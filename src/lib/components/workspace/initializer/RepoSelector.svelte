@@ -188,9 +188,9 @@
   // svelte-ignore state_referenced_locally - intentional initial capture; prop only seeds the input
   let inputValue = $state(value);
   let searchTerm = $state(''); // Separate search term that starts empty
-  let inputElement: any;
+  let inputElement = $state<Input>();
   /** The GitHub tab's owner/repo input, so the window-level Enter interceptor
-   *  can target it exactly rather than matching any focused <input>. */
+   *  can target it exactly rather than matching any focused text field. */
   let githubInputElement = $state<HTMLInputElement | null>(null);
   let isOpen = $state(false); // Track dropdown open state
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1478,7 +1478,7 @@
       <!-- Tab bar -->
       <div class="flex gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1">
         {#each [{ id: 'github' as TabId, label: m.workspace_repoSelector_pickARepo_tab() }, { id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
-          <button
+          <Button
             type="button"
             class="flex-1 px-3 py-1.5 text-sm whitespace-nowrap rounded-md cursor-pointer transition-all {activeTab ===
             tab.id
@@ -1487,7 +1487,7 @@
             onclick={() => (activeTab = tab.id)}
           >
             {tab.label}
-          </button>
+          </Button>
         {/each}
       </div>
 
@@ -1495,7 +1495,7 @@
       <div class="px-3 mb-3">
         {#if activeTab === 'local'}
           <!-- Local repo: folder picker button -->
-          <button
+          <Button
             type="button"
             class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border-0 bg-sidebar text-left cursor-pointer"
             onclick={handleSelectFolder}
@@ -1506,7 +1506,7 @@
               {inputValue || m.workspace_repoSelector_selectAFolder_placeholder()}
             </span>
             <Fa icon={faFolder} class="text-ghost opacity-50" />
-          </button>
+          </Button>
         {:else if activeTab === 'github'}
           <!-- GitHub: URL input with prefix (path-less pick — no clone destination) -->
           <div
@@ -1548,13 +1548,13 @@
           {:else if $githubReposError$}
             <div class="mt-2 px-1 text-sm text-subtle flex items-center gap-2">
               <span>{m.workspace_repoSelector_suggestionsUnavailable_label()}</span>
-              <button
+              <Button
                 type="button"
                 class="underline underline-offset-2 cursor-pointer hover:no-underline"
                 onclick={retryGithubRepos}
               >
                 {m.workspace_repoSelector_retrySuggestions_label()}
-              </button>
+              </Button>
             </div>
           {:else if githubSuggestions.length > 0}
             <div
@@ -1564,7 +1564,7 @@
               class="mt-2 max-h-56 overflow-y-auto"
             >
               {#each githubSuggestions as repo, index (repo.id)}
-                <button
+                <Button
                   type="button"
                   id="repo-selector-github-suggestion-{index}"
                   role="option"
@@ -1586,7 +1586,7 @@
                   <span class="text-sm text-foreground truncate">
                     <span class="text-subtle mr-1">{repo.owner} /</span>{repo.name}
                   </span>
-                </button>
+                </Button>
               {/each}
             </div>
           {:else if githubQuery && $githubSearchLoading$}
@@ -1609,7 +1609,7 @@
           {/if}
         {:else if activeTab === 'new'}
           <!-- New repo: parent folder + folder name -->
-          <button
+          <Button
             type="button"
             class="w-full flex items-center gap-3 mb-2 text-left cursor-pointer"
             onclick={handleSelectNewRepoParent}
@@ -1627,7 +1627,7 @@
               </div>
               <Fa icon={faFolder} class="text-ghost shrink-0 opacity-50" />
             </span>
-          </button>
+          </Button>
           <div class="flex items-center gap-3">
             <span class="text-sm text-subtle shrink-0 w-24 pl-1"
               >{m.workspace_repoSelector_folderName_label()}</span
@@ -1723,7 +1723,7 @@
                       : `${setup.username}@${setup.host}:${setup.port}`}
                   </div>
                 </div>
-                <button
+                <Button
                   type="button"
                   onclick={(e) => {
                     e.stopPropagation();
@@ -1734,7 +1734,7 @@
                   title={m.workspace_repoSelector_removeSetup_tooltip()}
                 >
                   <Fa icon={faXmark} size="xs" />
-                </button>
+                </Button>
               </div>
             {/each}
             {#if remoteSetups.length === 0}
@@ -1742,14 +1742,14 @@
                 {m.workspace_repoSelector_noRemoteSetups_label()}
               </div>
             {/if}
-            <button
+            <Button
               type="button"
               class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left cursor-pointer hover:bg-muted/50 transition-colors text-sm text-muted-foreground"
               onclick={handleAddRemoteSetup}
             >
               <Fa icon={faPlus} size="sm" />
               {m.workspace_repoSelector_addRemoteSetup_label()}
-            </button>
+            </Button>
           </div>
         {/if}
       </div>
@@ -1798,7 +1798,7 @@
                 {@const label = getRecentRepoLabel(repo)}
                 {@const tooltip = getRecentRepoTooltip(repo)}
                 {#snippet repoRow()}
-                  <button
+                  <Button
                     type="button"
                     class="w-full flex items-center gap-2 py-1.5 text-left hover:bg-muted/50 rounded-md px-2 pl-3 -mx-2 transition-colors cursor-pointer {index ===
                     highlightedIndex
@@ -1831,7 +1831,7 @@
                         <span class="text-subtle ml-1">({label.suffix})</span>
                       {/if}
                     </span>
-                  </button>
+                  </Button>
                 {/snippet}
                 {#if tooltip}
                   <Tooltip content={tooltip} delayDuration={300} side="bottom" class="flex w-full">

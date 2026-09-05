@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
     faCircleExclamation,
@@ -14,7 +15,7 @@
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { invoke } from '$lib/electron-bridge';
   import { getLanguageFromPath } from '$lib/utils/file-utils';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -125,7 +126,7 @@
   <!-- File location row -->
   {#if comment.location}
     <div class="flex items-center gap-2 px-4 py-2 border-t border-border">
-      <button
+      <Button
         class="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex-1 min-w-0"
         onclick={toggleCodeExpand}
       >
@@ -138,19 +139,19 @@
             ? `-${comment.location.endLine}`
             : ''}
         </span>
-      </button>
-      <button
+      </Button>
+      <Button
         class="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0"
         onclick={() => onViewInDiff?.(comment)}
         title={m.codeReview_commentCard_viewInDiff_tooltip()}
       >
         <Fa icon={faArrowUpRightFromSquare} class="h-3 w-3" />
-      </button>
+      </Button>
     </div>
 
     <!-- Expandable code snippet -->
     {#if isCodeExpanded}
-      <div class="px-4 pb-3" transition:slide={{ duration: 100 }}>
+      <div class="px-4 pb-3" transition:slide={{ tier: 'fast' }}>
         {#if isLoadingSnippet}
           <div class="text-xs text-subtle italic py-2">
             {m.codeReview_commentCard_loading_label()}
@@ -179,7 +180,7 @@
   <!-- Footer actions -->
   <div class="flex items-center gap-3 px-4 py-2 border-t border-border">
     {#if onFix}
-      <button
+      <Button
         class="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
         onclick={() => onFix?.(comment)}
         disabled={isFixing}
@@ -190,7 +191,7 @@
             ? m.codeReview_commentCard_creating_label()
             : m.codeReview_commentCard_fix_label()}</span
         >
-      </button>
+      </Button>
     {/if}
   </div>
 </div>

@@ -27,8 +27,8 @@ const mockToast = vi.hoisted(() => ({
   warning: vi.fn(),
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: mockToast,
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: mockToast,
 }));
 
 const FEATURE_PATHS = [

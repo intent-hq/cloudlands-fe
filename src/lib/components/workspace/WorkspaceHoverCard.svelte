@@ -169,7 +169,7 @@
       if (count > 1) {
         questionMeta = {
           compact: `${formatInteger(1)}/${formatInteger(count)}`,
-          accessible: `${m.workspace_hoverCard_question_label()} ${m.chat_questionWizard_stepCounter_label({ current: 1, total: count })}`,
+          accessible: m.chat_questionWizard_stepCounter_label({ current: 1, total: count }),
         };
       }
     } else if (attention?.kind === 'discussion') {

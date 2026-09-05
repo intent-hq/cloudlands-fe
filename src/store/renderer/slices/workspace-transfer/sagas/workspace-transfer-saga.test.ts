@@ -3,7 +3,7 @@ import { runSaga, stdChannel } from 'redux-saga';
 
 const mocks = vi.hoisted(() => ({ request: vi.fn(), invoke: vi.fn(), toastWarning: vi.fn() }));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));
-vi.mock('svelte-sonner', () => ({ toast: { warning: mocks.toastWarning } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { warning: mocks.toastWarning } }));
 
 import {
   closeTransferModal,

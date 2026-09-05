@@ -227,8 +227,8 @@ vi.mock('$lib/client/live/backend-transport', async (importOriginal) => ({
   backendRequest: (...args: unknown[]) => mocks.backendRequest(...args),
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
 
 vi.mock('svelte-fa', async () => ({
@@ -310,8 +310,8 @@ describe('CompactWorkspaceInitializer folder drop (path references, local daemon
     });
     expect(pills(result.container)[0].dataset.name).toBe('my-folder');
     expect(pills(result.container)[0].dataset.type).toBe('folder');
-    const { toast } = await import('svelte-sonner');
-    expect(toast.error).not.toHaveBeenCalled();
+    const { notify } = await import('$lib/components/patterns/notify');
+    expect(notify.error).not.toHaveBeenCalled();
   });
 
   it('remote drop containing a folder rejects the WHOLE drop with one error toast', async () => {
@@ -329,9 +329,9 @@ describe('CompactWorkspaceInitializer folder drop (path references, local daemon
       ]),
     );
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     // Nothing attaches — not even the file in the same drop.
     expect(pills(result.container)).toHaveLength(0);
@@ -349,9 +349,9 @@ describe('CompactWorkspaceInitializer folder drop (path references, local daemon
       makeItemsDropEvent([{ file: folder, isDirectory: true }]),
     );
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     expect(pills(result.container)).toHaveLength(0);
   });

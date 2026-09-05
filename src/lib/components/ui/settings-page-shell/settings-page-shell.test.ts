@@ -10,7 +10,12 @@ describe('SettingsPageShell', () => {
   it('supports action and href back modes with a shortcut affordance', async () => {
     const { getByLabelText, getByRole, getByText } = render(SettingsPageShellHarness);
     expect(getByRole('heading', { level: 1, name: 'Application settings' })).toBeTruthy();
-    expect(getByRole('navigation', { name: 'Settings sections' })).toBeTruthy();
+    const tablist = getByRole('tablist', { name: 'Settings sections' });
+    expect(tablist).toBeTruthy();
+    const appearanceTab = getByRole('tab', { name: 'Appearance and colors' });
+    await fireEvent.click(appearanceTab);
+    expect(appearanceTab.getAttribute('aria-selected')).toBe('true');
+    expect(getByLabelText('Active settings section').textContent).toBe('appearance');
     const action = getByRole('button', { name: 'Back to workspace' });
     await fireEvent.click(action);
     expect(getByLabelText('Back action count').textContent).toBe('1');
@@ -37,7 +42,8 @@ describe('SettingsPageShell', () => {
     expect(shell.className).toContain('h-full');
     expect(shell.className).toContain('overflow-hidden');
     expect(header).toBeTruthy();
-    expect(navigation?.className).toContain('overflow-x-auto');
+    expect(navigation?.querySelector('.overflow-x-auto')).toBeTruthy();
+    expect(navigation?.querySelector('.pb-2')).toBeTruthy();
     expect(scroller?.className).toContain('overflow-auto');
     expect(content?.getAttribute('data-measure')).toBe('standard');
     expect(headerInner?.getAttribute('data-measure')).toBe('wide');
@@ -64,6 +70,8 @@ describe('SettingsPageShell', () => {
         'long-content',
         'compact',
         'keyboard-focus',
+        'shared-tabs',
+        'tab-spacing',
         'back-action',
         'back-href',
         'shortcut',

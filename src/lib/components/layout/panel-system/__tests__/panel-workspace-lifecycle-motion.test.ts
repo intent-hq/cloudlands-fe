@@ -11,7 +11,9 @@ describe('panel lifecycle motion', () => {
     const container = source('../PanelContainer.svelte');
 
     expect(layout).toContain('data-panel-layout-motion');
-    expect(layout).toContain("transition:resize={{ axis: 'x', duration: layoutMotionDuration }}");
+    expect(layout).toContain(
+      "transition:resize={{ axis: 'x', enabled: layoutMotionEnabled, tier: 'moderate' }}",
+    );
     expect(layout).toContain(
       'lifecycleMotionReadyForLayoutId === effectiveLayoutId && !suppressCommittedPanelMoveMotion',
     );
@@ -24,7 +26,7 @@ describe('panel lifecycle motion', () => {
     expect(layout).toContain('node={viewportOuterResizeRoot}');
     expect(container).toContain('{#each getSplitLayoutItems() as item (item.key)}');
     expect(container).toContain(
-      'animate:translatePanel={{ duration: layoutMotionDuration, easing: cubicOut }}',
+      "animate:translatePanel={{ enabled: layoutMotionEnabled, tier: 'moderate' }}",
     );
     expect(container).toContain(
       'lifecycleMotionReady && !isResizing && !suppressLayoutMotion && !suppressResizeCommitMotion',

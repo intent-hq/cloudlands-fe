@@ -11,8 +11,8 @@
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
 
-  import { Tooltip } from '$lib/components/ui/tooltip';
-  import { highlightTarget } from '$lib/components/ui/highlight/highlight-target';
+  import { Tooltip } from '$lib/components/patterns/settings/custom-controls';
+  import { highlightTarget } from '$lib/components/patterns/settings/highlight-target';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 

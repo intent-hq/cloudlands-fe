@@ -1,4 +1,4 @@
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import {
   call,
   delay,
@@ -160,7 +160,7 @@ export function* handleApplyProposal(
     const completedAt = Date.now();
     const message = serializeError(error);
     yield* put(proposalFailed({ proposalId, error: message, completedAt, lastAction: 'apply' }));
-    yield* call(toast.error, m.chat_proposalLifecycle_applyFailed_label(), {
+    yield* call(notify.error, m.chat_proposalLifecycle_applyFailed_label(), {
       description: message,
     });
   } finally {
@@ -206,7 +206,7 @@ export function* handleUndoProposal(
     const completedAt = Date.now();
     const message = serializeError(error);
     yield* put(proposalFailed({ proposalId, error: message, completedAt, lastAction: 'undo' }));
-    yield* call(toast.error, m.chat_proposalLifecycle_undoFailed_label(), {
+    yield* call(notify.error, m.chat_proposalLifecycle_undoFailed_label(), {
       description: message,
     });
   } finally {

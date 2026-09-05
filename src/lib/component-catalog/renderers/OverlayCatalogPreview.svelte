@@ -8,16 +8,44 @@
   import type { CatalogRendererProps } from '../catalog-renderers';
 
   let { componentId, fixture }: CatalogRendererProps = $props();
+  const uid = $props.id();
+  const portalTargetId = `${uid}-portal`;
   let menuChecked = $state(false);
   let menuDensity = $state('comfortable');
+  let menuOpen = $state(false);
 </script>
 
+{#snippet menuTrigger({ props }: { props: Record<string, unknown> })}
+  <Button {...props} variant="outline" size="sm" active={menuOpen}>Open catalog menu</Button>
+{/snippet}
+
+{#snippet dialogTrigger({ props }: { props: Record<string, unknown> })}
+  <Button {...props} variant="outline" size="sm">Open catalog dialog</Button>
+{/snippet}
+
+{#snippet disabledDialogTrigger({ props }: { props: Record<string, unknown> })}
+  <Button {...props} variant="outline" size="sm">Open dialog with disabled close</Button>
+{/snippet}
+
+{#snippet sheetTrigger({ props }: { props: Record<string, unknown> })}
+  <Button {...props} variant="outline" size="sm">Open catalog sheet</Button>
+{/snippet}
+
+{#snippet disabledSheetTrigger({ props }: { props: Record<string, unknown> })}
+  <Button {...props} variant="outline" size="sm">Open left sheet with disabled close</Button>
+{/snippet}
+
 <div class="flex flex-wrap gap-3" data-catalog-renderer-fixture={fixture.id}>
+  <div id={portalTargetId} data-catalog-portal-target={componentId}></div>
   {#if componentId === 'menu'}
     <div data-catalog-rendered-state="closed open disabled checked radio-selected submenu-open">
-      <Menu.Root>
-        <Menu.Trigger>Open catalog menu</Menu.Trigger>
-        <Menu.Content preventScroll={false} interactOutsideBehavior="close">
+      <Menu.Root bind:open={menuOpen}>
+        <Menu.Trigger child={menuTrigger} />
+        <Menu.Content
+          portalProps={{ to: `#${portalTargetId}` }}
+          preventScroll={false}
+          interactOutsideBehavior="close"
+        >
           <Menu.Item>Run command</Menu.Item>
           <Menu.CommandItem icon={faPaperclip} label="Attach files" shortcut="⇧⌘A" />
           <Menu.Item disabled>Disabled command</Menu.Item>
@@ -40,8 +68,8 @@
   {:else if componentId === 'dialog'}
     <div data-catalog-rendered-state="closed open focused nested-content long-content">
       <Dialog.Root>
-        <Dialog.Trigger>Open catalog dialog</Dialog.Trigger>
-        <Dialog.Content>
+        <Dialog.Trigger child={dialogTrigger} />
+        <Dialog.Content portalProps={{ to: `#${portalTargetId}` }}>
           <Dialog.Header
             ><Dialog.Title>Catalog dialog</Dialog.Title><Dialog.Description
               >Host-independent dialog preview with deliberately long content for compact layouts.</Dialog.Description
@@ -54,7 +82,8 @@
     </div>
     <div data-catalog-rendered-state="disabled-close">
       <Dialog.Root
-        ><Dialog.Trigger>Open dialog with disabled close</Dialog.Trigger><Dialog.Content
+        ><Dialog.Trigger child={disabledDialogTrigger} /><Dialog.Content
+          portalProps={{ to: `#${portalTargetId}` }}
           closeDisabled
           ><Dialog.Title>Disabled close dialog</Dialog.Title><Dialog.Description
             >Escape and outside dismissal remain testable.</Dialog.Description
@@ -65,8 +94,8 @@
   {:else if componentId === 'sheet'}
     <div data-catalog-rendered-state="closed open right nested-content">
       <Sheet.Root>
-        <Sheet.Trigger>Open catalog sheet</Sheet.Trigger>
-        <Sheet.Content side="right"
+        <Sheet.Trigger child={sheetTrigger} />
+        <Sheet.Content portalProps={{ to: `#${portalTargetId}` }} side="right"
           ><Sheet.Header
             ><Sheet.Title>Catalog sheet</Sheet.Title><Sheet.Description
               >Host-independent sheet preview.</Sheet.Description
@@ -77,7 +106,8 @@
     </div>
     <div data-catalog-rendered-state="left disabled-close">
       <Sheet.Root
-        ><Sheet.Trigger>Open left sheet with disabled close</Sheet.Trigger><Sheet.Content
+        ><Sheet.Trigger child={disabledSheetTrigger} /><Sheet.Content
+          portalProps={{ to: `#${portalTargetId}` }}
           side="left"
           closeDisabled
           ><Sheet.Title>Left sheet</Sheet.Title><Sheet.Description

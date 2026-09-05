@@ -20,7 +20,7 @@
   import Fa from 'svelte-fa';
   import { faChevronDown, faCode, faPlay, faXmark } from '@fortawesome/free-solid-svg-icons';
   import HourglassMedium from 'phosphor-svelte/lib/HourglassMedium';
-  import { safeSlide } from '$lib/utils/animations';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -195,7 +195,7 @@
     role="group"
     aria-label={m.chat_backgroundHooks_row_ariaLabel()}
     data-testid="background-hooks-row"
-    transition:safeSlide={{ axis: 'y', duration: 200 }}
+    transition:safeDisclosureTransition={{ tier: 'moderate' }}
   >
     {#each agentHooks as hook (hook.hookId)}
       {@const detailsId = `background-hook-details-${hook.hookId}`}

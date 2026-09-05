@@ -1,15 +1,13 @@
 <script lang="ts" module>
   import { tv, type VariantProps } from 'tailwind-variants';
   export const sheetVariants = tv({
-    base: 'sheet-editorial-content bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-[var(--layer-modal)] flex flex-col overflow-y-auto overscroll-contain border-border outline-none transition motion-reduce:animate-none motion-reduce:transition-none',
+    base: 'sheet-editorial-content text-popover-foreground fixed z-[var(--layer-modal)] flex flex-col overflow-y-auto overscroll-contain outline-none motion-reduce:animate-none motion-reduce:transition-none',
     variants: {
       side: {
-        top: 'data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-2 top-0 rounded-b-md border-b border-x sm:inset-x-4',
-        bottom:
-          'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-2 bottom-0 rounded-t-md border-t border-x sm:inset-x-4',
-        left: 'data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-2 left-0 rounded-r-md border-y border-r',
-        right:
-          'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-2 right-0 rounded-l-md border-y border-l',
+        top: 'inset-x-2 top-0 rounded-b-(--radius-large) sm:inset-x-4',
+        bottom: 'inset-x-2 bottom-0 rounded-t-(--radius-large) sm:inset-x-4',
+        left: 'inset-y-2 left-0 rounded-r-(--radius-large)',
+        right: 'inset-y-2 right-0 rounded-l-(--radius-large)',
       },
     },
     defaultVariants: {
@@ -23,15 +21,29 @@
 <script lang="ts">
   import { Dialog as SheetPrimitive } from 'bits-ui';
   import type { Snippet } from 'svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { crispOut, springIn } from '$lib/motion';
   import SheetOverlay from './sheet-overlay.svelte';
+  import {
+    createOverlayPresence,
+    overlayMotion,
+    useOverlayOpen,
+  } from '../dialog/overlay-motion.svelte';
   import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
   import { m } from '$shared/paraglide/messages.js';
+  import {
+    clampSurface,
+    setSurface,
+    surfaceClasses,
+    useSurface,
+  } from '$lib/components/ui/surface-context';
 
   let {
     ref = $bindable(null),
     class: className,
     side = 'right',
     portalProps,
+    forceMount = false,
     showCloseButton = true,
     closeDisabled = false,
     closeLabel = m.ui_sheet_close_label(),
@@ -47,6 +59,13 @@
     children: Snippet;
   } = $props();
 
+  const rootOpen = useOverlayOpen();
+  const surface = clampSurface(useSurface() + 2);
+  setSurface(surface);
+  const open = () => forceMount || rootOpen();
+  const presence = createOverlayPresence(open);
+  const motion = $derived(overlayMotion.sheet(side));
+
   // Interactions inside a lightbox stacked above the sheet (see
   // ImageLightbox's data-image-lightbox-root) are not outside interactions:
   // closing the lightbox must not also dismiss the sheet.
@@ -58,38 +77,55 @@
   }
 </script>
 
-<SheetPrimitive.Portal {...portalProps}>
-  <SheetOverlay />
-  <SheetPrimitive.Content
-    bind:ref
-    data-slot="sheet-content"
-    data-side={side}
-    class={cn(sheetVariants({ side }), className)}
-    {...restProps}
-    onInteractOutside={handleInteractOutside}
-  >
-    {@render children?.()}
-    {#if showCloseButton}
-      <SheetPrimitive.Close
-        aria-label={closeLabel}
-        disabled={closeDisabled}
-        class="absolute right-3 top-3 inline-flex size-7 items-center justify-center rounded-md border border-transparent text-muted-foreground transition-[color,background-color,border-color] duration-[var(--motion-fast)] hover:bg-accent hover:text-accent-foreground focus-visible:border-input focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none"
-      >
-        <svg aria-hidden="true" viewBox="0 0 16 16" class="size-4" fill="none">
-          <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.5" />
-        </svg>
-      </SheetPrimitive.Close>
-    {/if}
-  </SheetPrimitive.Content>
-</SheetPrimitive.Portal>
+{#if presence.mounted}
+  <SheetPrimitive.Portal {...portalProps}>
+    <SheetOverlay />
+    <SheetPrimitive.Content
+      bind:ref
+      forceMount
+      {...restProps}
+      onInteractOutside={handleInteractOutside}
+    >
+      {#snippet child({ props })}
+        {#if open()}
+          <div
+            {...props}
+            data-slot="sheet-content"
+            data-side={side}
+            class={cn(sheetVariants({ side }), surfaceClasses(surface), className)}
+            data-surface-level={surface}
+            in:springIn={motion.enter}
+            out:crispOut={motion.exit}
+            onoutroend={presence.finishExit}
+          >
+            {@render children?.()}
+            {#if showCloseButton}
+              <SheetPrimitive.Close disabled={closeDisabled}>
+                {#snippet child({ props: closeProps })}
+                  <Button
+                    {...closeProps}
+                    aria-label={closeLabel}
+                    disabled={closeDisabled}
+                    variant="ghost"
+                    size="icon-sm"
+                    iconOnly
+                    class="absolute right-3 top-3 text-muted-foreground"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 16 16" fill="none">
+                      <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.5" />
+                    </svg>
+                  </Button>
+                {/snippet}
+              </SheetPrimitive.Close>
+            {/if}
+          </div>
+        {/if}
+      {/snippet}
+    </SheetPrimitive.Content>
+  </SheetPrimitive.Portal>
+{/if}
 
 <style>
-  :global(.sheet-editorial-content) {
-    box-shadow: var(--elevation-overlay);
-    transition-duration: var(--motion-slow);
-    transition-timing-function: var(--ease-standard);
-  }
-
   :global(.sheet-editorial-content[data-side='left']),
   :global(.sheet-editorial-content[data-side='right']) {
     width: min(26rem, calc(100% - 0.5rem));

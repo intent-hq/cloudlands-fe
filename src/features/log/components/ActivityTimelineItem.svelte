@@ -15,8 +15,9 @@
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import { faCheckCircle, faXmarkCircle, faSpinner } from '@fortawesome/free-solid-svg-icons';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+  import { Button } from '$lib/components/ui/button';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import type { Snippet } from 'svelte';
 
   type Status = 'success' | 'error' | 'pending' | 'neutral';
@@ -88,7 +89,7 @@
   </div>
 
   <!-- Content -->
-  <button
+  <Button
     type="button"
     class="flex-1 min-w-0 text-left cursor-pointer group/content"
     onclick={onClick}
@@ -104,23 +105,23 @@
         · <RelativeTime date={timestamp} compact />
       </span>
     </div>
-  </button>
+  </Button>
 
   <!-- Agent avatar (right side) -->
   {#if isAgent && agentId}
-    <button
+    <Button
       type="button"
       class="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
       onclick={onAgentClick}
     >
       <AgentAvatar variant="standard" {agentId} />
-    </button>
+    </Button>
   {/if}
 </div>
 
 <!-- Expanded details -->
 {#if isExpanded && details}
-  <div transition:slide={{ axis: 'y', duration: 200 }} class="ml-8 mr-2 py-2">
+  <div transition:slide={{ axis: 'y', tier: 'moderate' }} class="ml-8 mr-2 py-2">
     {@render details()}
   </div>
 {/if}

@@ -3,16 +3,17 @@
   import { ToggleGroup as ToggleGroupPrimitive } from 'bits-ui';
   import type { Snippet } from 'svelte';
   import type { HTMLButtonAttributes } from 'svelte/elements';
-  import { getContext } from 'svelte';
+  import { getContext, untrack } from 'svelte';
   import { tv, type VariantProps } from 'tailwind-variants';
+  import { TOGGLE_GROUP_CONTEXT, type ToggleGroupContext } from './context';
 
   const toggleVariants = tv({
-    base: 'type-body inline-flex cursor-pointer items-center justify-center rounded-(--radius-small) border border-transparent bg-transparent font-medium text-muted-foreground transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] hover:border-input hover:bg-accent hover:text-accent-foreground focus-visible:z-10 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 data-[state=on]:border-primary/60 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground data-[state=on]:shadow-(--elevation-raised) motion-reduce:transition-none',
+    base: 'type-caption relative z-10 inline-flex cursor-pointer items-center justify-center rounded-(--radius-small) border border-transparent bg-transparent font-medium text-muted-foreground transition-[border-color,color,font-weight] duration-spring-fast ease-spring-fast hover:border-input hover:font-semibold hover:text-foreground active:bg-active disabled:pointer-events-none disabled:opacity-50 data-[state=on]:border-transparent data-[state=on]:font-semibold data-[state=on]:text-foreground motion-reduce:transition-none',
     variants: {
       variant: {
         default: '',
         outline: 'bg-transparent',
-        flat: 'border-transparent hover:border-transparent data-[state=on]:border-transparent data-[state=on]:shadow-none',
+        flat: 'border-transparent hover:border-transparent data-[state=on]:border-transparent',
       },
       size: {
         default: 'h-(--control-height-medium) min-w-8 px-2',
@@ -45,24 +46,37 @@
     tooltip = undefined,
     class: className = '',
     onclick,
+    onfocus,
     children,
     ...restProps
   }: Props = $props();
 
-  const context = getContext<{
-    size?: ToggleVariant['size'];
-    variant?: ToggleVariant['variant'];
-  }>('toggle-group-style');
+  const context = getContext<ToggleGroupContext>(TOGGLE_GROUP_CONTEXT);
+  const index = context.state.allocate(untrack(() => value));
+  let element = $state<HTMLElement | null>(null);
 
   const actualSize = $derived(size ?? context?.size ?? 'default');
   const actualVariant = $derived(variant ?? context?.variant ?? 'default');
+
+  $effect(() => context.state.update(index, value, disabled));
+  $effect(() => {
+    context.state.register(index, element);
+    return () => context.state.register(index, null);
+  });
+
+  function handleFocus(event: FocusEvent & { currentTarget: EventTarget & HTMLButtonElement }) {
+    context.state.activate(index);
+    onfocus?.(event);
+  }
 </script>
 
 <ToggleGroupPrimitive.Item
+  bind:ref={element}
   {value}
   title={tooltip}
   {disabled}
   {onclick}
+  onfocus={handleFocus}
   class={cn(toggleVariants({ variant: actualVariant, size: actualSize }), className)}
   {...restProps as any}
 >

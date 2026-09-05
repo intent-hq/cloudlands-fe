@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
   /**
    * SetupScriptBanner - Prompts users to create a setup script from their terminal commands
    *
@@ -15,8 +16,7 @@
    */
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
-  import { fly } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fly } from '$lib/motion';
   import Fa from 'svelte-fa';
   import {
     faWandMagicSparkles,
@@ -32,7 +32,7 @@
   import { recordLastUsedSetupScript } from '$features/setup-scripts';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { createLogger } from '$lib/utils/client-logger';
   import { store as appStore } from '$store/renderer/store';
   import { appClient } from '$lib/client';
@@ -179,13 +179,13 @@
 
   function handleSave() {
     if (!scriptContent.trim()) {
-      toast.error(m.terminal_setupBanner_emptyScript_error());
+      notify.error(m.terminal_setupBanner_emptyScript_error());
       return;
     }
     // recordLastUsedSetupScript is a no-op without a repo path — don't claim
     // success (and drop the script) when the workspace has no repositoryPath.
     if (!repoPath) {
-      toast.error(m.terminal_setupBanner_noRepo_error());
+      notify.error(m.terminal_setupBanner_noRepo_error());
       return;
     }
 
@@ -194,7 +194,7 @@
       content: scriptContent,
     });
 
-    toast.success(m.terminal_setupBanner_saved_success({ name: scriptName }));
+    notify.success(m.terminal_setupBanner_saved_success({ name: scriptName }));
     logger.info('Setup script saved from terminal banner', { repoPath, scriptName });
     dismiss();
   }
@@ -243,7 +243,7 @@
   <div bind:this={bannerEl} class="setup-script-banner border-t border-border bg-muted/30 shrink-0">
     <div class="flex items-center gap-3 px-4 py-2">
       <div class="flex items-center gap-2 text-subtle">
-        <Fa icon={faWandMagicSparkles} class="w-3.5 h-3.5 text-primary/70" />
+        <Fa icon={faWandMagicSparkles} class="w-3.5 h-3.5 text-primary-ink/70" />
       </div>
       <p class="text-sm text-subtle flex-1">
         <span class="text-muted-foreground font-medium"
@@ -251,13 +251,13 @@
         >
         {m.terminal_setupBanner_headline_suffix()}
       </p>
-      <button
+      <Button
         type="button"
         class="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
         onclick={dismiss}
       >
         {m.terminal_setupBanner_dontShowAgain_label()}
-      </button>
+      </Button>
       {#if isExpanded}
         <Button variant="outline" size="xs" onclick={() => (isExpanded = false)}>
           <Fa icon={faChevronRight} size="xs" />
@@ -269,14 +269,14 @@
           <Fa icon={faChevronRight} size="xs" />
         </Button>
       {/if}
-      <button
+      <Button
         type="button"
         class="p-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
         onclick={close}
         aria-label={m.terminal_setupBanner_close_ariaLabel()}
       >
         <Fa icon={faXmark} size="xs" />
-      </button>
+      </Button>
     </div>
   </div>
 {/if}
@@ -287,7 +287,7 @@
     class="absolute top-0 right-0 border-l border-border bg-sidebar flex flex-col z-10"
     class:select-none={isResizing}
     style="width: {panelWidth}px; bottom: {bannerEl?.offsetHeight ?? 0}px"
-    transition:fly={{ x: panelWidth, duration: 200, easing: cubicOut }}
+    transition:fly={{ axis: 'x', distance: panelWidth, tier: 'moderate' }}
   >
     <!-- Resize handle -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -301,7 +301,7 @@
     <!-- Header -->
     <div class="flex items-center justify-between px-3 py-2 border-b border-border">
       <div class="flex items-start gap-2">
-        <!-- <Fa icon={faWandMagicSparkles} class="w-3.5 h-3.5 text-primary/70 mt-1" /> -->
+        <!-- <Fa icon={faWandMagicSparkles} class="w-3.5 h-3.5 text-primary-ink/70 mt-1" /> -->
         <div class="flex flex-col">
           <span class="text-sm font-medium text-muted-foreground"
             >{m.terminal_setupBanner_create_label()}</span
@@ -317,21 +317,21 @@
           <Fa icon={faFloppyDisk} size="xs" />
           {m.terminal_setupBanner_save_label()}
         </Button>
-        <button
+        <Button
           type="button"
           class="p-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
           onclick={() => (isExpanded = false)}
           aria-label={m.terminal_setupBanner_closeEditor_label()}
         >
           <Fa icon={faXmark} size="xs" />
-        </button>
+        </Button>
       </div>
     </div>
 
     <!-- Script name -->
     <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border">
       <span class="text-xs text-subtle">{m.terminal_setupBanner_name_label()}</span>
-      <input
+      <Input
         type="text"
         bind:value={scriptName}
         class="flex-1 text-xs bg-transparent border-0 outline-none focus:outline-none text-foreground/80 placeholder:text-muted-foreground/40"

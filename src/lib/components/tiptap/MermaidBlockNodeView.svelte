@@ -1,11 +1,13 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Textarea } from '$lib/components/ui/textarea';
   import { NodeViewWrapper } from '$lib/utils/tiptap/svelte-node-view';
   import type { NodeViewProps } from '@tiptap/core';
   import hljs from 'highlight.js';
   import '$lib/styles/syntax-highlighting.css';
   import Fa from 'svelte-fa';
   import { faPencil, faExpand } from '@fortawesome/free-solid-svg-icons';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import { tick } from 'svelte';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
@@ -116,7 +118,7 @@
 
   // Debounce timer for auto-saving
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-  let textareaEl: HTMLTextAreaElement;
+  let textareaEl = $state<HTMLTextAreaElement>();
 
   async function openCodeView(e: MouseEvent) {
     // Prevent the click from selecting text or triggering bubble menu
@@ -197,31 +199,32 @@
       <div
         class="mermaid-code-section"
         contenteditable="false"
-        transition:slide={{ axis: 'y', duration: 200 }}
+        transition:slide={{ axis: 'y', tier: 'moderate' }}
       >
         <div class="code-editor-wrapper">
           <pre class="code-highlight hljs" aria-hidden="true">{@html highlightedCode + '\n'}</pre>
-          <textarea
-            bind:this={textareaEl}
+          <Textarea
+            bind:ref={textareaEl}
             class="code-textarea"
             value={editCode}
             oninput={handleCodeInput}
             onkeydown={handleKeyDown}
             spellcheck="false"
             autocorrect="off"
-            autocapitalize="off"></textarea>
+            autocapitalize="off"
+          ></Textarea>
         </div>
         <div class="edit-actions">
           {#if hasChanges}
-            <button type="button" class="action-btn" onclick={cancelChanges}
-              >{m.tiptap_mermaidBlock_cancel_label()}</button
+            <Button type="button" class="action-btn" onclick={cancelChanges}
+              >{m.tiptap_mermaidBlock_cancel_label()}</Button
             >
-            <button type="button" class="action-btn primary" onclick={saveChanges}
-              >{m.tiptap_mermaidBlock_save_label()}</button
+            <Button type="button" class="action-btn primary" onclick={saveChanges}
+              >{m.tiptap_mermaidBlock_save_label()}</Button
             >
           {:else}
-            <button type="button" class="action-btn" onclick={closeCodeView}
-              >{m.tiptap_mermaidBlock_close_label()}</button
+            <Button type="button" class="action-btn" onclick={closeCodeView}
+              >{m.tiptap_mermaidBlock_close_label()}</Button
             >
           {/if}
         </div>
@@ -231,22 +234,22 @@
     <!-- Action buttons (edit + expand) -->
     {#if !showCode}
       <div class="action-btns">
-        <button
+        <Button
           type="button"
           class="hover-btn"
           onclick={openCodeView}
           title={m.tiptap_mermaidBlock_editCode_tooltip()}
         >
           <Fa icon={faPencil} size="xs" />
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           class="hover-btn"
           onclick={openFullscreen}
           title={m.tiptap_mermaidBlock_fullscreen_tooltip()}
         >
           <Fa icon={faExpand} size="xs" />
-        </button>
+        </Button>
       </div>
     {/if}
   </div>
@@ -293,10 +296,10 @@
     display: flex;
     gap: 0.25rem;
     opacity: 0;
-    transition: opacity 0.15s;
+    transition: opacity var(--spring-moderate) var(--spring-moderate-ease);
   }
 
-  .hover-btn {
+  :global(.hover-btn) {
     width: 1.75rem;
     height: 1.75rem;
     padding: 0;
@@ -305,13 +308,13 @@
     border-radius: 0.375rem;
     color: white;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background var(--spring-moderate) var(--spring-moderate-ease);
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
-  .hover-btn:hover {
+  :global(.hover-btn:hover) {
     background: rgb(0 0 0 / 0.75);
   }
 
@@ -355,7 +358,7 @@
     background: transparent;
   }
 
-  .code-textarea {
+  :global(.code-textarea) {
     position: absolute;
     top: 0;
     left: 0;
@@ -375,7 +378,7 @@
     overflow: hidden;
   }
 
-  .code-textarea:focus {
+  :global(.code-textarea:focus) {
     outline: none;
   }
 
@@ -385,26 +388,26 @@
     margin-top: 0.25rem;
   }
 
-  .action-btn {
+  :global(.action-btn) {
     padding: 0.25rem 0.5rem;
     font-size: 0.7rem;
     background: transparent;
     border: none;
     color: hsl(var(--muted-foreground));
     cursor: pointer;
-    transition: color 0.15s;
+    transition: color var(--spring-moderate) var(--spring-moderate-ease);
   }
 
-  .action-btn:hover {
+  :global(.action-btn:hover) {
     color: hsl(var(--foreground));
   }
 
-  .action-btn.primary {
-    color: hsl(var(--primary));
+  :global(.action-btn.primary) {
+    color: hsl(var(--primary-ink));
   }
 
-  .action-btn.primary:hover {
-    color: hsl(var(--primary) / 0.8);
+  :global(.action-btn.primary:hover) {
+    color: hsl(var(--primary-ink) / 0.8);
   }
 
   .mermaid-loading {
@@ -418,7 +421,7 @@
     width: 16px;
     height: 16px;
     border: 2px solid hsl(var(--muted));
-    border-top-color: hsl(var(--primary));
+    border-top-color: hsl(var(--primary-ink));
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }

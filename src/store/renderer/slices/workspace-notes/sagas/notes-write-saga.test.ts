@@ -1,8 +1,8 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('svelte-sonner', () => ({
-  toast: { error: vi.fn(), warning: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), warning: vi.fn() },
 }));
 
 import { appClient } from '$lib/client';

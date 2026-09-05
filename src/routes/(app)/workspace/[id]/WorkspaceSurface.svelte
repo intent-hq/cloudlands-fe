@@ -10,7 +10,7 @@
   import { writable } from 'svelte/store';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
 
   import { createWorkspacePageState } from './composables/workspace-page-state.svelte';
   import { useCloseHandlers, usePanelShortcuts, useTabManagement } from './composables';
@@ -491,7 +491,7 @@
       const { error, timestamp } = JSON.parse(errorData);
       if (Date.now() - timestamp < 30000) {
         logger.error('[WorkspacePage] Workspace creation failed', { error });
-        toast.error(m.workspace_page_createFailed_error({ error }), {
+        notify.error(m.workspace_page_createFailed_error({ error }), {
           duration: 10000,
           description: m.workspace_page_createFailedRetry_description(),
         });

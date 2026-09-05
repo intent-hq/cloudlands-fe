@@ -88,7 +88,7 @@
     flex: 1;
   }
   .hud-system-online {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
   .hud-system-offline {
     color: hsl(var(--danger));

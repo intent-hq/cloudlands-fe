@@ -2,10 +2,10 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import Label from '$lib/components/ui/label/label.svelte';
+  import { RadioGroup, RadioGroupItem } from '$lib/components/ui/radio-group';
   import Fa from 'svelte-fa';
   import { faXmark, faServer, faKey } from '@fortawesome/free-solid-svg-icons';
-  import { fade, scale } from 'svelte/transition';
-  import { scaleConfig } from '$lib/utils/animations';
+  import { fade, scale } from '$lib/motion';
   import { createLogger } from '$lib/utils/client-logger';
   import { portal } from '$lib/actions/portal';
   import { m } from '$shared/paraglide/messages.js';
@@ -119,13 +119,13 @@
       class="absolute inset-0 bg-black/50 cursor-default"
       onclick={handleClose}
       aria-label={m.workspace_addRemoteSetupModal_close_ariaLabel()}
-      transition:fade={{ duration: 150 }}
+      transition:fade={{ tier: 'moderate' }}
     ></button>
 
     <!-- Modal -->
     <div
       class="relative bg-sidebar border border-border shadow-xs w-full max-w-lg max-h-[90vh] overflow-y-auto px-12 py-8"
-      transition:scale={scaleConfig()}
+      transition:scale={{ distance: 0.05, tier: 'moderate' }}
     >
       <!-- Header -->
       <div class="flex items-center justify-between mb-4">
@@ -163,7 +163,7 @@
 
           <!-- Transport type selector -->
           <div class="flex gap-2">
-            <button
+            <Button
               type="button"
               class="flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors {transport ===
               'ssh'
@@ -178,8 +178,8 @@
             >
               <!-- i18n-ignore (protocol name) -->
               SSH
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               class="flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors {transport ===
               'websocket'
@@ -194,7 +194,7 @@
             >
               <!-- i18n-ignore (protocol name) -->
               WebSocket
-            </button>
+            </Button>
           </div>
 
           {#if transport === 'ssh'}
@@ -236,101 +236,45 @@
             </h3>
 
             <!-- Auth mode radio buttons -->
-            <div class="space-y-2">
-              <!-- SSH Agent option -->
-              <label
-                class="flex items-start gap-3 p-2 rounded-md border cursor-pointer transition-colors {authMode ===
-                'agent'
+            {#snippet agentMarker()}
+              <Fa icon={faKey} class="text-ghost text-xs" />
+            {/snippet}
+            <RadioGroup
+              value={authMode}
+              onValueChange={(value) => (authMode = value as typeof authMode)}
+              aria-label={m.workspace_addRemoteSetupModal_authentication_label()}
+              class="gap-2"
+            >
+              <RadioGroupItem
+                value="agent"
+                title={m.workspace_addRemoteSetupModal_sshAgent_label()}
+                marker={agentMarker}
+                class="rounded-md border p-2 {authMode === 'agent'
                   ? 'border-primary bg-primary/5'
                   : 'border-border hover:bg-muted/50'}"
-              >
-                <input
-                  type="radio"
-                  name="authMode"
-                  value="agent"
-                  checked={authMode === 'agent'}
-                  onchange={() => {
-                    authMode = 'agent';
-                  }}
-                  class="mt-1"
-                />
-                <div class="flex-1">
-                  <div class="flex items-center gap-2">
-                    <Fa icon={faKey} class="text-ghost text-xs" />
-                    <span class="text-sm font-medium"
-                      >{m.workspace_addRemoteSetupModal_sshAgent_label()}</span
-                    >
-                  </div>
-                </div>
-              </label>
-
-              <!-- Key file option -->
-              <label
-                class="flex items-start gap-3 p-2 rounded-md border cursor-pointer transition-colors {authMode ===
-                'keyfile'
+              />
+              <RadioGroupItem
+                value="keyfile"
+                title={m.workspace_addRemoteSetupModal_keyFile_label()}
+                class="rounded-md border p-2 {authMode === 'keyfile'
                   ? 'border-primary bg-primary/5'
                   : 'border-border hover:bg-muted/50'}"
-              >
-                <input
-                  type="radio"
-                  name="authMode"
-                  value="keyfile"
-                  checked={authMode === 'keyfile'}
-                  onchange={() => {
-                    authMode = 'keyfile';
-                  }}
-                  class="mt-1"
-                />
-                <div class="flex-1">
-                  <span class="text-sm font-medium"
-                    >{m.workspace_addRemoteSetupModal_keyFile_label()}</span
-                  >
-                  {#if authMode === 'keyfile'}
-                    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-                    <!-- stopPropagation prevents clicks on interactive elements from bubbling
-                         to the parent <label>, which would steal focus to the radio button -->
-                    <div class="mt-1" onclick={(e) => e.stopPropagation()}>
-                      <!-- i18n-ignore (example path placeholder) -->
-                      <Input bind:value={keyPath} placeholder="~/.ssh/id_rsa" class="mt-1 h-8" />
-                    </div>
-                  {/if}
-                </div>
-              </label>
-
-              <!-- Password option -->
-              <label
-                class="flex items-start gap-3 p-2 rounded-md border cursor-pointer transition-colors {authMode ===
-                'password'
+              />
+              {#if authMode === 'keyfile'}
+                <!-- i18n-ignore (example path placeholder) -->
+                <Input bind:value={keyPath} placeholder="~/.ssh/id_rsa" class="h-8" />
+              {/if}
+              <RadioGroupItem
+                value="password"
+                title={m.workspace_addRemoteSetupModal_password_label()}
+                class="rounded-md border p-2 {authMode === 'password'
                   ? 'border-primary bg-primary/5'
                   : 'border-border hover:bg-muted/50'}"
-              >
-                <input
-                  type="radio"
-                  name="authMode"
-                  value="password"
-                  checked={authMode === 'password'}
-                  onchange={() => {
-                    authMode = 'password';
-                  }}
-                  class="mt-1"
-                />
-                <div class="flex-1">
-                  <span class="text-sm font-medium"
-                    >{m.workspace_addRemoteSetupModal_password_label()}</span
-                  >
-                  {#if authMode === 'password'}
-                    <div class="mt-1">
-                      <Input
-                        type="password"
-                        bind:value={password}
-                        placeholder="••••••••"
-                        class="h-8"
-                      />
-                    </div>
-                  {/if}
-                </div>
-              </label>
-            </div>
+              />
+              {#if authMode === 'password'}
+                <Input type="password" bind:value={password} placeholder="••••••••" class="h-8" />
+              {/if}
+            </RadioGroup>
           </div>
         {:else}
           <!-- WebSocket info - no SSH auth needed -->

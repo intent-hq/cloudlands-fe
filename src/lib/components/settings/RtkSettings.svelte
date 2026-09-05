@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button, Switch } from '$lib/components/patterns/settings/custom-controls';
   /**
    * RTK Settings Component
    *
@@ -10,7 +11,6 @@
    * like other daemon-backed settings (e.g., AgentBackendSettings.svelte).
    */
 
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -23,7 +23,7 @@
   } from '$store/renderer/slices/terminals/terminals-slice';
   import { ROOT_WORKSPACE_ID } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import { store as appStore } from '$store/renderer/store';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
 
   let rtkAvailable = $state(false);
   let rtkEnabled = $state(false);
@@ -83,11 +83,11 @@
         // Daemon-first invariant: never fabricate a tab without a PTY behind
         // it — surface the failure instead.
         console.error(
-          // i18n-ignore (developer log)
+          // i18n-ignore -- developer-only diagnostic; the user sees the localized notification below
           'Failed to create install terminal:',
           result.success ? 'missing id' : result.error,
         );
-        toast.error(m.terminal_adapter_openFailed_error());
+        notify.error(m.terminal_adapter_openFailed_error());
         return;
       }
       const termId = result.id;
@@ -114,21 +114,22 @@
     } catch (error) {
       // Daemon-first invariant: no fabricated fallback tab — surface the
       // failure instead.
-      // i18n-ignore (developer log)
+      // i18n-ignore -- developer-only diagnostic; the user sees the localized notification below
       console.error('Failed to create install terminal:', error);
-      toast.error(m.terminal_adapter_openFailed_error());
+      notify.error(m.terminal_adapter_openFailed_error());
     }
   }
 
-  async function handleToggle() {
+  async function handleToggle(checked: boolean) {
     if (updating) return; // Guard against re-entrancy
-    const newValue = !rtkEnabled;
+    const previousValue = rtkEnabled;
+    rtkEnabled = checked;
     updating = true;
     try {
-      await appClient.settings.update([{ path: SETTING_PATH, value: newValue }]);
-      rtkEnabled = newValue;
+      await appClient.settings.update([{ path: SETTING_PATH, value: checked }]);
       settingsError = '';
     } catch (error) {
+      rtkEnabled = previousValue;
       settingsError = m.settings_rtk_saveError();
       console.error('Failed to update rtk.enabled setting:', error);
     } finally {
@@ -151,20 +152,19 @@
           {m.settings_rtk_enabledDescription()}
         {:else}
           <span class="text-muted-foreground">{m.settings_rtk_notInstalled()}</span>
-          <button
+          <Button
             type="button"
-            class="text-primary hover:underline cursor-pointer text-xs ml-1"
+            class="text-primary-ink hover:underline cursor-pointer text-xs ml-1"
             onclick={recheckRtk}
             disabled={checking}
-            >{checking ? m.settings_rtk_checking() : m.settings_rtk_checkAgain()}</button
+            >{checking ? m.settings_rtk_checking() : m.settings_rtk_checkAgain()}</Button
           >
         {/if}
       </p>
     </div>
-    <Toggle
-      pressed={rtkEnabled}
-      onclick={handleToggle}
-      variant="indicator"
+    <Switch
+      checked={rtkEnabled}
+      onCheckedChange={handleToggle}
       size="xs"
       class="mb-auto"
       disabled={!rtkAvailable}
@@ -174,17 +174,17 @@
   {#if !rtkAvailable}
     <p class="text-xs text-muted-foreground mt-2">
       {m.settings_rtk_installHint_before()}
-      <button
+      <Button
         type="button"
-        class="text-primary hover:underline cursor-pointer font-mono"
-        onclick={installRtk}><!-- i18n-ignore (shell command) -->brew install rtk</button
+        class="text-primary-ink hover:underline cursor-pointer font-mono"
+        onclick={installRtk}><!-- i18n-ignore (shell command) -->brew install rtk</Button
       >
       {m.settings_rtk_installHint_orVisit()}
       <a
         href="https://github.com/rtk-ai/rtk"
         target="_blank"
         rel="noopener noreferrer"
-        class="text-primary hover:underline"><!-- i18n-ignore (URL) -->github.com/rtk-ai/rtk</a
+        class="text-primary-ink hover:underline"><!-- i18n-ignore (URL) -->github.com/rtk-ai/rtk</a
       >.
     </p>
   {/if}

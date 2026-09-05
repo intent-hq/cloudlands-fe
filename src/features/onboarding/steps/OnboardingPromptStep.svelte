@@ -6,8 +6,7 @@
    * setup script disclosure, PR branch suggestion, error state, and the
    * "Create workspace" button.
    */
-  import { fly, slide } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fly, slide } from '$lib/motion';
   import Fa from 'svelte-fa';
   import {
     faArrowRight,
@@ -16,7 +15,7 @@
     faArrowsRotate,
     faCodeBranch,
   } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
@@ -341,7 +340,7 @@
           },
         ];
         if (!sourcePath) {
-          toast.error(m.onboarding_promptStep_attachmentNoPath_error({ name: fileName }));
+          notify.error(m.onboarding_promptStep_attachmentNoPath_error({ name: fileName }));
         }
       }
     }
@@ -428,7 +427,7 @@
       // drop rejects the WHOLE drop when remote (files included). Mirrors
       // SimpleRichInput's folder-drop behavior.
       if (isRemoteBackend()) {
-        toast.error(m.chat_richInput_folderDropRemote_error());
+        notify.error(m.chat_richInput_folderDropRemote_error());
         return;
       }
       for (const folder of folderFiles) {
@@ -460,7 +459,7 @@
       logger.warn('Dropped folder has no resolvable absolute path; skipping', {
         name: folder.name,
       });
-      toast.error(m.onboarding_promptStep_attachmentNoPath_error({ name: folder.name }));
+      notify.error(m.onboarding_promptStep_attachmentNoPath_error({ name: folder.name }));
       return;
     }
     // Path-keyed like folder @-mentions, so two dropped folders sharing a
@@ -524,10 +523,7 @@
 
 <div class="max-w-5xl mx-auto space-y-3">
   {#if isOnboardingCreating}
-    <div
-      class="onboarding-creating-state space-y-4"
-      in:fly={{ y: 12, duration: 350, easing: cubicOut }}
-    >
+    <div class="onboarding-creating-state space-y-4" in:fly={{ tier: 'slow', distance: 12 }}>
       <div class="rounded-xl bg-muted/20 border border-border px-4 py-3">
         <p class="text-sm text-foreground leading-relaxed">
           {onboardingInputValue}
@@ -556,7 +552,7 @@
       />
       <div
         class="relative rich-input-container flex flex-col bg-background rounded-xl border shadow-xs transition-colors overflow-hidden {isDragging
-          ? 'border-primary border-dashed'
+          ? 'border-primary-ink border-dashed'
           : 'border-border'}"
         ondragenter={handleDragEnter}
         ondragleave={handleDragLeave}
@@ -569,7 +565,7 @@
           <div
             class="absolute inset-0 bg-primary/5 z-20 flex items-center justify-center pointer-events-none rounded-xl"
           >
-            <div class="flex flex-col items-center gap-2 text-primary">
+            <div class="flex flex-col items-center gap-2 text-primary-ink">
               <Fa icon={faPaperclip} size={24} />
               <span class="text-sm font-medium">{m.onboarding_promptStep_dropFiles_label()}</span>
             </div>
@@ -599,32 +595,28 @@
                 aria-label={m.onboarding_promptStep_promptSuggestions_ariaLabel()}
               >
                 {#each visibleSuggestions.slice(0, 4) as suggestion, i (suggestion)}
-                  <button
-                    type="button"
-                    role="option"
-                    id="suggestion-{i}"
-                    aria-selected={focusedSuggestionIndex === i}
-                    class="text-left text-sm transition-colors cursor-pointer truncate flex items-center gap-1.5
-                      {focusedSuggestionIndex === i
-                      ? 'text-foreground'
-                      : 'text-muted-foreground/50 hover:text-muted-foreground/70'}"
-                    onclick={() => onPromptSelect(suggestion)}
-                    in:fly={{
-                      x: -6,
-                      duration: 200,
-                      delay: 30 * i,
-                      easing: cubicOut,
-                    }}
-                  >
-                    <Fa
-                      icon={faArrowRight}
-                      size={12}
-                      class={focusedSuggestionIndex === i ? 'opacity-100' : 'opacity-60'}
-                    />
-                    {suggestion}
-                  </button>
+                  <div class="contents" in:fly={{ tier: 'moderate', axis: 'x', distance: -6 }}>
+                    <Button
+                      type="button"
+                      role="option"
+                      id="suggestion-{i}"
+                      aria-selected={focusedSuggestionIndex === i}
+                      class="text-left text-sm transition-colors cursor-pointer truncate flex items-center gap-1.5
+                        {focusedSuggestionIndex === i
+                        ? 'text-foreground'
+                        : 'text-muted-foreground/50 hover:text-muted-foreground/70'}"
+                      onclick={() => onPromptSelect(suggestion)}
+                    >
+                      <Fa
+                        icon={faArrowRight}
+                        size={12}
+                        class={focusedSuggestionIndex === i ? 'opacity-100' : 'opacity-60'}
+                      />
+                      {suggestion}
+                    </Button>
+                  </div>
                 {/each}
-                <button
+                <Button
                   type="button"
                   role="option"
                   id="suggestion-shuffle"
@@ -637,7 +629,7 @@
                 >
                   <Fa icon={faArrowsRotate} size={12} />
                   <span></span>
-                </button>
+                </Button>
               </div>
             </div>
           {/if}
@@ -743,7 +735,7 @@
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm cursor-pointer"
-          in:fly={{ y: 10, duration: 200, easing: cubicOut }}
+          in:fly={{ tier: 'moderate', distance: 10 }}
           onclick={(e) => {
             const trigger = e.currentTarget.querySelector('button');
             if (trigger && e.target !== trigger && !trigger.contains(e.target as Node)) {
@@ -782,7 +774,7 @@
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm cursor-pointer"
-          in:fly={{ y: 10, duration: 200, easing: cubicOut }}
+          in:fly={{ tier: 'moderate', distance: 10 }}
           onclick={(e) => {
             const trigger = e.currentTarget.querySelector('button');
             if (trigger && e.target !== trigger && !trigger.contains(e.target as Node)) {
@@ -823,9 +815,9 @@
         {#if !hideSetupScriptControl}
           <div
             class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm"
-            in:fly={{ y: 10, duration: 200, easing: cubicOut }}
+            in:fly={{ tier: 'moderate', distance: 10 }}
           >
-            <button
+            <Button
               type="button"
               class="flex min-h-8 min-w-0 max-w-full flex-wrap items-center gap-y-1 text-left text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               onclick={() => onShowSetupScriptChange(!showSetupScript)}
@@ -838,7 +830,7 @@
               <span class="text-muted-foreground"
                 >{m.onboarding_promptStep_setupEnvWith_after()}</span
               >
-            </button>
+            </Button>
           </div>
         {/if}
         <SetupScriptModal
@@ -857,7 +849,7 @@
       <!-- Model picker (initial Coordinator agent) -->
       <div
         class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm"
-        in:fly={{ y: 10, duration: 200, easing: cubicOut }}
+        in:fly={{ tier: 'moderate', distance: 10 }}
       >
         <span class="shrink-0 text-muted-foreground"
           >{m.onboarding_promptStep_usingModel_before()}</span
@@ -881,10 +873,9 @@
 
     <!-- Use PR branch suggestion -->
     {#if selectedPRBranch && projectSelection?.branch !== selectedPRBranch && !treatAsNewRepo}
-      <div class="mt-1">
-        <button
-          class="flex items-center gap-2 mt-1 mb-1 px-1 text-sm text-primary hover:text-primary/80 cursor-pointer"
-          transition:slide={{ axis: 'y', duration: 150 }}
+      <div class="mt-1" transition:slide={{ axis: 'y', tier: 'moderate' }}>
+        <Button
+          class="flex items-center gap-2 mt-1 mb-1 px-1 text-sm text-primary-ink hover:text-primary-ink/80 cursor-pointer"
           onclick={() => {
             if (projectSelection) {
               onProjectChange({
@@ -899,7 +890,7 @@
             >{m.onboarding_promptStep_usePrBranch_before()}
             <strong>{selectedPRBranch}</strong></span
           >
-        </button>
+        </Button>
       </div>
     {/if}
 
@@ -924,7 +915,7 @@
       >
         {m.onboarding_promptStep_createWorkspace_label()}
         {#if onboardingInputValue.trim()}
-          <span class="mx-1 opacity-50" in:slide={{ axis: 'x', duration: 200 }}> ⌘↵</span>
+          <span class="mx-1 opacity-50" in:slide={{ axis: 'x', tier: 'moderate' }}> ⌘↵</span>
         {/if}
         <Fa
           icon={faArrowRight}

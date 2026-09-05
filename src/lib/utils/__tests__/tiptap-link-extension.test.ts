@@ -17,7 +17,7 @@ const createTestEditor = (element: HTMLElement, content = '<p></p>') =>
         linkOnPaste: true,
         shouldAutoLink: (url: string) => /^https?:\/\//.test(url) || url.startsWith('intent://'),
         HTMLAttributes: {
-          class: 'text-primary underline',
+          class: 'text-primary-ink underline',
         },
       }),
     ],

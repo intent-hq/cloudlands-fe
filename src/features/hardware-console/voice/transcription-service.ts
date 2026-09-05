@@ -100,9 +100,9 @@ function focusDictationComposer(agentId: string): void {
 const TRANSCRIPTION_TOAST_ID = 'hardware-console-voice-transcription';
 
 /** Lazily pull the toast lib so this service stays light. */
-let toastPromise: Promise<(typeof import('svelte-sonner'))['toast']> | null = null;
+let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null = null;
 function getToast() {
-  if (!toastPromise) toastPromise = import('svelte-sonner').then((module) => module.toast);
+  if (!toastPromise) toastPromise = import('$lib/components/patterns/notify').then((module) => module.notify);
   return toastPromise;
 }
 
@@ -534,8 +534,8 @@ export async function handleFinishedRecording(
           error: clipboardError,
         });
       }
-      const toast = await getToast();
-      toast.error(
+      const notify = await getToast();
+      notify.error(
         copied
           ? m.hardwareConsole_voice_insertFailedCopied_error()
           : m.hardwareConsole_voice_insertFailed_error(),
@@ -561,11 +561,11 @@ export async function handleFinishedRecording(
     }
     settle();
     logger.error('voice.transcribe failed', { error });
-    const toast = await getToast();
+    const notify = await getToast();
     if (error instanceof OsTranscriptionError && error.code === 'authorization-denied') {
       // Actionable: the Settings Voice section explains the System Settings
       // grant and offers the engine/key alternatives.
-      toast.error(m.hardwareConsole_voice_osAuthDenied_error(), {
+      notify.error(m.hardwareConsole_voice_osAuthDenied_error(), {
         id: TRANSCRIPTION_TOAST_ID,
         description: errorDetail(error),
         action: voiceSettingsToastAction(),
@@ -576,18 +576,18 @@ export async function handleFinishedRecording(
     ) {
       // The user's explicit OS-engine choice is honored — never a silent
       // fallback to the cloud path — so an unavailable engine fails clearly.
-      toast.error(m.hardwareConsole_voice_osUnavailable_error(), {
+      notify.error(m.hardwareConsole_voice_osUnavailable_error(), {
         id: TRANSCRIPTION_TOAST_ID,
         description: errorDetail(error),
         action: voiceSettingsToastAction(),
       });
     } else if (isNoApiKeyError(error)) {
-      toast.error(m.hardwareConsole_voice_noKey_error(), {
+      notify.error(m.hardwareConsole_voice_noKey_error(), {
         id: TRANSCRIPTION_TOAST_ID,
         description: errorDetail(error),
       });
     } else {
-      toast.error(m.hardwareConsole_voice_transcribeFailed_error(), {
+      notify.error(m.hardwareConsole_voice_transcribeFailed_error(), {
         id: TRANSCRIPTION_TOAST_ID,
         description: errorDetail(error),
       });

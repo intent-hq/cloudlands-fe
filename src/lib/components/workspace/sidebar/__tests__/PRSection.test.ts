@@ -199,8 +199,8 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })),
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { info: vi.fn(), error: vi.fn(), success: vi.fn(), warning: vi.fn(), custom: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { info: vi.fn(), error: vi.fn(), success: vi.fn(), warning: vi.fn(), custom: vi.fn() },
 }));
 
 vi.mock('$lib/components/GitHubAuthBanner.svelte', async () => ({

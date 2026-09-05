@@ -37,6 +37,16 @@
   --workspace-agent-delegation-indent: 1.625rem;
 }
 
+/* Inter: bundle only the Latin weight axis used by application UI. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2')
+    format('woff2-variations');
+}
+
 /* Source Serif 4: bundle only the Latin normal and italic variable faces used by notes. */
 @font-face {
   font-family: 'Source Serif 4 Variable';
@@ -71,7 +81,7 @@
 .ui-highlight-pulse-ring {
   animation: ui-highlight-pulse-ring 700ms ease-out 3;
   border-radius: 0.5rem;
-  outline: 1px solid hsl(var(--primary) / 0.55);
+  outline: 1px solid hsl(var(--primary-ink) / 0.55);
   outline-offset: 2px;
 }
 
@@ -118,8 +128,13 @@ kbd {
   }
 
   :focus-visible {
-    outline: 2px solid hsl(var(--ring));
+    outline: 1px solid hsl(var(--focus-ring));
     outline-offset: 2px;
+    border-radius: var(--shape-input-radius, 8px);
+  }
+
+  a:focus-visible {
+    border-radius: 2px;
   }
 }
 
@@ -202,24 +217,127 @@ textarea::placeholder {
 /* Hover color changes should appear instantly for better UX */
 /* Layout transitions (panel resizing, accordion, etc.) are handled per-component */
 
-/* Scrollbar styles */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* Canonical scrollbar styling. Terminals and editors opt out by placing
+     `native-scrollbars` on their host so their platform-owned behavior wins. */
+@media (pointer: fine) {
+  :where(:not(.native-scrollbars, .native-scrollbars *)) {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--overlay) / 0.08) transparent;
+  }
+
+  :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar-track,
+  :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    background-color: hsl(var(--overlay) / 0.08);
+    background-clip: content-box;
+  }
+
+  :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar-thumb:vertical {
+    border-right-width: 5px;
+    border-left-width: 1px;
+  }
+
+  :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar-thumb:horizontal {
+    border-top-width: 1px;
+    border-bottom-width: 5px;
+  }
+
+  :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--overlay) / 0.12);
+  }
+
+  :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar-thumb:active {
+    background-color: hsl(var(--overlay) / 0.16);
+  }
 }
 
-::-webkit-scrollbar-track {
-  background: hsl(var(--muted));
-  border-radius: 4px;
+[data-slot='scroll-area-scrollbar'] {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  touch-action: none;
+  user-select: none;
+  opacity: 0;
+  transition: opacity var(--spring-fast-exit) var(--spring-exit-ease);
 }
 
-::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground) / 0.3);
-  border-radius: 4px;
+[data-slot='scroll-area-scrollbar'][data-state='visible'] {
+  opacity: 1;
+  transition-duration: var(--spring-fast);
+  transition-timing-function: var(--spring-fast-ease);
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.5);
+[data-slot='scroll-area-scrollbar'][data-orientation='vertical'] {
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+}
+
+[data-slot='scroll-area-scrollbar'][data-orientation='horizontal'] {
+  bottom: 0;
+  left: 0;
+  flex-direction: column;
+  width: 100%;
+  height: 10px;
+}
+
+[data-slot='scroll-area-thumb'] {
+  position: relative;
+  margin: auto;
+  border-radius: 9999px;
+  background: hsl(var(--overlay) / 0.08);
+  transition:
+    width var(--spring-fast) var(--spring-fast-ease),
+    height var(--spring-fast) var(--spring-fast-ease),
+    background-color var(--spring-fast) var(--spring-fast-ease);
+}
+
+[data-slot='scroll-area-scrollbar'][data-orientation='vertical'] [data-slot='scroll-area-thumb'] {
+  width: 4px;
+  height: var(--bits-scroll-area-thumb-height);
+  transform: translateX(-2px);
+}
+
+[data-slot='scroll-area-scrollbar'][data-orientation='horizontal'] [data-slot='scroll-area-thumb'] {
+  width: var(--bits-scroll-area-thumb-width);
+  height: 4px;
+  transform: translateY(-2px);
+}
+
+[data-slot='scroll-area-scrollbar']:hover [data-slot='scroll-area-thumb'] {
+  background: hsl(var(--overlay) / 0.12);
+}
+
+[data-slot='scroll-area-scrollbar'][data-orientation='vertical']:hover
+  [data-slot='scroll-area-thumb'] {
+  width: 6px;
+}
+
+[data-slot='scroll-area-scrollbar'][data-orientation='horizontal']:hover
+  [data-slot='scroll-area-thumb'] {
+  height: 6px;
+}
+
+[data-slot='scroll-area-thumb']:active {
+  background: hsl(var(--overlay) / 0.16);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot='scroll-area-scrollbar'],
+  [data-slot='scroll-area-thumb'] {
+    transition: none;
+  }
 }
 
 /* Loading skeleton animation */
@@ -575,29 +693,6 @@ textarea::placeholder {
 
 .scrollbar-none::-webkit-scrollbar {
   display: none;
-}
-
-/* Custom scrollbar styles */
-.overflow-y-auto {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(var(--border)) transparent;
-}
-
-.overflow-y-auto::-webkit-scrollbar {
-  width: 6px;
-}
-
-.overflow-y-auto::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.overflow-y-auto::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--border));
-  border-radius: 3px;
-}
-
-.overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background-color: hsl(var(--muted-foreground));
 }
 
 /* Panel resizing - disable pointer events on iframes during drag */

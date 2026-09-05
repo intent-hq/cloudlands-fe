@@ -335,7 +335,7 @@
     flex: 1;
   }
   .hud-tokrate-value {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
     font-size: 14px;
   }
   @media (prefers-reduced-motion: reduce) {

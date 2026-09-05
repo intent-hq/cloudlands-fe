@@ -111,8 +111,8 @@ vi.mock('$lib/utils/client-logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { success: mocks.toastSuccess, error: mocks.toastError },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: mocks.toastSuccess, error: mocks.toastError },
 }));
 
 vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/Fa.svelte')).default }));

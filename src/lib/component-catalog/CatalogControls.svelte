@@ -14,6 +14,9 @@
     colorTheme?: CatalogColorTheme;
     resolvedTheme?: 'light' | 'dark';
     reducedMotion?: boolean;
+    width?: number;
+    density?: 'default' | 'compact';
+    radius?: 'rounded' | 'square';
   }
 
   let {
@@ -21,6 +24,9 @@
     colorTheme = $bindable('default'),
     resolvedTheme = 'light',
     reducedMotion = $bindable(false),
+    width = $bindable(undefined),
+    density = $bindable('default'),
+    radius = $bindable('rounded'),
   }: Props = $props();
 
   const themeOptions = [
@@ -36,15 +42,27 @@
   const selectedColorTheme = $derived(
     colorThemeOptions.find((option) => option.value === colorTheme) ?? colorThemeOptions[0],
   );
+  const widthOptions = $derived([
+    { value: 'auto', label: 'Responsive' },
+    ...(!width || [320, 420, 680, 960].includes(width)
+      ? []
+      : [{ value: String(width), label: `${width}px` }]),
+    ...[320, 420, 680, 960].map((value) => ({ value: String(value), label: `${value}px` })),
+  ]);
 
   function handleColorThemeChange(value: string) {
     if (catalogColorThemes.includes(value as CatalogColorTheme)) {
       colorTheme = value as CatalogColorTheme;
     }
   }
+
+  function handleWidthChange(value: string) {
+    width = value === 'auto' ? undefined : Number(value);
+  }
 </script>
 
 <div class="catalog-controls" aria-label="Catalog display controls">
+  <h2>Make them yours</h2>
   <div class="control-set">
     <span id="catalog-color-theme-label" class="control-label">Color theme</span>
     <div class="color-theme-dropdown">
@@ -94,15 +112,72 @@
     <Switch bind:checked={reducedMotion} size="sm" ariaLabel="Reduce motion" />
     <span>Reduce motion</span>
   </label>
+
+  <div class="control-set">
+    <span id="catalog-size-label" class="control-label">Size</span>
+    <ToggleGroup.Root
+      type="single"
+      bind:value={density}
+      size="sm"
+      aria-labelledby="catalog-size-label"
+      data-catalog-control="size"
+    >
+      <ToggleGroup.Item value="default" class="control-choice">Default</ToggleGroup.Item>
+      <ToggleGroup.Item value="compact" class="control-choice">Compact</ToggleGroup.Item>
+    </ToggleGroup.Root>
+  </div>
+
+  <div class="control-set">
+    <span id="catalog-radius-label" class="control-label">Radius</span>
+    <ToggleGroup.Root
+      type="single"
+      bind:value={radius}
+      size="sm"
+      aria-labelledby="catalog-radius-label"
+      data-catalog-control="radius"
+    >
+      <ToggleGroup.Item value="rounded" class="control-choice">Rounded</ToggleGroup.Item>
+      <ToggleGroup.Item value="square" class="control-choice">Square</ToggleGroup.Item>
+    </ToggleGroup.Root>
+  </div>
+
+  <div class="control-set">
+    <span id="catalog-width-label" class="control-label">Preview</span>
+    <div class="color-theme-dropdown">
+      <Select.Root
+        value={width ? String(width) : 'auto'}
+        items={widthOptions}
+        onchange={handleWidthChange}
+      >
+        <Select.Trigger aria-labelledby="catalog-width-label" data-catalog-control="width">
+          <Select.Value placeholder="Responsive" />
+        </Select.Trigger>
+        <Select.Content portal>
+          {#each widthOptions as option (option.value)}
+            <Select.Item value={option.value} label={option.label}>{option.label}</Select.Item>
+          {/each}
+        </Select.Content>
+      </Select.Root>
+    </div>
+  </div>
 </div>
 
 <style>
   .catalog-controls {
-    display: flex;
+    display: grid;
     min-width: 0;
-    align-items: center;
-    justify-content: flex-end;
-    gap: calc(var(--control-height-compact) / 2);
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-medium);
+    background: hsl(var(--card));
+    box-shadow: var(--elevation-raised);
+  }
+
+  h2 {
+    margin-bottom: 0.25rem;
+    font-size: var(--text-body-size);
+    font-weight: var(--text-body-strong-weight);
   }
 
   .control-set,
@@ -110,6 +185,7 @@
     display: flex;
     flex: none;
     align-items: center;
+    justify-content: space-between;
     gap: calc(var(--control-height-compact) / 4);
   }
 
@@ -125,28 +201,10 @@
   }
 
   .color-theme-dropdown {
-    width: calc(var(--control-height-medium) * 4.25);
+    width: calc(var(--control-height-medium) * 3.75);
   }
 
   :global(.color-theme-select) {
     height: var(--control-height-small);
-  }
-
-  @media (max-width: 767px) {
-    .catalog-controls {
-      width: 100%;
-      justify-content: flex-start;
-      overflow-x: auto;
-      padding-bottom: calc(var(--control-height-compact) / 6);
-      scrollbar-width: thin;
-    }
-
-    .control-label {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-    }
   }
 </style>

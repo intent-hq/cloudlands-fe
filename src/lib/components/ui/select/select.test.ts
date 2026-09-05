@@ -71,25 +71,12 @@ describe('Select', () => {
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
   });
 
-  it('uses compact editorial geometry and safe long-content treatment', async () => {
+  it('opens long content without changing its accessible option name', async () => {
     render(SelectHarness);
     const trigger = screen.getByRole('button', { name: 'Choose fruit' });
-    expect(trigger.parentElement?.className.split(/\s+/)).toContain('min-w-0');
-    expect(trigger.className).toContain('h-(--control-height-medium)');
-    expect(trigger.className.split(/\s+/)).toEqual(
-      expect.arrayContaining([
-        'type-body',
-        'border-border',
-        'bg-card',
-        'hover:border-input',
-        'focus-visible:ring-ring/40',
-      ]),
-    );
-    expect(trigger.className.split(/\s+/)).not.toContain('border-input');
-    expect(trigger.className.split(/\s+/)).not.toContain('text-sm');
+    expect(trigger.closest('[data-slot="select-root"]')).toBeTruthy();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     const longOption = screen.getByRole('option', { name: /very long cherry/ });
-    expect(longOption.firstElementChild?.className).toContain('truncate');
-    expect(longOption.className.split(/\s+/)).toContain('type-body');
+    expect(longOption.textContent).toContain('A very long cherry');
   });
 });

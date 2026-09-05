@@ -5,8 +5,7 @@
   Helps users get started with common actions.
 -->
 <script lang="ts">
-  import { fly } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { crispOut, spring, springIn } from '$lib/motion';
   import Fa from 'svelte-fa';
   import {
     faCode,
@@ -16,6 +15,7 @@
     type IconDefinition,
   } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
+  import { Button } from '$lib/components/ui/button';
 
   interface Suggestion {
     id: string;
@@ -66,22 +66,31 @@
   function handleSelect(suggestion: Suggestion) {
     onSelect?.(suggestion.prompt);
   }
+
+  function suggestionIn(node: Element, { delay }: { delay: number }) {
+    return { ...springIn(node, { tier: 'slow', y: 10, scale: 1 }), delay };
+  }
 </script>
 
 <div class="flex flex-col gap-2 {className}">
   {#each suggestions as suggestion, index (`suggestion-${index}-${suggestion.label}`)}
-    <button
-      type="button"
-      class="group flex items-center gap-3 py-2.5 px-3.5 rounded-lg border border-border bg-transparent cursor-pointer transition-all duration-150 text-left hover:bg-muted active:scale-[0.98]"
-      onclick={() => handleSelect(suggestion)}
-      in:fly={{ y: 10, duration: 300, delay: index * 50, easing: cubicOut }}
+    <div
+      in:suggestionIn={{ delay: index * spring.fast.exit.duration }}
+      out:crispOut={{ tier: 'fast' }}
     >
-      <div
-        class="flex items-center justify-center w-7 h-7 rounded-md bg-muted text-muted-foreground transition-all duration-150 group-hover:bg-primary group-hover:text-primary-foreground"
+      <Button
+        type="button"
+        variant="outline"
+        class="group flex w-full items-center gap-3 py-2.5 px-3.5 rounded-lg border border-border bg-transparent cursor-pointer transition-all duration-spring-fast ease-spring-fast motion-reduce:transition-none text-left hover:bg-muted active:scale-[0.98]"
+        onclick={() => handleSelect(suggestion)}
       >
-        <Fa icon={suggestion.icon} class="w-3.5 h-3.5" />
-      </div>
-      <span class="text-xs font-medium text-foreground">{suggestion.label}</span>
-    </button>
+        <div
+          class="flex items-center justify-center w-7 h-7 rounded-md bg-muted text-muted-foreground transition-all duration-spring-fast ease-spring-fast motion-reduce:transition-none group-hover:bg-primary group-hover:text-primary-foreground"
+        >
+          <Fa icon={suggestion.icon} class="w-3.5 h-3.5" />
+        </div>
+        <span class="text-xs font-medium text-foreground">{suggestion.label}</span>
+      </Button>
+    </div>
   {/each}
 </div>

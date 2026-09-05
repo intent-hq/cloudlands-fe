@@ -7,7 +7,7 @@
    * provider icon, connection status, and install/login state. Extracted from
    * AgentGrid to keep per-provider rendering isolated.
    */
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import {
     faArrowUpRightFromSquare,
     faArrowsRotate,
@@ -18,6 +18,7 @@
   import { cn } from '$lib/utils';
   import ProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { Button } from '$lib/components/ui/button';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { shell } from '$lib/electron-bridge';
   import { m } from '$shared/paraglide/messages.js';
@@ -202,19 +203,19 @@
     <div class="relative z-10 flex flex-col">
       <div class="flex items-center gap-1.5 min-w-0 pb-1.5">
         {#if provider.docsUrl}
-          <button
+          <Button
             onclick={(e) => openDocs(provider.docsUrl, e)}
             class="font-medium text-lg truncate min-w-0 cursor-pointer"
           >
             {provider.name}
-          </button>
+          </Button>
         {:else}
           <div class="font-medium text-lg truncate min-w-0">
             {provider.name}
           </div>
         {/if}
         {#if provider.docsUrl}
-          <button
+          <Button
             type="button"
             class="group/button shrink-0 opacity-50 flex items-center gap-1.5 hover:opacity-100 transition-colors p-0.5 cursor-pointer"
             onclick={(e) => openDocs(provider.docsUrl, e)}
@@ -222,7 +223,7 @@
             aria-label={m.onboarding_providerCard_openDocs_tooltip({ name: provider.name })}
           >
             <Fa icon={faArrowUpRightFromSquare} size={11} />
-          </button>
+          </Button>
         {/if}
       </div>
 
@@ -231,7 +232,10 @@
           <span class="opacity-50">{m.onboarding_providerCard_checking_label()}</span>
         {:else if ready}
           <div class="flex items-center whitespace-nowrap min-w-0">
-            <div class="flex items-center -ml-3.5" transition:slide={{ axis: 'x', duration: 200 }}>
+            <div
+              class="flex items-center -ml-3.5"
+              transition:slide={{ axis: 'x', tier: 'moderate' }}
+            >
               <div class="h-px bg-gradient-to-r from-transparent to-current w-3 mt-px"></div>
               <Fa icon={faPlug} class="mr-1.5 transform rotate-90" size={12} />
             </div>
@@ -241,7 +245,7 @@
                 <Tooltip side="top" content={provider.authDetails} disableHoverableContent>
                   <div
                     class="text-xs opacity-70 font-normal truncate pl-1"
-                    transition:slide={{ axis: 'y', duration: 200 }}
+                    transition:slide={{ axis: 'y', tier: 'moderate' }}
                   >
                     {m.onboarding_providerCard_connectedAs_label({ details: provider.authDetails })}
                   </div>
@@ -265,7 +269,7 @@
 
         <div class="flex items-center gap-1.5">
           {#if needsInstall || needsLogin || authUnknown}
-            <button
+            <Button
               type="button"
               class="flex-none opacity-50 hover:opacity-100 transition-colors px-0.5 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               onclick={(e) => {
@@ -285,7 +289,7 @@
               >
                 <Fa icon={faArrowsRotate} size={14} />
               </span>
-            </button>
+            </Button>
           {/if}
         </div>
       </div>
@@ -325,11 +329,11 @@
           <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
           <span>
             {m.onboarding_providerCard_requiresNpx_before()}
-            <button
+            <Button
               type="button"
               class="underline hover:no-underline"
               onclick={() => shell.open('https://nodejs.org')}
-              >{m.onboarding_providerCard_installFromNodejs_label()}</button
+              >{m.onboarding_providerCard_installFromNodejs_label()}</Button
             >
           </span>
         </div>
@@ -346,11 +350,11 @@
           <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
           <span>
             {provider.warning}{#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
-              — <button
+              — <Button
                 type="button"
                 class="underline hover:no-underline"
                 onclick={() => void shell.open('https://nodejs.org')}
-                ><!-- i18n-ignore (domain name) -->nodejs.org</button
+                ><!-- i18n-ignore (domain name) -->nodejs.org</Button
               >
             {/if}
           </span>

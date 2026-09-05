@@ -14,6 +14,8 @@
     OPERATIONAL_EXPANDED_CONTENT_CLASS,
   } from './operational-disclosure-row';
   import ChatOperationalRow from './ChatOperationalRow.svelte';
+  import { Spinner } from '$lib/components/ui/indicators';
+  import ShimmerOverlay from '$lib/components/ui/ShimmerOverlay.svelte';
 
   interface Props {
     content: string;
@@ -69,15 +71,21 @@
 </script>
 
 {#snippet leading()}
-  <Fa
-    icon={faBrain}
-    size={16}
-    class="{CHAT_OPERATIONAL_ICON_CLASS} {isStreaming ? 'animate-pulse' : ''}"
-  />
+  {#if isStreaming}
+    <Spinner seed={workspaceId ?? 'thinking'} size={4} gap={1} class="shrink-0" />
+  {:else}
+    <Fa icon={faBrain} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
+  {/if}
 {/snippet}
 
 {#snippet summary()}
-  <span class="min-w-0 truncate whitespace-nowrap font-normal">{toggleLabel}</span>
+  <span class="min-w-0 truncate whitespace-nowrap font-normal">
+    {#if isStreaming}
+      <ShimmerOverlay duration={1.92}>{toggleLabel}</ShimmerOverlay>
+    {:else}
+      {toggleLabel}
+    {/if}
+  </span>
 {/snippet}
 
 {#snippet details()}
@@ -95,7 +103,8 @@
   {leading}
   {summary}
   showChevron={false}
-  details={isExpanded ? details : undefined}
+  {details}
+  animateDetailsHeight
   interactive
   expanded={isExpanded}
   controls={detailsId}

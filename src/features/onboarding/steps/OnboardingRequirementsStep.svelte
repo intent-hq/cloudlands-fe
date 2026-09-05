@@ -27,7 +27,7 @@
     faPaste,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import { store as appStore } from '$store/renderer/store';
@@ -141,15 +141,15 @@
   async function copyCommand(command: string) {
     try {
       await navigator.clipboard.writeText(command);
-      toast.success(m.onboarding_requirementsStep_copiedToClipboard_label());
+      notify.success(m.onboarding_requirementsStep_copiedToClipboard_label());
     } catch {
-      toast.error(m.onboarding_requirementsStep_copyFailed_error());
+      notify.error(m.onboarding_requirementsStep_copyFailed_error());
     }
   }
 
   function openDocs(url: string) {
     void handleLink(url, {}).catch(() => {
-      toast.error(m.onboarding_requirementsStep_openLinkFailed_error());
+      notify.error(m.onboarding_requirementsStep_openLinkFailed_error());
     });
   }
 
@@ -199,7 +199,7 @@
         <div class="guidance">
           {#if gitGuidance.command}
             {@const command = gitGuidance.command}
-            <button
+            <Button
               type="button"
               class="install-command-button"
               onclick={() => copyCommand(command)}
@@ -207,15 +207,15 @@
             >
               <code>{command}</code>
               <Fa icon={faPaste} class="copy-icon" size="sm" />
-            </button>
+            </Button>
           {/if}
           {#if gitGuidance.note}
             <p class="text-xs text-muted-foreground">{gitGuidance.note}</p>
           {/if}
-          <button type="button" class="docs-link" onclick={() => openDocs(gitGuidance.docsUrl)}>
+          <Button type="button" class="docs-link" onclick={() => openDocs(gitGuidance.docsUrl)}>
             <Fa icon={faExternalLinkAlt} size="sm" class="mr-1" />
             {m.onboarding_requirementsStep_installGit_label()}
-          </button>
+          </Button>
         </div>
       {/if}
     </div>
@@ -258,7 +258,7 @@
         <div class="guidance">
           {#if nodeGuidance.command}
             {@const command = nodeGuidance.command}
-            <button
+            <Button
               type="button"
               class="install-command-button"
               onclick={() => copyCommand(command)}
@@ -266,15 +266,15 @@
             >
               <code>{command}</code>
               <Fa icon={faPaste} class="copy-icon" size="sm" />
-            </button>
+            </Button>
           {/if}
           {#if nodeGuidance.note}
             <p class="text-xs text-muted-foreground">{nodeGuidance.note}</p>
           {/if}
-          <button type="button" class="docs-link" onclick={() => openDocs(nodeGuidance.docsUrl)}>
+          <Button type="button" class="docs-link" onclick={() => openDocs(nodeGuidance.docsUrl)}>
             <Fa icon={faExternalLinkAlt} size="sm" class="mr-1" />
             {m.onboarding_requirementsStep_installNode_label()}
-          </button>
+          </Button>
         </div>
       {/if}
     </div>

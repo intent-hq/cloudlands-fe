@@ -45,8 +45,8 @@ vi.mock('svelte-fa', async () => ({
   ).default,
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn() },
 }));
 
 import WorkspaceSetupCard from '../messages/WorkspaceSetupCard.svelte';

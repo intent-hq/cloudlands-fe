@@ -8,7 +8,7 @@
   import { Button } from '$lib/components/ui/button';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { invoke } from '$lib/electron-bridge';
   import {
     fetchEditors,
@@ -253,13 +253,13 @@
       // Handle special actions first
       if (actionId === 'copy') {
         await navigator.clipboard.writeText(toNativePath(filePath));
-        toast.success(m.ui_openCombo_pathCopied_label());
+        notify.success(m.ui_openCombo_pathCopied_label());
         return;
       }
       if (actionId === 'copy-branch') {
         if (branchName) {
           await navigator.clipboard.writeText(branchName);
-          toast.success(m.ui_openCombo_branchCopied_label());
+          notify.success(m.ui_openCombo_branchCopied_label());
         }
         return;
       }
@@ -275,7 +275,7 @@
         } else if (result?.error && result.error !== 'No application selected') {
           // Surface bridge-absent / spawn failures as a toast so the "Other"
           // action fails loudly instead of silently no-oping.
-          toast.error(result.error);
+          notify.error(result.error);
         }
         return;
       }
@@ -310,7 +310,7 @@
       }
     } catch (error) {
       logger.error(`Failed to execute action ${actionId}:`, error);
-      toast.error(
+      notify.error(
         error instanceof Error
           ? error.message
           : m.ui_openCombo_openFailed_error({ name: actionId }),
@@ -375,7 +375,7 @@
       {#snippet trigger({ props })}
         {#if children}
           <!-- With a single action there is no dropdown to show; run it directly. -->
-          <button
+          <Button
             type="button"
             onclick={actions.length > 1 ? undefined : handlePrimaryClick}
             class="cursor-pointer"
@@ -383,7 +383,7 @@
             {...actions.length > 1 ? props : {}}
           >
             {@render children()}
-          </button>
+          </Button>
         {:else if compact}
           <!-- Compact mode: single icon button with dropdown -->
           <Button
@@ -400,7 +400,7 @@
           <div
             class="inline-flex gap-px items-stretch rounded-md borderx border-border overflow-hidden"
           >
-            <button
+            <Button
               type="button"
               class="flex items-center gap-1.5 px-2 py-1 text-xs {bgClass} transition-colors cursor-pointer"
               onpointerdown={keepPrimaryActionOutsideDropdown}
@@ -428,15 +428,15 @@
               <span class="text-subtle"
                 >{hasOpenCapableAction ? m.ui_openCombo_open_label() : currentAction.label}</span
               >
-            </button>
+            </Button>
             {#if actions.length > 1}
-              <button
+              <Button
                 {...props}
                 type="button"
                 class="flex items-center h-full min-h-full px-1.5 py-2 {bgClass} border-lx border-border transition-colors cursor-pointer"
               >
                 <Fa icon={faChevronDown} class="w-2! h-2! text-ghost" />
-              </button>
+              </Button>
             {/if}
           </div>
         {/if}
@@ -454,7 +454,7 @@
             {#if action.id === 'copy'}
               <!-- <div class="my-1 w-full h-px bg-border"></div> -->
             {/if}
-            <button
+            <Button
               type="button"
               class="flex flex-col w-full px-2 py-1.5 text-sm hover:bg-muted transition-colors text-left cursor-pointer"
               onclick={() => handleActionClick(action.id)}
@@ -491,7 +491,7 @@
                   {action.description}
                 </div>
               {/if}
-            </button>
+            </Button>
           {/each}
         </div>
       {/snippet}

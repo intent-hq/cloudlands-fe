@@ -28,8 +28,8 @@ vi.mock('$features/pi/pi-models.client', () => ({
   installPiMcpAdapter: vi.fn(),
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { error: mocks.toastError, success: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: mocks.toastError, success: vi.fn() },
 }));
 
 vi.mock('./ProviderPathConfig.svelte', async () => ({

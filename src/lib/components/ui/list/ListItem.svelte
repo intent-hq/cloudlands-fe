@@ -3,6 +3,11 @@
   import type { HTMLButtonAttributes } from 'svelte/elements';
   import { Fa } from 'svelte-fa';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
+  import { Button, type ButtonProps } from '$lib/components/ui/button';
+  import { Spinner } from '$lib/components/ui/indicators';
+  import { proximityItem } from '$lib/interaction';
+  import { getListProximityContext } from './list-context';
+  import { untrack } from 'svelte';
 
   interface Props extends HTMLButtonAttributes {
     class?: string;
@@ -26,6 +31,8 @@
     children?: any;
     iconSnippet?: any; // Custom icon snippet for inline SVG or custom rendering
     onclick?: (e: MouseEvent) => void;
+    onfocus?: (e: FocusEvent) => void;
+    onblur?: (e: FocusEvent) => void;
     onRightClick?: (e: MouseEvent) => void;
     actions?: Array<{
       icon: any;
@@ -62,6 +69,8 @@
     children,
     iconSnippet,
     onclick,
+    onfocus,
+    onblur,
     onRightClick,
     actions = [],
     actionsClass,
@@ -70,6 +79,22 @@
     indentSize = 22,
     ...restProps
   }: Props = $props();
+
+  const listContext = getListProximityContext();
+  const proximityIndex = listContext?.claimIndex() ?? -1;
+  let itemElement: HTMLButtonElement | null = $state(null);
+  let proximityActive = $derived(
+    listContext?.interactive && listContext.hover?.activeIndex === proximityIndex,
+  );
+
+  $effect(() => {
+    const hover = listContext?.interactive ? listContext.hover : null;
+    if (!hover || !itemElement || disabled) return;
+    const registration = untrack(() =>
+      proximityItem(itemElement!, { hover, index: proximityIndex }),
+    );
+    return () => registration?.destroy?.();
+  });
 
   // Size configurations
   const sizeConfig = {
@@ -96,19 +121,22 @@
   // Variant styles with active and selected states
   const variantStyles = $derived({
     default: cn(
-      'hover:bg-accent/60 hover:text-accent-foreground',
-      selected && 'bg-accent text-accent-foreground',
-      active && 'bg-card text-foreground',
+      !listContext?.interactive && 'hover:bg-hover',
+      selected && 'bg-selected text-foreground',
+      active && 'bg-active text-foreground',
+      proximityActive && 'bg-hover text-foreground',
     ),
     ghost: cn(
-      'hover:bg-accent/60 hover:text-accent-foreground',
-      selected && 'bg-accent text-accent-foreground',
-      active && 'bg-card text-foreground',
+      !listContext?.interactive && 'hover:bg-hover',
+      selected && 'bg-selected text-foreground',
+      active && 'bg-active text-foreground',
+      proximityActive && 'bg-hover text-foreground',
     ),
     subtle: cn(
-      'hover:bg-muted',
-      selected && 'bg-accent text-accent-foreground',
-      active && 'bg-card text-foreground',
+      !listContext?.interactive && 'hover:bg-hover',
+      selected && 'bg-selected text-foreground',
+      active && 'bg-active text-foreground',
+      proximityActive && 'bg-hover text-foreground',
     ),
   });
 
@@ -126,14 +154,18 @@
   );
 </script>
 
-<button
+<Button
+  bind:ref={itemElement}
+  variant="plain"
   data-slot="list-item"
   data-selected={selected || undefined}
   data-active={active || undefined}
+  data-proximity-active={proximityActive || undefined}
   aria-current={active ? 'true' : undefined}
   class={cn(
     // Base styles
-    'relative flex w-full min-w-0 cursor-pointer items-center rounded-md border border-transparent bg-transparent text-left font-inherit text-foreground outline-none transition-colors',
+    'relative flex w-full min-w-0 cursor-pointer items-center justify-start rounded-md border border-transparent bg-transparent text-left font-inherit text-foreground outline-none transition-colors duration-spring-fast ease-spring-fast',
+    '[&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_[data-slot=button-content]]:justify-start',
     'focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40',
     'motion-reduce:transition-none',
     'group',
@@ -153,24 +185,32 @@
   style={`margin-left: ${leftIndent}px; padding-right: ${config.basePaddingX}px; width: calc(100% - ${leftIndent}px);`}
   {disabled}
   {onclick}
+  onfocus={(event) => {
+    listContext?.hover?.setActiveIndex(proximityIndex);
+    onfocus?.(event);
+  }}
+  onblur={(event) => {
+    if (listContext?.hover?.activeIndex === proximityIndex) {
+      listContext.hover.setActiveIndex(null);
+    }
+    onblur?.(event);
+  }}
   oncontextmenu={onRightClick}
-  {...restProps}
+  {...restProps as ButtonProps}
 >
-  <div class="relative w-full flex items-center {config.gap}">
+  <div class="relative flex w-full items-center {config.gap}">
     <!-- Icon Section -->
-    {#if iconSnippet}
+    {#if loading}
+      <div class="flex w-3.5 shrink-0 items-center justify-center">
+        <Spinner seed={title || 'list-loading'} size={3} gap={1} />
+      </div>
+    {:else if iconSnippet}
       <div class={cn('shrink-0 flex items-center justify-center', iconClass)}>
         {@render iconSnippet()}
       </div>
     {:else if icon || IconComponent}
       <div class={cn('shrink-0 flex items-center justify-center', iconClass)}>
-        {#if loading && icon}
-          <Fa
-            {icon}
-            size={config.iconSize}
-            class="w-3.5 animate-spin opacity-60 motion-reduce:animate-none"
-          />
-        {:else if IconComponent}
+        {#if IconComponent}
           <IconComponent {...iconProps} />
         {:else if icon}
           <Fa
@@ -183,7 +223,7 @@
     {/if}
 
     <!-- Content Section -->
-    <div class="flex-1 min-w-0 flex items-center gap-1">
+    <div class="flex min-w-0 flex-1 items-baseline gap-1 text-left">
       {#if title}
         <div
           class={cn(
@@ -231,7 +271,7 @@
               role="button"
               tabindex={0}
               class={cn(
-                'cursor-pointer rounded-sm border border-transparent p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none',
+                'cursor-pointer rounded-sm border border-transparent p-1 text-muted-foreground transition-colors duration-spring-fast ease-spring-fast hover:bg-hover hover:text-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none',
                 action.className,
               )}
               onclick={(e: MouseEvent) => {
@@ -268,11 +308,4 @@
       </div>
     {/if}
   </div>
-</button>
-
-<style>
-  [data-slot='list-item'],
-  [role='button'] {
-    transition-duration: var(--motion-fast);
-  }
-</style>
+</Button>

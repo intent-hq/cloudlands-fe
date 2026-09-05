@@ -116,7 +116,7 @@
   // flicker). Instead every swap-out is deferred through this window and a
   // re-entry cancels it, so only a turn that stays out of the extended
   // viewport actually swaps. Swap-ins remain immediate. The window also
-  // exceeds the ResizeObserver debounce (50ms), so a deferred swap-out uses
+  // exceeds the ResizeObserver debounce window, so a deferred swap-out uses
   // a freshly recorded content height and stays geometry-neutral.
   const SWAP_OUT_SETTLE_MS = 250;
   let swapOutTimer: ReturnType<typeof setTimeout> | null = null;
@@ -239,7 +239,7 @@
           hasBeenMeasured = true;
           if (!shouldStayVisible) requestSwapOut();
           resizeDebounceTimer = null;
-        }, 50); // 50ms debounce
+        }, 50); // ResizeObserver debounce
       }
     });
 

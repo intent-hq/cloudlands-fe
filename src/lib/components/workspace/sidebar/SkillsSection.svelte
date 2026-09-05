@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * SkillsSection - Displays discovered agent skills in the sidebar
    *
@@ -10,7 +11,7 @@
   import { loadSkillsRequested } from '$store/renderer/slices/skills/skills-slice';
   import { writable } from 'svelte/store';
 
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import { faChevronDown, faGlobe, faPuzzlePiece } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { navigateToFile } from '$lib/utils/workspace-navigation';
@@ -68,7 +69,7 @@
   {@const isGlobal = skill.scope === 'user' || !skill.scope}
   <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors group">
     <!-- Skill Icon + Name (clickable) -->
-    <button
+    <Button
       type="button"
       class="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer text-left"
       onclick={() => handleSkillClick(skill)}
@@ -85,14 +86,14 @@
           {skill.name}
         </span>
       </div>
-    </button>
+    </Button>
   </div>
 {/snippet}
 
 {#if $skills$.length > 0}
   <div class="mt-3 {className ?? ''}">
     <!-- Section Header -->
-    <button
+    <Button
       type="button"
       class="w-full flex items-center gap-2 px-1.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
       onclick={() => (isExpanded = !isExpanded)}
@@ -100,14 +101,16 @@
       <Fa
         icon={faChevronDown}
         size="xs"
-        class="opacity-50 transition-transform duration-200 {isExpanded ? '' : 'rotate-90'}"
+        class="opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isExpanded
+          ? ''
+          : 'rotate-90'}"
       />
       <span>{m.workspace_skills_title()}</span>
       <span class="ml-auto text-ui opacity-60">{$skills$.length}</span>
-    </button>
+    </Button>
 
     {#if isExpanded}
-      <div class="space-y-0.5 mt-1 pl-4" transition:slide={{ axis: 'y', duration: 200 }}>
+      <div class="space-y-0.5 mt-1 pl-4" transition:slide={{ axis: 'y', tier: 'moderate' }}>
         {#each sortedSkills as skill (skill.name)}
           {@render skillRow(skill)}
         {/each}

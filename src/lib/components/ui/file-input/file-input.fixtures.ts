@@ -6,6 +6,9 @@ export const fileInputFixtures = [
     title: 'File input states',
     states: [
       'default',
+      'rest',
+      'hover',
+      'focus',
       'disabled',
       'invalid',
       'error',

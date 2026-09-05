@@ -57,4 +57,23 @@ describe('SidebarContextMenu Escape handling (escape-layer stack)', () => {
     // No layer left on the stack — the event must not be consumed
     expect(event.defaultPrevented).toBe(false);
   });
+
+  it('tracks keyboard focus through the proximity state shared by its rows', async () => {
+    render(SidebarContextMenu, {
+      props: {
+        x: 10,
+        y: 10,
+        items: [
+          { id: 'rename', label: 'Rename', onClick: () => {} },
+          { id: 'archive', label: 'Archive', onClick: () => {} },
+        ],
+      },
+    });
+
+    const archive = await screen.findByRole('menuitem', { name: 'Archive' });
+    archive.focus();
+    await waitFor(() => expect(archive.getAttribute('data-proximity-active')).toBe('true'));
+    archive.blur();
+    await waitFor(() => expect(archive.getAttribute('data-proximity-active')).toBe('false'));
+  });
 });

@@ -3,8 +3,12 @@
   import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
   import { faCheck, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
-  import { slide } from 'svelte/transition';
   import Portal from '../Portal.svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
+  import ListHighlight from '../menu/menu-list-highlight.svelte';
+  import { menuItem, menuOverlay, menuOverlayTransition } from '../menu/menu-recipes';
+  import { crispOut, springIn } from '$lib/motion';
   import type {
     DropdownOption,
     DropdownGroup,
@@ -302,6 +306,7 @@
     const spaceAbove = Math.max(0, rect.top - topBoundary - 4);
     const preferredDropdownHeight = contentMaxHeight ?? (portal ? 300 : 360);
     const opensAbove = spaceBelow < preferredDropdownHeight && spaceAbove > spaceBelow;
+    inlineSide = opensAbove ? 'top' : 'bottom';
     const maxHeight = Math.min(preferredDropdownHeight, opensAbove ? spaceAbove : spaceBelow);
 
     // Clamp horizontal position so dropdown doesn't overflow the viewport
@@ -322,7 +327,6 @@
 
     const containerRect = containerRef?.getBoundingClientRect() ?? rect;
     const relativeLeft = left - containerRect.left;
-    inlineSide = opensAbove ? 'top' : 'bottom';
     if (opensAbove) {
       const bottom = containerRect.bottom - rect.top + 4;
       inlineStyle = `position: absolute; top: auto; bottom: ${bottom}px; left: ${relativeLeft}px; min-width: ${minWidth}px; max-width: ${availableWidth}px; max-height: ${maxHeight}px;`;
@@ -384,7 +388,7 @@
   }
 
   // Handle submenu hover
-  function handleSubmenuEnter(option: DropdownOption, event: MouseEvent) {
+  function handleSubmenuEnter(option: DropdownOption, event: Event) {
     if (option.type === 'submenu' && option.children?.length) {
       openSubmenu = option.value;
       // Position submenu to the right of the parent item
@@ -520,19 +524,23 @@
 
   // Size classes for trigger
   const sizeClasses: Record<DropdownTriggerSize, string> = {
-    xs: 'h-6 px-2 text-xs',
-    sm: 'h-8 px-2.5 text-sm',
-    md: 'h-9 px-3 text-sm',
-    lg: 'h-10 px-4 text-base',
+    xs: 'h-(--control-height-compact) px-3',
+    sm: 'h-(--control-height-small) px-3',
+    md: 'h-(--control-height-medium) px-4',
+    lg: 'h-(--control-height-large) px-4',
   };
 
   // Variant classes for trigger
   const variantClasses: Record<DropdownTriggerVariant, string> = {
-    default: 'border border-input bg-background hover:bg-muted/50',
-    ghost: 'border-0 bg-transparent hover:bg-muted/50',
-    outline: 'border border-input bg-transparent hover:bg-muted/50',
+    default: 'border border-border bg-transparent hover:bg-hover',
+    ghost: 'border-0 bg-transparent hover:bg-hover active:bg-active',
+    outline: 'border border-border bg-transparent hover:bg-hover active:bg-active',
     inline: 'border-0 bg-transparent p-0 h-auto hover:text-foreground',
   };
+  const buttonVariant = $derived(
+    variant === 'inline' ? 'plain' : variant === 'default' ? 'default' : variant,
+  );
+  const buttonSize = $derived(size === 'md' ? 'default' : size);
 
   // Check if we have any results
   const hasResults = $derived(
@@ -570,17 +578,20 @@
   }
 </script>
 
-<div bind:this={containerRef} class={cn('relative inline-block', className)}>
+<div
+  bind:this={containerRef}
+  data-slot="dropdown-root"
+  class={cn('relative inline-block', className)}
+>
   <!-- Trigger -->
-  <button
-    bind:this={triggerRef}
+  <Button
+    bind:ref={triggerRef}
     type="button"
     onclick={handleTriggerClick}
     onkeydown={handleKeyDown}
     {disabled}
     class={cn(
-      'inline-flex items-center gap-2 rounded-md transition-colors cursor-pointer',
-      'focus:outline-none focus-visible:outline-none focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:border-foreground/50',
+      'type-caption inline-flex cursor-pointer items-center gap-2 rounded-(--radius-medium)',
       'disabled:cursor-not-allowed disabled:opacity-50',
       sizeClasses[size],
       variantClasses[variant],
@@ -588,6 +599,9 @@
     )}
     aria-haspopup="listbox"
     aria-expanded={open}
+    active={open}
+    variant={buttonVariant}
+    size={buttonSize}
   >
     {#if trigger}
       {@render trigger({ open, value })}
@@ -595,20 +609,20 @@
       <span class="truncate text-left flex-1 {!displayLabel ? 'text-muted-foreground' : ''}">
         {displayLabel ?? placeholder}
       </span>
-      <Fa icon={faChevronDown} class="h-2! w-2! opacity-50 shrink-0" />
+      <Fa icon={faChevronDown} class="size-4! shrink-0 text-muted-foreground" />
     {/if}
-  </button>
+  </Button>
 
   <!-- Content (inline, no portal) -->
   {#if open && !portal}
     <div
       bind:this={inlineContentRef}
-      transition:slide={{ duration: 150 }}
+      in:springIn={menuOverlayTransition.enter}
+      out:crispOut={menuOverlayTransition.exit}
       class={cn(
+        menuOverlay(),
         'absolute z-50 min-w-full w-max',
         collisionBoundary ? 'flex flex-col' : 'top-full left-0 mt-1',
-        'overflow-hidden rounded-md border border-border',
-        'bg-popover text-popover-foreground shadow-(--elevation-overlay)',
         contentClass,
       )}
       style={collisionBoundary ? inlineStyle : undefined}
@@ -628,13 +642,11 @@
   <Portal zIndex={100}>
     <div
       bind:this={portalContentRef}
-      class={cn(
-        'w-max flex flex-col',
-        'overflow-hidden rounded-md border border-border',
-        'bg-popover text-popover-foreground shadow-(--elevation-overlay)',
-        contentClass,
-      )}
+      in:springIn={menuOverlayTransition.enter}
+      out:crispOut={menuOverlayTransition.exit}
+      class={cn(menuOverlay(), 'w-max flex flex-col', contentClass)}
       style={portalStyle}
+      data-side={inlineSide}
       role="listbox"
       tabindex="-1"
       onkeydown={handleKeyDown}
@@ -655,8 +667,8 @@
   <!-- Search Input -->
   {#if searchable}
     <div class={cn('w-full', isPortal && 'shrink-0')}>
-      <input
-        bind:this={inputRef}
+      <Input
+        bind:ref={inputRef}
         type="text"
         class="w-full bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/50 outline-none border-none ring-0 focus:ring-0! focus:outline-none!"
         {placeholder}
@@ -668,6 +680,7 @@
         value={searchValue}
         oninput={(e) => (searchValue = e.currentTarget.value)}
         onkeydown={handleKeyDown}
+        noFocusStyle
       />
     </div>
     <!-- Screen reader announcement for filtered results -->
@@ -685,9 +698,15 @@
     data-scroll-container
     class={cn(
       isPortal || fillContentHeight ? 'flex-1 min-h-0' : 'max-h-[300px]',
-      'overflow-y-auto pb-1',
+      'overflow-y-auto p-1',
     )}
   >
+    <ListHighlight
+      activeIndex={highlightedIndex >= 0 ? highlightedIndex : null}
+      onactiveindexchange={(index) => {
+        if (index !== null) highlightedIndex = index;
+      }}
+    />
     {#if groups.length > 0}
       <!-- Grouped options -->
       {#each filteredGroups as group, groupIndex (group.key)}
@@ -696,7 +715,7 @@
             {@render groupHeader({ group, groupIndex })}
           {:else if group.label}
             <div
-              class="px-3 {groupIndex === 0
+              class="type-caption px-2 {groupIndex === 0
                 ? ''
                 : 'pt-3 border-t border-border'} py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider sticky top-0 z-10 bg-popover"
             >
@@ -760,25 +779,23 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="relative"
-      onmouseenter={(e) => handleSubmenuEnter(option, e)}
+      onmouseover={(e) => handleSubmenuEnter(option, e)}
+      onfocus={(e) => handleSubmenuEnter(option, e)}
+      onfocusin={(e) => handleSubmenuEnter(option, e)}
       onmouseleave={handleSubmenuLeave}
     >
-      <button
+      <Button
+        variant="plain"
         type="button"
         id={optionIndex >= 0 ? `dropdown-option-${optionIndex}` : undefined}
         onclick={(e) => handleSelect(option, e)}
-        onmouseenter={() => {
-          if (optionIndex >= 0) highlightedIndex = optionIndex;
-        }}
         disabled={option.disabled}
         data-highlighted={isHighlighted ? 'true' : undefined}
+        data-menu-item
         style="scroll-margin-top: 32px"
         class={cn(
-          'relative flex items-center gap-1.5 px-3 py-2 text-sm w-full text-left min-w-0 overflow-hidden',
-          'cursor-pointer select-none transition-colors duration-100',
-          'focus:bg-muted/40 focus:outline-none',
-          'disabled:pointer-events-none disabled:opacity-50',
-          isHighlighted && 'bg-muted/40',
+          menuItem(),
+          'min-h-(--control-height-compact) gap-1.5 overflow-hidden px-2 py-1.5 text-xs',
           option.class,
         )}
         role={option.type === 'submenu' ? 'menuitem' : 'option'}
@@ -852,7 +869,7 @@
             <Fa icon={faCheck} class="h-4 w-4 shrink-0 text-foreground" />
           {/if}
         {/if}
-      </button>
+      </Button>
 
       <!-- Submenu (rendered in portal for proper positioning) -->
       {#if option.type === 'submenu' && option.children?.length && openSubmenu === option.value}
@@ -860,15 +877,20 @@
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             data-submenu
+            in:springIn={menuOverlayTransition.enter}
+            out:crispOut={menuOverlayTransition.exit}
             class={cn(
+              menuOverlay(),
               'min-w-45 overflow-hidden rounded-md border border-border',
-              'bg-popover text-popover-foreground shadow-(--elevation-overlay) py-1',
+              'py-1',
             )}
             style={submenuStyle}
             onmouseleave={() => (openSubmenu = null)}
             role="menu"
+            data-side="right"
             tabindex="-1"
           >
+            <ListHighlight />
             {#each deduplicateOptions(option.children) as child (child.value)}
               {@render optionItem(child)}
             {/each}

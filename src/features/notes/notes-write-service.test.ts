@@ -18,13 +18,13 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
-// FAKE the toast seam so the conflict prompt is asserted without svelte-sonner.
-vi.mock('svelte-sonner', () => ({
-  toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), message: vi.fn() },
+// FAKE the toast seam so the conflict prompt is asserted without $lib/components/patterns/notify.
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), message: vi.fn() },
 }));
 
 import { appClient } from '$lib/client';
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import { store as appStore } from '$store/renderer/store';
 
 const testStore = appStore as typeof appStore & {
@@ -242,7 +242,7 @@ describe('notesWriteService (fake seam, real store)', () => {
 
     updateNoteContent(WS, 'n1', 'edited', { immediate: true });
     await vi.advanceTimersByTimeAsync(1);
-    expect(toast.error).toHaveBeenCalledWith(
+    expect(notify.error).toHaveBeenCalledWith(
       'Failed to save note',
       expect.objectContaining({ description: 'boom' }),
     );
@@ -255,7 +255,7 @@ describe('notesWriteService (fake seam, real store)', () => {
     await updateNoteTitle(WS, 'n1', 'New');
     expect(notesApi.updateMetadata).toHaveBeenCalledWith('n1', { title: 'New' }, undefined, WS);
     expect(selectNoteById.select(appStore.state, WS, 'n1')?.title).toBe('Old');
-    expect(toast.error).toHaveBeenCalledWith(
+    expect(notify.error).toHaveBeenCalledWith(
       'Failed to update note title',
       expect.objectContaining({ description: 'no' }),
     );
@@ -268,7 +268,7 @@ describe('notesWriteService (fake seam, real store)', () => {
     await deleteNote(WS, 'n1');
     expect(notesApi.delete).toHaveBeenCalledWith('n1', undefined, WS);
     expect(selectNoteById.select(appStore.state, WS, 'n1')).toBeDefined();
-    expect(toast.error).toHaveBeenCalledWith(
+    expect(notify.error).toHaveBeenCalledWith(
       'Failed to delete note',
       expect.objectContaining({ description: 'no' }),
     );
@@ -399,7 +399,7 @@ describe('notesWriteService (fake seam, real store)', () => {
     expect(note?.title).toBe('Renamed');
     expect(note?.content).toBe('typed content');
     expect(note?.rev).toBe(5);
-    expect(toast.warning).not.toHaveBeenCalled();
+    expect(notify.warning).not.toHaveBeenCalled();
     expect(notesApi.list).not.toHaveBeenCalled();
   });
 
@@ -418,7 +418,7 @@ describe('notesWriteService (fake seam, real store)', () => {
     const note = selectNoteById.select(appStore.state, WS, 'n1');
     expect(note?.content).toBe('server');
     expect(note?.rev).toBe(8);
-    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(notify.warning).toHaveBeenCalledTimes(1);
     // Conflict path must NOT fall through to the generic reconcile refetch.
     expect(notesApi.list).not.toHaveBeenCalled();
   });
@@ -435,7 +435,7 @@ describe('notesWriteService (fake seam, real store)', () => {
     const note = selectNoteById.select(appStore.state, WS, 'n1');
     expect(note?.title).toBe('Server Title');
     expect(note?.rev).toBe(5);
-    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(notify.warning).toHaveBeenCalledTimes(1);
   });
 
   it('preserves cached unmetDependsOn when a conflict note omits the projection', async () => {
@@ -485,6 +485,6 @@ describe('notesWriteService (fake seam, real store)', () => {
     expect(note?.rev).toBe(12);
     expect(note?.title).toBe('Server');
     expect(note?.content).toBe('server');
-    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(notify.warning).toHaveBeenCalledTimes(1);
   });
 });

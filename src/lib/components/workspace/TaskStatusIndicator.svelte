@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { tick } from 'svelte';
   import type { TaskStatus } from '$shared/types';
   import type { WorkspaceId, NoteId } from '$shared/types/branded-ids';
@@ -137,7 +138,7 @@
 {#if isInteractive}
   <DropdownMenu bind:open={menuOpen} align="start" side="bottom">
     {#snippet trigger({ props })}
-      <button
+      <Button
         {...props}
         class="inline-flex font-mediumx text-subtlex items-center cursor-pointer {compact
           ? 'py-0.5 text-sm gap-1.5'
@@ -145,7 +146,7 @@
       >
         <TaskStatusIcon {status} size={12} />
         {statusLabels[status]}
-      </button>
+      </Button>
     {/snippet}
     {#snippet content({ close }: { close: () => void })}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -157,7 +158,7 @@
         role="listbox"
       >
         {#each statusOptions as option, i (option)}
-          <button
+          <Button
             onclick={() => handleStatusSelect(option, close)}
             onmouseenter={() => (selectedIndex = i)}
             class="w-full text-left px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-2 cursor-pointer {i ===
@@ -170,7 +171,7 @@
             <!-- <span class="size-2 rounded-full {statusDotColors[option]}"></span> -->
             <TaskStatusIcon status={option} size={12} />
             {statusLabels[option]}
-          </button>
+          </Button>
         {/each}
       </div>
     {/snippet}

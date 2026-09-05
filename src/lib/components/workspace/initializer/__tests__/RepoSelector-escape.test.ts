@@ -349,10 +349,12 @@ describe('RepoSelector mode tabs', () => {
     const { container } = render(RepoSelector, { props: {} });
     await openDropdown(container);
 
-    const pickARepo = await screen.findByRole('button', { name: 'Pick a repo' });
-    const tabLabels = Array.from(pickARepo.parentElement!.children).map((tab) =>
-      tab.textContent?.trim(),
-    );
+    await screen.findByRole('button', { name: 'Pick a repo' });
+    const expectedLabels = new Set(['Pick a repo', 'Copy local repo', 'New repo']);
+    const tabLabels = screen
+      .getAllByRole('button')
+      .map((tab) => tab.textContent?.trim())
+      .filter((label): label is string => Boolean(label && expectedLabels.has(label)));
     expect(tabLabels).toEqual(['Pick a repo', 'Copy local repo', 'New repo']);
   });
 });

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Combobox, { type ComboboxGroup, type ComboboxOption } from '../combobox';
+  import { Button } from '$lib/components/ui/button';
   import Tooltip from '../tooltip/Tooltip.svelte';
   import type { GroupedOption, OptionGroup } from './types';
   import { m } from '$shared/paraglide/messages.js';
@@ -121,7 +122,8 @@
 {/snippet}
 
 {#snippet canonicalGroupAction(group: ComboboxGroup)}
-  <button
+  <Button
+    variant="plain"
     type="button"
     aria-label={m.ui_groupedCombobox_toggleGroup_ariaLabel({ group: group.label })}
     onclick={() => toggleGroup(group.key)}
@@ -129,7 +131,7 @@
     {collapsedGroups.has(group.key)
       ? m.ui_groupedCombobox_expandGroup_label()
       : m.ui_groupedCombobox_collapseGroup_label()}
-  </button>
+  </Button>
   {@render groupAction?.(group as OptionGroup)}
 {/snippet}
 

@@ -1,18 +1,17 @@
 <script lang="ts">
-  import { tweened } from 'svelte/motion';
-  import { cubicOut } from 'svelte/easing';
+  import { spring, tweenedValue, type SpringTierName } from '$lib/motion';
   import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     value: number;
-    duration?: number;
+    tier?: SpringTierName;
     format?: (n: number) => string;
     class?: string;
   }
 
   let {
     value,
-    duration = 300,
+    tier = 'slow',
     format = (n: number) => formatInteger(n),
     class: className = '',
   }: Props = $props();
@@ -26,10 +25,7 @@
   // Create tweened store for smooth interpolation. Initial value and duration
   // are intentionally captured at init; the $effect drives later updates.
   // svelte-ignore state_referenced_locally
-  const displayValue = tweened(value, {
-    duration,
-    easing: cubicOut,
-  });
+  const displayValue = tweenedValue(value, tier);
 
   // Update the tweened value and track direction when value changes
   $effect(() => {
@@ -41,7 +37,7 @@
       // Clear direction after animation completes
       const timeout = setTimeout(() => {
         direction = null;
-      }, duration);
+      }, spring[tier].settleMs);
 
       return () => clearTimeout(timeout);
     }
@@ -61,15 +57,15 @@
 <style>
   .animated-number {
     display: inline-block;
-    transition: transform 0.15s ease-out;
+    transition: transform var(--spring-moderate) var(--spring-moderate-ease);
   }
 
   .animating-up {
-    animation: pulse-up 0.3s ease-out;
+    animation: pulse-up var(--motion-slow) var(--spring-slow-ease);
   }
 
   .animating-down {
-    animation: pulse-down 0.3s ease-out;
+    animation: pulse-down var(--motion-slow) var(--spring-slow-ease);
   }
 
   @keyframes pulse-up {

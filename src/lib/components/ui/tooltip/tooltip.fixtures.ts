@@ -15,6 +15,8 @@ export const tooltipFixtures = [
       'disabled',
       'rich-content',
       'shortcut',
+      'spring-enter',
+      'crisp-exit',
       'long-content',
       'compact',
       'zoom-200',

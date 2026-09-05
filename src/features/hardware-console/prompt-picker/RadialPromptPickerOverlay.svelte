@@ -10,7 +10,7 @@
    * presentational — all input handling and insertion live in the
    * prompt-picker service.
    */
-  import { fade, scale } from 'svelte/transition';
+  import { fade, scale } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import { selectHardwareConsoleRadialPrompt } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
   import { radialCancelSector, radialPromptTurn } from './radial-layout';
@@ -46,12 +46,12 @@
 {#if $radial$.open}
   <div
     class="radial-backdrop fixed inset-0 z-50"
-    transition:fade={{ duration: 120 }}
+    transition:fade={{ tier: 'moderate' }}
     role="listbox"
     aria-label={m.hardwareConsole_radialPromptPicker_menu_ariaLabel()}
   >
     <div class="absolute inset-0 flex items-center justify-center">
-      <div class="relative" transition:scale={{ duration: 140, start: 0.9 }}>
+      <div class="relative" transition:scale={{ tier: 'moderate', distance: 0.1 }}>
         <div
           class="radial-hub absolute left-0 top-0 -translate-x-1/2 -translate-y-1/2 rounded-full px-4 py-2 text-xs"
         >

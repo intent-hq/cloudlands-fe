@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * PanelCornerHandle - Corner resize handle for multi-directional resizing
    *
@@ -65,7 +66,7 @@
   }
 </script>
 
-<button
+<Button
   type="button"
   class={cn('app-resize-handle panel-corner-handle', isDragging && 'dragging')}
   data-resize-axis="both"
@@ -73,10 +74,10 @@
   aria-label={m.layout_panelCornerHandle_resize_ariaLabel()}
   {style}
   onmousedown={handleMouseDown}
-></button>
+></Button>
 
 <style>
-  .panel-corner-handle {
+  :global(.panel-corner-handle) {
     position: absolute;
     width: 16px;
     height: 16px;

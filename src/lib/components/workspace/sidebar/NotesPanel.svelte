@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
   import type { Note, TaskStatus } from '$shared/types';
   import { ListContainer, ListItem } from '$lib/components/ui/list';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -49,8 +51,8 @@
   } from '$features/layout/panel-layout-adapter';
 
   import { deleteNote, createNote, updateNoteTitle } from '$features/notes/notes-write-service';
-  import { toast } from 'svelte-sonner';
-  import { withToastCountdown } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
+  import { withToastCountdown } from '$lib/components/patterns/notify';
   import { store as appStore } from '$store/renderer/store';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
@@ -202,7 +204,7 @@
           void deleteNote(workspaceId, note.id);
           closeContextMenu();
 
-          toast.warning(
+          notify.warning(
             m.layout_noteTab_deletedNote_toast({ title: noteTitle }),
             withToastCountdown(
               {
@@ -414,14 +416,14 @@
 
 <div class={cn('w-full flex flex-col', className)}>
   {#if onCreateNote}
-    <button
+    <Button
       onclick={onCreateNote}
       class="-mt-1 mb-2 text-muted-foreground hover:text-foreground p-1 cursor-pointer transition-colors flex items-center gap-1 text-xs"
       title={m.workspace_notesPanel_newNote_tooltip()}
     >
       <Fa icon={faPlus} size="xs" />
       <span>{m.workspace_notesPanel_attachContext_label()}</span>
-    </button>
+    </Button>
   {/if}
 
   {#if loading}
@@ -527,8 +529,8 @@
                 {:else}
                   <ResourceIconTile kind="note" />
                 {/if}
-                <input
-                  bind:this={editInputRef}
+                <Input
+                  bind:ref={editInputRef}
                   type="text"
                   bind:value={editingValue}
                   onblur={saveEdit}
@@ -572,7 +574,7 @@
                 {#if activeAgents.length > 0}
                   <div class="flex items-center gap-0.5 pr-1 -space-x-1">
                     {#each activeAgents.slice(0, 3) as { agentId, state, onClick, specialist } (agentId)}
-                      <button
+                      <Button
                         type="button"
                         class="cursor-pointer hover:opacity-80 transition-opacity"
                         onclick={onClick}
@@ -580,7 +582,7 @@
                         title={m.workspace_notesPanel_openAgent_tooltip()}
                       >
                         <AgentAvatarWithState {agentId} variant="compact" {state} {specialist} />
-                      </button>
+                      </Button>
                     {/each}
                     {#if activeAgents.length > 3}
                       <span
@@ -653,7 +655,7 @@
                             stroke-dasharray={circumference}
                             stroke-dashoffset={inProgressOffset}
                             stroke-linecap="round"
-                            class="text-primary"
+                            class="text-primary-ink"
                             style="transform-origin: center; transform: rotate({completedPctNorm *
                               360}deg);"
                           />
@@ -714,7 +716,7 @@
                 {#if activeAgents.length > 0}
                   <div class="flex items-center gap-0.5 pr-1 -space-x-1">
                     {#each activeAgents.slice(0, 3) as { agentId, state, onClick, specialist } (agentId)}
-                      <button
+                      <Button
                         type="button"
                         class="cursor-pointer hover:opacity-80 transition-opacity"
                         onclick={onClick}
@@ -722,7 +724,7 @@
                         title={m.workspace_notesPanel_openAgent_tooltip()}
                       >
                         <AgentAvatarWithState {agentId} variant="compact" {state} {specialist} />
-                      </button>
+                      </Button>
                     {/each}
                     {#if activeAgents.length > 3}
                       <span
@@ -737,7 +739,7 @@
               </div>
             {/if}
             {#if hasChildren}
-              <button
+              <Button
                 type="button"
                 class="shrink-0 p-1 mr-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer opacity-0 group-hover/note:opacity-100"
                 onclick={(e) => toggleCollapse(note.id as string, e)}
@@ -751,7 +753,7 @@
                 >
                   <Fa icon={faChevronDown} size="10" />
                 </div>
-              </button>
+              </Button>
             {/if}
           </div>
         {/if}

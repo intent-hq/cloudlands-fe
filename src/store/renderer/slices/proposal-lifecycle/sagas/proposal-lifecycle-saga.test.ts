@@ -19,7 +19,7 @@ vi.mock('$lib/components/chat/proposals/specialist-proposal-actions', () => ({
   applySpecialistProposalWork: mocks.applySpecialistProposalWork,
   undoSpecialistProposalWork: mocks.undoSpecialistProposalWork,
 }));
-vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
 vi.mock('$lib/utils/safe-storage', () => ({
   safeLocalStorage: {
     getJSON: mocks.getJSON,

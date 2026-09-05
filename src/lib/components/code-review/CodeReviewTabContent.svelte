@@ -27,7 +27,7 @@
   import { Badge } from '$lib/components/ui/badge';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
-  import { fly } from 'svelte/transition';
+  import { fly } from '$lib/motion';
   import { store as appStore } from '$store/renderer/store';
   import * as m from '$shared/paraglide/messages.js';
 
@@ -155,7 +155,7 @@
       <div class="flex flex-col items-center justify-center py-16 px-8 text-center">
         <div
           class="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center mb-4"
-          transition:fly={{ y: 8, duration: 200 }}
+          transition:fly={{ axis: 'y', distance: 8, tier: 'moderate' }}
         >
           <Fa icon={faWandMagicSparkles} class="h-5 w-5 text-subtle" />
         </div>
@@ -183,7 +183,7 @@
       <div class="space-y-4">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <Fa icon={faSpinner} class="h-4 w-4 animate-spin text-primary" />
+            <Fa icon={faSpinner} class="h-4 w-4 animate-spin text-primary-ink" />
             <span class="text-sm font-medium">{m.codeReview_tabContent_reviewing_label()}</span>
           </div>
           <Button variant="ghost" size="xs" onclick={handleStop}>

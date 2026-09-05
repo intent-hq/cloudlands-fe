@@ -10,8 +10,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: mocks.backendRequest,
 }));
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { warning: mocks.toastWarning, error: mocks.toastError },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { warning: mocks.toastWarning, error: mocks.toastError },
 }));
 
 import { IPC_CHANNELS } from '$shared/ipc-registry';

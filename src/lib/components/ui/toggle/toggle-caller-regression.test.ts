@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { checkboxMetadata } from '../checkbox/checkbox.meta';
 import { switchMetadata } from '../switch/switch.meta';
 import { toggleGroupMetadata } from '../toggle-group/toggle-group.meta';
-import { toggleCompatibilityModes, toggleMetadata } from './toggle.meta';
+import { toggleMetadata } from './toggle.meta';
 
 const repositoryRoot = process.cwd();
 const sourceRoot = join(repositoryRoot, 'src');
@@ -94,13 +94,18 @@ describe('B2 caller metadata regression', () => {
     const expected = {
       checkbox: [
         'src/features/onboarding/OnboardingPage.svelte',
+        'src/features/log/components/ActivityLogFilters.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
+        'src/lib/components/chat/ChatChangesPanel.svelte',
+        'src/lib/components/chat/ChatSearch.svelte',
         'src/lib/components/chat/input/ContextPickerButton.svelte',
         'src/lib/components/chat/proposals/BulkProposalItems.svelte',
         'src/lib/components/layout/ConnectBackendModal.svelte',
+        'src/lib/components/modals/InterruptedAgentsModal.svelte',
         'src/lib/components/modals/TransferWorkspaceModal.svelte',
-        'src/lib/components/settings/HardwareConsoleSettings.svelte',
+        'src/lib/components/notes/NotesPanel.svelte',
+        'src/lib/components/patterns/settings/custom-controls.ts',
         'src/lib/components/tiptap/TaskItemNodeView.svelte',
         'src/lib/components/workspace/initializer/BranchSelector.svelte',
         'src/lib/components/workspace/initializer/RepoAndBranchPicker.svelte',
@@ -115,30 +120,24 @@ describe('B2 caller metadata regression', () => {
         'src/lib/components/settings/DeviceRow.svelte',
         'src/lib/components/settings/OpenInAppsSettings.svelte',
         'src/lib/components/settings/mcp/McpServerCard.svelte',
+        'src/lib/components/patterns/settings/SettingsControl.svelte',
+        'src/lib/components/patterns/settings/custom-controls.ts',
+        'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
         'src/lib/components/workspace/sidebar/McpServersSection.svelte',
         'src/lib/components/workspace/sidebar/MergePanel.svelte',
         'src/routes/(app)/settings/+page.svelte',
       ],
       toggle: [
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
-        'src/lib/components/settings/AgentFeaturesSettings.svelte',
-        'src/lib/components/settings/GitWorkspaceSettings.svelte',
-        'src/lib/components/settings/HardwareConsoleSettings.svelte',
-        'src/lib/components/settings/LegacyImportSettings.svelte',
-        'src/lib/components/settings/McpServersSettings.svelte',
-        'src/lib/components/settings/NotificationSettings.svelte',
-        'src/lib/components/settings/RtkSettings.svelte',
-        'src/lib/components/settings/WebSocketApiSettings.svelte',
-        'src/lib/components/settings/WorkspaceApiSettings.svelte',
-        'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
-        'src/routes/(app)/settings/+page.svelte',
+        'src/lib/components/patterns/settings/custom-controls.ts',
       ],
       'toggle-group': [
         'src/features/layout/tab-types/AgentViewSettingsDropdown.svelte',
         'src/features/layout/tab-types/NoteViewSettingsDropdown.svelte',
         'src/lib/component-catalog/CatalogControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
-        'src/lib/components/settings/ColorThemeSettings.svelte',
+        'src/lib/components/patterns/settings/custom-controls.ts',
+        'src/routes/(app)/settings/+page.svelte',
       ],
     };
 

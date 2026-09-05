@@ -26,6 +26,7 @@ describe('Sheet', () => {
       'Sheet behavior fixture',
     );
     await waitFor(() => expect(sheet.contains(document.activeElement)).toBe(true));
+    expect(screen.getByRole('textbox', { name: 'Sheet field' }).className).toContain('var(--ring)');
     await fireEvent.click(screen.getByRole('button', { name: 'Nested sheet action' }));
     expect(screen.getByRole('dialog')).toBeTruthy();
 
@@ -68,7 +69,9 @@ describe('Sheet', () => {
   it('keeps a destructive confirmation action open until explicit dismissal', async () => {
     render(SheetHarness);
     await fireEvent.click(screen.getByRole('button', { name: 'Open sheet' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Delete item' }));
+    const action = screen.getByRole('button', { name: 'Delete item' });
+    expect(action.dataset.slot).toBe('button');
+    await fireEvent.click(action);
     expect(screen.getByLabelText('Sheet destructive count').textContent).toBe('1');
     expect(screen.getByRole('dialog')).toBeTruthy();
   });

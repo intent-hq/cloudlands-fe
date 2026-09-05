@@ -5,7 +5,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CatalogFoundations from './CatalogFoundations.svelte';
 import CatalogGallery from './CatalogGallery.svelte';
+import CatalogIntroduction from './CatalogIntroduction.svelte';
 import CatalogShell from './CatalogShell.svelte';
+import CatalogSystemPage from './CatalogSystemPage.svelte';
 import { themePresets } from '$lib/utils/theme-presets';
 import { parseVSCodeTheme } from '$lib/utils/vscode-theme-parser';
 
@@ -33,7 +35,7 @@ describe('catalog workspace', () => {
   it('uses canonical choices and persists color theme, mode, and motion', async () => {
     vi.mocked(localStorage.setItem).mockClear();
     const first = render(CatalogShell);
-    expect(first.container.querySelector('header [data-catalog-control="theme"]')).not.toBeNull();
+    expect(first.container.querySelector('[data-catalog-control="theme"]')).not.toBeNull();
     const colorThemeTrigger = screen.getByRole('button', { name: 'Color theme' });
     await fireEvent.keyDown(colorThemeTrigger, { key: 'Enter' });
     await fireEvent.keyDown(colorThemeTrigger, { key: 'ArrowDown' });
@@ -90,7 +92,7 @@ describe('catalog workspace', () => {
     });
   });
 
-  it('renders resolved foundations from CSS variables without physical values', async () => {
+  it('renders resolved foundations with token-sized visual specimens', async () => {
     document.documentElement.style.setProperty('--background', '120 10% 96%');
     render(CatalogFoundations);
 
@@ -107,14 +109,28 @@ describe('catalog workspace', () => {
     expect(screen.getByText('Messages, controls, and suggestions')).toBeTruthy();
     expect(screen.getByTestId('foundation-spacing')).toBeTruthy();
     expect(screen.getByText('--space-7')).toBeTruthy();
+    expect(
+      document.querySelector('[data-foundation-spacing="--space-7"]')?.getAttribute('style'),
+    ).toContain('width: var(--space-7)');
     expect(screen.getByTestId('foundation-measures')).toBeTruthy();
     expect(screen.getByText('--content-measure-wide')).toBeTruthy();
+    expect(screen.queryByText('--content-measure-reading')).toBeNull();
     expect(screen.getByTestId('foundation-controls')).toBeTruthy();
     expect(screen.getByText('--control-height-large')).toBeTruthy();
+    expect(
+      document
+        .querySelector('[data-foundation-control="--control-height-large"]')
+        ?.getAttribute('style'),
+    ).toContain('height: var(--control-height-large)');
     expect(screen.getByText('--radius-large')).toBeTruthy();
-    expect(screen.getByTestId('foundation-surface')).toBeTruthy();
-    expect(screen.getByText('--surface-hatch')).toBeTruthy();
+    expect(
+      document.querySelector('[data-foundation-radius="--radius-large"]')?.getAttribute('style'),
+    ).toContain('border-radius: var(--radius-large)');
+    expect(screen.queryByTestId('foundation-surface')).toBeNull();
     expect(screen.getByTestId('foundation-elevation')).toBeTruthy();
+    const springs = screen.getByTestId('foundation-springs');
+    expect(springs.querySelector('[style*="animation"]')).toBeNull();
+    expect(screen.getByText('--spring-slow-ease')).toBeTruthy();
   });
 
   it('filters the gallery and preserves hash navigation active state', async () => {
@@ -129,5 +145,24 @@ describe('catalog workspace', () => {
     });
     expect(screen.getByRole('heading', { name: 'Dialog' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Button' })).toBeNull();
+  });
+
+  it('presents the landing and system pages as navigable documentation', async () => {
+    const landing = render(CatalogIntroduction);
+    expect(screen.getByRole('heading', { name: 'Intent design system' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Surfaces/ }).getAttribute('href')).toBe(
+      '/sandbox/surfaces',
+    );
+    landing.unmount();
+
+    const motion = render(CatalogSystemPage, { props: { slug: 'motion' } });
+    const replay = screen.getByRole('button', { name: 'Replay motion' });
+    expect(replay.getAttribute('aria-pressed')).toBe('false');
+    await fireEvent.click(replay);
+    expect(replay.getAttribute('aria-pressed')).toBe('true');
+    motion.unmount();
+
+    render(CatalogSystemPage, { props: { slug: 'surfaces' } });
+    expect(screen.getAllByText(/Surface [1-8]/)).toHaveLength(8);
   });
 });

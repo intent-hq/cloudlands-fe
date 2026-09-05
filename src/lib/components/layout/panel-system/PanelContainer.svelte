@@ -26,7 +26,6 @@
   import { translatePanel } from './panel-reorder-animation';
   import { getDraggedPane, type PaneDropPlacement } from './panel-drag';
   import { resize } from '$lib/components/layout/size-transition';
-  import { cubicOut } from 'svelte/easing';
   import {
     PANEL_SPLIT_GUTTER_WIDTH,
     resizePanelWidthsAtDivider,
@@ -215,20 +214,17 @@
   let isResizing = $state(false);
   let suppressResizeCommitMotion = $state(false);
   let resizeCommitMotionFrame: number | null = null;
-  const layoutMotionDuration = $derived(
-    lifecycleMotionReady && !isResizing && !suppressLayoutMotion && !suppressResizeCommitMotion
-      ? 180
-      : 0,
-  );
-  const layoutMotionExitDuration = $derived(
-    lifecycleMotionReady && !isResizing && !suppressLayoutMotion && !suppressResizeCommitMotion
-      ? 140
-      : 0,
+  const layoutMotionEnabled = $derived(
+    lifecycleMotionReady && !isResizing && !suppressLayoutMotion && !suppressResizeCommitMotion,
   );
 
-  function resizePanelChild(nodeToResize: HTMLElement, params: Parameters<typeof resize>[1]) {
+  function resizePanelChild(
+    nodeToResize: HTMLElement,
+    params: Parameters<typeof resize>[1],
+    options: Parameters<typeof resize>[2],
+  ) {
     if (suppressLayoutMotion || getDraggedPane()) return { duration: 0 };
-    return resize(nodeToResize, params);
+    return resize(nodeToResize, params, options);
   }
 
   $effect(() => {
@@ -719,14 +715,16 @@
         class:hidden={item.type === 'panel' && isPanelHiddenByZoom(item.child)}
         style:flex={item.type === 'panel' ? getPanelChildFlex(item.child, item.index) : undefined}
         data-split-gutter={item.type === 'gutter' ? node.direction : undefined}
-        animate:translatePanel={{ duration: layoutMotionDuration, easing: cubicOut }}
+        animate:translatePanel={{ enabled: layoutMotionEnabled, tier: 'moderate' }}
         in:resizePanelChild={{
           axis: node.direction === 'horizontal' ? 'x' : 'y',
-          duration: layoutMotionDuration,
+          enabled: layoutMotionEnabled,
+          tier: 'moderate',
         }}
         out:resizePanelChild={{
           axis: node.direction === 'horizontal' ? 'x' : 'y',
-          duration: layoutMotionExitDuration,
+          enabled: layoutMotionEnabled,
+          tier: 'moderate',
         }}
       >
         {#if item.type === 'panel'}

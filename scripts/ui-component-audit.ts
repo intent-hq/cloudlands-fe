@@ -11,10 +11,52 @@ import {
   structuralGuardrailFailures,
   validateMigrationReplacement,
 } from './ui-component-manifest';
+import { uiComponentGuardrails } from './ui-component-guardrails';
 import { buildUiComponentInventory } from './ui-component-inventory';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sortText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+const RAW_ELEMENT_TAGS = ['button', 'input', 'select', 'textarea'] as const;
+const RAW_ELEMENT_POLICY = 'scripts/ui-component-raw-element-allowlist.json';
+const RAW_ELEMENT_APPROVED_ROOTS = [
+  'button',
+  'input',
+  'select',
+  'textarea',
+  'checkbox',
+  'switch',
+  'toggle',
+  'toggle-group',
+  'menu',
+  'dialog',
+  'sheet',
+  'combobox',
+  'file-input',
+  'slider',
+].map((family) => `src/lib/components/ui/${family}/`);
+
+type RawElementTag = (typeof RAW_ELEMENT_TAGS)[number];
+type RawElementCounts = Record<RawElementTag, { files: number; elements: number }>;
+
+interface RawElementPolicy {
+  ceilings: Record<string, Record<RawElementTag, number>>;
+  exceptions: Array<{ file: string; elements: RawElementTag[]; owner: string; reason: string }>;
+}
+
+type PatternAdoptionKind = keyof typeof uiComponentGuardrails.patternAdoption;
+
+interface PatternAdoptionFinding {
+  file: string;
+  occurrences: number;
+}
+
+export interface PatternAdoptionAudit {
+  patterns: Record<
+    PatternAdoptionKind,
+    { count: number; ceiling: number; findings: PatternAdoptionFinding[] }
+  >;
+  failures: string[];
+}
 
 function walk(directory: string): string[] {
   return fs
@@ -24,6 +66,254 @@ function walk(directory: string): string[] {
       const target = path.join(directory, entry.name);
       return entry.isDirectory() ? walk(target) : [target];
     });
+}
+
+function normalizedRelative(root: string, file: string): string {
+  return path.relative(root, file).split(path.sep).join('/');
+}
+
+function productionSvelteSource(file: string): boolean {
+  const normalized = file.split(path.sep).join('/');
+  const internalRoute =
+    normalized.includes('/src/routes/sandbox/') ||
+    normalized.includes('/src/routes/(app)/test-') ||
+    normalized.includes('/src/routes/(app)/workspace/[id]/terminal-test/');
+  return (
+    file.endsWith('.svelte') &&
+    !internalRoute &&
+    !normalized.includes('/__tests__/') &&
+    !/(?:test-harness|Harness|TestWrapper)\.svelte$/.test(normalized)
+  );
+}
+
+function productPatternSource(root: string, file: string): boolean {
+  const relative = normalizedRelative(root, file);
+  return (
+    productionSvelteSource(file) &&
+    !relative.startsWith('src/lib/component-catalog/') &&
+    !relative.startsWith('src/lib/components/patterns/') &&
+    !relative.startsWith('src/lib/components/ui/')
+  );
+}
+
+function eachListOccurrences(source: string): number {
+  let count = 0;
+  for (const match of source.matchAll(/\{#each\b/g)) {
+    const closingIndex = source.indexOf('{/each}', match.index);
+    const block = source.slice(match.index, closingIndex < 0 ? source.length : closingIndex);
+    if (
+      /<li(?=[\s>])/.test(block) ||
+      /<div(?=[^>]*class(?:=|:)[^>]*(?:hover:|group-hover:))[^>]*>/.test(block)
+    ) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+export function buildPatternAdoptionAudit(root = projectRoot): PatternAdoptionAudit {
+  const findings = Object.fromEntries(
+    Object.keys(uiComponentGuardrails.patternAdoption).map((kind) => [kind, []]),
+  ) as Record<PatternAdoptionKind, PatternAdoptionFinding[]>;
+  const files = walk(path.join(root, 'src')).filter((file) => productPatternSource(root, file));
+
+  for (const absolute of files) {
+    const file = normalizedRelative(root, absolute);
+    const source = fs.readFileSync(absolute, 'utf8');
+    const settingsCandidate =
+      (file.includes('/settings/') || /Settings\.svelte$/.test(file)) &&
+      /<(?:SettingsSection|SettingsFieldRow)\b/.test(source);
+    if (settingsCandidate && !/<SettingsForm\b/.test(source)) {
+      findings.settingsForm.push({ file, occurrences: 1 });
+    }
+
+    const basename = path.posix.basename(file);
+    const screenCandidate =
+      basename === '+page.svelte' || /(?:Page|TakeoverOverlay)\.svelte$/.test(basename);
+    if (
+      screenCandidate &&
+      !/<(?:Screen|TakeoverScreen)\b/.test(source) &&
+      !file.includes('/test-') &&
+      !file.includes('/terminal-test/')
+    ) {
+      findings.screen.push({ file, occurrences: 1 });
+    }
+
+    const collectionOccurrences = eachListOccurrences(source);
+    if (collectionOccurrences > 0 && !/<ListView\b/.test(source)) {
+      findings.listView.push({ file, occurrences: collectionOccurrences });
+    }
+
+    const dialogOccurrences = [...source.matchAll(/<Dialog\.(?:Root|Content)\b/g)].length;
+    if (
+      dialogOccurrences > 0 &&
+      !/<(?:FormDialog|DestructiveConfirm)\b/.test(source) &&
+      !/\b(?:confirm|prompt|alert)\s*\(/.test(source)
+    ) {
+      findings.formDialog.push({ file, occurrences: dialogOccurrences });
+    }
+  }
+
+  const failures: string[] = [];
+  const patterns = Object.fromEntries(
+    (Object.keys(findings) as PatternAdoptionKind[]).sort(sortText).map((kind) => {
+      const sorted = findings[kind].sort((left, right) => sortText(left.file, right.file));
+      const count = sorted.length;
+      const ceiling = uiComponentGuardrails.patternAdoption[kind];
+      if (count > ceiling) {
+        failures.push(
+          `pattern ${kind} count ${count} exceeds ceiling ${ceiling}; migrate new surfaces to the canonical pattern`,
+        );
+      }
+      return [kind, { count, ceiling, findings: sorted }];
+    }),
+  ) as PatternAdoptionAudit['patterns'];
+  return { patterns, failures: failures.sort(sortText) };
+}
+
+function patternAdoptionCheckFailures(root: string): string[] {
+  try {
+    return buildPatternAdoptionAudit(root).failures;
+  } catch (error) {
+    return [error instanceof Error ? error.message : String(error)];
+  }
+}
+
+function emptyRawElementCounts(): RawElementCounts {
+  return Object.fromEntries(
+    RAW_ELEMENT_TAGS.map((tag) => [tag, { files: 0, elements: 0 }]),
+  ) as RawElementCounts;
+}
+
+function loadRawElementPolicy(root: string): RawElementPolicy {
+  const policyFile = path.join(root, RAW_ELEMENT_POLICY);
+  const parsed = JSON.parse(fs.readFileSync(policyFile, 'utf8')) as Partial<RawElementPolicy>;
+  if (
+    !parsed.ceilings ||
+    typeof parsed.ceilings !== 'object' ||
+    !Array.isArray(parsed.exceptions)
+  ) {
+    throw new Error(`${RAW_ELEMENT_POLICY}: expected ceilings and exceptions`);
+  }
+  for (const [directory, ceilings] of Object.entries(parsed.ceilings)) {
+    if (!directory.startsWith('src/') || !ceilings || typeof ceilings !== 'object') {
+      throw new Error(`${RAW_ELEMENT_POLICY}: invalid directory ${directory}`);
+    }
+    for (const tag of RAW_ELEMENT_TAGS) {
+      if (!Number.isInteger(ceilings[tag]) || ceilings[tag] < 0) {
+        throw new Error(
+          `${RAW_ELEMENT_POLICY}: ${directory}.${tag} must be a non-negative integer`,
+        );
+      }
+    }
+  }
+  for (const exception of parsed.exceptions) {
+    if (
+      !exception ||
+      typeof exception.file !== 'string' ||
+      !exception.file.startsWith('src/') ||
+      !exception.file.endsWith('.svelte') ||
+      !Array.isArray(exception.elements) ||
+      !exception.elements.length ||
+      exception.elements.some((tag) => !RAW_ELEMENT_TAGS.includes(tag)) ||
+      typeof exception.owner !== 'string' ||
+      !exception.owner.trim() ||
+      typeof exception.reason !== 'string' ||
+      !exception.reason.trim()
+    ) {
+      throw new Error(`${RAW_ELEMENT_POLICY}: invalid exception ${JSON.stringify(exception)}`);
+    }
+  }
+  return parsed as RawElementPolicy;
+}
+
+export interface RawElementAudit {
+  directories: Record<
+    string,
+    Record<RawElementTag, { files: number; elements: number; ceiling: number | null }>
+  >;
+  exceptions: number;
+  failures: string[];
+}
+
+export function buildRawElementAudit(root = projectRoot): RawElementAudit {
+  const policy = loadRawElementPolicy(root);
+  const exceptions = new Map<string, Set<RawElementTag>>();
+  const failures: string[] = [];
+  for (const exception of policy.exceptions) {
+    const tags = exceptions.get(exception.file) ?? new Set<RawElementTag>();
+    for (const tag of exception.elements) {
+      if (tags.has(tag)) failures.push(`${exception.file}: duplicate <${tag}> exception`);
+      tags.add(tag);
+    }
+    exceptions.set(exception.file, tags);
+  }
+
+  const counts = new Map<string, RawElementCounts>();
+  const files = walk(path.join(root, 'src')).filter(productionSvelteSource);
+  for (const absolute of files) {
+    const file = normalizedRelative(root, absolute);
+    if (RAW_ELEMENT_APPROVED_ROOTS.some((approved) => file.startsWith(approved))) continue;
+    const directory = `src/${file.slice('src/'.length).split('/')[0]}`;
+    const directoryCounts = counts.get(directory) ?? emptyRawElementCounts();
+    const source = fs.readFileSync(absolute, 'utf8');
+    for (const tag of RAW_ELEMENT_TAGS) {
+      const matches = [...source.matchAll(new RegExp(`<${tag}(?=[\\s/>])`, 'g'))].length;
+      if (!matches || exceptions.get(file)?.has(tag)) continue;
+      directoryCounts[tag].files += 1;
+      directoryCounts[tag].elements += matches;
+    }
+    counts.set(directory, directoryCounts);
+  }
+
+  for (const [file, tags] of exceptions) {
+    const absolute = path.join(root, file);
+    if (!fs.existsSync(absolute)) {
+      failures.push(`${file}: allowlisted file is missing`);
+      continue;
+    }
+    const source = fs.readFileSync(absolute, 'utf8');
+    for (const tag of tags) {
+      if (!new RegExp(`<${tag}(?=[\\s/>])`, 'g').test(source)) {
+        failures.push(`${file}: stale <${tag}> exception; remove it from ${RAW_ELEMENT_POLICY}`);
+      }
+    }
+  }
+
+  const directories: RawElementAudit['directories'] = {};
+  const directoryNames = [...new Set([...counts.keys(), ...Object.keys(policy.ceilings)])].sort(
+    sortText,
+  );
+  for (const directory of directoryNames) {
+    const directoryCounts = counts.get(directory) ?? emptyRawElementCounts();
+    directories[directory] = Object.fromEntries(
+      RAW_ELEMENT_TAGS.map((tag) => {
+        const ceiling = policy.ceilings[directory]?.[tag];
+        if (ceiling === undefined) {
+          failures.push(`${directory}: missing raw-element ceilings in ${RAW_ELEMENT_POLICY}`);
+        } else if (directoryCounts[tag].files > ceiling) {
+          failures.push(
+            `${directory}: raw <${tag}> files ${directoryCounts[tag].files} exceed ceiling ${ceiling}; use $lib/components/ui/${tag}`,
+          );
+        }
+        return [tag, { ...directoryCounts[tag], ceiling: ceiling ?? null }];
+      }),
+    ) as RawElementAudit['directories'][string];
+  }
+  return {
+    directories,
+    exceptions: policy.exceptions.length,
+    failures: [...new Set(failures)].sort(sortText),
+  };
+}
+
+function rawElementCheckFailures(root: string, required: boolean): string[] {
+  if (!required && !fs.existsSync(path.join(root, RAW_ELEMENT_POLICY))) return [];
+  try {
+    return buildRawElementAudit(root).failures;
+  } catch (error) {
+    return [error instanceof Error ? error.message : String(error)];
+  }
 }
 
 function importSpecifiers(source: string): string[] {
@@ -240,8 +530,28 @@ export function runUiComponentAudit(mode = 'check', rootOverride?: string): UiCo
   if (mode === 'raw-controls') {
     return { stdout: JSON.stringify(countRawUiControls(root), null, 2), stderr: '', exitCode: 0 };
   }
+  if (mode === 'raw-elements') {
+    try {
+      const audit = buildRawElementAudit(root);
+      return { stdout: JSON.stringify(audit, null, 2), stderr: '', exitCode: 0 };
+    } catch (error) {
+      return {
+        stdout: '',
+        stderr: error instanceof Error ? error.message : String(error),
+        exitCode: 1,
+      };
+    }
+  }
+  if (mode === 'patterns') {
+    const audit = buildPatternAdoptionAudit(root);
+    return { stdout: JSON.stringify(audit, null, 2), stderr: '', exitCode: 0 };
+  }
   if (mode === 'check') {
-    const failures = checkFailures(root, inventory, usesProjectManifest);
+    const failures = [
+      ...checkFailures(root, inventory, usesProjectManifest),
+      ...rawElementCheckFailures(root, usesProjectManifest),
+      ...patternAdoptionCheckFailures(root),
+    ].sort(sortText);
     if (failures.length) {
       return { stdout: '', stderr: failures.join('\n'), exitCode: 1 };
     }
@@ -257,7 +567,7 @@ export function runUiComponentAudit(mode = 'check', rootOverride?: string): UiCo
       (component) => component.category === 'deletion-candidate',
     ).length;
     return {
-      stdout: `UI component audit passed; modules=${inventory.components.length}; exports=${exports}; callers=${callers}; deletionCandidates=${deletionCandidates}; boundaryViolations=0`,
+      stdout: `UI component audit passed; modules=${inventory.components.length}; exports=${exports}; callers=${callers}; deletionCandidates=${deletionCandidates}; boundaryViolations=0; rawElementViolations=0; patternViolations=0`,
       stderr: '',
       exitCode: 0,
     };
@@ -265,7 +575,7 @@ export function runUiComponentAudit(mode = 'check', rootOverride?: string): UiCo
   return {
     stdout: '',
     stderr:
-      'usage: ui-component-audit.ts [inventory|dynamic|boundaries|json|manifest|migrations|internal-imports|raw-controls|check]',
+      'usage: ui-component-audit.ts [inventory|dynamic|boundaries|json|manifest|migrations|internal-imports|raw-controls|raw-elements|patterns|check]',
     exitCode: 2,
   };
 }

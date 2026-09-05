@@ -47,8 +47,8 @@ vi.mock('$app/stores', () => ({
   },
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { warning: mocks.toastWarning },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { warning: mocks.toastWarning },
 }));
 
 import NodeVersionToast, { resetNodeVersionToastSessionLatch } from './NodeVersionToast.svelte';

@@ -9,6 +9,7 @@
     faCircleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { Button } from '$lib/components/ui/button';
   import { onDestroy } from 'svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import MessageActions from './MessageActions.svelte';
@@ -24,7 +25,7 @@
   import { getModelChangeNotice } from './model-change-notice';
   import { getAttentionNotice } from './attention-notice';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
-  import { safeSlide } from '$lib/utils/animations';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import type { ContextItem } from './input/context-api';
   import type { FileBlock, ImageBlock } from '$lib/client/app-client';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
@@ -1392,9 +1393,9 @@
   <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
   <div
     bind:this={messageElement}
-    class="group group/message transition-transform duration-200 ease-out {role === 'user'
+    class="{role === 'user'
       ? 'user-message'
-      : 'relative assistant-message'}"
+      : 'relative assistant-message'} group group/message transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
     data-message-id={ownsMessageIdentity ? message?.id : undefined}
     data-message-role={ownsMessageIdentity ? role : undefined}
     inert={readOnly}
@@ -1402,7 +1403,7 @@
     {#if role === 'user'}
       {#if isEditing}
         <!-- Edit mode - use SimpleRichInput for rich editing experience -->
-        <div class="rounded-xs" transition:safeSlide={{ axis: 'y', duration: 200 }}>
+        <div class="rounded-xs" transition:safeDisclosureTransition={{ tier: 'moderate' }}>
           <SimpleRichInput
             bind:value={editValue}
             bind:contextItems={editContextItems}
@@ -1546,8 +1547,9 @@
                     pill.url ||
                     pill.type === 'spec'
                   )}
-                  <button
+                  <Button
                     type="button"
+                    variant="plain"
                     class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
                     title={pill.content || pill.path || pill.noteId || pill.label}
                     onclick={(e) => {
@@ -1560,7 +1562,7 @@
                     <span class="truncate font-medium" style="max-width: 180px;" title={pill.label}
                       >{pill.label}</span
                     >
-                  </button>
+                  </Button>
                 {/each}
                 <!-- Render text with inline @mentions as chips -->
                 {#each parsedMessage.segments as segment, i (i)}
@@ -1591,8 +1593,9 @@
                       segment.mentionType === 'spec' ||
                       segment.url
                     )}
-                    <button
+                    <Button
                       type="button"
+                      variant="plain"
                       class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
                       title={segment.path ||
                         segment.noteId ||
@@ -1636,7 +1639,7 @@
                       <span class="truncate" style="max-width: 180px;" title={segment.label}
                         >{segment.label}</span
                       >
-                    </button>
+                    </Button>
                   {/if}
                 {/each}
               </div>
@@ -1645,13 +1648,17 @@
                 <div class="flex flex-wrap gap-1.5 mt-2">
                   {#each imageBlocks as imageBlock, i (i)}
                     {@const src = imageBlockSrc(imageBlock)}
-                    <button
+                    <Button
                       type="button"
-                      class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary rounded"
-                      class:animate-pulse={isAttachmentHydrationLoading(imageBlock.id)}
+                      variant="plain"
+                      class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary-ink rounded {isAttachmentHydrationLoading(
+                        imageBlock.id,
+                      )
+                        ? 'animate-pulse'
+                        : ''}"
                       aria-busy={isAttachmentHydrationLoading(imageBlock.id)}
                       onclick={(e) => {
-                        openImageLightbox(imageBlock, e.currentTarget, i);
+                        openImageLightbox(imageBlock, e.currentTarget as HTMLButtonElement, i);
                       }}
                       onkeydown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
@@ -1682,7 +1689,7 @@
                           data-testid="chat-message-image-placeholder"
                         ></div>
                       {/if}
-                    </button>
+                    </Button>
                   {/each}
                 </div>
               {/if}
@@ -1694,8 +1701,9 @@
                 <div class="flex flex-wrap gap-1.5 mt-2">
                   {#each fileBlocks as fileBlock, i (i)}
                     {@const secondary = fileChipSecondaryText(fileBlock)}
-                    <button
+                    <Button
                       type="button"
+                      variant="plain"
                       data-testid="chat-message-file-chip"
                       class="type-caption flex cursor-pointer items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       onclick={() => {
@@ -1714,7 +1722,7 @@
                       {#if secondary}
                         <span class="opacity-60 shrink-0">{secondary}</span>
                       {/if}
-                    </button>
+                    </Button>
                   {/each}
                 </div>
               {/if}

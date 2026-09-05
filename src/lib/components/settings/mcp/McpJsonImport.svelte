@@ -1,7 +1,6 @@
 <script lang="ts">
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button, Textarea } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
-  import { Textarea } from '$lib/components/ui/textarea';
 
   interface Props {
     onImport: (json: string) => Promise<void>;
@@ -70,8 +69,8 @@
       placeholder={/* i18n-ignore (JSON config example) */ `{"my-server": {"command": "npx", "args": ["-y", "@some/mcp-server"]}}`}
       rows={12}
       class="w-full px-3 py-2 text-sm font-mono rounded-md border border-border
-             bg-background focus:outline-none focus:ring-2 focus:ring-primary/30
-             focus:border-primary resize-none"
+             bg-background focus:outline-none focus:ring-2 focus:ring-primary-ink/30
+             focus:border-primary-ink resize-none"
     />
     <p class="text-xs text-subtle mt-1">
       {m.settings_mcp_import_formatHint()}

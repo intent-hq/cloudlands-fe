@@ -37,7 +37,7 @@
     ensureProvidersChecked as ensureProvidersCheckedAction,
   } from '$store/renderer/slices/agent-availability/agent-availability-slice';
 
-  import { fly } from 'svelte/transition';
+  import { fly } from '$lib/motion';
   import { flip } from 'svelte/animate';
   import { store as appStore } from '$store/renderer/store';
 
@@ -303,10 +303,10 @@
 </script>
 
 <div class="flex gap-4 w-full">
-  {#each visibleProviders as provider, i (provider.id)}
+  {#each visibleProviders as provider (provider.id)}
     <div
       class="overflow-hidden transition-all flex flex-col flex-1 min-w-66"
-      in:fly={{ y: 20, duration: 300, delay: i * 60 }}
+      in:fly={{ tier: 'slow', distance: 20 }}
       animate:flip={{ duration: 300 }}
     >
       <ProviderCard

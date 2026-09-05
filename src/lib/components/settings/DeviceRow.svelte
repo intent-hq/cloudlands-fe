@@ -1,11 +1,13 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { Button } from '$lib/components/ui/button';
-  import { Input } from '$lib/components/ui/input';
-  import { Label } from '$lib/components/ui/label';
-  import * as Menu from '$lib/components/ui/menu';
-  import { Switch } from '$lib/components/ui/switch';
-  import { Tooltip } from '$lib/components/ui/tooltip';
+  import {
+    Button,
+    Input,
+    Label,
+    Menu,
+    Tooltip,
+  } from '$lib/components/patterns/settings/custom-controls';
+  import { ListRow, RowActions } from '$lib/components/patterns/collection';
   import { cn } from '$lib/utils';
   import {
     CONNECTION_ACCENT_CLASSES,
@@ -421,42 +423,38 @@
     if (!device.tcAddress) return;
     try {
       await navigator.clipboard.writeText(device.tcAddress);
-      const { toast } = await import('$lib/components/ui/toast');
-      toast.success(m.settings_devices_tcAddress_copied());
+      const { notify } = await import('$lib/components/patterns/notify');
+      notify.success(m.settings_devices_tcAddress_copied());
     } catch {
-      const { toast } = await import('$lib/components/ui/toast');
-      toast.error(m.settings_devices_tcAddress_copyError());
+      const { notify } = await import('$lib/components/patterns/notify');
+      notify.error(m.settings_devices_tcAddress_copyError());
     }
   }
 </script>
 
-<article aria-labelledby={`device-${device.id}-name`} aria-busy={busy !== null}>
-  <div class="flex min-w-0 items-center gap-3 px-4 py-3 sm:px-5">
-    <span
-      class={cn(
-        'size-2.5 shrink-0 rounded-full ring-2 ring-background outline outline-1 outline-border',
-        statusClass(openStatus),
-      )}
-      role="status"
-      aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
-    ></span>
-    <div class="min-w-0 flex-1">
-      <div class="flex min-w-0 items-baseline gap-2">
-        <p
-          id={`device-${device.id}-name`}
-          class="min-w-0 truncate text-sm font-medium text-foreground"
-        >
-          {displayName}
-        </p>
-        {#if openStatus === 'connected' && device.intentdVersion}
-          <p class="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
-            {device.intentdVersion}
-          </p>
-        {/if}
+<article
+  class="group/collection-row"
+  aria-labelledby={`device-${device.id}-name`}
+  aria-busy={busy !== null}
+>
+  <ListRow class="px-4 sm:px-5">
+    {#snippet leading()}
+      <span
+        class={cn(
+          'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
+          statusClass(openStatus),
+        )}
+        role="status"
+        aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
+      ></span>
+    {/snippet}
+    {#snippet title()}<span id={`device-${device.id}-name`}>{displayName}</span>{/snippet}
+    {#snippet meta()}
+      <span class="flex items-center gap-2">
+        {#if openStatus === 'connected' && device.intentdVersion}<span>{device.intentdVersion}</span
+          >{/if}
         {#if daemonBehindTooltip}
-          <!-- The Tooltip trigger wrapper gives this non-interactive dot a tab
-               stop, so the explanation is reachable by keyboard focus too. -->
-          <Tooltip content={daemonBehindTooltip} class="shrink-0 self-center">
+          <Tooltip content={daemonBehindTooltip} class="self-center">
             <span
               class="block size-2 rounded-full bg-yellow-500"
               role="img"
@@ -464,75 +462,90 @@
             ></span>
           </Tooltip>
         {/if}
-      </div>
-    </div>
-    <!-- The local row has no remote-only actions (Connect/Edit/Remove), so its
-         menu only exists while the Update action is offered. -->
-    {#if !device.isLocal || canUpdateDaemon}
-      <Menu.Root bind:open={actionsMenuOpen}>
-        <Menu.Trigger>
-          {#snippet child({ props })}
+        {#if device.tcAddress}
+          <Tooltip content={device.tcAddress} class="self-center">
             <Button
-              {...props}
-              bind:ref={actionsButton}
-              variant="ghost-light"
-              size="icon-xs"
-              aria-label={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
+              variant="outline"
+              size="xs"
+              onclick={() => void copyTcAddress()}
+              aria-label={m.settings_devices_tcAddress_copy()}
+              data-tc-address-chip>{m.settings_devices_tunnelAddress_label()}</Button
             >
-              <Fa icon={faEllipsisVertical} />
-            </Button>
+          </Tooltip>
+        {/if}
+      </span>
+    {/snippet}
+    {#snippet trailing()}
+      {#if !device.isLocal || canUpdateDaemon}
+        <RowActions>
+          {#snippet overflow()}
+            <Menu.Root bind:open={actionsMenuOpen}>
+              <Menu.Trigger>
+                {#snippet child({ props })}
+                  <Button
+                    {...props}
+                    bind:ref={actionsButton}
+                    variant="ghost-light"
+                    size="icon-xs"
+                    iconOnly
+                    aria-label={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
+                    ><Fa icon={faEllipsisVertical} /></Button
+                  >
+                {/snippet}
+              </Menu.Trigger>
+              <Menu.Content align="end" class="p-0!">
+                <div class="w-44 py-1">
+                  {#if !device.isLocal}
+                    <Menu.Item
+                      onclick={() => {
+                        actionsMenuOpen = false;
+                        void connectDevice();
+                      }}
+                    >
+                      <Fa icon={faPlug} class="size-3.5 text-muted-foreground" />
+                      {m.settings_devices_connect_label()}
+                    </Menu.Item>
+                  {/if}
+                  {#if canUpdateDaemon}
+                    <Menu.Item
+                      onclick={() => {
+                        actionsMenuOpen = false;
+                        void requestDaemonUpdate();
+                      }}
+                    >
+                      <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
+                      {m.layout_daemonStatus_update_action()}
+                    </Menu.Item>
+                  {/if}
+                  {#if !device.isLocal}
+                    <Menu.Item
+                      onclick={() => {
+                        actionsMenuOpen = false;
+                        onOpenPanel('edit');
+                      }}
+                    >
+                      <Fa icon={faPen} class="size-3.5 text-muted-foreground" />
+                      {m.settings_devices_edit_label()}
+                    </Menu.Item>
+                    <Menu.Item
+                      destructive
+                      onclick={() => {
+                        actionsMenuOpen = false;
+                        onRequestRemove(device);
+                      }}
+                    >
+                      <Fa icon={faTrash} class="size-3.5 text-muted-foreground" />
+                      {m.settings_devices_remove_label()}
+                    </Menu.Item>
+                  {/if}
+                </div>
+              </Menu.Content>
+            </Menu.Root>
           {/snippet}
-        </Menu.Trigger>
-        <Menu.Content align="end" class="p-0!">
-          <div class="w-44 py-1">
-            {#if !device.isLocal}
-              <Menu.Item
-                onclick={() => {
-                  actionsMenuOpen = false;
-                  void connectDevice();
-                }}
-              >
-                <Fa icon={faPlug} class="size-3.5 text-muted-foreground" />
-                {m.settings_devices_connect_label()}
-              </Menu.Item>
-            {/if}
-            {#if canUpdateDaemon}
-              <Menu.Item
-                onclick={() => {
-                  actionsMenuOpen = false;
-                  void requestDaemonUpdate();
-                }}
-              >
-                <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
-                {m.layout_daemonStatus_update_action()}
-              </Menu.Item>
-            {/if}
-            {#if !device.isLocal}
-              <Menu.Item
-                onclick={() => {
-                  actionsMenuOpen = false;
-                  onOpenPanel('edit');
-                }}
-              >
-                <Fa icon={faPen} class="size-3.5 text-muted-foreground" />
-                {m.settings_devices_edit_label()}
-              </Menu.Item>
-              <Menu.Item
-                destructive
-                onclick={() => {
-                  actionsMenuOpen = false;
-                  onRequestRemove(device);
-                }}
-              >
-                <Fa icon={faTrash} class="size-3.5 text-muted-foreground" />
-                {m.settings_devices_remove_label()}
-              </Menu.Item>
-            {/if}
-          </div>
-        </Menu.Content>
-      </Menu.Root>
-    {/if}
-  </div>
+        </RowActions>
+      {/if}
+    {/snippet}
+  </ListRow>
 
   {#if connectionError}
     <p class="px-4 pb-3 text-sm text-danger sm:px-5" role="alert">

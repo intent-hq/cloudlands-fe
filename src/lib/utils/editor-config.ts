@@ -385,7 +385,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         createWorkspacesLink({
           openOnClick: false,
           HTMLAttributes: {
-            class: 'text-primary underline cursor-pointer',
+            class: 'text-primary-ink underline cursor-pointer',
           },
         }),
         TaskList.configure({
@@ -800,7 +800,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         createWorkspacesLink({
           openOnClick: false,
           HTMLAttributes: {
-            class: 'text-primary underline cursor-pointer',
+            class: 'text-primary-ink underline cursor-pointer',
           },
         }),
         TaskList.configure({

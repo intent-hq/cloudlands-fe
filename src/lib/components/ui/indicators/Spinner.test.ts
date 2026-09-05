@@ -15,13 +15,20 @@ const spinnerSource = readFileSync(
 );
 
 describe('Spinner', () => {
+  it('defaults to the pulse spinner used by streaming reasoning', () => {
+    render(Spinner);
+    const spinner = screen.getByRole('status', { name: 'Loading' });
+    expect(spinner.getAttribute('data-variant')).toBe('pulse');
+    expect(spinner.querySelectorAll('.spinner-tile')).toHaveLength(3);
+  });
+
   it('preserves its public props and loading status semantics', () => {
     render(Spinner, {
-      props: { seed: 'agent-1', size: 8, gap: 2, variant: 'shuffle', class: 'custom-spinner' },
+      props: { seed: 'agent-1', size: 8, gap: 2, class: 'custom-spinner' },
     });
     const spinner = screen.getByRole('status', { name: 'Loading' });
     expect(spinner.getAttribute('data-seed')).toBe('agent-1');
-    expect(spinner.getAttribute('data-variant')).toBe('shuffle');
+    expect(spinner.getAttribute('data-variant')).toBe('pulse');
     expect(spinner.getAttribute('style')).toContain('--spinner-size: 8px');
     expect(spinner.className).toContain('custom-spinner');
     expect(spinner.querySelectorAll('.spinner-tile')).toHaveLength(3);
@@ -51,41 +58,14 @@ describe('Spinner', () => {
     }
   });
 
-  it('keeps every public variant on a distinct animation behavior', () => {
-    const variants = ['wave', 'stair', 'snake', 'shuffle', 'pulse'] as const;
-    const animationNames = variants.map((variant) => {
-      const { container } = render(Spinner, { props: { variant } });
-      const spinner = container.querySelector<HTMLElement>('[role="status"]');
-      return spinner?.style.getPropertyValue('--spinner-animation-name');
-    });
-
-    expect(animationNames).toEqual(variants.map((variant) => `spinner-${variant}`));
-    expect(new Set(animationNames).size).toBe(variants.length);
-    expect(spinnerSource).toContain('animation-name: var(--spinner-animation-name)');
-    const animationBodies = animationNames.map((animationName) => {
-      const start = spinnerSource.indexOf(`@keyframes ${animationName}`);
-      const nextKeyframes = spinnerSource.indexOf('\n  @keyframes ', start + 1);
-      const reducedMotion = spinnerSource.indexOf('\n  @media ', start + 1);
-      const end = nextKeyframes === -1 ? reducedMotion : nextKeyframes;
-
-      expect(start).toBeGreaterThan(-1);
-      expect(end).toBeGreaterThan(start);
-      return spinnerSource.slice(start, end).replace(/\s+/g, ' ').trim();
-    });
-    for (const animationName of animationNames) {
-      expect(spinnerSource).toContain(`@keyframes ${animationName}`);
-    }
-    expect(new Set(animationBodies).size).toBe(variants.length);
-  });
-
-  it('restores the square thinking tiles with semantic colors and reduced-motion parity', () => {
+  it('uses semantic colors and reduced-motion parity', () => {
     expect(spinnerSource).toContain("'hsl(var(--primary))'");
     expect(spinnerSource).toContain("'hsl(var(--info))'");
     expect(spinnerSource).toContain("'hsl(var(--muted-foreground))'");
     expect(spinnerSource).toContain('background: var(--spinner-color-1)');
     expect(spinnerSource).toContain('class="spinner-tile spinner-tile-primary"');
     expect(spinnerSource).toContain('animation-timing-function: step-start');
-    expect(spinnerSource).toContain('transform: translateY(-90%)');
+    expect(spinnerSource).toContain('@keyframes spinner-pulse');
     expect(spinnerSource).not.toContain('border-radius: var(--radius-full)');
     expect(spinnerSource).toMatch(/prefers-reduced-motion: reduce[\s\S]*animation: none/);
     expect(spinnerSource).not.toContain('dark:');
@@ -106,15 +86,16 @@ describe('Spinner', () => {
     });
     expect(spinnerFixtures[0].states).toEqual(
       expect.arrayContaining([
-        'wave',
-        'stair',
-        'snake',
-        'shuffle',
+        'intent-mark',
+        'bloom',
         'pulse',
         'seeded-colors',
         'zoom-200',
         'reduced-motion',
       ]),
+    );
+    expect(spinnerFixtures[0].states).not.toEqual(
+      expect.arrayContaining(['path', 'wave', 'stair', 'snake', 'shuffle']),
     );
   });
 });

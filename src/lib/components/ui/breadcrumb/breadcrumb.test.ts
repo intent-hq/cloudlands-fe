@@ -40,6 +40,8 @@ describe('Breadcrumb', () => {
     const link = getByRole('link', { name: 'Projects' });
     expect(link.className).toContain('focus-visible:ring-2');
     expect(link.className).toContain('focus-visible:ring-ring/40');
+    expect(link.className).toContain('hover:bg-hover');
+    expect(link.className).toContain('duration-spring-fast');
     expect(link.className).toContain('motion-reduce:transition-none');
   });
 

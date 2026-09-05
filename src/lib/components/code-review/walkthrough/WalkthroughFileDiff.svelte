@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * WalkthroughFileDiff
    *
@@ -8,7 +9,7 @@
    * - Subtle styling without harsh stripes
    * - Proper syntax highlighting (highlights entire hunks for context)
    */
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import Fa from 'svelte-fa';
   import { faChevronDown, faChevronLeft, faEllipsisH } from '@fortawesome/free-solid-svg-icons';
   import hljs from 'highlight.js';
@@ -400,7 +401,7 @@
 <div class="walkthrough-file-diff overflow-hidden bg-card {className}">
   <!-- File header -->
   <div class="flex flex-col border-b border-border">
-    <button
+    <Button
       type="button"
       class="w-full flex items-center gap-2 px-4 py-3 hover:bg-muted/30 transition-colors text-left group"
       onclick={toggleFileCollapsed}
@@ -431,7 +432,7 @@
           >
         {/if}
       </div>
-    </button>
+    </Button>
 
     <!-- File description (if provided) -->
     {#if fileDescription}
@@ -443,7 +444,7 @@
 
   <!-- Preview when collapsed -->
   {#if isFileCollapsed && previewLines.length > 0}
-    <div class="border-t border-border" transition:slide={{ duration: 150 }}>
+    <div class="border-t border-border" transition:slide={{ tier: 'moderate' }}>
       <div class="font-mono text-xs leading-relaxed opacity-60">
         {#each previewLines as { line, hunkIndex, lineIndex } (`preview-${hunkIndex}-${lineIndex}`)}
           <div class="flex {getLineBgClass(line)}">
@@ -463,7 +464,7 @@
           </div>
         {/each}
         {#if totalChangedLines > previewLines.length}
-          <button
+          <Button
             type="button"
             class="w-full py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors text-center"
             onclick={toggleFileCollapsed}
@@ -471,7 +472,7 @@
             {m.codeReview_fileDiff_moreLines_label({
               count: totalChangedLines - previewLines.length,
             })}
-          </button>
+          </Button>
         {/if}
       </div>
     </div>
@@ -479,28 +480,28 @@
 
   <!-- Diff content -->
   {#if !isFileCollapsed}
-    <div class="relative" transition:slide={{ duration: 150 }}>
+    <div class="relative" transition:slide={{ tier: 'moderate' }}>
       <!-- Toolbar when there are hidden lines -->
       {#if hasHiddenLines}
         <div
           class="flex items-center justify-end gap-2 px-3 py-1.5 bg-muted/20 border-b border-border text-xs"
         >
-          <button
+          <Button
             type="button"
             class="text-muted-foreground hover:text-foreground transition-colors"
             onclick={expandAll}
           >
             {m.codeReview_fileDiff_expandAll_label()}
-          </button>
+          </Button>
           {#if expandedRanges.size > 0}
             <span class="text-subtle">·</span>
-            <button
+            <Button
               type="button"
               class="text-muted-foreground hover:text-foreground transition-colors"
               onclick={collapseToDefault}
             >
               {m.codeReview_fileDiff_collapse_label()}
-            </button>
+            </Button>
           {/if}
         </div>
       {/if}
@@ -513,7 +514,7 @@
 
             <!-- Gap indicator at start of hunk -->
             {#if gapAtStart}
-              <button
+              <Button
                 type="button"
                 class="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors border-b border-border"
                 onclick={() => expandRange(hunkIndex, gapAtStart.startIndex, gapAtStart.endIndex)}
@@ -521,7 +522,7 @@
                 <Fa icon={faChevronDown} class="h-2.5 w-2.5" />
                 <span>{m.codeReview_fileDiff_showHidden_label({ count: gapAtStart.count })}</span>
                 <Fa icon={faChevronDown} class="h-2.5 w-2.5" />
-              </button>
+              </Button>
             {/if}
 
             {#each hunk.lines as line, lineIndex (`${hunkIndex}-${lineIndex}`)}
@@ -561,21 +562,21 @@
 
                     <!-- Comment button (show on hover) -->
                     {#if onSendMessage}
-                      <button
+                      <Button
                         type="button"
-                        class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-primary transition-all shrink-0"
+                        class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-primary-ink transition-all shrink-0"
                         onclick={() => handleOpenComment(lineKey)}
                         title={m.codeReview_fileDiff_askLine_tooltip()}
                       >
                         <Fa icon={faEllipsisH} class="h-3 w-3" />
-                      </button>
+                      </Button>
                     {/if}
                   </div>
                 </div>
 
                 <!-- Inline annotations for this line (using comment thread component) -->
                 {#each lineAnnotations as ann, annIdx (`${ann.line}-${annIdx}`)}
-                  <div class="ml-20" transition:slide={{ duration: 150 }}>
+                  <div class="ml-20" transition:slide={{ tier: 'moderate' }}>
                     <WalkthroughCommentThread
                       annotation={ann}
                       lineNumber={line.newNum ?? line.oldNum ?? 0}
@@ -589,7 +590,7 @@
 
                 <!-- Inline comment input (for lines without annotations) -->
                 {#if isCommentOpen && lineAnnotations.length === 0}
-                  <div class="ml-20 border-l-2 border-primary/50 bg-muted/20">
+                  <div class="ml-20 border-l-2 border-primary-ink/50 bg-muted/20">
                     <div class="p-3">
                       <WalkthroughInlineComment
                         lineNumber={line.newNum ?? line.oldNum ?? 0}
@@ -604,7 +605,7 @@
 
                 <!-- Gap indicator after this line -->
                 {#if gapAfter}
-                  <button
+                  <Button
                     type="button"
                     class="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors border-y border-border bg-muted/10"
                     onclick={() => expandRange(hunkIndex, gapAfter.startIndex, gapAfter.endIndex)}
@@ -612,7 +613,7 @@
                     <Fa icon={faEllipsisH} class="h-2.5 w-2.5" />
                     <span>{m.codeReview_fileDiff_showHidden_label({ count: gapAfter.count })}</span>
                     <Fa icon={faEllipsisH} class="h-2.5 w-2.5" />
-                  </button>
+                  </Button>
                 {/if}
               {/if}
             {/each}

@@ -125,7 +125,7 @@ describe('PanelEmptyState', () => {
       expect(button.className).not.toContain('shadow');
       expect(button.className).not.toContain('hover:bg-');
     }
-    expect(creationButtons[0].parentElement?.className).toContain('creation-grid');
+    expect(creationButtons[0].closest('.creation-grid')).not.toBeNull();
     expect(screen.getByRole('button', { name: /^New panel/i }).className).not.toContain(
       'creation-card',
     );

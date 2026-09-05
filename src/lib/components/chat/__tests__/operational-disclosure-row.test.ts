@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { spring } from '$lib/motion';
 import type { ContentBlock, ToolUseBlock } from '$shared/types';
 
 vi.mock('$store/renderer/store', async () => {
@@ -176,7 +177,9 @@ describe('shared operational disclosure-row contract', () => {
       'matchMedia',
       vi.fn(() => ({ matches: false })),
     );
-    expect(safeOperationalDetailsTransition(document.createElement('div')).duration).toBe(150);
+    expect(safeOperationalDetailsTransition(document.createElement('div')).duration).toBe(
+      spring.moderate.settleMs,
+    );
   });
 
   it('renders the same body-sized tone, geometry, and narrow containment across all consumers', () => {
@@ -340,9 +343,10 @@ describe('shared operational disclosure-row contract', () => {
     cleanup();
 
     render(ThinkingBlock, { props: { content: 'Thinking', isStreaming: true } });
-    const brain = screen.getByTestId('reasoning-tool-call').querySelector('[data-icon="brain"]')!;
-    expectClasses(brain, CHAT_OPERATIONAL_ICON_CLASS);
-    expect(brain.className).toContain('animate-pulse');
+    const reasoning = screen.getByTestId('reasoning-tool-call');
+    const spinner = within(reasoning).getByRole('status', { name: 'Loading' });
+    expect(spinner.getAttribute('data-variant')).toBe('pulse');
+    expect(reasoning.querySelector('[data-icon="brain"]')).toBeNull();
     cleanup();
 
     const group = render(ResponseGroup, {

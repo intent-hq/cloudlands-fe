@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { Button } from '$lib/components/ui/button';
   import mermaid from 'mermaid';
   import elkLayouts from '@mermaid-js/layout-elk';
 
@@ -229,14 +230,14 @@
         {@html renderedSvg}
       </div>
       {#if showExpandButton}
-        <button
+        <Button
           class="expand-button"
           onclick={openFullscreen}
           title={m.markdown_mermaid_expand_tooltip()}
           aria-label={m.markdown_mermaid_expand_ariaLabel()}
         >
           <Fa icon={faExpand} size="sm" />
-        </button>
+        </Button>
       {/if}
     </div>
   {:else if !code?.trim()}
@@ -282,7 +283,7 @@
     border-radius: 0.5rem;
   }
 
-  .mermaid-svg-container:hover .expand-button {
+  .mermaid-svg-container:hover :global(.expand-button) {
     opacity: 1;
   }
 
@@ -431,7 +432,7 @@
     width: 20px;
     height: 20px;
     border: 2px solid hsl(var(--muted));
-    border-top-color: hsl(var(--primary));
+    border-top-color: hsl(var(--primary-ink));
     animation: spin 0.8s linear infinite;
   }
 

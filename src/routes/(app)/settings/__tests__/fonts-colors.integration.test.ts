@@ -125,16 +125,16 @@ describe('Fonts & Colors settings migration', () => {
     const recorder = installDispatchRecorder();
     try {
       renderFontsColors();
-      const light = screen.getByRole('button', { name: 'Light' });
-      const dark = screen.getByRole('button', { name: 'Dark' });
-      expect(light.getAttribute('aria-pressed')).toBe('true');
+      const light = screen.getByRole('radio', { name: 'Light' });
+      const dark = screen.getByRole('radio', { name: 'Dark' });
+      expect(light.getAttribute('aria-checked')).toBe('true');
       await fireEvent.click(dark);
 
       await fireEvent.click(
-        within(document.getElementById('note-font')!).getByRole('button', { name: 'Mono' }),
+        within(document.getElementById('note-font')!).getByRole('radio', { name: 'Mono' }),
       );
       await fireEvent.click(
-        within(document.getElementById('agent-chat-font')!).getByRole('button', { name: 'Mono' }),
+        within(document.getElementById('agent-chat-font')!).getByRole('radio', { name: 'Mono' }),
       );
 
       const codeFont = document.querySelector<HTMLElement>('[data-select-trigger]')!;

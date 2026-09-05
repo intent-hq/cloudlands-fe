@@ -49,7 +49,7 @@
   <div class="divide-y divide-border">
     {#each items as item (item.id)}
       {@const checked = selectedIds.includes(item.id)}
-      <div class="flex items-start gap-3 px-3 py-2.5" class:opacity-60={item.disabled || disabled}>
+      <div class="flex items-center gap-3 px-3 py-2.5" class:opacity-60={item.disabled || disabled}>
         <Checkbox
           {checked}
           disabled={item.disabled || disabled}
@@ -77,7 +77,9 @@
                 <span class="font-medium">{m.chat_shared_before_label()}</span>
                 {formatValue(item.before)}
               </div>
-              <div class="min-w-0 break-words rounded-md bg-primary/10 px-2 py-1 text-foreground">
+              <div
+                class="min-w-0 break-words rounded-(--radius-small) border border-primary-ink/30 bg-accent/60 px-2 py-1 text-accent-foreground"
+              >
                 <span class="font-medium">{m.chat_shared_after_label()}</span>
                 {formatValue(item.after)}
               </div>

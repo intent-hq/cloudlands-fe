@@ -34,7 +34,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onDestroy } from 'svelte';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('BranchSelector');
@@ -1418,7 +1418,7 @@
     <Select.Root bind:value={internalSelectedBranch} bind:open={isOpen}>
       <Select.Trigger
         {variant}
-        class={`w-full text-muted-foreground ${triggerClass} ${githubAuthNeeded === 'not-authenticated' ? 'ring-1 ring-orange-400 rounded-sm' : suggestedBranch && suggestedBranch !== internalSelectedBranch ? 'ring-1 ring-primary rounded-sm' : ''}`}
+        class={`w-full text-muted-foreground ${triggerClass} ${githubAuthNeeded === 'not-authenticated' ? 'ring-1 ring-orange-400 rounded-sm' : suggestedBranch && suggestedBranch !== internalSelectedBranch ? 'ring-1 ring-primary-ink rounded-sm' : ''}`}
       >
         <div class={`flex items-center truncate min-w-0 ${triggerContentClass}`}>
           {#if githubAuthNeeded === 'not-authenticated'}
@@ -1450,7 +1450,7 @@
           </span>
           <!-- Branch status indicators -->
           {#if showUncommittedIndicator && !skipIsolation && selectedBranch && repoType === 'local' && !branchStatusIsLoading && branchStatusHasUncommittedChanges && isCurrentBranch}
-            <div class="flex-0 flex flex-col" transition:slide={{ axis: 'x', duration: 150 }}>
+            <div class="flex-0 flex flex-col" transition:slide={{ axis: 'x', tier: 'moderate' }}>
               <Tooltip
                 content={m.workspace_branchSelector_uncommittedChanges_tooltip()}
                 side="bottom"
@@ -1482,17 +1482,17 @@
 
         <!-- Suggested PR branch -->
         {#if suggestedBranch && suggestedBranch !== internalSelectedBranch}
-          <button
+          <Button
             type="button"
             class="mx-2 mb-2 px-3 py-2 flex items-center gap-2 text-sm text-left rounded-md bg-primary/10 hover:bg-primary/15 border border-primary/20 transition-colors cursor-pointer"
             onclick={() => selectBranch(suggestedBranch)}
           >
-            <GitBranchIcon size={14} class="text-primary shrink-0" />
+            <GitBranchIcon size={14} class="text-primary-ink shrink-0" />
             <span class="flex-1 min-w-0">
               <span class="text-subtle">{m.workspace_branchSelector_usePrBranch_label()}</span>
               <strong class="text-foreground ml-1 truncate">{suggestedBranch}</strong>
             </span>
-          </button>
+          </Button>
         {/if}
 
         <div class="px-2 pb-1 pt-1 sticky -top-1 bg-background z-10">
@@ -1528,7 +1528,7 @@
         {#if selectedBranch && repoType === 'local' && (branchStatusBehind > 0 || (showUncommittedIndicator && !skipIsolation && branchStatusHasUncommittedChanges && isCurrentBranch))}
           <div
             class="mx-2 mb-1 px-3 py-2 text-sm text-subtle"
-            transition:slide={{ axis: 'y', duration: 150 }}
+            transition:slide={{ axis: 'y', tier: 'moderate' }}
           >
             {#if branchStatusBehind > 0}
               <p>{m.workspace_branchSelector_pullLatest_description()}</p>
@@ -1546,7 +1546,7 @@
         <div class="overflow-y-auto flex-1 pt-2">
           {#if githubAuthNeeded === 'not-authenticated' && !isConnectingGitHub}
             <!-- Connect with GitHub prompt for private repos -->
-            <button
+            <Button
               type="button"
               class="w-full px-3 py-3 flex items-center gap-3 hover:bg-muted/50 transition-colors cursor-pointer text-left border-l-2 border-primary bg-primary/5"
               onclick={handleConnectGitHub}
@@ -1564,7 +1564,7 @@
                   {m.workspace_branchSelector_connectWithGithub_description()}
                 </p>
               </div>
-            </button>
+            </Button>
           {:else if isConnectingGitHub}
             <!-- Connecting to GitHub -->
             <div class="px-3 py-3 flex items-center gap-3 border-l-2 border-primary bg-primary/5">
@@ -1641,7 +1641,7 @@
                         >
                       {/if}
                       {#if branch === selectedBranch}
-                        <Fa icon={faCheck} class="text-primary" size="sm" />
+                        <Fa icon={faCheck} class="text-primary-ink" size="sm" />
                       {/if}
                     </div>
                   </Button>
@@ -1667,7 +1667,7 @@
                   </Button>
 
                   {#if !dependabotBranchesCollapsed}
-                    <div class="ml-2" transition:slide={{ axis: 'y' }}>
+                    <div class="ml-2" transition:slide={{ axis: 'y', tier: 'moderate' }}>
                       {#each dependabotBranches as branch (branch)}
                         <Button
                           variant="ghost"
@@ -1679,7 +1679,7 @@
                             >{branch.replace('dependabot/', '')}</span
                           >
                           {#if branch === selectedBranch}
-                            <Fa icon={faCheck} class="text-primary" size="sm" />
+                            <Fa icon={faCheck} class="text-primary-ink" size="sm" />
                           {/if}
                         </Button>
                       {/each}
@@ -1699,7 +1699,7 @@
                     <Fa
                       icon={faChevronDown}
                       size={10}
-                      class="mr-1 opacity-50 transition-transform duration-200 {workspaceBranchesCollapsed
+                      class="mr-1 opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {workspaceBranchesCollapsed
                         ? 'rotate-90'
                         : ''}"
                     />
@@ -1712,7 +1712,7 @@
                   </Button>
 
                   {#if !workspaceBranchesCollapsed}
-                    <div class="ml-6" transition:slide={{ axis: 'y' }}>
+                    <div class="ml-6" transition:slide={{ axis: 'y', tier: 'moderate' }}>
                       {#each workspaceBranches as branch (branch)}
                         <Button
                           variant="ghost"
@@ -1722,7 +1722,7 @@
                           <GitBranchIcon size={14} class="text-ghost shrink-0" />
                           <span class="text-sm truncate flex-1">{branch}</span>
                           {#if branch === selectedBranch}
-                            <Fa icon={faCheck} class="text-primary" size="sm" />
+                            <Fa icon={faCheck} class="text-primary-ink" size="sm" />
                           {/if}
                         </Button>
                       {/each}
@@ -1742,7 +1742,7 @@
                     <Fa
                       icon={faChevronDown}
                       size={10}
-                      class="mr-1 opacity-50 transition-transform duration-200 {showRemoteBranches
+                      class="mr-1 opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {showRemoteBranches
                         ? ''
                         : 'rotate-90'}"
                     />
@@ -1756,7 +1756,7 @@
                   </Button>
 
                   {#if showRemoteBranches}
-                    <div class="ml-4" transition:slide={{ axis: 'y' }}>
+                    <div class="ml-4" transition:slide={{ axis: 'y', tier: 'moderate' }}>
                       {#if isLoadingRemote}
                         <div class="px-2 py-2 space-y-2">
                           {#each [1, 2, 3] as { }}
@@ -1779,7 +1779,7 @@
                               >{branch.replace(/^origin\//, '')}</span
                             >
                             {#if branch === selectedBranch}
-                              <Fa icon={faCheck} class="text-primary" size="sm" />
+                              <Fa icon={faCheck} class="text-primary-ink" size="sm" />
                             {/if}
                           </Button>
                         {/each}
@@ -1817,7 +1817,7 @@
         <!-- Use current branch option (no isolated checkout) -->
         {#if typeof onSkipIsolationChange === 'function' && currentBranch}
           <div class="px-2 pt-2 pb-3 border-t border-border sticky -bottom-1 bg-background">
-            <button
+            <Button
               onclick={() => {
                 const enabling = !skipIsolation;
                 try {
@@ -1853,7 +1853,7 @@
                 {workDirectlyParts[0]}<span class="font-semibold">{currentBranch}</span
                 >{workDirectlyParts[1]}
               </div>
-            </button>
+            </Button>
             <div class="ml-9 text-sm text-subtle">
               {m.workspace_branchSelector_stayInFolder_description({ isolationLabel })}
             </div>

@@ -9,6 +9,7 @@
    * the PR in the external browser (metadata `url` first, GitHub fallback).
    */
   import Fa from 'svelte-fa';
+  import { Button } from '$lib/components/ui/button';
   import { faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import {
@@ -58,14 +59,15 @@
   data-testid="pr-monitor-wake-attribution"
 >
   <Fa icon={faCodePullRequest} class="w-3 h-3 text-ghost" />
-  <button
+  <Button
     type="button"
+    variant="link"
     class="min-w-0 break-words text-left text-foreground font-medium hover:underline cursor-pointer"
     data-testid="pr-monitor-wake-chip"
     title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
     onclick={handleOpenPr}
   >
     {chipLabel}
-  </button>
+  </Button>
   <span class="text-subtle">{m.chat_prMonitorWakeAttribution_wokeAgent_after()}</span>
 </div>

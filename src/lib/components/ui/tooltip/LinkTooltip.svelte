@@ -5,6 +5,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { parseGitHubIssueOrPrUrl } from '$shared/utils/link-helpers';
   import GitHubLinkCard from './GitHubLinkCard.svelte';
+  import { crispOut, springIn } from '$lib/motion';
 
   const isMac = isMacPlatform();
   const modifierKey = isMac ? '⌘' : 'Ctrl';
@@ -63,6 +64,8 @@
       role="tooltip"
       bind:offsetWidth={tooltipWidth}
       bind:offsetHeight={tooltipHeight}
+      in:springIn={{ tier: 'fast', y: 4, scale: 0.96 }}
+      out:crispOut={{ tier: 'fast' }}
     >
       {#if cardPreview}
         <GitHubLinkCard url={tooltip.url} preview={cardPreview} />
@@ -91,7 +94,6 @@
     box-shadow: var(--elevation-overlay);
     font-size: 12px;
     line-height: 1.4;
-    animation: link-tooltip-in var(--motion-fast) var(--ease-emphasized-out);
   }
 
   :global(.link-tooltip--card) {
@@ -106,7 +108,6 @@
 
   :global(.link-tooltip--below) {
     transform: translateX(-50%);
-    animation-name: link-tooltip-in-below;
   }
 
   /* Inline rendering (sandbox): no fixed positioning or entrance motion. */
@@ -180,33 +181,5 @@
     font-size: 11px;
     opacity: 0.6;
     white-space: nowrap;
-  }
-
-  @keyframes -global-link-tooltip-in {
-    from {
-      opacity: 0;
-      transform: translateX(-50%) translateY(-100%) translateY(4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(-50%) translateY(-100%);
-    }
-  }
-
-  @keyframes -global-link-tooltip-in-below {
-    from {
-      opacity: 0;
-      transform: translateX(-50%) translateY(-4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(-50%);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    :global(.link-tooltip) {
-      animation: none;
-    }
   }
 </style>

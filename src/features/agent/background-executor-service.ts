@@ -108,16 +108,16 @@ function isCurrentGeneration(
 }
 
 /** Lazily pull the toast lib so this middleware-reachable module stays light. */
-let toastPromise: Promise<(typeof import('svelte-sonner'))['toast']> | null = null;
+let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null = null;
 function getToast() {
-  if (!toastPromise) toastPromise = import('svelte-sonner').then((module) => module.toast);
+  if (!toastPromise) toastPromise = import('$lib/components/patterns/notify').then((module) => module.notify);
   return toastPromise;
 }
 
 async function showErrorToast(message: string, description: string): Promise<void> {
   try {
-    const toast = await getToast();
-    toast.error(message, { description, duration: 5000 });
+    const notify = await getToast();
+    notify.error(message, { description, duration: 5000 });
   } catch (error) {
     logger.warn('Failed to show background-executor toast', { error });
   }

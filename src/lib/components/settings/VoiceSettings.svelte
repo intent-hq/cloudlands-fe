@@ -1,11 +1,10 @@
 <script lang="ts">
+  import { Button, Input, Select } from '$lib/components/patterns/settings/custom-controls';
   import { onMount } from 'svelte';
   import { faCheck, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { faApple } from '@fortawesome/free-brands-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
-  import { Select } from '$lib/components/ui/select';
-  import Input from '$lib/components/ui/input/input.svelte';
   import ElevenLabsIcon from '$lib/components/icons/ElevenLabsIcon.svelte';
   import OpenAIIcon from '$lib/components/icons/OpenAIIcon.svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -291,39 +290,39 @@
                 <span class="text-subtle">{m.settings_voice_saving()}</span>
               {:else}
                 {#if !isDefault && $keyConfigured$[target]}
-                  <button
+                  <Button
                     type="button"
                     class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
                     onclick={() => handleSetProviderDefault(target)}
                   >
                     {m.settings_voice_setDefault()}
-                  </button>
+                  </Button>
                   <span class="text-ghost">·</span>
                 {/if}
                 {#if $keyConfigured$[target]}
-                  <button
+                  <Button
                     type="button"
                     class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
                     onclick={() => handleShowKeyInput(target)}
                   >
                     {m.settings_voice_replaceKey()}
-                  </button>
+                  </Button>
                   <span class="text-ghost">·</span>
-                  <button
+                  <Button
                     type="button"
                     class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
                     onclick={() => handleClearApiKey(target)}
                   >
                     {m.settings_voice_clearKey()}
-                  </button>
+                  </Button>
                 {:else}
-                  <button
+                  <Button
                     type="button"
-                    class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+                    class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium"
                     onclick={() => handleShowKeyInput(target)}
                   >
                     {m.settings_voice_setKey()}
-                  </button>
+                  </Button>
                 {/if}
               {/if}
             </div>
@@ -345,21 +344,21 @@
                     if (e.key === 'Escape') handleCancelKeyInput();
                   }}
                 />
-                <button
+                <Button
                   type="button"
-                  class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium text-xs"
+                  class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium text-xs"
                   onclick={() => handleSubmitApiKey(target)}
                   disabled={!apiKeyDraft.trim()}
                 >
                   {m.settings_voice_save()}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors text-xs"
                   onclick={handleCancelKeyInput}
                 >
                   {m.settings_voice_cancel()}
-                </button>
+                </Button>
               </div>
               <p class="text-xs text-subtle">
                 {m.settings_voice_apiKeyStorageNote()}
@@ -417,14 +416,14 @@
           </div>
           <div class="flex items-center gap-2 text-xs shrink-0">
             {#if !isOsDefault}
-              <button
+              <Button
                 type="button"
                 class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 onclick={handleSetOsDefault}
                 disabled={!$osEngineAvailable$}
               >
                 {m.settings_voice_setDefault()}
-              </button>
+              </Button>
             {/if}
           </div>
         </div>
@@ -536,14 +535,14 @@
                     if (e.key === 'Enter') handleAddVocabularyTerm();
                   }}
                 />
-                <button
+                <Button
                   type="button"
-                  class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium text-xs"
+                  class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium text-xs"
                   onclick={handleAddVocabularyTerm}
                   disabled={!vocabularyDraft.trim()}
                 >
                   {m.settings_voice_vocabulary_add()}
-                </button>
+                </Button>
               </div>
               {#if vocabularyDraftError}
                 <p class="text-xs text-danger">{vocabularyDraftError}</p>
@@ -555,14 +554,14 @@
                       class="inline-flex items-center gap-1 rounded-full bg-muted/50 px-2 py-0.5 text-xs text-foreground"
                     >
                       {term}
-                      <button
+                      <Button
                         type="button"
                         class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
                         aria-label={m.settings_voice_vocabulary_remove_ariaLabel({ term })}
                         onclick={() => handleRemoveVocabularyTerm(term)}
                       >
                         <Fa icon={faXmark} class="w-2.5 h-2.5" />
-                      </button>
+                      </Button>
                     </span>
                   {/each}
                 </div>

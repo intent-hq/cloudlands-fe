@@ -27,7 +27,7 @@
   } from '$store/renderer/slices/workspace/workspace-slice';
 
   import { Button } from '$lib/components/ui/button';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { isDaemonManagedRepoPath } from '$lib/components/workspace/initializer/recent-repo-display';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import type { PostMergeState } from '$store/renderer/slices/git/git-types';
@@ -78,7 +78,7 @@
     if (currentWorkspaceId) {
       const archiveResult = await workspaceClient.archive(currentWorkspaceId);
       if (!archiveResult.ok) {
-        toast.error(m.workspace_postMerge_archiveFailed_error());
+        notify.error(m.workspace_postMerge_archiveFailed_error());
         return;
       }
       appStore.dispatch(loadWorkspacesRequested());
@@ -138,7 +138,7 @@
             hasResetToTrunk: true,
           });
 
-          toast.success(m.workspace_postMerge_resetSuccess_label());
+          notify.success(m.workspace_postMerge_resetSuccess_label());
         } catch (uiError) {
           console.error('Failed to refresh UI after workspace reset:', uiError);
           dispatchPostMergeUpdate({
@@ -147,7 +147,7 @@
             isContentMergedToTrunk: false,
             hasResetToTrunk: true,
           });
-          toast.success(m.workspace_postMerge_resetSuccessReload_label());
+          notify.success(m.workspace_postMerge_resetSuccessReload_label());
         }
 
         // If workspace was archived, unarchive it so the user can continue working
@@ -162,10 +162,10 @@
           });
         }
       } else {
-        toast.error(result.error || m.workspace_postMerge_resetFailed_error());
+        notify.error(result.error || m.workspace_postMerge_resetFailed_error());
       }
     } catch {
-      toast.error(m.workspace_postMerge_resetFailed_error());
+      notify.error(m.workspace_postMerge_resetFailed_error());
     } finally {
       appStore.dispatch(setGitOperationFlag(workspaceId, 'isResettingToTrunk', false));
     }
@@ -187,7 +187,7 @@
           <Fa icon={faSpinner} size="sm" class="animate-spin text-ghost" />
           <span>{m.workspace_postMerge_resetting_label()}</span>
         {:else}
-          <Fa icon={faRotateLeft} size="sm" class="text-primary" />
+          <Fa icon={faRotateLeft} size="sm" class="text-primary-ink" />
           <span>{m.workspace_postMerge_resetAndContinue_label()}</span>
         {/if}
       </Button>
@@ -200,7 +200,7 @@
     <!-- Archive and start new space button -->
     <div>
       <Button variant="outline" size="sm" class="w-full gap-2" onclick={handleStartNewSpace}>
-        <Fa icon={faRocket} size="sm" class="text-primary" />
+        <Fa icon={faRocket} size="sm" class="text-primary-ink" />
         <span>{m.workspace_postMerge_archiveStartNew_label()}</span>
       </Button>
       <p class="text-xs text-subtle text-center mt-2">

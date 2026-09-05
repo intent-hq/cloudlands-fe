@@ -37,8 +37,8 @@ vi.mock('$lib/constants/specialists', () => ({
     },
   ],
 }));
-vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
-vi.mock('$lib/components/ui/toast', () => ({ toast: { error: mocks.toastError } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
 
 import { settingsChanged } from '../../settings-events/settings-events-slice';
 import {

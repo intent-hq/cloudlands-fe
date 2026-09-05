@@ -171,8 +171,8 @@ vi.mock('$store/renderer/store', () => ({
   store: { dispatch: vi.fn(), state: {} },
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
 vi.mock('svelte-fa', async () => {

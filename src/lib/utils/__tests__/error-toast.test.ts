@@ -8,7 +8,7 @@ const {
   selectWorkspaceByIdMock,
   selectCurrentWorkspaceTabIdMock,
   selectSelectedModelMock,
-  toastCustomMock,
+  appErrorMock,
 } = vi.hoisted(() => ({
   dismissMock: vi.fn(),
   dispatchMock: vi.fn(),
@@ -17,19 +17,15 @@ const {
   selectWorkspaceByIdMock: vi.fn(),
   selectCurrentWorkspaceTabIdMock: vi.fn(),
   selectSelectedModelMock: vi.fn(),
-  toastCustomMock: vi.fn(),
+  appErrorMock: vi.fn(),
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: {
-    custom: toastCustomMock,
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
+    appError: appErrorMock,
     error: vi.fn(),
     success: vi.fn(),
   },
-}));
-
-vi.mock('$lib/components/ui/toast/ErrorToast.svelte', () => ({
-  default: 'ErrorToast',
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -95,8 +91,8 @@ describe('showErrorToast', () => {
 
     showErrorToast(error);
 
-    const [, options] = toastCustomMock.mock.calls[0];
-    await options.componentProps.onDebug();
+    const [props] = appErrorMock.mock.calls[0];
+    await props.onDebug();
 
     expect(selectSelectedModelMock).toHaveBeenCalledWith(legacyState);
     expect(dispatchMock).toHaveBeenCalledWith(
@@ -133,7 +129,7 @@ describe('showErrorToast', () => {
       recoverable: false,
     } as any);
 
-    const [, options] = toastCustomMock.mock.calls[0];
+    const [, options] = appErrorMock.mock.calls[0];
     expect(options.class).toBe(expectedClass);
   });
 });

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import js from '@eslint/js';
 import typescript from '@typescript-eslint/eslint-plugin';
@@ -8,11 +9,23 @@ import unusedImports from 'eslint-plugin-unused-imports';
 import { svelte as themisFullConfig } from '@augmentcode/themis/eslint-plugins';
 import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-import.js';
 import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-data-fetch.js';
+import { designSystemRules } from './eslint-rules/design-system/index.js';
+
+const designSystemBaseline = JSON.parse(
+  readFileSync(new URL('./eslint-rules/design-system/baseline.json', import.meta.url), 'utf8'),
+);
+const designSystemBaselineOverrides = Object.entries(designSystemBaseline).flatMap(
+  ([rule, exceptions]) => {
+    const files = exceptions.flatMap((exception) => exception.files);
+    return files.length > 0 ? [{ files, rules: { [`intent/${rule}`]: 'off' } }] : [];
+  },
+);
 
 const intentPlugin = {
   rules: {
     'no-component-async-data-fetch': noComponentAsyncDataFetchRule,
     'no-production-dynamic-import': noProductionDynamicImportRule,
+    ...designSystemRules,
   },
 };
 
@@ -600,6 +613,23 @@ export default [
       'max-lines': ['error', { max: 1200 }],
     },
   },
+  {
+    files: ['src/**/*.{js,mjs,ts,tsx,svelte}'],
+    ignores: productionModuleIgnores,
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-adhoc-transitions': 'error',
+      'intent/no-arbitrary-motion-or-color': 'error',
+      'intent/no-dialog-root-outside-patterns': 'error',
+      'intent/no-direct-toast': 'error',
+      'intent/no-native-dialogs': 'error',
+      'intent/no-raw-controls': 'error',
+      'intent/settings-use-schema': 'error',
+    },
+  },
+  ...designSystemBaselineOverrides,
   {
     files: ['**/*.svelte'],
     ignores: componentAsyncDataFetchBaselineIgnorePatterns,

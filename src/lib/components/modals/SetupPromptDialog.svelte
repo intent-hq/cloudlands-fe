@@ -73,7 +73,7 @@
       <!-- Header -->
       <div class="px-6 py-4 border-b border-border flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="text-primary">
+          <div class="text-primary-ink">
             <Fa icon={faWandMagicSparkles} size="lg" />
           </div>
           <h2 id="setup-prompt-title" class="text-lg font-semibold">

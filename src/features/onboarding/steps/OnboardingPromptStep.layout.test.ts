@@ -35,8 +35,8 @@ const placementMocks = vi.hoisted(() => ({ isRemote: false }));
 vi.mock('$lib/components/chat/input/attachment-placement', () => ({
   isRemoteBackend: () => placementMocks.isRemote,
 }));
-vi.mock('svelte-sonner', () => ({
-  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
 vi.mock('$lib/components/modals/SetupScriptModal.svelte', async () => ({
   default: (
@@ -299,8 +299,8 @@ describe('OnboardingPromptStep folder drop (path references, local daemon only)'
       expect(pills(result.container)).toHaveLength(1);
     });
     expect(pills(result.container)[0].dataset.name).toBe('my-folder');
-    const { toast } = await import('svelte-sonner');
-    expect(toast.error).not.toHaveBeenCalled();
+    const { notify } = await import('$lib/components/patterns/notify');
+    expect(notify.error).not.toHaveBeenCalled();
   });
 
   it('remote drop containing a folder rejects the WHOLE drop with one error toast', async () => {
@@ -318,9 +318,9 @@ describe('OnboardingPromptStep folder drop (path references, local daemon only)'
       ]),
     );
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     // Nothing attaches — not even the file in the same drop.
     expect(pills(result.container)).toHaveLength(0);
@@ -377,9 +377,9 @@ describe('OnboardingPromptStep folder drop (path references, local daemon only)'
       makeItemsDropEvent([{ file: folder, isDirectory: true }]),
     );
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     expect(pills(result.container)).toHaveLength(0);
   });

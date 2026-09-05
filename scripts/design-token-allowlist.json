@@ -18,15 +18,24 @@
     }
   ],
   "canonicalRaw": {
+    "src/lib/components/ui/ask-user-questions/ask-user-questions.svelte": {
+      "palette": 0,
+      "arbitrary": 24
+    },
     "src/lib/components/ui/badge/badge.svelte": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/badge/index.ts": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/button/button.svelte": { "palette": 0, "arbitrary": 7 },
+    "src/lib/components/ui/button/button.test.ts": { "palette": 0, "arbitrary": 3 },
+    "src/lib/components/ui/button/button.variants.ts": { "palette": 0, "arbitrary": 48 },
+    "src/lib/components/ui/button-group/button-group.svelte": { "palette": 0, "arbitrary": 1 },
+    "src/lib/components/ui/button-group/button-group.test.ts": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/button/index.ts": { "palette": 0, "arbitrary": 7 },
     "src/lib/components/ui/checkbox/checkbox.svelte": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/CollapsiblePanel.svelte": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/dialog/dialog-content.svelte": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/dropdown/Dropdown.svelte": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/EditableName.svelte": { "palette": 0, "arbitrary": 1 },
+    "src/lib/components/ui/file-input/file-input.test.ts": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/grouped-combobox/grouped-combobox.svelte": {
       "palette": 0,
       "arbitrary": 1
@@ -34,6 +43,18 @@
     "src/lib/components/ui/Header.svelte": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/ImageLightbox.svelte": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/MediaLightbox.svelte": { "palette": 0, "arbitrary": 1 },
+    "src/lib/components/ui/input-group/input-group.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/input/input.test.ts": { "palette": 0, "arbitrary": 1 },
+    "src/lib/components/ui/kbd/ShortcutChip.svelte": { "palette": 0, "arbitrary": 1 },
+    "src/lib/components/ui/message-composer/message-composer.svelte": {
+      "palette": 0,
+      "arbitrary": 6
+    },
+    "src/lib/components/ui/message-composer/queued-row.svelte": { "palette": 0, "arbitrary": 1 },
+    "src/lib/components/ui/message-composer/suggestion-row.svelte": {
+      "palette": 0,
+      "arbitrary": 1
+    },
     "src/lib/components/ui/NavigationButtons.svelte": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/PanelWrapper.svelte": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/scroll-area/scroll-area.svelte": { "palette": 0, "arbitrary": 1 },
@@ -46,6 +67,8 @@
     "src/lib/components/ui/sidebar/sidebar-menu-button.svelte": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/sidebar/sidebar-rail.svelte": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/sidebar/sidebar.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/text-entry.ts": { "palette": 0, "arbitrary": 3 },
+    "src/lib/components/ui/textarea/textarea.test.ts": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/toast/ErrorToast.svelte": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/toast/AgentFailureToast.svelte": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/toast/Toast.svelte": { "palette": 0, "arbitrary": 25 },
@@ -143,6 +166,14 @@
   ],
   "undefined": [
     {
+      "token": "--shape-input-radius",
+      "owner": "design-system",
+      "reason": "Optional reference-compatible focus radius hook with an 8px fallback",
+      "replacement": "--radius-medium",
+      "removalCondition": "The shape token family is adopted globally",
+      "allowedFiles": ["src/app.css"]
+    },
+    {
       "token": "--color-bg",
       "owner": "terminal-adapter",
       "reason": "Terminal viewer and diagnostics host override",
@@ -168,22 +199,6 @@
       "replacement": "--ring",
       "removalCondition": "Accessibility fixture migrates",
       "allowedFiles": ["src/lib/utils/accessibility.ts"]
-    },
-    {
-      "token": "--color-surface-1",
-      "owner": "chat",
-      "reason": "Legacy surface role",
-      "replacement": "--card",
-      "removalCondition": "Streaming content migrates",
-      "allowedFiles": ["src/lib/components/chat/StreamingAnimatedContent.svelte"]
-    },
-    {
-      "token": "--color-surface-2",
-      "owner": "chat",
-      "reason": "Legacy surface role",
-      "replacement": "--muted",
-      "removalCondition": "Streaming content migrates",
-      "allowedFiles": ["src/lib/components/chat/StreamingAnimatedContent.svelte"]
     },
     {
       "token": "--color-text",

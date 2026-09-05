@@ -110,13 +110,13 @@
           class="w-4 h-4 border-[2px] border-border border-t-blue-600 rounded-full animate-spin"
         ></div>
         <span>{m.onboarding_githubStep_waitingForAuthorization_label()}</span>
-        <button
+        <Button
           type="button"
           class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors ml-2"
           onclick={handleCancel}
         >
           {m.onboarding_githubStep_cancel_label()}
-        </button>
+        </Button>
       </div>
     </div>
   {:else if $isAuthenticating$}

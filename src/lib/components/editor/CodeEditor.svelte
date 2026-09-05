@@ -990,7 +990,7 @@
         isActive={true}
       />
     {/if}
-    <div bind:this={container} class="w-full h-full"></div>
+    <div bind:this={container} class="native-scrollbars w-full h-full"></div>
     {#if placeholder && !value}
       <div class="placeholder-overlay">
         <span class="text-subtle text-sm italic">{placeholder}</span>

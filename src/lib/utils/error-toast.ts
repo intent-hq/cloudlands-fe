@@ -2,8 +2,7 @@
  * Error Toast Utility
  * Shows errors using the built-in toast system
  */
-import { toast } from '$lib/components/ui/toast';
-import ErrorToast from '$lib/components/ui/toast/ErrorToast.svelte';
+import { notify } from '$lib/components/patterns/notify';
 import { errorReporter } from '$lib/utils/error-reporter';
 import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -49,7 +48,7 @@ async function copyError(error: AppError): Promise<void> {
   lines.push('*Paste this into a support message or GitHub issue.*'); // i18n-ignore (support report content)
 
   await navigator.clipboard.writeText(lines.join('\n'));
-  toast.success(m.error_toast_copied_message());
+  notify.success(m.error_toast_copied_message());
 }
 
 /**
@@ -61,7 +60,7 @@ async function sendToAgent(error: AppError): Promise<void> {
     ? selectWorkspaceById.select(appStore.state, activeWorkspaceId)
     : undefined;
   if (!workspace) {
-    toast.error(m.error_toast_noSpace_error());
+    notify.error(m.error_toast_noSpace_error());
     return;
   }
 
@@ -106,9 +105,9 @@ async function attemptRecovery(error: AppError): Promise<void> {
   const success = await errorHandler.attemptRecovery(error.id);
   if (success) {
     errorHandler.dismiss(error.id);
-    toast.success(m.error_recovery_success());
+    notify.success(m.error_recovery_success());
   } else {
-    toast.error(m.error_recovery_failed());
+    notify.error(m.error_recovery_failed());
   }
 }
 
@@ -131,14 +130,16 @@ function getWrapperBorderClass(type: string): string {
  * Show an error as a toast notification
  */
 export function showErrorToast(error: AppError): void {
-  toast.custom(ErrorToast, {
-    componentProps: {
+  notify.appError(
+    {
       error,
       onCopy: () => copyError(error),
       onDebug: () => sendToAgent(error),
       onRetry: error.recoverable ? () => attemptRecovery(error) : undefined,
     },
-    duration: error.type === 'info' ? 5000 : 15000,
-    class: getWrapperBorderClass(error.type),
-  });
+    {
+      duration: error.type === 'info' ? 5000 : 15000,
+      class: getWrapperBorderClass(error.type),
+    },
+  );
 }

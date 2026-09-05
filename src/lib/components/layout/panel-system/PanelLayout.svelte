@@ -44,7 +44,7 @@
   import { dispatchWindowEvent } from '$lib/utils/window-events';
 
   import { resize } from '$lib/components/layout/size-transition';
-  import { fade } from 'svelte/transition';
+  import { fade } from '$lib/motion';
   import { flattenPanels, openTabFromConfig } from './panel-ai-layout-helpers';
   import { NoteId } from '$shared/types/branded-ids';
   import { updateNoteTitle } from '$features/notes/notes-write-service';
@@ -815,10 +815,8 @@
     }),
   );
   let lifecycleMotionReadyForLayoutId = $state<string | null>(null);
-  const layoutMotionDuration = $derived(
-    lifecycleMotionReadyForLayoutId === effectiveLayoutId && !suppressCommittedPanelMoveMotion
-      ? 220
-      : 0,
+  const layoutMotionEnabled = $derived(
+    lifecycleMotionReadyForLayoutId === effectiveLayoutId && !suppressCommittedPanelMoveMotion,
   );
 
   $effect(() => {
@@ -1520,7 +1518,7 @@
       ondragovercapture={handlePaneInsertionDragOver}
       ondropcapture={handlePaneInsertionDrop}
       ondragleave={handlePaneInsertionDragLeave}
-      transition:resize={{ axis: 'x', duration: layoutMotionDuration }}
+      transition:resize={{ axis: 'x', enabled: layoutMotionEnabled, tier: 'moderate' }}
     >
       <div class:opacity-0={panelMovePreviewRoot !== null} class="h-full w-full min-w-0">
         <PanelContainer
@@ -1651,14 +1649,14 @@
 {#if active && keyboardShortcuts.leaderActive}
   <div
     class="fixed bottom-20 left-1/2 -translate-x-1/2 bg-popover border border-border rounded-lg shadow-lg px-4 py-2 z-50"
-    transition:fade={{ duration: 100 }}
+    transition:fade={{ tier: 'fast' }}
   >
     <div class="text-sm font-medium text-foreground">
       {#if keyboardShortcuts.showPanelNumbers}
-        <span class="text-primary">{m.layout_panelLayout_pressKeys_before()}</span>
+        <span class="text-primary-ink">{m.layout_panelLayout_pressKeys_before()}</span>
         {m.layout_panelLayout_jumpToPanel_after()}
       {:else}
-        <span class="text-primary">⌘K</span>
+        <span class="text-primary-ink">⌘K</span>
         {m.layout_panelLayout_leaderActivated_label()}
         <span class="text-subtle ml-2"> {m.layout_panelLayout_leaderHints_label()} </span>
       {/if}

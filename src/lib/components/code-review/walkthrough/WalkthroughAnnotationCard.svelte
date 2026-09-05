@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
@@ -49,12 +50,12 @@
   <!-- Content card -->
   <div class="flex-1 pb-6 min-w-0">
     <!-- File header - clickable -->
-    <button
-      class="group mb-2 flex items-center gap-2 text-left transition-colors hover:text-primary"
+    <Button
+      class="group mb-2 flex items-center gap-2 text-left transition-colors hover:text-primary-ink"
       onclick={() => onClick?.()}
       title={m.codeReview_annotationCard_viewInDiff_tooltip()}
     >
-      <span class="text-xs font-mono text-muted-foreground group-hover:text-primary truncate">
+      <span class="text-xs font-mono text-muted-foreground group-hover:text-primary-ink truncate">
         {shortFilename()}
       </span>
       <span class="rounded bg-muted px-1.5 py-0.5 text-xs font-mono text-subtle">
@@ -66,7 +67,7 @@
           class="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
         />
       {/if}
-    </button>
+    </Button>
 
     <!-- Code snippet (if available) -->
     {#if codeLines.length > 0}

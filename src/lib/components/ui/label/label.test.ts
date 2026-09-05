@@ -14,8 +14,9 @@ describe('Label', () => {
     expect(getByRole('textbox', { name: 'Team name' })).toBeTruthy();
     const classes = getByText('Team name').className.split(/\s+/);
     expect(classes).toEqual(
-      expect.arrayContaining(['type-body', 'text-foreground', 'font-medium']),
+      expect.arrayContaining(['type-caption', 'text-muted-foreground', 'font-medium']),
     );
+    expect(classes).toContain('group-focus-within:text-foreground');
     expect(classes).not.toContain('text-xs');
   });
 

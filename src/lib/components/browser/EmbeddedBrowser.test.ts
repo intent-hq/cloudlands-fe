@@ -44,8 +44,8 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => 
   ensureAgentSessionLoaded: vi.fn(),
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { error: vi.fn(), success: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn() },
 }));
 
 // The owner-chip navigation helper transitively imports selector modules

@@ -21,7 +21,7 @@
 <div class="detected-scripts-card my-3 rounded-lg border border-border bg-muted/30 overflow-hidden">
   <!-- Header -->
   <div class="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-muted/40">
-    <Fa icon={faWandMagicSparkles} size="sm" class="text-primary/70" />
+    <Fa icon={faWandMagicSparkles} size="sm" class="text-primary-ink/70" />
     <span class="text-sm font-semibold text-foreground">{m.chat_detectedScripts_title()}</span>
   </div>
 

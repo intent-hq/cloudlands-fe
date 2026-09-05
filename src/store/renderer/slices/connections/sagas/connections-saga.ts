@@ -217,18 +217,18 @@ async function invokeUpdateBackend(params: UpdateBackendParams): Promise<UpdateB
  * (same pattern as the boot-fallback toast) keep the saga module light.
  */
 async function showUpdateBackendToast(result: UpdateBackendResult): Promise<void> {
-  const [{ toast }, { m }] = await Promise.all([
-    import('svelte-sonner'),
+  const [{ notify }, { m }] = await Promise.all([
+    import('$lib/components/patterns/notify'),
     import('$shared/paraglide/messages.js'),
   ]);
   if (result.ok) {
-    toast.success(m.layout_daemonStatus_updateRequested_toast());
+    notify.success(m.layout_daemonStatus_updateRequested_toast());
   } else if (result.reason === 'unsupported') {
-    toast.error(m.layout_daemonStatus_updateUnsupported_toast());
+    notify.error(m.layout_daemonStatus_updateUnsupported_toast());
   } else if (result.reason === 'not-connected') {
-    toast.error(m.layout_daemonStatus_updateNotConnected_toast());
+    notify.error(m.layout_daemonStatus_updateNotConnected_toast());
   } else {
-    toast.error(m.layout_daemonStatus_updateFailed_toast({ message: result.message ?? '' }));
+    notify.error(m.layout_daemonStatus_updateFailed_toast({ message: result.message ?? '' }));
   }
 }
 
@@ -238,11 +238,11 @@ async function showUpdateBackendToast(result: UpdateBackendResult): Promise<void
  * not user-oriented, unlike daemon-side 'failed' messages.
  */
 async function showUpdateBackendRequestErrorToast(): Promise<void> {
-  const [{ toast }, { m }] = await Promise.all([
-    import('svelte-sonner'),
+  const [{ notify }, { m }] = await Promise.all([
+    import('$lib/components/patterns/notify'),
     import('$shared/paraglide/messages.js'),
   ]);
-  toast.error(m.layout_daemonStatus_updateRequestError_toast());
+  notify.error(m.layout_daemonStatus_updateRequestError_toast());
 }
 
 type UpdateBackendAction = ReturnType<typeof updateBackendRequested>;
@@ -259,11 +259,11 @@ async function showDaemonBehindPinToast(
   pinnedVersion: string,
   onUpdate: () => void,
 ): Promise<void> {
-  const [{ toast }, { m }] = await Promise.all([
-    import('svelte-sonner'),
+  const [{ notify }, { m }] = await Promise.all([
+    import('$lib/components/patterns/notify'),
     import('$shared/paraglide/messages.js'),
   ]);
-  toast.warning(
+  notify.warning(
     m.layout_daemonStatus_daemonBehind_toast({
       // The local entry's persisted label is an English fallback — use the
       // localized label, same as DeviceRow and the daemon-status menu.
@@ -286,8 +286,8 @@ async function showDaemonBehindPinToast(
 
 /** Dismiss a behind-pin toast previously raised for `connectionId`. */
 async function dismissDaemonBehindPinToast(connectionId: string): Promise<void> {
-  const { toast } = await import('svelte-sonner');
-  toast.dismiss(`connections-daemon-behind-${connectionId}`);
+  const { notify } = await import('$lib/components/patterns/notify');
+  notify.dismiss(`connections-daemon-behind-${connectionId}`);
 }
 
 /**

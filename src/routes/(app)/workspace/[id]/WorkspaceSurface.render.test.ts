@@ -98,7 +98,7 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
 }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToFirstWorkspace: vi.fn() }));
 vi.mock('$shared/types/branded-ids', () => ({ WorkspaceId: (id: string) => id }));
-vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn() } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   loadWorkspacesRequested: action('workspace/loadWorkspacesRequested'),

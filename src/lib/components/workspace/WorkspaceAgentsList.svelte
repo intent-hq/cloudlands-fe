@@ -9,7 +9,7 @@
   import { faChevronDown, faRotateLeft } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { untrack } from 'svelte';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import { formatInteger } from '$lib/i18n/format';
@@ -224,14 +224,14 @@
           <Fa
             icon={faChevronDown}
             size="xs"
-            class="ml-auto shrink-0 opacity-50 transition-transform duration-200 {isExpanded
+            class="ml-auto shrink-0 opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isExpanded
               ? ''
               : 'rotate-90'}"
           />
         </Button>
 
         {#if isExpanded}
-          <div class="flex flex-col gap-0.5" transition:slide={{ axis: 'y', duration: 150 }}>
+          <div class="flex flex-col gap-0.5" transition:slide={{ axis: 'y', tier: 'moderate' }}>
             {@render agentTree(children)}
           </div>
         {/if}
@@ -337,7 +337,7 @@
       <Fa
         icon={faChevronDown}
         size="xs"
-        class="ml-auto shrink-0 transition-transform duration-200 {showBackgroundAgents
+        class="ml-auto shrink-0 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {showBackgroundAgents
           ? ''
           : 'rotate-90'}"
       />
@@ -347,7 +347,7 @@
   <div class="flex flex-col gap-0.5 pt-1">
     {#each standaloneBackgroundAgents as agent (agent.id)}
       {#if hasActiveSearch || showBackgroundAgents || isAgentRunning(agent.id)}
-        <div transition:slide={{ axis: 'y', duration: 150 }}>
+        <div transition:slide={{ axis: 'y', tier: 'moderate' }}>
           <LazyAgentCard
             cacheKey={agent.id}
             agentId={agent.id}
@@ -383,7 +383,7 @@
       <Fa
         icon={faChevronDown}
         size="xs"
-        class="ml-auto shrink-0 transition-transform duration-200 {showRetiredAgents
+        class="ml-auto shrink-0 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {showRetiredAgents
           ? ''
           : 'rotate-90'}"
       />
@@ -440,7 +440,7 @@
           {#snippet rowActions()}
             {@render retiredActions(agent.id)}
           {/snippet}
-          <div transition:slide={{ axis: 'y', duration: 150 }} class="opacity-70">
+          <div transition:slide={{ axis: 'y', tier: 'moderate' }} class="opacity-70">
             <LazyAgentCard
               cacheKey={agent.id}
               agentId={agent.id}

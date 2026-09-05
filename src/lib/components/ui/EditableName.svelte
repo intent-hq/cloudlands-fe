@@ -11,6 +11,8 @@
    */
   import { tick } from 'svelte';
   import { cn } from '$lib/utils';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -119,8 +121,8 @@
 
 <div class={cn('relative inline-flex items-center min-w-0 shrink whitespace-nowrap', className)}>
   {#if isEditing}
-    <input
-      bind:this={inputRef}
+    <Input
+      bind:ref={inputRef}
       type="text"
       bind:value={editedValue}
       onblur={save}
@@ -135,11 +137,13 @@
         'focus:ring-0! focus:outline-none! focus:ring-transparent!',
         'min-w-[60px]',
       )}
+      noFocusStyle
       {placeholder}
       style="width: {getInputWidth(editedValue)}px; max-width: {maxWidth}px"
     />
   {:else}
-    <button
+    <Button
+      variant="plain"
       class={cn(
         textClass,
         'relative z-10 bg-transparent border-none cursor-text text-left',
@@ -152,7 +156,7 @@
       {title}
     >
       {value || placeholder}
-    </button>
+    </Button>
   {/if}
   <span
     aria-hidden="true"

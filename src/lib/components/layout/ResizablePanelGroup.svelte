@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { onMount, onDestroy } from 'svelte';
   import type { Snippet } from 'svelte';
   import { writable } from 'svelte/store';
@@ -432,7 +433,7 @@
     {#if index < panels.length - 1}
       {@const nextCollapsed = collapsedPanels.has(panels[index + 1].id)}
       {#if !isCollapsed && !nextCollapsed}
-        <button
+        <Button
           type="button"
           class="app-resize-handle relative z-30 {orientation === 'vertical'
             ? '-my-[7.5px] h-4 w-full'
@@ -473,7 +474,7 @@
           >
             <Fa icon={faGripVertical} size="lg" class="text-foreground" />
           </div> -->
-        </button>
+        </Button>
       {/if}
     {/if}
   {/each}

@@ -10,7 +10,7 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faCheck, faRotateLeft, faSpinner, faPlusMinus } from '@fortawesome/free-solid-svg-icons';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DiffViewer from './DiffViewer.svelte';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -146,7 +146,7 @@
 
     <!-- Expanded diff view -->
     {#if expanded}
-      <div transition:slide={{ duration: 150 }} class="border-t border-border p-2">
+      <div transition:slide={{ tier: 'moderate' }} class="border-t border-border p-2">
         {#if patches.length > 1}
           <div class="mb-2 flex gap-1">
             {#each patches as patch, i (`patch-${i}-${patch.filePath}`)}

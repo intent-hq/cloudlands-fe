@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import { onDestroy, onMount } from 'svelte';
@@ -100,9 +101,9 @@
     >
       <div class="flex justify-between items-center p-4 border-b border-border">
         <h2 class="m-0 text-lg text-foreground">{m.lib_githubAuth_connect_label()}</h2>
-        <button
+        <Button
           class="bg-transparent border-none text-2xl cursor-pointer text-muted-foreground hover:text-foreground"
-          onclick={handleCancel}>×</button
+          onclick={handleCancel}>×</Button
         >
       </div>
 
@@ -110,9 +111,9 @@
         {#if $error$}
           <div class="text-danger">
             <p>{$error$}</p>
-            <button
+            <Button
               class="mt-3 bg-muted border-none px-4 py-2 rounded cursor-pointer text-foreground hover:bg-muted/80"
-              onclick={handleRetry}>{m.lib_githubAuth_tryAgain_label()}</button
+              onclick={handleRetry}>{m.lib_githubAuth_tryAgain_label()}</Button
             >
           </div>
         {:else if $requiresDaemonAuth$}
@@ -160,12 +161,12 @@
             <p class="text-subtle text-sm mt-2">
               {m.lib_githubAuth_localCredentials_message()}
             </p>
-            <button
-              class="bg-[#238636] text-white border-none px-6 py-3 rounded text-base cursor-pointer mt-4 hover:bg-[#2ea043]"
+            <Button
+              class="mt-4 cursor-pointer rounded border-none bg-success px-6 py-3 text-base text-success-foreground hover:bg-success/90"
               onclick={handleConnect}
             >
               {m.lib_githubAuth_connect_label()}
-            </button>
+            </Button>
           </div>
         {/if}
       </div>

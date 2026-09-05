@@ -396,8 +396,8 @@ function* handleStop(action: StopAction): SagaGenerator<void> {
 
 async function showNothingToRetry(): Promise<void> {
   try {
-    const { toast } = await import('svelte-sonner');
-    toast.info(m.agent_chatSend_nothingToRetry_toast());
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.info(m.agent_chatSend_nothingToRetry_toast());
   } catch (error) {
     logger.error('Failed to surface retry no-op feedback', error);
   }

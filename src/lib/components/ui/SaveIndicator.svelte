@@ -3,8 +3,7 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
   import { faCircle, faCheck, faCloudArrowUp, faSpinner } from '@fortawesome/free-solid-svg-icons';
-  import { fade, scale } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fade, scale } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -81,7 +80,7 @@
   <Button
     variant="ghost"
     size="icon"
-    class={`relative transition-all duration-200 p-0 min-w-0 hover:bg-muted disabled:opacity-100 disabled:cursor-default ${config.button} ${className}`}
+    class={`relative transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none p-0 min-w-0 hover:bg-muted disabled:opacity-100 disabled:cursor-default ${config.button} ${className}`}
     onclick={isClickable ? onSave : undefined}
     disabled={!isClickable}
     aria-label={iconConfig?.tooltip}
@@ -90,8 +89,8 @@
       {#key state}
         <div
           class="absolute inset-0 flex items-center justify-center"
-          in:scale={{ duration: 200, easing: cubicOut, start: 0.8 }}
-          out:fade={{ duration: 150 }}
+          in:scale={{ distance: 0.2, tier: 'moderate' }}
+          out:fade={{ tier: 'moderate' }}
         >
           {#if state === 'unsaved'}
             <!-- Unsaved: Show a dot that pulses subtly -->

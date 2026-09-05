@@ -1,6 +1,8 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
   import { Switch as SwitchPrimitive } from 'bits-ui';
+  import { onMount, untrack } from 'svelte';
+  import { createSwitchThumbSpring, retargetSwitchThumb } from './switch-motion.svelte';
 
   interface Props {
     id?: string;
@@ -10,7 +12,7 @@
     invalid?: boolean;
     class?: string;
     onCheckedChange?: (checked: boolean) => void;
-    size?: 'xs' | 'sm' | 'md' | 'lg';
+    size?: 'default' | 'compact' | 'xs' | 'sm' | 'md' | 'lg';
     name?: string;
     value?: string;
     ariaLabel?: string;
@@ -34,30 +36,64 @@
     ariaDescribedby,
   }: Props = $props();
 
-  const paddingRatio = 0.15;
   const sizes = {
     xs: {
-      width: 12,
-      height: 6,
-    },
-    sm: {
-      width: 18,
-      height: 12,
-    },
-    md: {
       width: 24,
       height: 14,
+      padding: 2,
+      thumb: 10,
     },
-    lg: {
+    sm: {
       width: 28,
       height: 16,
+      padding: 2,
+      thumb: 12,
+    },
+    compact: {
+      width: 28,
+      height: 16,
+      padding: 2,
+      thumb: 12,
+    },
+    md: {
+      width: 34,
+      height: 20,
+      padding: 2,
+      thumb: 16,
+    },
+    default: {
+      width: 34,
+      height: 20,
+      padding: 2,
+      thumb: 16,
+    },
+    lg: {
+      width: 38,
+      height: 22,
+      padding: 2,
+      thumb: 18,
     },
   };
   let width = $derived(sizes[size].width);
   let height = $derived(sizes[size].height);
-  let padding = $derived(height * paddingRatio);
-  let thumbWidth = $derived(height * (1 - paddingRatio * 2));
+  let padding = $derived(sizes[size].padding);
+  let thumbWidth = $derived(sizes[size].thumb);
   let thumbHeight = $derived(thumbWidth);
+  let reducedMotion = $state(false);
+  const thumbPosition = createSwitchThumbSpring(untrack(() => padding));
+  const targetPosition = $derived(checked ? width - thumbWidth - padding : padding);
+
+  $effect(() => {
+    retargetSwitchThumb(thumbPosition, targetPosition, reducedMotion);
+  });
+
+  onMount(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => (reducedMotion = media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  });
 </script>
 
 <SwitchPrimitive.Root
@@ -74,10 +110,10 @@
   aria-describedby={ariaDescribedby}
   aria-invalid={invalid || undefined}
   class={cn(
-    "border-border peer relative inline-flex shrink-0 cursor-pointer items-center rounded-full border shadow-(--elevation-raised) transition-[border-color,background-color,box-shadow,opacity] duration-(--motion-fast) after:absolute after:-inset-y-2 after:-inset-x-1 after:content-[''] motion-reduce:transition-none",
-    'hover:border-input focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
-    'disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-border',
-    'data-[state=unchecked]:bg-muted data-[state=checked]:border-primary/60 data-[state=checked]:bg-accent',
+    "border-border peer relative inline-flex shrink-0 cursor-pointer items-center rounded-full border bg-muted shadow-(--elevation-raised) transition-[background-color,box-shadow,opacity] duration-spring-fast ease-spring-fast after:absolute after:-inset-y-2 after:-inset-x-1 after:content-[''] motion-reduce:transition-none",
+    'hover:bg-hover active:bg-active',
+    'disabled:cursor-not-allowed disabled:opacity-60',
+    'data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:hover:bg-primary data-[state=checked]:active:bg-primary',
     invalid && 'border-danger ring-1 ring-danger/25',
     className,
   )}
@@ -88,12 +124,12 @@
 >
   <SwitchPrimitive.Thumb
     class={cn(
-      'bg-card pointer-events-none absolute top-1/2 left-0 block rounded-full shadow-(--elevation-raised) ring-0 transition-transform duration-(--motion-standard) motion-reduce:transition-none',
+      'bg-card pointer-events-none absolute top-1/2 left-0 block rounded-full shadow-(--elevation-raised) ring-0 data-[state=checked]:bg-primary-foreground',
     )}
     style={`
       width: ${thumbWidth}px;
       height: ${thumbHeight}px;
-      transform: translateX(${checked ? width - thumbWidth - padding : padding}px) translateY(-50%);
+      transform: translateX(${thumbPosition.current}px) translateY(-50%);
     `}
   />
 </SwitchPrimitive.Root>

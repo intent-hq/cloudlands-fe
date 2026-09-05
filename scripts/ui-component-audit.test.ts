@@ -113,6 +113,19 @@ describe('UI component inventory gate', () => {
     ).toMatchObject({ category: 'primitive', owner: '007-B5', replacement: null });
   });
 
+  it('classifies Kbd as a canonical design-system primitive', () => {
+    expect(
+      buildUiComponentInventory().components.find(
+        (component) => component.publicImport === '$lib/components/ui/kbd',
+      ),
+    ).toMatchObject({
+      source: 'src/lib/components/ui/kbd/index.ts',
+      category: 'primitive',
+      owner: 'design-system',
+      replacement: null,
+    });
+  });
+
   it('resolves relative callers with deterministic component counts', () => {
     const components = buildUiComponentInventory().components;
     const toggleGroup = components.find(
@@ -127,9 +140,10 @@ describe('UI component inventory gate', () => {
       'src/features/layout/tab-types/NoteViewSettingsDropdown.svelte',
       'src/lib/component-catalog/CatalogControls.svelte',
       'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
-      'src/lib/components/settings/ColorThemeSettings.svelte',
+      'src/lib/components/patterns/settings/custom-controls.ts',
+      'src/routes/(app)/settings/+page.svelte',
     ]);
-    expect(dropdownMenu?.callers).toHaveLength(17);
+    expect(dropdownMenu?.callers).toHaveLength(16);
     expect(dropdownMenu?.callers).toContain('src/lib/components/chat/RegularAgentWelcome.svelte');
     expect(buildUiComponentInventory().components).toEqual(components);
   });
@@ -140,17 +154,81 @@ describe('UI component inventory gate', () => {
     expect(audit('inventory').split('\n')).toEqual([...audit('inventory').split('\n')].sort());
   });
 
-  it('removes zero-reference tabs from inventory without unresolved imports', () => {
-    const legacyTabs = ['$lib/components/ui/tabs', '$lib/components/ui/TabBar.svelte'];
+  it('reports raw-element files and occurrences against per-directory ceilings', () => {
+    const report = JSON.parse(audit('raw-elements')) as {
+      directories: Record<
+        string,
+        Record<string, { files: number; elements: number; ceiling: number }>
+      >;
+      exceptions: number;
+      failures: string[];
+    };
+
+    expect(Object.keys(report.directories)).toEqual(['src/features', 'src/lib', 'src/routes']);
+    expect(report.exceptions).toBeGreaterThan(0);
+    expect(report.failures).toEqual([]);
+    for (const controls of Object.values(report.directories)) {
+      for (const counts of Object.values(controls)) {
+        expect(counts.files).toBeLessThanOrEqual(counts.ceiling);
+        expect(counts.elements).toBeGreaterThanOrEqual(counts.files);
+      }
+    }
+  });
+
+  it('fails check when a raw-element file count exceeds its directory ceiling', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'ui-component-raw-elements-'));
+    try {
+      const files = {
+        'src/lib/components/ui/button/index.ts': "export const Button = 'button';",
+        'src/lib/components/ui/button/button.svelte': '<button>primitive host</button>',
+        'src/features/example/Controls.svelte': '<button>one</button><button>two</button><input />',
+        'src/features/example/Attachment.svelte': '<input type="file" />',
+        'scripts/ui-component-raw-element-allowlist.json': JSON.stringify({
+          ceilings: {
+            'src/features': { button: 0, input: 1, select: 0, textarea: 0 },
+            'src/lib': { button: 0, input: 0, select: 0, textarea: 0 },
+          },
+          exceptions: [
+            {
+              file: 'src/features/example/Attachment.svelte',
+              elements: ['input'],
+              owner: 'example',
+              reason: 'Hidden native file picker host',
+            },
+          ],
+        }),
+      };
+      for (const [file, source] of Object.entries(files)) {
+        const target = path.join(directory, file);
+        mkdirSync(path.dirname(target), { recursive: true });
+        writeFileSync(target, source);
+      }
+
+      const report = runUiComponentAudit('raw-elements', directory);
+      expect(report.exitCode).toBe(0);
+      expect(JSON.parse(report.stdout).directories['src/features']).toMatchObject({
+        button: { files: 1, elements: 2, ceiling: 0 },
+        input: { files: 1, elements: 1, ceiling: 1 },
+      });
+
+      const result = runUiComponentAudit('check', directory);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('src/features: raw <button> files 1 exceed ceiling 0');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('publishes canonical tabs while keeping the deleted TabBar out of inventory', () => {
     const publicImports = buildUiComponentInventory().components.map(
       (component) => component.publicImport,
     );
     const dynamicOutput = audit('dynamic');
 
-    expect(publicImports).not.toEqual(expect.arrayContaining(legacyTabs));
-    for (const publicImport of legacyTabs) {
-      expect(dynamicOutput).not.toContain(publicImport);
-    }
+    expect(publicImports).toContain('$lib/components/ui/tabs');
+    expect(publicImports).not.toContain('$lib/components/ui/TabBar.svelte');
+    expect(dynamicOutput).not.toContain('$lib/components/ui/tabs');
+    expect(dynamicOutput).not.toContain('$lib/components/ui/TabBar.svelte');
     expect(audit('check')).toMatch(/^UI component audit passed;/);
   });
 

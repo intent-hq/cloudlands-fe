@@ -6,6 +6,26 @@ export interface CatalogGroup {
   entries: CatalogEntry[];
 }
 
+export interface CatalogNavEntry {
+  slug: string;
+  name: string;
+  href: string;
+}
+
+export const catalogShowcaseEntries: readonly CatalogNavEntry[] = [
+  { slug: 'introduction', name: 'Introduction', href: '/sandbox' },
+  { slug: 'recipes', name: 'Recipes', href: '/sandbox/recipes' },
+  { slug: 'directory-picker', name: 'Directory picker', href: '/sandbox/directory-picker' },
+  { slug: 'question-wizard', name: 'Question wizard', href: '/sandbox/question-wizard' },
+];
+
+export const catalogSystemEntries: readonly CatalogNavEntry[] = [
+  { slug: 'motion', name: 'Motion', href: '/sandbox/motion' },
+  { slug: 'scrollbars', name: 'Scrollbars', href: '/sandbox/scrollbars' },
+  { slug: 'sizes', name: 'Sizes', href: '/sandbox/sizes' },
+  { slug: 'surfaces', name: 'Surfaces', href: '/sandbox/surfaces' },
+];
+
 const groupDefinitions = [
   { id: 'actions', name: 'Actions & status', match: /badge|button|toggle|status|progress|alert/ },
   {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
   /**
    * ActiveWorkspacesCard - Shows workspaces split into Unread, Running, Waiting, and Pinned sections
    *
@@ -335,8 +336,8 @@
   {:else}
     {#if expanded && totalCount > 3}
       <div class="px-3 pt-1 pb-2">
-        <input
-          bind:this={searchInputEl}
+        <Input
+          bind:ref={searchInputEl}
           type="text"
           placeholder={m.layout_activeCard_search_placeholder()}
           aria-label={m.layout_activeCard_search_placeholder()}

@@ -3,6 +3,11 @@
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
+  import { InputMessage } from '$lib/components/ui/input-message';
+  import { useSize, type UiSize } from '$lib/components/ui/size-context';
+  import { textEntryGroupClasses, textEntryHeight } from '../text-entry';
+
+  const contextSize = useSize();
 
   let {
     id,
@@ -16,6 +21,9 @@
     busy = false,
     invalid = false,
     variant = 'default',
+    state: previewState,
+    size,
+    message,
     error,
     files = $bindable(),
     onFilesChange,
@@ -32,6 +40,9 @@
     busy?: boolean;
     invalid?: boolean;
     variant?: 'default' | 'flat';
+    state?: 'rest' | 'hover' | 'focus';
+    size?: UiSize;
+    message?: string;
     error?: string;
     files?: FileList;
     onFilesChange?: (files: FileList | undefined) => void;
@@ -40,6 +51,10 @@
 
   let inputRef: HTMLInputElement | null = $state(null);
   const errorId = $derived(error ? `${id}-error` : undefined);
+  const messageId = $derived(!error && message ? `${id}-message` : undefined);
+  const describedBy = $derived(errorId ?? messageId);
+  const resolvedSize = $derived(size ?? contextSize);
+  const isInvalid = $derived(invalid || Boolean(error));
   const selectedText = $derived(
     files?.length ? Array.from(files, (file) => file.name).join(', ') : emptyText,
   );
@@ -73,7 +88,7 @@
   class={cn('min-w-0', className)}
   aria-busy={busy || undefined}
   aria-disabled={disabled || busy || undefined}
-  data-invalid={invalid || undefined}
+  data-invalid={isInvalid || undefined}
   data-variant={variant}
 >
   <input
@@ -87,33 +102,40 @@
     {name}
     disabled={disabled || busy}
     aria-hidden="true"
-    aria-invalid={invalid || undefined}
-    aria-describedby={errorId}
+    aria-invalid={isInvalid || undefined}
+    aria-describedby={describedBy}
     class="sr-only"
     tabindex="-1"
     onchange={handleChange}
   />
   <div
     data-slot="file-input-surface"
+    data-state={previewState}
+    data-size={resolvedSize}
     class={cn(
-      'flex min-h-(--control-height-medium) min-w-0 items-center gap-2 rounded-(--radius-medium) border p-0.5 transition-[border-color,background-color,box-shadow] duration-(--motion-fast) focus-within:border-ring focus-within:ring-0 motion-reduce:transition-none',
+      'flex min-w-0 items-center gap-2 rounded-(--radius-medium) p-1',
+      textEntryGroupClasses,
+      textEntryHeight(resolvedSize),
       variant === 'default'
-        ? 'border-border bg-card shadow-(--elevation-raised) hover:border-input'
-        : 'border-transparent bg-muted/40 shadow-none hover:border-transparent',
-      (disabled || busy) && 'bg-muted/40 opacity-60 hover:border-border',
-      invalid && 'border-danger ring-1 ring-danger/25',
+        ? 'border-0 bg-hover hover:bg-card'
+        : 'border-0 bg-transparent shadow-none',
+      (disabled || busy) && 'pointer-events-none opacity-60',
+      isInvalid && 'ring-1 ring-danger/25',
     )}
   >
     <Button
       type="button"
       variant={variant === 'flat' ? 'ghost' : 'outline'}
-      size="sm"
-      class={cn('shrink-0', 'aria-invalid:border-danger aria-invalid:ring-danger/25')}
+      size={resolvedSize === 'compact' ? 'xs' : 'default'}
+      class={cn(
+        'h-full shrink-0',
+        'aria-invalid:border-danger aria-invalid:ring-danger/25',
+      )}
       {disabled}
       loading={busy}
       aria-controls={id}
-      aria-invalid={invalid || undefined}
-      aria-describedby={errorId}
+      aria-invalid={isInvalid || undefined}
+      aria-describedby={describedBy}
       onclick={openPicker}>{label}</Button
     >
     <span
@@ -125,9 +147,9 @@
       {selectedText}
     </span>
   </div>
-  {#if error}
-    <p id={errorId} class="type-body mt-1.5 text-danger" role="alert">
-      {error}
-    </p>
+  {#if error || message}
+    <InputMessage id={errorId ?? messageId} tone={error ? 'error' : 'helper'}>
+      {error ?? message}
+    </InputMessage>
   {/if}
 </div>

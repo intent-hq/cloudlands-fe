@@ -5,8 +5,8 @@ const mocks = vi.hoisted(() => ({
   toastWarning: vi.fn(),
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { error: mocks.toastError, warning: mocks.toastWarning },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: mocks.toastError, warning: mocks.toastWarning },
 }));
 
 import { resolveBrowserLinkForOpen } from './browser-link-open';

@@ -528,7 +528,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       const group = screen.getByTestId('finished-agent-group');
       const summary = screen.getByTestId('finished-agent-summary');
       const negativeInsetClass = /^-(?:m(?:[lrxse])?|inset(?:[lrxse])?)-/;
-      const distinctSurfaceClass = /^(?:bg-|rounded(?:-|$)|shadow(?:-|$))/;
+      const distinctSurfaceClass = /^(?:bg-(?!transparent$)|shadow(?:-|$))/;
 
       expect(summary.getAttribute('aria-expanded')).toBe('false');
       expect(summary.classList).toContain('px-3!');

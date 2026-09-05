@@ -29,8 +29,8 @@ vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () =
   default: (await import('./__tests__/AgentAvatarMock.svelte')).default,
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: {
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
     error: toastErrorMock,
     success: toastSuccessMock,
   },

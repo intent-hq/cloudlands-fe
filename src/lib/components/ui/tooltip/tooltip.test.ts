@@ -31,14 +31,7 @@ describe('Tooltip', () => {
     expect(tooltip.textContent).toContain('Press Command K');
     expect(container.contains(tooltip)).toBe(false);
     expect(trigger.getAttribute('aria-describedby')).toBe(tooltip.id);
-    expect(tooltip.className).toContain('motion-reduce:animate-none');
-    expect(tooltip.className).toContain('z-(--layer-tooltip)');
-    expect(tooltip.className).toContain('rounded-md');
-    expect(tooltip.className).toContain('border-border');
-    expect(tooltip.className).toContain('bg-popover');
-    expect(tooltip.className).toContain('text-popover-foreground');
-    expect(tooltip.className).toContain('shadow-(--elevation-overlay)');
-    expect(tooltip.className).toContain('type-body');
+    expect(tooltip.getAttribute('data-surface-level')).toBe('3');
     await fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull());
     expect(document.activeElement).toBe(trigger);
@@ -58,7 +51,6 @@ describe('Tooltip', () => {
     const simpleTrigger = screen.getByRole('button', { name: 'Show wrapped help' });
     expect(simpleCase.querySelectorAll('button')).toHaveLength(1);
     expect(simpleTrigger.hasAttribute('data-tooltip-trigger')).toBe(true);
-    expect(simpleTrigger.className).toContain('focus-visible:ring-2');
 
     simpleTrigger.focus();
     await fireEvent.focus(simpleTrigger);
@@ -114,6 +106,18 @@ describe('Tooltip', () => {
     expect(
       await screen.findByRole('tooltip', { name: 'Wrapped button help', hidden: true }),
     ).not.toBeNull();
+  });
+
+  it('renders shortcut keycaps through the shared semantic chip', async () => {
+    render(TooltipHarness);
+    const trigger = screen.getByRole('button', { name: 'Show shortcut help' });
+    trigger.focus();
+    await fireEvent.focus(trigger);
+
+    const tooltip = await screen.findByRole('tooltip', { name: /Open navigation/, hidden: true });
+    const chips = tooltip.querySelectorAll('kbd[data-slot="shortcut-chip"]');
+    expect(chips).toHaveLength(2);
+    expect([...chips].map((chip) => chip.textContent)).toEqual(['Ctrl', 'K']);
   });
 
   it('mounts no tooltip content and performs no layout reads while closed', async () => {

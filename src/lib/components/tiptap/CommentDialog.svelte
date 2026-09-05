@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Textarea } from '$lib/components/ui/textarea';
   import {
     faCommentDots,
     faCodePullRequest,
@@ -18,38 +20,15 @@
   let { x = 0, y = 0, onSubmit, onClose }: Props = $props();
 
   let content = $state('');
+  let textareaRef: HTMLTextAreaElement | null = $state(null);
   let commentType: 'comment' | 'suggestion' | 'change-request' | 'question' = $state('comment');
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const typeOptions = [
-    {
-      value: 'comment',
-      get label() {
-        return m.tiptap_commentDialog_typeComment_label();
-      },
-      icon: faCommentDots,
-    },
-    {
-      value: 'suggestion',
-      get label() {
-        return m.tiptap_commentDialog_typeSuggestion_label();
-      },
-      icon: faCodePullRequest,
-    },
-    {
-      value: 'change-request',
-      get label() {
-        return m.tiptap_commentDialog_typeChangeRequest_label();
-      },
-      icon: faSquarePen,
-    },
-    {
-      value: 'question',
-      get label() {
-        return m.tiptap_commentDialog_typeQuestion_label();
-      },
-      icon: faCircleQuestion,
-    },
+    { value: 'comment', get label() { return m.tiptap_commentDialog_typeComment_label(); }, icon: faCommentDots },
+    { value: 'suggestion', get label() { return m.tiptap_commentDialog_typeSuggestion_label(); }, icon: faCodePullRequest },
+    { value: 'change-request', get label() { return m.tiptap_commentDialog_typeChangeRequest_label(); }, icon: faSquarePen },
+    { value: 'question', get label() { return m.tiptap_commentDialog_typeQuestion_label(); }, icon: faCircleQuestion },
   ];
 
   function handleSubmit() {
@@ -101,6 +80,12 @@
       },
     };
   }
+
+  $effect(() => {
+    if (!textareaRef) return;
+    const action = focusOnMount(textareaRef);
+    return action.destroy;
+  });
 </script>
 
 <!-- Render through portal to avoid clipping -->
@@ -112,41 +97,38 @@
   >
     <!-- Content Textarea -->
     <div class="mb-3">
-      <textarea
+      <Textarea
+        bind:ref={textareaRef}
         bind:value={content}
-        use:focusOnMount
         placeholder={m.tiptap_commentDialog_content_placeholder()}
         onkeydown={handleKeyDown}
         class="w-full p-2 text-xs rounded bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-slate-600 resize-none border-0"
-        rows="3"></textarea>
+        rows={3}
+      ></Textarea>
     </div>
 
     <!-- Actions -->
     {#if content.trim()}
       <div class="flex gap-2">
-        <button
+        <Button
           onclick={handleSubmit}
           class="text-xs px-2 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
         >
           {m.tiptap_commentDialog_send_label()}
-        </button>
-        <button
+        </Button>
+        <Button
           onclick={handleClose}
           class="text-xs px-2 py-1 rounded text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         >
           {m.tiptap_commentDialog_cancel_label()}
-        </button>
+        </Button>
       </div>
     {/if}
   </div>
 
   <!-- Backdrop - click outside to close -->
-  <button
-    class="fixed inset-0 z-[14]"
-    onclick={handleClose}
-    aria-label={m.tiptap_commentDialog_close_ariaLabel()}
-    type="button"
-  ></button>
+  <Button class="fixed inset-0 z-[14]" onclick={handleClose} aria-label={m.tiptap_commentDialog_close_ariaLabel()} type="button"
+  ></Button>
 </Portal>
 
 <style>

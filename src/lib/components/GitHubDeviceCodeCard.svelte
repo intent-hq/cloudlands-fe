@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
@@ -42,16 +43,16 @@
       label={m.lib_githubDeviceCode_copyCode_label()}
     />
   </div>
-  <button
+  <Button
     type="button"
-    class="inline-flex items-center justify-center gap-2 bg-[#238636] text-white border-none rounded cursor-pointer hover:bg-[#2ea043] {compact
+    class="inline-flex items-center justify-center gap-2 rounded border-none bg-success text-success-foreground cursor-pointer hover:bg-success/90 {compact
       ? 'px-3 py-1.5 text-xs'
       : 'px-6 py-3 text-base w-full'}"
     onclick={handleOpenGitHub}
   >
     <span>{m.lib_githubDeviceCode_openGithub_label()}</span>
     <Fa icon={faArrowUpRightFromSquare} size="xs" />
-  </button>
+  </Button>
   <p class="text-xs text-subtle">
     {m.lib_githubDeviceCode_enterCodeAt_before()}
     <span class="font-mono break-all">{verificationUri}</span>

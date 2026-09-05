@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { Button } from '$lib/components/ui/button';
   import type { ButtonVariant } from '$lib/components/ui/button';
-  import * as Dialog from '$lib/components/ui/dialog';
+  import { DestructiveConfirm } from '$lib/components/patterns/confirm';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
 
@@ -33,9 +32,6 @@
 
   const hasActiveWork = $derived(activeAgentCount > 0 || activeHookCount > 0);
 
-  let confirmButtonRef: HTMLButtonElement | null = $state(null);
-  let confirmHasFocus = $state(false);
-
   function close() {
     open = false;
     onCancel?.();
@@ -49,25 +45,20 @@
     }
     open = false;
   }
-
-  function handleOpenAutoFocus(event: Event) {
-    event.preventDefault();
-    confirmButtonRef?.focus();
-  }
 </script>
 
-<Dialog.Root {open} onOpenChange={(nextOpen) => !nextOpen && close()}>
-  <Dialog.Content
-    class="max-w-sm gap-0 overflow-hidden p-0"
-    closeLabel={m.modals_bulkActionConfirm_close_ariaLabel()}
-    onOpenAutoFocus={handleOpenAutoFocus}
-  >
-    <div class="space-y-4 p-5 pr-12">
-      <Dialog.Header class="gap-2 pr-0">
-        <Dialog.Title>{title}</Dialog.Title>
-        <Dialog.Description class="leading-5">{description}</Dialog.Description>
-      </Dialog.Header>
-
+<DestructiveConfirm
+  bind:open
+  {title}
+  {description}
+  confirmLabel={confirmText}
+  destructive={variant === 'destructive'}
+  class="max-w-sm"
+  onConfirm={handleConfirm}
+  onCancel={close}
+>
+  {#snippet details()}
+    <div class="space-y-4">
       {#if hasActiveWork}
         <div class="space-y-1 rounded-md border border-border bg-muted/40 p-3">
           {#if activeAgentCount > 0}
@@ -95,21 +86,5 @@
         </div>
       {/if}
     </div>
-
-    <Dialog.Footer class="mt-0 flex-row items-center justify-end border-0 px-5 pb-5 pt-0">
-      <Button variant="ghost-light" onclick={close}>
-        {m.modals_bulkActionConfirm_cancel_label()}
-      </Button>
-      <Button
-        {variant}
-        bind:ref={confirmButtonRef}
-        class={confirmHasFocus ? 'ring-ring/50 ring-[3px]' : undefined}
-        onfocus={() => (confirmHasFocus = true)}
-        onblur={() => (confirmHasFocus = false)}
-        onclick={handleConfirm}
-      >
-        {confirmText}
-      </Button>
-    </Dialog.Footer>
-  </Dialog.Content>
-</Dialog.Root>
+  {/snippet}
+</DestructiveConfirm>

@@ -64,6 +64,9 @@
   });
 </script>
 
+<!-- Primitive exception: this component is a content-only preview body embedded by a
+     parent-owned hover trigger. Tooltip/TooltipRich own their trigger and provider, so
+     wrapping this body would create a nested trigger and change its always-rendered API. -->
 <div class="w-72 bg-popover border border-border shadow {className}" role="tooltip">
   <div class="pt-3.5 px-5">
     {#if !note}
@@ -89,7 +92,7 @@
                    [&_pre]:text-xs [&_pre]:bg-muted [&_pre]:p-2 [&_pre]:rounded [&_pre]:my-0.5
                    [&_strong]:font-semibold [&_strong]:text-foreground
                    [&_em]:italic
-                   [&_a]:text-primary [&_a]:underline
+                   [&_a]:text-primary-ink [&_a]:underline
                    overflow-wrap-anywhere"
           >
             {@html renderedHtml}

@@ -1,23 +1,28 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
   import { logger } from '$lib/utils/client-logger';
 
   import type { Editor } from '@tiptap/core';
   import type { Workspace } from '$shared/types';
   import Fa from 'svelte-fa';
   import {
-    faBold,
-    faItalic,
-    faUnderline,
-    faCode,
-    faCommentDots,
-    faStrikethrough,
-    faPaperPlane,
-    faCheck,
-    faLink,
-    faTimes,
-  } from '@fortawesome/free-solid-svg-icons';
+  faBold,
+  faItalic,
+  faUnderline,
+  faCode,
+  faCommentDots,
+  faStrikethrough,
+  faPaperPlane,
+  faCheck,
+  faLink,
+  faTimes,
+} from '@fortawesome/free-solid-svg-icons';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
-  import { type ContextReference, convertContextReferences } from '$features/agent/agent-context';
+  import {
+  type ContextReference,
+  convertContextReferences,
+} from '$features/agent/agent-context';
   import LaunchFromSelectionDialog from './LaunchFromSelectionDialog.svelte';
   import { createAgentTypeId } from '$shared/types/agent.types';
 
@@ -26,6 +31,7 @@
   import Portal from '$lib/components/ui/Portal.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+
 
   interface Props {
     editor: Editor | null;
@@ -211,7 +217,8 @@
       const context = convertContextReferences([contextReference]);
 
       // Use user message or default
-      const finalUserMessage = userMessage.trim() || m.tiptap_bubbleMenu_defaultAgentMessage();
+      const finalUserMessage =
+        userMessage.trim() || m.tiptap_bubbleMenu_defaultAgentMessage();
 
       logger.info('[BubbleMenu] Creating agent with unified creator', {
         workspaceId: workspace.id,
@@ -365,13 +372,8 @@
       onmousedown={(e) => e.preventDefault()}
     >
       <div class="bubble-menu-container">
-        <TooltipShortcut
-          label={m.tiptap_bubbleMenu_bold_label()}
-          shortcut="cmd+b"
-          side="top"
-          delayDuration={200}
-        >
-          <button
+        <TooltipShortcut label={m.tiptap_bubbleMenu_bold_label()} shortcut="cmd+b" side="top" delayDuration={200}>
+          <Button
             class="bubble-menu-btn"
             onclick={toggleBold}
             aria-label={m.tiptap_bubbleMenu_bold_label()}
@@ -379,16 +381,11 @@
             data-active={editor.isActive('bold')}
           >
             <Fa icon={faBold} size="xs" />
-          </button>
+          </Button>
         </TooltipShortcut>
 
-        <TooltipShortcut
-          label={m.tiptap_bubbleMenu_italic_label()}
-          shortcut="cmd+i"
-          side="top"
-          delayDuration={200}
-        >
-          <button
+        <TooltipShortcut label={m.tiptap_bubbleMenu_italic_label()} shortcut="cmd+i" side="top" delayDuration={200}>
+          <Button
             class="bubble-menu-btn"
             onclick={toggleItalic}
             aria-label={m.tiptap_bubbleMenu_italic_label()}
@@ -396,16 +393,11 @@
             data-active={editor.isActive('italic')}
           >
             <Fa icon={faItalic} size="xs" />
-          </button>
+          </Button>
         </TooltipShortcut>
 
-        <TooltipShortcut
-          label={m.tiptap_bubbleMenu_underline_label()}
-          shortcut="cmd+u"
-          side="top"
-          delayDuration={200}
-        >
-          <button
+        <TooltipShortcut label={m.tiptap_bubbleMenu_underline_label()} shortcut="cmd+u" side="top" delayDuration={200}>
+          <Button
             class="bubble-menu-btn"
             onclick={toggleUnderline}
             aria-label={m.tiptap_bubbleMenu_underline_label()}
@@ -413,7 +405,7 @@
             data-active={editor.isActive('underline')}
           >
             <Fa icon={faUnderline} size="xs" />
-          </button>
+          </Button>
         </TooltipShortcut>
 
         <TooltipShortcut
@@ -422,7 +414,7 @@
           side="top"
           delayDuration={200}
         >
-          <button
+          <Button
             class="bubble-menu-btn"
             onclick={toggleStrike}
             aria-label={m.tiptap_bubbleMenu_strikethrough_label()}
@@ -430,16 +422,11 @@
             data-active={editor.isActive('strike')}
           >
             <Fa icon={faStrikethrough} size="xs" />
-          </button>
+          </Button>
         </TooltipShortcut>
 
-        <TooltipShortcut
-          label={m.tiptap_bubbleMenu_code_label()}
-          shortcut="cmd+e"
-          side="top"
-          delayDuration={200}
-        >
-          <button
+        <TooltipShortcut label={m.tiptap_bubbleMenu_code_label()} shortcut="cmd+e" side="top" delayDuration={200}>
+          <Button
             class="bubble-menu-btn"
             onclick={toggleCode}
             aria-label={m.tiptap_bubbleMenu_code_label()}
@@ -447,54 +434,37 @@
             data-active={editor.isActive('code')}
           >
             <Fa icon={faCode} size="xs" />
-          </button>
+          </Button>
         </TooltipShortcut>
 
-        <TooltipShortcut
-          label={m.tiptap_bubbleMenu_addLink_label()}
-          shortcut="cmd+k"
-          side="top"
-          delayDuration={200}
-        >
-          <button
+        <TooltipShortcut label={m.tiptap_bubbleMenu_addLink_label()} shortcut="cmd+k" side="top" delayDuration={200}>
+          <Button
             class="bubble-menu-btn"
             onclick={handleLinkClick}
             aria-label={m.tiptap_bubbleMenu_addLink_label()}
             data-active={editor.isActive('link')}
           >
             <Fa icon={faLink} size="xs" />
-          </button>
+          </Button>
         </TooltipShortcut>
 
         {#if showNoteActions}
           <div class="bubble-menu-divider"></div>
 
-          <TooltipShortcut
-            label={m.tiptap_bubbleMenu_addComment_label()}
-            side="top"
-            delayDuration={200}
-          >
-            <button
-              class="bubble-menu-btn"
-              onclick={handleAddComment}
-              aria-label={m.tiptap_bubbleMenu_addComment_label()}
-            >
+          <TooltipShortcut label={m.tiptap_bubbleMenu_addComment_label()} side="top" delayDuration={200}>
+            <Button class="bubble-menu-btn" onclick={handleAddComment} aria-label={m.tiptap_bubbleMenu_addComment_label()}>
               <Fa icon={faCommentDots} size="xs" />
-            </button>
+            </Button>
           </TooltipShortcut>
 
-          <TooltipShortcut
-            label={m.tiptap_bubbleMenu_sendToAgent_label()}
-            side="top"
-            delayDuration={200}
-          >
-            <button
+          <TooltipShortcut label={m.tiptap_bubbleMenu_sendToAgent_label()} side="top" delayDuration={200}>
+            <Button
               class="bubble-menu-btn"
               onclick={handleLaunchAgentClick}
               aria-label={m.tiptap_bubbleMenu_sendToAgent_label()}
             >
               <Fa icon={faPaperPlane} size="xs" />
-            </button>
+            </Button>
           </TooltipShortcut>
         {/if}
       </div>
@@ -502,8 +472,8 @@
       <!-- Link Input (appears below the bubble menu) -->
       {#if showLinkInput}
         <div class="link-input-container">
-          <input
-            bind:this={linkInputElement}
+          <Input
+            bind:ref={linkInputElement}
             bind:value={linkInputValue}
             onkeydown={handleLinkInputKeydown}
             type="text"
@@ -511,20 +481,12 @@
             class="link-input"
           />
           <div class="link-input-actions">
-            <button
-              class="bubble-menu-btn small"
-              onclick={handleSetLink}
-              aria-label={m.tiptap_bubbleMenu_setLink_ariaLabel()}
-            >
+            <Button class="bubble-menu-btn small" onclick={handleSetLink} aria-label={m.tiptap_bubbleMenu_setLink_ariaLabel()}>
               <Fa icon={faCheck} size="xs" />
-            </button>
-            <button
-              class="bubble-menu-btn small"
-              onclick={handleCancelLink}
-              aria-label={m.tiptap_bubbleMenu_cancel_ariaLabel()}
-            >
+            </Button>
+            <Button class="bubble-menu-btn small" onclick={handleCancelLink} aria-label={m.tiptap_bubbleMenu_cancel_ariaLabel()}>
               <Fa icon={faTimes} size="xs" />
-            </button>
+            </Button>
           </div>
         </div>
       {/if}
@@ -564,7 +526,7 @@
     gap: 1px;
   }
 
-  .bubble-menu-btn {
+  :global(.bubble-menu-btn) {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -578,22 +540,22 @@
     transition: all 0.1s ease;
   }
 
-  .bubble-menu-btn:hover:not(:disabled) {
+  :global(.bubble-menu-btn:hover:not(:disabled)) {
     background-color: hsl(var(--muted) / 0.5);
     color: hsl(var(--foreground));
   }
 
-  .bubble-menu-btn:disabled {
+  :global(.bubble-menu-btn:disabled) {
     opacity: 0.4;
     cursor: not-allowed;
   }
 
-  .bubble-menu-btn[data-active='true'] {
+  :global(.bubble-menu-btn[data-active='true']) {
     background-color: hsl(var(--muted));
     color: hsl(var(--foreground));
   }
 
-  .bubble-menu-btn.small {
+  :global(.bubble-menu-btn.small) {
     width: 22px;
     height: 22px;
   }
@@ -625,7 +587,7 @@
     align-items: center;
   }
 
-  .link-input {
+  :global(.link-input) {
     flex: 1;
     min-width: 180px;
     padding: 4px 8px;
@@ -637,11 +599,11 @@
     outline: none;
   }
 
-  .link-input::placeholder {
+  :global(.link-input::placeholder) {
     color: hsl(var(--muted-foreground));
   }
 
-  .link-input:focus {
+  :global(.link-input:focus) {
     border-color: hsl(var(--border));
     box-shadow: 0 0 0 1px hsl(var(--border));
   }

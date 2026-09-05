@@ -32,6 +32,22 @@ describe('Toast', () => {
     expect(await screen.findByText('Saved successfully')).toBeTruthy();
   });
 
+  it('runs and dismisses a standard toast action through the shared action control', async () => {
+    const onAction = vi.fn();
+    render(Toast);
+    toast.success('Workspace archived', {
+      duration: Number.POSITIVE_INFINITY,
+      action: { label: 'Undo', onClick: onAction },
+    });
+
+    const action = await screen.findByRole('button', { name: 'Undo' });
+    action.focus();
+    expect(document.activeElement).toBe(action);
+    await fireEvent.click(action);
+    expect(onAction).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByText('Workspace archived')).toBeNull());
+  });
+
   it('shows Clear all only for a stack and exposes count-aware live-region semantics', async () => {
     render(Toast);
     toast.success('First notification', { id: 'first', duration: Number.POSITIVE_INFINITY });

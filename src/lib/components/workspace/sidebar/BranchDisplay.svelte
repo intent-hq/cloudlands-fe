@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   /**
    * BranchDisplay - Branch display/edit with trunk branch picker
    * Shows working branch (editable) and trunk branch (selectable).
@@ -9,7 +11,7 @@
 
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import { getBranchNameValidationError } from './sidebar-changes-utils';
@@ -102,7 +104,7 @@
     const validationError = getBranchNameValidationError(newBranch);
     if (validationError) {
       logger.error('Invalid branch name format', { branchName: newBranch, error: validationError });
-      toast.error(validationError);
+      notify.error(validationError);
       branchRename.value = $workspace.branch || '';
       branchRename.active = false;
       return;
@@ -119,12 +121,12 @@
         await persistWorkspaceChanges({ branch: newBranch });
       } else {
         logger.error('Failed to rename branch', { error: result.error });
-        toast.error(result.error || m.workspace_sidebarHeader_renameBranchFailed_error());
+        notify.error(result.error || m.workspace_sidebarHeader_renameBranchFailed_error());
         branchRename.value = $workspace.branch || '';
       }
     } catch (error) {
       logger.error('Error renaming branch:', error);
-      toast.error(m.workspace_sidebarHeader_renameBranchFailed_error());
+      notify.error(m.workspace_sidebarHeader_renameBranchFailed_error());
       branchRename.value = $workspace.branch || '';
     } finally {
       branchRename.active = false;
@@ -168,8 +170,8 @@
   <div class="flex items-center shrink-0">
     <GitBranchIcon size={12} class="shrink-0 text-ghost" />
     {#if branchRename.active}
-      <input
-        bind:this={branchRename.inputRef}
+      <Input
+        bind:ref={branchRename.inputRef}
         type="text"
         bind:value={branchRename.value}
         onblur={saveBranch}
@@ -194,7 +196,7 @@
               class="text-green-500 ml-1.5 inline-flex items-center gap-1"
               ><Fa icon={faCheck} size="xs" /></span
             >{/if}{/snippet}
-        <button
+        <Button
           class="text-ui text-subtle bg-transparent
                  border-none px-1 py-0.5 rounded cursor-pointer text-left
                  max-w-full overflow-hidden text-ellipsis whitespace-nowrap
@@ -220,7 +222,7 @@
           {#if $workspace}
             {$workspace.branch || m.workspace_branchDisplay_noBranch_label()}
           {/if}
-        </button>
+        </Button>
       </Tooltip>
     {/if}
   </div>
@@ -283,11 +285,11 @@
                 baseRef: e.detail.branch,
               });
               if (!result.ok) {
-                toast.error('Failed to update base branch');
+                notify.error('Failed to update base branch');
               }
             } catch (err) {
               console.error('[BranchDisplay] Update error:', err);
-              toast.error('Failed to update base branch');
+              notify.error('Failed to update base branch');
             }
           }}
         />

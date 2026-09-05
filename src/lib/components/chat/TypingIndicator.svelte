@@ -1,8 +1,7 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import { faRobot } from '@fortawesome/free-solid-svg-icons';
-  import { fade, scale } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fade, scale } from '$lib/motion';
   import { Spinner } from '$lib/components/ui/indicators';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -47,8 +46,8 @@
 
 <div
   class="flex items-center gap-3 {sizeConfig.container} rounded-lg max-w-fit"
-  in:fade={{ duration: 200, easing: cubicOut }}
-  out:scale={{ duration: 150, start: 0.95, easing: cubicOut }}
+  in:fade={{ tier: 'moderate' }}
+  out:scale={{ tier: 'moderate', distance: 0.05 }}
 >
   {#if showAvatar}
     <div

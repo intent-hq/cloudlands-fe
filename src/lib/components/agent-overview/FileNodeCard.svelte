@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * FileNodeCard Component
    *
@@ -53,11 +54,11 @@
   const glowClass = $derived(isBeingAccessed ? 'file-glow-active' : '');
 </script>
 
-<button
+<Button
   type="button"
   class="file-node-card flex gap-2 px-2.5 py-2 rounded-md border border-border shadow-xs transition-all duration-200 cursor-pointer
     bg-muted/30 hover:bg-muted/50
-    {isActive ? 'ring-1 ring-primary/30' : ''} {glowClass}"
+    {isActive ? 'ring-1 ring-primary-ink/30' : ''} {glowClass}"
   {onclick}
 >
   <!-- Icon -->
@@ -78,7 +79,7 @@
       </p>
     {/if}
   </div>
-</button>
+</Button>
 
 <style>
   .file-node-card {

@@ -13,7 +13,7 @@
   import { Button } from '$lib/components/ui/button';
 
   import Fa from 'svelte-fa';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import { faChevronDown, faChevronLeft, faPlus } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -167,7 +167,7 @@
       'group relative flex items-center gap-3 w-full text-left py-1 pl-0 pr-2 rounded-md outline-none',
       clickable ? 'cursor-pointer' : 'cursor-default',
     )}
-    in:slide={{ duration: 200 }}
+    in:slide={{ tier: 'moderate' }}
   >
     {#if eventAgentId && onShowAgent}
       <Button
@@ -195,7 +195,7 @@
       </div>
     {/if}
 
-    <button
+    <Button
       type="button"
       class="flex min-w-0 flex-1 items-center gap-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       onclick={() => handleEventClick(row.event)}
@@ -215,7 +215,7 @@
           {time.label}
         </span>
       {/if}
-    </button>
+    </Button>
   </div>
 {/snippet}
 
@@ -243,7 +243,7 @@
             {/each}
           </div>
           {#if expanded && extraRows.length > 0}
-            <div class="space-y-0" transition:slide={{ duration: 250 }}>
+            <div class="space-y-0" transition:slide={{ tier: 'slow' }}>
               {#each extraRows as row, index (row.key)}
                 {@render activityRow(row, index + visibleRows.length)}
               {/each}
@@ -253,7 +253,7 @@
       {/if}
 
       {#if hasMore}
-        <button
+        <Button
           type="button"
           class="shrink-0 w-full text-sm text-muted-foreground hover:text-foreground transition-colors mt-1.5 flex items-center gap-1 cursor-pointer outline-none"
           onclick={() => (expanded = !expanded)}
@@ -268,18 +268,18 @@
               ? m.workspace_activityPreview_showLess_label()
               : m.workspace_activityPreview_showMore_label()}
           </div>
-        </button>
+        </Button>
       {/if}
 
       {#if onViewAll}
-        <button
+        <Button
           type="button"
           class="shrink-0 w-full text-sm text-muted-foreground hover:text-foreground transition-colors mt-1.5 flex items-center gap-1 cursor-pointer"
           onclick={() => onViewAll?.()}
         >
           <Fa icon={faPlus} size="xs" class="text-ghost shrink-0 w-3.5 mr-0.5" />
           <div class="flex-1 text-left text-ui">{m.workspace_activityPreview_seeAll_label()}</div>
-        </button>
+        </Button>
       {/if}
     </div>
   </div>

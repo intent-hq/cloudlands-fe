@@ -7,6 +7,7 @@
    */
 
   import Fa from 'svelte-fa';
+  import { Button } from '$lib/components/ui/button';
   import { faArrowRight } from '@fortawesome/free-solid-svg-icons';
   import { faFile } from '@fortawesome/free-regular-svg-icons';
   import { formatInteger } from '$lib/i18n/format';
@@ -141,8 +142,9 @@
     data-chat-operational-row
     data-testid="file-changes-surface"
   >
-    <button
+    <Button
       type="button"
+      variant="plain"
       onclick={handleClick}
       aria-disabled={readOnly}
       tabindex={readOnly ? -1 : undefined}
@@ -163,6 +165,6 @@
           class="h-3.5! w-3.5! shrink-0 opacity-30 transition-opacity group-hover:opacity-50"
         />
       </span>
-    </button>
+    </Button>
   </div>
 {/if}

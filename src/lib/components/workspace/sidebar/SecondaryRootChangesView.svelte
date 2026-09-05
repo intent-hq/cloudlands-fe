@@ -41,8 +41,8 @@
     faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { slide } from 'svelte/transition';
-  import { toast } from 'svelte-sonner';
+  import { slide } from '$lib/motion';
+  import { notify } from '$lib/components/patterns/notify';
 
   interface Props {
     workspaceId: string;
@@ -146,9 +146,9 @@
     if (!branchName) return;
     try {
       await writeTextToClipboard(branchName);
-      toast.success(m.workspace_sidebarChanges_branchCopied_label());
+      notify.success(m.workspace_sidebarChanges_branchCopied_label());
     } catch {
-      toast.error(m.workspace_sidebarChanges_copyBranchFailed_error());
+      notify.error(m.workspace_sidebarChanges_copyBranchFailed_error());
     }
   }
 
@@ -186,7 +186,7 @@
     {:else}
       <span class="text-ui truncate min-w-0">{branchLabel}</span>
     {/if}
-    <button
+    <Button
       type="button"
       class="ml-auto p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
       onclick={load}
@@ -194,7 +194,7 @@
       title={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
     >
       <Fa icon={faArrowsRotate} class="text-subtle {loading ? 'animate-spin' : ''}" size={10} />
-    </button>
+    </Button>
   </div>
 
   {#if loading && !status}
@@ -391,7 +391,7 @@
 
     <!-- Expanded lazy file list (read-only; clicking a file opens the same changeset) -->
     {#if isExpanded}
-      <div class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px" transition:slide={{ duration: 150 }}>
+      <div class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px" transition:slide={{ tier: 'moderate' }}>
         {#each files as file (file.path)}
           <FileRow {file} muted={true} onFileClick={() => openCommitChangeset(commit)} />
         {/each}

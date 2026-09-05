@@ -172,8 +172,10 @@ describe('WorkspaceCard compact agent metadata', () => {
 
     expect(workspaceButton.contains(pinButton)).toBe(false);
     expect(workspaceButton.contains(markAsReadButton)).toBe(false);
-    expect(pinButton.className).toContain('size-7');
-    expect(markAsReadButton.className).toContain('size-7');
+    expect(pinButton.getAttribute('data-slot')).toBe('button');
+    expect(markAsReadButton.getAttribute('data-slot')).toBe('button');
+    expect(pinButton.className).toContain('size-(--control-height-compact)');
+    expect(markAsReadButton.className).toContain('size-(--control-height-compact)');
     expect(actions?.className).toContain('focus-within:opacity-100');
 
     pinButton.focus();

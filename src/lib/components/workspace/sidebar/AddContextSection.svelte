@@ -11,7 +11,7 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faPlus, faGlobe } from '@fortawesome/free-solid-svg-icons';
-  import { scale } from 'svelte/transition';
+  import { scale } from '$lib/motion';
   import ProviderIcon from '$features/context/components/ContextProviderIcon.svelte';
   import IssueSuggestions, {
     type IssueSelectionData,
@@ -161,11 +161,11 @@
       bind:this={contentRef}
       class="fixed z-[10000] bg-popover border border-border shadow-lg overflow-hidden"
       style={portalStyle}
-      transition:scale={{ duration: 150, start: 0.95 }}
+      transition:scale={{ distance: 0.05, tier: 'moderate' }}
     >
       <div class="">
         <!-- Note -->
-        <button
+        <Button
           class="w-full px-3 py-2 flex items-center gap-2.5 transition-colors text-left hover:bg-muted/50 cursor-pointer"
           onclick={handleNoteClick}
         >
@@ -176,11 +176,11 @@
             <div class="text-sm font-medium">{m.workspace_addContext_note_label()}</div>
             <div class="text-xs text-subtle">{m.workspace_addContext_note_description()}</div>
           </div>
-        </button>
+        </Button>
 
         <!-- Integrations -->
         <!-- TODO: these aren't hooked up rn -->
-        <!-- <button
+        <!-- <Button
           bind:this={integrationsAnchor}
           class="w-full px-3 py-2 flex items-center gap-2.5 transition-colors text-left hover:bg-muted/50 cursor-pointer
                  {showIntegrations ? 'bg-muted/50' : ''}"
@@ -193,10 +193,10 @@
             <div class="text-sm font-medium">Integrations</div>
             <div class="text-xs text-subtle">Linear, GitHub, Sentry</div>
           </div>
-        </button> -->
+        </Button> -->
 
         <!-- Browser -->
-        <button
+        <Button
           class="w-full px-3 py-2 flex items-center gap-2.5 transition-colors text-left hover:bg-muted/50 cursor-pointer"
           onclick={handleBrowserClick}
         >
@@ -207,7 +207,7 @@
             <div class="text-sm font-medium">{m.workspace_multiSelectSidebar_browser_label()}</div>
             <div class="text-xs text-subtle">{m.workspace_addContext_browser_description()}</div>
           </div>
-        </button>
+        </Button>
       </div>
     </div>
   </Portal>
@@ -230,7 +230,7 @@
         pickerWidth,
         viewportWidth - 32,
       )}px;"
-      transition:scale={{ duration: 150, start: 0.95 }}
+      transition:scale={{ distance: 0.05, tier: 'moderate' }}
     >
       <IssueSuggestions
         onSelect={handleIntegrationSelect}

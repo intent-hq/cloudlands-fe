@@ -26,6 +26,12 @@
   </Tooltip.TooltipRich>
 </div>
 
+<div data-testid="shortcut-tooltip">
+  <Tooltip.TooltipShortcut label="Open navigation" shortcut="mod+k" delayDuration={0}>
+    <Button aria-label="Show shortcut help" variant="ghost">Shortcut help</Button>
+  </Tooltip.TooltipShortcut>
+</div>
+
 <div data-testid="passive-tooltip">
   <Tooltip.Tooltip content="Passive status help" delayDuration={0}>
     <span>Passive status</span>

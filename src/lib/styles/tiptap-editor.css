@@ -563,11 +563,11 @@ div.tiptap-editor ol {
 
 .tiptap-editor ul.task-list li.task-item input[type='checkbox']:checked {
   background: hsl(var(--primary));
-  border-color: hsl(var(--primary));
+  border-color: hsl(var(--primary-ink));
 }
 
 .tiptap-editor ul.task-list li.task-item input[type='checkbox']:hover {
-  border-color: hsl(var(--primary));
+  border-color: hsl(var(--primary-ink));
 }
 
 .tiptap-editor ul.task-list li.task-item[data-checked='true'] > div > p,
@@ -806,7 +806,7 @@ code.is-file-path:focus {
 }
 
 .tiptap-editor pre .code-block-copy-btn.copied {
-  color: hsl(var(--primary));
+  color: hsl(var(--primary-ink));
 }
 
 /* Syntax highlighting for code blocks */

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
@@ -16,7 +18,7 @@
     faFolderOpen,
     faTrash,
   } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
   import LineChangesBadge from '../shared/LineChangesBadge.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
@@ -776,14 +778,14 @@
         error?: { code: string; message: string };
       }>('file:download', { path: node.path });
       if (result?.success && result.data?.filePath) {
-        toast.success(
+        notify.success(
           m.fileExplorer_tree_downloadSuccess_toast({ filePath: result.data.filePath }),
         );
       } else if (!result?.canceled) {
-        toast.error(result?.error?.message || m.fileExplorer_tree_downloadFailed_error());
+        notify.error(result?.error?.message || m.fileExplorer_tree_downloadFailed_error());
       }
     } catch {
-      toast.error(m.fileExplorer_tree_downloadFailed_error());
+      notify.error(m.fileExplorer_tree_downloadFailed_error());
     }
   }
 
@@ -1133,8 +1135,8 @@
                 >
                   {@html getFileTypeIconSvg(creatingValue || '')}
                 </span>
-                <input
-                  bind:this={createInputRef}
+                <Input
+                  bind:ref={createInputRef}
                   type="text"
                   bind:value={creatingValue}
                   onblur={saveCreate}
@@ -1196,8 +1198,8 @@
                       {@html getFileTypeIconSvg(node.name)}
                     {/if}
                   </span>
-                  <input
-                    bind:this={editInputRef}
+                  <Input
+                    bind:ref={editInputRef}
                     type="text"
                     bind:value={editingValue}
                     onblur={saveEdit}
@@ -1265,7 +1267,7 @@
               {#if flatNode.agentEdits && flatNode.agentEdits.length > 0 && (node.type === 'file' || !flatNode.isExpanded)}
                 <div class="flex items-center -space-x-1 mr-1 ml-2">
                   {#each flatNode.agentEdits.slice(0, 3) as agentId (agentId)}
-                    <button
+                    <Button
                       type="button"
                       class="rounded-full overflow-hidden cursor-pointer"
                       title={m.fileExplorer_tree_openAgent_tooltip()}
@@ -1275,7 +1277,7 @@
                       }}
                     >
                       <AgentAvatar {agentId} variant="compact" />
-                    </button>
+                    </Button>
                   {/each}
                 </div>
               {/if}
@@ -1301,7 +1303,7 @@
 <style>
   /* Visual feedback when dragging files to root level (no specific folder targeted) */
   .file-drop-root {
-    outline: 2px dashed hsl(var(--primary));
+    outline: 2px dashed hsl(var(--primary-ink));
     outline-offset: -2px;
     background-color: hsl(var(--primary) / 0.05);
   }

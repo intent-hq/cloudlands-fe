@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import CodeBlock from './CodeBlock.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -45,7 +46,7 @@
   <!-- Header with file path and mode -->
   <div class="flex items-center justify-between mb-1 px-3">
     <div class="flex items-center gap-2 flex-1 min-w-0">
-      <button
+      <Button
         class="flex items-center gap-1.5 flex-1 min-w-0 text-left hover:text-muted-foreground transition-colors text-inherit cursor-pointer"
         onclick={handleOpenFile}
         title={m.editor_codeSnippet_openFile_tooltip()}
@@ -63,7 +64,7 @@
           size="xs"
           class="text-ghost opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
         /> -->
-      </button>
+      </Button>
     </div>
 
     {#if mode && mode !== 'EXCERPT'}

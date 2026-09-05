@@ -69,8 +69,8 @@ vi.mock(
   }),
 );
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { error: vi.fn(), success: vi.fn(), custom: vi.fn(), info: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn(), custom: vi.fn(), info: vi.fn() },
 }));
 
 vi.mock('svelte-fa', async () => {

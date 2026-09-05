@@ -12,6 +12,7 @@
    */
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
+  import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { hudTakeoverRequestCleared } from '$store/renderer/slices/hud/hud-slice';
@@ -73,10 +74,6 @@
     motion: () => !reducedMotion.current,
     needsPan: () => needsPan,
   });
-
-  function handleDismiss() {
-    controller.dismiss();
-  }
 
   // Manual card-click requests arrive via the hud slice; consume + clear.
   const takeoverRequest$ = selectHudTakeoverRequestWorkspaceId();
@@ -276,9 +273,14 @@
               {m.hud_takeover_return_label({ seconds: String(countdown).padStart(2, '0') })}
             </span>
           {/if}
-          <button class="ov-dismiss" onclick={handleDismiss} data-testid="hud-takeover-dismiss">
+          <Button
+            variant="plain"
+            class="ov-dismiss"
+            onclick={() => controller.dismiss()}
+            data-testid="hud-takeover-dismiss"
+          >
             {m.hud_takeover_dismiss_label()}
-          </button>
+          </Button>
         </div>
 
         <div class="ov-main">
@@ -768,11 +770,13 @@
       monospace;
     color: hsl(var(--muted-foreground) / 0.55);
   }
-  .ov-dismiss {
+  :global(.ov-dismiss) {
     cursor: pointer;
     border: 1px solid hsl(var(--border));
     background: transparent;
-    padding: 6px 12px;
+    height: auto;
+    padding: 6px 12px !important;
+    border-radius: 0;
     font:
       600 10px 'JetBrains Mono',
       monospace;
@@ -780,7 +784,7 @@
     color: hsl(var(--muted-foreground));
     text-transform: uppercase;
   }
-  .ov-dismiss:hover {
+  :global(.ov-dismiss:hover) {
     background: hsl(var(--muted) / 0.5);
   }
 

@@ -1,10 +1,10 @@
 <script lang="ts">
+  import { Button, Input, Select } from '$lib/components/patterns/settings/custom-controls';
   import {
     LINEAR_ISSUE_FILTER_OPTIONS,
     type LinearIssueFilter,
   } from '$features/linear-auth/constants';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
-  import { Select } from '$lib/components/ui/select';
   import { safeLocalStorage } from '$lib/utils/safe-storage';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
@@ -21,7 +21,6 @@
     connectLinear,
     logoutLinear,
   } from '$store/renderer/slices/linear-auth/linear-auth-slice';
-  import Input from '$lib/components/ui/input/input.svelte';
 
   const isAuthenticated$ = selectLinearIsAuthenticated();
   const isAuthenticating$ = selectLinearIsAuthenticating();
@@ -113,15 +112,15 @@
       {#if $isAuthenticating$}
         <span class="text-subtle">{m.settings_connections_linear_validatingApiKey()}</span>
       {:else if $isAuthenticated$}
-        <button
+        <Button
           type="button"
           class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
           onclick={handleShowKeyInput}
         >
           {m.settings_connections_linear_replaceKey()}
-        </button>
+        </Button>
         <span class="text-ghost">·</span>
-        <button
+        <Button
           type="button"
           class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
           onclick={handleLinearDisconnect}
@@ -130,15 +129,15 @@
           {isDisconnectingLinear
             ? m.settings_connections_disconnecting()
             : m.settings_connections_disconnect()}
-        </button>
+        </Button>
       {:else if !$requiresDaemonAuth$}
-        <button
+        <Button
           type="button"
-          class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+          class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium"
           onclick={handleShowKeyInput}
         >
           {m.settings_connections_connect()}
-        </button>
+        </Button>
       {:else}
         <span class="text-xs text-subtle">{m.settings_connections_requiresDaemonAuth()}</span>
       {/if}
@@ -159,21 +158,21 @@
             if (e.key === 'Escape') handleCancelKeyInput();
           }}
         />
-        <button
+        <Button
           type="button"
-          class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium text-xs"
+          class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium text-xs"
           onclick={handleSubmitApiKey}
           disabled={!apiKeyDraft.trim()}
         >
           {m.settings_connections_save()}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors text-xs"
           onclick={handleCancelKeyInput}
         >
           {m.settings_connections_cancel()}
-        </button>
+        </Button>
       </div>
       <p class="text-xs text-subtle">
         {m.settings_connections_linear_apiKeyStorageNote()}

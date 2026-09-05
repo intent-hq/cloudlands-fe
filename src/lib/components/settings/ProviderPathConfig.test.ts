@@ -23,8 +23,8 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock('svelte-fa', async () => ({

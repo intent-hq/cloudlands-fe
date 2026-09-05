@@ -36,7 +36,7 @@ describe('Input', () => {
     expect(input.readOnly).toBe(true);
   });
 
-  it('uses contrast-validated invalid borders and rings for text and file inputs', () => {
+  it('uses contrast-validated invalid borders without an outer ring', () => {
     const text = render(InputHarness);
     const textInput = text.getByRole('textbox', { name: 'Profile name' });
     const file = render(Input, {
@@ -44,45 +44,38 @@ describe('Input', () => {
     });
     const fileInput = file.container.querySelector('input[type="file"]');
     for (const control of [textInput, fileInput]) {
-      expect(control?.className.split(/\s+/)).toContain('aria-invalid:border-danger');
-      expect(control?.className.split(/\s+/)).toContain('aria-invalid:ring-1');
-      expect(control?.className.split(/\s+/)).toContain('aria-invalid:ring-danger/25');
+      expect(control?.className.split(/\s+/)).toContain(
+          'aria-invalid:border-danger',
+      );
+      expect(control?.className.split(/\s+/)).not.toContain('aria-invalid:ring-1');
     }
     for (const { label, ratio } of invalidControlContrastCases()) {
       expect(ratio, label).toBeGreaterThanOrEqual(3);
     }
   });
 
-  it('uses a flat neutral field treatment and canonical Body typography', () => {
-    const { getByRole } = render(Input, {
-      props: { 'aria-label': 'Project name', placeholder: 'Enter a project name' },
+  it('publishes its resolved size without consuming the native file-input size', () => {
+    const compact = render(Input, {
+      props: { 'aria-label': 'Project name', size: 'compact' },
     });
-    const classes = getByRole('textbox', { name: 'Project name' }).className.split(/\s+/);
-    expect(classes).toEqual(
-      expect.arrayContaining([
-        'type-body',
-        'border-border',
-        'bg-card',
-        'shadow-none',
-        'hover:border-input',
-        'focus-visible:border-ring',
-        'focus-visible:outline-none',
-        'focus-visible:ring-0',
-      ]),
-    );
-    const fileInput = render(Input, {
-      props: { type: 'file', 'aria-label': 'Project file' },
-    }).container.querySelector('input[type="file"]');
-    expect(fileInput?.className.split(/\s+/)).toContain('shadow-none');
-    expect(fileInput?.className.split(/\s+/)).toContain('focus-visible:ring-0');
-    expect(fileInput?.className.split(/\s+/)).not.toContain('focus-visible:ring-2');
-    expect(fileInput?.className.split(/\s+/)).not.toContain('focus-visible:ring-ring/40');
-    expect(classes).not.toContain('shadow-(--elevation-raised)');
-    expect(fileInput?.className.split(/\s+/)).not.toContain('shadow-(--elevation-raised)');
-    expect(classes).not.toContain('border-input');
-    expect(classes).not.toContain('text-sm');
-    expect(classes).not.toContain('focus-visible:ring-2');
-    expect(classes).not.toContain('focus-visible:ring-ring/40');
+    expect(compact.getByRole('textbox', { name: 'Project name' }).dataset.size).toBe('compact');
+    compact.unmount();
+
+    const file = render(Input, {
+      props: { type: 'file', 'aria-label': 'Project file', size: 24 },
+    }).container.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(file.size).toBe(24);
+    expect(file.dataset.size).toBe('default');
+  });
+
+  it('connects animated helper and error messages to the control', () => {
+    const { getByRole } = render(Input, {
+      props: { id: 'project-name', 'aria-label': 'Project name', error: 'A name is required' },
+    });
+    const input = getByRole('textbox', { name: 'Project name' });
+    const alert = getByRole('alert');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.getAttribute('aria-describedby')).toBe(alert.id);
   });
 
   it('publishes compact, theme, validation, and reduced-motion fixtures', () => {
@@ -99,7 +92,7 @@ describe('Input', () => {
     const classes = getByRole('textbox', { name: 'Composite field' }).className.split(/\s+/);
     expect(classes).toContain('focus-visible:outline-none');
     expect(classes).toContain('focus-visible:ring-0');
-    expect(classes).not.toContain('focus-visible:border-ring');
+    expect(classes).toContain('focus-visible:!shadow-none');
   });
 });
 

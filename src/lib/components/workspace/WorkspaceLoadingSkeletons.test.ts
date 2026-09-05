@@ -7,7 +7,7 @@ import ContentSkeleton from './ContentSkeleton.svelte';
 import SidebarSkeleton from './SidebarSkeleton.svelte';
 
 describe('workspace loading skeletons', () => {
-  it('uses one quiet pulse layer on sidebar-relative placeholders', () => {
+  it('uses one quiet shimmer layer on sidebar-relative placeholders', () => {
     const { container } = render(SidebarSkeleton);
     const wrapper = container.querySelector('[data-workspace-sidebar-skeleton]');
     const placeholders = [...container.querySelectorAll('[data-slot="skeleton"]')];
@@ -17,7 +17,7 @@ describe('workspace loading skeletons', () => {
     expect(
       placeholders.every(
         (placeholder) =>
-          placeholder.classList.contains('animate-pulse') &&
+          placeholder.classList.contains('skeleton-shimmer') &&
           placeholder.classList.contains('bg-sidebar-foreground/10'),
       ),
     ).toBe(true);
@@ -34,14 +34,16 @@ describe('workspace loading skeletons', () => {
     expect(container.querySelectorAll('[data-loading-sidebar-card]')).toHaveLength(6);
   });
 
-  it('does not compound the content skeleton pulse animation', () => {
+  it('does not compound the content skeleton shimmer animation', () => {
     const { container } = render(ContentSkeleton);
     const wrapper = container.querySelector('[data-workspace-content-skeleton]');
 
     expect(wrapper?.classList.contains('animate-pulse')).toBe(false);
     expect(wrapper?.classList).toContain('bg-sidebar');
     expect(wrapper?.classList).not.toContain('bg-transparent');
-    expect(container.querySelector('[data-slot="skeleton"]')?.classList).toContain('animate-pulse');
+    expect(container.querySelector('[data-slot="skeleton"]')?.classList).toContain(
+      'skeleton-shimmer',
+    );
   });
 
   it('keeps loading surfaces opaque instead of fading over mounted content', () => {

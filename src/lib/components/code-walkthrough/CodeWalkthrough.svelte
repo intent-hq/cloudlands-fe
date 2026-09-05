@@ -69,7 +69,7 @@
       <!-- Header with summary -->
       <div class="flex items-start gap-3">
         <div class="p-2 rounded-lg bg-primary/10">
-          <Fa icon={faBook} class="h-5 w-5 text-primary" />
+          <Fa icon={faBook} class="h-5 w-5 text-primary-ink" />
         </div>
         <div class="flex-1 min-w-0">
           <h2 class="text-lg font-semibold">{m.codeWalkthrough_main_title()}</h2>

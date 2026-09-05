@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { Button } from '$lib/components/ui/button';
-  import { FileInput } from '$lib/components/ui/file-input';
-  import * as ToggleGroup from '$lib/components/ui/toggle-group';
+  import {
+    Button,
+    FileInput,
+    ToggleGroup,
+  } from '$lib/components/patterns/settings/custom-controls';
   import { stripJSONC } from '$lib/utils/vscode-theme-parser';
   import { themePresets } from '$lib/utils/theme-presets';
   import { m } from '$shared/paraglide/messages.js';

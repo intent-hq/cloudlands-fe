@@ -13,8 +13,7 @@
   } from '$store/renderer/slices/sentry-auth/sentry-auth-slice';
 
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
-  import { Button } from '$lib/components/ui/button';
-  import { Input } from '$lib/components/ui/input';
+  import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
@@ -101,15 +100,15 @@
     {#if $storeIsConnecting$ || pendingConnect}
       <span class="text-subtle">{m.settings_connections_connecting()}</span>
     {:else if $isAuthenticated$}
-      <button
+      <Button
         type="button"
         class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
         onclick={handleSentryReconnect}
       >
         {m.settings_connections_reconnect()}
-      </button>
+      </Button>
       <span class="text-ghost">·</span>
-      <button
+      <Button
         type="button"
         class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
         onclick={handleSentryDisconnect}
@@ -118,15 +117,15 @@
         {isDisconnectingSentry
           ? m.settings_connections_disconnecting()
           : m.settings_connections_disconnect()}
-      </button>
+      </Button>
     {:else}
-      <button
+      <Button
         type="button"
-        class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+        class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium"
         onclick={() => (showConnectForm = true)}
       >
         {m.settings_connections_connect()}
-      </button>
+      </Button>
     {/if}
   </div>
 </div>
@@ -163,18 +162,18 @@
       />
       <p class="text-xs text-subtle">
         {m.settings_connections_sentry_apiToken_createTokenAt()}{' '}
-        <button
+        <Button
           type="button"
           onclick={() => {
             handleLink('https://sentry.io/settings/account/api/auth-tokens/', {
               workspaceId,
             });
           }}
-          class="text-primary hover:underline cursor-pointer"
+          class="text-primary-ink hover:underline cursor-pointer"
         >
           <!-- i18n-ignore (URL) -->
           sentry.io/settings/account/api/auth-tokens/
-        </button>
+        </Button>
         {' '}{m.settings_connections_sentry_apiToken_withScopes()}
         <!-- i18n-ignore (scope identifiers) -->
         <span class="font-mono text-subtle">org:read, project:read, event:read</span>

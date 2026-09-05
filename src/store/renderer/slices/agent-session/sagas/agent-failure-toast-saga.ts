@@ -26,8 +26,8 @@
  * Switch To performs the SAME navigation but never calls `agent.retry`.
  */
 import { buffers, eventChannel, type EventChannel } from 'redux-saga';
-import type { ComponentProps } from 'svelte';
 import { call, cancelled, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
+import type { AgentFailureNotifyProps } from '$lib/components/patterns/notify';
 
 import {
   getAgentFailureEntry,
@@ -100,17 +100,9 @@ function truncate(text: string): string {
 }
 
 async function loadToastArtifacts() {
-  const [{ toast }, component] = await Promise.all([
-    import('svelte-sonner'),
-    import('$lib/components/ui/toast/AgentFailureToast.svelte'),
-  ]);
-  return { toast, AgentFailureToast: component.default };
+  const { notify } = await import('$lib/components/patterns/notify');
+  return notify;
 }
-
-/** Toast component props, derived from the dynamic import to avoid a static import edge. */
-type AgentFailureToastProps = ComponentProps<
-  Awaited<ReturnType<typeof loadToastArtifacts>>['AgentFailureToast']
->;
 
 /**
  * Lazily pull the connected key-slot resolver. The badge is optional: an
@@ -163,7 +155,7 @@ function* buildToastProps(
   state: AgentToastState,
   emit: FailureEmitter,
 ): SagaGenerator<{
-  componentProps: AgentFailureToastProps;
+  componentProps: AgentFailureNotifyProps;
   authGuidance: ProviderAuthFailureGuidance | null;
 }> {
   const session = yield* selectAgentSession.effect(entry.agentId);
@@ -182,7 +174,7 @@ function* buildToastProps(
     session?.model,
     entry.error,
   );
-  const componentProps: AgentFailureToastProps = {
+  const componentProps: AgentFailureNotifyProps = {
     title: agentName
       ? m.agent_failureToast_agentFailed_title({ name: agentName })
       : m.agent_failureToast_agentFailedUnknown_title(),
@@ -211,11 +203,10 @@ function* renderEntry(
   state: AgentToastState,
   emit: FailureEmitter,
 ): SagaGenerator<void> {
-  const { toast, AgentFailureToast } = yield* call(loadToastArtifacts);
+  const notify = yield* call(loadToastArtifacts);
   const { componentProps, authGuidance } = yield* call(buildToastProps, entry, state, emit);
-  toast.custom(AgentFailureToast, {
+  notify.agentFailure(componentProps, {
     id: toastId(entry.agentId),
-    componentProps,
     duration: Number.POSITIVE_INFINITY,
     class: WRAPPER_CLASS,
   });
@@ -265,8 +256,8 @@ function* renderSnapshot(
   for (const [agentId, state] of states) {
     if (liveAgentIds.has(agentId)) continue;
     if (state.visible) {
-      const { toast } = yield* call(loadToastArtifacts);
-      toast.dismiss(toastId(agentId));
+      const notify = yield* call(loadToastArtifacts);
+      notify.dismiss(toastId(agentId));
     }
     states.delete(agentId);
   }
@@ -410,8 +401,8 @@ function* closeAgentToast(
   const entry = getAgentFailureEntry(agentId);
   state.dismissedThroughAt = entry ? entry.at : Date.now();
   state.visible = false;
-  const { toast } = yield* call(loadToastArtifacts);
-  toast.dismiss(toastId(agentId));
+  const notify = yield* call(loadToastArtifacts);
+  notify.dismiss(toastId(agentId));
 }
 
 export function* agentFailureToastSaga(): SagaGenerator<void> {
@@ -434,8 +425,8 @@ export function* agentFailureToastSaga(): SagaGenerator<void> {
   } finally {
     channel.close();
     if (states.size > 0) {
-      const { toast } = yield* call(loadToastArtifacts);
-      for (const agentId of states.keys()) toast.dismiss(toastId(agentId));
+      const notify = yield* call(loadToastArtifacts);
+      for (const agentId of states.keys()) notify.dismiss(toastId(agentId));
     }
     states.clear();
   }

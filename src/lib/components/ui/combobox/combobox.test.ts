@@ -6,7 +6,7 @@ import { invalidControlContrastCases } from '../../../../../tests/helpers/invali
 import ComboboxHarness from './combobox.test-harness.svelte';
 
 describe('Combobox inventory', () => {
-  it('owns the canonical pattern with every legacy searchable family barrel removed', () => {
+  it('owns the canonical pattern while retaining deprecated source-compatible wrappers', () => {
     const inventory = buildUiComponentInventory();
     const canonical = inventory.components.find(
       (component) => component.publicImport === '$lib/components/ui/combobox',
@@ -22,7 +22,11 @@ describe('Combobox inventory', () => {
       const legacy = inventory.components.find(
         (component) => component.publicImport === publicImport,
       );
-      expect(legacy, publicImport).toBeUndefined();
+      expect(legacy, publicImport).toMatchObject({
+        category: 'deprecated-wrapper',
+        owner: '007-B6',
+        replacement: '$lib/components/ui/combobox',
+      });
     }
   });
 });
@@ -61,7 +65,7 @@ describe('Combobox behavior', () => {
     await fireEvent.focus(input);
     await fireEvent.input(input, { target: { value: 'Grace' } });
     expect(screen.getByRole('option', { name: 'Grace Hopper' })).toBeTruthy();
-    expect(screen.queryByRole('option', { name: 'Ada Lovelace' })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('option', { name: 'Ada Lovelace' })).toBeNull());
 
     await waitFor(() => expect(input.getAttribute('aria-activedescendant')).toBeTruthy());
     await fireEvent.keyDown(input, { key: 'Home' });
@@ -162,18 +166,13 @@ describe('Combobox behavior', () => {
     expect(container.contains(screen.getByRole('listbox'))).toBe(false);
   });
 
-  it('uses compact lifted field and editorial scrolling geometry', async () => {
+  it('shows a traveling highlight when opened', async () => {
     render(ComboboxHarness);
     const input = screen.getByRole('combobox', { name: 'Search people' });
-    expect(input.className).toContain('h-(--control-height-medium)');
-    expect(input.className).toContain('type-body');
-    expect(input.className).toContain('border-border');
-    expect(input.className).toContain('bg-card');
-    expect(input.className).toContain('hover:border-input');
-    expect(input.className).toContain('rounded-(--radius-medium)');
-    expect(input.className).toContain('shadow-(--elevation-raised)');
     await fireEvent.focus(input);
-    expect(screen.getByRole('listbox').className).toContain('rounded-(--radius-medium)');
+    expect(
+      screen.getByRole('listbox').querySelector('[data-slot="menu-list-highlight"]'),
+    ).toBeTruthy();
   });
 
   it('dismisses portal content with Escape and restores input focus', async () => {

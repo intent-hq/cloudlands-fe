@@ -106,6 +106,7 @@ describe('Menu command state behavior', () => {
     expect(command.getAttribute('data-slot')).toBe('menu-command-item');
     expect(command.querySelector('svg')).toBeTruthy();
     expect(command.querySelector('kbd')?.textContent).toBe('⇧⌘A');
+    expect(command.querySelector('kbd')?.getAttribute('data-slot')).toBe('shortcut-chip');
   });
 });
 
@@ -239,16 +240,16 @@ describe('Menu metadata and compatibility', () => {
     await openMenu();
     const menu = screen.getByRole('menu');
     const apple = screen.getByRole('menuitem', { name: 'Apple' });
-    const checkbox = screen.getByRole('menuitemcheckbox', { name: 'Show panel' });
-    expect(menu.className).toContain('bg-popover');
+    expect(menu.className).toContain('bg-surface-3');
     expect(menu.className).toContain('border-border');
     expect(menu.className).toContain('overflow-y-auto');
     expect(menu.className).toContain('rounded-md');
-    expect(menu.className).toContain('shadow-(--elevation-overlay)');
+    expect(menu.className).toContain('shadow-surface-3');
+    expect(menu.getAttribute('data-surface-level')).toBe('3');
     expect(apple.className).toContain('min-h-7');
     expect(apple.className).toContain('rounded-md');
     expect(apple.className).toContain('type-body');
-    expect(checkbox.className).toContain('data-[state=checked]:bg-accent/60');
+    expect(menu.querySelector('[data-slot="menu-list-highlight"]')).toBeTruthy();
     expect(menu.className).not.toMatch(/bg-(?:white|black|gray|slate|zinc|neutral)-?/);
   });
 

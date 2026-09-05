@@ -9,8 +9,7 @@
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import Fa from 'svelte-fa';
   import { faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
-  import { fly } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fly } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -94,14 +93,14 @@
           <div
             class="text-left overflow-hidden col-span-full row-span-full"
             in:fly={{
-              x: slideDirection === 'left' ? 100 : -100,
-              duration: 300,
-              easing: cubicOut,
+              axis: 'x',
+              distance: slideDirection === 'left' ? 100 : -100,
+              tier: 'slow',
             }}
             out:fly={{
-              x: slideDirection === 'left' ? -100 : 100,
-              duration: 300,
-              easing: cubicOut,
+              axis: 'x',
+              distance: slideDirection === 'left' ? -100 : 100,
+              tier: 'slow',
             }}
           >
             {#if narrative?.title}
@@ -127,11 +126,11 @@
       <div class="flex items-center gap-1.5">
         {#each states as state, index (state.id)}
           {@const stateNarrative = getNarrative(state.narrative)}
-          <button
-            class="stepper-dot"
-            class:active={index === currentIndex}
-            class:completed={index < currentIndex}
-            style:anchor-name="--segment-{index}"
+          <Button
+            class="stepper-dot {index === currentIndex ? 'active' : ''} {index < currentIndex
+              ? 'completed'
+              : ''}"
+            style="anchor-name: --segment-{index};"
             onclick={() => goToState(index)}
             onmouseenter={() => (hoveredIndex = index)}
             onmouseleave={() => (hoveredIndex = null)}
@@ -141,7 +140,7 @@
                 stateNarrative?.title ||
                 m.diagram_controls_stateNumber_label({ number: index + 1 }),
             })}
-          ></button>
+          ></Button>
 
           <!-- Hover card -->
           {#if hoveredIndex === index && stateNarrative}
@@ -198,39 +197,39 @@
     pointer-events: auto;
   }
 
-  .stepper-dot {
+  :global(.stepper-dot) {
     width: 6px;
     height: 6px;
     background: hsl(var(--border) / 0.6);
     border: none;
     border-radius: 3px;
     cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all var(--spring-moderate) var(--spring-moderate-ease);
     position: relative;
     padding: 6px;
     background-clip: content-box;
     flex-shrink: 0;
   }
 
-  .stepper-dot:hover {
+  :global(.stepper-dot:hover) {
     background: hsl(var(--muted-foreground) / 0.5);
     background-clip: content-box;
     transform: scale(1.2);
   }
 
-  .stepper-dot.completed {
+  :global(.stepper-dot.completed) {
     background: hsl(var(--primary) / 0.6);
     background-clip: content-box;
   }
 
-  .stepper-dot.active {
+  :global(.stepper-dot.active) {
     width: 24px;
     background: hsl(var(--primary));
     background-clip: content-box;
     border-radius: 12px;
   }
 
-  .stepper-dot.active:hover {
+  :global(.stepper-dot.active:hover) {
     transform: scale(1.05);
   }
 </style>

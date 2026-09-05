@@ -1,8 +1,7 @@
 <script lang="ts">
   import type { McpServerFormState, McpTransportType, McpAuthType } from './types';
   import { createEmptyFormState, formStateToServer } from './types';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Input from '$lib/components/ui/input/input.svelte';
+  import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
   import { faPlus, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
@@ -178,7 +177,7 @@
     </span>
     <div class="flex gap-1 p-1 bg-muted rounded-lg w-fit">
       {#each transportTypes as type (type.value)}
-        <button
+        <Button
           type="button"
           class="px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer
                  {form.type === type.value
@@ -187,7 +186,7 @@
           onclick={() => (form.type = type.value)}
         >
           {type.label}
-        </button>
+        </Button>
       {/each}
     </div>
     <p class="text-xs text-subtle mt-1.5">
@@ -269,7 +268,7 @@
       >
       <div class="flex gap-1 p-1 bg-muted rounded-lg w-fit">
         {#each authTypes as auth (auth.value)}
-          <button
+          <Button
             type="button"
             class="px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer
                    {form.authType === auth.value
@@ -278,7 +277,7 @@
             onclick={() => (form.authType = auth.value)}
           >
             {auth.label}
-          </button>
+          </Button>
         {/each}
       </div>
       <p class="text-xs text-subtle mt-1.5">

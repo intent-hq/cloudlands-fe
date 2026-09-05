@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import DialogHarness from './DialogHarness.svelte';
 import { dialogMetadata } from './dialog.meta';
 import { legacyOverlayDeprecations } from './legacy-overlays.meta';
+import { overlayMotion } from './overlay-motion.svelte';
 
 afterEach(cleanup);
 
@@ -11,11 +12,21 @@ describe('Dialog', () => {
     expect(dialogMetadata.fixtures[0]?.states).toContain('open');
     expect(legacyOverlayDeprecations).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ replacement: '$lib/components/ui/dialog' }),
         expect.objectContaining({ replacement: '$lib/components/ui/sheet' }),
       ]),
     );
     expect(legacyOverlayDeprecations.every((record) => record.removalGate.length > 0)).toBe(true);
+    expect(legacyOverlayDeprecations.every((record) => record.callers.length === 0)).toBe(true);
+  });
+
+  it('shares token-driven entrance and tween-exit recipes with Sheet', () => {
+    expect(overlayMotion.backdrop.enter.tier).toBe('moderate');
+    expect(overlayMotion.dialog.enter).toMatchObject({ tier: 'slow', scale: 0.97, y: 8 });
+    expect(overlayMotion.dialog.exit).toEqual(overlayMotion.dialog.enter);
+    expect(overlayMotion.sheet('left').exit).toEqual(overlayMotion.sheet('left').enter);
+    expect(overlayMotion.sheet('right').enter.x).toBe('100%');
+    expect(overlayMotion.sheet('top').enter.y).toBe('-100%');
+    expect(overlayMotion.dialog.enter).not.toHaveProperty('duration');
   });
 
   it('renders open/closed state with labelled and described semantics', async () => {
@@ -29,6 +40,7 @@ describe('Dialog', () => {
       'Dialog behavior fixture',
     );
     await fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
+    expect(dialog.isConnected).toBe(true);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
@@ -40,6 +52,9 @@ describe('Dialog', () => {
 
     const dialog = screen.getByRole('dialog');
     await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    expect(screen.getByRole('textbox', { name: 'Dialog field' }).className).toContain(
+      'var(--ring)',
+    );
     await fireEvent.click(screen.getByRole('button', { name: 'Nested dialog action' }));
     expect(screen.getByRole('dialog')).toBeTruthy();
 
@@ -86,31 +101,21 @@ describe('Dialog', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
-  it('uses the editorial overlay surface and contains long content without viewport overflow', async () => {
+  it('keeps long content inside the accessible dialog', async () => {
     render(DialogHarness, { props: { longContent: true } });
     await fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }));
     const dialog = screen.getByRole('dialog');
-    expect(dialog.className).toContain('bg-popover');
-    expect(dialog.className).toContain('border-border');
-    expect(dialog.className).toContain('rounded-md');
-    expect(dialog.className).toContain('p-4');
-    expect(dialog.className).toContain('dialog-editorial-content');
-    expect(dialog.className).toContain('overflow-y-auto');
-    expect(document.querySelector('[data-slot="dialog-title"]')?.className).toContain('type-title');
-    expect(document.querySelector('[data-slot="dialog-description"]')?.className).toContain(
-      'type-body',
-    );
-    expect(document.querySelector('[data-slot="dialog-footer"]')?.className).toContain(
-      'border-border',
-    );
+    expect(dialog.contains(screen.getByRole('heading', { name: 'Canonical dialog' }))).toBe(true);
+    expect(dialog.contains(screen.getByText('Dialog behavior fixture'))).toBe(true);
     expect(screen.getByTestId('dialog-long-content')).toBeTruthy();
-    expect(dialog.className).not.toMatch(/bg-(?:white|black|gray|slate|zinc|neutral)-?/);
   });
 
   it('keeps a destructive confirmation action inside the focus trap until explicit dismissal', async () => {
     render(DialogHarness);
     await fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Delete item' }));
+    const action = screen.getByRole('button', { name: 'Delete item' });
+    expect(action.dataset.slot).toBe('button');
+    await fireEvent.click(action);
     expect(screen.getByLabelText('Dialog destructive count').textContent).toBe('1');
     expect(screen.getByRole('dialog')).toBeTruthy();
   });

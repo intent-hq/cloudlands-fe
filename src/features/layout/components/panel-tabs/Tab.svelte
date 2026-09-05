@@ -4,6 +4,7 @@
   import type { Snippet } from 'svelte';
   import { cn } from '$lib/utils.js';
   import UnsavedIndicator from '$lib/components/ui/indicators/UnsavedIndicator.svelte';
+  import { Button } from '$lib/components/ui/button';
   import AgentBadge from '$lib/components/ui/indicators/AgentBadge.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import AgentAvatarStack, {
@@ -116,7 +117,7 @@
 >
   <div
     class={cn(
-      'px-3 h-8 pt-0.5 rounded-lg flex items-center gap-1.5 focus/tab-button:outline-none focus-visible/tab-button:ring-2 focus-visible/tab-button:ring-primary focus-visible/tab-button:ring-offset-2 transition-[background-color,color,border-color,box-shadow] duration-200',
+      'px-3 h-8 pt-0.5 rounded-lg flex items-center gap-1.5 focus/tab-button:outline-none focus-visible/tab-button:ring-2 focus-visible/tab-button:ring-primary-ink focus-visible/tab-button:ring-offset-2 transition-[background-color,color,border-color,box-shadow] duration-200',
       active
         ? ''
         : isPinned
@@ -185,7 +186,7 @@
             {#if closeButton}
               {@render closeButton()}
             {:else}
-              <button
+              <Button
                 type="button"
                 class="close-button flex items-center justify-center w-5 h-5 rounded hover:bg-foreground/10 active:bg-foreground/20 transition-[background-color,color,border-color,box-shadow,transform] duration-150 shrink-0 -mr-2 opacity-50"
                 onclick={(e) => {
@@ -196,7 +197,7 @@
                 title={m.ui_tab_close_tooltip()}
               >
                 <Fa icon={faXmark} size="xs" />
-              </button>
+              </Button>
             {/if}
           </div>
         {/if}
@@ -247,7 +248,7 @@
 
   /* Focus styles for keyboard navigation */
   .tab-button:focus-visible {
-    outline: 2px solid hsl(var(--primary));
+    outline: 2px solid hsl(var(--primary-ink));
     outline-offset: -2px;
   }
 

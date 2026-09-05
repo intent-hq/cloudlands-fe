@@ -16,7 +16,7 @@
   import Fa from 'svelte-fa';
   import Button from '$lib/components/ui/button/button.svelte';
   import { faXmark, faWandMagicSparkles, faPlay } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
 
@@ -246,7 +246,7 @@
 
   async function handleAskAgent(): Promise<void> {
     if (!workspaceId) {
-      toast.error(m.terminal_scriptOutput_noWorkspace_error());
+      notify.error(m.terminal_scriptOutput_noWorkspace_error());
       return;
     }
 
@@ -278,7 +278,7 @@
         ),
       );
     } catch {
-      toast.error(m.workspace_modals_createAgentFailed_error());
+      notify.error(m.workspace_modals_createAgentFailed_error());
     }
   }
 

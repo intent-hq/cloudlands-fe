@@ -38,7 +38,7 @@
 
   let open = $state(false);
   const fontOptionClass =
-    'relative h-auto min-w-0 flex-col gap-1 rounded-md border border-border bg-transparent px-2 pb-2.5 pt-3 font-normal text-muted-foreground shadow-none hover:border-input hover:bg-transparent hover:text-foreground data-[state=on]:border-primary data-[state=on]:bg-transparent data-[state=on]:text-foreground data-[state=on]:shadow-none';
+    'relative h-auto min-w-0 flex-col gap-1 rounded-md border border-border bg-transparent px-2 pb-2.5 pt-3 font-normal text-muted-foreground shadow-none hover:border-input hover:bg-transparent hover:text-foreground data-[state=on]:border-primary-ink data-[state=on]:bg-transparent data-[state=on]:text-foreground data-[state=on]:shadow-none';
 
   function setFontStyle(value: string) {
     if (value !== 'sans' && value !== 'serif' && value !== 'monospace') return;
@@ -115,7 +115,7 @@
         >
           <ToggleGroup.Item value="sans" class={fontOptionClass}>
             {#if $noteFontStyle === 'sans'}
-              <Fa icon={faCheck} size="xs" class="absolute right-1.5 top-1.5 text-primary" />
+              <Fa icon={faCheck} size="xs" class="absolute right-1.5 top-1.5 text-primary-ink" />
             {/if}
             <span class="type-title font-normal leading-none"
               >{m.notes_fontStyleButton_specimen_label()}</span
@@ -124,7 +124,7 @@
           </ToggleGroup.Item>
           <ToggleGroup.Item value="serif" class={fontOptionClass}>
             {#if $noteFontStyle === 'serif'}
-              <Fa icon={faCheck} size="xs" class="absolute right-1.5 top-1.5 text-primary" />
+              <Fa icon={faCheck} size="xs" class="absolute right-1.5 top-1.5 text-primary-ink" />
             {/if}
             <span class="type-title font-serif font-normal leading-none"
               >{m.notes_fontStyleButton_specimen_label()}</span
@@ -134,7 +134,7 @@
           </ToggleGroup.Item>
           <ToggleGroup.Item value="monospace" class={fontOptionClass}>
             {#if $noteFontStyle === 'monospace'}
-              <Fa icon={faCheck} size="xs" class="absolute right-1.5 top-1.5 text-primary" />
+              <Fa icon={faCheck} size="xs" class="absolute right-1.5 top-1.5 text-primary-ink" />
             {/if}
             <span class="type-title font-mono font-normal leading-none"
               >{m.notes_fontStyleButton_specimen_label()}</span

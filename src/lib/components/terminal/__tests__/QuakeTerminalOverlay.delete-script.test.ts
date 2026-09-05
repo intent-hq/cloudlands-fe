@@ -129,8 +129,8 @@ vi.mock('$features/scripts/scripts.client', () => ({
     update: vi.fn(),
   },
 }));
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 vi.mock('$features/terminal/terminal-manager.svelte', () => ({
   terminalManager: { disposeTerminal: vi.fn(), clearTerminal: vi.fn() },

@@ -159,8 +159,8 @@ vi.mock('$features/agent/agent.client', () => ({
 }));
 vi.mock('$features/agent/browser', () => ({}));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: vi.fn() }));
-vi.mock('svelte-sonner', () => ({
-  toast: { error: vi.fn(), info: vi.fn(), warning: vi.fn(), success: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), info: vi.fn(), warning: vi.fn(), success: vi.fn() },
 }));
 
 vi.mock('$features/setup-scripts', async (importOriginal) => ({

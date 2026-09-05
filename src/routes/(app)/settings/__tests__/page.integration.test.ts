@@ -111,7 +111,7 @@ vi.mock('$lib/components/settings/ColorThemeSettings.svelte', async () => ({
   default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 vi.mock('$lib/components/settings/NotificationSettings.svelte', async () => ({
-  default: (await import('./mocks/SettingsStateFixture.svelte')).default,
+  default: (await import('./mocks/NotificationSettingsFixture.svelte')).default,
 }));
 vi.mock('$lib/components/settings/RtkSettings.svelte', async () => ({
   default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
@@ -490,6 +490,20 @@ describe('settings tab route and focus behavior', () => {
     const heading = screen.getByRole('heading', { level: 1, name: 'Settings' });
 
     expect(main?.getAttribute('aria-labelledby')).toBe(heading.id);
+  });
+
+  it('renders route content through the integrated settings page and sidebar', async () => {
+    const { container } = renderSettings('/settings?tab=setup');
+    const settingsPage = container.querySelector('[data-slot="settings-page"]');
+
+    expect(settingsPage).not.toBeNull();
+    expect(settingsPage?.querySelector('[data-settings-git-workspace]')).not.toBeNull();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Setup' }).getAttribute('aria-current')).toBe(
+        'page',
+      ),
+    );
+    expect(settingsPage?.querySelector('[data-settings-agents-section]')).not.toBeNull();
   });
 
   it.each([

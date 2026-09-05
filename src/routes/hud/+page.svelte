@@ -20,6 +20,7 @@
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { faExpand, faCompress } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { Button } from '$lib/components/ui/button';
   import { startHudSubscription } from '$features/hud';
   import { HudWorkspaceGrid } from '$features/hud/grid';
   import HudFooter from '$features/hud/components/HudFooter.svelte';
@@ -81,23 +82,23 @@
   <HudHeader {nowMs} {isFullScreen}>
     {#snippet controls()}
       {#if isFullScreen}
-        <button
+        <Button
           class="hud-fullscreen-btn"
           onclick={() => setFullScreen(false)}
           aria-label={m.hud_shell_exitFullScreen_label()}
         >
           <Fa icon={faCompress} size={12} />
           {m.hud_shell_exitFullScreen_label()}
-        </button>
+        </Button>
       {:else}
-        <button
+        <Button
           class="hud-fullscreen-btn"
           onclick={() => setFullScreen(true)}
           aria-label={m.hud_shell_enterFullScreen_label()}
         >
           <Fa icon={faExpand} size={12} />
           {m.hud_shell_enterFullScreen_label()}
-        </button>
+        </Button>
       {/if}
     {/snippet}
   </HudHeader>

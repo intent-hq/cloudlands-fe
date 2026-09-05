@@ -8,9 +8,8 @@
     faCircleExclamation,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button, Textarea } from '$lib/components/patterns/settings/custom-controls';
   import { Logger } from '$lib/utils/logger';
-  import Textarea from '$lib/components/ui/textarea/textarea.svelte';
   import { appClient } from '$lib/client';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger, formatNumber } from '$lib/i18n/format';

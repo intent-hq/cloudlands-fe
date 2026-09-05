@@ -3,6 +3,7 @@
   import type { Snippet } from 'svelte';
   import { cn } from '$lib/utils.js';
   import type { WithoutChildrenOrChild } from '$lib/utils.js';
+  import { menuItem } from './menu-recipes';
 
   let {
     ref = $bindable(null),
@@ -21,16 +22,12 @@
   bind:checked
   bind:indeterminate
   data-slot="menu-checkbox-item"
-  class={cn(
-    'type-body relative flex min-h-7 cursor-default select-none items-center rounded-md py-1 pl-8 pr-2 outline-none',
-    'focus:bg-accent focus:text-accent-foreground data-[highlighted]:bg-accent data-[state=checked]:bg-accent/60 data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-    'transition-colors duration-[var(--motion-fast)] motion-reduce:transition-none',
-    className,
-  )}
+  data-menu-item
+  class={cn(menuItem({ inset: true }), className)}
   {...restProps}
 >
   <span
-    class="absolute left-2 flex size-4 items-center justify-center text-primary"
+    class="absolute left-2 flex size-4 items-center justify-center text-primary-ink"
     aria-hidden="true"
   >
     {indeterminate ? '−' : checked ? '✓' : ''}

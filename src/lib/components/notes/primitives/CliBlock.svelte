@@ -13,7 +13,7 @@
     faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
   import { invoke, listenSync } from '$lib/electron-bridge';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { onDestroy } from 'svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
@@ -74,7 +74,7 @@
     e.stopPropagation();
     if (!primitive || running) return;
     if (!workspaceId) {
-      toast.error(m.notes_cliBlock_noWorkspace_error());
+      notify.error(m.notes_cliBlock_noWorkspace_error());
       return;
     }
 
@@ -140,7 +140,7 @@
         }
 
         // Note: terminal:created event listener in +page.svelte will open the drawer
-        toast.success(m.notes_cliBlock_terminalOpened_label());
+        notify.success(m.notes_cliBlock_terminalOpened_label());
       } else {
         throw new Error(result.error || m.notes_cliBlock_createTerminalFailed_error());
       }
@@ -151,7 +151,7 @@
         workspaceId,
       });
       running = false;
-      toast.error(err instanceof Error ? err.message : m.notes_cliBlock_runFailed_error());
+      notify.error(err instanceof Error ? err.message : m.notes_cliBlock_runFailed_error());
     }
   }
 
@@ -181,7 +181,7 @@
     >
       {#if linkedAgentId}
         <!-- Show agent avatar that opens the agent panel -->
-        <button
+        <Button
           type="button"
           class="shrink-0 rounded-sm transition-opacity hover:opacity-80"
           onclick={(event) => {
@@ -197,7 +197,7 @@
           title={m.notes_cliBlock_viewAgent_tooltip()}
         >
           <AgentAvatar agentId={linkedAgentId} variant="compact" />
-        </button>
+        </Button>
       {:else}
         <Fa icon={faTerminal} size="sm" class="shrink-0 text-muted-foreground" />
       {/if}

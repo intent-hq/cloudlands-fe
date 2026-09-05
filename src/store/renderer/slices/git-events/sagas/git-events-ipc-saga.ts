@@ -70,7 +70,7 @@ async function toastCompleted(
   )
     return;
   try {
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     const messages = {
       commit: `✅ Changes committed in "${workspaceName}"`,
       push: `✅ Changes pushed in "${workspaceName}"`,
@@ -91,7 +91,7 @@ async function toastCompleted(
         label: 'Open',
         onClick: () => navigateToRoute(`/workspace/${data.workspaceId}`),
       };
-    toast.success(
+    notify.success(
       messages[data.operationType] ?? `✅ Git operation completed in "${workspaceName}"`,
       options,
     );
@@ -113,7 +113,7 @@ async function toastFailed(
     return;
   if (activeWorkspaceId === data.workspaceId && data.operationType !== 'auto-commit') return;
   try {
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     const messages = {
       commit: `❌ Commit failed in "${workspaceName}"`,
       push: `❌ Push failed in "${workspaceName}"`,
@@ -134,7 +134,7 @@ async function toastFailed(
         onClick: () => navigateToRoute(`/workspace/${data.workspaceId}`),
       };
     }
-    toast.error(
+    notify.error(
       messages[data.operationType] ?? `❌ Git operation failed in "${workspaceName}"`,
       options,
     );

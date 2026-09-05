@@ -14,7 +14,7 @@
   import { isPendingAgentSession } from '$shared/types/agent-session';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DropdownMenu from '../ui/dropdown-menu.svelte';
-  import Button from '../ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -84,9 +84,10 @@
         contentClass="w-[min(28rem,calc(100vw-2rem))] overflow-hidden p-0!"
       >
         {#snippet trigger({ props })}
-          <button
+          <Button
             {...props}
             type="button"
+            variant="plain"
             class={cn(
               'group flex w-full cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left shadow-xs transition-colors',
               'hover:border-input hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -112,7 +113,7 @@
             >
               <Fa icon={faChevronDown} size={10} />
             </div>
-          </button>
+          </Button>
         {/snippet}
 
         {#snippet content({ close }: { close: () => void })}
@@ -128,8 +129,9 @@
             </div>
 
             <div class="max-h-[21rem] overflow-y-auto p-2">
-              <button
+              <Button
                 type="button"
+                variant="plain"
                 class={cn(
                   'flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors',
                   'hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -156,13 +158,14 @@
                   </div>
                 </div>
                 {#if !specialistInfo}
-                  <Fa icon={faCheck} size={12} class="shrink-0 text-primary" />
+                  <Fa icon={faCheck} size={12} class="shrink-0 text-primary-ink" />
                 {/if}
-              </button>
+              </Button>
 
               {#each customSpecialists as specialist (specialist.id)}
-                <button
+                <Button
                   type="button"
+                  variant="plain"
                   class={cn(
                     'mt-1 flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors',
                     'hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -192,15 +195,16 @@
                     </div>
                   </div>
                   {#if specialistInfo?.id === specialist.id}
-                    <Fa icon={faCheck} size={12} class="shrink-0 text-primary" />
+                    <Fa icon={faCheck} size={12} class="shrink-0 text-primary-ink" />
                   {/if}
-                </button>
+                </Button>
               {/each}
             </div>
 
             <div class="border-t border-border bg-popover p-2">
-              <button
+              <Button
                 type="button"
+                variant="plain"
                 class="flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onclick={() => {
                   openSpecialistSettings();
@@ -215,7 +219,7 @@
                 <span class="type-body font-medium"
                   >{m.chat_regularAgentWelcome_createSpecialist_label()}</span
                 >
-              </button>
+              </Button>
             </div>
           </div>
         {/snippet}
@@ -234,15 +238,16 @@
       {displayPrompt}
     </p>
     {#if specialistInfo}
-      <button
+      <Button
         type="button"
+        variant="link"
         onclick={() => (showFullPrompt = !showFullPrompt)}
         class="text-xs text-muted-foreground hover:text-foreground transition-colors mt-2 cursor-pointer"
       >
         {showFullPrompt
           ? m.chat_regularAgentWelcome_showLess_label()
           : m.chat_regularAgentWelcome_showMore_label()}
-      </button>
+      </Button>
     {/if}
   </div>
 

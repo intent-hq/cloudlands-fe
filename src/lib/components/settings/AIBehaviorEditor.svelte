@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button, Input, Textarea } from '$lib/components/patterns/settings/custom-controls';
   import Fa from 'svelte-fa';
   import { faPlus, faRotateLeft, faTrash, faPencil } from '@fortawesome/free-solid-svg-icons';
 
@@ -28,8 +29,6 @@
     saveFileSpecialist,
   } from '$store/renderer/slices/specialists/specialists-slice';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Input from '$lib/components/ui/input/input.svelte';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import AgentRulesEditor from './AgentRulesEditor.svelte';
   import AutoSaveTextarea from './AutoSaveTextarea.svelte';
@@ -38,7 +37,7 @@
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import SpecialistModelOptions from './SpecialistModelOptions.svelte';
   import { isRedundantBuiltInOverride } from './utils/builtin-override-redundancy';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
@@ -647,7 +646,7 @@
     const expectedPath = folderPath
       ? `${folderPath}/${createdId}.md`
       : `~/.intent/specialists/${createdId}.md`;
-    toast.success(m.settings_aiBehavior_createdToast({ name: newName.trim() }), {
+    notify.success(m.settings_aiBehavior_createdToast({ name: newName.trim() }), {
       description: expectedPath.replace(/^\/Users\/[^/]+/, '~'),
     });
 
@@ -704,7 +703,7 @@
           class="mb-2 flex min-w-0 shrink-0 flex-wrap items-center gap-2"
         >
           {#if !isBuiltIn && !hasOverrides}
-            <input
+            <Input
               type="text"
               value={currentSpecialist.name}
               onblur={(e) => handleNameSave(e.currentTarget.value)}
@@ -730,14 +729,14 @@
             {/if}
           {/if}
           {#if isBuiltIn && hasOverrides}
-            <button
+            <Button
               type="button"
               onclick={resetToDefault}
               class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer shrink-0"
             >
               <Fa icon={faRotateLeft} class="w-3 h-3" />
               {m.settings_aiBehavior_reset()}
-            </button>
+            </Button>
           {/if}
           {#if specialistFilePath}
             <div class="ml-auto shrink-0">
@@ -760,7 +759,7 @@
         <!-- Specialist identity and source context. -->
         <div class="min-w-0">
           {#if !isBuiltIn && !hasOverrides}
-            <input
+            <Input
               type="text"
               value={currentSpecialist.description}
               onblur={(e) => handleDescriptionSave(e.currentTarget.value)}
@@ -843,14 +842,14 @@
 
         {#if !isBuiltIn}
           <div class="pt-4 border-border">
-            <button
+            <Button
               type="button"
               onclick={deleteSpecialist}
               class="text-xs text-muted-foreground hover:text-danger transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <Fa icon={faTrash} class="w-3 h-3" />
               {m.settings_aiBehavior_deleteSpecialist()}
-            </button>
+            </Button>
           </div>
         {/if}
       </div>
@@ -871,13 +870,14 @@
           {m.settings_aiBehavior_createSpecialist_title()}
         </h2>
         <div class="flex min-h-0 flex-1 flex-col gap-1.5">
-          <textarea
+          <Textarea
             id="create-specialist-prompt"
             bind:value={newPrompt}
             placeholder={m.settings_aiBehavior_newPrompt_placeholder()}
             class="min-h-72 w-full grow resize-none rounded-lg border border-border bg-background p-3 text-sm
               focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 xl:min-h-0
-              {newPromptIsOverLimit ? 'border-danger' : ''}"></textarea>
+              {newPromptIsOverLimit ? 'border-danger' : ''}"
+          ></Textarea>
           {#if newPromptIsApproachingLimit || newPromptIsOverLimit}
             <div
               class="flex shrink-0 items-center justify-end text-xs {newPromptIsOverLimit

@@ -12,6 +12,7 @@
   import type { Snippet } from 'svelte';
   import TooltipTriggerWrapper from './tooltip-trigger-wrapper.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import './tooltip-motion.css';
 
   interface Props {
     title?: string;
@@ -139,15 +140,7 @@
   const contentClasses = $derived(
     cn(
       'z-(--layer-tooltip) rounded-md border border-border shadow-(--elevation-overlay)',
-      'motion-reduce:animate-none motion-reduce:transition-none',
-      !disableAnimation && [
-        'animate-in fade-in-0 zoom-in-95',
-        'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
-        'data-[side=bottom]:slide-in-from-top-2',
-        'data-[side=left]:slide-in-from-right-2',
-        'data-[side=right]:slide-in-from-left-2',
-        'data-[side=top]:slide-in-from-bottom-2',
-      ],
+      !disableAnimation && 'tooltip-motion',
       config.bg,
       config.text,
       config.border,
@@ -210,7 +203,7 @@
             {#if showClose}
               <button
                 onclick={handleClose}
-                class="absolute -right-1 -top-1 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+                class="absolute -right-1 -top-1 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground motion-reduce:transition-none"
                 aria-label={m.ui_tooltipRich_close_ariaLabel()}
               >
                 <Fa icon={faXmark} size="xs" class="w-3 h-3" />

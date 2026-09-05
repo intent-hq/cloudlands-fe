@@ -11,7 +11,7 @@
   import { selectCollapsiblePanelCollapsed } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { m } from '$shared/paraglide/messages.js';
 
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -110,7 +110,7 @@
 <div class={`flex flex-col w-full h-full min-h-0 overflow-hidden relative ${className}`}>
   <!-- Header -->
   <div
-    class="group/panel-header flex items-center w-full h-8 px-2.5 transition-colors duration-100 hover:bg-background"
+    class="group/panel-header flex items-center w-full h-8 px-2.5 transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none hover:bg-background"
   >
     <Button
       variant="plain"
@@ -166,7 +166,7 @@
         class="h-full px-2 text-subtle"
       >
         <div
-          class="flex items-center justify-center shrink-0 transition-transform duration-150 ease-linear opacity-0 group-hover/panel-header:opacity-60"
+          class="flex items-center justify-center shrink-0 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none opacity-0 group-hover/panel-header:opacity-60"
           class:opacity-70={collapsed}
           class:rotate-0={collapsed}
           class:-rotate-90={!collapsed}
@@ -182,7 +182,7 @@
     <div
       id={contentId}
       class={`flex-1 min-h-0 overflow-hidden flex flex-col ${contentClass}`}
-      transition:slide={{ duration: 150 }}
+      transition:slide={{ tier: 'moderate' }}
     >
       {#if children}
         {@render children()}

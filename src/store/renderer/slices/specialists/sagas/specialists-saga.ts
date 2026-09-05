@@ -167,8 +167,8 @@ function* refetchSpecialists(context: ListContext) {
     if (generation === context.generation) yield* call(applySpecialistList, defs);
   } catch (error) {
     logger.error('Failed to refetch specialist list', error);
-    const { toast } = yield* call(() => import('$lib/components/ui/toast'));
-    yield* call([toast, toast.error], m.specialists_mutation_refreshFailed_error());
+    const { notify } = yield* call(() => import('$lib/components/patterns/notify'));
+    yield* call([notify, notify.error], m.specialists_mutation_refreshFailed_error());
   }
 }
 
@@ -182,8 +182,8 @@ function mutationError(error: unknown, fallback: string): Error {
 }
 
 function* showMutationError(error: unknown, fallback: string) {
-  const { toast } = yield* call(() => import('svelte-sonner'));
-  yield* call([toast, toast.error], errorMessage(error, fallback));
+  const { notify } = yield* call(() => import('$lib/components/patterns/notify'));
+  yield* call([notify, notify.error], errorMessage(error, fallback));
 }
 
 /**

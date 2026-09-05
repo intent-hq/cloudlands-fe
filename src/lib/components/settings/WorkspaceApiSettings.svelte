@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button, Input, Switch } from '$lib/components/patterns/settings/custom-controls';
   /* eslint-disable intent/no-component-async-data-fetch */
   /**
    * Workspace API Output Settings Component
@@ -15,9 +16,7 @@
    * UI state only.
    */
   import { onMount } from 'svelte';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
-  import { Input } from '$lib/components/ui/input';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { appClient } from '$lib/client';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -52,7 +51,7 @@
       }
       toonOutput = toon?.value !== false;
     } catch (error) {
-      toast.error(
+      notify.error(
         m.settings_workspaceApi_loadError({
           error: error instanceof Error ? error.message : String(error),
         }),
@@ -63,6 +62,8 @@
   }
 
   async function handleToonToggle(checked: boolean) {
+    const previousValue = toonOutput;
+    toonOutput = checked;
     try {
       const result = await appClient.settings.update([{ path: TOON_OUTPUT_PATH, value: checked }]);
 
@@ -71,19 +72,17 @@
         (r: { path: string; value: unknown }) => r.path === TOON_OUTPUT_PATH,
       );
       if (applied && applied.value !== checked) {
-        toast.error(m.settings_workspaceApi_toonOutput_rollbackError());
+        notify.error(m.settings_workspaceApi_toonOutput_rollbackError());
         toonOutput = applied.value !== false;
         return;
       }
-
-      toonOutput = checked;
     } catch (error) {
-      toast.error(
+      notify.error(
         m.settings_workspaceApi_toonOutput_error({
           error: error instanceof Error ? error.message : String(error),
         }),
       );
-      toonOutput = !checked;
+      toonOutput = previousValue;
     }
   }
 
@@ -111,16 +110,16 @@
       if (applied && applied.value !== newValue) {
         const rolledBackValue =
           typeof applied.value === 'number' ? applied.value : persistedMaxOutputChars;
-        toast.error(m.settings_workspaceApi_maxOutputChars_rollbackError());
+        notify.error(m.settings_workspaceApi_maxOutputChars_rollbackError());
         persistedMaxOutputChars = rolledBackValue;
         editedMaxOutputChars = String(rolledBackValue);
         return;
       }
 
       persistedMaxOutputChars = newValue;
-      toast.success(m.settings_workspaceApi_maxOutputChars_saved());
+      notify.success(m.settings_workspaceApi_maxOutputChars_saved());
     } catch (error) {
-      toast.error(
+      notify.error(
         m.settings_workspaceApi_saveError({
           error: error instanceof Error ? error.message : String(error),
         }),
@@ -162,7 +161,7 @@
             />
           </div>
           {#if Number(editedMaxOutputChars) !== persistedMaxOutputChars}
-            <button
+            <Button
               type="button"
               onclick={handleMaxCharsSave}
               disabled={maxCharsSaving || !isValid}
@@ -171,7 +170,7 @@
               {maxCharsSaving
                 ? m.settings_workspaceApi_maxOutputChars_saving()
                 : m.settings_workspaceApi_maxOutputChars_save()}
-            </button>
+            </Button>
           {/if}
         </div>
       </div>
@@ -195,10 +194,9 @@
           {m.settings_workspaceApi_toonOutput_description()}
         </p>
       </div>
-      <Toggle
-        pressed={toonOutput}
-        onclick={() => handleToonToggle(!toonOutput)}
-        variant="indicator"
+      <Switch
+        checked={toonOutput}
+        onCheckedChange={handleToonToggle}
         size="xs"
         class="mb-auto"
         disabled={loading}

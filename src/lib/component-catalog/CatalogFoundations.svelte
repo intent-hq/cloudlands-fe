@@ -7,6 +7,7 @@
     ['--card', 'Raised surface'],
     ['--popover', 'Overlay surface'],
     ['--primary', 'Primary action'],
+    ['--primary-ink', 'Primary text and outline'],
     ['--secondary', 'Secondary action'],
     ['--accent', 'Selection'],
     ['--muted', 'Quiet surface'],
@@ -14,6 +15,77 @@
     ['--ring', 'Focus'],
     ['--sidebar', 'Navigation chrome'],
     ['--sidebar-accent', 'Navigation selection'],
+  ] as const;
+  const interactionRoles = [
+    {
+      name: '--hover',
+      label: 'Hover preview',
+      use: 'Previews the pointed or nearest actionable row.',
+    },
+    {
+      name: '--active',
+      label: 'Active press',
+      use: 'Confirms pointer-down without becoming selection.',
+    },
+    {
+      name: '--selected',
+      label: 'Selected',
+      use: 'Persists chosen rows, tabs, and options.',
+    },
+  ] as const;
+  const surfaceThemes = [
+    {
+      id: 'light',
+      levels: [
+        [1, '--theme-light-surface-1', '--theme-light-shadow-surface-1'],
+        [2, '--theme-light-surface-2', '--theme-light-shadow-surface-2'],
+        [3, '--theme-light-surface-3', '--theme-light-shadow-surface-3'],
+        [4, '--theme-light-surface-4', '--theme-light-shadow-surface-4'],
+        [5, '--theme-light-surface-5', '--theme-light-shadow-surface-5'],
+        [6, '--theme-light-surface-6', '--theme-light-shadow-surface-6'],
+        [7, '--theme-light-surface-7', '--theme-light-shadow-surface-7'],
+        [8, '--theme-light-surface-8', '--theme-light-shadow-surface-8'],
+      ],
+    },
+    {
+      id: 'dark',
+      levels: [
+        [1, '--theme-dark-surface-1', '--theme-dark-shadow-surface-1'],
+        [2, '--theme-dark-surface-2', '--theme-dark-shadow-surface-2'],
+        [3, '--theme-dark-surface-3', '--theme-dark-shadow-surface-3'],
+        [4, '--theme-dark-surface-4', '--theme-dark-shadow-surface-4'],
+        [5, '--theme-dark-surface-5', '--theme-dark-shadow-surface-5'],
+        [6, '--theme-dark-surface-6', '--theme-dark-shadow-surface-6'],
+        [7, '--theme-dark-surface-7', '--theme-dark-shadow-surface-7'],
+        [8, '--theme-dark-surface-8', '--theme-dark-shadow-surface-8'],
+      ],
+    },
+  ] as const;
+  const springTiers = [
+    {
+      id: 'fast',
+      label: 'Fast',
+      use: 'Hover, press, focus, icon, and weight feedback',
+      duration: '--spring-fast',
+      exit: '--spring-fast-exit',
+      easing: '--spring-fast-ease',
+    },
+    {
+      id: 'moderate',
+      label: 'Moderate',
+      use: 'Menus, selection geometry, and compact disclosure',
+      duration: '--spring-moderate',
+      exit: '--spring-moderate-exit',
+      easing: '--spring-moderate-ease',
+    },
+    {
+      id: 'slow',
+      label: 'Slow',
+      use: 'Large panels and deliberate takeover transitions',
+      duration: '--spring-slow',
+      exit: '--spring-slow-exit',
+      easing: '--spring-slow-ease',
+    },
   ] as const;
   const typographyStyles = [
     {
@@ -79,7 +151,7 @@
     {
       id: 'measures',
       title: 'Content measures',
-      tokens: ['--content-measure-reading', '--content-measure-form', '--content-measure-wide'],
+      tokens: ['--content-measure-form', '--content-measure-wide'],
     },
     {
       id: 'controls',
@@ -92,42 +164,20 @@
       tokens: ['--radius-small', '--radius-medium', '--radius-large'],
     },
     {
-      id: 'surface',
-      title: 'Surface texture',
-      tokens: ['--surface-hatch'],
-    },
-    {
       id: 'elevation',
       title: 'Elevation',
       tokens: ['--elevation-raised', '--elevation-overlay'],
     },
     {
-      id: 'motion',
-      title: 'Motion',
-      tokens: [
-        '--motion-fast',
-        '--motion-standard',
-        '--motion-slow',
-        '--ease-standard',
-        '--ease-emphasized-out',
-      ],
-    },
-    {
       id: 'layers',
       title: 'Layers',
-      tokens: [
-        '--layer-base',
-        '--layer-sticky',
-        '--layer-chrome',
-        '--layer-popover',
-        '--layer-modal',
-        '--layer-toast',
-        '--layer-tooltip',
-      ],
+      tokens: ['--layer-chrome', '--layer-popover', '--layer-modal', '--layer-tooltip'],
     },
   ] as const;
   const tokenNames = [
     ...colorRoles.map(([name]) => name),
+    ...interactionRoles.map(({ name }) => name),
+    ...springTiers.flatMap(({ duration, exit, easing }) => [duration, exit, easing]),
     ...scales.flatMap(({ tokens }) => tokens),
     ...typographyStyles.flatMap(({ tokens }) => tokens),
   ];
@@ -158,7 +208,7 @@
     </p>
   </header>
 
-  <div class="foundation-stage rounded-lg border border-border p-3 sm:p-4">
+  <div class="rounded-lg border border-border bg-background p-3 sm:p-4">
     <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" data-testid="foundation-colors">
       {#each colorRoles as [name, label] (name)}
         <article
@@ -176,6 +226,87 @@
         </article>
       {/each}
     </div>
+  </div>
+
+  <article class="rounded-lg border border-border bg-card p-4" data-testid="foundation-surfaces">
+    <h3 class="text-sm font-medium">Surfaces</h3>
+    <p class="type-caption mt-1 text-muted-foreground">
+      Eight shared background and shadow pairs carry elevation consistently in both themes.
+    </p>
+    <div class="mt-4 grid gap-4">
+      {#each surfaceThemes as theme (theme.id)}
+        <section aria-label={`${theme.id} surface ladder`}>
+          <h4 class="type-caption mb-2 capitalize text-muted-foreground">{theme.id}</h4>
+          <div class="grid grid-cols-4 gap-3 sm:grid-cols-8">
+            {#each theme.levels as [level, background, shadow] (level)}
+              <div class="grid min-w-0 gap-2">
+                <span
+                  class="aspect-square rounded-md"
+                  data-foundation-surface={`${theme.id}-${level}`}
+                  style={`background: hsl(var(${background})); box-shadow: var(${shadow})`}
+                ></span>
+                <code class="type-code text-center text-muted-foreground">{level}</code>
+              </div>
+            {/each}
+          </div>
+        </section>
+      {/each}
+    </div>
+  </article>
+
+  <div class="grid gap-3 lg:grid-cols-2">
+    <article
+      class="rounded-lg border border-border bg-card p-4"
+      data-testid="foundation-interactions"
+    >
+      <h3 class="text-sm font-medium">Interaction tokens</h3>
+      <p class="type-caption mt-1 text-muted-foreground">
+        One semantic overlay ladder keeps preview, press, and persistent selection distinct.
+      </p>
+      <div class="mt-3 grid gap-2">
+        {#each interactionRoles as token (token.name)}
+          <div class="rounded-md border border-border p-3" style={`background: var(${token.name})`}>
+            <div class="flex items-baseline justify-between gap-3">
+              <strong class="type-body">{token.label}</strong>
+              <output class="type-caption text-muted-foreground">{resolved[token.name]}</output>
+            </div>
+            <code class="type-code text-muted-foreground">{token.name}</code>
+            <p class="type-caption mt-1 text-muted-foreground">{token.use}</p>
+          </div>
+        {/each}
+      </div>
+    </article>
+
+    <article class="rounded-lg border border-border bg-card p-4" data-testid="foundation-springs">
+      <h3 class="text-sm font-medium">Spring tiers</h3>
+      <p class="type-caption mt-1 text-muted-foreground">
+        Enters settle with a shared spring curve; exits use the paired crisp tween.
+      </p>
+      <div class="mt-3 divide-y divide-border border-y border-border">
+        {#each springTiers as tier (tier.id)}
+          <section class="grid gap-2 py-3" aria-label={`${tier.label} spring tier`}>
+            <div class="flex items-baseline justify-between gap-3">
+              <strong class="type-body">{tier.label}</strong>
+              <span class="type-caption text-muted-foreground">
+                {resolved[tier.duration]} in · {resolved[tier.exit]} out
+              </span>
+            </div>
+            <div class="grid min-w-0 gap-1">
+              <code class="type-code break-all text-muted-foreground">
+                {tier.duration} · {tier.exit}
+              </code>
+              <div class="flex min-w-0 items-baseline justify-between gap-3">
+                <code class="type-code break-all text-muted-foreground">{tier.easing}</code>
+                <output class="type-caption max-w-44 truncate text-right text-muted-foreground">
+                  {resolved[tier.easing]}
+                </output>
+              </div>
+            </div>
+            <p class="type-caption text-muted-foreground">{tier.use}</p>
+          </section>
+        {/each}
+      </div>
+    </article>
   </div>
 
   <div class="grid gap-3 lg:grid-cols-2">
@@ -218,6 +349,51 @@
               </section>
             {/each}
           </div>
+        {:else if scale.id === 'spacing'}
+          <dl class="mt-3 grid gap-2" data-testid="spacing-specimens">
+            {#each scale.tokens as name (name)}
+              <div class="grid min-w-0 grid-cols-[7rem_minmax(0,1fr)_auto] items-center gap-3">
+                <dt><code class="type-code break-all">{name}</code></dt>
+                <dd class="min-w-0">
+                  <span
+                    class="block h-2 rounded-full bg-primary"
+                    data-foundation-spacing={name}
+                    style={`width: var(${name})`}
+                  ></span>
+                </dd>
+                <dd class="type-caption text-right text-muted-foreground">{resolved[name]}</dd>
+              </div>
+            {/each}
+          </dl>
+        {:else if scale.id === 'controls'}
+          <dl class="mt-3 grid gap-2" data-testid="control-height-specimens">
+            {#each scale.tokens as name (name)}
+              <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+                <dt
+                  class="flex items-center rounded-(--radius-small) border border-border bg-background px-3"
+                  data-foundation-control={name}
+                  style={`height: var(${name})`}
+                >
+                  <code class="type-code break-all">{name}</code>
+                </dt>
+                <dd class="type-caption text-right text-muted-foreground">{resolved[name]}</dd>
+              </div>
+            {/each}
+          </dl>
+        {:else if scale.id === 'radii'}
+          <dl class="mt-3 flex flex-wrap gap-4" data-testid="radius-specimens">
+            {#each scale.tokens as name (name)}
+              <div class="grid justify-items-center gap-2">
+                <dd
+                  class="size-12 border border-border bg-muted"
+                  data-foundation-radius={name}
+                  style={`border-radius: var(${name})`}
+                ></dd>
+                <dt><code class="type-code break-all">{name}</code></dt>
+                <dd class="type-caption text-muted-foreground">{resolved[name]}</dd>
+              </div>
+            {/each}
+          </dl>
         {:else if scale.id === 'elevation'}
           <div class="mt-3 flex gap-3">
             <span
@@ -229,13 +405,8 @@
               style="box-shadow: var(--elevation-overlay)"
             ></span>
           </div>
-        {:else if scale.id === 'surface'}
-          <div
-            class="mt-3 h-10 rounded-md border border-border bg-background"
-            style="background-image: var(--surface-hatch)"
-          ></div>
         {/if}
-        {#if scale.id !== 'typography'}
+        {#if scale.id !== 'typography' && scale.id !== 'spacing' && scale.id !== 'controls' && scale.id !== 'radii'}
           <dl class="mt-3 divide-y divide-border border-t border-border">
             {#each scale.tokens as name (name)}
               <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 text-xs">
@@ -249,10 +420,3 @@
     {/each}
   </div>
 </section>
-
-<style>
-  .foundation-stage {
-    background-color: hsl(var(--background));
-    background-image: var(--surface-hatch);
-  }
-</style>

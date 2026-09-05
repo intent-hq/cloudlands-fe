@@ -79,7 +79,7 @@ describe('TransferWorkspaceModal — destination step', () => {
     expect(screen.getByText('10.0.0.2:5181')).toBeTruthy();
     expect(screen.getByText('Download to file')).toBeTruthy();
     expect(screen.queryByTestId('transfer-empty-servers')).toBeNull();
-    expect((screen.getByText('Next') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(true);
 
     await fireEvent.click(screen.getByTestId('transfer-server-conn-1'));
     expect(onSelectDestination).toHaveBeenCalledWith({ kind: 'server', connectionId: 'conn-1' });
@@ -173,7 +173,7 @@ describe('TransferWorkspaceModal — destination step', () => {
       },
     });
 
-    const next = screen.getByText('Next') as HTMLButtonElement;
+    const next = screen.getByRole('button', { name: 'Next' });
     expect(next.disabled).toBe(false);
     await fireEvent.click(next);
     expect(onNext).toHaveBeenCalled();

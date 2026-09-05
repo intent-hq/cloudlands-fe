@@ -7,9 +7,9 @@
   import { appClient } from '$lib/client';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
-  import * as Menu from '$lib/components/ui/menu';
+  import { Menu } from '$lib/components/patterns/settings/custom-controls';
   import PathSettingField from './PathSettingField.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
@@ -97,11 +97,11 @@
         { path: 'providers.paths', value: { ...existing, [providerId]: path } },
       ]);
       onPathChange?.(path);
-      toast.success(m.settings_providerPath_saved());
+      notify.success(m.settings_providerPath_saved());
       logger.info(`[ProviderPathConfig] Saved ${providerId} path:`, path);
     } catch (error) {
       logger.error(`[ProviderPathConfig] Failed to save ${providerId} path:`, error);
-      toast.error(m.settings_providerPath_saveError());
+      notify.error(m.settings_providerPath_saveError());
     }
   }
 

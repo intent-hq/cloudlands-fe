@@ -171,7 +171,11 @@
           class="flex items-center gap-1 px-2 py-1 bg-muted border border-border rounded-full text-sm"
         >
           <span>{ref.name || ref.type || m.chat_shared_context_fallback()}</span>
-          <button
+          <Button
+            variant="ghost-light"
+            size="icon-xs"
+            iconOnly
+            aria-label={m.chat_contextChip_remove_label()}
             class="flex items-center justify-center size-4 p-0 bg-transparent border-none text-muted-foreground cursor-pointer transition-colors hover:text-danger"
             onclick={() => {
               const newRefs = contextReferences.filter((r) => r !== ref);
@@ -179,7 +183,7 @@
             }}
           >
             ×
-          </button>
+          </Button>
         </div>
       {/each}
     </div>
@@ -236,9 +240,13 @@
   {#if isProcessing && !isStreaming}
     <div class="flex justify-center gap-1 p-2">
       <span class="size-2 bg-primary rounded-full animate-bounce-dot"></span>
-      <span class="size-2 bg-primary rounded-full animate-bounce-dot" style="animation-delay: 0.2s"
+      <span
+        class="size-2 bg-primary rounded-full animate-bounce-dot"
+        style="animation-delay: calc(var(--spring-fast-exit) * 3)"
       ></span>
-      <span class="size-2 bg-primary rounded-full animate-bounce-dot" style="animation-delay: 0.4s"
+      <span
+        class="size-2 bg-primary rounded-full animate-bounce-dot"
+        style="animation-delay: calc(var(--spring-fast-exit) * 7)"
       ></span>
     </div>
   {/if}
@@ -259,6 +267,12 @@
   }
 
   .animate-bounce-dot {
-    animation: bounce-dot 1.4s ease-in-out infinite;
+    animation: bounce-dot calc(var(--spring-slow) * 6) var(--spring-slow-ease) infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-bounce-dot {
+      animation: none;
+    }
   }
 </style>

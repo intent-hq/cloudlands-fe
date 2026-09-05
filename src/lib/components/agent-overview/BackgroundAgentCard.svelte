@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { Button } from '$lib/components/ui/button';
   // Fixed size for background agent avatars - exported for layout calculations
   export const BG_CARD_SIZE = 50;
 </script>
@@ -56,7 +57,7 @@
   });
 </script>
 
-<button
+<Button
   type="button"
   class="background-agent-card relative flex flex-col items-center justify-center gap-1 rounded-full bg-sidebar hover:bg-muted/70 transition-colors cursor-pointer p-2"
   style="width: {BG_CARD_SIZE}px; min-height: {BG_CARD_SIZE}px; anchor-name: --agent-hierarchy-{agent.agentId};"
@@ -71,4 +72,4 @@
     state={avatarState}
     specialist={agent.specialist as 'spec-writer' | 'implementor' | 'verifier' | null}
   />
-</button>
+</Button>

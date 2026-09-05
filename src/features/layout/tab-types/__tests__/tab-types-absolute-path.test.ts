@@ -231,8 +231,8 @@ vi.mock('$features/git/git-write-service', () => ({
   discardFiles: vi.fn(async () => ({ success: true })),
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock('$features/file-tracking/change-converters', () => ({

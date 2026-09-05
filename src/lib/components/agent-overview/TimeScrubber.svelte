@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * TimeScrubber Component
    *
@@ -71,7 +72,7 @@
 
 <div class="flex items-center gap-3 px-4 py-2.5 bg-background border-t border-border min-w-0">
   <!-- Live toggle -->
-  <button
+  <Button
     type="button"
     class="shrink-0 inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-all
       {isLive
@@ -94,7 +95,7 @@
         ? m.agentOverview_timeScrubber_live_label()
         : m.agentOverview_timeScrubber_paused_label()}</span
     >
-  </button>
+  </Button>
 
   <!-- Slider container -->
   <div class="flex-1 flex items-center gap-2 min-w-0">

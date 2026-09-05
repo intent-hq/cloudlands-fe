@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   /**
    * QuakeTerminalOverlay - A sleek, Quake-style terminal overlay
@@ -69,7 +70,7 @@
     isLiveScriptStatus,
     type ScriptStatusKind,
   } from '$features/scripts/utils/script-status';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { rewriteBrowserLinkForDisplay } from '$lib/utils/browser-url-resolution';
   import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
@@ -187,7 +188,7 @@
       const result = await scriptsClient.detect(workspaceId);
       appStore.dispatch(refreshScripts(workspaceId));
       if (!result.success) {
-        toast.error(result.error || m.terminal_quakeOverlay_detectFailed_error());
+        notify.error(result.error || m.terminal_quakeOverlay_detectFailed_error());
         return;
       }
       const detected = result.detected ?? 0;
@@ -212,13 +213,13 @@
             ? m.terminal_quakeOverlay_detectedNoNew_one({ count: detected })
             : m.terminal_quakeOverlay_detectedNoNew_many({ count: detected });
       if (detected === 0) {
-        toast.info(m.terminal_quakeOverlay_noScriptsDetected_info());
+        notify.info(m.terminal_quakeOverlay_noScriptsDetected_info());
       } else {
-        toast.success(summary);
+        notify.success(summary);
       }
       const skippedRunning = result.skippedRunning ?? [];
       if (skippedRunning.length > 0) {
-        toast.warning(
+        notify.warning(
           skippedRunning.length === 1
             ? m.scripts_detect_skippedRunning_one({ name: skippedRunning[0] })
             : m.scripts_detect_skippedRunning_many({
@@ -342,12 +343,12 @@
     try {
       const result = await mutation();
       if (!result.success) {
-        toast.error(result.error || fallbackError);
+        notify.error(result.error || fallbackError);
         return false;
       }
       return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : fallbackError);
+      notify.error(error instanceof Error ? error.message : fallbackError);
       return false;
     }
   }
@@ -806,7 +807,7 @@
         rows: 24,
       });
       if (!result.success || !result.id) {
-        toast.error(m.terminal_adapter_openFailed_error());
+        notify.error(m.terminal_adapter_openFailed_error());
         return;
       }
       const stale = workspaceId !== createWorkspaceId;
@@ -823,7 +824,7 @@
       if (!$isOpen) appStore.dispatch(openTerminalOverlay(createWorkspaceId, result.id));
       requestAnimationFrame(() => overlayContainer?.focus());
     } catch {
-      toast.error(m.terminal_adapter_openFailed_error());
+      notify.error(m.terminal_adapter_openFailed_error());
     } finally {
       isCreatingTerminal = false;
     }
@@ -1001,7 +1002,7 @@
             >
               <!-- Script name (editable) -->
               {#if isEditingScriptName}
-                <input
+                <Input
                   type="text"
                   data-edit-script-header-name
                   bind:value={editedScriptName}
@@ -1024,8 +1025,8 @@
               <!-- Command (inline-editable) -->
               {#if showScriptEditPanel}
                 <span class="text-green-500 font-semibold text-xs flex-shrink-0">$</span>
-                <input
-                  bind:this={editScriptCommandTextarea}
+                <Input
+                  bind:ref={editScriptCommandTextarea}
                   bind:value={editedScriptCommand}
                   class="text-xs font-mono bg-transparent border-0 outline-none focus:outline-none! focus:ring-0! px-0 text-muted-foreground flex-1 min-w-0"
                   placeholder={/* i18n-ignore (shell command example) */ 'npm run dev'}
@@ -1149,7 +1150,7 @@
             <div class="flex items-center gap-2">
               <Fa icon={faTerminal} class="w-3.5 h-3.5 text-muted-foreground/75" />
               {#if isEditingHeaderName}
-                <input
+                <Input
                   type="text"
                   data-edit-header-terminal
                   bind:value={headerEditValue}
@@ -1311,7 +1312,7 @@
             >
               <!-- Tab Label (editable) -->
               {#if editingTerminalId === term.id}
-                <input
+                <Input
                   type="text"
                   data-edit-terminal={term.id}
                   bind:value={editingValue}
@@ -1381,7 +1382,7 @@
                 title={scriptStatusInfo.label}
               ></div>
               {#if editingScriptTabId === script.id}
-                <input
+                <Input
                   type="text"
                   data-edit-script-tab={script.id}
                   bind:value={editingScriptTabValue}

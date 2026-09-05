@@ -5,7 +5,7 @@
   import { faCheck, faRotateRight, faSpinner, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { onDestroy, onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
 
   import {
@@ -163,14 +163,14 @@
     <!-- Success state - shows briefly after auth completes -->
     <div
       class="py-2 px-2 flex items-center gap-2 text-xs text-emerald-500"
-      transition:slide={{ axis: 'y', duration: 200 }}
+      transition:slide={{ axis: 'y', tier: 'moderate' }}
     >
       <Fa icon={faCheck} size="xs" />
       <span>{m.lib_githubAuth_connected_label()}</span>
     </div>
   {:else if hasError}
     <!-- Error state -->
-    <div class="py-2 px-2 space-y-2" transition:slide={{ axis: 'y', duration: 200 }}>
+    <div class="py-2 px-2 space-y-2" transition:slide={{ axis: 'y', tier: 'moderate' }}>
       <p class="text-xs text-danger">{$error$}</p>
       <Button variant="outline" size="xs" onclick={handleRetry}>
         <Fa icon={faRotateRight} size="xs" />
@@ -179,7 +179,7 @@
     </div>
   {:else if $requiresDaemonAuth$}
     <!-- Daemon auth required state -->
-    <div class="py-2 px-2 space-y-1" transition:slide={{ axis: 'y', duration: 200 }}>
+    <div class="py-2 px-2 space-y-1" transition:slide={{ axis: 'y', tier: 'moderate' }}>
       <p class="text-xs text-subtle">{m.lib_githubAuth_daemonAuthFirst_message()}</p>
       <p class="text-xs text-subtle">
         <!-- i18n-ignore (shell command) -->
@@ -189,7 +189,7 @@
     </div>
   {:else if hasDeviceFlow && $deviceFlow$}
     <!-- Device-flow state: show the user code + Open GitHub (§5.27) -->
-    <div class="py-1.5 px-3 space-y-2" transition:slide={{ axis: 'y', duration: 200 }}>
+    <div class="py-1.5 px-3 space-y-2" transition:slide={{ axis: 'y', tier: 'moderate' }}>
       <div class="flex items-center justify-between gap-2">
         <p class="text-xs text-subtle">{m.lib_githubAuth_enterCode_label()}</p>
         <Button
@@ -214,13 +214,13 @@
         {:else}
           <Fa icon={faSpinner} size="xs" class="animate-spin" />
           <span>{m.lib_githubAuth_waitingForAuthorization_label()}</span>
-          <button
+          <Button
             type="button"
             class="cursor-pointer underline underline-offset-2 decoration-muted-foreground/20"
             onclick={checkAuthStatus}
           >
             {m.lib_githubAuth_checkNow_label()}
-          </button>
+          </Button>
         {/if}
       </div>
     </div>
@@ -228,7 +228,7 @@
     <!-- Starting auth state -->
     <div
       class="py-2 px-2 flex items-center gap-2 text-xs text-subtle"
-      transition:slide={{ axis: 'y', duration: 200 }}
+      transition:slide={{ axis: 'y', tier: 'moderate' }}
     >
       <Fa icon={faSpinner} size="xs" class="animate-spin" />
       <span>{m.lib_githubAuth_startingAuthentication_label()}</span>
@@ -239,7 +239,7 @@
       type="button"
       class="w-full py-2 px-2 flex items-center gap-2 hover:bg-muted/50 transition-colors cursor-pointer text-left"
       onclick={handleConnect}
-      transition:slide={{ axis: 'y', duration: 200 }}
+      transition:slide={{ axis: 'y', tier: 'moderate' }}
     >
       <div class="flex items-center justify-center">
         <GitHubIcon size={16} class="text-ghost" />

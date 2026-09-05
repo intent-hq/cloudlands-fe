@@ -28,13 +28,16 @@ export const spinnerMetadata = parseUiComponentMetadata({
     'src/lib/components/chat/ChatMessageNavigator.svelte',
     'src/lib/components/chat/LiveStreamPhaseIndicator.svelte',
     'src/lib/components/chat/StreamingTypingIndicator.svelte',
+    'src/lib/components/chat/ThinkingBlock.svelte',
     'src/lib/components/chat/TypingIndicator.svelte',
     'src/lib/components/chat/streaming-status-utils.ts',
+    'src/lib/components/ui/button/button.svelte',
+    'src/lib/components/ui/list/ListItem.svelte',
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/indicators/Spinner.test.ts',
   removalGate:
-    'Retain Spinner while canonical callers and deterministic loading tests pass; AgentBadge and UnsavedIndicator remain internal product exports and are not catalog entries.',
+    'Retain IntentMarkLoader as the single indeterminate indicator and Spinner for inline pulse rows while canonical callers and deterministic loading tests pass; AgentBadge and UnsavedIndicator remain internal product exports and are not catalog entries.',
   dynamicImports: [],
   fixtures: spinnerFixtures,
 });

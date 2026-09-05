@@ -3,8 +3,8 @@
     resolveEditorFallbackIcon,
     resolveEditorIcon,
   } from '$lib/components/shared/icons/editor-icon';
-  import { SettingsFieldRow } from '$lib/components/ui/settings-field-row';
-  import { Switch } from '$lib/components/ui/switch';
+  import { SettingsFieldRow } from '$lib/components/patterns/settings';
+  import { Switch } from '$lib/components/patterns/settings/custom-controls';
   import {
     selectHiddenEditorIds,
     selectInstalledEditors,

@@ -7,6 +7,7 @@
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { m } from '$shared/paraglide/messages.js';
+  import { Button } from '$lib/components/ui/button';
 
   interface Props {
     /** Currently selected specialist ID - null means blank agent */
@@ -60,8 +61,9 @@
 <div class={cn('flex flex-wrap gap-1.5', className)}>
   {#each options as option (option.id ?? '__blank__')}
     {@const isSelected = value === option.id}
-    <button
+    <Button
       type="button"
+      variant="plain"
       onclick={() => handleSelect(option.id)}
       class={cn(
         'inline-flex items-center gap-2 rounded-full transition-all cursor-pointer',
@@ -81,6 +83,6 @@
         icon={option.icon}
       />
       <span class={cn('font-medium', textSize)}>{option.name}</span>
-    </button>
+    </Button>
   {/each}
 </div>

@@ -230,7 +230,7 @@
                       : `${setup.username}@${setup.host}:${setup.port}`}
                   </div>
                 </div>
-                <button
+                <Button
                   onclick={(e) => {
                     e.stopPropagation();
                     e.preventDefault();
@@ -240,18 +240,18 @@
                   title={m.workspace_remoteSetupSelector_removeSetup_tooltip()}
                 >
                   <Fa icon={faXmark} size="xs" />
-                </button>
+                </Button>
               </div>
             </Select.Item>
           {/each}
           <div class="border-t border-border"></div>
-          <button
+          <Button
             onclick={handleAddNewSetup}
             class="w-full text-left px-2 py-1.5 hover:bg-accent flex items-center gap-2 text-sm cursor-pointer rounded-b-sm"
           >
             <Fa icon={faPlus} size="sm" />
             {m.workspace_remoteSetupSelector_addRemoteSetup_label()}
-          </button>
+          </Button>
         </Select.Content>
       </Select.Root>
     </div>
@@ -307,10 +307,12 @@
                 {m.workspace_remoteSetupSelector_recentSetups_label()}
               </div>
               {#each applicableSetups as setup (setup.id)}
-                <button
+                <Button
                   onclick={() => selectSetup(setup)}
-                  class="w-full text-left px-2 py-1.5 hover:bg-accent rounded-sm flex items-center gap-2 text-sm"
-                  class:bg-accent={selectedSetup?.id === setup.id}
+                  class="w-full text-left px-2 py-1.5 hover:bg-accent rounded-sm flex items-center gap-2 text-sm {selectedSetup?.id ===
+                  setup.id
+                    ? 'bg-accent'
+                    : ''}"
                 >
                   <ServerIcon size={14} class="text-ghost" />
                   <div class="flex-1">
@@ -343,9 +345,9 @@
                     <Fa icon={faXmark} size="xs" />
                   </span>
                   {#if selectedSetup?.id === setup.id}
-                    <Fa icon={faCheck} class="text-primary" size="sm" />
+                    <Fa icon={faCheck} class="text-primary-ink" size="sm" />
                   {/if}
-                </button>
+                </Button>
               {/each}
             </div>
           {/if}
@@ -356,7 +358,7 @@
                 {m.workspace_remoteSetupSelector_otherSetups_label()}
               </div>
               {#each otherSetups as setup (setup.id)}
-                <button
+                <Button
                   disabled
                   class="w-full text-left px-2 py-1.5 opacity-50 flex items-center gap-2 text-sm"
                 >
@@ -369,7 +371,7 @@
                         : `${setup.username}@${setup.host}`}
                     </div>
                   </div>
-                </button>
+                </Button>
               {/each}
             </div>
           {/if}

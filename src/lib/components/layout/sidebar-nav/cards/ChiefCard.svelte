@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { Button } from '$lib/components/ui/button';
   // The Chief chat can render in two sidebar hosts at once (the hover card and
   // combined workspace panel). The chief virtual workspace is shared, so
   // mount/unmount is refcounted: only the last live instance unmounts it.
@@ -10,7 +11,7 @@
   import { faChevronDown, faPlus, faSpinner, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
   import {
     Dropdown,
@@ -285,7 +286,7 @@
     } catch (error) {
       if (ownsCreation) {
         const message = error instanceof Error ? error.message : String(error);
-        toast.error(m.layout_chiefCard_startFailed_error({ message }));
+        notify.error(m.layout_chiefCard_startFailed_error({ message }));
       }
     } finally {
       isCreatingThread = false;
@@ -295,7 +296,7 @@
 
 {#if !expanded}
   <div class="p-3">
-    <button
+    <Button
       type="button"
       class="block w-full cursor-pointer rounded-sm text-left outline-none"
       onclick={openChiefPanel}
@@ -303,7 +304,7 @@
     >
       <p class="type-body truncate font-medium text-foreground">{title}</p>
       <p class="type-caption mt-1 text-muted-foreground line-clamp-3">{preview}</p>
-    </button>
+    </Button>
   </div>
 {:else}
   <div class="flex h-full flex-col {embedded ? 'min-h-0' : 'min-h-[460px]'}">
@@ -392,7 +393,7 @@
           ? 'pointer-events-none -mr-1 w-0 opacity-0'
           : 'mr-0 w-6 opacity-100'}"
       >
-        <button
+        <Button
           class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
           onclick={handleNewThreadClick}
           disabled={isCreatingThread || collapsed}
@@ -406,7 +407,7 @@
             size="xs"
             class={isCreatingThread ? 'animate-spin' : ''}
           />
-        </button>
+        </Button>
       </div>
       {#if ontoggle}
         <button

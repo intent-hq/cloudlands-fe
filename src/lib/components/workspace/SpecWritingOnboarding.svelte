@@ -193,7 +193,7 @@
   }
 
   .step.current .step-content h4 {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
 
   .step-content p {
@@ -209,7 +209,7 @@
   }
 
   .step-content a {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
     text-decoration: underline;
     cursor: pointer;
   }

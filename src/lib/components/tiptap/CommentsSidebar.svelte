@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import ResponsiveCommentThread from './comments/ResponsiveCommentThread.svelte';
   import type { CommentV2 } from '$features/comments/comment-types-v2';
   import { selectSelectedComment } from '$store/renderer/slices/comments/comments-selectors';
@@ -582,7 +582,7 @@
         class:is-focused={isFocused}
         style="top: {adjustedTop}px; right: {-10 - horizontalOffset}px; z-index: {isFocused
           ? 20
-          : 10}; transition: right 0.3s ease-in-out, top 0.3s ease-in-out;"
+          : 10}; transition: right var(--motion-slow) var(--spring-slow-ease), top var(--motion-slow) var(--spring-slow-ease);"
         role="button"
         tabindex="0"
         data-comment-id={comment.id}
@@ -602,7 +602,7 @@
           }
         }}
       >
-        <div transition:slide={{ axis: 'y', duration: 200 }}>
+        <div transition:slide={{ axis: 'y', tier: 'moderate' }}>
           <ResponsiveCommentThread
             {comment}
             {replies}
@@ -665,7 +665,7 @@
 
   /* Responsive comment animations */
   :global(.comment-thread-container) {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all var(--motion-slow) var(--spring-slow-ease);
   }
 
   /* Constrain expanded comments to prevent overflow */

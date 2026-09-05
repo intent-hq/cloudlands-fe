@@ -4,7 +4,7 @@
  * Runs a REAL HardwareConsoleManager against the fake WebHID surface with an
  * RPC auto-responder (requests decoded from the device's sent report-6
  * frames, replies injected back as channel-2 JSON), so the probe traffic is
- * exercised end to end. Only the toast lib (`vi.mock('svelte-sonner')`,
+ * exercised end to end. Only the toast lib (`vi.mock('$lib/components/patterns/notify')`,
  * existing pattern) and settings navigation are faked.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,8 +18,8 @@ const { toastSuccessMock, toastInfoMock, toastWarningMock, navigateToRouteMock }
   }),
 );
 
-vi.mock('svelte-sonner', () => ({
-  toast: {
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
     success: toastSuccessMock,
     info: toastInfoMock,
     warning: toastWarningMock,

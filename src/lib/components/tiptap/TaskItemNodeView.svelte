@@ -447,12 +447,12 @@
             />
           {/key}
         </span>
-        <button
+        <Button
           type="button"
           data-testid="linked-task-title"
           data-task-row-content
           data-task-row-title
-          class="min-w-0 flex-1 cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary/40 {linkedTaskNotFound
+          class="min-w-0 flex-1 cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary-ink/40 {linkedTaskNotFound
             ? 'text-muted-foreground italic'
             : ''}"
           onclick={(e) => handleOpenLinkedNote(e)}
@@ -464,7 +464,7 @@
           }}
         >
           {linkedTaskTitle}
-        </button>
+        </Button>
         <div data-task-row-trailing class="ml-auto flex shrink-0 items-center gap-1.5">
           {#if unmetDependsOn.length > 0 && !effectiveChecked}
             <Tooltip
@@ -564,7 +564,7 @@
     <!-- Simple checkbox layout -->
     <div class="min-w-0 w-full flex items-start gap-1.5 py-1 pl-1">
       <span class="shrink-0 flex mt-1" contenteditable="false">
-        <!-- <input type="checkbox" {checked} onclick={handleNormalCheckboxClick} /> -->
+        <!-- The Checkbox primitive replaces the former native checkbox here. -->
         <Checkbox {checked} onCheckedChange={handleNormalCheckboxClick} />
       </span>
       <div class="flex-1 min-w-0">

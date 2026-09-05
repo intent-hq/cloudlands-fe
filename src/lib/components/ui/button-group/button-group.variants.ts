@@ -1,7 +1,7 @@
 import { tv, type VariantProps } from 'tailwind-variants';
 
 export const buttonGroupVariants = tv({
-  base: 'isolate inline-flex items-stretch gap-px rounded-md border border-border bg-border p-px shadow-xs',
+  base: 'isolate inline-flex items-stretch gap-px rounded-md bg-border p-px',
   variants: {
     orientation: {
       horizontal: 'flex-row',

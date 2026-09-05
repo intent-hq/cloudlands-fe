@@ -14,10 +14,12 @@
    */
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
-  import { Select } from '$lib/components/ui/select';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
+  import {
+    Button,
+    Checkbox,
+    Select,
+    Switch,
+  } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
   import { MACOS_INPUT_MONITORING_SETTINGS_URL } from '$shared/constants';
   import { formatNumber } from '$lib/i18n/format';
@@ -144,8 +146,8 @@
     });
   });
 
-  function handleEnabledChange(value: string | boolean) {
-    appStore.dispatch(setHardwareConsoleEnabled(Boolean(value)));
+  function handleEnabledChange(enabled: boolean) {
+    appStore.dispatch(setHardwareConsoleEnabled(enabled));
   }
 
   function handleLimitChange(value: string) {
@@ -313,10 +315,9 @@
         <p class="text-sm font-medium text-foreground">{m.settings_hardware_enable_label()}</p>
         <p class="text-xs text-subtle mt-1">{m.settings_hardware_enable_description()}</p>
       </div>
-      <Toggle
-        pressed={$enabled$}
-        onChange={handleEnabledChange}
-        variant="indicator"
+      <Switch
+        checked={$enabled$}
+        onCheckedChange={handleEnabledChange}
         size="xs"
         class="mb-auto"
         ariaLabel={m.settings_hardware_enable_label()}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { logger } from '$lib/utils/client-logger';
 
   import UnifiedCommentThread from './UnifiedCommentThread.svelte';
@@ -65,13 +66,13 @@
 
     <div class="space-y-4">
       <div class="flex items-center gap-4 mb-4">
-        <button
+        <Button
           class="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
           onclick={() => (isCollapsed = !isCollapsed)}
         >
           <!-- i18n-ignore (dev-only demo content) -->
           {isCollapsed ? 'Expand' : 'Collapse'} Comment
-        </button>
+        </Button>
         <span class="text-sm text-subtle">
           <!-- i18n-ignore (dev-only demo content) -->
           Current state: {isCollapsed ? 'Collapsed' : 'Expanded'}

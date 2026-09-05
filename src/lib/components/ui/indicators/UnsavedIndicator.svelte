@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fade } from 'svelte/transition';
+  import { fade } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
 
   /**
@@ -18,7 +18,7 @@
 {#if visible}
   <div
     class="flex items-center justify-center shrink-0 {className}"
-    transition:fade={{ duration: 200 }}
+    transition:fade={{ tier: 'moderate' }}
     aria-label={m.ui_unsavedIndicator_tooltip()}
     title={m.ui_unsavedIndicator_tooltip()}
   >

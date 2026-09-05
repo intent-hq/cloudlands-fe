@@ -3,13 +3,11 @@ import type { UiComponentFixture } from '../component-metadata';
 export const spinnerFixtures = [
   {
     id: 'spinner-state-matrix',
-    title: 'Spinner loading states',
+    title: 'Loading indicator states',
     states: [
       'default',
-      'wave',
-      'stair',
-      'snake',
-      'shuffle',
+      'intent-mark',
+      'bloom',
       'pulse',
       'seeded-colors',
       'custom-size-gap',

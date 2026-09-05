@@ -211,7 +211,7 @@
         {#if 'divider' in preset}
           <div class="h-px bg-border my-1"></div>
         {:else}
-          <button
+          <Button
             class="w-full flex gap-2.5 px-3 py-1.5 text-left hover:bg-muted transition-colors rounded-sm cursor-pointer"
             onclick={() => handlePresetClick(preset.id, close)}
           >
@@ -221,9 +221,9 @@
               <div class="text-xs text-subtle truncate">{preset.description()}</div>
             </div>
             {#if currentPreset === preset.id}
-              <Fa icon={faCheck} size="xs" class="text-primary shrink-0" />
+              <Fa icon={faCheck} size="xs" class="text-primary-ink shrink-0" />
             {/if}
-          </button>
+          </Button>
         {/if}
       {/each}
 

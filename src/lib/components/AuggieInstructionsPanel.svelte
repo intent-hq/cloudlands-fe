@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * AuggieInstructionsPanel
    *
@@ -8,10 +9,10 @@
    * install/login flow itself — the daemon returns the steps the user must run
    * in their own terminal, and this panel is the surface that displays them.
    */
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import { faPaste, faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -33,16 +34,16 @@
     if (!command) return;
     try {
       await navigator.clipboard.writeText(command);
-      toast.success(m.lib_auggieInstructions_copied_message());
+      notify.success(m.lib_auggieInstructions_copied_message());
     } catch {
-      toast.error(m.lib_auggieInstructions_copyFailed_error());
+      notify.error(m.lib_auggieInstructions_copyFailed_error());
     }
   }
 </script>
 
 <div
   class="flex flex-col gap-2 p-3 rounded-lg bg-muted/50 border border-border text-xs"
-  transition:slide={{ axis: 'y', duration: 200 }}
+  transition:slide={{ axis: 'y', tier: 'moderate' }}
   data-testid="auggie-instructions-panel"
 >
   <div class="flex items-start justify-between gap-2">
@@ -52,7 +53,7 @@
       {/each}
     </ol>
     {#if onDismiss}
-      <button
+      <Button
         type="button"
         class="shrink-0 opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
         onclick={onDismiss}
@@ -60,12 +61,12 @@
         aria-label={m.lib_auggieInstructions_dismiss_ariaLabel()}
       >
         <Fa icon={faXmark} size="sm" />
-      </button>
+      </Button>
     {/if}
   </div>
 
   {#if command}
-    <button
+    <Button
       type="button"
       class="flex items-center gap-1.5 px-2 py-1 bg-background border border-border rounded font-mono text-xs text-foreground hover:bg-muted transition-colors w-fit cursor-pointer"
       onclick={copyCommand}
@@ -74,14 +75,14 @@
     >
       <code>{command}</code>
       <Fa icon={faPaste} size="xs" />
-    </button>
+    </Button>
   {/if}
 
   {#if onRecheck}
     <div class="flex gap-3 text-xs pt-1">
-      <button
+      <Button
         type="button"
-        class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium disabled:opacity-50"
+        class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium disabled:opacity-50"
         onclick={onRecheck}
         disabled={rechecking}
         data-testid="auggie-instructions-recheck"
@@ -89,7 +90,7 @@
         {rechecking
           ? m.lib_auggieInstructions_checking_label()
           : m.lib_auggieInstructions_recheck_label()}
-      </button>
+      </Button>
     </div>
   {/if}
 </div>

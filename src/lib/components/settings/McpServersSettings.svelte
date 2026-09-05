@@ -1,4 +1,12 @@
 <script lang="ts">
+  import {
+    Button,
+    Header,
+    Input,
+    Skeleton,
+    Textarea,
+    Switch,
+  } from '$lib/components/patterns/settings/custom-controls';
   import { logger } from '../../../shared/logger';
   import { onMount } from 'svelte';
   import type { McpServerConfig, McpServerWithStatus, McpServerFormState } from './mcp/types';
@@ -13,17 +21,13 @@
   import McpServerForm from './mcp/McpServerForm.svelte';
   import McpJsonImport from './mcp/McpJsonImport.svelte';
   import McpIcon from './mcp/McpIcon.svelte';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Input from '$lib/components/ui/input/input.svelte';
-  import { Skeleton } from '$lib/components/ui/skeleton';
-  import { slide } from 'svelte/transition';
+  import { ListView } from '$lib/components/patterns/collection';
+  import { crispOut, springIn } from '$lib/motion';
   import { faCheck, faCopy, faPlus, faRotateRight } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { toast, withToastCountdown } from '$lib/components/ui/toast';
+  import { notify, withToastCountdown } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import Header from '../ui/Header.svelte';
   import { handleLink } from '$features/navigation/link-handler';
   import { store as appStore } from '$store/renderer/store';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
@@ -124,10 +128,10 @@
   async function handleCopyDiagnosticCommand() {
     try {
       await navigator.clipboard.writeText(diagnosticCommand);
-      toast.success(m.settings_mcpServers_diagnosticCopied());
+      notify.success(m.settings_mcpServers_diagnosticCopied());
     } catch (copyError) {
       logger.error('Failed to copy MCP diagnostic command:', copyError);
-      toast.error(m.settings_mcpServers_diagnosticCopyError());
+      notify.error(m.settings_mcpServers_diagnosticCopyError());
     }
   }
 
@@ -137,7 +141,7 @@
 
   function handleRestartServer(name: string) {
     appStore.dispatch(restartServer(name));
-    toast.info(m.settings_mcpServers_restartingToast({ name }), {
+    notify.info(m.settings_mcpServers_restartingToast({ name }), {
       description: m.settings_mcpServers_restartingDescription(),
       duration: 3000,
     });
@@ -173,7 +177,7 @@
     loadSettingsFile();
 
     // Show toast with undo action
-    toast.warning(
+    notify.warning(
       m.settings_mcpServers_deletedToast({ name }),
       withToastCountdown(
         {
@@ -204,7 +208,7 @@
 
     // Edit mode for manual auth configuration
     editingServer = server;
-    toast.info(m.settings_mcpServers_configureAuthToast(), {
+    notify.info(m.settings_mcpServers_configureAuthToast(), {
       description: m.settings_mcpServers_configureAuthDescription(),
       duration: 5000,
     });
@@ -356,10 +360,9 @@
         <p class="text-xs text-subtle">{m.settings_mcpServers_description()}</p>
         <p class="text-xs text-subtle">{m.settings_mcpServers_newAgentsOnlyNote()}</p>
       </div>
-      <Toggle
-        pressed={$enabled$}
-        onclick={handleToggleEnabled}
-        variant="indicator"
+      <Switch
+        checked={$enabled$}
+        onCheckedChange={handleToggleEnabled}
         size="xs"
         class="mb-auto"
         ariaLabel={m.settings_mcpServers_title()}
@@ -368,7 +371,11 @@
   </div>
 
   {#if $enabled$}
-    <div transition:slide={{ duration: 200 }} class="px-6 py-5 space-y-6">
+    <div
+      in:springIn={{ tier: 'moderate', y: -4 }}
+      out:crispOut={{ tier: 'moderate' }}
+      class="px-6 py-5 space-y-6"
+    >
       <!-- Combined MCP Servers Section -->
       <section>
         <!-- Header with Add button -->
@@ -399,12 +406,16 @@
 
         <!-- Expandable Add Panel -->
         {#if showAddPanel}
-          <div transition:slide={{ duration: 200 }} class="border-b border-border">
+          <div
+            in:springIn={{ tier: 'moderate', y: -4 }}
+            out:crispOut={{ tier: 'moderate' }}
+            class="border-b border-border"
+          >
             <div class="py-4">
               <Header size={2} title={m.settings_mcpServers_addPanelTitle()} class="mb-3" />
               <!-- Mode Toggle -->
               <div class="flex gap-1 p-1 bg-muted rounded-lg w-fit mb-4">
-                <button
+                <Button
                   type="button"
                   class="px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer {addMode ===
                   'form'
@@ -413,8 +424,8 @@
                   onclick={() => (addMode = 'form')}
                 >
                   {m.settings_mcpServers_modeConfigure()}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   class="px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer {addMode ===
                   'import'
@@ -423,7 +434,7 @@
                   onclick={() => (addMode = 'import')}
                 >
                   {m.settings_mcpServers_modeImportJson()}
-                </button>
+                </Button>
               </div>
 
               {#if addMode === 'form'}
@@ -441,7 +452,11 @@
 
         <!-- Edit Panel (when editing a server) -->
         {#if editingServer && editFormState}
-          <div transition:slide={{ duration: 200 }} class="border-b border-border bg-muted/20">
+          <div
+            in:springIn={{ tier: 'moderate', y: -4 }}
+            out:crispOut={{ tier: 'moderate' }}
+            class="border-b border-border bg-muted/20"
+          >
             <div class="py-4">
               <h3 class="text-sm font-medium mb-4">
                 {m.settings_mcpServers_editServerTitle({ name: editingServer.name })}
@@ -532,21 +547,27 @@
               <p>{m.settings_mcpServers_emptyTitle()}</p>
               <p class="mt-1">
                 {m.settings_mcpServers_emptyDescription()}
-                <button
+                <Button
                   type="button"
-                  class="text-primary hover:underline cursor-pointer"
+                  class="text-primary-ink hover:underline cursor-pointer"
                   onclick={(e) => {
                     handleLink('https://docs.augmentcode.com/setup-augment/mcp', {
                       workspaceId,
                       event: e,
                     });
-                  }}>{m.settings_mcpServers_learnHow()}</button
+                  }}>{m.settings_mcpServers_learnHow()}</Button
                 >
               </p>
             </div>
           {:else}
-            <div class="mb-6">
-              {#each $servers$ as server (server.name)}
+            <ListView
+              items={$servers$}
+              getKey={(server) => server.name}
+              getText={(server) => server.name}
+              ariaLabel={m.settings_mcpServers_sectionTitle()}
+              class="mb-6"
+            >
+              {#snippet row({ item: server })}
                 <McpServerCard
                   {server}
                   onToggle={handleToggleServer}
@@ -555,8 +576,8 @@
                   onReauthenticate={handleReauthenticate}
                   onRestart={handleRestartServer}
                 />
-              {/each}
-            </div>
+              {/snippet}
+            </ListView>
           {/if}
 
           <!-- Easy MCP Installation (below configured servers) -->
@@ -621,7 +642,7 @@
                     <div
                       class="w-full flex items-center gap-3 py-2.5 px-1 rounded-md transition-colors"
                     >
-                      <button
+                      <Button
                         type="button"
                         class="flex-1 flex items-center gap-3 min-w-0 cursor-pointer"
                         onclick={() => startInstall(option)}
@@ -644,7 +665,7 @@
                           </div>
                           <p class="text-xs text-subtle truncate">{option.description}</p>
                         </div>
-                      </button>
+                      </Button>
 
                       <div class="shrink-0 flex items-center gap-2">
                         {#if installing}
@@ -652,23 +673,23 @@
                             class="w-4 h-4 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
                           ></div>
                         {:else if needsAuth}
-                          <button
+                          <Button
                             type="button"
                             class="px-3 py-1 text-xs font-medium rounded-md border border-amber-500/50 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer"
                             onclick={() => handleReauthenticate(normalizeServerName(option.label))}
                           >
                             {m.settings_mcp_authenticateButton()}
-                          </button>
+                          </Button>
                         {:else if installed}
                           <Fa icon={faCheck} size="sm" class="text-green-500" />
                         {:else}
-                          <button
+                          <Button
                             type="button"
                             class="p-1 rounded-md hover:bg-muted transition-colors cursor-pointer"
                             onclick={() => startInstall(option)}
                           >
                             <Fa icon={faPlus} size="sm" class="text-subtle" />
-                          </button>
+                          </Button>
                         {/if}
                       </div>
                     </div>
@@ -682,7 +703,7 @@
 
       <!-- Advanced: Settings JSON Editor (daemon `mcp.servers` structured config) -->
       <section>
-        <button
+        <Button
           type="button"
           class="w-full flex items-center justify-between py-4 hover:bg-muted/30 transition-colors cursor-pointer"
           onclick={handleToggleAdvanced}
@@ -701,18 +722,20 @@
           <span class="text-subtle text-xs transition-transform {showAdvanced ? 'rotate-90' : ''}"
             >▶</span
           >
-        </button>
+        </Button>
 
         {#if showAdvanced}
           <div
-            transition:slide={{ duration: 200 }}
+            in:springIn={{ tier: 'moderate', y: -4 }}
+            out:crispOut={{ tier: 'moderate' }}
             class="pb-4 space-y-3 border-t border-border pt-4"
           >
-            <textarea
-              class="w-full h-64 px-3 py-2 bg-background border border-border rounded-md text-sm font-mono text-foreground resize-y focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+            <Textarea
+              class="w-full h-64 px-3 py-2 bg-background border border-border rounded-md text-sm font-mono text-foreground resize-y focus:outline-none focus:border-primary-ink focus:ring-2 focus:ring-primary-ink/10"
               placeholder={mcpJsonPlaceholder}
               aria-label={m.settings_mcpServers_jsonEditorAriaLabel()}
-              bind:value={userMcpSettingsContent}></textarea>
+              bind:value={userMcpSettingsContent}
+            ></Textarea>
 
             <div class="flex items-center justify-between gap-4">
               <div class="flex items-center gap-2">
@@ -731,7 +754,7 @@
               <div class="flex items-center gap-3">
                 <a
                   href="https://docs.augmentcode.com/cli/integrations#configure-mcp-via-settings-json"
-                  class="text-xs text-primary hover:underline"
+                  class="text-xs text-primary-ink hover:underline"
                   onclick={(e) => {
                     e.preventDefault();
                     handleLink(
@@ -763,7 +786,8 @@
 {#if showImportSuccess}
   <div
     class="fixed bottom-4 right-4 px-4 py-3 bg-green-600 text-white text-sm rounded-lg shadow-lg z-50"
-    transition:slide={{ duration: 150 }}
+    in:springIn={{ tier: 'fast', y: 4 }}
+    out:crispOut={{ tier: 'fast' }}
   >
     {importedCount === 1
       ? m.settings_mcpServers_importSuccess_one()

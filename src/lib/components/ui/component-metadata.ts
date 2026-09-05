@@ -39,6 +39,9 @@ const uiComponentMetadataSchema = z
     removalGate: z.string().min(1),
     dynamicImports: z.array(pathSchema),
     fixtures: z.array(uiComponentFixtureSchema),
+    useWhen: z.array(z.string().min(1)).optional(),
+    dontUseWhen: z.array(z.string().min(1)).optional(),
+    replaces: z.array(z.string().min(1)).optional(),
   })
   .superRefine((record, context) => {
     if (!['deprecated-wrapper', 'deletion-candidate'].includes(record.category)) return;

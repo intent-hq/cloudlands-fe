@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   /**
    * Global Modal Command Palette (Cmd/Ctrl+K)
    *
@@ -9,7 +11,7 @@
   import { onMount, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import { goto } from '$app/navigation';
-  import { fly } from 'svelte/transition';
+  import { fly } from '$lib/motion';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import Fa from 'svelte-fa';
   import {
@@ -891,7 +893,7 @@
     aria-label={m.lib_commandPalette_quickActions_ariaLabel()}
     tabindex="-1"
     onkeydown={handleContainerKeyDown}
-    transition:fly={{ y: 6, duration: 200 }}
+    transition:fly={{ axis: 'y', distance: 6, tier: 'moderate' }}
   >
     <div
       class="bg-background overflow-hidden"
@@ -903,8 +905,8 @@
       <div class="flex items-center gap-2.5 px-3 h-10">
         <Fa icon={faSearch} class="text-[14px] text-foreground/30" />
 
-        <input
-          bind:this={inputRef}
+        <Input
+          bind:ref={inputRef}
           bind:value={searchQuery}
           onkeydown={handleKeyDown}
           type="text"
@@ -938,7 +940,7 @@
         <div class="max-h-[480px] overflow-y-auto py-1">
           <div class="px-3 py-2">
             {#if goToLineNumber != null && goToLineNumber > 0}
-              <button
+              <Button
                 class="w-full px-3 py-2 flex items-center gap-3 text-left rounded-md bg-foreground/[0.04] hover:bg-foreground/[0.06] transition-colors duration-50"
                 onclick={() => {
                   if (goToLineNumber != null && goToLineNumber > 0) {
@@ -950,7 +952,7 @@
                 <span class="text-[14px] font-medium text-foreground"
                   >{m.lib_commandPalette_goToLine_label({ line: goToLineNumber })}</span
                 >
-              </button>
+              </Button>
             {:else}
               <p class="text-[13px] text-subtle px-3">
                 {m.lib_commandPalette_invalidLine_message()}
@@ -971,7 +973,7 @@
                 <!-- Left side: workspace-specific actions -->
                 <div class="flex gap-2">
                   {#each searchResults.filter((r) => r._newAction && !r._newWorkspace) as action}
-                    <button
+                    <Button
                       class="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors duration-100
                              {selectedIndex === action._idx
                         ? 'border-foreground/[0.12] bg-foreground/[0.04]'
@@ -983,13 +985,13 @@
                       <span class="text-[13px] font-medium text-subtle">
                         {action.pillLabel ?? action.label}
                       </span>
-                    </button>
+                    </Button>
                   {/each}
                 </div>
 
                 <!-- Right side: New Workspace -->
                 {#each searchResults.filter((r) => r._newWorkspace) as wsAction}
-                  <button
+                  <Button
                     class="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors duration-100
                            {selectedIndex === wsAction._idx
                       ? 'border-foreground/[0.12] bg-foreground/[0.04]'
@@ -1001,7 +1003,7 @@
                     <span class="text-[13px] font-medium text-subtle">
                       {wsAction.pillLabel ?? wsAction.label}
                     </span>
-                  </button>
+                  </Button>
                 {/each}
               </div>
             {:else if item._groupLabel}
@@ -1022,7 +1024,7 @@
               </div>
             {:else if item._showMore}
               <!-- Show More Button -->
-              <button
+              <Button
                 class="w-full px-3 py-1.5 flex items-center justify-center gap-2 text-left transition-colors duration-50
                        hover:bg-foreground/[0.03]"
                 onclick={() => selectItem(item)}
@@ -1030,10 +1032,10 @@
                 <span class="text-[13px] text-subtle">
                   {showMoreLabel(item._count, item._itemType)}
                 </span>
-              </button>
+              </Button>
             {:else if !item._newAction}
               <!-- Regular Item -->
-              <button
+              <Button
                 class="w-full px-3 py-1.5 flex items-start gap-3 text-left transition-colors duration-50
                        {selectedIndex === index
                   ? 'bg-foreground/[0.04]'
@@ -1085,7 +1087,7 @@
                 {#if selectedIndex === index && !item._groupLabel}
                   <span class="text-subtle text-[13px]">↵</span>
                 {/if}
-              </button>
+              </Button>
             {/if}
           {/each}
 

@@ -13,7 +13,7 @@
  * This reserves the URL slot for future use.
  */
 
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import { noteUrl } from '$shared/constants/intent-links';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
@@ -287,7 +287,7 @@ export async function handleIntentLink(
   const info = parseIntentLink(url);
 
   if (!info.valid) {
-    toast.error(m.ui_linkHandler_invalidLink_title(), {
+    notify.error(m.ui_linkHandler_invalidLink_title(), {
       description: info.error || m.ui_linkHandler_invalidLink_description(),
     });
     return true;
@@ -313,17 +313,17 @@ export async function handleIntentLink(
         break;
       }
       default:
-        toast.error(m.ui_linkHandler_unsupportedLink_title(), {
+        notify.error(m.ui_linkHandler_unsupportedLink_title(), {
           description: m.ui_linkHandler_unsupportedLink_description({ type: info.type }),
         });
     }
   } catch (error) {
     if (error instanceof NotFoundError) {
-      toast.error(m.ui_linkHandler_notFound_title(), {
+      notify.error(m.ui_linkHandler_notFound_title(), {
         description: error.message,
       });
     } else {
-      toast.error(m.ui_linkHandler_navigationFailed_title(), {
+      notify.error(m.ui_linkHandler_navigationFailed_title(), {
         description: error instanceof Error ? error.message : m.ui_linkHandler_unknownError_label(),
       });
     }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * ProjectPickerMessage — Message 2 of the onboarding flow.
    *
@@ -12,8 +13,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
   import { invoke } from '$shared/generated/ipc-client';
-  import { fly } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fly } from '$lib/motion';
   import LocalRepoTab from './LocalRepoTab.svelte';
   import GitHubRepoTab from './GitHubRepoTab.svelte';
   import NewProjectTab from './NewProjectTab.svelte';
@@ -321,12 +321,9 @@
 </script>
 
 <!-- Message content — flies in from bottom -->
-<div class="space-y-5" data-message in:fly={{ y: 30, duration: 500, easing: cubicOut }}>
+<div class="space-y-5" data-message in:fly={{ tier: 'slow', distance: 30 }}>
   {#if !hideHeading}
-    <h2
-      class="text-2xl font-semibold tracking-tight"
-      in:fly={{ y: 14, duration: 400, delay: 80, easing: cubicOut }}
-    >
+    <h2 class="text-2xl font-semibold tracking-tight" in:fly={{ tier: 'slow', distance: 14 }}>
       {m.onboarding_projectPicker_chooseProject_title()}
     </h2>
     <p class="text-base text-muted-foreground leading-relaxed font-light max-w-lg">
@@ -337,10 +334,10 @@
   <!-- Tab bar -->
   <div
     class="flex gap-0 rounded-lg p-1 border border-border bg-muted/30"
-    in:fly={{ y: 12, duration: 350, delay: 150, easing: cubicOut }}
+    in:fly={{ tier: 'slow', distance: 12 }}
   >
     {#each tabs as tab (tab.id)}
-      <button
+      <Button
         type="button"
         class="flex-1 px-3 py-2.5 text-sm rounded-md cursor-pointer transition-all duration-200
           {activeTab === tab.id
@@ -353,14 +350,14 @@
         }}
       >
         {tab.label}
-      </button>
+      </Button>
     {/each}
   </div>
 
   <!-- Tab content -->
-  <div class="min-h-[120px]" in:fly={{ y: 10, duration: 300, delay: 250, easing: cubicOut }}>
+  <div class="min-h-[120px]" in:fly={{ tier: 'slow', distance: 10 }}>
     {#key activeTab}
-      <div in:fly={{ x: slideDirection * 150, duration: 250, easing: cubicOut }}>
+      <div in:fly={{ tier: 'slow', axis: 'x', distance: slideDirection * 150 }}>
         {#if activeTab === 'local'}
           <LocalRepoTab
             selectedPath={localRepoPath}

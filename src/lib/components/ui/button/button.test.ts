@@ -7,12 +7,18 @@ import { resolve } from 'node:path';
 import { parse } from 'svelte/compiler';
 import { describe, expect, it, vi } from 'vitest';
 import Button from './button.svelte';
+import ButtonHarness from './ButtonHarness.svelte';
 import { buttonFixtures } from './button.fixtures';
 import { buttonMetadata } from './button.meta';
-import { buttonVariants, type ButtonSize } from './button.variants';
+import {
+  activeButtonSurfaceVariants,
+  buttonSurfaceVariants,
+  buttonVariants,
+  type ButtonSize,
+} from './button.variants';
 
 describe('Button', () => {
-  it('owns one variant recipe and maps every size to 28, 32, or 36px control tokens', () => {
+  it('owns one variant recipe and maps every size to the control-height scale', () => {
     const sources = ['button.svelte', 'index.ts', 'button.variants.ts'].map((file) =>
       readFileSync(new URL(file, import.meta.url), 'utf8'),
     );
@@ -21,39 +27,75 @@ describe('Button', () => {
     expect(source.match(/export type ButtonVariant\b/g)).toHaveLength(1);
     expect(source.match(/export type ButtonSize\b/g)).toHaveLength(1);
     expect(source.match(/export type ButtonProps\b/g)).toHaveLength(1);
-    expect(buttonVariants({ size: 'icon-xs' })).toContain('size-7');
-    expect(buttonVariants({ size: 'xs' })).toContain('h-7');
-    expect(buttonVariants({ size: 'sm' })).toContain('h-7');
-    expect(buttonVariants({ size: 'default' })).toContain('h-8');
-    expect(buttonVariants({ size: 'lg' })).toContain('h-9');
-    expect(buttonVariants()).toContain('focus-visible:ring-2');
-    expect(buttonVariants()).toContain('focus-visible:border-ring');
-    expect(buttonVariants()).toContain('type-body');
+    expect(buttonVariants({ size: 'icon-xs' })).toContain('size-(--control-height-compact)');
+    expect(buttonVariants({ size: 'xs' })).toContain('h-(--control-height-compact)');
+    expect(buttonVariants({ size: 'sm' })).toContain('h-(--control-height-small)');
+    expect(buttonVariants({ size: 'default' })).toContain('h-(--control-height-medium)');
+    expect(buttonVariants({ size: 'lg' })).toContain('h-(--control-height-large)');
+    expect(buttonVariants({ size: 'default' })).toContain('px-4');
+    expect(buttonVariants()).toContain('rounded-(--radius-medium)');
+    expect(buttonVariants()).toContain('font-medium');
+    expect(buttonVariants()).not.toContain('outline-none');
+    expect(buttonVariants()).not.toContain('focus-visible:ring');
+    expect(buttonVariants()).toContain('type-caption');
     expect(buttonVariants()).not.toMatch(/\btext-(?:xs|sm|base)\b/);
   });
 
-  it('uses semantic editorial variants and keeps neumorphic as an outline alias', () => {
+  it('gives default, primary, and secondary solid raised surfaces with pressed states', () => {
     const defaultButton = buttonVariants({ variant: 'default' });
-    expect(defaultButton).toContain('border-border');
-    expect(defaultButton).toContain('bg-card');
-    expect(defaultButton).toContain('hover:border-input');
-    expect(defaultButton).not.toContain('hover:border-primary');
-    expect(defaultButton).not.toContain('bg-primary ');
+    expect(defaultButton).toContain('text-primary-foreground');
+    expect(buttonSurfaceVariants.default).toContain('bg-primary');
+    expect(buttonVariants({ variant: 'primary' })).toContain('text-primary-foreground');
+    expect(buttonSurfaceVariants.primary).toContain('bg-primary');
+    expect(buttonSurfaceVariants.primary).toContain('shadow-(--elevation-raised)');
+    expect(buttonSurfaceVariants.primary).toContain('group-active/button:brightness-90');
     const outlineButton = buttonVariants({ variant: 'outline' });
-    expect(outlineButton).toContain('border-border');
-    expect(outlineButton).toContain('bg-transparent');
-    expect(outlineButton).toContain('shadow-none');
+    expect(outlineButton).toContain('text-foreground');
+    expect(buttonSurfaceVariants.outline).toContain('group-hover/button:bg-hover');
+    expect(buttonSurfaceVariants.outline).toContain('group-active/button:bg-active');
     const secondaryButton = buttonVariants({ variant: 'secondary' });
-    expect(secondaryButton).toContain('border-border');
-    expect(secondaryButton).not.toContain('hover:border-primary');
+    expect(secondaryButton).toContain('text-secondary-foreground');
+    expect(buttonSurfaceVariants.secondary).toContain('bg-secondary');
+    expect(buttonSurfaceVariants.secondary).toContain('shadow-(--elevation-raised)');
+    expect(buttonSurfaceVariants.secondary).toContain('group-active/button:brightness-90');
     const destructiveButton = buttonVariants({ variant: 'destructive' });
-    expect(destructiveButton).toContain('bg-card');
-    expect(destructiveButton).toContain('hover:bg-danger');
-    expect(destructiveButton.split(/\s+/)).not.toContain('bg-danger');
-    const compatibility = buttonVariants({ variant: 'neumorphic' });
-    expect(compatibility).toContain('border-border');
-    expect(compatibility).toContain('bg-card');
-    expect(compatibility).not.toMatch(/gradient|rounded-2xl|shadow-md/);
+    expect(destructiveButton).toContain('text-danger-background');
+    expect(buttonSurfaceVariants.destructive).toContain('bg-danger');
+    expect(buttonSurfaceVariants.neumorphic).toBe(buttonSurfaceVariants.outline);
+  });
+
+  it('renders press-collapse, forced-active, icon, loading, and contextual-size states', () => {
+    const { container } = render(ButtonHarness);
+    const contextual = screen.getByRole('button', { name: 'Contextual action' });
+    const explicit = screen.getByRole('button', { name: 'Explicit action' });
+    const active = screen.getByRole('button', { name: 'Active action' });
+    const loading = screen.getByRole('button', { name: 'Loading action' });
+
+    expect(contextual.className).toContain('h-(--control-height-compact)');
+    expect(explicit.className).toContain('h-(--control-height-large)');
+    expect(active.getAttribute('data-state')).toBe('active');
+    expect(active.querySelector('[data-slot="button-surface"]')?.className).toContain('bg-active');
+    expect(activeButtonSurfaceVariants.outline).toContain('bg-active');
+
+    const iconButton = screen.getByRole('button', { name: 'Navigate' });
+    expect(iconButton.querySelector('[data-slot="button-leading-icon"]')).not.toBeNull();
+    expect(iconButton.querySelector('[data-slot="button-trailing-icon"]')).not.toBeNull();
+    expect(iconButton.className).toContain('pl-[var(--button-icon-padding)]');
+    expect(iconButton.className).toContain('pr-[var(--button-icon-padding)]');
+
+    const content = loading.querySelector('[data-slot="button-content"]');
+    const label = loading.querySelector('[data-slot="button-label"]');
+    const spinner = loading.querySelector('[data-slot="button-spinner"]');
+    expect(content?.textContent).toContain('Preserved loading label');
+    expect(content?.classList.contains('min-w-0')).toBe(true);
+    expect(label?.classList.contains('truncate')).toBe(true);
+    expect(content?.classList.contains('opacity-0')).toBe(true);
+    const loader = spinner?.querySelector('[data-slot="intent-mark-loader"]');
+    expect(loader?.getAttribute('data-variant')).toBe('bloom');
+    expect(loader?.getAttribute('data-playing')).toBe('true');
+    expect(loader?.getAttribute('width')).toBe('16');
+    expect(loader?.getAttribute('class')).toContain('size-4!');
+    expect(container.querySelectorAll('[data-slot="button-surface"]')).toHaveLength(5);
   });
 
   it('prevents disabled and loading buttons from activating', async () => {
@@ -194,13 +236,17 @@ describe('Button', () => {
     expect(states).toEqual(
       new Set([
         'default',
+        'primary',
         'secondary',
         'outline',
         'destructive',
+        'active',
         'keyboard-focus',
         'disabled',
         'loading',
+        'loading-variants',
         'icon-only',
+        'icon-weight',
         'action-feedback',
         'long-label',
         'light',

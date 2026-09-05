@@ -5,13 +5,7 @@
   import type { ParsedToolResult } from './tool-result-parser';
   import { extractPayloadText } from './tool-result-pairing';
   import Fa from 'svelte-fa';
-  import {
-    faCopy,
-    faCheck,
-    faExclamationTriangle,
-    faFolder,
-    faFile,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faExclamationTriangle, faFolder, faFile } from '@fortawesome/free-solid-svg-icons';
   import { DiffViewer } from '$features/file-tracking/components/diff';
   import MarkdownRenderer from '$lib/components/editor/MarkdownRenderer.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
@@ -38,6 +32,8 @@
     sanitizeToolText,
   } from './tool-display-model';
   import { resolveBrowserScreenshotSource } from './browser-screenshot-source';
+  import { Button } from '$lib/components/ui/button';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
 
   interface Props {
     input: Record<string, any>;
@@ -74,7 +70,6 @@
   });
   const toolWorkspace = selectWorkspaceById(toolWorkspaceIdStore);
 
-  let copied = $state(false);
   const sanitizedInput = $derived(sanitizeToolPayload(input) as Record<string, any>);
   const sanitizedResult = $derived(sanitizeToolPayload(result));
   const browserScreenshotSource = $derived(
@@ -127,13 +122,6 @@
     const lines = content.split('\n');
     if (lines.length <= maxLines) return content;
     return lines.slice(0, maxLines).join('\n') + '\n...';
-  }
-
-  // Copy to clipboard
-  async function copyToClipboard(text: string) {
-    await navigator.clipboard.writeText(text);
-    copied = true;
-    setTimeout(() => (copied = false), 2000);
   }
 
   // Extract evaluate expressions from browser tool input actions
@@ -318,16 +306,11 @@
         >
           <!-- Copy button - Skip for file-view since CodeBlock has its own copy button -->
           {#if (parsedResult?.content || parsedResult?.newContent) && parsedResult?.type !== 'file-view'}
-            <button
-              class="cursor-pointer border-0 bg-transparent p-1 text-muted-foreground transition-colors hover:text-foreground"
-              onclick={() =>
-                copyToClipboard(
-                  input.content || parsedResult?.newContent || parsedResult?.content || '',
-                )}
-              title={m.chat_toolDetails_copyContent_title()}
-            >
-              <Fa icon={copied ? faCheck : faCopy} size="xs" />
-            </button>
+            <CopyButton
+              text={input.content || parsedResult?.newContent || parsedResult?.content || ''}
+              label={m.chat_toolDetails_copyContent_title()}
+              class="text-muted-foreground"
+            />
           {/if}
         </div>
 
@@ -359,8 +342,9 @@
             <!-- File edit without diff - show new content as code block with file name header -->
             <div class="flex flex-col gap-1">
               {#if parsedResult.filePath}
-                <button
+                <Button
                   type="button"
+                  variant="link"
                   class="flex items-center gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer w-fit"
                   onclick={(e) => {
                     const line = parsedResult?.lineRange?.[0];
@@ -387,7 +371,7 @@
                   {#if parsedResult.editSummary}
                     <span class="text-subtle">{parsedResult.editSummary}</span>
                   {/if}
-                </button>
+                </Button>
               {/if}
               <CodeBlock
                 code={parsedResult.newContent}
@@ -402,8 +386,9 @@
           {:else if parsedResult.type === 'file-edit' && parsedResult.filePath}
             <!-- File edit fallback - show file name header with result summary -->
             <div class="flex flex-col gap-1">
-              <button
+              <Button
                 type="button"
+                variant="link"
                 class="flex items-center gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer w-fit"
                 onclick={(e) => {
                   const openInAdjacentPanel = e.metaKey || e.ctrlKey;
@@ -423,7 +408,7 @@
                 {#if parsedResult.editSummary}
                   <span class="text-subtle">{parsedResult.editSummary}</span>
                 {/if}
-              </button>
+              </Button>
               {#if parsedResult.content}
                 <!-- Use plaintext since this fallback content is status messages, not source code -->
                 <CodeBlock
@@ -538,8 +523,9 @@
             <div class="flex flex-col gap-1">
               {#if parsedResult.filePath}
                 <!-- Clickable file link - shows filename, links to full path -->
-                <button
+                <Button
                   type="button"
+                  variant="link"
                   class="flex items-center gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer w-fit"
                   onclick={(e) => {
                     const line = parsedResult?.lineRange?.[0];
@@ -563,7 +549,7 @@
                       >:{parsedResult.lineRange[0]}-{parsedResult.lineRange[1]}</span
                     >
                   {/if}
-                </button>
+                </Button>
               {/if}
               <CodeBlock
                 code={parsedResult.content}
@@ -631,8 +617,9 @@
                       : agent.status === 'error'
                         ? 'text-red-500'
                         : 'text-subtle'}
-                <button
+                <Button
                   type="button"
+                  variant="plain"
                   class="flex items-center gap-2 p-2 rounded bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer text-left w-full"
                   onclick={(e) => {
                     if (!workspaceId) return;
@@ -653,7 +640,7 @@
                       >{agent.status}</span
                     >
                   {/if}
-                </button>
+                </Button>
               {/each}
               <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                 {plural(
@@ -752,8 +739,9 @@
               <div class="flex items-center gap-1.5">
                 <span class="text-subtle">{m.chat_toolDetails_sentMessageTo_before()}</span>
                 {#if agentId}
-                  <button
+                  <Button
                     type="button"
+                    variant="link"
                     class="inline-flex items-center gap-1 text-foreground font-medium hover:text-foreground cursor-pointer bg-transparent border-0 p-0"
                     onclick={(e) => {
                       if (!workspaceId) return;
@@ -767,7 +755,7 @@
                   >
                     <AgentAvatar {agentId} size={14} class="shrink-0" />
                     <span>{agentName}</span>
-                  </button>
+                  </Button>
                 {:else}
                   <span class="text-foreground font-medium"
                     >{m.chat_toolDetails_agent_fallback()}</span
@@ -852,8 +840,9 @@
             <div class="flex flex-col gap-1 max-h-64 overflow-y-auto">
               {#if parsedResult.notes && parsedResult.notes.length > 0}
                 {#each parsedResult.notes as note}
-                  <button
+                  <Button
                     type="button"
+                    variant="plain"
                     class="flex items-center gap-2 p-2 rounded bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer text-left w-full"
                     onclick={(e) => {
                       const openInAdjacentPanel = e.metaKey || e.ctrlKey;
@@ -885,7 +874,7 @@
                         {/if}
                       </div>
                     {/if}
-                  </button>
+                  </Button>
                 {/each}
                 <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                   {plural(
@@ -932,7 +921,7 @@
                       href={asset.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      class="text-primary hover:underline truncate"
+                      class="text-primary-ink hover:underline truncate"
                     >
                       {asset.name}
                     </a>
@@ -972,7 +961,8 @@
                 <!-- Tab list -->
                 <div class="flex flex-col gap-0.5 max-h-64 overflow-y-auto">
                   {#each parsedResult.browserTabs as tab}
-                    <button
+                    <Button
+                      variant="plain"
                       class="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-muted/30 rounded cursor-pointer text-left w-full"
                       onclick={() => {
                         if (tab.tabId && workspaceId) {
@@ -994,7 +984,7 @@
                           {tab.url}
                         </span>
                       {/if}
-                    </button>
+                    </Button>
                   {/each}
                   <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                     {plural(
@@ -1128,7 +1118,7 @@
                     href={issue.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="text-ui text-primary hover:underline"
+                    class="text-ui text-primary-ink hover:underline"
                   >
                     {m.chat_toolDetails_viewInSentry_label()}
                   </a>

@@ -14,6 +14,7 @@
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { m } from '$shared/paraglide/messages.js';
+  import { Button } from '$lib/components/ui/button';
 
   interface Props {
     /** Currently selected specialist ID - null means blank agent */
@@ -54,9 +55,10 @@
 
 <DropdownMenu bind:open={dropdownOpen} align="start" side="bottom">
   {#snippet trigger({ props })}
-    <button
+    <Button
       {...props}
       type="button"
+      variant="plain"
       class={cn(
         variant === 'bare'
           ? 'group inline-flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-sm font-normal leading-5 text-foreground transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer'
@@ -80,14 +82,15 @@
           ? 'h-2.5 w-2.5 shrink-0 text-ghost opacity-70'
           : 'text-ghost h-2.5 w-2.5'}
       />
-    </button>
+    </Button>
   {/snippet}
 
   {#snippet content()}
     <div class="py-1 min-w-[180px]">
       <!-- Blank agent option -->
-      <button
+      <Button
         type="button"
+        variant="plain"
         class={cn(
           'flex items-center gap-2 w-full px-3 py-2 text-left text-sm transition-colors',
           'hover:bg-muted rounded-sm cursor-pointer',
@@ -100,14 +103,15 @@
           <span class="font-medium text-foreground">{m.chat_shared_general_fallback()}</span>
           <span class="text-xs text-subtle">{m.chat_shared_noSpecializedBehavior_label()}</span>
         </div>
-      </button>
+      </Button>
 
       <div class="h-px bg-border my-1"></div>
 
       <!-- Specialists -->
       {#each visibleSpecialists as specialist (specialist.id)}
-        <button
+        <Button
           type="button"
+          variant="plain"
           class={cn(
             'flex items-center gap-2 w-full px-3 py-2 text-left text-sm transition-colors',
             'hover:bg-muted rounded-sm cursor-pointer',
@@ -125,7 +129,7 @@
             <span class="font-medium text-foreground">{specialist.name}</span>
             <span class="text-xs text-subtle truncate">{specialist.description}</span>
           </div>
-        </button>
+        </Button>
       {/each}
     </div>
   {/snippet}

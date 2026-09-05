@@ -586,7 +586,7 @@
               <li>
                 <button
                   type="button"
-                  class="text-xs font-mono text-primary cursor-pointer hover:underline"
+                  class="text-xs font-mono text-primary-ink cursor-pointer hover:underline"
                   onclick={() => openNotFoundCandidate(candidate)}
                 >
                   {candidate}

@@ -11,6 +11,8 @@ export const settingsPageShellFixtures = [
       'light',
       'dark',
       'keyboard-focus',
+      'shared-tabs',
+      'tab-spacing',
       'back-action',
       'shortcut',
       'scroll-regions',

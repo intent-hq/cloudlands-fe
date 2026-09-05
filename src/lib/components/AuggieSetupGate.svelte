@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { Button } from '$lib/components/ui/button';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { invoke, shell } from '$lib/electron-bridge';
   import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
   import AuggieInstructionsPanel from '$lib/components/AuggieInstructionsPanel.svelte';
@@ -195,7 +195,7 @@
       if (status?.installed && status?.authenticated) {
         auggieInstructions = null;
         auggieCommand = null;
-        toast.success(m.lib_auggieSetup_readyToGo_message());
+        notify.success(m.lib_auggieSetup_readyToGo_message());
         return;
       }
       const channel = status?.installed ? AUGGIE_CHANNELS.AUTHENTICATE : AUGGIE_CHANNELS.INSTALL;
@@ -295,9 +295,9 @@
   async function copyCommand(command: string) {
     try {
       await navigator.clipboard.writeText(command);
-      toast.success(m.lib_auggieSetup_copied_message());
+      notify.success(m.lib_auggieSetup_copied_message());
     } catch {
-      toast.error(m.lib_auggieSetup_copyFailed_error());
+      notify.error(m.lib_auggieSetup_copyFailed_error());
     }
   }
 </script>
@@ -387,20 +387,20 @@
                 {:else}
                   {#if provider.installCommand}
                     {@const installCommand = provider.installCommand}
-                    <button
+                    <Button
                       class="install-command-button"
                       onclick={() => copyCommand(installCommand)}
                       title={m.lib_auggieSetup_clickToCopy_tooltip()}
                     >
                       <code>{installCommand}</code>
                       <Fa icon={faPaste} class="copy-icon" size="sm" />
-                    </button>
+                    </Button>
                   {/if}
                 {/if}
-                <button class="docs-link" onclick={() => openProviderDocs(provider.docsUrl)}>
+                <Button class="docs-link" onclick={() => openProviderDocs(provider.docsUrl)}>
                   <Fa icon={faExternalLinkAlt} size="sm" class="mr-1" />
                   {m.lib_auggieSetup_docs_label()}
-                </button>
+                </Button>
               </div>
 
               {#if provider.requiresAuth && provider.id === 'auggie'}
@@ -531,7 +531,7 @@
   }
 
   /* Install command button */
-  .install-command-button {
+  :global(.install-command-button) {
     position: relative;
     display: inline-flex;
     align-items: center;
@@ -546,16 +546,16 @@
     transition: all 0.2s;
   }
 
-  .install-command-button:hover {
+  :global(.install-command-button:hover) {
     background: hsl(var(--muted) / 0.8);
   }
 
-  .install-command-button :global(.copy-icon) {
+  :global(.install-command-button .copy-icon) {
     opacity: 0;
     transition: opacity 0.2s;
   }
 
-  .install-command-button:hover :global(.copy-icon) {
+  :global(.install-command-button:hover .copy-icon) {
     opacity: 1;
   }
 
@@ -604,12 +604,12 @@
   }
 
   .provider-card.recommended {
-    border-color: hsl(var(--primary) / 0.5);
+    border-color: hsl(var(--primary-ink) / 0.5);
     background: hsl(var(--primary) / 0.05);
   }
 
   .provider-card.recommended:hover {
-    border-color: hsl(var(--primary) / 0.7);
+    border-color: hsl(var(--primary-ink) / 0.7);
     background: hsl(var(--primary) / 0.1);
   }
 
@@ -655,7 +655,7 @@
     margin-top: 0.25rem;
   }
 
-  .docs-link {
+  :global(.docs-link) {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
@@ -668,7 +668,7 @@
     transition: color 0.2s;
   }
 
-  .docs-link:hover {
+  :global(.docs-link:hover) {
     color: hsl(var(--foreground));
   }
 

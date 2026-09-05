@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack, type Snippet } from 'svelte';
   import { cn } from '$lib/utils';
+  import { Button } from '$lib/components/ui/button';
   import {
     clampSurfaceGeometry,
     interpolateSurfaceGeometry,
@@ -49,7 +50,7 @@
   let pressOffset = $state(0);
   let reducedMotion = $state(false);
 
-  const tabButtons = new Map<string, HTMLButtonElement>();
+  let tabButtons = $state<Record<string, HTMLButtonElement | null>>({});
   let resizeObserver: ResizeObserver | null = null;
   let surfaceAnimationFrame: number | null = null;
   let pressAnimationFrame: number | null = null;
@@ -75,19 +76,8 @@
     return 1 - (1 - progress) ** 3;
   }
 
-  function registerTabButton(node: HTMLButtonElement, tabId: string) {
-    tabButtons.set(tabId, node);
-    resizeObserver?.observe(node);
-
-    return {
-      destroy() {
-        tabButtons.delete(tabId);
-      },
-    };
-  }
-
   function measureHover(tabId: string) {
-    const button = tabButtons.get(tabId);
+    const button = tabButtons[tabId];
     const tabList = tabListRef;
     if (!button || !tabList) return;
     const buttonRect = button.getBoundingClientRect();
@@ -100,7 +90,7 @@
   function getTargetGeometry(): SurfaceGeometry | null {
     const root = rootRef;
     const tabList = tabListRef;
-    const button = tabButtons.get(activeId);
+    const button = tabButtons[activeId];
     if (!root || !tabList || !button) return null;
 
     const rootRect = root.getBoundingClientRect();
@@ -151,7 +141,9 @@
   function measure() {
     const next = getTargetGeometry();
     if (next) animateSurface(next);
-    for (const tabId of tabButtons.keys()) resizeObserver?.observe(tabButtons.get(tabId)!);
+    for (const button of Object.values(tabButtons)) {
+      if (button) resizeObserver?.observe(button);
+    }
   }
 
   function scheduleMeasure() {
@@ -197,7 +189,7 @@
     onTabChange?.(tabId);
     scheduleVisualActive(tabId);
 
-    const button = tabButtons.get(tabId);
+    const button = tabButtons[tabId];
     button?.scrollIntoView?.({
       behavior: isReducedMotion() ? 'auto' : 'smooth',
       block: 'nearest',
@@ -221,7 +213,7 @@
     if (nextIndex !== null) {
       event.preventDefault();
       const nextTab = enabledTabs[nextIndex];
-      tabButtons.get(nextTab.id)?.focus();
+      tabButtons[nextTab.id]?.focus();
       activateTab(nextTab.id);
       return;
     }
@@ -260,7 +252,9 @@
     resizeObserver = new ResizeObserver(scheduleMeasure);
     if (rootRef) resizeObserver.observe(rootRef);
     if (tabListRef) resizeObserver.observe(tabListRef);
-    for (const button of tabButtons.values()) resizeObserver.observe(button);
+    for (const button of Object.values(tabButtons)) {
+      if (button) resizeObserver.observe(button);
+    }
     scheduleMeasure();
     fontsReady?.then(scheduleMeasure);
 
@@ -302,8 +296,9 @@
         aria-hidden="true"
       ></div>
       {#each tabs as tab (tab.id)}
-        <button
-          use:registerTabButton={tab.id}
+        <Button
+          bind:ref={tabButtons[tab.id]}
+          variant="plain"
           id={`${surfacePathId}-tab-${tab.id}`}
           type="button"
           role="tab"
@@ -325,7 +320,7 @@
           onpointercancel={() => animatePress(0)}
         >
           {tab.label}
-        </button>
+        </Button>
       {/each}
     </div>
   </div>

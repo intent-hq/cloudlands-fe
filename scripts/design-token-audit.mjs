@@ -18,6 +18,7 @@ const approved = [
   'popover',
   'popover-foreground',
   'primary',
+  'primary-ink',
   'primary-foreground',
   'secondary',
   'secondary-foreground',
@@ -41,6 +42,28 @@ const approved = [
   'sidebar-accent',
   'sidebar-accent-foreground',
   'sidebar-border',
+  'hover',
+  'active',
+  'selected',
+  'overlay',
+  'focus-ring',
+  'destructive-light',
+  'surface-1',
+  'surface-2',
+  'surface-3',
+  'surface-4',
+  'surface-5',
+  'surface-6',
+  'surface-7',
+  'surface-8',
+  'shadow-surface-1',
+  'shadow-surface-2',
+  'shadow-surface-3',
+  'shadow-surface-4',
+  'shadow-surface-5',
+  'shadow-surface-6',
+  'shadow-surface-7',
+  'shadow-surface-8',
 ];
 const extensions = new Set(['.css', '.svelte', '.ts']);
 const files = [];
@@ -105,6 +128,10 @@ const runtimePatterns = [
   // Set by bits-ui at runtime on menu content (dropdown-menu content and the shared
   // menu primitive used by SubContent); externally owned, not design tokens.
   /^--bits-(?:dropdown-)?menu-content-available-height$/,
+  // Set by Bits UI from measured ScrollArea thumb geometry.
+  /^--bits-scroll-area-thumb-(?:height|width)$/,
+  // Set by Bits UI's floating-positioning layer for Tooltip content.
+  /^--bits-tooltip-content-transform-origin$/,
 ];
 const exceptionFiles = new Map(
   allowlist.undefined.map((entry) => [entry.token, new Set(entry.allowedFiles ?? [])]),
@@ -123,6 +150,16 @@ const totals = [...rawByFile.values()].reduce(
     palette: sum.palette + value.palette,
     arbitrary: sum.arbitrary + value.arbitrary,
   }),
+  { palette: 0, arbitrary: 0 },
+);
+const ratchetTotals = [...rawByFile].reduce(
+  (sum, [file, value]) => {
+    if (allowlist.canonicalRaw[file]) return sum;
+    return {
+      palette: sum.palette + value.palette,
+      arbitrary: sum.arbitrary + value.arbitrary,
+    };
+  },
   { palette: 0, arbitrary: 0 },
 );
 const mode = process.argv[2] ?? 'check';
@@ -186,19 +223,19 @@ if (mode === 'approved') {
       failures.push(`${file}: physical palette utility; use an approved semantic color family`);
     }
   }
-  if (totals.palette > allowlist.ratchets.palette) {
+  if (ratchetTotals.palette > allowlist.ratchets.palette) {
     for (const [file, counts] of rawByFile) {
       if (!counts.palette) continue;
       failures.push(
-        `${file}: physical palette utilities ${counts.paletteUtilities.join(', ')}; use an approved semantic color family (global total ${totals.palette} > ${allowlist.ratchets.palette})`,
+        `${file}: physical palette utilities ${counts.paletteUtilities.join(', ')}; use an approved semantic color family (global total ${ratchetTotals.palette} > ${allowlist.ratchets.palette})`,
       );
     }
   }
-  if (totals.arbitrary > allowlist.ratchets.arbitrary) {
+  if (ratchetTotals.arbitrary > allowlist.ratchets.arbitrary) {
     for (const [file, counts] of rawByFile) {
       if (!counts.arbitrary) continue;
       failures.push(
-        `${file}: arbitrary utilities ${counts.arbitraryUtilities.join(', ')}; use approved semantic roles and Tailwind spacing (global total ${totals.arbitrary} > ${allowlist.ratchets.arbitrary})`,
+        `${file}: arbitrary utilities ${counts.arbitraryUtilities.join(', ')}; use approved semantic roles and Tailwind spacing (global total ${ratchetTotals.arbitrary} > ${allowlist.ratchets.arbitrary})`,
       );
     }
   }

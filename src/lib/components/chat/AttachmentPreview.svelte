@@ -5,8 +5,7 @@
   Supports removal and displays file metadata.
 -->
 <script lang="ts">
-  import { fade, scale } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { crispOut, springIn } from '$lib/motion';
   import Fa from 'svelte-fa';
   import {
     faXmark,
@@ -162,26 +161,27 @@
   <!-- Slack-style thumbnail for images: larger, rounded corners, X overlaid on hover -->
   <div
     class="relative group shrink-0 {className}"
-    in:scale={{ duration: 200, start: 0.9, easing: cubicOut }}
-    out:fade={{ duration: 150 }}
+    in:springIn={{ tier: 'moderate', y: 0, scale: 0.9 }}
+    out:crispOut={{ tier: 'fast' }}
   >
     <!-- Clickable thumbnail button -->
-    <button
-      bind:this={thumbnailButtonElement}
+    <Button
+      variant="plain"
+      bind:ref={thumbnailButtonElement}
       type="button"
-      class="w-16 h-16 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-primary"
+      class="w-16 h-16 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-primary-ink"
       onclick={openLightbox}
       onkeydown={handleThumbnailKeydown}
       aria-label={m.chat_attachmentPreview_viewFullSize_ariaLabel({ name })}
       title={name}
     >
       <img src={thumbnailUrl} alt={name} class="w-full h-full object-cover" />
-    </button>
+    </Button>
     {#if onRemove}
       <Button
         variant="ghost"
         size="icon-xs"
-        class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-150 bg-background/80 hover:bg-background shadow-sm"
+        class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-spring-fast ease-spring-fast motion-reduce:transition-none bg-background/80 hover:bg-background shadow-sm"
         onclick={handleRemoveClick}
         aria-label={m.chat_attachmentPreview_remove_ariaLabel({ name })}
       >
@@ -204,8 +204,8 @@
     'failed'
       ? 'bg-danger-background/10 text-danger border border-danger/40'
       : 'bg-muted/70 text-subtle'} {className}"
-    in:scale={{ duration: 200, start: 0.9, easing: cubicOut }}
-    out:fade={{ duration: 150 }}
+    in:springIn={{ tier: 'moderate', y: 0, scale: 0.9 }}
+    out:crispOut={{ tier: 'fast' }}
     data-placement-status={placementStatus}
     title={chipTitle}
   >
@@ -255,7 +255,7 @@
         size="icon-xs"
         class="shrink-0 {placementStatus === 'failed'
           ? ''
-          : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'} transition-opacity duration-150 -my-1 -mr-1"
+          : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'} transition-opacity duration-spring-fast ease-spring-fast motion-reduce:transition-none -my-1 -mr-1"
         onclick={() => onRemove(id)}
         aria-label={m.chat_attachmentPreview_removeAttachment_ariaLabel()}
       >

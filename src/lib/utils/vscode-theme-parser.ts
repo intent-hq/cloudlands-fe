@@ -786,6 +786,10 @@ function buildCSSVariables(
       dangerSurfaces.map((surface) => result[surface]),
     );
   }
+  result['--primary-ink'] = ensureContrastAgainstSurfaces(result['--primary'], [
+    result['--background'],
+    result['--card'],
+  ]);
   return result;
 }
 

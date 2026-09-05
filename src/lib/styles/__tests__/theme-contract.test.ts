@@ -12,6 +12,7 @@ const COLOR_ROLES = [
   'popover',
   'popover-foreground',
   'primary',
+  'primary-ink',
   'primary-foreground',
   'secondary',
   'secondary-foreground',
@@ -41,6 +42,7 @@ const CONTRAST_PAIRS = [
   ['foreground', 'background'],
   ['card-foreground', 'card'],
   ['popover-foreground', 'popover'],
+  ['primary-ink', 'background'],
   ['primary-foreground', 'primary'],
   ['secondary-foreground', 'secondary'],
   ['accent-foreground', 'accent'],
@@ -103,8 +105,9 @@ const DEFAULT_NEUTRAL_SOURCE = {
 } as const;
 
 const PRESERVED_SEMANTIC_SOURCE = {
-  'theme-light-primary': '145 67% 28%',
-  'theme-light-primary-foreground': '0 0% 100%',
+  'theme-light-primary': '66.4 67% 64.3%',
+  'theme-light-primary-ink': '66 60% 28%',
+  'theme-light-primary-foreground': '67 40% 12%',
   'theme-light-danger': '0 63% 31%',
   'theme-light-danger-background': '0 65% 94%',
   'theme-light-ring': '217.2 91.2% 59.8%',
@@ -121,7 +124,8 @@ const PRESERVED_SEMANTIC_SOURCE = {
   'theme-light-agent-avatar-surface-active': '66.892 71.845% 59.608%',
   'theme-light-workspace-status-unread': '217.2 91.2% 59.8%',
   'theme-light-agent-avatar-surface-waiting': '263.2 74.257% 80.196%',
-  'theme-dark-primary': '145 58% 55%',
+  'theme-dark-primary': '67 78% 68%',
+  'theme-dark-primary-ink': 'var(--theme-dark-primary)',
   'theme-dark-primary-foreground': '154 25% 9%',
   'theme-dark-danger': '0 70% 88%',
   'theme-dark-danger-background': '0 35% 22%',
@@ -242,6 +246,20 @@ describe('theme color contract', () => {
     (mode) => {
       const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
       expectCompleteAndLegible(tokenValues(css, mode));
+    },
+  );
+
+  it.each(['light', 'dark'] as const)(
+    'keeps %s primary ink readable on neutral surfaces',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      const values = tokenValues(css, mode);
+      for (const surface of ['background', 'card'] as const) {
+        expect(
+          contrast(values['primary-ink'], values[surface]),
+          `primary-ink on ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
     },
   );
 
@@ -441,6 +459,29 @@ describe('theme color contract', () => {
     expect(config).not.toContain("'error-foreground'");
   });
 
+  it('uses the exact neutral interaction roles in light and dark themes', () => {
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+    expect(tokenValue(css, 'theme-light-overlay')).toBe('0 0 0');
+    expect(tokenValue(css, 'theme-light-hover')).toBe('rgb(var(--theme-light-overlay) / 0.04)');
+    expect(tokenValue(css, 'theme-light-active')).toBe('rgb(var(--theme-light-overlay) / 0.07)');
+    expect(tokenValue(css, 'theme-light-selected')).toBe('0 0% 83%');
+    expect(tokenValue(css, 'theme-light-destructive-light')).toBe(
+      '0 85.7142857143% 97.2549019608%',
+    );
+    expect(tokenValue(css, 'theme-dark-overlay')).toBe('255 255 255');
+    expect(tokenValue(css, 'theme-dark-hover')).toBe('rgb(var(--theme-dark-overlay) / 0.06)');
+    expect(tokenValue(css, 'theme-dark-active')).toBe('rgb(var(--theme-dark-overlay) / 0.1)');
+    expect(tokenValue(css, 'theme-dark-selected')).toBe('0 0% 32%');
+    expect(tokenValue(css, 'theme-dark-destructive-light')).toBe('0 74.6835443038% 15.4901960784%');
+    expect(tokenValue(css, 'focus-ring')).toBe('223 100% 71%');
+    expect(tokenValue(css, 'overlay')).toBe('var(--theme-overlay)');
+    expect(tokenValue(css, 'hover')).toBe('var(--theme-hover)');
+    expect(tokenValue(css, 'active')).toBe('var(--theme-active)');
+    expect(tokenValue(css, 'selected')).toBe('var(--theme-selected)');
+    expect(tokenValue(css, 'destructive-light')).toBe('var(--theme-destructive-light)');
+    expect(css).toMatch(/\.dark\s*{[^}]*--theme-overlay:\s*var\(--theme-dark-overlay\);/s);
+  });
+
   it('keeps primary, focus, and semantic status source values unchanged', () => {
     const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
 
@@ -548,14 +589,21 @@ describe('theme color contract', () => {
       'motion-fast',
       'motion-standard',
       'motion-slow',
+      'spring-fast',
+      'spring-fast-exit',
+      'spring-fast-ease',
+      'spring-moderate',
+      'spring-moderate-exit',
+      'spring-moderate-ease',
+      'spring-slow',
+      'spring-slow-exit',
+      'spring-slow-ease',
+      'press-inset',
       'ease-standard',
       'ease-emphasized-out',
-      'layer-base',
-      'layer-sticky',
       'layer-chrome',
       'layer-popover',
       'layer-modal',
-      'layer-toast',
       'layer-tooltip',
       'layer-drag-overlay',
       'space-1',
@@ -565,12 +613,24 @@ describe('theme color contract', () => {
       'space-5',
       'space-6',
       'space-7',
-      'content-measure-reading',
       'content-measure-form',
       'content-measure-wide',
-      'surface-hatch',
     ])
       expect(css).toContain(`--${token}:`);
+    for (const tier of ['fast', 'moderate', 'slow']) {
+      const springToken = ['var(', '--spring-', tier, ')'].join('');
+      const springExitToken = ['var(', '--spring-', tier, '-exit)'].join('');
+      const springEaseToken = ['var(', '--spring-', tier, '-ease)'].join('');
+      expect(tokenValue(css, `transition-duration-spring-${tier}`)).toBe(springToken);
+      expect(tokenValue(css, `transition-duration-spring-${tier}-exit`)).toBe(springExitToken);
+      expect(tokenValue(css, `ease-spring-${tier}`)).toBe(springEaseToken);
+    }
+    expect(tokenValue(css, 'ease-spring-exit')).toBe('var(--spring-exit-ease)');
+    expect(tokenValue(css, 'spring-exit-ease')).toBe('cubic-bezier(0.33, 1, 0.68, 1)');
+    expect(tokenValue(css, 'motion-fast')).toBe('var(--spring-fast)');
+    expect(tokenValue(css, 'motion-standard')).toBe('var(--spring-moderate)');
+    expect(tokenValue(css, 'motion-slow')).toBe('var(--spring-slow)');
+    expect(tokenValue(css, 'press-inset')).toBe('1px');
     expect(tokenValue(css, 'control-height-compact')).toBe('1.75rem');
     expect(tokenValue(css, 'control-height-small')).toBe('1.75rem');
     expect(tokenValue(css, 'control-height-medium')).toBe('2rem');
@@ -578,10 +638,10 @@ describe('theme color contract', () => {
     expect(tokenValue(css, 'radius-small')).toBe('5px');
     expect(tokenValue(css, 'radius-medium')).toBe('7px');
     expect(tokenValue(css, 'radius-large')).toBe('9px');
-    expect(tokenValue(css, 'surface-hatch')).toContain('repeating-linear-gradient');
-    for (const role of ['background', 'muted', 'border']) {
-      expect(tokenValue(css, 'surface-hatch')).toContain(`var(--${role})`);
+    for (const token of ['content-measure-reading', 'layer-base', 'layer-sticky', 'layer-toast']) {
+      expect(css).not.toContain(`--${token}:`);
     }
+    expect(css).not.toContain(['--surface', 'hatch:'].join('-'));
     expect(css).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*transition-duration: 0\.01ms/,
     );
@@ -626,6 +686,11 @@ describe('theme color contract', () => {
     expect(tokens).toContain('--text-display-large-size: var(--text-display-size);');
     expect(tokens).toContain('--text-body-size: 0.9375rem;');
     expect(tokens).toContain('--text-caption-tracking: -0.01em;');
+    expect(tokenValue(tokens, 'font-ui')).toBe(
+      "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    );
+    expect(appCss.match(/@fontsource-variable\/inter\/files\//g)).toHaveLength(1);
+    expect(appCss).toContain('inter-latin-wght-normal.woff2');
     for (const role of ['body', 'title', 'display']) {
       expect(tokens).toContain(`--text-${role}-tracking: -0.016em;`);
     }

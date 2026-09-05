@@ -77,7 +77,8 @@ describe('ChatMessageNavigator', () => {
     expect(input.className).toContain('h-(--control-height-medium)');
     expect(input.className).toContain('outline-none');
     expect(input.className).toContain('caret-foreground');
-    expect(input.className).toContain('focus-visible:border-ring');
+    expect(input.className).toContain('focus-visible:bg-card');
+    expect(input.className).toContain('focus-visible:shadow-[inset_0_0_0_1px_var(--ring)]');
 
     const panel = screen.getByTestId('chat-message-navigator-panel').parentElement!;
     expect(panel.className).toContain('w-[28rem]');
@@ -99,10 +100,11 @@ describe('ChatMessageNavigator', () => {
     expect(longResult.className).toContain('h-(--control-height-large)');
     expect(results.every((result) => result.className.includes('text-left'))).toBe(true);
     expect(longResult.className).toContain('focus-visible:ring-inset');
-    expect(longResult.querySelector('span')?.className).toContain('overflow-hidden');
-    expect(longResult.querySelector('span')?.className).toContain('whitespace-nowrap');
-    expect(longResult.querySelector('span')?.className).toContain('text-ellipsis');
-    expect(longResult.querySelector('span')?.className).toContain('text-left');
+    const resultLabel = longResult.querySelector('[data-slot="button-content"] > span');
+    expect(resultLabel?.className).toContain('overflow-hidden');
+    expect(resultLabel?.className).toContain('whitespace-nowrap');
+    expect(resultLabel?.className).toContain('text-ellipsis');
+    expect(resultLabel?.className).toContain('text-left');
 
     longResult.focus();
     await fireEvent.focus(longResult);

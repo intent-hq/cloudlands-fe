@@ -3,6 +3,7 @@
   import { cn } from '$lib/utils.js';
   import type { Snippet } from 'svelte';
   import TooltipTriggerWrapper from './tooltip-trigger-wrapper.svelte';
+  import './tooltip-motion.css';
 
   interface Props {
     /** Tooltip content - can be a string or a snippet */
@@ -46,7 +47,7 @@
     class: className = '',
     contentClass = '',
     arrowClass = '',
-    showArrow = true,
+    showArrow = false,
     variant = 'default',
     size = 'default',
     children,
@@ -56,30 +57,23 @@
 
   // Variant styles
   const variantStyles = {
-    default: 'bg-popover text-popover-foreground border border-border',
+    default: 'bg-foreground text-background',
     secondary: 'bg-secondary text-secondary-foreground border border-border',
     destructive: 'bg-danger text-danger-background border border-danger',
-    outline: 'bg-popover text-popover-foreground border border-border',
+    outline: 'bg-transparent text-foreground ring-1 ring-inset ring-border',
   };
 
   // Size styles
   const sizeStyles = {
-    sm: 'type-caption px-3 py-2',
-    default: 'type-body px-3 py-1.5',
+    sm: 'type-caption px-2 py-1',
+    default: 'type-caption px-2 py-1',
     lg: 'type-title px-4 py-2',
   };
 
   // Combined content classes - use $derived to react to prop changes
   const contentClasses = $derived(
     cn(
-      'z-(--layer-tooltip) w-fit max-w-xs whitespace-pre-wrap text-balance rounded-md shadow-(--elevation-overlay)',
-      'animate-in fade-in-0 zoom-in-95',
-      'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
-      'motion-reduce:animate-none motion-reduce:transition-none',
-      'data-[side=bottom]:slide-in-from-top-2',
-      'data-[side=left]:slide-in-from-right-2',
-      'data-[side=right]:slide-in-from-left-2',
-      'data-[side=top]:slide-in-from-bottom-2',
+      'tooltip-motion z-(--layer-tooltip) w-fit max-w-xs whitespace-pre-wrap text-balance rounded-(--radius-small)',
       variantStyles[variant],
       sizeStyles[size],
       contentClass,

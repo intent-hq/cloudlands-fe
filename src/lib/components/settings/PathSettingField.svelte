@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
   /**
    * PathSettingField — reusable settings-row path field.
    *
@@ -93,16 +94,16 @@
 </script>
 
 <div class="flex items-center gap-2 flex-1 max-w-md">
-  <input
+  <Input
     {id}
     type="text"
     readonly
     {value}
     {placeholder}
     aria-label={ariaLabel}
-    class="flex-1 min-w-0 px-3 py-1.5 bg-background border border-border rounded-md text-sm text-foreground transition-all focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+    class="flex-1 min-w-0 px-3 py-1.5 bg-background border border-border rounded-md text-sm text-foreground transition-all focus:outline-none focus:border-primary-ink focus:ring-2 focus:ring-primary-ink/10"
   />
-  <button
+  <Button
     type="button"
     onclick={handleBrowseClick}
     aria-label={resolvedBrowseAriaLabel}
@@ -110,8 +111,8 @@
     class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors cursor-pointer shrink-0"
   >
     <Fa icon={faFolderOpen} size="sm" />
-  </button>
-  <button
+  </Button>
+  <Button
     type="button"
     onclick={() => commit('')}
     disabled={!value}
@@ -122,7 +123,7 @@
       : 'text-muted-foreground/40 cursor-not-allowed'}"
   >
     <Fa icon={faRotateLeft} size="sm" />
-  </button>
+  </Button>
 </div>
 
 {#if confirm}

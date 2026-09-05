@@ -1,18 +1,30 @@
 <script lang="ts">
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
+  import { useSize } from '$lib/components/ui/size-context';
   import { cn } from '$lib/utils.js';
-  import { buttonVariants, type ButtonProps } from './button.variants';
+  import {
+    activeButtonSurfaceVariants,
+    buttonSurfaceVariants,
+    buttonVariants,
+    type ButtonProps,
+  } from './button.variants';
 
   let {
     class: className,
     variant = 'default',
-    size = 'default',
-    ref = $bindable(null),
+    size = undefined,
+    ref = $bindable(),
     href = undefined,
     type = 'button',
     disabled,
     loading = false,
+    active = false,
+    truncateLabel = true,
+    labelClass = undefined,
     iconOnly = false,
+    leadingIcon,
+    trailingIcon,
     onclick,
     children,
     tooltip = undefined,
@@ -26,10 +38,43 @@
     ...restProps
   }: ButtonProps = $props();
 
-  const baseClass = $derived(cn(buttonVariants({ variant, size }), className));
+  const contextSize = useSize();
+  const resolvedSize = $derived(size ?? (contextSize === 'compact' ? 'compact' : 'default'));
+  const baseClass = $derived(
+    cn(
+      buttonVariants({
+        variant,
+        size: resolvedSize,
+        leadingIcon: Boolean(leadingIcon),
+        trailingIcon: Boolean(trailingIcon),
+      }),
+      className,
+    ),
+  );
+  const surfaceClass = $derived(
+    cn(
+      'pointer-events-none absolute inset-px transition-[box-shadow,background-color,filter] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+      (active ? activeButtonSurfaceVariants : buttonSurfaceVariants)[variant],
+    ),
+  );
+  const intentMarkSize = $derived(
+    resolvedSize === 'xs' ||
+      resolvedSize === 'compact' ||
+      resolvedSize === 'sm' ||
+      resolvedSize === 'icon-compact' ||
+      resolvedSize === 'icon-xs' ||
+      resolvedSize === 'icon-sm'
+      ? 12
+      : resolvedSize === 'lg' || resolvedSize === 'xl' || resolvedSize === 'icon-lg'
+        ? 18
+        : 16,
+  );
+  const intentMarkSizeClass = $derived(
+    intentMarkSize === 12 ? 'size-3!' : intentMarkSize === 18 ? 'size-[18px]!' : 'size-4!',
+  );
   const isDisabled = $derived(Boolean(disabled || loading));
   const accessibleLabel = $derived.by(() => {
-    const requiresName = iconOnly || (typeof size === 'string' && size.startsWith('icon'));
+    const requiresName = iconOnly || resolvedSize.startsWith('icon');
     if (
       requiresName &&
       !ariaLabel?.trim() &&
@@ -55,6 +100,57 @@
   });
 </script>
 
+{#snippet internals()}
+  <span
+    data-slot="button-surface"
+    class={surfaceClass}
+    style="border-radius: inherit"
+    aria-hidden="true"
+  ></span>
+  <span
+    data-slot="button-content"
+    class="relative inline-flex min-w-0 max-w-full flex-1 items-center [&_svg]:transition-[stroke-width] [&_svg]:duration-spring-fast motion-reduce:[&_svg]:transition-none"
+    style="gap: inherit; justify-content: inherit"
+    class:opacity-0={loading}
+  >
+    {#if leadingIcon}
+      <span
+        data-slot="button-leading-icon"
+        class="inline-flex shrink-0 items-center justify-center"
+      >
+        {@render leadingIcon()}
+      </span>
+    {/if}
+    <span
+      data-slot="button-label"
+      class={cn('min-w-0 max-w-full flex-1', truncateLabel && 'truncate', labelClass)}
+      >{@render children?.()}</span
+    >
+    {#if trailingIcon}
+      <span
+        data-slot="button-trailing-icon"
+        class="inline-flex shrink-0 items-center justify-center"
+      >
+        {@render trailingIcon()}
+      </span>
+    {/if}
+  </span>
+  {#if loading}
+    <span
+      data-slot="button-spinner"
+      class="pointer-events-none absolute inset-0 flex items-center justify-center"
+      aria-hidden="true"
+    >
+      <IntentMarkLoader
+        variant="bloom"
+        size={intentMarkSize}
+        playing={loading}
+        class={intentMarkSizeClass}
+      />
+    </span>
+  {/if}
+{/snippet}
+
 {#snippet content()}
   <div bind:this={containerRef} style="display: contents;">
     {#if href}
@@ -62,6 +158,7 @@
         data-slot="button"
         class={baseClass}
         {href}
+        data-state={active ? 'active' : undefined}
         aria-label={accessibleLabel}
         aria-labelledby={ariaLabelledby}
         {title}
@@ -72,20 +169,14 @@
         onclick={isDisabled ? (event: MouseEvent) => event.preventDefault() : onclick}
         {...restProps}
       >
-        {#if loading}
-          <span
-            data-slot="button-spinner"
-            class="size-3.5 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none"
-            aria-hidden="true"
-          ></span>
-        {/if}
-        {@render children?.()}
+        {@render internals()}
       </a>
     {:else}
       <button
         data-slot="button"
         class={baseClass}
         {type}
+        data-state={active ? 'active' : undefined}
         disabled={isDisabled}
         aria-label={accessibleLabel}
         aria-labelledby={ariaLabelledby}
@@ -94,14 +185,7 @@
         onclick={isDisabled ? (event: MouseEvent) => event.preventDefault() : onclick}
         {...restProps}
       >
-        {#if loading}
-          <span
-            data-slot="button-spinner"
-            class="size-3.5 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none"
-            aria-hidden="true"
-          ></span>
-        {/if}
-        {@render children?.()}
+        {@render internals()}
       </button>
     {/if}
   </div>
@@ -120,3 +204,29 @@
 {:else}
   {@render content()}
 {/if}
+
+<style>
+  :global([data-slot='button-content'] svg) {
+    stroke-width: 1.5;
+  }
+
+  :global([data-slot='button-label']:has(> *)) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: inherit;
+    gap: inherit;
+    text-overflow: clip;
+  }
+
+  :global([data-slot='button-label'] > *) {
+    min-width: 0;
+  }
+
+  :global([data-slot='button-label'] > svg) {
+    flex-shrink: 0;
+  }
+
+  :global([data-slot='button']:hover [data-slot='button-content'] svg) {
+    stroke-width: 2;
+  }
+</style>

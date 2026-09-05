@@ -6,8 +6,12 @@
 -->
 
 <script lang="ts">
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import { Select } from '$lib/components/ui/select';
+  import { Button } from '$lib/components/ui/button';
+  import { Checkbox } from '$lib/components/ui/checkbox';
+  import { Input } from '$lib/components/ui/input';
+  import { prompt as showPrompt } from '$lib/components/patterns/confirm';
   import {
     deleteActivityLogPreset,
     saveActivityLogPreset,
@@ -159,8 +163,11 @@
   }
 
   // Save current filters as preset
-  function savePreset() {
-    const name = prompt(m.log_filters_presetName_prompt());
+  async function savePreset() {
+    const name = await showPrompt({
+      title: m.log_filters_presetName_prompt(),
+      field: { required: true },
+    });
     if (name) {
       appStore.dispatch(saveActivityLogPreset({ name, filters: { ...filters } }));
     }
@@ -187,54 +194,54 @@
   <!-- Quick Filters -->
   <div class="flex gap-4 items-center mb-2">
     <label class="flex items-center gap-1 cursor-pointer select-none">
-      <input type="checkbox" bind:checked={filters.showFileChanges} class="cursor-pointer" />
+      <Checkbox bind:checked={filters.showFileChanges} />
       <span class="text-sm">{m.log_filters_fileChanges_label()}</span>
     </label>
 
     <label class="flex items-center gap-1 cursor-pointer select-none">
-      <input type="checkbox" bind:checked={filters.showAgentActivity} class="cursor-pointer" />
+      <Checkbox bind:checked={filters.showAgentActivity} />
       <span class="text-sm">{m.log_filters_agentActivity_label()}</span>
     </label>
 
     <label class="flex items-center gap-1 cursor-pointer select-none">
-      <input type="checkbox" bind:checked={filters.showSystemEvents} class="cursor-pointer" />
+      <Checkbox bind:checked={filters.showSystemEvents} />
       <span class="text-sm">{m.log_filters_systemEvents_label()}</span>
     </label>
 
     <label class="flex items-center gap-1 cursor-pointer select-none">
-      <input type="checkbox" bind:checked={filters.showErrors} class="cursor-pointer" />
+      <Checkbox bind:checked={filters.showErrors} />
       <span class="text-sm">{m.log_filters_errors_label()}</span>
     </label>
 
-    <button
-      class="bg-transparent border-none text-primary cursor-pointer text-sm px-2 py-1 ml-auto hover:underline"
+    <Button
+      class="bg-transparent border-none text-primary-ink cursor-pointer text-sm px-2 py-1 ml-auto hover:underline"
       onclick={() => (showAdvanced = !showAdvanced)}
     >
       {showAdvanced ? m.log_filters_hideAdvanced_label() : m.log_filters_showAdvanced_label()}
-    </button>
+    </Button>
   </div>
 
   <!-- Search Bar -->
   <div class="relative mt-2">
-    <input
+    <Input
       type="text"
       placeholder={m.log_filters_search_placeholder()}
       bind:value={filters.searchQuery}
       class="w-full p-2 pr-8 border border-border rounded text-sm"
     />
     {#if filters.searchQuery}
-      <button
+      <Button
         class="absolute right-2 top-1/2 -translate-y-1/2 bg-transparent border-none text-subtle cursor-pointer text-xl p-1"
         onclick={() => (filters.searchQuery = '')}
       >
         ×
-      </button>
+      </Button>
     {/if}
   </div>
 
   <!-- Advanced Filters -->
   {#if showAdvanced}
-    <div class="mt-4 pt-4 border-t border-border" transition:slide={{ duration: 200 }}>
+    <div class="mt-4 pt-4 border-t border-border" transition:slide={{ tier: 'moderate' }}>
       <!-- Date Range -->
       <div class="flex items-center gap-2 mb-3">
         <label for="date-range" class="text-sm min-w-[100px]"
@@ -283,30 +290,30 @@
       <div class="mt-4 p-3 bg-muted rounded">
         <div class="flex justify-between items-center mb-2">
           <span class="text-sm font-medium">{m.log_filters_presets_label()}</span>
-          <button
+          <Button
             class="px-2 py-1 text-xs bg-primary text-primary-foreground border-none rounded cursor-pointer"
             onclick={savePreset}
           >
             {m.log_filters_saveCurrent_label()}
-          </button>
+          </Button>
         </div>
 
         {#if $activityLogPresets$.length > 0}
           <div class="flex flex-col gap-1">
             {#each $activityLogPresets$ as preset, i (`preset-${i}-${preset.name}`)}
               <div class="flex justify-between items-center">
-                <button
+                <Button
                   class="flex-1 text-left px-2 py-1 bg-transparent border border-transparent rounded cursor-pointer text-sm hover:bg-background hover:border-border"
                   onclick={() => loadPreset(preset)}
                 >
                   {preset.name}
-                </button>
-                <button
+                </Button>
+                <Button
                   class="bg-transparent border-none text-subtle cursor-pointer text-base p-1"
                   onclick={() => deletePreset(i)}
                 >
                   ×
-                </button>
+                </Button>
               </div>
             {/each}
           </div>
@@ -319,12 +326,12 @@
 
       <!-- Actions -->
       <div class="mt-4 flex justify-end">
-        <button
+        <Button
           class="px-4 py-2 bg-muted border border-border rounded cursor-pointer text-sm hover:bg-background"
           onclick={resetFilters}
         >
           {m.log_filters_resetAll_label()}
-        </button>
+        </Button>
       </div>
     </div>
   {/if}

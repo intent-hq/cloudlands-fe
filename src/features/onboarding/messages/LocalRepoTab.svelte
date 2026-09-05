@@ -20,6 +20,7 @@
   import { faFolder } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Input from '$lib/components/ui/input/input.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils';
   import DirectoryPickerModal from './DirectoryPickerModal.svelte';
   import { pickDirectory } from '$lib/directory-picker-service';
@@ -252,17 +253,17 @@
     />
     <div class="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
       {#if searchQuery}
-        <button
+        <Button
           type="button"
           class="text-muted-foreground/50 hover:text-foreground text-xs cursor-pointer p-1.5 rounded hover:bg-muted/40 transition-colors"
           onclick={() => {
             searchQuery = '';
             searchInputRef?.focus();
           }}
-          aria-label={m.onboarding_localRepoTab_clearSearch_ariaLabel()}>✕</button
+          aria-label={m.onboarding_localRepoTab_clearSearch_ariaLabel()}>✕</Button
         >
       {/if}
-      <button
+      <Button
         type="button"
         class="text-muted-foreground/60 hover:text-foreground cursor-pointer p-1.5 mr-0.5 rounded hover:bg-muted/40 transition-colors"
         onclick={handleSelectFolder}
@@ -270,7 +271,7 @@
         title={m.onboarding_localRepoTab_browse_ariaLabel()}
       >
         <Fa icon={faFolder} size="sm" />
-      </button>
+      </Button>
     </div>
   </div>
 
@@ -294,7 +295,7 @@
         {#each filteredRepos as repo, index (repo.path)}
           {@const isFocused = index === focusedIndex}
           {@const isCommitted = repo.path === selectedPath}
-          <button
+          <Button
             type="button"
             id="local-repo-option-{index}"
             role="option"
@@ -364,7 +365,7 @@
             >
               <path d="M9 5l7 7-7 7" />
             </svg>
-          </button>
+          </Button>
           {#if isCommitted && initGitPath === repo.path}
             <div
               role="status"

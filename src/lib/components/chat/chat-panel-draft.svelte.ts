@@ -11,7 +11,7 @@
  * the composer is gated (`gateActive`) so a mount-time empty save cannot
  * erase the persisted draft; a fallback releases the gate after 5s if the
  * daemon doesn't answer. The gate's loading indicator is deferred behind
- * `gateVisible` (500ms) so a fast restore never blinks a spinner.
+ * `gateVisible` delay so a fast restore never blinks a spinner.
  *
  * The restore re-runs whenever the `(workspaceId, agentId)` pair changes:
  * the composer resets, dirty-tracking resets, and a late-resolving restore

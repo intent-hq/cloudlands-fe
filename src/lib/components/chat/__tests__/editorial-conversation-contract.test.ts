@@ -338,7 +338,7 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('data-testid="chat-scroll-to-bottom-button"');
     expect(panel).toContain('showAgentCards={!isDelegatedBackgroundTaskAgent}');
     expect(panel).not.toContain('agentEventsForCards');
-    expect(wakeup).toMatch(/items-center gap-1.5 py-0.5 pr-2 pl-0 text-primary/);
+    expect(wakeup).toMatch(/items-center gap-1.5 py-0.5 pr-2 pl-0 text-primary-ink/);
     expect(wakeup).toContain('SUBSCRIPTION_CARD_CONTAINMENT_CLASS');
     expect(wakeup).toContain('SUBSCRIPTION_CARD_SURFACE_CLASS');
     expect(wakeup).toContain('{#if showSummary || (showAgentCards && agentEvents.length > 0)}');

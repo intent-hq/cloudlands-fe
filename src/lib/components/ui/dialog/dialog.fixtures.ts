@@ -7,6 +7,8 @@ export const dialogFixtures = [
     states: [
       'closed',
       'open',
+      'entering',
+      'exiting',
       'focused',
       'disabled-close',
       'destructive-flow',
@@ -18,6 +20,7 @@ export const dialogFixtures = [
       'outside-dismiss',
       'escape-dismiss',
       'focus-return',
+      'reduced-motion',
     ],
     themes: ['light', 'dark'],
     viewport: 'both',

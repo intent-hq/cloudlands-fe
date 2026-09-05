@@ -4,8 +4,18 @@
   import { Button } from '$lib/components/ui/button';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { m } from '$shared/paraglide/messages.js';
+  import {
+    clampSurface,
+    setSurface,
+    SURFACE_SHADOW_VALUE,
+    SURFACE_VALUE,
+    surfaceClasses,
+    useSurface,
+  } from '$lib/components/ui/surface-context';
 
   const isDarkTheme = selectIsDarkTheme();
+  const surface = clampSurface(useSurface() + 2);
+  setSurface(surface);
   let visibleToastCount = $state(0);
   let showClearAll = $derived(visibleToastCount >= 2);
   let offset = $derived({ bottom: showClearAll ? 68 : 32, left: 32 });
@@ -44,7 +54,11 @@
      `expand` keeps stacked toasts at their own height with content visible —
      a UX decision kept through the 1.2.1 upgrade (which fixed heights ordering
      so --front-toast-height now tracks the front toast). -->
-<div id="app-toast-region">
+<div
+  id="app-toast-region"
+  data-surface-level={surface}
+  style="--toast-surface: {SURFACE_VALUE[surface]}; --toast-shadow: {SURFACE_SHADOW_VALUE[surface]}"
+>
   <Sonner
     theme={$isDarkTheme ? 'dark' : 'light'}
     class="toaster group"
@@ -55,11 +69,9 @@
     closeButtonAriaLabel={m.ui_toast_close_ariaLabel()}
     toastOptions={{
       classes: {
-        toast:
-          'group toast w-full min-w-0 max-w-full group-[.toaster]:bg-card group-[.toaster]:text-foreground group-[.toaster]:border group-[.toaster]:border-border group-[.toaster]:shadow-(--elevation-overlay)',
+        toast: `group toast w-full min-w-0 max-w-full group-[.toaster]:text-foreground ${surfaceClasses(surface)}`,
         description: 'group-[.toast]:text-subtle text-sm',
-        actionButton:
-          'group-[.toast]:bg-transparent group-[.toast]:text-foreground group-[.toast]:border group-[.toast]:border-border group-[.toast]:hover:bg-muted group-[.toast]:px-4 group-[.toast]:py-2 group-[.toast]:text-sm group-[.toast]:font-semibold group-[.toast]:transition-colors',
+        actionButton: 'toast-action-button',
         cancelButton:
           'group-[.toast]:bg-transparent group-[.toast]:text-foreground group-[.toast]:border group-[.toast]:border-border group-[.toast]:hover:bg-muted group-[.toast]:px-4 group-[.toast]:py-2 group-[.toast]:text-sm group-[.toast]:font-semibold',
         action: 'text-sm font-semibold',
@@ -97,23 +109,37 @@
        background-size on opted-in toasts, and an !important shorthand here
        would lock every background longhand (CSS animations cannot override
        !important declarations). */
-    background-color: hsl(var(--card)) !important;
+    background-color: hsl(var(--toast-surface)) !important;
     color: hsl(var(--foreground)) !important;
     /* Width/style stay !important, but color must NOT be — per-toast Tailwind
        classes (e.g. !border-danger/50 on custom toasts) override it.
        This also relies on these :global styles staying UNLAYERED: moving them
        into a cascade layer would change the fallback chain for default toasts. */
-    border-width: 1px !important;
-    border-style: solid !important;
-    border-color: hsl(var(--border));
-    border-radius: 0 !important;
+    border: 0 !important;
+    border-radius: var(--radius-large) !important;
     backdrop-filter: blur(8px);
     width: var(--app-toast-width) !important;
     min-width: 0;
     max-width: 100%;
     padding: 1rem 1.25rem;
     align-items: flex-start !important;
-    box-shadow: var(--elevation-overlay);
+    box-shadow: var(--toast-shadow);
+  }
+
+  :global([data-sonner-toast][data-swiping='false']) {
+    transition:
+      transform var(--spring-moderate) var(--spring-moderate-ease),
+      opacity var(--spring-moderate) var(--spring-moderate-ease),
+      height var(--spring-moderate) var(--spring-moderate-ease),
+      box-shadow var(--spring-fast) var(--spring-fast-ease) !important;
+  }
+
+  :global([data-sonner-toast][data-removed='true'][data-swiping='false']) {
+    transition:
+      transform var(--spring-fast-exit) var(--spring-exit-ease),
+      opacity var(--spring-fast-exit) var(--spring-exit-ease),
+      height var(--spring-fast-exit) var(--spring-exit-ease),
+      box-shadow var(--spring-fast-exit) var(--spring-exit-ease) !important;
   }
 
   :global([data-sonner-toast] [data-icon]) {
@@ -133,21 +159,57 @@
     overflow-wrap: anywhere;
   }
 
-  /* Action buttons using CSS variables */
+  /* Sonner owns this button element, so mirror Button's inset surface recipe. */
   :global([data-sonner-toast] button[data-button]) {
     font-size: 0.875rem !important;
-    font-weight: 600 !important;
-    padding: 0.5rem 1rem !important;
-    border-radius: 0 !important;
-    transition: all 0.15s ease !important;
+    height: var(--control-height-compact) !important;
+    font-weight: 500 !important;
+    padding: 0 0.625rem !important;
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border-radius: var(--radius-medium) !important;
+    transition:
+      color var(--spring-fast) var(--spring-fast-ease),
+      opacity var(--spring-fast) var(--spring-fast-ease) !important;
     border: 1px solid hsl(var(--border)) !important;
     background: transparent !important;
     color: hsl(var(--foreground)) !important;
+    outline: none;
+  }
+
+  :global([data-sonner-toast] button[data-button]:focus-visible) {
+    outline: 1px solid hsl(var(--focus-ring));
+    outline-offset: 2px;
+  }
+
+  :global([data-sonner-toast] button[data-button]::before) {
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    border-radius: inherit;
+    background: transparent;
+    box-shadow: 0 0 0 1px hsl(var(--border));
+    content: '';
+    transition:
+      inset var(--spring-fast) var(--spring-fast-ease),
+      background-color var(--spring-fast) var(--spring-fast-ease),
+      box-shadow var(--spring-fast) var(--spring-fast-ease);
   }
 
   :global([data-sonner-toast] button[data-button]:hover) {
-    background: hsl(var(--muted)) !important;
+    background: transparent !important;
     border-color: hsl(var(--border)) !important;
+  }
+
+  :global([data-sonner-toast] button[data-button]:hover::before) {
+    background: var(--hover);
+  }
+
+  :global([data-sonner-toast] button[data-button]:active::before) {
+    inset: var(--press-inset);
+    background: var(--active);
+    box-shadow: 0 0 0 0 hsl(var(--border));
   }
 
   :global([data-sonner-toast] [data-icon]) {
@@ -159,7 +221,7 @@
   :global([data-sonner-toast] [data-close-button]) {
     color: hsl(var(--muted-foreground)) !important;
     border-color: hsl(var(--border)) !important;
-    background: hsl(var(--card)) !important;
+    background: hsl(var(--toast-surface)) !important;
   }
 
   :global([data-sonner-toaster][dir='ltr']) {
@@ -173,26 +235,7 @@
     left: 2rem;
     bottom: 2rem;
     z-index: 1000000000;
-    min-height: 1.75rem;
-    padding: 0.25rem 0.625rem;
-    border: 1px solid hsl(var(--border));
-    background: hsl(var(--card));
-    color: hsl(var(--muted-foreground));
-    font-size: 0.75rem;
-    font-weight: 600;
-    line-height: 1rem;
     box-shadow: var(--elevation-raised);
-    cursor: pointer;
-  }
-
-  :global(.toast-clear-all:hover) {
-    background: hsl(var(--muted));
-    color: hsl(var(--foreground));
-  }
-
-  :global(.toast-clear-all:focus-visible) {
-    outline: 2px solid hsl(var(--ring));
-    outline-offset: 2px;
   }
 
   @media (max-width: 600px) {
@@ -271,6 +314,12 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    :global([data-sonner-toast][data-swiping='false']),
+    :global([data-sonner-toast] button[data-button]),
+    :global([data-sonner-toast] button[data-button]::before) {
+      transition: none !important;
+    }
+
     :global(
       [data-sonner-toaster] [data-sonner-toast].toast-countdown:not([data-swipe-out='true'])
     ) {

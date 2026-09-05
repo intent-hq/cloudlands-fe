@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * ChoiceBlock NodeView Component
    *
@@ -45,7 +46,7 @@
 >
   <!-- Delete button - only visible on hover -->
   {#if isHovered}
-    <button
+    <Button
       class="absolute top-2 right-2 p-1 rounded hover:bg-danger-background/10 text-muted-foreground hover:text-danger transition-colors"
       onclick={handleDelete}
       onkeydown={handleKeyDown}
@@ -68,7 +69,7 @@
         <line x1="18" y1="6" x2="6" y2="18"></line>
         <line x1="6" y1="6" x2="18" y2="18"></line>
       </svg>
-    </button>
+    </Button>
   {/if}
 
   <!-- Editable content (question and options) -->

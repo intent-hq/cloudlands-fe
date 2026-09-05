@@ -27,8 +27,8 @@ const mockToast = vi.hoisted(() => ({
   warning: vi.fn(),
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: mockToast,
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: mockToast,
 }));
 
 describe('WorkspaceApiSettings', () => {
@@ -79,7 +79,9 @@ describe('WorkspaceApiSettings', () => {
       expect(mockToast.error).toHaveBeenCalled();
     });
     // Toggle remains checked (rolled back to true)
-    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
+    await waitFor(() =>
+      expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true'),
+    );
   });
 
   it('shows Save when max output chars differs, and clicking Save sends the exact request', async () => {
@@ -113,7 +115,9 @@ describe('WorkspaceApiSettings', () => {
 
     await fireEvent.input(input, { target: { value: '500' } });
 
-    const saveButton = await waitFor(() => screen.getByText('Save') as HTMLButtonElement);
+    const saveButton = await waitFor(
+      () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+    );
     expect(saveButton.disabled).toBe(true);
     expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
   });

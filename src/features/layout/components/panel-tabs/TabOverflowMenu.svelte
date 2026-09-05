@@ -1,6 +1,6 @@
 <script lang="ts">
+  import * as Menu from '$lib/components/ui/menu';
   import { cn } from '$lib/utils.js';
-  import { fade, scale } from 'svelte/transition';
   import type { Snippet } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -22,89 +22,58 @@
     class: className = '',
   }: Props = $props();
 
-  let menuElement: HTMLElement | null = $state(null);
-  let triggerElement: HTMLElement | null = $state(null);
+  let containerElement: HTMLDivElement | null = $state(null);
+  let triggerElement: HTMLButtonElement | null = $state(null);
 
-  function toggle() {
-    isOpen = !isOpen;
-    onOpenChange?.(isOpen);
+  function setOpen(open: boolean) {
+    isOpen = open;
+    onOpenChange?.(open);
   }
 
   function close() {
-    isOpen = false;
-    onOpenChange?.(false);
-  }
-
-  function handleClickOutside(e: MouseEvent) {
-    if (
-      menuElement &&
-      triggerElement &&
-      !menuElement.contains(e.target as Node) &&
-      !triggerElement.contains(e.target as Node)
-    ) {
-      close();
-    }
-  }
-
-  // Combined transition function for scale + fade
-  function scaleAndFade(node: Element, { duration = 150 } = {}) {
-    const scaleTransition = scale(node, { duration, start: 0.95 });
-    const fadeTransition = fade(node, { duration });
-
-    return {
-      duration,
-      css: (t: number, u: number) => {
-        const scaleCss = scaleTransition.css?.(t, u) ?? '';
-        const fadeCss = fadeTransition.css?.(t, u) ?? '';
-        return `${scaleCss}${fadeCss}`;
-      },
-    };
+    setOpen(false);
+    queueMicrotask(() => triggerElement?.focus());
   }
 
   $effect(() => {
-    if (isOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => {
-        document.removeEventListener('click', handleClickOutside);
-      };
-    }
+    if (!isOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!containerElement?.contains(event.target as Node)) close();
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
   });
 </script>
 
-<div class={cn('relative', className)}>
-  <!-- Trigger button (visible on all screens when there are hidden tabs) -->
-  <button
-    bind:this={triggerElement}
-    type="button"
-    onclick={toggle}
-    class="flex-shrink-0 flex items-center justify-center w-6 h-full hover:bg-sidebar/50 transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-    aria-label={m.ui_tabOverflow_showMore_ariaLabel()}
-    aria-expanded={isOpen}
-    aria-haspopup="menu"
-    title={m.ui_tabOverflow_more_tooltip()}
-  >
-    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        stroke-width="2"
-        d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
-      />
-    </svg>
-  </button>
+<Menu.Root bind:open={isOpen} onOpenChange={setOpen}>
+  <div bind:this={containerElement} class={cn('relative', className)}>
+    <Menu.Trigger
+      bind:ref={triggerElement}
+      class="flex-shrink-0 flex items-center justify-center w-6 h-full hover:bg-sidebar/50 transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-ink focus-visible:ring-offset-2"
+      aria-label={m.ui_tabOverflow_showMore_ariaLabel()}
+      title={m.ui_tabOverflow_more_tooltip()}
+    >
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
+        />
+      </svg>
+    </Menu.Trigger>
 
-  <!-- Dropdown menu -->
-  {#if isOpen}
-    <div
-      bind:this={menuElement}
-      class="absolute right-0 top-full mt-1 bg-sidebar border border-border rounded-lg shadow-lg z-50 min-w-48 max-h-96 overflow-y-auto"
-      role="menu"
-      transition:scaleAndFade={{ duration: 150 }}
+    <Menu.Content
+      portal={false}
+      align="end"
+      onEscapeKeydown={close}
+      class="bg-sidebar min-w-48 max-h-96"
+      aria-label={m.ui_tabOverflow_showMore_ariaLabel()}
     >
       {@render children?.({ close })}
-    </div>
-  {/if}
-</div>
+    </Menu.Content>
+  </div>
+</Menu.Root>
 
 <style>
   :global(.tab-overflow-menu-item) {
@@ -132,7 +101,7 @@
   }
 
   :global(.tab-overflow-menu-item:focus-visible) {
-    outline: 2px solid hsl(var(--primary));
+    outline: 2px solid hsl(var(--primary-ink));
     outline-offset: -2px;
   }
 

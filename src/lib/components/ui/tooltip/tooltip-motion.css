@@ -1,0 +1,57 @@
+.tooltip-motion {
+  --tooltip-enter-x: 0px;
+  --tooltip-enter-y: 0px;
+  transform-origin: var(--bits-tooltip-content-transform-origin, center);
+}
+
+.tooltip-motion[data-side='top'] {
+  --tooltip-enter-y: 4px;
+}
+
+.tooltip-motion[data-side='right'] {
+  --tooltip-enter-x: -4px;
+}
+
+.tooltip-motion[data-side='bottom'] {
+  --tooltip-enter-y: -4px;
+}
+
+.tooltip-motion[data-side='left'] {
+  --tooltip-enter-x: 4px;
+}
+
+.tooltip-motion[data-state='open'] {
+  animation: tooltip-spring-in var(--spring-fast) var(--spring-fast-ease) both;
+}
+
+.tooltip-motion[data-state='closed'] {
+  animation: tooltip-crisp-out var(--spring-fast-exit) var(--spring-exit-ease) both;
+}
+
+@keyframes tooltip-spring-in {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--tooltip-enter-x), var(--tooltip-enter-y), 0) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes tooltip-crisp-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltip-motion[data-state] {
+    animation: none;
+  }
+}

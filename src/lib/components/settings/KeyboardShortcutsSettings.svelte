@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { Button } from '$lib/components/ui/button';
-  import { Input } from '$lib/components/ui/input';
+  import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
   import {
     applyShortcutCapture,
     shortcutFromKeyboardEvent,

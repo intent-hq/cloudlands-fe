@@ -1,8 +1,9 @@
 <script lang="ts">
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import Fa from 'svelte-fa';
+  import { Button } from '$lib/components/ui/button';
   import {
     requestCollapsiblePanelCollapsed,
     setCollapsiblePanelCollapsed,
@@ -67,7 +68,8 @@
 </script>
 
 <div class="w-full flex flex-col h-full {className}">
-  <button
+  <Button
+    variant="plain"
     class="relative w-full px-3.5 pt-[0.9rem] z-10 text-left cursor-pointer {headerClass}"
     onclick={toggleCollapsed}
     onmouseenter={() => (hovering = true)}
@@ -81,7 +83,7 @@
         {/if}
         <h3 class="m-0 text-sm font-medium">{title}</h3>
         <div
-          class="transition-[opacity,transform] mt-[2px] duration-200 text-subtle {!hovering &&
+          class="transition-[opacity,transform] mt-[2px] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none text-subtle {!hovering &&
           showChevronOnHover
             ? 'opacity-0'
             : 'opacity-100'} {collapsed ? 'rotate-90' : ''}"
@@ -91,12 +93,12 @@
       </div>
       {@render headerActions?.()}
     </div>
-  </button>
+  </Button>
 
   {#if !collapsed}
     <div
       class="relative z-0 w-full flex flex-col flex-1 min-h-0 overflow-hidden {contentClass}"
-      transition:slide={{ duration: 200 }}
+      transition:slide={{ tier: 'moderate' }}
     >
       {#if showGradient}
         <!-- Gradient fade-out at top -->

@@ -193,8 +193,8 @@ describe('AgentCard sandbox "Reveal in" context-menu item', () => {
       bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]),
     );
     mockedInvoke.mockRejectedValueOnce(new Error('open exited with code 1'));
-    const { toast } = await import('svelte-sonner');
-    const errorSpy = vi.spyOn(toast, 'error').mockImplementation(() => '' as never);
+    const { notify } = await import('$lib/components/patterns/notify');
+    const errorSpy = vi.spyOn(notify, 'error').mockImplementation(() => '' as never);
 
     render(AgentCard, { props: { agentId } });
     await openContextMenu();

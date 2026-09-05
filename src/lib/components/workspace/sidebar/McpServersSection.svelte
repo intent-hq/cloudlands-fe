@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * McpServersSection - Displays user-defined MCP servers with toggles
    *
@@ -18,7 +19,7 @@
     selectMcpErrorMessages,
     selectWorkspaceDisabledMcpServerNamesByWorkspaceId,
   } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import Switch from '$lib/components/ui/switch/switch.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import {
@@ -126,7 +127,7 @@
 {#if serverRows.length > 0}
   <div class="mt-3 {className ?? ''}">
     <!-- Section Header -->
-    <button
+    <Button
       type="button"
       class="w-full flex items-center gap-2 px-1.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
       onclick={() => (isExpanded = !isExpanded)}
@@ -134,7 +135,9 @@
       <Fa
         icon={faChevronDown}
         size="xs"
-        class="opacity-50 transition-transform duration-200 {isExpanded ? '' : 'rotate-90'}"
+        class="opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isExpanded
+          ? ''
+          : 'rotate-90'}"
       />
       <!-- <Fa icon={faPlug} size="xs" class="opacity-70" /> -->
       <span>{m.workspace_mcpServers_title()}</span>
@@ -143,10 +146,10 @@
           count: formatInteger(enabledServerCount),
         })}</span
       >
-    </button>
+    </Button>
 
     {#if isExpanded}
-      <div class="space-y-0.5 mt-1 pl-4" transition:slide={{ axis: 'y', duration: 200 }}>
+      <div class="space-y-0.5 mt-1 pl-4" transition:slide={{ axis: 'y', tier: 'moderate' }}>
         {#each serverRows as { server, enabled, error } (server.name)}
           {@const isEnabled = enabled}
           {@const serverError = error}
@@ -163,7 +166,7 @@
                 <Fa
                   icon={server.type === 'stdio' ? faTerminal : faPlug}
                   size="xs"
-                  class={isEnabled ? 'text-primary' : 'text-muted-foreground'}
+                  class={isEnabled ? 'text-primary-ink' : 'text-muted-foreground'}
                 />
               {:else if faviconUrl}
                 <img
@@ -213,14 +216,14 @@
         {/each}
 
         <!-- Manage Servers Button -->
-        <button
+        <Button
           type="button"
           class="w-full flex items-center gap-1.5 px-2 py-1.5 mt-1 text-sm text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
           onclick={() => navigateToSettings({ hash: 'mcp-servers' })}
         >
           <Fa icon={faGear} size={13} class="opacity-50 mx-[2px]" />
           <span>{m.workspace_mcpServers_manageServers_label()}</span>
-        </button>
+        </Button>
       </div>
     {/if}
   </div>

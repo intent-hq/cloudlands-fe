@@ -118,7 +118,7 @@ describe('SuggestedPrompts', () => {
     });
 
     const hint = screen.getByText(/(?:⌃|Alt\+)1/);
-    expect(hint.className).toContain('font-normal!');
+    expect(hint.className).toContain('!font-normal');
     expect(hint.className).toContain('text-muted-foreground!');
     for (const className of COMPACT_TOOL_TRAILING_CLASS.replace('text-ui', '').split(' ')) {
       if (!className) continue;
@@ -126,9 +126,8 @@ describe('SuggestedPrompts', () => {
     }
     expect(hint.className).toContain('type-caption');
     expect(hint.className).not.toContain('text-ui');
-    expect(hint.className).not.toContain('font-medium');
     expect(hint.className).not.toMatch(/text-(?:muted-foreground|subtle)\//);
-    expect(hint.parentElement?.className).toContain('type-body');
+    expect(hint.closest('button')?.className).toContain('type-body');
   });
 
   it('preserves keyboard selection and the separate edit affordance', async () => {

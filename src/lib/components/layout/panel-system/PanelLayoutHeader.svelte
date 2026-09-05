@@ -1,4 +1,6 @@
 <script lang="ts" module>
+  import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
   /** Layout preset type */
   export type LayoutPresetId = 'single' | 'split-horizontal' | 'split-vertical' | 'three-column';
 
@@ -73,8 +75,8 @@
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectModelForType } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
-  import { fade, slide } from 'svelte/transition';
-  import { toast } from 'svelte-sonner';
+  import { fade, slide } from '$lib/motion';
+  import { notify } from '$lib/components/patterns/notify';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectForegroundWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 
@@ -231,14 +233,14 @@
         applyParsedLayout(layout);
         promptValue = '';
         showPrompt = false;
-        toast.success(m.layout_layoutControls_updated_label());
+        notify.success(m.layout_layoutControls_updated_label());
       } else {
-        toast.error(m.layout_layoutControls_parseFailed_error());
+        notify.error(m.layout_layoutControls_parseFailed_error());
         logger.warn('Failed to parse layout response', { response: result.enhanced });
       }
     } catch (error) {
       logger.error('Layout generation failed', error);
-      toast.error(
+      notify.error(
         error instanceof EnhancePromptUnavailableError
           ? m.layout_layoutControls_generationUnavailable_error()
           : error instanceof Error && error.message
@@ -486,7 +488,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
       side="bottom"
       delayDuration={300}
     >
-      <button
+      <Button
         class={cn(
           'p-1.5 rounded hover:bg-muted transition-colors',
           canGoBack ? 'text-foreground' : 'text-ghost cursor-not-allowed',
@@ -496,7 +498,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         aria-label={m.layout_layoutHeader_goBack_ariaLabel()}
       >
         <Fa icon={faArrowLeft} size="sm" />
-      </button>
+      </Button>
     </Tooltip>
     <Tooltip
       content={m.layout_layoutHeader_goForward_tooltip({
@@ -505,7 +507,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
       side="bottom"
       delayDuration={300}
     >
-      <button
+      <Button
         class={cn(
           'p-1.5 rounded hover:bg-muted transition-colors',
           canGoForward ? 'text-foreground' : 'text-ghost cursor-not-allowed',
@@ -515,7 +517,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         aria-label={m.layout_layoutHeader_goForward_ariaLabel()}
       >
         <Fa icon={faArrowRight} size="sm" />
-      </button>
+      </Button>
     </Tooltip>
   </div>
 
@@ -534,7 +536,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         side="bottom"
         delayDuration={300}
       >
-        <button
+        <Button
           class={cn(
             'p-1.5 rounded transition-colors',
             currentPreset === preset.id
@@ -549,7 +551,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
             size="sm"
             class={preset.id === 'split-vertical' ? 'rotate-90' : ''}
           />
-        </button>
+        </Button>
       </Tooltip>
     {/each}
 
@@ -559,7 +561,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
       side="bottom"
       delayDuration={300}
     >
-      <button
+      <Button
         class={cn(
           'p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted',
           showPresetDropdown && 'bg-muted text-foreground',
@@ -568,20 +570,20 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         aria-label={m.layout_layoutHeader_morePresets_ariaLabel()}
       >
         <Fa icon={faChevronDown} size="xs" />
-      </button>
+      </Button>
     </Tooltip>
 
     <!-- Preset dropdown menu -->
     {#if showPresetDropdown}
       <div
         class="absolute bottom-full left-0 mt-1 w-56 bg-popover border border-border rounded-lg shadow-lg z-50 py-1"
-        transition:fade={{ duration: 100 }}
+        transition:fade={{ tier: 'fast' }}
       >
         <div class="px-2 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
           {m.layout_layoutHeader_focusModes_header()}
         </div>
         {#each contentPresets as preset (preset.id)}
-          <button
+          <Button
             class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
             onclick={() => handleContentPreset(preset.id)}
           >
@@ -590,7 +592,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
               <div class="font-medium">{preset.label()}</div>
               <div class="text-xs text-subtle truncate">{preset.description()}</div>
             </div>
-          </button>
+          </Button>
         {/each}
       </div>
     {/if}
@@ -603,7 +605,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
       side="bottom"
       delayDuration={300}
     >
-      <button
+      <Button
         class={cn(
           'p-1.5 rounded transition-colors',
           showPrompt
@@ -614,15 +616,15 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         aria-label={m.layout_layoutHeader_configureWithAi_ariaLabel()}
       >
         <Fa icon={faWandMagicSparkles} size="sm" />
-      </button>
+      </Button>
     </Tooltip>
   {/if}
 
   <!-- AI Prompt input (expanded) -->
   {#if aiLayoutAvailable && showPrompt}
-    <div class="flex items-center gap-1 ml-1" transition:slide={{ duration: 150, axis: 'x' }}>
-      <input
-        bind:this={promptInputRef}
+    <div class="flex items-center gap-1 ml-1" transition:slide={{ tier: 'moderate', axis: 'x' }}>
+      <Input
+        bind:ref={promptInputRef}
         bind:value={promptValue}
         onkeydown={handlePromptKeydown}
         type="text"
@@ -631,11 +633,11 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         class={cn(
           'w-48 h-6 px-2 text-xs rounded border border-border bg-background',
           'placeholder:text-muted-foreground/50',
-          'focus:outline-none focus:ring-1 focus:ring-primary/50',
+          'focus:outline-none focus:ring-1 focus:ring-primary-ink/50',
           'disabled:opacity-50',
         )}
       />
-      <button
+      <Button
         class={cn(
           'p-1 rounded transition-colors',
           promptValue.trim() && !isGenerating
@@ -651,7 +653,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         {:else}
           <Fa icon={faMagic} size="sm" />
         {/if}
-      </button>
+      </Button>
     </div>
   {/if}
 </div>

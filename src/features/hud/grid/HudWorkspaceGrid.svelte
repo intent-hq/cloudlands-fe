@@ -11,8 +11,8 @@
    */
   import { onDestroy, onMount } from 'svelte';
   import { flip } from 'svelte/animate';
-  import { scale } from 'svelte/transition';
-  import { cubicOut, quintOut } from 'svelte/easing';
+  import { scale } from '$lib/motion';
+  import { quintOut } from 'svelte/easing';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -40,12 +40,9 @@
 
   const visibleCards = $derived(applyHudGridFilter($cards$, $filter$));
 
-  // Mock `flipRoster` timings: entering cards scale in (420ms), leaving cards
-  // scale out (260ms), the rest FLIP-slide into place (480ms, ~the mock's
-  // cubic-bezier(0.16,1,0.3,1)). Reduced motion snaps (0ms).
+  // The FLIP layout animation remains tied to the HUD mock; card entry and
+  // exit use the shared slow motion tier.
   const flipDuration = $derived(reducedMotion.current ? 0 : 480);
-  const enterDuration = $derived(reducedMotion.current ? 0 : 420);
-  const leaveDuration = $derived(reducedMotion.current ? 0 : 260);
 
   onMount(() => {
     const timer = setInterval(() => (nowMs = Date.now()), 1000);
@@ -97,8 +94,8 @@
             data-testid="hud-ws-grid-slot"
             use:observeCard={card.workspaceId}
             animate:flip={{ duration: flipDuration, easing: quintOut }}
-            in:scale={{ duration: enterDuration, start: 0.86, easing: quintOut }}
-            out:scale={{ duration: leaveDuration, start: 0.88, easing: cubicOut }}
+            in:scale={{ tier: 'slow', distance: 0.14 }}
+            out:scale={{ tier: 'slow', distance: 0.12 }}
           >
             <HudWorkspaceCard {card} {nowMs} />
           </div>

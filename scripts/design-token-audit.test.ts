@@ -22,6 +22,9 @@ describe('design token audit', () => {
     expect(approved).toContain('--background');
     expect(approved).toContain('--danger');
     expect(approved).toContain('--danger-background');
+    expect(approved).toContain('--primary-ink');
+    expect(approved).toContain('--hover');
+    expect(approved).toContain('--focus-ring');
     expect(approved).toContain('--warning-foreground');
     expect(approved).not.toContain('--destructive');
     expect(approved).not.toContain('--destructive-foreground');
@@ -167,6 +170,14 @@ describe('design token audit', () => {
           entry.removalCondition,
       ),
     ).toBe(true);
+    expect(allowlist.canonicalRaw['src/lib/components/ui/kbd/ShortcutChip.svelte']).toEqual({
+      palette: 0,
+      arbitrary: 1,
+    });
+    expect(allowlist.canonicalRaw['src/lib/components/ui/toast/Toast.svelte']).toEqual({
+      palette: 0,
+      arbitrary: 25,
+    });
   });
 
   it('reports the file, raw utility, and replacement family when a ratchet grows', () => {

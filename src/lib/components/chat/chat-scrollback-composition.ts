@@ -542,7 +542,7 @@ export interface RapidScrollParams {
  * relative to the viewport height — sum |delta| across consecutive samples
  * within `windowMs` of the newest sample and compare against
  * `viewportFactor` viewports. A wheel flick or scrollbar-thumb drag covers
- * more than one viewport inside one settle window (200ms), which a serial
+ * more than one viewport inside one settle window, which a serial
  * page walk cannot usefully chase — the caller defers paging to the settle
  * debounce. A gentle reading-pace scroll stays under the threshold and
  * keeps today's immediate edge-triggered serial fetch. Absolute deltas (not

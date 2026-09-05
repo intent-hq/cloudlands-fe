@@ -45,12 +45,15 @@ describe('product panel TabOverflowMenu', () => {
     const onOpenChange = vi.fn();
     render(TabOverflowMenu, { props: { onOpenChange } });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Show more tabs' }));
+    const trigger = screen.getByRole('button', { name: 'Show more tabs' });
+    await fireEvent.click(trigger);
     expect(screen.getByRole('menu')).toBeTruthy();
     expect(onOpenChange).toHaveBeenLastCalledWith(true);
 
+    await fireEvent.pointerDown(document.body, { pointerType: 'mouse' });
     await fireEvent.click(document.body);
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    expect(document.activeElement).toBe(trigger);
   });
 });

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * PanelSplitHandle - Resizable divider between panels
    *
@@ -48,7 +49,7 @@
   let isDragging = $state(false);
   let startPos = $state(0);
 
-  let handleRef: HTMLButtonElement;
+  let handleRef = $state<HTMLButtonElement>();
 
   // Custom MIME type for tab drag (must match PanelTabBar)
   const TAB_DRAG_MIME = 'application/x-panel-tab';
@@ -180,9 +181,9 @@
   }
 </script>
 
-<button
+<Button
   type="button"
-  bind:this={handleRef}
+  bind:ref={handleRef}
   class={cn(
     'app-resize-handle panel-split-handle',
     direction === 'horizontal' ? 'horizontal' : 'vertical',
@@ -195,10 +196,10 @@
   ondragover={handleTabDragOver}
   ondragleave={handleTabDragLeave}
   ondrop={handleTabDrop}
-></button>
+></Button>
 
 <style>
-  .panel-split-handle {
+  :global(.panel-split-handle) {
     position: relative;
     flex-shrink: 0;
     z-index: 35;
@@ -215,13 +216,13 @@
      scrollbar) — an accepted trade-off to preserve the forgiving target.
      Note inset() sides are physical, not logical: under RTL the leading edge
      would flip to the right, but all shipped locales are LTR. */
-  .panel-split-handle.horizontal {
+  :global(.panel-split-handle.horizontal) {
     width: 16px;
     margin: 0 -4px;
     clip-path: inset(0 0 0 4px);
   }
 
-  .panel-split-handle.vertical {
+  :global(.panel-split-handle.vertical) {
     height: 16px;
     width: 100%;
     margin: -4px 0;

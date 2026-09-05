@@ -14,7 +14,7 @@
   import AIBehaviorSidebar, {
     type AIBehaviorView,
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
-  import SettingsSidebarNav from '$lib/components/settings/SettingsSidebarNav.svelte';
+  import { SettingsPage, type SettingsTab } from '$lib/components/patterns/settings';
   import ConnectionsSettings from '$lib/components/settings/ConnectionsSettings.svelte';
   import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
   import BackendSyncSettings from '$lib/components/settings/BackendSyncSettings.svelte';
@@ -40,7 +40,7 @@
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { highlightTarget } from '$lib/components/ui/highlight/highlight-target';
   import { Switch } from '$lib/components/ui/switch';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
@@ -109,18 +109,6 @@
       ? $daemonTransport$.target
       : null,
   );
-
-  type SettingsTab =
-    | 'display'
-    | 'app-behavior'
-    | 'agent-behavior'
-    | 'providers'
-    | 'connections'
-    | 'devices'
-    | 'setup'
-    | 'advanced'
-    | 'input'
-    | 'specialists';
 
   const validTabs: SettingsTab[] = [
     'display',
@@ -340,11 +328,11 @@
     { value: 'monospace', label: m.settings_fontStyle_mono() },
   ];
 
-  function handleNoteFontChange(value: string | boolean) {
+  function handleNoteFontChange(value: string) {
     appStore.dispatch(setNoteFontStyle(value as 'sans' | 'monospace'));
   }
 
-  function handleAgentFontChange(value: string | boolean) {
+  function handleAgentFontChange(value: string) {
     appStore.dispatch(setAgentFontStyle(value as AgentFontStyle));
   }
 
@@ -418,7 +406,7 @@
     }, 100);
   }
 
-  function handleThemeChange(newTheme: string | boolean) {
+  function handleThemeChange(newTheme: string) {
     const theme = newTheme as ThemePreference;
     appStore.dispatch(requestThemePreferenceChange(theme));
   }
@@ -478,64 +466,78 @@
   }
 </script>
 
-<div class="flex h-full min-w-0">
-  <aside
-    class="flex h-full w-60 shrink-0 flex-col border-r border-border dark:border-border bg-sidebar"
-  >
-    <div class="px-5 pt-8 pb-3">
-      <!-- Back button with keyboard shortcut -->
-      <button
-        onclick={navigateBackFromSettings}
-        class="group flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+{#snippet sidebarHeader()}
+  <div class="px-5 pt-8 pb-3">
+    <!-- Back button with keyboard shortcut -->
+    <Button
+      onclick={navigateBackFromSettings}
+      class="group flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+    >
+      <Fa icon={faArrowLeft} class="text-xs opacity-50 mr-1" />
+      <span>{backLabel}</span>
+      <kbd
+        class="ml-2 px-1.5 py-0.5 text-ui font-medium bg-muted text-muted-foreground border border-border rounded opacity-60 group-hover:opacity-100 transition-opacity"
       >
-        <Fa icon={faArrowLeft} class="text-xs opacity-50 mr-1" />
-        <span>{backLabel}</span>
-        <kbd
-          class="ml-2 px-1.5 py-0.5 text-ui font-medium bg-muted text-muted-foreground border border-border rounded opacity-60 group-hover:opacity-100 transition-opacity"
-        >
-          {isMac ? '⌘' : 'Ctrl'},
-        </kbd>
-      </button>
-    </div>
+        {isMac ? '⌘' : 'Ctrl'},
+      </kbd>
+    </Button>
+  </div>
+{/snippet}
 
-    <SettingsSidebarNav {activeTab} onSelect={setActiveTab}>
-      {#snippet agentsNavigation()}
-        <AIBehaviorSidebar
-          activeView={aiBehaviorView}
-          onSelect={selectAiBehaviorView}
-          isActive={activeTab === 'specialists'}
-        />
-      {/snippet}
-    </SettingsSidebarNav>
+{#snippet agentsNavigation()}
+  <AIBehaviorSidebar
+    activeView={aiBehaviorView}
+    onSelect={selectAiBehaviorView}
+    isActive={activeTab === 'specialists'}
+  />
+{/snippet}
 
-    <div class="shrink-0 border-t border-border dark:border-border px-5 py-4 text-xs text-subtle">
-      <div class="flex w-full items-baseline justify-between gap-2">
-        <div class="flex items-baseline gap-1.5">
-          <!-- i18n-ignore (brand name) -->
-          <strong class="text-foreground">Intent</strong>
-          <span>v{appVersion || '...'}</span>
-        </div>
-        {#if $isReadyToInstall$}
-          <button
-            class="cursor-pointer border-none bg-transparent p-0 font-medium text-primary underline hover:text-primary/80"
-            onclick={() => appStore.dispatch(installUpdate())}
-          >
-            {m.settings_footer_updateAvailable()}
-          </button>
-        {:else if $autoUpdateStatus$ === 'not-available' || $autoUpdateStatus$ === 'idle'}
-          <span>{m.settings_footer_upToDate()}</span>
-        {/if}
+{#snippet sidebarFooter()}
+  <div class="shrink-0 border-t border-border dark:border-border px-5 py-4 text-xs text-subtle">
+    <div class="flex w-full items-baseline justify-between gap-2">
+      <div class="flex items-baseline gap-1.5">
+        <!-- i18n-ignore (brand name) -->
+        <strong class="text-foreground">Intent</strong>
+        <span>v{appVersion || '...'}</span>
       </div>
-      <a
-        href="https://www.intentapp.dev/docs"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="mt-1.5 block cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
-        >{m.settings_footer_support()}</a
-      >
+      {#if $isReadyToInstall$}
+        <Button
+          class="cursor-pointer border-none bg-transparent p-0 font-medium text-primary-ink underline hover:text-primary-ink/80"
+          onclick={() => appStore.dispatch(installUpdate())}
+        >
+          {m.settings_footer_updateAvailable()}
+        </Button>
+      {:else if $autoUpdateStatus$ === 'not-available' || $autoUpdateStatus$ === 'idle'}
+        <span>{m.settings_footer_upToDate()}</span>
+      {/if}
     </div>
-  </aside>
+    <a
+      href="https://www.intentapp.dev/docs"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="mt-1.5 block cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
+      >{m.settings_footer_support()}</a
+    >
+    <!-- tailcat ships bundled (resources/tailcat, BSD-3-Clause); its license
+           text is packaged next to the binary as tailcat.LICENSE. -->
+    <a
+      href="https://github.com/tailscale/tailcat/blob/main/LICENSE"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="mt-1 block cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
+      >{m.settings_footer_tailcatAttribution()}</a
+    >
+  </div>
+{/snippet}
 
+<SettingsPage
+  title={m.settings_page_title()}
+  {activeTab}
+  onSelect={setActiveTab}
+  {agentsNavigation}
+  {sidebarHeader}
+  {sidebarFooter}
+>
   <div class="flex min-w-0 flex-1 flex-col">
     <div class="min-h-0 flex-1 overflow-auto">
       <main
@@ -646,14 +648,7 @@
           <div id="git-workspace" data-highlight-id="git-workspace" use:highlightTarget>
             <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef}>
               {#snippet shellAdditions()}
-                <div id="cli-optimization" data-highlight-id="cli-optimization" use:highlightTarget>
-                  <h3
-                    class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3"
-                  >
-                    {m.settings_section_cliOptimization()}
-                  </h3>
-                  <RtkSettings />
-                </div>
+                <RtkSettings />
               {/snippet}
             </GitWorkspaceSettings>
           </div>
@@ -670,13 +665,17 @@
               <section class="px-6 py-5">
                 <div class="flex items-center justify-between">
                   <p class="text-sm font-medium text-foreground">{m.settings_theme_label()}</p>
-                  <Toggle
-                    variant="group"
-                    options={themeOptions}
+                  <ToggleGroup.Root
+                    type="single"
                     value={$themePreference}
-                    onChange={handleThemeChange}
+                    onValueChange={handleThemeChange}
                     size="sm"
-                  />
+                    aria-label={m.settings_theme_label()}
+                  >
+                    {#each themeOptions as option (option.value)}
+                      <ToggleGroup.Item value={option.value}>{option.label}</ToggleGroup.Item>
+                    {/each}
+                  </ToggleGroup.Root>
                 </div>
               </section>
               <section
@@ -765,13 +764,17 @@
                       {m.settings_font_notes_description()}
                     </p>
                   </div>
-                  <Toggle
-                    variant="group"
-                    options={fontStyleOptions}
+                  <ToggleGroup.Root
+                    type="single"
                     value={$noteFontStyle}
-                    onChange={handleNoteFontChange}
+                    onValueChange={handleNoteFontChange}
                     size="sm"
-                  />
+                    aria-label={m.settings_font_notes_label()}
+                  >
+                    {#each fontStyleOptions as option (option.value)}
+                      <ToggleGroup.Item value={option.value}>{option.label}</ToggleGroup.Item>
+                    {/each}
+                  </ToggleGroup.Root>
                 </div>
               </section>
               <section
@@ -792,13 +795,17 @@
                       {m.settings_font_agentChat_description()}
                     </p>
                   </div>
-                  <Toggle
-                    variant="group"
-                    options={fontStyleOptions}
+                  <ToggleGroup.Root
+                    type="single"
                     value={$agentFontStyle}
-                    onChange={handleAgentFontChange}
+                    onValueChange={handleAgentFontChange}
                     size="sm"
-                  />
+                    aria-label={m.settings_font_agentChat_label()}
+                  >
+                    {#each fontStyleOptions as option (option.value)}
+                      <ToggleGroup.Item value={option.value}>{option.label}</ToggleGroup.Item>
+                    {/each}
+                  </ToggleGroup.Root>
                 </div>
               </section>
               <section
@@ -910,19 +917,7 @@
               <section class="px-6 py-5"><GitHubLinkSettings /></section>
             </div>
           </div>
-          <div
-            id="notifications"
-            data-highlight-id="notifications"
-            use:highlightTarget
-            class="mb-12"
-          >
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_notifications()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5"><NotificationSettings /></section>
-            </div>
-          </div>
+          <NotificationSettings />
         {/if}
 
         <!-- Agent Behavior -->
@@ -942,17 +937,7 @@
             />
           </div>
 
-          <div
-            id="agent-features"
-            data-highlight-id="agent-features"
-            use:highlightTarget
-            class="mb-12"
-          >
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_agentFeatures()}
-            </h2>
-            <AgentFeaturesSettings />
-          </div>
+          <AgentFeaturesSettings />
         {/if}
 
         <!-- Input -->
@@ -1181,4 +1166,4 @@
       </main>
     </div>
   </div>
-</div>
+</SettingsPage>

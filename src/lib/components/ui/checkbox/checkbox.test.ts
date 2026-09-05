@@ -20,6 +20,8 @@ describe('Checkbox', () => {
 
     await rerender({ checked: true, indeterminate: false });
     expect(checkbox.getAttribute('aria-checked')).toBe('true');
+    expect(checkbox.className).toContain('data-[state=checked]:bg-primary');
+    expect(checkbox.className).toContain('data-[state=checked]:text-primary-foreground');
     await rerender({ checked: false, indeterminate: false });
     expect(checkbox.getAttribute('aria-checked')).toBe('false');
   });
@@ -85,6 +87,8 @@ describe('Checkbox', () => {
         'unchecked',
         'checked',
         'mixed',
+        'solid-primary',
+        'inverted-glyph',
         'disabled',
         'invalid',
         'required-invalid',

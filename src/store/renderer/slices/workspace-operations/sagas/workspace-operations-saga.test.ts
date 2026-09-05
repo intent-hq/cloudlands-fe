@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   navigateToRoute: vi.fn(),
   getActiveWorkNames: vi.fn(),
   invoke: vi.fn(),
-  toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() },
+  notify: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 vi.mock('../../workspace/utils/workspace.client', () => ({
   workspaceClient: {
@@ -30,7 +30,10 @@ vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigate
 vi.mock('$lib/utils/delete-warning-utils', () => ({
   getActiveWorkNames: mocks.getActiveWorkNames,
 }));
-vi.mock('svelte-sonner', () => ({ toast: mocks.toast }));
+vi.mock('$lib/components/patterns/notify', async () => ({
+  ...(await vi.importActual('$lib/components/ui/toast/toast-countdown')),
+  notify: mocks.notify,
+}));
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
@@ -62,7 +65,7 @@ import {
   requestUnarchiveWorkspace,
   workspaceOperationsReducer,
 } from '../workspace-operations-slice';
-import { TOAST_COUNTDOWN_CLASS } from '$lib/components/ui/toast';
+import { TOAST_COUNTDOWN_CLASS } from '$lib/components/patterns/notify';
 import {
   WORKSPACE_DELETION_TOMBSTONE_TTL_MS,
   WORKSPACE_OPERATION_UNDO_DURATION_MS,
@@ -130,7 +133,7 @@ const localChanges = {
 };
 
 function latestUndo(): (() => void) | undefined {
-  const options = mocks.toast.warning.mock.calls.at(-1)?.[1] as
+  const options = mocks.notify.warning.mock.calls.at(-1)?.[1] as
     { action?: { onClick?: () => void } } | undefined;
   return options?.action?.onClick;
 }
@@ -195,7 +198,7 @@ describe('workspaceOperationsSaga', () => {
     run.send(requestArchiveWorkspace('ws-2'));
     await settle();
     expect(mocks.archive.mock.calls).toEqual([['ws-1'], ['ws-2']]);
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     // Tab close + navigation are driven by the daemon workspace:updated event
     expect(mocks.navigate).not.toHaveBeenCalled();
     expect(
@@ -216,8 +219,8 @@ describe('workspaceOperationsSaga', () => {
     run.send(confirmBulkArchive());
     await settle();
     expect(mocks.archive).toHaveBeenCalledTimes(2);
-    expect(mocks.toast.warning).toHaveBeenCalledTimes(1);
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.warning).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -377,7 +380,7 @@ describe('workspaceOperationsSaga', () => {
       undoDelayMs: WORKSPACE_OPERATION_UNDO_DURATION_MS,
     });
     expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
-    expect(mocks.toast.warning).toHaveBeenCalledExactlyOnceWith(
+    expect(mocks.notify.warning).toHaveBeenCalledExactlyOnceWith(
       expect.any(String),
       expect.objectContaining({
         duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
@@ -410,7 +413,7 @@ describe('workspaceOperationsSaga', () => {
     await vi.advanceTimersByTimeAsync(50);
     expect(mocks.cancelDelete).toHaveBeenCalledExactlyOnceWith('ws-1');
     // The daemon already committed: show "could not undo" and stay deleted
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
     expect(run.state().workspace.pendingDeletions['ws-1']).toBe(true);
     run.task.cancel();
@@ -591,7 +594,7 @@ describe('workspaceOperationsSaga', () => {
     });
     expect(getItem(run.state().workspace.workspaces, 'ws-1')).toMatchObject({ id: 'ws-1' });
     expect(run.state().workspace.pendingDeletions['ws-1']).toBeUndefined();
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
   });
 
   it('runs deletion undo windows concurrently and undoes each via cancelDelete', async () => {
@@ -609,8 +612,8 @@ describe('workspaceOperationsSaga', () => {
     await settle();
 
     expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(2);
-    expect(mocks.toast.warning).toHaveBeenCalledTimes(2);
-    for (const [, options] of mocks.toast.warning.mock.calls) {
+    expect(mocks.notify.warning).toHaveBeenCalledTimes(2);
+    for (const [, options] of mocks.notify.warning.mock.calls) {
       (options as { action: { onClick: () => void } }).action.onClick();
     }
     await settle();
@@ -659,7 +662,7 @@ describe('workspaceOperationsSaga', () => {
     ]);
     run.send(requestArchiveWorkspace('ws-1'));
     await settle();
-    expect(mocks.toast.warning).toHaveBeenCalledExactlyOnceWith(
+    expect(mocks.notify.warning).toHaveBeenCalledExactlyOnceWith(
       expect.any(String),
       expect.objectContaining({
         duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
@@ -679,8 +682,8 @@ describe('workspaceOperationsSaga', () => {
     run.send(requestUnarchiveWorkspace('ws-3'));
     await settle();
     expect(mocks.unarchive.mock.calls).toEqual([['ws-1'], ['ws-2'], ['ws-3']]);
-    expect(mocks.toast.success).toHaveBeenCalledTimes(1);
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.success).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     // Direct unarchive gets no focus behavior — only the undo path does
     expect(mocks.navigateToRoute).toHaveBeenCalledTimes(1);
     run.task.cancel();
@@ -698,7 +701,7 @@ describe('workspaceOperationsSaga', () => {
     await vi.advanceTimersByTimeAsync(50);
     expect(mocks.archive).not.toHaveBeenCalled();
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
-    expect(mocks.toast.info).toHaveBeenCalledTimes(2);
+    expect(mocks.notify.info).toHaveBeenCalledTimes(2);
     empty.task.cancel();
     await empty.task.toPromise();
 
@@ -739,9 +742,9 @@ describe('workspaceOperationsSaga', () => {
     guarded.send(confirmBulkDeleteWarning());
     await vi.advanceTimersByTimeAsync(50);
     expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(3);
-    expect(mocks.toast.success).toHaveBeenCalledTimes(1);
-    expect(mocks.toast.info).toHaveBeenCalledTimes(1);
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.success).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.info).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     // Only the successful delete (ws-1) is tombstoned; a stale refetch cannot
     // resurrect it, and the grace timer clears the tombstone afterwards.
     expect(guarded.state().workspace.pendingDeletions).toEqual({ 'ws-1': true });
@@ -776,7 +779,7 @@ describe('workspaceOperationsSaga', () => {
       type: 'knownRepos/removeRepo',
       payload: ['/repo/one'],
     });
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -821,7 +824,7 @@ describe('workspaceOperationsSaga', () => {
       error: 'cannot resolve base ref',
       errorCode: 'base-ref-unresolvable',
     });
-    expect(mocks.toast.error).toHaveBeenCalledWith('cannot resolve base ref');
+    expect(mocks.notify.error).toHaveBeenCalledWith('cannot resolve base ref');
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -905,7 +908,7 @@ describe('workspaceOperationsSaga', () => {
       status: WorkspaceStatusEnum.Archived,
       archived: true,
     });
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -928,8 +931,8 @@ describe('workspaceOperationsSaga', () => {
     await vi.advanceTimersByTimeAsync(50);
     expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(2);
     expect(run.state().proposalLifecycle['delete-applied']).toMatchObject({ status: 'applied' });
-    expect(mocks.toast.success).toHaveBeenCalledTimes(1);
-    expect(mocks.toast.info).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.success).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.info).toHaveBeenCalledTimes(1);
     // The successful delete (ws-1) is tombstoned for the grace window; a stale
     // refetch cannot re-admit it, and the timer clears the tombstone afterwards.
     expect(run.state().workspace.pendingDeletions).toEqual({ 'ws-1': true });
@@ -943,7 +946,7 @@ describe('workspaceOperationsSaga', () => {
     );
     await vi.advanceTimersByTimeAsync(50);
     expect(run.state().proposalLifecycle['delete-failed']).toMatchObject({ status: 'failed' });
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
     expect(run.state().workspace.pendingDeletions).toEqual({});
     run.task.cancel();

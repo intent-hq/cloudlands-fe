@@ -36,7 +36,7 @@
     toggleDiffSideBySide,
   } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { isAbsolutePath } from '$lib/utils/path-utils';
   import { m } from '$shared/paraglide/messages.js';
   import { faFile } from '@fortawesome/free-solid-svg-icons';
@@ -230,18 +230,18 @@
       patchLength: hunkPatch.length,
     });
     if (!workspaceId) {
-      toast.error(m.layout_diffTab_noWorkspace_error());
+      notify.error(m.layout_diffTab_noWorkspace_error());
       return;
     }
     const result = await gitClient.stageHunk(WorkspaceId(workspaceId), filePath, hunkPatch);
     if (result.ok) {
-      toast.success(m.layout_diffTab_hunkStaged_toast());
+      notify.success(m.layout_diffTab_hunkStaged_toast());
       gitCache.invalidateWorkspace(workspaceId);
       appStore.dispatch(loadGitStatus(workspaceId, true));
       // Refresh file tracking to update the changes panel and diff viewer
       appStore.dispatch(refreshRequested(workspaceId, true));
     } else {
-      toast.error(result.error || m.layout_diffTab_stageHunkFailed_error());
+      notify.error(result.error || m.layout_diffTab_stageHunkFailed_error());
     }
   }
 
@@ -252,18 +252,18 @@
       patchLength: hunkPatch.length,
     });
     if (!workspaceId) {
-      toast.error(m.layout_diffTab_noWorkspace_error());
+      notify.error(m.layout_diffTab_noWorkspace_error());
       return;
     }
     const result = await gitClient.unstageHunk(WorkspaceId(workspaceId), filePath, hunkPatch);
     if (result.ok) {
-      toast.success(m.layout_diffTab_hunkUnstaged_toast());
+      notify.success(m.layout_diffTab_hunkUnstaged_toast());
       gitCache.invalidateWorkspace(workspaceId);
       appStore.dispatch(loadGitStatus(workspaceId, true));
       // Refresh file tracking to update the changes panel and diff viewer
       appStore.dispatch(refreshRequested(workspaceId, true));
     } else {
-      toast.error(result.error || m.layout_diffTab_unstageHunkFailed_error());
+      notify.error(result.error || m.layout_diffTab_unstageHunkFailed_error());
     }
   }
 </script>

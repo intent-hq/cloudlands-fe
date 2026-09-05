@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Textarea } from '$lib/components/ui/textarea';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { faPaperPlane } from '@fortawesome/free-solid-svg-icons';
@@ -82,12 +84,12 @@
 <!-- Render through portal to avoid clipping -->
 <Portal>
   <!-- Backdrop - click outside to close -->
-  <button
+  <Button
     class="fixed inset-0 z-50 bg-transparent"
     onclick={handleClose}
     aria-label={m.tiptap_launchDialog_close_ariaLabel()}
     type="button"
-  ></button>
+  ></Button>
 
   <!-- Compact floating popover - positioned below the bubble menu -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -97,25 +99,24 @@
     onmousedown={(e) => e.stopPropagation()}
   >
     <div class="flex items-end gap-1.5">
-      <textarea
-        bind:this={textareaRef}
+      <Textarea
+        bind:ref={textareaRef}
         bind:value={userMessage}
         placeholder={m.tiptap_launchDialog_message_placeholder()}
         onkeydown={handleKeyDown}
         class="launch-textarea"
-        rows="1"></textarea>
-      <button
+        rows={1}
+      ></Textarea>
+      <Button
         onclick={handleSubmit}
         class="launch-submit-btn"
         aria-label={m.tiptap_launchDialog_send_ariaLabel()}
       >
         <Fa icon={faPaperPlane} size="xs" />
-      </button>
+      </Button>
     </div>
     <div class="launch-hint">
-      {m.tiptap_launchDialog_hint_before()} <kbd>{m.tiptap_launchDialog_enterKey_label()}</kbd>
-      {m.tiptap_launchDialog_hint_middle()} <kbd>{m.tiptap_launchDialog_escKey_label()}</kbd>
-      {m.tiptap_launchDialog_hint_after()}
+      {m.tiptap_launchDialog_hint_before()} <kbd>{m.tiptap_launchDialog_enterKey_label()}</kbd> {m.tiptap_launchDialog_hint_middle()} <kbd>{m.tiptap_launchDialog_escKey_label()}</kbd> {m.tiptap_launchDialog_hint_after()}
     </div>
   </div>
 </Portal>
@@ -131,7 +132,7 @@
     animation: launchDialogIn 0.15s ease-out;
   }
 
-  .launch-textarea {
+  :global(.launch-textarea) {
     flex: 1;
     min-height: 32px;
     max-height: 120px;
@@ -148,16 +149,16 @@
     field-sizing: content;
   }
 
-  .launch-textarea::placeholder {
+  :global(.launch-textarea::placeholder) {
     color: hsl(var(--muted-foreground) / 0.6);
   }
 
-  .launch-textarea:focus {
+  :global(.launch-textarea:focus) {
     background-color: hsl(var(--background));
     border-color: hsl(var(--border));
   }
 
-  .launch-submit-btn {
+  :global(.launch-submit-btn) {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -172,12 +173,12 @@
     transition: all 0.15s ease;
   }
 
-  .launch-submit-btn:hover {
+  :global(.launch-submit-btn:hover) {
     background-color: hsl(var(--primary) / 0.9);
     transform: scale(1.02);
   }
 
-  .launch-submit-btn:active {
+  :global(.launch-submit-btn:active) {
     transform: scale(0.98);
   }
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { Button } from '$lib/components/ui/button';
+  import * as Tabs from '$lib/components/ui/tabs';
   import { cn } from '$lib/utils';
 
   let {
@@ -13,6 +14,9 @@
     onBack,
     busy = false,
     measure = 'standard',
+    navigationValue = $bindable(''),
+    navigationLabel,
+    onNavigationValueChange,
     navigation,
     children,
     footer,
@@ -28,6 +32,9 @@
     onBack?: (event: MouseEvent) => void;
     busy?: boolean;
     measure?: 'standard' | 'wide';
+    navigationValue?: string;
+    navigationLabel?: string;
+    onNavigationValueChange?: (value: string) => void;
     navigation?: Snippet;
     children?: Snippet;
     footer?: Snippet;
@@ -86,12 +93,18 @@
       </div>
     </div>
     {#if navigation}
-      <div
-        data-slot="settings-page-navigation"
-        class="min-w-0 max-w-full overflow-x-auto overscroll-x-contain"
-      >
-        <div class="settings-measure-wide mx-auto w-full px-4 sm:px-6">
-          {@render navigation()}
+      <div data-slot="settings-page-navigation" class="min-w-0 max-w-full">
+        <div class="settings-measure-wide mx-auto w-full px-4 pb-2 sm:px-6">
+          <div class="max-w-full overflow-x-auto overscroll-x-contain">
+            <Tabs.Root bind:value={navigationValue} onValueChange={onNavigationValueChange}>
+              <Tabs.List
+                class="min-w-max max-w-none [&_[role=tab]]:whitespace-nowrap"
+                aria-label={navigationLabel}
+              >
+                {@render navigation()}
+              </Tabs.List>
+            </Tabs.Root>
+          </div>
         </div>
       </div>
     {/if}

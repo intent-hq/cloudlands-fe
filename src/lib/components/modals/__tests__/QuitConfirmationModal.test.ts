@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 import type { QuitConfirmationShowPayload } from '$shared/ipc/quit-confirmation';
@@ -131,10 +131,17 @@ describe('QuitConfirmationModal', () => {
 
     render(QuitConfirmationModal, { props: { open: true, payload: FULL_PAYLOAD, onRespond } });
 
-    const dialogEl = await screen.findByRole('alertdialog', { name: 'Quit Intent?' });
-    await fireEvent.click(dialogEl.parentElement!);
+    await screen.findByRole('alertdialog', { name: 'Quit Intent?' });
+    const overlay = document.querySelector('[data-slot="dialog-overlay"]')!;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await fireEvent.pointerDown(overlay, {
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+      pointerType: 'mouse',
+    });
 
-    expect(onRespond).toHaveBeenCalledExactlyOnceWith(false);
+    await waitFor(() => expect(onRespond).toHaveBeenCalledExactlyOnceWith(false));
   });
 
   it('renders nothing when closed or without payload', async () => {

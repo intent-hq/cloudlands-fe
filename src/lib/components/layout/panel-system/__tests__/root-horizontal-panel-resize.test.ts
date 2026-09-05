@@ -127,7 +127,7 @@ function splitHandle(index: number): HTMLButtonElement {
   const root = document.querySelector<HTMLElement>('.panel-split-container.horizontal')!;
   return Array.from(
     root.querySelectorAll<HTMLButtonElement>(
-      ':scope > .panel-split-handle-wrapper > button[data-resize-axis="x"]',
+      ':scope > .panel-split-handle-wrapper > div > button[data-resize-axis="x"]',
     ),
   )[index];
 }

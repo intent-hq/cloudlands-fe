@@ -5,7 +5,7 @@
   import { Button } from '$lib/components/ui/button';
   import TipTapEditor from '$lib/components/chat/input/TipTapEditor.svelte';
   import type { Workspace } from '$shared/types';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import InitialsAvatar from './InitialsAvatar.svelte';
   import { faEdit, faCheck, faTimes } from '@fortawesome/free-solid-svg-icons';
   import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
@@ -248,8 +248,8 @@
       </div>
       {#if showActions && !isCollapsed}
         <div
-          class="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto focus-within:pointer-events-auto transition-opacity duration-150"
-          transition:slide={{ axis: 'y', duration: 200 }}
+          class="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto focus-within:pointer-events-auto transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
+          transition:slide={{ axis: 'y', tier: 'moderate' }}
         >
           <!-- Edit -->
           {#if comment.status === 'open'}
@@ -338,10 +338,10 @@
           <div class="line-clamp-3 whitespace-pre-wrap wrap-break-word">
             {commentText}
           </div>
-          <button
+          <Button
             class="block text-sm text-muted-foreground hover:text-foreground underline underline-offset-2"
             onclick={() => (expanded = true)}
-            type="button">{m.tiptap_comment_more_label()}</button
+            type="button">{m.tiptap_comment_more_label()}</Button
           >
         {/if}
       </div>
@@ -357,7 +357,7 @@
 
     <!-- Agent link for session comments -->
     {#if isSessionCommentWithAgent(comment)}
-      <button
+      <Button
         onclick={(e) => {
           const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
           const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
@@ -377,7 +377,7 @@
         type="button"
       >
         {m.tiptap_comment_viewAgent_label()}
-      </button>
+      </Button>
     {/if}
   </div>
 </div>

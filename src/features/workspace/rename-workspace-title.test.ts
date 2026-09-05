@@ -23,8 +23,8 @@ vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { update: mocks.update },
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { error: mocks.toastError },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: mocks.toastError },
 }));
 
 import { renameWorkspaceTitle } from './rename-workspace-title';

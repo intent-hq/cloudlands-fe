@@ -203,14 +203,14 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('mountedLauncherRect ?? launcherRects.get(tabId)');
     expect(sidebar).toContain('launcherRect.left - cardRect.left');
     expect(sidebar).toContain('launcherRect.width / cardRect.width');
-    expect(sidebar).toContain('duration: 300');
+    expect(sidebar).toContain('duration: spring.slow.settleMs');
     expect(sidebar).toContain('transform-origin: top left');
     expect(sidebar).toContain('getFixedContainingBlockOffset(node)');
     expect(sidebar).toContain('position: fixed; left: ${fixedLeft}px');
-    expect(sidebar).toContain("direction === 'expand' ? cubicOut(t) : cubicIn(t)");
+    expect(sidebar).toContain('spring.slow.exit.easing(t)');
     expect(sidebar).toContain('(t - 0.72) / 0.28');
     expect(sidebar).toContain('data-sidebar-expanded-content');
-    expect(sidebar).toContain("window.matchMedia('(prefers-reduced-motion: reduce)').matches");
+    expect(sidebar).toContain('prefersReducedMotion()');
     expect(transitions).toContain('opacity: var(--sidebar-card-content-opacity, 1)');
     expect(transitions).not.toContain('grid-template-rows');
     expect(transitions).not.toContain('::view-transition');
@@ -220,8 +220,8 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
 
     expect(sidebar).toContain('function launcherGridReveal(_node: Element)');
-    expect(sidebar).toContain('delay: 210');
-    expect(sidebar).toContain('duration: 90');
+    expect(sidebar).toContain('delay: spring.moderate.settleMs');
+    expect(sidebar).toContain('duration: spring.fast.settleMs');
     expect(sidebar).toContain('in:launcherGridReveal|global');
   });
 

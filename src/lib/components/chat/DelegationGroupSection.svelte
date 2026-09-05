@@ -8,8 +8,8 @@
    * stop/cancel actions, an avatar strip when collapsed, and the group's
    * agent cards when expanded.
    */
-  import { fade } from 'svelte/transition';
-  import { safeSlide } from '$lib/utils/animations';
+  import { crispOut, spring, springIn } from '$lib/motion';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import { flip } from 'svelte/animate';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import {
@@ -98,10 +98,12 @@
     class="flex min-h-9 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-3 py-2 {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
     data-testid="delegation-group-header"
   >
-    <button
+    <Button
       type="button"
-      class="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      class:text-warning={deliveryPending}
+      variant="plain"
+      class="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring {deliveryPending
+        ? 'text-warning'
+        : ''}"
       data-testid="group-summary-toggle"
       aria-expanded={!isCollapsed}
       aria-controls={agentListId}
@@ -127,14 +129,15 @@
                 })}
         </span>
       {/if}
-    </button>
+    </Button>
 
     <!-- Inline agent avatars when collapsed -->
     {#if isCollapsed}
       <div
         class="min-w-0 shrink overflow-hidden"
         data-testid="group-avatar-strip"
-        transition:fade={{ duration: 150 }}
+        in:springIn={{ tier: 'fast', y: 0, scale: 1 }}
+        out:crispOut={{ tier: 'fast' }}
       >
         {#snippet delegationAvatar(item: AgentAvatarStackItem)}
           <InlineAgentAvatar
@@ -204,8 +207,11 @@
         </Tooltip.Provider>
       {/if}
     </div>
-    <button
+    <Button
       type="button"
+      variant="ghost-light"
+      size="icon-xs"
+      iconOnly
       class="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-ghost transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       data-testid="group-collapse-toggle"
       aria-expanded={!isCollapsed}
@@ -225,7 +231,7 @@
             : ''}"
         />
       </span>
-    </button>
+    </Button>
   </div>
 
   <!-- Agent cards - shown when expanded -->
@@ -239,8 +245,8 @@
       {#each orderedAgentIds.slice(0, 5) as agentId (agentId)}
         <div
           class="w-full min-w-0 max-w-full overflow-hidden border-t border-border pt-0.5 first:border-t-0 first:pt-0"
-          animate:flip={{ duration: 200 }}
-          transition:safeSlide={{ axis: 'y', duration: 200 }}
+          animate:flip={{ duration: spring.moderate.settleMs }}
+          transition:safeDisclosureTransition={{ tier: 'moderate' }}
         >
           <AgentCard
             {agentId}

@@ -12,7 +12,7 @@
    * automatic deliveries leave it pending.
    */
   import { writable } from 'svelte/store';
-  import { safeSlide } from '$lib/utils/animations';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import Fa from 'svelte-fa';
   import { faCommentDots, faCircleExclamation } from '@fortawesome/free-solid-svg-icons';
   import { selectAgentAttentionRequest } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -38,7 +38,7 @@
   <div
     class="mt-6 w-full font-family-child"
     data-testid="attention-request-banner"
-    transition:safeSlide={{ axis: 'y', duration: 200 }}
+    transition:safeDisclosureTransition={{ tier: 'moderate' }}
   >
     <div class="flex flex-col gap-1 px-3 py-1.5 text-sm">
       <div class="flex items-start justify-between gap-3" data-testid="attention-request-header">

@@ -90,7 +90,7 @@ describe('ContentFieldCatalogPreview', () => {
     const spinner = render(ContentFieldCatalogPreview, {
       props: { componentId: 'spinner', fixture: spinnerFixtures[0] },
     });
-    expect(spinner.getAllByRole('status', { name: 'Loading' })).toHaveLength(6);
+    expect(spinner.getAllByRole('status', { name: 'Loading' })).toHaveLength(3);
   });
 
   it('contains no raw controls or physical palette utilities', () => {

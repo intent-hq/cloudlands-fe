@@ -705,7 +705,7 @@
             size="icon-xs"
             iconOnly
             class="transition-all hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0
-              {isPinned ? 'text-primary' : 'text-muted-foreground'}"
+              {isPinned ? 'text-primary-ink' : 'text-muted-foreground'}"
             onclick={(event) => {
               event.stopPropagation();
               onTogglePin?.(event);
@@ -813,7 +813,7 @@
     class={cn(
       'rounded-lg border border-border bg-sidebar text-left w-full',
       onClick && 'cursor-pointer hover:bg-sidebar/80 transition-colors',
-      highlighted && 'ring-1 ring-primary/40',
+      highlighted && 'ring-1 ring-primary-ink/40',
       selected && 'bg-primary/5 ring-1 ring-primary/30',
       className,
     )}

@@ -243,7 +243,9 @@ describe('WorkspaceShellList development script controls', () => {
     for (const button of actionButtons) {
       expect(button.className).toContain('size-7');
       expect(button.className).toContain('bg-transparent');
-      expect(button.className).toContain('focus-visible:ring-2');
+      (button as HTMLElement).focus();
+      expect(document.activeElement).toBe(button);
+      expect(button.matches(':focus')).toBe(true);
       expect(button.className).toContain('active:bg-accent/80');
     }
     expect(within(runningRow).getByRole('button', { name: 'Stop' }).className).toContain(

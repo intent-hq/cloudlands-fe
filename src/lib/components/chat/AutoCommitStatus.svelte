@@ -14,6 +14,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { Button } from '$lib/components/ui/button';
 
   export type CommitStatus =
     | { state: 'committing' }
@@ -48,13 +49,14 @@
           <Fa icon={faCodeCommit} class="text-ghost" size="xs" />
           <span class="truncate min-w-0 text-left flex-1">
             {m.chat_autoCommitStatus_committed_label()}
-            <button
+            <Button
+              variant="plain"
               onclick={handleOpenCommitChangeset}
               class="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               title={status.message}
             >
               {status.message}
-            </button>
+            </Button>
             <span class="text-subtle">
               {status.fileCount === 1
                 ? m.chat_autoCommitStatus_fileCount_one({ count: formatInteger(status.fileCount) })

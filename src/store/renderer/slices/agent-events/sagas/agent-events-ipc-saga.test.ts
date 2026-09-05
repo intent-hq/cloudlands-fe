@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
 vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigate }));
-vi.mock('svelte-sonner', () => ({ toast: { warning: mocks.warning, error: mocks.error } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { warning: mocks.warning, error: mocks.error } }));
 
 import { agentEventsIpcSaga } from './agent-events-ipc-saga';
 

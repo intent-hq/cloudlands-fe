@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
     faTimesCircle,
@@ -98,7 +99,7 @@
 
 <div class="my-3 rounded-lg border {config.borderColor} {config.bgColor} overflow-hidden">
   {#if collapsible}
-    <button
+    <Button
       class="w-full px-4 py-3 flex items-start gap-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
       onclick={() => (isExpanded = !isExpanded)}
     >
@@ -118,7 +119,7 @@
         size="sm"
         class="text-subtle flex-shrink-0 mt-1"
       />
-    </button>
+    </Button>
 
     {#if isExpanded}
       <div class="px-4 pb-3 border-t {config.borderColor} pt-3">
@@ -165,7 +166,7 @@
             <!-- Docs link -->
             <a
               href={svelteErrorInfo.docsUrl}
-              class="inline-flex items-center gap-2 text-xs text-primary hover:underline"
+              class="inline-flex items-center gap-2 text-xs text-primary-ink hover:underline"
               onclick={(e) => {
                 e.preventDefault();
                 handleLink(svelteErrorInfo.docsUrl, { workspaceId, event: e });

@@ -1,6 +1,5 @@
 <script lang="ts">
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import { Button, Switch } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { legacyImportRequested } from '$store/renderer/slices/legacy-import/legacy-import-slice';
@@ -72,15 +71,12 @@
         </p>
         <p class="text-xs text-subtle mt-0.5">{m.settings_legacyImport_overwrite_description()}</p>
       </div>
-      <Toggle
-        variant="indicator"
+      <Switch
         size="xs"
-        pressed={overwrite}
+        checked={overwrite}
         disabled={$loading}
         ariaLabel={m.settings_legacyImport_overwrite_ariaLabel()}
-        onLabel={m.settings_legacyImport_on_label()}
-        offLabel={m.settings_legacyImport_off_label()}
-        onChange={(value) => (overwrite = value === true)}
+        onCheckedChange={(checked) => (overwrite = checked)}
       />
     </div>
   </section>

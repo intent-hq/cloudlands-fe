@@ -1,72 +1,109 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
   import type { HTMLTextareaAttributes } from 'svelte/elements';
+  import { InputMessage } from '$lib/components/ui/input-message';
+  import { useSize, type UiSize } from '$lib/components/ui/size-context';
+  import { textEntryControlClasses, textEntryFocusResetClasses } from '../text-entry';
 
   interface Props extends HTMLTextareaAttributes {
+    ref?: HTMLTextAreaElement | null;
     value?: string;
     doesExpandToFit?: boolean;
+    autoResize?: boolean;
     minHeight?: number;
     maxHeight?: number;
     noFocusStyle?: boolean;
+    size?: UiSize;
+    message?: string;
+    error?: string;
+    messageId?: string;
     class?: string;
   }
 
+  const uid = $props.id();
+  const contextSize = useSize();
+
   let {
+    ref = $bindable(),
+    id,
     class: className,
     value = $bindable(),
     doesExpandToFit = false,
+    autoResize = false,
     minHeight = 80,
     maxHeight = 400,
     noFocusStyle = false,
+    size,
+    message,
+    error,
+    messageId = `${uid}-message`,
+    'aria-describedby': ariaDescribedBy,
+    'aria-invalid': ariaInvalid,
     ...restProps
   }: Props = $props();
 
-  let textareaElement = $state<HTMLTextAreaElement | undefined>(undefined);
+  const resolvedSize = $derived(size ?? contextSize);
+  const shouldAutoResize = $derived(autoResize || doesExpandToFit);
+  const visibleMessage = $derived(error ?? message);
+  const describedBy = $derived(
+    [ariaDescribedBy, visibleMessage ? messageId : undefined].filter(Boolean).join(' ') ||
+      undefined,
+  );
+  const invalid = $derived(error ? true : ariaInvalid);
 
   export function focus() {
-    textareaElement?.focus();
+    ref?.focus();
   }
 
   export function blur() {
-    textareaElement?.blur();
+    ref?.blur();
   }
 
   function adjustHeight() {
-    if (!doesExpandToFit || !textareaElement) return;
+    if (!shouldAutoResize || !ref) return;
 
     // Reset height to auto to get the correct scrollHeight
-    textareaElement.style.height = 'auto';
+    ref.style.height = 'auto';
 
     // Calculate the new height, clamped between min and max
-    const newHeight = Math.min(Math.max(textareaElement.scrollHeight, minHeight), maxHeight);
-    textareaElement.style.height = `${newHeight}px`;
+    const newHeight = Math.min(Math.max(ref.scrollHeight, minHeight), maxHeight);
+    ref.style.height = `${newHeight}px`;
 
     // Add overflow-y auto only if content exceeds max height
-    textareaElement.style.overflowY = textareaElement.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    ref.style.overflowY = ref.scrollHeight > maxHeight ? 'auto' : 'hidden';
   }
 
   // Adjust height when value changes
   $effect(() => {
-    if (doesExpandToFit && textareaElement && value !== undefined) {
+    if (shouldAutoResize && ref && value !== undefined) {
       adjustHeight();
     }
   });
 </script>
 
 <textarea
-  bind:this={textareaElement}
+  bind:this={ref}
+  {id}
+  data-slot="textarea"
+  data-size={resolvedSize}
   bind:value
-  oninput={doesExpandToFit ? adjustHeight : undefined}
+  oninput={shouldAutoResize ? adjustHeight : undefined}
+  aria-describedby={describedBy}
+  aria-invalid={invalid}
   class={cn(
-    'type-body border-border bg-card text-foreground placeholder:text-muted-foreground/70 flex w-full rounded-(--radius-medium) border px-3 py-2 shadow-(--elevation-raised) outline-none transition-[border-color,background-color,box-shadow] duration-(--motion-fast) hover:border-input read-only:bg-muted/30 read-only:text-muted-foreground read-only:hover:border-border disabled:cursor-not-allowed disabled:bg-muted/40 disabled:opacity-60 disabled:hover:border-border aria-invalid:border-danger aria-invalid:ring-1 aria-invalid:ring-danger/25 motion-reduce:transition-none',
-    doesExpandToFit ? 'resize-none overflow-hidden' : 'min-h-20',
-    noFocusStyle
-      ? 'focus-visible:outline-none focus-visible:ring-0'
-      : 'focus-visible:border-ring focus-visible:outline-none focus-visible:ring-0',
+    'type-caption text-foreground placeholder:text-muted-foreground/70 flex w-full rounded-(--radius-medium) border px-3',
+    textEntryControlClasses,
+    resolvedSize === 'compact' ? 'py-1.5' : 'py-2',
+    shouldAutoResize ? 'resize-none overflow-hidden' : 'min-h-20',
+    noFocusStyle && textEntryFocusResetClasses,
     className,
   )}
-  style={doesExpandToFit ? `min-height: ${minHeight}px; max-height: ${maxHeight}px` : undefined}
+  style={shouldAutoResize ? `min-height: ${minHeight}px; max-height: ${maxHeight}px` : undefined}
   autocorrect="off"
   autocapitalize="off"
   spellcheck="false"
   {...restProps}></textarea>
+
+{#if visibleMessage}
+  <InputMessage id={messageId} tone={error ? 'error' : 'helper'}>{visibleMessage}</InputMessage>
+{/if}

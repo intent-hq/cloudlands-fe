@@ -1,7 +1,7 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { onMount, onDestroy, untrack } from 'svelte';
-  import { fly } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fly, spring } from '$lib/motion';
   import {
     requestResizablePanelSize,
     setResizablePanelSize,
@@ -47,7 +47,7 @@
 
     // Animation props
     animateOnMount = false,
-    animationDuration = 300,
+    animationDuration: _animationDuration = spring.slow.settleMs,
     disableWidthTransition = false,
     onWidthChange,
     onResizeStart,
@@ -888,9 +888,9 @@
   <div
     bind:this={panelElement}
     transition:fly={{
-      x: animateOnMount ? (side === 'right' ? actualWidth : -actualWidth) : 0,
-      duration: animateOnMount ? animationDuration : 0,
-      easing: cubicOut,
+      axis: 'x',
+      distance: animateOnMount ? (side === 'right' ? actualWidth : -actualWidth) : 0,
+      tier: 'slow',
     }}
     class="relative shrink-0 {isResizing || disableWidthTransition
       ? ''
@@ -916,7 +916,7 @@
     <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
 
     {#if !doSkipResize}
-      <button
+      <Button
         type="button"
         class="absolute top-0 {side === 'left'
           ? '-right-2'
@@ -927,11 +927,10 @@
         onmousedown={startResize}
         ondblclick={handleDoubleClick}
         onkeydown={handleHandleKeydown}
-        tabindex="0"
+        tabindex={0}
         aria-label={m.layout_resizable_resizePanel_ariaLabel()}
         title={m.layout_resizable_dragToResize_tooltip()}
-      >
-      </button>
+      ></Button>
     {/if}
   </div>
 {:else}
@@ -946,7 +945,7 @@
   >
     {#if !doSkipResize}
       <!-- Resize handle -->
-      <button
+      <Button
         type="button"
         class="{edge === 'top'
           ? 'absolute -top-2'
@@ -956,11 +955,10 @@
         onmousedown={startResize}
         ondblclick={handleDoubleClick}
         onkeydown={handleHandleKeydown}
-        tabindex="0"
+        tabindex={0}
         aria-label={m.layout_resizable_resizePanelHeight_ariaLabel()}
         title={m.layout_resizable_dragToResizeHeight_tooltip()}
-      >
-      </button>
+      ></Button>
     {/if}
 
     <!-- Panel content slot -->
@@ -978,21 +976,21 @@
      as PanelSplitHandle.svelte); the trailing half keeps the forgiving
      target. Note inset() sides are physical, not logical: under RTL the
      leading edge would flip to the right, but all shipped locales are LTR. */
-  .resizable-panel-handle[data-resize-axis='x'] {
+  :global(.resizable-panel-handle[data-resize-axis='x']) {
     clip-path: inset(0 0 0 8px);
   }
 
   /* Nudge the 2px indicator off the boundary center so the clip leaves it
      fully visible instead of a 1px sliver. */
-  .resizable-panel-handle.app-resize-handle[data-resize-axis='x']::before {
+  :global(.resizable-panel-handle.app-resize-handle[data-resize-axis='x'])::before {
     left: calc(50% + 1px);
   }
 
-  .resizable-panel-handle[data-resize-axis='y'] {
+  :global(.resizable-panel-handle[data-resize-axis='y']) {
     clip-path: inset(8px 0 0 0);
   }
 
-  .resizable-panel-handle.app-resize-handle[data-resize-axis='y']::before {
+  :global(.resizable-panel-handle.app-resize-handle[data-resize-axis='y'])::before {
     top: calc(50% + 1px);
   }
 </style>

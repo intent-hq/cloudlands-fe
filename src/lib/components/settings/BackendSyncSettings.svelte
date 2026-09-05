@@ -15,7 +15,7 @@
 
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { Switch } from '$lib/components/ui/switch';
+  import { Switch } from '$lib/components/patterns/settings/custom-controls';
   import { store as appStore } from '$store/renderer/store';
   import { selectKeychainSyncState } from '$store/renderer/slices/connections/connections-selectors';
   import {

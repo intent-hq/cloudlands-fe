@@ -10,10 +10,11 @@
   let { children }: Props = $props();
 
   const activeSlug = $derived((page.params as { slug?: string }).slug);
+  const activePath = $derived(page.url.pathname);
 </script>
 
 <svelte:head>
   <title>Component sandbox</title>
 </svelte:head>
 
-<CatalogShell {activeSlug}>{@render children?.()}</CatalogShell>
+<CatalogShell {activeSlug} {activePath}>{@render children?.()}</CatalogShell>

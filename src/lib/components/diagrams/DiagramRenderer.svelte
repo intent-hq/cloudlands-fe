@@ -12,8 +12,7 @@
   import DiagramEdge from './DiagramEdge.svelte';
   import DiagramGroup from './DiagramGroup.svelte';
   import DiagramControls from './DiagramControls.svelte';
-  import { fade, fly } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fade, fly } from '$lib/motion';
 
   interface Props {
     diagram: DiagramPrimitive;
@@ -509,7 +508,7 @@
             <path
               d="M 3 1 L 8 5 L 3 9"
               fill="none"
-              stroke="hsl(var(--danger) / 0.8)"
+              stroke="hsl(var(--destructive) / 0.8)"
               stroke-width="1.5"
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -629,7 +628,7 @@
           <!-- Groups (background) -->
           {#if visibleGroups}
             {#each visibleGroups as group (group.id)}
-              <g transition:fade={{ duration: 200 }}>
+              <g transition:fade={{ tier: 'moderate' }}>
                 <DiagramGroup
                   {group}
                   dimmed={hoveredGroupId !== null && hoveredGroupId !== group.id}
@@ -676,7 +675,7 @@
                 width={labelPos.width}
                 height={labelPos.height}
                 class="edge-label-container {isDimmed ? 'edge-label-dimmed' : ''}"
-                transition:fade={{ duration: 300 }}
+                transition:fade={{ tier: 'slow' }}
               >
                 <div class="edge-label-html">
                   {edge.label}
@@ -701,12 +700,11 @@
               width={node.width}
               height={node.height}
               in:fly={{
-                y: stateJustChanged ? -20 : 0,
-                duration: stateJustChanged ? 400 : 0,
-                easing: cubicOut,
-                opacity: 0,
+                axis: 'y',
+                distance: stateJustChanged ? -20 : 0,
+                tier: 'slow',
               }}
-              out:fade={{ duration: 200 }}
+              out:fade={{ tier: 'moderate' }}
             >
               <DiagramNodeHTML
                 {node}
@@ -785,7 +783,7 @@
   :global(.edge-label-container) {
     pointer-events: none;
     overflow: visible;
-    transition: opacity 0.2s ease;
+    transition: opacity var(--spring-moderate) var(--spring-moderate-ease);
     /* Ensure foreignObject is visible */
     display: block;
   }
@@ -796,7 +794,7 @@
 
   /* Edge path drawing animation */
   :global(.edge-draw-in path) {
-    animation: drawPath 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    animation: drawPath var(--motion-slow) var(--spring-slow-ease) forwards;
   }
 
   @keyframes drawPath {

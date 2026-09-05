@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Button } from '$lib/components/ui/button';
+  import { Button } from '$lib/components/patterns/settings/custom-controls';
+  import { ListView } from '$lib/components/patterns/collection';
   import { Fa } from 'svelte-fa';
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
@@ -78,34 +79,38 @@
     </p>
   </div>
 
-  {#if !$loaded$}
-    <p
-      class="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground"
-      role="status"
-    >
-      {m.settings_devices_loading_label()}
-    </p>
-  {:else}
-    {#if $connections$.length > 0}
-      <div class="flex flex-col overflow-hidden rounded-xl bg-card divide-y divide-border">
-        {#each $connections$ as device (device.id)}
-          <DeviceRow
-            {device}
-            panelMode={activeDeviceId === device.id ? activePanel : null}
-            onOpenPanel={(panel) => openPanel(device.id, panel)}
-            onClosePanel={closePanel}
-            onRequestRemove={requestRemove}
-          />
-        {/each}
-      </div>
-    {/if}
-    {#if $connections$.length === 0}
+  <ListView
+    items={$connections$}
+    getKey={(device) => device.id}
+    getText={(device) => device.label}
+    status={$loaded$ ? 'ready' : 'loading'}
+    ariaLabel={m.settings_devices_title()}
+    class="overflow-hidden rounded-xl bg-card"
+  >
+    {#snippet row({ item: device })}
+      <DeviceRow
+        {device}
+        panelMode={activeDeviceId === device.id ? activePanel : null}
+        onOpenPanel={(panel) => openPanel(device.id, panel)}
+        onClosePanel={closePanel}
+        onRequestRemove={requestRemove}
+      />
+    {/snippet}
+    {#snippet loading()}
+      <p
+        class="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground"
+        role="status"
+      >
+        {m.settings_devices_loading_label()}
+      </p>
+    {/snippet}
+    {#snippet empty()}
       <div class="rounded-xl border border-dashed border-border bg-card p-8 text-center">
         <p class="text-sm font-medium text-foreground">{m.settings_devices_empty_title()}</p>
         <p class="mt-1 text-sm text-muted-foreground">{m.settings_devices_empty_description()}</p>
       </div>
-    {/if}
-  {/if}
+    {/snippet}
+  </ListView>
 
   <div class="flex justify-end">
     <Button variant="ghost" size="sm" onclick={() => (connectModalOpen = true)}>

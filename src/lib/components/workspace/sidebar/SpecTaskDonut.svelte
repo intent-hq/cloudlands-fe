@@ -49,7 +49,7 @@
           stroke-dasharray={circumference}
           stroke-dashoffset={inProgressOffset}
           stroke-linecap="round"
-          class="text-primary"
+          class="text-primary-ink"
           style="transform-origin: center; transform: rotate({completedPct * 360}deg);"
         />
       {/if}

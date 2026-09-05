@@ -1,6 +1,14 @@
 <script lang="ts">
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
   import { cn } from '$lib/utils.js';
+  import ListHighlight from './menu-list-highlight.svelte';
+  import { menuOverlay } from './menu-recipes';
+  import {
+    clampSurface,
+    setSurface,
+    surfaceClasses,
+    useSurface,
+  } from '$lib/components/ui/surface-context';
 
   const uid = $props.id();
 
@@ -11,6 +19,7 @@
     portal = true,
     portalProps,
     sideOffset = 4,
+    children,
     ...restProps
   }: MenuPrimitive.SubContentProps & {
     portal?: boolean;
@@ -22,11 +31,13 @@
   // in menu-content.svelte. The differing var names are intentional.
   const maxHeight = 'var(--bits-menu-content-available-height, calc(100dvh - 1rem))';
 
+  const surface = clampSurface(useSurface() + 2);
+  setSurface(surface);
   const contentClass = $derived(
     cn(
-      'type-body z-(--layer-popover) min-w-40 overflow-y-auto overscroll-contain rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none focus-visible:border-input focus-visible:ring-3 focus-visible:ring-ring/50',
-      'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0',
-      'duration-[var(--motion-fast)] motion-reduce:animate-none motion-reduce:transition-none',
+      menuOverlay(),
+      surfaceClasses(surface),
+      'min-w-40 overflow-y-auto overscroll-contain p-1',
       className,
     ),
   );
@@ -42,20 +53,28 @@
       bind:ref
       {id}
       data-slot="menu-sub-content"
+      data-surface-level={surface}
       class={contentClass}
       {sideOffset}
       style="max-height: {maxHeight}"
       {...restProps}
-    />
+    >
+      <ListHighlight />
+      {@render children?.()}
+    </MenuPrimitive.SubContent>
   </MenuPrimitive.Portal>
 {:else}
   <MenuPrimitive.SubContent
     bind:ref
     {id}
     data-slot="menu-sub-content"
+    data-surface-level={surface}
     class={contentClass}
     {sideOffset}
     style="max-height: {maxHeight}"
     {...restProps}
-  />
+  >
+    <ListHighlight />
+    {@render children?.()}
+  </MenuPrimitive.SubContent>
 {/if}

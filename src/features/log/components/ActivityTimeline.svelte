@@ -34,7 +34,8 @@
   } from '$store/renderer/slices/workspace-events/workspace-events-selectors';
 
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { slide } from 'svelte/transition';
+  import { Button } from '$lib/components/ui/button';
+  import { slide } from '$lib/motion';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import EntityChip from './EntityChip.svelte';
@@ -220,7 +221,7 @@
 
           <div
             class="relative group flex items-start gap-2 py-1.5"
-            transition:slide={{ duration: 200 }}
+            transition:slide={{ tier: 'moderate' }}
           >
             <!-- Timeline indicator (icon) with background to cover line -->
             <div class="relative flex items-center justify-center w-3 mt-[3.5px]">
@@ -230,7 +231,7 @@
             </div>
 
             <!-- Content -->
-            <button
+            <Button
               class="flex-1 min-w-0 text-left group/item hover:bg-muted/30 rounded-md -ml-1 pl-1 py-0.5 transition-colors"
               onclick={(e) => {
                 const eventType = event.type as string;
@@ -298,23 +299,23 @@
               {#if isExpanded}
                 <div
                   class="mt-2 p-2 rounded-md bg-muted/40 text-xs font-mono text-subtle overflow-auto max-h-[40em] border border-border"
-                  transition:slide={{ duration: 150 }}
+                  transition:slide={{ tier: 'moderate' }}
                 >
                   <pre>{JSON.stringify(event, null, 2)}</pre>
                 </div>
               {/if}
-            </button>
+            </Button>
 
             <!-- Agent avatar -->
             {#if isAgent && event.actor?.id}
-              <button
+              <Button
                 type="button"
-                class="shrink-0 -my-1 p-0.5 rounded-full hover:bg-muted/50 hover:ring-2 hover:ring-primary/20 transition-[background-color,box-shadow] cursor-pointer"
+                class="shrink-0 -my-1 p-0.5 rounded-full hover:bg-muted/50 hover:ring-2 hover:ring-primary-ink/20 transition-[background-color,box-shadow] cursor-pointer"
                 onclick={(e) => onShowAgent?.(event.actor.id!, e)}
                 title={m.log_timeline_openAgent_tooltip()}
               >
                 <AgentAvatar variant="emphasized" agentId={event.actor.id} />
-              </button>
+              </Button>
             {/if}
           </div>
         {/each}

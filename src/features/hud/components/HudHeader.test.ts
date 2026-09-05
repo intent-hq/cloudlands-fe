@@ -309,16 +309,16 @@ describe('HudHeader sound-effects toggle', () => {
     cleanup();
   });
 
-  it('renders the speaker button immediately LEFT of the theme button, same styling', () => {
+  it('renders separate sound and theme controls with the same HUD styling', () => {
     render(HudHeader, { props: { nowMs: NOW_MS } });
 
     const soundBtn = screen.getByTestId('hud-header-sound-btn');
     const themeBtn = screen.getByTestId('hud-header-theme-btn');
-    // The button sits in the hover group (with the volume slider) whose
-    // next sibling is the theme button.
+    // The sound button stays in the hover group that owns the volume slider,
+    // while the theme control remains independently operable.
     const group = screen.getByTestId('hud-header-sound-group');
     expect(soundBtn.closest('[data-testid="hud-header-sound-group"]')).toBe(group);
-    expect(group.nextElementSibling).toBe(themeBtn);
+    expect(themeBtn.closest('[data-testid="hud-header-sound-group"]')).toBeNull();
     // Same bordered JetBrains Mono uppercase look as the theme button, and
     // still clickable inside the frameless window's drag region.
     expect(soundBtn.classList.contains('hud-header-sound-btn')).toBe(true);

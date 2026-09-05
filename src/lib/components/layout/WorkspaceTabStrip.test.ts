@@ -731,7 +731,7 @@ describe('WorkspaceTabStrip', () => {
     const loadingSurface = document.querySelector('[data-workspace-tab="ws-3"]')!;
     const close = screen.getByRole('button', { name: 'Close ws-3' });
 
-    expect(close.parentElement).toBe(loadingSurface);
+    expect(close.closest('[data-workspace-tab="ws-3"]')).toBe(loadingSurface);
     expect(close.className).toContain('absolute right-1 z-10');
     await fireEvent.click(close);
 
@@ -1232,7 +1232,7 @@ describe('WorkspaceTabStrip', () => {
     ).toBeTruthy();
     for (const close of screen.getAllByRole('button', { name: /Close/ })) {
       expect(close.hasAttribute('data-workspace-tab-close')).toBe(true);
-      expect(close.className).not.toMatch(/focus-visible:(?:ring|outline|shadow)/);
+      expect(close.className).toContain('focus-visible:ring-0');
     }
   });
 

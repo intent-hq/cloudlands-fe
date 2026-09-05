@@ -11,7 +11,7 @@
     faArrowUpRightFromSquare,
     faCheck,
   } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { parseAgentTypeId } from '$shared/types/agent.types';
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
 
@@ -66,7 +66,7 @@
   async function runAction() {
     if (!primitive || running) return;
     if (!workspaceId) {
-      toast.error(m.notes_agentActionBlock_noWorkspace_error());
+      notify.error(m.notes_agentActionBlock_noWorkspace_error());
       return;
     }
     running = true;
@@ -119,7 +119,7 @@
         });
       }
 
-      toast.success(m.notes_agentActionBlock_started_label());
+      notify.success(m.notes_agentActionBlock_started_label());
     } catch (err) {
       const errorMessage = getErrorMessage(err);
       logger.error('[runAction] Error running agent action', {
@@ -146,7 +146,7 @@
         });
       }
 
-      toast.error(errorMessage);
+      notify.error(errorMessage);
     }
   }
 
@@ -188,14 +188,14 @@
     >
       {#if linkedAgentId}
         <!-- Show agent avatar that opens the agent panel -->
-        <button
+        <Button
           type="button"
           class="shrink-0 rounded-sm transition-opacity hover:opacity-80"
           onclick={(e) => handleOpenAgent(e, linkedAgentId)}
           title={m.notes_agentActionBlock_viewAgent_tooltip()}
         >
           <AgentAvatar agentId={linkedAgentId} variant="compact" />
-        </button>
+        </Button>
       {:else}
         <Fa icon={faRobot} size="sm" class="shrink-0 text-muted-foreground" />
       {/if}

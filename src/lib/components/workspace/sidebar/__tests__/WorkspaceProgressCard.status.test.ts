@@ -100,8 +100,8 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock('svelte-sonner', () => ({
-  toast: { success: mocks.toastSuccess, error: mocks.toastError },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: mocks.toastSuccess, error: mocks.toastError },
 }));
 
 vi.mock('$store/renderer/store', async () => {

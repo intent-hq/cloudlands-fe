@@ -295,7 +295,7 @@
   }
 
   const inputClass =
-    'w-full px-3 py-2 bg-background border border-border rounded text-foreground text-sm focus:outline-none focus:border-primary';
+    'w-full px-3 py-2 bg-background border border-border rounded text-foreground text-sm focus:outline-none focus:border-primary-ink';
 
   function accentLabel(value: ConnectionAccent): string {
     if (value === null) return m.settings_devices_accentNone_label();
@@ -430,7 +430,7 @@
             <label class="text-xs text-subtle" for="connect-host"
               >{m.modals_connect_host_label()}</label
             >
-            <input
+            <Input
               id="connect-host"
               bind:value={host}
               type="text"
@@ -448,7 +448,7 @@
             <label class="text-xs text-subtle" for="connect-port"
               >{m.modals_connect_port_label()}</label
             >
-            <input
+            <Input
               id="connect-port"
               bind:value={port}
               type="text"
@@ -465,7 +465,7 @@
             <label class="text-xs text-subtle" for="connect-token"
               >{m.modals_connect_token_label()}</label
             >
-            <input
+            <Input
               id="connect-token"
               bind:value={token}
               type="password"
@@ -504,7 +504,7 @@
             {m.modals_connect_headless_before()}
             <a
               href={INTENTD_REPO_URL}
-              class="text-primary hover:underline"
+              class="text-primary-ink hover:underline"
               onclick={openIntentdRepo}><!-- i18n-ignore (URL) -->github.com/intent-hq/intentd</a
             >
             {m.modals_connect_headless_after()}

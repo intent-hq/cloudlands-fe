@@ -319,7 +319,7 @@
         <SidebarNav />
       </div>
       <div
-        class="flex min-w-0 self-end items-center gap-1 transition-[margin-left] duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] motion-reduce:transition-none"
+        class="flex min-w-0 self-end items-center gap-1 transition-[margin-left] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
         style:margin-left={`${panelOffset}px`}
         data-titlebar-workspace-controls
       >

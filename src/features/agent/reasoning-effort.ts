@@ -71,8 +71,8 @@ export async function applyReasoningEffort(
   if (current === effort) {
     appStore.dispatch(updateSession(agentId, { reasoningEffort: previousEffort }));
   }
-  const { toast } = await import('svelte-sonner');
-  toast.error(result.error ?? m.chat_effortPicker_updateFailed_error());
+  const { notify } = await import('$lib/components/patterns/notify');
+  notify.error(result.error ?? m.chat_effortPicker_updateFailed_error());
   return false;
 }
 

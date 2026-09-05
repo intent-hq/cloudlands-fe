@@ -455,7 +455,7 @@
       outline-color: transparent;
     }
     50% {
-      outline-color: hsl(var(--primary));
+      outline-color: hsl(var(--primary-ink));
     }
   }
   @media (prefers-reduced-motion: reduce) {

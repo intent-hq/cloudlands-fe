@@ -3,7 +3,7 @@
    * SetupScriptModal - Modal wrapper around SetupScriptEditor
    * Uses local state so changes only apply on Done, and Cancel discards them.
    */
-  import Modal from './Modal.svelte';
+  import { FormDialog } from '$lib/components/patterns/confirm';
   import SetupScriptEditor from '$lib/components/workspace/initializer/SetupScriptEditor.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import type { ProjectType, SetupScriptNameSource } from '$features/setup-scripts';
@@ -44,6 +44,7 @@
   let localScriptNameSource = $state<SetupScriptNameSource>('named');
   let localIsCustomScript = $state(false);
   let editorExpanded = $state(true);
+  let escapeKeydownBehavior = $state<'close' | 'ignore'>('close');
   const localHasUnsavedChanges = $derived(
     localValue !== value ||
       localScriptName !== scriptName ||
@@ -78,9 +79,28 @@
     open = false;
     onClose?.();
   }
+
+  function handleFocusIn(event: FocusEvent) {
+    const target = event.target;
+    escapeKeydownBehavior =
+      target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
+        ? 'ignore'
+        : 'close';
+  }
 </script>
 
-<Modal bind:open title={m.modals_setupScript_title()} contentClass="p-0" onClose={handleCancel}>
+<FormDialog
+  bind:open
+  title={m.modals_setupScript_title()}
+  showCloseButton={false}
+  {escapeKeydownBehavior}
+  onfocusin={handleFocusIn}
+  enterKey="ignore"
+  modEnter="ignore"
+  class="max-w-6xl"
+  onSubmit={handleDone}
+  onCancel={handleCancel}
+>
   <SetupScriptEditor
     {repoPath}
     {githubUrl}
@@ -93,7 +113,7 @@
     bind:isCustomScript={localIsCustomScript}
     contentOnly={true}
   />
-  <div class="flex items-center justify-end gap-3 px-6 py-3 border-t border-border shrink-0">
+  {#snippet footer()}
     <Button variant="ghost" onclick={handleCancel}>{m.modals_setupScript_cancel_label()}</Button>
     {#if localHasUnsavedChanges}
       <Button variant="default" onclick={handleSaveAndDone}>
@@ -102,5 +122,5 @@
     {:else}
       <Button variant="default" onclick={handleDone}>{m.modals_setupScript_done_label()}</Button>
     {/if}
-  </div>
-</Modal>
+  {/snippet}
+</FormDialog>

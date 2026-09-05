@@ -15,7 +15,7 @@
     faChevronRight,
     faWandMagicSparkles,
   } from '@fortawesome/free-solid-svg-icons';
-  import { fly } from 'svelte/transition';
+  import { fly } from '$lib/motion';
   import ReviewCommentCard from './ReviewCommentCard.svelte';
   import type { ReviewComment, ReviewStatus, ReviewSeverity, CodeReview } from './types';
   import { parseAllReviewComments, parseReviewSummary } from './types';
@@ -449,7 +449,7 @@
     <div class="flex flex-col items-center justify-center py-16 px-8 text-center">
       <div
         class="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center mb-4"
-        transition:fly={{ y: 8, duration: 200 }}
+        transition:fly={{ axis: 'y', distance: 8, tier: 'moderate' }}
       >
         <Fa icon={faWandMagicSparkles} class="h-5 w-5 text-subtle" />
       </div>
@@ -469,7 +469,10 @@
   {:else}
     <!-- Agent Status Card (shows while running) -->
     {#if isRunning}
-      <div class="p-4 border-b border-border" transition:fly={{ y: 4, duration: 200 }}>
+      <div
+        class="p-4 border-b border-border"
+        transition:fly={{ axis: 'y', distance: 4, tier: 'moderate' }}
+      >
         <div class="rounded-lg border border-border bg-muted/30 p-3">
           <div class="flex items-center justify-between mb-2">
             <div class="flex items-center gap-2">
@@ -506,7 +509,10 @@
 
     <!-- Error Card (shows when error) -->
     {#if hasError && error}
-      <div class="p-4 border-b border-border" transition:fly={{ y: 4, duration: 200 }}>
+      <div
+        class="p-4 border-b border-border"
+        transition:fly={{ axis: 'y', distance: 4, tier: 'moderate' }}
+      >
         <div
           class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3"
         >
@@ -566,7 +572,10 @@
     <!-- Summary Card (shows when complete) -->
     {#if !isRunning && !hasError && displaySummary}
       <div class="pt-5 px-5">
-        <div class="text-sm text-subtle" transition:fly={{ y: 4, duration: 200 }}>
+        <div
+          class="text-sm text-subtle"
+          transition:fly={{ axis: 'y', distance: 4, tier: 'moderate' }}
+        >
           <MarkdownViewer content={displaySummary} className="prose-sm" />
         </div>
       </div>
@@ -588,7 +597,7 @@
           {#each [1, 2] as i (i)}
             <div
               class="rounded-lg border border-border bg-card shadow-sm overflow-hidden"
-              transition:fly={{ y: 8, duration: 200, delay: i * 100 }}
+              transition:fly={{ axis: 'y', distance: 8, tier: 'moderate' }}
             >
               <!-- Header skeleton -->
               <div class="flex items-center gap-3 px-4 py-3 border-b border-border">
@@ -611,8 +620,8 @@
           {/each}
         {:else}
           <!-- Linear list of comments (GitHub-style cards) -->
-          {#each filteredComments as comment, i (comment.id)}
-            <div transition:fly={{ y: 8, duration: 200, delay: Math.min(i * 30, 300) }}>
+          {#each filteredComments as comment (comment.id)}
+            <div transition:fly={{ axis: 'y', distance: 8, tier: 'moderate' }}>
               <ReviewCommentCard
                 {comment}
                 workspaceId={walkthroughWorkspaceId}

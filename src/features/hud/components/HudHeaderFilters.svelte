@@ -16,6 +16,7 @@
     hudGridFilterStatesCleared,
     hudGridFilterStateToggled,
   } from '$store/renderer/slices/hud/hud-slice';
+  import * as Menu from '$lib/components/ui/menu';
   import { HUD_CARD_STATE_KEYS, type HudCardStateKey } from '$store/renderer/slices/hud/hud-types';
   import { cardStateColor, cardStateLabel } from '../grid/hud-card-meta';
   import { repoOptions, stateCounts } from '../grid/hud-grid-filter';
@@ -42,13 +43,9 @@
     return `oklch(0.55 0.09 ${Math.abs(hash) % 360} / 0.45)`;
   }
 
-  function closeMenus() {
-    repoMenuOpen = false;
-    stateMenuOpen = false;
-  }
   function pickRepo(repo: string | null) {
     appStore.dispatch(hudGridFilterRepoPicked(repo));
-    closeMenus();
+    repoMenuOpen = false;
   }
   function toggleState(stateKey: HudCardStateKey) {
     appStore.dispatch(hudGridFilterStateToggled(stateKey));
@@ -58,108 +55,84 @@
   }
 </script>
 
-<svelte:window onclick={closeMenus} />
-
 <div class="hud-header-filters" data-testid="hud-header-filters">
   <div class="hud-header-filter">
-    <button
-      class="hud-header-filter-btn"
-      aria-label={m.hud_filter_repoMenu_ariaLabel()}
-      aria-expanded={repoMenuOpen}
-      onclick={(event) => {
-        event.stopPropagation();
-        stateMenuOpen = false;
-        repoMenuOpen = !repoMenuOpen;
-      }}
-    >
-      <span class="hud-header-filter-prefix">{m.hud_header_fleetOps_label()}</span>
-      <span class="hud-header-filter-sep"></span>
-      {#if $filter$.repo}
-        <span class="hud-header-filter-avatar" style:background={repoColor($filter$.repo)}>
-          {$filter$.repo[0].toUpperCase()}
-        </span>
-      {/if}
-      <span class="hud-header-filter-label">{repoLabel}</span>
-      <!-- i18n-ignore (glyph) -->
-      <span class="hud-header-filter-caret">▼</span>
-    </button>
-    {#if repoMenuOpen}
-      <div class="hud-header-menu" role="menu">
-        <button class="hud-header-menu-row" role="menuitem" onclick={() => pickRepo(null)}>
+    <Menu.Root bind:open={repoMenuOpen}>
+      <Menu.Trigger class="hud-header-filter-btn" aria-label={m.hud_filter_repoMenu_ariaLabel()}>
+        <span class="hud-header-filter-prefix">{m.hud_header_fleetOps_label()}</span>
+        <span class="hud-header-filter-sep"></span>
+        {#if $filter$.repo}
+          <span class="hud-header-filter-avatar" style:background={repoColor($filter$.repo)}>
+            {$filter$.repo[0].toUpperCase()}
+          </span>
+        {/if}
+        <span class="hud-header-filter-label">{repoLabel}</span>
+        <!-- i18n-ignore (glyph) -->
+        <span class="hud-header-filter-caret">▼</span>
+      </Menu.Trigger>
+      <Menu.Content
+        align="start"
+        sideOffset={6}
+        class="hud-header-menu"
+        aria-label={m.hud_filter_repoMenu_ariaLabel()}
+      >
+        <Menu.Item class="hud-header-menu-row" onSelect={() => pickRepo(null)}>
           <!-- i18n-ignore (glyph) -->
           <span class="hud-header-menu-avatar hud-header-menu-avatar-all">∗</span>
           <span class="hud-header-menu-name">{m.hud_filter_allWorkspaces_label()}</span>
           <span class="hud-header-menu-count">{$cards$.length}</span>
-        </button>
-        <div class="hud-header-menu-sep"></div>
+        </Menu.Item>
+        <Menu.Separator class="hud-header-menu-sep" />
         {#each repos as option (option.repo)}
-          <button
-            class="hud-header-menu-row"
-            class:hud-header-menu-row-active={$filter$.repo === option.repo}
-            role="menuitem"
-            onclick={() => pickRepo(option.repo)}
+          <Menu.Item
+            class={$filter$.repo === option.repo
+              ? 'hud-header-menu-row hud-header-menu-row-active'
+              : 'hud-header-menu-row'}
+            onSelect={() => pickRepo(option.repo)}
           >
             <span class="hud-header-menu-avatar" style:background={repoColor(option.repo)}>
               {option.repo[0].toUpperCase()}
             </span>
             <span class="hud-header-menu-name">{option.repo}</span>
             <span class="hud-header-menu-count">{option.count}</span>
-          </button>
+          </Menu.Item>
         {/each}
-      </div>
-    {/if}
+      </Menu.Content>
+    </Menu.Root>
   </div>
 
   <div class="hud-header-filter">
-    <button
-      class="hud-header-filter-btn"
-      aria-label={m.hud_filter_statusMenu_ariaLabel()}
-      aria-expanded={stateMenuOpen}
-      onclick={(event) => {
-        event.stopPropagation();
-        repoMenuOpen = false;
-        stateMenuOpen = !stateMenuOpen;
-      }}
-    >
-      <span class="hud-header-filter-label">{stateLabel}</span>
-      <!-- i18n-ignore (glyph) -->
-      <span class="hud-header-filter-caret">▼</span>
-    </button>
-    {#if stateMenuOpen}
-      <div class="hud-header-menu" role="menu">
-        <button
-          class="hud-header-menu-row"
-          role="menuitem"
-          onclick={(event) => {
-            event.stopPropagation();
-            clearStates();
-          }}
-        >
+    <Menu.Root bind:open={stateMenuOpen}>
+      <Menu.Trigger class="hud-header-filter-btn" aria-label={m.hud_filter_statusMenu_ariaLabel()}>
+        <span class="hud-header-filter-label">{stateLabel}</span>
+        <!-- i18n-ignore (glyph) -->
+        <span class="hud-header-filter-caret">▼</span>
+      </Menu.Trigger>
+      <Menu.Content
+        align="start"
+        sideOffset={6}
+        class="hud-header-menu"
+        aria-label={m.hud_filter_statusMenu_ariaLabel()}
+      >
+        <Menu.Item class="hud-header-menu-row" onSelect={clearStates}>
           <span class="hud-header-menu-name">{m.hud_filter_allStatuses_label()}</span>
           <span class="hud-header-menu-count">{$cards$.length}</span>
-        </button>
-        <div class="hud-header-menu-sep"></div>
+        </Menu.Item>
+        <Menu.Separator class="hud-header-menu-sep" />
         {#each HUD_CARD_STATE_KEYS as stateKey (stateKey)}
-          <button
+          <Menu.CheckboxItem
             class="hud-header-menu-row"
-            role="menuitemcheckbox"
-            aria-checked={$filter$.states.includes(stateKey)}
-            onclick={(event) => {
-              event.stopPropagation();
-              toggleState(stateKey);
-            }}
+            checked={$filter$.states.includes(stateKey)}
+            closeOnSelect={false}
+            onCheckedChange={() => toggleState(stateKey)}
           >
-            <span
-              class="hud-header-menu-check"
-              class:hud-header-menu-check-on={$filter$.states.includes(stateKey)}
-            ></span>
             <span class="hud-header-menu-swatch" style:background={cardStateColor(stateKey)}></span>
             <span class="hud-header-menu-name">{cardStateLabel(stateKey)}</span>
             <span class="hud-header-menu-count">{counts[stateKey] ?? 0}</span>
-          </button>
+          </Menu.CheckboxItem>
         {/each}
-      </div>
-    {/if}
+      </Menu.Content>
+    </Menu.Root>
   </div>
 </div>
 
@@ -171,18 +144,26 @@
   .hud-header-filter {
     position: relative;
   }
-  .hud-header-filter-btn {
+  :global(.hud-header-filter-btn) {
     display: flex;
     align-items: center;
     gap: 8px;
     cursor: pointer;
     border: 1px solid hsl(var(--border));
     background: transparent;
-    padding: 6px 12px;
+    height: auto;
+    padding: 6px 12px !important;
+    border-radius: 0;
     color: hsl(var(--foreground));
   }
-  .hud-header-filter-btn:hover {
+  :global(.hud-header-filter-btn:hover) {
     background: hsl(var(--muted) / 0.5);
+  }
+  :global(.hud-header-filter-btn > [data-slot='button-content']) {
+    display: contents;
+  }
+  :global(.hud-header-filter-btn > [data-slot='button-surface']) {
+    display: none;
   }
   .hud-header-filter-prefix {
     font:
@@ -228,10 +209,7 @@
       monospace;
     color: hsl(var(--muted-foreground) / 0.65);
   }
-  .hud-header-menu {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
+  :global(.hud-header-menu) {
     min-width: 270px;
     background: hsl(var(--card));
     border: 1px solid hsl(var(--border));
@@ -241,24 +219,25 @@
     display: flex;
     flex-direction: column;
   }
-  .hud-header-menu-sep {
+  :global(.hud-header-menu-sep) {
     height: 1px;
     background: hsl(var(--border) / 0.5);
     margin: 3px 6px;
   }
-  .hud-header-menu-row {
+  :global(.hud-header-menu-row) {
     display: flex;
     align-items: center;
     gap: 9px;
-    padding: 7px 10px;
+    height: auto;
+    padding: 7px 10px !important;
     cursor: pointer;
     border: none;
     background: transparent;
     color: hsl(var(--foreground));
     text-align: left;
   }
-  .hud-header-menu-row:hover,
-  .hud-header-menu-row-active {
+  :global(.hud-header-menu-row:hover),
+  :global(.hud-header-menu-row-active) {
     background: hsl(var(--muted) / 0.5);
   }
   .hud-header-menu-avatar {
@@ -277,26 +256,6 @@
   .hud-header-menu-avatar-all {
     border: 1px dashed hsl(var(--border));
     color: hsl(var(--muted-foreground) / 0.65);
-  }
-  .hud-header-menu-check {
-    width: 13px;
-    height: 13px;
-    border: 1px solid hsl(var(--border));
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font:
-      700 9px 'JetBrains Mono',
-      monospace;
-    color: hsl(var(--card));
-  }
-  .hud-header-menu-check-on {
-    background: hsl(var(--foreground));
-  }
-  /* Mock's ✓ glyph (CSS content; i18n-exempt glyph). */
-  .hud-header-menu-check-on::after {
-    content: '✓';
   }
   .hud-header-menu-swatch {
     width: 7px;

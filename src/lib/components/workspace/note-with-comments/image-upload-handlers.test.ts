@@ -8,12 +8,12 @@ import type { Editor } from '@tiptap/core';
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
 }));
-vi.mock('svelte-sonner', () => ({
-  toast: { error: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn() },
 }));
 
 import { backendRequest } from '$lib/client/live/backend-transport';
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import {
   createImageDropHandler,
   createImagePasteHandler,
@@ -60,7 +60,7 @@ describe('image upload seam (daemon note.saveAsset, fake transport)', () => {
     expect(params.data).toMatch(/^data:image\/png;base64,/);
 
     expect(setImage).toHaveBeenCalledWith({ src: saveResult.url });
-    expect(toast.error).not.toHaveBeenCalled();
+    expect(notify.error).not.toHaveBeenCalled();
   });
 
   it('surfaces daemon failure via toast + logger and does not insert', async () => {
@@ -73,7 +73,7 @@ describe('image upload seam (daemon note.saveAsset, fake transport)', () => {
     expect(logger.error).toHaveBeenCalledWith('Failed to upload image', {
       error: 'NOT_FOUND: workspace not found',
     });
-    expect(toast.error).toHaveBeenCalledWith('Failed to upload image', {
+    expect(notify.error).toHaveBeenCalledWith('Failed to upload image', {
       description: 'NOT_FOUND: workspace not found',
     });
   });

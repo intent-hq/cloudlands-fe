@@ -12,7 +12,8 @@ export const buttonMetadata = parseUiComponentMetadata({
   callers: [],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/button/button.test.ts',
-  removalGate: 'Retain while exported and behavior, accessibility, and fixtures pass.',
+  removalGate:
+    'Retain while exported and behavior, accessibility, shared loading indicator, and fixtures pass.',
   dynamicImports: [],
   fixtures: buttonFixtures,
 });

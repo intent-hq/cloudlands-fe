@@ -7,7 +7,7 @@
    */
   import { DiffViewer } from '$features/file-tracking/components/diff';
   import type { DiffAction } from '$features/file-tracking/components/diff';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -22,12 +22,12 @@
 
   function handleApply() {
     onApply?.();
-    toast.success(m.chat_diffViewer_applied_toast());
+    notify.success(m.chat_diffViewer_applied_toast());
   }
 
   function handleReject() {
     onReject?.();
-    toast.info(m.chat_diffViewer_rejected_toast());
+    notify.info(m.chat_diffViewer_rejected_toast());
   }
 
   // Build actions array for PureDiff

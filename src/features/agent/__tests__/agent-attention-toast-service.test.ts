@@ -1,7 +1,7 @@
 /**
  * Agent-attention toast service tests.
  *
- * The toast seam is faked via `vi.mock('svelte-sonner')` (existing pattern);
+ * The toast seam is faked via `vi.mock('$lib/components/patterns/notify')` (existing pattern);
  * these tests lock in the stickiness contract (duration: Infinity, stable
  * per-agent id, only close/Switch To dismiss) and the "Switch To" wiring
  * (workspace activation + cross-workspace goto + agent-tab dispatch).
@@ -33,8 +33,8 @@ const {
   storeStateMock: { value: {} as Record<string, unknown> },
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: {
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
     custom: toastCustomMock,
     info: toastInfoMock,
     dismiss: toastDismissMock,
@@ -129,7 +129,7 @@ describe('agent-attention-toast-service', () => {
     expect(call.componentProps.title).toBe('Implementor requests a discussion');
     expect(call.componentProps.reason).toBe('Need a decision on the API shape');
     expect(call.componentProps.kind).toBe('discussion');
-    expect(call.class).toBe('!border-primary/50');
+    expect(call.class).toBe('!border-primary-ink/50');
   });
 
   it('flavors blocker toasts with the destructive tint and blocker title', async () => {

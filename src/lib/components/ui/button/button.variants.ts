@@ -4,39 +4,38 @@ import { tv, type VariantProps } from 'tailwind-variants';
 import type { WithElementRef } from '$lib/utils.js';
 
 export const buttonVariants = tv({
-  base: 'type-body relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent font-medium outline-none transition-[background-color,border-color,color,box-shadow,opacity] duration-[var(--motion-fast)] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-invalid:border-danger aria-invalid:ring-2 aria-invalid:ring-danger/25 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0',
+  base: 'type-caption group/button relative isolate inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-(--radius-medium) border border-transparent bg-transparent font-medium transition-[color,opacity] duration-spring-fast ease-spring-fast disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-invalid:ring-1 aria-invalid:ring-danger motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0',
   variants: {
     variant: {
-      default:
-        'border-border bg-card text-foreground shadow-xs hover:border-input hover:bg-secondary hover:text-foreground active:border-input active:bg-muted',
-      destructive:
-        'border-danger/25 bg-card text-danger shadow-xs hover:border-danger/40 hover:bg-danger hover:text-danger-background focus-visible:ring-danger/35 active:bg-danger/80',
-      outline:
-        'border-border bg-transparent text-foreground shadow-none hover:border-input hover:bg-secondary hover:text-foreground active:bg-muted',
-      secondary:
-        'border-border bg-secondary text-secondary-foreground shadow-xs hover:border-input hover:bg-accent hover:text-accent-foreground active:bg-accent/80',
-      ghost:
-        'bg-transparent text-foreground hover:border-border hover:bg-secondary hover:text-foreground',
-      'ghost-light':
-        'bg-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground',
+      primary: 'text-primary-foreground',
+      default: 'text-primary-foreground',
+      destructive: 'bg-danger text-danger-background',
+      outline: 'text-foreground',
+      tertiary: 'text-foreground',
+      secondary: 'text-secondary-foreground',
+      ghost: 'text-foreground',
+      'ghost-light': 'text-muted-foreground hover:text-foreground',
       underline:
-        'bg-transparent text-muted-foreground underline decoration-border underline-offset-3 hover:text-foreground',
-      plain: 'border-transparent shadow-none !px-0 !py-0 font-inherit',
-      link: 'border-transparent bg-transparent text-primary underline-offset-4 hover:underline',
-      neumorphic:
-        'border-border bg-card text-foreground shadow-xs hover:border-input hover:bg-secondary hover:text-foreground active:bg-muted',
+        'text-muted-foreground underline decoration-border underline-offset-3 hover:text-foreground',
+      plain: 'text-inherit !px-0 !py-0 font-inherit',
+      link: 'text-primary-ink underline-offset-4 hover:underline',
+      neumorphic: 'text-foreground',
     },
     size: {
-      default: 'h-8 px-3 has-[>svg]:pl-2.5 has-[>svg]:pr-3',
-      xs: 'h-7 px-2 has-[>svg]:pl-2 has-[>svg]:pr-2.5',
-      sm: 'h-7 px-2.5 has-[>svg]:pl-2 has-[>svg]:pr-2.5',
-      lg: 'h-9 px-4 has-[>svg]:pl-3 has-[>svg]:pr-4',
-      xl: 'h-9 px-5 has-[>svg]:pl-4 has-[>svg]:pr-5',
-      icon: 'size-8 p-0 [&_svg]:size-4',
-      'icon-sm': 'size-7 p-0 [&_svg]:size-4',
-      'icon-xs': 'size-7 p-0 [&_svg]:size-3',
-      'icon-lg': 'size-9 p-0 [&_svg]:size-4',
+      default: 'h-(--control-height-medium) px-4 [--button-icon-padding:0.75rem]',
+      compact: 'h-(--control-height-compact) gap-1 px-3 [--button-icon-padding:0.375rem]',
+      xs: 'h-(--control-height-compact) gap-1 px-3 [--button-icon-padding:0.375rem]',
+      sm: 'h-(--control-height-small) gap-1 px-3 [--button-icon-padding:0.375rem]',
+      lg: 'h-(--control-height-large) px-4 [--button-icon-padding:0.75rem]',
+      xl: 'h-(--control-height-large) px-5 [--button-icon-padding:1rem]',
+      icon: 'size-(--control-height-medium) p-0 [&_svg]:size-4',
+      'icon-compact': 'size-(--control-height-compact) p-0 [&_svg]:size-3.5',
+      'icon-sm': 'size-(--control-height-small) p-0 [&_svg]:size-4',
+      'icon-xs': 'size-(--control-height-compact) p-0 [&_svg]:size-3',
+      'icon-lg': 'size-(--control-height-large) p-0 [&_svg]:size-4',
     },
+    leadingIcon: { true: 'pl-[var(--button-icon-padding)]' },
+    trailingIcon: { true: 'pr-[var(--button-icon-padding)]' },
   },
   defaultVariants: {
     variant: 'default',
@@ -47,11 +46,60 @@ export const buttonVariants = tv({
 export type ButtonVariant = VariantProps<typeof buttonVariants>['variant'];
 export type ButtonSize = VariantProps<typeof buttonVariants>['size'];
 
+type ConcreteButtonVariant = Exclude<ButtonVariant, null | undefined>;
+
+export const buttonSurfaceVariants: Record<ConcreteButtonVariant, string> = {
+  primary:
+    'bg-primary shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
+  default:
+    'bg-primary shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
+  secondary:
+    'bg-secondary shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
+  destructive:
+    'bg-danger shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
+  outline:
+    'bg-transparent shadow-[0_0_0_1px_var(--color-border),inset_0_0_0_0_var(--color-border)] group-hover/button:bg-hover group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--color-border),inset_0_0_0_1px_var(--color-border)]',
+  tertiary:
+    'bg-transparent shadow-[0_0_0_1px_var(--color-border),inset_0_0_0_0_var(--color-border)] group-hover/button:bg-hover group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--color-border),inset_0_0_0_1px_var(--color-border)]',
+  neumorphic:
+    'bg-transparent shadow-[0_0_0_1px_var(--color-border),inset_0_0_0_0_var(--color-border)] group-hover/button:bg-hover group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--color-border),inset_0_0_0_1px_var(--color-border)]',
+  ghost:
+    'bg-transparent shadow-[0_0_0_1px_transparent] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)]',
+  'ghost-light':
+    'bg-transparent shadow-[0_0_0_1px_transparent] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)]',
+  underline: 'bg-transparent shadow-[0_0_0_1px_transparent]',
+  plain: 'bg-transparent shadow-[0_0_0_1px_transparent]',
+  link: 'bg-transparent shadow-[0_0_0_1px_transparent]',
+};
+
+export const activeButtonSurfaceVariants: Record<ConcreteButtonVariant, string> = {
+  ...buttonSurfaceVariants,
+  primary: 'bg-primary brightness-90 shadow-none',
+  default: 'bg-primary brightness-90 shadow-none',
+  secondary: 'bg-secondary brightness-90 shadow-none',
+  destructive: 'bg-danger brightness-90 shadow-none',
+  outline:
+    'bg-active shadow-[0_0_0_1px_var(--color-border),inset_0_0_0_0_var(--color-border)] group-active/button:shadow-[0_0_0_0_var(--color-border),inset_0_0_0_1px_var(--color-border)]',
+  tertiary:
+    'bg-active shadow-[0_0_0_1px_var(--color-border),inset_0_0_0_0_var(--color-border)] group-active/button:shadow-[0_0_0_0_var(--color-border),inset_0_0_0_1px_var(--color-border)]',
+  neumorphic:
+    'bg-active shadow-[0_0_0_1px_var(--color-border),inset_0_0_0_0_var(--color-border)] group-active/button:shadow-[0_0_0_0_var(--color-border),inset_0_0_0_1px_var(--color-border)]',
+  ghost:
+    'bg-active shadow-[0_0_0_1px_var(--active)] group-active/button:shadow-[0_0_0_0_var(--active)]',
+  'ghost-light':
+    'bg-active shadow-[0_0_0_1px_var(--active)] group-active/button:shadow-[0_0_0_0_var(--active)]',
+};
+
 type ButtonBaseProps = WithElementRef<HTMLButtonAttributes> &
   WithElementRef<HTMLAnchorAttributes> & {
     variant?: ButtonVariant;
     size?: ButtonSize;
     loading?: boolean;
+    active?: boolean;
+    truncateLabel?: boolean;
+    labelClass?: string;
+    leadingIcon?: Snippet;
+    trailingIcon?: Snippet;
     children?: Snippet;
     onclick?: (event: MouseEvent) => void;
     tooltip?: string;

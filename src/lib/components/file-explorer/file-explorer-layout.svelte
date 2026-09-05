@@ -261,7 +261,7 @@
               {#if fileData.modified}
                 <span class="w-2 h-2 bg-blue-500 rounded-full"></span>
               {/if}
-              <button
+              <Button
                 class="ml-1 hover:bg-accent rounded p-0.5"
                 onclick={(e) => {
                   e.stopPropagation();
@@ -269,7 +269,7 @@
                 }}
               >
                 <Fa icon={faXmark} size="xs" class="w-3 h-3" />
-              </button>
+              </Button>
             </Button>
           {/each}
         </div>

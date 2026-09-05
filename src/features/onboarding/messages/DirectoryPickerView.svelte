@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   import { untrack } from 'svelte';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import {
@@ -345,14 +347,14 @@
         <Fa icon={faFolderOpen} class="shrink-0 text-muted-foreground" />
         <h2 class="truncate text-sm font-medium">{title}</h2>
       </div>
-      <button
+      <Button
         type="button"
         class="cursor-pointer rounded p-1 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
         onclick={onClose}
         aria-label={m.onboarding_dirPicker_close_ariaLabel()}
       >
         <Fa icon={faXmark} size="sm" />
-      </button>
+      </Button>
     </header>
 
     <div class="flex min-h-0 flex-1">
@@ -362,7 +364,7 @@
         </h3>
         <nav class="space-y-0.5" aria-label={m.onboarding_dirPicker_favorites_label()}>
           {#each defaultFavorites as favorite (favorite.id)}
-            <button
+            <Button
               type="button"
               class={cn(
                 'flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
@@ -376,7 +378,7 @@
             >
               <Fa icon={favoriteIcon(favorite)} class="w-3.5 shrink-0 text-blue-500/80" size="sm" />
               <span class="truncate">{favorite.label}</span>
-            </button>
+            </Button>
           {/each}
         </nav>
       </aside>
@@ -385,7 +387,7 @@
         <div
           class="flex min-h-11 shrink-0 items-center gap-2 border-b border-border bg-muted/10 px-3 py-2"
         >
-          <button
+          <Button
             type="button"
             class={cn(
               'rounded p-1.5 transition-colors',
@@ -399,11 +401,11 @@
             title={m.onboarding_dirPicker_goUp_tooltip()}
           >
             <Fa icon={faArrowUp} size="sm" />
-          </button>
+          </Button>
 
           {#if pathEditing}
-            <input
-              bind:this={pathInputRef}
+            <Input
+              bind:ref={pathInputRef}
               bind:value={pathDraft}
               type="text"
               class={cn(
@@ -425,17 +427,17 @@
             >
               {#each breadcrumbs as breadcrumb, index (breadcrumb.path)}
                 {#if index > 0}<span class="px-0.5 text-ghost">/</span>{/if}
-                <button
+                <Button
                   type="button"
                   class="min-w-0 cursor-pointer truncate rounded px-1 py-0.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                   title={breadcrumb.path}
                   onclick={() => requestNavigation(breadcrumb.path)}
                 >
                   {breadcrumb.label}
-                </button>
+                </Button>
               {/each}
             </nav>
-            <button
+            <Button
               type="button"
               class="cursor-pointer rounded p-1.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
               onclick={beginPathEdit}
@@ -443,7 +445,7 @@
               title={m.onboarding_dirPicker_editPath_ariaLabel()}
             >
               <Fa icon={faPen} size="xs" />
-            </button>
+            </Button>
           {/if}
 
           <label class="relative block w-28 shrink-0 sm:w-40">
@@ -452,8 +454,8 @@
               size="xs"
               class="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
             />
-            <input
-              bind:this={searchInputRef}
+            <Input
+              bind:ref={searchInputRef}
               bind:value={searchDraft}
               type="search"
               class="w-full rounded-md border border-border bg-background py-1 pl-7 pr-2 text-xs outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring"
@@ -506,7 +508,7 @@
                     ? entry.path === selectedFilePath
                     : entry.path === selectedFolderEntry?.path}
                 <li>
-                  <button
+                  <Button
                     type="button"
                     role="option"
                     aria-selected={mode === 'file'
@@ -550,7 +552,7 @@
                         <Fa icon={faCodeBranch} class="text-amber-500/70" size="xs" />
                       </span>
                     {/if}
-                  </button>
+                  </Button>
                 </li>
               {/each}
             </ul>
@@ -572,8 +574,8 @@
       {#if mode === 'directory' && onCreateDirectory}
         {#if newFolderOpen}
           <div class="flex min-w-0 flex-1 items-center gap-1.5">
-            <input
-              bind:this={newFolderInputRef}
+            <Input
+              bind:ref={newFolderInputRef}
               bind:value={newFolderName}
               type="text"
               class={cn(
@@ -589,7 +591,7 @@
             />
           </div>
         {:else}
-          <button
+          <Button
             type="button"
             class={cn(
               'rounded-md px-3 py-1.5 text-sm transition-colors',
@@ -601,17 +603,17 @@
             onclick={openNewFolder}
           >
             {m.onboarding_dirPicker_newFolder_label()}
-          </button>
+          </Button>
         {/if}
       {/if}
-      <button
+      <Button
         type="button"
         class="ml-auto cursor-pointer rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground"
         onclick={onClose}
       >
         {m.onboarding_dirPicker_cancel_label()}
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
         class={cn(
           'max-w-56 truncate rounded-md px-3 py-1.5 text-sm transition-colors',
@@ -623,7 +625,7 @@
         onclick={handleSelect}
       >
         {selectButtonLabel}
-      </button>
+      </Button>
     </footer>
   </div>
 {/if}

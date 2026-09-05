@@ -1,4 +1,5 @@
 import { Dialog as DialogPrimitive } from 'bits-ui';
+import Root from './overlay-root.svelte';
 import Close from './dialog-close.svelte';
 import Content from './dialog-content.svelte';
 import Description from './dialog-description.svelte';
@@ -8,7 +9,6 @@ import Overlay from './dialog-overlay.svelte';
 import Title from './dialog-title.svelte';
 import Trigger from './dialog-trigger.svelte';
 
-const Root = DialogPrimitive.Root;
 const Portal = DialogPrimitive.Portal;
 export { dialogMetadata } from './dialog.meta';
 

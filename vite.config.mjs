@@ -19,14 +19,16 @@ const messagesDir = join(__dirname, 'messages');
 const normalizeWatcherPath = (file) => file.replace(/\\/g, '/');
 
 function canReuseGeneratedParaglide() {
-  const outputs = ['messages.js', 'runtime.js'].map((file) => join(paraglideOutdir, file));
+  const messageFiles = readdirSync(messagesDir).filter((file) => file.endsWith('.json'));
+  const outputs = [
+    join(paraglideOutdir, 'messages/_index.js'),
+    ...messageFiles.map((file) => join(paraglideOutdir, 'messages', file.replace(/\.json$/, '.js'))),
+  ];
   if (outputs.some((file) => !existsSync(file))) return false;
 
   const inputs = [
     join(paraglideProject, 'settings.json'),
-    ...readdirSync(messagesDir)
-      .filter((file) => file.endsWith('.json'))
-      .map((file) => join(messagesDir, file)),
+    ...messageFiles.map((file) => join(messagesDir, file)),
   ];
   const newestInput = Math.max(...inputs.map((file) => statSync(file).mtimeMs));
   const oldestOutput = Math.min(...outputs.map((file) => statSync(file).mtimeMs));

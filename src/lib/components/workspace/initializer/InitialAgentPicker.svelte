@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
 
@@ -751,7 +752,7 @@
         contentClass="p-0!"
       >
         {#snippet trigger({ props })}
-          <button
+          <Button
             {...isTeamMode ? {} : props}
             type="button"
             tabindex={isTeamMode ? -1 : 0}
@@ -780,13 +781,13 @@
               >
             </div>
             <Fa icon={faChevronDown} class="text-ghost h-2.5! w-2.5! shrink-0" />
-          </button>
+          </Button>
         {/snippet}
 
         {#snippet content()}
           <div class="min-w-[220px] max-h-[300px] overflow-y-auto">
             <!-- General (blank) option -->
-            <button
+            <Button
               type="button"
               class="specialist-option {selectedSpecialist === null ||
               (selectedSpecialist && isTeamRoleId(selectedSpecialist))
@@ -803,13 +804,13 @@
                   >{m.workspace_initialAgentPicker_noSpecializedBehavior_description()}</span
                 >
               </div>
-            </button>
+            </Button>
 
             {#if customSpecialists.length > 0}
               <div class="h-px bg-border"></div>
 
               {#each customSpecialists as specialist (specialist.id)}
-                <button
+                <Button
                   type="button"
                   class="specialist-option {selectedSpecialist === specialist.id
                     ? 'specialist-option-selected'
@@ -826,12 +827,12 @@
                     <span class="font-medium text-foreground text-sm">{specialist.name}</span>
                     <span class="text-xs text-subtle truncate">{specialist.description}</span>
                   </div>
-                </button>
+                </Button>
               {/each}
             {/if}
 
             <!-- Create new specialist link -->
-            <button
+            <Button
               type="button"
               class="sticky bottom-0 border-t border-border bg-background px-4 gap-3 py-1 z-10 w-full flex items-center text-subtle cursor-pointer"
               onclick={openSpecialistSettings}
@@ -839,7 +840,7 @@
               <Fa icon={faPlus} class="ml-0.5 mr-0.5 opacity-60" size={10} />
               <span class="text-sm">{m.workspace_initialAgentPicker_manageSpecialists_label()}</span
               >
-            </button>
+            </Button>
           </div>
         {/snippet}
       </DropdownMenu>
@@ -918,7 +919,7 @@
     width: 100%;
   }
 
-  .specialist-trigger {
+  :global(.specialist-trigger) {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -931,17 +932,17 @@
     text-align: left;
   }
 
-  .specialist-trigger:hover {
+  :global(.specialist-trigger:hover) {
     background: var(--color-muted);
   }
 
-  .specialist-trigger:focus-visible {
+  :global(.specialist-trigger:focus-visible) {
     outline: none;
     border-color: var(--color-foreground);
     background: var(--color-muted);
   }
 
-  .specialist-option {
+  :global(.specialist-option) {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -955,29 +956,29 @@
     transition: background-color 0.1s ease;
   }
 
-  .specialist-option:hover {
+  :global(.specialist-option:hover) {
     background: color-mix(in srgb, var(--color-muted, hsl(var(--muted))) 60%, transparent);
   }
 
-  .specialist-option:focus-visible {
+  :global(.specialist-option:focus-visible) {
     outline: none;
     background: color-mix(in srgb, var(--color-muted, hsl(var(--muted))) 75%, transparent);
   }
 
   @media (forced-colors: active) {
     .agent-card:focus-visible,
-    .specialist-trigger:focus-visible {
+    :global(.specialist-trigger:focus-visible) {
       border-color: Highlight;
       background: Canvas;
     }
 
-    .specialist-option:focus-visible {
+    :global(.specialist-option:focus-visible) {
       background: Highlight;
       color: HighlightText;
     }
   }
 
-  .specialist-option-selected {
+  :global(.specialist-option-selected) {
     background: color-mix(in srgb, var(--color-muted, hsl(var(--muted))) 40%, transparent);
   }
 </style>

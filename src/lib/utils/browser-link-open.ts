@@ -7,7 +7,7 @@
  * is given.
  */
 
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
 import { resolveBrowserLinkUrl } from './browser-url-resolution';
 
@@ -40,9 +40,9 @@ export async function resolveBrowserLinkForOpen(
     typeof window !== 'undefined' ? window.electronAPI?.invoke : undefined,
   );
   if (resolved.error && resolved.rewritten) {
-    toast.error(m.browser_embedded_resolveFailed_error(), { description: resolved.error });
+    notify.error(m.browser_embedded_resolveFailed_error(), { description: resolved.error });
   } else if (resolved.warning) {
-    toast.warning(m.browser_linkOpen_loopbackAmbiguity_warning(), {
+    notify.warning(m.browser_linkOpen_loopbackAmbiguity_warning(), {
       description: resolved.warning,
     });
   }

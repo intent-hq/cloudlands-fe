@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fade } from 'svelte/transition';
+  import { fade, spring } from '$lib/motion';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -24,7 +24,7 @@
       prevCount = count;
       const timer = setTimeout(() => {
         isUpdating = false;
-      }, 300);
+      }, spring.slow.settleMs);
       return () => clearTimeout(timer);
     }
   });
@@ -41,7 +41,7 @@
     <div
       class="agent-badge {className}"
       class:updating={isUpdating}
-      transition:fade={{ duration: 200 }}
+      transition:fade={{ tier: 'slow' }}
       aria-label={tooltip}
     >
       <span class="badge-text">{formatInteger(count)}</span>
@@ -64,12 +64,12 @@
     font-weight: 600;
     color: hsl(var(--muted-foreground));
     flex-shrink: 0;
-    animation: badge-scale-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    animation: badge-scale-in var(--spring-slow) var(--spring-slow-ease);
     will-change: transform, opacity;
   }
 
   .agent-badge.updating {
-    animation: badge-pulse 0.3s cubic-bezier(0.4, 0, 0.6, 1);
+    animation: badge-pulse var(--spring-slow) var(--spring-slow-ease);
   }
 
   .badge-text {

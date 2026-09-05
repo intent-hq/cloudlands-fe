@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * ContextMentionNodeView - Renders a context mention as a clickable pill
    *
@@ -360,7 +361,7 @@
     </TooltipRich>
 
     <!-- Delete button - shows on hover, positioned outside TooltipRich to avoid snippet issues -->
-    <button
+    <Button
       type="button"
       onclick={handleDelete}
       class="delete-btn absolute right-0 top-0 bottom-0 flex items-center justify-center w-5 rounded-r-md cursor-pointer
@@ -378,7 +379,7 @@
           d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
         />
       </svg>
-    </button>
+    </Button>
   </span>
 
   <!-- Branch switch button - positioned to the right of the pill -->
@@ -388,15 +389,15 @@
       side="top"
       delayDuration={200}
     >
-      <button
+      <Button
         type="button"
         onclick={handleSwitchToPRBranch}
         class="branch-switch-btn inline-flex items-center justify-center w-5 h-5 ml-1 rounded cursor-pointer transition-colors
           hover:bg-primary/20"
         aria-label={m.tiptap_contextMention_switchBranch_tooltip()}
       >
-        <GitBranchIcon size={12} class="text-primary hover:text-primary/80" />
-      </button>
+        <GitBranchIcon size={12} class="text-primary-ink hover:text-primary-ink/80" />
+      </Button>
     </Tooltip>
   {/if}
 </NodeViewWrapper>

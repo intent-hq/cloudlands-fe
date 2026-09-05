@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * ChoiceOption NodeView Component
    *
@@ -98,7 +99,7 @@
 >
   <!-- Selection button (radio indicator) - clickable to toggle selection -->
   <!-- Keep .selection-button class for test compatibility -->
-  <button
+  <Button
     type="button"
     class="selection-button choice-option-marker cursor-pointer bg-transparent border-none p-0 text-inherit"
     onclick={(e) => {
@@ -110,7 +111,7 @@
     aria-pressed={selected}
   >
     {selected ? '●' : '○'}
-  </button>
+  </Button>
 
   <!-- Editable text content -->
   <!-- This is the key: NodeViewContent provides contentDOM for inline editing -->

@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { Button } from '$lib/components/ui/button';
   // Fixed card size for consistent layout - exported for use in parent components
   export const CARD_WIDTH = 180;
   export const CARD_HEIGHT = 180; // Square cards
@@ -103,12 +104,12 @@
   {/if}
 
   <!-- Main agent card -->
-  <button
+  <Button
     type="button"
     class="agent-card flex flex-col items-center px-2.5 py-4 bg-card border border-border
-      hover:shadow transition-all cursor-pointer"
-    class:border-primary={$agentIsWaiting$}
-    class:border-2={$agentIsWaiting$}
+      hover:shadow transition-all cursor-pointer {$agentIsWaiting$
+      ? 'border-primary-ink border-2'
+      : ''}"
     style="width: {CARD_WIDTH}px; height: {CARD_HEIGHT}px; anchor-name: --agent-hierarchy-{agent.agentId};"
     {onclick}
     {onmouseenter}
@@ -162,7 +163,7 @@
         </div>
       {:else if $agentIsWaitingForOtherAgents$}
         <!-- Waiting for other agents -->
-        <div class="text-sm text-primary flex items-center justify-center gap-1">
+        <div class="text-sm text-primary-ink flex items-center justify-center gap-1">
           <Fa icon={faHourglass} size="xs" class="animate-pulse" />
           <span class="truncate"
             >{m.agentOverview_hierarchyCard_waitingFor_label({
@@ -211,7 +212,7 @@
         </div>
       {/if}
     </div>
-  </button>
+  </Button>
 
   <!-- Right activity pill (note) -->
   {#if activeNote && $agentIsResponding$}

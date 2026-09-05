@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import {
     selectAgentIsResponding,
     selectAgentSession,
@@ -364,13 +365,12 @@
 </script>
 
 {#if shouldShow}
-  <button
+  <Button
     onclick={handleClick}
     onmousedown={(e) => e.preventDefault()}
-    class="task-agent-status"
-    class:compact
-    class:indicator
-    class:loading={!agent}
+    class="task-agent-status {compact ? 'compact' : ''} {indicator ? 'indicator' : ''} {!agent
+      ? 'loading'
+      : ''}"
     type="button"
     contenteditable="false"
     aria-label={indicator ? indicatorLabel : undefined}
@@ -413,11 +413,11 @@
     <div class="status-icon">
       <AgentAvatarWithState {agentId} state={avatarState} size={19} />
     </div>
-  </button>
+  </Button>
 {/if}
 
 <style>
-  .task-agent-status {
+  :global(.task-agent-status) {
     display: flex;
     align-items: start;
     gap: 0.5rem;
@@ -440,7 +440,7 @@
   }
 
   /* Compact mode - used when inside a linked task card */
-  .task-agent-status.compact {
+  :global(.task-agent-status.compact) {
     width: 100%;
     margin: 0;
     padding: 0.25rem 0;
@@ -453,11 +453,11 @@
     line-height: 1.5em;
   }
 
-  .task-agent-status.compact:hover {
+  :global(.task-agent-status.compact:hover) {
     background-color: transparent;
   }
 
-  .task-agent-status.indicator {
+  :global(.task-agent-status.indicator) {
     width: 20px;
     height: 20px;
     flex: none;
@@ -472,20 +472,20 @@
     box-shadow: none;
   }
 
-  .task-agent-status.indicator:focus-visible {
+  :global(.task-agent-status.indicator:focus-visible) {
     outline: 2px solid var(--color-ring);
     outline-offset: 1px;
   }
 
-  .task-agent-status:hover:not(.compact) {
+  :global(.task-agent-status:hover:not(.compact)) {
     background-color: var(--color-accent);
   }
 
-  .task-agent-status:active {
+  :global(.task-agent-status:active) {
     background-color: var(--color-accent);
   }
 
-  .task-agent-status.loading {
+  :global(.task-agent-status.loading) {
     opacity: 0.7;
   }
 
@@ -502,7 +502,7 @@
     margin-right: 0.66rem;
   }
 
-  .indicator .status-icon {
+  :global(.indicator) .status-icon {
     margin: 0;
   }
 

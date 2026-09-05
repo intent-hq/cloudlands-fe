@@ -242,7 +242,7 @@
   :global(.streaming-renderer .streaming-cursor) {
     display: inline-block;
     animation: blink 1s infinite;
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
     margin-left: 2px;
   }
 

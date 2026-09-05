@@ -53,17 +53,19 @@
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
-  import GrokLogo from '../ui/GrokLogo.svelte';
-  import CopyButton from '$lib/components/ui/CopyButton.svelte';
+  import {
+    Button,
+    CopyButton,
+    DropdownMenu,
+    GrokLogo,
+  } from '$lib/components/patterns/settings/custom-controls';
   import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
   import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { checkPiMcpAdapterInstalled, installPiMcpAdapter } from '$features/pi/pi-models.client';
-  import Button from '../ui/button/button.svelte';
-  import DropdownMenu from '../ui/dropdown-menu.svelte';
   import { store as appStore } from '$store/renderer/store';
   import AntigravityConnect from '$features/antigravity/AntigravityConnect.svelte';
   import { selectAntigravitySetupPolicy } from '$store/renderer/slices/antigravity-setup/antigravity-setup-selectors';
@@ -239,7 +241,7 @@
     if (!enabled) {
       const reason = $providerInUseReasons$[providerId];
       if (reason) {
-        toast.error(
+        notify.error(
           m.settings_providers_cannotDisable({
             name: selectProviderDisplayName.select(appStore.state, providerId),
           }),
@@ -416,15 +418,15 @@
       const result = await installPiMcpAdapter();
       if (result?.success) {
         await loadPiMcpAdapterStatus();
-        toast.success(m.settings_providers_piAdapterInstalled());
+        notify.success(m.settings_providers_piAdapterInstalled());
       } else {
-        toast.error(m.settings_providers_piAdapterInstallFailed(), {
+        notify.error(m.settings_providers_piAdapterInstallFailed(), {
           description: result?.error || m.settings_providers_unknownError(),
         });
       }
     } catch (err) {
       logger.error('Failed to install pi-mcp-adapter', err);
-      toast.error(m.settings_providers_piAdapterInstallFailed(), {
+      notify.error(m.settings_providers_piAdapterInstallFailed(), {
         description: err instanceof Error ? err.message : m.settings_providers_unknownError(),
       });
     } finally {
@@ -446,7 +448,7 @@
       });
       appStore.dispatch(setActiveProvider(providerId));
       appStore.dispatch(reloadModelsForProvider());
-      toast.success(
+      notify.success(
         m.settings_providers_switchedTo({
           name: selectProviderDisplayName.select(appStore.state, providerId),
         }),
@@ -461,13 +463,13 @@
   {#if checkError}
     <div class="flex items-center justify-between gap-4 rounded-xl bg-card px-6 py-4">
       <p class="text-sm text-danger">{checkError}</p>
-      <button
+      <Button
         type="button"
-        class="text-primary hover:text-primary/80 cursor-pointer transition-colors text-xs font-medium"
+        class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors text-xs font-medium"
         onclick={() => checkProviderAvailability(true, true)}
       >
         {m.settings_providers_tryAgain()}
-      </button>
+      </Button>
     </div>
   {/if}
 
@@ -648,7 +650,7 @@
                                 <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
                                   {m.settings_providers_piAdapterNeeded()}
                                 </p>
-                                <button
+                                <Button
                                   type="button"
                                   role="menuitem"
                                   disabled={setupInProgress.pi}
@@ -665,14 +667,14 @@
                                     <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
                                     {m.settings_providers_install()}
                                   {/if}
-                                </button>
+                                </Button>
                               {/if}
 
                               {#if hasNodeMissing}
                                 <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
                                   {m.settings_providers_requiresNodejs()}
                                 </p>
-                                <button
+                                <Button
                                   type="button"
                                   role="menuitem"
                                   class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
@@ -682,7 +684,7 @@
                                   }}
                                 >
                                   {m.settings_providers_installFromNodejs()}
-                                </button>
+                                </Button>
                               {/if}
 
                               {#if hasNpmOld}
@@ -696,7 +698,7 @@
                                   {provider.warning}
                                 </p>
                                 {#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
-                                  <button
+                                  <Button
                                     type="button"
                                     role="menuitem"
                                     class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
@@ -706,7 +708,7 @@
                                     }}
                                   >
                                     {m.settings_providers_installFromNodejs()}
-                                  </button>
+                                  </Button>
                                 {/if}
                               {/if}
                             </div>
@@ -723,7 +725,7 @@
                             </div>
                           {/if}
 
-                          <button
+                          <Button
                             type="button"
                             role="menuitem"
                             class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
@@ -734,10 +736,10 @@
                           >
                             <Fa icon={faFolder} class="size-3.5 text-muted-foreground" />
                             {m.settings_providerPath_setCustomPath_label()}
-                          </button>
+                          </Button>
 
                           {#if canSetDefault}
-                            <button
+                            <Button
                               type="button"
                               role="menuitem"
                               class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -751,11 +753,11 @@
                               {selectingProviderId === provider.id
                                 ? m.settings_providers_switching()
                                 : m.settings_providers_setAsDefault()}
-                            </button>
+                            </Button>
                           {/if}
 
                           {#if canDisable}
-                            <button
+                            <Button
                               type="button"
                               role="menuitem"
                               class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -768,7 +770,7 @@
                             >
                               <Fa icon={faBan} class="size-3.5 text-muted-foreground" />
                               {m.settings_providers_disable()}
-                            </button>
+                            </Button>
                           {/if}
 
                           {#if needsLogin}
@@ -797,7 +799,7 @@
                                 {m.settings_providers_claudeDesktopNote_label()}
                               </p>
                             {/if}
-                            <button
+                            <Button
                               type="button"
                               role="menuitem"
                               class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -815,11 +817,11 @@
                                 <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
                               </span>
                               {m.settings_providers_recheck_label()}
-                            </button>
+                            </Button>
                           {/if}
 
                           {#if canLogIn}
-                            <button
+                            <Button
                               type="button"
                               role="menuitem"
                               class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
@@ -829,11 +831,11 @@
                               }}
                             >
                               {m.settings_providers_logIn()}
-                            </button>
+                            </Button>
                           {/if}
 
                           {#if canInstall}
-                            <button
+                            <Button
                               type="button"
                               role="menuitem"
                               class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
@@ -844,7 +846,7 @@
                             >
                               <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
                               {m.settings_providers_install()}
-                            </button>
+                            </Button>
                           {/if}
                         </div>
                       {/snippet}

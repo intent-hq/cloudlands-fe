@@ -152,21 +152,62 @@ describe('CatalogFixtureList real previews', () => {
   });
 
   it('opens and dismisses the canonical Dialog preview', async () => {
-    renderEntry('dialog');
+    const { container } = renderEntry('dialog');
     const trigger = screen.getByRole('button', { name: 'Open catalog dialog' });
 
     await fireEvent.click(trigger);
-    expect(screen.getByRole('dialog', { name: 'Catalog dialog' })).not.toBeNull();
+    const dialog = screen.getByRole('dialog', { name: 'Catalog dialog' });
+    expect(dialog.closest('[data-catalog-portal-target="dialog"]')).not.toBeNull();
     await fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog', { name: 'Catalog dialog' })).toBeNull();
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Catalog dialog' })).toBeNull(),
+    );
+    expect(container.querySelector('[data-catalog-portal-target="dialog"]')).not.toBeNull();
   });
 
-  it('keeps collapsed Sidebar navigation recognizable with icons', () => {
-    const { container } = renderEntry('sidebar');
+  it('operates the canonical Menu, Sheet, and Accordion previews', async () => {
+    const menuRender = renderEntry('menu');
+    const menuTrigger = screen.getByRole('button', { name: 'Open catalog menu' });
+    menuTrigger.focus();
+    await fireEvent.keyDown(menuTrigger, { key: 'ArrowDown' });
+    const menu = await screen.findByRole('menu');
+    expect(menu.closest('[data-catalog-portal-target="menu"]')).not.toBeNull();
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    menuRender.unmount();
 
-    expect(screen.getByRole('button', { name: 'Catalog overview' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Unavailable catalog page' })).toBeTruthy();
-    expect(container.querySelectorAll('[data-catalog-sidebar-icon]')).toHaveLength(2);
+    const sheetRender = renderEntry('sheet');
+    const sheetTrigger = screen.getByRole('button', { name: 'Open catalog sheet' });
+    await fireEvent.click(sheetTrigger);
+    const sheet = screen.getByRole('dialog', { name: 'Catalog sheet' });
+    expect(sheet.closest('[data-catalog-portal-target="sheet"]')).not.toBeNull();
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Catalog sheet' })).toBeNull());
+    sheetRender.unmount();
+
+    renderEntry('accordion');
+    const details = screen.getByRole('button', { name: 'Details' });
+    expect(details.getAttribute('aria-expanded')).toBe('true');
+    await fireEvent.click(details);
+    expect(details.getAttribute('aria-expanded')).toBe('false');
+    details.focus();
+    await fireEvent.keyDown(details, { key: 'Enter' });
+    expect(details.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('keeps Sidebar navigation operable from its collapsed state', async () => {
+    const { container } = renderEntry('sidebar');
+    const sidebar = container.querySelector('[data-slot="sidebar"][data-state]');
+
+    expect(sidebar?.getAttribute('data-state')).toBe('collapsed');
+    expect(screen.getByRole('button', { name: 'Overview' }).getAttribute('data-active')).toBe(
+      'true',
+    );
+    expect(
+      (screen.getByRole('button', { name: 'Disabled navigation' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    await fireEvent.click(container.querySelector<HTMLButtonElement>('[data-sidebar="trigger"]')!);
+    expect(sidebar?.getAttribute('data-state')).toBe('expanded');
   });
 
   it('mounts and operates the canonical Settings Slider and FileInput previews', async () => {

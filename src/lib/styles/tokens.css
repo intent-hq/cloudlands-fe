@@ -7,6 +7,7 @@
   --color-popover: hsl(var(--popover));
   --color-popover-foreground: hsl(var(--popover-foreground));
   --color-primary: hsl(var(--primary));
+  --color-primary-ink: hsl(var(--primary-ink));
   --color-primary-foreground: hsl(var(--primary-foreground));
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
@@ -30,6 +31,38 @@
   --color-sidebar-accent: hsl(var(--sidebar-accent));
   --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
   --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-selected: hsl(var(--selected));
+  --color-destructive-light: hsl(var(--destructive-light));
+  --color-focus-ring: hsl(var(--focus-ring));
+  --color-surface-1: hsl(var(--surface-1));
+  --color-surface-2: hsl(var(--surface-2));
+  --color-surface-3: hsl(var(--surface-3));
+  --color-surface-4: hsl(var(--surface-4));
+  --color-surface-5: hsl(var(--surface-5));
+  --color-surface-6: hsl(var(--surface-6));
+  --color-surface-7: hsl(var(--surface-7));
+  --color-surface-8: hsl(var(--surface-8));
+  --shadow-surface-1: var(--surface-shadow-1);
+  --shadow-surface-2: var(--surface-shadow-2);
+  --shadow-surface-3: var(--surface-shadow-3);
+  --shadow-surface-4: var(--surface-shadow-4);
+  --shadow-surface-5: var(--surface-shadow-5);
+  --shadow-surface-6: var(--surface-shadow-6);
+  --shadow-surface-7: var(--surface-shadow-7);
+  --shadow-surface-8: var(--surface-shadow-8);
+
+  --transition-duration-spring-fast: var(--spring-fast);
+  --transition-duration-spring-fast-exit: var(--spring-fast-exit);
+  --transition-duration-spring-moderate: var(--spring-moderate);
+  --transition-duration-spring-moderate-exit: var(--spring-moderate-exit);
+  --transition-duration-spring-slow: var(--spring-slow);
+  --transition-duration-spring-slow-exit: var(--spring-slow-exit);
+  --ease-spring-fast: var(--spring-fast-ease);
+  --ease-spring-moderate: var(--spring-moderate-ease);
+  --ease-spring-slow: var(--spring-slow-ease);
+  --ease-spring-exit: var(--spring-exit-ease);
 
   /* Reachable compatibility utilities; do not use in new product code. */
   --color-app-background: hsl(var(--app-background));
@@ -50,8 +83,9 @@
   --theme-light-card-foreground: 0 0% 0%;
   --theme-light-popover: 60 5% 92.1568627451%;
   --theme-light-popover-foreground: 0 0% 0%;
-  --theme-light-primary: 145 67% 28%;
-  --theme-light-primary-foreground: 0 0% 100%;
+  --theme-light-primary: 66.4 67% 64.3%;
+  --theme-light-primary-ink: 66 60% 28%;
+  --theme-light-primary-foreground: 67 40% 12%;
   --theme-light-secondary: 0 0% 89.8039215686%;
   --theme-light-secondary-foreground: 0 0% 0%;
   --theme-light-accent: 20 4.7619047619% 87.6470588235%;
@@ -91,7 +125,8 @@
   --theme-dark-card-foreground: 0 0% 100%;
   --theme-dark-popover: 0 0% 14.9019607843%;
   --theme-dark-popover-foreground: 0 0% 100%;
-  --theme-dark-primary: 145 58% 55%;
+  --theme-dark-primary: 67 78% 68%;
+  --theme-dark-primary-ink: var(--theme-dark-primary);
   --theme-dark-primary-foreground: 154 25% 9%;
   --theme-dark-secondary: 0 0% 14.9019607843%;
   --theme-dark-secondary-foreground: 20 4.7619047619% 87.6470588235%;
@@ -125,6 +160,116 @@
   --theme-dark-agent-avatar-surface-active: 67 78% 68%;
   --theme-dark-workspace-status-unread: 213.1 93.9% 67.8%;
   --theme-dark-agent-avatar-surface-waiting: 259.024 64.063% 74.902%;
+  --theme-light-overlay: 0 0 0;
+  --theme-light-hover: rgb(var(--theme-light-overlay) / 0.04);
+  --theme-light-active: rgb(var(--theme-light-overlay) / 0.07);
+  --theme-light-selected: 0 0% 83%;
+  --theme-light-destructive-light: 0 85.7142857143% 97.2549019608%;
+  --theme-dark-overlay: 255 255 255;
+  --theme-dark-hover: rgb(var(--theme-dark-overlay) / 0.06);
+  --theme-dark-active: rgb(var(--theme-dark-overlay) / 0.1);
+  --theme-dark-selected: 0 0% 32%;
+  --theme-dark-destructive-light: 0 74.6835443038% 15.4901960784%;
+
+  /*
+   * Surface ladder: level 1 is the page substrate; overlays rise two levels, capped at 8.
+   * Light mode reaches white at level 3 and uses increasingly soft shadows for depth.
+   * Dark mode keeps lifting through progressively lighter neutral greys and inset highlights.
+   */
+  --theme-light-surface-1: var(--theme-light-background);
+  --theme-light-surface-2: 0 0% 98.8235294118%;
+  --theme-light-surface-3: 0 0% 100%;
+  --theme-light-surface-4: 0 0% 100%;
+  --theme-light-surface-5: 0 0% 100%;
+  --theme-light-surface-6: 0 0% 100%;
+  --theme-light-surface-7: 0 0% 100%;
+  --theme-light-surface-8: 0 0% 100%;
+  --theme-light-shadow-color: rgb(0 0 0 / 0.06);
+  --theme-light-shadow-surface-1: 0 0 0 1px var(--theme-light-shadow-color);
+  --theme-light-shadow-surface-2:
+    0 0 0 1px var(--theme-light-shadow-color), 0 1px 1px -0.5px var(--theme-light-shadow-color);
+  --theme-light-shadow-surface-3:
+    0 0 0 1px var(--theme-light-shadow-color), 0 1px 1px -0.5px var(--theme-light-shadow-color),
+    0 3px 3px -1.5px var(--theme-light-shadow-color);
+  --theme-light-shadow-surface-4:
+    0 0 0 1px var(--theme-light-shadow-color), 0 1px 1px -0.5px var(--theme-light-shadow-color),
+    0 3px 3px -1.5px var(--theme-light-shadow-color), 0 6px 6px -3px var(--theme-light-shadow-color);
+  --theme-light-shadow-surface-5:
+    0 0 0 1px var(--theme-light-shadow-color), 0 1px 1px -0.5px var(--theme-light-shadow-color),
+    0 3px 3px -1.5px var(--theme-light-shadow-color),
+    0 6px 6px -3px var(--theme-light-shadow-color), 0 12px 12px -6px var(--theme-light-shadow-color);
+  --theme-light-shadow-surface-6:
+    0 0 0 1px var(--theme-light-shadow-color), 0 1px 1px -0.5px var(--theme-light-shadow-color),
+    0 3px 3px -1.5px var(--theme-light-shadow-color),
+    0 6px 6px -3px var(--theme-light-shadow-color),
+    0 12px 12px -6px var(--theme-light-shadow-color),
+    0 24px 24px -12px var(--theme-light-shadow-color);
+  --theme-light-shadow-surface-7:
+    0 0 0 1px var(--theme-light-shadow-color), 0 1px 1px -0.5px var(--theme-light-shadow-color),
+    0 3px 3px -1.5px var(--theme-light-shadow-color),
+    0 6px 6px -3px var(--theme-light-shadow-color),
+    0 12px 12px -6px var(--theme-light-shadow-color),
+    0 24px 24px -12px var(--theme-light-shadow-color),
+    0 48px 48px -24px var(--theme-light-shadow-color);
+  --theme-light-shadow-surface-8:
+    0 0 0 1px var(--theme-light-shadow-color), 0 1px 1px -0.5px var(--theme-light-shadow-color),
+    0 3px 3px -1.5px var(--theme-light-shadow-color),
+    0 6px 6px -3px var(--theme-light-shadow-color),
+    0 12px 12px -6px var(--theme-light-shadow-color),
+    0 24px 24px -12px var(--theme-light-shadow-color),
+    0 48px 48px -24px var(--theme-light-shadow-color),
+    0 96px 96px -48px var(--theme-light-shadow-color);
+
+  --theme-dark-surface-1: 0 0% 9.0196078431%;
+  --theme-dark-surface-2: 0 0% 11.7647058824%;
+  --theme-dark-surface-3: 0 0% 14.5098039216%;
+  --theme-dark-surface-4: 0 0% 17.2549019608%;
+  --theme-dark-surface-5: 0 0% 20%;
+  --theme-dark-surface-6: 0 0% 22.7450980392%;
+  --theme-dark-surface-7: 0 0% 25.4901960784%;
+  --theme-dark-surface-8: 0 0% 28.2352941176%;
+  --theme-dark-highlight-base: rgb(255 255 255 / 0.01);
+  --theme-dark-highlight-mid: rgb(255 255 255 / 0.02);
+  --theme-dark-highlight-high: rgb(255 255 255 / 0.04);
+  --theme-dark-highlight-peak: rgb(255 255 255 / 0.06);
+  --theme-dark-ring-base: rgb(255 255 255 / 0.02);
+  --theme-dark-ring-mid: rgb(255 255 255 / 0.04);
+  --theme-dark-ring-high: rgb(255 255 255 / 0.06);
+  --theme-dark-shadow-drop: rgb(0 0 0 / 0.18);
+  --theme-dark-shadow-surface-1: inset 0 0 0 1px var(--theme-dark-ring-base);
+  --theme-dark-shadow-surface-2:
+    inset 0 1px 0 0 var(--theme-dark-highlight-base), inset 0 0 0 1px var(--theme-dark-ring-base),
+    0 1px 1px -0.5px var(--theme-dark-shadow-drop);
+  --theme-dark-shadow-surface-3:
+    inset 0 1px 0 0 var(--theme-dark-highlight-mid), inset 0 0 0 1px var(--theme-dark-ring-base),
+    0 0 0 1px rgb(0 0 0 / 0.12), 0 1px 1px -0.5px var(--theme-dark-shadow-drop),
+    0 3px 3px -1.5px var(--theme-dark-shadow-drop);
+  --theme-dark-shadow-surface-4:
+    inset 0 1px 0 0 var(--theme-dark-highlight-mid), inset 0 0 0 1px var(--theme-dark-ring-mid),
+    0 0 0 1px rgb(0 0 0 / 0.14), 0 1px 1px -0.5px var(--theme-dark-shadow-drop),
+    0 3px 3px -1.5px var(--theme-dark-shadow-drop), 0 6px 6px -3px var(--theme-dark-shadow-drop);
+  --theme-dark-shadow-surface-5:
+    inset 0 1px 0 0 var(--theme-dark-highlight-high), inset 0 0 0 1px var(--theme-dark-ring-mid),
+    0 0 0 1px rgb(0 0 0 / 0.16), 0 1px 1px -0.5px var(--theme-dark-shadow-drop),
+    0 3px 3px -1.5px var(--theme-dark-shadow-drop), 0 6px 6px -3px var(--theme-dark-shadow-drop),
+    0 12px 12px -6px var(--theme-dark-shadow-drop);
+  --theme-dark-shadow-surface-6:
+    inset 0 1px 0 0 var(--theme-dark-highlight-high), inset 0 0 0 1px var(--theme-dark-ring-high),
+    0 0 0 1px rgb(0 0 0 / 0.18), 0 1px 1px -0.5px var(--theme-dark-shadow-drop),
+    0 3px 3px -1.5px var(--theme-dark-shadow-drop), 0 6px 6px -3px var(--theme-dark-shadow-drop),
+    0 12px 12px -6px var(--theme-dark-shadow-drop), 0 24px 24px -12px var(--theme-dark-shadow-drop);
+  --theme-dark-shadow-surface-7:
+    inset 0 1px 0 0 var(--theme-dark-highlight-peak), inset 0 0 0 1px var(--theme-dark-ring-high),
+    0 0 0 1px rgb(0 0 0 / 0.2), 0 1px 1px -0.5px var(--theme-dark-shadow-drop),
+    0 3px 3px -1.5px var(--theme-dark-shadow-drop), 0 6px 6px -3px var(--theme-dark-shadow-drop),
+    0 12px 12px -6px var(--theme-dark-shadow-drop), 0 24px 24px -12px var(--theme-dark-shadow-drop),
+    0 48px 48px -24px var(--theme-dark-shadow-drop);
+  --theme-dark-shadow-surface-8:
+    inset 0 1px 0 0 var(--theme-dark-highlight-peak), inset 0 0 0 1px var(--theme-dark-ring-high),
+    0 0 0 1px rgb(0 0 0 / 0.22), 0 1px 1px -0.5px var(--theme-dark-shadow-drop),
+    0 3px 3px -1.5px var(--theme-dark-shadow-drop), 0 6px 6px -3px var(--theme-dark-shadow-drop),
+    0 12px 12px -6px var(--theme-dark-shadow-drop), 0 24px 24px -12px var(--theme-dark-shadow-drop),
+    0 48px 48px -24px var(--theme-dark-shadow-drop), 0 96px 96px -48px var(--theme-dark-shadow-drop);
 
   --theme-background: var(--theme-light-background);
   --theme-foreground: var(--theme-light-foreground);
@@ -133,6 +278,7 @@
   --theme-popover: var(--theme-light-popover);
   --theme-popover-foreground: var(--theme-light-popover-foreground);
   --theme-primary: var(--theme-light-primary);
+  --theme-primary-ink: var(--theme-light-primary-ink);
   --theme-primary-foreground: var(--theme-light-primary-foreground);
   --theme-secondary: var(--theme-light-secondary);
   --theme-secondary-foreground: var(--theme-light-secondary-foreground);
@@ -166,6 +312,27 @@
   --theme-agent-avatar-surface-active: var(--theme-light-agent-avatar-surface-active);
   --theme-workspace-status-unread: var(--theme-light-workspace-status-unread);
   --theme-agent-avatar-surface-waiting: var(--theme-light-agent-avatar-surface-waiting);
+  --theme-surface-1: var(--theme-light-surface-1);
+  --theme-surface-2: var(--theme-light-surface-2);
+  --theme-surface-3: var(--theme-light-surface-3);
+  --theme-surface-4: var(--theme-light-surface-4);
+  --theme-surface-5: var(--theme-light-surface-5);
+  --theme-surface-6: var(--theme-light-surface-6);
+  --theme-surface-7: var(--theme-light-surface-7);
+  --theme-surface-8: var(--theme-light-surface-8);
+  --theme-shadow-surface-1: var(--theme-light-shadow-surface-1);
+  --theme-shadow-surface-2: var(--theme-light-shadow-surface-2);
+  --theme-shadow-surface-3: var(--theme-light-shadow-surface-3);
+  --theme-shadow-surface-4: var(--theme-light-shadow-surface-4);
+  --theme-shadow-surface-5: var(--theme-light-shadow-surface-5);
+  --theme-shadow-surface-6: var(--theme-light-shadow-surface-6);
+  --theme-shadow-surface-7: var(--theme-light-shadow-surface-7);
+  --theme-shadow-surface-8: var(--theme-light-shadow-surface-8);
+  --theme-overlay: var(--theme-light-overlay);
+  --theme-hover: var(--theme-light-hover);
+  --theme-active: var(--theme-light-active);
+  --theme-selected: var(--theme-light-selected);
+  --theme-destructive-light: var(--theme-light-destructive-light);
 
   --background: var(--theme-background);
   --foreground: var(--theme-foreground);
@@ -174,6 +341,7 @@
   --popover: var(--theme-popover);
   --popover-foreground: var(--theme-popover-foreground);
   --primary: var(--theme-primary);
+  --primary-ink: var(--theme-primary-ink);
   --primary-foreground: var(--theme-primary-foreground);
   --secondary: var(--theme-secondary);
   --secondary-foreground: var(--theme-secondary-foreground);
@@ -186,6 +354,13 @@
   --border: var(--theme-border);
   --input: var(--theme-input);
   --ring: var(--theme-ring);
+  --focus-ring: 223 100% 71%;
+  /* Interaction fills use the reference's neutral RGB overlays in both themes. */
+  --overlay: var(--theme-overlay);
+  --hover: var(--theme-hover);
+  --active: var(--theme-active);
+  --selected: var(--theme-selected);
+  --destructive-light: var(--theme-destructive-light);
   --info: var(--theme-info);
   --info-foreground: var(--theme-info-foreground);
   --success: var(--theme-success);
@@ -197,6 +372,22 @@
   --sidebar-accent: var(--theme-sidebar-accent);
   --sidebar-accent-foreground: var(--theme-sidebar-accent-foreground);
   --sidebar-border: var(--theme-sidebar-border);
+  --surface-1: var(--theme-surface-1);
+  --surface-2: var(--theme-surface-2);
+  --surface-3: var(--theme-surface-3);
+  --surface-4: var(--theme-surface-4);
+  --surface-5: var(--theme-surface-5);
+  --surface-6: var(--theme-surface-6);
+  --surface-7: var(--theme-surface-7);
+  --surface-8: var(--theme-surface-8);
+  --surface-shadow-1: var(--theme-shadow-surface-1);
+  --surface-shadow-2: var(--theme-shadow-surface-2);
+  --surface-shadow-3: var(--theme-shadow-surface-3);
+  --surface-shadow-4: var(--theme-shadow-surface-4);
+  --surface-shadow-5: var(--theme-shadow-surface-5);
+  --surface-shadow-6: var(--theme-shadow-surface-6);
+  --surface-shadow-7: var(--theme-shadow-surface-7);
+  --surface-shadow-8: var(--theme-shadow-surface-8);
 
   --app-background: var(--theme-app-background);
   --agent-avatar-surface-neutral: var(--theme-agent-avatar-surface-neutral);
@@ -286,7 +477,6 @@
   --space-5: 1.5rem;
   --space-6: 2rem;
   --space-7: 3rem;
-  --content-measure-reading: 42rem;
   --content-measure-form: 48rem;
   --content-measure-wide: 72rem;
 
@@ -305,24 +495,39 @@
   --theme-dark-elevation-overlay: 0 12px 32px rgb(0 0 0 / 0.56), 0 3px 10px rgb(0 0 0 / 0.4);
   --elevation-raised: var(--theme-light-elevation-raised);
   --elevation-overlay: var(--theme-light-elevation-overlay);
-  --surface-hatch: repeating-linear-gradient(
-    135deg,
-    color-mix(in srgb, hsl(var(--muted)) 42%, hsl(var(--background))) 0 1px,
-    hsl(var(--background)) 1px 9px,
-    hsl(var(--border) / 0.2) 9px 10px
-  );
   --status-in-progress-hatch-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='5' height='5' viewBox='0 0 5 5'%3E%3Cpath d='M-2 2L2-2M-2 7L7-2M3 7L7 3' fill='none' stroke='white' stroke-width='0.5'/%3E%3C/svg%3E");
-  --motion-fast: 100ms;
-  --motion-standard: 150ms;
-  --motion-slow: 250ms;
-  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --ease-emphasized-out: cubic-bezier(0.05, 0.7, 0.1, 1);
-  --layer-base: 0;
-  --layer-sticky: 10;
+  /* Spring enters follow the reference 80/160/240ms tiers; exits are crisp tweens. */
+  --spring-fast: 80ms;
+  --spring-fast-exit: 60ms;
+  --spring-fast-ease: linear(0, 0.19 10%, 0.48 22%, 0.73 36%, 0.88 50%, 0.96 64%, 0.99 78%, 1);
+  --spring-moderate: 160ms;
+  --spring-moderate-exit: 120ms;
+  --spring-moderate-ease: linear(0, 0.14 8%, 0.4 20%, 0.65 34%, 0.82 48%, 0.93 62%, 0.98 76%, 1);
+  --spring-slow: 240ms;
+  --spring-slow-exit: 160ms;
+  --spring-slow-ease: linear(
+    0,
+    0.13 8%,
+    0.39 20%,
+    0.67 34%,
+    0.88 48%,
+    1.02 62%,
+    1.03 70%,
+    1.01 82%,
+    1
+  );
+  --spring-exit-ease: cubic-bezier(0.33, 1, 0.68, 1);
+  --press-inset: 1px;
+
+  /* Compatibility aliases for existing consumers. */
+  --motion-fast: var(--spring-fast);
+  --motion-standard: var(--spring-moderate);
+  --motion-slow: var(--spring-slow);
+  --ease-standard: var(--spring-moderate-ease);
+  --ease-emphasized-out: var(--spring-slow-ease);
   --layer-chrome: 20;
   --layer-popover: 40;
   --layer-modal: 50;
-  --layer-toast: 60;
   --layer-tooltip: 70;
   --layer-drag-overlay: 80;
   --radius: var(--radius-base);
@@ -381,6 +586,7 @@
   --theme-popover: var(--theme-dark-popover);
   --theme-popover-foreground: var(--theme-dark-popover-foreground);
   --theme-primary: var(--theme-dark-primary);
+  --theme-primary-ink: var(--theme-dark-primary-ink);
   --theme-primary-foreground: var(--theme-dark-primary-foreground);
   --theme-secondary: var(--theme-dark-secondary);
   --theme-secondary-foreground: var(--theme-dark-secondary-foreground);
@@ -414,6 +620,27 @@
   --theme-agent-avatar-surface-active: var(--theme-dark-agent-avatar-surface-active);
   --theme-workspace-status-unread: var(--theme-dark-workspace-status-unread);
   --theme-agent-avatar-surface-waiting: var(--theme-dark-agent-avatar-surface-waiting);
+  --theme-surface-1: var(--theme-dark-surface-1);
+  --theme-surface-2: var(--theme-dark-surface-2);
+  --theme-surface-3: var(--theme-dark-surface-3);
+  --theme-surface-4: var(--theme-dark-surface-4);
+  --theme-surface-5: var(--theme-dark-surface-5);
+  --theme-surface-6: var(--theme-dark-surface-6);
+  --theme-surface-7: var(--theme-dark-surface-7);
+  --theme-surface-8: var(--theme-dark-surface-8);
+  --theme-shadow-surface-1: var(--theme-dark-shadow-surface-1);
+  --theme-shadow-surface-2: var(--theme-dark-shadow-surface-2);
+  --theme-shadow-surface-3: var(--theme-dark-shadow-surface-3);
+  --theme-shadow-surface-4: var(--theme-dark-shadow-surface-4);
+  --theme-shadow-surface-5: var(--theme-dark-shadow-surface-5);
+  --theme-shadow-surface-6: var(--theme-dark-shadow-surface-6);
+  --theme-shadow-surface-7: var(--theme-dark-shadow-surface-7);
+  --theme-shadow-surface-8: var(--theme-dark-shadow-surface-8);
+  --theme-overlay: var(--theme-dark-overlay);
+  --theme-hover: var(--theme-dark-hover);
+  --theme-active: var(--theme-dark-active);
+  --theme-selected: var(--theme-dark-selected);
+  --theme-destructive-light: var(--theme-dark-destructive-light);
 }
 
 @media (prefers-reduced-motion: reduce) {

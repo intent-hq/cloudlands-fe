@@ -22,9 +22,9 @@ const logger = createLogger('HardwareConsoleVoiceSetupToast');
 const VOICE_SETUP_TOAST_ID = 'hardware-console-voice-setup';
 
 /** Lazily pull the toast lib so this middleware-reachable module stays light. */
-let toastPromise: Promise<(typeof import('svelte-sonner'))['toast']> | null = null;
+let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null = null;
 function getToast() {
-  if (!toastPromise) toastPromise = import('svelte-sonner').then((module) => module.toast);
+  if (!toastPromise) toastPromise = import('$lib/components/patterns/notify').then((module) => module.notify);
   return toastPromise;
 }
 
@@ -62,8 +62,8 @@ export function voiceSettingsToastAction(): { label: string; onClick: () => void
  * gesture synchronously; the toast lib import settles on its own).
  */
 export function showVoiceSetupToast(): void {
-  void getToast().then((toast) => {
-    toast.error(m.hardwareConsole_voice_noKey_error(), {
+  void getToast().then((notify) => {
+    notify.error(m.hardwareConsole_voice_noKey_error(), {
       id: VOICE_SETUP_TOAST_ID,
       action: voiceSettingsToastAction(),
     });

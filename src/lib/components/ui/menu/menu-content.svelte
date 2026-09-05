@@ -1,6 +1,14 @@
 <script lang="ts">
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
   import { cn } from '$lib/utils.js';
+  import ListHighlight from './menu-list-highlight.svelte';
+  import { menuOverlay } from './menu-recipes';
+  import {
+    clampSurface,
+    setSurface,
+    surfaceClasses,
+    useSurface,
+  } from '$lib/components/ui/surface-context';
 
   const uid = $props.id();
 
@@ -15,6 +23,7 @@
     // floating CSS vars, while SubContent (menu-sub-content.svelte) uses the shared
     // 'menu' prefix — the differing var names between the two files are intentional.
     maxHeight = 'var(--bits-dropdown-menu-content-available-height, calc(100dvh - 1rem))',
+    children,
     ...restProps
   }: MenuPrimitive.ContentProps & {
     portal?: boolean;
@@ -22,11 +31,13 @@
     maxHeight?: string;
   } = $props();
 
+  const surface = clampSurface(useSurface() + 2);
+  setSurface(surface);
   const contentClass = $derived(
     cn(
-      'type-body z-(--layer-popover) min-w-40 overflow-y-auto overscroll-contain rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none focus-visible:border-input focus-visible:ring-3 focus-visible:ring-ring/50',
-      'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95',
-      'duration-[var(--motion-fast)] motion-reduce:animate-none motion-reduce:transition-none',
+      menuOverlay(),
+      surfaceClasses(surface),
+      'min-w-40 overflow-y-auto overscroll-contain p-1',
       className,
     ),
   );
@@ -42,20 +53,28 @@
       bind:ref
       {id}
       data-slot="menu-content"
+      data-surface-level={surface}
       class={contentClass}
       {sideOffset}
       style="max-height: {maxHeight}"
       {...restProps}
-    />
+    >
+      <ListHighlight />
+      {@render children?.()}
+    </MenuPrimitive.Content>
   </MenuPrimitive.Portal>
 {:else}
   <MenuPrimitive.Content
     bind:ref
     {id}
     data-slot="menu-content"
+    data-surface-level={surface}
     class={contentClass}
     {sideOffset}
     style="max-height: {maxHeight}"
     {...restProps}
-  />
+  >
+    <ListHighlight />
+    {@render children?.()}
+  </MenuPrimitive.Content>
 {/if}

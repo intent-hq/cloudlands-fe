@@ -13,7 +13,7 @@
   import { getAttentionNotice } from './attention-notice';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
-  import { fade } from 'svelte/transition';
+  import { crispOut, spring, springIn } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import { extractSearchableContent } from './chat-search';
@@ -43,7 +43,7 @@
     showInitStatus = false,
     initializationStatus = null,
     enableTransitions = true,
-    animationDuration = 300,
+    animationDuration = spring.slow.settleMs,
     onCopy,
     workspaceId,
   }: Props = $props();
@@ -98,6 +98,11 @@
     navigator.clipboard.writeText(content);
     onCopy?.(content);
   }
+
+  function messageIn(node: Element) {
+    if (!enableTransitions) return { duration: 0 };
+    return { ...springIn(node, { tier: 'slow', y: 0, scale: 1 }), duration: animationDuration };
+  }
 </script>
 
 <div class="message-list">
@@ -112,7 +117,8 @@
       class:user-message={message.role === 'user'}
       class:assistant-message={message.role === 'assistant'}
       class:system-message={message.role === 'system'}
-      transition:fade={{ duration: enableTransitions ? animationDuration : 0 }}
+      in:messageIn
+      out:crispOut={{ tier: 'slow' }}
     >
       <!-- Fallback path: AgentMessageList does not receive `agentId` via props/context,
            so we can't use ChatMessage's Redux-backed subscription here. Pass the
@@ -168,7 +174,11 @@
   {/each}
 
   {#if showInitStatus && initializationStatus}
-    <div class="initialization-status" transition:fade={{ duration: 200 }}>
+    <div
+      class="initialization-status"
+      in:springIn={{ tier: 'moderate', y: 0, scale: 1 }}
+      out:crispOut={{ tier: 'moderate' }}
+    >
       <div class="status-content">
         <div class="status-spinner"></div>
         <span>{initializationStatus}</span>
@@ -196,14 +206,14 @@
   .message-wrapper {
     display: flex;
     flex-direction: column;
-    animation: slideIn 0.3s ease-out;
+    animation: slideIn var(--spring-slow) var(--spring-slow-ease);
   }
 
   .message-wrapper.highlighted {
     background-color: hsl(var(--warning) / 0.2);
     border-radius: 0.5rem;
     padding: 0.5rem;
-    transition: background-color 0.3s ease;
+    transition: background-color var(--spring-slow) var(--spring-slow-ease);
   }
 
   .message-wrapper.user-message {
@@ -246,9 +256,9 @@
     width: 1rem;
     height: 1rem;
     border: 2px solid hsl(var(--border));
-    border-top-color: hsl(var(--primary));
+    border-top-color: hsl(var(--primary-ink));
     border-radius: 50%;
-    animation: spin 1s linear infinite;
+    animation: spin calc(var(--spring-slow) * 4) linear infinite;
   }
 
   .empty-state {
@@ -278,7 +288,7 @@
   }
 
   :global(.highlight-flash) {
-    animation: flash 1s ease-out;
+    animation: flash calc(var(--spring-slow) * 4) var(--spring-exit-ease);
   }
 
   @keyframes flash {
@@ -288,6 +298,18 @@
     }
     50% {
       background-color: hsl(var(--warning) / 0.2);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .message-wrapper,
+    .status-spinner,
+    :global(.highlight-flash) {
+      animation: none;
+    }
+
+    .message-wrapper.highlighted {
+      transition: none;
     }
   }
 </style>

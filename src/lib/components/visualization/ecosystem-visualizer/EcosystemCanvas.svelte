@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
   /* eslint-disable max-lines */
   /**
    * EcosystemCanvas - Canvas-based organic visualization
@@ -11,8 +13,7 @@
   import { runForceSimulation } from './force-simulation';
   import { computeBlobShapes, drawBlobToCanvas } from './blob-shapes';
   import { tick, untrack } from 'svelte';
-  import { tweened } from 'svelte/motion';
-  import { cubicOut } from 'svelte/easing';
+  import { springValue } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
 
   // Change type colors matching repo-visualizer
@@ -106,7 +107,7 @@
 
   // ==================== PAN/ZOOM STATE ====================
   // Animated zoom transform for smooth visual zooming (matches repo-visualizer)
-  const zoomTransform = tweened({ x: 0, y: 0, scale: 1 }, { duration: 300, easing: cubicOut });
+  const zoomTransform = springValue({ x: 0, y: 0, scale: 1 }, 'slow');
   let isPanning = $state(false);
   let lastPanPoint = $state({ x: 0, y: 0 });
 
@@ -393,7 +394,7 @@
         y: mouseY - (mouseY - currentTransform.y) * scaleFactor,
         scale: newScale,
       },
-      { duration: 0 },
+      { hard: true },
     );
   }
 
@@ -414,7 +415,7 @@
     // Set immediately (no animation for panning)
     zoomTransform.set(
       { ...currentTransform, x: currentTransform.x + dx, y: currentTransform.y + dy },
-      { duration: 0 },
+      { hard: true },
     );
     lastPanPoint = { x: e.clientX, y: e.clientY };
   }
@@ -574,7 +575,7 @@
         focusDepth,
       });
       // Reset zoom to identity since force simulation already fits to viewport
-      zoomTransform.set({ x: 0, y: 0, scale: 1 }, { duration: 0 });
+      zoomTransform.set({ x: 0, y: 0, scale: 1 }, { hard: true });
       draw();
     });
   }
@@ -616,7 +617,7 @@
 
     // Reset zoom when data changes
     zoomedPath = null;
-    zoomTransform.set({ x: 0, y: 0, scale: 1 }, { duration: 0 });
+    zoomTransform.set({ x: 0, y: 0, scale: 1 }, { hard: true });
 
     // Build set of highlighted paths for pruning preservation
     const highlightedPathsSet = new Set([...filesChanged, ...filesCommitted, ...filesPR]);
@@ -657,7 +658,7 @@
       });
 
       // Force simulation already fits to viewport, so reset zoom to identity
-      zoomTransform.set({ x: 0, y: 0, scale: 1 }, { duration: 0 });
+      zoomTransform.set({ x: 0, y: 0, scale: 1 }, { hard: true });
       lastFocusPath = null;
 
       draw();
@@ -1219,7 +1220,7 @@
         {#if i > 0}
           <span class="opacity-40">/</span>
         {/if}
-        <button
+        <Button
           class="hover:text-foreground transition-colors truncate max-w-[120px] cursor-pointer {i ===
           breadcrumbs.length - 1
             ? 'text-foreground font-medium'
@@ -1227,7 +1228,7 @@
           onclick={() => handleBreadcrumbClick(crumb.path)}
         >
           {crumb.label}
-        </button>
+        </Button>
       {/each}
     </div>
   {/if}
@@ -1295,20 +1296,20 @@
               <circle cx="11" cy="11" r="8"></circle>
               <path d="m21 21-4.35-4.35"></path>
             </svg>
-            <input
-              bind:this={searchInputRef}
+            <Input
+              bind:ref={searchInputRef}
               bind:value={searchQuery}
               type="text"
               placeholder={m.ecosystem_canvas_search_placeholder()}
               class="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground focus:outline-none! focus:ring-0!"
               onblur={() => !searchQuery.trim() && closeSearch()}
             />
-            <button
+            <Button
               class="text-muted-foreground hover:text-foreground text-xs"
               onclick={closeSearch}
             >
               {m.ecosystem_canvas_esc_label()}
-            </button>
+            </Button>
           </div>
           {#if searchResults.length > 0}
             <div class="max-h-64 overflow-y-auto py-1">
@@ -1353,7 +1354,7 @@
           {/if}
         </div>
       {:else}
-        <button
+        <Button
           class="flex items-center gap-2 px-2.5 py-1.5 rounded text-xs bg-background/70 text-muted-foreground hover:bg-background/90 hover:text-foreground transition-all cursor-pointer"
           onclick={openSearch}
         >
@@ -1369,7 +1370,7 @@
           </svg>
           <span>{m.ecosystem_canvas_search_label()}</span>
           <kbd class="text-ui px-1 py-0.5 rounded bg-muted ml-1">/</kbd>
-        </button>
+        </Button>
       {/if}
     </div>
 
@@ -1377,7 +1378,7 @@
     <div class="absolute bottom-2 right-2 flex flex-col items-end gap-1.5">
       <!-- Changes toggle (when there are any changes) -->
       {#if hasAnyChanges}
-        <button
+        <Button
           class="flex items-center gap-3 px-2.5 py-1.5 rounded text-xs cursor-pointer border {showChangesMode
             ? 'bg-background/95 text-foreground shadow-sm border-border'
             : 'bg-background/70 text-muted-foreground hover:bg-background/90 border-border'}"
@@ -1413,7 +1414,7 @@
               <span>{m.ecosystem_canvas_inPrCount_label({ count: filesPR.length })}</span>
             </span>
           {/if}
-        </button>
+        </Button>
       {/if}
     </div>
   </div>

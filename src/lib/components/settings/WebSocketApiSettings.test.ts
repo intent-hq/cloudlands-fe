@@ -34,8 +34,8 @@ const mockToast = vi.hoisted(() => ({
   warning: vi.fn(),
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: mockToast,
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: mockToast,
 }));
 
 // Mock the lazily-imported qrcode module so QR tests can assert the pairing URI.
@@ -148,6 +148,7 @@ describe('WebSocketApiSettings', () => {
       expect(mockToast.error).toHaveBeenCalledWith(
         expect.stringContaining('Port 5181 is already in use'),
       );
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
     });
   });
 
@@ -174,6 +175,7 @@ describe('WebSocketApiSettings', () => {
     // Assert: toast.error was called (daemon rolled back the setting)
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalled();
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
     });
   });
 

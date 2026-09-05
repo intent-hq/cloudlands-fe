@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import { Logger } from '../../shared/logger';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
@@ -377,7 +377,10 @@
 
               <!-- Stack Trace Details - Full width with proper overflow handling -->
               {#if showDetails}
-                <div class="relative w-full pt-3" transition:slide={{ axis: 'y' }}>
+                <div
+                  class="relative w-full pt-3"
+                  transition:slide={{ axis: 'y', tier: 'moderate' }}
+                >
                   <div class="p-4 border border-border">
                     <pre
                       class="text-xs font-mono text-subtle leading-relaxed overflow-x-auto max-h-64 text-left whitespace-pre-wrap break-all">{errStack}</pre>

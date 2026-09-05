@@ -1,10 +1,11 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { goto } from '$app/navigation';
   import { faArrowRight, faLayerGroup, faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
-  import { cubicOut } from 'svelte/easing';
+  import { prefersReducedMotion, spring } from '$lib/motion';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
@@ -122,7 +123,7 @@
   // mask stays put while the tab slides. Poll via rAF for the full layout
   // transition whenever tab order or title-bar positioning changes.
   const activeTabBoundsPollers = new Set<() => void>();
-  const ACTIVE_TAB_TRACKING_DURATION_MS = 240;
+  const ACTIVE_TAB_TRACKING_DURATION_MS = spring.slow.settleMs;
   let autoScrollFrame: number | null = null;
   let layoutTracking = false;
   let dragTracking = false;
@@ -170,6 +171,7 @@
     const handleMoved = (event: Event) =>
       handleGlobalWorkspaceTabMoved(event as CustomEvent<WorkspaceTabMovedEventDetail>);
     window.addEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
+    window.addEventListener('keydown', handleDragKeydown);
     return () => {
       unsubscribe();
       unsubscribeHoverCardIntent();
@@ -177,6 +179,7 @@
       openWorkspaceHoverCardIds.clear();
       pointerOpenEligibleWorkspaceHoverCardIds.clear();
       window.removeEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
+      window.removeEventListener('keydown', handleDragKeydown);
     };
   });
 
@@ -715,8 +718,6 @@
   }
 </script>
 
-<svelte:window onkeydown={handleDragKeydown} />
-
 {#if $workspaceTabOrder$.length > 0}
   <!-- pl-7 keeps the active tab's 12px corner-flare SVG inside the padding box
        and gives the first tab 24px of clearance after the -ml-1 strip offset.
@@ -761,7 +762,10 @@
         data-workspace-tab-motion={workspaceId}
         style:width={isDragged ? `${dragSession?.origin.width ?? 160}px` : undefined}
         style:height={isDragged ? `${dragSession?.origin.height ?? 32}px` : undefined}
-        animate:flip={{ duration: isDragged ? 0 : 180, easing: cubicOut }}
+        animate:flip={{
+          duration: isDragged || prefersReducedMotion() ? 0 : spring.moderate.settleMs,
+          easing: spring.moderate.exit.easing,
+        }}
       >
         {#if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
@@ -892,10 +896,10 @@
                 </span>
               </button>
             </TooltipRich>
-            <button
+            <Button
               type="button"
               class={cn(
-                'absolute right-1 z-10 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-subtle outline-none! transition-opacity hover:bg-muted hover:text-foreground focus-visible:text-foreground focus-visible:opacity-100 forced-colors:focus-visible:text-[HighlightText]',
+                'absolute right-1 z-10 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-subtle outline-none! transition-opacity hover:bg-muted hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:text-foreground focus-visible:opacity-100 forced-colors:focus-visible:text-[HighlightText]',
                 isCurrent ? 'opacity-70' : 'opacity-0 group-hover/workspace-tab:opacity-100',
               )}
               onclick={(event) => closeWorkspace(workspaceId, event)}
@@ -905,7 +909,7 @@
               data-workspace-tab-close
             >
               <Fa icon={faXmark} size="xs" />
-            </button>
+            </Button>
           </div>
         {:else}
           <div
@@ -973,15 +977,15 @@
                 data-workspace-tab-loading-indicator
               ></span>
             </button>
-            <button
+            <Button
               type="button"
-              class="absolute right-1 z-10 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-subtle opacity-70 outline-none! hover:bg-muted hover:text-foreground focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
+              class="absolute right-1 z-10 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-subtle opacity-70 outline-none! hover:bg-muted hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
               onclick={(event) => closeWorkspace(workspaceId, event)}
               aria-label={m.layout_workspaceTabStrip_close_ariaLabel({ name: workspaceId })}
               data-workspace-tab-close
             >
               <Fa icon={faXmark} size="xs" />
-            </button>
+            </Button>
           </div>
         {/if}
       </div>
@@ -1020,7 +1024,7 @@
     opacity: 0.45;
   }
 
-  button[data-workspace-tab-close]:focus-visible :global(svg) {
+  :global(button[data-workspace-tab-close]:focus-visible svg) {
     transform: scale(1.15);
   }
 </style>

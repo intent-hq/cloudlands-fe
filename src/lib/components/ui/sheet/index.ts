@@ -1,4 +1,5 @@
 import { Dialog as SheetPrimitive } from 'bits-ui';
+import Root from '../dialog/overlay-root.svelte';
 import Trigger from './sheet-trigger.svelte';
 import Close from './sheet-close.svelte';
 import Overlay from './sheet-overlay.svelte';
@@ -8,7 +9,6 @@ import Footer from './sheet-footer.svelte';
 import Title from './sheet-title.svelte';
 import Description from './sheet-description.svelte';
 
-const Root = SheetPrimitive.Root;
 const Portal = SheetPrimitive.Portal;
 export { sheetMetadata } from './sheet.meta';
 

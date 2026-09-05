@@ -511,7 +511,9 @@ describe('MonitoredPrsRow', () => {
     for (const item of Array.from(menu.querySelectorAll('button'))) {
       expect(item.className).toContain('h-auto');
       expect(item.className).toContain('whitespace-normal');
-      expect(item.querySelector('span')?.className).toContain('break-words');
+      expect(item.querySelector('[data-slot="button-content"] > span')?.className).toContain(
+        'break-words',
+      );
     }
   });
 

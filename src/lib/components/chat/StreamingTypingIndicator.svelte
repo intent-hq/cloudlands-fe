@@ -6,14 +6,9 @@
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { fade } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fade } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
-  import {
-    IntentMarkLoader,
-    intentMarkMotionTiming,
-    type IntentMarkVariant,
-  } from '$lib/components/ui/indicators';
+  import { IntentMarkLoader, type IntentMarkVariant } from '$lib/components/ui/indicators';
   import {
     CHAT_OPERATIONAL_LEADING_CLASS,
     CHAT_OPERATIONAL_ROW_CLASS,
@@ -44,8 +39,6 @@
     seed: _seed = 'default',
   }: Props = $props();
 
-  const hideMs = 150;
-  const settlementHoldMs = intentMarkMotionTiming.settleMs + 20;
   let rendered = $state(false);
   let hideTimer: number | undefined;
 
@@ -65,13 +58,6 @@
   onDestroy(() => {
     if (hideTimer !== undefined) window.clearTimeout(hideTimer);
   });
-
-  function settleAndFade(node: Element) {
-    return fade(node, {
-      duration: settlementHoldMs,
-      easing: (progress) => cubicOut(Math.min(1, (progress * settlementHoldMs) / hideMs)),
-    });
-  }
 </script>
 
 {#if rendered}
@@ -79,8 +65,8 @@
     class="{CHAT_OPERATIONAL_ROW_CLASS} group font-family-child font-normal text-muted-foreground {className}"
     data-streaming-typing-row
     aria-hidden={!visible}
-    in:fade={{ duration: 200, easing: cubicOut }}
-    out:settleAndFade
+    in:fade={{ tier: 'moderate' }}
+    out:fade={{ tier: 'moderate' }}
   >
     <div class={CHAT_OPERATIONAL_LEADING_CLASS} data-operational-leading>
       <IntentMarkLoader {variant} size={16} playing={visible} />

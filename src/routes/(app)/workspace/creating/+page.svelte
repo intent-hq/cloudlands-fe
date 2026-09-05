@@ -9,11 +9,11 @@
   <div class="text-center space-y-6 max-w-md">
     <div class="flex justify-center">
       <div class="relative">
-        <Fa icon={faGithub} size="2x" class="text-primary" />
+        <Fa icon={faGithub} size="2x" class="text-primary-ink" />
         <Fa
           icon={faSpinner}
           size="lg"
-          class="absolute -bottom-2 -right-2 text-primary animate-spin"
+          class="absolute -bottom-2 -right-2 text-primary-ink animate-spin"
         />
       </div>
     </div>

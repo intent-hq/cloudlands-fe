@@ -10,7 +10,7 @@
    */
   import Fa from 'svelte-fa';
   import { faEllipsis } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import * as Menu from '$lib/components/ui/menu';
   import { cn } from '$lib/utils.js';
   import { m } from '$shared/paraglide/messages.js';
@@ -126,7 +126,7 @@
       document.body.removeChild(link);
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     } catch {
-      toast.error(m.ui_imageActionsMenu_downloadFailed_error());
+      notify.error(m.ui_imageActionsMenu_downloadFailed_error());
     }
   }
 
@@ -134,9 +134,9 @@
     if (!workspaceFile) return;
     try {
       await writeTextToClipboard(workspaceFile.path);
-      toast.success(m.ui_imageActionsMenu_pathCopied_label());
+      notify.success(m.ui_imageActionsMenu_pathCopied_label());
     } catch {
-      toast.error(m.ui_imageActionsMenu_copyFailed_error());
+      notify.error(m.ui_imageActionsMenu_copyFailed_error());
     }
   }
 
@@ -177,9 +177,9 @@
       // Clipboard image writes only accept PNG.
       if (blob.type !== 'image/png') blob = await convertToPngBlob(blob);
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      toast.success(m.ui_imageActionsMenu_imageCopied_label());
+      notify.success(m.ui_imageActionsMenu_imageCopied_label());
     } catch {
-      toast.error(m.ui_imageActionsMenu_copyFailed_error());
+      notify.error(m.ui_imageActionsMenu_copyFailed_error());
     }
   }
 </script>

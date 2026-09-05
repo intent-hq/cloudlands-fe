@@ -198,7 +198,7 @@
     : 'border-transparent'}"
   oncontextmenu={handleContextMenu}
 >
-  <button
+  <Button
     type="button"
     aria-current={activeInPanel ? 'page' : undefined}
     class="flex-1 min-w-0 pr-2 py-0.5 flex items-center gap-1.5 rounded transition-colors cursor-pointer focus:ring-0 focus:outline-0"
@@ -232,7 +232,7 @@
         <span class="text-ui text-subtle truncate">{dirPath}</span>
       {/if}
     </div>
-  </button>
+  </Button>
 
   <!-- Action buttons container - shown on hover -->
   {#if hasActions}

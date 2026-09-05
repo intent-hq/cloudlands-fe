@@ -55,7 +55,7 @@
   });
 </script>
 
-<div class="relative min-w-0 w-full">
+<div data-slot="select-root" class="relative min-w-0 w-full">
   <SelectPrimitive.Root
     type="single"
     bind:value

@@ -3,6 +3,7 @@
   import { Editor } from '@tiptap/core';
   import { createEditorConfig } from '$lib/utils/editor-config';
   import { CommentManagerV2 } from '$features/comments/comment-manager-v2';
+  import { alert as showAlert } from '$lib/components/patterns/confirm';
 
   import {
     selectComments,
@@ -120,7 +121,7 @@ More content here for testing purposes.`;
 
     const { from, to } = editor.state.selection;
     if (from === to) {
-      alert('Please select some text to comment on');
+      void showAlert('Please select some text to comment on');
       return;
     }
 

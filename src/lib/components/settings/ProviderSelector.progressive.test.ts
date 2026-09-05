@@ -36,8 +36,8 @@ vi.mock('$features/pi/pi-models.client', () => ({
   installPiMcpAdapter: mocks.installPiMcpAdapter,
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { error: vi.fn(), success: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn() },
 }));
 
 vi.mock('$store/renderer/store', async () => {

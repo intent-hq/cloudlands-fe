@@ -137,8 +137,8 @@ function* handleTransferProgress(event: TransferProgressEvent): SagaGenerator<vo
 /** Fail-soft warning toast when the target could not resume some agents. */
 async function showResumeFailedToast(count: number): Promise<void> {
   try {
-    const { toast } = await import('svelte-sonner');
-    toast.warning(
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.warning(
       count === 1
         ? m.workspace_transfer_resumeFailed_one()
         : m.workspace_transfer_resumeFailed_many({ count }),

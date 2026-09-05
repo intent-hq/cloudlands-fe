@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   /**
    * WalkthroughInlineComment
    *
@@ -59,15 +61,15 @@
 </script>
 
 <div class="walkthrough-inline-comment flex items-center gap-2 {className}">
-  <input
-    bind:this={inputElement}
+  <Input
+    bind:ref={inputElement}
     bind:value={message}
     onkeydown={handleKeydown}
     placeholder={m.codeReview_inlineComment_askLine_placeholder()}
     disabled={isSending}
-    class="flex-1 h-8 rounded-md border border-border bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary/50 disabled:opacity-50"
+    class="flex-1 h-8 rounded-md border border-border bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary-ink/30 focus:border-primary-ink/50 disabled:opacity-50"
   />
-  <button
+  <Button
     type="button"
     onclick={handleSend}
     disabled={!message.trim() || isSending}
@@ -78,13 +80,13 @@
     {:else}
       <Fa icon={faArrowRight} class="h-3.5 w-3.5" />
     {/if}
-  </button>
-  <button
+  </Button>
+  <Button
     type="button"
     onclick={() => onClose?.()}
     class="h-8 px-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
   >
     {m.codeReview_inlineComment_cancel_label()}
-  </button>
+  </Button>
 </div>
 <p class="text-ui text-subtle mt-1">{m.codeReview_inlineComment_inputHint_label()}</p>

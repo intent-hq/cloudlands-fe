@@ -76,9 +76,9 @@ vi.mock('../../notes/notes-write-service', () => ({
   ),
 }));
 
-// FAKE the toast seam so the failure path runs without svelte-sonner.
-vi.mock('svelte-sonner', () => ({
-  toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), message: vi.fn() },
+// FAKE the toast seam so the failure path runs without $lib/components/patterns/notify.
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), message: vi.fn() },
 }));
 
 import { Editor } from '@tiptap/core';

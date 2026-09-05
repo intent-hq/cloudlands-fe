@@ -67,8 +67,8 @@ function isProviderModelMismatch(error: unknown): boolean {
 
 async function showCreationError(error: unknown): Promise<void> {
   try {
-    const { toast } = await import('svelte-sonner');
-    toast.error(m.agent_creation_createFailed_error(), {
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.error(m.agent_creation_createFailed_error(), {
       description: isProviderModelMismatch(error)
         ? m.agent_creation_providerModelMismatch_description()
         : m.agent_creation_failed_description(),

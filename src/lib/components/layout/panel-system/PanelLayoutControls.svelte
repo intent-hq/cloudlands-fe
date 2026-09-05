@@ -27,7 +27,7 @@
   import { selectModelForType } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import LayoutPresetDropdown from './LayoutPresetDropdown.svelte';
   import PanelMinimap from './PanelMinimap.svelte';
   import type { LayoutPresetId } from './types';
@@ -105,14 +105,14 @@
         logger.info('Parsed layout', { layout });
         applyParsedLayout(layout);
         promptValue = '';
-        toast.success(m.layout_layoutControls_updated_label());
+        notify.success(m.layout_layoutControls_updated_label());
       } else {
         logger.warn('Failed to parse layout response', { response: result.enhanced });
-        toast.error(m.layout_layoutControls_parseFailed_error());
+        notify.error(m.layout_layoutControls_parseFailed_error());
       }
     } catch (error) {
       logger.error('Layout generation failed', error);
-      toast.error(
+      notify.error(
         error instanceof EnhancePromptUnavailableError
           ? m.layout_layoutControls_generationUnavailable_error()
           : error instanceof Error && error.message

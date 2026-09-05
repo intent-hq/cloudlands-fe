@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { Input } from '$lib/components/ui/input';
   export { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 </script>
 
@@ -19,8 +20,7 @@
    */
   import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
   import { onDestroy } from 'svelte';
-  import { slide } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { slide } from '$lib/motion';
   import {
     selectIsTerminalOverlayOpenForWorkspace,
     selectTerminalOverlayHeight,
@@ -38,7 +38,7 @@
     type TerminalTab,
   } from '$store/renderer/slices/terminals/terminals-slice';
   import { appClient } from '$lib/client';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   // RootQuakeTerminalOverlay uses ROOT_WORKSPACE_ID as its workspace ID
 
   import Terminal from './Terminal.svelte';
@@ -205,7 +205,7 @@
         rows: 24,
       });
       if (!result.success || !result.id) {
-        toast.error(m.terminal_adapter_openFailed_error());
+        notify.error(m.terminal_adapter_openFailed_error());
         return;
       }
       appStore.dispatch(
@@ -224,7 +224,7 @@
         overlayContainer?.focus();
       });
     } catch {
-      toast.error(m.terminal_adapter_openFailed_error());
+      notify.error(m.terminal_adapter_openFailed_error());
     } finally {
       isCreatingTerminal = false;
     }
@@ -376,7 +376,7 @@
       class="terminal-panel relative flex flex-col bg-sidebar border-t border-border shadow-2xl w-full"
       class:is-resizing={isResizing}
       style="height: {renderedHeight}vh;"
-      transition:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
+      transition:slide={{ axis: 'y', tier: 'moderate' }}
     >
       <!-- Resize Handle -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -396,7 +396,7 @@
         <div class="flex items-center gap-2">
           <Fa icon={faTerminal} class="w-3.5 h-3.5 opacity-60" />
           {#if isEditingHeaderName}
-            <input
+            <Input
               type="text"
               data-edit-header-terminal
               bind:value={headerEditValue}
@@ -485,7 +485,7 @@
               aria-selected={isActive}
             >
               {#if editingTerminalId === term.id}
-                <input
+                <Input
                   type="text"
                   data-edit-terminal={term.id}
                   bind:value={editingValue}
@@ -501,14 +501,14 @@
                 >
               {/if}
 
-              <button
+              <Button
                 type="button"
                 class="ml-0.5 p-1 text-muted-foreground hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
                 onclick={(e) => closeTerminal(term.id, e)}
                 aria-label={m.terminal_quakeOverlay_closeTerminal_ariaLabel()}
               >
                 <Fa icon={faXmark} size="xs" />
-              </button>
+              </Button>
             </div>
           {/each}
 
@@ -517,14 +517,14 @@
             side="top"
             delayDuration={300}
           >
-            <button
+            <Button
               type="button"
               class="flex items-center justify-center w-7 h-7 ml-1 border-none rounded-md bg-transparent text-muted-foreground cursor-pointer transition-all duration-150 hover:bg-muted/80 hover:text-foreground"
               onclick={createNewTerminal}
               aria-label={m.terminal_quakeOverlay_newTerminal_ariaLabel()}
             >
               <Fa icon={faPlus} class="w-3.5 h-3.5" />
-            </button>
+            </Button>
           </Tooltip>
         </div>
 

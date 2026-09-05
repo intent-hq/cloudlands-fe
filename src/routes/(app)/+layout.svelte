@@ -49,6 +49,7 @@
   import Toast from '$lib/components/ui/toast/Toast.svelte';
   import NodeVersionToast from '$lib/components/NodeVersionToast.svelte';
   import { TooltipProvider } from '$lib/components/ui/tooltip';
+  import { ConfirmHost } from '$lib/components/patterns/confirm';
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
   import LinkActionMenu from '$features/navigation/LinkActionMenu.svelte';
   import OffscreenWebviewHost from '$lib/components/browser/OffscreenWebviewHost.svelte';
@@ -843,9 +844,9 @@
       });
     }
 
-    import('svelte-sonner')
-      .then(({ toast }) => {
-        toast.success(m.layout_appShell_githubConnected_toast(), {
+    import('$lib/components/patterns/notify')
+      .then(({ notify }) => {
+        notify.success(m.layout_appShell_githubConnected_toast(), {
           duration: 3000,
         });
       })
@@ -1001,6 +1002,7 @@
   <AuggieSetupGate />
 
   <Toast />
+  <ConfirmHost />
 
   <!-- Once-per-session Node.js requirement warning (renders nothing itself) -->
   <NodeVersionToast />

@@ -9,6 +9,7 @@
    * component-local and resets to 09–18 whenever the overlay reopens.
    */
   import Logo from '$lib/components/Logo.svelte';
+  import { Button } from '$lib/components/ui/button';
   import type { UsageStatsResult } from '$lib/client/app-client';
   import { m } from '$shared/paraglide/messages.js';
   import type { StatsMode } from './stats-period';
@@ -107,14 +108,14 @@
                appear in PNG exports (html-to-image serializes the non-hover
                computed styles). -->
           <span class="wh-bound"
-            >{pad2(value)}<button
+            >{pad2(value)}<Button
               class="wh-arrow wh-arrow-up"
               onclick={() => stepBound(bound, 1)}
-              aria-label={m.stats_hourCard_increaseBound_ariaLabel({ bound })}>▲</button
-            ><button
+              aria-label={m.stats_hourCard_increaseBound_ariaLabel({ bound })}>▲</Button
+            ><Button
               class="wh-arrow wh-arrow-down"
               onclick={() => stepBound(bound, -1)}
-              aria-label={m.stats_hourCard_decreaseBound_ariaLabel({ bound })}>▼</button
+              aria-label={m.stats_hourCard_decreaseBound_ariaLabel({ bound })}>▼</Button
             ></span
           >
         {/snippet}

@@ -30,7 +30,7 @@
     faWindowMaximize,
     faXmark,
   } from '@fortawesome/free-solid-svg-icons';
-  import { safeSlide } from '$lib/utils/animations';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -267,7 +267,7 @@
     role="group"
     aria-label={m.chat_monitoredPrs_row_ariaLabel()}
     data-testid="monitored-prs-row"
-    transition:safeSlide={{ axis: 'y', duration: 200 }}
+    transition:safeDisclosureTransition={{ tier: 'moderate' }}
   >
     {#each activeMonitors as monitor (monitor.monitorId)}
       {@const detailsId = `monitored-pr-details-${monitor.monitorId}`}
@@ -333,6 +333,8 @@
                 <Button
                   variant="ghost-light"
                   size="xs"
+                  truncateLabel={false}
+                  labelClass="break-words whitespace-normal"
                   class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
                   data-testid="monitored-pr-check-flush-item"
                   onclick={() => handleCheckAndFlush(monitor, close)}
@@ -345,6 +347,8 @@
                 <Button
                   variant="ghost-light"
                   size="xs"
+                  truncateLabel={false}
+                  labelClass="break-words whitespace-normal"
                   class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
                   data-testid="monitored-pr-open-in-app-item"
                   onclick={() => handleOpenInApp(monitor, close)}
@@ -357,6 +361,8 @@
                 <Button
                   variant="ghost-light"
                   size="xs"
+                  truncateLabel={false}
+                  labelClass="break-words whitespace-normal"
                   class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
                   data-testid="monitored-pr-open-external-item"
                   onclick={() => handleOpenExternal(monitor, close)}
@@ -369,6 +375,8 @@
                 <Button
                   variant="ghost-light"
                   size="xs"
+                  truncateLabel={false}
+                  labelClass="break-words whitespace-normal"
                   class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
                   data-testid="monitored-pr-cancel-item"
                   onclick={() => handleCancel(monitor, close)}

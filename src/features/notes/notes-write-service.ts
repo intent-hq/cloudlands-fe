@@ -32,7 +32,7 @@
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { appClient } from '$lib/client';
 import type { MutationResult } from '$lib/client';
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
 import { ContentType, NoteVisibility } from '$shared/types';
 import type { CreateNoteRequest, Note } from '$shared/types';
@@ -217,7 +217,7 @@ function reconcileNoteConflict(
     void refetchWorkspaceNotes(workspaceId);
   }
   logger.warn('Note mutation conflicted; reloaded the latest version', { noteId });
-  toast.warning(m.notes_writeService_noteChanged_label(), {
+  notify.warning(m.notes_writeService_noteChanged_label(), {
     description: m.notes_writeService_noteChanged_description(),
   });
   return true;
@@ -327,7 +327,7 @@ async function flushContent(key: string, noteId: string): Promise<void> {
       if (!result.success) {
         if (reconcileNoteConflict(pending.workspaceId, noteId, result)) return;
         logger.error('Failed to save note content', result.error);
-        toast.error(m.notes_writeService_saveFailed_error(), {
+        notify.error(m.notes_writeService_saveFailed_error(), {
           description: result.error ?? m.notes_writeService_unknown_error(),
         });
         await refetchWorkspaceNotes(pending.workspaceId);
@@ -357,7 +357,7 @@ export async function updateNoteTitle(
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
       logger.error('Failed to update note title', result.error);
-      toast.error(m.notes_writeService_updateTitleFailed_error(), {
+      notify.error(m.notes_writeService_updateTitleFailed_error(), {
         description: result.error ?? m.notes_writeService_unknown_error(),
       });
       if (previous !== undefined) {
@@ -380,7 +380,7 @@ export async function deleteNote(workspaceId: string, noteId: string): Promise<v
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
       logger.error('Failed to delete note', result.error);
-      toast.error(m.notes_writeService_deleteFailed_error(), {
+      notify.error(m.notes_writeService_deleteFailed_error(), {
         description: result.error ?? m.notes_writeService_unknown_error(),
       });
       if (snapshot) appStore.dispatch(applyNoteCreated(workspaceId, snapshot));

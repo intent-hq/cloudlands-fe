@@ -9,6 +9,7 @@
   import SubTrigger from './menu-sub-trigger.svelte';
   import { DropdownMenu } from 'bits-ui';
   import type { StackedMenuGroup, StackedMenuItem } from './menu-stacked-content.types';
+  import { ShortcutChip } from '$lib/components/ui/kbd';
 
   let {
     groups,
@@ -33,9 +34,8 @@
           {/if}
           <span class="min-w-0 flex-1 truncate">{item.label}</span>
           {#if item.shortcut}
-            <kbd class="type-caption ml-5 shrink-0 text-muted-foreground" aria-hidden="true">
-              {item.shortcut}
-            </kbd>
+            <span class="ml-5" aria-hidden="true"><ShortcutChip>{item.shortcut}</ShortcutChip></span
+            >
           {/if}
         </SubTrigger>
         <SubContent class={submenuClass}>

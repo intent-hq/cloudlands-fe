@@ -1,27 +1,56 @@
 <script lang="ts">
   import type { HTMLInputAttributes, HTMLInputTypeAttribute } from 'svelte/elements';
+  import { InputMessage } from '$lib/components/ui/input-message';
+  import { useSize, type UiSize } from '$lib/components/ui/size-context';
+  import {
+    textEntryControlClasses,
+    textEntryFocusResetClasses,
+    textEntryHeight,
+  } from '../text-entry';
   import { cn, type WithElementRef } from '$lib/utils.js';
 
   type InputType = Exclude<HTMLInputTypeAttribute, 'file'>;
+  type SharedProps = Omit<HTMLInputAttributes, 'size' | 'type'> & {
+    size?: UiSize | number;
+    noFocusStyle?: boolean;
+    message?: string;
+    error?: string;
+    messageId?: string;
+  };
 
   type Props = WithElementRef<
-    Omit<HTMLInputAttributes, 'type'> &
-      (
-        | { type: 'file'; files?: FileList; noFocusStyle?: boolean }
-        | { type?: InputType; files?: undefined; noFocusStyle?: boolean }
-      )
+    SharedProps & ({ type: 'file'; files?: FileList } | { type?: InputType; files?: undefined })
   >;
 
+  const uid = $props.id();
+  const contextSize = useSize();
+
   let {
-    ref = $bindable(null),
+    ref = $bindable(),
+    id,
     value = $bindable(),
     type,
+    size,
     files = $bindable(),
     noFocusStyle = false,
+    message,
+    error,
+    messageId = `${uid}-message`,
+    'aria-describedby': ariaDescribedBy,
+    'aria-invalid': ariaInvalid,
     class: className,
     'data-slot': dataSlot = 'input',
     ...restProps
   }: Props = $props();
+
+  const resolvedSize = $derived(typeof size === 'string' ? size : contextSize);
+  const nativeSize = $derived(typeof size === 'number' ? size : undefined);
+  const visibleMessage = $derived(error ?? message);
+  const describedBy = $derived(
+    [ariaDescribedBy, visibleMessage ? messageId : undefined].filter(Boolean).join(' ') ||
+      undefined,
+  );
+  const invalid = $derived(error ? true : ariaInvalid);
 
   export function focus() {
     ref?.focus();
@@ -44,16 +73,20 @@
 {#if type === 'file'}
   <input
     bind:this={ref}
+    {id}
     data-slot={dataSlot}
+    data-size={resolvedSize}
     class={cn(
-      'type-body border-border bg-card text-foreground selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground/70 flex h-(--control-height-medium) w-full min-w-0 rounded-(--radius-medium) border px-3 shadow-none outline-none transition-[border-color,background-color,box-shadow] duration-(--motion-fast) hover:border-input file:mr-3 file:border-0 file:bg-transparent file:font-medium file:text-foreground disabled:cursor-not-allowed disabled:bg-muted/40 disabled:opacity-60 disabled:hover:border-border motion-reduce:transition-none',
-      noFocusStyle
-        ? 'focus-visible:outline-none focus-visible:ring-0'
-        : 'focus-visible:border-ring focus-visible:outline-none focus-visible:ring-0',
-      'aria-invalid:border-danger aria-invalid:ring-1 aria-invalid:ring-danger/25',
+      'type-caption text-foreground selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground/70 flex w-full min-w-0 rounded-(--radius-medium) border px-3 file:mr-3 file:border-0 file:bg-transparent file:font-medium file:text-foreground',
+      textEntryControlClasses,
+      textEntryHeight(resolvedSize),
+      noFocusStyle && textEntryFocusResetClasses,
       className,
     )}
     type="file"
+    size={nativeSize}
+    aria-describedby={describedBy}
+    aria-invalid={invalid}
     bind:files
     bind:value
     {...restProps}
@@ -61,20 +94,28 @@
 {:else}
   <input
     bind:this={ref}
+    {id}
     data-slot={dataSlot}
+    data-size={resolvedSize}
     class={cn(
-      'type-body border-border bg-card text-foreground selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground/70 flex h-(--control-height-medium) w-full min-w-0 rounded-(--radius-medium) border px-3 py-1 shadow-none outline-none transition-[border-color,background-color,box-shadow] duration-(--motion-fast) hover:border-input read-only:bg-muted/30 read-only:text-muted-foreground read-only:hover:border-border disabled:cursor-not-allowed disabled:bg-muted/40 disabled:opacity-60 disabled:hover:border-border motion-reduce:transition-none',
-      noFocusStyle
-        ? 'focus-visible:outline-none focus-visible:ring-0'
-        : 'focus-visible:border-ring focus-visible:outline-none focus-visible:ring-0',
-      'aria-invalid:border-danger aria-invalid:ring-1 aria-invalid:ring-danger/25',
+      'type-caption text-foreground selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground/70 flex w-full min-w-0 rounded-(--radius-medium) border px-3 py-1',
+      textEntryControlClasses,
+      textEntryHeight(resolvedSize),
+      noFocusStyle && textEntryFocusResetClasses,
       className,
     )}
     {type}
+    size={nativeSize}
+    aria-describedby={describedBy}
+    aria-invalid={invalid}
     bind:value
     autocorrect="off"
     autocapitalize="off"
     spellcheck="false"
     {...restProps}
   />
+{/if}
+
+{#if visibleMessage}
+  <InputMessage id={messageId} tone={error ? 'error' : 'helper'}>{visibleMessage}</InputMessage>
 {/if}

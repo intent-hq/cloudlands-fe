@@ -44,8 +44,8 @@ vi.mock('$store/renderer/store', () => ({
   },
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), info: vi.fn(), error: mocks.mockToastError, warning: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), info: vi.fn(), error: mocks.mockToastError, warning: vi.fn() },
 }));
 
 describe('RtkSettings', () => {
@@ -75,7 +75,7 @@ describe('RtkSettings', () => {
     render(RtkSettings);
 
     const toggle = await screen.findByRole('switch');
-    expect(toggle.getAttribute('data-state')).toBe('off');
+    expect(toggle.getAttribute('data-state')).toBe('unchecked');
   });
 
   it('calls settings.update with correct arguments when toggle is clicked', async () => {
@@ -203,13 +203,13 @@ describe('RtkSettings', () => {
     render(RtkSettings);
 
     const toggle = await screen.findByRole('switch');
-    expect(toggle.getAttribute('data-state')).toBe('off');
+    expect(toggle.getAttribute('data-state')).toBe('unchecked');
 
     await fireEvent.click(toggle);
 
     await waitFor(() =>
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: 'rtk.enabled', value: true }]),
     );
-    expect(toggle.getAttribute('data-state')).toBe('off');
+    expect(toggle.getAttribute('data-state')).toBe('unchecked');
   });
 });

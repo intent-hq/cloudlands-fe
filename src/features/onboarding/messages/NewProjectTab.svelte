@@ -8,6 +8,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
   import Input from '$lib/components/ui/input/input.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { faFolder } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import DirectoryPickerModal from './DirectoryPickerModal.svelte';
@@ -68,7 +69,7 @@
   <div
     class="flex items-center rounded-lg border border-border bg-card/50 text-sm overflow-hidden focus-within:border-ring"
   >
-    <button
+    <Button
       type="button"
       class="flex items-center gap-1.5 shrink-0 px-3 py-3 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer border-r border-border"
       onclick={handleSelectParentFolder}
@@ -80,7 +81,7 @@
           ? `${parentPath.replace(/^\/Users\/[^/]+/, '~').replace(/\/$/, '')}/`
           : m.onboarding_newProjectTab_selectFolder_label()}
       </span>
-    </button>
+    </Button>
     <Input
       id="project-name"
       bind:ref={projectNameInputRef}

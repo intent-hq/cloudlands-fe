@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { starterPrompts, type StarterPrompt } from '$lib/data/starter-prompts';
+  import { Button } from '$lib/components/ui/button';
+  import {
+  starterPrompts,
+  type StarterPrompt,
+} from '$lib/data/starter-prompts';
   import { faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import TypewriterText from '$lib/components/ui/TypewriterText.svelte';
@@ -23,7 +27,7 @@
 </script>
 
 <div class="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
-  <button
+  <Button
     type="button"
     onclick={handleClick}
     onmouseenter={() => (isHovered = true)}
@@ -35,13 +39,12 @@
       rounded-full
       text-sm font-medium
       cursor-pointer
-      transition-all duration-200
+      transition-all duration-200 {isHovered ? 'hovered' : ''}
     "
-    class:hovered={isHovered}
   >
     <Fa icon={faWandMagicSparkles} />
     <TypewriterText texts={labels} paused={isHovered} onIndexChange={(i) => (currentIndex = i)} />
-  </button>
+  </Button>
 </div>
 
 <style>

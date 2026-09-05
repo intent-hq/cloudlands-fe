@@ -22,7 +22,7 @@
   import { selectInstalledEditorsFiltered } from '$store/renderer/slices/external-editors/external-editors-selectors';
 
   import { invoke } from '$lib/electron-bridge';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -159,7 +159,7 @@
       onCancel?.();
     } catch (err) {
       logger.error(`Failed to open in ${editor.appName}:`, err);
-      toast.error(
+      notify.error(
         err instanceof Error
           ? err.message
           : m.modals_pullConflict_openFailed_error({ appName: editor.appName }),
@@ -239,7 +239,7 @@
               <div class="max-w-60 py-1">
                 {#each $installedEditors$ as editor (editor.id)}
                   {@const IconComponent = EDITOR_ICONS[editor.id]}
-                  <button
+                  <Button
                     type="button"
                     class="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted transition-colors text-left cursor-pointer"
                     onclick={() => {
@@ -263,7 +263,7 @@
                       <Fa icon={faCode} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
                     {/if}
                     <span class="flex-1">{editor.name}</span>
-                  </button>
+                  </Button>
                 {/each}
               </div>
             {/snippet}

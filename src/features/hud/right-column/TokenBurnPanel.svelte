@@ -127,7 +127,7 @@
     color: hsl(var(--foreground));
   }
   .hud-burn-rate.up {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
   .hud-burn-rate.down {
     color: hsl(var(--danger));

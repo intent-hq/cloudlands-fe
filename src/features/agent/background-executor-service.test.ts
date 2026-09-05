@@ -25,10 +25,10 @@ vi.mock('$store/renderer/slices/background-agent-executor/utils/context-preparat
   prepareContext: prepareContextSpy,
 }));
 
-// The service lazily imports svelte-sonner for error toasts.
+// The service lazily imports $lib/components/patterns/notify for error toasts.
 const { toastErrorSpy } = vi.hoisted(() => ({ toastErrorSpy: vi.fn() }));
-vi.mock('svelte-sonner', () => ({
-  toast: { error: toastErrorSpy, warning: vi.fn(), success: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: toastErrorSpy, warning: vi.fn(), success: vi.fn() },
 }));
 
 import { store as appStore } from '$store/renderer/store';

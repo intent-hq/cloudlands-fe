@@ -259,7 +259,6 @@
   .fixture-preview {
     padding: var(--catalog-preview-padding);
     background-color: hsl(var(--background));
-    background-image: var(--surface-hatch);
   }
 
   summary,
@@ -267,7 +266,7 @@
     width: fit-content;
     cursor: pointer;
     border-radius: var(--radius-small);
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
     font-size: var(--text-caption-size);
     font-weight: var(--text-body-strong-weight);
   }

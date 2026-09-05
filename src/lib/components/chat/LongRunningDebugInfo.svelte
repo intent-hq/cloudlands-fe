@@ -6,12 +6,13 @@
 -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { safeSlide } from '$lib/utils/animations';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import Fa from 'svelte-fa';
   import { faInfoCircle, faChevronDown, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils/cn';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { Button } from '$lib/components/ui/button';
 
   interface Props {
     /** When streaming/processing started (timestamp in ms) */
@@ -79,11 +80,12 @@
       'rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400',
       className,
     )}
-    transition:safeSlide={{ duration: 200 }}
+    transition:safeDisclosureTransition={{ tier: 'moderate' }}
   >
     <!-- Header - always visible -->
-    <button
+    <Button
       type="button"
+      variant="plain"
       class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-amber-500/10"
       onclick={() => (isExpanded = !isExpanded)}
     >
@@ -93,13 +95,13 @@
         <strong>{formattedTime}</strong>
       </span>
       <Fa icon={isExpanded ? faChevronDown : faChevronLeft} class="shrink-0 opacity-60" />
-    </button>
+    </Button>
 
     <!-- Expanded debug details -->
     {#if isExpanded}
       <div
         class="border-t border-amber-500/20 px-3 py-2 text-ui space-y-1.5"
-        transition:safeSlide={{ duration: 150 }}
+        transition:safeDisclosureTransition={{ tier: 'fast' }}
       >
         <p class="text-amber-600/80 dark:text-amber-400/80">
           {m.chat_longRunningDebug_intro_label()}

@@ -125,7 +125,7 @@
 {#if displayMode === 'icon'}
   <!-- Icon mode - just show avatar -->
   {#if agentData}
-    <button
+    <Button
       class="icon-button session-comment"
       onclick={() => onShow?.()}
       aria-label={m.tiptap_agentPeek_session_ariaLabel({ name: agentData.name })}
@@ -137,10 +137,10 @@
           class={cn($agentIsResponding$ && 'animate-pulse')}
         />
       </div>
-    </button>
+    </Button>
   {:else if isRecentComment}
     <!-- Waiting state in icon mode -->
-    <button
+    <Button
       class="icon-button session-comment"
       onclick={() => onShow?.()}
       aria-label={m.tiptap_agentPeek_launching_ariaLabel()}
@@ -148,10 +148,10 @@
       <div class="icon-wrapper">
         <Fa icon={faSpinner} class="animate-spin" size="sm" />
       </div>
-    </button>
+    </Button>
   {:else}
     <!-- Error state in icon mode -->
-    <button
+    <Button
       class="icon-button session-comment error"
       onclick={() => onShow?.()}
       aria-label={m.tiptap_agentPeek_notFound_ariaLabel()}
@@ -159,7 +159,7 @@
       <div class="icon-wrapper">
         <Fa icon={faExclamationTriangle} size="sm" />
       </div>
-    </button>
+    </Button>
   {/if}
 {:else}
   <!-- Full mode (used for both compact and full display modes) -->
@@ -317,7 +317,7 @@
   }
 
   /* Icon mode styles */
-  .icon-button {
+  :global(.icon-button) {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -330,17 +330,17 @@
     transition: all 0.2s;
   }
 
-  .icon-button.session-comment {
+  :global(.icon-button.session-comment) {
     border-color: rgb(125, 211, 252); /* sky-300 */
     background: rgb(224, 242, 254); /* sky-100 */
   }
 
-  .icon-button.session-comment.error {
+  :global(.icon-button.session-comment.error) {
     border-color: hsl(var(--danger));
     background: hsl(var(--danger-background));
   }
 
-  .icon-button:hover {
+  :global(.icon-button:hover) {
     transform: scale(1.1);
   }
 

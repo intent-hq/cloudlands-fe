@@ -9,7 +9,7 @@
    * - Up to date: Success message (brief)
    */
 
-  import { fly } from 'svelte/transition';
+  import { crispOut, springIn } from '$lib/motion';
   import {
     faArrowsRotate,
     faCakeCandles,
@@ -34,6 +34,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber, formatInteger } from '$lib/i18n/format';
   import ToastCloseButton from './ToastCloseButton.svelte';
+  import { Button } from '$lib/components/ui/button';
 
   interface Props {
     /** Callback when toast should be dismissed */
@@ -121,10 +122,10 @@
         </div>
         <div class="description">{m.ui_updateToast_readyToDownload_description()}</div>
       </div>
-      <button class="action-btn success" onclick={handleDownload}>
+      <Button variant="primary" size="sm" onclick={handleDownload}>
         <Fa icon={faDownload} class="mr-1" />
         {m.ui_updateToast_download_label()}
-      </button>
+      </Button>
     </div>
   {:else if $status$ === 'downloading'}
     <div class="flex flex-col gap-2">
@@ -147,7 +148,11 @@
     </div>
   {:else if $status$ === 'downloaded'}
     <div class="flex items-center gap-3">
-      <div class="icon-celebrate" transition:fly={{ y: 30, duration: 300 }}>
+      <div
+        class="icon-celebrate"
+        in:springIn={{ tier: 'slow', y: 30, scale: 1 }}
+        out:crispOut={{ tier: 'slow' }}
+      >
         <Fa icon={faCakeCandles} size="2x" />
       </div>
       <div class="text flex-1">
@@ -156,10 +161,10 @@
           {m.ui_updateToast_readyToInstall_description({ version: $updateInfo$?.version ?? '' })}
         </div>
       </div>
-      <button class="action-btn success" onclick={handleInstall}>
+      <Button variant="primary" size="sm" onclick={handleInstall}>
         <Fa icon={faRotateRight} class="mr-1" />
         {m.ui_updateToast_install_label()}
-      </button>
+      </Button>
     </div>
   {:else if $status$ === 'not-available'}
     <div class="flex items-center gap-3">
@@ -208,7 +213,7 @@
 
   .icon.checking {
     background: hsl(var(--primary) / 0.1);
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
 
   .icon.downloading {
@@ -260,29 +265,12 @@
     height: 100%;
     background: hsl(217 91% 60%);
     border-radius: 0;
-    transition: width 0.2s ease;
+    transition: width var(--spring-moderate) var(--spring-moderate-ease);
   }
 
-  .action-btn {
-    padding: 0.375rem 0.75rem;
-    border-radius: 0;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    border: none;
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    flex-shrink: 0;
-  }
-
-  .action-btn.success {
-    background: hsl(142 76% 36%);
-    color: white;
-  }
-
-  .action-btn.success:hover {
-    background: hsl(142 76% 30%);
+  @media (prefers-reduced-motion: reduce) {
+    .progress-fill {
+      transition: none;
+    }
   }
 </style>

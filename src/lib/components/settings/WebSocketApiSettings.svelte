@@ -24,11 +24,9 @@
    * commit 27293564. The WebSocket API settings are transient UI state that do not
    * belong in Redux; the settings themselves are persisted by the daemon.
    */
-  import { onDestroy } from 'svelte';
-  import { slide } from 'svelte/transition';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
-  import { Button } from '$lib/components/ui/button';
-  import { Input } from '$lib/components/ui/input';
+  import { onDestroy, tick } from 'svelte';
+  import { slide } from '$lib/motion';
+  import { Button, Input, Switch } from '$lib/components/patterns/settings/custom-controls';
   import Fa from 'svelte-fa';
   import {
     faCopy,
@@ -37,7 +35,7 @@
     faEyeSlash,
     faQrcode,
   } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { appClient } from '$lib/client';
   import ListenTargetSelector from './ListenTargetSelector.svelte';
   import type { ListenTargetSelection } from './ListenTargetSelector.svelte';
@@ -181,7 +179,7 @@
         await refreshPublishState();
       }
     } catch (error) {
-      toast.error(
+      notify.error(
         m.settings_wsApi_loadStatusError({
           error: error instanceof Error ? error.message : String(error),
         }),
@@ -229,7 +227,7 @@
       bindIps = selection.ips;
       tunnelEnabled = selection.tunnel;
       tunnelOnly = false;
-      toast.success(m.settings_listenTargets_saved());
+      notify.success(m.settings_listenTargets_saved());
       // The listen targets changed the published fields (hosts from the new
       // bind IPs, tc address from the tunnel toggle) — propagate them to the
       // published self entry (no-op in main when unpublished/suppressed).
@@ -237,7 +235,7 @@
       // The bound listeners changed — refresh the pairing info (port/IPs/tc).
       await loadStatus();
     } catch (error) {
-      toast.error(
+      notify.error(
         m.settings_listenTargets_saveError({
           error: error instanceof Error ? error.message : String(error),
         }),
@@ -343,7 +341,7 @@
       // The bound listeners changed — refresh the pairing info (port/IPs).
       await loadStatus();
     } catch (error) {
-      toast.error(
+      notify.error(
         m.settings_listenTargets_saveError({
           error: error instanceof Error ? error.message : String(error),
         }),
@@ -356,14 +354,15 @@
   async function handleCopyTcAddress() {
     try {
       await navigator.clipboard.writeText(tcAddress);
-      toast.success(m.settings_tunnel_tcAddress_copied());
+      notify.success(m.settings_tunnel_tcAddress_copied());
     } catch {
-      toast.error(m.settings_tunnel_tcAddress_copyError());
+      notify.error(m.settings_tunnel_tcAddress_copyError());
     }
   }
 
   async function handleToggle(checked: boolean) {
     if (toggleBusy) return;
+    const previousValue = enabled;
     toggleBusy = true;
     try {
       const result = await appClient.settings.update([
@@ -375,8 +374,10 @@
         (r: { path: string; value: unknown }) => r.path === 'server.wsApi.enabled',
       );
       if (applied && applied.value !== checked) {
-        toast.error(m.settings_wsApi_startListenerError());
-        enabled = false;
+        notify.error(m.settings_wsApi_startListenerError());
+        enabled = checked;
+        await tick();
+        enabled = applied.value === true;
         return;
       }
 
@@ -390,12 +391,14 @@
         await maybeAutoUnpublish();
       }
     } catch (error) {
-      toast.error(
+      notify.error(
         m.settings_wsApi_toggleError({
           error: error instanceof Error ? error.message : String(error),
         }),
       );
-      enabled = !checked;
+      enabled = checked;
+      await tick();
+      enabled = previousValue;
     } finally {
       toggleBusy = false;
     }
@@ -454,7 +457,7 @@
       publishBusy = true;
       await publishSelf();
     } catch (error) {
-      toast.error(
+      notify.error(
         m.settings_wsApi_publishSelf_error({
           error: error instanceof Error ? error.message : String(error),
         }),
@@ -486,10 +489,10 @@
       // toast; the state still converges to unpublished-side truth.
       selfPublished = false;
       if (result.removed) {
-        toast.success(m.settings_wsApi_unpublishSelf_success());
+        notify.success(m.settings_wsApi_unpublishSelf_success());
       }
     } catch (error) {
-      toast.error(
+      notify.error(
         m.settings_wsApi_unpublishSelf_error({
           error: error instanceof Error ? error.message : String(error),
         }),
@@ -503,7 +506,7 @@
     await (api.invoke(CONNECTIONS.PUBLISH_SELF) as Promise<PublishSelfResult>);
     selfPublished = true;
     publishSuppressed = false;
-    toast.success(m.settings_wsApi_publishSelf_success());
+    notify.success(m.settings_wsApi_publishSelf_success());
   }
 
   async function handlePublishButton() {
@@ -511,7 +514,7 @@
       publishBusy = true;
       await publishSelf();
     } catch (error) {
-      toast.error(
+      notify.error(
         m.settings_wsApi_publishSelf_error({
           error: error instanceof Error ? error.message : String(error),
         }),
@@ -540,7 +543,7 @@
       if (applied && applied.value !== newPort) {
         // Daemon rolled back to a different value (could be the old value or a different one)
         const rolledBackValue = typeof applied.value === 'number' ? applied.value : persistedPort;
-        toast.error(m.settings_wsApi_portRollbackError());
+        notify.error(m.settings_wsApi_portRollbackError());
         persistedPort = rolledBackValue;
         editedPort = String(rolledBackValue);
         return;
@@ -559,13 +562,13 @@
         // Propagate the new port to the published self entry (no-op in main
         // when unpublished/suppressed).
         refreshSelfEntry();
-        toast.success(m.settings_wsApi_portChanged({ port: String(newPort) }));
+        notify.success(m.settings_wsApi_portChanged({ port: String(newPort) }));
       } else {
-        toast.success(m.settings_wsApi_portSaved());
+        notify.success(m.settings_wsApi_portSaved());
       }
     } catch (error) {
       // Daemon error (e.g., port already in use)
-      toast.error(
+      notify.error(
         m.settings_wsApi_portChangeError({
           error: error instanceof Error ? error.message : String(error),
         }),
@@ -584,13 +587,13 @@
       // Propagate the rotated token to the published self entry (no-op in
       // main when unpublished/suppressed).
       refreshSelfEntry();
-      toast.success(m.settings_wsApi_tokenRegenerated());
+      notify.success(m.settings_wsApi_tokenRegenerated());
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes('INTENTD_AUTH_TOKEN') || message.includes('token is fixed')) {
-        toast.error(m.settings_wsApi_tokenRotateFixedError());
+        notify.error(m.settings_wsApi_tokenRotateFixedError());
       } else {
-        toast.error(m.settings_wsApi_tokenRegenerateError({ error: message }));
+        notify.error(m.settings_wsApi_tokenRegenerateError({ error: message }));
       }
     } finally {
       regenerating = false;
@@ -600,15 +603,15 @@
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(token);
-      toast.success(m.settings_wsApi_tokenCopied());
+      notify.success(m.settings_wsApi_tokenCopied());
     } catch {
-      toast.error(m.settings_wsApi_tokenCopyError());
+      notify.error(m.settings_wsApi_tokenCopyError());
     }
   }
 
   async function handleShowQr() {
     if (!port) {
-      toast.error(m.settings_wsApi_serverNotRunning());
+      notify.error(m.settings_wsApi_serverNotRunning());
       return;
     }
     try {
@@ -634,7 +637,7 @@
         qrDataUrl = '';
       }, 30_000);
     } catch {
-      toast.error(m.settings_wsApi_qrGenerateError());
+      notify.error(m.settings_wsApi_qrGenerateError());
     }
   }
 
@@ -671,10 +674,9 @@
             {m.settings_wsApi_enable_description()}
           </p>
         </div>
-        <Toggle
-          pressed={enabled}
-          onclick={() => handleToggle(!enabled)}
-          variant="indicator"
+        <Switch
+          checked={enabled}
+          onCheckedChange={handleToggle}
           size="xs"
           class="mb-auto"
           disabled={loading || toggleBusy}
@@ -684,7 +686,7 @@
     </section>
 
     {#if enabled && tunnelSupported}
-      <div transition:slide={{ duration: 200 }} class="space-y-4">
+      <div transition:slide={{ tier: 'moderate' }} class="space-y-4">
         <!-- Tailcat tunnel toggle: drives server.tunnel.enabled. Absent on
              old daemons predating the server.tunnel.* settings. -->
         <section data-tunnel-toggle-row>
@@ -702,10 +704,9 @@
                 >
               </p>
             </div>
-            <Toggle
-              pressed={tunnelEnabled}
-              onclick={handleTunnelToggle}
-              variant="indicator"
+            <Switch
+              checked={tunnelEnabled}
+              onCheckedChange={handleTunnelToggle}
               size="xs"
               class="mb-auto"
               disabled={toggleBusy || listenSaving}
@@ -727,14 +728,14 @@
                   class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
                   title={tcAddress}>{tcAddress}</code
                 >
-                <button
+                <Button
                   type="button"
                   onclick={handleCopyTcAddress}
                   class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
                   title={m.settings_tunnel_tcAddress_copy()}
                 >
                   <Fa icon={faCopy} size="sm" />
-                </button>
+                </Button>
               </div>
             </div>
           </section>
@@ -743,7 +744,7 @@
     {/if}
 
     {#if enabled && bindAddressSupported}
-      <div transition:slide={{ duration: 200 }}>
+      <div transition:slide={{ tier: 'moderate' }}>
         <!-- Local Network Access: a view over server.bindAddress (ON when a
              non-loopback target is bound, or while the user is hand-picking
              targets). Absent on daemons that do not report
@@ -758,10 +759,9 @@
                 {m.settings_wsApi_localNetworkAccess_description()}
               </p>
             </div>
-            <Toggle
-              pressed={localNetworkShown}
-              onclick={handleLocalNetworkToggle}
-              variant="indicator"
+            <Switch
+              checked={localNetworkShown}
+              onCheckedChange={handleLocalNetworkToggle}
               size="xs"
               class="mb-auto"
               disabled={toggleBusy || listenSaving}
@@ -793,14 +793,14 @@
               />
             </div>
             {#if Number(editedPort) !== persistedPort}
-              <button
+              <Button
                 type="button"
                 onclick={handlePortSave}
                 disabled={portSaving || !isValid}
                 class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {portSaving ? m.settings_wsApi_port_saving() : m.settings_wsApi_port_save()}
-              </button>
+              </Button>
             {/if}
           </div>
         </div>
@@ -812,12 +812,12 @@
     </section>
 
     {#if enabled}
-      <div transition:slide={{ duration: 200 }} class="space-y-4">
+      <div transition:slide={{ tier: 'moderate' }} class="space-y-4">
         <!-- Listen targets: the daemon's bind candidates with the bound ones
              selected. Shown only while Local Network Access is ON; the tunnel
              is toggled above, not in the selector. -->
         {#if localNetworkShown}
-          <section transition:slide={{ duration: 200 }}>
+          <section transition:slide={{ tier: 'moderate' }}>
             <ListenTargetSelector
               availableIps={availableIps ?? localIps}
               selectedIps={tunnelOnly ? [] : bindIps}
@@ -839,14 +839,14 @@
                 {m.settings_wsApi_mobilePairing_description()}
               </p>
             </div>
-            <button
+            <Button
               type="button"
               onclick={handleShowQr}
               class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer"
             >
               <Fa icon={faQrcode} size="sm" />
               {m.settings_wsApi_showQrCode()}
-            </button>
+            </Button>
           </div>
         </section>
 
@@ -899,23 +899,23 @@
               >
                 {showToken ? token : maskedToken}
               </code>
-              <button
+              <Button
                 type="button"
                 onclick={() => (showToken = !showToken)}
                 class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
                 title={showToken ? m.settings_wsApi_hideToken() : m.settings_wsApi_showToken()}
               >
                 <Fa icon={showToken ? faEyeSlash : faEye} size="sm" />
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 onclick={handleCopy}
                 class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
                 title={m.settings_wsApi_copyToken()}
               >
                 <Fa icon={faCopy} size="sm" />
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 onclick={handleRegenerate}
                 disabled={regenerating}
@@ -923,7 +923,7 @@
                 title={m.settings_wsApi_regenerateToken()}
               >
                 <Fa icon={faRotateRight} size="sm" class={regenerating ? 'animate-spin' : ''} />
-              </button>
+              </Button>
             </div>
           </div>
           <p class="text-xs text-amber-500/90">
@@ -965,13 +965,13 @@
       <p class="text-xs text-amber-500/90 mt-2">
         {m.settings_wsApi_qrTokenWarning()}
       </p>
-      <button
+      <Button
         type="button"
         onclick={handleCloseQr}
         class="mt-4 px-4 py-1.5 text-xs font-medium text-foreground bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer"
       >
         {m.settings_wsApi_close()}
-      </button>
+      </Button>
     </div>
   </div>
 {/if}

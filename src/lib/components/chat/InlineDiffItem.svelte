@@ -10,7 +10,7 @@
    * when the user is trying to scroll the parent page.
    */
 
-  import { fade } from 'svelte/transition';
+  import { crispOut, springIn } from '$lib/motion';
   import type { ChatFileChange } from '$lib/utils/get-file-changes-from-messages';
   import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
   import { selectDiffSideBySide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
@@ -241,8 +241,9 @@
     <!-- Scroll hint overlay -->
     {#if enableScrollHint && showScrollHint}
       <div
-        class="absolute inset-0 flex items-center justify-center rounded-lg bg-background/60 backdrop-blur-[2px] transition-opacity duration-200 z-10 pointer-events-none"
-        transition:fade={{ duration: 150 }}
+        class="absolute inset-0 flex items-center justify-center rounded-lg bg-background/60 backdrop-blur-[2px] transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none z-10 pointer-events-none"
+        in:springIn={{ tier: 'fast', y: 0, scale: 1 }}
+        out:crispOut={{ tier: 'fast' }}
       >
         <div
           class="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-subtle shadow-lg"

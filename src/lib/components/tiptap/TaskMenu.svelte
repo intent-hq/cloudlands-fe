@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { logger } from '$lib/utils/client-logger';
 
   /**
@@ -71,15 +72,15 @@
   class:anchored={anchorName}
   style={anchorName ? `position-anchor: --${anchorName};` : ''}
 >
-  <button class="task-menu-item" onclick={() => handleAction('assign-agent')}>
+  <Button class="task-menu-item" onclick={() => handleAction('assign-agent')}>
     <Fa icon={faRobot} size="sm" class="w-4 h-4" />
     <span>{m.tiptap_taskMenu_assignToAgent_label()}</span>
-  </button>
+  </Button>
 
-  <button class="task-menu-item" onclick={() => handleAction('task-breakdown')}>
+  <Button class="task-menu-item" onclick={() => handleAction('task-breakdown')}>
     <Fa icon={faList} size="sm" class="w-4 h-4" />
     <span>{m.tiptap_taskMenu_breakIntoSubtasks_label()}</span>
-  </button>
+  </Button>
 </div>
 
 <style>

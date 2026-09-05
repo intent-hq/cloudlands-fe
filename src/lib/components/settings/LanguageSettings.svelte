@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Select } from '$lib/components/ui/select';
+  import { Select } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { setLanguagePreference } from '$store/renderer/slices/user-preferences/user-preferences-slice';

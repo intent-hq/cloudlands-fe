@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import type { Note } from '$shared/types';
   import type { TrackedChange } from '$features/file-tracking/types';
   import type { LocalCommitInfo } from '$features/accept-changes/types';
@@ -38,7 +39,7 @@
   const hasPRs = $derived(pullRequests.length > 0);
 </script>
 
-<button
+<Button
   type="button"
   class="w-full rounded-lg bg-muted/30 px-3 py-3 hover:bg-muted/50 transition-colors cursor-pointer text-left whitespace-nowrap"
   onclick={() => onOpenDashboard?.()}
@@ -71,4 +72,4 @@
       {/if}
     </div>
   </div>
-</button>
+</Button>

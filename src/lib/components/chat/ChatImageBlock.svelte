@@ -54,11 +54,13 @@
 <div class="my-2 min-w-0 max-w-2xl" data-chat-image>
   {#if imageUrl && !imageUnavailable}
     <div class="group relative size-40">
-      <button
-        bind:this={openerElement}
+      <Button
+        variant="plain"
+        bind:ref={openerElement}
         type="button"
-        class="block size-40 cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted/30 p-0 shadow-(--elevation-raised) transition-opacity hover:opacity-90 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-        class:animate-pulse={hydrationLoading}
+        class="block size-40 cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted/30 p-0 shadow-(--elevation-raised) transition-opacity hover:opacity-90 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {hydrationLoading
+          ? 'animate-pulse'
+          : ''}"
         onclick={handleClick}
         aria-label={needsHydration
           ? m.chat_imageBlock_loadFullImage_ariaLabel({ alt })
@@ -76,7 +78,7 @@
           class="block size-full object-cover"
           onerror={() => (failedImageUrl = imageUrl)}
         />
-      </button>
+      </Button>
       {#if !dataTruncated}
         <!-- Truncated blocks only carry the low-res write-time thumbnail, so
              the menu would download/copy/inspect the wrong bytes; clicking

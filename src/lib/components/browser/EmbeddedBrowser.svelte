@@ -12,7 +12,7 @@
   import { onMount, tick } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { Button } from '$lib/components/ui/button';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import type { BrowserTabViewport } from '$shared/ipc/workspace-command-payloads';
   import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
@@ -845,29 +845,29 @@
   async function copyCurrentUrl() {
     const urlToCopy = currentLoadedUrl();
     if (!urlToCopy) {
-      toast.error(m.browser_embedded_noUrlToCopy_error());
+      notify.error(m.browser_embedded_noUrlToCopy_error());
       return;
     }
     try {
       await writeTextToClipboard(urlToCopy);
-      toast.success(m.browser_embedded_urlCopied_label());
+      notify.success(m.browser_embedded_urlCopied_label());
     } catch (error) {
       logger.error('Failed to copy browser URL', error, { url: urlToCopy });
-      toast.error(m.browser_embedded_copyFailed_error());
+      notify.error(m.browser_embedded_copyFailed_error());
     }
   }
 
   async function openInExternalBrowser() {
     const targetUrl = currentLoadedUrl();
     if (!targetUrl) {
-      toast.error(m.browser_embedded_noUrlToOpen_error());
+      notify.error(m.browser_embedded_noUrlToOpen_error());
       return;
     }
     try {
       await invoke('shell:openExternal', { url: targetUrl });
     } catch (error) {
       logger.error('Failed to open browser URL externally', error, { url: targetUrl });
-      toast.error(m.browser_embedded_openExternalFailed_error());
+      notify.error(m.browser_embedded_openExternalFailed_error());
     }
   }
 
@@ -892,7 +892,7 @@
     const targetAgentId =
       selectMostRecentAgentTab.select(appStore.state, _workspaceId)?.agentId ?? ownerAgentId;
     if (!targetAgentId) {
-      toast.error(m.browser_embedded_noTargetAgent_error());
+      notify.error(m.browser_embedded_noTargetAgent_error());
       return;
     }
     appStore.dispatch(
@@ -919,7 +919,7 @@
       dispatchBrowserCapture(parseCapturedImage(image.toDataURL()));
     } catch (error) {
       logger.error('Failed to capture browser screenshot', error);
-      toast.error(m.browser_embedded_screenshotFailed_error());
+      notify.error(m.browser_embedded_screenshotFailed_error());
     }
   }
 
@@ -938,7 +938,7 @@
       dispatchBrowserCapture(parseCapturedImage(image.toDataURL()), element);
     } catch (error) {
       logger.error('Failed to capture selected browser element', error);
-      toast.error(m.browser_embedded_screenshotFailed_error());
+      notify.error(m.browser_embedded_screenshotFailed_error());
     }
   }
 
@@ -1115,7 +1115,6 @@
       {:else if faviconUrl}
         <img src={faviconUrl} alt="" class="size-5 shrink-0 rounded-sm" data-browser-page-favicon />
       {/if}
-
       <div class="flex h-8 min-w-0 flex-1 items-center rounded-md bg-background px-2">
         {#if isEditingUrl}
           <form onsubmit={handleFormSubmit} class="flex h-full min-w-0 flex-1 items-center">

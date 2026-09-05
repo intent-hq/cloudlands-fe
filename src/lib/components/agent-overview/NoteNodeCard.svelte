@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { faNote } from '$lib/icons/faNote';
   /**
    * NoteNodeCard Component
@@ -19,15 +20,13 @@
     onclick?: () => void;
   }
 
-  /* eslint-disable @typescript-eslint/no-unused-vars */
   let {
     node,
     isActive = false,
     isBeingAccessed = false,
-    actionType = null,
+    actionType: _actionType = null,
     onclick,
   }: Props = $props();
-  /* eslint-enable @typescript-eslint/no-unused-vars */
 
   // Action indicator icon
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -41,11 +40,11 @@
   const glowClass = $derived(isBeingAccessed ? 'note-glow-active' : '');
 </script>
 
-<button
+<Button
   type="button"
   class="note-node-card flex items-center gap-2 px-2.5 py-2 rounded-md border border-border shadow-xs transition-all duration-200 cursor-pointer
     bg-muted/30 hover:bg-muted/50
-    {isActive ? 'ring-1 ring-primary/30' : ''} {glowClass}"
+    {isActive ? 'ring-1 ring-primary-ink/30' : ''} {glowClass}"
   {onclick}
 >
   <!-- Icon -->
@@ -60,7 +59,7 @@
       {node.title}
     </p>
   </div>
-</button>
+</Button>
 
 <style>
   .note-node-card {

@@ -26,6 +26,20 @@
   }
 </script>
 
+{#snippet arrowIcon()}
+  <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="size-4">
+    <path
+      d="M3 8h10M9 4l4 4-4 4"
+      stroke="currentColor"
+      stroke-width="1.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    ></path>
+  </svg>
+{/snippet}
+
+{#snippet badgeIcon()}<Fa icon={faPlus} size="xs" />{/snippet}
+
 <div
   class="flex min-w-0 max-w-full flex-wrap items-center gap-3"
   data-catalog-renderer-fixture={fixture.id}
@@ -33,11 +47,15 @@
   {#if componentId === 'badge'}
     <div
       class="flex min-w-0 max-w-full flex-wrap gap-2"
-      data-catalog-rendered-state="default focus long-label light dark compact"
+      data-catalog-rendered-state="default outline destructive success-ring-dot info-ring-dot leading-icon removable keyboard-focus long-label light dark compact"
     >
       <Badge>Default badge</Badge>
-      <Badge variant="secondary">Secondary badge</Badge>
+      <Badge variant="outline">Outline badge</Badge>
       <Badge variant="destructive">Error badge</Badge>
+      <Badge variant="success" dot>Ready</Badge>
+      <Badge variant="info" dot>Informational</Badge>
+      <Badge leadingIcon={badgeIcon}>With icon</Badge>
+      <Badge removable removeLabel="Remove badge" onRemove={() => undefined}>Removable</Badge>
       <Badge href="#badge-preview">Focusable badge link</Badge>
       <Badge variant="outline" class="max-w-full truncate"
         >A deliberately long badge label for truncation review</Badge
@@ -47,7 +65,7 @@
     {#if fixture.id === 'interaction-states'}
       <div
         class="flex flex-wrap items-center gap-2"
-        data-catalog-rendered-state="default secondary outline destructive focus disabled loading icon-only action-feedback"
+        data-catalog-rendered-state="default primary secondary outline destructive active focus disabled loading loading-variants icon-only icon-weight action-feedback"
       >
         <Button onclick={() => recordButtonAction('Run action completed')}>
           <span
@@ -56,18 +74,26 @@
           >
           Run action
         </Button>
+        <Button variant="primary" leadingIcon={arrowIcon}>Primary</Button>
         <Button variant="secondary" onclick={() => recordButtonAction('Secondary action completed')}
           >Secondary</Button
         >
         <Button variant="outline" onclick={() => recordButtonAction('Outline action completed')}
           >Outline</Button
         >
+        <Button variant="outline" active>Active</Button>
         <Button variant="destructive" onclick={() => recordButtonAction('Delete requested')}>
           <Fa icon={faTrash} size="xs" />
           Delete
         </Button>
         <Button disabled>Disabled action</Button>
         <Button loading>Loading action</Button>
+        <Button variant="outline" loading>Outline loading</Button>
+        <Button variant="ghost" loading>Ghost loading</Button>
+        <Button size="sm" loading>Compact loading</Button>
+        <Button size="icon" iconOnly aria-label="Icon loading" loading
+          ><Fa icon={faPlus} size="xs" /></Button
+        >
         <Button size="icon" aria-label="Add item" onclick={() => recordButtonAction('Item added')}
           ><Fa icon={faPlus} size="xs" /></Button
         >
@@ -84,7 +110,7 @@
         data-catalog-rendered-state="long-label light dark compact reduced-motion action-feedback"
       >
         <Button
-          class="max-w-full whitespace-normal text-left"
+          class="w-full min-w-0 max-w-full"
           variant="outline"
           onclick={() => (longButtonAction = 'Long-label action completed')}
           >A long button label that remains readable in compact layouts</Button
@@ -141,27 +167,11 @@
       </div>
     </div>
   {:else if componentId === 'toggle'}
-    {#if fixture.id === 'toggle-state-matrix'}
-      <div class="flex flex-wrap gap-2" data-catalog-rendered-state="off on disabled focus-visible">
-        <Toggle bind:pressed={togglePressed} ariaLabel="Bold">Bold</Toggle>
-        <Toggle pressed ariaLabel="Pinned">Pinned</Toggle>
-        <Toggle disabled ariaLabel="Disabled toggle">Disabled</Toggle>
-      </div>
-    {:else}
-      <div class="flex flex-wrap gap-2" data-catalog-rendered-state="group switch indicator">
-        <Toggle
-          variant="group"
-          options={[
-            { value: 'one', label: 'One' },
-            { value: 'two', label: 'Two' },
-          ]}
-          value="one"
-          ariaLabel="Grouped toggle"
-        />
-        <Toggle variant="switch" pressed ariaLabel="Switch compatibility" />
-        <Toggle variant="indicator" pressed ariaLabel="Indicator compatibility" />
-      </div>
-    {/if}
+    <div class="flex flex-wrap gap-2" data-catalog-rendered-state="off on disabled focus-visible">
+      <Toggle bind:pressed={togglePressed} ariaLabel="Bold">Bold</Toggle>
+      <Toggle pressed ariaLabel="Pinned">Pinned</Toggle>
+      <Toggle disabled ariaLabel="Disabled toggle">Disabled</Toggle>
+    </div>
   {:else if componentId === 'toggle-group'}
     <div data-catalog-rendered-state="single multiple selected unselected disabled keyboard-focus">
       <ToggleGroup.Root type="single" bind:value={groupValue} aria-label="Display mode">

@@ -42,7 +42,7 @@
       role="tab"
       aria-selected={activeTab === 'script'}
       class="border-b-2 px-3 py-1.5 text-sm {activeTab === 'script'
-        ? 'border-primary text-primary'
+        ? 'border-primary-ink text-primary-ink'
         : 'border-transparent text-subtle'}"
       onclick={() => (activeTab = 'script')}
       >{m.chat_backgroundHooks_modal_scriptTab_label()}</Button
@@ -52,7 +52,7 @@
       role="tab"
       aria-selected={activeTab === 'logs'}
       class="border-b-2 px-3 py-1.5 text-sm {activeTab === 'logs'
-        ? 'border-primary text-primary'
+        ? 'border-primary-ink text-primary-ink'
         : 'border-transparent text-subtle'}"
       onclick={() => (activeTab = 'logs')}>{m.chat_backgroundHooks_modal_logsTab_label()}</Button
     >

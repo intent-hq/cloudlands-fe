@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /* eslint-disable max-lines */
   /**
    * SidebarChangesPanel - Timeline-based changes panel
@@ -53,7 +54,7 @@
   import { openWorkspaceLocalChanges } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
 
@@ -924,10 +925,10 @@
         commitDrawerOpen = false;
         // Toast is handled by git:op-completed event in +layout.svelte
       } else {
-        toast.error(result.error || m.workspace_sidebarChanges_commitFailed_error());
+        notify.error(result.error || m.workspace_sidebarChanges_commitFailed_error());
       }
     } catch {
-      toast.error(m.workspace_sidebarChanges_commitFailed_error());
+      notify.error(m.workspace_sidebarChanges_commitFailed_error());
     } finally {
       isCommitting = false;
     }
@@ -942,7 +943,7 @@
 
     const worktreePath = $workspace?.worktreePath || $workspace?.repositoryPath;
     if (!worktreePath) {
-      toast.error(m.workspace_commitsTimeline_noSpacePath_error());
+      notify.error(m.workspace_commitsTimeline_noSpacePath_error());
       return;
     }
 
@@ -966,15 +967,15 @@
         appStore.dispatch(addTerminal(workspaceId, result.terminalId, terminalTitle));
         appStore.dispatch(openTerminalOverlay(workspaceId, result.terminalId));
 
-        toast.success(m.workspace_sidebarChanges_rebaseStarted_label(), {
+        notify.success(m.workspace_sidebarChanges_rebaseStarted_label(), {
           description: m.workspace_sidebarChanges_rebaseStarted_description(),
         });
       } else {
-        toast.error(result.error || m.workspace_commitsTimeline_openTerminalFailed_error());
+        notify.error(result.error || m.workspace_commitsTimeline_openTerminalFailed_error());
       }
     } catch (error) {
       logger.error('Failed to open rebase terminal', error as Error);
-      toast.error(m.workspace_commitsTimeline_openTerminalFailed_error());
+      notify.error(m.workspace_commitsTimeline_openTerminalFailed_error());
     }
   }
 
@@ -1085,7 +1086,7 @@
           <BranchDisplay {workspaceId} {trunkBranch} {repoPath} {repoType} {canChangeTrunk} />
 
           <div class="flex items-center mb-4 -ml-1 gap-1.25 h-7">
-            <button
+            <Button
               type="button"
               class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer z-10"
               onclick={handleRefreshGitStatus}
@@ -1097,12 +1098,12 @@
                 class="text-subtle {isRefreshingGitStatus ? 'animate-spin' : ''}"
                 size={10}
               />
-            </button>
+            </Button>
 
             <!-- View All Changes Button -->
             {#if hasAnyChanges}
               {@const isActive = isAllChangesViewActive}
-              <button
+              <Button
                 onclick={handleOpenAllChanges}
                 class="flex flex-1 items-center border gap-2 pr-2 py-1.5 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0 {isActive
                   ? 'bg-background text-foreground border-transparent pl-2'
@@ -1120,7 +1121,7 @@
                   </span>
                   <!-- <LineChangesBadge additions={totalAdditions} deletions={totalDeletions} size="xs" /> -->
                 </div>
-              </button>
+              </Button>
             {:else}
               <div
                 class="flex flex-1 items-center gap-2 pr-2 py-1.5 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0"

@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils';
-  import { fly } from 'svelte/transition';
+  import { fly } from '$lib/motion';
   import type { Snippet } from 'svelte';
 
   interface Tab {
@@ -54,7 +55,7 @@
 <div class={cn('shrink-0 px-4 pt-2 pb-1', headerClass)}>
   <div class="flex items-center gap-4">
     {#each tabs as tab (tab.id)}
-      <button
+      <Button
         type="button"
         class={cn(
           'text-ui uppercase tracking-wider font-medium transition-colors cursor-pointer whitespace-nowrap',
@@ -65,7 +66,7 @@
         onclick={() => handleTabClick(tab.id)}
       >
         {tab.label}
-      </button>
+      </Button>
     {/each}
     {#if headerRight}
       <div class="ml-auto">
@@ -92,8 +93,8 @@
   {#if content}
     {#key activeTab}
       <div
-        class="transition-[opacity,transform] duration-200 pt-1 pb-3"
-        in:fly={{ x: getTransitionX(), duration: 200 }}
+        class="transition-[opacity,transform] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none pt-1 pb-3"
+        in:fly={{ axis: 'x', distance: getTransitionX(), tier: 'moderate' }}
       >
         {@render content(activeTab)}
       </div>

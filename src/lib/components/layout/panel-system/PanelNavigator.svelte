@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { tick } from 'svelte';
   import Fa from 'svelte-fa';
   import {
@@ -191,11 +192,10 @@
       {@const segment = segmentGeometry.get(panel.id)}
       {#if segment}
         {@const active = panel.id === activePanelId}
-        <button
+        <Button
           type="button"
           class="panel-navigator-segment group pointer-events-auto absolute inset-y-0 z-10 min-w-0 border-0 bg-transparent p-1 text-muted-foreground focus-visible:outline-none"
-          style:left={`${segment.start * 100}%`}
-          style:width={`${segment.size * 100}%`}
+          style="left: {segment.start * 100}%; width: {segment.size * 100}%;"
           aria-label={panel.title}
           aria-current={active ? 'page' : undefined}
           title={panel.title}
@@ -211,7 +211,7 @@
           >
             <Fa icon={getPanelIcon(panel.type)} size={14} class="panel-navigator-icon" />
           </span>
-        </button>
+        </Button>
       {/if}
     {/each}
     <div

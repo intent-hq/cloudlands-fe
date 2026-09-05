@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
   import {
     faCodeBranch,
@@ -12,19 +13,8 @@
     faWandMagicSparkles,
   } from '@fortawesome/free-solid-svg-icons';
   import type { Snippet } from 'svelte';
+  import type { SettingsTab } from '$lib/components/patterns/settings/types';
   import Fa from 'svelte-fa';
-
-  type SettingsTab =
-    | 'display'
-    | 'app-behavior'
-    | 'agent-behavior'
-    | 'providers'
-    | 'connections'
-    | 'devices'
-    | 'setup'
-    | 'advanced'
-    | 'input'
-    | 'specialists';
 
   interface Props {
     activeTab: SettingsTab;
@@ -106,7 +96,7 @@
   aria-label={m.settings_page_title()}
 >
   {#each primaryItems as item (item.id)}
-    <button
+    <Button
       type="button"
       onclick={() => onSelect(item.id as SettingsTab)}
       aria-current={activeTab === item.id ? 'page' : undefined}
@@ -124,7 +114,7 @@
         <Fa icon={item.icon} size="sm" />
       </span>
       <span>{item.label}</span>
-    </button>
+    </Button>
   {/each}
 
   <section data-settings-agents-section data-settings-specialists-section class="mt-8">

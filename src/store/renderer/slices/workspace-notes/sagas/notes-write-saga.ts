@@ -18,7 +18,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { ContentType, NoteVisibility } from '$shared/types';
 import type { CreateNoteRequest, Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import { takeLatestInContext } from '../../../utils/context-saga-effects';
 import {
   createNoteRequested,
@@ -154,7 +154,7 @@ function* reconcileConflict(
     yield* call(refetchWorkspaceNotes, workspaceId);
   }
   logger.warn('Note mutation conflicted; reloaded the latest version', { noteId });
-  toast.warning(m.notes_writeService_noteChanged_label(), {
+  notify.warning(m.notes_writeService_noteChanged_label(), {
     description: m.notes_writeService_noteChanged_description(),
   });
   return true;
@@ -181,7 +181,7 @@ function* saveContent(command: ContentCommand) {
     if (!result.success) {
       if (yield* call(reconcileConflict, workspaceId, noteId, result)) return;
       logger.error('Failed to save note content', result.error);
-      toast.error(m.notes_writeService_saveFailed_error(), {
+      notify.error(m.notes_writeService_saveFailed_error(), {
         description: result.error ?? m.notes_writeService_unknown_error(),
       });
       yield* call(refetchWorkspaceNotes, workspaceId);
@@ -212,7 +212,7 @@ function* saveMetadata(command: MetadataCommand) {
         titleOnly ? 'Failed to update note title' : 'Failed to update note metadata',
         result.error,
       );
-      toast.error(
+      notify.error(
         titleOnly
           ? m.notes_writeService_updateTitleFailed_error()
           : m.notes_writeService_updateFailed_error(),
@@ -240,7 +240,7 @@ function* removeNote(command: DeleteCommand) {
     if (result.success) return;
     if (yield* call(reconcileConflict, workspaceId, noteId, result)) return;
     logger.error('Failed to delete note', result.error);
-    toast.error(m.notes_writeService_deleteFailed_error(), {
+    notify.error(m.notes_writeService_deleteFailed_error(), {
       description: result.error ?? m.notes_writeService_unknown_error(),
     });
     if (snapshot) yield* put(applyNoteCreated(workspaceId, snapshot));

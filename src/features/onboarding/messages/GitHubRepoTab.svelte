@@ -23,6 +23,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { shell } from '$lib/electron-bridge';
   import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
 
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
@@ -314,14 +315,14 @@
       class="rounded-lg border border-danger/30 bg-danger-background/5 px-3 py-2.5 text-xs text-danger space-y-2"
     >
       <p>{m.onboarding_githubRepoTab_loadFailed_error({ error: $reposError$ })}</p>
-      <button
+      <Button
         type="button"
         class="inline-flex items-center gap-1.5 text-xs underline underline-offset-2 cursor-pointer hover:no-underline"
         onclick={refreshRepos}
       >
         <Fa icon={faSpinner} size="xs" />
         <span>{m.onboarding_githubRepoTab_tryAgain_label()}</span>
-      </button>
+      </Button>
     </div>
   {:else}
     <div
@@ -336,7 +337,7 @@
           {#each combinedRepos as repo, index (repo.id)}
             {@const isFocused = index === focusedIndex}
             {@const isCommitted = githubUrl === `https://github.com/${repo.owner}/${repo.name}`}
-            <button
+            <Button
               type="button"
               id="github-repo-option-{index}"
               role="option"
@@ -394,7 +395,7 @@
               >
                 <Fa icon={faArrowUpRightFromSquare} size="xs" />
               </span>
-            </button>
+            </Button>
           {/each}
         </div>
       {:else if $reposLoading$ && !$reposLoaded$}

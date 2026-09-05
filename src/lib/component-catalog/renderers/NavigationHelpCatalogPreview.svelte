@@ -1,21 +1,19 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
   import * as Breadcrumb from '$lib/components/ui/breadcrumb';
+  import { ShortcutChip } from '$lib/components/ui/kbd';
   import { ScrollArea } from '$lib/components/ui/scroll-area';
   import * as Sidebar from '$lib/components/ui/sidebar';
   import * as Tooltip from '$lib/components/ui/tooltip';
-  import { faBan, faHouse } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
-  import Fa from 'svelte-fa';
   import type { CatalogRendererProps } from '../catalog-renderers';
 
-  type NavigationHelpComponentId = 'breadcrumb' | 'tooltip' | 'sidebar' | 'scroll-area';
+  type NavigationHelpComponentId = 'breadcrumb' | 'kbd' | 'tooltip' | 'sidebar' | 'scroll-area';
   type NavigationHelpCatalogRendererProps = Omit<CatalogRendererProps, 'componentId'> & {
     componentId: NavigationHelpComponentId;
   };
 
   let { componentId, fixture }: NavigationHelpCatalogRendererProps = $props();
-  let sidebarOpen = $state(false);
   let tooltipOpen = $state(false);
 
   onMount(() => {
@@ -37,7 +35,7 @@
   {#if componentId === 'breadcrumb'}
     <div
       class="w-full min-w-0 overflow-hidden"
-      data-catalog-rendered-state="navigation current-page ellipsis long-content no-overflow"
+      data-catalog-rendered-state="navigation current-page ellipsis long-content keyboard-focus overlay-hover compact zoom-200 no-overflow light dark reduced-motion"
     >
       <Breadcrumb.Root aria-label="Catalog path">
         <Breadcrumb.List>
@@ -58,6 +56,20 @@
           </Breadcrumb.Item>
         </Breadcrumb.List>
       </Breadcrumb.Root>
+    </div>
+  {:else if componentId === 'kbd'}
+    <div
+      class="flex flex-wrap items-center gap-3"
+      data-catalog-rendered-state="single-key modifier key-sequence long-key light dark zoom-200"
+    >
+      <ShortcutChip>Esc</ShortcutChip>
+      <div class="flex items-center gap-1" aria-label="Command K shortcut">
+        <ShortcutChip>⌘</ShortcutChip>
+        <span aria-hidden="true">+</span>
+        <ShortcutChip>K</ShortcutChip>
+      </div>
+      <ShortcutChip>Enter</ShortcutChip>
+      <ShortcutChip class="min-w-16">Page Down</ShortcutChip>
     </div>
   {:else if componentId === 'tooltip'}
     <div class="pb-10" data-catalog-rendered-state="open portal arrow reduced-motion">
@@ -90,59 +102,9 @@
     </div>
   {:else if componentId === 'sidebar'}
     <div
-      data-catalog-rendered-state="collapsed expanded mobile-closed mobile-open active-menu-item disabled-menu-item"
+      data-catalog-rendered-state="default floating inset nested actions-and-badges collapsed peek-hover resizing reduced-motion"
     >
-      <Sidebar.Provider
-        bind:open={sidebarOpen}
-        class="relative h-72 !min-h-0 overflow-hidden rounded-md border border-border"
-      >
-        <Sidebar.Trigger />
-        <Sidebar.Root collapsible="icon" class="!absolute !inset-y-0 !h-full">
-          <Sidebar.Header class="group-data-[collapsible=icon]:hidden">
-            <span class="type-title">Workspace</span>
-          </Sidebar.Header>
-          <Sidebar.Content>
-            <Sidebar.Group>
-              <Sidebar.GroupLabel>Navigation</Sidebar.GroupLabel>
-              <Sidebar.GroupContent>
-                <Sidebar.Menu>
-                  <Sidebar.MenuItem>
-                    <Sidebar.MenuButton
-                      aria-label="Catalog overview"
-                      isActive
-                      tooltipContent="Overview"
-                    >
-                      <span
-                        class="flex size-4 shrink-0 items-center justify-center"
-                        data-catalog-sidebar-icon="overview"
-                        aria-hidden="true"
-                      >
-                        <Fa icon={faHouse} />
-                      </span>
-                      <span>Overview</span>
-                    </Sidebar.MenuButton>
-                  </Sidebar.MenuItem>
-                  <Sidebar.MenuItem>
-                    <Sidebar.MenuButton aria-label="Unavailable catalog page" disabled>
-                      <span
-                        class="flex size-4 shrink-0 items-center justify-center"
-                        data-catalog-sidebar-icon="unavailable"
-                        aria-hidden="true"
-                      >
-                        <Fa icon={faBan} />
-                      </span>
-                      <span>Unavailable</span>
-                    </Sidebar.MenuButton>
-                  </Sidebar.MenuItem>
-                </Sidebar.Menu>
-              </Sidebar.GroupContent>
-            </Sidebar.Group>
-          </Sidebar.Content>
-        </Sidebar.Root>
-        <output class="sr-only" aria-label="Catalog sidebar state">
-          {sidebarOpen ? 'expanded' : 'collapsed'}
-        </output>
-      </Sidebar.Provider>
+      <Sidebar.Harness />
     </div>
   {:else if componentId === 'scroll-area'}
     <div

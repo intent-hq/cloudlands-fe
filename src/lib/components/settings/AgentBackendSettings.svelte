@@ -18,10 +18,7 @@
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { Input } from '$lib/components/ui/input';
-  import { Select } from '$lib/components/ui/select';
-  import { Slider } from '$lib/components/ui/slider';
-  import { Switch } from '$lib/components/ui/switch';
+  import { Input, Select, Slider, Switch } from '$lib/components/patterns/settings/custom-controls';
   import type { SettingDefinitionWithValue } from '$lib/client';
 
   type FlushQueuedMessagesMode = 'all' | 'systemOnly' | 'off';

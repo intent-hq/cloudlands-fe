@@ -4,6 +4,17 @@
   import { cn } from '$lib/utils';
   import type { ComboboxGroup, ComboboxOption } from './types';
   import { m } from '$shared/paraglide/messages.js';
+  import ListHighlight from '../menu/menu-list-highlight.svelte';
+  import { menuItem, menuOverlay } from '../menu/menu-recipes';
+  import { slide } from '$lib/motion';
+  import {
+    clampSurface,
+    setSurface,
+    surfaceClasses,
+    useSurface,
+  } from '$lib/components/ui/surface-context';
+  import { useSize, type UiSize } from '$lib/components/ui/size-context';
+  import { textEntryControlClasses, textEntryHeight } from '../text-entry';
 
   interface Props {
     value?: string | string[];
@@ -13,6 +24,7 @@
     open?: boolean;
     disabled?: boolean;
     invalid?: boolean;
+    size?: UiSize;
     loading?: boolean;
     portal?: boolean;
     side?: 'top' | 'bottom';
@@ -48,6 +60,7 @@
     open = $bindable(false),
     disabled = false,
     invalid = false,
+    size,
     loading = false,
     portal = true,
     side = 'bottom',
@@ -72,6 +85,11 @@
     onchange,
     onopenchange,
   }: Props = $props();
+
+  const surface = clampSurface(useSurface() + 2);
+  setSurface(surface);
+  const contextSize = useSize();
+  const resolvedSize = $derived(size ?? contextSize);
 
   let query = $state('');
   let singleValue = $state('');
@@ -108,16 +126,11 @@
       })),
   );
   const filteredGroups = $derived.by(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return normalizedGroups;
-    return normalizedGroups
-      .map((group) => ({
-        ...group,
-        options: group.options.filter((option) =>
-          `${option.label} ${option.description ?? ''}`.toLowerCase().includes(normalizedQuery),
-        ),
-      }))
-      .filter((group) => group.options.length > 0);
+    if (!query.trim()) return normalizedGroups;
+    return normalizedGroups.map((group) => ({
+      ...group,
+      options: group.options.filter((option) => optionMatchesQuery(option)),
+    }));
   });
   const hasOptions = $derived(filteredGroups.some((group) => group.options.length > 0));
   const selectedInputValue = $derived.by(() => {
@@ -156,6 +169,14 @@
       open = true;
       onopenchange?.(true);
     }
+  }
+
+  function optionMatchesQuery(option: ComboboxOption) {
+    const normalizedQuery = query.trim().toLowerCase();
+    return (
+      !normalizedQuery ||
+      `${option.label} ${option.description ?? ''}`.toLowerCase().includes(normalizedQuery)
+    );
   }
 
   function handleInput(event: Event) {
@@ -242,10 +263,11 @@
     placeholder={open ? searchPlaceholder : placeholder}
     onfocus={handleFocus}
     oninput={handleInput}
+    data-size={resolvedSize}
     class={cn(
-      'type-body border-border bg-card text-foreground placeholder:text-muted-foreground/70 h-(--control-height-medium) w-full min-w-0 rounded-(--radius-medium) border px-3 shadow-(--elevation-raised) outline-none transition-[border-color,background-color,box-shadow] duration-(--motion-fast)',
-      'hover:border-input focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40',
-      'disabled:cursor-not-allowed disabled:bg-muted/40 disabled:opacity-60 disabled:hover:border-border motion-reduce:transition-none',
+      'type-caption text-foreground placeholder:text-muted-foreground/70 w-full min-w-0 rounded-(--radius-medium) border px-3',
+      textEntryControlClasses,
+      textEntryHeight(resolvedSize),
       invalid && 'border-danger ring-1 ring-danger/25',
       inputClass,
     )}
@@ -254,8 +276,11 @@
     <ComboboxPrimitive.Content
       {side}
       sideOffset={4}
+      data-surface-level={surface}
       class={cn(
-        'z-(--layer-popover) w-(--bits-combobox-anchor-width) max-h-72 overflow-hidden rounded-(--radius-medium) border border-border bg-popover text-popover-foreground shadow-(--elevation-overlay)',
+        menuOverlay(),
+        surfaceClasses(surface),
+        'w-(--bits-combobox-anchor-width) max-h-72 rounded-(--radius-medium)',
         contentClass,
       )}
       style="max-width: calc(100vw - var(--space-4));"
@@ -269,13 +294,20 @@
         </div>
       {/if}
       <ComboboxPrimitive.Viewport class="max-h-72 overscroll-contain overflow-y-auto p-1">
-        {#if loading || searching}
+        <ListHighlight />
+        {#if loading}
           <div class="type-body px-3 py-2 text-muted-foreground" role="status">
             {m.ui_combobox_loadingOptions_message()}
           </div>
-        {:else if !hasOptions && groups.length === 0}
-          <div class="type-body px-3 py-2 text-muted-foreground">{emptyText}</div>
         {:else}
+          {#if searching}
+            <div class="type-body px-3 py-2 text-muted-foreground" role="status">
+              {m.ui_combobox_loadingOptions_message()}
+            </div>
+          {/if}
+          {#if !hasOptions && groups.length === 0 && !searching}
+            <div class="type-body px-3 py-2 text-muted-foreground">{emptyText}</div>
+          {/if}
           {#each filteredGroups as group (group.key)}
             <ComboboxPrimitive.Group>
               {#if group.label}
@@ -288,30 +320,37 @@
                 </ComboboxPrimitive.GroupHeading>
               {/if}
               {#each group.options as option (option.value)}
+                <!-- i18n-ignore (snippet parameter type annotation, not UI text) -->
+                {#snippet optionChild({ props }: { props: Record<string, unknown> })}
+                  <div
+                    {...props}
+                    data-slot="combobox-option-motion"
+                    transition:slide={{ tier: 'fast' }}
+                  >
+                    <span class="min-w-0 flex-1 truncate">{option.label}</span>
+                    {#if optionDescription}
+                      {@render optionDescription(option)}
+                    {:else if option.description}
+                      <span class="type-caption max-w-1/2 shrink-0 truncate text-muted-foreground">
+                        {option.description}
+                      </span>
+                    {/if}
+                    <span
+                      data-slot="combobox-item-check"
+                      class="text-primary-ink shrink-0 font-medium opacity-0 group-data-[selected]:opacity-100"
+                      aria-hidden="true">✓</span
+                    >
+                    {#if optionActions}{@render optionActions(option)}{/if}
+                  </div>
+                {/snippet}
                 <ComboboxPrimitive.Item
                   value={option.value}
                   label={option.label}
-                  disabled={option.disabled}
-                  class={cn(
-                    'group type-body flex min-h-(--control-height-compact) min-w-0 cursor-pointer items-center gap-2 rounded-(--radius-small) px-2 py-1.5 outline-none transition-colors duration-(--motion-fast) data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[selected]:bg-accent/60 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 motion-reduce:transition-none',
-                    option.class,
-                  )}
-                >
-                  <span class="min-w-0 flex-1 truncate">{option.label}</span>
-                  {#if optionDescription}
-                    {@render optionDescription(option)}
-                  {:else if option.description}
-                    <span class="type-caption max-w-1/2 shrink-0 truncate text-muted-foreground">
-                      {option.description}
-                    </span>
-                  {/if}
-                  <span
-                    data-slot="combobox-item-check"
-                    class="text-primary shrink-0 font-medium opacity-0 group-data-[selected]:opacity-100"
-                    aria-hidden="true">✓</span
-                  >
-                  {#if optionActions}{@render optionActions(option)}{/if}
-                </ComboboxPrimitive.Item>
+                  disabled={option.disabled || !optionMatchesQuery(option)}
+                  data-menu-item
+                  class={cn(menuItem(), 'min-h-(--control-height-compact) p-1.5', option.class)}
+                  child={optionChild}
+                />
               {/each}
             </ComboboxPrimitive.Group>
           {/each}

@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { fireEvent, render } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { parseUiComponentMetadata } from '../component-metadata';
@@ -31,6 +29,39 @@ describe('Slider', () => {
     expect(slider.disabled).toBe(true);
   });
 
+  it('shows the formatted current value only while dragging', async () => {
+    const { container, getByRole } = render(Slider, {
+      props: { 'aria-label': 'Progress', value: 40, formatValue: (value) => `${value}%` },
+    });
+    const slider = getByRole('slider', { name: 'Progress' });
+    expect(container.querySelector('output')).toBeNull();
+    await fireEvent.pointerDown(slider);
+    expect(container.querySelector('output')?.textContent).toBe('40%');
+    await fireEvent.input(slider, { target: { value: '60' } });
+    expect(container.querySelector('output')?.textContent).toBe('60%');
+    await fireEvent.pointerUp(slider);
+    expect(container.querySelector('output')).toBeNull();
+  });
+
+  it('keeps the displayed value synchronized with every pointer move', async () => {
+    const onValueChange = vi.fn();
+    const { container, getByRole } = render(Slider, {
+      props: { 'aria-label': 'Progress', value: 10, onValueChange },
+    });
+    const slider = getByRole('slider', { name: 'Progress' }) as HTMLInputElement;
+
+    await fireEvent.pointerDown(slider);
+    for (const nextValue of [25, 70, 45]) {
+      await fireEvent.pointerMove(slider, { target: { value: String(nextValue) } });
+      expect(slider.valueAsNumber).toBe(nextValue);
+      expect(container.querySelector('output')?.textContent).toBe(String(nextValue));
+      expect((container.querySelector('output') as HTMLOutputElement).style.left).toBe(
+        `${nextValue}%`,
+      );
+    }
+    expect(onValueChange.mock.calls.map(([nextValue]) => nextValue)).toEqual([25, 70, 45]);
+  });
+
   it('uses a contrast-validated invalid ring and native indicator', () => {
     const { getByRole } = render(Slider, {
       props: { 'aria-label': 'Invalid volume', 'aria-invalid': 'true' },
@@ -54,6 +85,7 @@ describe('Slider', () => {
         'keyboard-focus',
         'arrow-keys',
         'home-end',
+        'synchronous-drag',
         'semantic-track',
         'semantic-thumb',
         'compact',
@@ -62,20 +94,5 @@ describe('Slider', () => {
         'reduced-motion',
       ]),
     );
-  });
-
-  it('uses a native semantic slider with tokenized compact track and thumb styles', () => {
-    const { getByRole } = render(Slider, { props: { 'aria-label': 'Zoom', value: 50 } });
-    const slider = getByRole('slider', { name: 'Zoom' });
-    expect(slider.className).toContain('operate-slider');
-    expect(slider.className).toContain('h-(--control-height-medium)');
-    expect(slider.className).toContain('rounded-(--radius-medium)');
-    expect(slider.className).toContain('focus-visible:ring-ring/40');
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/lib/components/ui/slider/slider.svelte'),
-      'utf8',
-    );
-    expect(source).toMatch(/slider-thumb[\s\S]*?width: 3px/);
-    expect(source).toMatch(/slider-thumb[\s\S]*?border-radius: var\(--radius-full\)/);
   });
 });

@@ -42,11 +42,10 @@
   // hydration so auggie users don't see a flash of the note before the
   // effective provider resolves; once hydrated, shown iff genuinely
   // unavailable.
-  /* eslint-disable intent/no-component-async-data-fetch -- synchronous pure predicate (string equality), not a data fetch; rule misfires on the '/client/' import source */
   const fastEnhanceUnavailable = $derived(
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pure predicate (string equality), not a data fetch; rule misfires on the '/client/' import source
     $catalogLoaded$ && !isEnhancePromptAvailable($effectiveProviderId$),
   );
-  /* eslint-enable intent/no-component-async-data-fetch */
 
   // ModelPicker reports "use default" as '' — stored verbatim as a cleared override.
   function handleOverrideChange(type: BackgroundAgentType, model: string) {

@@ -160,7 +160,7 @@ describe('AllWorkspacesCard skeleton loading state', () => {
       skeletonElements.forEach((el) => {
         const classList = Array.from(el.classList);
         expect(classList).toContain('bg-sidebar-foreground/10');
-        expect(classList).toContain('animate-pulse');
+        expect(classList).toContain('skeleton-shimmer');
       });
 
       const titleWidths = skeletons.map(

@@ -5,7 +5,7 @@
    * event handling and natural language descriptions.
    */
   import { writable } from 'svelte/store';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import Fa from 'svelte-fa';
   import {
     faFile,
@@ -451,7 +451,7 @@
               : 'cursor-default'}"
             onclick={() => handleEventClick(event)}
             disabled={!clickable}
-            transition:slide={{ axis: 'y', duration: 150 }}
+            transition:slide={{ axis: 'y', tier: 'moderate' }}
           >
             <!-- Icon or Agent Avatar - use h-[1.2rem] to match text line-height for vertical centering -->
             <div class="relative flex items-center justify-center w-3.5 h-[1.2rem] shrink-0">

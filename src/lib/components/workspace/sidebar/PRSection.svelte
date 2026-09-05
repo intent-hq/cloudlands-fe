@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   /**
    * PRSection - Pull request creation, push/pull/sync, force push, rebase, connect remote, PR list
@@ -54,7 +55,7 @@
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
@@ -77,7 +78,7 @@
   import { tick, untrack } from 'svelte';
   import { readable, writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import DividerButton from './DividerButton.svelte';
   import DividerPanel from './DividerPanel.svelte';
   import { aggregatePRFiles, getPRStatusTooltip } from './sidebar-changes-utils';
@@ -377,7 +378,7 @@
       }
       if (!$githubAuthIsAuthenticated$) {
         pendingActionAfterAuth = 'refresh-pr';
-        toast.info(m.workspace_prSection_connectGithub_label());
+        notify.info(m.workspace_prSection_connectGithub_label());
         return;
       }
       try {
@@ -413,7 +414,7 @@
     if (!$githubAuthIsAuthenticated$) {
       pendingActionAfterAuth = 'create-pr';
       pendingPRWorkspaceId = wsId;
-      toast.info(m.workspace_prSection_connectGithub_label());
+      notify.info(m.workspace_prSection_connectGithub_label());
       return;
     }
     isCreatingPR = true;
@@ -432,12 +433,12 @@
       } else if (result.needsAuth) {
         pendingActionAfterAuth = 'create-pr';
         pendingPRWorkspaceId = wsId;
-        toast.info(m.workspace_prSection_connectGithub_label());
+        notify.info(m.workspace_prSection_connectGithub_label());
       } else {
-        toast.error(result.error || m.workspace_prCreator_createFailed_error());
+        notify.error(result.error || m.workspace_prCreator_createFailed_error());
       }
     } catch {
-      toast.error(m.workspace_prCreator_createFailed_error());
+      notify.error(m.workspace_prCreator_createFailed_error());
     } finally {
       isCreatingPR = false;
     }
@@ -514,10 +515,10 @@
           /* Refresh failed but push succeeded */
         }
       } else {
-        toast.error(result.error || m.workspace_prSection_pushFailed_error());
+        notify.error(result.error || m.workspace_prSection_pushFailed_error());
       }
     } catch {
-      toast.error(m.workspace_prSection_pushCommitsFailed_error());
+      notify.error(m.workspace_prSection_pushCommitsFailed_error());
     } finally {
       appStore.dispatch(setGitOperationFlag(workspaceId, 'isPushing', false));
     }
@@ -528,7 +529,7 @@
     try {
       const result = await gitClient.push(workspaceId as WorkspaceId, undefined, true);
       if (result.ok) {
-        toast.warning(m.workspace_prSection_forcePushDone_label());
+        notify.warning(m.workspace_prSection_forcePushDone_label());
         forcePushDrawerOpen = false;
         gitCache.invalidate(`git-status-${workspaceId}`);
         await Promise.all([
@@ -536,11 +537,11 @@
           appStore.dispatch(refreshRequested(workspaceId, true)),
         ]);
       } else {
-        toast.error(result.error || m.workspace_prSection_forcePushFailed_error());
+        notify.error(result.error || m.workspace_prSection_forcePushFailed_error());
       }
     } catch (error) {
       logger.error('Force push failed', error as Error);
-      toast.error(m.workspace_prSection_forcePushFailed_error());
+      notify.error(m.workspace_prSection_forcePushFailed_error());
     } finally {
       appStore.dispatch(setGitOperationFlag(workspaceId, 'isForcePushing', false));
     }
@@ -571,7 +572,7 @@
           appStore.dispatch(refreshRequested(capturedWsId, true)),
         ]);
         appStore.dispatch(refreshAcceptChangesStatus(capturedWsId));
-        toast.success(m.workspace_prSection_rebasedOnto_label({ branch: trunkBranch }));
+        notify.success(m.workspace_prSection_rebasedOnto_label({ branch: trunkBranch }));
       } else {
         const mainError = result.error || m.workspace_prSection_rebaseFailed_error();
         const stepErrors = result.steps
@@ -580,11 +581,11 @@
         const detailError = stepErrors?.length
           ? `${mainError}\n${stepErrors.join('\n')}`
           : mainError;
-        toast.error(detailError);
+        notify.error(detailError);
       }
     } catch (error) {
       logger.error('Rebase onto trunk failed', error as Error);
-      toast.error(
+      notify.error(
         m.workspace_prSection_rebaseFailedDetail_error({ error: (error as Error).message }),
       );
     } finally {
@@ -601,19 +602,19 @@
       const repoPath = $workspace$?.worktreePath || $workspace$?.path;
       const branch = $workspace$?.branch;
       if (!repoPath || !branch) {
-        toast.error(m.workspace_prSection_pullUnavailable_error());
+        notify.error(m.workspace_prSection_pullUnavailable_error());
         return;
       }
       const result = await appClient.git.pull(repoPath, branch);
       if (result.success) {
-        toast.success(m.workspace_prSection_pullSuccess_label());
+        notify.success(m.workspace_prSection_pullSuccess_label());
         gitCache.invalidateWorkspace(workspaceId as WorkspaceId);
         appStore.dispatch(loadGitStatus(workspaceId, true));
       } else {
-        toast.error(m.workspace_prSection_pullFailed_error({ error: result.error ?? '' }));
+        notify.error(m.workspace_prSection_pullFailed_error({ error: result.error ?? '' }));
       }
     } catch (error) {
-      toast.error(
+      notify.error(
         m.workspace_prSection_pullFailedDetail_error({
           error:
             error instanceof Error ? error.message : m.workspace_prSection_unknownError_label(),
@@ -642,12 +643,14 @@
     connectRemote.adding = true;
     try {
       await AcceptChangesClient.addRemote(workspaceId as WorkspaceId, connectRemote.url.trim());
-      toast.success(m.workspace_prSection_remoteAdded_label());
+      notify.success(m.workspace_prSection_remoteAdded_label());
       appStore.dispatch(refreshAcceptChangesStatus(workspaceId));
       connectRemote.drawerOpen = false;
       connectRemote.url = '';
     } catch (error) {
-      toast.error(m.workspace_prSection_addRemoteFailed_error({ error: (error as Error).message }));
+      notify.error(
+        m.workspace_prSection_addRemoteFailed_error({ error: (error as Error).message }),
+      );
     } finally {
       connectRemote.adding = false;
     }
@@ -781,9 +784,9 @@
               <span class="text-xs text-subtle mb-1 block"
                 >{m.workspace_prCreator_titleField_label()}</span
               >
-              <input
+              <Input
                 type="text"
-                class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
+                class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary-ink/50 placeholder:text-muted-foreground/50"
                 placeholder={m.workspace_prSection_prTitle_placeholder()}
                 bind:value={prTitle}
               />
@@ -804,7 +807,7 @@
                 minHeight={80}
                 maxHeight={200}
                 readonly={isGeneratingPR}
-                class="text-sm {isGeneratingPR ? 'border-primary/40 bg-muted/20' : ''}"
+                class="text-sm {isGeneratingPR ? 'border-primary-ink/40 bg-muted/20' : ''}"
               />
             </div>
           </div>
@@ -1017,7 +1020,7 @@
      primary workspace has no remote (monorepo#2053). Primary-only
      affordances (create PR / push / merge) stay gated on hasRemote above. -->
 {#if hasAnyPRs}
-  <div transition:slide={{ duration: 200 }}>
+  <div transition:slide={{ tier: 'moderate' }}>
     <TimelineSection
       title={m.workspace_prSection_pullRequests_label()}
       active={hasAnyPRs}
@@ -1028,7 +1031,7 @@
                state, so it is suppressed in the read-only listOnly
                (secondary-root browsing) mode (monorepo#2053). -->
         {#if !listOnly && (hasAnyPRs || $githubAuthIsAuthenticated$)}
-          <button
+          <Button
             type="button"
             class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
             onclick={() => {
@@ -1048,7 +1051,7 @@
               icon={faArrowsRotate}
               class="opacity-50 text-ui {isRefreshingPR ? 'animate-spin' : ''}"
             />
-          </button>
+          </Button>
         {/if}
       {/snippet}
       {#snippet children()}
@@ -1110,7 +1113,7 @@
               {/if}
 
               <Fa icon={statusIcon} size="xs" class="{statusColor} shrink-0" />
-              <button
+              <Button
                 type="button"
                 class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
                 onclick={onOpenFullPanel}
@@ -1141,7 +1144,7 @@
                     >{m.workspace_prSection_closed_label()}</span
                   >
                 {/if}
-              </button>
+              </Button>
 
               <div
                 class="absolute -right-1 pl-1 bg-sidebar flex items-center opacity-0 group-hover:opacity-100 transition-opacity"
@@ -1167,7 +1170,7 @@
             {#if isPRExpanded}
               <div
                 class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
-                transition:slide={{ duration: 150 }}
+                transition:slide={{ tier: 'moderate' }}
               >
                 {#each prFiles as file (file.path)}
                   <FileRow
@@ -1270,9 +1273,9 @@
       <div>
         <span class="text-xs text-subtle mb-1 block">{m.workspace_prSection_remoteUrl_label()}</span
         >
-        <input
+        <Input
           type="text"
-          class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
+          class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary-ink/50 placeholder:text-muted-foreground/50"
           placeholder={m.workspace_prSection_remoteUrl_placeholder()}
           bind:value={connectRemote.url}
           onkeydown={(e) => {
@@ -1303,7 +1306,7 @@
         {m.workspace_prSection_noRepo_label()}
         <a
           href="https://github.com/new"
-          class="text-primary hover:underline inline-flex items-center gap-0.5"
+          class="text-primary-ink hover:underline inline-flex items-center gap-0.5"
           onclick={(e) => {
             e.preventDefault();
             handleLink('https://github.com/new', {

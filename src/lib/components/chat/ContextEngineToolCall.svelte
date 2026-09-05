@@ -283,7 +283,7 @@
           <div class="transition-colors">
             <!-- File header -->
             <div class="flex items-center gap-1.5 py-1">
-              <!-- <Fa icon={faFile} size="xs" class="text-primary/60" /> -->
+              <!-- <Fa icon={faFile} size="xs" class="text-primary-ink/60" /> -->
               <span class="type-caption text-subtle">{fileName}</span>
               {#if snippet.lineStart}
                 <span class="type-caption text-subtle">:{snippet.lineStart}</span>

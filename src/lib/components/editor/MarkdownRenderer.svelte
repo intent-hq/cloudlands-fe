@@ -130,16 +130,16 @@
     }
 
     codespan({ text }: Tokens.Codespan) {
-      return `<code class="px-1.5 py-0.5 rounded bg-muted text-primary text-sm font-mono">${text}</code>`;
+      return `<code class="px-1.5 py-0.5 rounded bg-muted text-primary-ink text-sm font-mono">${text}</code>`;
     }
 
     link({ href, title, text }: Tokens.Link) {
       const titleAttr = title ? ` title="${title}"` : '';
-      return `<a href="${href}"${titleAttr} class="text-primary border-b border-transparent hover:border-primary transition-colors">${text}</a>`;
+      return `<a href="${href}"${titleAttr} class="text-primary-ink border-b border-transparent hover:border-primary-ink transition-colors">${text}</a>`;
     }
 
     blockquote({ text }: Tokens.Blockquote) {
-      return `<blockquote class="border-l-4 border-primary/40 pl-4 py-2.5 my-4 text-subtle italic bg-muted/30 rounded-r">${text}</blockquote>`;
+      return `<blockquote class="border-l-4 border-primary-ink/40 pl-4 py-2.5 my-4 text-subtle italic bg-muted/30 rounded-r">${text}</blockquote>`;
     }
 
     list(token: Tokens.List) {

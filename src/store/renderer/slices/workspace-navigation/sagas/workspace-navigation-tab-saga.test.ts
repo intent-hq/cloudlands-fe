@@ -35,8 +35,8 @@ vi.mock('$lib/components/chat/input/context-api', () => ({
   getAttachmentInfo: mocks.getAttachmentInfo,
   downloadAttachment: mocks.downloadAttachment,
 }));
-vi.mock('svelte-sonner', () => ({
-  toast: { error: mocks.toastError, success: mocks.toastSuccess },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: mocks.toastError, success: mocks.toastSuccess },
 }));
 
 const settle = async () => {

@@ -18,7 +18,8 @@
   const groupClass = $derived(
     cn(
       buttonGroupVariants({ orientation }),
-      '[&_[data-slot=button]]:rounded-sm [&_[data-slot=button]]:border-border [&_[data-slot=button]]:shadow-none',
+      '[&_[data-slot=button]]:rounded-sm [&_[data-slot=button]]:border-transparent',
+      '[&_[data-slot=button-surface]]:rounded-[inherit]',
       '[&_[data-slot=button]:hover]:z-10 [&_[data-slot=button]:focus-visible]:z-20',
       '[&_[data-slot=button][data-state=active]]:z-10',
       className,

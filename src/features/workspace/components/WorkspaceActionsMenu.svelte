@@ -51,8 +51,8 @@
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import { toast } from 'svelte-sonner';
-  import { withToastCountdown } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
+  import { withToastCountdown } from '$lib/components/patterns/notify';
   import { Button } from '$lib/components/ui/button';
   import { formatShortcut } from '$lib/utils/shortcuts';
   import { store as appStore } from '$store/renderer/store';
@@ -287,7 +287,7 @@
     } catch (error) {
       logger.error('Failed to open in VSCode:', error);
       // i18n-ignore (brand name)
-      toast.error(
+      notify.error(
         error instanceof Error
           ? error.message
           : m.ui_workspaceActions_openFailed_error({ name: 'VS Code' }),
@@ -318,7 +318,7 @@
     } catch (error) {
       logger.error('Failed to open in JetBrains:', error);
       // i18n-ignore (brand name)
-      toast.error(
+      notify.error(
         error instanceof Error
           ? error.message
           : m.ui_workspaceActions_openFailed_error({ name: 'JetBrains' }),
@@ -375,7 +375,7 @@
     } catch (error) {
       logger.error('Failed to open in Xcode:', error);
       // i18n-ignore (brand name)
-      toast.error(
+      notify.error(
         error instanceof Error
           ? error.message
           : m.ui_workspaceActions_openFailed_error({ name: 'Xcode' }),
@@ -444,7 +444,7 @@
       onClose?.();
     } catch (error) {
       logger.error(`[WorkspaceActionsMenu] Failed to open in ${editor.appName}:`, error);
-      toast.error(
+      notify.error(
         error instanceof Error
           ? error.message
           : m.ui_workspaceActions_openFailed_error({ name: editor.appName }),
@@ -483,7 +483,7 @@
         // i18n-ignore (IPC sentinel string from the main process, not UI copy)
         if (result?.error !== 'No application selected') {
           logger.error('Failed to open with other app:', result?.error);
-          toast.error(result?.error || m.ui_workspaceActions_openOtherFailed_error());
+          notify.error(result?.error || m.ui_workspaceActions_openOtherFailed_error());
         }
         return;
       }
@@ -491,7 +491,7 @@
       onClose?.();
     } catch (error) {
       logger.error('Failed to open with other app:', error);
-      toast.error(
+      notify.error(
         error instanceof Error ? error.message : m.ui_workspaceActions_openOtherFailed_error(),
       );
     }
@@ -579,7 +579,7 @@
         onFileDeleted?.();
         onClose?.();
 
-        const toastId = toast.warning(
+        const toastId = notify.warning(
           m.ui_workspaceActions_deletedFile_label({ name: fileName }),
           withToastCountdown({
             duration: 15000,
@@ -597,17 +597,17 @@
                     type: 'create',
                     filePath: pathToDelete,
                   });
-                  toast.dismiss(toastId);
+                  notify.dismiss(toastId);
                 } catch (err) {
                   logger.error('[WorkspaceActionsMenu] Failed to restore file', err);
-                  toast.error(m.ui_workspaceActions_restoreFileFailed_error());
+                  notify.error(m.ui_workspaceActions_restoreFileFailed_error());
                 }
               },
             },
           }),
         );
       } else {
-        toast.error(
+        notify.error(
           m.ui_workspaceActions_deleteFileFailedDetail_error({
             error: result?.error || m.ui_workspaceActions_unknown_error(),
           }),
@@ -615,7 +615,7 @@
       }
     } catch (err) {
       logger.error('[WorkspaceActionsMenu] Error deleting file', err);
-      toast.error(m.ui_workspaceActions_deleteFileFailed_error());
+      notify.error(m.ui_workspaceActions_deleteFileFailed_error());
     } finally {
       isDeletingFile = false;
     }

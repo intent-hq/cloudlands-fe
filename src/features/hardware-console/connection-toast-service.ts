@@ -42,9 +42,9 @@ const CODEX_WARNING_DURATION_MS = 10000;
 /** Lazily pull the toast lib so this device-service module stays light.
  *  The import promise is cached — concurrent events must not race two
  *  first-time dynamic imports of the same module. */
-let toastPromise: Promise<(typeof import('svelte-sonner'))['toast']> | null = null;
+let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null = null;
 function getToast() {
-  if (!toastPromise) toastPromise = import('svelte-sonner').then((module) => module.toast);
+  if (!toastPromise) toastPromise = import('$lib/components/patterns/notify').then((module) => module.notify);
   return toastPromise;
 }
 
@@ -97,7 +97,7 @@ async function showCodexWarning(
   name: string,
   codexMode: 'unsupported-firmware' | 'no-codex-layer',
 ) {
-  const toast = await getToast();
+  const notify = await getToast();
   const title =
     codexMode === 'unsupported-firmware'
       ? m.hardwareConsole_connectionToast_notCodexFirmware_message({ name })
@@ -106,7 +106,7 @@ async function showCodexWarning(
     codexMode === 'unsupported-firmware'
       ? m.hardwareConsole_connectionToast_notCodexFirmware_description()
       : m.hardwareConsole_connectionToast_noCodexLayer_description();
-  toast.warning(title, {
+  notify.warning(title, {
     id: CODEX_WARNING_TOAST_ID,
     description,
     duration: CODEX_WARNING_DURATION_MS,
@@ -117,7 +117,7 @@ async function handleConnected(manager: HardwareConsoleManager): Promise<void> {
   const device = manager.connectedDevice;
   const client = manager.client;
   if (!device || !client) return;
-  const [snapshot, collections, toast] = await Promise.all([
+  const [snapshot, collections, notify] = await Promise.all([
     probeConnectedDevice(client),
     manager.connectedCollections().catch(() => []),
     getToast(),
@@ -131,7 +131,7 @@ async function handleConnected(manager: HardwareConsoleManager): Promise<void> {
         transport,
       })
     : m.hardwareConsole_connectionToast_connected_message({ name: device.name });
-  toast.success(title, {
+  notify.success(title, {
     id: CONNECTION_TOAST_ID,
     description: describeSnapshot(snapshot),
     duration: CONNECT_TOAST_DURATION_MS,
@@ -146,8 +146,8 @@ async function handleConnected(manager: HardwareConsoleManager): Promise<void> {
 }
 
 async function showDisconnectToast(name: string): Promise<void> {
-  const toast = await getToast();
-  toast.info(m.hardwareConsole_connectionToast_disconnected_message({ name }), {
+  const notify = await getToast();
+  notify.info(m.hardwareConsole_connectionToast_disconnected_message({ name }), {
     id: CONNECTION_TOAST_ID,
     duration: DISCONNECT_TOAST_DURATION_MS,
   });

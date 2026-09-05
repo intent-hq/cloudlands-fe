@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * ContextItemRow - List item for displaying context items in the sidebar
    *
@@ -164,7 +165,7 @@
       <ProviderIcon
         provider={item.provider}
         size={12}
-        class={isSelected ? 'text-primary' : isActive ? 'text-foreground' : 'opacity-70'}
+        class={isSelected ? 'text-primary-ink' : isActive ? 'text-foreground' : 'opacity-70'}
       />
     </div>
   {/if}
@@ -172,7 +173,7 @@
   <!-- Content -->
   <div class="flex-1 flex items-baseline gap-1.5 min-w-0">
     <div class="w-full min-w-0 flex items-center gap-1.5">
-      <span class="text-ui truncate {isSelected ? 'text-primary' : ''}">{displayTitle()}</span>
+      <span class="text-ui truncate {isSelected ? 'text-primary-ink' : ''}">{displayTitle()}</span>
       {#if item.type === 'note' && item.isSpec}
         <span class="text-xs px-1 py-0.5 rounded bg-primary/10 text-primary font-medium"
           >{m.workspace_contextItem_spec_label()}</span
@@ -190,24 +191,24 @@
   >
     {#if hasExternalLink}
       <Tooltip content="Open in browser" side="top" delayDuration={300}>
-        <button
+        <Button
           type="button"
           class="p-1 rounded hover:bg-muted transition-colors cursor-pointer"
           onclick={handleExternalClick}
         >
           <Fa icon={faExternalLink} size="xs" class="text-ghost" />
-        </button>
+        </Button>
       </Tooltip>
     {/if}
     <!-- {#if canDelete}
       <Tooltip content="Remove from context" side="top" delayDuration={300}>
-        <button
+        <Button
           type="button"
           class="p-1 rounded hover:bg-danger-background/10 transition-colors cursor-pointer"
           onclick={handleDeleteClick}
         >
           <Fa icon={faTrash} size="xs" class="text-ghost hover:text-danger" />
-        </button>
+        </Button>
       </Tooltip>
     {/if} -->
   </div>

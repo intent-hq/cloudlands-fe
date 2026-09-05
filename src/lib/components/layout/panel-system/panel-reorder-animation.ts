@@ -1,9 +1,9 @@
 import type { AnimationConfig } from 'svelte/animate';
-import { cubicOut } from 'svelte/easing';
+import { prefersReducedMotion, spring, type SpringTierName } from '$lib/motion';
 
 interface PanelReorderAnimationParams {
-  duration?: number;
-  easing?: (t: number) => number;
+  enabled?: boolean;
+  tier?: SpringTierName;
 }
 
 const PREVIEW_PANEL_SELECTOR = '[data-panel-layout-preview-panel]';
@@ -27,9 +27,9 @@ export function capturePanelPositions(
 export function animatePanelPreviewPositions(
   root: ParentNode,
   fromPositions: ReadonlyMap<string, DOMRect>,
-  duration = 140,
+  tier: SpringTierName = 'moderate',
 ): void {
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  if (prefersReducedMotion()) return;
   root.querySelectorAll<HTMLElement>(PREVIEW_PANEL_SELECTOR).forEach((element) => {
     const panelId = getPanelPositionId(element);
     const from = panelId ? fromPositions.get(panelId) : null;
@@ -49,12 +49,13 @@ export function animatePanelPreviewPositions(
 
     element.getAnimations().forEach((animation) => animation.cancel());
     element.style.transformOrigin = 'top left';
+    const easing = getComputedStyle(element).getPropertyValue(`--spring-${tier}-ease`).trim();
     element.animate(
       [
         { transform: `translate3d(${deltaX}px, ${deltaY}px, 0) scale(${scaleX}, ${scaleY})` },
         { transform: 'translate3d(0, 0, 0)' },
       ],
-      { duration, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+      { duration: spring[tier].settleMs, ...(easing && { easing }) },
     );
   });
 }
@@ -62,14 +63,14 @@ export function animatePanelPreviewPositions(
 export function translatePanel(
   _node: Element,
   { from, to }: { from: DOMRect; to: DOMRect },
-  { duration = 180, easing = cubicOut }: PanelReorderAnimationParams = {},
+  { enabled = true, tier = 'moderate' }: PanelReorderAnimationParams = {},
 ): AnimationConfig {
   const deltaX = from.left - to.left;
   const deltaY = from.top - to.top;
 
   return {
-    duration,
-    easing,
+    duration: enabled && !prefersReducedMotion() ? spring[tier].settleMs : 0,
+    easing: spring[tier].exit.easing,
     css: (_t, remaining) =>
       `transform: translate(${remaining * deltaX}px, ${remaining * deltaY}px);`,
   };

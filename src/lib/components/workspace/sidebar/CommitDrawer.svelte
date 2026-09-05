@@ -141,7 +141,7 @@
         minHeight={60}
         maxHeight={150}
         readonly={isGenerating}
-        class="text-sm {isGenerating ? 'border-primary/40 bg-muted/20' : ''}"
+        class="text-sm {isGenerating ? 'border-primary-ink/40 bg-muted/20' : ''}"
       />
     </div>
     <div class="flex items-center gap-2 flex-wrap w-full">

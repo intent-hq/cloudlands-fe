@@ -67,9 +67,9 @@ export const COMPOSER_FOCUS_DELAYS_MS = [150, 600] as const;
 const COMPOSER_FOCUS_ARM_TTL_MS = 15_000;
 
 /** Lazily pull the toast lib so this service stays light. */
-let toastPromise: Promise<(typeof import('svelte-sonner'))['toast']> | null = null;
+let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null = null;
 function getToast() {
-  if (!toastPromise) toastPromise = import('svelte-sonner').then((module) => module.toast);
+  if (!toastPromise) toastPromise = import('$lib/components/patterns/notify').then((module) => module.notify);
   return toastPromise;
 }
 
@@ -138,8 +138,8 @@ export function consumeArmedComposerFocus(now = Date.now()): boolean {
 }
 
 async function showUnavailableToast(message: string): Promise<void> {
-  const toast = await getToast();
-  toast.info(message, {
+  const notify = await getToast();
+  notify.info(message, {
     id: UNAVAILABLE_HINT_TOAST_ID,
     duration: UNAVAILABLE_HINT_DURATION_MS,
   });

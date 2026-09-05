@@ -9,6 +9,7 @@ export const skeletonFixtures = [
       'line',
       'avatar',
       'card',
+      'shimmer',
       'compact',
       'zoom-200',
       'light',

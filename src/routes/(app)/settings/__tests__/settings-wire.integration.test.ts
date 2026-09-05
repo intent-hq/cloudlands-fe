@@ -15,8 +15,8 @@ import {
 vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/ui/__tests__/mocks/Fa.svelte')).default,
 }));
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
 import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';

@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { Button } from '$lib/components/ui/button';
   import { formatNumber } from '$lib/i18n/format';
 
   /**
@@ -433,7 +434,7 @@
   portal={true}
 >
   {#snippet trigger({ props })}
-    <button
+    <Button
       {...props}
       class={cn(
         'flex items-center justify-center h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer',
@@ -445,7 +446,7 @@
         <span class="text-xs text-subtle truncate max-w-32">{currentRemoteName}</span>
       {/if}
       <div class={cn('w-2 h-2 rounded-full shrink-0', dotColorClass)}></div>
-    </button>
+    </Button>
   {/snippet}
 
   {#snippet content()}
@@ -757,7 +758,7 @@
                 {/if}
 
                 <!-- Stop action -->
-                <button
+                <Button
                   class="w-full text-left text-xs text-danger hover:bg-muted/50 rounded px-1 py-1 mt-0.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
                   disabled={$unslothStopping$}
                   onclick={() => {
@@ -768,7 +769,7 @@
                   {$unslothStopping$
                     ? m.layout_daemonStatus_stopUnsloth_stopping_label()
                     : m.layout_daemonStatus_stopUnsloth_action_label()}
-                </button>
+                </Button>
               {/if}
             </div>
           {/if}
@@ -863,7 +864,7 @@
             </Menu.Item>
           {/each}
         {/if}
-        <button
+        <Button
           class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1.5 transition-colors cursor-pointer flex items-center gap-2"
           onclick={openDevicesSettings}
         >
@@ -871,7 +872,7 @@
           {hasSavedRemoteConnections
             ? m.layout_daemonStatus_manageDevices_action()
             : m.layout_daemonStatus_connectAnotherDevice_action()}
-        </button>
+        </Button>
       </div>
     </div>
   {/snippet}

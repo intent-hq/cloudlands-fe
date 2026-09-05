@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('$features/agent/services/agent-factory', () => ({
   agentFactory: { createAgent: mocks.createAgent },
 }));
-vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
 
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';

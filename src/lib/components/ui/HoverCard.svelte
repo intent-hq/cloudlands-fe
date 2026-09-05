@@ -3,6 +3,13 @@
   import type { Snippet } from 'svelte';
   import Portal from './Portal.svelte';
   import { scheduleLayoutRead, type CancelLayoutTask } from '$lib/utils/layout-phases';
+  import { crispOut, springIn } from '$lib/motion';
+  import {
+    clampSurface,
+    setSurface,
+    surfaceClasses,
+    useSurface,
+  } from '$lib/components/ui/surface-context';
   interface Props {
     id?: string;
     anchor: string;
@@ -24,6 +31,10 @@
     children,
   }: Props = $props();
 
+  const surface = clampSurface(useSurface() + 2);
+  setSurface(surface);
+  const surfaceClass = surfaceClasses(surface);
+
   const COLLISION_PADDING = 8;
   const SIDE_OFFSET = 4;
 
@@ -40,6 +51,12 @@
   const isBottom = $derived(position === 'bottom-right' || position === 'bottom-left');
   const isTop = $derived(position === 'top');
   const positionClass = $derived(absolute ? 'absolute' : 'fixed');
+  const enterOffset = $derived.by(() => {
+    if (position === 'right') return { x: -4, y: 0 };
+    if (position === 'bottom') return { x: 4, y: 0 };
+    if (isTop) return { x: 0, y: 4 };
+    return { x: 0, y: -4 };
+  });
 
   function clamp(value: number, min: number, max: number) {
     return Math.max(min, Math.min(max, value));
@@ -210,8 +227,9 @@
     {id}
     bind:this={cardEl}
     class={positionClass +
-      ' z-50 w-64 flex flex-col bg-popover border border-border shadow pointer-events-none transition duration-150 ease-out ' +
+      ` z-50 w-64 flex flex-col border border-border pointer-events-none ${surfaceClass} ` +
       className}
+    data-surface-level={surface}
     style:position-anchor={anchor}
     style:right={position === 'bottom' ? 'anchor(left)' : undefined}
     style:left={position === 'right'
@@ -229,6 +247,8 @@
     style:margin-bottom={isTop ? '4px' : undefined}
     style:translate={isTop ? '-50% 0' : undefined}
     role="tooltip"
+    in:springIn={{ tier: 'fast', ...enterOffset, scale: 0.96 }}
+    out:crispOut={{ tier: 'fast' }}
   >
     {@render children?.()}
   </div>
@@ -238,11 +258,14 @@
       {id}
       bind:this={cardEl}
       class={positionClass +
-        ' z-50 w-64 flex flex-col overflow-y-auto bg-popover border border-border shadow pointer-events-auto transition duration-150 ease-out ' +
+        ` z-50 w-64 flex flex-col overflow-y-auto border border-border pointer-events-auto ${surfaceClass} ` +
         className}
+      data-surface-level={surface}
       style={measuredStyle}
       style:max-height={maxHeight}
       role="tooltip"
+      in:springIn={{ tier: 'fast', ...enterOffset, scale: 0.96 }}
+      out:crispOut={{ tier: 'fast' }}
     >
       {@render children?.()}
     </div>

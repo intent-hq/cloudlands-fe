@@ -980,7 +980,7 @@
   }
 
   .markdown-viewer :global(.markdown-link) {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
 
   .markdown-viewer :global(a:hover),

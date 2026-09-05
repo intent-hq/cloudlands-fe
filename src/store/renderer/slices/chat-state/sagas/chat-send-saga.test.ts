@@ -24,7 +24,7 @@ const mocks = vi.hoisted(() => ({
   ),
 }));
 vi.mock('$features/agent/agent-send', () => ({ sendMessage: mocks.send }));
-vi.mock('svelte-sonner', () => ({ toast: { info: mocks.toastInfo } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { info: mocks.toastInfo } }));
 vi.mock('$lib/components/chat/input/image-attachment-placement', () => ({
   toImageReferenceBlocks: mocks.toImageReferenceBlocks,
 }));

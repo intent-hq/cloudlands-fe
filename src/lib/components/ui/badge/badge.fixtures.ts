@@ -10,6 +10,8 @@ export const badgeFixtures = [
       'destructive',
       'success-ring-dot',
       'info-ring-dot',
+      'leading-icon',
+      'removable',
       'keyboard-focus',
       'long-label',
       'light',

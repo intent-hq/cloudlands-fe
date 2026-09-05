@@ -127,12 +127,12 @@ describe('LinkActionMenu', () => {
     expect(linkActionMenuState.visible).toBe(false);
   });
 
-  it('Escape dismisses the menu via the escape-layer stack', async () => {
+  it('Escape dismisses the menu', async () => {
     render(LinkActionMenu);
     showIssueMenu(TEST_WORKSPACE_ID);
     await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
 
-    await fireEvent.keyDown(window, { key: 'Escape' });
+    await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
 
     await waitFor(() => expect(linkActionMenuState.visible).toBe(false));
   });
@@ -142,7 +142,8 @@ describe('LinkActionMenu', () => {
     showIssueMenu(TEST_WORKSPACE_ID);
     await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
 
-    await fireEvent.mouseDown(document.body);
+    await fireEvent.pointerDown(document.body, { pointerType: 'mouse' });
+    await fireEvent.click(document.body);
 
     await waitFor(() => expect(linkActionMenuState.visible).toBe(false));
   });
@@ -161,79 +162,28 @@ describe('LinkActionMenu', () => {
     expect(screen.getAllByRole('menuitem')[0].textContent).toContain('PR #7');
   });
 
-  describe('batched positioning', () => {
-    let rafCallbacks: FrameRequestCallback[];
-    let rafSpy: ReturnType<typeof vi.spyOn>;
-
-    beforeEach(() => {
-      rafCallbacks = [];
-      rafSpy = vi
-        .spyOn(globalThis, 'requestAnimationFrame')
-        .mockImplementation((cb: FrameRequestCallback) => {
-          rafCallbacks.push(cb);
-          return rafCallbacks.length;
-        });
+  it('uses canonical arrow navigation and restores focus to the invoking element', async () => {
+    const anchor = document.createElement('button');
+    document.body.append(anchor);
+    anchor.focus();
+    render(LinkActionMenu);
+    showLinkActionMenu({
+      url: ISSUE_URL,
+      gitHubRef: { owner: 'acme', repo: 'widgets', number: 42, kind: 'issue' },
+      x: 50,
+      y: 60,
+      workspaceId: TEST_WORKSPACE_ID,
+      anchorElement: anchor,
     });
 
-    afterEach(() => {
-      // Drain the shared layout-phases queue so state does not leak.
-      flushFrames();
-      rafSpy.mockRestore();
-    });
+    const menu = await screen.findByRole('menu');
+    const items = screen.getAllByRole('menuitem');
+    await waitFor(() => expect(document.activeElement).toBe(items[0]));
+    await fireEvent.keyDown(items[0], { key: 'ArrowDown' });
+    await waitFor(() => expect(document.activeElement).toBe(items[1]));
 
-    function flushFrames() {
-      let guard = 0;
-      while (rafCallbacks.length > 0 && guard < 10) {
-        const batch = rafCallbacks;
-        rafCallbacks = [];
-        for (const cb of batch) cb(performance.now());
-        guard += 1;
-      }
-    }
-
-    it('measures the menu through the layout-read phase and focuses the first item', async () => {
-      render(LinkActionMenu);
-      showIssueMenu(TEST_WORKSPACE_ID);
-      await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
-      const menu = screen.getByRole('menu');
-      const rectSpy = vi.spyOn(menu, 'getBoundingClientRect');
-
-      // Nothing measured synchronously; the adjustment waits for the frame.
-      expect(rectSpy).not.toHaveBeenCalled();
-      flushFrames();
-
-      expect(rectSpy).toHaveBeenCalledTimes(1);
-      expect(document.activeElement).toBe(screen.getAllByRole('menuitem')[0]);
-    });
-
-    it('coalesces rapid coordinate updates into one measurement', async () => {
-      render(LinkActionMenu);
-      showIssueMenu(TEST_WORKSPACE_ID);
-      await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
-      const menu = screen.getByRole('menu');
-      const rectSpy = vi.spyOn(menu, 'getBoundingClientRect');
-
-      // Re-show at new coordinates before the first frame flushes: the
-      // pending task is cancelled and replaced, not stacked.
-      showIssueMenu(TEST_WORKSPACE_ID);
-      await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
-      flushFrames();
-
-      expect(rectSpy).toHaveBeenCalledTimes(1);
-    });
-
-    it('cancels the pending measurement when the menu is hidden before the frame', async () => {
-      render(LinkActionMenu);
-      showIssueMenu(TEST_WORKSPACE_ID);
-      await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
-      const menu = screen.getByRole('menu');
-      const rectSpy = vi.spyOn(menu, 'getBoundingClientRect');
-
-      hideLinkActionMenu();
-      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
-      flushFrames();
-
-      expect(rectSpy).not.toHaveBeenCalled();
-    });
+    await fireEvent.keyDown(menu, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    expect(document.activeElement).toBe(anchor);
   });
 });

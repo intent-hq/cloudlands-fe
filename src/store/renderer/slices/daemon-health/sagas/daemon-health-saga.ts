@@ -92,11 +92,11 @@ async function invokeSidecarRunLog(): Promise<SidecarRunLog> {
 
 async function notifyVersionMismatch(transport: BackendTransportInfo): Promise<boolean> {
   try {
-    const { toast } = await import('$lib/components/ui/toast');
+    const { notify } = await import('$lib/components/patterns/notify');
     const daemonVersion = transport.daemonVersion
       ? ` (v${transport.daemonVersion.replace(/^v/, '')})`
       : '';
-    toast.warning(m.daemonStatus_versionMismatch_warning({ version: daemonVersion }), {
+    notify.warning(m.daemonStatus_versionMismatch_warning({ version: daemonVersion }), {
       duration: 15_000,
     });
     return true;
@@ -133,16 +133,16 @@ async function notifyOrphanedSidecar(
   notifyState: OrphanNotifyState,
 ): Promise<boolean> {
   try {
-    const { toast } = await import('$lib/components/ui/toast');
+    const { notify } = await import('$lib/components/patterns/notify');
     const daemonVersion = transport.daemonVersion
       ? ` (v${transport.daemonVersion.replace(/^v/, '')})`
       : '';
     const onRestartFailed = async () => {
       notifyState.notified = false;
-      const { toast: toastLib } = await import('$lib/components/ui/toast');
+      const { notify: toastLib } = await import('$lib/components/patterns/notify');
       toastLib.error(m.daemonStatus_orphanRestartFailed_error());
     };
-    toast.warning(m.daemonStatus_orphanedSidecar_warning({ version: daemonVersion }), {
+    notify.warning(m.daemonStatus_orphanedSidecar_warning({ version: daemonVersion }), {
       duration: 30_000,
       action: {
         label: m.daemonStatus_orphanedSidecar_restart_action(),

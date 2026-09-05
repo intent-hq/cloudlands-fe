@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * WalkthroughCategoriesGrid
    *
@@ -55,7 +56,7 @@
 
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
     {#each categories as category, index (index)}
-      <button
+      <Button
         type="button"
         class="text-left p-4 rounded-lg border transition-all duration-200 {getCategoryColor(
           index,
@@ -96,7 +97,7 @@
             </div>
           </div>
         </div>
-      </button>
+      </Button>
     {/each}
   </div>
 </div>

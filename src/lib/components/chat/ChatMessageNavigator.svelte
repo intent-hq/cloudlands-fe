@@ -251,7 +251,7 @@
             aria-activedescendant={activeOptionId}
             autocomplete="off"
             placeholder={m.chat_messageNavigator_search_placeholder()}
-            class="type-caption h-(--control-height-medium) w-full min-w-0 shrink-0 rounded-(--radius-small) border border-border bg-card px-[var(--space-2)] text-foreground caret-foreground outline-none placeholder:text-muted-foreground/70"
+            class="type-caption h-(--control-height-medium) w-full min-w-0 shrink-0 rounded-(--radius-small) border border-border bg-card px-[var(--space-2)] text-foreground caret-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:shadow-[inset_0_0_0_1px_var(--ring)]"
             data-testid="chat-message-navigator-search"
           />
           <!-- Persistent live region: announcements only fire for content
@@ -290,11 +290,13 @@
                   class="block h-(--control-height-large) w-full min-w-0 max-w-full"
                   contentClass="max-w-[min(28rem,calc(100vw-var(--space-4)))] break-words text-left"
                 >
-                  <button
+                  <Button
                     type="button"
+                    variant="plain"
+                    labelClass="overflow-hidden whitespace-nowrap text-left text-ellipsis"
                     id={`${listboxId}-option-${index}`}
                     role="option"
-                    tabindex="-1"
+                    tabindex={-1}
                     aria-selected={index === activeIndex}
                     class={cn(
                       'type-caption flex h-(--control-height-large) min-h-(--control-height-large) max-h-(--control-height-large) w-full min-w-0 max-w-full cursor-pointer items-center overflow-hidden rounded-(--radius-small) px-[var(--space-2)] text-left font-normal text-muted-foreground outline-none transition-[background-color,color,box-shadow] duration-(--motion-fast) hover:bg-accent/60 hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 motion-reduce:transition-none',
@@ -318,7 +320,7 @@
                     >
                       {message.text}
                     </span>
-                  </button>
+                  </Button>
                 </Tooltip>
               {/each}
             </div>

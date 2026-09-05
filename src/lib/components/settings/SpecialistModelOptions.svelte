@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
   /**
    * "+ Add model option" rows for the specialist editor (PROTOCOL §5.11
    * `modelOptions`): each row is a ModelPicker + free-text
@@ -191,7 +192,7 @@
           onReasoningChange={(effort) => handleEffortChange(index, effort ?? undefined)}
         />
       </div>
-      <input
+      <Input
         type="text"
         value={row.hint}
         onblur={(e) => handleHintBlur(index, e.currentTarget.value.trim())}
@@ -204,25 +205,25 @@
         placeholder={m.settings_aiBehavior_modelOptions_hint_placeholder()}
         class="flex-1 min-w-0 h-8 px-2.5 text-sm rounded-md border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
       />
-      <button
+      <Button
         type="button"
         onclick={() => removeRow(index)}
         aria-label={m.settings_aiBehavior_modelOptions_remove_ariaLabel()}
         class="shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
       >
         <Fa icon={faXmark} class="w-3.5 h-3.5" />
-      </button>
+      </Button>
     </div>
   {/each}
 
   <div>
-    <button
+    <Button
       type="button"
       onclick={addRow}
       class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
     >
       <Fa icon={faPlus} class="w-3 h-3" />
       {m.settings_aiBehavior_modelOptions_add()}
-    </button>
+    </Button>
   </div>
 </div>

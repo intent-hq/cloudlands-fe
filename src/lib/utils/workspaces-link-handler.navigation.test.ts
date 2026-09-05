@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   openMessage: vi.fn(),
 }));
 
-vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn() } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');

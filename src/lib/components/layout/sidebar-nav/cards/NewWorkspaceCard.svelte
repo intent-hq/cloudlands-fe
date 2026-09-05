@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * NewWorkspaceCard - Hover card for creating a new workspace
    *
@@ -92,12 +93,12 @@
 <div class="px-3 pb-3 flex flex-col gap-2">
   <!-- WIP Draft -->
   {#if hasDraft}
-    <button
+    <Button
       class="w-full text-left p-2.5 rounded-lg bg-primary/5 border border-primary/15 hover:bg-primary/10 transition-colors cursor-pointer group"
       onclick={openWithDraft}
     >
       <div class="flex items-center gap-2 mb-1">
-        <span class="text-ui font-semibold uppercase tracking-wider text-primary/70"
+        <span class="text-ui font-semibold uppercase tracking-wider text-primary-ink/70"
           >{m.layout_newWorkspaceCard_draft_label()}</span
         >
       </div>
@@ -108,7 +109,7 @@
         {m.layout_newWorkspaceCard_continueEditing_label()}
         <Fa icon={faArrowRight} size="xs" />
       </span>
-    </button>
+    </Button>
   {/if}
 
   <!-- Quick start with recent repos -->
@@ -117,7 +118,7 @@
     <div>
       <div class="flex flex-col">
         {#each recentRepos as repo}
-          <button
+          <Button
             class="flex items-center gap-2 px-1 py-1 rounded-md text-left hover:bg-sidebar cursor-pointer w-full focus:outline-0"
             onclick={(e) =>
               openModal(
@@ -153,7 +154,7 @@
                 {repo.name ?? m.layout_newWorkspaceCard_unknownRepo_label()}
               {/if}
             </span>
-          </button>
+          </Button>
         {/each}
       </div>
     </div>

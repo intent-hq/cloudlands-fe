@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { Note, AgentMessage, AgentSession } from '$shared/types';
   import type { WorkspaceId, AgentId } from '$shared/types/branded-ids';
@@ -224,17 +225,17 @@
         <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_assignee_label()}</div>
         <div class="flex flex-col gap-1.5 min-h-6 min-w-0 overflow-hidden">
           {#if assignedAgents.length === 0}
-            <button
+            <Button
               onclick={handleRunAgent}
               class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
               title={m.workspace_noteMetadataBar_runAgent_tooltip()}
             >
               <Fa icon={faPlay} class="text-xs" />
-            </button>
+            </Button>
           {:else}
             <div class="flex flex-wrap items-center gap-1.5 min-w-0">
               {#each assignedAgents as agentId (agentId)}
-                <button
+                <Button
                   onclick={(e) => handleAgentClick(e, agentId)}
                   class="inline-flex items-center gap-1 min-w-0 py-0.5 pl-0.5 pr-2 rounded bg-muted/30 px-2 cursor-pointer"
                 >
@@ -242,22 +243,22 @@
                   <span class="truncate font-medium text-subtle -mt-0.5"
                     >{getAgentName(agentId)}</span
                   >
-                </button>
+                </Button>
               {/each}
-              <button
+              <Button
                 onclick={handleRunAgent}
                 class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
                 title={m.workspace_noteMetadataBar_runAgent_tooltip()}
               >
                 <Fa icon={faPlay} class="text-xs" />
-              </button>
+              </Button>
             </div>
-            <!-- <button
+            <!-- <Button
               onclick={handleViewAllChanges}
               class= text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer text-left"
             >
               View all changes
-            </button> -->
+            </Button> -->
           {/if}
         </div>
       </div>

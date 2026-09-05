@@ -48,7 +48,7 @@
     justify-content: center;
     cursor: pointer;
     padding: 0;
-    transition: opacity 0.15s ease;
+    transition: opacity var(--spring-fast) var(--spring-fast-ease);
     z-index: 1;
   }
 
@@ -59,5 +59,11 @@
   .toast-close-btn:focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .toast-close-btn {
+      transition: none;
+    }
   }
 </style>

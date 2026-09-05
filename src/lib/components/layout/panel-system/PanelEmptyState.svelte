@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * PanelEmptyState - Empty state for panels without tabs
    *
@@ -19,6 +20,7 @@
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import type { PanelLayoutManager, PanelTab } from '$features/layout/panel-layout-adapter';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
+  import { EmptyState } from '$lib/components/patterns/screen';
   import {
     getResourceIconKind,
     RESOURCE_ICON_BY_KIND,
@@ -221,83 +223,80 @@
   ]);
 </script>
 
-<div
-  class="empty-state flex h-full items-center justify-center overflow-y-auto bg-sidebar px-6 py-10 text-foreground"
+<EmptyState
+  class="empty-state h-full overflow-y-auto bg-sidebar px-6 py-10 text-foreground text-left"
+  contentClass="empty-state-content w-full max-w-[36rem]"
+  aria-label={m.layout_panelEmptyState_createInEmptyPanel_ariaLabel()}
   data-panel-empty-state
 >
-  <section
-    class="empty-state-content w-full max-w-[36rem]"
-    aria-label={m.layout_panelEmptyState_createInEmptyPanel_ariaLabel()}
-  >
-    <div class="creation-grid grid gap-1.5">
-      {#each creationActions as action (action.id)}
-        <button
-          class="creation-card type-body flex min-h-16 cursor-pointer items-center gap-2.5 rounded-md border border-transparent bg-muted/30 px-3 py-2.5 text-left text-foreground transition-transform duration-150 focus-visible:outline-none motion-reduce:transition-none"
-          onclick={action.action}
-          title={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
-          aria-label={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
-        >
-          {#if action.resourceKind}
-            <ResourceIconTile kind={action.resourceKind} variant="emphasized" />
-          {:else}
-            <span
-              class="flex size-6 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground"
-              data-panel-empty-leading-surface
-            >
-              <Fa icon={action.icon} class="size-4" />
-            </span>
-          {/if}
-          <span class="min-w-0 truncate font-medium">
-            {m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
-          </span>
-        </button>
-      {/each}
-    </div>
-
-    {#if recentItems.length > 0}
-      <div class="mt-4 pt-3">
-        <div class="type-caption mb-1 flex items-center gap-1.5 px-1 text-muted-foreground">
-          <Fa icon={faArrowRotateLeft} class="size-3" />
-          <span>{m.layout_panelEmptyState_recentlyClosed_label()}</span>
-        </div>
-        {#each recentItems as item (item.tab.id + '-' + item.closedAt)}
-          {@const resourceKind = getResourceIconKind(item.tab.type)}
-          <button
-            class="recent-item type-caption flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none motion-reduce:transition-none"
-            onclick={handleReopenItem}
-            title={m.layout_panelEmptyState_reopen_tooltip({ title: item.tab.title })}
+  <div class="creation-grid grid gap-1.5">
+    {#each creationActions as action (action.id)}
+      <Button
+        class="creation-card type-body flex min-h-16 cursor-pointer items-center gap-2.5 rounded-md border border-transparent bg-muted/30 px-3 py-2.5 text-left text-foreground transition-transform duration-150 focus-visible:outline-none motion-reduce:transition-none"
+        onclick={action.action}
+        title={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
+        aria-label={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
+      >
+        {#if action.resourceKind}
+          <ResourceIconTile kind={action.resourceKind} variant="emphasized" />
+        {:else}
+          <span
+            class="flex size-6 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground"
+            data-panel-empty-leading-surface
           >
-            {#if resourceKind}
-              <ResourceIconTile kind={resourceKind} />
-            {:else}
-              <Fa icon={getTabIcon(item.tab.type)} class="size-3 shrink-0 opacity-70" />
-            {/if}
-            <span class="flex-1 truncate">{item.tab.title}</span>
-            <span class="shrink-0 opacity-70">{formatTime(item.closedAt)}</span>
-          </button>
-        {/each}
-      </div>
-    {/if}
+            <Fa icon={action.icon} class="size-4" />
+          </span>
+        {/if}
+        <span class="min-w-0 truncate font-medium">
+          {m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
+        </span>
+      </Button>
+    {/each}
+  </div>
 
-    <div class="shortcut-grid mt-5 grid gap-x-5 gap-y-0.5 pt-3">
-      {#each utilityActions as action (action.key)}
-        <button
-          class="shortcut-item type-caption flex cursor-pointer items-center justify-between gap-3 rounded-md px-1 py-1.5 text-left text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none motion-reduce:transition-none"
-          onclick={action.action}
-          title={action.label}
+  {#if recentItems.length > 0}
+    <div class="mt-4 pt-3">
+      <div class="type-caption mb-1 flex items-center gap-1.5 px-1 text-muted-foreground">
+        <Fa icon={faArrowRotateLeft} class="size-3" />
+        <span>{m.layout_panelEmptyState_recentlyClosed_label()}</span>
+      </div>
+      {#each recentItems as item (item.tab.id + '-' + item.closedAt)}
+        {@const resourceKind = getResourceIconKind(item.tab.type)}
+        <Button
+          class="recent-item type-caption flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none motion-reduce:transition-none"
+          onclick={handleReopenItem}
+          title={m.layout_panelEmptyState_reopen_tooltip({ title: item.tab.title })}
         >
-          <span>{action.label}</span>
-          <kbd class="shortcut-key shrink-0 text-muted-foreground">
-            {formatShortcut(action.key)}
-          </kbd>
-        </button>
+          {#if resourceKind}
+            <ResourceIconTile kind={resourceKind} />
+          {:else}
+            <Fa icon={getTabIcon(item.tab.type)} class="size-3 shrink-0 opacity-70" />
+          {/if}
+          <span class="flex-1 truncate">{item.tab.title}</span>
+          <span class="shrink-0 opacity-70">{formatTime(item.closedAt)}</span>
+        </Button>
       {/each}
     </div>
-  </section>
-</div>
+  {/if}
+
+  <div class="shortcut-grid mt-5 grid gap-x-5 gap-y-0.5 pt-3">
+    {#each utilityActions as action (action.key)}
+      <Button
+        class="shortcut-item type-caption flex cursor-pointer items-center justify-between gap-3 rounded-md px-1 py-1.5 text-left text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none motion-reduce:transition-none"
+        onclick={action.action}
+        title={action.label}
+      >
+        <span>{action.label}</span>
+        <kbd class="shortcut-key shrink-0 text-muted-foreground">
+          {formatShortcut(action.key)}
+        </kbd>
+      </Button>
+    {/each}
+  </div>
+</EmptyState>
 
 <style>
-  .empty-state-content {
+  :global(.empty-state-content) {
     container-type: inline-size;
   }
 
@@ -322,12 +321,12 @@
     line-height: 1rem;
   }
 
-  .creation-card:active,
-  .shortcut-item:active {
+  :global(.creation-card:active),
+  :global(.shortcut-item:active) {
     transform: scale(0.98);
   }
 
-  .recent-item:active {
+  :global(.recent-item:active) {
     transform: scale(0.99);
   }
 </style>

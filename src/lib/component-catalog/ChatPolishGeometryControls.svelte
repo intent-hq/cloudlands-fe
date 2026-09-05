@@ -187,7 +187,7 @@
     cursor: pointer;
   }
   .save-button {
-    border-color: hsl(var(--primary));
+    border-color: hsl(var(--primary-ink));
     background: hsl(var(--primary));
     color: hsl(var(--primary-foreground));
   }

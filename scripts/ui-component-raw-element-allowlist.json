@@ -1,0 +1,105 @@
+{
+  "ceilings": {
+    "src/features": { "button": 0, "input": 0, "select": 0, "textarea": 0 },
+    "src/lib": { "button": 16, "input": 4, "select": 0, "textarea": 2 },
+    "src/routes": { "button": 0, "input": 0, "select": 0, "textarea": 0 }
+  },
+  "exceptions": [
+    {
+      "file": "src/features/onboarding/steps/OnboardingPromptStep.svelte",
+      "elements": ["input"],
+      "owner": "onboarding",
+      "reason": "Hidden native file picker host used for prompt attachments"
+    },
+    {
+      "file": "src/features/file-tracking/components/diff/DiffHeader.svelte",
+      "elements": ["button"],
+      "owner": "file-tracking",
+      "reason": "Native diff-surface controls preserve dense editor interaction semantics"
+    },
+    {
+      "file": "src/features/file-tracking/components/diff/DiffViewer.svelte",
+      "elements": ["button"],
+      "owner": "file-tracking",
+      "reason": "Native diff-surface controls preserve dense editor interaction semantics"
+    },
+    {
+      "file": "src/features/file-tracking/components/diff/PatchBlockContent.svelte",
+      "elements": ["button"],
+      "owner": "file-tracking",
+      "reason": "Native diff-surface controls preserve dense editor interaction semantics"
+    },
+    {
+      "file": "src/features/file-tracking/components/diff/TrackedChangeDiffViewer.svelte",
+      "elements": ["button"],
+      "owner": "file-tracking",
+      "reason": "Native diff-surface controls preserve dense editor interaction semantics"
+    },
+    {
+      "file": "src/features/layout/tab-types/FileTabType.svelte",
+      "elements": ["button"],
+      "owner": "layout",
+      "reason": "Native editor-surface control preserves CodeMirror-adjacent interaction semantics"
+    },
+    {
+      "file": "src/features/hud/grid/HudWorkspaceCard.svelte",
+      "elements": ["button"],
+      "owner": "hud",
+      "reason": "Full-card interactive container requires direct flex children and composite workspace-card geometry"
+    },
+    {
+      "file": "src/lib/components/GitHubAuthBanner.svelte",
+      "elements": ["button"],
+      "owner": "github-auth",
+      "reason": "Initial auth prompt hosts a Svelte slide transition, which component instances cannot receive"
+    },
+    {
+      "file": "src/lib/components/layout/WorkspaceTabStrip.svelte",
+      "elements": ["button"],
+      "owner": "layout",
+      "reason": "Tab buttons require the registerTabButton DOM action for roving focus and drag registration"
+    },
+    {
+      "file": "src/lib/components/settings/AIBehaviorSidebar.svelte",
+      "elements": ["button"],
+      "owner": "settings",
+      "reason": "Settings rows require the highlightTarget DOM action used by guided navigation"
+    },
+    {
+      "file": "src/lib/components/workspace/WorkspaceCard.svelte",
+      "elements": ["button"],
+      "owner": "workspace",
+      "reason": "Workspace row requires the highlightTarget DOM action used by guided navigation"
+    },
+    {
+      "file": "src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte",
+      "elements": ["button"],
+      "owner": "workspace",
+      "reason": "Modal backdrop hosts a Svelte fade transition, which component instances cannot receive"
+    },
+    {
+      "file": "src/lib/components/workspace/initializer/IssueSuggestions.svelte",
+      "elements": ["button"],
+      "owner": "workspace",
+      "reason": "Dynamically inserted issue row hosts a Svelte slide transition, which component instances cannot receive"
+    },
+    {
+      "file": "src/lib/components/workspace/sidebar/SidebarActivityPanel.svelte",
+      "elements": ["button"],
+      "owner": "workspace",
+      "reason": "Activity row hosts a Svelte slide transition, which component instances cannot receive"
+    },
+    {
+      "file": "src/lib/components/agent-overview/TimeScrubber.svelte",
+      "elements": ["input"],
+      "owner": "agent-overview",
+      "reason": "Transparent native range input overlays a custom timeline; Slider would break absolute hit-target geometry"
+    },
+    {
+      "file": "src/lib/components/settings/ListenTargetSelector.svelte",
+      "elements": ["input"],
+      "owner": "settings",
+      "reason": "Native checkboxes synchronously roll back invalid selections through the input element"
+    }
+  ]
+}

@@ -11,7 +11,7 @@
    */
 
   import { onMount, onDestroy } from 'svelte';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import { createLogger } from '$lib/utils/client-logger';
   import { ErrorHandler } from '$features/agent/services/error-handler';
   import { Button } from '$lib/components/ui/button';
@@ -305,7 +305,10 @@
 
               <!-- Stack Trace Details - Full width with proper overflow handling -->
               {#if showDetails && errorInfo}
-                <div class="w-full pt-6 border-t border-border" transition:slide={{ axis: 'y' }}>
+                <div
+                  class="w-full pt-6 border-t border-border"
+                  transition:slide={{ axis: 'y', tier: 'moderate' }}
+                >
                   <div class="bg-muted/60 rounded-lg p-4 border border-border">
                     <pre
                       class="text-xs font-mono text-subtle leading-relaxed overflow-x-auto max-h-64 text-left whitespace-pre-wrap break-all">{errorInfo}</pre>

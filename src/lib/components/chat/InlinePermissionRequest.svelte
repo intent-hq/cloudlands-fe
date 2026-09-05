@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fly } from 'svelte/transition';
+  import { fly } from '$lib/motion';
   import { onMount, onDestroy } from 'svelte';
   import { selectPermissionOption } from '$store/renderer/slices/permission/permission-slice';
   import type { PermissionRequest } from '$store/renderer/slices/permission/permission-slice';
@@ -10,6 +10,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { Button } from '$lib/components/ui/button';
   import { shouldHandlePermissionShortcut } from './permission-shortcut';
 
   interface Props {
@@ -93,7 +94,7 @@
 
 <div
   class="inline-permission-request my-3 rounded-lg border border-border bg-card overflow-hidden"
-  in:fly={{ y: 10, duration: 200 }}
+  in:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}
 >
   <!-- Header with friendly question -->
   <div class="flex items-center justify-between px-4 py-3 bg-muted/30 border-b border-border">
@@ -128,8 +129,9 @@
 
     <!-- Raw details toggle (for debugging/advanced users) -->
     {#if request.description}
-      <button
+      <Button
         type="button"
+        variant="ghost"
         class="type-caption mb-3 flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
         onclick={() => (showDetails = !showDetails)}
       >
@@ -137,7 +139,7 @@
         {showDetails
           ? m.chat_inlinePermission_hideRawDetails_label()
           : m.chat_inlinePermission_showRawDetails_label()}
-      </button>
+      </Button>
 
       {#if showDetails}
         <div
@@ -151,8 +153,9 @@
     <!-- Options with keyboard shortcuts -->
     <div class="flex flex-col gap-2">
       {#each optionsWithShortcuts as option (option.id)}
-        <button
+        <Button
           type="button"
+          variant="plain"
           class="type-body flex items-center gap-3 rounded-md px-3 py-2 transition-colors
                  disabled:opacity-50 disabled:cursor-not-allowed
                  {option.destructive
@@ -172,7 +175,7 @@
           {#if option.description}
             <span class="type-caption opacity-60">{option.description}</span>
           {/if}
-        </button>
+        </Button>
       {/each}
     </div>
 

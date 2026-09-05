@@ -10,8 +10,8 @@
 
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('svelte-sonner', () => ({
-  toast: { error: vi.fn(), warning: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), warning: vi.fn() },
 }));
 
 import { AgentError } from '../../errors/agent-errors';

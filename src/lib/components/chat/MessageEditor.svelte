@@ -5,9 +5,9 @@
   Allows editing the message text and regenerating from that point.
 -->
 <script lang="ts">
-  import { fade } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fade } from '$lib/motion';
   import Button from '$lib/components/ui/button/button.svelte';
+  import { Textarea } from '$lib/components/ui/textarea';
   import Fa from 'svelte-fa';
   import { faCheck, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
@@ -62,19 +62,20 @@
 
 <div
   class="flex flex-col gap-2 {className}"
-  in:fade={{ duration: 150, easing: cubicOut }}
-  out:fade={{ duration: 100, easing: cubicOut }}
+  in:fade={{ tier: 'moderate' }}
+  out:fade={{ tier: 'moderate' }}
 >
-  <textarea
-    bind:this={textareaRef}
+  <Textarea
+    bind:ref={textareaRef}
     bind:value={text}
     onkeydown={handleKeyDown}
-    class="w-full min-h-10 max-h-48 px-3 py-2.5 text-sm leading-normal text-foreground bg-background border border-border rounded-lg resize-none overflow-y-auto focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-    rows="1"
+    class="w-full min-h-10 max-h-48 px-3 py-2.5 text-sm leading-normal text-foreground bg-background border border-border rounded-lg resize-none overflow-y-auto focus:outline-none focus:border-primary-ink focus:ring-2 focus:ring-primary-ink/20"
+    rows={1}
     placeholder={m.chat_chatMessage_edit_placeholder()}
     autocorrect="off"
     autocapitalize="off"
-    spellcheck="false"></textarea>
+    spellcheck="false"
+  />
 
   <div class="flex justify-end gap-2">
     <Button variant="ghost" size="sm" onclick={onCancel} class="text-subtle">

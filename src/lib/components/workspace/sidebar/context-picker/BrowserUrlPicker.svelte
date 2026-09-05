@@ -154,7 +154,7 @@
       </div>
       <div class="space-y-1 max-h-48 overflow-y-auto">
         {#each $recentUrls$.slice(0, 10) as entry (entry.url)}
-          <button
+          <Button
             type="button"
             class="w-full text-left px-3 py-2 rounded hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-2"
             onclick={() => handleRecentClick(entry)}
@@ -164,7 +164,7 @@
               <p class="text-sm truncate">{entry.title || getDisplayTitle(entry.url)}</p>
               <p class="text-xs text-subtle truncate">{entry.url}</p>
             </div>
-          </button>
+          </Button>
         {/each}
       </div>
     </div>

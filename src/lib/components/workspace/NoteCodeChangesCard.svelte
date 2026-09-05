@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /**
    * NoteCodeChangesCard - A sleek,
@@ -26,7 +27,7 @@
     type ChatFileChange,
   } from '$lib/utils/get-file-changes-from-messages';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import { untrack } from 'svelte';
   import {
     openWorkspaceChatChanges,
@@ -221,11 +222,11 @@
   <div class="w-full flex justify-center">
     <div
       class="w-full max-w-[var(--content-max-width,60rem)] px-14 pb-4"
-      transition:slide={{ duration: 150 }}
+      transition:slide={{ tier: 'moderate' }}
     >
       <div class="rounded-lg border border-border overflow-hidden">
         <!-- Header -->
-        <button
+        <Button
           onclick={() => (isExpanded = !isExpanded)}
           class="w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer"
         >
@@ -249,14 +250,14 @@
             {/if}
           </div>
           <Fa icon={isExpanded ? faChevronDown : faChevronLeft} class="text-subtle" size="xs" />
-        </button>
+        </Button>
 
         <!-- File List -->
         {#if isExpanded && hasChanges}
-          <div class="border-t border-border" transition:slide={{ duration: 150 }}>
+          <div class="border-t border-border" transition:slide={{ tier: 'moderate' }}>
             <div class="divide-y divide-border">
               {#each displayedChanges as change (change.filePath)}
-                <button
+                <Button
                   onclick={() => handleFileClick(change)}
                   class="w-full flex items-center gap-3 px-4 py-2 transition-colors cursor-pointer text-left group"
                 >
@@ -276,7 +277,7 @@
                     deletions={change.deletions}
                     size="xs"
                   />
-                </button>
+                </Button>
               {/each}
             </div>
 
@@ -293,12 +294,12 @@
 
             <!-- View All Link -->
             <div class="px-4 pt-0.5 pb-1 bg-muted/30">
-              <button
+              <Button
                 onclick={handleViewAllClick}
                 class="text-xs text-subtle transition-colors cursor-pointer"
               >
                 {m.workspace_noteCodeChanges_viewAll_label()}
-              </button>
+              </Button>
             </div>
           </div>
         {/if}

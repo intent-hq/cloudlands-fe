@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * DividerButton - A button styled to sit on a timeline divider
    * Has a background to "cut through" the divider line
@@ -77,9 +78,9 @@
     <TooltipPrimitive.Root delayDuration={200} disableHoverableContent>
       <TooltipPrimitive.Trigger>
         {#snippet child({ props })}
-          <button type="button" class={buttonClass} {onclick} {disabled} {...restProps} {...props}>
+          <Button type="button" class={buttonClass} {onclick} {disabled} {...restProps} {...props}>
             {@render buttonContent()}
-          </button>
+          </Button>
         {/snippet}
       </TooltipPrimitive.Trigger>
       <TooltipPrimitive.Portal>
@@ -96,7 +97,7 @@
     </TooltipPrimitive.Root>
   </TooltipPrimitive.Provider>
 {:else}
-  <button type="button" class={buttonClass} {onclick} {disabled} {...restProps}>
+  <Button type="button" class={buttonClass} {onclick} {disabled} {...restProps}>
     {@render buttonContent()}
-  </button>
+  </Button>
 {/if}

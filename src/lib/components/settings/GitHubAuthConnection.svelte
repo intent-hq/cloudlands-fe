@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/patterns/settings/custom-controls';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
@@ -96,15 +97,15 @@
       {#if $isAuthenticating$}
         <span class="text-subtle">{m.settings_connections_github_waitingForAuthorization()}</span>
       {:else if $isAuthenticated$}
-        <button
+        <Button
           type="button"
           class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
           onclick={handleGitHubReconnect}
         >
           {m.settings_connections_reconnect()}
-        </button>
+        </Button>
         <span class="text-ghost">·</span>
-        <button
+        <Button
           type="button"
           class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
           onclick={handleGitHubDisconnect}
@@ -113,15 +114,15 @@
           {isDisconnectingGitHub
             ? m.settings_connections_disconnecting()
             : m.settings_connections_disconnect()}
-        </button>
+        </Button>
       {:else if !$requiresDaemonAuth$}
-        <button
+        <Button
           type="button"
-          class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+          class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium"
           onclick={handleGitHubConnect}
         >
           {m.settings_connections_connect()}
-        </button>
+        </Button>
       {:else}
         <span class="text-xs text-subtle">{m.settings_connections_requiresDaemonAuth()}</span>
       {/if}

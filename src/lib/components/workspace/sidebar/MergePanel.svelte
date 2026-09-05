@@ -29,7 +29,7 @@
   import Switch from '$lib/components/ui/switch/switch.svelte';
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import {
@@ -178,14 +178,14 @@
 
     if (hasStaged) {
       if (!commitMessage.trim()) {
-        toast.error(m.workspace_mergePanel_commitMessageRequired_error());
+        notify.error(m.workspace_mergePanel_commitMessageRequired_error());
         return;
       }
       const commitResult = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
         commitMessage: commitMessage.trim(),
       });
       if (!commitResult.success) {
-        toast.error(commitResult.error || m.workspace_mergePanel_commitFailed_error());
+        notify.error(commitResult.error || m.workspace_mergePanel_commitFailed_error());
         return;
       }
     }
@@ -223,9 +223,9 @@
           }
         }
         if (result.result?.autoRebased) {
-          toast.success(m.workspace_mergePanel_rebasedAndMerged_label({ branch: targetBranch }));
+          notify.success(m.workspace_mergePanel_rebasedAndMerged_label({ branch: targetBranch }));
         } else {
-          toast.success(m.workspace_mergePanel_merged_label({ branch: targetBranch }));
+          notify.success(m.workspace_mergePanel_merged_label({ branch: targetBranch }));
         }
         celebrateMerge();
       } else {
@@ -238,7 +238,7 @@
           // i18n-ignore (matching backend error strings)
           errorMsg.includes('Please rebase');
         if (needsRebase && !options?.rebaseFirst) {
-          toast.error(m.workspace_mergePanel_conflicts_error(), {
+          notify.error(m.workspace_mergePanel_conflicts_error(), {
             description: m.workspace_mergePanel_conflicts_description(),
             action: {
               label: m.workspace_mergePanel_rebaseInTerminal_label(),
@@ -247,11 +247,11 @@
             duration: 10000,
           });
         } else {
-          toast.error(result.error || m.workspace_mergePanel_mergeFailed_error());
+          notify.error(result.error || m.workspace_mergePanel_mergeFailed_error());
         }
       }
     } catch {
-      toast.error(m.workspace_mergePanel_mergeToTrunkFailed_error());
+      notify.error(m.workspace_mergePanel_mergeToTrunkFailed_error());
     } finally {
       isMergingToTrunk = false;
     }
@@ -261,7 +261,7 @@
     if (!workspaceId) return;
     const openPR = pullRequests.find((pr) => pr.status === 'open' || pr.status === 'draft');
     if (!openPR) {
-      toast.error(m.workspace_mergePanel_noOpenPr_error());
+      notify.error(m.workspace_mergePanel_noOpenPr_error());
       return;
     }
 
@@ -285,13 +285,13 @@
         } catch {
           /* Refresh failed but merge succeeded */
         }
-        toast.success(m.workspace_mergePanel_prMergedOnGithub_label({ number: openPR.number }));
+        notify.success(m.workspace_mergePanel_prMergedOnGithub_label({ number: openPR.number }));
         celebrateMerge();
       } else {
-        toast.error(result.error || m.workspace_mergePanel_prMergeFailed_error());
+        notify.error(result.error || m.workspace_mergePanel_prMergeFailed_error());
       }
     } catch {
-      toast.error(m.workspace_mergePanel_prMergeFailed_error());
+      notify.error(m.workspace_mergePanel_prMergeFailed_error());
     } finally {
       mergeOptions.mergingPR = false;
     }
@@ -331,22 +331,22 @@
 <!-- Via PR / Via git toggle - only show when there's an open PR -->
 {#if hasOpenPR && hasRemote}
   <div class="flex items-center rounded-md border border-border overflow-hidden w-fit">
-    <button
+    <Button
       class="px-2.5 py-1 text-xs font-medium transition-colors {mergeOptions.viaPR
         ? 'bg-primary text-primary-foreground'
         : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'}"
       onclick={() => (mergeOptions.viaPR = true)}
     >
       {m.workspace_mergePanel_viaPr_label()}
-    </button>
-    <button
+    </Button>
+    <Button
       class="px-2.5 py-1 text-xs font-medium transition-colors border-l border-border {!mergeOptions.viaPR
         ? 'bg-primary text-primary-foreground'
         : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'}"
       onclick={() => (mergeOptions.viaPR = false)}
     >
       {m.workspace_mergePanel_viaGit_label()}
-    </button>
+    </Button>
   </div>
 {/if}
 
@@ -465,7 +465,7 @@
           minHeight={60}
           maxHeight={150}
           readonly={isGeneratingMerge}
-          class="text-sm {isGeneratingMerge ? 'border-primary/40 bg-muted/20' : ''}"
+          class="text-sm {isGeneratingMerge ? 'border-primary-ink/40 bg-muted/20' : ''}"
         />
       </div>
     </div>

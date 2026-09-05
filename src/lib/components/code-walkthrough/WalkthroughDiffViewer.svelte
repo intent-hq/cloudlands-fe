@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * WalkthroughDiffViewer
    *
@@ -9,7 +10,7 @@
    * Note: This is NOT a general-purpose diff viewer. For standard diff display,
    * use `DiffViewer` from `$lib/components/ui/diff`.
    */
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import Fa from 'svelte-fa';
   import { faChevronDown, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
   import { parsePatch, type DiffLine } from './patch-utils';
@@ -105,7 +106,7 @@
 
 <div class="walkthrough-diff-viewer rounded-lg border border-border overflow-hidden {className}">
   <!-- File header -->
-  <button
+  <Button
     type="button"
     class="w-full flex items-center gap-2 px-3 py-2 bg-muted/50 border-b border-border hover:bg-muted/70 transition-colors text-left"
     onclick={toggleCollapsed}
@@ -117,11 +118,11 @@
         ? m.codeWalkthrough_diffViewer_annotationCount_one({ count: annotations.length })
         : m.codeWalkthrough_diffViewer_annotationCount_many({ count: annotations.length })}
     </span>
-  </button>
+  </Button>
 
   <!-- Diff content -->
   {#if !collapsed || previewLines > 0}
-    <div class="relative overflow-x-auto" transition:slide={{ duration: 150 }}>
+    <div class="relative overflow-x-auto" transition:slide={{ tier: 'moderate' }}>
       <div class="font-mono text-xs leading-relaxed">
         {#each hunks as hunk, hunkIndex (hunkIndex)}
           {#each hunk.lines as line, lineIndex (`${hunkIndex}-${lineIndex}`)}
@@ -162,13 +163,13 @@
 
       <!-- Show more indicator when collapsed -->
       {#if collapsed && previewLines > 0 && totalLineCount > previewLines}
-        <button
+        <Button
           type="button"
           class="w-full py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           onclick={toggleCollapsed}
         >
           {m.codeWalkthrough_diffViewer_showMore_label({ count: totalLineCount - previewLines })}
-        </button>
+        </Button>
       {/if}
     </div>
   {/if}

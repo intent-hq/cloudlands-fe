@@ -67,7 +67,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
     },
   },
 }));
-vi.mock('svelte-sonner', () => ({ toast: { error: mockToastError } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mockToastError } }));
 
 import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { applyReasoningEffort, reconcileAgentReasoningEffort } from './reasoning-effort';

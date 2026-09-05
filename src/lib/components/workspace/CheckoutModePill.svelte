@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * CheckoutModePill - Tiny, quiet metadata pill showing how the workspace
    * checkout was provisioned (PROTOCOL §5.1). Renders nothing when
@@ -274,13 +275,13 @@
       {/if}
       <div class="mt-0.5 flex flex-col gap-1 border-t border-border pt-1.5 text-xs">
         <div class="text-subtle">{m.workspace_diskUsagePill_shrink_description()}</div>
-        <button
+        <Button
           type="button"
           class="self-start cursor-pointer border-none bg-transparent p-0 font-medium text-accent-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
           onclick={handleShrinkClick}
         >
           {m.workspace_diskUsagePill_shrink_label()}
-        </button>
+        </Button>
       </div>
     {:else if loading}
       <div

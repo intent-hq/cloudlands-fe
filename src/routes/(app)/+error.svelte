@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import Fa from 'svelte-fa';
   import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
@@ -69,16 +69,16 @@
         <!-- Show Details Button - Only if error message exists -->
         {#if error?.message}
           <div class="w-full flex flex-col items-center">
-            <button
+            <Button
               class="text-sm text-muted-foreground hover:text-muted-foreground transition-colors"
               onclick={() => (showDetails = !showDetails)}
             >
               {showDetails ? m.error_page_hideDetails_label() : m.error_page_showDetails_label()}
-            </button>
+            </Button>
 
             <!-- Stack Trace Details - Full width with proper overflow handling -->
             {#if showDetails}
-              <div class="relative w-full pt-3" transition:slide={{ axis: 'y' }}>
+              <div class="relative w-full pt-3" transition:slide={{ axis: 'y', tier: 'moderate' }}>
                 <div class="p-4 border border-border rounded bg-muted/30">
                   <pre
                     class="text-xs font-mono text-subtle leading-relaxed overflow-x-auto max-h-64 text-left whitespace-pre-wrap break-all">{m.error_page_statusLine_label(

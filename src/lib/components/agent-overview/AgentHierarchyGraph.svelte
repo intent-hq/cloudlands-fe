@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * AgentHierarchyGraph Component
    *
@@ -438,7 +439,7 @@
               <!-- Continuation line from previous row's cards down into this SVG -->
               <path
                 d="M {maxRowWidth / 2} -{CARD_HEIGHT} L {maxRowWidth / 2} {connectorHeight / 3}"
-                stroke={hasAnyWaiting ? 'var(--primary)' : 'currentColor'}
+                stroke={hasAnyWaiting ? 'var(--primary-ink)' : 'currentColor'}
                 class={hasAnyWaiting ? '' : 'text-border'}
                 stroke-width={hasAnyWaiting ? 2 : 1}
                 fill="none"
@@ -447,7 +448,7 @@
               <!-- First row: trunk line from parent down to branch point -->
               <path
                 d="M {maxRowWidth / 2} 0 L {maxRowWidth / 2} {connectorHeight / 3}"
-                stroke={hasAnyWaiting ? 'var(--primary)' : 'currentColor'}
+                stroke={hasAnyWaiting ? 'var(--primary-ink)' : 'currentColor'}
                 class={hasAnyWaiting ? '' : 'text-border'}
                 stroke-width={hasAnyWaiting ? 2 : 1}
                 fill="none"
@@ -630,7 +631,7 @@
                   >● {m.agentOverview_hierarchyGraph_statusWaiting_label()}</span
                 >
               {:else if hoveredAgent.status === 'responding'}
-                <span class="text-primary"
+                <span class="text-primary-ink"
                   >● {m.agentOverview_hierarchyGraph_statusResponding_label()}</span
                 >
               {:else if hoveredAgent.status === 'completed'}
@@ -680,7 +681,7 @@
     <div
       class="zoom-controls absolute bottom-4 right-4 flex items-center gap-1 bg-card border border-border rounded-lg shadow-sm p-1"
     >
-      <button
+      <Button
         type="button"
         class="zoom-btn w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
         onclick={zoomOut}
@@ -689,18 +690,18 @@
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="5" y1="12" x2="19" y2="12"></line>
         </svg>
-      </button>
+      </Button>
 
-      <button
+      <Button
         type="button"
         class="zoom-percent w-12 h-8 flex items-center justify-center text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
         onclick={resetZoom}
         title={m.agentOverview_hierarchyGraph_resetZoom_tooltip()}
       >
         {zoomPercent}%
-      </button>
+      </Button>
 
-      <button
+      <Button
         type="button"
         class="zoom-btn w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
         onclick={zoomIn}
@@ -710,11 +711,11 @@
           <line x1="12" y1="5" x2="12" y2="19"></line>
           <line x1="5" y1="12" x2="19" y2="12"></line>
         </svg>
-      </button>
+      </Button>
 
       <div class="w-px h-6 bg-border mx-1"></div>
 
-      <button
+      <Button
         type="button"
         class="zoom-btn w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
         onclick={fitToView}
@@ -723,7 +724,7 @@
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path>
         </svg>
-      </button>
+      </Button>
     </div>
 
     <!-- Pan hint -->

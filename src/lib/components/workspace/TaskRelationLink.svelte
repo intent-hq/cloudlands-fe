@@ -8,6 +8,7 @@
   conflict edges, both consistent with the existing task-row chip semantics.
 -->
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faHourglassHalf, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
@@ -50,7 +51,7 @@
   }
 </script>
 
-<button
+<Button
   type="button"
   onclick={handleClick}
   class="inline-flex items-center gap-1.5 min-w-0 max-w-full rounded px-2 py-0.5 text-left cursor-pointer transition-colors {variant ===
@@ -63,7 +64,7 @@
   {#if variant === 'conflict'}
     <Fa icon={faTriangleExclamation} size="xs" class="shrink-0" />
   {:else}
-    <!-- inert: TaskStatusIcon renders its own <button>; neutralize it so this
+    <!-- inert: TaskStatusIcon renders its own button; neutralize it so this
          chip's root button stays the only interactive/focusable control. -->
     <span class="contents" inert>
       {#key status}
@@ -80,4 +81,4 @@
       <Fa icon={faHourglassHalf} size="xs" />
     </span>
   {/if}
-</button>
+</Button>

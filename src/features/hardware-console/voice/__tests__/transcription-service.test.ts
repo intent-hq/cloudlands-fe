@@ -65,7 +65,7 @@ vi.mock('$store/renderer/store', () => ({
 }));
 
 const toastError = vi.fn();
-vi.mock('svelte-sonner', () => ({ toast: { error: toastError, info: vi.fn() } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: toastError, info: vi.fn() } }));
 
 const transcribeWithOsMock = vi.fn();
 vi.mock('$features/voice/os-transcription-service', async (importOriginal) => {

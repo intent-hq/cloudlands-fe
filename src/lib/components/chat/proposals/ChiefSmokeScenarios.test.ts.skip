@@ -82,7 +82,7 @@ vi.mock('$lib/store/redux-dispatch-bridge', () => ({
 }));
 
 vi.mock('$lib/electron-bridge', () => ({ invoke: vi.fn() }));
-vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn() } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
 }));

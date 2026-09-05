@@ -181,7 +181,8 @@ describe('Dropdown portal positioning', () => {
     });
     const trigger = container.querySelector('button') as HTMLButtonElement;
     trigger.getBoundingClientRect = vi.fn(() => rect(120, 500, 120, 28));
-    trigger.parentElement!.getBoundingClientRect = vi.fn(() => rect(120, 500, 120, 28));
+    const root = container.querySelector<HTMLElement>('[data-slot="dropdown-root"]')!;
+    root.getBoundingClientRect = vi.fn(() => rect(120, 500, 120, 28));
 
     await fireEvent.click(trigger);
     const listbox = await screen.findByRole('listbox');
@@ -192,7 +193,7 @@ describe('Dropdown portal positioning', () => {
     expect(boundary.contains(listbox)).toBe(true);
 
     trigger.getBoundingClientRect = vi.fn(() => rect(120, 90, 120, 28));
-    trigger.parentElement!.getBoundingClientRect = vi.fn(() => rect(120, 90, 120, 28));
+    root.getBoundingClientRect = vi.fn(() => rect(120, 90, 120, 28));
     await fireEvent(window, new Event('resize'));
     expect(listbox.dataset.side).toBe('bottom');
     expect(listbox.style.top).toBe('32px');
@@ -267,6 +268,35 @@ describe('Dropdown compatibility modes', () => {
     expect(onopenchange).toHaveBeenNthCalledWith(2, false);
   });
 
+  it('shares one active index between arrow navigation and pointer proximity', async () => {
+    const { container } = render(Dropdown, {
+      props: {
+        options: [
+          { value: 'a', label: 'Alpha' },
+          { value: 'b', label: 'Beta' },
+        ],
+        searchable: false,
+        portal: false,
+      },
+    });
+    await fireEvent.click(container.querySelector('button')!);
+    const listbox = await screen.findByRole('listbox');
+    const options = screen.getAllByRole('option');
+    const optionContainer = listbox.querySelector<HTMLElement>('[data-scroll-container]')!;
+    const activeIndex = optionContainer.querySelector<HTMLElement>(
+      '[data-slot="menu-list-highlight"]',
+    )!;
+    optionContainer.getBoundingClientRect = vi.fn(() => rect(0, 0, 200, 60));
+    options[0].getBoundingClientRect = vi.fn(() => rect(0, 0, 200, 30));
+    options[1].getBoundingClientRect = vi.fn(() => rect(0, 30, 200, 30));
+
+    await fireEvent.keyDown(listbox, { key: 'ArrowDown' });
+    await waitFor(() => expect(activeIndex.dataset.activeIndex).toBe('1'));
+    await fireEvent.pointerMove(optionContainer, { clientX: 10, clientY: 5 });
+    await waitFor(() => expect(activeIndex.dataset.activeIndex).toBe('0'));
+    expect(options[0].dataset.highlighted).toBe('true');
+  });
+
   it('searches grouped options by both the display label and search label', async () => {
     const { container } = render(Dropdown, {
       props: {
@@ -319,7 +349,7 @@ describe('Dropdown compatibility modes', () => {
 
     await fireEvent.click(screen.getByRole('option', { name: 'Toggle detail' }));
     expect(onchange).toHaveBeenCalledWith('toggle', expect.any(MouseEvent));
-    await fireEvent.mouseEnter(screen.getByRole('menuitem', { name: 'More' }).parentElement!);
+    await fireEvent.mouseOver(screen.getByRole('menuitem', { name: 'More' }));
     expect(await screen.findByRole('menu')).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('option', { name: 'Run action' }));
@@ -358,6 +388,11 @@ describe('Dropdown caller migration ledger', () => {
     );
     expect(dropdownCallerLedger).toEqual([
       {
+        caller: 'src/lib/component-catalog/renderers/ChoiceCatalogPreview.svelte',
+        replacement: 'Combobox',
+        reason: 'catalog characterization of the deprecated value-selection wrapper',
+      },
+      {
         caller: 'src/lib/components/chat/input/ModelPicker.svelte',
         replacement: 'Combobox',
         reason: 'searchable grouped value selection',
@@ -388,9 +423,9 @@ describe('Dropdown caller migration ledger', () => {
         reason: 'shared option model for ModelPicker',
       },
       {
-        caller: 'src/lib/components/settings/mcp/McpServerCard.svelte',
+        caller: 'src/lib/components/patterns/settings/custom-controls.ts',
         replacement: 'Menu',
-        reason: 'action items and separator without value selection',
+        reason: 'settings bridge for action items and separator without value selection',
       },
     ]);
   });
