@@ -1,6 +1,8 @@
 export { buildDiffMapDocument } from './model/build-document';
 export type { BuildDiffMapDocumentOptions } from './model/build-document';
 export { default as DiffMap } from './components/DiffMap.svelte';
+export { default as DiffMapRichBlock } from './components/DiffMapRichBlock.svelte';
+export { parseDiffMapDocument } from './model/parse-rich-block';
 export * from './layout/layout-diff-map';
 export * from './model/fixtures';
 export * from './model/types';

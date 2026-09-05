@@ -22,6 +22,7 @@
     activePath?: string;
     selection?: Set<string>;
     layers?: DiffMapLayers;
+    pathFilter?: ReadonlySet<string>;
     rungOverride?: DiffMapDensityRung;
     filterable?: boolean;
     onOpen: (file: DiffMapFile, event: MouseEvent | KeyboardEvent) => void;
@@ -34,6 +35,7 @@
     activePath,
     selection = $bindable(new Set<string>()),
     layers,
+    pathFilter,
     rungOverride,
     filterable = true,
     onOpen,
@@ -332,6 +334,7 @@
               {selection}
               {focusedPath}
               filter={filter.trim().toLocaleLowerCase()}
+              {pathFilter}
               {layers}
               onActivate={activate}
               onKeydown={navigate}

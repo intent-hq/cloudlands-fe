@@ -18,6 +18,7 @@
     selection: ReadonlySet<string>;
     focusedPath?: string;
     filter: string;
+    pathFilter?: ReadonlySet<string>;
     layers?: DiffMapLayers;
     onActivate: (file: DiffMapFile, event: MouseEvent) => void;
     onKeydown: (file: DiffMapFile, event: KeyboardEvent) => void;
@@ -34,6 +35,7 @@
     selection,
     focusedPath,
     filter,
+    pathFilter,
     layers,
     onActivate,
     onKeydown,
@@ -53,7 +55,10 @@
 
   function matches(row: DiffMapLayoutRow) {
     const file = files.get(row.fileId);
-    return !filter || file?.path.toLocaleLowerCase().includes(filter) === true;
+    return (
+      (!filter || file?.path.toLocaleLowerCase().includes(filter) === true) &&
+      (!pathFilter || (file ? pathFilter.has(file.path) : false))
+    );
   }
 </script>
 

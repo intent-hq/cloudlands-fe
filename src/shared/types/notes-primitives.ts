@@ -14,7 +14,7 @@ import { z } from 'zod';
 // Base Types
 // ============================================================================
 
-type NotePrimitiveType = 'reference' | 'cli' | 'agent_action' | 'patch' | 'diagram';
+type NotePrimitiveType = 'reference' | 'cli' | 'agent_action' | 'patch' | 'diagram' | 'diffmap';
 
 type CreatedByType = 'user' | 'agent' | 'system';
 
@@ -398,12 +398,22 @@ export interface DiagramPrimitive extends BasePrimitive {
   currentStateId?: string; // Currently active state
 }
 
+export interface DiffMapPrimitive extends BasePrimitive {
+  type: 'diffmap';
+  document: Record<string, unknown>;
+}
+
 // ============================================================================
 // Union Types
 // ============================================================================
 
 export type NotePrimitive =
-  ReferencePrimitive | CliPrimitive | AgentActionPrimitive | PatchPrimitive | DiagramPrimitive;
+  | ReferencePrimitive
+  | CliPrimitive
+  | AgentActionPrimitive
+  | PatchPrimitive
+  | DiagramPrimitive
+  | DiffMapPrimitive;
 
 // ============================================================================
 // Zod Schemas for Runtime Validation
@@ -412,7 +422,7 @@ export type NotePrimitive =
 // Base schema
 const BasePrimitiveSchema = z.object({
   id: z.string().uuid(),
-  type: z.enum(['reference', 'cli', 'agent_action', 'patch', 'diagram']),
+  type: z.enum(['reference', 'cli', 'agent_action', 'patch', 'diagram', 'diffmap']),
   version: z.literal(1),
   label: z.string().optional(),
   description: z.string().optional(),
@@ -689,6 +699,11 @@ export const DiagramPrimitiveSchema = BasePrimitiveSchema.extend({
   currentStateId: z.string().optional(),
 });
 
+export const DiffMapPrimitiveSchema = BasePrimitiveSchema.extend({
+  type: z.literal('diffmap'),
+  document: z.record(z.unknown()),
+});
+
 // Union schema
 export const NotePrimitiveSchema = z.discriminatedUnion('type', [
   ReferencePrimitiveSchema,
@@ -696,6 +711,7 @@ export const NotePrimitiveSchema = z.discriminatedUnion('type', [
   AgentActionPrimitiveSchema,
   PatchPrimitiveSchema,
   DiagramPrimitiveSchema,
+  DiffMapPrimitiveSchema,
 ]);
 
 // ============================================================================

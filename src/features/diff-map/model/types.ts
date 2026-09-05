@@ -60,7 +60,7 @@ export interface DiffMapLineRange {
   end: number;
 }
 
-export interface DiffMapAnnotation {
+export interface DiffMapFactAnnotation {
   id: string;
   kind: 'attribution' | 'comment' | 'review' | 'changed-since-review' | 'test' | 'custom';
   fileId?: string;
@@ -69,6 +69,25 @@ export interface DiffMapAnnotation {
   label?: string;
   data?: Record<string, unknown>;
 }
+
+export interface DiffMapClaimAnnotation {
+  id: string;
+  kind: 'claim';
+  label: string;
+  paths: string[];
+  hunks?: unknown[];
+  provenance: string | Record<string, unknown>;
+}
+
+export interface DiffMapGroupAnnotation {
+  id: string;
+  kind: 'group';
+  label: string;
+  paths: string[];
+}
+
+export type DiffMapAnnotation =
+  DiffMapFactAnnotation | DiffMapClaimAnnotation | DiffMapGroupAnnotation;
 
 export interface DiffMapDocument {
   source: DiffMapSource;

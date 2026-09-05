@@ -538,6 +538,38 @@ not valid json
     expect(result[0].content).toContain('ws-block:reference');
   });
 
+  it('parses compact ws-block:diffmap data with annotations', () => {
+    const input = `\`\`\`ws-block:diffmap
+{"files":[{"path":"src/app.ts","additions":3,"deletions":1,"status":"modified"}],"annotations":[{"kind":"group","label":"UI","paths":["src/app.ts"]}]}
+\`\`\``;
+
+    const result = parseAgentMessage(input);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe('diffmap');
+    expect(result[0].metadata?.diffMapData?.files[0]).toMatchObject({
+      path: 'src/app.ts',
+      additions: 3,
+      deletions: 1,
+    });
+    expect(result[0].metadata?.diffMapData?.annotations[0]).toMatchObject({
+      kind: 'group',
+      label: 'UI',
+    });
+  });
+
+  it('falls back to text for invalid ws-block:diffmap JSON', () => {
+    const input = `\`\`\`ws-block:diffmap
+not valid json
+\`\`\``;
+
+    const result = parseAgentMessage(input);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe('text');
+    expect(result[0].content).toContain('ws-block:diffmap');
+  });
+
   it('should parse ws-block:cli', () => {
     const input = `Run this command:
 
