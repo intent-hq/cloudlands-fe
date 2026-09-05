@@ -2616,7 +2616,7 @@
   "layout_daemonStatus_unknown_label": "Inconnu",
   "layout_daemonStatus_noStats_label": "Aucune statistique disponible",
   "layout_daemonStatus_degradedTimeout_one": "La dernière vérification d'état a expiré.",
-  "layout_daemonStatus_degradedTimeout_many": "Les {count} dernières vérifications d'état ont expiré.",
+  "layout_daemonStatus_degradedTimeout_many": "La dernière vérification d'état a expiré ; {count} vérifications d'état consécutives ont échoué.",
   "layout_daemonStatus_degradedCheckFailed_one": "La dernière vérification d'état a échoué.",
   "layout_daemonStatus_degradedCheckFailed_many": "Les {count} dernières vérifications d'état ont échoué.",
   "layout_daemonStatus_degradedUnknown_description": "Connecté, mais les vérifications d'état du daemon n'aboutissent pas.",

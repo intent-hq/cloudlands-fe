@@ -2617,7 +2617,7 @@
   "layout_daemonStatus_unknown_label": "Unknown",
   "layout_daemonStatus_noStats_label": "No stats available",
   "layout_daemonStatus_degradedTimeout_one": "The last status check timed out.",
-  "layout_daemonStatus_degradedTimeout_many": "The last {count} status checks timed out.",
+  "layout_daemonStatus_degradedTimeout_many": "The last status check timed out; {count} status checks in a row have failed.",
   "layout_daemonStatus_degradedCheckFailed_one": "The last status check failed.",
   "layout_daemonStatus_degradedCheckFailed_many": "The last {count} status checks failed.",
   "layout_daemonStatus_degradedUnknown_description": "Connected, but the daemon's status checks are not succeeding.",

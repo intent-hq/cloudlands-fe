@@ -2616,7 +2616,7 @@
   "layout_daemonStatus_unknown_label": "Unbekannt",
   "layout_daemonStatus_noStats_label": "Keine Statistiken verfügbar",
   "layout_daemonStatus_degradedTimeout_one": "Die letzte Statusprüfung hat das Zeitlimit überschritten.",
-  "layout_daemonStatus_degradedTimeout_many": "Die letzten {count} Statusprüfungen haben das Zeitlimit überschritten.",
+  "layout_daemonStatus_degradedTimeout_many": "Die letzte Statusprüfung hat das Zeitlimit überschritten; {count} Statusprüfungen in Folge sind fehlgeschlagen.",
   "layout_daemonStatus_degradedCheckFailed_one": "Die letzte Statusprüfung ist fehlgeschlagen.",
   "layout_daemonStatus_degradedCheckFailed_many": "Die letzten {count} Statusprüfungen sind fehlgeschlagen.",
   "layout_daemonStatus_degradedUnknown_description": "Verbunden, aber die Statusprüfungen des Daemons schlagen fehl.",

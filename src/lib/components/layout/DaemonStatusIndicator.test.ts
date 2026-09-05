@@ -305,6 +305,22 @@ describe('DaemonStatusIndicator', () => {
       expect(explanation()!.textContent).toContain('3');
     });
 
+    it('attributes a timeout only to the latest check when earlier failures were generic', async () => {
+      let state = await failOnce(await connectedState(), 'status-check-failed');
+      state = await failOnce(state, 'status-check-failed');
+      state = await failOnce(state, 'timeout');
+      expect(state.statusCheckFailure?.kind).toBe('timeout');
+      expect(state.statusCheckFailure?.consecutiveFailures).toBe(3);
+
+      await openDetails(state);
+
+      const text = explanation()!.textContent!;
+      expect(text).toMatch(/timed out/i);
+      expect(text).toContain('3');
+      // Only the latest check timed out; the count covers all failed checks.
+      expect(text).not.toMatch(/\d+ (status )?checks (have )?timed out/i);
+    });
+
     it('does not claim a timeout for a generic status-check failure', async () => {
       const state = await failOnce(await connectedState(), 'status-check-failed');
 

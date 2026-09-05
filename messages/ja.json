@@ -2616,7 +2616,7 @@
   "layout_daemonStatus_unknown_label": "不明",
   "layout_daemonStatus_noStats_label": "統計情報はありません",
   "layout_daemonStatus_degradedTimeout_one": "直近のステータスチェックがタイムアウトしました。",
-  "layout_daemonStatus_degradedTimeout_many": "直近 {count} 回のステータスチェックがタイムアウトしました。",
+  "layout_daemonStatus_degradedTimeout_many": "直近のステータスチェックがタイムアウトしました。ステータスチェックが {count} 回連続で失敗しています。",
   "layout_daemonStatus_degradedCheckFailed_one": "直近のステータスチェックが失敗しました。",
   "layout_daemonStatus_degradedCheckFailed_many": "直近 {count} 回のステータスチェックが失敗しました。",
   "layout_daemonStatus_degradedUnknown_description": "接続されていますが、デーモンのステータスチェックが成功していません。",

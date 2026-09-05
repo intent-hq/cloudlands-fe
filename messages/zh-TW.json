@@ -2616,7 +2616,7 @@
   "layout_daemonStatus_unknown_label": "未知",
   "layout_daemonStatus_noStats_label": "沒有可用的統計資訊",
   "layout_daemonStatus_degradedTimeout_one": "最近一次狀態檢查逾時。",
-  "layout_daemonStatus_degradedTimeout_many": "最近 {count} 次狀態檢查逾時。",
+  "layout_daemonStatus_degradedTimeout_many": "最近一次狀態檢查逾時；狀態檢查已連續 {count} 次失敗。",
   "layout_daemonStatus_degradedCheckFailed_one": "最近一次狀態檢查失敗。",
   "layout_daemonStatus_degradedCheckFailed_many": "最近 {count} 次狀態檢查失敗。",
   "layout_daemonStatus_degradedUnknown_description": "已連線，但精靈的狀態檢查未能成功。",

@@ -2616,7 +2616,7 @@
   "layout_daemonStatus_unknown_label": "未知",
   "layout_daemonStatus_noStats_label": "没有可用的统计信息",
   "layout_daemonStatus_degradedTimeout_one": "最近一次状态检查超时。",
-  "layout_daemonStatus_degradedTimeout_many": "最近 {count} 次状态检查超时。",
+  "layout_daemonStatus_degradedTimeout_many": "最近一次状态检查超时；状态检查已连续 {count} 次失败。",
   "layout_daemonStatus_degradedCheckFailed_one": "最近一次状态检查失败。",
   "layout_daemonStatus_degradedCheckFailed_many": "最近 {count} 次状态检查失败。",
   "layout_daemonStatus_degradedUnknown_description": "已连接，但守护进程的状态检查未能成功。",

@@ -225,8 +225,11 @@
 
   // Why the daemon is degraded (#4439): the safe failure category recorded by
   // the last failed system.status poll. `timeout` is only claimed when the
-  // transport tagged it as one; a degradation without recorded context (e.g.
-  // a heartbeat failure) gets an honest generic line instead of a guess.
+  // transport tagged it as one, and only for that latest check —
+  // `consecutiveFailures` counts every failed check regardless of kind, so
+  // the plural copy reports it as failed checks in a row rather than as
+  // timeouts. A degradation without recorded context (e.g. a heartbeat
+  // failure) gets an honest generic line instead of a guess.
   const degradedReason = $derived.by(() => {
     if ($health$ !== 'degraded') return null;
     const failure = $statusCheckFailure$;

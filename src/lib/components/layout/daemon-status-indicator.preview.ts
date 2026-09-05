@@ -37,7 +37,18 @@ const generation = () => selectDaemonConnectionGeneration.select(store.state);
 
 interface Scenario {
   stats?: boolean;
-  failures?: { kind: DaemonStatusCheckFailureKind; count: number } | 'heartbeat';
+  failures?:
+    | { kind: DaemonStatusCheckFailureKind; count: number }
+    | DaemonStatusCheckFailureKind[]
+    | 'heartbeat';
+}
+
+function failureKinds(
+  failures: Exclude<NonNullable<Scenario['failures']>, 'heartbeat'>,
+): DaemonStatusCheckFailureKind[] {
+  return Array.isArray(failures)
+    ? failures
+    : Array.from({ length: failures.count }, () => failures.kind);
 }
 
 // The trigger is a dot; open it and the "Status - …" submenu to see the
@@ -53,10 +64,10 @@ function setup({ stats = true, failures }: Scenario) {
     if (failures === 'heartbeat') {
       store.dispatch(heartbeatFailed());
     } else if (failures) {
-      for (let i = 0; i < failures.count; i++) {
+      for (const kind of failureKinds(failures)) {
         store.dispatch(
           systemStatusFailure(
-            { kind: failures.kind, failedAt: PREVIEW_FIXTURE_TIMESTAMPS.updatedAt },
+            { kind, failedAt: PREVIEW_FIXTURE_TIMESTAMPS.updatedAt },
             generation(),
           ),
         );
@@ -83,6 +94,10 @@ export const preview = definePreview<Record<string, never>>({
     'degraded-check-failed': {
       props: {},
       setup: setup({ failures: { kind: 'status-check-failed', count: 1 } }),
+    },
+    'degraded-mixed-failures': {
+      props: {},
+      setup: setup({ failures: ['status-check-failed', 'status-check-failed', 'timeout'] }),
     },
     'degraded-no-context': { props: {}, setup: setup({ failures: 'heartbeat' }) },
     'degraded-no-stats': {

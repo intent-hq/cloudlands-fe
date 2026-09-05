@@ -2616,7 +2616,7 @@
   "layout_daemonStatus_unknown_label": "Desconocido",
   "layout_daemonStatus_noStats_label": "No hay estadísticas disponibles",
   "layout_daemonStatus_degradedTimeout_one": "La última comprobación de estado agotó el tiempo de espera.",
-  "layout_daemonStatus_degradedTimeout_many": "Las últimas {count} comprobaciones de estado agotaron el tiempo de espera.",
+  "layout_daemonStatus_degradedTimeout_many": "La última comprobación de estado agotó el tiempo de espera; {count} comprobaciones de estado seguidas han fallado.",
   "layout_daemonStatus_degradedCheckFailed_one": "La última comprobación de estado falló.",
   "layout_daemonStatus_degradedCheckFailed_many": "Las últimas {count} comprobaciones de estado fallaron.",
   "layout_daemonStatus_degradedUnknown_description": "Conectado, pero las comprobaciones de estado del daemon no están teniendo éxito.",
