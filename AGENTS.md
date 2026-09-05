@@ -161,10 +161,24 @@ pnpm sandbox:geometry:update
 The two commands are equivalent; the package script sets
 `SANDBOX_GEOMETRY_UPDATE=1`. Inspect the JSON diff and justify every regenerated
 snapshot in the PR description. To register a scene, add a co-located
-`<scene>.geometry.ct.spec.ts` that calls `defineGeometrySnapshotSuite` with its preview,
-named states, contract widths, and `__geometry__/<scene>.geometry.json` path; then run
-the update command once to create the baseline. See
+`<scene>.geometry.ct.spec.ts` that statically imports the preview's default component and
+named `preview` definition, then passes both to `defineGeometrySnapshotSuite` with the scene,
+named states, contract widths, and `__geometry__/<scene>.geometry.json` path. No loader or
+CT bootstrap registration is needed. Run the update command once to create the baseline. See
 `../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow` for the manual preview loop.
+
+```ts
+import Preview, { preview } from './example.preview.svelte';
+
+defineGeometrySnapshotSuite({
+  scene: 'example',
+  component: Preview,
+  definition: preview,
+  states: ['default'],
+  widths: [420],
+  snapshotPath,
+});
+```
 
 ### Put a preview screenshot in user chat
 

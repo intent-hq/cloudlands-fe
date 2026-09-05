@@ -157,8 +157,17 @@ function importTargets(source, testPath, root) {
   const targets = new Set();
   const importRe = /(?:from\s*|import\s*(?:\(\s*)?)["']([^"']+)["']/g;
   for (const match of source.matchAll(importRe)) {
-    if (!match[1].startsWith('.')) continue;
-    const base = resolve(root, dirname(testPath), match[1]);
+    const aliases = {
+      '$features/': 'src/features/',
+      '$lib/': 'src/lib/',
+      '$shared/': 'src/shared/',
+      '$store/': 'src/store/',
+    };
+    const alias = Object.entries(aliases).find(([prefix]) => match[1].startsWith(prefix));
+    if (!match[1].startsWith('.') && !alias) continue;
+    const base = alias
+      ? resolve(root, alias[1], match[1].slice(alias[0].length))
+      : resolve(root, dirname(testPath), match[1]);
     for (const suffix of ['', '.svelte', '.ts', '.tsx', '.js', '.mjs']) {
       targets.add(slash(relative(root, `${base}${suffix}`)));
     }

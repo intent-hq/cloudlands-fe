@@ -134,10 +134,11 @@ describe('verification planning', () => {
     const geometryTest = 'src/lib/components/workspace/workspace-hover-card.geometry.ct.spec.ts';
     const root = fixtureRoot({
       [geometryTest]:
-        "defineGeometrySnapshotSuite({ preview: () => import('./workspace-hover-card.preview.svelte') });",
+        "import Preview, { preview } from './workspace-hover-card.preview.svelte';\ndefineGeometrySnapshotSuite({ scene: 'workspace-hover-card', component: Preview, definition: preview });",
       'src/lib/components/workspace/workspace-hover-card.preview.svelte':
-        "import WorkspaceHoverCard from './WorkspaceHoverCard.svelte';",
+        "import HoverCard from '$lib/components/ui/HoverCard.svelte';\nimport WorkspaceHoverCard from './WorkspaceHoverCard.svelte';",
       'src/lib/components/workspace/workspace-hover-card.preview-fixtures.ts': '',
+      'src/lib/components/ui/HoverCard.svelte': '<aside />',
       'src/lib/components/workspace/WorkspaceHoverCard.svelte': '<article />',
       'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json': '{}',
     });
@@ -146,6 +147,7 @@ describe('verification planning', () => {
     for (const file of [
       'src/lib/components/workspace/workspace-hover-card.preview.svelte',
       'src/lib/components/workspace/workspace-hover-card.preview-fixtures.ts',
+      'src/lib/components/ui/HoverCard.svelte',
       'src/lib/components/workspace/WorkspaceHoverCard.svelte',
       'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
     ]) {

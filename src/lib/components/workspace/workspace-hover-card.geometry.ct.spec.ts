@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import { fileURLToPath } from 'node:url';
 import { defineGeometrySnapshotSuite } from '$lib/component-catalog/geometry-snapshot';
-import WorkspaceHoverCardPreview from './workspace-hover-card.preview.svelte';
+import WorkspaceHoverCardPreview, { preview } from './workspace-hover-card.preview.svelte';
 import {
   workspaceHoverCardPreview,
   type WorkspaceHoverCardPreviewProps,
@@ -483,7 +483,9 @@ test('keeps sections accessible without visible headings or internal row divider
 });
 
 defineGeometrySnapshotSuite({
-  preview: () => import('./workspace-hover-card.preview.svelte'),
+  scene: 'workspace-hover-card',
+  component: WorkspaceHoverCardPreview,
+  definition: preview,
   states: [
     'working',
     'attention',
