@@ -63,25 +63,41 @@ describe('chat search utilities', () => {
     ]);
   });
 
-  it('indexes the adjacent description selected by both live renderers', () => {
-    const message = assistant(
-      'assistant-adjacent-preview',
-      [
-        {
-          type: 'thinking',
-          text: '**Hidden predecessor reasoning**\n\n**Rendered group title**',
-        },
-        {
-          type: 'text',
-          text: '<group:Prepping>Rendered adjacent description',
-        },
-      ],
-      true,
-    );
+  it.each([1, 2, 4])(
+    'indexes the adjacent description across %i absorbed histories in a live group',
+    (historyCount) => {
+      const histories = Array.from({ length: historyCount }, (_, index) => ({
+        type: 'thinking' as const,
+        text:
+          index === historyCount - 1
+            ? `**Hidden predecessor reasoning ${index + 1}**\n\n**Rendered group title**`
+            : `Hidden predecessor reasoning ${index + 1}.`,
+      }));
+      const message = assistant(
+        `assistant-adjacent-preview-${historyCount}`,
+        [
+          ...histories,
+          {
+            type: 'text',
+            text: '<group:Prepping>Rendered adjacent description',
+          },
+        ],
+        true,
+      );
 
-    expect(findChatSearchMatches([message], 'adjacent description', new Map())).toHaveLength(1);
-    expect(findChatSearchMatches([message], 'Hidden predecessor', new Map())).toEqual([]);
-  });
+      expect(findChatSearchMatches([message], 'adjacent description', new Map())).toEqual([
+        {
+          messageId: `assistant-adjacent-preview-${historyCount}`,
+          matchIndexInMessage: 0,
+          occurrenceInBlock: 0,
+          turnKey: `assistant-adjacent-preview-${historyCount}`,
+          blockPath: 'b:0:c:0',
+          disclosurePath: ['group:b:0'],
+        },
+      ]);
+      expect(findChatSearchMatches([message], 'Hidden predecessor', new Map())).toEqual([]);
+    },
+  );
 
   it('indexes a later meaningful reasoning title through the group disclosure', () => {
     const blocks = [

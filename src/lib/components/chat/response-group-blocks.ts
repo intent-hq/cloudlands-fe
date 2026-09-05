@@ -155,6 +155,7 @@ function pairAdjacentReasoningGroup(
   return {
     ...namedGroup,
     hasAdjacentReasoningHistory: true,
+    adjacentReasoningHistoryCount: histories.length,
     children: insertAdjacentReasoning(namedGroup.children, histories),
   };
 }
@@ -352,11 +353,15 @@ export function getResponseGroupCurrentBlockIndex(blocks: readonly ContentBlock[
 }
 
 export function getResponseGroupCurrentChildIndex(
-  group: Pick<ContentBlockGroup, 'children' | 'hasAdjacentReasoningHistory'>,
+  group: Pick<
+    ContentBlockGroup,
+    'children' | 'hasAdjacentReasoningHistory' | 'adjacentReasoningHistoryCount'
+  >,
 ): number {
+  const adjacentHistoryCount = Math.max(group.adjacentReasoningHistoryCount ?? 1, 1);
   if (
     group.hasAdjacentReasoningHistory &&
-    getResponseGroupCurrentBlockIndex(group.children.slice(2)) < 0
+    getResponseGroupCurrentBlockIndex(group.children.slice(adjacentHistoryCount + 1)) < 0
   ) {
     return group.children.length > 0 ? 0 : -1;
   }

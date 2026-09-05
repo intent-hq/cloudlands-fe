@@ -865,6 +865,7 @@ describe('ResponseGroup - block identity', () => {
         sourceName: 'Prepping',
         isReasoningPhase: true,
         hasAdjacentReasoningHistory: true,
+        adjacentReasoningHistoryCount: 1,
         children: [
           description,
           {
@@ -910,6 +911,7 @@ describe('ResponseGroup - block identity', () => {
         sourceName: 'Prepping',
         isReasoningPhase: true,
         hasAdjacentReasoningHistory: true,
+        adjacentReasoningHistoryCount: 1,
         children: [preceding, tool, laterReasoning],
       },
     ]);
@@ -997,6 +999,7 @@ describe('ResponseGroup - block identity', () => {
         sourceName: 'Prepping',
         isReasoningPhase: true,
         hasAdjacentReasoningHistory: true,
+        adjacentReasoningHistoryCount: 1,
         children: [description, { ...proseReasoning, text: 'Explain the next step.' }],
       },
     ]);
@@ -1035,6 +1038,7 @@ describe('ResponseGroup - block identity', () => {
         sourceName: 'Prepping',
         isReasoningPhase: true,
         hasAdjacentReasoningHistory: true,
+        adjacentReasoningHistoryCount: 2,
         children: [description, first, { ...second, text: 'Second body.' }],
       },
     ]);
@@ -1125,20 +1129,27 @@ describe('ResponseGroup - block identity', () => {
     expect(getResponseGroupCurrentBlock([{ type: 'tool_result' } as ContentBlock])).toBeUndefined();
   });
 
-  it('selects an adjacent description until later live history arrives', () => {
-    const description = { type: 'text', text: 'Group description.' } as ContentBlock;
-    const predecessor = { type: 'thinking', text: 'Earlier reasoning' } as ContentBlock;
-    const group = {
-      children: [description, predecessor],
-      hasAdjacentReasoningHistory: true,
-    };
+  it.each([1, 2, 4])(
+    'selects an adjacent description across %i absorbed histories until a live child arrives',
+    (historyCount) => {
+      const description = { type: 'text', text: 'Group description.' } as ContentBlock;
+      const histories = Array.from({ length: historyCount }, (_, index) => ({
+        type: 'thinking',
+        text: `Earlier reasoning ${index + 1}`,
+      })) as ContentBlock[];
+      const group = {
+        children: [description, ...histories],
+        hasAdjacentReasoningHistory: true,
+        adjacentReasoningHistoryCount: historyCount,
+      };
 
-    expect(getResponseGroupCurrentChildIndex(group)).toBe(0);
+      expect(getResponseGroupCurrentChildIndex(group)).toBe(0);
 
-    const current = { type: 'tool_use', id: 'tool-1', name: 'view', input: {} } as ContentBlock;
-    group.children.push(current);
-    expect(getResponseGroupCurrentChildIndex(group)).toBe(2);
-  });
+      const current = { type: 'tool_use', id: 'tool-1', name: 'view', input: {} } as ContentBlock;
+      group.children.push(current);
+      expect(getResponseGroupCurrentChildIndex(group)).toBe(historyCount + 1);
+    },
+  );
 
   it('uses protocol-backed tool identities instead of positions', () => {
     const toolUse = { type: 'tool_use', id: 'tool-42', name: 'search' } as ContentBlock;
