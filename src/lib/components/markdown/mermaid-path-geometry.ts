@@ -228,7 +228,12 @@ function clientBoundsInPathSpace(element: SVGGraphicsElement, path: SVGPathEleme
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
-function rayBoundsEntry(origin: Point, direction: Point, bounds: Bounds): Point | null {
+function rayBoundsEntry(
+  origin: Point,
+  direction: Point,
+  bounds: Bounds,
+  edgeTolerance = 0,
+): Point | null {
   let near = Number.NEGATIVE_INFINITY;
   let far = Number.POSITIVE_INFINITY;
   for (const [position, delta, minimum, maximum] of [
@@ -236,7 +241,7 @@ function rayBoundsEntry(origin: Point, direction: Point, bounds: Bounds): Point 
     [origin.y, direction.y, bounds.y, bounds.y + bounds.height],
   ]) {
     if (Math.abs(delta) < 0.0001) {
-      if (position < minimum || position > maximum) return null;
+      if (position < minimum - edgeTolerance || position > maximum + edgeTolerance) return null;
       continue;
     }
     const first = (minimum - position) / delta;
@@ -301,8 +306,14 @@ function distanceToShape(point: Point, bounds: Bounds, shape: SVGGraphicsElement
   );
 }
 
-function rayShapeEntry(origin: Point, direction: Point, bounds: Bounds, shape: SVGGraphicsElement) {
-  const boundsEntry = rayBoundsEntry(origin, direction, bounds);
+function rayShapeEntry(
+  origin: Point,
+  direction: Point,
+  bounds: Bounds,
+  shape: SVGGraphicsElement,
+  edgeTolerance = 0,
+) {
+  const boundsEntry = rayBoundsEntry(origin, direction, bounds, edgeTolerance);
   if (!boundsEntry || shape.dataset.diagramCylinder !== 'true') return boundsEntry;
   const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
   let near = Math.hypot(boundsEntry.x - origin.x, boundsEntry.y - origin.y);
@@ -353,7 +364,7 @@ export function attachStateTerminalArrowheads(svg: SVGSVGElement) {
       const rawBounds = clientBoundsInPathSpace(shape, path);
       if (!rawBounds) return [];
       const bounds = rawBounds;
-      const intersection = rayBoundsEntry(origin, direction, bounds);
+      const intersection = rayBoundsEntry(origin, direction, bounds, 0.5);
       if (!intersection) return [];
       const correction = Math.hypot(intersection.x - terminal.x, intersection.y - terminal.y);
       const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
@@ -421,7 +432,13 @@ export function applyMermaidTerminalGaps(svg: SVGSVGElement, cssGap = 5) {
         width: clientBounds.width,
         height: clientBounds.height,
       };
-      const intersection = rayShapeEntry(origin, screenDirection, bounds, shape);
+      const intersection = rayShapeEntry(
+        origin,
+        screenDirection,
+        bounds,
+        shape,
+        svg.classList.contains('statediagram') ? 0.5 : 0,
+      );
       if (!intersection) return [];
       const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
       const pointsInward =
@@ -2387,7 +2404,7 @@ function stateRoutePoints(
   if (label === STATE_LABEL.agentFinishes) {
     const finishSource = pointAt(source, 1, 0.35);
     const finishTarget = pointAt(target, 1, 0.35);
-    const laneX = compact ? Math.max(finishSource.x, finishTarget.x) + 44 : right + 90;
+    const laneX = compact ? Math.max(finishSource.x, finishTarget.x) + 40 : right + 90;
     return [
       finishSource,
       { x: laneX, y: finishSource.y },
@@ -2433,7 +2450,7 @@ function stateRoutePoints(
   if (compact) {
     const retrySource = pointAt(source, 0, 0.9);
     const retryTarget = pointAt(target, 0, 0.1);
-    const laneX = left - 108;
+    const laneX = left - 92;
     return [
       retrySource,
       { x: laneX, y: retrySource.y },
@@ -2782,14 +2799,22 @@ export function placeStateLabelsOnFinalRoutes(svg: SVGSVGElement, compact = fals
               path.dataset.routeLabel === STATE_LABEL.requestFails ||
               path.dataset.routeLabel === STATE_LABEL.streamFails);
           if (placesLabelInsideLeftLane) {
-            midpoint.x +=
-              local.width / 2 + (path.dataset.routeLabel === STATE_LABEL.agentAsksUser ? 0 : -1);
+            const inset =
+              path.dataset.routeLabel === STATE_LABEL.agentAsksUser
+                ? 0
+                : path.dataset.routeLabel === STATE_LABEL.streamFails
+                  ? -26
+                  : -1;
+            midpoint.x += local.width / 2 + inset;
           }
           const placesRetryAboveShelf =
             compact &&
             Math.abs(candidateSegment.y1 - candidateSegment.y2) < 0.5 &&
             path.dataset.routeLabel === STATE_LABEL.userRetries;
-          if (placesRetryAboveShelf) midpoint.y -= local.height / 2 - 4;
+          if (placesRetryAboveShelf) {
+            midpoint.x += 12;
+            midpoint.y -= local.height / 2 - 4;
+          }
           const placesToolCompletionBesideReturnLane =
             !compact &&
             Math.abs(candidateSegment.x1 - candidateSegment.x2) < 0.5 &&

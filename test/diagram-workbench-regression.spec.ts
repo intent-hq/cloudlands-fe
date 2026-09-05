@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { DIAGRAM_WORKBENCH_CASES } from '../src/lib/components/diagrams/diagram-workbench.preview-fixtures';
 
 const baseUrl = process.env.UI_PREVIEW_BASE_URL?.replace(/\/$/, '');
@@ -872,11 +872,13 @@ async function expectMermaidClassGeometry(page: Page, context: string) {
 
 async function expectActionsClearGeometry(
   page: Page,
-  actionSelector: string,
+  actionSelector: string | Locator,
   contentSelector: string,
   context: string,
 ) {
-  const collisions = await page.locator(actionSelector).evaluate((action, selector) => {
+  const actionLocator =
+    typeof actionSelector === 'string' ? page.locator(actionSelector) : actionSelector;
+  const collisions = await actionLocator.evaluate((action, selector) => {
     const actionBounds = action.getBoundingClientRect();
     return [...document.querySelectorAll<SVGGraphicsElement | HTMLElement>(selector)]
       .map((element, index) => ({ element, index, bounds: element.getBoundingClientRect() }))
@@ -1424,7 +1426,9 @@ test('keeps actions outside content and frames compact diagrams at every support
   await expect(page.getByRole('dialog', { name: 'Fullscreen diagram view' })).toBeVisible();
   await expectActionsClearGeometry(
     page,
-    '.fullscreen-content .close-button',
+    page
+      .getByRole('dialog', { name: 'Fullscreen diagram view' })
+      .getByRole('button', { name: 'Close fullscreen view' }),
     '.fullscreen-diagram .node, .fullscreen-diagram .edgeLabel, .fullscreen-diagram .edgePaths path, .fullscreen-diagram .cluster',
     'fullscreen Mermaid',
   );
@@ -1472,6 +1476,8 @@ test('keeps the reported state labels and group header bands clear', async ({ pa
       const byText = (text: string) => labels.find((label) => label.textContent?.trim() === text)!;
       const retries = byText('User retries').getBoundingClientRect();
       const fails = byText('Request fails').getBoundingClientRect();
+      const finishes = byText('Agent finishes').getBoundingClientRect();
+      const streamFails = byText('Stream fails').getBoundingClientRect();
       const complete = [...root.querySelectorAll<SVGGElement>('g.node')]
         .find((node) => node.textContent?.trim() === 'Complete')!
         .getBoundingClientRect();
@@ -1519,6 +1525,10 @@ test('keeps the reported state labels and group header bands clear', async ({ pa
           retries.right > fails.left &&
           retries.top < fails.bottom &&
           retries.bottom > fails.top,
+        finishStreamClearance: Math.hypot(
+          Math.max(finishes.left - streamFails.right, streamFails.left - finishes.right, 0),
+          Math.max(finishes.top - streamFails.bottom, streamFails.top - finishes.bottom, 0),
+        ),
         routeMisses,
         labelOverlaps,
         completeContained: complete.left >= svg.left - 1 && complete.right <= svg.right + 1,
@@ -1534,6 +1544,10 @@ test('keeps the reported state labels and group header bands clear', async ({ pa
       };
     });
     expect(stateGeometry.pairOverlaps, `${width}px state label separation`).toBe(false);
+    expect(
+      stateGeometry.finishStreamClearance,
+      `${width}px Agent finishes/Stream fails clearance`,
+    ).toBeGreaterThanOrEqual(8);
     expect(stateGeometry.routeMisses, `${width}px state label route ownership`).toEqual([]);
     expect(stateGeometry.labelOverlaps, `${width}px state label lane overlaps`).toEqual([]);
     expect(stateGeometry.completeContained, `${width}px Complete containment`).toBe(true);
@@ -1653,9 +1667,7 @@ test('keeps data-flow feedback continuous from Preview source to Capture evidenc
   }
 });
 
-test('grouped architecture fan-out uses one centered source trunk and centered targets', async ({
-  page,
-}) => {
+test('discovers grouped fan-out semantically and keeps wide routes centered', async ({ page }) => {
   test.setTimeout(10 * 60_000);
   for (const theme of ['light', 'dark', 'nord'] as const) {
     for (const width of widths) {
@@ -1677,10 +1689,10 @@ test('grouped architecture fan-out uses one centered source trunk and centered t
       }
       await expect(mermaidRenderer).toHaveAttribute('data-render-settled', 'true');
       const geometry = await page.locator('#mermaid-groups .mermaid-svg svg').evaluate((svg) => {
-        const nodeShape = (id: string) =>
-          [...svg.querySelectorAll<SVGGElement>('g.node')]
-            .find((node) => node.id.includes(`-flowchart-${id}-`))
-            ?.querySelector<SVGGraphicsElement>(':scope > .label-container');
+        const nodeShapes = [...svg.querySelectorAll<SVGGElement>('g.node')].flatMap((node) => {
+          const shape = node.querySelector<SVGGraphicsElement>(':scope > .label-container');
+          return shape ? [shape] : [];
+        });
         const boundsInPath = (shape: SVGGraphicsElement, path: SVGPathElement) => {
           const bounds = shape.getBBox();
           const matrix = path.getCTM()!.inverse().multiply(shape.getCTM()!);
@@ -1699,43 +1711,107 @@ test('grouped architecture fan-out uses one centered source trunk and centered t
             bottom: Math.max(...ys),
           };
         };
-        const paths = [...svg.querySelectorAll<SVGPathElement>('path[data-fanout-source="Scene"]')];
-        return paths.map((path) => {
-          const logical = (path.dataset.manhattanPoints ?? '').split(' ').map((value) => {
-            const [x, y] = value.split(',').map(Number);
-            return { x, y };
-          });
-          const source = boundsInPath(nodeShape('Scene')!, path);
-          const target = boundsInPath(nodeShape(path.dataset.fanoutTarget ?? '')!, path);
-          return {
-            sourceMidpointDistance: Math.hypot(
-              logical[0].x - source.right,
-              logical[0].y - (source.top + source.bottom) / 2,
-            ),
-            targetMidpointDistance: Math.hypot(
-              logical.at(-1)!.x - target.left,
-              logical.at(-1)!.y - (target.top + target.bottom) / 2,
-            ),
-            sourcePerpendicular: Math.abs(logical[1].y - logical[0].y),
-            targetPerpendicular: Math.abs(logical.at(-1)!.y - logical.at(-2)!.y),
-            trunk: logical.slice(0, 2),
-            junctionClearance: logical[1].x - logical[0].x,
-          };
-        });
+        const distanceToBounds = (
+          point: { x: number; y: number },
+          bounds: ReturnType<typeof boundsInPath>,
+        ) =>
+          Math.hypot(
+            Math.max(bounds.left - point.x, 0, point.x - bounds.right),
+            Math.max(bounds.top - point.y, 0, point.y - bounds.bottom),
+          );
+        const routes = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].flatMap(
+          (path) => {
+            const logical = (path.dataset.manhattanPoints ?? '').split(' ').map((value) => {
+              const [x, y] = value.split(',').map(Number);
+              return { x, y };
+            });
+            if (logical.length < 2 || logical.some(({ x, y }) => !Number.isFinite(x + y)))
+              return [];
+            const nodes = nodeShapes.map((shape, index) => ({
+              index,
+              bounds: boundsInPath(shape, path),
+            }));
+            const nearest = (point: { x: number; y: number }) =>
+              nodes.toSorted(
+                (left, right) =>
+                  distanceToBounds(point, left.bounds) - distanceToBounds(point, right.bounds),
+              )[0];
+            const source = nearest(logical[0]);
+            const target = nearest(logical.at(-1)!);
+            return source && target ? [{ path, logical, source, target }] : [];
+          },
+        );
+        const bySource = new Map<number, typeof routes>();
+        for (const route of routes) {
+          bySource.set(route.source.index, [...(bySource.get(route.source.index) ?? []), route]);
+        }
+        const fanout = [...bySource.values()].find(
+          (group) =>
+            group.length === 2 && new Set(group.map(({ target }) => target.index)).size === 2,
+        );
+        if (!fanout) return { routeCount: 0, targetCount: 0, centeredRouteCount: 0, routes: [] };
+        const sideCenters = (bounds: ReturnType<typeof boundsInPath>) => [
+          { x: bounds.left + (bounds.right - bounds.left) / 2, y: bounds.top, vertical: true },
+          { x: bounds.right, y: bounds.top + (bounds.bottom - bounds.top) / 2, vertical: false },
+          { x: bounds.left + (bounds.right - bounds.left) / 2, y: bounds.bottom, vertical: true },
+          { x: bounds.left, y: bounds.top + (bounds.bottom - bounds.top) / 2, vertical: false },
+        ];
+        const centeredRoutes = fanout.filter(({ path }) => path.dataset.fanoutSource);
+        return {
+          routeCount: fanout.length,
+          targetCount: new Set(fanout.map(({ target }) => target.index)).size,
+          centeredRouteCount: centeredRoutes.length,
+          routes: centeredRoutes.map(({ logical, source, target }) => {
+            const sourcePort = sideCenters(source.bounds).toSorted(
+              (left, right) =>
+                Math.hypot(logical[0].x - left.x, logical[0].y - left.y) -
+                Math.hypot(logical[0].x - right.x, logical[0].y - right.y),
+            )[0];
+            const targetPort = sideCenters(target.bounds).toSorted(
+              (left, right) =>
+                Math.hypot(logical.at(-1)!.x - left.x, logical.at(-1)!.y - left.y) -
+                Math.hypot(logical.at(-1)!.x - right.x, logical.at(-1)!.y - right.y),
+            )[0];
+            return {
+              sourceMidpointDistance: Math.hypot(
+                logical[0].x - sourcePort.x,
+                logical[0].y - sourcePort.y,
+              ),
+              targetMidpointDistance: Math.hypot(
+                logical.at(-1)!.x - targetPort.x,
+                logical.at(-1)!.y - targetPort.y,
+              ),
+              sourcePerpendicular: sourcePort.vertical
+                ? Math.abs(logical[1].x - logical[0].x)
+                : Math.abs(logical[1].y - logical[0].y),
+              targetPerpendicular: targetPort.vertical
+                ? Math.abs(logical.at(-1)!.x - logical.at(-2)!.x)
+                : Math.abs(logical.at(-1)!.y - logical.at(-2)!.y),
+              trunk: logical.slice(0, 2),
+              junctionClearance: Math.hypot(
+                logical[1].x - logical[0].x,
+                logical[1].y - logical[0].y,
+              ),
+            };
+          }),
+        };
       });
-      expect(geometry).toHaveLength(2);
+      expect(geometry.routeCount, `${theme} ${width}px semantic fan-out routes`).toBe(2);
+      expect(geometry.targetCount, `${theme} ${width}px distinct fan-out targets`).toBe(2);
+      if (width < 960) continue;
+      expect(geometry.centeredRouteCount, `${theme} ${width}px centered fan-out routes`).toBe(2);
       expect(
-        geometry.every((edge) => edge.sourceMidpointDistance <= 1),
+        geometry.routes.every((edge) => edge.sourceMidpointDistance <= 1),
         `${theme} ${width}px source midpoint`,
       ).toBe(true);
       expect(
-        geometry.every((edge) => edge.targetMidpointDistance <= 1),
+        geometry.routes.every((edge) => edge.targetMidpointDistance <= 1),
         `${theme} ${width}px target midpoint`,
       ).toBe(true);
-      expect(geometry.every((edge) => edge.sourcePerpendicular <= 1)).toBe(true);
-      expect(geometry.every((edge) => edge.targetPerpendicular <= 1)).toBe(true);
-      expect(geometry.every((edge) => edge.junctionClearance >= 16)).toBe(true);
-      expect(geometry[0].trunk).toEqual(geometry[1].trunk);
+      expect(geometry.routes.every((edge) => edge.sourcePerpendicular <= 1)).toBe(true);
+      expect(geometry.routes.every((edge) => edge.targetPerpendicular <= 1)).toBe(true);
+      expect(geometry.routes.every((edge) => edge.junctionClearance >= 16)).toBe(true);
+      expect(geometry.routes[0].trunk).toEqual(geometry.routes[1].trunk);
     }
   }
 });
@@ -1778,7 +1854,14 @@ test('uses one continuous centered-port route for the dense primary request', as
     const sourcePort = closest(start, source);
     const targetPort = closest(end, target);
     const viewport = section.querySelector<HTMLElement>('.diagram-scroll-container')!;
-    const svg = section.querySelector<SVGSVGElement>('.diagram-svg-layer')!.getBoundingClientRect();
+    const svgElement = section.querySelector<SVGSVGElement>('.diagram-svg-layer')!;
+    const svg = svgElement.getBoundingClientRect();
+    const scale = Math.hypot(svgElement.getScreenCTM()!.a, svgElement.getScreenCTM()!.b);
+    const minimumPrimaryTextSize = Math.min(
+      ...[...section.querySelectorAll<HTMLElement>('.node-label')].map(
+        (label) => Number.parseFloat(getComputedStyle(label).fontSize) * scale,
+      ),
+    );
     const viewportBounds = viewport.getBoundingClientRect();
     return {
       moveCommands: (path.getAttribute('d')?.match(/(?:^|\s)M\s/g) ?? []).length,
@@ -1790,6 +1873,7 @@ test('uses one continuous centered-port route for the dense primary request', as
       targetPerpendicular: targetPort.vertical
         ? Math.abs(end.x - endTangent.x)
         : Math.abs(end.y - endTangent.y),
+      minimumPrimaryTextSize,
       noScrollbar: viewport.scrollWidth <= viewport.clientWidth + 1,
       contained: svg.left >= viewportBounds.left - 1 && svg.right <= viewportBounds.right + 1,
     };
@@ -1799,6 +1883,7 @@ test('uses one continuous centered-port route for the dense primary request', as
   expect(Math.abs(geometry.targetDistance - 0.5 - 5)).toBeLessThanOrEqual(0.35);
   expect(geometry.sourcePerpendicular).toBeLessThanOrEqual(0.5);
   expect(geometry.targetPerpendicular).toBeLessThanOrEqual(0.5);
+  expect(geometry.minimumPrimaryTextSize).toBeGreaterThanOrEqual(12);
   expect(geometry.noScrollbar).toBe(true);
   expect(geometry.contained).toBe(true);
 });

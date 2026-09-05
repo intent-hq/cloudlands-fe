@@ -3124,6 +3124,7 @@ function computeCompactColumnEdgePaths(
   const nodeMap = new Map(nodes.map((node, index) => [node.id, { node, index }]));
   const sourceRows = new Map<string, number>();
   const columnWidth = Math.max(...nodes.map((node) => node.x + node.width));
+  const terminalLead = (edges.length >= nodes.length * 1.5 ? 24 : 32) + ORTHOGONAL_CORNER_RADIUS;
 
   return edges.flatMap((edge) => {
     const sourceEntry = nodeMap.get(edge.from);
@@ -3169,7 +3170,6 @@ function computeCompactColumnEdgePaths(
         x: downward ? target.x + target.width : target.x,
         y: target.y + target.height / 2,
       };
-      const terminalLead = 32 + ORTHOGONAL_CORNER_RADIUS;
       const laneClearance = needsAdjacentLabelLane
         ? Math.max(terminalLead, (compactLabel?.width ?? 0) / 2 + 8)
         : terminalLead;
