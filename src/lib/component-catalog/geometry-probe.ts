@@ -100,7 +100,8 @@ function collectElements(
 /**
  * Measures probe-marked descendants relative to the supplied component frame.
  * Selector-only matches use their first probe attribute, then first data attribute,
- * then the selector itself as the stable key. Extra computed fields extend the defaults.
+ * then the selector itself as the stable key. Repeated keys receive #2, #3, and later
+ * suffixes in document order. Extra computed fields extend the defaults.
  */
 export function collectGeometry(
   root: HTMLElement,
