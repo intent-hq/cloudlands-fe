@@ -88,7 +88,7 @@ function makeWorkspaceEvent(overrides: Partial<WorkspaceEvent>): WorkspaceEvent 
 }
 
 describe('selectGraphState', () => {
-  it('replays only agents and events that existed at the requested time', () => {
+  it('starts replay before the earliest agent and reveals agents at their creation time', () => {
     const early = makeSession('early', { createdAt: '2026-03-20T13:00:00.000Z' });
     const late = makeSession('late', { createdAt: '2026-03-20T13:30:00.000Z' });
     const events = [
@@ -101,11 +101,8 @@ describe('selectGraphState', () => {
       }),
     ];
 
-    const graph = selectGraphStateAt.select(
-      makeOverviewState([early, late], events),
-      WS,
-      '2026-03-20T13:20:00.000Z',
-    );
+    const state = makeOverviewState([early, late], events);
+    const graph = selectGraphStateAt.select(state, WS, '2026-03-20T13:20:00.000Z');
 
     expect(graph.isLive).toBe(false);
     expect(graph.nodes).toContainEqual(
@@ -118,8 +115,58 @@ describe('selectGraphState', () => {
       expect.objectContaining({ type: 'file', path: 'src/actual.ts' }),
     );
     expect(graph.nodes).not.toContainEqual(expect.objectContaining({ path: 'src/future.ts' }));
-    expect(graph.minTime).toBe('2026-03-20T13:10:00.000Z');
+    expect(graph.minTime).toBe('2026-03-20T12:59:12.000Z');
     expect(graph.maxTime).toBe('2026-03-20T13:40:00.000Z');
+
+    const graphAtStart = selectGraphStateAt.select(state, WS, graph.minTime);
+    expect(graphAtStart.nodes).not.toContainEqual(expect.objectContaining({ type: 'agent' }));
+
+    const graphAtFirstCreation = selectGraphStateAt.select(state, WS, String(early.createdAt));
+    expect(graphAtFirstCreation.nodes).toContainEqual(
+      expect.objectContaining({ type: 'agent', agentId: 'early' }),
+    );
+    expect(graphAtFirstCreation.nodes).not.toContainEqual(
+      expect.objectContaining({ type: 'agent', agentId: 'late' }),
+    );
+  });
+
+  it('keeps every agent visible in live mode', () => {
+    const graph = selectGraphState.select(
+      makeOverviewState(
+        [
+          makeSession('early', { createdAt: '2026-03-20T13:00:00.000Z' }),
+          makeSession('late', { createdAt: '2026-03-20T14:00:00.000Z' }),
+        ],
+        [makeWorkspaceEvent({ timestamp: '2026-03-20T13:30:00.000Z' })],
+      ),
+      WS,
+    );
+
+    expect(graph.isLive).toBe(true);
+    expect(graph.nodes.filter((node) => node.type === 'agent')).toHaveLength(2);
+    expect(graph.maxTime).toBe('2026-03-20T14:00:00.000Z');
+  });
+
+  it('keeps agents with unparseable creation times visible without changing the range start', () => {
+    const currentTime = '2026-03-20T13:20:00.000Z';
+    const graph = selectGraphStateAt.select(
+      makeOverviewState(makeSession('unknown', { createdAt: 'not-a-date' })),
+      WS,
+      currentTime,
+    );
+
+    expect(graph.nodes).toContainEqual(
+      expect.objectContaining({ type: 'agent', agentId: 'unknown' }),
+    );
+    expect(graph.minTime).toBe(currentTime);
+  });
+
+  it('uses the requested time as both bounds when no events or agents exist', () => {
+    const currentTime = '2026-03-20T13:20:00.000Z';
+    const graph = selectGraphStateAt.select(makeOverviewState([]), WS, currentTime);
+
+    expect(graph.minTime).toBe(currentTime);
+    expect(graph.maxTime).toBe(currentTime);
   });
 
   it('derives graph interactions from canonical workspace events via .select', () => {

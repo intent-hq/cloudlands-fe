@@ -456,10 +456,18 @@ function computeGraphState(
   }
 
   const timestamps = events.map((e) => new Date(e.timestamp).getTime());
-  const minTime =
-    timestamps.length > 0 ? new Date(Math.min(...timestamps)).toISOString() : currentTime;
-  const maxTime =
-    timestamps.length > 0 ? new Date(Math.max(...timestamps)).toISOString() : currentTime;
+  const agentCreatedAtTimestamps = Object.values(agents)
+    .map((session) => new Date(String(session.createdAt)).getTime())
+    .filter(Number.isFinite);
+  const maxTimestamp = Math.max(currentTimestamp, ...timestamps, ...agentCreatedAtTimestamps);
+  let minTimestamp = timestamps.length > 0 ? Math.min(...timestamps) : currentTimestamp;
+  if (agentCreatedAtTimestamps.length > 0) {
+    minTimestamp = Math.min(minTimestamp, ...agentCreatedAtTimestamps);
+    const leadTime = Math.max(1_000, (maxTimestamp - minTimestamp) * 0.02);
+    minTimestamp -= leadTime;
+  }
+  const minTime = new Date(minTimestamp).toISOString();
+  const maxTime = new Date(maxTimestamp).toISOString();
 
   const taskStats: Record<TaskStatus, number> = {
     not_started: 0,
