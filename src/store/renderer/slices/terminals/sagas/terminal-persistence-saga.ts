@@ -1,12 +1,15 @@
 import { call, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import {
+  DEFAULT_TERMINAL_OVERLAY_HEIGHT,
+  isValidTerminalOverlayHeight,
+} from '$shared/utils/terminal-overlay-height';
+import {
   getLocalStorageItem,
   getLocalStorageJSON,
-  setLocalStorageItem,
   setLocalStorageJSON,
 } from '../../../utils/safe-local-storage-saga';
-import { selectTerminalOverlayHeight, selectWorkspaceTerminalState } from '../terminals-selectors';
+import { selectWorkspaceTerminalState } from '../terminals-selectors';
 import {
   CUSTOM_NAMES_STORAGE_KEY,
   STORAGE_KEY,
@@ -130,6 +133,7 @@ function* persistWorkspaceState(workspaceId: string): SagaGenerator<void> {
   states[workspaceId] = {
     isOpen: workspaceState.isOpen,
     activeTerminalId: workspaceState.activeTerminalId,
+    ...(workspaceState.height !== null ? { height: workspaceState.height } : {}),
   };
   yield* call(setLocalStorageJSON, WORKSPACE_STATE_STORAGE_KEY, states);
 }
@@ -137,12 +141,26 @@ function* persistWorkspaceState(workspaceId: string): SagaGenerator<void> {
 function* hydrateTerminalHeightWorker(): SagaGenerator<void> {
   const stored = yield* call(getLocalStorageItem, STORAGE_KEY);
   const parsed = stored ? Number.parseInt(stored, 10) : Number.NaN;
-  yield* put(hydrateHeight(Number.isNaN(parsed) ? 50 : parsed));
+  const fallback = Number.isNaN(parsed) ? DEFAULT_TERMINAL_OVERLAY_HEIGHT : parsed;
+
+  const states = yield* call(
+    getLocalStorageJSON<Record<string, PersistedWorkspaceState>>,
+    WORKSPACE_STATE_STORAGE_KEY,
+  );
+  const workspaceHeights: Record<string, number> = {};
+  for (const [workspaceId, state] of Object.entries(states ?? {})) {
+    const height = state?.height;
+    if (typeof height === 'number' && isValidTerminalOverlayHeight(height)) {
+      workspaceHeights[workspaceId] = height;
+    }
+  }
+  yield* put(hydrateHeight(fallback, workspaceHeights));
 }
 
-function* persistTerminalHeightWorker(): SagaGenerator<void> {
-  const height = yield* selectTerminalOverlayHeight.effect();
-  yield* call(setLocalStorageItem, STORAGE_KEY, String(height));
+function* persistTerminalHeightWorker(
+  action: ReturnType<typeof setTerminalOverlayHeight>,
+): SagaGenerator<void> {
+  yield* call(persistWorkspaceState, action.payload[0]);
 }
 
 function* persistTerminalNameWorker(

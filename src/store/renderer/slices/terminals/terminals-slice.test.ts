@@ -49,6 +49,7 @@ function getWs(state: TerminalOverlayState, wsId: string = WS) {
       isLoadingTerminals: false,
       recentlyCreatedTerminals: [],
       daemonBootId: null,
+      height: null,
     }
   );
 }
@@ -296,16 +297,28 @@ describe('terminalsReducer', () => {
 
   describe('setTerminalOverlayHeight', () => {
     it('should clamp height to min/max', () => {
-      const state = terminalsReducer(initialState, setTerminalOverlayHeight(10));
-      expect(state.height).toBe(20);
+      const state = terminalsReducer(initialState, setTerminalOverlayHeight(WS, 5));
+      expect(getWs(state).height).toBe(10);
 
-      const state2 = terminalsReducer(initialState, setTerminalOverlayHeight(100));
-      expect(state2.height).toBe(90);
+      const state2 = terminalsReducer(initialState, setTerminalOverlayHeight(WS, 100));
+      expect(getWs(state2).height).toBe(90);
+    });
+
+    it('should scope the height to the workspace and leave the fallback alone', () => {
+      const state = terminalsReducer(initialState, setTerminalOverlayHeight(WS, 30));
+      expect(getWs(state).height).toBe(30);
+      expect(getWs(state, 'ws-other').height).toBeNull();
+      expect(state.height).toBe(50);
+
+      const state2 = terminalsReducer(state, setTerminalOverlayHeight('ws-other', 70));
+      expect(getWs(state2).height).toBe(30);
+      expect(getWs(state2, 'ws-other').height).toBe(70);
     });
 
     it('should return same state if height unchanged', () => {
-      const state = terminalsReducer(initialState, setTerminalOverlayHeight(50));
-      expect(state).toBe(initialState);
+      const state = terminalsReducer(initialState, setTerminalOverlayHeight(WS, 30));
+      const state2 = terminalsReducer(state, setTerminalOverlayHeight(WS, 30));
+      expect(state2).toBe(state);
     });
   });
 
@@ -498,14 +511,50 @@ describe('terminalsReducer', () => {
   });
 
   describe('hydrateHeight', () => {
-    it('should set height from localStorage', () => {
+    it('should set the fallback height from localStorage', () => {
       const state = terminalsReducer(initialState, hydrateHeight(75));
       expect(state.height).toBe(75);
     });
 
     it('should ignore invalid height', () => {
-      const state = terminalsReducer(initialState, hydrateHeight(10));
+      const state = terminalsReducer(initialState, hydrateHeight(5));
       expect(state).toBe(initialState);
+      const state2 = terminalsReducer(initialState, hydrateHeight(95));
+      expect(state2).toBe(initialState);
+    });
+
+    it('should seed per-workspace heights and skip out-of-range entries', () => {
+      const state = terminalsReducer(
+        initialState,
+        hydrateHeight(60, { [WS]: 15, 'ws-b': 80, 'ws-bad': 5, 'ws-big': 95 }),
+      );
+      expect(state.height).toBe(60);
+      expect(getWs(state).height).toBe(15);
+      expect(getWs(state, 'ws-b').height).toBe(80);
+      expect(state.workspaces['ws-bad']).toBeUndefined();
+      expect(state.workspaces['ws-big']).toBeUndefined();
+    });
+
+    it('should preserve a workspace height across a later terminal load', () => {
+      const hydrated = terminalsReducer(initialState, hydrateHeight(50, { [WS]: 15 }));
+      const state = terminalsReducer(
+        hydrated,
+        loadWorkspaceTerminals(WS, [{ id: 'term-1', name: 'Terminal' }], null),
+      );
+      expect(getWs(state).height).toBe(15);
+      expect(getWs(state).activeTerminalId).toBe('term-1');
+    });
+
+    it('should apply a saved height carried by loadWorkspaceTerminals', () => {
+      const state = terminalsReducer(
+        initialState,
+        loadWorkspaceTerminals(WS, [{ id: 'term-1', name: 'Terminal' }], {
+          isOpen: true,
+          activeTerminalId: 'term-1',
+          height: 25,
+        }),
+      );
+      expect(getWs(state).height).toBe(25);
     });
   });
 

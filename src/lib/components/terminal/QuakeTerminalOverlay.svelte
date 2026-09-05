@@ -110,7 +110,7 @@
 
   // Store bindings
   const isOpen = selectIsTerminalOverlayOpenForWorkspace(workspaceIdStore);
-  const height = selectTerminalOverlayHeight();
+  const height = selectTerminalOverlayHeight(workspaceIdStore);
   const activeTerminalId = selectActiveTerminalIdForWorkspace(workspaceIdStore);
   const terminals = selectTerminalsForWorkspace(workspaceIdStore);
   const workspaceTerminalState$ = selectWorkspaceTerminalState(workspaceIdStore);
@@ -893,7 +893,8 @@
     getHeight: () => $height,
     setPreviewHeight: (height) => (resizePreviewHeight = height),
     setResizing: (resizing) => (isResizing = resizing),
-    commitHeight: (height) => appStore.dispatch(setTerminalOverlayHeight(height)),
+    commitHeight: (height) =>
+      appStore.dispatch(setTerminalOverlayHeight(workspaceId ?? ROOT_WORKSPACE_ID, height)),
   });
 
   // ============================================================================
