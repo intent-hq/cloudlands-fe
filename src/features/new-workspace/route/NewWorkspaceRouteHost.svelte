@@ -12,6 +12,9 @@
   import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import { selectIsActiveProviderAvailable } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectWorkspaceCreationDefaultParentPath } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-selectors';
+  import { stageNewWorkspaceFiles } from './new-workspace-attachments';
+  import { toast } from 'svelte-sonner';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     url: URL;
@@ -23,7 +26,8 @@
     startInput: consumeNewWorkspaceStartInput(url),
     requestedDraftId,
   });
-  let state = $state<ControllerState>(createInitialControllerState(1));
+  let controllerState = $state<ControllerState>(createInitialControllerState(1));
+  let fileInput: HTMLInputElement | undefined = $state();
   const hasCheckedProviders$ = selectHasCheckedOnce();
   const activeProviderAvailable$ = selectIsActiveProviderAvailable();
   const defaultParentPath$ = selectWorkspaceCreationDefaultParentPath();
@@ -32,7 +36,7 @@
     if (!$hasCheckedProviders$) return;
     routeController.dispatch({
       type: 'capability.result',
-      generation: state.generation,
+      generation: controllerState.generation,
       capability: 'provider',
       status: $activeProviderAvailable$ ? 'ready' : 'missing',
     });
@@ -43,10 +47,24 @@
     appStore.dispatch(checkSingleProviderRequested(providerId));
   }
 
+  async function handleFilesSelected(event: Event): Promise<void> {
+    const input = event.currentTarget as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    input.value = '';
+    if (files.length === 0) return;
+    const added = await stageNewWorkspaceFiles(files);
+    for (const item of added) {
+      if (item.placementStatus === 'failed') {
+        toast.error(m.workspaceCreation_promptStep_attachmentNoPath_error({ name: item.label }));
+      }
+    }
+    routeController.edit({ attachments: [...controllerState.input.attachments, ...added] });
+  }
+
   onMount(() => {
     appStore.dispatch(setWorkspaceCreationActive(true));
     void routeController.start((next) => {
-      state = next;
+      controllerState = next;
       if (next.phase === 'live') void goto(`/workspace/${next.workspaceId}`);
     });
   });
@@ -57,9 +75,10 @@
   });
 </script>
 
+<input class="hidden" type="file" multiple bind:this={fileInput} onchange={handleFilesSelected} />
 <div class="h-full p-3">
   <UntitledWorkspaceShell
-    {state}
+    state={controllerState}
     onEdit={(patch) => routeController.edit(patch)}
     onStart={(requiredCapabilities) =>
       routeController.dispatch({ type: 'start.requested', requiredCapabilities })}
@@ -73,5 +92,6 @@
         source: { kind: 'newFolder', parentPath: $defaultParentPath$, name },
       })}
     onProviderSelected={selectProvider}
+    onAddFiles={() => fileInput?.click()}
   />
 </div>
