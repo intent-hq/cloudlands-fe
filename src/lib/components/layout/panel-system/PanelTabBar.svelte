@@ -1281,7 +1281,7 @@
         />
       </div>
 
-      {#if $isWorkspaceHostLocal$}
+      {#if $isWorkspaceHostLocal$ || activeTab?.type === 'browser'}
         <Menu.Separator />
 
         <div class="type-caption px-2 pb-0.5 pt-1.5 font-medium text-muted-foreground">

@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import { invoke } from '$lib/electron-bridge';
 import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
 
 const mocks = vi.hoisted(() => {
@@ -391,7 +392,7 @@ describe('mounted panel header actions menu', () => {
     expect(screen.getByTestId('content-command-action')).toBeTruthy();
   });
 
-  it.each(panelTypes)(
+  it.each(panelTypes.filter((type) => type !== 'browser'))(
     'omits the Open In section on a remote workspace host for the %s panel',
     async (type) => {
       mocks.workspaceHostLocal = false;
@@ -403,9 +404,6 @@ describe('mounted panel header actions menu', () => {
       expect(menu.querySelector('[data-panel-actions-section="display"]')).toBeTruthy();
       expect(menu.querySelector('[data-panel-actions-section="actions"]')).toBeTruthy();
       expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeNull();
-      expect(screen.queryByText('Open In')).toBeNull();
-      expect(screen.queryByRole('menuitem', { name: /Open in browser/i })).toBeNull();
-      expect(screen.queryByRole('menuitem', { name: /No repository path configured/i })).toBeNull();
       const actionsSection = menu.querySelector('[data-panel-actions-section="actions"]')!;
       const separators = Array.from(menu.querySelectorAll('[data-slot="menu-separator"]'));
       expect(separators).toHaveLength(1);
@@ -414,6 +412,30 @@ describe('mounted panel header actions menu', () => {
       );
     },
   );
+
+  it('keeps Open in browser on a remote workspace host for the browser panel', async () => {
+    mocks.workspaceHostLocal = false;
+    const browserTab = { ...tab('browser'), browserUrl: 'https://example.com/pr/1' };
+    const { container } = renderHeader('browser', {
+      tabs: [browserTab],
+      activeTabId: browserTab.id,
+    });
+
+    await fireEvent.click(panelTrigger(container));
+
+    const menu = await screen.findByRole('menu');
+    expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeTruthy();
+    const openInBrowser = within(menu).getByRole('menuitem', { name: /open in browser/i });
+    expect(openInBrowser.getAttribute('aria-disabled')).not.toBe('true');
+
+    await fireEvent.click(openInBrowser);
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith('shell:openExternal', {
+        url: 'https://example.com/pr/1',
+      }),
+    );
+  });
 
   it.each(
     panelTypes.flatMap(
