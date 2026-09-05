@@ -149,66 +149,44 @@ export function defineGeometrySnapshotSuite<Props extends Record<string, unknown
   const stateNames = options.states ?? Object.keys(readSnapshot(options.snapshotPath));
   for (const stateName of stateNames) {
     for (const width of widths) {
-      test(`${name} ${stateName} ${width}px geometry snapshot`, async ({ page }) => {
+      test(`${name} ${stateName} ${width}px geometry snapshot`, async ({ mount, page }) => {
         await page.setViewportSize({ width, height: 1200 });
-        const componentRef: unknown = options.component;
-        const definitionRef: unknown = options.definition;
-        const actual = await page.evaluate(
-          async ({ componentRef, definitionRef, scene, state, requestedWidth, selector }) => {
-            const ctWindow = window as typeof window & {
+        const root = page.locator('#root');
+        await root.evaluate((element, requestedWidth) => {
+          element.setAttribute(
+            'class',
+            'preview-focus mx-auto max-w-full rounded-md border border-border bg-card p-6',
+          );
+          element.style.width = `${requestedWidth}px`;
+        }, width);
+        const component = await mount(options.component, {
+          hooksConfig: {
+            geometrySnapshot: {
+              definition: options.definition,
+              scene: options.scene,
+              state: stateName,
+            },
+          },
+        });
+        let actual: GeometryProbeResult;
+        try {
+          actual = await root.evaluate(async (element, selector) => {
+            const rootElement = element as HTMLElement;
+            const geometryWindow = window as typeof window & {
               __INTENT_GEOMETRY_CT__: {
                 collectGeometry: typeof import('./geometry-probe').collectGeometry;
                 waitForCaptureStability: typeof import('./capture-stability').waitForCaptureStability;
               };
-              __pwUnwrapObject: (value: unknown) => Promise<unknown>;
-              playwrightMount: (
-                component: unknown,
-                root: HTMLElement,
-                hooksConfig?: unknown,
-              ) => Promise<void>;
-              playwrightUnmount: (root: HTMLElement) => Promise<void>;
             };
-            const [component, definition] = (await Promise.all([
-              ctWindow.__pwUnwrapObject(componentRef),
-              ctWindow.__pwUnwrapObject(definitionRef),
-            ])) as [Component<Record<string, unknown>>, PreviewDefinition<Record<string, unknown>>];
-            if (definition.id !== scene)
-              throw new Error(
-                `Preview “${definition.id}” does not match geometry scene “${scene}”.`,
-              );
-            const previewState = definition.states[state];
-            if (!previewState) throw new Error(`Preview “${scene}” has no state “${state}”.`);
-
-            const root = document.getElementById('root');
-            if (!root) throw new Error('Playwright CT root is unavailable.');
-            root.className =
-              'preview-focus mx-auto max-w-full rounded-md border border-border bg-card p-6';
-            root.style.width = `${requestedWidth}px`;
-            const cleanup = previewState.setup?.();
-            let mounted = false;
-            try {
-              await ctWindow.playwrightMount(
-                { __pw_type: 'object-component', type: component, props: previewState.props },
-                root,
-              );
-              mounted = true;
-              const { collectGeometry, waitForCaptureStability } = ctWindow.__INTENT_GEOMETRY_CT__;
-              await waitForCaptureStability(root);
-              return collectGeometry(root, selector ? { selector } : {});
-            } finally {
-              if (mounted) await ctWindow.playwrightUnmount(root);
-              cleanup?.();
-            }
-          },
-          {
-            componentRef,
-            definitionRef,
-            scene: options.scene,
-            state: stateName,
-            requestedWidth: width,
-            selector: options.selector,
-          },
-        );
+            await geometryWindow.__INTENT_GEOMETRY_CT__.waitForCaptureStability(rootElement);
+            return geometryWindow.__INTENT_GEOMETRY_CT__.collectGeometry(
+              rootElement,
+              selector ? { selector } : {},
+            );
+          }, options.selector);
+        } finally {
+          await component.unmount();
+        }
         if (process.env.SANDBOX_GEOMETRY_UPDATE === '1') {
           updateSnapshotCell(options.snapshotPath, stateNames, widths, stateName, width, actual);
           return;
