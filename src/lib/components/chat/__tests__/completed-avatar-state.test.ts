@@ -68,6 +68,7 @@ vi.mock('$lib/components/ui/tooltip', async () => {
     Root: SlotOnly,
     Trigger: SlotOnly,
     Content: SlotOnly,
+    TooltipShortcut: SlotOnly,
   };
 });
 
@@ -104,6 +105,24 @@ describe('isCompleted avatar state wiring', () => {
     render(AgentCard, { props: { agentId: 'agent-1' } });
 
     expect(screen.getByTestId('mock-avatar-with-state').dataset.state).toBe('idle');
+  });
+
+  it('AgentCard keeps status-stack by default and forwards an explicit checklist presentation', () => {
+    const taskProgress = [
+      { id: 'pending', title: 'Inspect the row', status: 'pending' as const },
+      { id: 'completed', title: 'Map the task', status: 'completed' as const },
+    ];
+    const defaultView = render(AgentCard, { props: { agentId: 'agent-1', taskProgress } });
+
+    expect(screen.getByTestId('task-progress-icon-stack')).toBeTruthy();
+    expect(screen.queryByTestId('task-progress-checklist-icon')).toBeNull();
+    defaultView.unmount();
+
+    render(AgentCard, {
+      props: { agentId: 'agent-1', taskProgress, taskProgressPresentation: 'checklist' },
+    });
+    expect(screen.getByTestId('task-progress-checklist-icon')).toBeTruthy();
+    expect(screen.queryByTestId('task-progress-icon-stack')).toBeNull();
   });
 
   it('AgentCard presents wake-up details in one compact inline row', () => {

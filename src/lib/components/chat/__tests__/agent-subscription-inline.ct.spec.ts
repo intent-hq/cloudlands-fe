@@ -3,10 +3,184 @@ import AgentSubscriptionInlineHost from './AgentSubscriptionInlineHost.svelte';
 
 const toolKinds = ['file', 'terminal', 'tool'] as const;
 
+const delegatedTaskSets = [
+  [{ id: 'pending', title: 'Pending row task', status: 'pending' }],
+  [{ id: 'running', title: 'Running row task', status: 'running' }],
+  [{ id: 'completed', title: 'Completed row task', status: 'completed' }],
+  [
+    { id: 'mixed-pending', title: 'Mixed pending task', status: 'pending' },
+    { id: 'mixed-running', title: 'Mixed running task', status: 'running' },
+    { id: 'mixed-completed', title: 'Mixed completed task', status: 'completed' },
+  ],
+  Array.from({ length: 7 }, (_, index) => ({
+    id: `overflow-${index}`,
+    title: `Overflow row task ${index + 1}`,
+    status: index === 6 ? ('completed' as const) : ('pending' as const),
+  })),
+] as const;
+const delegatedTaskLabels = [
+  'Task progress: 0 of 1 completed',
+  'Task progress: 0 of 1 completed',
+  'Task progress: 1 of 1 completed',
+  'Task progress: 1 of 3 completed',
+  'Task progress: 1 of 7 completed',
+] as const;
+
 test.afterEach(async ({ page }) => {
   await page.locator('#root').evaluate(async (root) => {
     if (root.childElementCount > 0) await window.playwrightUnmount(root);
   });
+});
+
+test('keeps one 28px checklist control per delegated row across themes, narrow width, and motion settings', async ({
+  mount,
+  page,
+}) => {
+  const taskSets = delegatedTaskSets.map((tasks) => [...tasks]);
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { agentCount: taskSets.length, taskSets, width: 240 },
+  });
+
+  await expect.poll(() => page.evaluate(() => matchMedia('(hover: hover)').matches)).toBe(true);
+  for (const theme of ['light', 'dark'] as const) {
+    for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+      for (const zoom of [1, 2]) {
+        await page.emulateMedia({ reducedMotion });
+        await component.update({
+          props: { agentCount: taskSets.length, taskSets, width: 240, theme, zoom },
+        });
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await page.mouse.move(0, 0);
+        const triggers = component.getByTestId('task-progress-trigger');
+        await expect(triggers).toHaveCount(taskSets.length);
+        await expect(component.getByTestId('task-progress-checklist-icon')).toHaveCount(
+          taskSets.length,
+        );
+        await expect(component.getByTestId('task-progress-icon-stack')).toHaveCount(0);
+        await expect(component.getByTestId('task-progress-status-icon')).toHaveCount(0);
+        await expect(component.getByTestId('task-progress-overflow-indicator')).toHaveCount(0);
+        for (let index = 0; index < taskSets.length; index += 1) {
+          await expect(triggers.nth(index)).toHaveCSS('height', '28px');
+          await expect(triggers.nth(index)).toHaveCSS('width', '28px');
+          await expect(triggers.nth(index)).toHaveCSS('opacity', '0');
+          await expect(triggers.nth(index)).toHaveAccessibleName(delegatedTaskLabels[index]);
+          await expect(triggers.nth(index).locator('svg')).toHaveCount(1);
+          await expect(triggers.nth(index)).toHaveText('');
+        }
+        await expect(triggers.first()).toHaveCSS(
+          'transition-property',
+          reducedMotion === 'reduce' ? 'none' : /opacity/,
+        );
+        await expect(component.getByTestId('agent-list-item').first()).toHaveCSS(
+          'overflow',
+          'hidden',
+        );
+      }
+    }
+  }
+
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await component.update({
+    props: { agentCount: taskSets.length, taskSets, width: 240, theme: 'light', zoom: 1 },
+  });
+  const triggers = component.getByTestId('task-progress-trigger');
+  const firstGeometry = await triggers.first().boundingBox();
+  await component.getByTestId('agent-list-item').first().hover();
+  await expect(triggers.first()).toHaveCSS('opacity', '1');
+  for (let index = 1; index < taskSets.length; index += 1) {
+    await expect(triggers.nth(index)).toHaveCSS('opacity', '0');
+  }
+  expect(await triggers.first().boundingBox()).toEqual(firstGeometry);
+  await page.mouse.move(0, 0);
+  await expect(triggers.first()).toHaveCSS('opacity', '0');
+
+  const firstRowButton = component.getByTestId('agent-list-item').first().locator('button').first();
+  await firstRowButton.focus();
+  await page.keyboard.press('Tab');
+  await expect(triggers.first()).toBeFocused();
+  await expect(triggers.first()).toHaveCSS('opacity', '1');
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toHaveCount(0);
+  await component.getByTestId('agent-list-item').first().hover();
+  await expect(page.getByRole('tooltip', { name: delegatedTaskLabels[0] })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toHaveCount(0);
+
+  await triggers.first().click();
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toBeVisible();
+  await expect(triggers.first()).toHaveAttribute('aria-expanded', 'true');
+  await page.mouse.move(0, 0);
+  await expect(triggers.first()).toHaveCSS('opacity', '1');
+  expect(await triggers.first().boundingBox()).toEqual(firstGeometry);
+  await expect(triggers.nth(1)).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('tooltip', { name: delegatedTaskLabels[0] })).toHaveCount(0);
+
+  await triggers.first().click();
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toHaveCount(0);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.mouse.move(0, 0);
+  await expect(triggers.first()).toHaveCSS('opacity', '0');
+  expect(await triggers.first().boundingBox()).toEqual(firstGeometry);
+
+  await triggers.nth(1).click();
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toBeVisible();
+  await expect(triggers.first()).toHaveAttribute('aria-expanded', 'false');
+  await expect(triggers.nth(1)).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toHaveCount(0);
+  await expect(triggers.nth(1)).toBeFocused();
+  await expect(triggers.nth(1)).toHaveCSS('opacity', '1');
+});
+
+test('keeps delegated checklist controls visible for non-hover primary input', async ({
+  mount,
+  page,
+}) => {
+  const client = await page.context().newCDPSession(page);
+  await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  await expect
+    .poll(() => page.evaluate(() => matchMedia('(hover: none), (pointer: coarse)').matches))
+    .toBe(true);
+
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { agentCount: 2, taskSets: delegatedTaskSets.slice(0, 2).map((tasks) => [...tasks]) },
+  });
+  await page.mouse.move(0, 0);
+  await expect(component.getByTestId('task-progress-trigger').first()).toHaveCSS('opacity', '1');
+  await client.detach();
+});
+
+test('isolates outside-dismissed task help between delegated row controls', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: {
+      agentCount: 2,
+      taskSets: [delegatedTaskSets[0], delegatedTaskSets[2]].map((tasks) => [...tasks]),
+      showOutsideTarget: true,
+    },
+  });
+  const rows = component.getByTestId('agent-list-item');
+  const triggers = component.getByTestId('task-progress-trigger');
+  const firstTooltip = page.getByRole('tooltip', { name: delegatedTaskLabels[0] });
+  const secondTooltip = page.getByRole('tooltip', { name: delegatedTaskLabels[2] });
+
+  await rows.first().hover();
+  await triggers.first().hover();
+  await expect(firstTooltip).toBeVisible();
+  await triggers.first().click();
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toBeVisible();
+  await component.getByTestId('outside-target').click();
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).not.toBeVisible();
+
+  await triggers.first().hover();
+  await page.waitForTimeout(350);
+  await expect(firstTooltip).not.toBeVisible();
+  await triggers.nth(1).focus();
+  await expect(secondTooltip).toBeVisible();
+
+  await page.mouse.move(0, 0);
+  await triggers.first().hover();
+  await expect(firstTooltip).toBeVisible();
 });
 
 async function measure(component: Locator, page: Page) {

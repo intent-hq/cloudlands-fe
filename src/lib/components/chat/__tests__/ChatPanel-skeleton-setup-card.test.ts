@@ -32,6 +32,15 @@ const testState = vi.hoisted(() => {
     selectorFrom,
     transcriptHydration: 'loading' as string,
     transcriptHydratedOnce: false,
+    agentSession: null as Record<string, unknown> | null,
+    agentMessages: [] as unknown[],
+    workspaceTasks: [] as Array<{
+      id: string;
+      title: string;
+      status: string;
+      specLinked?: boolean;
+    }>,
+    workspaceTasksInitialized: false,
     panelManager: {
       getPanelIds: vi.fn(() => [] as string[]),
       getPanel: vi.fn(() => null),
@@ -59,7 +68,7 @@ vi.mock('$lib/client', () => ({
       set: vi.fn().mockResolvedValue({ ok: true }),
       clear: vi.fn().mockResolvedValue({ ok: true }),
     },
-    agents: { retry: vi.fn(), editQueued: vi.fn() },
+    agents: { retry: vi.fn(), editQueued: vi.fn(), getQueue: vi.fn().mockResolvedValue([]) },
   },
 }));
 vi.mock('$lib/electron-bridge', () => ({
@@ -75,12 +84,12 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectHiddenTabs: testState.selector([] as unknown[]),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSession: testState.selector(null),
+  selectAgentSession: testState.selectorFrom(() => testState.agentSession),
   selectAgentIsResponding: testState.selector(false),
   selectAgentIsRunning: testState.selector(false),
   selectAgentSessionIsStreaming: testState.selector(false),
   selectAgentSessionStreamingContent: testState.selector(''),
-  selectAgentMessages: testState.selector([]),
+  selectAgentMessages: testState.selectorFrom(() => testState.agentMessages),
   selectAgentHistoryMessages: testState.selector([]),
   selectHistorySegmentMeta: testState.selector({
     gapToTail: false,
@@ -118,6 +127,12 @@ vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: testState.selector(null),
 }));
+vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
+  selectWorkspaceTasks: testState.selectorFrom(() => testState.workspaceTasks),
+  selectWorkspaceTasksInitialized: testState.selectorFrom(
+    () => testState.workspaceTasksInitialized,
+  ),
+}));
 vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
   selectCheckedPanels: testState.selector([]),
   selectPanels: testState.selector([]),
@@ -141,6 +156,9 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectChatAuroraEnabled: testState.selector(true),
   selectIsAgentMonospace: testState.selector(false),
+}));
+vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () => ({
+  selectDividerSession: testState.selector(null),
 }));
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: testState.selector([]),
@@ -237,10 +255,16 @@ const workspace = {
   branch: 'feature/setup',
 };
 
-async function renderInitialWorkspaceChatPanel() {
+async function renderInitialWorkspaceChatPanel(onTaskProgressChange?: (tasks: unknown[]) => void) {
   const ChatPanel = (await import('../ChatPanel.svelte')).default;
   render(ChatPanel, {
-    props: { workspace, agentId: 'agent-1', isActive: true, isInitialWorkspaceAgent: true },
+    props: {
+      workspace,
+      agentId: 'agent-1',
+      isActive: true,
+      isInitialWorkspaceAgent: true,
+      onTaskProgressChange,
+    },
   });
   await Promise.resolve();
 }
@@ -248,6 +272,10 @@ async function renderInitialWorkspaceChatPanel() {
 describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    testState.agentSession = null;
+    testState.agentMessages = [];
+    testState.workspaceTasks = [];
+    testState.workspaceTasksInitialized = false;
     vi.stubGlobal(
       'ResizeObserver',
       class {
@@ -282,5 +310,49 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
 
     await waitFor(() => expect(screen.getByTestId('mock-workspace-setup-card')).toBeTruthy());
     expect(screen.queryByTestId('chat-transcript-skeleton')).toBeNull();
+  });
+
+  it('routes hydrated fallback progress to the header and gives a native plan precedence', async () => {
+    testState.transcriptHydration = 'settled';
+    testState.transcriptHydratedOnce = true;
+    testState.workspaceTasksInitialized = true;
+    testState.workspaceTasks = [
+      { id: 'task-1', title: 'Canonical workspace task', status: 'in_progress', specLinked: true },
+    ];
+
+    const onTaskProgressChange = vi.fn();
+    await renderInitialWorkspaceChatPanel(onTaskProgressChange);
+    await waitFor(() =>
+      expect(onTaskProgressChange).toHaveBeenLastCalledWith([
+        {
+          id: 'workspace:task-1',
+          title: 'Canonical workspace task',
+          status: 'running',
+        },
+      ]),
+    );
+    expect(screen.queryByTestId('workspace-task-fallback-card')).toBeNull();
+
+    cleanup();
+    testState.agentMessages = [
+      {
+        id: 'assistant-plan',
+        role: 'assistant',
+        contentBlocks: [
+          {
+            type: 'plan',
+            entries: [{ content: 'Native plan', priority: 'high', status: 'in_progress' }],
+          },
+        ],
+      },
+    ];
+    await renderInitialWorkspaceChatPanel(onTaskProgressChange);
+    await waitFor(() => expect(screen.queryByTestId('chat-transcript-skeleton')).toBeNull());
+    expect(screen.queryByTestId('workspace-task-fallback-card')).toBeNull();
+    await waitFor(() =>
+      expect(onTaskProgressChange).toHaveBeenLastCalledWith([
+        { id: 'plan:assistant-plan:0:0', title: 'Native plan', status: 'running' },
+      ]),
+    );
   });
 });

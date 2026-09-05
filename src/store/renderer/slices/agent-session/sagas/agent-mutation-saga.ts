@@ -437,6 +437,23 @@ function* clearTombstoneAfterGrace(entry: PendingAgentDeletion): SagaGenerator<v
   }
 }
 
+/** Clear an immediate-delete tombstone after stale reads have had time to settle. */
+function* clearImmediateTombstoneAfterGrace(entry: PendingAgentDeletion): SagaGenerator<void> {
+  yield* delay(AGENT_DELETION_TOMBSTONE_TTL_MS);
+  if (getPendingAgentDeletion(entry.agentId) === entry) {
+    removePendingAgentDeletion(entry.agentId);
+  }
+}
+
+/** Roll back only if this attempt still owns the agent's deletion barrier. */
+function* rollbackImmediateDeletion(entry: PendingAgentDeletion): SagaGenerator<void> {
+  if (getPendingAgentDeletion(entry.agentId) !== entry) return;
+  removePendingAgentDeletion(entry.agentId);
+  if (entry.snapshot) {
+    yield* call(restoreHiddenSession, entry.wsId, entry.snapshot);
+  }
+}
+
 /**
  * Daemon-owned delete grace window (PROTOCOL §5.5, delete grace window):
  * `agent.delete { undoDelayMs }` is sent IMMEDIATELY, so the deletion commits
@@ -559,12 +576,15 @@ function* deleteImmediately(
 ): SagaGenerator<void> {
   const [wsId, agentId] = action.payload;
   const snapshot = yield* selectAgentSession.effect(agentId);
+  const entry: PendingAgentDeletion = { wsId, agentId, snapshot };
   let settled = false;
+  let clearerSpawned = false;
+  setPendingAgentDeletion(entry);
   try {
     yield* call(softHide, wsId, agentId);
     const result = yield* call([appClient.agents, appClient.agents.delete], agentId, wsId);
     if (!result.success) {
-      if (snapshot) yield* call(restoreHiddenSession, wsId, snapshot);
+      yield* call(rollbackImmediateDeletion, entry);
       yield* call(showError, result.error || m.agent_mutation_deleteFailed_error());
       yield* put(action.failure(new Error(result.error || m.agent_mutation_deleteFailed_error())));
       settled = true;
@@ -572,14 +592,19 @@ function* deleteImmediately(
     }
     yield* put(action.success(undefined as never));
     settled = true;
+    yield* spawn(clearImmediateTombstoneAfterGrace, entry);
+    clearerSpawned = true;
   } catch (error) {
-    if (snapshot) yield* call(restoreHiddenSession, wsId, snapshot);
+    yield* call(rollbackImmediateDeletion, entry);
     yield* put(action.failure(mutationError(error, m.agent_mutation_deleteSessionFailed_error())));
     settled = true;
   } finally {
     if (!settled && (yield* cancelled())) {
-      if (snapshot) yield* call(restoreHiddenSession, wsId, snapshot);
+      yield* call(rollbackImmediateDeletion, entry);
       yield* put(action.failure(new Error(m.agent_mutation_deleteSessionFailed_error())));
+    }
+    if (settled && getPendingAgentDeletion(agentId) === entry && !clearerSpawned) {
+      yield* spawn(clearImmediateTombstoneAfterGrace, entry);
     }
   }
 }

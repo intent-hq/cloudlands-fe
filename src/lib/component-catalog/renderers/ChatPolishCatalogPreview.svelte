@@ -8,6 +8,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { chatPolishFixtureAdapter } from '../chat-polish/chat-polish-fixture-adapter';
   import { getChatPolishScenario } from '../chat-polish/chat-polish-scenarios';
+  import type { TaskProgressItem } from '$lib/components/chat/workspace-task-fallback';
 
   let {
     fixture,
@@ -16,11 +17,50 @@
   }: { fixture: UiComponentFixture; compact?: boolean; stickySimulation?: boolean } = $props();
   const scenario = $derived(getChatPolishScenario(fixture.id));
 
+  function subscriptionAgentTasks(index: number): TaskProgressItem[] {
+    const pending = {
+      id: `fixture-task-${index}-pending`,
+      title: 'Review layout',
+      status: 'pending',
+    } as const;
+    const running = {
+      id: `fixture-task-${index}-running`,
+      title: 'Verify behavior',
+      status: 'running',
+    } as const;
+    const completed = {
+      id: `fixture-task-${index}-completed`,
+      title: 'Map states',
+      status: 'completed',
+    } as const;
+    if (index === 0) return [pending];
+    if (index === 1) return [running];
+    if (index === 2) return [completed];
+    if (index === 3) return [pending, running, completed];
+    if (index === 4) {
+      return [
+        pending,
+        running,
+        completed,
+        { id: `fixture-task-${index}-waiting`, title: 'Wait for review', status: 'waiting' },
+        { id: `fixture-task-${index}-blocked`, title: 'Resolve blocker', status: 'blocked' },
+        {
+          id: `fixture-task-${index}-discussion`,
+          title: 'Discuss result',
+          status: 'discussion_needed',
+        },
+        { id: `fixture-task-${index}-review`, title: 'Approve result', status: 'review_required' },
+      ];
+    }
+    return [pending, completed];
+  }
+
   function subscriptionAgents(count: number, finishedCount = 0) {
     return Array.from({ length: count }, (_, index) => ({
       id: `fixture-agent-${index + 1}`,
       name: m.sandbox_chatPolish_agentName_label({ number: String(index + 1) }),
       finished: index >= count - finishedCount,
+      taskProgress: subscriptionAgentTasks(index),
     }));
   }
 </script>

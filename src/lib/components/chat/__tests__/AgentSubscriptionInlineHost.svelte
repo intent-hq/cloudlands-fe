@@ -10,6 +10,7 @@
   import type { AgentMessage, AgentSession, ToolUseBlock } from '$shared/types';
   import { AgentStatus } from '$shared/types';
   import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
+  import type { TaskProgressItem } from '$lib/components/chat/workspace-task-fallback';
 
   type PreviewKind = 'file' | 'terminal' | 'tool' | 'text';
   type ParentBackground = 'background' | 'muted' | 'accent';
@@ -35,6 +36,8 @@
     initiallyExpanded?: boolean;
     parentBackground?: ParentBackground;
     agentStateScenario?: AgentStateScenario;
+    taskSets?: TaskProgressItem[][];
+    showOutsideTarget?: boolean;
   }
 
   let {
@@ -50,6 +53,8 @@
     initiallyExpanded = true,
     parentBackground = 'background',
     agentStateScenario = 'responding',
+    taskSets = [],
+    showOutsideTarget = false,
   }: Props = $props();
   const agentId = 'agent-subscription-inline-geometry';
   const workspaceId = 'workspace-subscription-inline-geometry';
@@ -188,10 +193,15 @@
             : 'Primary Agent'
           : `Filler ${index}`,
       finished: index >= agentCount - finishedCount,
+      taskProgress: taskSets[index] ?? [],
     }));
     return reverseAgents ? rows.reverse() : rows;
   });
 </script>
+
+{#if showOutsideTarget}
+  <button type="button" class="fixed top-1 right-1" data-testid="outside-target">Outside</button>
+{/if}
 
 {#snippet mixedPreview()}
   <div class="px-3 py-2 text-muted-foreground" data-testid="mixed-subscription-preview">

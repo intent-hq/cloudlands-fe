@@ -17,7 +17,8 @@ import type { AgentId } from './branded-ids';
 /**
  * Message role type
  */
-export type MessageRole = 'user' | 'assistant' | 'system' | 'error';
+export const MESSAGE_ROLES = ['user', 'assistant', 'tool', 'system', 'error'] as const;
+export type MessageRole = (typeof MESSAGE_ROLES)[number];
 
 /**
  * Tool call information

@@ -6,6 +6,7 @@ import { createServer } from 'vite';
 
 const systemChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const artifactDir = path.resolve('test-results/catalog-artifacts');
+const catalogReadyTimeout = 90_000;
 const catalogSlugs = [
   'badge',
   'breadcrumb',
@@ -45,7 +46,8 @@ test.describe.configure({ mode: 'serial' });
 let server: ViteDevServer;
 let baseUrl: string;
 
-test.beforeAll(async () => {
+test.beforeAll(async ({ browser }) => {
+  test.setTimeout(120_000);
   mkdirSync(artifactDir, { recursive: true });
   server = await createServer({
     server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
@@ -53,6 +55,32 @@ test.beforeAll(async () => {
   await server.listen();
   baseUrl = server.resolvedUrls?.local[0] ?? '';
   expect(baseUrl).not.toBe('');
+  await expect
+    .poll(
+      async () => {
+        try {
+          const response = await fetch(`${baseUrl}sandbox`, {
+            signal: AbortSignal.timeout(10_000),
+          });
+          await response.arrayBuffer();
+          return response.status;
+        } catch {
+          return 0;
+        }
+      },
+      { timeout: 90_000, intervals: [100, 250, 500, 1_000] },
+    )
+    .toBe(200);
+  const readinessPage = await browser.newPage();
+  try {
+    await readinessPage.goto(`${baseUrl}sandbox`, {
+      waitUntil: 'domcontentloaded',
+      timeout: catalogReadyTimeout,
+    });
+    await expectCatalogGalleryReady(readinessPage);
+  } finally {
+    await readinessPage.close();
+  }
 });
 
 test.afterAll(async () => {
@@ -80,16 +108,18 @@ for (const viewport of [
     const faviconResponse = page.waitForResponse(
       (response) => new URL(response.url()).pathname === '/favicon.png',
     );
-    await page.goto(`${baseUrl}sandbox`, { waitUntil: 'networkidle' });
+    await page.goto(`${baseUrl}sandbox`, { waitUntil: 'domcontentloaded' });
     expect((await faviconResponse).status()).toBe(200);
-    await expect(page.getByTestId('catalog-shell')).toBeVisible();
+    await expectCatalogShellReady(page);
 
     await assertGallery(page);
     await captureGalleryArtifacts(page, viewport.name);
 
     for (const slug of catalogSlugs) {
-      await page.goto(`${baseUrl}sandbox/${slug}`, { waitUntil: 'networkidle' });
+      await navigateToCatalogPreview(page, slug);
+      await expectCatalogShellReady(page);
       const previews = page.locator(`[data-catalog-preview="${slug}"]`);
+      await expect(previews.first()).toBeAttached({ timeout: catalogReadyTimeout });
       const previewCount = await previews.count();
       expect(previewCount).toBeGreaterThan(0);
       for (let index = 0; index < previewCount; index += 1) {
@@ -98,7 +128,7 @@ for (const viewport of [
         ).toBeVisible();
         await expect(
           previews.nth(index).locator('[data-catalog-rendered-state]').first(),
-        ).toBeAttached();
+        ).toBeAttached({ timeout: catalogReadyTimeout });
       }
       if (viewport.name === 'compact' && (slug === 'combobox' || slug === 'select')) {
         await assertChoiceLongListGeometry(page, slug);
@@ -156,7 +186,8 @@ test('200% zoom uses DPR2 device metrics and keeps the catalog contained', async
     screenHeight: physicalHeight,
   });
   try {
-    await page.goto(`${baseUrl}sandbox`, { waitUntil: 'networkidle' });
+    await page.goto(`${baseUrl}sandbox`, { waitUntil: 'domcontentloaded' });
+    await expectCatalogShellReady(page);
     const heading = page.getByRole('heading', { name: 'Design system workspace' });
     const intro = page.getByText(/^Explore live semantic foundations/);
     await expect(heading).toBeVisible();
@@ -193,7 +224,8 @@ test('200% zoom uses DPR2 device metrics and keeps the catalog contained', async
 
 async function captureKeyboardFocusEvidence(page: Page) {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto(`${baseUrl}sandbox/button`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}sandbox/button`, { waitUntil: 'domcontentloaded' });
+  await expectCatalogShellReady(page);
   await setCatalogTheme(page, 'dark');
 
   const control = page.getByRole('button', { name: 'Run action' });
@@ -517,16 +549,7 @@ async function exerciseCanonicalPreview(page: Page, slug: (typeof catalogSlugs)[
 }
 
 async function assertGallery(page: Page) {
-  const gallery = page.getByTestId('catalog-gallery');
-  await expect(gallery).toBeVisible();
-  await expect(page.getByRole('navigation', { name: 'Catalog navigation' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Foundations' })).toBeVisible();
-  await expect(page.getByTestId('foundation-colors')).toBeVisible();
-  for (const slug of catalogSlugs) {
-    const entry = gallery.locator(`[data-catalog-gallery-entry="${slug}"]`);
-    await expect(entry).toBeVisible();
-    await expect(entry.locator(`[data-catalog-preview="${slug}"]`).first()).toBeVisible();
-  }
+  const gallery = await expectCatalogGalleryReady(page);
 
   const search = page.getByTestId('catalog-search');
   await search.fill('dialog');
@@ -545,9 +568,49 @@ async function assertGallery(page: Page) {
   await page.getByRole('link', { name: 'Dialog', exact: true }).first().click();
   await expect(page).toHaveURL(/\/sandbox#component-dialog$/);
   await expect(page.locator('#component-dialog')).toBeInViewport();
-  await page.reload({ waitUntil: 'networkidle' });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page).toHaveURL(/\/sandbox#component-dialog$/);
+  await expectCatalogGalleryReady(page);
   await expect(page.locator('#component-dialog')).toBeInViewport();
   await assertNoPageOverflow(page);
+}
+
+async function expectCatalogGalleryReady(page: Page): Promise<Locator> {
+  await expectCatalogShellReady(page);
+  const gallery = page.getByTestId('catalog-gallery');
+  await expect(gallery).toBeVisible({ timeout: catalogReadyTimeout });
+  await expect(page.getByRole('navigation', { name: 'Catalog navigation' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Foundations' })).toBeVisible();
+  await expect(page.getByTestId('foundation-colors')).toBeVisible();
+  for (const slug of catalogSlugs) {
+    const entry = gallery.locator(`[data-catalog-gallery-entry="${slug}"]`);
+    await expect(entry).toBeVisible();
+    const preview = entry.locator(`[data-catalog-preview="${slug}"]`).first();
+    await expect(preview).toBeVisible();
+    await expect(preview.locator('[data-catalog-rendered-state]').first()).toBeAttached({
+      timeout: catalogReadyTimeout,
+    });
+  }
+  return gallery;
+}
+
+async function expectCatalogShellReady(page: Page) {
+  await expect(page.getByTestId('catalog-shell')).toBeVisible({ timeout: catalogReadyTimeout });
+}
+
+async function navigateToCatalogPreview(page: Page, slug: (typeof catalogSlugs)[number]) {
+  const gallery = page.getByTestId('catalog-gallery');
+  if (!(await gallery.isVisible())) {
+    await page.getByRole('link', { name: 'View all' }).click();
+    await expect(gallery).toBeVisible({ timeout: catalogReadyTimeout });
+  }
+  const entry = gallery.locator(`[data-catalog-gallery-entry="${slug}"]`);
+  const link = entry.locator(`a[href="/sandbox/${slug}"]`).first();
+  await expect(link).toBeVisible({ timeout: catalogReadyTimeout });
+  await link.click();
+  await expect
+    .poll(() => page.evaluate(() => window.location.pathname), { timeout: catalogReadyTimeout })
+    .toBe(`/sandbox/${slug}`);
 }
 
 async function assertNoPageOverflow(page: Page) {

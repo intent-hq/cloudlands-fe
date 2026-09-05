@@ -20,6 +20,7 @@
   import ToolCall from './ToolCall.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
   import ReasoningHistoryBlock from './ReasoningHistoryBlock.svelte';
+  import ExecutionPlanCard from './ExecutionPlanCard.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import AugmentCodeSnippet from '$lib/components/editor/AugmentCodeSnippet.svelte';
@@ -631,6 +632,8 @@
         {/if}
       </div>
     </div>
+  {:else if block.type === 'plan' && block.entries}
+    <ExecutionPlanCard entries={block.entries} />
   {:else if block.type === 'thinking'}
     {#if reasoningHistory}
       <ReasoningHistoryBlock

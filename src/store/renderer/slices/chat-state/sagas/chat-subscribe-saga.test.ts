@@ -61,6 +61,7 @@ import {
   chatSendStarted,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
+  retainedChatTranscriptsSet,
   refreshChatTranscriptRequested,
   transcriptHydrationFailed,
   transcriptHydrationSettled,
@@ -435,6 +436,181 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(messages[1].contentBlocks?.[0]).toMatchObject({
       text: 'Let me check the logs first.',
     });
+  });
+
+  it('retains an AgentLite child transcript through snapshot hydration and live plan updates', async () => {
+    const agentId = 'agent-sub-retained-plan';
+    seedSession(agentId, { messages: [] });
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-a', WS, [agentId]));
+    await vi.waitFor(() => {
+      expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(1);
+    });
+    const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
+    const planMessage = (status: 'pending' | 'in_progress' | 'completed') =>
+      makeMessage('retained-plan', 'Plan', {
+        contentBlocks: [
+          {
+            type: 'plan',
+            id: 'retained-plan:block',
+            entries: [{ content: 'Hydrated child task', priority: 'high', status }],
+          },
+        ],
+      });
+
+    sub.handler({ ...transcript([planMessage('in_progress')]), fromSnapshot: true });
+    expect(selectAgentMessages.select(appStore.state, agentId)[0].contentBlocks?.[0]).toMatchObject(
+      {
+        type: 'plan',
+        entries: [{ content: 'Hydrated child task', status: 'in_progress' }],
+      },
+    );
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-b', WS, [agentId]));
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-a', WS, []));
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(1);
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+    appStore.dispatch(markAgentAsViewed('agent-unrelated-view'));
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+    sub.handler(transcript([planMessage('completed')]));
+    expect(selectAgentMessages.select(appStore.state, agentId)[0].contentBlocks?.[0]).toMatchObject(
+      {
+        type: 'plan',
+        entries: [{ content: 'Hydrated child task', status: 'completed' }],
+      },
+    );
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-b', WS, []));
+    await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+  });
+
+  it('defers a retained-transcript close until its last chat-interest lease releases', async () => {
+    const agentId = 'agent-sub-retained-deferred';
+    seedSession(agentId);
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-deferred', WS, [agentId]));
+    await vi.waitFor(() =>
+      expect(chatApi.subscribe).toHaveBeenCalledWith(
+        agentId,
+        expect.any(Function),
+        expect.any(Function),
+      ),
+    );
+    const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
+    acquireChatInterestLease(agentId, 'panel-retained-deferred');
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-deferred', WS, []));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+    sub.onPhase?.('delayed');
+    sub.onPhase?.('connecting');
+    releaseChatInterestLease(agentId, 'panel-retained-deferred');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sub.unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('cancels a deferred retained close when another owner retains the transcript', async () => {
+    const agentId = 'agent-sub-retained-reretained';
+    seedSession(agentId);
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-old', WS, [agentId]));
+    await vi.waitFor(() =>
+      expect(chatApi.subscribe).toHaveBeenCalledWith(
+        agentId,
+        expect.any(Function),
+        expect.any(Function),
+      ),
+    );
+    const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
+    acquireChatInterestLease(agentId, 'panel-retained-reretained');
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-old', WS, []));
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-new', WS, [agentId]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseChatInterestLease(agentId, 'panel-retained-reretained');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-new', WS, []));
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-new', WS, []));
+    await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+  });
+
+  it('keeps a viewed agent after a deferred retained close, then closes it on the next view swap', async () => {
+    const agentId = 'agent-sub-retained-viewed-race';
+    const nextAgentId = 'agent-sub-retained-viewed-next';
+    seedSession(agentId);
+    seedSession(nextAgentId);
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-viewed', WS, [agentId]));
+    await vi.waitFor(() =>
+      expect(chatApi.subscribe).toHaveBeenCalledWith(
+        agentId,
+        expect.any(Function),
+        expect.any(Function),
+      ),
+    );
+    const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
+    acquireChatInterestLease(agentId, 'panel-retained-viewed');
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-viewed', WS, []));
+    appStore.dispatch(markAgentAsViewed(agentId));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseChatInterestLease(agentId, 'panel-retained-viewed');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+    appStore.dispatch(markAgentAsViewed(nextAgentId));
+    await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+  });
+
+  it('retires a deferred retained close on workspace teardown without a duplicate lease-release close', async () => {
+    const agentId = 'agent-sub-retained-workspace-teardown';
+    seedSession(agentId);
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-workspace', WS, [agentId]));
+    await vi.waitFor(() =>
+      expect(chatApi.subscribe).toHaveBeenCalledWith(
+        agentId,
+        expect.any(Function),
+        expect.any(Function),
+      ),
+    );
+    const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
+    acquireChatInterestLease(agentId, 'panel-retained-workspace');
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-workspace', WS, []));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    appStore.dispatch(removeWorkspaceSessions(WS));
+    await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+
+    releaseChatInterestLease(agentId, 'panel-retained-workspace');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sub.unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('tears down a deferred retained close exactly once when the root saga is cancelled', async () => {
+    const agentId = 'agent-sub-retained-root-cancel';
+    seedSession(agentId);
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-root-cancel', WS, [agentId]));
+    await vi.waitFor(() =>
+      expect(chatApi.subscribe).toHaveBeenCalledWith(
+        agentId,
+        expect.any(Function),
+        expect.any(Function),
+      ),
+    );
+    const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
+    acquireChatInterestLease(agentId, 'panel-retained-root-cancel');
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-root-cancel', WS, []));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    stopSaga?.();
+    stopSaga = undefined;
+    expect(sub.unsubscribe).toHaveBeenCalledOnce();
+
+    releaseChatInterestLease(agentId, 'panel-retained-root-cancel');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sub.unsubscribe).toHaveBeenCalledOnce();
+    stopSaga = appStore.runSaga(chatSubscribeSaga);
   });
 
   it('records snapshot metadata on fromSnapshot emits (single-transfer hydration signal)', () => {
