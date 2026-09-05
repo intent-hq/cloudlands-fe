@@ -1,4 +1,5 @@
 export const WORKSPACE_HOVER_CARD_OPEN_DELAY_MS = 400;
+export const WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS = 175;
 export const WORKSPACE_HOVER_CARD_SESSION_RESET_DELAY_MS = 300;
 
 type OpenDelayListener = (delay: number) => void;
