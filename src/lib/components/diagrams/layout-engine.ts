@@ -765,7 +765,7 @@ function computeNodeSize(
   const height = Math.max(
     contentHeight + paddingY * 2 + frameBorderWidth,
     MIN_NODE_HEIGHT,
-    isStoreNode ? 80 : 0,
+    isStoreNode ? 90 : 0,
   );
 
   return { width, height };

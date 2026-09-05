@@ -232,19 +232,23 @@
   }
 
   .diagram-node-html[data-store-node='true'] {
+    --store-cap-top: 1px;
+    --store-cap-height: 18px;
+    --store-bottom-curve-depth: 10px;
+
     position: relative;
     isolation: isolate;
     overflow: hidden;
-    border-radius: 50% / 10px;
+    border-radius: 50% / var(--store-bottom-curve-depth);
   }
 
   .diagram-node-html[data-store-node='true']::before {
     position: absolute;
     z-index: 0;
-    top: 1px;
+    top: var(--store-cap-top);
     left: 1px;
     width: calc(100% - 2px);
-    height: 18px;
+    height: var(--store-cap-height);
     border: 1px solid var(--diagram-canvas);
     border-radius: 50%;
     box-sizing: border-box;
@@ -357,6 +361,11 @@
     position: relative;
     z-index: 1;
     justify-content: center;
+  }
+
+  .diagram-node-html[data-store-node='true'] .node-content {
+    padding-block-start: calc(var(--store-cap-top) + var(--store-cap-height));
+    padding-block-end: var(--store-bottom-curve-depth);
   }
 
   .diagram-node-html[data-store-node='true'] .node-copy {

@@ -624,13 +624,23 @@ async function expectStoreNodeGeometry(
       const body = [...root.querySelectorAll<HTMLElement>('.diagram-node-html')].find((node) =>
         node.textContent?.includes('Capture evidence'),
       )!;
-      const copy = body.querySelector<HTMLElement>('.node-copy')!;
+      const content = body.querySelector<HTMLElement>('.node-row')!;
       const path = root.querySelector<SVGPathElement>('.diagram-edge[data-edge-id="d4"] path')!;
       const terminal = path
         .getPointAtLength(path.getTotalLength())
         .matrixTransform(path.getScreenCTM()!);
       const bounds = body.getBoundingClientRect();
-      const copyBounds = copy.getBoundingClientRect();
+      const contentBounds = content.getBoundingClientRect();
+      const style = getComputedStyle(body);
+      const scale = bounds.height / body.offsetHeight;
+      const usableTop =
+        bounds.top +
+        (Number.parseFloat(style.getPropertyValue('--store-cap-top')) +
+          Number.parseFloat(style.getPropertyValue('--store-cap-height'))) *
+          scale;
+      const usableBottom =
+        bounds.bottom -
+        Number.parseFloat(style.getPropertyValue('--store-bottom-curve-depth')) * scale;
       const markerId = path.getAttribute('marker-end')!.match(/#([^)]+)/)![1];
       const marker = root.querySelector<SVGMarkerElement>(`#${CSS.escape(markerId)}`)!;
       const markerStroke = Number.parseFloat(
@@ -642,13 +652,13 @@ async function expectStoreNodeGeometry(
       );
       return {
         aspect: bounds.width / bounds.height,
-        topGap: copyBounds.top - bounds.top,
-        bottomGap: bounds.bottom - copyBounds.bottom,
+        topGap: contentBounds.top - usableTop,
+        bottomGap: usableBottom - contentBounds.bottom,
         clipped:
-          copyBounds.left < bounds.left ||
-          copyBounds.right > bounds.right ||
-          copyBounds.top < bounds.top ||
-          copyBounds.bottom > bounds.bottom,
+          contentBounds.left < bounds.left ||
+          contentBounds.right > bounds.right ||
+          contentBounds.top < bounds.top ||
+          contentBounds.bottom > bounds.bottom,
         perimeterClear: [...root.querySelectorAll<HTMLElement>('.diagram-node-html')].every(
           (node) => getComputedStyle(node).borderWidth === '0px',
         ),
