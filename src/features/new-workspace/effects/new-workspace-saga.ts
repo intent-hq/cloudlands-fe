@@ -10,6 +10,7 @@ import { backendRequest } from '$lib/client/live/backend-transport';
 import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
 import { newIdempotencyKey } from '$lib/client/live/live-support';
 import type { DraftDelivery, WorkspaceDraft } from '$shared/types';
+import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
 import { m } from '$shared/paraglide/messages.js';
 import {
   selectHasCheckedOnce,
@@ -181,7 +182,10 @@ function* probe(capability: Capability): SagaGenerator<CapabilityStatus> {
       select(selectHasCheckedOnce.select),
     ]);
     if (
-      Object.values(statuses).some((status) => status.available && status.authenticated !== false)
+      Object.entries(statuses).some(
+        ([providerId, status]) =>
+          status.available && isProviderAuthenticationReady(providerId, status.authenticated),
+      )
     ) {
       return 'ready';
     }
