@@ -606,7 +606,7 @@
   "settings_tab_accounts": "账号",
   "settings_back_back": "返回",
   "settings_devices_title": "设备",
-  "settings_devices_description": "管理已保存的远程设备。你可以将 Intent 连接到任何运行 intentd 的后端。",
+  "settings_devices_description": "管理已保存的远程设备，并控制其他设备如何连接到本机。",
   "settings_devices_add_label": "添加设备",
   "settings_devices_loading_label": "正在加载设备…",
   "settings_devices_empty_title": "没有已保存的远程设备",

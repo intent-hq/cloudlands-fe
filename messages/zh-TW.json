@@ -606,7 +606,7 @@
   "settings_tab_accounts": "帳號",
   "settings_back_back": "返回",
   "settings_devices_title": "裝置",
-  "settings_devices_description": "管理已儲存的遠端裝置。你可以將 Intent 連線到任何執行 intentd 的後端。",
+  "settings_devices_description": "管理已儲存的遠端裝置，並控制其他裝置如何連線到本機。",
   "settings_devices_add_label": "新增裝置",
   "settings_devices_loading_label": "正在載入裝置…",
   "settings_devices_empty_title": "沒有已儲存的遠端裝置",

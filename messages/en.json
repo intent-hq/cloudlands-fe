@@ -606,7 +606,7 @@
   "settings_tab_accounts": "Accounts",
   "settings_back_back": "Back",
   "settings_devices_title": "Devices",
-  "settings_devices_description": "Manage saved remote devices. You can connect Intent to any backend running intentd.",
+  "settings_devices_description": "Manage saved remote devices and control how other devices connect to this machine.",
   "settings_devices_add_label": "Add device",
   "settings_devices_loading_label": "Loading devices…",
   "settings_devices_empty_title": "No remote devices saved",

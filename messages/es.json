@@ -606,7 +606,7 @@
   "settings_tab_accounts": "Cuentas",
   "settings_back_back": "Atrás",
   "settings_devices_title": "Dispositivos",
-  "settings_devices_description": "Administra los dispositivos remotos guardados. Puedes conectar Intent a cualquier backend que ejecute intentd.",
+  "settings_devices_description": "Administra los dispositivos remotos guardados y controla cómo otros dispositivos se conectan a este equipo.",
   "settings_devices_add_label": "Añadir dispositivo",
   "settings_devices_loading_label": "Cargando dispositivos…",
   "settings_devices_empty_title": "No hay dispositivos remotos guardados",

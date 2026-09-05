@@ -606,7 +606,7 @@
   "settings_tab_accounts": "Konten",
   "settings_back_back": "Zurück",
   "settings_devices_title": "Geräte",
-  "settings_devices_description": "Gespeicherte Remote-Geräte verwalten. Sie können Intent mit jedem Backend verbinden, auf dem intentd ausgeführt wird.",
+  "settings_devices_description": "Gespeicherte Remote-Geräte verwalten und steuern, wie sich andere Geräte mit diesem Rechner verbinden.",
   "settings_devices_add_label": "Gerät hinzufügen",
   "settings_devices_loading_label": "Geräte werden geladen…",
   "settings_devices_empty_title": "Keine entfernten Geräte gespeichert",

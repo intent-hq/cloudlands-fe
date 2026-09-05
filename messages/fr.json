@@ -606,7 +606,7 @@
   "settings_tab_accounts": "Comptes",
   "settings_back_back": "Retour",
   "settings_devices_title": "Appareils",
-  "settings_devices_description": "Gérez les appareils distants enregistrés. Vous pouvez connecter Intent à n’importe quel backend exécutant intentd.",
+  "settings_devices_description": "Gérez les appareils distants enregistrés et contrôlez la façon dont les autres appareils se connectent à cette machine.",
   "settings_devices_add_label": "Ajouter un appareil",
   "settings_devices_loading_label": "Chargement des appareils…",
   "settings_devices_empty_title": "Aucun appareil distant enregistré",

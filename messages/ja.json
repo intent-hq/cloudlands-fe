@@ -606,7 +606,7 @@
   "settings_tab_accounts": "アカウント",
   "settings_back_back": "戻る",
   "settings_devices_title": "デバイス",
-  "settings_devices_description": "保存済みのリモートデバイスを管理します。intentd を実行している任意のバックエンドに Intent を接続できます。",
+  "settings_devices_description": "保存済みのリモートデバイスを管理し、他のデバイスがこのマシンに接続する方法を制御します。",
   "settings_devices_add_label": "デバイスを追加",
   "settings_devices_loading_label": "デバイスを読み込み中…",
   "settings_devices_empty_title": "保存済みのリモートデバイスはありません",
