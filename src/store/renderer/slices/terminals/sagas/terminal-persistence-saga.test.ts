@@ -68,8 +68,10 @@ function startSaga() {
     terminals = terminalsReducer(terminals, action as never);
     input.put(action as never);
   };
-  return { dispatched, send, task };
+  return { dispatched, send, task, getTerminals: () => terminals };
 }
+
+const noHydratedPlacements = { type: 'terminals/hydratePlacements', payload: [{}] };
 
 beforeEach(() => {
   storage.values.clear();
@@ -93,7 +95,10 @@ describe('terminalPersistenceSaga', () => {
     const { dispatched, task } = startSaga();
     await settle();
 
-    expect(dispatched).toEqual([{ type: 'terminals/hydrateHeight', payload: [64, {}] }]);
+    expect(dispatched).toEqual([
+      { type: 'terminals/hydrateHeight', payload: [64, {}] },
+      noHydratedPlacements,
+    ]);
     task.cancel();
     await task.toPromise();
   });
@@ -103,7 +108,126 @@ describe('terminalPersistenceSaga', () => {
     const { dispatched, task } = startSaga();
     await settle();
 
-    expect(dispatched).toEqual([{ type: 'terminals/hydrateHeight', payload: [50, {}] }]);
+    expect(dispatched).toEqual([
+      { type: 'terminals/hydrateHeight', payload: [50, {}] },
+      noHydratedPlacements,
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('hydrates stored placements per workspace at start, dropping malformed entries', async () => {
+    storage.values.set(
+      WORKSPACE_STATE_STORAGE_KEY,
+      JSON.stringify({
+        'ws-1': {
+          isOpen: false,
+          activeTerminalId: null,
+          placements: { 'term-1': 'panel', 'script-1': 'overlay', bogus: 'floating' },
+        },
+        'ws-2': { isOpen: true, activeTerminalId: 'term-9' },
+        'ws-3': { isOpen: false, activeTerminalId: null, placements: 'panel' },
+      }),
+    );
+    const { dispatched, getTerminals, task } = startSaga();
+    await settle();
+
+    expect(dispatched).toEqual([
+      { type: 'terminals/hydrateHeight', payload: [50, {}] },
+      {
+        type: 'terminals/hydratePlacements',
+        payload: [{ 'ws-1': { 'term-1': 'panel', 'script-1': 'overlay' } }],
+      },
+    ]);
+    expect(getTerminals().workspaces).toEqual({});
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('restores placements through the production load shape (terminals, null, bootId)', async () => {
+    storage.values.set(
+      WORKSPACE_STATE_STORAGE_KEY,
+      JSON.stringify({
+        'ws-1': {
+          isOpen: false,
+          activeTerminalId: null,
+          placements: { 'term-1': 'panel', 'script-1': 'panel' },
+        },
+      }),
+    );
+    const { dispatched, getTerminals, send, task } = startSaga();
+    await settle();
+    dispatched.length = 0;
+    storage.setJSON.mockClear();
+    send(loadWorkspaceTerminals('ws-1', [{ id: 'term-1', name: 'Terminal 1' }], null, 'boot-1'));
+    await settle();
+
+    expect(dispatched).toEqual([]);
+    expect(getTerminals().workspaces['ws-1'].placements).toEqual({
+      'term-1': 'panel',
+      'script-1': 'panel',
+    });
+    expect(getTerminals().workspacePlacements).toEqual({});
+    expect(storage.setJSON.mock.calls).toEqual([
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        {
+          'ws-1': {
+            isOpen: false,
+            activeTerminalId: 'term-1',
+            placements: { 'term-1': 'panel', 'script-1': 'panel' },
+          },
+        },
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not clobber stored placements on a persist that precedes the first load', async () => {
+    storage.values.set(
+      WORKSPACE_STATE_STORAGE_KEY,
+      JSON.stringify({
+        'ws-1': { isOpen: false, activeTerminalId: null, placements: { 'term-1': 'panel' } },
+      }),
+    );
+    const { getTerminals, send, task } = startSaga();
+    await settle();
+    send(addTerminal('ws-1', 'term-2'));
+    await settle();
+
+    expect(JSON.parse(storage.values.get(WORKSPACE_STATE_STORAGE_KEY) ?? '{}')).toEqual({
+      'ws-1': { isOpen: false, activeTerminalId: 'term-2', placements: { 'term-1': 'panel' } },
+    });
+
+    send(setTerminalPlacement('ws-1', 'term-2', 'panel'));
+    await settle();
+
+    expect(JSON.parse(storage.values.get(WORKSPACE_STATE_STORAGE_KEY) ?? '{}')).toEqual({
+      'ws-1': {
+        isOpen: false,
+        activeTerminalId: 'term-2',
+        placements: { 'term-1': 'panel', 'term-2': 'panel' },
+      },
+    });
+
+    send(
+      loadWorkspaceTerminals(
+        'ws-1',
+        [
+          { id: 'term-1', name: 'Terminal 1' },
+          { id: 'term-2', name: 'Terminal 2' },
+        ],
+        null,
+        'boot-1',
+      ),
+    );
+    await settle();
+
+    expect(getTerminals().workspaces['ws-1'].placements).toEqual({
+      'term-1': 'panel',
+      'term-2': 'panel',
+    });
     task.cancel();
     await task.toPromise();
   });
@@ -124,6 +248,7 @@ describe('terminalPersistenceSaga', () => {
 
     expect(dispatched).toEqual([
       { type: 'terminals/hydrateHeight', payload: [64, { 'ws-1': 15 }] },
+      noHydratedPlacements,
     ]);
     task.cancel();
     await task.toPromise();
@@ -176,6 +301,7 @@ describe('terminalPersistenceSaga', () => {
 
     expect(second.dispatched).toEqual([
       { type: 'terminals/hydrateHeight', payload: [50, { 'ws-1': 25 }] },
+      noHydratedPlacements,
     ]);
     second.task.cancel();
     await second.task.toPromise();
@@ -193,7 +319,14 @@ describe('terminalPersistenceSaga', () => {
     expect(storage.setJSON.mock.calls).toEqual([
       [
         WORKSPACE_STATE_STORAGE_KEY,
-        { 'ws-1': { isOpen: true, activeTerminalId: 'term-1', height: 25 } },
+        {
+          'ws-1': {
+            isOpen: true,
+            activeTerminalId: 'term-1',
+            placements: { 'term-1': 'overlay' },
+            height: 25,
+          },
+        },
       ],
     ]);
     task.cancel();
@@ -212,7 +345,14 @@ describe('terminalPersistenceSaga', () => {
     expect(storage.setJSON.mock.calls).toEqual([
       [
         WORKSPACE_STATE_STORAGE_KEY,
-        { 'ws-1': { isOpen: true, activeTerminalId: 'term-1', height: 35 } },
+        {
+          'ws-1': {
+            isOpen: true,
+            activeTerminalId: 'term-1',
+            placements: { 'term-1': 'overlay' },
+            height: 35,
+          },
+        },
       ],
     ]);
     task.cancel();

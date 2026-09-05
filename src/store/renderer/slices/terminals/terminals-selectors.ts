@@ -91,6 +91,16 @@ export const selectTerminalPlacement = store.createSelector(
   },
 );
 
+/**
+ * Stored placements hydrated at boot that the workspace has not consumed yet
+ * (its first `loadWorkspaceTerminals` has not run); `undefined` afterwards.
+ */
+export const selectHydratedWorkspacePlacements = store.createSelector(
+  (state, wsId: string): Record<string, TerminalPlacement> | undefined => {
+    return state.terminals.workspacePlacements[wsId];
+  },
+);
+
 export const selectTerminalDisplayName = store.createSelector(
   (state, wsId: string | null, termId: string): string => {
     const ws = getActiveWs(state, wsId);

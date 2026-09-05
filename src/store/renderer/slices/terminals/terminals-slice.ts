@@ -101,6 +101,12 @@ export type TerminalOverlayState = {
    * `emptyWorkspaceState` identity to skip not-yet-loaded workspaces.
    */
   workspaceHeights: Record<string, number>;
+  /**
+   * Stored placements per workspace, hydrated at boot and consumed by the
+   * workspace's first `loadWorkspaceTerminals`. Kept outside `workspaces` for
+   * the same reason as `workspaceHeights`.
+   */
+  workspacePlacements: Record<string, Record<string, TerminalPlacement>>;
   workspaces: Record<string, WorkspaceTerminalState>;
 };
 
@@ -123,6 +129,7 @@ export const emptyWorkspaceState: WorkspaceTerminalState = {
 const initialState: TerminalOverlayState = {
   height: DEFAULT_TERMINAL_OVERLAY_HEIGHT,
   workspaceHeights: {},
+  workspacePlacements: {},
   workspaces: {},
 };
 
@@ -203,6 +210,14 @@ export const hydrateHeight =
   createAction<[height: number, workspaceHeights?: Record<string, number>]>(
     'terminals/hydrateHeight',
   );
+
+/**
+ * Hydrate stored placements per workspace from localStorage (dispatched by
+ * init saga). Each workspace consumes its entry on its first terminal load.
+ */
+export const hydratePlacements = createAction<
+  [workspacePlacements: Record<string, Record<string, TerminalPlacement>>]
+>('terminals/hydratePlacements');
 
 export const createTerminalRequested = createAction<[wsId: string]>(
   'terminals/createTerminalRequested',
@@ -296,6 +311,14 @@ function withoutPlacement(
   if (!(id in placements)) return placements;
   const { [id]: _removed, ...rest } = placements;
   return rest;
+}
+
+function consumeHydratedPlacements(
+  state: TerminalOverlayState,
+  wsId: string,
+): TerminalOverlayState {
+  const { [wsId]: _consumed, ...workspacePlacements } = state.workspacePlacements;
+  return { ...state, workspacePlacements };
 }
 
 // ============================================================================
@@ -471,10 +494,14 @@ terminalsReducer.with(
 terminalsReducer.with(
   loadWorkspaceTerminals,
   (rawState, { payload: [wsId, terminals, savedState, daemonBootId] }) => {
-    const state =
+    const withHeight =
       savedState?.height !== undefined && isValidTerminalOverlayHeight(savedState.height)
         ? setWsHeight(rawState, wsId, savedState.height)
         : rawState;
+    // The hydrated entry seeds the first load (in-memory changes win), then
+    // the loaded workspace state is authoritative.
+    const hydrated = withHeight.workspacePlacements[wsId];
+    const state = hydrated ? consumeHydratedPlacements(withHeight, wsId) : withHeight;
     const collection = createCollection<TerminalTab, 'id'>('id', terminals);
     const prior = getWs(state, wsId);
     const nextBootId = daemonBootId ?? prior.daemonBootId;
@@ -483,7 +510,9 @@ terminalsReducer.with(
       (savedState?.selectedScriptId !== undefined
         ? savedState.selectedScriptId
         : prior.selectedScriptId) ?? null;
-    const placements = savedState?.placements ?? prior.placements;
+    const placements =
+      savedState?.placements ??
+      (hydrated ? { ...hydrated, ...prior.placements } : prior.placements);
 
     if (terminals.length > 0) {
       let activeId: string | null;
@@ -521,8 +550,8 @@ terminalsReducer.with(
         daemonBootId === prior.daemonBootId;
 
       if (!sameBootAuthoritativeEmpty) {
-        if (nextBootId === prior.daemonBootId) return state;
-        return setWs(state, wsId, { ...prior, daemonBootId: nextBootId });
+        if (nextBootId === prior.daemonBootId && placements === prior.placements) return state;
+        return setWs(state, wsId, { ...prior, daemonBootId: nextBootId, placements });
       }
 
       const kept = prior.terminals.ids
@@ -578,6 +607,13 @@ terminalsReducer.with(hydrateHeight, (state, { payload: [height, workspaceHeight
     next = setWsHeight(next, wsId, wsHeight);
   }
   return next;
+});
+terminalsReducer.with(hydratePlacements, (state, { payload: [workspacePlacements] }) => {
+  if (Object.keys(workspacePlacements).length === 0) return state;
+  return {
+    ...state,
+    workspacePlacements: { ...state.workspacePlacements, ...workspacePlacements },
+  };
 });
 
 terminalsReducer.with(setScriptsData, (state, { payload: { wsId, scripts } }) => {

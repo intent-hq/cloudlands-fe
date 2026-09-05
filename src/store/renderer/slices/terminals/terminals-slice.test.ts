@@ -14,6 +14,7 @@ import {
   saveTerminalMetadata,
   loadWorkspaceTerminals,
   hydrateHeight,
+  hydratePlacements,
   type TerminalOverlayState,
   type TerminalTab,
 } from './terminals-slice';
@@ -38,6 +39,7 @@ function terms(state: TerminalOverlayState, wsId: string = WS) {
 const initialState: TerminalOverlayState = {
   height: 50,
   workspaceHeights: {},
+  workspacePlacements: {},
   workspaces: {},
 };
 
@@ -848,6 +850,67 @@ describe('terminalsReducer', () => {
       const ws = getWs(state);
       expect(terms(state).map((t) => t.id)).toEqual(['pty-42']);
       expect(ws.daemonBootId).toBe('boot-1');
+    });
+  });
+
+  describe('hydratePlacements', () => {
+    const terminals = [{ id: 't1', name: 'Terminal 1' }];
+
+    it('stores hydrated placements without materializing workspace entries', () => {
+      const state = terminalsReducer(
+        initialState,
+        hydratePlacements({ [WS]: { t1: 'panel' }, 'ws-other': { s1: 'panel' } }),
+      );
+      expect(state.workspacePlacements).toEqual({
+        [WS]: { t1: 'panel' },
+        'ws-other': { s1: 'panel' },
+      });
+      expect(state.workspaces).toEqual({});
+    });
+
+    it('returns the same state for an empty hydration', () => {
+      expect(terminalsReducer(initialState, hydratePlacements({}))).toBe(initialState);
+    });
+
+    it('seeds the first load without saved state and consumes the entry', () => {
+      let state = terminalsReducer(
+        initialState,
+        hydratePlacements({ [WS]: { t1: 'panel', s1: 'panel' }, 'ws-other': { s1: 'panel' } }),
+      );
+      state = terminalsReducer(state, loadWorkspaceTerminals(WS, terminals, null, 'boot-1'));
+      expect(getWs(state).placements).toEqual({ t1: 'panel', s1: 'panel' });
+      expect(state.workspacePlacements).toEqual({ 'ws-other': { s1: 'panel' } });
+    });
+
+    it('lets in-memory placements win over hydrated ones on the first load', () => {
+      let state = terminalsReducer(initialState, hydratePlacements({ [WS]: { t1: 'panel' } }));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't1', 'overlay'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't2', 'panel'));
+      state = terminalsReducer(state, loadWorkspaceTerminals(WS, terminals, null, 'boot-1'));
+      expect(getWs(state).placements).toEqual({ t1: 'overlay', t2: 'panel' });
+    });
+
+    it('prefers explicit saved-state placements and still consumes the entry', () => {
+      let state = terminalsReducer(initialState, hydratePlacements({ [WS]: { t1: 'panel' } }));
+      state = terminalsReducer(
+        state,
+        loadWorkspaceTerminals(WS, terminals, {
+          isOpen: false,
+          activeTerminalId: null,
+          placements: { t1: 'overlay' },
+        }),
+      );
+      expect(getWs(state).placements).toEqual({ t1: 'overlay' });
+      expect(state.workspacePlacements).toEqual({});
+    });
+
+    it('does not re-seed later loads after removal pruned a placement', () => {
+      let state = terminalsReducer(initialState, hydratePlacements({ [WS]: { t1: 'panel' } }));
+      state = terminalsReducer(state, loadWorkspaceTerminals(WS, terminals, null, 'boot-1'));
+      state = terminalsReducer(state, removeTerminal(WS, 't1'));
+      expect(getWs(state).placements).toEqual({});
+      state = terminalsReducer(state, loadWorkspaceTerminals(WS, terminals, null, 'boot-1'));
+      expect(getWs(state).placements).toEqual({});
     });
   });
 

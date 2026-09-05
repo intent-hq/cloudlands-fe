@@ -21,6 +21,7 @@ function terminalState(
   return {
     height: 50,
     workspaceHeights: {},
+    workspacePlacements: {},
     workspaces: {
       [WS]: {
         isOpen: false,
