@@ -1001,6 +1001,31 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('replaces an in-flight context read with a fresh hydration generation', async () => {
+    const stale = [{ id: 'stale', type: 'note', title: 'Stale', provider: 'internal' }];
+    const fresh = [{ id: 'fresh', type: 'note', title: 'Fresh', provider: 'internal' }];
+    let resolveStale!: (items: typeof stale) => void;
+    let resolveFresh!: (items: typeof fresh) => void;
+    mocks.workspaces.getContext
+      .mockReturnValueOnce(new Promise((resolve) => (resolveStale = resolve)))
+      .mockReturnValueOnce(new Promise((resolve) => (resolveFresh = resolve)));
+    const run = start();
+
+    run.channel.put(initContextForWorkspace(WS, false, 1));
+    await settle();
+    run.channel.put(initContextForWorkspace(WS, true, 2));
+    await settle();
+
+    expect(mocks.workspaces.getContext.mock.calls).toEqual([[WS], [WS]]);
+    resolveFresh(fresh);
+    await settle();
+    resolveStale(stale);
+    await settle();
+
+    expect(run.actions).toEqual([{ type: 'context/hydrateContextItems', payload: [WS, fresh] }]);
+    await stop(run.task);
+  });
+
   it('reports PR refresh success and maps only the branch lookup payload', async () => {
     const current = state();
     current.workspace.workspaces = createCollection('id', [

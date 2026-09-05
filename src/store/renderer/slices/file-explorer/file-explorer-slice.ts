@@ -81,9 +81,9 @@ export const refreshFileExplorer = createAction<[wsId: string]>('fileExplorer/re
  * `file-explorer-read-service` and is guarded by the per-workspace
  * `isInitialized` flag so boot-seeded workspaces are unaffected.
  */
-export const hydrateFileExplorerRequested = createAction<[wsId: string, force?: boolean]>(
-  'fileExplorer/hydrateFileExplorerRequested',
-);
+export const hydrateFileExplorerRequested = createAction<
+  [wsId: string, force?: boolean, generation?: number]
+>('fileExplorer/hydrateFileExplorerRequested');
 
 /**
  * Trigger a targeted reload of a single directory's children in response to a

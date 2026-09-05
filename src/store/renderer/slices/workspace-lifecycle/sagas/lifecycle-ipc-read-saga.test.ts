@@ -113,7 +113,11 @@ function workspaceMountFanOut(
   ];
 }
 
-function workspaceDeferredFanOut(workspaceId: string, force = false): ObservedAction[] {
+function workspaceDeferredFanOut(
+  workspaceId: string,
+  generation = 1,
+  force = false,
+): ObservedAction[] {
   return [
     { type: 'workspaceEvents/loadEventsRequested', payload: [workspaceId] },
     { type: 'scripts/refreshScripts', payload: [workspaceId] },
@@ -122,11 +126,11 @@ function workspaceDeferredFanOut(workspaceId: string, force = false): ObservedAc
     { type: 'changes/loadWorkspaceDataRequested', payload: [workspaceId] },
     {
       type: 'fileExplorer/hydrateFileExplorerRequested',
-      payload: force ? [workspaceId, true] : [workspaceId],
+      payload: [workspaceId, force, generation],
     },
     {
       type: 'context/initContextForWorkspace',
-      payload: force ? [workspaceId, true] : [workspaceId],
+      payload: [workspaceId, force, generation],
     },
   ];
 }
@@ -536,7 +540,7 @@ describe('lifecycleIpcReadSaga', () => {
     run.actions.length = 0;
     await vi.advanceTimersByTimeAsync(WORKSPACE_HYDRATION_IDLE_FALLBACK_MS);
     await settle();
-    expect(run.actions).toEqual(workspaceDeferredFanOut(WS, true));
+    expect(run.actions).toEqual(workspaceDeferredFanOut(WS, 2, true));
     await stop(run.task);
   });
 

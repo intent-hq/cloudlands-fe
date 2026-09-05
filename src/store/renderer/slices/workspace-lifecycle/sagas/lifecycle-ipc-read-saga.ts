@@ -344,16 +344,10 @@ function* dispatchHydrationBranch(
       yield* put(hydrateTerminalsRequested(workspaceId));
       break;
     case 'fileExplorer':
-      yield* put(
-        force
-          ? hydrateFileExplorerRequested(workspaceId, true)
-          : hydrateFileExplorerRequested(workspaceId),
-      );
+      yield* put(hydrateFileExplorerRequested(workspaceId, force, generation));
       break;
     case 'context':
-      yield* put(
-        force ? initContextForWorkspace(workspaceId, true) : initContextForWorkspace(workspaceId),
-      );
+      yield* put(initContextForWorkspace(workspaceId, force, generation));
       break;
     case 'taskAgentLinks':
       yield* put(hydrateTaskAgentAssociationsRequested(workspaceId));
