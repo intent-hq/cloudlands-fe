@@ -1,5 +1,5 @@
-import type { Task } from 'redux-saga';
-import { call, cancel, delay, fork, put, take } from 'typed-redux-saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { call, delay, join, put } from 'typed-redux-saga';
 import {
   closeAntigravitySetup,
   requestAntigravitySetup,
@@ -9,13 +9,17 @@ import { getModelsForProviderForLoadingState } from '../../model/model-utils';
 import { providerModelsLoaded } from '../../provider-models/provider-models-slice';
 import { selectProviderModelsClearEpoch } from '../../provider-models/provider-models-selectors';
 import { setProviderEnabled } from '../../provider-settings/provider-settings-slice';
-import { selectAntigravitySetup } from '../antigravity-setup-selectors';
+import {
+  selectAntigravitySetup,
+  selectAntigravitySetupRequest,
+} from '../antigravity-setup-selectors';
 import {
   antigravitySetupReceived,
-  antigravitySetupRequested,
   antigravitySetupVerified,
   type SetupCommand,
 } from '../antigravity-setup-slice';
+
+type SetupRequest = { generation: number; command: SetupCommand };
 
 export function* antigravitySetupWorker(command: SetupCommand, generation: number) {
   try {
@@ -81,20 +85,25 @@ export function* antigravitySetupWorker(command: SetupCommand, generation: numbe
   }
 }
 
+function* antigravitySetupRequestWorker({
+  payload,
+  prevPayload,
+}: SelectorChannelPayload<SetupRequest>) {
+  // The selector channel replays the idle initial state once; nothing was requested yet.
+  if (prevPayload == null) return;
+  yield* call(antigravitySetupWorker, payload.command, payload.generation);
+}
+
 export function* antigravitySetupSaga() {
-  let task: Task | undefined;
-  let activeGeneration = -1;
+  // A repeated start/login the reducer deduped leaves the generation unchanged, so
+  // the running attempt keeps going; any other request cancels it and runs the latest.
+  const watcher = yield* takeLatestFromSelector(
+    selectAntigravitySetupRequest,
+    antigravitySetupRequestWorker,
+  );
   try {
-    while (true) {
-      const action = yield* take(antigravitySetupRequested);
-      const state = yield* selectAntigravitySetup.effect();
-      if (task?.isRunning() && activeGeneration === state.generation) continue;
-      if (task) yield* cancel(task);
-      activeGeneration = state.generation;
-      task = yield* fork(antigravitySetupWorker, action.payload[0], state.generation);
-    }
+    yield* join(watcher);
   } finally {
-    if (task) yield* cancel(task);
     yield* call(closeAntigravitySetup);
   }
 }

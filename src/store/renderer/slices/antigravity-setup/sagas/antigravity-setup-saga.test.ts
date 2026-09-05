@@ -121,9 +121,40 @@ describe('guided setup saga', () => {
     expect(mocks.request).not.toHaveBeenCalled();
     expect(actions.some((a) => a.type === setProviderEnabled.type)).toBe(false);
   });
-  it('coalesces rapid clicks and cancels unfinished work on close', async () => {
+  function startSaga(dispatch = vi.fn()) {
     let state: AntigravitySetupState = initialState;
     const channel = stdChannel();
+    const listeners = new Set<() => void>();
+    const reduxStore = {
+      getState: () => ({ antigravitySetup: state }),
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const task = runSaga(
+      { channel, dispatch, getState: reduxStore.getState, context: { reduxStore } },
+      antigravitySetupSaga,
+    );
+    const send = (command: SetupCommand) => {
+      const action = antigravitySetupRequested(command);
+      state = antigravitySetupReducer(state, action);
+      channel.put(action);
+      for (const listener of listeners) listener();
+    };
+    return { task, send };
+  }
+  it('does not touch the private connection until something is requested', async () => {
+    const { task } = startSaga();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mocks.close).not.toHaveBeenCalled();
+    expect(mocks.request).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+    expect(mocks.close).toHaveBeenCalledOnce();
+  });
+  it('coalesces rapid clicks and cancels unfinished work on close', async () => {
     const dispatch = vi.fn();
     let finish!: (value: AntigravitySetupResult) => void;
     mocks.request.mockImplementation(
@@ -132,15 +163,7 @@ describe('guided setup saga', () => {
           finish = resolve;
         }),
     );
-    const task = runSaga(
-      { channel, dispatch, getState: () => ({ antigravitySetup: state }) },
-      antigravitySetupSaga,
-    );
-    const send = (command: SetupCommand) => {
-      const action = antigravitySetupRequested(command);
-      state = antigravitySetupReducer(state, action);
-      channel.put(action);
-    };
+    const { task, send } = startSaga(dispatch);
     send('start');
     await Promise.resolve();
     await Promise.resolve();
