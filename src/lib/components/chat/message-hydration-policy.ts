@@ -174,6 +174,13 @@ export function createMessageHydrationPolicy(
     scheduledFrame = null;
   }
 
+  function prunePendingHydrations(liveIds: ReadonlySet<string>): void {
+    for (const id of pendingHydrations) {
+      if (!liveIds.has(id)) pendingHydrations.delete(id);
+    }
+    if (pendingHydrations.size === 0 && scheduledFrame !== null) cancelScheduledHydration();
+  }
+
   function hydrationPriority(record: MessageRecord): number {
     if (record.forced) return 0;
     return record.isVisible ? 1 : 2;
@@ -352,6 +359,7 @@ export function createMessageHydrationPolicy(
       if (disposed) return;
       const previous = new Map(records);
       const nextIds = new Set(nextMessages.map((message) => message.id));
+      prunePendingHydrations(nextIds);
       // Appended rows (newer than every previously known row) hydrate eagerly:
       // a just-sent user message or a fresh streaming row must not paint as a
       // placeholder while waiting for an intersection report. Interior

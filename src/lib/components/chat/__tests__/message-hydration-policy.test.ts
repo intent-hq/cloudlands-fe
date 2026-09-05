@@ -712,6 +712,49 @@ describe('message hydration policy', () => {
       expect(frames.callbacks).toHaveLength(2);
     });
 
+    it('retires removed pending rows without scheduling another frame', () => {
+      const frames = controlledFrames();
+      const policy = createMessageHydrationPolicy([assistant('removed'), assistant('live')], {
+        frameBudgetMs: 6,
+        scheduleFrame: frames.scheduleFrame,
+        cancelFrame: frames.cancelFrame,
+        now: () => 0,
+      });
+      policies.push(policy);
+      const elements = observe(policy, ['removed', 'live']);
+      MockIntersectionObserver.instances[0].fire([
+        { target: elements.get('removed')!, isIntersecting: true },
+        { target: elements.get('live')!, isIntersecting: true },
+      ]);
+
+      policy.updateMessages([assistant('live')]);
+      frames.callbacks[0](0);
+
+      expect(policy.getHydratedIds()).toEqual(['live']);
+      expect(frames.callbacks).toHaveLength(1);
+    });
+
+    it('cancels pending hydration when the transcript is fully replaced', () => {
+      const frames = controlledFrames();
+      const policy = createMessageHydrationPolicy([assistant('old')], {
+        frameBudgetMs: 6,
+        scheduleFrame: frames.scheduleFrame,
+        cancelFrame: frames.cancelFrame,
+        now: () => 0,
+      });
+      policies.push(policy);
+      const oldElement = observe(policy, ['old']).get('old')!;
+      MockIntersectionObserver.instances[0].fire([{ target: oldElement, isIntersecting: true }]);
+      const staleFrame = frames.callbacks[0];
+
+      policy.updateMessages([assistant('new')]);
+      staleFrame(0);
+
+      expect(frames.cancelFrame).toHaveBeenCalledWith(1);
+      expect(frames.callbacks).toHaveLength(1);
+      expect(policy.getHydratedIds()).toEqual([]);
+    });
+
     it('rejects a stale scheduled frame after scope replacement', () => {
       const frames = controlledFrames();
       const transitions: string[] = [];
