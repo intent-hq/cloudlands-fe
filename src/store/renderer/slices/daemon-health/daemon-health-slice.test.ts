@@ -737,15 +737,21 @@ describe('daemonHealthReducer', () => {
       host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
     };
     const failure = { kind: 'timeout' as const, failedAt: '2026-09-05T10:00:00.000Z' };
-    const uds: BackendTransportInfo = { mode: 'external-uds' };
-    const tcp: BackendTransportInfo = { mode: 'tcp', target: 'intent1:7331' };
+    const uds: BackendTransportInfo = { mode: 'external-uds', target: '/tmp/intentd.sock' };
+    // Remote WebSocket as main reports it: `external-ws` with the sanitized URL
+    // (userinfo and query already stripped by formatTransportInfo).
+    const remoteWs: BackendTransportInfo = {
+      mode: 'external-ws',
+      target: 'ws://127.0.0.1:5181/ws',
+    };
 
     it('starts a new generation on every connection lifecycle change', () => {
       const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
       const down = daemonHealthReducer(a, connectionStatusChanged('disconnected'));
       const connecting = daemonHealthReducer(down, connectionStatusChanged('connecting'));
       const b = daemonHealthReducer(connecting, connectionStatusChanged('connected', uds));
-      const switched = daemonHealthReducer(b, connectionStatusChanged('connected', tcp));
+      const switched = daemonHealthReducer(b, connectionStatusChanged('connected', remoteWs));
+      expect(switched.transport).toEqual(remoteWs);
       expect([a, down, connecting, b, switched].map((s) => s.connectionGeneration)).toEqual([
         1, 2, 3, 4, 5,
       ]);
@@ -851,7 +857,7 @@ describe('daemonHealthReducer', () => {
 
     it('ignores a success from before a direct transport switch, even after the new connection has fresh stats', () => {
       const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
-      const b = daemonHealthReducer(a, connectionStatusChanged('connected', tcp));
+      const b = daemonHealthReducer(a, connectionStatusChanged('connected', remoteWs));
       expect(b.stats).toBeNull();
 
       const staleAfterSwitch = daemonHealthReducer(
@@ -888,7 +894,7 @@ describe('daemonHealthReducer', () => {
 
     it('ignores a stale failure from before a switch instead of degrading the new connection', () => {
       const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
-      const b = daemonHealthReducer(a, connectionStatusChanged('connected', tcp));
+      const b = daemonHealthReducer(a, connectionStatusChanged('connected', remoteWs));
       const next = daemonHealthReducer(b, systemStatusFailure(failure, a.connectionGeneration));
       expect(next).toBe(b);
       expect(next.health).toBe('healthy');

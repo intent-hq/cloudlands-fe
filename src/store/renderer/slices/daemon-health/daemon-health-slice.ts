@@ -11,7 +11,7 @@ import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   DaemonHealthState,
   DaemonHealthStats,
-  DaemonStatusCheckFailureKind,
+  DaemonStatusCheckFailure,
   SidecarRunLog,
   SystemStatusWirePayload,
   UnslothStatusWirePayload,
@@ -111,7 +111,7 @@ export const systemStatusSuccess = createAction<
  * changes nothing.
  */
 export const systemStatusFailure = createAction<
-  [failure: { kind: DaemonStatusCheckFailureKind; failedAt: string }, connectionGeneration: number]
+  [failure: Omit<DaemonStatusCheckFailure, 'consecutiveFailures'>, connectionGeneration: number]
 >('daemonHealth/systemStatusFailure');
 
 /**

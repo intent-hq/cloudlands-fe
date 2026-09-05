@@ -33,7 +33,11 @@ import {
   systemStatusFailure,
   systemStatusSuccess,
 } from '../daemon-health-slice';
-import type { DaemonHealthState, SystemStatusWirePayload } from '../daemon-health-types';
+import type {
+  BackendTransportInfo,
+  DaemonHealthState,
+  SystemStatusWirePayload,
+} from '../daemon-health-types';
 import { daemonHealthSaga, pollSystemStatusSaga } from './daemon-health-saga';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
@@ -774,8 +778,16 @@ describe('daemonHealthSaga', () => {
   });
 
   describe('poll ↔ connection lifecycle binding (#4439)', () => {
-    const udsTransport = { mode: 'external-uds' as const };
-    const tcpTransport = { mode: 'tcp' as const, target: 'intent1:7331' };
+    const udsTransport: BackendTransportInfo = {
+      mode: 'external-uds',
+      target: '/tmp/intentd.sock',
+    };
+    // Remote WebSocket as main reports it: `external-ws` with the sanitized URL
+    // (userinfo and query already stripped by formatTransportInfo).
+    const remoteWsTransport: BackendTransportInfo = {
+      mode: 'external-ws',
+      target: 'ws://127.0.0.1:5181/ws',
+    };
     const oldPayload: SystemStatusWirePayload = {
       ...statusPayload,
       hostname: 'old-daemon',
@@ -858,10 +870,10 @@ describe('daemonHealthSaga', () => {
 
     it('discards a pre-switch poll that resolves after a direct transport switch', async () => {
       const { task, polls, getState } = await bootWithPendingPoll();
-      statusHandler!({ status: 'connected', transport: tcpTransport });
+      statusHandler!({ status: 'connected', transport: remoteWsTransport });
       await settle();
       expect(getState().stats).toBeNull();
-      expect(getState().transport).toEqual(tcpTransport);
+      expect(getState().transport).toEqual(remoteWsTransport);
 
       polls[0].resolve(oldPayload);
       await settle();
@@ -874,14 +886,14 @@ describe('daemonHealthSaga', () => {
 
     it('re-polls the new connection right away when the switch interrupted a poll, and the old result cannot overwrite the fresh snapshot', async () => {
       const { task, polls, getState } = await bootWithPendingPoll();
-      statusHandler!({ status: 'connected', transport: tcpTransport });
+      statusHandler!({ status: 'connected', transport: remoteWsTransport });
       await settle();
       expect(polls).toHaveLength(2);
 
       polls[1].resolve(newPayload);
       await settle();
       expect(getState().stats?.hostname).toBe('new-daemon');
-      expect(getState().stats?.transport).toEqual(tcpTransport);
+      expect(getState().stats?.transport).toEqual(remoteWsTransport);
       expect(getState().hostLocality).toBe('remote');
       const fresh = getState();
 
@@ -1054,13 +1066,29 @@ describe('daemonHealthSaga', () => {
     });
 
     it('never puts the raw error or its message into the dispatched action', async () => {
-      mocks.backendRequest.mockRejectedValue(new Error('token=super-secret'));
-      const [action] = await runPoll();
-      expect(JSON.stringify(action)).not.toContain('super-secret');
-      expect(dispatchedFailurePayload(action)).toEqual({
-        kind: 'status-check-failed',
-        failedAt: '2026-09-05T10:00:00.000Z',
+      // Synthetic sentinel shaped like a real transport failure that leaks a
+      // connection URL with a token. The dispatched action must be exactly
+      // the safe payload — every raw field is asserted absent by its value.
+      const rawMessage =
+        'connect ECONNREFUSED ws://user:pw@127.0.0.1:5181/ws?token=synthetic-sentinel-0f9e8d7c';
+      const raw = new BackendError({
+        code: 'TRANSPORT_ERROR',
+        message: rawMessage,
+        data: { socketPath: '/tmp/synthetic-sentinel.sock' },
       });
+      mocks.backendRequest.mockRejectedValue(raw);
+      const dispatched = await runPoll();
+      expect(dispatched).toEqual([
+        systemStatusFailure(
+          { kind: 'status-check-failed', failedAt: '2026-09-05T10:00:00.000Z' },
+          generation,
+        ),
+      ]);
+      const serialized = JSON.stringify(dispatched);
+      expect(serialized).not.toContain(rawMessage);
+      expect(serialized).not.toContain('synthetic-sentinel');
+      expect(serialized).not.toContain(raw.code);
+      expect(serialized).not.toContain(raw.name);
     });
 
     it('does not dispatch a separate heartbeat degradation — the failure action carries it', async () => {
@@ -1072,7 +1100,3 @@ describe('daemonHealthSaga', () => {
     });
   });
 });
-
-function dispatchedFailurePayload(action: unknown) {
-  return (action as { payload: unknown[] }).payload[0];
-}
