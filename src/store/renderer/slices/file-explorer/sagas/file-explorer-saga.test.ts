@@ -178,6 +178,46 @@ describe('fileExplorerSaga', () => {
     await task.toPromise();
   });
 
+  it('replaces an in-flight hydration when forced without a generation', async () => {
+    const staleRoot = { ...root, name: 'stale', path: '/stale', children: [] };
+    const freshRoot = { ...root, name: 'fresh', path: '/fresh', children: [] };
+    let resolveStale!: (tree: typeof staleRoot) => void;
+    let resolveFresh!: (tree: typeof freshRoot) => void;
+    const explorerTree = vi
+      .spyOn(appClient.files, 'explorerTree')
+      .mockReturnValueOnce(new Promise((resolve) => (resolveStale = resolve)))
+      .mockReturnValueOnce(new Promise((resolve) => (resolveFresh = resolve)));
+    vi.spyOn(appClient.files, 'gitStatusMap').mockResolvedValue({});
+    const channel = stdChannel();
+    let fileExplorer = initialState;
+    const task = runSaga(
+      {
+        channel,
+        dispatch: (action: Parameters<typeof fileExplorerReducer>[1]) => {
+          fileExplorer = fileExplorerReducer(fileExplorer, action);
+        },
+        getState: () => ({ fileExplorer }),
+      },
+      fileExplorerSaga,
+    );
+
+    channel.put(hydrateFileExplorerRequested('ws-1'));
+    await settle();
+    channel.put(hydrateFileExplorerRequested('ws-1', true));
+    await settle();
+
+    expect(explorerTree.mock.calls).toEqual([['ws-1'], ['ws-1']]);
+    resolveFresh(freshRoot);
+    await settle();
+    expect(fileExplorer.byWorkspaceId['ws-1'].rootPath).toBe('/fresh');
+
+    resolveStale(staleRoot);
+    await settle();
+    expect(fileExplorer.byWorkspaceId['ws-1'].rootPath).toBe('/fresh');
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('refreshes the root and expanded directories before agent metadata', async () => {
     const listDirectory = vi
       .spyOn(appClient.files, 'listDirectory')

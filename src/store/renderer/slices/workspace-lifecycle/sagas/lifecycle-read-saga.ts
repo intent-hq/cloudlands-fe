@@ -846,7 +846,11 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       takeLeadingByWorkspace(fetchWorkspaceTokenUsage, tokenUsageWorker, scheduler),
       takeLatestByContext(
         initContextForWorkspace,
-        (action) => ({ context: action.payload[0], generation: action.payload[2] ?? 0 }),
+        (action) => ({
+          context: action.payload[0],
+          force: action.payload[1],
+          generation: action.payload[2] ?? 0,
+        }),
         contextWorker,
         initializedContexts,
       ),
