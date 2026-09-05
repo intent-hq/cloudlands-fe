@@ -5,6 +5,8 @@ import {
   closeTerminalOverlay,
   toggleTerminalOverlay,
   selectTerminal,
+  selectScript,
+  setTerminalPlacement,
   addTerminal,
   removeTerminal,
   setTerminalOverlayHeight,
@@ -50,6 +52,7 @@ function getWs(state: TerminalOverlayState, wsId: string = WS) {
       isLoadingTerminals: false,
       recentlyCreatedTerminals: [],
       daemonBootId: null,
+      placements: {},
     }
   );
 }
@@ -91,6 +94,7 @@ describe('terminalsReducer', () => {
             isLoadingTerminals: false,
             recentlyCreatedTerminals: [],
             daemonBootId: null,
+            placements: {},
           },
         },
       };
@@ -189,6 +193,7 @@ describe('terminalsReducer', () => {
             isLoadingTerminals: false,
             recentlyCreatedTerminals: [],
             daemonBootId: null,
+            placements: {},
           },
         },
       };
@@ -213,6 +218,7 @@ describe('terminalsReducer', () => {
             isLoadingTerminals: false,
             recentlyCreatedTerminals: [],
             daemonBootId: null,
+            placements: {},
           },
         },
       };
@@ -232,6 +238,7 @@ describe('terminalsReducer', () => {
             isLoadingTerminals: false,
             recentlyCreatedTerminals: [],
             daemonBootId: null,
+            placements: {},
           },
         },
       };
@@ -255,6 +262,7 @@ describe('terminalsReducer', () => {
             isLoadingTerminals: false,
             recentlyCreatedTerminals: [],
             daemonBootId: null,
+            placements: {},
           },
         },
       };
@@ -280,6 +288,7 @@ describe('terminalsReducer', () => {
             isLoadingTerminals: false,
             recentlyCreatedTerminals: [],
             daemonBootId: null,
+            placements: {},
           },
         },
       };
@@ -676,6 +685,7 @@ describe('terminalsReducer', () => {
             isLoadingTerminals: false,
             recentlyCreatedTerminals: [],
             daemonBootId: null,
+            placements: {},
           },
         },
       };
@@ -835,6 +845,85 @@ describe('terminalsReducer', () => {
       const ws = getWs(state);
       expect(terms(state).map((t) => t.id)).toEqual(['pty-42']);
       expect(ws.daemonBootId).toBe('boot-1');
+    });
+  });
+
+  describe('placement (last surface a terminal/script was shown on)', () => {
+    it('starts with no placements recorded', () => {
+      const state = terminalsReducer(initialState, addTerminal(WS, 't1'));
+      expect(getWs(state).placements).toEqual({});
+    });
+
+    it('records panel placement via setTerminalPlacement', () => {
+      const state = terminalsReducer(initialState, setTerminalPlacement(WS, 't1', 'panel'));
+      expect(getWs(state).placements).toEqual({ t1: 'panel' });
+    });
+
+    it('returns the same state when the placement is unchanged', () => {
+      const state = terminalsReducer(initialState, setTerminalPlacement(WS, 't1', 'panel'));
+      expect(terminalsReducer(state, setTerminalPlacement(WS, 't1', 'panel'))).toBe(state);
+    });
+
+    it('records overlay placement when a terminal is opened in the overlay', () => {
+      let state = terminalsReducer(initialState, setTerminalPlacement(WS, 't1', 'panel'));
+      state = terminalsReducer(state, openTerminalOverlay(WS, 't1'));
+      expect(getWs(state).placements).toEqual({ t1: 'overlay' });
+    });
+
+    it('records overlay placement for the default terminal when none is named', () => {
+      const state = terminalsReducer(initialState, openTerminalOverlay(WS));
+      expect(getWs(state).placements).toEqual({ [`terminal-${WS}-default`]: 'overlay' });
+    });
+
+    it('records overlay placement for the selected script when the overlay opens on it', () => {
+      let state = terminalsReducer(initialState, addTerminal(WS, 't1'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 'script-1', 'panel'));
+      state = terminalsReducer(state, selectScript(WS, 'script-1'));
+      state = terminalsReducer(state, openTerminalOverlay(WS));
+      expect(getWs(state).placements).toEqual({ 'script-1': 'overlay' });
+    });
+
+    it('keeps placements per workspace and per terminal', () => {
+      let state = terminalsReducer(initialState, setTerminalPlacement(WS, 't1', 'panel'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't2', 'overlay'));
+      state = terminalsReducer(state, setTerminalPlacement('ws-2', 't1', 'overlay'));
+      expect(getWs(state).placements).toEqual({ t1: 'panel', t2: 'overlay' });
+      expect(getWs(state, 'ws-2').placements).toEqual({ t1: 'overlay' });
+    });
+
+    it('drops the placement of a removed terminal', () => {
+      let state = terminalsReducer(initialState, addTerminal(WS, 't1'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't1', 'panel'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't2', 'panel'));
+      state = terminalsReducer(state, removeTerminal(WS, 't1'));
+      expect(getWs(state).placements).toEqual({ t2: 'panel' });
+    });
+
+    it('hydrates placements from saved state and keeps them across a refetch', () => {
+      let state = terminalsReducer(
+        initialState,
+        loadWorkspaceTerminals(WS, [{ id: 't1', name: 'T1' }], {
+          isOpen: false,
+          activeTerminalId: 't1',
+          placements: { t1: 'panel' },
+        }),
+      );
+      expect(getWs(state).placements).toEqual({ t1: 'panel' });
+
+      state = terminalsReducer(state, loadWorkspaceTerminals(WS, [{ id: 't1', name: 'T1' }]));
+      expect(getWs(state).placements).toEqual({ t1: 'panel' });
+    });
+
+    it('keeps prior placements when the saved state predates them', () => {
+      let state = terminalsReducer(initialState, setTerminalPlacement(WS, 't1', 'panel'));
+      state = terminalsReducer(
+        state,
+        loadWorkspaceTerminals(WS, [{ id: 't1', name: 'T1' }], {
+          isOpen: false,
+          activeTerminalId: 't1',
+        }),
+      );
+      expect(getWs(state).placements).toEqual({ t1: 'panel' });
     });
   });
 });

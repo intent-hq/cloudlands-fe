@@ -26,6 +26,7 @@ import {
   saveTerminalMetadata,
   selectTerminal,
   setTerminalOverlayHeight,
+  setTerminalPlacement,
   toggleTerminalOverlay,
   type PersistedWorkspaceState,
   type TerminalMetadata,
@@ -41,7 +42,8 @@ type WorkspaceStateAction =
   | ReturnType<typeof closeTerminalOverlay>
   | ReturnType<typeof toggleTerminalOverlay>
   | ReturnType<typeof selectTerminal>
-  | ReturnType<typeof addTerminal>;
+  | ReturnType<typeof addTerminal>
+  | ReturnType<typeof setTerminalPlacement>;
 
 const internallyHydratedLoads = new WeakSet<object>();
 
@@ -139,6 +141,7 @@ function* persistWorkspaceState(workspaceId: string): SagaGenerator<void> {
   states[workspaceId] = {
     isOpen: workspaceState.isOpen,
     activeTerminalId: workspaceState.activeTerminalId,
+    placements: workspaceState.placements,
     ...(height !== undefined ? { height } : {}),
   };
   yield* call(setLocalStorageJSON, WORKSPACE_STATE_STORAGE_KEY, states);
@@ -270,7 +273,14 @@ function* watchTerminalPersistence(): SagaGenerator<void> {
   yield* takeEvery(saveTerminalMetadata, persistTerminalMetadataWorker);
   yield* takeEvery(removeTerminal, removeTerminalPersistenceWorker);
   yield* takeEvery(
-    [openTerminalOverlay, closeTerminalOverlay, toggleTerminalOverlay, selectTerminal, addTerminal],
+    [
+      openTerminalOverlay,
+      closeTerminalOverlay,
+      toggleTerminalOverlay,
+      selectTerminal,
+      addTerminal,
+      setTerminalPlacement,
+    ],
     persistTerminalWorkspaceStateWorker,
   );
   yield* takeEvery(loadWorkspaceTerminals, hydrateAndPersistLoadedTerminalsWorker);

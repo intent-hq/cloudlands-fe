@@ -36,6 +36,7 @@
     renameTerminal,
     selectScript,
     clearScriptSelection,
+    setTerminalPlacement,
     type TerminalTab,
   } from '$store/renderer/slices/terminals/terminals-slice';
   import { appClient } from '$lib/client';
@@ -539,6 +540,7 @@
         workspaceId,
         closable: true,
       });
+      appStore.dispatch(setTerminalPlacement(workspaceId, selectedScript.id, 'panel'));
     } else if (activeTerminal) {
       getPanelLayoutManager(workspaceId).openUserTab({
         type: 'terminal',
@@ -547,6 +549,7 @@
         workspaceId,
         closable: true,
       });
+      appStore.dispatch(setTerminalPlacement(workspaceId, activeTerminal.id, 'panel'));
     } else {
       return;
     }

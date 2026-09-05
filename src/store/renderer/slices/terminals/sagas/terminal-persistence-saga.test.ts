@@ -36,6 +36,7 @@ import {
   saveTerminalMetadata,
   selectTerminal,
   setTerminalOverlayHeight,
+  setTerminalPlacement,
   terminalsReducer,
   toggleTerminalOverlay,
 } from '../terminals-slice';
@@ -382,12 +383,61 @@ describe('terminalPersistenceSaga', () => {
     send(selectTerminal('ws-1', 'term-1'));
     await settle();
 
+    const placements = { 'term-1': 'overlay' };
     expect(storage.setJSON.mock.calls).toEqual([
-      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: true, activeTerminalId: 'term-1' } }],
-      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: false, activeTerminalId: 'term-1' } }],
-      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: true, activeTerminalId: 'term-1' } }],
-      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: true, activeTerminalId: 'term-2' } }],
-      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: true, activeTerminalId: 'term-1' } }],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: true, activeTerminalId: 'term-1', placements } },
+      ],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: false, activeTerminalId: 'term-1', placements } },
+      ],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: true, activeTerminalId: 'term-1', placements } },
+      ],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: true, activeTerminalId: 'term-2', placements } },
+      ],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: true, activeTerminalId: 'term-1', placements } },
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('round-trips terminal placement through workspace-state persistence', async () => {
+    const { dispatched, send, task } = startSaga();
+    await settle();
+    storage.setJSON.mockClear();
+    send(setTerminalPlacement('ws-1', 'term-1', 'panel'));
+    await settle();
+
+    expect(storage.setJSON.mock.calls).toEqual([
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: false, activeTerminalId: null, placements: { 'term-1': 'panel' } } },
+      ],
+    ]);
+
+    dispatched.length = 0;
+    const terminals = [{ id: 'term-1', name: 'Terminal 1' }];
+    send(loadWorkspaceTerminals('ws-1', terminals));
+    await settle();
+
+    expect(dispatched).toEqual([
+      {
+        type: 'terminals/loadWorkspaceTerminals',
+        payload: [
+          'ws-1',
+          terminals,
+          { isOpen: false, activeTerminalId: null, placements: { 'term-1': 'panel' } },
+        ],
+      },
     ]);
     task.cancel();
     await task.toPromise();
@@ -417,7 +467,10 @@ describe('terminalPersistenceSaga', () => {
     expect(storage.setJSON.mock.calls).toEqual([
       [CUSTOM_NAMES_STORAGE_KEY, {}],
       ['terminal-metadata-ws-1', []],
-      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: false, activeTerminalId: null } }],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: false, activeTerminalId: null, placements: {} } },
+      ],
     ]);
     task.cancel();
     await task.toPromise();
@@ -464,7 +517,10 @@ describe('terminalPersistenceSaga', () => {
 
     expect(dispatched).toEqual([]);
     expect(storage.setJSON.mock.calls).toEqual([
-      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: true, activeTerminalId: 'term-1' } }],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: true, activeTerminalId: 'term-1', placements: {} } },
+      ],
     ]);
     task.cancel();
     await task.toPromise();

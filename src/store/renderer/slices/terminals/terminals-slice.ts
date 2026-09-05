@@ -47,6 +47,11 @@ export interface TerminalMetadata {
   title?: string;
 }
 
+/** Surface a terminal or script output was last shown on. */
+export type TerminalPlacement = 'overlay' | 'panel';
+
+export const DEFAULT_TERMINAL_PLACEMENT: TerminalPlacement = 'overlay';
+
 export interface WorkspaceTerminalState {
   isOpen: boolean;
   activeTerminalId: string | null;
@@ -67,6 +72,12 @@ export interface WorkspaceTerminalState {
    * PTYs respawn via auto-reconnect). `null` until a boot id is seen.
    */
   daemonBootId: string | null;
+  /**
+   * Last surface each terminal (keyed by terminal id) or script output (keyed
+   * by script id) was shown on, so the Shell sidebar reopens it there. Missing
+   * entries read as `'overlay'`.
+   */
+  placements: Record<string, TerminalPlacement>;
 }
 
 /** Persisted subset of workspace state (terminals are loaded from terminalManager) */
@@ -77,6 +88,8 @@ export interface PersistedWorkspaceState {
   selectedScriptId?: string | null;
   /** Optional for backward compat with entries persisted before it existed. */
   height?: number;
+  /** Optional for backward compat with entries persisted before it existed. */
+  placements?: Record<string, TerminalPlacement>;
 }
 
 export type TerminalOverlayState = {
@@ -104,6 +117,7 @@ export const emptyWorkspaceState: WorkspaceTerminalState = {
   recentlyCreatedTerminals: [],
   selectedScriptId: null,
   daemonBootId: null,
+  placements: {},
 };
 
 const initialState: TerminalOverlayState = {
@@ -142,6 +156,10 @@ export const selectScript =
   createAction<[wsId: string, scriptId: string]>('terminals/selectScript');
 
 export const clearScriptSelection = createAction<[wsId: string]>('terminals/clearScriptSelection');
+
+/** Record the surface a terminal (`id` = terminal id) or script (`id` = script id) was shown on. */
+export const setTerminalPlacement =
+  createAction<[wsId: string, id: string, placement: TerminalPlacement]>('terminals/setPlacement');
 
 export const addTerminal =
   createAction<[wsId: string, termId: string, name?: string]>('terminals/addTerminal');
@@ -262,6 +280,24 @@ function addTerminalIfMissing(
   });
 }
 
+function withPlacement(
+  placements: Record<string, TerminalPlacement>,
+  id: string | null,
+  placement: TerminalPlacement,
+): Record<string, TerminalPlacement> {
+  if (!id || placements[id] === placement) return placements;
+  return { ...placements, [id]: placement };
+}
+
+function withoutPlacement(
+  placements: Record<string, TerminalPlacement>,
+  id: string,
+): Record<string, TerminalPlacement> {
+  if (!(id in placements)) return placements;
+  const { [id]: _removed, ...rest } = placements;
+  return rest;
+}
+
 // ============================================================================
 // Reducer
 // ============================================================================
@@ -281,8 +317,20 @@ terminalsReducer.with(openTerminalOverlay, (state, { payload: [wsId, termId] }) 
     newWs.activeTerminalId = result.defaultId;
   }
 
+  // The overlay shows the selected script when one is set, else the active terminal.
+  newWs.placements = withPlacement(
+    ws.placements,
+    newWs.selectedScriptId ?? newWs.activeTerminalId,
+    'overlay',
+  );
   newWs.isOpen = true;
   return setWs(state, wsId, newWs);
+});
+terminalsReducer.with(setTerminalPlacement, (state, { payload: [wsId, id, placement] }) => {
+  const ws = getWs(state, wsId);
+  const placements = withPlacement(ws.placements, id, placement);
+  if (placements === ws.placements) return state;
+  return setWs(state, wsId, { ...ws, placements });
 });
 terminalsReducer.with(closeTerminalOverlay, (state, { payload: [wsId] }) => {
   const ws = getWs(state, wsId);
@@ -361,6 +409,7 @@ terminalsReducer.with(removeTerminal, (state, { payload: [wsId, termId] }) => {
     terminals: newTerminals,
     activeTerminalId: newActiveId,
     isOpen,
+    placements: withoutPlacement(ws.placements, termId),
   });
 });
 terminalsReducer.with(setTerminalOverlayHeight, (state, { payload: [wsId, height] }) => {
@@ -415,6 +464,7 @@ terminalsReducer.with(
       (savedState?.selectedScriptId !== undefined
         ? savedState.selectedScriptId
         : prior.selectedScriptId) ?? null;
+    const placements = savedState?.placements ?? prior.placements;
 
     if (terminals.length > 0) {
       let activeId: string | null;
@@ -443,6 +493,7 @@ terminalsReducer.with(
         recentlyCreatedTerminals: [],
         selectedScriptId,
         daemonBootId: nextBootId,
+        placements,
       };
     } else if (prior.terminals.ids.length > 0) {
       const sameBootAuthoritativeEmpty =
@@ -474,6 +525,7 @@ terminalsReducer.with(
             : selectedScriptId !== null && (savedState ? savedState.isOpen : prior.isOpen),
         selectedScriptId,
         daemonBootId: nextBootId,
+        placements,
       };
     } else {
       // Don't restore isOpen when there are no terminals — the panel
@@ -490,6 +542,7 @@ terminalsReducer.with(
         recentlyCreatedTerminals: [],
         selectedScriptId,
         daemonBootId: nextBootId,
+        placements,
       };
     }
 

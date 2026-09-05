@@ -1,6 +1,11 @@
 import { store } from '../../store';
 import { type StoreState } from '$store/renderer/types';
-import { emptyWorkspaceState, type TerminalTab } from './terminals-slice';
+import {
+  DEFAULT_TERMINAL_PLACEMENT,
+  emptyWorkspaceState,
+  type TerminalPlacement,
+  type TerminalTab,
+} from './terminals-slice';
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { terminalDisplayName } from '$lib/utils/terminal-display-name';
 
@@ -75,6 +80,16 @@ export const selectUserTerminals = store.createSelector((state, wsId: string | n
 export const selectWorkspaceTerminalState = store.createSelector((state, wsId: string) => {
   return state.terminals.workspaces[wsId] || emptyWorkspaceState;
 });
+
+/**
+ * Surface a terminal (`id` = terminal id) or script output (`id` = script id)
+ * was last shown on in the workspace; unknown ids read as `'overlay'`.
+ */
+export const selectTerminalPlacement = store.createSelector(
+  (state, wsId: string, id: string): TerminalPlacement => {
+    return getWsById(state, wsId).placements[id] ?? DEFAULT_TERMINAL_PLACEMENT;
+  },
+);
 
 export const selectTerminalDisplayName = store.createSelector(
   (state, wsId: string | null, termId: string): string => {

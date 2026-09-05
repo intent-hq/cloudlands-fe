@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
-import type { TerminalOverlayState, TerminalTab } from './terminals-slice';
+import type { TerminalOverlayState, TerminalPlacement, TerminalTab } from './terminals-slice';
 import {
   selectSelectedScriptId,
   selectTerminalDisplayName,
   selectTerminalOverlayHeight,
+  selectTerminalPlacement,
   selectWorkspaceSetupTerminal,
 } from './terminals-selectors';
 import { m } from '$shared/paraglide/messages.js';
@@ -15,6 +16,7 @@ const WS = 'ws-1';
 function terminalState(
   terminals: TerminalTab[],
   selectedScriptId: string | null = null,
+  placements: Record<string, TerminalPlacement> = {},
 ): TerminalOverlayState {
   return {
     height: 50,
@@ -26,8 +28,10 @@ function terminalState(
         terminals: createCollection<TerminalTab, 'id'>('id', terminals),
         terminalsLoaded: true,
         isLoadingTerminals: false,
+        recentlyCreatedTerminals: [],
         daemonBootId: null,
         selectedScriptId,
+        placements,
       },
     },
   };
@@ -183,6 +187,30 @@ describe('terminals selectors', () => {
       expect(selectTerminalOverlayHeight.select(state, WS)).toBe(15);
       expect(selectTerminalOverlayHeight.select(state, 'ws-unloaded')).toBe(80);
       expect(selectTerminalOverlayHeight.select(state, 'ws-unknown')).toBe(50);
+    });
+  });
+
+  describe('selectTerminalPlacement', () => {
+    it('defaults an unknown terminal or script to the overlay', () => {
+      const state = stateWith([{ id: 'term-1', name: 'Terminal' }]);
+
+      expect(selectTerminalPlacement.select(state, WS, 'term-1')).toBe('overlay');
+      expect(selectTerminalPlacement.select(state, WS, 'script-1')).toBe('overlay');
+    });
+
+    it('defaults to the overlay for a workspace with no terminal state', () => {
+      const state = stateWith([]);
+
+      expect(selectTerminalPlacement.select(state, 'ws-other', 'term-1')).toBe('overlay');
+    });
+
+    it('returns the recorded placement per id', () => {
+      const state = {
+        terminals: terminalState([], null, { 'term-1': 'panel', 'script-1': 'overlay' }),
+      } as unknown as StoreState;
+
+      expect(selectTerminalPlacement.select(state, WS, 'term-1')).toBe('panel');
+      expect(selectTerminalPlacement.select(state, WS, 'script-1')).toBe('overlay');
     });
   });
 });
