@@ -64,6 +64,7 @@ import { panelLayoutSaga } from './slices/panel-layout/sagas/panel-layout-saga';
 import { permissionResponseSaga } from './slices/permission/sagas/permission-response-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
+import { antigravitySetupSaga } from './slices/antigravity-setup/sagas/antigravity-setup-saga';
 import { prMonitorSaga } from './slices/pr-monitor/sagas/pr-monitor-saga';
 import { releaseNotesSaga } from './slices/release-notes/sagas/release-notes-saga';
 import { sentryAuthSaga } from './slices/sentry-auth/sagas/sentry-auth-saga';
@@ -162,6 +163,7 @@ export const sagas = [
   modelSelectionSaga,
   backgroundAgentSettingsSaga,
   providerSettingsSaga,
+  antigravitySetupSaga,
   modelBootSaga,
   modelReloadSaga,
   providerAvailabilitySaga,
