@@ -74,7 +74,7 @@ function toWorkspaceStatus(value: unknown): WorkspaceStatus {
 }
 
 /** Coerce a raw daemon workspace object into the renderer `Workspace` shape. */
-export function normalizeWorkspace(raw: Record<string, unknown>): Workspace {
+function normalizeWorkspace(raw: Record<string, unknown>): Workspace {
   const now = new Date().toISOString();
   const id = String(raw.id ?? raw.workspaceId ?? '');
   return {

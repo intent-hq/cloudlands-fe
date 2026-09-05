@@ -10,9 +10,7 @@ export const inputMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: '007-B2',
   callers: [
-    'src/features/onboarding/messages/GitHubRepoTab.svelte',
-    'src/features/onboarding/messages/LocalRepoTab.svelte',
-    'src/features/onboarding/messages/NewProjectTab.svelte',
+    'src/features/new-workspace/ui/SourceCard.svelte',
     'src/lib/component-catalog/CatalogGallery.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/OverlayCatalogPreview.svelte',

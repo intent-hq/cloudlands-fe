@@ -70,12 +70,20 @@ describe('new workspace route controller', () => {
   });
 
   it('exposes stable draft-created, first-input, promote-started, and live transitions', async () => {
-    const controller = createNewWorkspaceRouteController({ startInput: {}, requestedDraftId: null });
+    const controller = createNewWorkspaceRouteController({
+      startInput: {},
+      requestedDraftId: null,
+    });
     const observed: ControllerState[] = [];
     await controller.start((state) => observed.push(state));
     controller.dispatch({ type: 'backend.connected', generation: 1, ownerClientId: 'client-1' });
     controller.edit({ intentText: 'Build it' });
-    controller.dispatch({ type: 'draft.acknowledged', generation: 1, inputVersion: 1, draft: draft() });
+    controller.dispatch({
+      type: 'draft.acknowledged',
+      generation: 1,
+      inputVersion: 1,
+      draft: draft(),
+    });
     controller.dispatch({
       type: 'capability.result',
       generation: 1,
@@ -105,12 +113,20 @@ describe('new workspace route controller', () => {
 
   it('imports a legacy sentinel draft once before starting the durable runner', async () => {
     mocks.legacyGet.mockResolvedValue({ text: 'Legacy prompt', attachments: [] });
-    mocks.createDraft.mockResolvedValue(draft({ id: 'migrated-draft', intentText: 'Legacy prompt' }));
-    const controller = createNewWorkspaceRouteController({ startInput: {}, requestedDraftId: null });
+    mocks.createDraft.mockResolvedValue(
+      draft({ id: 'migrated-draft', intentText: 'Legacy prompt' }),
+    );
+    const controller = createNewWorkspaceRouteController({
+      startInput: {},
+      requestedDraftId: null,
+    });
 
     await controller.start(() => undefined);
 
-    expect(mocks.createDraft).toHaveBeenCalledWith({ intentText: 'Legacy prompt', attachments: [] });
+    expect(mocks.createDraft).toHaveBeenCalledWith({
+      intentText: 'Legacy prompt',
+      attachments: [],
+    });
     expect(mocks.legacyClear).toHaveBeenCalledWith('__new-workspace__', '__initializer__');
     expect(mocks.runnerOptions).toHaveBeenCalledWith(
       expect.objectContaining({ requestedDraftId: 'migrated-draft' }),

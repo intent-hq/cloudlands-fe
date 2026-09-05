@@ -245,7 +245,7 @@ vi.mock('../AuroraBackground.svelte', async () => ({
 vi.mock('../ModelChangeNotice.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
-vi.mock('$features/onboarding/messages/WorkspaceSetupCard.svelte', async () => ({
+vi.mock('$lib/components/workspace/creation/WorkspaceSetupCard.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 

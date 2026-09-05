@@ -61,9 +61,9 @@ export type TabState = {
 };
 
 const MAX_RECENTLY_CLOSED_TABS = 10;
-const ONBOARDING_WORKSPACE_ID = 'new';
+const NEW_WORKSPACE_ROUTE_ID = 'new';
 
-const isWorkspaceTabId = (workspaceId: string): boolean => workspaceId !== ONBOARDING_WORKSPACE_ID;
+const isWorkspaceTabId = (workspaceId: string): boolean => workspaceId !== NEW_WORKSPACE_ROUTE_ID;
 
 const createTabFlagMap = (tabIds: string[]): TabFlagMap => {
   const next: TabFlagMap = {};

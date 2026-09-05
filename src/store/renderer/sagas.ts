@@ -94,7 +94,7 @@ import { activeStreamsSaga } from './slices/workspace-agents/sagas/active-stream
 import { agentCreationSaga } from './slices/workspace-agents/sagas/agent-creation-saga';
 import { agentReadSaga } from './slices/workspace-agents/sagas/agent-read-saga';
 import { daemonEventsSaga } from './slices/workspace-events/sagas/daemon-events-saga';
-import { workspaceInitializerSaga } from './slices/workspace-initializer/sagas/workspace-initializer-saga';
+import { workspaceCreationSettingsSaga } from './slices/workspace-creation-settings/sagas/workspace-creation-settings-saga';
 import { lifecycleIpcReadSaga } from './slices/workspace-lifecycle/sagas/lifecycle-ipc-read-saga';
 import { lifecycleReadSaga } from './slices/workspace-lifecycle/sagas/lifecycle-read-saga';
 import { workspaceNavigationLayoutSaga } from './slices/workspace-navigation/sagas/workspace-navigation-layout-saga';
@@ -202,7 +202,7 @@ export const sagas = [
   updateChannelSaga,
   notificationSettingsSaga,
   userPreferencesPersistenceSaga,
-  workspaceInitializerSaga,
+  workspaceCreationSettingsSaga,
   zoomIpcSaga,
   menuIpcSaga,
   browserIpcSaga,

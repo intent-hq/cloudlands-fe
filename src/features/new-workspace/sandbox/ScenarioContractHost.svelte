@@ -57,8 +57,7 @@
     onAcceptRemote={() =>
       (controllerState = reduce(controllerState, { type: 'conflict.acceptRemote' }))}
     onKeepLocal={() => (controllerState = reduce(controllerState, { type: 'conflict.keepLocal' }))}
-    onChooseLocal={() => undefined}
-    onChooseGitHub={() => undefined}
+    onSourceSelected={(source) => edit({ source })}
     onChooseNewFolder={(name) =>
       edit({ source: { kind: 'newFolder', parentPath: '/sandbox/projects', name } })}
     onRecheckCapabilities={refresh}

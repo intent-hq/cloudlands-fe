@@ -85,9 +85,6 @@ vi.mock('$features/hardware-console/actions/ActionKeyHud.svelte', async () => ({
 vi.mock('$lib/components/CommandPalette.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));
-vi.mock('$lib/components/AuggieSetupGate.svelte', async () => ({
-  default: (await import('./mocks/Marker.svelte')).default,
-}));
 vi.mock('$lib/components/debug/DebugPanel.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));

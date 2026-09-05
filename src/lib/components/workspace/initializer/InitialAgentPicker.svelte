@@ -16,7 +16,7 @@
     selectModelEffortLevels,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
-  import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { selectWorkspaceCreationSettingsHydrated } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -56,7 +56,7 @@
   const orchestratorId = $derived(orchestrator?.id ?? null);
   const customSpecialistsLoaded$ = selectCustomSpecialistsLoaded();
   const fileSpecialistsLoaded$ = selectFileSpecialistsLoaded();
-  const initializerHydrated$ = selectWorkspaceInitializerHydrated();
+  const settingsHydrated$ = selectWorkspaceCreationSettingsHydrated();
   const activeProviderId$ = selectActiveProviderId();
   const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
@@ -463,7 +463,7 @@
   // meaningless — and re-runs if hydration re-applies a stale override after
   // mount. Overrides the user made in this session are never cleared.
   $effect(() => {
-    const dataReady = $fileSpecialistsLoaded$ && $initializerHydrated$;
+    const dataReady = $fileSpecialistsLoaded$ && $settingsHydrated$;
     if (!dataReady || modelOverriddenThisSession) return;
     // Degenerate persisted state: overridden flag set with no model. Normalize
     // so the invariant `modelWasOverridden ⇒ selectedModel set` holds.

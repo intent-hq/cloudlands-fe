@@ -9,7 +9,7 @@ interface ReducerWithInitialState {
   initialState: any;
 }
 
-export const RENDERER_BATCH_ACTIONS = 'renderer/batchActions';
+const RENDERER_BATCH_ACTIONS = 'renderer/batchActions';
 
 export function batchRendererActions(actions: ReduxAction[]): ReduxAction {
   return { type: RENDERER_BATCH_ACTIONS, payload: actions };

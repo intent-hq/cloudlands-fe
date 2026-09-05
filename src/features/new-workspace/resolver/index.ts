@@ -6,7 +6,7 @@ import {
   MAX_CONTEXT_LINKS,
 } from '$lib/components/workspace/initializer/context-links';
 
-export interface StartPrefill {
+interface StartPrefill {
   title?: string;
   prompt?: string;
   repoPath?: string;
@@ -29,10 +29,10 @@ export interface ResolveStartInput {
   prefill?: StartPrefill;
 }
 
-export type UnresolvedReason =
+type UnresolvedReason =
   'unknown-link' | 'ambiguous-source' | 'needs-git-init' | 'remote-daemon-path';
 
-export interface UnresolvedRef {
+interface UnresolvedRef {
   value: string;
   kind: 'link' | 'path' | 'source';
   reason: UnresolvedReason;

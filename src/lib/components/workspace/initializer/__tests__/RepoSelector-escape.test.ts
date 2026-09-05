@@ -1,8 +1,7 @@
 /**
  * RepoSelector.svelte Escape handling via the escape-layer stack.
  * The dropdown pushes an escape layer while open, so Escape dismisses it
- * (and only it, when stacked under other overlays — see the NewSpaceModal
- * regression test in modals/__tests__).
+ * (and only it when stacked under other overlays).
  * Also covers the Recent list rendering (owner-qualified repo names) and
  * plain-text search filtering from the "Pick a repo" tab (intent-hq/monorepo#859).
  */
@@ -31,36 +30,39 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock(
-  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-selectors',
   async () => {
     const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
     const store = createAppStoreMock({ state: {} });
     return {
-      selectWorkspaceInitializerDefaultParentPath: store.createSelector(() => ''),
-      selectWorkspaceInitializerRecentRepos: store.createSelector(() => mockRepos.recentRepos),
-      selectWorkspaceInitializerRemoteSetups: store.createSelector(() => []),
+      selectWorkspaceCreationDefaultParentPath: store.createSelector(() => ''),
+      selectWorkspaceCreationRecentRepos: store.createSelector(() => mockRepos.recentRepos),
+      selectWorkspaceCreationRemoteSetups: store.createSelector(() => []),
     };
   },
 );
 
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slice', () => ({
-  setWorkspaceInitializerDefaultParentPath: (path: string) => ({
-    type: 'workspaceInitializer/setDefaultParentPath',
-    payload: path,
+vi.mock(
+  '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-slice',
+  () => ({
+    setWorkspaceCreationDefaultParentPath: (path: string) => ({
+      type: 'workspaceCreationSettings/setDefaultParentPath',
+      payload: path,
+    }),
+    setWorkspaceCreationLastSelectedRepo: (repo: unknown) => ({
+      type: 'workspaceCreationSettings/setLastSelectedRepo',
+      payload: repo,
+    }),
+    setWorkspaceCreationRecentRepos: (repos: unknown) => ({
+      type: 'workspaceCreationSettings/setRecentRepos',
+      payload: repos,
+    }),
+    setWorkspaceCreationRemoteSetups: (setups: unknown) => ({
+      type: 'workspaceCreationSettings/setRemoteSetups',
+      payload: setups,
+    }),
   }),
-  setWorkspaceInitializerLastSelectedRepo: (repo: unknown) => ({
-    type: 'workspaceInitializer/setLastSelectedRepo',
-    payload: repo,
-  }),
-  setWorkspaceInitializerRecentRepos: (repos: unknown) => ({
-    type: 'workspaceInitializer/setRecentRepos',
-    payload: repos,
-  }),
-  setWorkspaceInitializerRemoteSetups: (setups: unknown) => ({
-    type: 'workspaceInitializer/setRemoteSetups',
-    payload: setups,
-  }),
-}));
+);
 
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   replaceWorkspaceList: (workspaces: unknown) => ({
@@ -147,7 +149,7 @@ vi.mock('svelte-fa', async () => {
 });
 
 // Stub the heavy nested modals (BE-driven folder picker, remote setup)
-vi.mock('$features/onboarding/messages/DirectoryPickerModal.svelte', async () => ({
+vi.mock('$lib/components/workspace/creation/DirectoryPickerModal.svelte', async () => ({
   default: (await import('./mocks/MockComponent.svelte')).default,
 }));
 vi.mock('$lib/components/workspace/initializer/AddRemoteSetupModal.svelte', async () => ({

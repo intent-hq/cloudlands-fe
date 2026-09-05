@@ -780,9 +780,6 @@
           appStore.dispatch(openWorkspaceBrowser(workspaceId, 'about:blank'));
         }
         return true;
-      case 'show-onboarding':
-        void navigateToNewWorkspace();
-        return true;
       case 'enhance-prompt':
         dispatchWindowEvent('chat:enhance-prompt');
         return true;

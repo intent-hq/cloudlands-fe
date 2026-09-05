@@ -1,7 +1,7 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import { faCircleNotch, faPause, faTriangleExclamation } from '$lib/icons/phosphor-icons';
-  import ProviderCard from '$features/onboarding/messages/ProviderCard.svelte';
+  import ProviderCard from '$features/new-workspace/ui/ProviderCard.svelte';
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import type { CoordinatorPresentation, CoordinatorState } from './types';

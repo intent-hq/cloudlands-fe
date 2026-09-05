@@ -12,7 +12,7 @@
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { pickDirectory, pickFile } from '$lib/directory-picker-service';
-  import DirectoryPickerModal from '$features/onboarding/messages/DirectoryPickerModal.svelte';
+  import DirectoryPickerModal from '$lib/components/workspace/creation/DirectoryPickerModal.svelte';
   import MessageDialog from '$lib/components/modals/MessageDialog.svelte';
 
   interface Props {

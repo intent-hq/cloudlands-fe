@@ -1,5 +1,5 @@
 <script lang="ts">
-  import DirectoryPickerView from '$features/onboarding/messages/DirectoryPickerView.svelte';
+  import DirectoryPickerView from '$lib/components/workspace/creation/DirectoryPickerView.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   import { getMockDirectoryListing, MOCK_HOME } from './mock-filesystem';
@@ -107,7 +107,7 @@
     <DirectoryPickerView
       {open}
       title={m.sandbox_directoryPicker_pickerTitle_title()}
-      selectLabel={m.onboarding_dirPicker_selectFolder_label()}
+      selectLabel={m.workspaceCreation_dirPicker_selectFolder_label()}
       {listing}
       loading={fakeLoading}
       error={listingError}

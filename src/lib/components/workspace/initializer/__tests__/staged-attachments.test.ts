@@ -1,7 +1,7 @@
 /**
  * Staged-attachment redemption at workspace.create (PROTOCOL §5.9).
  *
- * Pre-workspace surfaces (new-workspace modal, onboarding) stage non-image
+ * Pre-workspace surfaces stage non-image
  * files as path-only context items; `redeemStagedAttachments` places each
  * from its `sourcePath` once the workspace exists (transport-aware: the
  * data arm carries the bytes when the backend is remote). Failures (stale
@@ -304,7 +304,11 @@ describe('sendHeldFirstMessage', () => {
       stubToReferences,
     );
 
-    expect(result).toEqual({ sent: false, errorDetail: 'agent session vanished mid-send' });
+    expect(result).toEqual({
+      sent: false,
+      errorDetail: 'agent session vanished mid-send',
+      deliveryUnknown: true,
+    });
   });
 
   it('returns no detail for generic transport fallbacks so callers keep localized copy', async () => {
@@ -317,7 +321,7 @@ describe('sendHeldFirstMessage', () => {
       stubToReferences,
     );
 
-    expect(result).toEqual({ sent: false, errorDetail: undefined });
+    expect(result).toEqual({ sent: false, errorDetail: undefined, deliveryUnknown: true });
   });
 
   it('resolves { sent: false } instead of throwing on a non-serializable held message', async () => {

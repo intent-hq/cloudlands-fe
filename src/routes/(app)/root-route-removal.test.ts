@@ -18,7 +18,7 @@ describe('root route removal', () => {
     expect(uiTargetsSource).not.toContain("id: 'home'");
     expect(
       existsSync(
-        resolve(process.cwd(), 'src/lib/components/workspace/CompactWorkspaceInitializer.svelte'),
+        resolve(process.cwd(), 'src/lib/components/workspace/workspace creation shell.svelte'),
       ),
     ).toBe(false);
     expect(layoutSource).not.toContain('workspace_home_');

@@ -7,14 +7,14 @@ import { store as appStore } from '$store/renderer/store';
 import {
   closePanel,
   setHoveredItem,
-  setOnboardingActive,
+  setWorkspaceCreationActive,
   togglePanel,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import SidebarNavHarness from './__tests__/mocks/SidebarNavHarness.svelte';
 
 describe('SidebarNav unified Spaces control', () => {
   function resetNavState() {
-    appStore.dispatch(setOnboardingActive(false));
+    appStore.dispatch(setWorkspaceCreationActive(false));
     appStore.dispatch(closePanel());
     appStore.dispatch(setHoveredItem(null));
   }

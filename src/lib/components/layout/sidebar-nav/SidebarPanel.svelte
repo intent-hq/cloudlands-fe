@@ -16,7 +16,7 @@
     selectPanelWidth,
     selectCombinedPanelSplit,
     selectIsChiefCollapsed,
-    selectOnboardingActive,
+    selectWorkspaceCreationActive,
     selectAllSpacesViewMode,
     selectShowArchivedWorkspaces,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
@@ -40,7 +40,7 @@
   const panelWidth$ = selectPanelWidth();
   const combinedPanelSplit$ = selectCombinedPanelSplit();
   const isChiefCollapsed$ = selectIsChiefCollapsed();
-  const onboardingActive$ = selectOnboardingActive();
+  const workspaceCreationActive$ = selectWorkspaceCreationActive();
   const allSpacesViewMode$ = selectAllSpacesViewMode();
   const showArchivedWorkspaces$ = selectShowArchivedWorkspaces();
 
@@ -59,7 +59,7 @@
   // mounted (hidden, width 0) when closed so its heavy children are not torn
   // down and rebuilt on every toggle. The width animates instead of the panel
   // mounting/unmounting.
-  const isOpen = $derived(Boolean($panelItem$) && !$onboardingActive$);
+  const isOpen = $derived(Boolean($panelItem$) && !$workspaceCreationActive$);
 
   // Last opened item, preserved while the panel is hidden so its content stays
   // mounted. Content reads `displayedPanelItem`, which falls back to it while

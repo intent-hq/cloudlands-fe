@@ -1,6 +1,6 @@
 /**
  * Shared image `File` → `ContextItem` conversion for composer surfaces
- * (SimpleRichInput, CompactWorkspaceInitializer). Reads each image as a
+ * (SimpleRichInput, workspace creation shell). Reads each image as a
  * base64 data URL, enforces the caller's size cap up front, and surfaces
  * the standard toasts (added / failed / too-large) from the chat message
  * set. Non-image files are the caller's responsibility — pass only

@@ -1110,7 +1110,7 @@ export interface AgentMetadata {
   isBackground?: boolean;
   appliedRules?: string | null;
   workspacePath?: string; // Path to the workspace
-  source?: 'workspace-initializer' | 'contextual-menu' | 'chat-panel' | 'api' | string; // Source of agent creation
+  source?: 'workspace-creation' | 'contextual-menu' | 'chat-panel' | 'api' | string; // Source of agent creation
   agentType?: string; // Type of agent (e.g., "investigate", "implement", "verify")
   specialist?: string; // Specialist type (e.g., "spec-writer", "implementor", "verifier")
   isInitialAgent?: boolean; // Whether this is the initial agent for a workspace

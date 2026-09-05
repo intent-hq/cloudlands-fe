@@ -27,11 +27,9 @@ export const SCENARIO_FAMILIES = [
   'recovery',
 ] as const;
 
-export type ScenarioFamily = (typeof SCENARIO_FAMILIES)[number];
+type ScenarioFamily = (typeof SCENARIO_FAMILIES)[number];
 
-export const SANDBOX_ACTIONS = ['advance', 'reject', 'reconnect', 'lose-ack'] as const;
-
-export type SandboxAction = (typeof SANDBOX_ACTIONS)[number];
+type SandboxAction = 'advance' | 'reject' | 'reconnect' | 'lose-ack';
 
 export interface ScenarioFixtures {
   draft: WorkspaceDraft;

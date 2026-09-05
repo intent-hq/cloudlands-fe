@@ -121,7 +121,7 @@ describe('tabStateReducer', () => {
     expect(tabStateReducer(openedState, openWorkspaceTab('ws-1'))).toBe(openedState);
   });
 
-  it('never adds the onboarding route sentinel to workspace stacks', () => {
+  it('never adds the new-workspace route sentinel to workspace stacks', () => {
     expect(tabStateReducer(initialState, openWorkspaceTab('new'))).toBe(initialState);
   });
 
@@ -205,7 +205,7 @@ describe('tabStateReducer', () => {
     });
   });
 
-  it('restoreWorkspaceTab is a no-op for already-open tabs and the onboarding sentinel', () => {
+  it('restoreWorkspaceTab is a no-op for already-open tabs and the new-workspace sentinel', () => {
     const stateWithTabs = makeState({
       openTabs: { 'ws-1': true, 'ws-2': true },
       currentTabId: 'ws-1',
@@ -397,7 +397,7 @@ describe('tabStateReducer', () => {
       expect(result.workspaceStacks).toEqual([['ws-1'], ['ws-2']]);
     });
 
-    it('prunes the onboarding route sentinel from restored tab state', () => {
+    it('prunes the new-workspace route sentinel from restored tab state', () => {
       const persisted: PersistedWorkspaceTabsState = {
         openTabs: ['new', 'ws-1'],
         currentTabId: 'new',

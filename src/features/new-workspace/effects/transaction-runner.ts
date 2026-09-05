@@ -6,11 +6,11 @@ import type { ControllerEvent, ControllerState } from '../controller';
 import { adoptPromotedWorkspace, type WorkspaceAdoption } from './adoption';
 import { newWorkspaceEffectSaga, type NewWorkspaceSagaDependencies } from './new-workspace-saga';
 
-export interface DraftTransactionClock {
+interface DraftTransactionClock {
   saveDebounceMs?: number;
 }
 
-export interface DraftTransactionLog {
+interface DraftTransactionLog {
   error(message: string, error: unknown): void;
 }
 

@@ -1288,7 +1288,7 @@ export interface GitClient {
   getBranches(repoPath: string, includeRemote: boolean): Promise<GitBranchesResult | null>;
   /**
    * Path-based branch status (`git.branchStatus`, §5.6). Used by the
-   * workspace-initializer `BranchSelector` to surface ahead/behind +
+   * workspace-creation `BranchSelector` to surface ahead/behind +
    * uncommitted-changes indicators against an arbitrary repo path BEFORE a
    * workspace exists. Errors fold to `null` so callers can surface a friendly
    * fallback without crashing on `result.success` against undefined.
@@ -2092,7 +2092,7 @@ export interface IntegrationsClient {
    * Remote branch names for a GitHub repo (`github.branches.list`, §5.27),
    * with the default branch from `github.repos.get` (best-effort). Unlike the
    * issue reads this THROWS on transport/daemon errors (e.g. "GitHub is not
-   * configured.") so the workspace-initializer BranchSelector can render an
+   * configured.") so the workspace-creation BranchSelector can render an
    * explicit error/auth state — never a fabricated branch list. An optional
    * `prefix` narrows the listing server-side (GitHub's `refs/heads/{prefix}`
    * matching-refs semantics) so branches beyond the first page are findable.

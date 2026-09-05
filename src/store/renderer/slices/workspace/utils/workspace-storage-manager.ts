@@ -451,6 +451,3 @@ export class WorkspaceStorageManager {
     logger.debug('WorkspaceStorageManager cleaned up');
   }
 }
-
-// Export singleton instance
-export const workspaceStorageManager = new WorkspaceStorageManager();

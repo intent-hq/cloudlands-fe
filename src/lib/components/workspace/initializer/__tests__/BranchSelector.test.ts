@@ -46,7 +46,7 @@ vi.mock('$store/renderer/store', async () => {
     // Mirror the real reducer: persisting a branch updates the saved map
     // (this is exactly the clobbering the reconciliation fix guards against).
     dispatch: (action: { type?: string; payload?: [string, string] }) => {
-      if (action?.type === 'workspaceInitializer/setBranchForRepo' && action.payload) {
+      if (action?.type === 'workspaceCreationSettings/setBranchForRepo' && action.payload) {
         const [repoPath, branch] = action.payload;
         savedBranchByRepo[repoPath] = branch;
       }
@@ -55,14 +55,14 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock(
-  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-selectors',
   async () => {
     const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
     const store = createAppStoreMock({ state: {} });
     return {
       // Return the shared mutable map so dispatched saves are visible to the
       // component's `$branchByRepo$` reads without a store re-emit.
-      selectWorkspaceInitializerBranchByRepo: store.createSelector(() => savedBranchByRepo),
+      selectWorkspaceCreationBranchByRepo: store.createSelector(() => savedBranchByRepo),
     };
   },
 );
@@ -75,12 +75,15 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', async () => {
   };
 });
 
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slice', () => ({
-  setWorkspaceInitializerBranchForRepo: (repoPath: string, branch: string) => ({
-    type: 'workspaceInitializer/setBranchForRepo',
-    payload: [repoPath, branch],
+vi.mock(
+  '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-slice',
+  () => ({
+    setWorkspaceCreationBranchForRepo: (repoPath: string, branch: string) => ({
+      type: 'workspaceCreationSettings/setBranchForRepo',
+      payload: [repoPath, branch],
+    }),
   }),
-}));
+);
 
 // Debug toggles (branch caching, form persistence, simulated delays) default
 // off; tests opt in via `debugFlags`.

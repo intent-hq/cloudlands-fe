@@ -32,9 +32,8 @@
     onAcceptRemote?: () => void;
     onKeepLocal?: () => void;
     onAddFiles?: () => void;
-    onChooseLocal?: () => void;
-    onChooseGitHub?: () => void;
     onChooseNewFolder?: (name: string) => void;
+    onSourceSelected?: (source: DraftInput['source']) => void;
     onRecheckCapabilities?: () => void;
     onProviderSelected?: (providerId: string) => void;
   }
@@ -49,9 +48,8 @@
     onAcceptRemote,
     onKeepLocal,
     onAddFiles,
-    onChooseLocal,
-    onChooseGitHub,
     onChooseNewFolder,
+    onSourceSelected,
     onRecheckCapabilities,
     onProviderSelected,
   }: Props = $props();
@@ -166,9 +164,8 @@
         source={controllerState.input.source}
         presentation={presentation.source}
         disabled={!editorEnabled}
-        {onChooseLocal}
-        {onChooseGitHub}
         {onChooseNewFolder}
+        {onSourceSelected}
       />
       <CapabilityStrip
         capabilities={controllerState.capabilities}
@@ -308,7 +305,7 @@
           <div class="flex flex-wrap gap-2">
             <Button size="sm" variant="ghost" disabled={!editorEnabled} onclick={onAddFiles}>
               <Fa icon={faPaperclip} />
-              {m.workspace_compactInitializer_addFiles_tooltip()}
+              {m.workspaceCreation_addFiles_tooltip()}
             </Button>
             <Button
               size="sm"

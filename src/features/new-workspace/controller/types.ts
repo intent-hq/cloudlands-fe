@@ -55,7 +55,7 @@ export interface ControllerData {
 export interface BootState extends ControllerData {
   phase: 'boot';
 }
-export interface RestoringState extends ControllerData {
+interface RestoringState extends ControllerData {
   phase: 'restoring';
 }
 export interface PristineState extends ControllerData {
@@ -87,7 +87,7 @@ export interface SendingState extends ControllerData {
   workspaceId: string;
   deliveryStage: 'needs-reconcile' | 'reconciling' | 'ready' | 'issued' | 'unknown';
 }
-export interface LiveState extends ControllerData {
+interface LiveState extends ControllerData {
   phase: 'live';
   workspaceId: string;
 }
@@ -111,12 +111,12 @@ export interface FailedState extends ControllerData {
   error: string;
   retryState: RecoverableState | null;
 }
-export interface OfflineState extends ControllerData {
+interface OfflineState extends ControllerData {
   phase: 'offline';
   unsavedInput: DraftInput;
   resumePhase: Exclude<ControllerPhase, 'offline' | 'conflict' | 'failed'>;
 }
-export interface ConflictState extends ControllerData {
+interface ConflictState extends ControllerData {
   phase: 'conflict';
   remote: WorkspaceDraft;
 }
@@ -223,7 +223,7 @@ export type ControllerEvent =
   | { type: 'conflict.acceptRemote' }
   | { type: 'conflict.keepLocal' };
 
-export type TransitionDisposition = 'handled' | 'ignored';
+type TransitionDisposition = 'handled' | 'ignored';
 export interface ControllerTransition {
   state: ControllerState;
   disposition: TransitionDisposition;
@@ -273,7 +273,7 @@ export type ControllerEffect =
       input: DraftInput;
     };
 
-export const EMPTY_DRAFT_INPUT: DraftInput = {
+const EMPTY_DRAFT_INPUT: DraftInput = {
   intentText: '',
   source: null,
   contextLinks: [],
@@ -281,7 +281,7 @@ export const EMPTY_DRAFT_INPUT: DraftInput = {
   config: {},
 };
 
-export const UNKNOWN_CAPABILITIES: Record<Capability, CapabilityStatus> = {
+const UNKNOWN_CAPABILITIES: Record<Capability, CapabilityStatus> = {
   provider: 'unknown',
   git: 'unknown',
   node: 'unknown',

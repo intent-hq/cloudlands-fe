@@ -108,14 +108,11 @@ const readSource = (relativePath: string): string =>
 
 describe('global focus rules (composite repo input regression)', () => {
   const appCss = readSource('../../../../app.css');
-  const gitHubRepoTabSource = readSource(
-    '../../../../features/onboarding/messages/GitHubRepoTab.svelte',
-  );
 
   // Under Tailwind v4, unlayered author CSS beats every layered utility, which
   // silently defeated `noFocusStyle` (`focus-visible:outline-none`) everywhere.
   // The global keyboard-focus fallback must live in `@layer base` so utilities
-  // can override it, and composite wrappers must carry their own indicator.
+  // can override it.
   it('keeps the global focus-visible fallback inside @layer base', () => {
     const layerBase = /@layer base \{[\s\S]*?^\}/m.exec(appCss)?.[0] ?? '';
     expect(layerBase).toContain(':focus:not(:focus-visible)');
@@ -123,9 +120,5 @@ describe('global focus rules (composite repo input regression)', () => {
     const outsideLayer = appCss.replace(layerBase, '');
     expect(outsideLayer).not.toMatch(/^:focus-visible\s*\{/m);
     expect(outsideLayer).not.toMatch(/^:focus:not\(:focus-visible\)/m);
-  });
-
-  it('gives the onboarding GitHub repo wrapper a focus-within indicator', () => {
-    expect(gitHubRepoTabSource).toContain('focus-within:border-ring');
   });
 });

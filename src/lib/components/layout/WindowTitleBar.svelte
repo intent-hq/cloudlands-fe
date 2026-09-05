@@ -46,7 +46,7 @@
   import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
   import SidebarNav from './sidebar-nav/SidebarNav.svelte';
   import {
-    selectOnboardingActive,
+    selectWorkspaceCreationActive,
     selectPanelItem,
     selectPanelWidth,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
@@ -65,7 +65,7 @@
   );
   const panelItem$ = selectPanelItem();
   const panelWidth$ = selectPanelWidth();
-  const onboardingActive$ = selectOnboardingActive();
+  const workspaceCreationActive$ = selectWorkspaceCreationActive();
 
   // Where the workspace controls naturally start (left edge, titlebar coords).
   // Measured from the fixed controls (SidebarNav) so the margin below can align
@@ -329,7 +329,7 @@
           activeWorkspaceId={routedWorkspaceId}
           horizontalPositionTrackingKey={panelOffset}
         />
-        {#if !$onboardingActive$}
+        {#if !$workspaceCreationActive$}
           <WorkspaceRepoLauncher />
         {/if}
       </div>

@@ -21,7 +21,7 @@ describe('agentAvailabilityReducer status retention during re-checks', () => {
     expect(failed.providerStatusMap.antigravity).toEqual({ available: true, authenticated: true });
     expect(failed.providerLoadingMap.antigravity).toBe(false);
   });
-  // Regression guard for sticky onboarding tiers: ordering in AgentGrid is
+  // Regression guard for sticky availability tiers: provider ordering is
   // derived from the last-known providerStatusMap, so re-check actions must
   // not clear it — only checkSingleProviderSuccess may replace an entry.
   const checkedState: AgentAvailabilityState = {

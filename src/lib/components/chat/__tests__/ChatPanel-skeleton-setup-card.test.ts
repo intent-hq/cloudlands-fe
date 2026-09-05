@@ -223,7 +223,7 @@ vi.mock('../ModelChangeNotice.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 // Marker mock: the real card's presence/absence is what this suite asserts.
-vi.mock('$features/onboarding/messages/WorkspaceSetupCard.svelte', async () => ({
+vi.mock('$lib/components/workspace/creation/WorkspaceSetupCard.svelte', async () => ({
   default: (await import('./mocks/MockWorkspaceSetupCard.svelte')).default,
 }));
 

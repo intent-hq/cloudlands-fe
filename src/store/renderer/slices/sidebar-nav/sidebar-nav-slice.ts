@@ -37,7 +37,7 @@ export const initialState: SidebarNavState = {
   panelItem: null,
   panelWidth: 288,
   combinedPanelSplit: 0.45,
-  onboardingActive: false,
+  workspaceCreationActive: false,
   draftPrompt: '',
   allSpacesViewMode: 'recent',
   showArchivedWorkspaces: false,
@@ -82,9 +82,9 @@ export const setCombinedPanelSplit = createAction<[split: number]>(
   'sidebarNav/setCombinedPanelSplit',
 );
 
-// Onboarding
-export const setOnboardingActive = createAction<[active: boolean]>(
-  'sidebarNav/setOnboardingActive',
+// Workspace creation
+export const setWorkspaceCreationActive = createAction<[active: boolean]>(
+  'sidebarNav/setWorkspaceCreationActive',
 );
 
 // View mode
@@ -207,9 +207,9 @@ sidebarNavReducer.with(setCombinedPanelSplit, (state, { payload: [split] }) => {
   if (clamped === state.combinedPanelSplit) return state;
   return { ...state, combinedPanelSplit: clamped };
 });
-sidebarNavReducer.with(setOnboardingActive, (state, { payload: [active] }) => ({
+sidebarNavReducer.with(setWorkspaceCreationActive, (state, { payload: [active] }) => ({
   ...state,
-  onboardingActive: active,
+  workspaceCreationActive: active,
 }));
 sidebarNavReducer.with(setAllSpacesViewMode, (state, { payload: [mode] }) => ({
   ...state,
@@ -290,7 +290,7 @@ sidebarNavReducer.with(closePanel, (state) => ({
   panelItem: null,
 }));
 sidebarNavReducer.with(togglePanel, (state, { payload: [item] }) => {
-  if (state.onboardingActive) return state;
+  if (state.workspaceCreationActive) return state;
   const isSamePanel =
     state.panelItem === item ||
     (state.panelItem !== null &&

@@ -83,13 +83,6 @@ export const COMMAND_PALETTE_COMMANDS = [
     icon: faGlobe,
   },
   {
-    id: 'show-onboarding',
-    get label() {
-      return m.lib_commandPalette_showOnboarding_command();
-    },
-    icon: faPlay,
-  },
-  {
     id: 'enhance-prompt',
     get label() {
       return m.chat_richInput_enhancePrompt_label();

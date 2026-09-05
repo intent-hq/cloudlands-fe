@@ -46,6 +46,7 @@ describe('static component catalog', () => {
     expect(new Set(groupedSlugs).size).toBe(groupedSlugs.length);
     expect(groups.find(({ id }) => id === 'products')?.entries.map(({ slug }) => slug)).toEqual([
       'chat-polish',
+      'new-workspace',
       'proposal-card',
     ]);
     expect(

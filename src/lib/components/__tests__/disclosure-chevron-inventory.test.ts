@@ -45,7 +45,7 @@ const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf
 describe('disclosure chevron inventory', () => {
   it('keeps every audited source on the rendered left-closed and down-open contract', () => {
     expect(rotatedDisclosureFiles).toHaveLength(15);
-    expect(swappedDisclosureFiles).toHaveLength(18);
+    expect(swappedDisclosureFiles).toHaveLength(17);
 
     for (const path of rotatedDisclosureFiles) {
       const contents = source(path);

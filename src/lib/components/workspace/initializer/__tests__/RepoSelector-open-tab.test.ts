@@ -70,20 +70,26 @@ vi.mock('$store/renderer/slices/github-repo-search/github-repo-search-selectors'
   selectGithubRepoSearchResults: mocks.selector(() => []),
 }));
 
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerDefaultParentPath: mocks.selector(() => ''),
-  selectWorkspaceInitializerRecentRepos: mocks.selector(() => mocks.state.recentRepos),
-  selectWorkspaceInitializerRemoteSetups: mocks.selector(() => []),
-}));
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slice', () => ({
-  setWorkspaceInitializerDefaultParentPath: (path: string) => ({
-    type: 'wi/parent',
-    payload: path,
+vi.mock(
+  '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-selectors',
+  () => ({
+    selectWorkspaceCreationDefaultParentPath: mocks.selector(() => ''),
+    selectWorkspaceCreationRecentRepos: mocks.selector(() => mocks.state.recentRepos),
+    selectWorkspaceCreationRemoteSetups: mocks.selector(() => []),
   }),
-  setWorkspaceInitializerLastSelectedRepo: (repo: unknown) => ({ type: 'wi/last', payload: repo }),
-  setWorkspaceInitializerRecentRepos: (repos: unknown) => ({ type: 'wi/recent', payload: repos }),
-  setWorkspaceInitializerRemoteSetups: (s: unknown) => ({ type: 'wi/remote', payload: s }),
-}));
+);
+vi.mock(
+  '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-slice',
+  () => ({
+    setWorkspaceCreationDefaultParentPath: (path: string) => ({
+      type: 'wi/parent',
+      payload: path,
+    }),
+    setWorkspaceCreationLastSelectedRepo: (repo: unknown) => ({ type: 'wc/last', payload: repo }),
+    setWorkspaceCreationRecentRepos: (repos: unknown) => ({ type: 'wc/recent', payload: repos }),
+    setWorkspaceCreationRemoteSetups: (s: unknown) => ({ type: 'wc/remote', payload: s }),
+  }),
+);
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   replaceWorkspaceList: (workspaces: unknown) => ({
     type: 'workspace/replace',
@@ -112,7 +118,7 @@ vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../../ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa, Fa: MockFa };
 });
-vi.mock('$features/onboarding/messages/DirectoryPickerModal.svelte', async () => ({
+vi.mock('$lib/components/workspace/creation/DirectoryPickerModal.svelte', async () => ({
   default: (await import('./mocks/MockComponent.svelte')).default,
 }));
 vi.mock('$lib/components/workspace/initializer/AddRemoteSetupModal.svelte', async () => ({

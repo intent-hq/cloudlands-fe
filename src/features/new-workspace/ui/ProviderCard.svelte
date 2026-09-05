@@ -1,0 +1,373 @@
+<script lang="ts">
+  import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
+  /**
+   * ProviderCard
+   *
+   * A single provider card for the workspace creation provider grid. Renders
+   * brand-color top area, provider icon, connection status, and install/login
+   * state while keeping per-provider rendering isolated.
+   */
+  import { slide } from 'svelte/transition';
+  import {
+    faArrowUpRightFromSquare,
+    faArrowsRotate,
+    faPlug,
+    faTriangleExclamation,
+  } from '@fortawesome/free-solid-svg-icons';
+  import Fa from 'svelte-fa';
+  import { cn } from '$lib/utils';
+  import ProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
+  import { Tooltip } from '$lib/components/ui/tooltip';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
+  import { shell } from '$lib/electron-bridge';
+  import { m } from '$shared/paraglide/messages.js';
+  import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
+
+  import { selectProviderLoadingMap } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+  import { checkSingleProviderRequested } from '$store/renderer/slices/agent-availability/agent-availability-slice';
+  import { store as appStore } from '$store/renderer/store';
+
+  const providerLoadingMap$ = selectProviderLoadingMap();
+
+  export interface ProviderCardData {
+    id: string;
+    name: string;
+    available: boolean;
+    authenticated: boolean | undefined;
+    statusLoading: boolean;
+    authDetails: string | undefined;
+    docsUrl: string;
+    installCommand: string;
+    /** Catalog-provided login command (PROTOCOL §5.38 loginCommandHint);
+     *  rendered as copyable guidance when the provider needs login. */
+    loginCommandHint?: string;
+    hasNpxFallback: boolean;
+    /** Status warning from the availability check (e.g. npx missing for claude-code). */
+    warning?: string;
+  }
+
+  export interface ProviderBrandColors {
+    color1: string;
+    color2: string;
+    isLight?: boolean;
+  }
+
+  import type { NpxStatus } from '$shared/types/provider-availability';
+
+  interface Props {
+    provider: ProviderCardData;
+    brand: ProviderBrandColors;
+    /** Whether this card is the currently selected workspaceCreation provider.
+     *  Only meaningful when the card is ready (installed + authenticated).
+     *  Renders a full-card-width "SELECTED" banner across the top of the card. */
+    selected?: boolean;
+    /** npx availability status for npx-fallback hint */
+    npxStatus: NpxStatus | null | undefined;
+    /** Called when a ready provider is selected */
+    onSelect: (providerId: string) => void;
+  }
+
+  let { provider, brand, selected = false, npxStatus, onSelect }: Props = $props();
+
+  // Explicit-refresh feedback: the provider grid suppresses `statusLoading` once a
+  // status is cached (background rechecks stay silent), so a user-initiated
+  // refresh needs its own flag to surface "Checking…" until its probe settles.
+  let userRefreshing = $state(false);
+  let wasRefreshLoading = false;
+  $effect(() => {
+    const loading = $providerLoadingMap$[provider.id] ?? false;
+    if (wasRefreshLoading && !loading) userRefreshing = false;
+    wasRefreshLoading = loading;
+  });
+  const checking = $derived(provider.statusLoading || userRefreshing);
+
+  const installed = $derived(provider.available);
+  const needsInstall = $derived(!provider.available && !provider.statusLoading);
+  const needsLogin = $derived(
+    provider.available && !provider.statusLoading && provider.authenticated === false,
+  );
+  const authUnknown = $derived(
+    provider.id === 'antigravity' &&
+      installed &&
+      provider.authenticated === undefined &&
+      !provider.statusLoading,
+  );
+  const ready = $derived(
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous authentication predicate, not a domain-data request
+    installed && isProviderAuthenticationReady(provider.id, provider.authenticated),
+  );
+  const needsAction = $derived(
+    !provider.statusLoading && (needsInstall || needsLogin || authUnknown),
+  );
+  const cardClickable = $derived(
+    ready || (!ready && !provider.statusLoading && !!provider.docsUrl),
+  );
+
+  // Show npx hint when: provider has npx fallback, binary not installed, npx missing or too old
+  const showNpxMissingHint = $derived(
+    provider.hasNpxFallback && needsInstall && npxStatus?.resolvedPath === null,
+  );
+  const showNpxOldHint = $derived(
+    provider.hasNpxFallback &&
+      needsInstall &&
+      npxStatus?.resolvedPath !== null &&
+      npxStatus?.versionOk === false,
+  );
+
+  function openExternalUrl(url: string) {
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- shell.open opens an external URL; it does not fetch domain data
+    void shell.open(url);
+  }
+
+  function openDocs(url: string, e: Event) {
+    e.stopPropagation();
+    openExternalUrl(url);
+  }
+
+  function handleCardClick() {
+    if (ready) {
+      onSelect(provider.id);
+    } else if (!provider.statusLoading && provider.docsUrl) {
+      openExternalUrl(provider.docsUrl);
+    }
+  }
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleCardClick();
+    }
+  }
+</script>
+
+<div class="overflow-hidden transition-all flex flex-col flex-1 min-w-66">
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_no_noninteractive_tabindex -->
+  <div
+    class={cn(
+      'group/card relative w-full aspect-[3/4] flex flex-col justify-between p-7 text-left rounded-xl overflow-hidden transition-colors duration-500 border',
+      cardClickable ? 'cursor-pointer border-transparent' : 'cursor-default border-border',
+      (ready || needsAction) && 'border-border',
+      installed && brand.isLight && 'text-slate-800',
+      installed && !brand.isLight && 'text-white',
+    )}
+    role={cardClickable ? 'button' : undefined}
+    tabindex={cardClickable ? 0 : undefined}
+    aria-pressed={ready ? selected : undefined}
+    onclick={handleCardClick}
+    onkeydown={handleKeydown}
+    aria-label={checking
+      ? m.workspaceCreation_providerCard_checking_ariaLabel({ name: provider.name })
+      : ready
+        ? selected
+          ? m.workspaceCreation_providerCard_selected_ariaLabel({ name: provider.name })
+          : m.workspaceCreation_providerCard_use_ariaLabel({ name: provider.name })
+        : authUnknown
+          ? m.providers_antigravity_authUnknown()
+          : needsLogin
+            ? m.workspaceCreation_providerCard_notLoggedIn_ariaLabel({ name: provider.name })
+            : m.workspaceCreation_providerCard_notInstalled_ariaLabel({ name: provider.name })}
+  >
+    <!-- Gradient overlay — always present, opacity animates on install -->
+    <div
+      class={cn(
+        'absolute inset-0 rounded-lg transition-all transform duration-700 ease-out',
+        !installed && 'opacity-0 translate-y-full',
+        needsLogin && 'translate-y-[calc(100%_-_13rem)]',
+        installed && 'opacity-100',
+      )}
+      style="background: linear-gradient(in oklab to bottom, {brand.color1} 10%, {brand.color2} 88%);"
+    ></div>
+
+    <!-- Icon in top-left -->
+    <span
+      class={cn(
+        'relative z-10 transition-all transform origin-center duration-300',
+        provider.statusLoading && 'animate-pulse',
+      )}
+    >
+      <ProviderIcon
+        providerId={provider.id}
+        class={cn(installed && needsLogin && 'text-foreground')}
+        size={32}
+      />
+    </span>
+
+    <!-- Full-card-width "SELECTED" banner across the top edge; the card's
+         overflow-hidden + rounded-xl clip its outer corners to match. Sits
+         above the gradient/brand overlay via z-20. -->
+    {#if ready && selected}
+      <div
+        data-testid="provider-card-selected-banner"
+        class="absolute top-0 inset-x-0 z-20 flex items-center justify-center bg-primary text-primary-foreground py-1 text-xs font-semibold uppercase tracking-widest"
+      >
+        {m.workspaceCreation_providerCard_selected_label()}
+      </div>
+    {/if}
+
+    <!-- Bottom area: name + status row -->
+    <div class="relative z-10 flex flex-col">
+      <div class="flex items-center gap-1.5 min-w-0 pb-1.5">
+        {#if provider.docsUrl}
+          <button
+            onclick={(e) => openDocs(provider.docsUrl, e)}
+            class="font-medium text-lg truncate min-w-0 cursor-pointer"
+          >
+            {provider.name}
+          </button>
+        {:else}
+          <div class="font-medium text-lg truncate min-w-0">
+            {provider.name}
+          </div>
+        {/if}
+        {#if provider.docsUrl}
+          <button
+            type="button"
+            class="group/button shrink-0 opacity-50 flex items-center gap-1.5 hover:opacity-100 transition-colors p-0.5 cursor-pointer"
+            onclick={(e) => openDocs(provider.docsUrl, e)}
+            title={m.workspaceCreation_providerCard_openDocs_tooltip({ name: provider.name })}
+            aria-label={m.workspaceCreation_providerCard_openDocs_tooltip({ name: provider.name })}
+          >
+            <Fa icon={faArrowUpRightFromSquare} size={11} />
+          </button>
+        {/if}
+      </div>
+
+      <div class="text-xs flex items-center gap-1.5">
+        {#if checking}
+          <span class="opacity-50">{m.workspaceCreation_providerCard_checking_label()}</span>
+        {:else if ready}
+          <div class="flex items-center whitespace-nowrap min-w-0">
+            <div class="flex items-center -ml-3.5" transition:slide={{ axis: 'x', duration: 200 }}>
+              <div class="h-px bg-gradient-to-r from-transparent to-current w-3 mt-px"></div>
+              <Fa icon={faPlug} class="mr-1.5 transform rotate-90" size={12} />
+            </div>
+            <div class="flex items-center whitespace-nowrap truncate font-medium">
+              {m.workspaceCreation_providerCard_connected_label()}
+              {#if provider.authDetails}
+                <Tooltip side="top" content={provider.authDetails} disableHoverableContent>
+                  <div
+                    class="text-xs opacity-70 font-normal truncate pl-1"
+                    transition:slide={{ axis: 'y', duration: 200 }}
+                  >
+                    {m.workspaceCreation_providerCard_connectedAs_label({
+                      details: provider.authDetails,
+                    })}
+                  </div>
+                </Tooltip>
+              {/if}
+            </div>
+          </div>
+        {:else if authUnknown}
+          <span>{m.providers_antigravity_authUnknown()}</span>
+        {:else if needsLogin}
+          <span
+            class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
+            >{m.workspaceCreation_providerCard_logIn_label()}</span
+          >
+        {:else}
+          <span
+            class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
+            >{m.workspaceCreation_providerCard_notInstalled_label()}</span
+          >
+        {/if}
+
+        <div class="flex items-center gap-1.5">
+          {#if needsInstall || needsLogin || authUnknown}
+            <button
+              type="button"
+              class="flex-none opacity-50 hover:opacity-100 transition-colors px-0.5 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              onclick={(e) => {
+                e.stopPropagation();
+                userRefreshing = true;
+                wasRefreshLoading = true;
+                appStore.dispatch(checkSingleProviderRequested(provider.id));
+              }}
+              disabled={$providerLoadingMap$[provider.id]}
+              title={m.workspaceCreation_providerCard_refreshStatus_tooltip({
+                name: provider.name,
+              })}
+              aria-label={m.workspaceCreation_providerCard_refreshStatus_tooltip({
+                name: provider.name,
+              })}
+            >
+              <span
+                class={cn('inline-block', {
+                  'animate-spin': $providerLoadingMap$[provider.id] || userRefreshing,
+                })}
+              >
+                <Fa icon={faArrowsRotate} size={14} />
+              </span>
+            </button>
+          {/if}
+        </div>
+      </div>
+
+      <!-- Actionable login guidance: the catalog's login command with
+           copy-to-clipboard (docs link above stays the secondary action).
+           Clicks must not bubble to the card (which opens docs). -->
+      {#if needsLogin && provider.loginCommandHint}
+        <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
+        <div
+          data-testid="provider-card-login-hint"
+          class="mt-2 text-xs"
+          onclick={(e) => e.stopPropagation()}
+        >
+          <span class="opacity-70">{m.workspaceCreation_providerCard_runToLogIn_label()}</span>
+          <div class="mt-1 flex items-center gap-1">
+            <code
+              class="min-w-0 flex-1 truncate rounded bg-background/60 px-1.5 py-0.5 font-mono text-foreground"
+              >{provider.loginCommandHint}</code
+            >
+            <CopyButton text={provider.loginCommandHint} class="hover:bg-background/60" />
+          </div>
+        </div>
+      {/if}
+
+      <!-- claude-code: a desktop-app sign-in does not carry over to the CLI
+           credential chain — the CLI login is still required. -->
+      {#if needsLogin && provider.id === 'claude-code'}
+        <p data-testid="provider-card-claude-desktop-note" class="mt-2 text-xs opacity-70">
+          {m.workspaceCreation_providerCard_claudeDesktopNote_label()}
+        </p>
+      {/if}
+
+      <!-- npx requirement hint for shim providers when binary not installed + npx missing/old -->
+      {#if showNpxMissingHint}
+        <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+          <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
+          <span>
+            {m.workspaceCreation_providerCard_requiresNpx_before()}
+            <button
+              type="button"
+              class="underline hover:no-underline"
+              onclick={() => openExternalUrl('https://nodejs.org')}
+              >{m.workspaceCreation_providerCard_installFromNodejs_label()}</button
+            >
+          </span>
+        </div>
+      {:else if showNpxOldHint}
+        <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+          <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
+          <span>{m.workspaceCreation_providerCard_npxTooOld_label()}</span>
+        </div>
+      {/if}
+
+      <!-- Provider status warning (e.g. claude-code installed but npx missing) -->
+      {#if provider.warning && !provider.statusLoading}
+        <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+          <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
+          <span>
+            {provider.warning}{#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
+              — <button
+                type="button"
+                class="underline hover:no-underline"
+                onclick={() => openExternalUrl('https://nodejs.org')}
+                ><!-- i18n-ignore (domain name) -->nodejs.org</button
+              >
+            {/if}
+          </span>
+        </div>
+      {/if}
+    </div>
+  </div>
+</div>

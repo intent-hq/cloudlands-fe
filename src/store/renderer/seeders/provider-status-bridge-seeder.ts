@@ -13,8 +13,8 @@
  * every CLI/ACP probe, output-marker parse, and cache; the FE never runs an
  * auth-check command itself. Uninstalled / unauthenticated states surface
  * honestly (`available:false` / `authenticated:false|undefined`) so
- * AuggieSetupGate, ProviderSelector, and AgentGrid render the truth and show
- * their static install/login guidance.
+ * provider selection surfaces render the truth and show their static
+ * install/login guidance.
  *
  * Mirrors the main-process semantics in
  * `features/providers/main/provider-availability.service.ts`, which the
@@ -45,9 +45,8 @@
  *                 hidden and unavailable, matching main's default-deny
  *                 gating.
  *
- * Handlers are registered at import time (host-bridge-seeder idiom) so the
- * AuggieSetupGate's onMount probes resolve against the daemon from the very
- * first render.
+ * Handlers are registered at import time (host-bridge-seeder idiom) so initial
+ * provider probes resolve against the daemon from the very first render.
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import {
@@ -315,7 +314,7 @@ function claudeCodeRunsViaOverride(discovery: ProviderDiscoverySnapshot | undefi
   return row?.installed === true && (row.resolvedPath ?? null) === null;
 }
 
-/** Single-provider recheck (AgentGrid card refresh) — same verdicts as
+/** Single-provider recheck (provider card refresh) — same verdicts as
  * above, defaulting to `force: true` so a login that just completed bypasses
  * the daemon's auth cache. Passive bulk loads pass `force: false` and ride
  * the daemon's cache instead. */
@@ -523,8 +522,8 @@ const AUGGIE_INSTALL_COMMAND = 'npm install -g @augmentcode/auggie';
 /**
  * `auggie:install` — the reference main handler ran an npm/binary install on
  * the local host; the daemon has no interactive install surface, so the
- * bridge returns the manual instructions the callers (ProviderSelector /
- * AgentGrid `applyInstructionResponse`) render, and the user re-probes with
+ * bridge returns the manual instructions the provider selectors render, and
+ * the user re-probes with
  * "Check again" (`providers:check-single`).
  */
 registerMockIpcHandler(AUGGIE_CHANNELS.INSTALL, async () => ({

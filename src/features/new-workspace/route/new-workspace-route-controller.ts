@@ -20,9 +20,7 @@ async function migrateSentinelDraft(): Promise<string | null> {
   if (!legacy) return null;
   const draft = await appClient.workspaceDrafts.create({
     intentText: legacy.text ?? '',
-    attachments: legacy.attachments?.length
-      ? deserializeDraftAttachments(legacy.attachments)
-      : [],
+    attachments: legacy.attachments?.length ? deserializeDraftAttachments(legacy.attachments) : [],
   });
   await appClient.drafts.clear(SENTINEL_WORKSPACE_ID, SENTINEL_AGENT_ID);
   return draft.id;

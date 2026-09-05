@@ -234,11 +234,11 @@ describe('directoryPickerSaga', () => {
     expect(dispatched).toEqual([
       {
         type: 'directoryPicker/pathNavigationFailed',
-        payload: ['/Users/me/ghost', m.onboarding_dirPicker_pathNotFound_error()],
+        payload: ['/Users/me/ghost', m.workspaceCreation_dirPicker_pathNotFound_error()],
       },
     ]);
     expect(state().loading).toBe(false);
-    expect(state().pathError).toBe(m.onboarding_dirPicker_pathNotFound_error());
+    expect(state().pathError).toBe(m.workspaceCreation_dirPicker_pathNotFound_error());
     expect(state().listing).toEqual(current);
     task.cancel();
     await task.toPromise();
@@ -411,7 +411,7 @@ describe('directoryPickerSaga', () => {
     expect(dispatched).toEqual([
       {
         type: 'directoryPicker/pathNavigationFailed',
-        payload: ['/missing', m.onboarding_dirPicker_pathNotFound_error()],
+        payload: ['/missing', m.workspaceCreation_dirPicker_pathNotFound_error()],
       },
     ]);
     task.cancel();

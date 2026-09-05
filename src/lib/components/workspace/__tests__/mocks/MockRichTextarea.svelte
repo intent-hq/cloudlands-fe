@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * Minimal RichTextarea stand-in for CompactWorkspaceInitializer tests.
+   * Minimal RichTextarea stand-in for workspace creation shell tests.
    * Exposes the imperative surface the initializer calls via bind:this.
    */
   let { value = $bindable(''), disabled = false }: { value?: string; disabled?: boolean } =

@@ -172,7 +172,6 @@ describe('no-component-async-data-fetch ESLint rule', () => {
   it('reports local command/helper wrapper bypasses around IPC work', async () => {
     const messages = await lintSvelte(`
       <script lang="ts">
-        import { chooseParentFolder } from '$features/onboarding/utils/choose-parent-folder';
         import { applyPrimitivePatch } from './patch-block-commands';
         import {
   resolveRtkAvailability,
@@ -180,7 +179,6 @@ describe('no-component-async-data-fetch ESLint rule', () => {
 } from './rtk-settings-commands';
 
         async function runHelpers(workspaceId, patch) {
-          await chooseParentFolder();
           await applyPrimitivePatch(workspaceId, patch);
           resolveRtkAvailability();
           persistRtkEnabled(true);
@@ -188,7 +186,7 @@ describe('no-component-async-data-fetch ESLint rule', () => {
       </script>
     `);
 
-    expect(messages).toHaveLength(4);
+    expect(messages).toHaveLength(3);
     expect(
       messages.every((message) => message.ruleId === 'intent/no-component-async-data-fetch'),
     ).toBe(true);

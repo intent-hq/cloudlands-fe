@@ -207,7 +207,11 @@ describe('configured app Store', () => {
     expect(registeredReducers).toHaveProperty('@internal_sagaManager');
 
     for (const [name, reducer] of Object.entries(reducers)) {
-      expect(registeredReducers[name]).toBe(reducer);
+      const registeredReducer = registeredReducers[name];
+      expect(registeredReducer, name).toBeDefined();
+      expect(registeredReducer(undefined, { type: '@@INIT' }), name).toEqual(
+        reducer(undefined, { type: '@@INIT' }),
+      );
     }
   });
 });

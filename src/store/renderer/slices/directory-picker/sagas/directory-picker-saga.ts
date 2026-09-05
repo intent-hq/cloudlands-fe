@@ -46,7 +46,7 @@ function* loadDirectory(requestedPath: string | null): SagaGenerator<void> {
     } else if (requestedPath !== null && current !== null) {
       // Navigation failure: keep the current listing and surface an inline
       // hint instead of silently jumping to home.
-      const hint = missing ? m.onboarding_dirPicker_pathNotFound_error() : message;
+      const hint = missing ? m.workspaceCreation_dirPicker_pathNotFound_error() : message;
       yield* put(pathNavigationFailed(requestedPath, hint));
     } else {
       yield* put(directoryListingFailed(requestedPath, message));
@@ -86,7 +86,7 @@ function* navigateToTypedPath(path: string): SagaGenerator<void> {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('host.listDirectory failed for typed path', { path, error: message });
     const hint = isMissingPathError(message)
-      ? m.onboarding_dirPicker_pathNotFound_error()
+      ? m.workspaceCreation_dirPicker_pathNotFound_error()
       : message;
     yield* put(pathNavigationFailed(path, hint));
   }

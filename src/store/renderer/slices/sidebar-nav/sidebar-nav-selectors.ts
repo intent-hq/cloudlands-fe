@@ -102,8 +102,8 @@ export const selectCombinedPanelSplit = store.createSelector(
   (state) => state.sidebarNav.combinedPanelSplit,
 );
 
-export const selectOnboardingActive = store.createSelector(
-  (state) => state.sidebarNav.onboardingActive,
+export const selectWorkspaceCreationActive = store.createSelector(
+  (state) => state.sidebarNav.workspaceCreationActive,
 );
 
 export const selectDraftPrompt = store.createSelector((state) => state.sidebarNav.draftPrompt);

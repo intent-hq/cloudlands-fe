@@ -130,9 +130,12 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-selectors',
+  () => ({
+    selectWorkspaceCreationSettingsHydrated: () => mocks.hydrated$,
+  }),
+);
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable('auggie'),

@@ -10,9 +10,8 @@
  * `features/file/main/file.ipc.ts` that already delegate to `host.checkGit` /
  * `host.directoryStatus` (cloudlands-fe PR #5) were never reached from the
  * renderer. The fallthrough returned `undefined`, which made
- * `CompactWorkspaceInitializer`'s git probe report `gitAvailable:false` and
- * every `RepoSelector` / `LocalRepoTab` / `ProjectPickerMessage` directory
- * status check resolve to `null`.
+ * workspace creation shell's git probe report `gitAvailable:false` and every
+ * repository or directory picker status check resolve to `null`.
  *
  * Per the integration principle BE = source of truth: each handler forwards
  * to the canonical daemon RPC (`host.checkGit` / `host.directoryStatus`) and
@@ -60,7 +59,7 @@ function asRecord(arg: unknown): Record<string, unknown> {
 /**
  * `system:check-git` → daemon `host.checkGit`.
  *
- * Call sites (e.g. `CompactWorkspaceInitializer.svelte`) read
+ * Call sites (e.g. `workspace creation shell.svelte`) read
  * `result.data.available` + `result.data.version`, so we forward the daemon
  * body verbatim under `data`. Only a daemon-reported probe answer folds to
  * `{ available:false }`; a transport failure (RPC timeout / daemon

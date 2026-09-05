@@ -15,7 +15,7 @@ import { batchRendererActions, type ReduxAction } from '$store/renderer/batch-ac
 
 type Workspace = NonNullable<Awaited<ReturnType<AppClient['workspaces']['get']>>>;
 type Agent = NonNullable<Awaited<ReturnType<AppClient['agents']['get']>>>;
-export interface WorkspaceAdoptionInput {
+interface WorkspaceAdoptionInput {
   workspace: Workspace;
   initialAgent: Agent | null;
   operationKey?: string;

@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * Minimal RepoAndBranchPicker stand-in for CompactWorkspaceInitializer
+   * Minimal RepoAndBranchPicker stand-in for workspace creation shell
    * tests. Exposes the repo/branch change callbacks on `window` so tests can
    * drive selection changes (e.g. a branch switch that must re-probe the
    * repo config, monorepo#835) without rendering the real picker, and

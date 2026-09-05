@@ -10,6 +10,9 @@
   } from '$lib/icons/phosphor-icons';
   import { Button } from '$lib/components/ui/button';
   import Input from '$lib/components/ui/input/input.svelte';
+  import RepoSelector, {
+    type RepoChangeDetail,
+  } from '$lib/components/workspace/initializer/RepoSelector.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import type { DraftSource } from '$shared/types/workspace-draft';
   import { getNewFolderNameError, type NewFolderNameError, type SourcePresentation } from './types';
@@ -18,18 +21,16 @@
     source: DraftSource | null;
     presentation?: SourcePresentation;
     disabled?: boolean;
-    onChooseLocal?: () => void;
-    onChooseGitHub?: () => void;
     onChooseNewFolder?: (name: string) => void;
+    onSourceSelected?: (source: DraftSource) => void;
   }
 
   let {
     source,
     presentation = {},
     disabled = false,
-    onChooseLocal,
-    onChooseGitHub,
     onChooseNewFolder,
+    onSourceSelected,
   }: Props = $props();
 
   // i18n-ignore (default filesystem-safe directory name)
@@ -63,7 +64,7 @@
       case 'non-git':
         return m.workspace_repoSelector_folderNotGitRepo_label();
       case 'new-folder':
-        return m.onboarding_dirPicker_newFolder_label();
+        return m.workspaceCreation_dirPicker_newFolder_label();
       case 'github-public':
         return m.newWorkspace_source_publicGithub_title();
       case 'github-private':
@@ -75,7 +76,7 @@
 
   const summary = $derived.by(() => {
     if (presentation.unresolvedLink) return presentation.unresolvedLink;
-    if (!source) return m.workspace_compactInitializer_selectRepoHint_label();
+    if (!source) return m.workspaceCreation_selectRepoHint_label();
     if (source.kind === 'local') return source.path;
     if (source.kind === 'newFolder') return `${source.parentPath}/${source.name}`;
     return `${source.owner}/${source.name}`;
@@ -86,20 +87,34 @@
       case 'required':
         return m.workspaceValidation_projectNameRequired_error();
       case 'path-separator':
-        return m.onboarding_projectPicker_pathSeparators_error();
+        return m.workspaceCreation_projectPicker_pathSeparators_error();
       case 'dot-name':
-        return m.onboarding_projectPicker_dotName_error();
+        return m.workspaceCreation_projectPicker_dotName_error();
       case 'null-character':
-        return m.onboarding_projectPicker_nullChars_error();
+        return m.workspaceCreation_projectPicker_nullChars_error();
       case 'invalid-character':
-        return m.onboarding_projectPicker_invalidChars_error();
+        return m.workspaceCreation_projectPicker_invalidChars_error();
       case 'too-long':
-        return m.onboarding_projectPicker_nameTooLong_error();
+        return m.workspaceCreation_projectPicker_nameTooLong_error();
     }
   }
 
   function chooseNewFolder(): void {
     if (!newFolderNameError) onChooseNewFolder?.(newFolderName.trim());
+  }
+
+  function selectRepo(event: CustomEvent<RepoChangeDetail>): void {
+    const selection = event.detail;
+    if (selection.type === 'github') {
+      const url = selection.githubUrl || selection.path;
+      const match = url.match(/github\.com[/:]([^/]+)\/([^/#]+?)(?:\.git)?$/);
+      if (!match) return;
+      onSourceSelected?.({ kind: 'github', url, owner: match[1], name: match[2] });
+      return;
+    }
+    if (selection.type === 'local' && selection.path) {
+      onSourceSelected?.({ kind: 'local', path: selection.path, isolation: 'worktree' });
+    }
   }
 </script>
 
@@ -162,13 +177,15 @@
   {/if}
 
   {#if sourceState === 'none' || sourceState === 'new-folder-invalid' || sourceState === 'unresolved-link' || sourceState === 'github-no-access'}
-    <div class="mt-4 flex flex-wrap gap-2 border-b border-border pb-4">
-      <Button size="sm" variant="outline" {disabled} onclick={onChooseLocal}>
-        {m.onboarding_projectPicker_localFolder_label()}
-      </Button>
-      <Button size="sm" variant="outline" {disabled} onclick={onChooseGitHub}>
-        {m.onboarding_projectPicker_githubRepo_label()}
-      </Button>
+    <div class="mt-4 border-b border-border pb-4">
+      <RepoSelector
+        value=""
+        onchange={selectRepo}
+        triggerClass="w-full justify-start"
+        emptyLabel={m.workspace_repoSelector_selectRepository_label()}
+        showEmptyIcon
+        showTriggerChevron
+      />
     </div>
     <div class="mt-4 rounded-lg border border-border bg-background p-3">
       <h3 class="text-sm font-semibold">{m.newWorkspace_source_newProject_title()}</h3>
@@ -179,8 +196,8 @@
         <Input
           value={newFolderName}
           oninput={(event) => (newFolderName = event.currentTarget.value)}
-          placeholder={m.onboarding_newProjectTab_projectName_placeholder()}
-          aria-label={m.onboarding_newProjectTab_projectName_placeholder()}
+          placeholder={m.workspaceCreation_newProjectTab_projectName_placeholder()}
+          aria-label={m.workspaceCreation_newProjectTab_projectName_placeholder()}
           aria-invalid={newFolderNameError ? 'true' : undefined}
           {disabled}
         />
@@ -190,7 +207,7 @@
           disabled={disabled || Boolean(newFolderNameError)}
           onclick={chooseNewFolder}
         >
-          {m.onboarding_newProjectTab_selectFolder_label()}
+          {m.workspaceCreation_newProjectTab_selectFolder_label()}
         </Button>
       </div>
     </div>

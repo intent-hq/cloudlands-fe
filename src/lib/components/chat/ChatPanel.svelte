@@ -355,7 +355,7 @@
     findPreviousUserMessage,
     isAutomatedChatMessage,
   } from '$lib/utils/previous-user-message';
-  import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
+  import WorkspaceSetupCard from '$lib/components/workspace/creation/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
   import { matchesShortcut } from '$lib/utils/shortcut-bindings';

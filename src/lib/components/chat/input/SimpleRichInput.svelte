@@ -1017,7 +1017,7 @@
       logger.warn('Dropped folder has no resolvable absolute path; skipping', {
         name: folder.name,
       });
-      toast.error(m.onboarding_promptStep_attachmentNoPath_error({ name: folder.name }));
+      toast.error(m.workspaceCreation_promptStep_attachmentNoPath_error({ name: folder.name }));
       return;
     }
     // Windows-aware basename fallback ('\' or '/' separators).

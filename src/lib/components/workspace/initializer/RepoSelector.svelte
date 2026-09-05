@@ -20,17 +20,17 @@
 
   import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
   import {
-    setWorkspaceInitializerDefaultParentPath,
-    setWorkspaceInitializerLastSelectedRepo,
-    setWorkspaceInitializerRecentRepos,
-    setWorkspaceInitializerRemoteSetups,
-  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+    setWorkspaceCreationDefaultParentPath,
+    setWorkspaceCreationLastSelectedRepo,
+    setWorkspaceCreationRecentRepos,
+    setWorkspaceCreationRemoteSetups,
+  } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-slice';
   import {
-    selectWorkspaceInitializerDefaultParentPath,
-    selectWorkspaceInitializerRecentRepos,
-    selectWorkspaceInitializerRemoteSetups,
-  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
-  import type { WorkspaceInitializerRemoteSetup } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+    selectWorkspaceCreationDefaultParentPath,
+    selectWorkspaceCreationRecentRepos,
+    selectWorkspaceCreationRemoteSetups,
+  } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-selectors';
+  import type { WorkspaceCreationRemoteSetup } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-types';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import {
     faFolder,
@@ -43,7 +43,7 @@
   import Fa from 'svelte-fa';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
-  import DirectoryPickerModal from '$features/onboarding/messages/DirectoryPickerModal.svelte';
+  import DirectoryPickerModal from '$lib/components/workspace/creation/DirectoryPickerModal.svelte';
   import { pickDirectory } from '$lib/directory-picker-service';
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
@@ -93,9 +93,9 @@
     );
   });
   const isolationLabel = $derived(isolationNoun(isolationMode));
-  const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
-  const workspaceInitializerRecentRepos$ = selectWorkspaceInitializerRecentRepos();
-  const workspaceInitializerRemoteSetups$ = selectWorkspaceInitializerRemoteSetups();
+  const defaultParentPath$ = selectWorkspaceCreationDefaultParentPath();
+  const workspaceCreationRecentRepos$ = selectWorkspaceCreationRecentRepos();
+  const workspaceCreationRemoteSetups$ = selectWorkspaceCreationRemoteSetups();
 
   // GitHub autocomplete sources for the "Pick a repo" tab: the user's own
   // repos (client-side filtered) plus a debounced global search.
@@ -117,7 +117,7 @@
     return `${cleanParent}${sep}${name}`;
   }
 
-  type RemoteSetup = WorkspaceInitializerRemoteSetup;
+  type RemoteSetup = WorkspaceCreationRemoteSetup;
 
   export interface RepoChangeDetail {
     path: string;
@@ -221,11 +221,11 @@
       name: string;
       owner?: string;
     }>
-  >($workspaceInitializerRecentRepos$);
+  >($workspaceCreationRecentRepos$);
 
   $effect(() => {
     if (isLoading) {
-      recentRepos = $workspaceInitializerRecentRepos$;
+      recentRepos = $workspaceCreationRecentRepos$;
     }
   });
 
@@ -260,17 +260,17 @@
   // REMOTE TAB STATE
   // ═══════════════════════════════════════════════════════════════════════════
   const remoteWorkspacesEnabled$ = selectIsFeatureEnabled('remote-workspaces');
-  let remoteSetups = $state<RemoteSetup[]>($workspaceInitializerRemoteSetups$);
+  let remoteSetups = $state<RemoteSetup[]>($workspaceCreationRemoteSetups$);
   let showAddRemoteModal = $state(false);
 
   $effect(() => {
-    remoteSetups = $workspaceInitializerRemoteSetups$;
+    remoteSetups = $workspaceCreationRemoteSetups$;
   });
 
   function saveRemoteSetups(setups = remoteSetups) {
     // Snapshot so no $state proxy enters the Redux store (src/store/renderer/AGENTS.md §2) —
     // a proxy in the persisted slice breaks settings.update's IPC structured clone.
-    appStore.dispatch(setWorkspaceInitializerRemoteSetups($state.snapshot(setups)));
+    appStore.dispatch(setWorkspaceCreationRemoteSetups($state.snapshot(setups)));
   }
 
   function handleSelectRemoteSetup(setup: RemoteSetup) {
@@ -330,12 +330,12 @@
 
   function saveLastSelectedRepo(detail: RepoChangeDetail) {
     if (debugConfig.get('enableFormPersistence')) {
-      appStore.dispatch(setWorkspaceInitializerLastSelectedRepo(detail));
+      appStore.dispatch(setWorkspaceCreationLastSelectedRepo(detail));
     }
   }
 
   function saveDefaultParentPath(path: string) {
-    appStore.dispatch(setWorkspaceInitializerDefaultParentPath(path));
+    appStore.dispatch(setWorkspaceCreationDefaultParentPath(path));
   }
 
   // Validate a project/folder name: reject path separators, traversal, null bytes, unsafe chars
@@ -395,7 +395,7 @@
   // ═══════════════════════════════════════════════════════════════════════════
   // GITHUB AUTOCOMPLETE ("Pick a repo" tab)
   // ═══════════════════════════════════════════════════════════════════════════
-  // Mirrors the onboarding GitHubRepoTab: the user's own repos filtered
+  // Mirrors the workspace creation GitHub picker: the user's own repos filtered
   // client-side by the typed text, followed by deduped global search results.
 
   /** Trimmed owner/repo text currently in the GitHub input. */
@@ -462,7 +462,7 @@
 
   /** User-initiated retry. The on-demand effect above skips loads while an
    *  error is present, so this explicit dispatch is what clears it and
-   *  re-fetches (mirrors GitHubRepoTab's "Try again"). */
+   *  re-fetches (mirrors the GitHub picker's "Try again"). */
   function retryGithubRepos() {
     appStore.dispatch(loadGithubRepos());
   }
@@ -720,7 +720,7 @@
       };
 
       // Persisted recents may predate the daemon-managed exclusions below.
-      for (const repo of $workspaceInitializerRecentRepos$) {
+      for (const repo of $workspaceCreationRecentRepos$) {
         if (isDaemonManagedRepoPath(repo.path) || workspaceOwnedCheckouts.has(repo.path)) continue;
         repoMap.set(entryKey(repo), repo);
       }
@@ -813,7 +813,7 @@
       if (debugConfig.get('enableFormPersistence')) {
         // Snapshot so no $state proxy enters the Redux store (src/store/renderer/AGENTS.md §2) —
         // a proxy in the persisted slice breaks settings.update's IPC structured clone.
-        appStore.dispatch(setWorkspaceInitializerRecentRepos($state.snapshot(recentRepos)));
+        appStore.dispatch(setWorkspaceCreationRecentRepos($state.snapshot(recentRepos)));
       }
     } catch (err) {
       const appError = handleError(err, { component: 'RepoSelector', action: 'loadRecentRepos' });

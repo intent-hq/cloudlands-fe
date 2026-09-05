@@ -44,7 +44,7 @@ interface PendingOperation {
   reject: (reason: unknown) => void;
 }
 
-export class MockTransactionDisconnectedError extends Error {
+class MockTransactionDisconnectedError extends Error {
   constructor() {
     super('Sandbox transaction is disconnected.');
     this.name = 'MockTransactionDisconnectedError';

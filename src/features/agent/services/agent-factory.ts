@@ -643,7 +643,7 @@ export class UnifiedAgentFactory {
    * Normalize configuration to ensure all required fields are present
    *
    * Note: All agent creation now goes through createAgent() method.
-   * Use appropriate source parameter: "workspace-initializer", "contextual-menu", etc.
+   * Use appropriate source parameter: "workspace-creation", "contextual-menu", etc.
    */
   private normalizeConfig(workspace: Workspace, config: UnifiedAgentConfig): NormalizedAgentConfig {
     // Normalize name: provide default if empty, derive from initialMessage if possible

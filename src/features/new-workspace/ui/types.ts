@@ -2,24 +2,21 @@ import type { NpxStatus } from '$shared/types/provider-availability';
 import type { SetupResult } from '$shared/types/workspace-draft';
 import type { Capability, ControllerState } from '../controller';
 
-export const COORDINATOR_STATES = [
-  'checking',
-  'connect-provider',
-  'login-required',
-  'test-failed',
-  'ready-idle',
-  'message-pending',
-  'live',
-  'daemon-offline',
-] as const;
-
-export type CoordinatorState = (typeof COORDINATOR_STATES)[number];
-export type SourceAccess = 'public' | 'private' | 'no-access';
-export type LocalSourceKind = 'git' | 'non-git';
+export type CoordinatorState =
+  | 'checking'
+  | 'connect-provider'
+  | 'login-required'
+  | 'test-failed'
+  | 'ready-idle'
+  | 'message-pending'
+  | 'live'
+  | 'daemon-offline';
+type SourceAccess = 'public' | 'private' | 'no-access';
+type LocalSourceKind = 'git' | 'non-git';
 export type NewFolderNameError =
   'required' | 'path-separator' | 'dot-name' | 'null-character' | 'invalid-character' | 'too-long';
 
-export interface ProviderCardPresentation {
+interface ProviderCardPresentation {
   id: string;
   name: string;
   available: boolean;
@@ -48,7 +45,7 @@ export interface SourcePresentation {
   localKind?: LocalSourceKind;
 }
 
-export interface ProgressPresentation {
+interface ProgressPresentation {
   clone?: { phase: string; percent?: number };
   setup?: SetupResult;
 }
