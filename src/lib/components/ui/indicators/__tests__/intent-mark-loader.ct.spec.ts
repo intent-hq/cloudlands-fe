@@ -34,6 +34,21 @@ test('keeps one root and five animations through every directed handoff', async 
       ),
     ).toBe(5);
     await expect(root).toHaveAttribute('data-motion-state', 'playing');
+    const loops = await root.evaluate((node) =>
+      node
+        .getAnimations({ subtree: true })
+        .filter((animation) => animation.effect?.getTiming().iterations === Infinity)
+        .map((animation) => ({
+          playState: animation.playState,
+          targetTag: (animation.effect as KeyframeEffect).target?.tagName,
+          willChange: ((animation.effect as KeyframeEffect).target as HTMLElement | null)?.style
+            .willChange,
+        })),
+    );
+    expect(loops).toHaveLength(5);
+    expect(loops.every(({ playState }) => playState === 'running')).toBe(true);
+    expect(loops.every(({ targetTag }) => targetTag === 'svg')).toBe(true);
+    expect(loops.every(({ willChange }) => willChange === 'transform, opacity')).toBe(true);
     expect(
       await root.evaluate(
         (node) =>
@@ -60,17 +75,24 @@ for (const theme of ['light', 'dark'] as const) {
         props: { theme, zoom, size: 128, playing: false },
       });
       const root = component.getByRole('status', { name: 'Loading' });
-      await expect(component).toHaveAttribute('data-theme', theme);
       await expect(root).toHaveAttribute('viewBox', '0 0 256 208');
+      await expect(component).toHaveAttribute('data-theme', theme);
+      await expect(root.locator('[data-mark-arm-box]')).toHaveCount(5);
+      await expect(root.locator('[data-mark-arm-box]').first()).toHaveAttribute(
+        'viewBox',
+        '0 0 256 208',
+      );
       await expect(root.locator('[data-mark-arm]')).toHaveCount(5);
       const box = await root.boundingBox();
       expect(box?.width).toBe(128 * zoom);
       expect(box?.height).toBe(128 * zoom);
       const colors = await root.evaluate((node) => ({
         color: getComputedStyle(node).color,
+        contain: getComputedStyle(node).contain,
         stroke: getComputedStyle(node.querySelector('[data-mark-arm]')!).stroke,
       }));
       expect(colors.stroke).toBe(colors.color);
+      expect(colors.contain).toBe('content');
     });
   }
 }
