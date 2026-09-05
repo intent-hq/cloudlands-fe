@@ -196,12 +196,7 @@ test('Mac sidebar activation preserves tab alignment, drag regions and narrow-wi
     ).toBe('no-drag');
   }
   await page.locator('[data-workspace-repo-launcher] button').click();
-  expect(
-    await page.evaluate(async () => {
-      const { store } = await import('/src/store/renderer/store.ts');
-      return store.state.sidebarNav.showCreateModal;
-    }),
-  ).toBe(true);
+  await expect(page).toHaveURL((url) => url.pathname === '/workspace/new');
 });
 
 test('mounts accepted control geometry and shortcut tooltips', async ({ page }, testInfo) => {

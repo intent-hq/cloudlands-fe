@@ -5,7 +5,9 @@
  * CT browser bundle.
  */
 
-export const goto = async (): Promise<void> => {};
+export const goto = async (url: string | URL): Promise<void> => {
+  window.history.pushState({}, '', url);
+};
 export const invalidate = async (): Promise<void> => {};
 export const invalidateAll = async (): Promise<void> => {};
 export const afterNavigate = (): void => {};
