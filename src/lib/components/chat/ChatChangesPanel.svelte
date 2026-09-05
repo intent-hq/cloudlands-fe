@@ -285,6 +285,10 @@
   import { selectAgentFileRefreshes } from '$store/renderer/slices/chat-changes/chat-changes-selectors';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { store as appStore } from '$store/renderer/store';
+  import { safeLocalStorage } from '$lib/utils/safe-storage';
+  import { buildDiffMapDocument } from '$features/diff-map/model/build-document';
+  import type { DiffMapFile, DiffMapGroup } from '$features/diff-map/model/types';
+  import DiffMap from '$features/diff-map/components/DiffMap.svelte';
 
   /**
    * Get the expand/collapse key for a change entry.
@@ -1284,6 +1288,51 @@
     mergedChanges = sorted;
   });
 
+  const DIFF_MAP_COLLAPSE_STORAGE_KEY = 'chat-changes-panel.diff-map-collapsed';
+  let diffMapCollapsed = $state(safeLocalStorage.getItem(DIFF_MAP_COLLAPSE_STORAGE_KEY) === 'true');
+  let activeDiffMapPath = $state<string | undefined>();
+  let hoveredDiffMapGroupPath = $state<string | undefined>();
+
+  function patchHeaders(change: LocalFileChange): string | undefined {
+    if (!change.chunks?.length) return undefined;
+    return change.chunks
+      .map(
+        (chunk) =>
+          `@@ -${chunk.oldStart},${chunk.oldLines} +${chunk.newStart},${chunk.newLines} @@`,
+      )
+      .join('\n');
+  }
+
+  let diffMapDocument = $derived.by(() => {
+    const normalizedChanges = mergedChanges.map((change) => ({
+      ...change,
+      filePath: getDisplayPath(change.filePath),
+    }));
+    const patches = new Map<string, string>();
+    for (const change of reactiveChanges) {
+      const patch = patchHeaders(change);
+      if (!patch) continue;
+      const path = getDisplayPath(change.filePath);
+      const current = patches.get(path);
+      patches.set(path, current ? `${current}\n${patch}` : patch);
+    }
+    const snapshotId = normalizedChanges
+      .map(
+        (change) =>
+          `${change.filePath}:${getChangeCategory(change)}:${change.additions}:${change.deletions}`,
+      )
+      .join('|');
+    return buildDiffMapDocument(normalizedChanges, {
+      source: { kind: 'working-tree', workspaceId: routeWorkspaceId, snapshotId },
+      patches,
+    });
+  });
+
+  function toggleDiffMap() {
+    diffMapCollapsed = !diffMapCollapsed;
+    safeLocalStorage.setItem(DIFF_MAP_COLLAPSE_STORAGE_KEY, String(diffMapCollapsed));
+  }
+
   // For aggregate views, we need to fetch git:diff to get correct content
   // The snippet-based content has wrong line numbers when aggregated
   let gitDiffChanges = $state<LocalFileChange[]>([]);
@@ -1959,6 +2008,29 @@
     });
   }
 
+  function findChangeForDiffMapPath(path: string): LocalFileChange | undefined {
+    return mergedChanges.find((change) => getDisplayPath(change.filePath) === path);
+  }
+
+  function handleDiffMapOpen(file: DiffMapFile) {
+    const change = findChangeForDiffMapPath(file.path);
+    if (!change) return;
+
+    if (groupByCommit && change.commitHash && !expandedCommits.has(change.commitHash)) {
+      expandedCommits = new Set([...expandedCommits, change.commitHash]);
+    }
+    const expandKey = getExpandKey(change);
+    if (!expandedFiles.has(expandKey)) {
+      expandedFiles = new Set([...expandedFiles, expandKey]);
+    }
+    activeDiffMapPath = file.path;
+    void tick().then(() => requestAnimationFrame(() => scrollFileHeaderIntoView(expandKey)));
+  }
+
+  function handleDiffMapHover(group: DiffMapGroup | null) {
+    hoveredDiffMapGroupPath = group?.path;
+  }
+
   function scheduleViewedCollapseScroll(expandKey: string) {
     const targetExpandKey = getViewedScrollTargetExpandKey(expandKey);
 
@@ -2045,6 +2117,52 @@
 
   // Reference to scroll container for preserving scroll position
   let scrollContainerRef: HTMLElement | null = $state(null);
+  let activePathAnimationFrame: number | undefined;
+
+  function updateActiveDiffMapPath() {
+    activePathAnimationFrame = undefined;
+    const container = scrollContainerRef;
+    const content = virtualizerContentRef;
+    if (!container || !content) return;
+
+    const headers = [...content.querySelectorAll<HTMLElement>('[data-change-map-path]')];
+    if (headers.length === 0) return;
+    const activationTop = container.getBoundingClientRect().top + 32;
+    let activeHeader = headers[0];
+    let closestPastTop = Number.NEGATIVE_INFINITY;
+    let closestFutureTop = Number.POSITIVE_INFINITY;
+
+    for (const header of headers) {
+      const card = header.closest<HTMLElement>('[data-change-card-key]');
+      const top = (card ?? header).getBoundingClientRect().top;
+      if (top <= activationTop && top > closestPastTop) {
+        closestPastTop = top;
+        activeHeader = header;
+      } else if (closestPastTop === Number.NEGATIVE_INFINITY && top < closestFutureTop) {
+        closestFutureTop = top;
+        activeHeader = header;
+      }
+    }
+
+    activeDiffMapPath = activeHeader.dataset.changeMapPath;
+  }
+
+  function scheduleActiveDiffMapPathUpdate() {
+    if (!showCategoryFilter || activePathAnimationFrame !== undefined) return;
+    activePathAnimationFrame = requestAnimationFrame(updateActiveDiffMapPath);
+  }
+
+  $effect(() => {
+    if (!showCategoryFilter || diffMapDocument.files.length === 0) return;
+    diffMapDocument.source.snapshotId;
+    groupByCommit;
+    expandedCommits;
+    void tick().then(scheduleActiveDiffMapPathUpdate);
+  });
+
+  onDestroy(() => {
+    if (activePathAnimationFrame !== undefined) cancelAnimationFrame(activePathAnimationFrame);
+  });
 
   // Wave 5a: Single pierre `Virtualizer` instance scoped to this panel's
   // scroll container. `VirtualizedFileDiff` (inside each `DiffViewer`)
@@ -2577,8 +2695,45 @@
     />
   {/if}
 
+  {#if showCategoryFilter && diffMapDocument.files.length > 0}
+    <section
+      class="flex shrink-0 flex-col overflow-hidden border-b border-border bg-background"
+      class:h-[40%]={!diffMapCollapsed}
+      class:min-h-[192px]={!diffMapCollapsed}
+      class:max-h-[360px]={!diffMapCollapsed}
+    >
+      <button
+        type="button"
+        class="flex h-8 shrink-0 items-center gap-2 px-4 text-xs font-medium text-subtle hover:text-foreground"
+        aria-expanded={!diffMapCollapsed}
+        aria-label={diffMapCollapsed
+          ? m.ui_vscodePanel_expand_ariaLabel()
+          : m.ui_vscodePanel_collapse_ariaLabel()}
+        onclick={toggleDiffMap}
+      >
+        <Fa icon={diffMapCollapsed ? faChevronLeft : faChevronDown} class="h-2.5! w-2.5!" />
+        <span>{m.workspace_sidebarChanges_rootChangedFiles_label()}</span>
+      </button>
+      {#if !diffMapCollapsed}
+        <div class="min-h-0 flex-1 overflow-hidden px-3 pb-3">
+          <DiffMap
+            document={diffMapDocument}
+            activePath={activeDiffMapPath}
+            filterable={false}
+            onOpen={handleDiffMapOpen}
+            onHoverGroup={handleDiffMapHover}
+          />
+        </div>
+      {/if}
+    </section>
+  {/if}
+
   <!-- Scroll container -->
-  <div class="h-full overflow-auto p-5 pt-0" bind:this={scrollContainerRef}>
+  <div
+    class="min-h-0 flex-1 overflow-auto p-5 pt-0"
+    bind:this={scrollContainerRef}
+    onscroll={scheduleActiveDiffMapPathUpdate}
+  >
     <!--
       Single content wrapper for the pierre Virtualizer's `resizeObserver`.
       All diff rows must live inside this wrapper so the virtualizer can
@@ -2937,11 +3092,15 @@
         ? 'ring-1 ring-yellow-400/60 bg-yellow-400/10'
         : ''} {allChangesSearchCurrentHeaderKey === expandKey
         ? 'ring-2 ring-blue-400/70 bg-blue-500/10'
+        : ''} {hoveredDiffMapGroupPath !== undefined &&
+      getDirectoryPath(displayPath) === hoveredDiffMapGroupPath
+        ? 'ring-2 ring-primary/60 bg-primary/10'
         : ''}"
       style="top: {stickyTop}; border-bottom: 1px solid {expandedFiles.has(expandKey)
         ? 'var(--border)'
         : 'transparent'}"
       data-change-header-key={expandKey}
+      data-change-map-path={displayPath}
       data-change-sticky-top={stickyTop}
       data-change-search-text={displayPath}
     >
