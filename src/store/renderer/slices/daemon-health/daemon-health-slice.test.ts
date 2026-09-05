@@ -751,6 +751,26 @@ describe('daemonHealthReducer', () => {
       ]);
     });
 
+    it('a repeated connected notification for the same connection is metadata, not a new lifecycle', () => {
+      const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
+      const polling = daemonHealthReducer(a, pollSystemStatus());
+      const repeat = daemonHealthReducer(
+        polling,
+        connectionStatusChanged('connected', { ...uds, updateSupported: true }),
+      );
+      expect(repeat.connectionGeneration).toBe(a.connectionGeneration);
+      expect(repeat.polling).toBe(true);
+      expect(repeat.transport).toEqual({ ...uds, updateSupported: true });
+
+      const applied = daemonHealthReducer(
+        repeat,
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z', a.connectionGeneration),
+      );
+      expect(applied.polling).toBe(false);
+      expect(applied.stats?.clients).toBe(1);
+      expect(applied.lastUpdated).toBe('2026-09-05T10:00:10.000Z');
+    });
+
     it('a lifecycle change invalidates the in-flight poll flag', () => {
       const polling = daemonHealthReducer(
         { ...initialState, health: 'healthy' as const },

@@ -2,8 +2,10 @@ import { buffers, type EventChannel } from 'redux-saga';
 import {
   actionChannel,
   call,
+  cancel,
   delay,
   fork,
+  join,
   put,
   race,
   take,
@@ -239,6 +241,11 @@ function* daemonStatusSaga() {
     } catch {
       // Push events and system.status polling still converge the state.
     }
+    // Polling starts once the boot snapshot has settled either way: a
+    // successful snapshot binds the first poll to that connection, and a
+    // failed one must not leave the app without any poll until main happens
+    // to push a status.
+    yield* fork(systemPollingLoop);
 
     yield* takeWithBackoff(
       channel,
@@ -299,16 +306,38 @@ export function* pollSystemStatusSaga() {
 }
 
 /**
- * Fixed-cadence poll trigger. The first poll waits for the first backend
- * status so it is bound to a known connection lifecycle rather than racing
- * the boot snapshot (which would only discard it).
+ * Fixed-cadence poll trigger, forked by `daemonStatusSaga` once the boot
+ * snapshot has settled so the first poll is bound to a known connection
+ * lifecycle rather than racing the snapshot (which would only discard it).
  */
 function* systemPollingLoop() {
-  yield* take(connectionStatusChanged);
   yield* put(pollSystemStatus());
   while (true) {
     yield* delay(POLL_INTERVAL_MS);
     yield* put(pollSystemStatus());
+  }
+}
+
+/**
+ * Run one poll to completion unless the connection generation changes
+ * underneath it. Status notifications that leave the generation alone
+ * (same-connection metadata refreshes) keep waiting on the same request — the
+ * transport cannot abort it, so re-issuing would only fan out requests.
+ * Returns whether the new lifecycle should be polled right away.
+ */
+function* runPollBoundToConnection() {
+  const generation = yield* selectDaemonConnectionGeneration.effect();
+  const poll = yield* fork(pollSystemStatusSaga);
+  while (true) {
+    const { lifecycle } = yield* race({
+      settled: join(poll),
+      lifecycle: take(connectionStatusChanged),
+    });
+    if (!lifecycle) return false;
+    const current = yield* selectDaemonConnectionGeneration.effect();
+    if (current === generation) continue;
+    yield* cancel(poll);
+    return lifecycle.payload[0] === 'connected';
   }
 }
 
@@ -324,11 +353,7 @@ function* watchSystemStatusPolls() {
     yield* take(pollSystemStatus);
     let poll = true;
     while (poll) {
-      const { lifecycle } = yield* race({
-        settled: call(pollSystemStatusSaga),
-        lifecycle: take(connectionStatusChanged),
-      });
-      poll = lifecycle?.payload[0] === 'connected';
+      poll = yield* call(runPollBoundToConnection);
       if (poll) yield* put(pollSystemStatus());
     }
   }
@@ -417,9 +442,10 @@ function* watchDaemonControls() {
 
 export function* daemonHealthSaga() {
   if (typeof window === 'undefined' || !window.electronAPI) return;
-  yield* fork(daemonStatusSaga);
+  // The poll watcher is forked first so the boot poll issued by the status
+  // saga's polling loop always has a listener.
   yield* fork(watchSystemStatusPolls);
+  yield* fork(daemonStatusSaga);
   yield* fork(watchUnslothStatusPolls);
   yield* fork(watchDaemonControls);
-  yield* call(systemPollingLoop);
 }

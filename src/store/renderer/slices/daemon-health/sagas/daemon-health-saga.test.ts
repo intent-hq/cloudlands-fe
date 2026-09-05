@@ -892,6 +892,78 @@ describe('daemonHealthSaga', () => {
       await task.toPromise();
     });
 
+    it('still polls on cadence when the boot snapshot rejects and no status is ever pushed', async () => {
+      invoke.mockImplementation(async (channel: string) => {
+        if (channel === BACKEND.GET_STATUS) throw new Error('main not ready');
+        return undefined;
+      });
+      const polls = deferSystemStatusPolls();
+      const { task, getState } = startHealthSagaWithReducer();
+      await settle();
+      expect(polls).toHaveLength(1);
+      expect(getState().health).toBe('down');
+
+      polls[0].resolve(oldPayload);
+      await settle();
+      expect(getState().stats?.hostname).toBe('old-daemon');
+      expect(getState().health).toBe('down');
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(polls).toHaveLength(2);
+      polls[1].resolve(oldPayload);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(polls).toHaveLength(3);
+
+      statusHandler!({ status: 'connected', transport: udsTransport });
+      await settle();
+      expect(getState().health).toBe('healthy');
+      expect(polls).toHaveLength(4);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('treats repeated same-connection connected notifications as metadata — one request, valid result applied', async () => {
+      const { task, polls, getState } = await bootWithPendingPoll();
+      const before = getState().connectionGeneration;
+      statusHandler!({
+        status: 'connected',
+        transport: { ...udsTransport, updateSupported: true },
+      });
+      statusHandler!({
+        status: 'connected',
+        transport: { ...udsTransport, updateSupported: true },
+      });
+      statusHandler!({
+        status: 'connected',
+        transport: { ...udsTransport, updateSupported: true },
+      });
+      await settle();
+      expect(polls).toHaveLength(1);
+      expect(mocks.backendRequest).toHaveBeenCalledTimes(1);
+      expect(getState().connectionGeneration).toBe(before);
+      expect(getState().transport).toEqual({ ...udsTransport, updateSupported: true });
+
+      polls[0].resolve(oldPayload);
+      await settle();
+      expect(getState().stats?.hostname).toBe('old-daemon');
+      expect(getState().stats?.transport).toEqual({ ...udsTransport, updateSupported: true });
+      expect(getState().lastUpdated).not.toBeNull();
+      expect(getState().polling).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(polls).toHaveLength(2);
+      polls[1].reject(new BackendError({ code: 'TIMEOUT', message: 'timed out' }));
+      await settle();
+      expect(getState().health).toBe('degraded');
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(polls).toHaveLength(3);
+      polls[2].resolve(oldPayload);
+      await settle();
+      expect(getState().health).toBe('healthy');
+      task.cancel();
+      await task.toPromise();
+    });
+
     it('keeps same-connection degrade → recovery and the poll cadence intact', async () => {
       const { task, polls, getState } = await bootWithPendingPoll();
       polls[0].reject(new BackendError({ code: 'TIMEOUT', message: 'timed out' }));

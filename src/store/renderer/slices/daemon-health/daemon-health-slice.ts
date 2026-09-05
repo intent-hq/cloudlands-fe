@@ -212,10 +212,16 @@ daemonHealthReducer.with(
       transport !== undefined &&
       (transport.mode !== state.transport?.mode || transport.target !== state.transport?.target);
     const hostLocality = transportChanged ? null : state.hostLocality;
-    // Every lifecycle change starts a new generation: any poll still in
-    // flight belongs to the previous connection and its result is discarded,
-    // so it is no longer "polling" for this one.
-    const connectionGeneration = state.connectionGeneration + 1;
+    // A repeated 'connected' for the same daemon (same mode/target) only
+    // refreshes transport metadata — it is not a new connection. Every other
+    // transition starts a new generation: any poll still in flight belongs to
+    // the previous connection and its result is discarded, so it is no longer
+    // "polling" for this one.
+    const sameConnection = status === 'connected' && state.health !== 'down' && !transportChanged;
+    const connectionGeneration = sameConnection
+      ? state.connectionGeneration
+      : state.connectionGeneration + 1;
+    const polling = sameConnection ? state.polling : false;
 
     if (status === 'connected') {
       // Connection established — health moves to 'healthy'.
@@ -224,7 +230,7 @@ daemonHealthReducer.with(
       return {
         ...state,
         connectionGeneration,
-        polling: false,
+        polling,
         health: 'healthy',
         // Stats belong to the daemon that reported them. Drop them on a
         // genuine daemon switch (mode/target changed) so selectors never
