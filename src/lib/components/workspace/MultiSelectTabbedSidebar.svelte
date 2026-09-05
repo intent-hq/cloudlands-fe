@@ -67,7 +67,6 @@
   import { buildWorkspacePRPresentationModel } from './sidebar/workspace-pr-presentation';
   import { constructPrUrl, legacyWorkspacePullRequest } from './sidebar/sidebar-changes-utils';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
-  import { getActivePrStatusPresentation } from '$lib/components/workspace/utils/active-pr-status-presentation';
   import {
     prefersReducedMotion,
     spring,

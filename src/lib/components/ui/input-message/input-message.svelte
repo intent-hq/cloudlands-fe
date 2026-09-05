@@ -22,7 +22,7 @@
   aria-live={tone === 'helper' ? 'polite' : undefined}
   class={cn(
     'type-body mt-1.5 pl-0.5 motion-reduce:transition-none',
-    tone === 'error' ? 'text-error-foreground' : 'text-muted-foreground',
+    tone === 'error' ? 'text-danger' : 'text-muted-foreground',
     className,
   )}
   in:springIn={{ tier: 'fast', y: -2, scale: 1 }}

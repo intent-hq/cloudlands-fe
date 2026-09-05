@@ -1858,13 +1858,15 @@
                               {/if}
                               {#if onboardingTestPromptFailure.loginDocsUrl}
                                 {@const docsUrl = onboardingTestPromptFailure.loginDocsUrl}
-                                <button
+                                <Button
                                   type="button"
-                                  class="mt-2 text-xs underline hover:no-underline"
+                                  variant="link"
+                                  size="xs"
+                                  class="mt-2 h-auto px-0 text-xs underline hover:no-underline"
                                   onclick={() => shell.open(docsUrl)}
                                 >
                                   {m.chat_modelPicker_setupDocs_label()}
-                                </button>
+                                </Button>
                               {/if}
                             </div>
                           {/if}

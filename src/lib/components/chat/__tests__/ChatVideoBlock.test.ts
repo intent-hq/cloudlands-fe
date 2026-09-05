@@ -176,7 +176,10 @@ describe('VideoActionsMenu', () => {
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Copy link' }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(remoteSource.url));
-    expect(toastSuccess).toHaveBeenCalledWith('Link copied to clipboard');
+    expect(toastSuccess).toHaveBeenCalledWith('Link copied to clipboard', {
+      duration: 2000,
+      id: undefined,
+    });
   });
 
   it('copies a decoded workspace-relative path and reports success', async () => {
@@ -200,7 +203,10 @@ describe('VideoActionsMenu', () => {
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith('.demo-artifacts/some run/demo.webm'),
     );
-    expect(toastSuccess).toHaveBeenCalledWith('Path copied to clipboard');
+    expect(toastSuccess).toHaveBeenCalledWith('Path copied to clipboard', {
+      duration: 2000,
+      id: undefined,
+    });
   });
 
   it('downloads remote video bytes under the display name', async () => {

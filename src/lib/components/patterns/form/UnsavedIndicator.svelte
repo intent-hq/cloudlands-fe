@@ -19,7 +19,7 @@
     class={cn(
       'inline-flex size-4 items-center justify-center text-muted-foreground transition-[opacity,transform,color] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
       status === 'saved' && 'text-emerald-500 animate-in fade-in zoom-in-75',
-      status === 'error' && 'text-destructive',
+      status === 'error' && 'text-danger',
       className,
     )}
   >

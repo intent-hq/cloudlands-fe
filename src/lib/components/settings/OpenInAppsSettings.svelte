@@ -4,7 +4,7 @@
     resolveEditorIcon,
   } from '$lib/components/shared/icons/editor-icon';
   import { SettingsFieldRow } from '$lib/components/patterns/settings';
-  import { Switch } from '$lib/components/patterns/settings/custom-controls';
+  import { Button, Switch } from '$lib/components/patterns/settings/custom-controls';
   import {
     selectHiddenEditorIds,
     selectInstalledEditors,
@@ -222,8 +222,10 @@
           {/snippet}
           {#snippet control({ labelId })}
             <div class="flex items-center gap-2">
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-xs"
                 draggable="true"
                 class="flex size-7 cursor-grab items-center justify-center rounded-(--radius-small) text-muted-foreground hover:bg-muted active:cursor-grabbing"
                 aria-label={m.settings_openInApps_reorder_ariaLabel({ name: editor.name })}
@@ -233,7 +235,7 @@
                 onkeydown={(event) => handleReorderKeydown(event, editor.id)}
               >
                 <Fa icon={faGripLines} class="size-3.5" />
-              </button>
+              </Button>
               <Switch
                 id={`open-in-${editor.id}-switch`}
                 checked={isEditorEnabled(editor.id)}

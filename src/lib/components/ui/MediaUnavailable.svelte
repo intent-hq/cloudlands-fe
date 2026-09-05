@@ -5,7 +5,7 @@
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { handleLink } from '$features/navigation/link-handler';
   import { m } from '$shared/paraglide/messages.js';
   import { WorkspaceId } from '$shared/types/branded-ids';
@@ -33,9 +33,9 @@
     if (!path) return;
     try {
       await writeTextToClipboard(path);
-      toast.success(m.ui_imageActionsMenu_pathCopied_label());
+      notify.success(m.ui_imageActionsMenu_pathCopied_label());
     } catch {
-      toast.error(m.ui_imageActionsMenu_copyFailed_error());
+      notify.error(m.ui_imageActionsMenu_copyFailed_error());
     }
   }
 

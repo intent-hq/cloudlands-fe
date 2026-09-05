@@ -4,6 +4,7 @@
   import VideoActionsMenu from '$lib/components/ui/VideoActionsMenu.svelte';
   import VideoLightbox from '$lib/components/ui/VideoLightbox.svelte';
   import MediaUnavailable from '$lib/components/ui/MediaUnavailable.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { parseWorkspaceFileImageUrl } from '$lib/utils/image-actions';
 
   interface Props {
@@ -56,9 +57,11 @@
       class="group relative aspect-video w-full max-h-40 max-w-2xl"
       style="width: min(100%, calc(10rem * 16 / 9));"
     >
-      <button
-        bind:this={triggerRef}
+      <Button
+        bind:ref={triggerRef}
         type="button"
+        variant="ghost"
+        size="default"
         class="relative block size-full cursor-pointer overflow-hidden rounded-lg border border-border bg-muted/40 p-0 shadow-(--elevation-raised) focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 forced-colors:border"
         aria-label={m.chat_videoBlock_play_ariaLabel({ name })}
         data-testid="chat-video-snapshot"
@@ -100,7 +103,7 @@
             </svg>
           </span>
         </span>
-      </button>
+      </Button>
       <VideoActionsMenu
         {videoUrl}
         videoName={name}

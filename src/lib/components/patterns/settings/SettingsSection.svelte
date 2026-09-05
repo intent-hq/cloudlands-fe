@@ -46,7 +46,7 @@
     </div>
     {#if actions}<div class="max-w-full shrink-0">{@render actions()}</div>{/if}
   </header>
-  {#if error}<p id={errorId} class="type-body mt-2 text-error-foreground" role="alert">
+  {#if error}<p id={errorId} class="type-body mt-2 text-danger" role="alert">
       {error}
     </p>{/if}
   <div

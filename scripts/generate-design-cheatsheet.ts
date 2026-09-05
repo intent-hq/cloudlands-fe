@@ -53,7 +53,7 @@ Pattern-first routing for product UI. Open the catalog URL in \`pnpm run dev:ui\
 - **Import:** \`SurfaceProvider\`, \`surfaceClasses\`, and \`surfaceHoverClasses\` from \`$lib/components/ui\`.
 - **Ladder:** \`bg-surface-1\` through \`bg-surface-8\` pair with \`shadow-surface-1\` through \`shadow-surface-8\`.
 - **Overlays:** render at two levels above their substrate, capped at level 8, and provide that level to nested content.
-- **States:** use \`bg-hover\`, \`bg-active\`, \`bg-selected\`, and \`bg-destructive-light\` rather than physical colors.
+- **States:** use \`bg-hover\`, \`bg-active\`, \`bg-selected\`, and \`bg-danger-background\` rather than physical colors.
 
 ## Motion
 

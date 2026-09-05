@@ -47,7 +47,6 @@ const approved = [
   'selected',
   'overlay',
   'focus-ring',
-  'destructive-light',
   'surface-1',
   'surface-2',
   'surface-3',

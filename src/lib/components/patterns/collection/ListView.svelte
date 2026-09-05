@@ -214,7 +214,7 @@
   {#if error}
     {@render error()}
   {:else}
-    <p class="p-4 text-sm text-error-foreground" role="alert">{m.error_page_title()}</p>
+    <p class="p-4 text-sm text-danger" role="alert">{m.error_page_title()}</p>
   {/if}
 {:else if items.length === 0}
   {#if empty}

@@ -22,7 +22,7 @@
   data-size={resolvedSize}
   data-invalid={invalid || undefined}
   class={cn(
-    'type-caption flex min-w-0 select-none items-center font-medium tracking-normal text-muted-foreground transition-[color] duration-(--spring-fast) group-hover:text-foreground group-focus-within:text-foreground data-[state=hover]:text-foreground data-[state=focus]:text-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-60 group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-60 group-data-[invalid=true]:text-error-foreground data-[invalid=true]:text-error-foreground motion-reduce:transition-none',
+    'type-caption flex min-w-0 select-none items-center font-medium tracking-normal text-muted-foreground transition-[color] duration-(--spring-fast) group-hover:text-foreground group-focus-within:text-foreground data-[state=hover]:text-foreground data-[state=focus]:text-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-60 group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-60 group-data-[invalid=true]:text-danger data-[invalid=true]:text-danger motion-reduce:transition-none',
     resolvedSize === 'compact' ? 'gap-1.5' : 'gap-2',
     className,
   )}

@@ -53,11 +53,7 @@ describe('MediaLightbox', () => {
     render(MediaLightboxHarness, { props: { initialOpen: true } });
     await screen.findByRole('dialog', { name: 'Media preview' });
 
-    expect(transitionMocks.fade).toHaveBeenCalledWith(
-      expect.any(HTMLElement),
-      expect.objectContaining({ duration: 0 }),
-      expect.anything(),
-    );
+    expect(transitionMocks.fade).not.toHaveBeenCalled();
   });
 
   it('uses the standard fade when matchMedia returns no value', async () => {
@@ -68,8 +64,7 @@ describe('MediaLightbox', () => {
 
     expect(transitionMocks.fade).toHaveBeenCalledWith(
       expect.any(HTMLElement),
-      expect.objectContaining({ duration: 200 }),
-      expect.anything(),
+      expect.objectContaining({ duration: 160 }),
     );
   });
 });

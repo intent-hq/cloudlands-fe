@@ -320,8 +320,10 @@
     >
       <div class="flex min-w-0 flex-1 items-center gap-1.5">
         {#if collapsed && ontoggle}
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="xs"
             class="flex h-7! min-w-0 max-w-full flex-1 items-center justify-start px-1.5! text-foreground"
             aria-expanded="false"
             aria-controls="combined-panel-chief-content"
@@ -329,7 +331,7 @@
             <span class="text-ui min-w-0 flex-1 truncate text-left font-medium">
               {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
             </span>
-          </button>
+          </Button>
         {:else}
           <Dropdown
             value={selectedAgentId ?? undefined}
@@ -410,8 +412,10 @@
         </Button>
       </div>
       {#if ontoggle}
-        <button
+        <Button
           type="button"
+          variant="ghost-light"
+          size="icon-xs"
           class="flex h-7 w-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
           aria-label={m.layout_chiefCard_title()}
           aria-expanded={!collapsed}
@@ -424,7 +428,7 @@
             size="xs"
             class="shrink-0 transition-transform {collapsed ? 'rotate-90' : ''}"
           />
-        </button>
+        </Button>
       {/if}
     </div>
 

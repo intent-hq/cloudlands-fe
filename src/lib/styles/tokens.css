@@ -34,7 +34,6 @@
   --color-hover: var(--hover);
   --color-active: var(--active);
   --color-selected: hsl(var(--selected));
-  --color-destructive-light: hsl(var(--destructive-light));
   --color-focus-ring: hsl(var(--focus-ring));
   --color-surface-1: hsl(var(--surface-1));
   --color-surface-2: hsl(var(--surface-2));
@@ -164,12 +163,10 @@
   --theme-light-hover: rgb(var(--theme-light-overlay) / 0.04);
   --theme-light-active: rgb(var(--theme-light-overlay) / 0.07);
   --theme-light-selected: 0 0% 83%;
-  --theme-light-destructive-light: 0 85.7142857143% 97.2549019608%;
   --theme-dark-overlay: 255 255 255;
   --theme-dark-hover: rgb(var(--theme-dark-overlay) / 0.06);
   --theme-dark-active: rgb(var(--theme-dark-overlay) / 0.1);
   --theme-dark-selected: 0 0% 32%;
-  --theme-dark-destructive-light: 0 74.6835443038% 15.4901960784%;
 
   /*
    * Surface ladder: level 1 is the page substrate; overlays rise two levels, capped at 8.
@@ -332,7 +329,6 @@
   --theme-hover: var(--theme-light-hover);
   --theme-active: var(--theme-light-active);
   --theme-selected: var(--theme-light-selected);
-  --theme-destructive-light: var(--theme-light-destructive-light);
 
   --background: var(--theme-background);
   --foreground: var(--theme-foreground);
@@ -360,7 +356,6 @@
   --hover: var(--theme-hover);
   --active: var(--theme-active);
   --selected: var(--theme-selected);
-  --destructive-light: var(--theme-destructive-light);
   --info: var(--theme-info);
   --info-foreground: var(--theme-info-foreground);
   --success: var(--theme-success);
@@ -640,7 +635,6 @@
   --theme-hover: var(--theme-dark-hover);
   --theme-active: var(--theme-dark-active);
   --theme-selected: var(--theme-dark-selected);
-  --theme-destructive-light: var(--theme-dark-destructive-light);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -27,6 +27,7 @@
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import { Button } from '$lib/components/patterns/settings/custom-controls';
   import {
     buildResetToInheritPayloads,
     hasExplicitModelPin,
@@ -119,12 +120,14 @@
     }}
   />
   {#if anySpecialistHasExplicitModel}
-    <button
+    <Button
       type="button"
+      variant="ghost-light"
+      size="xs"
       onclick={resetAllSpecialistsToInherit}
-      class="ml-auto text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+      class="ml-auto h-auto px-0 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
     >
       {m.settings_aiBehavior_resetAllSpecialists()}
-    </button>
+    </Button>
   {/if}
 </div>

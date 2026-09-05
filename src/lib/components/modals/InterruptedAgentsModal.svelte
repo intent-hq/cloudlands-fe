@@ -240,7 +240,7 @@
 {/snippet}
 
 {#snippet takeoverDestructive()}
-  <Button variant="ghost" class="text-destructive" onclick={handleAbandonAll}>
+  <Button variant="ghost" class="text-danger" onclick={handleAbandonAll}>
     {m.modals_interruptedAgents_abandonAll_label()}
   </Button>
 {/snippet}

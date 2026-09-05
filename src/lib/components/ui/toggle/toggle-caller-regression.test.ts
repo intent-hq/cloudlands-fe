@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { checkboxMetadata } from '../checkbox/checkbox.meta';
 import { switchMetadata } from '../switch/switch.meta';
 import { toggleGroupMetadata } from '../toggle-group/toggle-group.meta';
-import { toggleMetadata } from './toggle.meta';
+import { toggleCompatibilityModes, toggleMetadata } from './toggle.meta';
 
 const repositoryRoot = process.cwd();
 const sourceRoot = join(repositoryRoot, 'src');
@@ -93,8 +93,8 @@ describe('B2 caller metadata regression', () => {
   it('matches current source-derived callers for every field primitive', () => {
     const expected = {
       checkbox: [
-        'src/features/onboarding/OnboardingPage.svelte',
         'src/features/log/components/ActivityLogFilters.svelte',
+        'src/features/onboarding/OnboardingPage.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
         'src/lib/components/chat/ChatChangesPanel.svelte',
@@ -115,11 +115,6 @@ describe('B2 caller metadata regression', () => {
         'src/lib/component-catalog/ChatPolishGeometryControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/components/debug/DebugPanel.svelte',
-        'src/lib/components/settings/AgentBackendSettings.svelte',
-        'src/lib/components/settings/BackendSyncSettings.svelte',
-        'src/lib/components/settings/DeviceRow.svelte',
-        'src/lib/components/settings/OpenInAppsSettings.svelte',
-        'src/lib/components/settings/mcp/McpServerCard.svelte',
         'src/lib/components/patterns/settings/SettingsControl.svelte',
         'src/lib/components/patterns/settings/custom-controls.ts',
         'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
@@ -157,26 +152,9 @@ describe('B2 caller metadata regression', () => {
   it('keeps compatibility usage counts, replacements, and removal gates verifiable', () => {
     const usages = discoverCompatibilityUsages();
     const expectedUsages = {
-      group: [
-        { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
-        { path: 'src/routes/(app)/settings/+page.svelte', count: 3 },
-      ],
-      switch: [
-        { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
-        { path: 'src/lib/components/workspace/sidebar/FileChangesSection.svelte', count: 1 },
-      ],
-      indicator: [
-        { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
-        { path: 'src/lib/components/settings/AgentFeaturesSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/GitWorkspaceSettings.svelte', count: 2 },
-        { path: 'src/lib/components/settings/HardwareConsoleSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/LegacyImportSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/McpServersSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/NotificationSettings.svelte', count: 3 },
-        { path: 'src/lib/components/settings/RtkSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 3 },
-        { path: 'src/lib/components/settings/WorkspaceApiSettings.svelte', count: 1 },
-      ],
+      group: [],
+      switch: [],
+      indicator: [],
     };
     const replacements = {
       group: '$lib/components/ui/toggle-group',

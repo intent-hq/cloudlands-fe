@@ -9,6 +9,7 @@
   import { parseWorkspaceFileImageUrl } from '$lib/utils/image-actions';
   import { parseIntentFileTarget } from '$lib/utils/workspace-file-image';
   import { m } from '$shared/paraglide/messages.js';
+  import { Button } from '$lib/components/ui/button';
 
   let { node, selected, editor, extension }: NodeViewProps = $props();
 
@@ -94,14 +95,16 @@
         contenteditable="false"
       >
         {#if editor.isEditable}
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-xs"
             class="flex h-7 w-7 items-center justify-center rounded-md bg-black/60 text-white hover:bg-black/75 focus-visible:ring-2 focus-visible:ring-ring"
             onclick={openLightbox}
             aria-label={m.chat_imageBlock_viewFullSize_ariaLabel({ alt: imageName })}
           >
             <Fa icon={faExpand} size="sm" />
-          </button>
+          </Button>
         {/if}
         <ImageActionsMenu {imageUrl} {imageName} triggerClass="data-[state=open]:opacity-100" />
       </div>

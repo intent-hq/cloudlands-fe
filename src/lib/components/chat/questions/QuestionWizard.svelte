@@ -216,7 +216,7 @@
     <Button
       variant="ghost"
       size="xs"
-      class="text-destructive"
+      class="text-danger"
       title={m.chat_questionWizard_dismiss_tooltip()}
       onclick={() => (confirmingDismiss = true)}>{m.chat_questionWizard_dismiss_label()}</Button
     >
@@ -248,7 +248,7 @@
       {#if onDismiss}
         <Button
           variant="ghost"
-          class="h-auto rounded-none px-3 py-2.5 text-destructive"
+          class="h-auto rounded-none px-3 py-2.5 text-danger"
           title={m.chat_questionWizard_dismiss_tooltip()}
           onclick={() => (confirmingDismiss = true)}>{m.chat_questionWizard_dismiss_label()}</Button
         >

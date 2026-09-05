@@ -1129,11 +1129,15 @@
               placeholder={m.browser_embedded_url_placeholder()}
               aria-label={m.browser_embedded_addressInput_ariaLabel()}
             />
-            <button type="submit" class="sr-only">{m.browser_embedded_go_label()}</button>
+            <Button type="submit" variant="ghost" size="xs" class="sr-only">
+              {m.browser_embedded_go_label()}
+            </Button>
           </form>
         {:else}
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             class="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-ring"
             onclick={() => void focusUrlInput()}
             aria-label={m.browser_embedded_editAddress_ariaLabel()}
@@ -1149,7 +1153,7 @@
                 >{pageHostname}</span
               >
             {/if}
-          </button>
+          </Button>
         {/if}
       </div>
     </div>

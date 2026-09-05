@@ -8,7 +8,7 @@
     Switch,
     Tooltip,
   } from '$lib/components/patterns/settings/custom-controls';
-  import { ListRow, RowActions } from '$lib/components/patterns/collection';
+  import { ListRow, ListView, RowActions } from '$lib/components/patterns/collection';
   import { cn } from '$lib/utils';
   import {
     CONNECTION_ACCENT_CLASSES,
@@ -463,17 +463,6 @@
             ></span>
           </Tooltip>
         {/if}
-        {#if device.tcAddress}
-          <Tooltip content={device.tcAddress} class="self-center">
-            <Button
-              variant="outline"
-              size="xs"
-              onclick={() => void copyTcAddress()}
-              aria-label={m.settings_devices_tcAddress_copy()}
-              data-tc-address-chip>{m.settings_devices_tunnelAddress_label()}</Button
-            >
-          </Tooltip>
-        {/if}
       </span>
     {/snippet}
     {#snippet trailing()}
@@ -676,14 +665,19 @@
               {m.settings_devices_detectedAddresses_label()}
             </dt>
             <dd>
-              <ul
-                class="space-y-0.5 font-mono text-foreground"
-                aria-label={m.settings_devices_detectedAddresses_label()}
-              >
-                {#each detectedHosts as candidate (candidate)}
-                  <li class="break-all">{candidate}</li>
-                {/each}
-              </ul>
+              {#if detectedHosts.length > 0}
+                <ListView
+                  items={detectedHosts}
+                  getKey={(candidate) => candidate}
+                  getText={(candidate) => candidate}
+                  class="space-y-0.5 overflow-visible font-mono text-foreground"
+                  ariaLabel={m.settings_devices_detectedAddresses_label()}
+                >
+                  {#snippet row({ item: candidate })}
+                    <span class="block break-all">{candidate}</span>
+                  {/snippet}
+                </ListView>
+              {/if}
             </dd>
           </div>
           {#if device.tcAddress}
@@ -691,14 +685,16 @@
               <dt class="text-muted-foreground">{m.settings_devices_tunnelAddress_label()}</dt>
               <dd class="flex items-center gap-1">
                 <code class="min-w-0 break-all font-mono text-foreground">{device.tcAddress}</code>
-                <button
+                <Button
                   type="button"
+                  variant="ghost-light"
+                  size="icon-xs"
                   onclick={() => void copyTcAddress()}
-                  class="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
+                  class="size-5 shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
                   aria-label={m.settings_devices_tcAddress_copy()}
                 >
                   <Fa icon={faCopy} class="size-3" />
-                </button>
+                </Button>
               </dd>
             </div>
           {/if}

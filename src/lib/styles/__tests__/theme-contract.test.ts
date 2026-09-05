@@ -465,20 +465,15 @@ describe('theme color contract', () => {
     expect(tokenValue(css, 'theme-light-hover')).toBe('rgb(var(--theme-light-overlay) / 0.04)');
     expect(tokenValue(css, 'theme-light-active')).toBe('rgb(var(--theme-light-overlay) / 0.07)');
     expect(tokenValue(css, 'theme-light-selected')).toBe('0 0% 83%');
-    expect(tokenValue(css, 'theme-light-destructive-light')).toBe(
-      '0 85.7142857143% 97.2549019608%',
-    );
     expect(tokenValue(css, 'theme-dark-overlay')).toBe('255 255 255');
     expect(tokenValue(css, 'theme-dark-hover')).toBe('rgb(var(--theme-dark-overlay) / 0.06)');
     expect(tokenValue(css, 'theme-dark-active')).toBe('rgb(var(--theme-dark-overlay) / 0.1)');
     expect(tokenValue(css, 'theme-dark-selected')).toBe('0 0% 32%');
-    expect(tokenValue(css, 'theme-dark-destructive-light')).toBe('0 74.6835443038% 15.4901960784%');
     expect(tokenValue(css, 'focus-ring')).toBe('223 100% 71%');
     expect(tokenValue(css, 'overlay')).toBe('var(--theme-overlay)');
     expect(tokenValue(css, 'hover')).toBe('var(--theme-hover)');
     expect(tokenValue(css, 'active')).toBe('var(--theme-active)');
     expect(tokenValue(css, 'selected')).toBe('var(--theme-selected)');
-    expect(tokenValue(css, 'destructive-light')).toBe('var(--theme-destructive-light)');
     expect(css).toMatch(/\.dark\s*{[^}]*--theme-overlay:\s*var\(--theme-dark-overlay\);/s);
   });
 

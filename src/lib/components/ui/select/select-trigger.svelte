@@ -36,7 +36,7 @@
   );
   const triggerClass = $derived(
     cn(
-      'group type-caption text-foreground flex h-(--control-height-medium) w-full min-w-0 cursor-pointer items-center justify-between gap-2 rounded-(--radius-medium) transition-[border-color,background-color,box-shadow] duration-spring-fast aria-invalid:border-destructive-foreground aria-invalid:ring-1 aria-invalid:ring-destructive-foreground/25 disabled:cursor-not-allowed disabled:bg-transparent disabled:opacity-50 disabled:hover:border-border disabled:hover:bg-transparent motion-reduce:transition-none',
+      'group type-caption text-foreground flex h-(--control-height-medium) w-full min-w-0 cursor-pointer items-center justify-between gap-2 rounded-(--radius-medium) transition-[border-color,background-color,box-shadow] duration-spring-fast aria-invalid:border-danger aria-invalid:ring-1 aria-invalid:ring-danger/25 disabled:cursor-not-allowed disabled:bg-transparent disabled:opacity-50 disabled:hover:border-border disabled:hover:bg-transparent motion-reduce:transition-none',
       variantClasses[variant],
       className,
     ),

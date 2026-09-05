@@ -2,12 +2,10 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseUiComponentMetadata } from '../component-metadata';
-import AskUserQuestions, {
-  type AskUserAnswer,
-  type AskUserQuestion,
-} from './ask-user-questions.svelte';
+import AskUserQuestions from './ask-user-questions.svelte';
 import { askUserQuestionsFixtures } from './ask-user-questions.fixtures';
 import { askUserQuestionsMetadata } from './ask-user-questions.meta';
+import type { AskUserAnswer, AskUserQuestion } from './types';
 
 afterEach(() => cleanup());
 

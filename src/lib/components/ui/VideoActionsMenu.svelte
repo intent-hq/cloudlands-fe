@@ -1,7 +1,7 @@
 <script lang="ts">
   import { faEllipsis } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import type { VideoSource } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import * as Menu from '$lib/components/ui/menu';
@@ -104,16 +104,16 @@
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     } catch {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
-      toast.error(m.ui_videoActionsMenu_downloadFailed_error());
+      notify.error(m.ui_videoActionsMenu_downloadFailed_error());
     }
   }
 
   async function copy(value: string, successMessage: string) {
     try {
       await writeTextToClipboard(value);
-      toast.success(successMessage);
+      notify.success(successMessage);
     } catch {
-      toast.error(m.ui_videoActionsMenu_copyFailed_error());
+      notify.error(m.ui_videoActionsMenu_copyFailed_error());
     }
   }
 

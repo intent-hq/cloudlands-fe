@@ -1834,7 +1834,12 @@
       {#if editMode}
         <div class="absolute right-2 top-2">
           <TooltipShortcut label={m.chat_richInput_cancel_label()} shortcut="Escape" side="top">
-            <Button variant="ghost-light" size="icon-xs" onclick={() => oncancel?.()}>
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              aria-label={m.chat_richInput_cancel_label()}
+              onclick={() => oncancel?.()}
+            >
               <Fa icon={faXmark} size="sm" />
             </Button>
           </TooltipShortcut>
