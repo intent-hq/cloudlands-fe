@@ -95,22 +95,19 @@ describe('custom diagram accessibility', () => {
       props: { diagram: customDiagram('custom-data-flow'), viewResetKey: 'data-flow' },
     });
     const scroller = result.container.querySelector('.diagram-scroll-container') as HTMLDivElement;
+    const camera = result.container.querySelector('.diagram-svg-layer') as SVGSVGElement;
     Object.defineProperty(scroller, 'clientWidth', { configurable: true, value: 160 });
     const fit = result.getByRole('button', { name: 'Fit diagram to width' });
     await fireEvent.click(fit);
     expect(fit.getAttribute('aria-pressed')).toBe('true');
-    expect(
-      Number((result.container.querySelector('.diagram-content') as HTMLElement).style.zoom),
-    ).toBeLessThan(1);
+    expect(camera.style.transform).toMatch(/^scale\(0\./);
 
     await result.rerender({
       diagram: customDiagram('custom-data-flow'),
       viewResetKey: 'state-machine',
     });
     expect(fit.getAttribute('aria-pressed')).toBe('false');
-    expect((result.container.querySelector('.diagram-content') as HTMLElement).style.zoom).toBe(
-      '1',
-    );
+    expect(camera.style.transform).toBe('');
 
     result.unmount();
     const empty = render(DiagramRenderer, {

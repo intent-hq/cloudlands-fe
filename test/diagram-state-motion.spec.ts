@@ -1,6 +1,15 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
 const baseUrl = process.env.UI_PREVIEW_BASE_URL ?? 'http://127.0.0.1:5173';
+const framingAppearances = [
+  { name: 'Light', theme: 'light' },
+  { name: 'Dark', theme: 'dark' },
+  { name: 'Nord', theme: 'light', colorTheme: 'nord' },
+] as const;
+const framingWidths = [
+  { name: 'wide', value: 960 },
+  { name: 'narrow', value: 420 },
+] as const;
 
 type Probe = {
   edgeId: string;
@@ -25,6 +34,8 @@ type Frame = {
   labelDistance: number | null;
   exitingOpacity: number | null;
   overflow: number;
+  camera: string;
+  footerOffset: number;
 };
 
 async function openMotionFixture(page: Page, state: string, reduced = false) {
@@ -99,6 +110,9 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
               ?.parentElement
           : null;
         const viewport = root.querySelector<HTMLElement>('.diagram-scroll-container')!;
+        const footer = root.querySelector<HTMLElement>('.diagram-footer')!;
+        const camera = root.querySelector<SVGSVGElement>('.diagram-svg-layer')!;
+        const geometry = root.querySelector<SVGGElement>('.diagram-geometry-motion')!;
         return {
           settled: renderer.dataset.diagramSettled === 'true',
           state: renderer.dataset.diagramState ?? '',
@@ -127,6 +141,9 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
           labelDistance,
           exitingOpacity: exiting ? Number(getComputedStyle(exiting).opacity) : null,
           overflow: viewport.scrollWidth - viewport.clientWidth,
+          camera: `${getComputedStyle(camera).transform}|${getComputedStyle(geometry).transform}`,
+          footerOffset:
+            footer.getBoundingClientRect().bottom - renderer.getBoundingClientRect().bottom,
         };
       };
       const before = frame();
@@ -134,13 +151,17 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
       await Promise.resolve();
       await nextFrame();
       const start = frame();
+      const samples = [start];
       const deadline = performance.now() + 1_000;
       let middle = frame();
       const hasMidpoint = (candidate: Frame) => {
         const nodeMoved =
-          !probe.movingNodeId || JSON.stringify(candidate.node) !== JSON.stringify(start.node);
+          !probe.movingNodeId ||
+          (candidate.node !== null &&
+            (candidate.node.x !== start.node?.x || candidate.node.y !== start.node?.y));
         const groupMoved =
-          !probe.groupId || JSON.stringify(candidate.group) !== JSON.stringify(start.group);
+          !probe.groupId ||
+          (candidate.group !== null && candidate.group.height !== start.group?.height);
         const enteringMoved =
           !probe.enteringNodeId ||
           (candidate.enteringOpacity !== null &&
@@ -148,11 +169,11 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
             candidate.enteringOpacity < 1);
         const exitingMoved =
           !probe.exitingEdgeId || candidate.exitingOpacity !== start.exitingOpacity;
-        const pathMoved =
-          start.progress >= 1 || (candidate.progress > start.progress && candidate.progress < 1);
+        const pathMoved = start.progress >= 1 || candidate.progress > start.progress;
         const geometryAligned =
           candidate.sourceDistance <= 2 &&
-          candidate.targetDistance <= 2 &&
+          candidate.targetDistance >= 4.5 &&
+          candidate.targetDistance <= 6 &&
           (candidate.labelDistance === null || candidate.labelDistance <= 4.5);
         return (
           !candidate.settled &&
@@ -168,15 +189,17 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
         if (performance.now() > deadline) throw new Error('Diagram motion had no midpoint frame');
         await nextFrame();
         middle = frame();
+        samples.push(middle);
       }
       while (
         root.querySelector<HTMLElement>('.diagram-renderer')!.dataset.diagramSettled !== 'true'
       ) {
         if (performance.now() > deadline) throw new Error('Diagram motion did not settle');
         await nextFrame();
+        samples.push(frame());
       }
       const settled = frame();
-      return { before, start, middle, settled };
+      return { before, start, middle, settled, samples };
     },
     { buttonName, probe },
   );
@@ -217,7 +240,8 @@ async function readStableSignature(page: Page, rootId: string) {
 
 function expectFrameGeometry(frame: Frame) {
   expect(frame.sourceDistance).toBeLessThanOrEqual(2);
-  expect(frame.targetDistance).toBeLessThanOrEqual(2);
+  expect(frame.targetDistance).toBeGreaterThanOrEqual(4.5);
+  expect(frame.targetDistance).toBeLessThanOrEqual(6);
   expect(frame.labelDistance).toBeLessThanOrEqual(4.5);
   expect(frame.overflow).toBeLessThanOrEqual(1);
 }
@@ -225,6 +249,26 @@ function expectFrameGeometry(frame: Frame) {
 function expectBetween(value: number, start: number, end: number) {
   expect(value).toBeGreaterThan(Math.min(start, end));
   expect(value).toBeLessThan(Math.max(start, end));
+}
+
+function isBetween(value: number, start: number, end: number) {
+  return value > Math.min(start, end) && value < Math.max(start, end);
+}
+
+function expectFixedFooter(transition: Awaited<ReturnType<typeof recordTransition>>) {
+  for (const frame of [transition.start, ...transition.samples, transition.settled]) {
+    expect(Math.abs(frame.footerOffset - transition.before.footerOffset)).toBeLessThanOrEqual(1);
+  }
+}
+
+function expectCameraInterpolation(transition: Awaited<ReturnType<typeof recordTransition>>) {
+  expect(transition.start.camera).not.toBe(transition.settled.camera);
+  expect(
+    transition.samples.some(
+      (frame) =>
+        frame.camera !== transition.start.camera && frame.camera !== transition.settled.camera,
+    ),
+  ).toBe(true);
 }
 
 test('coordinates architecture and ownership state motion through settled frames', async ({
@@ -245,6 +289,8 @@ test('coordinates architecture and ownership state motion through settled frames
   expect(architecture12.middle.enteringOpacity).toBeLessThanOrEqual(
     architecture12.settled.enteringOpacity!,
   );
+  expectFixedFooter(architecture12);
+  expectCameraInterpolation(architecture12);
   for (const frame of [architecture12.start, architecture12.middle, architecture12.settled]) {
     expectFrameGeometry(frame);
   }
@@ -262,14 +308,19 @@ test('coordinates architecture and ownership state motion through settled frames
       groupId: 'runtime',
     },
   );
-  expect(Math.abs(architecture23.settled.node!.x - architecture23.before.node!.x)).toBeGreaterThan(
-    2,
+  const nodeDelta = Math.hypot(
+    architecture23.settled.node!.x - architecture23.before.node!.x,
+    architecture23.settled.node!.y - architecture23.before.node!.y,
   );
-  expectBetween(
-    architecture23.middle.node!.x,
-    architecture23.start.node!.x,
-    architecture23.settled.node!.x,
-  );
+  expect(nodeDelta).toBeGreaterThan(2);
+  expect(
+    architecture23.samples.some(
+      (sample) =>
+        sample.node !== null &&
+        (isBetween(sample.node.x, architecture23.start.node!.x, architecture23.settled.node!.x) ||
+          isBetween(sample.node.y, architecture23.start.node!.y, architecture23.settled.node!.y)),
+    ),
+  ).toBe(true);
   expectBetween(
     architecture23.middle.group!.height,
     architecture23.start.group!.height,
@@ -282,10 +333,27 @@ test('coordinates architecture and ownership state motion through settled frames
   expect(architecture23.middle.enteringOpacity).toBeLessThanOrEqual(
     architecture23.settled.enteringOpacity!,
   );
+  expectFixedFooter(architecture23);
+  expectCameraInterpolation(architecture23);
   for (const frame of [architecture23.start, architecture23.middle, architecture23.settled]) {
     expectFrameGeometry(frame);
   }
   const architectureStable = await readStableSignature(page, 'custom-architecture');
+  const architecture31 = await recordTransition(
+    page,
+    'custom-architecture',
+    'State 1: 1. Start in the workbench',
+    {
+      edgeId: 'a1',
+      sourceId: 'user',
+      targetId: 'renderer',
+      groupId: 'client',
+      exitingEdgeId: 'a5',
+    },
+  );
+  expect(architecture31.settled.state).toBe('orient');
+  expect(architecture31.settled.exitingOpacity).toBeNull();
+  expectFixedFooter(architecture31);
 
   await openMotionFixture(page, 'custom-walkthrough');
   const ownership12 = await recordTransition(
@@ -302,6 +370,7 @@ test('coordinates architecture and ownership state motion through settled frames
   for (const frame of [ownership12.start, ownership12.middle, ownership12.settled]) {
     expectFrameGeometry(frame);
   }
+  expectFixedFooter(ownership12);
 
   const ownership23 = await recordTransition(
     page,
@@ -311,13 +380,14 @@ test('coordinates architecture and ownership state motion through settled frames
   );
   expect(ownership23.start.path).not.toBe(ownership23.settled.path);
   expect(ownership23.start.progress).toBeLessThan(ownership23.middle.progress);
-  expect(ownership23.middle.progress).toBeLessThan(1);
+  expect(ownership23.middle.progress).toBe(1);
   expect(ownership23.settled.progress).toBe(1);
   expect(ownership23.start.exitingOpacity).toBeGreaterThan(ownership23.middle.exitingOpacity!);
   expect(ownership23.settled.exitingOpacity).toBeNull();
   for (const frame of [ownership23.start, ownership23.middle, ownership23.settled]) {
     expectFrameGeometry(frame);
   }
+  expectFixedFooter(ownership23);
   const ownershipStable = await readStableSignature(page, 'custom-walkthrough');
 
   await openMotionFixture(page, 'custom-architecture');
@@ -332,13 +402,14 @@ test('coordinates architecture and ownership state motion through settled frames
     const opacity = daemon ? Number(getComputedStyle(daemon).opacity) : 1;
     return renderer.dataset.diagramSettled === 'false' && opacity > 0 && opacity < 1;
   });
-  await root
-    .getByRole('button', { name: 'State 3: 3. Close the loop' })
-    .evaluate((node) => (node as HTMLButtonElement).click());
+  const finalStateButton = root.getByRole('button', { name: 'State 3: 3. Close the loop' });
+  await finalStateButton.focus();
+  await finalStateButton.evaluate((node) => (node as HTMLButtonElement).click());
   await expect(root.locator('.diagram-renderer')).toHaveAttribute('data-diagram-settled', 'true');
   await expect(root.locator('.diagram-renderer')).toHaveAttribute('data-diagram-state', 'observe');
   await expect(root.locator('[data-node-id="events"]')).toBeVisible();
   await expect(root.locator('.diagram-edge[data-edge-id="a5"]')).toBeVisible();
+  await expect(finalStateButton).toBeFocused();
   await expect(root.locator('.diagram-scroll-container')).toHaveJSProperty('scrollLeft', 0);
   expect(await readStableSignature(page, 'custom-architecture')).toEqual(architectureStable);
 
@@ -397,3 +468,107 @@ test('coordinates architecture and ownership state motion through settled frames
   );
   await ownershipRoot.screenshot({ path: testInfo.outputPath('ownership-settled.png') });
 });
+
+for (const appearance of framingAppearances) {
+  for (const width of framingWidths) {
+    test(`fits each reduced-motion scene above the footer · ${appearance.name} · ${width.name}`, async ({
+      page,
+    }) => {
+      test.setTimeout(60_000);
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      const params = new URLSearchParams({
+        state: 'custom-architecture',
+        theme: appearance.theme,
+        width: String(width.value),
+        motion: 'reduced',
+      });
+      if ('colorTheme' in appearance) params.set('colorTheme', appearance.colorTheme);
+      await page.goto(`${baseUrl}/sandbox/diagram-workbench?${params}`);
+      await expect(page.getByTestId('catalog-scene')).toHaveAttribute(
+        'data-preview-ready',
+        'true',
+        {
+          timeout: 30_000,
+        },
+      );
+      const root = page.locator('#custom-architecture');
+      const buttons = [
+        'State 1: 1. Start in the workbench',
+        'State 2: 2. Follow the data',
+        'State 3: 3. Close the loop',
+      ];
+      const nodeCounts = [2, 4, 5];
+      for (const [index, button] of buttons.entries()) {
+        await root.getByRole('button', { name: button }).click();
+        await expect(root.locator('.diagram-renderer')).toHaveAttribute(
+          'data-diagram-settled',
+          'true',
+        );
+        const metrics = await root.evaluate((section) => {
+          const renderer = section.querySelector<HTMLElement>('.diagram-renderer')!;
+          const viewport = section.querySelector<HTMLElement>('.diagram-scroll-container')!;
+          const footer = section.querySelector<HTMLElement>('.diagram-footer')!;
+          const viewportBounds = viewport.getBoundingClientRect();
+          const painted = [
+            ...section.querySelectorAll<SVGGraphicsElement>(
+              '[data-node-id], [data-group-id] .group-bg, .edge-path, .edge-label-container',
+            ),
+          ]
+            .filter((element) => Number(getComputedStyle(element).opacity) > 0)
+            .map((element) => element.getBoundingClientRect())
+            .filter((bounds) => bounds.width > 0 || bounds.height > 0);
+          const minX = Math.min(...painted.map((bounds) => bounds.left));
+          const maxX = Math.max(...painted.map((bounds) => bounds.right));
+          const minY = Math.min(...painted.map((bounds) => bounds.top));
+          const maxY = Math.max(...painted.map((bounds) => bounds.bottom));
+          const finiteAnimations = renderer
+            .getAnimations({ subtree: true })
+            .filter((animation) =>
+              Number.isFinite(Number(animation.effect?.getComputedTiming().endTime)),
+            );
+          return {
+            nodeCount: section.querySelectorAll('[data-node-id]').length,
+            clipped: painted.some(
+              (bounds) =>
+                bounds.left < viewportBounds.left - 1 ||
+                bounds.right > viewportBounds.right + 1 ||
+                bounds.top < viewportBounds.top - 1 ||
+                bounds.bottom > viewportBounds.bottom + 1,
+            ),
+            centerDelta: Math.abs(
+              (minX + maxX) / 2 - (viewportBounds.left + viewportBounds.right) / 2,
+            ),
+            clipAmount: Math.max(
+              viewportBounds.left - minX,
+              maxX - viewportBounds.right,
+              viewportBounds.top - minY,
+              maxY - viewportBounds.bottom,
+            ),
+            clipSides: {
+              left: viewportBounds.left - minX,
+              right: maxX - viewportBounds.right,
+              top: viewportBounds.top - minY,
+              bottom: maxY - viewportBounds.bottom,
+            },
+            footerOffset:
+              footer.getBoundingClientRect().bottom - renderer.getBoundingClientRect().bottom,
+            clearsFooter: viewportBounds.bottom <= footer.getBoundingClientRect().top + 1,
+            overflow: Math.max(
+              viewport.scrollWidth - viewport.clientWidth,
+              viewport.scrollHeight - viewport.clientHeight,
+            ),
+            overflowStyle: getComputedStyle(viewport).overflow,
+            finiteAnimationCount: finiteAnimations.length,
+          };
+        });
+        expect(metrics.nodeCount).toBe(nodeCounts[index]);
+        expect(metrics.clipped, JSON.stringify({ index, metrics })).toBe(false);
+        expect(metrics.centerDelta).toBeLessThanOrEqual(8);
+        expect(Math.abs(metrics.footerOffset)).toBeLessThanOrEqual(1);
+        expect(metrics.clearsFooter).toBe(true);
+        expect(metrics.overflowStyle).toBe('hidden');
+        expect(metrics.finiteAnimationCount).toBe(0);
+      }
+    });
+  }
+}

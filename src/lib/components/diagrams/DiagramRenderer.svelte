@@ -19,7 +19,7 @@
   import { faCompress, faExpand } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import { onDestroy, onMount, tick } from 'svelte';
+  import { flushSync, onDestroy, onMount, tick } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -66,22 +66,11 @@
 
   // Computed layout
   let layout = $state<ComputedLayout | null>(null);
-  let canvasBounds = $state<ComputedLayout['bounds'] | null>(null);
   let layoutError = $state(false);
   let fitToWidth = $state(false);
   let fitScale = $state(1);
   let layoutWidthLimit = $state(900);
-  let canvasPadding = $derived(layoutWidthLimit < 500 ? 4 : PADDING);
-  let renderStyleConfig = $derived(
-    layoutWidthLimit < 500
-      ? {
-          ...styleConfig,
-          maxWidth: Math.min(styleConfig.maxWidth, 150),
-          maxLines: Math.max(styleConfig.maxLines, 5),
-          paddingX: Math.min(styleConfig.paddingX, 10),
-        }
-      : styleConfig,
-  );
+  let scrollContainerWidth = $state<number | null>(null);
   let fontMeasurementRevision = $state(0);
 
   onMount(() => {
@@ -102,7 +91,23 @@
   );
   let currentState = $derived(diagram.states?.find((s) => s.id === currentStateId) ?? null);
   let cameraZoom = $derived(currentState?.camera?.zoom ?? 1);
-  let renderedScale = $derived(cameraZoom * (fitToWidth ? fitScale : 1));
+  let automaticallyFitState = $derived(currentState !== null);
+  let usesCompactPresentation = $derived(
+    layoutWidthLimit < 500 ||
+      (automaticallyFitState && scrollContainerWidth !== null && scrollContainerWidth < 500),
+  );
+  let canvasPadding = $derived(usesCompactPresentation ? 4 : PADDING);
+  let renderStyleConfig = $derived(
+    usesCompactPresentation
+      ? {
+          ...styleConfig,
+          maxWidth: Math.min(styleConfig.maxWidth, 150),
+          maxLines: Math.max(styleConfig.maxLines, 5),
+          paddingX: Math.min(styleConfig.paddingX, 10),
+        }
+      : styleConfig,
+  );
+  let renderedScale = $derived(cameraZoom * (fitToWidth || automaticallyFitState ? fitScale : 1));
   let arrowTerminalGap = $derived(
     (ARROW_TERMINAL_GAP_CSS_PX + ARROW_TIP_RADIUS_CSS_PX) / renderedScale,
   );
@@ -116,7 +121,45 @@
   let diagramSettled = $state(true);
   let settlementRevision = 0;
   let settlementFrame: number | undefined;
+  let transitionRevision = 0;
 
+  function captureNodePositions() {
+    const positions = new Map<string, { x: number; y: number }>();
+    for (const node of rendererEl?.querySelectorAll<SVGForeignObjectElement>('[data-node-id]') ??
+      []) {
+      const id = node.dataset.nodeId;
+      if (!id) continue;
+      positions.set(id, {
+        x: Number(node.getAttribute('x')),
+        y: Number(node.getAttribute('y')),
+      });
+    }
+    return positions;
+  }
+
+  function animatePersistentNodes(
+    revision: number,
+    positions: Map<string, { x: number; y: number }>,
+  ) {
+    if (revision !== transitionRevision || motionDuration(1) === 0 || !rendererEl) return;
+    for (const node of rendererEl.querySelectorAll<SVGForeignObjectElement>('[data-node-id]')) {
+      const id = node.dataset.nodeId;
+      const previous = id ? positions.get(id) : undefined;
+      if (!previous) continue;
+      const deltaX = previous.x - Number(node.getAttribute('x'));
+      const deltaY = previous.y - Number(node.getAttribute('y'));
+      if (Math.abs(deltaX) < 0.01 && Math.abs(deltaY) < 0.01) continue;
+      node
+        .animate(
+          [
+            { transform: `translate(${deltaX}px, ${deltaY}px)` },
+            { transform: 'translate(0px, 0px)' },
+          ],
+          { duration: 220, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+        )
+        .finished.catch(() => undefined);
+    }
+  }
   function activeFiniteAnimations() {
     if (!rendererEl?.getAnimations) return [];
     return rendererEl.getAnimations({ subtree: true }).filter((animation) => {
@@ -195,8 +238,6 @@
     settlementFrame = undefined;
     if (motionDuration(1) === 0) {
       stateJustChanged = false;
-      diagramSettled = true;
-      return;
     }
     diagramSettled = false;
     queueMicrotask(() => {
@@ -399,7 +440,7 @@
         lines,
       } = measureEdgeLabel(
         edge.label,
-        layoutWidthLimit < 500 ? compactEdgeLabelMaxWidth(edge.label ?? '') : undefined,
+        usesCompactPresentation ? compactEdgeLabelMaxWidth(edge.label ?? '') : undefined,
       );
       const truncated = lines > 3;
 
@@ -413,7 +454,7 @@
       if (reverseEdge && points.length === 2) {
         const reverseLabel = measureEdgeLabel(
           reverseEdge.label ?? '',
-          layoutWidthLimit < 500 ? compactEdgeLabelMaxWidth(reverseEdge.label ?? '') : undefined,
+          usesCompactPresentation ? compactEdgeLabelMaxWidth(reverseEdge.label ?? '') : undefined,
         );
         const dx = Math.abs(points[1].x - points[0].x);
         const dy = Math.abs(points[1].y - points[0].y);
@@ -571,17 +612,6 @@
         renderStyleConfig,
         layoutWidthLimit,
       );
-      let { minX, minY, maxX, maxY } = fullLayout.bounds;
-      const labelSizes = diagram.model.edges
-        .filter((edge) => edge.label)
-        .map((edge) => measureEdgeLabel(edge.label!, layoutWidthLimit < 500 ? 100 : undefined));
-      const labelOverflowX = Math.max(0, ...labelSizes.map((size) => size.width / 2 + 8));
-      const labelOverflowY = Math.max(0, ...labelSizes.map((size) => size.height / 2 + 8));
-      minX -= labelOverflowX;
-      maxX += labelOverflowX;
-      minY -= labelOverflowY;
-      maxY += labelOverflowY;
-      canvasBounds = { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
       const nodeIds = new Set(visibleNodeIds);
       const edgeIds = new Set(visibleEdgeIds);
       const model = currentState
@@ -597,7 +627,13 @@
       layout = currentState
         ? computeLayout(
             model,
-            diagram.baseView,
+            {
+              ...diagram.baseView,
+              layout: {
+                ...diagram.baseView.layout,
+                spacing: Math.min(diagram.baseView.layout.spacing ?? 80, 56),
+              },
+            },
             diagram.grammar,
             renderStyleConfig,
             layoutWidthLimit,
@@ -607,7 +643,6 @@
       beginDiagramSettlement();
     } catch {
       layout = null;
-      canvasBounds = null;
       layoutError = true;
     }
   });
@@ -618,7 +653,6 @@
 
   // Scroll container ref for focus scrolling
   let scrollContainerEl = $state<HTMLDivElement | null>(null);
-  let scrollContainerWidth = $state<number | null>(null);
   let initialFitResolved = $state(false);
 
   // Track scroll container width for sticky footer sizing
@@ -638,12 +672,15 @@
 
   // Apply camera transform (zoom + pan) to the diagram content
   let cameraTransformStyle = $derived.by(() => {
-    const transforms: string[] = [];
-    if (cameraPan) {
-      transforms.push(`translate(${cameraPan.x}px, ${cameraPan.y}px)`);
+    const panX = cameraPan?.x ?? 0;
+    const panY = cameraPan?.y ?? 0;
+    if (automaticallyFitState) {
+      return `scale(${renderedScale}) translate(calc(-50% + ${panX / renderedScale}px), calc(-50% + ${panY / renderedScale}px))`;
     }
-    if (cameraZoom !== 1) {
-      transforms.push(`scale(${cameraZoom})`);
+    const transforms: string[] = [];
+    if (cameraPan) transforms.push(`translate(${panX}px, ${panY}px)`);
+    if (renderedScale !== 1) {
+      transforms.push(`scale(${renderedScale})`);
     }
     return transforms.length > 0 ? transforms.join(' ') : undefined;
   });
@@ -692,10 +729,6 @@
         maxY = Math.max(maxY, label.y + label.height);
       }
       return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
-    }
-
-    if (canvasBounds) {
-      return canvasBounds;
     }
 
     // Compute bounds from only visible elements
@@ -764,6 +797,9 @@
     return visibleBounds.height + canvasPadding * 2;
   });
 
+  let contentWidth = $derived(svgWidth * renderedScale);
+  let contentHeight = $derived((svgHeight + 6) * renderedScale);
+
   let svgTransform = $derived.by(() => {
     if (!visibleBounds) return 'translate(0, 0)';
     return `translate(${-visibleBounds.minX + canvasPadding}px, ${-visibleBounds.minY + canvasPadding}px)`;
@@ -775,19 +811,34 @@
   });
 
   function updateFitScale() {
-    if (!fitToWidth || !scrollContainerEl) {
+    if ((!fitToWidth && !automaticallyFitState) || !scrollContainerEl) {
       fitScale = 1;
       return;
     }
     const availableWidth = Math.max(1, scrollContainerEl.clientWidth - 16);
+    const availableHeight = Math.max(1, scrollContainerEl.clientHeight - 16);
     const renderedWidth = Math.max(1, svgWidth * cameraZoom);
+    const renderedHeight = Math.max(1, svgHeight * cameraZoom);
     const readableScale = Math.max(
       PRIMARY_TEXT_FLOOR / renderStyleConfig.labelFontSize,
       SECONDARY_TEXT_FLOOR /
         (styleConfig === DEFAULT_NODE_STYLE ? 11 : renderStyleConfig.kindFontSize),
     );
-    layoutWidthLimit = Math.max(160, availableWidth / readableScale - canvasPadding * 2);
-    fitScale = Math.min(1, Math.max(readableScale, availableWidth / renderedWidth));
+    const verticalStateWidthFloor =
+      automaticallyFitState && ['TB', 'BT'].includes(diagram.baseView.layout.direction ?? '')
+        ? 500
+        : 160;
+    layoutWidthLimit = Math.max(
+      verticalStateWidthFloor,
+      availableWidth / readableScale - canvasPadding * 2,
+    );
+    fitScale = Math.min(
+      1.25,
+      Math.max(
+        readableScale,
+        Math.min(availableWidth / renderedWidth, availableHeight / renderedHeight),
+      ),
+    );
   }
 
   function toggleFitToWidth() {
@@ -805,8 +856,9 @@
 
   $effect(() => {
     svgWidth;
+    svgHeight;
     cameraZoom;
-    if (fitToWidth) updateFitScale();
+    if (fitToWidth || automaticallyFitState) updateFitScale();
   });
 
   $effect(() => {
@@ -839,10 +891,15 @@
   // Handle state change
   function changeState(stateId: string) {
     if (stateId === currentStateId) return;
+    const nodePositions = captureNodePositions();
+    transitionRevision += 1;
+    const revision = transitionRevision;
     previousVisibleEdgeIds = visibleEdgeIds;
     stateJustChanged = motionDuration(1) > 0;
     beginDiagramSettlement();
     currentStateId = stateId;
+    flushSync();
+    animatePersistentNodes(revision, nodePositions);
 
     // Notify parent so consumers (e.g. TipTap DiagramBlock) can persist the selected step
     onUpdate?.({ currentStateId: stateId });
@@ -877,8 +934,9 @@
   bind:this={rendererEl}
   class="diagram-renderer"
   class:has-content={Boolean(layout && diagram.model.nodes.length > 0)}
-  class:compact-diagram={layoutWidthLimit < 500}
+  class:compact-diagram={usesCompactPresentation}
   class:fitted-diagram={fitToWidth}
+  class:stateful-diagram={Boolean(diagram.states?.length)}
   data-diagram-settled={diagramSettled}
   data-diagram-state={currentStateId}
 >
@@ -917,12 +975,16 @@
     {:else}
       <div
         class="diagram-content"
-        style:transform={cameraTransformStyle}
-        style:transform-origin="top left"
-        style:zoom={fitToWidth ? fitScale : 1}
+        style:width={automaticallyFitState ? '100%' : `${contentWidth}px`}
+        style:height={automaticallyFitState ? '100%' : `${contentHeight}px`}
       >
         <!-- SVG Layer (edges, groups, and HTML overlay) -->
-        <svg class="diagram-svg-layer" width={svgWidth} height={svgHeight + 6}>
+        <svg
+          class="diagram-svg-layer"
+          width={svgWidth}
+          height={svgHeight + 6}
+          style:transform={cameraTransformStyle}
+        >
           <!-- Shared marker definitions scoped by diagram ID to avoid cross-diagram conflicts -->
           <defs>
             <!-- Default arrowhead matching default edge stroke color -->
@@ -1088,7 +1150,10 @@
             <!-- Groups (background) -->
             {#if visibleGroups}
               {#each visibleGroups as group (group.id)}
-                <g transition:fade={{ duration: motionDuration(150) }}>
+                <g
+                  in:fade={{ delay: motionDuration(60), duration: motionDuration(160) }}
+                  out:fade={{ delay: motionDuration(220), duration: motionDuration(120) }}
+                >
                   <DiagramGroup
                     {group}
                     dimmed={hoveredGroupId !== null && hoveredGroupId !== group.id}
@@ -1109,7 +1174,11 @@
               {@const isEdgeHighlighted =
                 highlightedEdgeSet !== null && highlightedEdgeSet.has(edge.id)}
               {@const isNewEdge = newEdgeIds.has(edge.id)}
-              <g class:edge-draw-in={isNewEdge} transition:fade={{ duration: motionDuration(150) }}>
+              <g
+                class:edge-draw-in={isNewEdge}
+                in:fade={{ delay: motionDuration(120), duration: motionDuration(160) }}
+                out:fade={{ delay: motionDuration(220), duration: motionDuration(120) }}
+              >
                 <DiagramEdge
                   {edge}
                   dimmed={isEdgeDimmed}
@@ -1142,7 +1211,8 @@
                   data-edge-id={edge.id}
                   data-semantic-style={edge.semanticStyle ?? 'default'}
                   data-truncated={labelPos.truncated}
-                  transition:fade={{ duration: motionDuration(150) }}
+                  in:fade={{ delay: motionDuration(160), duration: motionDuration(140) }}
+                  out:fade={{ delay: motionDuration(220), duration: motionDuration(120) }}
                 >
                   {#if labelPos.truncated}
                     <Tooltip content={edge.label} side="top" class="edge-label-tooltip">
@@ -1178,10 +1248,12 @@
                 width={node.width}
                 height={node.height}
                 class="diagram-geometry-motion"
-                transition:fade={{
+                in:fade={{
+                  delay: stateJustChanged ? motionDuration(60) : 0,
                   duration: stateJustChanged ? motionDuration(180) : 0,
                   easing: cubicOut,
                 }}
+                out:fade={{ delay: motionDuration(220), duration: motionDuration(120) }}
               >
                 <DiagramNodeHTML
                   {node}
@@ -1199,17 +1271,17 @@
         </svg>
       </div>
     {/if}
-
-    <!-- Footer with controls and narrative (only show if states exist) - sticky at bottom -->
-    {#if !layoutError && diagram.model.nodes.length > 0 && diagram.states && diagram.states.length > 0}
-      <div
-        class="diagram-footer"
-        style:width={scrollContainerWidth != null ? `${scrollContainerWidth}px` : '100%'}
-      >
-        <DiagramControls states={diagram.states} {currentStateId} onStateChange={changeState} />
-      </div>
-    {/if}
   </div>
+
+  <!-- Footer with controls and narrative (only show if states exist) - sticky at bottom -->
+  {#if !layoutError && diagram.model.nodes.length > 0 && diagram.states && diagram.states.length > 0}
+    <div
+      class="diagram-footer"
+      style:width={scrollContainerWidth != null ? `${scrollContainerWidth}px` : '100%'}
+    >
+      <DiagramControls states={diagram.states} {currentStateId} onStateChange={changeState} />
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -1234,6 +1306,14 @@
     width: 100%;
     max-width: 100%;
     margin-inline: auto;
+  }
+
+  .diagram-renderer.stateful-diagram.has-content {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    align-items: stretch;
   }
 
   .diagram-actions {
@@ -1276,6 +1356,24 @@
     min-height: 0;
   }
 
+  .stateful-diagram .diagram-scroll-container {
+    height: 664px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+  }
+
+  .stateful-diagram .diagram-content {
+    min-width: 100%;
+    min-height: 100%;
+  }
+
+  .stateful-diagram .diagram-svg-layer {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+  }
+
   .diagram-content {
     position: relative;
     width: fit-content;
@@ -1305,12 +1403,14 @@
   .diagram-svg-layer {
     display: block;
     background: var(--diagram-canvas);
+    transform-origin: top left;
+    transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .diagram-footer {
-    position: sticky;
-    bottom: 0;
-    left: 0;
+    grid-column: 1;
+    grid-row: 3;
+    position: relative;
     flex-shrink: 0;
     z-index: 1;
     box-sizing: border-box;
@@ -1342,6 +1442,7 @@
 
   :global(.diagram-geometry-motion) {
     transition:
+      transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
       x 220ms cubic-bezier(0.16, 1, 0.3, 1),
       y 220ms cubic-bezier(0.16, 1, 0.3, 1),
       width 220ms cubic-bezier(0.16, 1, 0.3, 1),

@@ -133,7 +133,7 @@
     let frame = 0;
     reportMotion(true);
     const tick = (now: number) => {
-      const elapsed = Math.min(1, (now - startedAt) / 220);
+      const elapsed = Math.max(0, Math.min(1, (now - startedAt) / 220));
       const progress = calmEaseOut(elapsed);
       const points = from.map((point, index) => ({
         x: point.x + (to[index].x - point.x) * progress,
