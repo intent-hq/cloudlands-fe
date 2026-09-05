@@ -14,7 +14,16 @@ import type {
 } from '$store/renderer/slices/daemon-health/daemon-health-types';
 import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
 
-const transport = { mode: 'sidecar-uds' as const, pinnedVersion: '0.9.1' };
+// Every scene connects to its own daemon: a distinct `target` makes the
+// reducer treat the connect as a genuine daemon switch, which drops the
+// previous scene's stats and freshness instead of keeping them as a
+// same-daemon reconnect would. `sidecar-uds` never renders the target.
+let daemonSerial = 0;
+const nextTransport = () => ({
+  mode: 'sidecar-uds' as const,
+  target: `/tmp/preview-daemon-${(daemonSerial += 1)}.sock`,
+  pinnedVersion: '0.9.1',
+});
 
 const statusPayload: SystemStatusWirePayload = {
   running: true,
@@ -56,11 +65,21 @@ function failureKinds(
     : Array.from({ length: failures.count }, () => failures.kind);
 }
 
+// The store is shared, so two live scenes would render the same merged
+// state. Refuse the overlap (`state=all`) rather than show a misleading grid.
+let liveScenes = 0;
+
 // The trigger is a dot; open it and the "Status - …" submenu to see the
 // details panel this preview is about.
 function setup({ stats = true, failures }: Scenario) {
   return () => {
-    store.dispatch(connectionStatusChanged('connected', transport));
+    if (liveScenes > 0) {
+      throw new Error(
+        'The daemon status indicator preview drives the shared daemon-health store and can only show one state at a time; open a single state instead of "all".',
+      );
+    }
+    liveScenes += 1;
+    store.dispatch(connectionStatusChanged('connected', nextTransport()));
     if (stats) {
       store.dispatch(systemStatusSuccess(statusPayload, lastSuccessAt(), generation()));
     }
@@ -76,7 +95,10 @@ function setup({ stats = true, failures }: Scenario) {
         );
       }
     }
-    return () => store.dispatch(connectionStatusChanged('disconnected'));
+    return () => {
+      liveScenes -= 1;
+      store.dispatch(connectionStatusChanged('disconnected'));
+    };
   };
 }
 
