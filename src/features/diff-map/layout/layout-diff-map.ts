@@ -1,3 +1,5 @@
+import { formatInteger } from '$lib/i18n/format';
+import { m } from '$shared/paraglide/messages.js';
 import type { DiffMapDocument, DiffMapGroup } from '../model/types';
 
 export type DiffMapDensityRung = 0 | 1 | 2 | 3;
@@ -71,6 +73,7 @@ const OUTER_GAP = 8;
 const BLOCK_GAP = 8;
 const BLOCK_PADDING = 6;
 const COLUMN_GAP = 4;
+const HEADER_GAP = 6;
 const SECTION_HEADER_HEIGHT = 22;
 const NARROW_WIDTH = 480;
 
@@ -112,6 +115,13 @@ function groupLabel(group: DiffMapGroup): string {
   return `${group.displayPrefix}${group.displayName}` || '.';
 }
 
+export function diffMapGroupCountLabel(group: DiffMapGroup): string {
+  const count = formatInteger(group.changedCount);
+  return group.totalCount === undefined
+    ? m.diffMap_groupChanged_label({ count })
+    : m.diffMap_groupChangedTotal_label({ count, total: formatInteger(group.totalCount) });
+}
+
 function leftEllipsis(
   text: string,
   maxWidth: number,
@@ -136,14 +146,19 @@ function truncateGroupLabel(
   maxWidth: number,
   measure: TextMeasurer,
   context: TextMeasureContext,
+  preserveName = false,
 ): { prefix: string; name: string } {
   const name = group.displayName || '.';
   const nameWidth = measure(name, context);
   if (nameWidth > maxWidth) {
     return { prefix: '', name: middleEllipsis(name, maxWidth, measure, context) };
   }
+  const prefixWidth = maxWidth - nameWidth;
   return {
-    prefix: leftEllipsis(group.displayPrefix, maxWidth - nameWidth, measure, context),
+    prefix:
+      preserveName && measure('…', context) > prefixWidth
+        ? ''
+        : leftEllipsis(group.displayPrefix, prefixWidth, measure, context),
     name,
   };
 }
@@ -164,9 +179,18 @@ function buildBlock(
     0,
   );
   const labelWidth = measure(groupLabel(group), groupContext);
+  const countLabel = diffMapGroupCountLabel(group);
+  const countWidth = measure(countLabel, groupContext);
+  const minimumHeaderWidth =
+    measure(group.displayName || '.', groupContext) + (rung < 3 ? countWidth + HEADER_GAP : 0);
   const naturalColumnWidth = Math.min(
     config.maxColumnWidth,
-    Math.max(config.minColumnWidth, longestFileWidth + config.chrome, labelWidth),
+    Math.max(
+      config.minColumnWidth,
+      longestFileWidth + config.chrome,
+      labelWidth,
+      minimumHeaderWidth,
+    ),
   );
   const maxRowsByHeight = Math.max(
     1,
@@ -216,9 +240,10 @@ function buildBlock(
   });
   const label = truncateGroupLabel(
     group,
-    Math.max(0, width - BLOCK_PADDING * 2),
+    Math.max(0, width - BLOCK_PADDING * 2 - (rung < 3 ? countWidth + HEADER_GAP : 0)),
     measure,
     groupContext,
+    rung < 3,
   );
   return {
     groupId: group.id,

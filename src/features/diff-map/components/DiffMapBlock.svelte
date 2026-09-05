@@ -1,10 +1,9 @@
 <script lang="ts">
-  import { formatInteger } from '$lib/i18n/format';
-  import { m } from '$shared/paraglide/messages.js';
-  import type {
-    DiffMapDensityRung,
-    DiffMapLayoutBlock,
-    DiffMapLayoutRow,
+  import {
+    diffMapGroupCountLabel,
+    type DiffMapDensityRung,
+    type DiffMapLayoutBlock,
+    type DiffMapLayoutRow,
   } from '../layout/layout-diff-map';
   import type { DiffMapFile, DiffMapGroup } from '../model/types';
   import DiffMapRow, { type DiffMapLayers } from './DiffMapRow.svelte';
@@ -44,15 +43,7 @@
   }: Props = $props();
 
   const rows = $derived(block.columns.flatMap((column) => column.rows));
-  const countLabel = $derived(
-    group.totalCount === undefined
-      ? m.diffMap_groupChanged_label({ count: formatInteger(group.changedCount) })
-      : m.diffMap_groupChangedTotal_label({
-          count: formatInteger(group.changedCount),
-          total: formatInteger(group.totalCount),
-        }),
-  );
-
+  const countLabel = $derived(diffMapGroupCountLabel(group));
   function matches(row: DiffMapLayoutRow) {
     const file = files.get(row.fileId);
     return (
@@ -130,10 +121,19 @@
   }
 
   .group-path {
+    display: flex;
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  .group-path strong {
+    flex: none;
+  }
+
+  .prefix {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .prefix,

@@ -8,6 +8,7 @@ import {
 } from '../model/fixtures';
 import type { DiffMapDocument } from '../model/types';
 import {
+  diffMapGroupCountLabel,
   diffLayouts,
   layoutDiffMap,
   shouldRelayoutDiffMap,
@@ -136,6 +137,36 @@ describe('layoutDiffMap', () => {
       expect.arrayContaining([expect.stringContaining('auth'), expect.stringContaining('ui')]),
     );
   });
+
+  it.each([0, 1, 2] as const)(
+    'reserves visible count space without eliding the group name at rung %i',
+    (rung) => {
+      const displayName = 'authentication';
+      const document: DiffMapDocument = {
+        ...typicalDiffMapFixture.document,
+        files: typicalDiffMapFixture.document.files.slice(0, 1),
+        groups: [
+          {
+            ...typicalDiffMapFixture.document.groups[0],
+            displayPrefix: 'packages/',
+            displayName,
+            fileIds: [typicalDiffMapFixture.document.files[0].id],
+          },
+        ],
+      };
+      const block = layoutDiffMap(document, { width: 480, height: 500 }, measure, {
+        rungOverride: rung,
+      }).blocks[0];
+      const labelWidth = measure(block.label, { role: 'group', rung });
+      const countWidth = measure(diffMapGroupCountLabel(document.groups[0]), {
+        role: 'group',
+        rung,
+      });
+
+      expect(block.label).toMatch(new RegExp(`${displayName}$`));
+      expect(labelWidth + countWidth + 6 + 12).toBeLessThanOrEqual(block.w);
+    },
+  );
 
   it('caps long labels with a middle ellipsis', () => {
     const layout = layoutDiffMap(
