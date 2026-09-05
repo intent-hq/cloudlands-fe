@@ -24,8 +24,10 @@ describe('NewSpaceModal nested overlay layering', () => {
     const overlay = source('src/lib/components/ui/dialog/dialog-overlay.svelte');
 
     expect(modal).toContain("import * as Dialog from '$lib/components/ui/dialog'");
-    expect(overlay).toContain('fixed inset-0');
-    expect(overlay).toContain('bg-foreground/20 backdrop-blur-[1px]');
+    expect(overlay).toContain("contained ? 'absolute' : 'fixed'");
+    expect(overlay).toContain('{#if forceMount || rootOpen()}');
+    expect(overlay).toContain('inset-0 z-[var(--layer-modal)]');
+    expect(overlay).toContain('bg-black/40 dark:bg-black/80');
     expect(modal).not.toContain('bg-background/50 backdrop-blur cursor-pointer');
   });
 });

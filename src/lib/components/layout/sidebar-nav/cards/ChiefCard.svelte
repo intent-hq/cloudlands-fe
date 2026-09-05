@@ -398,7 +398,7 @@
         <Button
           class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
           onclick={handleNewThreadClick}
-          disabled={isCreatingThread || collapsed}
+          disabled={collapsed}
           tabindex={collapsed ? -1 : undefined}
           aria-hidden={collapsed ? 'true' : undefined}
           aria-label={m.layout_chiefCard_newThread_tooltip()}

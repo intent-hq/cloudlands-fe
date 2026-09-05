@@ -47,11 +47,11 @@ describe('settings pattern', () => {
     ).toContain('feature.flag');
   });
 
-  it('integrates section anchors with the active settings sidebar navigation', async () => {
+  it('integrates section tabs with the active settings sidebar navigation', async () => {
     render(SettingsHarness);
-    expect(screen.getByRole('link', { name: 'General settings' }).getAttribute('href')).toBe(
-      '#general',
-    );
+    const generalTab = screen.getByRole('tab', { name: 'General settings' });
+    await fireEvent.click(generalTab);
+    expect(generalTab.getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('button', { name: 'Display' }).getAttribute('aria-current')).toBe(
       'page',
     );

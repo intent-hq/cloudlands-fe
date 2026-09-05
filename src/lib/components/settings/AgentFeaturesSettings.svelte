@@ -232,6 +232,7 @@
         description: feature.description(),
         featureCode: feature.path,
         disabled: loading,
+        // i18n-ignore (daemon-provided wire text, PROTOCOL §5.12 tokenImpact)
         status: tokenImpacts[feature.path],
         statusTone: 'subtle',
         get: () => currentValue,
@@ -302,7 +303,9 @@
 {/snippet}
 
 {#snippet maxAgentsControl()}
+  <!-- i18n-ignore (template expression, not user-facing text) -->
   {@const maxAgentsNum = Number(editedMaxAgents)}
+  <!-- i18n-ignore (template expression, not user-facing text) -->
   {@const valid = Number.isInteger(maxAgentsNum) && maxAgentsNum >= MIN_MAX_TOP_LEVEL_AGENTS}
   <div class="flex flex-col items-end gap-1">
     <div class="flex items-center gap-2">

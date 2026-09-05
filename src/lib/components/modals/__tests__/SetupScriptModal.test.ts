@@ -16,6 +16,6 @@ describe('SetupScriptModal primary actions', () => {
 
     const defaultClasses = buttonVariants({ variant: 'default' });
     expect(defaultClasses).toContain('bg-transparent');
-    expect(defaultClasses).toContain('text-foreground');
+    expect(defaultClasses).toContain('text-primary-foreground');
   });
 });
