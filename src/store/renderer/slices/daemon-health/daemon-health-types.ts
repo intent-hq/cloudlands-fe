@@ -151,6 +151,12 @@ export interface DaemonHealthStats {
   transport?: BackendTransportInfo;
 }
 
+/** Protocol-safe host identity used by presentation code for repair guidance. */
+export interface DaemonHostRepairTarget {
+  os: string;
+  arch: string;
+}
+
 /**
  * Daemon health slice state.
  */

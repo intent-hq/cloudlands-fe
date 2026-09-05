@@ -81,7 +81,7 @@
 <div class="h-full p-3">
   <UntitledWorkspaceShell
     state={controllerState}
-    presentation={{ hostName: $daemonHostRepairTarget$ }}
+    presentation={{ host: $daemonHostRepairTarget$ }}
     onEdit={(patch) => routeController.edit(patch)}
     onStart={(requiredCapabilities) =>
       routeController.dispatch({ type: 'start.requested', requiredCapabilities })}

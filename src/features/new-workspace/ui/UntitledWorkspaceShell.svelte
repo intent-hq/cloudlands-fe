@@ -169,7 +169,7 @@
       />
       <CapabilityStrip
         capabilities={controllerState.capabilities}
-        hostName={presentation.hostName}
+        host={presentation.host}
         onRecheck={onRecheckCapabilities}
       />
 

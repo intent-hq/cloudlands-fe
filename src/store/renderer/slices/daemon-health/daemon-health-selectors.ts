@@ -4,40 +4,20 @@
 
 import { compareToPinnedVersion, type PinComparison } from '$shared/intentd-version-compare';
 import { store } from '../../store';
-import type { BackendTransportInfo } from './daemon-health-types';
+import type { BackendTransportInfo, DaemonHostRepairTarget } from './daemon-health-types';
 
 export const selectDaemonHealth = store.createSelector((state) => state.daemonHealth.health);
 
 export const selectDaemonHealthStats = store.createSelector((state) => state.daemonHealth.stats);
 
-/** Repair target derived from the daemon's system.status host block. */
-export const selectDaemonHostRepairTarget = store.createSelector((state): string | undefined => {
-  const stats = state.daemonHealth.stats;
-  if (!stats) return undefined;
-
-  const os =
-    stats.os === 'macos'
-      ? 'macOS'
-      : stats.os === 'windows'
-        ? 'Windows'
-        : stats.os === 'linux'
-          ? 'Linux'
-          : stats.os;
-  const isArm = stats.arch === 'aarch64' || stats.arch === 'arm64';
-  const isX64 = stats.arch === 'x86_64' || stats.arch === 'x64';
-  const arch =
-    stats.os === 'macos' && isArm
-      ? 'Apple silicon'
-      : stats.os === 'macos' && isX64
-        ? 'Intel'
-        : isArm
-          ? 'ARM64'
-          : isX64
-            ? 'x86-64'
-            : stats.arch;
-
-  return `${os} (${arch})`;
-});
+/** Protocol-safe repair target derived from the daemon's system.status host block. */
+export const selectDaemonHostRepairTarget = store.createSelector(
+  (state): DaemonHostRepairTarget | undefined => {
+    const stats = state.daemonHealth.stats;
+    if (!stats) return undefined;
+    return { os: stats.os, arch: stats.arch };
+  },
+);
 
 export const selectDaemonHealthLastUpdated = store.createSelector(
   (state) => state.daemonHealth.lastUpdated,

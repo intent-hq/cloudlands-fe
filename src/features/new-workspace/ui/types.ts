@@ -1,5 +1,6 @@
 import type { NpxStatus } from '$shared/types/provider-availability';
 import type { SetupResult } from '$shared/types/workspace-draft';
+import type { DaemonHostRepairTarget } from '$store/renderer/slices/daemon-health/daemon-health-types';
 import type { Capability, ControllerState } from '../controller';
 
 export type CoordinatorState =
@@ -51,7 +52,7 @@ interface ProgressPresentation {
 }
 
 export interface NewWorkspacePresentation {
-  hostName?: string;
+  host?: DaemonHostRepairTarget;
   coordinator?: CoordinatorPresentation;
   source?: SourcePresentation;
   progress?: ProgressPresentation;

@@ -8,19 +8,17 @@
     faTriangleExclamation,
   } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
+  import type { DaemonHostRepairTarget } from '$store/renderer/slices/daemon-health/daemon-health-types';
   import type { CapabilityStatus, ControllerState } from '../controller';
+  import { formatDaemonHostRepairTarget } from './host-repair-target';
 
   interface Props {
     capabilities: ControllerState['capabilities'];
-    hostName?: string;
+    host?: DaemonHostRepairTarget;
     onRecheck?: () => void;
   }
 
-  let {
-    capabilities,
-    hostName = m.newWorkspace_capabilities_defaultHost_label(),
-    onRecheck,
-  }: Props = $props();
+  let { capabilities, host, onRecheck }: Props = $props();
 
   const items = $derived([
     { id: 'git' as const, name: 'Git', status: capabilities.git },
@@ -104,7 +102,7 @@
     <p class="text-xs text-muted-foreground" data-capability-guidance={item.id}>
       {m.newWorkspace_capabilities_repairOnHost_description({
         capability: item.name,
-        host: hostName,
+        host: formatDaemonHostRepairTarget(host),
       })}
     </p>
   {/each}

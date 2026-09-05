@@ -26,6 +26,7 @@ import {
 } from '../controller';
 import { DEFAULT_SCENARIO_FIXTURES } from '../sandbox/scenarios';
 import { READY_CAPABILITIES, restoredState } from '../sandbox/scenario-builders';
+import { formatDaemonHostRepairTarget } from '../ui/host-repair-target';
 import { coordinatorStateFor, isEditorEnabled } from '../ui/types';
 import { newWorkspaceEffectSaga, type NewWorkspaceSagaDependencies } from '.';
 
@@ -135,13 +136,13 @@ describe('new-workspace host × provider × network robustness matrix', () => {
   );
 
   it.each([
-    ['macOS Intel', 'macos', 'x86_64', 'macOS (Intel)'],
-    ['macOS ARM', 'macos', 'aarch64', 'macOS (Apple silicon)'],
-    ['Windows', 'windows', 'x86_64', 'Windows (x86-64)'],
-    ['Linux', 'linux', 'aarch64', 'Linux (ARM64)'],
+    ['macOS Intel', 'macos', 'x86_64'],
+    ['macOS ARM', 'macos', 'aarch64'],
+    ['Windows', 'windows', 'x86_64'],
+    ['Linux', 'linux', 'aarch64'],
   ] as const)(
     '%s system.status fixture selects truthful missing-Git guidance and preserves the draft',
-    async (_name, os, arch, expectedRepairTarget) => {
+    async (_name, os, arch) => {
       const healthState = daemonHealthReducer(
         daemonHealthInitialState,
         systemStatusSuccess(systemStatusFixture(os, arch), '2026-09-05T00:00:00.000Z'),
@@ -149,6 +150,7 @@ describe('new-workspace host × provider × network robustness matrix', () => {
       const repairTarget = selectDaemonHostRepairTarget.select({
         daemonHealth: healthState,
       } as unknown as StoreState);
+      const hostGuidanceTarget = formatDaemonHostRepairTarget(repairTarget);
       registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, () => ({
         ok: true,
         result: { available: false },
@@ -158,13 +160,14 @@ describe('new-workspace host × provider × network robustness matrix', () => {
 
       state = await execute(state);
 
-      expect(repairTarget).toBe(expectedRepairTarget);
+      expect(repairTarget).toEqual({ os, arch });
+      expect(hostGuidanceTarget).not.toBe(m.newWorkspace_capabilities_defaultHost_label());
       expect(
         m.newWorkspace_capabilities_repairOnHost_description({
           capability: 'Git',
-          host: repairTarget!,
+          host: hostGuidanceTarget,
         }),
-      ).toContain(expectedRepairTarget);
+      ).toContain(hostGuidanceTarget);
       expect(state.capabilities.git).toBe('missing');
       expect(state.input).toMatchObject({
         intentText: 'Retain this plan',
@@ -173,6 +176,26 @@ describe('new-workspace host × provider × network robustness matrix', () => {
       expect(coordinatorStateFor(state)).not.toBe('live');
     },
   );
+
+  it('host fixtures produce distinct localized repair targets', () => {
+    const repairTargets = [
+      ['macos', 'x86_64'],
+      ['macos', 'aarch64'],
+      ['windows', 'x86_64'],
+      ['linux', 'aarch64'],
+    ].map(([os, arch]) => {
+      const healthState = daemonHealthReducer(
+        daemonHealthInitialState,
+        systemStatusSuccess(systemStatusFixture(os, arch), '2026-09-05T00:00:00.000Z'),
+      );
+      const host = selectDaemonHostRepairTarget.select({
+        daemonHealth: healthState,
+      } as unknown as StoreState);
+      return formatDaemonHostRepairTarget(host);
+    });
+
+    expect(new Set(repairTargets).size).toBe(repairTargets.length);
+  });
 
   it('native provider remains startable when Node is absent', () => {
     let state = editable('node', 'missing');

@@ -370,12 +370,18 @@ export const NEW_WORKSPACE_SCENARIOS: readonly Scenario[] = [
       contract: { control: 'provider', width: 768 },
     },
   ),
-  ...[
-    ['capability-wrong-remote-host', 'Remote build host', 'remote-builder'],
-    ['capability-git-missing-mac', 'Git missing on macOS', 'Mac'],
-    ['capability-git-missing-windows', 'Git missing on Windows', 'Windows'],
-    ['capability-git-missing-linux', 'Git missing on Linux', 'Linux'],
-  ].map(([id, title, hostName]) =>
+  ...(
+    [
+      ['capability-wrong-remote-host', 'Remote build host', { os: 'remote', arch: 'builder' }],
+      ['capability-git-missing-mac', 'Git missing on macOS', { os: 'macos', arch: 'aarch64' }],
+      [
+        'capability-git-missing-windows',
+        'Git missing on Windows',
+        { os: 'windows', arch: 'x86_64' },
+      ],
+      ['capability-git-missing-linux', 'Git missing on Linux', { os: 'linux', arch: 'aarch64' }],
+    ] as const
+  ).map(([id, title, host]) =>
     scenario(
       id,
       'capability',
@@ -386,7 +392,7 @@ export const NEW_WORKSPACE_SCENARIOS: readonly Scenario[] = [
         fixtures: fixtures(localDraft, {
           host: { ...DEFAULT_SCENARIO_FIXTURES.host, git: { state: 'missing' } },
         }),
-        presentation: { hostName, requiredCapabilities: ['git'] },
+        presentation: { host, requiredCapabilities: ['git'] },
         contract: { control: 'none', width: 768 },
       },
     ),
