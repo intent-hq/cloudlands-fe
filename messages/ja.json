@@ -4824,7 +4824,6 @@
   "ui_shortcuts_navigatePanels_label": "パネル間を移動",
   "ui_shortcuts_resizePanels_label": "パネルのサイズを変更",
   "ui_shortcuts_splitRight_label": "右に分割",
-  "ui_shortcuts_splitDown_label": "下に分割",
   "ui_shortcuts_toggleZoom_label": "ズームの切り替え",
   "ui_shortcuts_closePanel_label": "パネルを閉じる",
   "ui_shortcuts_nextPrevPanel_label": "次/前のパネル",
