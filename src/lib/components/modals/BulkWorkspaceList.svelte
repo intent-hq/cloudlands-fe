@@ -83,7 +83,7 @@
         <span class="min-w-0 flex-1 truncate">{workspace.title}</span>
         {#if workspace.status === WorkspaceStatusEnum.Archived}
           <span
-            class="shrink-0 rounded bg-foreground/[0.05] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+            class="type-caption shrink-0 rounded-sm bg-muted-foreground/10 px-1.5 font-normal text-muted-foreground"
           >
             {m.lib_commandPalette_archivedWorkspace_pill()}
           </span>
