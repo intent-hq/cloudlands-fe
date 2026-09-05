@@ -363,7 +363,7 @@ describe('WebSocketApiSettings', () => {
       await waitFor(() => {
         expect(
           screen.getByText(
-            'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.',
+            'Remote access settings are managed on the machine running the daemon and are only available when connected locally.',
           ),
         ).toBeTruthy();
       });
@@ -405,7 +405,7 @@ describe('WebSocketApiSettings', () => {
       // Assert: no remote info panel, no error toast
       expect(
         screen.queryByText(
-          'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.',
+          'Remote access settings are managed on the machine running the daemon and are only available when connected locally.',
         ),
       ).toBeNull();
       expect(mockToast.error).not.toHaveBeenCalled();
@@ -424,7 +424,7 @@ describe('WebSocketApiSettings', () => {
       await waitFor(() => {
         expect(
           screen.getByText(
-            'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.',
+            'Remote access settings are managed on the machine running the daemon and are only available when connected locally.',
           ),
         ).toBeTruthy();
       });
@@ -470,7 +470,7 @@ describe('WebSocketApiSettings', () => {
       await waitFor(() => {
         expect(
           screen.getByText(
-            'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.',
+            'Remote access settings are managed on the machine running the daemon and are only available when connected locally.',
           ),
         ).toBeTruthy();
       });
