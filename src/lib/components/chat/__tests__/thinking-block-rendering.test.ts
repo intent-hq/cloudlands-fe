@@ -7,7 +7,7 @@
  * sites must read it, not only the legacy `content` field the FE's own
  * <think>-tag parser produces.
  */
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
@@ -39,6 +39,7 @@ afterEach(() => {
 
 warmImport(() => import('../StreamingMessageContent.svelte'), 300_000);
 warmImport(() => import('../MessageContent.svelte'), 300_000);
+warmImport(() => import('../ReasoningHistoryBlock.svelte'), 300_000);
 
 /** Daemon-shaped thinking block (PROTOCOL §7.1). */
 function thinking(id: string, text: string): ContentBlock {
@@ -58,6 +59,67 @@ async function renderMessage(content: ContentBlock[], isStreaming: boolean) {
 async function renderStatic(content: ContentBlock[]) {
   return renderMessage(content, false);
 }
+
+async function renderReasoningHistory(content: string) {
+  const ReasoningHistoryBlock = (await import('../ReasoningHistoryBlock.svelte')).default;
+  return render(ReasoningHistoryBlock, { props: { content, searchPath: 'b:0:c:1' } });
+}
+
+describe('reasoning history search targets', () => {
+  it('marks a title-only phase with its stable summary target', async () => {
+    const { container } = await renderReasoningHistory('Title-only search target');
+
+    expect(
+      container.querySelector('[data-chat-search-block-path="b:0:c:1:p:0:summary"]')?.textContent,
+    ).toContain('Title-only search target');
+    expect(container.querySelector('[data-chat-search-block-path$=":body"]')).toBeNull();
+  });
+
+  it('marks a body-only phase with its stable body target after search expansion', async () => {
+    const { container } = await renderReasoningHistory(
+      'This body-only search target is a complete explanatory sentence.',
+    );
+    const disclosure = container.querySelector('[data-chat-search-disclosure-id]')!;
+
+    disclosure.dispatchEvent(new CustomEvent('chatsearchexpand'));
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-chat-search-block-path="b:0:c:1:p:0:body"]'),
+      ).not.toBeNull(),
+    );
+    expect(
+      container.querySelector('[data-chat-search-block-path="b:0:c:1:p:0:body"]')?.textContent,
+    ).toContain('body-only search target');
+  });
+
+  it('keeps shared title and body text independently targetable and restores search ownership', async () => {
+    const { container } = await renderReasoningHistory(
+      'Shared-marker title\n\nShared-marker body explanation.',
+    );
+    const disclosure = container.querySelector('[data-chat-search-disclosure-id]')!;
+    const button = screen.getByRole('button');
+    const summary = container.querySelector('[data-chat-search-block-path="b:0:c:1:p:0:summary"]')!;
+
+    disclosure.dispatchEvent(new CustomEvent('chatsearchexpand'));
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-chat-search-block-path="b:0:c:1:p:0:body"]'),
+      ).not.toBeNull(),
+    );
+    const body = container.querySelector('[data-chat-search-block-path="b:0:c:1:p:0:body"]')!;
+    expect(summary.compareDocumentPosition(body!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+
+    disclosure.dispatchEvent(new CustomEvent('chatsearchrestore'));
+    await waitFor(() => expect(button.getAttribute('aria-expanded')).toBe('false'));
+    expect(container.querySelector('[data-chat-search-block-path$=":body"]')).toBeNull();
+
+    await fireEvent.click(button);
+    disclosure.dispatchEvent(new CustomEvent('chatsearchexpand'));
+    disclosure.dispatchEvent(new CustomEvent('chatsearchrestore'));
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+  });
+});
 
 describe('thinking blocks — StreamingMessageContent', () => {
   it('renders the daemon `text` field while streaming (auto-expanded)', async () => {

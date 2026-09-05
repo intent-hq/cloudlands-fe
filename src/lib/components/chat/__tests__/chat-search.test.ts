@@ -136,9 +136,44 @@ describe('chat search utilities', () => {
         matchIndexInMessage: 0,
         occurrenceInBlock: 0,
         turnKey: 'disclosed-headingless',
-        blockPath: 'b:0:c:1:p:0',
+        blockPath: 'b:0:c:1:p:0:body',
         disclosurePath: ['group:b:0', 'reasoning:b:0:c:1:p:0'],
       },
+    ]);
+  });
+
+  it('gives a reasoning phase title and body distinct targets in result order', () => {
+    const message = assistant('phase-targets', [
+      { type: 'text', text: '<group:Prepping>Group description.' },
+      { type: 'thinking', text: 'Initial group title\n\nInitial group body.' },
+      {
+        type: 'thinking',
+        text: 'Title-only marker shared-marker\n\nBody-only marker shared-marker.',
+      },
+      { type: 'text', text: '</group:Prepping>Final prose.' },
+    ]);
+
+    expect(findChatSearchMatches([message], 'Title-only marker', new Map())).toEqual([
+      expect.objectContaining({
+        blockPath: 'b:0:c:2:p:0:summary',
+        disclosurePath: ['group:b:0', 'reasoning:b:0:c:2:p:0'],
+      }),
+    ]);
+    expect(findChatSearchMatches([message], 'Body-only marker', new Map())).toEqual([
+      expect.objectContaining({
+        blockPath: 'b:0:c:2:p:0:body',
+        disclosurePath: ['group:b:0', 'reasoning:b:0:c:2:p:0'],
+      }),
+    ]);
+    expect(findChatSearchMatches([message], 'shared-marker', new Map())).toEqual([
+      expect.objectContaining({
+        matchIndexInMessage: 0,
+        blockPath: 'b:0:c:2:p:0:summary',
+      }),
+      expect.objectContaining({
+        matchIndexInMessage: 1,
+        blockPath: 'b:0:c:2:p:0:body',
+      }),
     ]);
   });
 
@@ -201,7 +236,7 @@ describe('chat search utilities', () => {
         matchIndexInMessage: 0,
         occurrenceInBlock: 0,
         turnKey: 'titled-reasoning',
-        blockPath: 'b:0:c:1:p:0',
+        blockPath: 'b:0:c:1:p:0:body',
         disclosurePath: ['group:b:0', 'reasoning:b:0:c:1:p:0'],
       },
     ]);

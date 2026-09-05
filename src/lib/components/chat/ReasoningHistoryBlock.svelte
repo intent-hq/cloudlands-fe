@@ -85,7 +85,7 @@
         <div
           class="reasoning-history-body {OPERATIONAL_EXPANDED_CONTENT_CLASS} pb-2 type-caption text-muted-foreground [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
           data-reasoning-history-body
-          data-chat-search-block-path={phasePath}
+          data-chat-search-block-path={phasePath ? `${phasePath}:body` : undefined}
         >
           <MarkdownViewer
             content={item.body}
@@ -107,7 +107,7 @@
         detailsId={item.body ? detailsId : undefined}
         onclick={() => togglePhase(index)}
         searchDisclosureId={item.body && phasePath ? `reasoning:${phasePath}` : undefined}
-        summarySearchPath={phasePath}
+        summarySearchPath={phasePath ? `${phasePath}:summary` : undefined}
         onSearchExpand={() => expandPhaseForSearch(index)}
         onSearchRestore={() => restorePhaseAfterSearch(index)}
         {adjacentOperationalRow}

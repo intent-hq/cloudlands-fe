@@ -78,8 +78,8 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
     extractReasoningHistory(getContentBlockText(child)).forEach((phase, phaseIndex) => {
       const phasePath = `${blockPath}:p:${phaseIndex}`;
       const phaseDisclosurePath = [...disclosurePath, `reasoning:${phasePath}`];
-      if (phase.title) addText(phase.title, phasePath, phaseDisclosurePath);
-      if (phase.body) addText(phase.body, phasePath, phaseDisclosurePath);
+      if (phase.title) addText(phase.title, `${phasePath}:summary`, phaseDisclosurePath);
+      if (phase.body) addText(phase.body, `${phasePath}:body`, phaseDisclosurePath);
     });
   };
 
