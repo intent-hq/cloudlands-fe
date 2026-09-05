@@ -37,7 +37,7 @@
 
 {#if live && $entry$}
   <span data-testid="create-progress-label">
-    {m.workspace_compactInitializer_progressWithPercent_label({
+    {m.workspaceCreation_progressWithPercent_label({
       label: createProgressLabel($entry$),
       percent: formatCreateProgressPercent(maxPercent),
     })}

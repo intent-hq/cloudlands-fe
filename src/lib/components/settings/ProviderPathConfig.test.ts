@@ -38,9 +38,9 @@ vi.mock('$lib/directory-picker-service', () => ({
 
 // The real modal reads directory listings from the store; stub it with the
 // existing mock that renders a "mock select" button reporting /Users/me/src.
-vi.mock('$features/onboarding/messages/DirectoryPickerModal.svelte', async () => ({
+vi.mock('$lib/components/workspace/creation/DirectoryPickerModal.svelte', async () => ({
   default: (
-    await import('$features/onboarding/messages/__tests__/mocks/MockDirectoryPickerModal.svelte')
+    await import('$lib/components/workspace/creation/__tests__/mocks/MockDirectoryPickerModal.svelte')
   ).default,
 }));
 
@@ -57,7 +57,8 @@ const flush = async () => {
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
 warmImport(
-  () => import('$features/onboarding/messages/__tests__/mocks/MockDirectoryPickerModal.svelte'),
+  () =>
+    import('$lib/components/workspace/creation/__tests__/mocks/MockDirectoryPickerModal.svelte'),
 );
 
 describe('ProviderPathConfig', () => {

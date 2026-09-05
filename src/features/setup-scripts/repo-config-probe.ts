@@ -1,6 +1,6 @@
 /**
  * Shared repo-config detection probe for the workspace initializers
- * (OnboardingPage and CompactWorkspaceInitializer) — extracted per
+ * (legacy wizard and workspace creation shell) — extracted per
  * intent-hq/monorepo#833 so the spinner state, no-clobber guards, and
  * repo-identity staleness key cannot silently diverge between the two
  * call sites.

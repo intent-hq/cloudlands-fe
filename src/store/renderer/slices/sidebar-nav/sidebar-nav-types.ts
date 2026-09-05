@@ -46,10 +46,8 @@ export type SidebarNavState = {
   panelWidth: number;
   /** Fraction of combined panel height given to the workspace list (persisted) */
   combinedPanelSplit: number;
-  /** Whether provider onboarding is active (hides sidebar nav) */
-  onboardingActive: boolean;
-  /** Whether the compact workspace creation modal is open */
-  showCreateModal: boolean;
+  /** Whether workspace creation is active (hides sidebar nav) */
+  workspaceCreationActive: boolean;
   /** Draft prompt text preserved for the new workspace card */
   draftPrompt: string;
   /** Persisted view mode for All Spaces card */

@@ -417,7 +417,6 @@ export const faArrowPointer = icon('arrow-pointer');
 export const faArrowRight = icon('arrow-right');
 export const faArrowRightArrowLeft = icon('arrow-right-arrow-left');
 export const faArrowRotateLeft = icon('arrow-rotate-left');
-export const faArrowRotateRight = icon('arrow-rotate-right');
 export const faArrowUp = icon('arrow-up');
 export const faArrowUpFromBracket = icon('arrow-up-from-bracket');
 export const faArrowUpRightFromSquare = icon('arrow-up-right-from-square');

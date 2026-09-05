@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => {
   } as Record<string, unknown>;
   const gitOps = { isResettingToTrunk: false } as Record<string, boolean>;
   const postMerge = {} as Record<string, unknown>;
+  const navigateToNewWorkspace = vi.fn(async () => undefined);
   const selector = <T>(getter: () => T) => {
     const fn = () => ({
       subscribe(run: (v: T) => void) {
@@ -22,7 +23,7 @@ const mocks = vi.hoisted(() => {
     });
     return Object.assign(fn, { select: () => getter() });
   };
-  return { dispatch, workspaceEntity, gitOps, postMerge, selector };
+  return { dispatch, workspaceEntity, gitOps, postMerge, navigateToNewWorkspace, selector };
 });
 
 const reduxDispatch = vi.fn();
@@ -92,11 +93,8 @@ vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   loadWorkspacesRequested: vi.fn(() => ({ type: 'workspace/loadWorkspacesRequested' })),
 }));
 
-vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-slice', () => ({
-  setShowCreateModal: vi.fn((val: boolean) => ({
-    type: 'sidebarNav/setShowCreateModal',
-    payload: val,
-  })),
+vi.mock('$features/new-workspace/route/new-workspace-navigation', () => ({
+  navigateToNewWorkspace: mocks.navigateToNewWorkspace,
 }));
 
 const mockResetToTrunk = vi.fn();
@@ -148,6 +146,7 @@ warmImport(() => import('../PostMergeActions.svelte'));
 describe('PostMergeActions', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
+    mocks.navigateToNewWorkspace.mockClear();
     reduxDispatch.mockClear();
     mockResetToTrunk.mockReset();
     mockWorkspaceUpdate.mockReset().mockResolvedValue({ ok: true, data: mocks.workspaceEntity });
@@ -271,7 +270,7 @@ describe('PostMergeActions', () => {
     );
   });
 
-  it('archive and start new: archives workspace, writes prefill, opens create modal', async () => {
+  it('archive and start new: archives workspace and opens Untitled with a local repo prefill', async () => {
     mocks.workspaceEntity.worktreePath = '/worktrees/ws-1';
     const { container } = await renderPostMerge();
     const archiveBtn = Array.from(container.querySelectorAll('button')).find((b) =>
@@ -283,15 +282,10 @@ describe('PostMergeActions', () => {
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'workspace/loadWorkspacesRequested' }),
     );
-    await waitFor(() => {
-      const prefill = sessionStorage.getItem('workspace-prefill');
-      expect(prefill).not.toBeNull();
-      expect(JSON.parse(prefill as string)).toEqual({ repoPath: '/repo' });
-    });
     await waitFor(() =>
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: true }),
-      ),
+      expect(mocks.navigateToNewWorkspace).toHaveBeenCalledWith({
+        prefill: { repoPath: '/repo' },
+      }),
     );
   });
 
@@ -307,12 +301,7 @@ describe('PostMergeActions', () => {
     await fireEvent.click(archiveBtn);
 
     await waitFor(() => expect(mockArchive).toHaveBeenCalledWith('ws-1'));
-    await waitFor(() =>
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: true }),
-      ),
-    );
-    expect(sessionStorage.getItem('workspace-prefill')).toBeNull();
+    await waitFor(() => expect(mocks.navigateToNewWorkspace).toHaveBeenCalledWith(undefined));
   });
 
   it('archive and start new: does not prefill a daemon-managed repo path (.repo-cache)', async () => {
@@ -325,11 +314,6 @@ describe('PostMergeActions', () => {
     await fireEvent.click(archiveBtn);
 
     await waitFor(() => expect(mockArchive).toHaveBeenCalledWith('ws-1'));
-    await waitFor(() =>
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: true }),
-      ),
-    );
-    expect(sessionStorage.getItem('workspace-prefill')).toBeNull();
+    await waitFor(() => expect(mocks.navigateToNewWorkspace).toHaveBeenCalledWith(undefined));
   });
 });

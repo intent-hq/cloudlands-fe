@@ -1,6 +1,6 @@
 /**
  * Submit-triple derivation for the workspace-creation path
- * (CompactWorkspaceInitializer).
+ * (workspace creation shell).
  *
  * Default-model resolution is daemon-owned (single resolver, PROTOCOL §5.11):
  * clients send `model` only on an explicit user pick and display the

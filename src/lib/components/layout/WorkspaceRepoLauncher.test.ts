@@ -4,13 +4,15 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
+const mocks = vi.hoisted(() => ({ navigateToNewWorkspace: vi.fn(async () => undefined) }));
 
-vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } }));
+vi.mock('$features/new-workspace/route/new-workspace-navigation', () => ({
+  navigateToNewWorkspace: mocks.navigateToNewWorkspace,
+}));
 import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
 
 describe('WorkspaceRepoLauncher', () => {
-  beforeEach(() => mocks.dispatch.mockClear());
+  beforeEach(() => mocks.navigateToNewWorkspace.mockClear());
 
   it.each([
     ['pointer', async (launcher: HTMLElement) => fireEvent.click(launcher)],
@@ -32,7 +34,7 @@ describe('WorkspaceRepoLauncher', () => {
         await fireEvent.click(launcher, { detail: 0 });
       },
     ],
-  ])('opens the existing create modal exactly once by %s', async (_input, activate) => {
+  ])('opens the Untitled workspace route exactly once by %s', async (_input, activate) => {
     render(WorkspaceRepoLauncher);
     const launcher = screen.getByRole('button', { name: 'New Workspace' });
 
@@ -40,17 +42,7 @@ describe('WorkspaceRepoLauncher', () => {
     expect(launcher.getAttribute('data-size')).toBeNull();
     await activate(launcher);
 
-    expect(mocks.dispatch).toHaveBeenCalledTimes(1);
-    expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'sidebarNav/setShowCreateModal',
-      payload: [true],
-    });
-    expect(
-      mocks.dispatch.mock.calls.some(
-        ([action]) =>
-          action.type === 'workspaceInitializer/setCompactWorkspaceInitializerFormState',
-      ),
-    ).toBe(false);
+    expect(mocks.navigateToNewWorkspace).toHaveBeenCalledOnce();
   });
 
   it('renders a centered 16px plus inside the non-shrinking 32px titlebar target', () => {

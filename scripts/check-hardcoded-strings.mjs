@@ -54,7 +54,7 @@ const ENFORCED_DIRS = [
   'src/routes/(app)/+layout.svelte',
   'src/routes/+layout.svelte',
   'src/routes/(app)/+error.svelte',
-  'src/features/onboarding',
+  'src/features/new-workspace',
   'src/features/github-auth',
   'src/features/linear-auth',
   'src/features/sentry-auth',
@@ -193,6 +193,7 @@ const SKIP_DIRS = new Set([
 // catalog (a developer tool) are accepted.
 const SCAFFOLDING_FILE_RE =
   /(?:Harness\.svelte|\.test-harness\.svelte|\.fixtures\.ts|\.preview\.(?:svelte|ts)|\.preview-fixtures\.ts|\.meta\.ts|\.playwright\.config\.ts)$/;
+const DEVELOPER_SANDBOX_PATH_RE = /(?:^|\/)src\/features\/new-workspace\/sandbox\//;
 
 // Counted per run and reported so name-based exclusions stay visible in CI
 // logs (a product file accidentally matching the pattern shows up here).
@@ -220,7 +221,7 @@ function isCheckedFile(absPath) {
   const norm = absPath.split('\\').join('/');
   if (norm.endsWith('.d.ts')) return false;
   if (/\.(test|spec)\.(ts|js|mjs|cjs)$/.test(norm)) return false;
-  if (SCAFFOLDING_FILE_RE.test(norm)) {
+  if (SCAFFOLDING_FILE_RE.test(norm) || DEVELOPER_SANDBOX_PATH_RE.test(norm)) {
     excludedScaffoldingFiles++;
     return false;
   }

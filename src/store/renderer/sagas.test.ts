@@ -94,7 +94,7 @@ describe('renderer app saga registry', () => {
       'updateChannelSaga',
       'notificationSettingsSaga',
       'userPreferencesPersistenceSaga',
-      'workspaceInitializerSaga',
+      'workspaceCreationSettingsSaga',
       'zoomIpcSaga',
       'menuIpcSaga',
       'browserIpcSaga',

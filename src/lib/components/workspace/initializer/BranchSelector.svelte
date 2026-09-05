@@ -13,8 +13,8 @@
   import { performanceMonitor } from '$lib/utils/performance';
   import { parseGitHubUrl } from '$lib/utils/workspace-validation';
 
-  import { setWorkspaceInitializerBranchForRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
-  import { selectWorkspaceInitializerBranchByRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { setWorkspaceCreationBranchForRepo } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-slice';
+  import { selectWorkspaceCreationBranchByRepo } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     isolationNoun,
@@ -38,7 +38,7 @@
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('BranchSelector');
-  const branchByRepo$ = selectWorkspaceInitializerBranchByRepo();
+  const branchByRepo$ = selectWorkspaceCreationBranchByRepo();
 
   /** Status of the branch relative to its upstream */
   export interface BranchStatus {
@@ -305,7 +305,7 @@
 
   function saveBranchForRepo(targetRepoPath: string, branch: string) {
     if (debugConfig.get('enableFormPersistence') && targetRepoPath) {
-      appStore.dispatch(setWorkspaceInitializerBranchForRepo(targetRepoPath, branch));
+      appStore.dispatch(setWorkspaceCreationBranchForRepo(targetRepoPath, branch));
     }
   }
 
@@ -1441,9 +1441,7 @@
               <span>{m.workspace_branchSelector_selectRepoFirst_label()}</span>
             {:else if isLoading}
               <Fa icon={faSpinner} class="text-ghost animate-spin" size="sm" />
-              <span class="sr-only"
-                >{m.workspace_compactInitializer_waitingBranchSelection_label()}</span
-              >
+              <span class="sr-only">{m.workspaceCreation_waitingBranchSelection_label()}</span>
             {:else}
               <span>{m.workspace_branchSelector_selectBranch_label()}</span>
             {/if}

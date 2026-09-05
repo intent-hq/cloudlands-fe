@@ -37,8 +37,8 @@ export const tooltipMetadata = parseUiComponentMetadata({
   callers: [
     'src/features/layout/components/content-header/ContentHeader.svelte',
     'src/features/log/components/EntityChip.svelte',
-    'src/features/onboarding/messages/ProviderCard.svelte',
-    'src/features/onboarding/messages/WorkspaceSetupCard.svelte',
+    'src/features/new-workspace/ui/ProviderCard.svelte',
+    'src/lib/components/workspace/creation/WorkspaceSetupCard.svelte',
     'src/lib/component-catalog/renderers/NavigationHelpCatalogPreview.svelte',
     'src/lib/components/chat/AgentInputArea.svelte',
     'src/lib/components/chat/AgentSubscriptions.svelte',
@@ -76,7 +76,6 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'src/lib/components/ui/searchable-combobox/searchable-combobox.svelte',
     'src/lib/components/ui/sidebar/sidebar-menu-button.svelte',
     'src/lib/components/ui/sidebar/sidebar-provider.svelte',
-    'src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
     'src/lib/components/workspace/TaskProgressBar.svelte',
     'src/lib/components/workspace/WorkspaceCard.svelte',
     'src/lib/components/workspace/initializer/BranchSelector.svelte',

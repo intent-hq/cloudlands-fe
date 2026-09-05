@@ -7,6 +7,7 @@
  * explicit `github-pr` itemType, or PR-only mention metadata (`sourceBranch`).
  */
 import type { ContextLink } from '$shared/types';
+import { parseGitHubIssueOrPrUrl } from '$shared/utils/link-helpers';
 
 /** Wire cap on `contextLinks` entries (PROTOCOL §5.1). */
 export const MAX_CONTEXT_LINKS = 20;
@@ -21,6 +22,19 @@ export interface ContextLinkMention {
 }
 
 const IDENTIFIER_PATTERN = /^([^/]+)\/([^#]+)#(\d+)$/;
+
+/** Build one context link from a canonical GitHub issue or pull-request URL. */
+export function buildContextLinkFromUrl(url: string): ContextLink | null {
+  const parsed = parseGitHubIssueOrPrUrl(url);
+  if (!parsed) return null;
+  return {
+    kind: parsed.kind,
+    url,
+    owner: parsed.owner,
+    repo: parsed.repo,
+    number: parsed.number,
+  };
+}
 
 function detectKind(mention: ContextLinkMention): ContextLink['kind'] {
   if (mention.itemType === 'github-pr') return 'pr';

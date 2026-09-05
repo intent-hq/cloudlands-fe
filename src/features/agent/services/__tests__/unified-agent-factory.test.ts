@@ -208,14 +208,14 @@ describe('UnifiedAgentFactory', () => {
       const config: UnifiedAgentConfig = {
         name: 'Test Agent',
         workspaceId: mockWorkspace.id as any,
-        source: 'workspace-initializer',
+        source: 'workspace-creation',
         metadata: { custom: 'value' },
       };
 
       const result = await factory.createAgent(mockWorkspace, config);
 
       expect(result.success).toBe(true);
-      expect(result.agent?.metadata?.source).toBe('workspace-initializer');
+      expect(result.agent?.metadata?.source).toBe('workspace-creation');
       expect(result.agent?.metadata?.custom).toBe('value');
     });
 

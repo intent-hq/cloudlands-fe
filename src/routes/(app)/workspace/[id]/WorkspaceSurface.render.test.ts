@@ -78,10 +78,6 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
 vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
   clearMainPanelView: action('changes/clearMainPanelView'),
 }));
-vi.mock('$store/renderer/slices/setup-prompt/setup-prompt-selectors', () => ({
-  selectBootRouteGateResolved: () => readable(true),
-}));
-vi.mock('$lib/utils/boot-route-gate', () => ({ isBootRouteLoad: () => false }));
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
   selectPanelVisibilityFlag: { select: () => true },
   selectSidebarSide: () => readable('left'),
@@ -112,9 +108,6 @@ vi.mock('$store/renderer/slices/note-read-tracking/note-read-tracking-slice', ()
 vi.mock('$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice', () => ({
   workspaceLoadRequested: action('workspace-lifecycle/workspaceLoadRequested'),
 }));
-vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-slice', () => ({
-  setOnboardingActive: action('sidebarNav/setOnboardingActive'),
-}));
 vi.mock('$store/renderer/slices/app-layout/app-layout-slice', () => ({
   commandPaletteActionConsumed: action('appLayout/commandPaletteActionConsumed'),
 }));
@@ -135,7 +128,6 @@ vi.mock('$lib/components/workspace/MultiSelectTabbedSidebar.svelte', mockPart('v
 vi.mock('$lib/components/workspace/WorkspaceModals.svelte', mockPart('modals'));
 vi.mock('$lib/components/modals/InputDialog.svelte', mockPart('input-dialog'));
 vi.mock('$lib/components/terminal/QuakeTerminalOverlay.svelte', mockPart('quake-terminal'));
-vi.mock('$features/onboarding/OnboardingPage.svelte', mockPart('onboarding'));
 vi.mock('$lib/components/layout/panel-system', async () => {
   const component = (await import('./__tests__/mocks/MockWorkspaceSurfacePart.svelte')).default;
   const renderPart = component as unknown as (anchor: Node, props: Record<string, unknown>) => void;

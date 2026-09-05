@@ -25,9 +25,8 @@ import {
   isCmdClickModifier,
   parseGitHubIssueOrPrUrl,
 } from '$shared/utils/link-helpers';
-import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { navigateToNewWorkspace } from '$features/new-workspace/route/new-workspace-navigation';
 import { selectGithubLinkDefaultAction } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import {
   focusPanel,
@@ -136,13 +135,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
             await writeTextToClipboard(url);
             return true;
           case 'start-workspace': {
-            appStore.dispatch(
-              setWorkspaceInitializerPendingGitHubPrefill({
-                ...gitHubRef,
-                url,
-              }),
-            );
-            appStore.dispatch(setShowCreateModal(true));
+            await navigateToNewWorkspace({ prefill: { ...gitHubRef, url } });
             return true;
           }
           case 'show-choices':

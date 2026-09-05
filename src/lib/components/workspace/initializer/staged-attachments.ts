@@ -1,6 +1,6 @@
 /**
- * Pre-workspace attachment staging for the new-workspace modal and
- * onboarding: non-image files are captured as path-only context items
+ * Pre-workspace attachment staging: non-image files are captured as path-only
+ * context items
  * (`sourcePath`, no bytes) because `file.placeAttachment` (PROTOCOL §5.9)
  * needs a workspace that does not exist yet. At `workspace.create`
  * redemption every staged item is placed from its sourcePath (transport-
@@ -27,11 +27,6 @@ function isStagedFileItem(item: ContextItem): boolean {
     !item.attachmentId &&
     (item.sourcePath !== undefined || item.placementStatus === 'failed')
   );
-}
-
-/** True when the item set contains staged files that need placement at create time. */
-export function hasStagedFileItems(items: ContextItem[]): boolean {
-  return items.some(isStagedFileItem);
 }
 
 /** Build an attachment-reference file block from a placed item (PROTOCOL §5.5). */
@@ -123,6 +118,8 @@ export async function redeemStagedAttachments(
 export interface HeldFirstMessage {
   workspaceId: string;
   agentId?: string;
+  /** Stable client message id used to reconcile an uncertain send after restart. */
+  messageId?: string;
   content: string;
   imageBlocks: ImageBlock[];
   contextReferences: unknown[];
@@ -131,6 +128,10 @@ export interface HeldFirstMessage {
 export interface SendHeldFirstMessageResult {
   /** False when the daemon rejected the send or the request failed. */
   sent: boolean;
+  /** The stable id supplied on the wire, when one was supplied. */
+  messageId?: string;
+  /** True when a transport failure means the daemon may have accepted the send. */
+  deliveryUnknown?: boolean;
   /**
    * Human-readable failure reason for the banner (daemon `error` string /
    * structured `data.detail` / non-generic message), when available.
@@ -191,6 +192,7 @@ export async function sendHeldFirstMessage(
       JSON.stringify({
         agentId: pending.agentId,
         workspaceId: pending.workspaceId,
+        messageId: pending.messageId,
         content: pending.content,
         imageBlocks: imageBlocks.length > 0 ? imageBlocks : undefined,
         fileBlocks: fileBlocks.length > 0 ? fileBlocks : undefined,
@@ -210,8 +212,16 @@ export async function sendHeldFirstMessage(
       const error = typeof result.error === 'string' ? result.error.trim() : '';
       return { sent: false, errorDetail: error.length > 0 ? error : undefined };
     }
-    return { sent: true };
+    return { sent: true, ...(pending.messageId ? { messageId: pending.messageId } : {}) };
   } catch (error) {
-    return { sent: false, errorDetail: extractPlacementErrorDetail(error) };
+    const deliveryUnknown =
+      !error ||
+      typeof error !== 'object' ||
+      typeof (error as { rpcCode?: unknown }).rpcCode !== 'number';
+    return {
+      sent: false,
+      errorDetail: extractPlacementErrorDetail(error),
+      ...(deliveryUnknown ? { deliveryUnknown: true } : {}),
+    };
   }
 }

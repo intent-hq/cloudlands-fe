@@ -19,15 +19,15 @@
   import { debugConfig } from '$lib/config/debug';
   import { m } from '$shared/paraglide/messages.js';
 
-  import { setWorkspaceInitializerRemoteSetups } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
-  import { selectWorkspaceInitializerRemoteSetups } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
-  import type { WorkspaceInitializerRemoteSetup } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+  import { setWorkspaceCreationRemoteSetups } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-slice';
+  import { selectWorkspaceCreationRemoteSetups } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-selectors';
+  import type { WorkspaceCreationRemoteSetup } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-types';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('RemoteSetupSelector');
-  const workspaceInitializerRemoteSetups$ = selectWorkspaceInitializerRemoteSetups();
+  const workspaceCreationRemoteSetups$ = selectWorkspaceCreationRemoteSetups();
 
-  type RemoteSetup = WorkspaceInitializerRemoteSetup;
+  type RemoteSetup = WorkspaceCreationRemoteSetup;
 
   interface Props {
     variant?: 'default' | 'ghost';
@@ -43,11 +43,11 @@
   let isExpanded = $state(false);
   let selectedSetup: RemoteSetup | null = $state(null);
   let selectedSetupId = $state('');
-  let remoteSetups: RemoteSetup[] = $state($workspaceInitializerRemoteSetups$);
+  let remoteSetups: RemoteSetup[] = $state($workspaceCreationRemoteSetups$);
   let showAddModal = $state(false);
 
   $effect(() => {
-    remoteSetups = $workspaceInitializerRemoteSetups$;
+    remoteSetups = $workspaceCreationRemoteSetups$;
   });
 
   // Remote setups are hydrated from Redux; persistence is handled by the saga.
@@ -144,7 +144,7 @@
   function saveSetups(setups = remoteSetups) {
     // Snapshot so no $state proxy enters the Redux store (src/store/renderer/AGENTS.md §2) —
     // a proxy in the persisted slice breaks settings.update's IPC structured clone.
-    appStore.dispatch(setWorkspaceInitializerRemoteSetups($state.snapshot(setups)));
+    appStore.dispatch(setWorkspaceCreationRemoteSetups($state.snapshot(setups)));
   }
 
   function updateSetupLastUsed(setup: RemoteSetup) {

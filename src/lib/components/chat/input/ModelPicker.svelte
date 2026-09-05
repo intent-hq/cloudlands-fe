@@ -148,7 +148,7 @@
 
   // The availability status map gates which providers the picker offers, but
   // outside onboarding nothing else triggers the bulk check — a fresh session
-  // that never mounted AgentGrid would sit on an empty map forever. The
+  // that never mounted the workspace provider grid would sit on an empty map forever. The
   // trigger is ensure-once and the middleware coalesces overlapping bulk
   // checks, so multiple pickers mounting concurrently cause no duplicate probes.
   onMount(() => {

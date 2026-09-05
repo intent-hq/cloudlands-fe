@@ -16,7 +16,7 @@
     selectPanelWidth,
     selectCombinedPanelSplit,
     selectIsChiefCollapsed,
-    selectOnboardingActive,
+    selectWorkspaceCreationActive,
     selectAllSpacesViewMode,
     selectShowArchivedWorkspaces,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
@@ -27,8 +27,8 @@
     toggleChiefCollapsed,
     setAllSpacesViewMode,
     setShowArchivedWorkspaces,
-    setShowCreateModal,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { navigateToNewWorkspace } from '$features/new-workspace/route/new-workspace-navigation';
   import {
     isCombinedWorkspacePanelItem,
     type AllSpacesViewMode,
@@ -40,7 +40,7 @@
   const panelWidth$ = selectPanelWidth();
   const combinedPanelSplit$ = selectCombinedPanelSplit();
   const isChiefCollapsed$ = selectIsChiefCollapsed();
-  const onboardingActive$ = selectOnboardingActive();
+  const workspaceCreationActive$ = selectWorkspaceCreationActive();
   const allSpacesViewMode$ = selectAllSpacesViewMode();
   const showArchivedWorkspaces$ = selectShowArchivedWorkspaces();
 
@@ -59,7 +59,7 @@
   // mounted (hidden, width 0) when closed so its heavy children are not torn
   // down and rebuilt on every toggle. The width animates instead of the panel
   // mounting/unmounting.
-  const isOpen = $derived(Boolean($panelItem$) && !$onboardingActive$);
+  const isOpen = $derived(Boolean($panelItem$) && !$workspaceCreationActive$);
 
   // Last opened item, preserved while the panel is hidden so its content stays
   // mounted. Content reads `displayedPanelItem`, which falls back to it while
@@ -311,7 +311,7 @@
                   <button
                     type="button"
                     class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground"
-                    onclick={() => appStore.dispatch(setShowCreateModal(true))}
+                    onclick={() => void navigateToNewWorkspace()}
                     aria-label={m.layout_sidebarNav_newWorkspace_title()}
                     data-spaces-create
                   >

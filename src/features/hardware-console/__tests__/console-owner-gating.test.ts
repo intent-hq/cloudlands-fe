@@ -39,7 +39,6 @@ const mockState = {
     allSpacesViewMode: 'recent',
     multiSelectTabOrder: [],
     multiSelectSelectedTabIdsByWorkspaceId: {},
-    showCreateModal: false,
   },
   voiceSettings: {
     isLoading: false,

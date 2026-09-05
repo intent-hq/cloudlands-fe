@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { appClient } from '$lib/client';
+import { navigateToRoute } from '$lib/utils/navigation.client';
 import { toast } from 'svelte-sonner';
 import { startRootStoreLifecycle } from './root-store-lifecycle';
 import { store as appStore } from './store';
@@ -156,7 +157,7 @@ describe('hardware-console production composition', () => {
     expect(hardware.client.call).toHaveBeenCalledWith('v.oai.rgbcfg', expect.any(Object));
 
     hardware.emitRaw({ m: 'v.oai.hid', p: { k: 'ACT06', act: 1 } });
-    await vi.waitFor(() => expect(appStore.state.sidebarNav.showCreateModal).toBe(true));
+    await vi.waitFor(() => expect(navigateToRoute).toHaveBeenCalledWith('/workspace/new'));
 
     const input = document.createElement('textarea');
     document.body.appendChild(input);

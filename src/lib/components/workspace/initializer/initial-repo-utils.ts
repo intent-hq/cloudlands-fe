@@ -1,9 +1,9 @@
 /**
  * Pure utility functions for initialRepo deduplication and state mapping.
- * Extracted from CompactWorkspaceInitializer.svelte $effect logic.
+ * Extracted from workspace creation shell.svelte $effect logic.
  */
 
-import type { WorkspaceInitializerRecentRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+import type { WorkspaceCreationRecentRepo } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-types';
 
 export interface InitialRepoInfo {
   repoPath?: string;
@@ -37,7 +37,7 @@ export interface LastSelectedRepoHydrationInput {
   isFormPersistenceEnabled: boolean;
   currentRepoPath?: string;
   hasLastSelectedRepo: boolean;
-  recentRepos: WorkspaceInitializerRecentRepo[];
+  recentRepos: WorkspaceCreationRecentRepo[];
 }
 
 /**
@@ -93,7 +93,7 @@ export function mapInitialRepoToFormState(repo: InitialRepoInfo): InitialRepoFor
  * state. Preserves `githubUrl` so a GitHub-type recent repo restores as a
  * GitHub selection instead of degrading to a URL-less one.
  */
-export function mapRecentRepoToSelection(repo: WorkspaceInitializerRecentRepo): {
+export function mapRecentRepoToSelection(repo: WorkspaceCreationRecentRepo): {
   path: string;
   type: 'local' | 'github';
   githubUrl?: string;

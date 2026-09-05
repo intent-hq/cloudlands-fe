@@ -29,6 +29,7 @@
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
   import { isDaemonManagedRepoPath } from '$lib/components/workspace/initializer/recent-repo-display';
+  import { navigateToNewWorkspace } from '$features/new-workspace/route/new-workspace-navigation';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import type { PostMergeState } from '$store/renderer/slices/git/git-types';
   import { faRotateLeft, faRocket, faSpinner } from '@fortawesome/free-solid-svg-icons';
@@ -90,14 +91,8 @@
     // repositoryPath === worktreePath) and daemon-managed paths are not
     // copyable local sources, so prefilling them would open the Copy-local
     // tab against a daemon-owned directory.
-    if (repo && repo !== worktree && !isDaemonManagedRepoPath(repo)) {
-      sessionStorage.setItem('workspace-prefill', JSON.stringify({ repoPath: repo }));
-    }
-
-    // Open the create workspace modal
-    const { setShowCreateModal } =
-      await import('$store/renderer/slices/sidebar-nav/sidebar-nav-slice');
-    appStore.dispatch(setShowCreateModal(true));
+    const repoPath = repo && repo !== worktree && !isDaemonManagedRepoPath(repo) ? repo : undefined;
+    await navigateToNewWorkspace(repoPath ? { prefill: { repoPath } } : undefined);
   }
 
   // Reset workspace branch to trunk HEAD and continue working

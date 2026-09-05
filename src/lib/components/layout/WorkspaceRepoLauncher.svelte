@@ -2,12 +2,11 @@
   import FaWrapper from '$lib/components/shared/icons/FaWrapper.svelte';
   import { faPlus } from '$lib/icons/phosphor-icons';
   import { Button } from '$lib/components/ui/button';
-  import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import { store as appStore } from '$store/renderer/store';
+  import { navigateToNewWorkspace } from '$features/new-workspace/route/new-workspace-navigation';
   import { m } from '$shared/paraglide/messages.js';
 
   function openNewWorkspace() {
-    appStore.dispatch(setShowCreateModal(true));
+    void navigateToNewWorkspace();
   }
 </script>
 

@@ -42,7 +42,7 @@
 
   // Onboarding renders at /workspace/new (WorkspaceSurface); suppress there.
   // Pathname form matches the (app) layout's own onboarding exclusion.
-  const isOnboarding = $derived($page.url.pathname.startsWith('/workspace/new'));
+  const isWorkspaceCreation = $derived($page.url.pathname.startsWith('/workspace/new'));
 
   // Fresh-probe handshake: request once healthy, then wait for the probe to
   // be observed running (checking true) and settling (checking false). If the
@@ -71,7 +71,13 @@
     }
     if (!probeStarted) return;
     const node = $node$;
-    if (hasShownThisSession || isOnboarding || $health$ !== 'healthy' || !node.checked || node.ok)
+    if (
+      hasShownThisSession ||
+      isWorkspaceCreation ||
+      $health$ !== 'healthy' ||
+      !node.checked ||
+      node.ok
+    )
       return;
     hasShownThisSession = true;
     toast.warning(

@@ -254,7 +254,7 @@
   onMount(() => {
     // Populate the shared availability status map (agent-availability slice)
     // for consumers gated on it (e.g. ModelPicker) even when onboarding's
-    // AgentGrid never mounted. Ensure-once + middleware coalescing make this
+    // The workspace provider grid never mounted. Ensure-once + middleware coalescing make this
     // a no-op when a check already ran or is in flight; the local
     // checkProviderAvailability below feeds this component's own card UI.
     appStore.dispatch(ensureProvidersChecked());

@@ -27,37 +27,37 @@ function submoduleCounter(message: string | undefined): { current: number; total
 export function createProgressLabel(entry: WorkspaceCreateProgressEntry): string {
   switch (entry.phase) {
     case 'cache':
-      return m.workspace_compactInitializer_progressCache_label();
+      return m.workspaceCreation_progressCache_label();
     case 'counting':
-      return m.workspace_compactInitializer_progressCounting_label();
+      return m.workspaceCreation_progressCounting_label();
     case 'compressing':
-      return m.workspace_compactInitializer_progressCompressing_label();
+      return m.workspaceCreation_progressCompressing_label();
     case 'receiving':
-      return m.workspace_compactInitializer_progressReceiving_label();
+      return m.workspaceCreation_progressReceiving_label();
     case 'resolving':
-      return m.workspace_compactInitializer_progressResolving_label();
+      return m.workspaceCreation_progressResolving_label();
     case 'checkout':
-      return m.workspace_compactInitializer_progressCheckout_label();
+      return m.workspaceCreation_progressCheckout_label();
     case 'submodules': {
       const counter = submoduleCounter(entry.message);
       return counter
-        ? m.workspace_compactInitializer_progressSubmodulesCounted_label({
+        ? m.workspaceCreation_progressSubmodulesCounted_label({
             current: formatInteger(counter.current),
             total: formatInteger(counter.total),
           })
-        : m.workspace_compactInitializer_progressSubmodules_label();
+        : m.workspaceCreation_progressSubmodules_label();
     }
     case 'cow-copy':
-      return m.workspace_compactInitializer_progressCowCopy_label();
+      return m.workspaceCreation_progressCowCopy_label();
     case 'worktree':
-      return m.workspace_compactInitializer_progressWorktree_label();
+      return m.workspaceCreation_progressWorktree_label();
     case 'finalizing':
-      return m.workspace_compactInitializer_progressFinalizing_label();
+      return m.workspaceCreation_progressFinalizing_label();
     case 'complete':
-      return m.workspace_compactInitializer_stageAlmostReady_label();
+      return m.workspaceCreation_stageAlmostReady_label();
     case 'starting':
     default:
-      return m.workspace_compactInitializer_stagePreparing_label();
+      return m.workspaceCreation_stagePreparing_label();
   }
 }
 

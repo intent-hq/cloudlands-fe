@@ -15,12 +15,12 @@
 
   import {
     selectPanelItem,
-    selectOnboardingActive,
+    selectWorkspaceCreationActive,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { togglePanel } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { store as appStore } from '$store/renderer/store';
   const panelItem$ = selectPanelItem();
-  const onboardingActive$ = selectOnboardingActive();
+  const workspaceCreationActive$ = selectWorkspaceCreationActive();
 
   const navItems: { id: SidebarNavItem }[] = [{ id: 'all-workspaces' }];
 
@@ -42,7 +42,7 @@
   }
 </script>
 
-{#if !$onboardingActive$}
+{#if !$workspaceCreationActive$}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <nav
     class="group/nav sidebar-nav flex h-8 shrink-0 items-center gap-0.5"

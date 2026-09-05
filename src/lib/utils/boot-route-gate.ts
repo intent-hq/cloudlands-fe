@@ -1,19 +1,15 @@
 /**
- * Boot-route facts for the backend-derived setup gate.
+ * Boot-route facts for backend-owned workspace restoration.
  *
  * Fresh windows boot at the workspace bootstrap route ('/workspace/new'),
- * which renders the full-page onboarding, and legacy sessions can still boot
- * at '/'. Whether onboarding is actually appropriate depends on the connected
- * backend — it needs first-run setup only when it has no workspaces AND no
- * ready providers (`selectBackendSetupGate`) — and that decision resolves
- * asynchronously after boot.
+ * and legacy sessions can still boot at '/'. The connected backend's workspace
+ * list and persisted tab identity determine whether an existing workspace is
+ * restored or the Untitled creation route remains visible.
  *
  * This module captures ONE immutable fact per full page load: the pathname
  * the page booted on. The `(app)` layout combines it with the setup-prompt
  * slice (`selectBootRouteGateResolved`) to decide, once per page load,
- * whether the boot route should redirect to an existing workspace; while that
- * decision is pending, `WorkspaceSurface` holds off rendering onboarding so
- * the wizard never flashes before a redirect.
+ * whether the boot route should redirect to an existing workspace.
  *
  * Deliberate in-app navigations to /workspace/new (the New Workspace action)
  * are client-side `goto`s that never reload the page, so they are unaffected:
@@ -53,8 +49,6 @@ export interface BootRouteDecisionInput {
   currentPathname: string;
   /** Whether this page load's decision was already made. */
   gateResolved: boolean;
-  /** Backend-derived first-run gate (`selectBackendSetupGate`). */
-  setupGate: 'none' | 'pending' | 'redirect';
   /** Whether the workspace list has loaded (`selectWorkspaceHasLoaded`). */
   workspaceHasLoaded: boolean;
   /** Workspace list (`selectWorkspaceItems`). */
@@ -68,22 +62,7 @@ export interface BootRouteDecisionInput {
   tabsHydrated: boolean;
   /** Persisted current workspace tab id, if any. */
   currentTabId: string | null | undefined;
-  /**
-   * Bounded-hold fallback: true once the boot hold has exceeded its time
-   * budget (`BOOT_ROUTE_HOLD_TIMEOUT_MS`, armed by the (app) layout). The
-   * gate can hold forever when nothing settles — e.g. a connected daemon
-   * whose provider probes fail repeatedly never flips `hasCheckedOnce` and
-   * never completes an evaluation — so once this flips, every remaining
-   * 'hold' degrades to a best-effort resolve instead of a blank surface.
-   */
-  holdTimedOut: boolean;
 }
-
-/**
- * Upper bound on the boot-route hold. Normal boots resolve in well under a
- * second; this only fires in degenerate cases (see `holdTimedOut`).
- */
-export const BOOT_ROUTE_HOLD_TIMEOUT_MS = 15_000;
 
 export type BootRouteDecision =
   /** Not a boot-route load, or already decided — nothing to do. */
@@ -100,23 +79,18 @@ export type BootRouteDecision =
  * Decide where a boot-route page load should land. Pure — the (app) layout
  * feeds it store state and applies the returned decision (dispatch + goto).
  *
- * - Backend has workspaces (or a ready provider): land on the persisted tab
- *   or the first available workspace.
- * - Active backend (local or remote) genuinely needs first-run setup: stay on
- *   /workspace/new (which renders onboarding / provider setup).
- * - No workspaces but setup not needed: stay on /workspace/new (creation).
+ * - Backend has workspaces: land on the persisted tab or first available workspace.
+ * - No workspaces: stay on /workspace/new (creation).
  */
 export function decideBootRoute(input: BootRouteDecisionInput): BootRouteDecision {
   const {
     bootPathname,
     currentPathname,
     gateResolved,
-    setupGate,
     workspaceHasLoaded,
     workspaces,
     tabsHydrated,
     currentTabId,
-    holdTimedOut,
   } = input;
   if (bootPathname === null || !BOOT_GATE_ROUTES.has(bootPathname) || gateResolved) {
     return { kind: 'inapplicable' };
@@ -126,27 +100,15 @@ export function decideBootRoute(input: BootRouteDecisionInput): BootRouteDecisio
   if (currentPathname !== bootPathname) {
     return { kind: 'resolve', target: null, openTabWorkspaceId: null };
   }
-  if (setupGate === 'pending' && !holdTimedOut) {
-    return { kind: 'hold' };
-  }
-  if (setupGate === 'redirect') {
-    // Active backend with no workspaces and no ready providers: first-run
-    // setup. /workspace/new renders it; boot windows are already there.
-    return {
-      kind: 'resolve',
-      target: currentPathname === '/workspace/new' ? null : '/workspace/new',
-      openTabWorkspaceId: null,
-    };
-  }
-  // 'none' (or a timed-out 'pending' degraded to it): no forced onboarding.
+  // Provider/setup probes do not own navigation. The backend workspace list
+  // and persisted tab identity are the only boot-route authorities.
   // Wait for the workspace list AND the active backend's persisted tab strip
   // (the workspace-list response can win the race against per-backend tab
   // rehydration, which would land on the first workspace instead of the
   // persisted tab), then land on the persisted tab or the first available
   // workspace; without any workspace, /workspace/new (creation) is the only
-  // surface left. Once the hold times out, resolve with whatever loaded —
-  // a possibly-suboptimal landing beats an unbounded blank surface.
-  if ((!workspaceHasLoaded || !tabsHydrated) && !holdTimedOut) {
+  // surface left.
+  if (!workspaceHasLoaded || !tabsHydrated) {
     return { kind: 'hold' };
   }
   const available = workspaces.filter(

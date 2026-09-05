@@ -1,7 +1,7 @@
 /**
  * Single opener for external (system-browser) URLs — every `shell:openExternal`
  * caller converges here via the host-bridge-seeder handler, so ProviderCard
- * docs links, GitHubRepoTab preview links, PanelTabBar/EmbeddedBrowser "open
+ * docs links, repository preview links, PanelTabBar/EmbeddedBrowser "open
  * externally", GitHubAuthModal, terminal link handlers, etc. all behave the
  * same way.
  *

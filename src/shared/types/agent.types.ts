@@ -191,7 +191,7 @@ export interface UnifiedAgentConfig {
 
   // Source tracking
   source?:
-    | 'workspace-initializer'
+    | 'workspace-creation'
     | 'contextual-menu'
     | 'chat-panel'
     | 'api'

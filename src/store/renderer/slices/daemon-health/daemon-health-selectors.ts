@@ -4,11 +4,20 @@
 
 import { compareToPinnedVersion, type PinComparison } from '$shared/intentd-version-compare';
 import { store } from '../../store';
-import type { BackendTransportInfo } from './daemon-health-types';
+import type { BackendTransportInfo, DaemonHostRepairTarget } from './daemon-health-types';
 
 export const selectDaemonHealth = store.createSelector((state) => state.daemonHealth.health);
 
 export const selectDaemonHealthStats = store.createSelector((state) => state.daemonHealth.stats);
+
+/** Protocol-safe repair target derived from the daemon's system.status host block. */
+export const selectDaemonHostRepairTarget = store.createSelector(
+  (state): DaemonHostRepairTarget | undefined => {
+    const stats = state.daemonHealth.stats;
+    if (!stats) return undefined;
+    return { os: stats.os, arch: stats.arch };
+  },
+);
 
 export const selectDaemonHealthLastUpdated = store.createSelector(
   (state) => state.daemonHealth.lastUpdated,

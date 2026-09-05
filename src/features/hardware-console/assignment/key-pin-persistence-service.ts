@@ -14,7 +14,7 @@
  * `excludedWorkspaceIds` fields replaced (pin changes are rare; a fresh
  * read per write keeps sibling fields safe). Persists that fire before
  * hydration settles are deferred and flushed once after a successful
- * hydrate, mirroring the workspace-initializer service, so boot-time
+ * hydrate, mirroring the workspace-creation service, so boot-time
  * default state never clobbers the persisted daemon bag.
  *
  * Saga orchestration lives in the hardware-console slice; this module owns

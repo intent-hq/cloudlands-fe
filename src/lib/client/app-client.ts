@@ -1288,7 +1288,7 @@ export interface GitClient {
   getBranches(repoPath: string, includeRemote: boolean): Promise<GitBranchesResult | null>;
   /**
    * Path-based branch status (`git.branchStatus`, §5.6). Used by the
-   * workspace-initializer `BranchSelector` to surface ahead/behind +
+   * workspace-creation `BranchSelector` to surface ahead/behind +
    * uncommitted-changes indicators against an arbitrary repo path BEFORE a
    * workspace exists. Errors fold to `null` so callers can surface a friendly
    * fallback without crashing on `result.success` against undefined.
@@ -2092,7 +2092,7 @@ export interface IntegrationsClient {
    * Remote branch names for a GitHub repo (`github.branches.list`, §5.27),
    * with the default branch from `github.repos.get` (best-effort). Unlike the
    * issue reads this THROWS on transport/daemon errors (e.g. "GitHub is not
-   * configured.") so the workspace-initializer BranchSelector can render an
+   * configured.") so the workspace-creation BranchSelector can render an
    * explicit error/auth state — never a fabricated branch list. An optional
    * `prefix` narrows the listing server-side (GitHub's `refs/heads/{prefix}`
    * matching-refs semantics) so branches beyond the first page are findable.
@@ -2237,6 +2237,41 @@ export interface DraftsClient {
   clear(workspaceId: string, agentId: string): Promise<{ ok: true }>;
 }
 
+export type WorkspaceDraftCreateRequest = import('$shared/types').WorkspaceDraftCreateInput;
+export type WorkspaceDraftUpdatePatch = import('$shared/types').WorkspaceDraftUpdatePatch;
+export type WorkspaceDraftInitialAgentRequest = Omit<
+  NonNullable<CreateWorkspaceRequest['initialAgent']>,
+  'agentId'
+>;
+
+export interface WorkspaceDraftPromotionResult {
+  draft: import('$shared/types').WorkspaceDraft;
+  workspace: Workspace;
+  initialAgent?: AgentSession;
+}
+
+/** Durable pre-workspace drafts (`workspaceDraft.*`, PROTOCOL §5.1.1). */
+export interface WorkspaceDraftsClient {
+  create(request?: WorkspaceDraftCreateRequest): Promise<import('$shared/types').WorkspaceDraft>;
+  get(id: string): Promise<import('$shared/types').WorkspaceDraft>;
+  list(): Promise<import('$shared/types').WorkspaceDraft[]>;
+  update(
+    id: string,
+    expectedRevision: number,
+    patch: WorkspaceDraftUpdatePatch,
+  ): Promise<import('$shared/types').WorkspaceDraft>;
+  promote(
+    id: string,
+    expectedRevision: number,
+    initialAgent?: WorkspaceDraftInitialAgentRequest,
+  ): Promise<WorkspaceDraftPromotionResult>;
+  markDelivery(
+    id: string,
+    delivery: import('$shared/types').DraftDelivery,
+  ): Promise<import('$shared/types').WorkspaceDraft>;
+  delete(id: string): Promise<{ deleted: boolean }>;
+}
+
 /** The aggregate seam exposing every backend domain to the renderer. */
 export interface AppClient {
   workspaces: WorkspacesClient;
@@ -2263,4 +2298,5 @@ export interface AppClient {
   server: ServerClient;
   events: EventsClient;
   drafts: DraftsClient;
+  workspaceDrafts: WorkspaceDraftsClient;
 }

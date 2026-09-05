@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   isElectron: vi.fn(() => true),
   isFocusInTerminal: vi.fn(() => false),
   navigateToRoute: vi.fn(async () => undefined),
+  navigateToNewWorkspace: vi.fn(async () => undefined),
   dispatchWindowEvent: vi.fn(),
   warn: vi.fn(),
 }));
@@ -12,6 +13,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
 vi.mock('$lib/utils/keyboardShortcuts', () => ({ isFocusInTerminal: mocks.isFocusInTerminal }));
 vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigateToRoute }));
+vi.mock('$features/new-workspace/route/new-workspace-navigation', () => ({
+  navigateToNewWorkspace: mocks.navigateToNewWorkspace,
+}));
 vi.mock('$lib/utils/window-events', () => ({ dispatchWindowEvent: mocks.dispatchWindowEvent }));
 vi.mock('$lib/utils/client-logger', () => ({ createLogger: () => ({ warn: mocks.warn }) }));
 
@@ -19,6 +23,7 @@ import { menuIpcSaga } from './menu-ipc-saga';
 
 const CHANNELS = [
   'navigate',
+  'deep-link',
   'menu:new-agent',
   'menu:new-note',
   'menu:new-terminal',
@@ -108,12 +113,11 @@ describe('menuIpcSaga', () => {
     await emit('navigate', '/?create=true');
     await emit('navigate', '/workspace/new');
     await emit('navigate', '/settings');
-    for (const channel of CHANNELS.slice(1)) await emit(channel);
+    for (const channel of CHANNELS.slice(2)) await emit(channel);
 
     expect(mocks.navigateToRoute.mock.calls).toEqual([['/settings']]);
+    expect(mocks.navigateToNewWorkspace).toHaveBeenCalledTimes(2);
     expect(actions).toEqual([
-      { type: 'sidebarNav/setShowCreateModal', payload: [true] },
-      { type: 'sidebarNav/setShowCreateModal', payload: [true] },
       { type: 'workspaceAgents/createAgentRequested', payload: ['ws-1'] },
       { type: 'noteReadTracking/createNoteRequested', payload: ['ws-1'] },
       { type: 'terminals/createTerminalRequested', payload: ['ws-1'] },

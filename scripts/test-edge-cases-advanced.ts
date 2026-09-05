@@ -163,36 +163,6 @@ class AdvancedEdgeCaseTest {
         },
       },
       {
-        name: 'Session Storage Overflow',
-        description: 'Handles session storage quota exceeded errors',
-        test: async () => {
-          const issues: string[] = [];
-
-          // Check for try-catch around sessionStorage
-          const initPath = path.join(
-            __dirname,
-            '../src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
-          );
-          const initContent = await fs.readFile(initPath, 'utf-8');
-
-          if (!initContent.includes('try') || !initContent.includes('sessionStorage')) {
-            issues.push('CompactWorkspaceInitializer may not handle sessionStorage errors');
-          }
-
-          const pagePath = path.join(
-            __dirname,
-            '../src/routes/(app)/workspace/[id]/WorkspaceSurface.svelte',
-          );
-          const pageContent = await fs.readFile(pagePath, 'utf-8');
-
-          if (pageContent.includes('sessionStorage.setItem') && !pageContent.includes('try')) {
-            issues.push('Workspace page may not handle sessionStorage quota errors');
-          }
-
-          return { passed: issues.length === 0, issues };
-        },
-      },
-      {
         name: 'Circular Reference in Messages',
         description: 'Prevents circular references in message objects',
         test: async () => {

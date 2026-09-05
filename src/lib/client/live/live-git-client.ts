@@ -612,7 +612,7 @@ export class LiveGitClient implements GitClient {
   }
 
   // `git.getBranches` (PROTOCOL §5.6) is path-based, NOT workspace-scoped: the
-  // workspace-initializer asks for an arbitrary repo path BEFORE a workspace
+  // workspace-creation asks for an arbitrary repo path BEFORE a workspace
   // exists. Maps the daemon `GitBranches` (snake_case fields are serialized as
   // camelCase per the wire model) into the renderer `GitBranchesResult`.
   // Errors (including the daemon's "Unknown or unauthorized repository path"
@@ -643,7 +643,7 @@ export class LiveGitClient implements GitClient {
   }
 
   // `git.branchStatus` (PROTOCOL §5.6) is path-based like `git.getBranches` —
-  // the workspace-initializer `BranchSelector` queries an arbitrary repo path
+  // the workspace-creation `BranchSelector` queries an arbitrary repo path
   // before a workspace exists to drive the ahead/behind + uncommitted
   // indicators. Maps the daemon `GitBranchStatus` (snake_case → camelCase per
   // the wire model) into the renderer `GitBranchStatusResult`. Errors

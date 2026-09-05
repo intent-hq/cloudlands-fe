@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
-import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import LinkActionMenu from './LinkActionMenu.svelte';
 import {
@@ -29,6 +27,10 @@ vi.mock('./link-handler', () => ({
 
 const writeTextToClipboardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('$lib/utils/clipboard', () => ({ writeTextToClipboard: writeTextToClipboardMock }));
+const navigateToNewWorkspaceMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('$features/new-workspace/route/new-workspace-navigation', () => ({
+  navigateToNewWorkspace: navigateToNewWorkspaceMock,
+}));
 
 const TEST_WORKSPACE_ID = 'ws-1' as WorkspaceId;
 const ISSUE_URL = 'https://github.com/acme/widgets/issues/42';
@@ -74,23 +76,22 @@ describe('LinkActionMenu', () => {
     expect(screen.getAllByRole('menuitem')).toHaveLength(3);
   });
 
-  it('start new workspace dispatches the prefill action and opens the create modal', async () => {
+  it('starts a new workspace with the GitHub prefill', async () => {
     render(LinkActionMenu);
     showIssueMenu(TEST_WORKSPACE_ID);
     await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
 
     await fireEvent.click(screen.getAllByRole('menuitem')[0]);
 
-    expect(reduxDispatchMock).toHaveBeenCalledWith(
-      setWorkspaceInitializerPendingGitHubPrefill({
+    expect(navigateToNewWorkspaceMock).toHaveBeenCalledWith({
+      prefill: {
         owner: 'acme',
         repo: 'widgets',
         number: 42,
         kind: 'issue',
         url: ISSUE_URL,
-      }),
-    );
-    expect(reduxDispatchMock).toHaveBeenCalledWith(setShowCreateModal(true));
+      },
+    });
     expect(linkActionMenuState.visible).toBe(false);
   });
 

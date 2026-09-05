@@ -42,10 +42,7 @@ import { agentSessionStopChatRequested } from '$store/renderer/slices/agent-sess
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { actionHudShown } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import { closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-import {
-  setMultiSelectSidebarSelectedTabs,
-  setShowCreateModal,
-} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { setMultiSelectSidebarSelectedTabs } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import {
   createAgentWithSpecialistRequested,
   hydrateAgentsRequested,
@@ -123,7 +120,6 @@ export interface ActionKeyState {
   sidebarNav: {
     multiSelectTabOrder: string[];
     multiSelectSelectedTabIdsByWorkspaceId: Record<string, string[]>;
-    showCreateModal: boolean;
   };
   /** Engine preference + configuration reality for the push-to-talk gate. */
   voiceSettings: EffectiveVoiceEngineInputs;
@@ -620,8 +616,8 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
     isAvailable() {
       return true;
     },
-    execute({ state, dispatch }) {
-      dispatch(setShowCreateModal(!state.sidebarNav.showCreateModal));
+    execute({ navigate }) {
+      void navigate('/workspace/new');
     },
   },
   {

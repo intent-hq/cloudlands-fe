@@ -22,7 +22,6 @@ const rotatedDisclosureFiles = [
 
 const swappedDisclosureFiles = [
   'src/features/file-tracking/components/diff/DiffHeader.svelte',
-  'src/features/onboarding/steps/WorkspaceCreationError.svelte',
   'src/features/workspace/components/WorkspaceActionsMenu.svelte',
   'src/lib/components/ErrorDisplay.svelte',
   'src/lib/components/chat/ChatChangesPanel.svelte',
@@ -46,7 +45,7 @@ const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf
 describe('disclosure chevron inventory', () => {
   it('keeps every audited source on the rendered left-closed and down-open contract', () => {
     expect(rotatedDisclosureFiles).toHaveLength(15);
-    expect(swappedDisclosureFiles).toHaveLength(18);
+    expect(swappedDisclosureFiles).toHaveLength(17);
 
     for (const path of rotatedDisclosureFiles) {
       const contents = source(path);

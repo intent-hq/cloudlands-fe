@@ -4,8 +4,8 @@
  * Asserts each legacy renderer→main host probe registers a mock IPC handler
  * that (a) forwards to the canonical daemon `host.*` JSON-RPC method with the
  * right params, and (b) wraps the daemon response in the `{success,data}`
- * envelope the existing call sites (CompactWorkspaceInitializer, RepoSelector,
- * LocalRepoTab, ProjectPickerMessage, workspace-validation) already consume.
+ * envelope the existing call sites (workspace creation shell, RepoSelector,
+ * repository pickers and workspace validation already consume.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 

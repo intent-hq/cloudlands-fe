@@ -1,0 +1,135 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import type { WorkspaceDraft } from '$shared/types/workspace-draft';
+  import {
+    createInitialControllerState,
+    reduce,
+    type Capability,
+    type ControllerState,
+    type DraftInput,
+  } from '../../controller';
+  import UntitledWorkspaceShell from '../UntitledWorkspaceShell.svelte';
+
+  interface Props {
+    pendingCapabilities?: boolean;
+    providerMissing?: boolean;
+  }
+
+  const draft: WorkspaceDraft = {
+    id: 'draft-shell-test',
+    ownerClientId: 'component-test',
+    revision: 1,
+    phase: 'editing',
+    title: 'Untitled',
+    intentText: 'Draft message',
+    source: null,
+    contextLinks: [],
+    attachments: [],
+    config: {},
+    operationKey: 'operation-shell-test',
+    delivery: { state: 'none' },
+    createdAt: '2026-01-15T12:00:00.000Z',
+    updatedAt: '2026-01-15T12:00:00.000Z',
+  };
+
+  let { pendingCapabilities = false, providerMissing = false }: Props = $props();
+  let controllerState = $state(buildState());
+  let startCount = $state(0);
+  let providerSelectionCount = $state(0);
+
+  function buildState(): ControllerState {
+    let next: ControllerState = createInitialControllerState(0);
+    next = reduce(next, { type: 'backend.connected', generation: 0, draftId: draft.id });
+    next = reduce(next, { type: 'restore.succeeded', generation: 0, draft });
+    for (const capability of ['provider', 'git', 'node', 'github'] as Capability[]) {
+      next = reduce(next, {
+        type: 'capability.result',
+        capability,
+        status:
+          capability === 'provider'
+            ? providerMissing
+              ? 'missing'
+              : 'ready'
+            : pendingCapabilities
+              ? 'pending'
+              : 'ready',
+        generation: 0,
+      });
+    }
+    return next;
+  }
+
+  function edit(patch: Partial<DraftInput>): void {
+    controllerState = reduce(controllerState, { type: 'user.edited', patch });
+  }
+
+  function chooseNewFolder(name: string): void {
+    edit({ source: { kind: 'newFolder', parentPath: '/test/projects', name } });
+  }
+
+  function chooseProvider(): void {
+    providerSelectionCount += 1;
+    controllerState = reduce(controllerState, {
+      type: 'capability.result',
+      capability: 'provider',
+      status: 'ready',
+      generation: controllerState.generation,
+    });
+  }
+
+  function selectedSourceName(): string {
+    const source = controllerState.input.source;
+    return source?.kind === 'newFolder' ? source.name : '';
+  }
+
+  function settleProbes(): void {
+    for (const capability of ['git', 'node', 'github'] as Capability[]) {
+      controllerState = reduce(controllerState, {
+        type: 'capability.result',
+        capability,
+        status: 'ready',
+        generation: 0,
+      });
+    }
+  }
+
+  onMount(() => {
+    window.addEventListener('new-workspace-probes-settled', settleProbes);
+    return () => window.removeEventListener('new-workspace-probes-settled', settleProbes);
+  });
+</script>
+
+<UntitledWorkspaceShell
+  state={controllerState}
+  presentation={{
+    requiredCapabilities: ['provider'],
+    coordinator: providerMissing
+      ? {
+          provider: {
+            id: 'auggie',
+            name: 'Augment Auggie',
+            available: true,
+            authenticated: true,
+            statusLoading: false,
+            authDetails: undefined,
+            docsUrl: 'https://docs.augmentcode.com/',
+            installCommand: 'auggie',
+            loginCommandHint: 'auggie login',
+            hasNpxFallback: false,
+          },
+          deviceFlow: {
+            userCode: 'SANDBOX-CODE',
+            verificationUri: 'https://github.com/login/device',
+          },
+        }
+      : undefined,
+  }}
+  onEdit={edit}
+  onStart={() => (startCount += 1)}
+  onChooseNewFolder={chooseNewFolder}
+  onProviderSelected={chooseProvider}
+/>
+<output class="sr-only" data-testid="start-count">{startCount}</output>
+<output class="sr-only" data-testid="source-kind">{controllerState.input.source?.kind}</output>
+<output class="sr-only" data-testid="source-name">{selectedSourceName()}</output>
+<output class="sr-only" data-testid="provider-selection-count">{providerSelectionCount}</output>

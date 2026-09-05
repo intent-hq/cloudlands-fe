@@ -1,6 +1,6 @@
 /**
  * Prompt mic latch controller: click-to-latch dictation for the
- * workspace-creation prompt surface (CompactWorkspaceInitializer in the
+ * workspace-creation prompt surface (workspace creation shell in the
  * New Space modal), built on the same trigger-agnostic
  * PTT session API as the chat composer's mic button
  * (composer-mic-controller) — no recording or transcription logic is

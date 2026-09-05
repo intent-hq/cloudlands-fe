@@ -19,6 +19,7 @@ import type {
   SubscriptionHandler,
   Unsubscribe,
 } from '../app-client';
+import type { WorkspaceDraft } from '$shared/types';
 import * as fx from './fixtures';
 
 const OK: MutationResult = { success: true };
@@ -49,6 +50,8 @@ const mockDrafts = new Map<
   string,
   { text: string; attachments?: DraftAttachment[]; updatedAt: string }
 >();
+
+const mockWorkspaceDrafts = new Map<string, WorkspaceDraft>();
 
 export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   readonly chat: AppClient['chat'] = {
@@ -255,6 +258,67 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     async clear(workspaceId, agentId) {
       mockDrafts.delete(`${workspaceId}:${agentId}`);
       return { ok: true };
+    },
+  };
+
+  readonly workspaceDrafts: AppClient['workspaceDrafts'] = {
+    async create(request = {}) {
+      const now = new Date().toISOString();
+      const id = crypto.randomUUID();
+      const draft: WorkspaceDraft = {
+        id,
+        ownerClientId: 'mock-client',
+        revision: 0,
+        phase: 'editing',
+        intentText: request.intentText ?? '',
+        source: request.source ?? null,
+        contextLinks: request.contextLinks ?? [],
+        attachments: request.attachments ?? [],
+        config: request.config ?? {},
+        operationKey: crypto.randomUUID(),
+        delivery: { state: 'none' },
+        createdAt: now,
+        updatedAt: now,
+        ...(request.ownerClientId === undefined ? {} : { ownerClientId: request.ownerClientId }),
+        ...(request.title === undefined ? {} : { title: request.title }),
+      };
+      mockWorkspaceDrafts.set(id, draft);
+      return draft;
+    },
+    async get(id) {
+      const draft = mockWorkspaceDrafts.get(id);
+      if (!draft) throw Object.assign(new Error('Draft not found'), { rpcCode: -32602 });
+      return draft;
+    },
+    async list() {
+      return [...mockWorkspaceDrafts.values()].filter((draft) => draft.phase !== 'promoted');
+    },
+    async update(id, expectedRevision, patch) {
+      const current = mockWorkspaceDrafts.get(id);
+      if (!current || current.revision !== expectedRevision) throw new Error('Draft conflict');
+      const { title, ...remainingPatch } = patch;
+      const updated: WorkspaceDraft = {
+        ...current,
+        ...remainingPatch,
+        revision: current.revision + 1,
+      };
+      if (title === null) delete updated.title;
+      else if (title !== undefined) updated.title = title;
+      mockWorkspaceDrafts.set(id, updated);
+      return updated;
+    },
+    async promote() {
+      throw new Error('Workspace draft promotion requires the live daemon');
+    },
+    async markDelivery(id, delivery) {
+      const current = mockWorkspaceDrafts.get(id);
+      if (!current) throw new Error('Draft not found');
+      const updated = { ...current, delivery, revision: current.revision + 1 };
+      mockWorkspaceDrafts.set(id, updated);
+      return updated;
+    },
+    async delete(id) {
+      return { deleted: mockWorkspaceDrafts.delete(id) };
     },
   };
 }

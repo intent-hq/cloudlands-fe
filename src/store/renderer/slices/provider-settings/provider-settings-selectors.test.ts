@@ -312,7 +312,7 @@ describe("install-mid-onboarding regression (false 'No provider available' on st
       checkSingleProviderSuccess('claude-code', { available: true, authenticated: true }, 3),
     );
 
-    // (d) The user picks claude-code on step 3 (AgentGrid's
+    // (d) The user picks claude-code from the provider grid's
     // handleSelectProvider dispatch sequence; the model slice mirrors
     // setActiveProvider into its defaultProviderId/normalization).
     settings = providerSettingsReducer(

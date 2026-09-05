@@ -131,6 +131,79 @@ export const WorkspaceGetRequestSchema = z.object({
   workspaceId: WorkspaceIdSchema,
 });
 
+const WorkspaceDraftSourceRequestSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('local'),
+    path: z.string().min(1),
+    branch: z.string().optional(),
+    isolation: z.enum(['worktree', 'in-place']),
+  }),
+  z.object({
+    kind: z.literal('github'),
+    url: z.string().url(),
+    owner: z.string().min(1),
+    name: z.string().min(1),
+    branch: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal('newFolder'),
+    parentPath: z.string().min(1),
+    name: z.string().min(1),
+  }),
+]);
+
+const WorkspaceDraftMutableFieldsRequestSchema = z
+  .object({
+    title: z.string().nullable().optional(),
+    intentText: z.string().optional(),
+    source: WorkspaceDraftSourceRequestSchema.nullable().optional(),
+    contextLinks: z.array(z.unknown()).optional(),
+    attachments: z.array(z.unknown()).optional(),
+    config: z.record(z.unknown()).optional(),
+  })
+  .strict();
+
+const WorkspaceDraftInitialAgentRequestSchema = z
+  .object({
+    name: z.string().optional(),
+    model: z.string().optional(),
+    prompt: z.string().optional(),
+    rules: z.string().optional(),
+    agentType: z.string().optional(),
+    specialist: z.string().optional(),
+    behaviorPrompt: z.string().optional(),
+    provider: z.string().optional(),
+    contextReferences: z.array(z.unknown()).optional(),
+    imageBlocks: z.array(z.unknown()).optional(),
+    metadata: z.record(z.unknown()).optional(),
+  })
+  .strict();
+
+export const WorkspaceDraftCreateRequestSchema = WorkspaceDraftMutableFieldsRequestSchema.omit({
+  title: true,
+}).extend({ ownerClientId: z.string().min(1).optional(), title: z.string().optional() });
+export const WorkspaceDraftGetRequestSchema = z.object({ id: z.string().min(1) });
+export const WorkspaceDraftListRequestSchema = z.object({}).strict();
+export const WorkspaceDraftUpdateRequestSchema = z.object({
+  id: z.string().min(1),
+  expectedRevision: z.number().int().nonnegative(),
+  patch: WorkspaceDraftMutableFieldsRequestSchema,
+});
+export const WorkspaceDraftPromoteRequestSchema = z.object({
+  id: z.string().min(1),
+  expectedRevision: z.number().int().nonnegative(),
+  initialAgent: WorkspaceDraftInitialAgentRequestSchema.optional(),
+});
+export const WorkspaceDraftMarkDeliveryRequestSchema = z.object({
+  id: z.string().min(1),
+  delivery: z.object({
+    state: z.enum(['none', 'pending', 'sent', 'unknown']),
+    messageId: z.string().optional(),
+    error: z.string().optional(),
+  }),
+});
+export const WorkspaceDraftDeleteRequestSchema = z.object({ id: z.string().min(1) });
+
 // ============================================================================
 // File IPC Schemas
 // ============================================================================
@@ -179,6 +252,13 @@ export const PrMonitorFlushRequestSchema = z.object({
 
 // Use Record<string, any> to avoid type conflicts with branded types
 const schemas: Record<string, z.ZodSchema<any>> = {
+  'workspaceDraft.create': WorkspaceDraftCreateRequestSchema,
+  'workspaceDraft.get': WorkspaceDraftGetRequestSchema,
+  'workspaceDraft.list': WorkspaceDraftListRequestSchema,
+  'workspaceDraft.update': WorkspaceDraftUpdateRequestSchema,
+  'workspaceDraft.promote': WorkspaceDraftPromoteRequestSchema,
+  'workspaceDraft.markDelivery': WorkspaceDraftMarkDeliveryRequestSchema,
+  'workspaceDraft.delete': WorkspaceDraftDeleteRequestSchema,
   'agent:create': AgentCreateRequestSchema,
   'agent:get': AgentGetRequestSchema,
   'agent:send-message': AgentSendMessageRequestSchema,

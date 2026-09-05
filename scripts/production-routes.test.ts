@@ -41,6 +41,7 @@ describe('production route graph', () => {
       '(app)/workspace/[id]/+page.svelte',
       '(app)/workspace/[id]/files/+page.svelte',
       '(app)/workspace/creating/+page.svelte',
+      '(app)/workspace/new/+page.svelte',
       '+error.svelte',
       '+layout.svelte',
       '+layout.ts',
