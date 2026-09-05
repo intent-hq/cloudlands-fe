@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.136.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.136.2...v2.136.3) (2026-09-05)
+
+
+### 🐛 Bug Fixes
+
+* **agent-avatar:** route inline/attribution/mention avatars through shared runtime-state precedence ([#2108](https://github.com/intent-hq/cloudlands-fe/issues/2108)) ([d75a570](https://github.com/intent-hq/cloudlands-fe/commit/d75a570abcb2e0e02a8999d1126662d5520b2c61))
+* never install the dev browser mock inside an Electron renderer ([#2106](https://github.com/intent-hq/cloudlands-fe/issues/2106)) ([e22a9bc](https://github.com/intent-hq/cloudlands-fe/commit/e22a9bc1a1870cdb295fdf7ded451347b24c6ac6))
+* surface secret-unavailable connection opens in all callers ([#2110](https://github.com/intent-hq/cloudlands-fe/issues/2110)) ([3ed9e7c](https://github.com/intent-hq/cloudlands-fe/commit/3ed9e7c176448209923b1310b9a2286c11318321))
+
 ## [2.136.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.136.1...v2.136.2) (2026-09-04)
 
 
