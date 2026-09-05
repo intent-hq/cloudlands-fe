@@ -9,7 +9,11 @@ import {
   getLocalStorageJSON,
   setLocalStorageJSON,
 } from '../../../utils/safe-local-storage-saga';
-import { selectTerminalOverlayHeight, selectWorkspaceTerminalState } from '../terminals-selectors';
+import {
+  selectHydratedWorkspacePlacements,
+  selectTerminalOverlayHeight,
+  selectWorkspaceTerminalState,
+} from '../terminals-selectors';
 import {
   CUSTOM_NAMES_STORAGE_KEY,
   STORAGE_KEY,
@@ -19,16 +23,20 @@ import {
   emptyWorkspaceState,
   getTerminalName,
   hydrateHeight,
+  hydratePlacements,
   loadWorkspaceTerminals,
   openTerminalOverlay,
   removeTerminal,
   renameTerminal,
   saveTerminalMetadata,
+  selectScript,
   selectTerminal,
   setTerminalOverlayHeight,
+  setTerminalPlacement,
   toggleTerminalOverlay,
   type PersistedWorkspaceState,
   type TerminalMetadata,
+  type TerminalPlacement,
 } from '../terminals-slice';
 
 const LEGACY_CUSTOM_NAMES_BUCKET = '__legacy__';
@@ -41,7 +49,9 @@ type WorkspaceStateAction =
   | ReturnType<typeof closeTerminalOverlay>
   | ReturnType<typeof toggleTerminalOverlay>
   | ReturnType<typeof selectTerminal>
-  | ReturnType<typeof addTerminal>;
+  | ReturnType<typeof selectScript>
+  | ReturnType<typeof addTerminal>
+  | ReturnType<typeof setTerminalPlacement>;
 
 const internallyHydratedLoads = new WeakSet<object>();
 
@@ -130,15 +140,36 @@ function* loadWorkspaceStates(): SagaGenerator<Record<string, PersistedWorkspace
   );
 }
 
+function isTerminalPlacement(value: unknown): value is TerminalPlacement {
+  return value === 'overlay' || value === 'panel';
+}
+
+function readStoredPlacements(
+  state: PersistedWorkspaceState | undefined,
+): Record<string, TerminalPlacement> | undefined {
+  const stored = state?.placements;
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return undefined;
+  const placements = Object.fromEntries(
+    Object.entries(stored).filter(([, placement]) => isTerminalPlacement(placement)),
+  );
+  return Object.keys(placements).length > 0 ? placements : undefined;
+}
+
 function* persistWorkspaceState(workspaceId: string): SagaGenerator<void> {
   const workspaceState = yield* selectWorkspaceTerminalState.effect(workspaceId);
   if (workspaceState === emptyWorkspaceState) return;
 
+  // Until the workspace's first load consumes them, stored placements are
+  // carried forward so an early write cannot clobber them.
+  const hydrated = yield* selectHydratedWorkspacePlacements.effect(workspaceId);
   const states = yield* call(loadWorkspaceStates);
   const height = states[workspaceId]?.height;
   states[workspaceId] = {
     isOpen: workspaceState.isOpen,
     activeTerminalId: workspaceState.activeTerminalId,
+    placements: hydrated
+      ? { ...hydrated, ...workspaceState.placements }
+      : workspaceState.placements,
     ...(height !== undefined ? { height } : {}),
   };
   yield* call(setLocalStorageJSON, WORKSPACE_STATE_STORAGE_KEY, states);
@@ -174,6 +205,21 @@ function* hydrateTerminalHeightWorker(): SagaGenerator<void> {
     }
   }
   yield* put(hydrateHeight(fallback, workspaceHeights));
+}
+
+/**
+ * Placements hydrate at boot rather than through `loadWorkspaceTerminals`:
+ * the production load always carries the daemon envelope (`savedState` null),
+ * which skips the per-load storage read.
+ */
+function* hydrateWorkspacePlacementsWorker(): SagaGenerator<void> {
+  const states = yield* call(loadWorkspaceStates);
+  const workspacePlacements: Record<string, Record<string, TerminalPlacement>> = {};
+  for (const [workspaceId, state] of Object.entries(states)) {
+    const placements = readStoredPlacements(state);
+    if (placements) workspacePlacements[workspaceId] = placements;
+  }
+  yield* put(hydratePlacements(workspacePlacements));
 }
 
 function* persistTerminalHeightWorker(
@@ -251,14 +297,11 @@ function* hydrateAndPersistLoadedTerminalsWorker(
     return;
   }
 
-  const states = yield* call(
-    getLocalStorageJSON<Record<string, PersistedWorkspaceState>>,
-    WORKSPACE_STATE_STORAGE_KEY,
-  );
+  const states = yield* call(loadWorkspaceStates);
   const hydratedAction = loadWorkspaceTerminals(
     workspaceId,
     terminals,
-    states?.[workspaceId] || null,
+    states[workspaceId] || null,
   );
   internallyHydratedLoads.add(hydratedAction);
   yield* put(hydratedAction);
@@ -270,7 +313,15 @@ function* watchTerminalPersistence(): SagaGenerator<void> {
   yield* takeEvery(saveTerminalMetadata, persistTerminalMetadataWorker);
   yield* takeEvery(removeTerminal, removeTerminalPersistenceWorker);
   yield* takeEvery(
-    [openTerminalOverlay, closeTerminalOverlay, toggleTerminalOverlay, selectTerminal, addTerminal],
+    [
+      openTerminalOverlay,
+      closeTerminalOverlay,
+      toggleTerminalOverlay,
+      selectTerminal,
+      selectScript,
+      addTerminal,
+      setTerminalPlacement,
+    ],
     persistTerminalWorkspaceStateWorker,
   );
   yield* takeEvery(loadWorkspaceTerminals, hydrateAndPersistLoadedTerminalsWorker);
@@ -279,5 +330,6 @@ function* watchTerminalPersistence(): SagaGenerator<void> {
 /** Unregistered until the S20 middleware cutover. */
 export function* terminalPersistenceSaga(): SagaGenerator<void> {
   yield* call(hydrateTerminalHeightWorker);
+  yield* call(hydrateWorkspacePlacementsWorker);
   yield* fork(watchTerminalPersistence);
 }

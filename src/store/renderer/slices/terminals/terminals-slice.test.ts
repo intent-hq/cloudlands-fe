@@ -5,6 +5,8 @@ import {
   closeTerminalOverlay,
   toggleTerminalOverlay,
   selectTerminal,
+  selectScript,
+  setTerminalPlacement,
   addTerminal,
   removeTerminal,
   setTerminalOverlayHeight,
@@ -12,6 +14,7 @@ import {
   saveTerminalMetadata,
   loadWorkspaceTerminals,
   hydrateHeight,
+  hydratePlacements,
   type TerminalOverlayState,
   type TerminalTab,
 } from './terminals-slice';
@@ -36,6 +39,7 @@ function terms(state: TerminalOverlayState, wsId: string = WS) {
 const initialState: TerminalOverlayState = {
   height: 50,
   workspaceHeights: {},
+  workspacePlacements: {},
   workspaces: {},
 };
 
@@ -50,6 +54,7 @@ function getWs(state: TerminalOverlayState, wsId: string = WS) {
       isLoadingTerminals: false,
       recentlyCreatedTerminals: [],
       daemonBootId: null,
+      placements: {},
     }
   );
 }
@@ -91,6 +96,7 @@ describe('terminalsReducer', () => {
             isLoadingTerminals: false,
             recentlyCreatedTerminals: [],
             daemonBootId: null,
+            placements: {},
           },
         },
       };
@@ -157,11 +163,13 @@ describe('terminalsReducer', () => {
           [WS]: {
             isOpen: true,
             activeTerminalId: null,
+            selectedScriptId: null,
             terminals: col([]),
             terminalsLoaded: false,
             isLoadingTerminals: false,
             recentlyCreatedTerminals: [],
             daemonBootId: null,
+            placements: {},
           },
         },
       };
@@ -169,6 +177,7 @@ describe('terminalsReducer', () => {
       const ws = getWs(state);
       expect(ws.isOpen).toBe(true);
       expect(ws.activeTerminalId).toBe('term-1');
+      expect(ws.placements).toEqual({ 'term-1': 'overlay' });
     });
   });
 
@@ -189,6 +198,7 @@ describe('terminalsReducer', () => {
             isLoadingTerminals: false,
             recentlyCreatedTerminals: [],
             daemonBootId: null,
+            placements: {},
           },
         },
       };
@@ -213,6 +223,7 @@ describe('terminalsReducer', () => {
             isLoadingTerminals: false,
             recentlyCreatedTerminals: [],
             daemonBootId: null,
+            placements: {},
           },
         },
       };
@@ -232,6 +243,7 @@ describe('terminalsReducer', () => {
             isLoadingTerminals: false,
             recentlyCreatedTerminals: [],
             daemonBootId: null,
+            placements: {},
           },
         },
       };
@@ -255,6 +267,7 @@ describe('terminalsReducer', () => {
             isLoadingTerminals: false,
             recentlyCreatedTerminals: [],
             daemonBootId: null,
+            placements: {},
           },
         },
       };
@@ -280,6 +293,7 @@ describe('terminalsReducer', () => {
             isLoadingTerminals: false,
             recentlyCreatedTerminals: [],
             daemonBootId: null,
+            placements: {},
           },
         },
       };
@@ -676,6 +690,7 @@ describe('terminalsReducer', () => {
             isLoadingTerminals: false,
             recentlyCreatedTerminals: [],
             daemonBootId: null,
+            placements: {},
           },
         },
       };
@@ -835,6 +850,225 @@ describe('terminalsReducer', () => {
       const ws = getWs(state);
       expect(terms(state).map((t) => t.id)).toEqual(['pty-42']);
       expect(ws.daemonBootId).toBe('boot-1');
+    });
+  });
+
+  describe('hydratePlacements', () => {
+    const terminals = [{ id: 't1', name: 'Terminal 1' }];
+
+    it('stores hydrated placements without materializing workspace entries', () => {
+      const state = terminalsReducer(
+        initialState,
+        hydratePlacements({ [WS]: { t1: 'panel' }, 'ws-other': { s1: 'panel' } }),
+      );
+      expect(state.workspacePlacements).toEqual({
+        [WS]: { t1: 'panel' },
+        'ws-other': { s1: 'panel' },
+      });
+      expect(state.workspaces).toEqual({});
+    });
+
+    it('returns the same state for an empty hydration', () => {
+      expect(terminalsReducer(initialState, hydratePlacements({}))).toBe(initialState);
+    });
+
+    it('seeds the first load without saved state and consumes the entry', () => {
+      let state = terminalsReducer(
+        initialState,
+        hydratePlacements({ [WS]: { t1: 'panel', s1: 'panel' }, 'ws-other': { s1: 'panel' } }),
+      );
+      state = terminalsReducer(state, loadWorkspaceTerminals(WS, terminals, null, 'boot-1'));
+      expect(getWs(state).placements).toEqual({ t1: 'panel', s1: 'panel' });
+      expect(state.workspacePlacements).toEqual({ 'ws-other': { s1: 'panel' } });
+    });
+
+    it('lets in-memory placements win over hydrated ones on the first load', () => {
+      let state = terminalsReducer(initialState, hydratePlacements({ [WS]: { t1: 'panel' } }));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't1', 'overlay'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't2', 'panel'));
+      state = terminalsReducer(state, loadWorkspaceTerminals(WS, terminals, null, 'boot-1'));
+      expect(getWs(state).placements).toEqual({ t1: 'overlay', t2: 'panel' });
+    });
+
+    it('prefers explicit saved-state placements and still consumes the entry', () => {
+      let state = terminalsReducer(initialState, hydratePlacements({ [WS]: { t1: 'panel' } }));
+      state = terminalsReducer(
+        state,
+        loadWorkspaceTerminals(WS, terminals, {
+          isOpen: false,
+          activeTerminalId: null,
+          placements: { t1: 'overlay' },
+        }),
+      );
+      expect(getWs(state).placements).toEqual({ t1: 'overlay' });
+      expect(state.workspacePlacements).toEqual({});
+    });
+
+    it('does not re-seed later loads after removal pruned a placement', () => {
+      let state = terminalsReducer(initialState, hydratePlacements({ [WS]: { t1: 'panel' } }));
+      state = terminalsReducer(state, loadWorkspaceTerminals(WS, terminals, null, 'boot-1'));
+      state = terminalsReducer(state, removeTerminal(WS, 't1'));
+      expect(getWs(state).placements).toEqual({});
+      state = terminalsReducer(state, loadWorkspaceTerminals(WS, terminals, null, 'boot-1'));
+      expect(getWs(state).placements).toEqual({});
+    });
+
+    it('prunes a removed terminal from the pending hydrated entry before the first load', () => {
+      let state = terminalsReducer(
+        initialState,
+        hydratePlacements({ [WS]: { t1: 'panel', s1: 'panel' }, 'ws-other': { t1: 'panel' } }),
+      );
+      state = terminalsReducer(state, addTerminal(WS, 't1'));
+      state = terminalsReducer(state, removeTerminal(WS, 't1'));
+      expect(state.workspacePlacements).toEqual({
+        [WS]: { s1: 'panel' },
+        'ws-other': { t1: 'panel' },
+      });
+      state = terminalsReducer(state, loadWorkspaceTerminals(WS, [], null, 'boot-1'));
+      expect(getWs(state).placements).toEqual({ s1: 'panel' });
+    });
+
+    it('leaves the pending hydrated entry untouched when removing an unrelated terminal', () => {
+      let state = terminalsReducer(initialState, hydratePlacements({ [WS]: { s1: 'panel' } }));
+      state = terminalsReducer(state, addTerminal(WS, 't1'));
+      const before = state.workspacePlacements;
+      state = terminalsReducer(state, removeTerminal(WS, 't1'));
+      expect(state.workspacePlacements).toBe(before);
+    });
+  });
+
+  describe('placement (last surface a terminal/script was shown on)', () => {
+    it('starts with no placements recorded', () => {
+      const state = terminalsReducer(initialState, addTerminal(WS, 't1'));
+      expect(getWs(state).placements).toEqual({});
+    });
+
+    it('records panel placement via setTerminalPlacement', () => {
+      const state = terminalsReducer(initialState, setTerminalPlacement(WS, 't1', 'panel'));
+      expect(getWs(state).placements).toEqual({ t1: 'panel' });
+    });
+
+    it('returns the same state when the placement is unchanged', () => {
+      const state = terminalsReducer(initialState, setTerminalPlacement(WS, 't1', 'panel'));
+      expect(terminalsReducer(state, setTerminalPlacement(WS, 't1', 'panel'))).toBe(state);
+    });
+
+    it('records overlay placement when a terminal is opened in the overlay', () => {
+      let state = terminalsReducer(initialState, setTerminalPlacement(WS, 't1', 'panel'));
+      state = terminalsReducer(state, openTerminalOverlay(WS, 't1'));
+      expect(getWs(state).placements).toEqual({ t1: 'overlay' });
+    });
+
+    it('records overlay placement for the default terminal when none is named', () => {
+      const state = terminalsReducer(initialState, openTerminalOverlay(WS));
+      expect(getWs(state).placements).toEqual({ [`terminal-${WS}-default`]: 'overlay' });
+    });
+
+    it('records overlay placement for the selected script when the overlay opens on it', () => {
+      let state = terminalsReducer(initialState, addTerminal(WS, 't1'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 'script-1', 'panel'));
+      state = terminalsReducer(state, selectScript(WS, 'script-1'));
+      state = terminalsReducer(state, openTerminalOverlay(WS));
+      expect(getWs(state).placements).toEqual({ 'script-1': 'overlay' });
+    });
+
+    it('records overlay placement when the overlay is toggled open on the active terminal', () => {
+      let state = terminalsReducer(initialState, addTerminal(WS, 't1'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't1', 'panel'));
+      state = terminalsReducer(state, toggleTerminalOverlay(WS));
+      expect(getWs(state).isOpen).toBe(true);
+      expect(getWs(state).placements).toEqual({ t1: 'overlay' });
+    });
+
+    it('records overlay placement for the selected script when the overlay is toggled open', () => {
+      let state = terminalsReducer(initialState, addTerminal(WS, 't1'));
+      state = terminalsReducer(state, selectScript(WS, 'script-1'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 'script-1', 'panel'));
+      state = terminalsReducer(state, toggleTerminalOverlay(WS));
+      expect(getWs(state).placements).toEqual({ 'script-1': 'overlay' });
+    });
+
+    it('leaves placements alone when the overlay is toggled closed', () => {
+      let state = terminalsReducer(initialState, openTerminalOverlay(WS, 't1'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't2', 'panel'));
+      state = terminalsReducer(state, toggleTerminalOverlay(WS));
+      expect(getWs(state).isOpen).toBe(false);
+      expect(getWs(state).placements).toEqual({ t1: 'overlay', t2: 'panel' });
+    });
+
+    it('records overlay placement when a panel-placed terminal is selected in the open overlay', () => {
+      let state = terminalsReducer(initialState, openTerminalOverlay(WS, 't1'));
+      state = terminalsReducer(state, addTerminal(WS, 't2'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't2', 'panel'));
+      state = terminalsReducer(state, selectTerminal(WS, 't2'));
+      expect(getWs(state).placements).toEqual({ t1: 'overlay', t2: 'overlay' });
+    });
+
+    it('leaves placement alone when a terminal is selected while the overlay is closed', () => {
+      let state = terminalsReducer(initialState, addTerminal(WS, 't1'));
+      state = terminalsReducer(state, addTerminal(WS, 't2'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't2', 'panel'));
+      state = terminalsReducer(state, selectTerminal(WS, 't2'));
+      expect(getWs(state).activeTerminalId).toBe('t2');
+      expect(getWs(state).placements).toEqual({ t2: 'panel' });
+    });
+
+    it('records overlay placement when a panel-placed script is selected in the open overlay', () => {
+      let state = terminalsReducer(initialState, openTerminalOverlay(WS, 't1'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 'script-1', 'panel'));
+      state = terminalsReducer(state, selectScript(WS, 'script-1'));
+      expect(getWs(state).selectedScriptId).toBe('script-1');
+      expect(getWs(state).placements).toEqual({ t1: 'overlay', 'script-1': 'overlay' });
+    });
+
+    it('leaves placement alone when a script is selected while the overlay is closed', () => {
+      let state = terminalsReducer(initialState, setTerminalPlacement(WS, 'script-1', 'panel'));
+      state = terminalsReducer(state, selectScript(WS, 'script-1'));
+      expect(getWs(state).selectedScriptId).toBe('script-1');
+      expect(getWs(state).placements).toEqual({ 'script-1': 'panel' });
+    });
+
+    it('keeps placements per workspace and per terminal', () => {
+      let state = terminalsReducer(initialState, setTerminalPlacement(WS, 't1', 'panel'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't2', 'overlay'));
+      state = terminalsReducer(state, setTerminalPlacement('ws-2', 't1', 'overlay'));
+      expect(getWs(state).placements).toEqual({ t1: 'panel', t2: 'overlay' });
+      expect(getWs(state, 'ws-2').placements).toEqual({ t1: 'overlay' });
+    });
+
+    it('drops the placement of a removed terminal', () => {
+      let state = terminalsReducer(initialState, addTerminal(WS, 't1'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't1', 'panel'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't2', 'panel'));
+      state = terminalsReducer(state, removeTerminal(WS, 't1'));
+      expect(getWs(state).placements).toEqual({ t2: 'panel' });
+    });
+
+    it('hydrates placements from saved state and keeps them across a refetch', () => {
+      let state = terminalsReducer(
+        initialState,
+        loadWorkspaceTerminals(WS, [{ id: 't1', name: 'T1' }], {
+          isOpen: false,
+          activeTerminalId: 't1',
+          placements: { t1: 'panel' },
+        }),
+      );
+      expect(getWs(state).placements).toEqual({ t1: 'panel' });
+
+      state = terminalsReducer(state, loadWorkspaceTerminals(WS, [{ id: 't1', name: 'T1' }]));
+      expect(getWs(state).placements).toEqual({ t1: 'panel' });
+    });
+
+    it('keeps prior placements when the saved state predates them', () => {
+      let state = terminalsReducer(initialState, setTerminalPlacement(WS, 't1', 'panel'));
+      state = terminalsReducer(
+        state,
+        loadWorkspaceTerminals(WS, [{ id: 't1', name: 'T1' }], {
+          isOpen: false,
+          activeTerminalId: 't1',
+        }),
+      );
+      expect(getWs(state).placements).toEqual({ t1: 'panel' });
     });
   });
 });

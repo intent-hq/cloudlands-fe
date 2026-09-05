@@ -47,6 +47,11 @@ export interface TerminalMetadata {
   title?: string;
 }
 
+/** Surface a terminal or script output was last shown on. */
+export type TerminalPlacement = 'overlay' | 'panel';
+
+export const DEFAULT_TERMINAL_PLACEMENT: TerminalPlacement = 'overlay';
+
 export interface WorkspaceTerminalState {
   isOpen: boolean;
   activeTerminalId: string | null;
@@ -67,6 +72,12 @@ export interface WorkspaceTerminalState {
    * PTYs respawn via auto-reconnect). `null` until a boot id is seen.
    */
   daemonBootId: string | null;
+  /**
+   * Last surface each terminal (keyed by terminal id) or script output (keyed
+   * by script id) was shown on, so the Shell sidebar reopens it there. Missing
+   * entries read as `'overlay'`.
+   */
+  placements: Record<string, TerminalPlacement>;
 }
 
 /** Persisted subset of workspace state (terminals are loaded from terminalManager) */
@@ -77,6 +88,8 @@ export interface PersistedWorkspaceState {
   selectedScriptId?: string | null;
   /** Optional for backward compat with entries persisted before it existed. */
   height?: number;
+  /** Optional for backward compat with entries persisted before it existed. */
+  placements?: Record<string, TerminalPlacement>;
 }
 
 export type TerminalOverlayState = {
@@ -88,6 +101,12 @@ export type TerminalOverlayState = {
    * `emptyWorkspaceState` identity to skip not-yet-loaded workspaces.
    */
   workspaceHeights: Record<string, number>;
+  /**
+   * Stored placements per workspace, hydrated at boot and consumed by the
+   * workspace's first `loadWorkspaceTerminals`. Kept outside `workspaces` for
+   * the same reason as `workspaceHeights`.
+   */
+  workspacePlacements: Record<string, Record<string, TerminalPlacement>>;
   workspaces: Record<string, WorkspaceTerminalState>;
 };
 
@@ -104,11 +123,13 @@ export const emptyWorkspaceState: WorkspaceTerminalState = {
   recentlyCreatedTerminals: [],
   selectedScriptId: null,
   daemonBootId: null,
+  placements: {},
 };
 
 const initialState: TerminalOverlayState = {
   height: DEFAULT_TERMINAL_OVERLAY_HEIGHT,
   workspaceHeights: {},
+  workspacePlacements: {},
   workspaces: {},
 };
 
@@ -142,6 +163,10 @@ export const selectScript =
   createAction<[wsId: string, scriptId: string]>('terminals/selectScript');
 
 export const clearScriptSelection = createAction<[wsId: string]>('terminals/clearScriptSelection');
+
+/** Record the surface a terminal (`id` = terminal id) or script (`id` = script id) was shown on. */
+export const setTerminalPlacement =
+  createAction<[wsId: string, id: string, placement: TerminalPlacement]>('terminals/setPlacement');
 
 export const addTerminal =
   createAction<[wsId: string, termId: string, name?: string]>('terminals/addTerminal');
@@ -185,6 +210,14 @@ export const hydrateHeight =
   createAction<[height: number, workspaceHeights?: Record<string, number>]>(
     'terminals/hydrateHeight',
   );
+
+/**
+ * Hydrate stored placements per workspace from localStorage (dispatched by
+ * init saga). Each workspace consumes its entry on its first terminal load.
+ */
+export const hydratePlacements = createAction<
+  [workspacePlacements: Record<string, Record<string, TerminalPlacement>>]
+>('terminals/hydratePlacements');
 
 export const createTerminalRequested = createAction<[wsId: string]>(
   'terminals/createTerminalRequested',
@@ -262,6 +295,32 @@ function addTerminalIfMissing(
   });
 }
 
+function withPlacement(
+  placements: Record<string, TerminalPlacement>,
+  id: string | null,
+  placement: TerminalPlacement,
+): Record<string, TerminalPlacement> {
+  if (!id || placements[id] === placement) return placements;
+  return { ...placements, [id]: placement };
+}
+
+function withoutPlacement(
+  placements: Record<string, TerminalPlacement>,
+  id: string,
+): Record<string, TerminalPlacement> {
+  if (!(id in placements)) return placements;
+  const { [id]: _removed, ...rest } = placements;
+  return rest;
+}
+
+function consumeHydratedPlacements(
+  state: TerminalOverlayState,
+  wsId: string,
+): TerminalOverlayState {
+  const { [wsId]: _consumed, ...workspacePlacements } = state.workspacePlacements;
+  return { ...state, workspacePlacements };
+}
+
 // ============================================================================
 // Reducer
 // ============================================================================
@@ -281,8 +340,20 @@ terminalsReducer.with(openTerminalOverlay, (state, { payload: [wsId, termId] }) 
     newWs.activeTerminalId = result.defaultId;
   }
 
+  // The overlay shows the selected script when one is set, else the active terminal.
+  newWs.placements = withPlacement(
+    ws.placements,
+    newWs.selectedScriptId ?? newWs.activeTerminalId,
+    'overlay',
+  );
   newWs.isOpen = true;
   return setWs(state, wsId, newWs);
+});
+terminalsReducer.with(setTerminalPlacement, (state, { payload: [wsId, id, placement] }) => {
+  const ws = getWs(state, wsId);
+  const placements = withPlacement(ws.placements, id, placement);
+  if (placements === ws.placements) return state;
+  return setWs(state, wsId, { ...ws, placements });
 });
 terminalsReducer.with(closeTerminalOverlay, (state, { payload: [wsId] }) => {
   const ws = getWs(state, wsId);
@@ -305,19 +376,38 @@ terminalsReducer.with(toggleTerminalOverlay, (state, { payload: [wsId, termId] }
     newWs.terminals = result.terminals;
     newWs.activeTerminalId = result.defaultId;
   }
+  newWs.placements = withPlacement(
+    ws.placements,
+    newWs.selectedScriptId ?? newWs.activeTerminalId,
+    'overlay',
+  );
   newWs.isOpen = true;
   return setWs(state, wsId, newWs);
 });
+// Selecting inside an open overlay shows the target there, so it counts as an overlay placement.
 terminalsReducer.with(selectTerminal, (state, { payload: [wsId, termId] }) => {
   const ws = getWs(state, wsId);
   if (!getItem(ws.terminals, termId)) return state;
-  if (ws.activeTerminalId === termId && ws.selectedScriptId === null) return state;
-  return setWs(state, wsId, { ...ws, activeTerminalId: termId, selectedScriptId: null });
+  const placements = ws.isOpen ? withPlacement(ws.placements, termId, 'overlay') : ws.placements;
+  if (
+    ws.activeTerminalId === termId &&
+    ws.selectedScriptId === null &&
+    placements === ws.placements
+  ) {
+    return state;
+  }
+  return setWs(state, wsId, {
+    ...ws,
+    activeTerminalId: termId,
+    selectedScriptId: null,
+    placements,
+  });
 });
 terminalsReducer.with(selectScript, (state, { payload: [wsId, scriptId] }) => {
   const ws = getWs(state, wsId);
-  if (ws.selectedScriptId === scriptId) return state;
-  return setWs(state, wsId, { ...ws, selectedScriptId: scriptId });
+  const placements = ws.isOpen ? withPlacement(ws.placements, scriptId, 'overlay') : ws.placements;
+  if (ws.selectedScriptId === scriptId && placements === ws.placements) return state;
+  return setWs(state, wsId, { ...ws, selectedScriptId: scriptId, placements });
 });
 terminalsReducer.with(clearScriptSelection, (state, { payload: [wsId] }) => {
   const ws = getWs(state, wsId);
@@ -356,12 +446,22 @@ terminalsReducer.with(removeTerminal, (state, { payload: [wsId, termId] }) => {
   // terminals creates a stuck state.
   const isOpen = newTerminals.ids.length > 0 ? ws.isOpen : false;
 
-  return setWs(state, wsId, {
+  const next = setWs(state, wsId, {
     ...ws,
     terminals: newTerminals,
     activeTerminalId: newActiveId,
     isOpen,
+    placements: withoutPlacement(ws.placements, termId),
   });
+  const hydrated = state.workspacePlacements[wsId];
+  if (!hydrated || !(termId in hydrated)) return next;
+  return {
+    ...next,
+    workspacePlacements: {
+      ...next.workspacePlacements,
+      [wsId]: withoutPlacement(hydrated, termId),
+    },
+  };
 });
 terminalsReducer.with(setTerminalOverlayHeight, (state, { payload: [wsId, height] }) => {
   if (!Number.isFinite(height)) return state;
@@ -403,10 +503,14 @@ terminalsReducer.with(
 terminalsReducer.with(
   loadWorkspaceTerminals,
   (rawState, { payload: [wsId, terminals, savedState, daemonBootId] }) => {
-    const state =
+    const withHeight =
       savedState?.height !== undefined && isValidTerminalOverlayHeight(savedState.height)
         ? setWsHeight(rawState, wsId, savedState.height)
         : rawState;
+    // The hydrated entry seeds the first load (in-memory changes win), then
+    // the loaded workspace state is authoritative.
+    const hydrated = withHeight.workspacePlacements[wsId];
+    const state = hydrated ? consumeHydratedPlacements(withHeight, wsId) : withHeight;
     const collection = createCollection<TerminalTab, 'id'>('id', terminals);
     const prior = getWs(state, wsId);
     const nextBootId = daemonBootId ?? prior.daemonBootId;
@@ -415,6 +519,9 @@ terminalsReducer.with(
       (savedState?.selectedScriptId !== undefined
         ? savedState.selectedScriptId
         : prior.selectedScriptId) ?? null;
+    const placements =
+      savedState?.placements ??
+      (hydrated ? { ...hydrated, ...prior.placements } : prior.placements);
 
     if (terminals.length > 0) {
       let activeId: string | null;
@@ -443,6 +550,7 @@ terminalsReducer.with(
         recentlyCreatedTerminals: [],
         selectedScriptId,
         daemonBootId: nextBootId,
+        placements,
       };
     } else if (prior.terminals.ids.length > 0) {
       const sameBootAuthoritativeEmpty =
@@ -451,8 +559,8 @@ terminalsReducer.with(
         daemonBootId === prior.daemonBootId;
 
       if (!sameBootAuthoritativeEmpty) {
-        if (nextBootId === prior.daemonBootId) return state;
-        return setWs(state, wsId, { ...prior, daemonBootId: nextBootId });
+        if (nextBootId === prior.daemonBootId && placements === prior.placements) return state;
+        return setWs(state, wsId, { ...prior, daemonBootId: nextBootId, placements });
       }
 
       const kept = prior.terminals.ids
@@ -474,6 +582,7 @@ terminalsReducer.with(
             : selectedScriptId !== null && (savedState ? savedState.isOpen : prior.isOpen),
         selectedScriptId,
         daemonBootId: nextBootId,
+        placements,
       };
     } else {
       // Don't restore isOpen when there are no terminals — the panel
@@ -490,6 +599,7 @@ terminalsReducer.with(
         recentlyCreatedTerminals: [],
         selectedScriptId,
         daemonBootId: nextBootId,
+        placements,
       };
     }
 
@@ -506,6 +616,13 @@ terminalsReducer.with(hydrateHeight, (state, { payload: [height, workspaceHeight
     next = setWsHeight(next, wsId, wsHeight);
   }
   return next;
+});
+terminalsReducer.with(hydratePlacements, (state, { payload: [workspacePlacements] }) => {
+  if (Object.keys(workspacePlacements).length === 0) return state;
+  return {
+    ...state,
+    workspacePlacements: { ...state.workspacePlacements, ...workspacePlacements },
+  };
 });
 
 terminalsReducer.with(setScriptsData, (state, { payload: { wsId, scripts } }) => {
