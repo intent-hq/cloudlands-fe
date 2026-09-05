@@ -172,7 +172,7 @@
   }
 
   [data-status='added'] .status {
-    color: rgb(5 150 105);
+    color: rgb(4 120 87);
   }
 
   [data-status='deleted'] .status {
@@ -209,7 +209,7 @@
   }
 
   .additions {
-    color: rgb(5 150 105);
+    color: rgb(4 120 87);
   }
 
   .deletions {
