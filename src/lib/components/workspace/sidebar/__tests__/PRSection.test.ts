@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => {
     branch: 'feature/branch',
     baseRef: 'main',
     repositoryPath: '/repo',
+    repositoryOwner: 'octocat',
+    repositoryName: 'demo',
   } as Record<string, unknown>;
   const state = {
     githubAuthed: true,
@@ -188,6 +190,12 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
+const mockFromPullRequest = vi.hoisted(() => vi.fn());
+vi.mock('$features/diff-map', async () => ({
+  DiffMap: (await import('./mocks/MockDiffMap.svelte')).default,
+  fromPullRequest: mockFromPullRequest,
+}));
+
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => ({ openTab: vi.fn() }),
 }));
@@ -321,6 +329,12 @@ describe('PRSection', () => {
     mockCreatePR.mockResolvedValue({ success: true });
     mockExecute.mockReset().mockResolvedValue({ success: true });
     mockCommitDetails.mockReset();
+    mockFromPullRequest.mockReset().mockImplementation((pr: { files: { path: string }[] }) => ({
+      source: { kind: 'pr', repository: 'octocat/demo', prNumber: 7, snapshotId: '7' },
+      files: pr.files.map((file) => ({ id: file.path, path: file.path })),
+      groups: [],
+      annotations: [],
+    }));
     mocks.state.githubAuthed = true;
     mocks.state.acceptChanges.prTitle = '';
     mocks.state.acceptChanges.prDescription = '';
@@ -497,6 +511,43 @@ describe('PRSection', () => {
       expect(fileRow?.getAttribute('data-file-path')).toBe('src/a.ts');
     });
     expect(mockCommitDetails).not.toHaveBeenCalled();
+    expect(mockFromPullRequest).toHaveBeenCalledWith({
+      repository: 'octocat/demo',
+      number: 7,
+      updatedAt: undefined,
+      files: [{ path: 'src/a.ts', additions: 2, deletions: 0, staged: false }],
+    });
+    expect(container.querySelector('[data-testid="diff-map"]')).toBeTruthy();
+  });
+
+  it('opens a PR diff from the map with the existing file click handler', async () => {
+    const { container } = await renderPR({
+      hasPRs: true,
+      hasOpenPR: true,
+      pullRequests: [testPR],
+      pushedCommits: [
+        makePushedCommit('abc', { files: [{ path: 'src/a.ts', additions: 2, deletions: 0 }] }),
+      ],
+      hasPushedCommits: true,
+    });
+    const toggle = await waitFor(
+      () =>
+        Array.from(container.querySelectorAll('button')).find(
+          (button) => button.getAttribute('title') === 'Toggle file list',
+        ) as HTMLButtonElement,
+    );
+    await fireEvent.click(toggle);
+    const mapFile = await waitFor(
+      () => container.querySelector('[data-map-file]') as HTMLButtonElement,
+    );
+    await fireEvent.click(mapFile);
+    await waitFor(() =>
+      expect(
+        mocks.dispatch.mock.calls.some(
+          ([action]) => action?.type === 'workspaceNavigation/openWorkspaceDiff',
+        ),
+      ).toBe(true),
+    );
   });
 
   it('pushed commits arriving while a PR is expanded get their files fetched too', async () => {

@@ -145,6 +145,12 @@ vi.mock('$lib/client', () => ({
   appClient: { git: { commitDetails: mockCommitDetails } },
 }));
 
+const mockFromCommit = vi.hoisted(() => vi.fn());
+vi.mock('$features/diff-map', async () => ({
+  DiffMap: (await import('./mocks/MockDiffMap.svelte')).default,
+  fromCommit: mockFromCommit,
+}));
+
 vi.mock('$features/git/git-cache', () => ({
   gitCache: { invalidate: vi.fn(), invalidateWorkspace: vi.fn(), set: vi.fn() },
 }));
@@ -254,6 +260,12 @@ describe('CommitsTimeline', () => {
     mockInvoke.mockReset();
     mockShowFile.mockReset();
     mockCommitDetails.mockReset().mockResolvedValue(null);
+    mockFromCommit.mockReset().mockImplementation(async (_workspaceId: string, sha: string) => ({
+      source: { kind: 'commit', commitHash: sha, snapshotId: sha },
+      files: [{ id: 'src/a.ts', path: 'src/a.ts' }],
+      groups: [],
+      annotations: [],
+    }));
     mocks.ftCommits.splice(0, mocks.ftCommits.length);
     mocks.workspaceEntity.baseCommitSha = '';
     mocks.postMergeState.hasRemote = true;
@@ -425,6 +437,33 @@ describe('CommitsTimeline', () => {
     });
     // Files already present — no lazy details fetch.
     expect(mockCommitDetails).not.toHaveBeenCalled();
+    expect(mockFromCommit).toHaveBeenCalledWith('ws-1', 'abc');
+    await waitFor(() => expect(container.querySelector('[data-testid="diff-map"]')).toBeTruthy());
+  });
+
+  it('opens a commit diff from the map with the existing file click handler', async () => {
+    mocks.ftCommits.push(
+      makeCommit('abc', 'feat: one', {
+        files: [{ path: 'src/a.ts', additions: 1, deletions: 0 }],
+      }),
+    );
+    mockShowFile.mockResolvedValue({ ok: true, data: 'content' });
+    const { container } = await renderTimeline();
+    const toggle = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.getAttribute('title') === 'Toggle file list',
+    ) as HTMLButtonElement;
+    await fireEvent.click(toggle);
+    const mapFile = await waitFor(
+      () => container.querySelector('[data-map-file]') as HTMLButtonElement,
+    );
+    await fireEvent.click(mapFile);
+    await waitFor(() =>
+      expect(
+        reduxDispatch.mock.calls.some(
+          ([action]) => action?.type === 'workspaceNavigation/openWorkspaceDiff',
+        ),
+      ).toBe(true),
+    );
   });
 
   it('expansion lazily fetches git.commitDetails for metadata-only commits', async () => {
