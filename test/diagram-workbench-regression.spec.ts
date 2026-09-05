@@ -1153,8 +1153,15 @@ for (const appearance of [
             .querySelector<SVGGraphicsElement>(':scope > .label-container')!;
           const source = sourceShape.getBoundingClientRect();
           const parse = points(route('A', 'B'));
+          const lint = points(route('A', 'C'));
+          const index = points(route('A', 'D'));
           const feedbackPath = route('G', 'A');
           const feedback = points(feedbackPath);
+          const capture = points(route('E', 'F'));
+          const inspect = points(route('E', 'G'));
+          const outgoing = [parse[0], lint[0], index[0]].toSorted(
+            (left, right) => left.x - right.x,
+          );
           return {
             feedbackFraction: (feedback.at(-1)!.x - source.left) / source.width,
             feedbackBeforeParse: feedback.at(-1)!.x < parse[0].x,
@@ -1165,6 +1172,8 @@ for (const appearance of [
             ),
             parseStub: Math.hypot(parse[1].x - parse[0].x, parse[1].y - parse[0].y),
             sharedParseFeedbackColumn: Math.abs(feedback.at(-1)!.x - parse[0].x) <= 1,
+            outgoingGaps: outgoing.slice(1).map((point, i) => point.x - outgoing[i].x),
+            framePortGap: Math.abs(capture[0].x - inspect[0].x),
             marker: feedbackPath.getAttribute('marker-end'),
           };
         });
@@ -1174,6 +1183,8 @@ for (const appearance of [
       expect(geometry.feedbackStub).toBeGreaterThanOrEqual(6);
       expect(geometry.parseStub).toBeGreaterThanOrEqual(8);
       expect(geometry.sharedParseFeedbackColumn).toBe(false);
+      expect(Math.min(...geometry.outgoingGaps)).toBeGreaterThanOrEqual(8);
+      expect(geometry.framePortGap).toBeGreaterThanOrEqual(8);
       expect(geometry.marker).toContain('pointEnd');
     });
 

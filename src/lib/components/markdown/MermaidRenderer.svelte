@@ -43,6 +43,7 @@
     routeFlowchartDecisionBranches,
     routeFlowchartFeedbackLane,
     routeGroupedReturnEdges,
+    snapFlowchartFanoutPorts,
     snapFlowchartPorts,
     snapFlowchartFeedbackPorts,
   } from './mermaid-path-geometry';
@@ -896,6 +897,7 @@ ${verticalSource}`;
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       if (generation !== renderGeneration) return false;
       snapFlowchartPorts(svg);
+      snapFlowchartFanoutPorts(svg);
       snapFlowchartFeedbackPorts(svg);
       routeGroupedReturnEdges(svg);
       alignMermaidOpenArrowheads(svg);
@@ -908,6 +910,7 @@ ${verticalSource}`;
     }
     if (svg.getAttribute('aria-roledescription') === 'flowchart-v2') {
       snapFlowchartPorts(svg);
+      snapFlowchartFanoutPorts(svg);
       snapFlowchartFeedbackPorts(svg);
       routeFlowchartClientRequestLane(svg);
       roundOrthogonalBends(svg);

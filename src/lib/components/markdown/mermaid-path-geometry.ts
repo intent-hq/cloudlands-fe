@@ -1,5 +1,6 @@
 const ORTHOGONAL_CORNER_RADIUS = 6;
 const FEEDBACK_TARGET_PORT_FRACTION = 0.18;
+const FLOWCHART_PORT_SLOT_GAP = 16;
 const MAX_TERMINAL_CORRECTION = 4;
 const COMPACT_ARROW_SIZE = 7;
 const LABEL_TURN_CLEARANCE_CSS = 8;
@@ -974,6 +975,55 @@ export function snapFlowchartFeedbackPorts(svg: SVGSVGElement) {
     points.map(({ x, y }, index) => `${index === 0 ? 'M' : 'L'}${x},${y}`).join(''),
   );
   placeFlowchartLabelOnRoute(flowchartLabelForPath(svg, path), path, points);
+}
+
+export function snapFlowchartFanoutPorts(svg: SVGSVGElement) {
+  const edges = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].flatMap((path) => {
+    const identity = flowchartEdgeIdentity(path);
+    const points = (path.dataset.manhattanPoints ?? '')
+      .trim()
+      .split(/\s+/)
+      .map((point) => point.split(',').map(Number))
+      .filter((point) => point.length === 2 && point.every(Number.isFinite))
+      .map(([x, y]) => ({ x, y }));
+    return identity && points.length >= 2 ? [{ path, points, ...identity }] : [];
+  });
+  const bySource = new Map<string, typeof edges>();
+  for (const edge of edges) bySource.set(edge.source, [...(bySource.get(edge.source) ?? []), edge]);
+  for (const [sourceId, branches] of bySource) {
+    const sourceNode = branches.length >= 2 && flowchartNode(svg, sourceId);
+    const source = sourceNode && flowchartNodeBounds(sourceNode);
+    if (!source) continue;
+    const vertical = branches.filter(({ points }) => Math.abs(points[0].x - points[1].x) < 0.001);
+    if (vertical.length < 2) continue;
+    const ordered = vertical.toSorted((left, right) => {
+      const leftTarget = flowchartNode(svg, left.target);
+      const rightTarget = flowchartNode(svg, right.target);
+      const leftBounds = leftTarget && flowchartNodeBounds(leftTarget);
+      const rightBounds = rightTarget && flowchartNodeBounds(rightTarget);
+      return (
+        (leftBounds?.x ?? 0) +
+          (leftBounds?.width ?? 0) / 2 -
+          ((rightBounds?.x ?? 0) + (rightBounds?.width ?? 0) / 2) ||
+        (leftBounds?.y ?? 0) +
+          (leftBounds?.height ?? 0) / 2 -
+          ((rightBounds?.y ?? 0) + (rightBounds?.height ?? 0) / 2) ||
+        left.path.id.localeCompare(right.path.id)
+      );
+    });
+    const gap = Math.min(FLOWCHART_PORT_SLOT_GAP, (source.width * 0.6) / (ordered.length - 1));
+    const firstX = source.x + source.width / 2 - (gap * (ordered.length - 1)) / 2;
+    ordered.forEach(({ path, points }, index) => {
+      points[0].x = firstX + gap * index;
+      points[1].x = points[0].x;
+      path.dataset.fanoutPort = `${points[0].x},${points[0].y}`;
+      path.dataset.manhattanPoints = points.map(({ x, y }) => `${x},${y}`).join(' ');
+      path.setAttribute(
+        'd',
+        points.map(({ x, y }, pointIndex) => `${pointIndex === 0 ? 'M' : 'L'}${x},${y}`).join(''),
+      );
+    });
+  }
 }
 
 export function snapOrthogonalTerminals(
