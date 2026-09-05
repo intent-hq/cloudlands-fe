@@ -24,6 +24,7 @@ import {
   removeTerminal,
   renameTerminal,
   saveTerminalMetadata,
+  selectScript,
   selectTerminal,
   setTerminalOverlayHeight,
   setTerminalPlacement,
@@ -42,6 +43,7 @@ type WorkspaceStateAction =
   | ReturnType<typeof closeTerminalOverlay>
   | ReturnType<typeof toggleTerminalOverlay>
   | ReturnType<typeof selectTerminal>
+  | ReturnType<typeof selectScript>
   | ReturnType<typeof addTerminal>
   | ReturnType<typeof setTerminalPlacement>;
 
@@ -278,6 +280,7 @@ function* watchTerminalPersistence(): SagaGenerator<void> {
       closeTerminalOverlay,
       toggleTerminalOverlay,
       selectTerminal,
+      selectScript,
       addTerminal,
       setTerminalPlacement,
     ],

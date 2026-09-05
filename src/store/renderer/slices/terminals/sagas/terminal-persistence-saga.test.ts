@@ -34,6 +34,7 @@ import {
   removeTerminal,
   renameTerminal,
   saveTerminalMetadata,
+  selectScript,
   selectTerminal,
   setTerminalOverlayHeight,
   setTerminalPlacement,
@@ -382,6 +383,8 @@ describe('terminalPersistenceSaga', () => {
     await settle();
     send(selectTerminal('ws-1', 'term-1'));
     await settle();
+    send(selectScript('ws-1', 'script-1'));
+    await settle();
 
     const placements = { 'term-1': 'overlay' };
     expect(storage.setJSON.mock.calls).toEqual([
@@ -404,6 +407,16 @@ describe('terminalPersistenceSaga', () => {
       [
         WORKSPACE_STATE_STORAGE_KEY,
         { 'ws-1': { isOpen: true, activeTerminalId: 'term-1', placements } },
+      ],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        {
+          'ws-1': {
+            isOpen: true,
+            activeTerminalId: 'term-1',
+            placements: { ...placements, 'script-1': 'overlay' },
+          },
+        },
       ],
     ]);
     task.cancel();

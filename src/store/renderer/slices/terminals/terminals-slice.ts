@@ -356,16 +356,30 @@ terminalsReducer.with(toggleTerminalOverlay, (state, { payload: [wsId, termId] }
   newWs.isOpen = true;
   return setWs(state, wsId, newWs);
 });
+// Selecting inside an open overlay shows the target there, so it counts as an overlay placement.
 terminalsReducer.with(selectTerminal, (state, { payload: [wsId, termId] }) => {
   const ws = getWs(state, wsId);
   if (!getItem(ws.terminals, termId)) return state;
-  if (ws.activeTerminalId === termId && ws.selectedScriptId === null) return state;
-  return setWs(state, wsId, { ...ws, activeTerminalId: termId, selectedScriptId: null });
+  const placements = ws.isOpen ? withPlacement(ws.placements, termId, 'overlay') : ws.placements;
+  if (
+    ws.activeTerminalId === termId &&
+    ws.selectedScriptId === null &&
+    placements === ws.placements
+  ) {
+    return state;
+  }
+  return setWs(state, wsId, {
+    ...ws,
+    activeTerminalId: termId,
+    selectedScriptId: null,
+    placements,
+  });
 });
 terminalsReducer.with(selectScript, (state, { payload: [wsId, scriptId] }) => {
   const ws = getWs(state, wsId);
-  if (ws.selectedScriptId === scriptId) return state;
-  return setWs(state, wsId, { ...ws, selectedScriptId: scriptId });
+  const placements = ws.isOpen ? withPlacement(ws.placements, scriptId, 'overlay') : ws.placements;
+  if (ws.selectedScriptId === scriptId && placements === ws.placements) return state;
+  return setWs(state, wsId, { ...ws, selectedScriptId: scriptId, placements });
 });
 terminalsReducer.with(clearScriptSelection, (state, { payload: [wsId] }) => {
   const ws = getWs(state, wsId);

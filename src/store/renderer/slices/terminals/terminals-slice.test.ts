@@ -883,6 +883,38 @@ describe('terminalsReducer', () => {
       expect(getWs(state).placements).toEqual({ 'script-1': 'overlay' });
     });
 
+    it('records overlay placement when a panel-placed terminal is selected in the open overlay', () => {
+      let state = terminalsReducer(initialState, openTerminalOverlay(WS, 't1'));
+      state = terminalsReducer(state, addTerminal(WS, 't2'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't2', 'panel'));
+      state = terminalsReducer(state, selectTerminal(WS, 't2'));
+      expect(getWs(state).placements).toEqual({ t1: 'overlay', t2: 'overlay' });
+    });
+
+    it('leaves placement alone when a terminal is selected while the overlay is closed', () => {
+      let state = terminalsReducer(initialState, addTerminal(WS, 't1'));
+      state = terminalsReducer(state, addTerminal(WS, 't2'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't2', 'panel'));
+      state = terminalsReducer(state, selectTerminal(WS, 't2'));
+      expect(getWs(state).activeTerminalId).toBe('t2');
+      expect(getWs(state).placements).toEqual({ t2: 'panel' });
+    });
+
+    it('records overlay placement when a panel-placed script is selected in the open overlay', () => {
+      let state = terminalsReducer(initialState, openTerminalOverlay(WS, 't1'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 'script-1', 'panel'));
+      state = terminalsReducer(state, selectScript(WS, 'script-1'));
+      expect(getWs(state).selectedScriptId).toBe('script-1');
+      expect(getWs(state).placements).toEqual({ t1: 'overlay', 'script-1': 'overlay' });
+    });
+
+    it('leaves placement alone when a script is selected while the overlay is closed', () => {
+      let state = terminalsReducer(initialState, setTerminalPlacement(WS, 'script-1', 'panel'));
+      state = terminalsReducer(state, selectScript(WS, 'script-1'));
+      expect(getWs(state).selectedScriptId).toBe('script-1');
+      expect(getWs(state).placements).toEqual({ 'script-1': 'panel' });
+    });
+
     it('keeps placements per workspace and per terminal', () => {
       let state = terminalsReducer(initialState, setTerminalPlacement(WS, 't1', 'panel'));
       state = terminalsReducer(state, setTerminalPlacement(WS, 't2', 'overlay'));
