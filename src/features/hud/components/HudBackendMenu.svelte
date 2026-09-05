@@ -37,21 +37,39 @@
 
   let menuOpen = $state(false);
   let connectModalOpen = $state(false);
+  // Inline failure line shown in the menu when an open resolves with
+  // `secret-unavailable` (#3783). The HUD window has no Toaster and no
+  // /settings route, so the menu itself carries the message; it clears on the
+  // next open attempt.
+  let openError = $state<string | null>(null);
 
   function openConnectModal() {
     menuOpen = false;
     connectModalOpen = true;
   }
 
+  function connectionDisplayLabel(id: string): string {
+    const conn = $connections$.find((c) => c.id === id);
+    if (!conn || conn.isLocal) return m.layout_daemonStatus_localConnection_label();
+    return formatConnectionLabel(conn);
+  }
+
   async function handleOpenConnection(id: string) {
     menuOpen = false;
+    openError = null;
     try {
       const action = openConnectionRequested(id);
       appStore.dispatch(action);
-      await action.promise;
+      const result = await action.promise;
+      if (result.status === 'secret-unavailable') {
+        openError = m.hud_backendMenu_secretUnavailable_error({
+          label: connectionDisplayLabel(id),
+        });
+        menuOpen = true;
+      }
     } catch {
-      // The failure is surfaced via the slice's op-status/error; nothing more
-      // to do here (the list/active refresh arrives via connections:changed).
+      // Other failures are surfaced via the slice's op-status/error; nothing
+      // more to do here (the list/active refresh arrives via connections:changed).
     }
   }
 </script>
@@ -118,6 +136,15 @@
               {/if}
             </Menu.Item>
           {/each}
+        {/if}
+        {#if openError}
+          <p
+            class="px-2 pt-1.5 pb-1 text-xs text-danger"
+            role="alert"
+            data-testid="hud-backend-menu-open-error"
+          >
+            {openError}
+          </p>
         {/if}
       </div>
     </Menu.Content>

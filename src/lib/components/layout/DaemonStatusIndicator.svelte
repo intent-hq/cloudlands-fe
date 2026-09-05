@@ -133,6 +133,7 @@
   } from '$lib/utils/connection-accents';
   import { store as appStore } from '$store/renderer/store';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
+  import { toast } from '$lib/components/ui/toast';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
   const health$ = selectDaemonHealth();
@@ -353,16 +354,38 @@
 
   const hasSavedRemoteConnections = $derived($connections$.some((conn) => !conn.isLocal));
 
-  async function handleOpenConnection(id: string) {
-    dropdownOpen = false;
+  function connectionDisplayLabel(id: string): string {
+    const conn = $connections$.find((c) => c.id === id);
+    if (!conn || conn.isLocal) return m.layout_daemonStatus_localConnection_label();
+    return formatConnectionLabel(conn);
+  }
+
+  /**
+   * Dispatch a connection open. A `secret-unavailable` resolution (the stored
+   * access token cannot be read — keychain locked or entry gone) is a failure,
+   * not a success (#3783): surface it and route to Devices settings, where the
+   * token can be re-entered.
+   */
+  async function openConnectionOrRecover(id: string) {
     try {
       const action = openConnectionRequested(id);
       appStore.dispatch(action);
-      await action.promise;
+      const result = await action.promise;
+      if (result.status === 'secret-unavailable') {
+        toast.error(
+          m.layout_daemonStatus_secretUnavailable_error({ label: connectionDisplayLabel(id) }),
+        );
+        void navigateToSettings({ tab: 'devices' });
+      }
     } catch {
-      // The failure is surfaced via the slice's op-status/error; nothing more
-      // to do here (the list/active refresh arrives via connections:changed).
+      // Other failures are surfaced via the slice's op-status/error; nothing
+      // more to do here (the list/active refresh arrives via connections:changed).
     }
+  }
+
+  async function handleOpenConnection(id: string) {
+    dropdownOpen = false;
+    await openConnectionOrRecover(id);
   }
 
   // --- Cert-mismatch modal actions ---------------------------------------
@@ -373,13 +396,7 @@
 
   async function openLocalFromCertMismatch() {
     dismissCertMismatch();
-    try {
-      const action = openConnectionRequested(LOCAL_CONNECTION_ID);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      // no-op; op-status/error surface via the slice.
-    }
+    await openConnectionOrRecover(LOCAL_CONNECTION_ID);
   }
 
   async function forgetMismatchedConnection(id: string) {
@@ -403,13 +420,7 @@
   /** Open the local sidecar's window from the advisory modal. */
   async function openLocalFromProtocolMismatch() {
     continueWithProtocolMismatch();
-    try {
-      const action = openConnectionRequested(LOCAL_CONNECTION_ID);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      // no-op; op-status/error surface via the slice.
-    }
+    await openConnectionOrRecover(LOCAL_CONNECTION_ID);
   }
 </script>
 
