@@ -473,17 +473,23 @@
     for (const edge of visibleEdges) {
       if (!edge.label || !edge.points || edge.points.length < 2) continue;
 
+      const points = edge.points;
+      const directVerticalCapacity =
+        points.length === 2 && Math.abs(points[0].x - points[1].x) < 0.5
+          ? Math.abs(points[0].y - points[1].y)
+          : undefined;
       const {
         width: labelWidth,
         height: labelHeight,
         lines,
       } = measureEdgeLabel(
         edge.label,
-        usesCompactPresentation ? compactEdgeLabelMaxWidth(edge.label ?? '') : undefined,
+        usesCompactPresentation
+          ? compactEdgeLabelMaxWidth(edge.label ?? '', directVerticalCapacity)
+          : undefined,
       );
       const truncated = lines > 3;
 
-      const points = edge.points;
       const modelEdge = diagram.model.edges.find(({ id }) => id === edge.id);
       const reverseEdge =
         modelEdge &&
@@ -506,7 +512,7 @@
           ? Math.max(0.05, Math.min(0.35, (1 - (pairExtent + 6) / axisLength) / 2))
           : 0.35;
         const labelExtent = dx >= dy ? labelWidth : labelHeight;
-        const minimumFraction = Math.min(0.5, (labelExtent / 2 + labelTurnClearance) / axisLength);
+        const minimumFraction = Math.min(0.5, (labelExtent / 2 + 2 / renderedScale) / axisLength);
         const fraction = Math.max(
           minimumFraction,
           Math.min(1 - minimumFraction, preferredFraction),
@@ -520,8 +526,9 @@
 
       const candidates: Array<{ x: number; y: number; score: number }> = [];
       const closeCandidates: Array<{ x: number; y: number; score: number }> = [];
+      const oneSidedCandidates: Array<{ x: number; y: number; score: number }> = [];
 
-      const addCandidate = (x: number, y: number, score: number) => {
+      const addCandidate = (x: number, y: number, score: number, target = candidates) => {
         const labelX = x - labelWidth / 2;
         const labelY = y - labelHeight / 2;
         if (overlapsNode(labelX, labelY, labelWidth, labelHeight, 8)) return;
@@ -534,7 +541,7 @@
           }
           return;
         }
-        candidates.push(candidate);
+        target.push(candidate);
       };
 
       for (let i = 0; i < points.length - 1; i++) {
@@ -547,20 +554,15 @@
         if (segmentLength < 8) continue;
         const isHorizontal = dx >= dy;
         const labelExtent = isHorizontal ? labelWidth : labelHeight;
-        const requiredCapacity = labelExtent + labelTurnClearance * 2;
-        if (segmentLength < requiredCapacity) continue;
 
         const labelFractions = [
           0.5, 0.25, 0.75, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.125, 0.875, 0.05, 0.1, 0.15, 0.85, 0.9,
           0.95,
         ];
         for (const fraction of labelFractions) {
-          if (
-            segmentLength * Math.min(fraction, 1 - fraction) <
-            labelExtent / 2 + labelTurnClearance
-          ) {
-            continue;
-          }
+          const nearestTurn = segmentLength * Math.min(fraction, 1 - fraction);
+          const farthestTurn = segmentLength * Math.max(fraction, 1 - fraction);
+          if (farthestTurn < labelExtent / 2 + labelTurnClearance) continue;
           const anchorX = p1.x + (p2.x - p1.x) * fraction;
           const anchorY = p1.y + (p2.y - p1.y) * fraction;
           const horizontalBonus = isHorizontal ? 1000 : 0;
@@ -568,13 +570,19 @@
             anchorX,
             anchorY,
             segmentLength + horizontalBonus - Math.abs(fraction - 0.5) * 16,
+            nearestTurn >= labelExtent / 2 + labelTurnClearance ? candidates : oneSidedCandidates,
           );
         }
       }
 
       // Pick best candidate
-      if (candidates.length > 0 || closeCandidates.length > 0) {
-        const eligibleCandidates = candidates.length > 0 ? candidates : closeCandidates;
+      if (candidates.length > 0 || closeCandidates.length > 0 || oneSidedCandidates.length > 0) {
+        const eligibleCandidates =
+          candidates.length > 0
+            ? candidates
+            : closeCandidates.length > 0
+              ? closeCandidates
+              : oneSidedCandidates;
         eligibleCandidates.sort((a, b) => b.score - a.score);
         const best = eligibleCandidates[0];
         positions.set(edge.id, {

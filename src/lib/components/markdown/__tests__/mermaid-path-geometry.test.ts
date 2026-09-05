@@ -267,12 +267,12 @@ describe('Mermaid path terminal geometry', () => {
       { x: 132, y: 220 },
       { x: 90, y: 220 },
     ]);
-    expect(buildFlowchartDecisionBranchPoints(source, target, 'lower', occupied)).toEqual([
+    expect(buildFlowchartDecisionBranchPoints(source, target, 'lower', occupied, true)).toEqual([
       { x: 75, y: 75 },
       { x: 148, y: 75 },
       { x: 148, y: 118 },
-      { x: -32, y: 118 },
-      { x: -32, y: 220 },
+      { x: -16, y: 118 },
+      { x: -16, y: 220 },
       { x: 10, y: 220 },
     ]);
   });
@@ -293,8 +293,8 @@ describe('Mermaid path terminal geometry', () => {
       { x: 154, y: 804 },
       { x: -106, y: 804 },
       { x: -106, y: 54 },
-      { x: -37.120000000000005, y: 54 },
-      { x: -37.120000000000005, y: 42.25 },
+      { x: 0, y: 54 },
+      { x: 0, y: 42.25 },
     ]);
   });
 
@@ -315,8 +315,8 @@ describe('Mermaid path terminal geometry', () => {
       { x: 64, y: 622 },
       { x: -95, y: 622 },
       { x: -95, y: 196 },
-      { x: -26.240000000000002, y: 196 },
-      { x: -26.240000000000002, y: 184.25 },
+      { x: 0, y: 196 },
+      { x: 0, y: 184.25 },
     ]);
   });
 

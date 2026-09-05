@@ -50,8 +50,13 @@ const AUTOMATIC_VERTICAL_THRESHOLD = 500;
 const MIN_READABLE_SCALE = 0.84;
 const PORT_SLOT_GAP = 16;
 
-export function compactEdgeLabelMaxWidth(label: string) {
-  return label.length >= 48 ? 100 : 60;
+export function compactEdgeLabelMaxWidth(
+  label: string,
+  availableHeight = Number.POSITIVE_INFINITY,
+) {
+  if (label.length >= 48) return 100;
+  const narrowLabel = measureEdgeLabel(label, 60);
+  return narrowLabel.lines >= 3 && availableHeight < narrowLabel.height + 16 ? 80 : 60;
 }
 
 let measurementContext: CanvasRenderingContext2D | null | undefined;
@@ -2780,6 +2785,20 @@ function computeOrthogonalEdgePaths(
     );
   };
 
+  const verticalLabelNeedsLane = (info: EdgeInfo) => {
+    if (!info.edge.label) return false;
+    const gap = Math.max(
+      0,
+      Math.max(info.fromNode.y, info.toNode.y) -
+        Math.min(info.fromNode.y + info.fromNode.height, info.toNode.y + info.toNode.height),
+    );
+    const compactLabel = measureEdgeLabel(
+      info.edge.label,
+      compactEdgeLabelMaxWidth(info.edge.label, gap),
+    );
+    return compactLabel.lines >= 3 && gap < compactLabel.height + 16;
+  };
+
   // Generate paths
   const computedEdges: ComputedEdge[] = edgeInfos.map((info) => {
     const { index, edge, fromNode, toNode, fromSide, toSide, goesBackward } = info;
@@ -2881,7 +2900,7 @@ function computeOrthogonalEdgePaths(
       isVerticalLayout &&
       isFromVertical &&
       isToVertical &&
-      verticalCorridorIsBlocked(info)
+      (verticalCorridorIsBlocked(info) || verticalLabelNeedsLane(info))
     ) {
       // A rank-spanning edge must not pass through intermediate nodes. Give it one
       // outside lane with a horizontal segment sized for its label.

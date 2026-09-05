@@ -164,7 +164,9 @@ test('uses the direct state as a stable initial scroll target without hiding cas
 
   const target = page.locator('#custom-bindings');
   await expect(target).toHaveAttribute('data-targeted', 'true');
-  await expect(page.locator('[data-diagram-case]')).toHaveCount(32);
+  await expect(page.locator('[data-diagram-case]')).toHaveCount(
+    Object.keys(DIAGRAM_WORKBENCH_CASES).length,
+  );
   await expect
     .poll(async () => {
       const box = await target.boundingBox();
@@ -222,7 +224,9 @@ test('keeps the complete page responsive in light, dark, wide, and narrow views'
       'data-catalog-motion',
       'reduced',
     );
-    await expect(page.locator('[data-diagram-case]')).toHaveCount(32);
+    await expect(page.locator('[data-diagram-case]')).toHaveCount(
+      Object.keys(DIAGRAM_WORKBENCH_CASES).length,
+    );
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
@@ -545,22 +549,22 @@ test('keeps final diagram geometry polished across themes and widths', async ({ 
         const longRoot = document.querySelector('#mermaid-long-labels')!;
         const longSvg = longRoot.querySelector<SVGSVGElement>('.mermaid-svg > svg')!;
         const longSvgRect = longSvg.getBoundingClientRect();
-        const longOutlines = [...longRoot.querySelectorAll<SVGRectElement>('.node > rect')].map(
-          (outline) => {
-            const rect = outline.getBoundingClientRect();
-            const style = getComputedStyle(outline);
-            return {
-              inset: Math.min(
-                rect.left - longSvgRect.left,
-                rect.top - longSvgRect.top,
-                longSvgRect.right - rect.right,
-                longSvgRect.bottom - rect.bottom,
-              ),
-              radius: Number.parseFloat(style.rx),
-              strokeWidth: Number.parseFloat(style.strokeWidth),
-            };
-          },
-        );
+        const longOutlines = [
+          ...longRoot.querySelectorAll<SVGRectElement>('.node > rect:not(.flowchart-node-outline)'),
+        ].map((outline) => {
+          const rect = outline.getBoundingClientRect();
+          const style = getComputedStyle(outline);
+          return {
+            inset: Math.min(
+              rect.left - longSvgRect.left,
+              rect.top - longSvgRect.top,
+              longSvgRect.right - rect.right,
+              longSvgRect.bottom - rect.bottom,
+            ),
+            radius: Number.parseFloat(style.rx),
+            strokeWidth: Number.parseFloat(style.strokeWidth),
+          };
+        });
 
         const cyclePaths = [
           ...document.querySelectorAll<SVGPathElement>('#mermaid-cycle-fanout .flowchart-link'),
@@ -747,9 +751,12 @@ test('uses the editorial architecture style contract', async ({ page }) => {
       const numeric = (...values: string[]) =>
         values.map(Number.parseFloat).find((value) => Number.isFinite(value) && value > 0) ?? 0;
       return {
-        nodeRadii: nodeStyles.map((style) =>
-          numeric(style.getPropertyValue('rx'), style.borderRadius),
-        ),
+        nodeRadii: [
+          ...customNodes
+            .filter((node) => node.dataset.storeNode !== 'true')
+            .map((node) => numeric(getComputedStyle(node).borderRadius)),
+          ...mermaidNodes.map((node) => numeric(getComputedStyle(node).getPropertyValue('rx'))),
+        ],
         groupRadii: groupStyles.map((style) => Number.parseFloat(style.getPropertyValue('rx'))),
         shadows: nodeStyles.map((style) => style.boxShadow),
         nodeBorders: nodeStyles.map((style) => numeric(style.strokeWidth, style.borderWidth)),

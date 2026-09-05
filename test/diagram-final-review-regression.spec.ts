@@ -58,7 +58,9 @@ async function expectContentHuggingNodes(page: Page, identity: string) {
       const lineTops = [...range.getClientRects()]
         .filter((rect) => rect.width > 0)
         .map((rect) => Math.round(rect.top * 10) / 10);
-      const uniqueLines = new Set(lineTops).size;
+      const uniqueLines = lineTops.filter((top, index) =>
+        lineTops.slice(0, index).every((other) => Math.abs(other - top) > 1),
+      ).length;
       return {
         nodeId,
         expectedLines,
@@ -386,6 +388,9 @@ test('reserves final measured nested Mermaid group header bands', async ({ page 
               );
           });
         const marker = svg.querySelector<SVGMarkerElement>(`#${CSS.escape(markerId)}`)!;
+        const markerPath = marker.querySelector<SVGPathElement>('path')!;
+        const terminalGap = Number(path.dataset.terminalGapCss);
+        const markerStroke = Number.parseFloat(getComputedStyle(markerPath).strokeWidth);
         return {
           sourceDistance: Math.hypot(
             start.x - source.right,
@@ -407,11 +412,15 @@ test('reserves final measured nested Mermaid group header bands', async ({ page 
           labelCrossesNode,
           crossesRoute,
           markerWidth: Number(marker.getAttribute('markerWidth')),
+          expectedTargetDistance: terminalGap + markerStroke / 2,
           moves: (path.getAttribute('d')?.match(/M/g) ?? []).length,
         };
       });
     expect(returnRoute.sourceDistance, `${identity} return source port`).toBeLessThanOrEqual(1);
-    expect(returnRoute.targetDistance, `${identity} return target port`).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(returnRoute.targetDistance - returnRoute.expectedTargetDistance),
+      `${identity} return target arrow gap`,
+    ).toBeLessThanOrEqual(0.35);
     expect(returnRoute.perpendicular, `${identity} return target tangent`).toBeLessThanOrEqual(
       0.01,
     );
@@ -451,6 +460,7 @@ test('terminates compact cycle feedback on real centered cardinal ports', async 
           const frame = svg.getBoundingClientRect();
           const markerId = path.getAttribute('marker-end')!.match(/#([^)'\"]+)/)![1];
           const marker = svg.querySelector<SVGMarkerElement>(`#${CSS.escape(markerId)}`)!;
+          const markerPath = marker.querySelector<SVGPathElement>('path')!;
           return {
             sourceDistance: Math.hypot(
               start.x - source.right,
@@ -467,11 +477,17 @@ test('terminates compact cycle feedback on real centered cardinal ports', async 
               bounds.right <= frame.right + 1 &&
               bounds.bottom <= frame.bottom + 1,
             markerWidth: Number(marker.getAttribute('markerWidth')),
+            expectedTargetDistance:
+              Number(path.dataset.terminalGapCss) +
+              Number.parseFloat(getComputedStyle(markerPath).strokeWidth) / 2,
             moves: (path.getAttribute('d')!.match(/M/g) ?? []).length,
           };
         });
       expect(result.sourceDistance, `${theme}/${width} source port`).toBeLessThanOrEqual(1);
-      expect(result.targetDistance, `${theme}/${width} target port`).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(result.targetDistance - result.expectedTargetDistance),
+        `${theme}/${width} target arrow gap`,
+      ).toBeLessThanOrEqual(0.35);
       expect(result.perpendicular, `${theme}/${width} target tangent`).toBeLessThanOrEqual(0.01);
       expect(result.contained, `${theme}/${width} route containment`).toBe(true);
       expect(result.markerWidth, `${theme}/${width} marker size`).toBeLessThanOrEqual(8);

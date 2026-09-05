@@ -931,14 +931,13 @@ for (const appearance of appearances) {
         };
       });
       expect(highlight).toMatchObject({
-        borderStyle: 'solid',
+        borderStyle: 'none',
         outlineStyle: 'none',
         boxShadow: 'none',
         background: expect.not.stringMatching(/rgba\(0, 0, 0, 0\)|transparent/),
         contained: true,
       });
-      expect(highlight.borderWidth).toBeGreaterThanOrEqual(0.9);
-      expect(highlight.borderWidth).toBeLessThanOrEqual(1.2);
+      expect(highlight.borderWidth).toBe(0);
       const defaults = await root.locator('.diagram-renderer').evaluate((renderer) => {
         const node = renderer.querySelector<HTMLElement>(
           '.diagram-node-html:not(.node-state-highlighted)',
@@ -955,19 +954,20 @@ for (const appearance of appearances) {
           : null;
         const nodeStyle = getComputedStyle(node);
         const labelStyle = getComputedStyle(label);
+        const svg = renderer.querySelector<SVGSVGElement>('.diagram-svg-layer')!;
+        const matrix = svg.getScreenCTM()!;
+        const scale = Math.hypot(matrix.a, matrix.b);
         return {
           nodeBorder: Number.parseFloat(nodeStyle.borderWidth),
           nodeBackground: nodeStyle.backgroundColor,
           nodeColor: nodeStyle.color,
           labelBackground: labelStyle.backgroundColor,
-          horizontal: Math.min(
-            textBounds.left - labelBounds.left,
-            labelBounds.right - textBounds.right,
-          ),
-          vertical: Math.min(
-            textBounds.top - labelBounds.top,
-            labelBounds.bottom - textBounds.bottom,
-          ),
+          horizontal:
+            Math.min(textBounds.left - labelBounds.left, labelBounds.right - textBounds.right) /
+            scale,
+          vertical:
+            Math.min(textBounds.top - labelBounds.top, labelBounds.bottom - textBounds.bottom) /
+            scale,
           paintOrder: !!(
             edge.compareDocumentPosition(label.closest('foreignObject')!) &
             Node.DOCUMENT_POSITION_FOLLOWING
@@ -980,7 +980,7 @@ for (const appearance of appearances) {
       expect(defaults).toMatchObject({
         nodeBorder: 0,
         paintOrder: true,
-        markerFill: 'context-stroke',
+        markerFill: 'none',
         markerStroke: 'context-stroke',
       });
       expect(defaults.nodeBackground).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);

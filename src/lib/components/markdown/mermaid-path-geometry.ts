@@ -1,5 +1,4 @@
 const ORTHOGONAL_CORNER_RADIUS = 6;
-const FEEDBACK_TARGET_PORT_FRACTION = 0.18;
 const FLOWCHART_PORT_SLOT_GAP = 16;
 const MAX_TERMINAL_CORRECTION = 4;
 const COMPACT_ARROW_SIZE = 7;
@@ -27,6 +26,7 @@ export function buildFlowchartDecisionBranchPoints(
   target: Bounds,
   branch: 'upper' | 'lower',
   occupied: Bounds[],
+  compact = false,
 ): Point[] {
   const upper = branch === 'upper';
   const sourcePort = pointAt(source, 0.75, upper ? 0.25 : 0.75);
@@ -42,7 +42,7 @@ export function buildFlowchartDecisionBranchPoints(
   if (!upper) {
     const stubX = source.x + source.width + 48;
     const bridgeY = source.y + source.height + 18;
-    const laneX = Math.min(...occupied.map((bounds) => bounds.x)) - 32;
+    const laneX = Math.min(...occupied.map((bounds) => bounds.x)) - (compact ? 16 : 32);
     const targetPort = pointAt(target, 0, 0.5);
     return [
       sourcePort,
@@ -62,6 +62,7 @@ export function buildFlowchartDecisionReturnPoints(
   source: Bounds,
   target: Bounds,
   occupied: Bounds[],
+  compact = false,
 ): Point[] {
   const sourcePort = pointAt(source, 0.5, 1);
   const outerBottom = Math.max(...occupied.map((bounds) => bounds.y + bounds.height)) + 32;
@@ -76,7 +77,7 @@ export function buildFlowchartDecisionReturnPoints(
       targetBottom,
     ];
   }
-  const outerLeft = Math.min(...occupied.map((bounds) => bounds.x)) - 64;
+  const outerLeft = Math.min(...occupied.map((bounds) => bounds.x)) - (compact ? 26 : 64);
   const bridgeY = source.y + source.height + 18;
   const targetPort = pointAt(target, 0, 0.5);
   return [
@@ -101,7 +102,7 @@ export function buildFlowchartFeedbackLanePoints(
   const outerBottom =
     Math.max(...occupied.map((bounds) => bounds.y + bounds.height)) + (compact ? 12 : 28);
   const sourceY = source.y + source.height / 2;
-  const targetX = target.x + target.width * FEEDBACK_TARGET_PORT_FRACTION;
+  const targetX = target.x + target.width / 2;
   return [
     { x: source.x + source.width, y: sourceY },
     { x: outerRight, y: sourceY },
@@ -856,11 +857,12 @@ export function routeFlowchartFeedbackLane(svg: SVGSVGElement, force = false) {
   const otherPathBounds = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')]
     .filter((path) => path !== feedback.path)
     .map((path) => path.getBBox());
+  const compact = feedback.path.dataset.compactFlowchart === 'true';
   const points = buildFlowchartFeedbackLanePoints(
     source,
     target,
-    [...nodeBounds, ...otherPathBounds],
-    feedback.path.dataset.compactFlowchart === 'true',
+    compact ? nodeBounds : [...nodeBounds, ...otherPathBounds],
+    compact,
   );
   feedback.path.setAttribute(
     'd',
@@ -962,7 +964,7 @@ export function snapFlowchartFeedbackPorts(svg: SVGSVGElement) {
     sourceBounds.top + sourceBounds.height / 2,
   ).matrixTransform(inverse);
   const targetPort = new DOMPoint(
-    targetBounds.left + targetBounds.width * FEEDBACK_TARGET_PORT_FRACTION,
+    targetBounds.left + targetBounds.width / 2,
     targetBounds.bottom + 0.25,
   ).matrixTransform(inverse);
   points[0] = { x: sourcePort.x, y: sourcePort.y };
@@ -979,6 +981,7 @@ export function snapFlowchartFeedbackPorts(svg: SVGSVGElement) {
 
 export function snapFlowchartFanoutPorts(svg: SVGSVGElement) {
   const edges = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].flatMap((path) => {
+    if (path.dataset.clusterHeaderClearance) return [];
     const identity = flowchartEdgeIdentity(path);
     const points = (path.dataset.manhattanPoints ?? '')
       .trim()
@@ -1014,13 +1017,14 @@ export function snapFlowchartFanoutPorts(svg: SVGSVGElement) {
     const gap = Math.min(FLOWCHART_PORT_SLOT_GAP, (source.width * 0.6) / (ordered.length - 1));
     const firstX = source.x + source.width / 2 - (gap * (ordered.length - 1)) / 2;
     ordered.forEach(({ path, points }, index) => {
-      points[0].x = firstX + gap * index;
-      points[1].x = points[0].x;
-      path.dataset.fanoutPort = `${points[0].x},${points[0].y}`;
-      path.dataset.manhattanPoints = points.map(({ x, y }) => `${x},${y}`).join(' ');
+      const start = { x: firstX + gap * index, y: points[0].y };
+      const end = points.at(-1)!;
+      const snapped = snapOrthogonalTerminals(points, start, end, true);
+      path.dataset.fanoutPort = `${start.x},${start.y}`;
+      path.dataset.manhattanPoints = snapped.map(({ x, y }) => `${x},${y}`).join(' ');
       path.setAttribute(
         'd',
-        points.map(({ x, y }, pointIndex) => `${pointIndex === 0 ? 'M' : 'L'}${x},${y}`).join(''),
+        snapped.map(({ x, y }, pointIndex) => `${pointIndex === 0 ? 'M' : 'L'}${x},${y}`).join(''),
       );
     });
   }
@@ -1177,7 +1181,7 @@ export function snapFlowchartPorts(svg: SVGSVGElement) {
       path.dataset.decisionBranch ||
       path.dataset.decisionReturn ||
       path.dataset.clientRequestLane ||
-      path.dataset.clusterHeaderTargetPort
+      path.dataset.clusterHeaderClearance
     )
       continue;
     const identity = flowchartEdgeIdentity(path);
@@ -1430,11 +1434,13 @@ export function routeFlowchartDecisionBranches(svg: SVGSVGElement) {
       continue;
     labeledBranches.forEach((edge, index) => {
       const branch = index === 0 ? 'upper' : 'lower';
+      const compact = edge.path.dataset.compactFlowchart === 'true';
       const points = buildFlowchartDecisionBranchPoints(
         source,
         edge.targetBounds,
         branch,
         occupied,
+        compact,
       );
       edge.path.setAttribute(
         'd',
@@ -1457,7 +1463,12 @@ export function routeFlowchartDecisionBranches(svg: SVGSVGElement) {
     const returnSourceNode = returnEdge && flowchartNode(svg, returnEdge.source);
     const returnSource = nodeBounds(returnSourceNode);
     if (!returnEdge || !returnSource) continue;
-    const points = buildFlowchartDecisionReturnPoints(returnSource, source, occupied);
+    const points = buildFlowchartDecisionReturnPoints(
+      returnSource,
+      source,
+      occupied,
+      returnEdge.path.dataset.compactFlowchart === 'true',
+    );
     returnEdge.path.setAttribute(
       'd',
       points.map((point, index) => `${index ? 'L' : 'M'}${point.x},${point.y}`).join(''),
@@ -1692,21 +1703,13 @@ function positionCompactGroupedFlowchart(svg: SVGSVGElement) {
     }
   };
   if (fanout) {
-    const targetIds = new Set(
-      identities.filter(({ source }) => source === fanout).map(({ target }) => target),
+    const ordered = nodes.toSorted(
+      (left, right) =>
+        (originalBounds.get(left)?.x ?? 0) - (originalBounds.get(right)?.x ?? 0) ||
+        (originalBounds.get(left)?.y ?? 0) - (originalBounds.get(right)?.y ?? 0),
     );
-    const left = nodes
-      .filter((node) => !targetIds.has(flowchartNodeId(node)))
-      .toSorted((first, second) => {
-        const degree = (node: SVGGElement) =>
-          identities.filter(({ source }) => flowchartNode(svg, source) === node).length;
-        return degree(first) - degree(second);
-      });
-    const right = nodes.filter((node) => targetIds.has(flowchartNodeId(node)));
-    const leftWidth = Math.max(...left.map((node) => node.getBBox().width));
-    const rightWidth = Math.max(...right.map((node) => node.getBBox().width));
-    placeColumn(left, leftWidth / 2, 48);
-    placeColumn(right, leftWidth + 60 + rightWidth / 2, 48);
+    const columnWidth = Math.max(...ordered.map((node) => node.getBBox().width));
+    placeColumn(ordered, columnWidth / 2, 48);
   } else {
     const ordered = nodes.toSorted(
       (left, right) => (originalBounds.get(left)?.y ?? 0) - (originalBounds.get(right)?.y ?? 0),
@@ -2376,7 +2379,7 @@ function stateRoutePoints(
   if (compact) {
     const retrySource = pointAt(source, 0, 0.9);
     const retryTarget = pointAt(target, 0, 0.1);
-    const laneX = left - 84;
+    const laneX = left - 108;
     return [
       retrySource,
       { x: laneX, y: retrySource.y },
@@ -2647,6 +2650,14 @@ export function placeStateLabelsOnFinalRoutes(svg: SVGSVGElement, compact = fals
         : [0.5, 0.25, 0.75, 0.15, 0.35, 0.65, 0.85]
       : [0.5, 0.25, 0.75];
     const ownSegments = routeSegments.find((route) => route.path === path)?.segments ?? [];
+    const retryShelf =
+      compact && path.dataset.routeLabel === STATE_LABEL.userRetries
+        ? ownSegments.findLast(
+            (segment) =>
+              Math.abs(segment.start.y - segment.end.y) < 0.5 &&
+              Math.abs(segment.start.x - segment.end.x) >= local.width,
+          )
+        : undefined;
     const pinsLabelToShelf =
       (compact &&
         (path.dataset.routeLabel === STATE_LABEL.agentAsksUser ||
@@ -2659,7 +2670,14 @@ export function placeStateLabelsOnFinalRoutes(svg: SVGSVGElement, compact = fals
           path.dataset.routeLabel === STATE_LABEL.userReplies ||
           path.dataset.routeLabel === STATE_LABEL.requestFails));
     const candidateSegments = [
-      { x1: values[0], y1: values[1], x2: values[2], y2: values[3] },
+      retryShelf
+        ? {
+            x1: retryShelf.start.x,
+            y1: retryShelf.start.y,
+            x2: retryShelf.end.x,
+            y2: retryShelf.end.y,
+          }
+        : { x1: values[0], y1: values[1], x2: values[2], y2: values[3] },
       ...(pinsLabelToShelf
         ? []
         : ownSegments.map(({ start, end }) => ({
@@ -2690,7 +2708,7 @@ export function placeStateLabelsOnFinalRoutes(svg: SVGSVGElement, compact = fals
         LABEL_TURN_CLEARANCE_CSS / segmentCssScale(path, segment.start, segment.end);
       return fractions
         .filter(
-          (fraction) => capacity * Math.min(fraction, 1 - fraction) >= halfLabelExtent + clearance,
+          (fraction) => capacity * Math.max(fraction, 1 - fraction) >= halfLabelExtent + clearance,
         )
         .map((fraction) => {
           const midpoint = {
@@ -2711,8 +2729,13 @@ export function placeStateLabelsOnFinalRoutes(svg: SVGSVGElement, compact = fals
               path.dataset.routeLabel === STATE_LABEL.streamFails);
           if (placesLabelInsideLeftLane) {
             midpoint.x +=
-              local.width / 2 + (path.dataset.routeLabel === STATE_LABEL.agentAsksUser ? 0 : -6);
+              local.width / 2 + (path.dataset.routeLabel === STATE_LABEL.agentAsksUser ? 0 : -1);
           }
+          const placesRetryAboveShelf =
+            compact &&
+            Math.abs(candidateSegment.y1 - candidateSegment.y2) < 0.5 &&
+            path.dataset.routeLabel === STATE_LABEL.userRetries;
+          if (placesRetryAboveShelf) midpoint.y -= local.height / 2 - 4;
           const placesToolCompletionBesideReturnLane =
             !compact &&
             Math.abs(candidateSegment.x1 - candidateSegment.x2) < 0.5 &&
@@ -2730,6 +2753,7 @@ export function placeStateLabelsOnFinalRoutes(svg: SVGSVGElement, compact = fals
             .filter((route) => route.path !== path)
             .flatMap((route) => route.segments)
             .filter((segment) => segmentHits(segment, bounds)).length;
+          const nearestTurn = capacity * Math.min(fraction, 1 - fraction);
           return {
             midpoint,
             bounds,
@@ -2737,6 +2761,7 @@ export function placeStateLabelsOnFinalRoutes(svg: SVGSVGElement, compact = fals
               labelCollisions * 10_000 +
               nodeCollisions * 10_000 +
               routeCollisions * 1_000 +
+              (nearestTurn < halfLabelExtent + clearance ? 100 : 0) +
               Math.abs(fraction - 0.5),
           };
         });
@@ -2744,6 +2769,8 @@ export function placeStateLabelsOnFinalRoutes(svg: SVGSVGElement, compact = fals
     if (candidates.length === 0) continue;
     const eligibleCandidates = candidates;
     eligibleCandidates.sort((left, right) => {
+      const collisionDelta = Math.floor(left.score / 1_000) - Math.floor(right.score / 1_000);
+      if (collisionDelta !== 0) return collisionDelta;
       if (compact && path.dataset.routeLabel === STATE_LABEL.toolStarts) {
         const targetY = values[1] + (values[3] - values[1]) * 0.65;
         return Math.abs(left.midpoint.y - targetY) - Math.abs(right.midpoint.y - targetY);

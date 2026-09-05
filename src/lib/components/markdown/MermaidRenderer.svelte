@@ -1048,7 +1048,9 @@ ${verticalSource}`;
     const flowchart = svg.getAttribute('aria-roledescription') === 'flowchart-v2';
     const groupedFlowchart = Boolean(svg.querySelector('g.cluster'));
     const padding = flowchart
-      ? 28
+      ? compactLayout
+        ? 24
+        : 28
       : groupedFlowchart
         ? 24
         : compactLayout

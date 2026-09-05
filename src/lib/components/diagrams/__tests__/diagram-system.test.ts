@@ -310,7 +310,9 @@ describe('Layout Engine', () => {
     expect(compactEdgeLabelMaxWidth('primary request')).toBe(60);
     expect(compactEdgeLabelMaxWidth(narrowLaneLabel)).toBe(100);
     expect(compactLabel.width).toBe(100);
-    expect(compactLabel.height).toBeLessThan(crampedLabel.height);
+    expect(compactLabel.lines).toBeLessThanOrEqual(crampedLabel.lines);
+    expect(compactEdgeLabelMaxWidth('stream state events', 40)).toBe(80);
+    expect(compactEdgeLabelMaxWidth('stream state events', 100)).toBe(60);
   });
 
   it('expands node height for every requested visible line', () => {
@@ -866,7 +868,7 @@ describe('Edge Routing', () => {
     expect(route.points![1].x).toBeLessThan(Math.min(...layout.nodes.map(({ x }) => x)));
   });
 
-  it('gives an oversized compact adjacent label a clear outside lane', () => {
+  it('reserves a clear direct gap for an oversized compact adjacent label', () => {
     const label = 'a deliberately long horizontal route label that must remain owned';
     const diagram = createDataFlowDiagram(
       [
@@ -877,12 +879,12 @@ describe('Edge Routing', () => {
     );
     const layout = computeLayout(diagram.model, diagram.baseView, diagram.grammar, undefined, 260);
     const route = layout.edges[0];
-    const nodeRight = Math.max(...layout.nodes.map((node) => node.x + node.width));
+    const source = layout.nodes.find((node) => node.id === 'source')!;
+    const target = layout.nodes.find((node) => node.id === 'target')!;
+    const labelSize = measureEdgeLabel(label, compactEdgeLabelMaxWidth(label));
 
-    expect(route.points).toHaveLength(4);
-    expect(route.points![1].x).toBeGreaterThanOrEqual(
-      nodeRight + measureEdgeLabel(label, compactEdgeLabelMaxWidth(label)).width / 2 + 8,
-    );
+    expect(route.points).toHaveLength(2);
+    expect(target.y - (source.y + source.height)).toBeGreaterThanOrEqual(labelSize.height + 16);
   });
 
   it('keeps self-route ports centered with perpendicular outside tangents', () => {

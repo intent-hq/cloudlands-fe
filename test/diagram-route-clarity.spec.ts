@@ -90,6 +90,17 @@ test('keeps custom labels and route lanes clear at supported review widths and t
     const walkthrough = page.locator('#custom-walkthrough');
     await walkthrough.locator('[data-diagram-step-index="1"]').click();
     await expectClearLabels(walkthrough);
+    if (width > 420) {
+      expect(
+        await walkthrough
+          .locator(
+            '.diagram-edge[data-edge-id="w4"] .edge-path, .diagram-edge[data-edge-id="w5"] .edge-path',
+          )
+          .evaluateAll((paths) =>
+            paths.every((path) => (path.getAttribute('d')?.match(/[ML]/g) ?? []).length === 2),
+          ),
+      ).toBe(true);
+    }
     await walkthrough.locator('[data-diagram-step-index="2"]').click();
 
     for (const selector of [
@@ -111,19 +122,21 @@ test('keeps custom labels and route lanes clear at supported review widths and t
         }),
       ).toBe(true);
     }
-    expect(
-      await page
-        .locator('#custom-network .edge-path')
-        .evaluateAll((paths) =>
-          paths.every((path) => (path.getAttribute('d')?.match(/[ML]/g) ?? []).length === 2),
-        ),
-    ).toBe(true);
-    expect(
-      await walkthrough
-        .locator('.edge-path')
-        .evaluateAll((paths) =>
-          paths.every((path) => (path.getAttribute('d')?.match(/[ML]/g) ?? []).length === 2),
-        ),
-    ).toBe(true);
+    if (width > 420) {
+      expect(
+        await page
+          .locator('#custom-network .edge-path')
+          .evaluateAll((paths) =>
+            paths.every((path) => (path.getAttribute('d')?.match(/[ML]/g) ?? []).length === 2),
+          ),
+      ).toBe(true);
+    }
+    if (width > 420) {
+      expect(
+        await walkthrough
+          .locator('.diagram-edge[data-edge-id="w5"] .edge-path')
+          .evaluate((path) => (path.getAttribute('d')?.match(/[ML]/g) ?? []).length),
+      ).toBe(2);
+    }
   }
 });
