@@ -4107,6 +4107,7 @@
   "agentOverview_toolbar_files_many": "파일 {count}개",
   "agentOverview_resourceNode_external_ariaLabel": "외부 파일 {name}: {path}",
   "agentOverview_timeScrubber_live_label": "라이브",
+  "agentOverview_timeScrubber_loadingHistory_label": "기록 불러오는 중…",
   "agentOverview_timeScrubber_paused_label": "일시 중지됨",
   "diagram_controls_state_ariaLabel": "상태 {number}: {title}",
   "diagram_controls_stateNumber_label": "상태 {number}",

@@ -17,6 +17,8 @@
     selectGraphState,
     selectGraphStateAt,
   } from '$store/renderer/slices/agent-overview/agent-overview-selectors';
+  import { selectGraphHistoryStatus } from '$store/renderer/slices/agent-overview/agent-overview-history-selectors';
+  import { loadGraphHistoryRequested } from '$store/renderer/slices/agent-overview/agent-overview-history-slice';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import {
     openWorkspaceFile,
@@ -39,6 +41,8 @@
 
   // svelte-ignore state_referenced_locally - workspaceId doesn't change during component lifecycle
   const graphState$ = selectGraphState(workspaceId);
+  // svelte-ignore state_referenced_locally - workspaceId doesn't change during component lifecycle
+  const graphHistoryStatus$ = selectGraphHistoryStatus(workspaceId);
   const eventTimesMs = $derived(
     ($graphState$.eventTimes ?? [])
       .map(Date.parse)
@@ -47,7 +51,8 @@
   );
   const graphCursor = $derived.by(() => {
     const cursorMs = Date.parse(cursor || $graphState$.minTime);
-    return new Date(snapPlaybackCursor(eventTimesMs, cursorMs)).toISOString();
+    const graphCursorMs = mode === 'playing' ? cursorMs : snapPlaybackCursor(eventTimesMs, cursorMs);
+    return new Date(graphCursorMs).toISOString();
   });
   const displayedGraph = $derived(
     mode === 'live'
@@ -60,6 +65,8 @@
 
   // svelte-ignore state_referenced_locally - one-shot init-time dispatch; workspaceId doesn't change during component lifecycle
   appStore.dispatch(loadEventsRequested(workspaceId));
+  // svelte-ignore state_referenced_locally - one-shot init-time dispatch; workspaceId doesn't change during component lifecycle
+  appStore.dispatch(loadGraphHistoryRequested(workspaceId));
 
   function navigationOptions(event: MouseEvent | KeyboardEvent) {
     return {
@@ -116,8 +123,8 @@
     if (mode !== 'playing') return;
     const playbackSpeed = speed;
     const maxTimeMs = Date.parse($graphState$.maxTime);
-    const eventTimes = eventTimesMs;
-    const rate = playbackRate(eventTimes);
+    const minTimeMs = Date.parse($graphState$.minTime);
+    const rate = playbackRate(maxTimeMs - minTimeMs);
     let currentMs = Date.parse(untrack(() => cursor || $graphState$.minTime));
     let previousFrame = performance.now();
     let frame = 0;
@@ -127,7 +134,6 @@
         currentMs,
         now - previousFrame,
         playbackSpeed,
-        eventTimes,
         maxTimeMs,
         rate,
       );
@@ -161,6 +167,13 @@
     playbackSpeed={speed}
     showFitControl={false}
   />
+
+  {#if $graphHistoryStatus$ === 'loading'}
+    <span
+      class="pointer-events-none absolute bottom-14 left-4 z-10 text-[10px] text-muted-foreground"
+      aria-live="polite">{m.agentOverview_timeScrubber_loadingHistory_label()}</span
+    >
+  {/if}
 
   <TimeScrubber
     currentTime={mode === 'live' ? $graphState$.currentTime : cursor}

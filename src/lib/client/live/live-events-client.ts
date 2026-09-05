@@ -16,6 +16,8 @@
 import type { WorkspaceEvent } from '$features/events/types';
 import type {
   EventQueryOptions,
+  EventQueryPage,
+  EventQueryPageOptions,
   EventsClient,
   SubscriptionHandler,
   Unsubscribe,
@@ -37,6 +39,25 @@ export class LiveEventsClient implements EventsClient {
       ...options,
     });
     return Array.isArray(result) ? (result as WorkspaceEvent[]) : [];
+  }
+
+  async queryPage(
+    workspaceId: string,
+    options: EventQueryPageOptions = {},
+  ): Promise<EventQueryPage> {
+    const { nextToken, ...filters } = options;
+    const result = await backendRequest<unknown>('event.query', {
+      workspaceId,
+      ...filters,
+      paginate: true,
+      ...(typeof nextToken === 'string' ? { nextToken } : {}),
+    });
+    if (!result || typeof result !== 'object') return { items: [], nextToken: null };
+    const page = result as { items?: unknown; nextToken?: unknown };
+    return {
+      items: Array.isArray(page.items) ? (page.items as WorkspaceEvent[]) : [],
+      nextToken: typeof page.nextToken === 'string' ? page.nextToken : null,
+    };
   }
 
   subscribe(workspaceId: string, handler: SubscriptionHandler<WorkspaceEvent[]>): Unsubscribe {

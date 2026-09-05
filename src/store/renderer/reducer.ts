@@ -28,6 +28,7 @@ import { workspaceNotesReducer } from './slices/workspace-notes/workspace-notes-
 import { workspaceTasksReducer } from './slices/workspace-tasks/workspace-tasks-slice';
 import { workspaceSummariesReducer } from './slices/workspace-summaries/workspace-summaries-slice';
 import { workspaceEventsReducer } from './slices/workspace-events/workspace-events-slice';
+import { agentOverviewHistoryReducer } from './slices/agent-overview/agent-overview-history-slice';
 import { paletteReducer } from './slices/palette/palette-slice';
 import { releaseNotesReducer } from './slices/release-notes/release-notes-slice';
 import { skillsReducer } from './slices/skills/skills-slice';
@@ -124,6 +125,7 @@ export const reducers = {
   workspaceOperations: workspaceOperationsReducer,
   workspaceSettings: workspaceSettingsReducer,
   workspaceEvents: workspaceEventsReducer,
+  agentOverviewHistory: agentOverviewHistoryReducer,
   palette: paletteReducer,
   releaseNotes: releaseNotesReducer,
   workspace: workspaceReducer,

@@ -13,6 +13,7 @@ function makeOverviewState(
   workspaceEvents: WorkspaceEvent[] = [],
   tasks: WorkspaceTask[] = [],
   taskAssociations: Record<string, TaskAgentAssociationsByTaskKey> = {},
+  historyEvents: WorkspaceEvent[] = [],
 ): StoreState {
   const sessions = Array.isArray(input) ? input : [input];
   return {
@@ -67,6 +68,19 @@ function makeOverviewState(
     workspaceEvents: {
       byWorkspaceId:
         workspaceEvents.length > 0 ? { [WS]: { events: workspaceEvents, loading: false } } : {},
+    },
+    agentOverviewHistory: {
+      byWorkspaceId:
+        historyEvents.length > 0
+          ? {
+              [WS]: {
+                events: historyEvents,
+                status: 'complete',
+                nextToken: null,
+                loadedAt: '2026-03-20T14:00:00.000Z',
+              },
+            }
+          : {},
     },
   } as unknown as StoreState;
 }
@@ -197,6 +211,25 @@ describe('selectGraphState', () => {
         count: 1,
       }),
     );
+  });
+
+  it('uses graph history instead of the shared event buffer once history has events', () => {
+    const sharedEvent = makeWorkspaceEvent({
+      id: 'shared-event',
+      data: { path: 'src/shared.ts', relativePath: 'src/shared.ts', action: 'modify' },
+    });
+    const historyEvent = makeWorkspaceEvent({
+      id: 'history-event',
+      data: { path: 'src/history.ts', relativePath: 'src/history.ts', action: 'modify' },
+    });
+
+    const graph = selectGraphState.select(
+      makeOverviewState(makeSession('a1'), [sharedEvent], [], {}, [historyEvent]),
+      WS,
+    );
+
+    expect(graph.nodes).toContainEqual(expect.objectContaining({ path: 'src/history.ts' }));
+    expect(graph.nodes).not.toContainEqual(expect.objectContaining({ path: 'src/shared.ts' }));
   });
 
   it('marks event-derived files outside workspace roots as external', () => {

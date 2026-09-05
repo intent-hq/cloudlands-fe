@@ -4107,6 +4107,7 @@
   "agentOverview_toolbar_files_many": "{count} Dateien",
   "agentOverview_resourceNode_external_ariaLabel": "Externe Datei {name}: {path}",
   "agentOverview_timeScrubber_live_label": "Live",
+  "agentOverview_timeScrubber_loadingHistory_label": "Verlauf wird geladen…",
   "agentOverview_timeScrubber_paused_label": "Pausiert",
   "diagram_controls_state_ariaLabel": "Zustand {number}: {title}",
   "diagram_controls_stateNumber_label": "Zustand {number}",

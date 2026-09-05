@@ -2117,6 +2117,15 @@ export interface EventQueryOptions {
   limit?: number;
 }
 
+export interface EventQueryPageOptions extends EventQueryOptions {
+  nextToken?: string | null;
+}
+
+export interface EventQueryPage {
+  items: WorkspaceEvent[];
+  nextToken: string | null;
+}
+
 export interface EventsClient {
   /** Boot snapshot of the workspace event stream, oldest→newest. */
   list(workspaceId: string): Promise<WorkspaceEvent[]>;
@@ -2125,6 +2134,8 @@ export interface EventsClient {
    * wire order (newest→oldest); the daemon defaults `limit` to 50.
    */
   query(workspaceId: string, options?: EventQueryOptions): Promise<WorkspaceEvent[]>;
+  /** Paginated historical read; each page remains in newest→oldest wire order. */
+  queryPage(workspaceId: string, options?: EventQueryPageOptions): Promise<EventQueryPage>;
   subscribe(workspaceId: string, handler: SubscriptionHandler<WorkspaceEvent[]>): Unsubscribe;
 }
 

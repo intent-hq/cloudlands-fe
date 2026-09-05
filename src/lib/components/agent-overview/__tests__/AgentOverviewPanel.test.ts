@@ -8,11 +8,14 @@ import {
   openWorkspaceFile,
   openWorkspaceNote,
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+import { loadGraphHistoryRequested } from '$store/renderer/slices/agent-overview/agent-overview-history-slice';
+import { loadEventsRequested } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   selectGraphState: vi.fn(),
   selectGraphStateAt: { select: vi.fn() },
+  selectGraphHistoryStatus: vi.fn(),
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -24,6 +27,10 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$store/renderer/slices/agent-overview/agent-overview-selectors', () => ({
   selectGraphState: mocks.selectGraphState,
   selectGraphStateAt: mocks.selectGraphStateAt,
+}));
+
+vi.mock('$store/renderer/slices/agent-overview/agent-overview-history-selectors', () => ({
+  selectGraphHistoryStatus: mocks.selectGraphHistoryStatus,
 }));
 
 vi.mock('svelte-fa', async () => ({
@@ -137,6 +144,7 @@ const graph: GraphState = {
 
 function renderPanel(inputGraph = graph) {
   mocks.selectGraphState.mockReturnValue(readable(inputGraph));
+  mocks.selectGraphHistoryStatus.mockReturnValue(readable('complete'));
   mocks.selectGraphStateAt.select.mockReturnValue({ ...inputGraph, isLive: false });
   const result = render(AgentOverviewPanel, { props: { workspaceId: 'workspace-one' } });
   result.container.firstElementChild?.setAttribute('data-panel-id', 'source-panel');
@@ -159,6 +167,8 @@ describe('AgentOverviewPanel', () => {
     expect(screen.getByText('1 agent active · 1 task · 1 file')).toBeTruthy();
     expect(screen.getByText('Legend')).toBeTruthy();
     expect(screen.getByRole('button', { name: /one\.ts/ })).toBeTruthy();
+    expect(mocks.dispatch).toHaveBeenCalledWith(loadEventsRequested('workspace-one'));
+    expect(mocks.dispatch).toHaveBeenCalledWith(loadGraphHistoryRequested('workspace-one'));
 
     const filesToggle = screen.getByRole('button', { name: 'Files' });
     await fireEvent.click(filesToggle);
@@ -204,7 +214,7 @@ describe('AgentOverviewPanel', () => {
     );
   });
 
-  it('recomputes the historical graph only when playback crosses an event', async () => {
+  it('advances the historical graph cursor continuously during playback', async () => {
     const middle = '2026-09-04T01:00:00.000Z';
     const end = '2026-09-04T02:00:00.000Z';
     const callbacks: FrameRequestCallback[] = [];
@@ -226,12 +236,19 @@ describe('AgentOverviewPanel', () => {
       frameCallbacks.forEach((callback) => callback(now));
       await tick();
     }
-    expect(mocks.selectGraphStateAt.select).toHaveBeenCalledOnce();
+    expect(mocks.selectGraphStateAt.select.mock.calls.length).toBeGreaterThan(1);
+    const lastCursor = mocks.selectGraphStateAt.select.mock.calls.at(-1)?.[2];
+    expect(Date.parse(lastCursor)).toBeGreaterThan(Date.parse(timestamp));
+    expect(Date.parse(lastCursor)).toBeLessThan(Date.parse(middle));
+  });
 
-    const frameCallbacks = callbacks.splice(0);
-    frameCallbacks.forEach((callback) => callback(base + 548));
-    await tick();
-    expect(mocks.selectGraphStateAt.select).toHaveBeenCalledTimes(2);
-    expect(mocks.selectGraphStateAt.select).toHaveBeenLastCalledWith({}, 'workspace-one', middle);
+  it('shows the graph history loading state near the scrubber', () => {
+    mocks.selectGraphHistoryStatus.mockReturnValue(readable('loading'));
+    mocks.selectGraphState.mockReturnValue(readable(graph));
+    mocks.selectGraphStateAt.select.mockReturnValue({ ...graph, isLive: false });
+
+    render(AgentOverviewPanel, { props: { workspaceId: 'workspace-one' } });
+
+    expect(screen.getByText('Loading history…')).toBeTruthy();
   });
 });

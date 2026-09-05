@@ -51,10 +51,12 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
 
 function deriveInteractionEvents(state: StoreState, workspaceId: string): InteractionEvent[] {
   const workspaceEvents = state.workspaceEvents.byWorkspaceId[workspaceId]?.events ?? [];
+  const historyEvents = state.agentOverviewHistory.byWorkspaceId[workspaceId]?.events ?? [];
+  const sourceEvents = historyEvents.length > 0 ? historyEvents : workspaceEvents;
   const interactions: InteractionEvent[] = [];
   const seenQueueMessageIds = new Set<string>();
 
-  for (const event of workspaceEvents) {
+  for (const event of sourceEvents) {
     interactions.push(...convertToInteractionEvent(event, seenQueueMessageIds));
   }
 

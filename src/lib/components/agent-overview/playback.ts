@@ -1,17 +1,10 @@
 export type PlaybackMode = 'live' | 'paused' | 'playing';
 export type PlaybackSpeed = 1 | 2 | 4 | 8;
 
-export const MAX_PLAYBACK_GAP_MS = 30_000;
 export const TARGET_PLAYBACK_DURATION_MS = 60_000;
 
-function sortedEventTimes(eventTimes: readonly number[]): number[] {
-  return [...new Set(eventTimes.filter(Number.isFinite))].sort((a, b) => a - b);
-}
-
-export function playbackRate(eventTimes: readonly number[]): number {
-  const sorted = sortedEventTimes(eventTimes);
-  const storyDuration = (sorted.at(-1) ?? 0) - (sorted[0] ?? 0);
-  return Math.max(1, storyDuration / TARGET_PLAYBACK_DURATION_MS);
+export function playbackRate(spanMs: number): number {
+  return Number.isFinite(spanMs) ? Math.max(1, spanMs / TARGET_PLAYBACK_DURATION_MS) : 1;
 }
 
 export function snapPlaybackCursor(eventTimes: readonly number[], cursorMs: number): number {
@@ -30,35 +23,14 @@ export function snapPlaybackCursor(eventTimes: readonly number[], cursorMs: numb
   return snapped;
 }
 
-function nextPlaybackEvent(eventTimes: readonly number[], cursorMs: number): number | undefined {
-  let low = 0;
-  let high = eventTimes.length - 1;
-  let next: number | undefined;
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2);
-    if (eventTimes[middle] > cursorMs) {
-      next = eventTimes[middle];
-      high = middle - 1;
-    } else {
-      low = middle + 1;
-    }
-  }
-  return next;
-}
-
 export function advancePlaybackCursor(
   cursorMs: number,
   elapsedMs: number,
   speed: PlaybackSpeed,
-  eventTimes: readonly number[],
   maxTimeMs: number,
-  rate = playbackRate(eventTimes),
+  rate = 1,
 ): { cursorMs: number; reachedEnd: boolean } {
-  let nextCursor = Math.min(maxTimeMs, cursorMs + Math.max(0, elapsedMs) * speed * rate);
-  const nextEvent = nextPlaybackEvent(eventTimes, cursorMs);
-  if (nextEvent !== undefined && nextEvent - nextCursor > MAX_PLAYBACK_GAP_MS) {
-    nextCursor = nextEvent - MAX_PLAYBACK_GAP_MS;
-  }
+  const nextCursor = Math.min(maxTimeMs, cursorMs + Math.max(0, elapsedMs) * speed * rate);
   return { cursorMs: nextCursor, reachedEnd: nextCursor >= maxTimeMs };
 }
 

@@ -4107,6 +4107,7 @@
   "agentOverview_toolbar_files_many": "{count} 個檔案",
   "agentOverview_resourceNode_external_ariaLabel": "外部檔案 {name}：{path}",
   "agentOverview_timeScrubber_live_label": "即時",
+  "agentOverview_timeScrubber_loadingHistory_label": "正在載入歷史記錄…",
   "agentOverview_timeScrubber_paused_label": "已暫停",
   "diagram_controls_state_ariaLabel": "狀態 {number}：{title}",
   "diagram_controls_stateNumber_label": "狀態 {number}",

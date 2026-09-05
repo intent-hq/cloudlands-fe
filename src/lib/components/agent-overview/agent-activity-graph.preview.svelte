@@ -30,8 +30,14 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import AgentActivityGraph from './AgentActivityGraph.svelte';
+  import type { GraphOpenEvent } from './AgentActivityGraph.svelte';
   import TimeScrubber from './TimeScrubber.svelte';
-  import { advancePlaybackCursor, type PlaybackMode, type PlaybackSpeed } from './playback';
+  import {
+    advancePlaybackCursor,
+    playbackRate,
+    type PlaybackMode,
+    type PlaybackSpeed,
+  } from './playback';
   import { buildReplayGraph } from './__fixtures__/agent-activity-graph.fixtures';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -45,7 +51,7 @@
       : buildReplayGraph(replayEnd, mode === 'live' ? replayEnd : Date.parse(cursor)),
   );
 
-  function logClick(kind: 'agent' | 'task' | 'note' | 'file', id: string, event: MouseEvent) {
+  function logClick(kind: 'agent' | 'task' | 'note' | 'file', id: string, event: GraphOpenEvent) {
     // i18n-ignore (developer-only sandbox diagnostic)
     console.info('[agent-activity-graph preview] click', { kind, id, eventType: event.type });
   }
@@ -71,7 +77,7 @@
   $effect(() => {
     if (mode !== 'playing' || replayEnd === undefined) return;
     const playbackSpeed = speed;
-    const eventTimes = (graph.eventTimes ?? []).map(Date.parse).filter(Number.isFinite);
+    const rate = playbackRate(replayEnd - Date.parse(graph.minTime));
     let currentMs = Date.parse(untrack(() => cursor));
     let previousFrame = performance.now();
     let frame = 0;
@@ -80,8 +86,8 @@
         currentMs,
         now - previousFrame,
         playbackSpeed,
-        eventTimes,
         replayEnd,
+        rate,
       );
       previousFrame = now;
       currentMs = result.cursorMs;
