@@ -177,6 +177,7 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 });
 vi.mock('svelte/transition', () => ({ slide: () => ({}) }));
 
+import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 import QuakeTerminalOverlay from '../QuakeTerminalOverlay.svelte';
 import RootQuakeTerminalOverlay from '../RootQuakeTerminalOverlay.svelte';
 
@@ -353,7 +354,7 @@ describe('QuakeTerminalOverlay lifecycle', () => {
       () => render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } }),
       'ws-1',
     ],
-    ['root', () => render(RootQuakeTerminalOverlay), '__root__'],
+    ['root', () => render(RootQuakeTerminalOverlay), ROOT_WORKSPACE_ID],
   ])(
     'flushes %s resize and releases global state when destroyed',
     async (_, renderOverlay, wsId) => {
@@ -392,7 +393,7 @@ describe('QuakeTerminalOverlay lifecycle', () => {
       () => render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } }),
       'ws-1',
     ],
-    ['root', () => render(RootQuakeTerminalOverlay), '__root__'],
+    ['root', () => render(RootQuakeTerminalOverlay), ROOT_WORKSPACE_ID],
   ])(
     'previews %s resize locally and commits one clamped height on release',
     async (_, renderOverlay, wsId) => {

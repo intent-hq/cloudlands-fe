@@ -67,11 +67,6 @@ export interface WorkspaceTerminalState {
    * PTYs respawn via auto-reconnect). `null` until a boot id is seen.
    */
   daemonBootId: string | null;
-  /**
-   * Overlay height in vh for this workspace, or null when it has never been
-   * resized — readers fall back to the top-level `height`.
-   */
-  height: number | null;
 }
 
 /** Persisted subset of workspace state (terminals are loaded from terminalManager) */
@@ -87,6 +82,12 @@ export interface PersistedWorkspaceState {
 export type TerminalOverlayState = {
   /** Fallback height for workspaces without their own (legacy global value or default). */
   height: number;
+  /**
+   * Per-workspace overlay heights in vh. Kept outside `workspaces` so boot
+   * hydration never materializes a workspace entry — persistence relies on the
+   * `emptyWorkspaceState` identity to skip not-yet-loaded workspaces.
+   */
+  workspaceHeights: Record<string, number>;
   workspaces: Record<string, WorkspaceTerminalState>;
 };
 
@@ -103,11 +104,11 @@ export const emptyWorkspaceState: WorkspaceTerminalState = {
   recentlyCreatedTerminals: [],
   selectedScriptId: null,
   daemonBootId: null,
-  height: null,
 };
 
 const initialState: TerminalOverlayState = {
   height: DEFAULT_TERMINAL_OVERLAY_HEIGHT,
+  workspaceHeights: {},
   workspaces: {},
 };
 
@@ -218,6 +219,15 @@ function setWs(
   ws: WorkspaceTerminalState,
 ): TerminalOverlayState {
   return { ...state, workspaces: { ...state.workspaces, [wsId]: ws } };
+}
+
+function setWsHeight(
+  state: TerminalOverlayState,
+  wsId: string,
+  height: number,
+): TerminalOverlayState {
+  if (state.workspaceHeights[wsId] === height) return state;
+  return { ...state, workspaceHeights: { ...state.workspaceHeights, [wsId]: height } };
 }
 
 function ensureDefaultTerminal(
@@ -354,10 +364,8 @@ terminalsReducer.with(removeTerminal, (state, { payload: [wsId, termId] }) => {
   });
 });
 terminalsReducer.with(setTerminalOverlayHeight, (state, { payload: [wsId, height] }) => {
-  const ws = getWs(state, wsId);
-  const clamped = clampTerminalOverlayHeight(height);
-  if (clamped === ws.height) return state;
-  return setWs(state, wsId, { ...ws, height: clamped });
+  if (!Number.isFinite(height)) return state;
+  return setWsHeight(state, wsId, clampTerminalOverlayHeight(height));
 });
 terminalsReducer.with(renameTerminal, (state, { payload: [wsId, termId, newName] }) => {
   const ws = getWs(state, wsId);
@@ -394,7 +402,11 @@ terminalsReducer.with(
 );
 terminalsReducer.with(
   loadWorkspaceTerminals,
-  (state, { payload: [wsId, terminals, savedState, daemonBootId] }) => {
+  (rawState, { payload: [wsId, terminals, savedState, daemonBootId] }) => {
+    const state =
+      savedState?.height !== undefined && isValidTerminalOverlayHeight(savedState.height)
+        ? setWsHeight(rawState, wsId, savedState.height)
+        : rawState;
     const collection = createCollection<TerminalTab, 'id'>('id', terminals);
     const prior = getWs(state, wsId);
     const nextBootId = daemonBootId ?? prior.daemonBootId;
@@ -403,10 +415,6 @@ terminalsReducer.with(
       (savedState?.selectedScriptId !== undefined
         ? savedState.selectedScriptId
         : prior.selectedScriptId) ?? null;
-    const height =
-      savedState?.height !== undefined && isValidTerminalOverlayHeight(savedState.height)
-        ? savedState.height
-        : prior.height;
 
     if (terminals.length > 0) {
       let activeId: string | null;
@@ -435,7 +443,6 @@ terminalsReducer.with(
         recentlyCreatedTerminals: [],
         selectedScriptId,
         daemonBootId: nextBootId,
-        height,
       };
     } else if (prior.terminals.ids.length > 0) {
       const sameBootAuthoritativeEmpty =
@@ -444,8 +451,8 @@ terminalsReducer.with(
         daemonBootId === prior.daemonBootId;
 
       if (!sameBootAuthoritativeEmpty) {
-        if (nextBootId === prior.daemonBootId && height === prior.height) return state;
-        return setWs(state, wsId, { ...prior, daemonBootId: nextBootId, height });
+        if (nextBootId === prior.daemonBootId) return state;
+        return setWs(state, wsId, { ...prior, daemonBootId: nextBootId });
       }
 
       const kept = prior.terminals.ids
@@ -467,7 +474,6 @@ terminalsReducer.with(
             : selectedScriptId !== null && (savedState ? savedState.isOpen : prior.isOpen),
         selectedScriptId,
         daemonBootId: nextBootId,
-        height,
       };
     } else {
       // Don't restore isOpen when there are no terminals — the panel
@@ -484,7 +490,6 @@ terminalsReducer.with(
         recentlyCreatedTerminals: [],
         selectedScriptId,
         daemonBootId: nextBootId,
-        height,
       };
     }
 
@@ -498,9 +503,7 @@ terminalsReducer.with(hydrateHeight, (state, { payload: [height, workspaceHeight
   }
   for (const [wsId, wsHeight] of Object.entries(workspaceHeights ?? {})) {
     if (!isValidTerminalOverlayHeight(wsHeight)) continue;
-    const ws = getWs(next, wsId);
-    if (ws.height === wsHeight) continue;
-    next = setWs(next, wsId, { ...ws, height: wsHeight });
+    next = setWsHeight(next, wsId, wsHeight);
   }
   return next;
 });

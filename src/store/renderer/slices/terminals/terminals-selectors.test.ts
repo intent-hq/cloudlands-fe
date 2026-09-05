@@ -18,6 +18,7 @@ function terminalState(
 ): TerminalOverlayState {
   return {
     height: 50,
+    workspaceHeights: {},
     workspaces: {
       [WS]: {
         isOpen: false,
@@ -27,7 +28,6 @@ function terminalState(
         isLoadingTerminals: false,
         daemonBootId: null,
         selectedScriptId,
-        height: null,
       },
     },
   };
@@ -177,10 +177,11 @@ describe('terminals selectors', () => {
 
     it('prefers the workspace height over the fallback', () => {
       const terminals = terminalState([]);
-      terminals.workspaces[WS] = { ...terminals.workspaces[WS], height: 15 };
+      terminals.workspaceHeights = { [WS]: 15, 'ws-unloaded': 80 };
       const state = { terminals } as unknown as StoreState;
 
       expect(selectTerminalOverlayHeight.select(state, WS)).toBe(15);
+      expect(selectTerminalOverlayHeight.select(state, 'ws-unloaded')).toBe(80);
       expect(selectTerminalOverlayHeight.select(state, 'ws-unknown')).toBe(50);
     });
   });

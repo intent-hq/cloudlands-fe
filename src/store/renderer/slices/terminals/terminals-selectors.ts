@@ -19,7 +19,7 @@ function isSetupTerminal(terminal: TerminalTab): boolean {
 
 /** Overlay height for a workspace; workspaces that were never resized read the fallback. */
 export const selectTerminalOverlayHeight = store.createSelector((state, wsId: string) => {
-  return getWsById(state, wsId).height ?? state.terminals.height;
+  return state.terminals.workspaceHeights[wsId] ?? state.terminals.height;
 });
 
 export const selectActiveTerminalId = store.createSelector((state, wsId: string | null) => {

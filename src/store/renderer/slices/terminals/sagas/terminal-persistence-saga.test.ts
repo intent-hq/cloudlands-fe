@@ -198,6 +198,61 @@ describe('terminalPersistenceSaga', () => {
     await task.toPromise();
   });
 
+  it('merges a resize into the stored entry of a loaded workspace', async () => {
+    const { send, task } = startSaga();
+    await settle();
+    send(openTerminalOverlay('ws-1', 'term-1'));
+    await settle();
+    storage.setJSON.mockClear();
+    send(setTerminalOverlayHeight('ws-1', 35));
+    await settle();
+
+    expect(storage.setJSON.mock.calls).toEqual([
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: true, activeTerminalId: 'term-1', height: 35 } },
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not write storage for a non-finite height', async () => {
+    const { send, task } = startSaga();
+    await settle();
+    storage.setJSON.mockClear();
+    send(setTerminalOverlayHeight('ws-1', Number.NaN));
+    await settle();
+
+    expect(storage.setJSON.mock.calls).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps hydrated heights from exposing not-yet-loaded workspaces to persistence', async () => {
+    const stored = {
+      'ws-1': { isOpen: true, activeTerminalId: 'term-1', height: 15 },
+      'ws-2': { isOpen: true, activeTerminalId: 'term-2' },
+    };
+    storage.values.set(WORKSPACE_STATE_STORAGE_KEY, JSON.stringify(stored));
+    const { send, task } = startSaga();
+    await settle();
+    send(removeTerminal('ws-1', 'term-gone'));
+    await settle();
+    send(closeTerminalOverlay('ws-1'));
+    await settle();
+    send(removeTerminal('ws-2', 'term-gone'));
+    await settle();
+
+    const workspaceStateWrites = storage.setJSON.mock.calls.filter(
+      ([key]) => key === WORKSPACE_STATE_STORAGE_KEY,
+    );
+    expect(workspaceStateWrites).toEqual([]);
+    expect(JSON.parse(storage.values.get(WORKSPACE_STATE_STORAGE_KEY) ?? '{}')).toEqual(stored);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('migrates legacy custom names and persists trimmed workspace names exactly', async () => {
     storage.values.set(
       CUSTOM_NAMES_STORAGE_KEY,
@@ -464,10 +519,11 @@ describe('terminalPersistenceSaga', () => {
     await task.toPromise();
     resolveHeight('70');
     await settle();
-    send(setTerminalOverlayHeight(70));
+    send(setTerminalOverlayHeight('ws-1', 70));
     await settle();
 
     expect(dispatched).toEqual([]);
     expect(storage.setItem.mock.calls).toEqual([]);
+    expect(storage.setJSON.mock.calls).toEqual([]);
   });
 });
