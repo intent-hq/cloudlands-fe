@@ -67,9 +67,11 @@ export const COMPOSER_FOCUS_DELAYS_MS = [150, 600] as const;
 const COMPOSER_FOCUS_ARM_TTL_MS = 15_000;
 
 /** Lazily pull the toast lib so this service stays light. */
-let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null = null;
+let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null =
+  null;
 function getToast() {
-  if (!toastPromise) toastPromise = import('$lib/components/patterns/notify').then((module) => module.notify);
+  if (!toastPromise)
+    toastPromise = import('$lib/components/patterns/notify').then((module) => module.notify);
   return toastPromise;
 }
 

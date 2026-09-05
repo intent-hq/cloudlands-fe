@@ -66,7 +66,9 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: () => constantReadable([]),
   selectPendingCount: () => constantReadable(0),
 }));
-vi.mock('$lib/components/patterns/notify', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn() },
+}));
 vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
   default: (await import('$lib/components/workspace/__tests__/mocks/MockAgentAvatar.svelte'))
     .default,

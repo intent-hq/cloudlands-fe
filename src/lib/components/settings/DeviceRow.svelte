@@ -5,6 +5,7 @@
     Input,
     Label,
     Menu,
+    Switch,
     Tooltip,
   } from '$lib/components/patterns/settings/custom-controls';
   import { ListRow, RowActions } from '$lib/components/patterns/collection';

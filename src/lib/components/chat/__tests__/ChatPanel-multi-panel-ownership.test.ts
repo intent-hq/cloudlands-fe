@@ -91,7 +91,9 @@ vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn().mockResolvedValue({ success: true, data: [] }),
   listenSync: vi.fn(() => () => {}),
 }));
-vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
+}));
 vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({

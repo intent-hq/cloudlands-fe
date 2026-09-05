@@ -726,7 +726,7 @@
       {#if projectSelection?.type === 'local' && projectSelection?.repoPath && treatAsNewRepo}
         <div
           class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground"
-          in:fly={{ y: 10, duration: 200, easing: cubicOut }}
+          in:fly={{ tier: 'moderate', distance: 10 }}
         >
           {m.onboarding_promptStep_initGit_description()}
         </div>

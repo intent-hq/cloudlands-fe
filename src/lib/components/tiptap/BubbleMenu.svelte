@@ -7,22 +7,19 @@
   import type { Workspace } from '$shared/types';
   import Fa from 'svelte-fa';
   import {
-  faBold,
-  faItalic,
-  faUnderline,
-  faCode,
-  faCommentDots,
-  faStrikethrough,
-  faPaperPlane,
-  faCheck,
-  faLink,
-  faTimes,
-} from '@fortawesome/free-solid-svg-icons';
+    faBold,
+    faItalic,
+    faUnderline,
+    faCode,
+    faCommentDots,
+    faStrikethrough,
+    faPaperPlane,
+    faCheck,
+    faLink,
+    faTimes,
+  } from '@fortawesome/free-solid-svg-icons';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
-  import {
-  type ContextReference,
-  convertContextReferences,
-} from '$features/agent/agent-context';
+  import { type ContextReference, convertContextReferences } from '$features/agent/agent-context';
   import LaunchFromSelectionDialog from './LaunchFromSelectionDialog.svelte';
   import { createAgentTypeId } from '$shared/types/agent.types';
 
@@ -31,7 +28,6 @@
   import Portal from '$lib/components/ui/Portal.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-
 
   interface Props {
     editor: Editor | null;
@@ -217,8 +213,7 @@
       const context = convertContextReferences([contextReference]);
 
       // Use user message or default
-      const finalUserMessage =
-        userMessage.trim() || m.tiptap_bubbleMenu_defaultAgentMessage();
+      const finalUserMessage = userMessage.trim() || m.tiptap_bubbleMenu_defaultAgentMessage();
 
       logger.info('[BubbleMenu] Creating agent with unified creator', {
         workspaceId: workspace.id,
@@ -372,7 +367,12 @@
       onmousedown={(e) => e.preventDefault()}
     >
       <div class="bubble-menu-container">
-        <TooltipShortcut label={m.tiptap_bubbleMenu_bold_label()} shortcut="cmd+b" side="top" delayDuration={200}>
+        <TooltipShortcut
+          label={m.tiptap_bubbleMenu_bold_label()}
+          shortcut="cmd+b"
+          side="top"
+          delayDuration={200}
+        >
           <Button
             class="bubble-menu-btn"
             onclick={toggleBold}
@@ -384,7 +384,12 @@
           </Button>
         </TooltipShortcut>
 
-        <TooltipShortcut label={m.tiptap_bubbleMenu_italic_label()} shortcut="cmd+i" side="top" delayDuration={200}>
+        <TooltipShortcut
+          label={m.tiptap_bubbleMenu_italic_label()}
+          shortcut="cmd+i"
+          side="top"
+          delayDuration={200}
+        >
           <Button
             class="bubble-menu-btn"
             onclick={toggleItalic}
@@ -396,7 +401,12 @@
           </Button>
         </TooltipShortcut>
 
-        <TooltipShortcut label={m.tiptap_bubbleMenu_underline_label()} shortcut="cmd+u" side="top" delayDuration={200}>
+        <TooltipShortcut
+          label={m.tiptap_bubbleMenu_underline_label()}
+          shortcut="cmd+u"
+          side="top"
+          delayDuration={200}
+        >
           <Button
             class="bubble-menu-btn"
             onclick={toggleUnderline}
@@ -425,7 +435,12 @@
           </Button>
         </TooltipShortcut>
 
-        <TooltipShortcut label={m.tiptap_bubbleMenu_code_label()} shortcut="cmd+e" side="top" delayDuration={200}>
+        <TooltipShortcut
+          label={m.tiptap_bubbleMenu_code_label()}
+          shortcut="cmd+e"
+          side="top"
+          delayDuration={200}
+        >
           <Button
             class="bubble-menu-btn"
             onclick={toggleCode}
@@ -437,7 +452,12 @@
           </Button>
         </TooltipShortcut>
 
-        <TooltipShortcut label={m.tiptap_bubbleMenu_addLink_label()} shortcut="cmd+k" side="top" delayDuration={200}>
+        <TooltipShortcut
+          label={m.tiptap_bubbleMenu_addLink_label()}
+          shortcut="cmd+k"
+          side="top"
+          delayDuration={200}
+        >
           <Button
             class="bubble-menu-btn"
             onclick={handleLinkClick}
@@ -451,13 +471,25 @@
         {#if showNoteActions}
           <div class="bubble-menu-divider"></div>
 
-          <TooltipShortcut label={m.tiptap_bubbleMenu_addComment_label()} side="top" delayDuration={200}>
-            <Button class="bubble-menu-btn" onclick={handleAddComment} aria-label={m.tiptap_bubbleMenu_addComment_label()}>
+          <TooltipShortcut
+            label={m.tiptap_bubbleMenu_addComment_label()}
+            side="top"
+            delayDuration={200}
+          >
+            <Button
+              class="bubble-menu-btn"
+              onclick={handleAddComment}
+              aria-label={m.tiptap_bubbleMenu_addComment_label()}
+            >
               <Fa icon={faCommentDots} size="xs" />
             </Button>
           </TooltipShortcut>
 
-          <TooltipShortcut label={m.tiptap_bubbleMenu_sendToAgent_label()} side="top" delayDuration={200}>
+          <TooltipShortcut
+            label={m.tiptap_bubbleMenu_sendToAgent_label()}
+            side="top"
+            delayDuration={200}
+          >
             <Button
               class="bubble-menu-btn"
               onclick={handleLaunchAgentClick}
@@ -481,10 +513,18 @@
             class="link-input"
           />
           <div class="link-input-actions">
-            <Button class="bubble-menu-btn small" onclick={handleSetLink} aria-label={m.tiptap_bubbleMenu_setLink_ariaLabel()}>
+            <Button
+              class="bubble-menu-btn small"
+              onclick={handleSetLink}
+              aria-label={m.tiptap_bubbleMenu_setLink_ariaLabel()}
+            >
               <Fa icon={faCheck} size="xs" />
             </Button>
-            <Button class="bubble-menu-btn small" onclick={handleCancelLink} aria-label={m.tiptap_bubbleMenu_cancel_ariaLabel()}>
+            <Button
+              class="bubble-menu-btn small"
+              onclick={handleCancelLink}
+              aria-label={m.tiptap_bubbleMenu_cancel_ariaLabel()}
+            >
               <Fa icon={faTimes} size="xs" />
             </Button>
           </div>

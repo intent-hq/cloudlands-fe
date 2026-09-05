@@ -22,9 +22,11 @@ const logger = createLogger('HardwareConsoleVoiceSetupToast');
 const VOICE_SETUP_TOAST_ID = 'hardware-console-voice-setup';
 
 /** Lazily pull the toast lib so this middleware-reachable module stays light. */
-let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null = null;
+let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null =
+  null;
 function getToast() {
-  if (!toastPromise) toastPromise = import('$lib/components/patterns/notify').then((module) => module.notify);
+  if (!toastPromise)
+    toastPromise = import('$lib/components/patterns/notify').then((module) => module.notify);
   return toastPromise;
 }
 

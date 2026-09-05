@@ -44,9 +44,7 @@ describe('Input', () => {
     });
     const fileInput = file.container.querySelector('input[type="file"]');
     for (const control of [textInput, fileInput]) {
-      expect(control?.className.split(/\s+/)).toContain(
-          'aria-invalid:border-danger',
-      );
+      expect(control?.className.split(/\s+/)).toContain('aria-invalid:border-danger');
       expect(control?.className.split(/\s+/)).not.toContain('aria-invalid:ring-1');
     }
     for (const { label, ratio } of invalidControlContrastCases()) {

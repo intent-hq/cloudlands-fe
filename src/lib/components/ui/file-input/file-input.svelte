@@ -127,10 +127,7 @@
       type="button"
       variant={variant === 'flat' ? 'ghost' : 'outline'}
       size={resolvedSize === 'compact' ? 'xs' : 'default'}
-      class={cn(
-        'h-full shrink-0',
-        'aria-invalid:border-danger aria-invalid:ring-danger/25',
-      )}
+      class={cn('h-full shrink-0', 'aria-invalid:border-danger aria-invalid:ring-danger/25')}
       {disabled}
       loading={busy}
       aria-controls={id}

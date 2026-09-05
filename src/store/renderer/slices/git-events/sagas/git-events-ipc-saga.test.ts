@@ -12,7 +12,9 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
 vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigate }));
-vi.mock('$lib/components/patterns/notify', () => ({ notify: { success: mocks.success, error: mocks.error } }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: mocks.success, error: mocks.error },
+}));
 
 import { setLastGitError, setLastGitOperation } from '../../git/git-slice';
 import {

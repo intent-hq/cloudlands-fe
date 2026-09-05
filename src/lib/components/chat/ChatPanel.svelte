@@ -6552,7 +6552,6 @@
                     <QueuedMessageList
                       bind:this={queuedMessageListRef}
                       messages={visibleQueuedMessages}
-                      heldForQuestions={queuedMessagesVisibility.heldForQuestions}
                       onedit={handleEditQueuedMessage}
                       onremove={handleRemoveQueuedMessage}
                       onsendnow={handleSendQueuedMessageNow}

@@ -100,9 +100,11 @@ function focusDictationComposer(agentId: string): void {
 const TRANSCRIPTION_TOAST_ID = 'hardware-console-voice-transcription';
 
 /** Lazily pull the toast lib so this service stays light. */
-let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null = null;
+let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null =
+  null;
 function getToast() {
-  if (!toastPromise) toastPromise = import('$lib/components/patterns/notify').then((module) => module.notify);
+  if (!toastPromise)
+    toastPromise = import('$lib/components/patterns/notify').then((module) => module.notify);
   return toastPromise;
 }
 

@@ -22,7 +22,9 @@ function canReuseGeneratedParaglide() {
   const messageFiles = readdirSync(messagesDir).filter((file) => file.endsWith('.json'));
   const outputs = [
     join(paraglideOutdir, 'messages/_index.js'),
-    ...messageFiles.map((file) => join(paraglideOutdir, 'messages', file.replace(/\.json$/, '.js'))),
+    ...messageFiles.map((file) =>
+      join(paraglideOutdir, 'messages', file.replace(/\.json$/, '.js')),
+    ),
   ];
   if (outputs.some((file) => !existsSync(file))) return false;
 

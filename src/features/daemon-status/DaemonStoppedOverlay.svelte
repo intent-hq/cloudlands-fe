@@ -59,7 +59,6 @@
   import type { ConnectionRecord } from '$shared/types/connections';
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
-  import { Button } from '$lib/components/ui/button';
   import { DAEMON_UPDATING_COUNTDOWN_MS } from './DaemonUpdatingOverlay.svelte';
   import { m } from '$shared/paraglide/messages.js';
 

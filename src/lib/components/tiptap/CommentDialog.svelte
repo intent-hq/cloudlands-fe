@@ -25,10 +25,34 @@
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const typeOptions = [
-    { value: 'comment', get label() { return m.tiptap_commentDialog_typeComment_label(); }, icon: faCommentDots },
-    { value: 'suggestion', get label() { return m.tiptap_commentDialog_typeSuggestion_label(); }, icon: faCodePullRequest },
-    { value: 'change-request', get label() { return m.tiptap_commentDialog_typeChangeRequest_label(); }, icon: faSquarePen },
-    { value: 'question', get label() { return m.tiptap_commentDialog_typeQuestion_label(); }, icon: faCircleQuestion },
+    {
+      value: 'comment',
+      get label() {
+        return m.tiptap_commentDialog_typeComment_label();
+      },
+      icon: faCommentDots,
+    },
+    {
+      value: 'suggestion',
+      get label() {
+        return m.tiptap_commentDialog_typeSuggestion_label();
+      },
+      icon: faCodePullRequest,
+    },
+    {
+      value: 'change-request',
+      get label() {
+        return m.tiptap_commentDialog_typeChangeRequest_label();
+      },
+      icon: faSquarePen,
+    },
+    {
+      value: 'question',
+      get label() {
+        return m.tiptap_commentDialog_typeQuestion_label();
+      },
+      icon: faCircleQuestion,
+    },
   ];
 
   function handleSubmit() {
@@ -127,7 +151,11 @@
   </div>
 
   <!-- Backdrop - click outside to close -->
-  <Button class="fixed inset-0 z-[14]" onclick={handleClose} aria-label={m.tiptap_commentDialog_close_ariaLabel()} type="button"
+  <Button
+    class="fixed inset-0 z-[14]"
+    onclick={handleClose}
+    aria-label={m.tiptap_commentDialog_close_ariaLabel()}
+    type="button"
   ></Button>
 </Portal>
 

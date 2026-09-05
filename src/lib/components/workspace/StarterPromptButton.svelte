@@ -1,9 +1,6 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
-  import {
-  starterPrompts,
-  type StarterPrompt,
-} from '$lib/data/starter-prompts';
+  import { starterPrompts, type StarterPrompt } from '$lib/data/starter-prompts';
   import { faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import TypewriterText from '$lib/components/ui/TypewriterText.svelte';

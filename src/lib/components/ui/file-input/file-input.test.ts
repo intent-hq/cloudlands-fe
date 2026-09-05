@@ -101,9 +101,7 @@ describe('FileInput', () => {
     });
     const surface = container.querySelector('[data-slot="file-input-surface"]');
     expect(surface?.className.split(/\s+/)).toContain('ring-danger/25');
-    expect(getByRole('button').className.split(/\s+/)).toContain(
-      'aria-invalid:border-danger',
-    );
+    expect(getByRole('button').className.split(/\s+/)).toContain('aria-invalid:border-danger');
     expect(getByRole('alert').className.split(/\s+/)).toContain('text-danger');
 
     const css = readFileSync(resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');

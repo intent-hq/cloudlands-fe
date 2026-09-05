@@ -42,9 +42,11 @@ const CODEX_WARNING_DURATION_MS = 10000;
 /** Lazily pull the toast lib so this device-service module stays light.
  *  The import promise is cached — concurrent events must not race two
  *  first-time dynamic imports of the same module. */
-let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null = null;
+let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null =
+  null;
 function getToast() {
-  if (!toastPromise) toastPromise = import('$lib/components/patterns/notify').then((module) => module.notify);
+  if (!toastPromise)
+    toastPromise = import('$lib/components/patterns/notify').then((module) => module.notify);
   return toastPromise;
 }
 

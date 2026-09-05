@@ -144,9 +144,9 @@
     if (!isHttpsImage) return;
     try {
       await writeTextToClipboard(imageUrl);
-      toast.success(m.ui_imageActionsMenu_linkCopied_label());
+      notify.success(m.ui_imageActionsMenu_linkCopied_label());
     } catch {
-      toast.error(m.ui_imageActionsMenu_copyFailed_error());
+      notify.error(m.ui_imageActionsMenu_copyFailed_error());
     }
   }
 

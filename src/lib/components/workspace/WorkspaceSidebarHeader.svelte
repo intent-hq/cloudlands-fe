@@ -480,8 +480,9 @@
                  transition-all duration-150 leading-normal line-clamp-3
                 focus-visible:outline focus-visible:outline-1
                  focus-visible:outline-ring focus-visible:outline-offset-[-1px]
-                 disabled:cursor-default disabled:opacity-50"
-          class:opacity-50={!workspace?.title}
+                 disabled:cursor-default disabled:opacity-50 {!workspace?.title
+            ? 'opacity-50'
+            : ''}"
           onclick={startEditingTitle}
           title={m.workspace_sidebarHeader_editTitle_tooltip()}
           disabled={!workspace}

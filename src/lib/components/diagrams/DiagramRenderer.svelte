@@ -508,7 +508,7 @@
             <path
               d="M 3 1 L 8 5 L 3 9"
               fill="none"
-              stroke="hsl(var(--destructive) / 0.8)"
+              stroke="hsl(var(--danger) / 0.8)"
               stroke-width="1.5"
               stroke-linecap="round"
               stroke-linejoin="round"
