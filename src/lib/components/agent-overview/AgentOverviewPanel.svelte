@@ -213,27 +213,32 @@
 
       <details class="relative">
         <summary
-          class="cursor-pointer list-none rounded-md px-2 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          class="cursor-pointer list-none rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           >{m.agentOverview_toolbar_legend_label()}</summary
         >
         <div
-          class="absolute left-0 top-full mt-2 grid min-w-56 grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-border bg-card/95 p-3 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground shadow-lg backdrop-blur"
+          class="absolute left-0 top-full mt-2 grid min-w-56 grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-border bg-card/95 p-3 text-[11px] font-medium text-muted-foreground shadow-lg backdrop-blur"
         >
           <span class="flex items-center gap-2"
-            ><i class="h-3 w-5 rounded border border-border bg-card"
-            ></i>{m.agentOverview_toolbar_tasks_label()}</span
+            ><i class="flex h-4 w-5 items-center gap-1" aria-hidden="true"
+              ><i class="size-2.5 rounded-full border border-muted-foreground"></i><i
+                class="h-px flex-1 bg-muted-foreground"
+              ></i></i
+            >{m.agentOverview_toolbar_tasks_label()}</span
           >
           <span class="flex items-center gap-2"
-            ><i class="h-3 w-5 rounded border border-border bg-card"
-            ></i>{m.agentOverview_toolbar_agents_label()}</span
+            ><i class="flex h-5 w-5 flex-col items-center gap-0.5" aria-hidden="true"
+              ><i class="size-3 rounded-[3px] bg-muted-foreground"></i><i class="h-px w-4 bg-border"
+              ></i></i
+            >{m.agentOverview_toolbar_agents_label()}</span
           >
           <span class="flex items-center gap-2"
-            ><i class="h-2.5 w-5 rounded-full border border-border bg-card"></i><span
+            ><i class="h-5 w-4 rounded-sm border border-muted-foreground"></i><span
               >{m.agentOverview_toolbar_files_label()} · {m.agentOverview_toolbar_notes_label()}</span
             ></span
           >
           <span class="flex items-center gap-2"
-            ><i class="h-2.5 w-5 rounded-full border border-dashed border-border bg-card"
+            ><i class="h-5 w-4 rounded-sm border border-dashed border-muted-foreground"
             ></i>{m.agentOverview_toolbar_externalFile_label()}</span
           >
           <span class="flex items-center gap-2"
@@ -253,7 +258,7 @@
     </div>
 
     <div
-      class="pointer-events-auto rounded-full border border-border bg-card/95 px-3 py-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground shadow-sm backdrop-blur"
+      class="pointer-events-auto rounded-full border border-border bg-card/95 px-3 py-1.5 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur"
       data-graph-controls
     >
       {displayedGraph.stats.agents.active === 1

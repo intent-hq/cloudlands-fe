@@ -93,7 +93,7 @@
 </script>
 
 <div
-  class="pointer-events-auto absolute inset-x-3 bottom-3 z-10 flex items-center gap-2 rounded-lg border border-border bg-card/95 px-2 py-1.5 shadow-sm backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+  class="pointer-events-auto absolute inset-x-3 bottom-3 z-10 flex items-center gap-2 rounded-lg border border-border bg-card/95 px-2 py-1.5 shadow-sm backdrop-blur focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-ring"
   role="toolbar"
   aria-label={m.agentOverview_timeScrubber_live_label()}
   tabindex="0"
@@ -112,10 +112,10 @@
   </button>
   <button
     type="button"
-    class="w-8 shrink-0 rounded px-1 py-0.5 font-mono text-[10px] tabular-nums text-subtle hover:bg-muted hover:text-foreground"
+    class="w-8 shrink-0 rounded px-1 py-0.5 text-[10px] tabular-nums text-subtle hover:bg-muted hover:text-foreground"
     onclick={cycleSpeed}>{speed}×</button
   >
-  <span class="hidden shrink-0 font-mono text-[9px] tabular-nums text-subtle sm:inline">
+  <span class="hidden shrink-0 text-[9px] tabular-nums text-subtle sm:inline">
     {formatTime(minTime)}
   </span>
   <div
@@ -146,20 +146,20 @@
     ></i>
     {#if hover}
       <span
-        class="pointer-events-none absolute bottom-full mb-1 -translate-x-1/2 rounded bg-foreground px-1.5 py-0.5 font-mono text-[9px] tabular-nums text-background"
+        class="pointer-events-none absolute bottom-full mb-1 -translate-x-1/2 rounded bg-foreground px-1.5 py-0.5 text-[9px] tabular-nums text-background"
         style:left={`${hover.left}%`}>{formatTime(hover.time)}</span
       >
     {/if}
   </div>
-  <span class="hidden shrink-0 font-mono text-[9px] tabular-nums text-subtle sm:inline">
+  <span class="hidden shrink-0 text-[9px] tabular-nums text-subtle sm:inline">
     {formatTime(maxTime)}
   </span>
   <button
     type="button"
-    class="shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider"
-    class:border-primary={isLive}
-    class:bg-primary={isLive}
-    class:text-primary-foreground={isLive}
+    class="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+    class:border-foreground={isLive}
+    class:bg-foreground={isLive}
+    class:text-background={isLive}
     class:border-border={!isLive}
     class:text-subtle={!isLive}
     onclick={onGoLive}>{m.agentOverview_timeScrubber_live_label()}</button

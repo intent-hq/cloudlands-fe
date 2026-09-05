@@ -2,7 +2,6 @@
   import Fa from 'svelte-fa';
   import { faArrowUpRightFromSquare, faFile } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
-  import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { FileNode, NoteNode } from '../types';
   import {
@@ -51,12 +50,6 @@
   }: Props = $props();
 
   const label = $derived(node.type === 'file' ? node.fileName : node.title);
-  const externalParent = $derived.by(() => {
-    if (node.type !== 'file' || !node.isExternal) return '';
-    const parent = node.path.slice(0, node.path.lastIndexOf('/'));
-    const segment = parent.split('/').filter(Boolean)[0];
-    return node.path.startsWith('/') ? `/${segment || ''}/…` : `${segment || '..'}/…`;
-  });
   const tooltip = $derived(node.type === 'file' && node.isExternal ? node.path : undefined);
   const ariaLabel = $derived(
     node.type === 'file' && node.isExternal
@@ -80,8 +73,7 @@
   in:activityNodeTransition={{ delay: enterDelay, playbackSpeed }}
   out:activityNodeTransition={{ exit: true, playbackSpeed }}
   type="button"
-  class="resource-node flex h-8 w-[180px] touch-none items-center gap-2 rounded-full border border-border bg-card/95 px-3 text-left shadow-xs backdrop-blur-sm transition-opacity hover:border-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-  class:border-dashed={node.type === 'file' && node.isExternal}
+  class="resource-node flex h-[88px] w-[72px] touch-none flex-col items-center gap-1.5 text-center text-muted-foreground transition-opacity hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-ring"
   data-graph-node
   data-node-id={node.id}
   data-external={node.type === 'file' && node.isExternal}
@@ -94,63 +86,35 @@
   style:--resource-cooldown={`${cooldownRemaining}ms`}
   {...events}
 >
-  <span class="shrink-0 text-subtle"
-    ><Fa icon={node.type === 'file' ? faFile : faNote} size="xs" /></span
+  <span
+    class="resource-card relative flex h-[58px] w-11 shrink-0 items-center justify-center rounded-md border border-border bg-background text-subtle"
+    class:border-dashed={node.type === 'file' && node.isExternal}
+    aria-hidden="true"
   >
-  {#if node.type === 'file' && node.isExternal}
-    <span class="shrink-0 text-subtle" aria-hidden="true"
-      ><Fa icon={faArrowUpRightFromSquare} size="xs" /></span
-    >
-  {/if}
-  <span class="min-w-0 flex flex-1 items-baseline gap-1 overflow-hidden font-mono text-[11px]">
-    <span class="truncate text-foreground">{label}</span>
-    {#if externalParent}
-      <span class="shrink-0 text-[9px] text-muted-foreground">{externalParent}</span>
+    <Fa icon={node.type === 'file' ? faFile : faNote} size="xs" />
+    {#if node.type === 'file' && node.isExternal}
+      <span class="absolute right-1 top-1"><Fa icon={faArrowUpRightFromSquare} size="xs" /></span>
     {/if}
   </span>
-  {#if access === 'write'}
-    <span
-      class="write-count shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground"
-      style:--target-additions={additions}
-      style:--target-deletions={deletions}
-      data-write-count
-    >
-      +{formatInteger(additions)} −{formatInteger(deletions)}
-    </span>
-  {/if}
+  <span class="line-clamp-2 w-full text-[11px] leading-[1.15]">{label}</span>
 </button>
 
 <style>
-  @property --display-additions {
-    syntax: '<integer>';
-    inherits: false;
-    initial-value: 0;
-  }
-  @property --display-deletions {
-    syntax: '<integer>';
-    inherits: false;
-    initial-value: 0;
-  }
   .resource-node {
     opacity: var(--resource-brightness);
     animation: resource-cooldown var(--resource-cooldown) linear forwards;
     transition:
       opacity 600ms linear,
-      border-color 180ms ease;
+      border-color 180ms ease,
+      color 180ms ease;
   }
-  .write-count {
-    --display-additions: var(--target-additions);
-    --display-deletions: var(--target-deletions);
-    color: transparent;
-    counter-reset: additions var(--display-additions) deletions var(--display-deletions);
-    position: relative;
+  .resource-node[data-active='true'] .resource-card,
+  .resource-node:hover .resource-card {
+    border-color: var(--color-muted-foreground);
   }
-  .write-count::after {
-    position: absolute;
-    inset: 0;
-    color: var(--color-muted-foreground);
-    content: '+' counter(additions) ' −' counter(deletions);
-    white-space: nowrap;
+  .resource-node[data-active='true'] {
+    color: var(--color-foreground);
+    font-weight: 500;
   }
   .resource-node[data-motion-enabled='false'] {
     animation-play-state: paused;

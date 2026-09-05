@@ -67,17 +67,17 @@ export const MAX_VISIBLE_RESOURCES_PER_AGENT = 6;
 
 /** Maximum rendered node dimensions used by layout collision and fit-to-view. */
 export const GRAPH_NODE_DIMENSIONS = {
-  agent: { width: 176, height: 68 },
-  task: { width: 168, height: 84 },
-  file: { width: 180, height: 32 },
-  note: { width: 180, height: 32 },
+  agent: { width: 56, height: 72 },
+  task: { width: 176, height: 48 },
+  file: { width: 72, height: 88 },
+  note: { width: 72, height: 88 },
 } as const;
 
 /** Clear space beyond node bounds for related-node orbits. */
 export const GRAPH_NODE_GAPS = {
-  collision: 10,
-  taskAgent: 24,
-  agentResource: 16,
+  collision: 12.5,
+  taskAgent: 30,
+  agentResource: 20,
 } as const;
 
 /** Shared zoom limits and per-side fit padding. */
