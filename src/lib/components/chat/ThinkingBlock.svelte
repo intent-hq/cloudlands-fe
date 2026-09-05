@@ -23,6 +23,7 @@
     workspaceId?: string;
     class?: string;
     adjacentOperationalRow?: boolean;
+    searchPath?: string;
   }
 
   let {
@@ -32,6 +33,7 @@
     workspaceId,
     class: className = '',
     adjacentOperationalRow = false,
+    searchPath,
   }: Props = $props();
 
   // Auto-expand while streaming, collapse when done
@@ -39,6 +41,7 @@
 
   // Track if user has manually toggled
   let userToggled = $state(false);
+  let searchPriorExpanded = $state<boolean | undefined>();
 
   $effect(() => {
     if (!userToggled) {
@@ -47,8 +50,21 @@
   });
 
   function toggle() {
+    searchPriorExpanded = undefined;
     userToggled = true;
     isExpanded = !isExpanded;
+  }
+
+  function expandForSearch() {
+    if (searchPriorExpanded !== undefined || isExpanded) return;
+    searchPriorExpanded = false;
+    isExpanded = true;
+  }
+
+  function restoreAfterSearch() {
+    if (searchPriorExpanded === undefined) return;
+    isExpanded = searchPriorExpanded;
+    searchPriorExpanded = undefined;
   }
 
   function handleDisclosureKeydown(event: KeyboardEvent) {
@@ -81,7 +97,11 @@
 {/snippet}
 
 {#snippet details()}
-  <div class="reasoning-expanded-body" data-reasoning-expanded-body>
+  <div
+    class="reasoning-expanded-body"
+    data-reasoning-expanded-body
+    data-chat-search-block-path={searchPath ? `${searchPath}:body` : undefined}
+  >
     <MarkdownViewer
       content={reasoningContent.body}
       {isStreaming}
@@ -110,6 +130,10 @@
   testId="reasoning-tool-call"
   disclosureTestId="reasoning-disclosure"
   summaryTestId="reasoning-summary"
+  searchDisclosureId={reasoningContent.body && searchPath ? `reasoning:${searchPath}` : undefined}
+  summarySearchPath={searchPath ? `${searchPath}:summary` : undefined}
+  onSearchExpand={expandForSearch}
+  onSearchRestore={restoreAfterSearch}
   class={className}
 />
 

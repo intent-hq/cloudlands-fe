@@ -1,7 +1,7 @@
 import type { DateInput } from '$lib/i18n/format';
 
 export const MESSAGE_ACTION_SURFACE_CLASS =
-  'message-actions flex max-w-full items-center gap-0.5 rounded-md border border-border bg-sidebar/95 p-0 text-foreground backdrop-blur-sm transition-opacity motion-reduce:transition-none';
+  'message-actions flex max-w-full items-center gap-0.5 rounded-md border border-border bg-sidebar/95 p-0 text-foreground backdrop-blur-sm';
 
 export const MESSAGE_ACTION_REVEAL_CLASS =
   'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100';

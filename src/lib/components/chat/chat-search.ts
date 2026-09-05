@@ -1,4 +1,4 @@
-import type { AgentMessage } from '$shared/types';
+import type { AgentMessage, ContentBlock } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 import { getContentBlockText } from '$shared/utils/content-block-helpers';
 import {
@@ -14,7 +14,12 @@ interface ChatSearchBlock {
   disclosurePath: string[];
   text: string;
 }
-import { normalizeResponseGroups, shouldRenderResponseGroupInline } from './response-group-blocks';
+import {
+  getResponseGroupCurrentChildIndex,
+  normalizeResponseGroups,
+  shouldRenderResponseGroupInline,
+} from './response-group-blocks';
+import { extractReasoningHeading, extractReasoningHistory } from './reasoning-heading';
 import {
   classifyToolResults,
   getStandaloneToolResultPresentation,
@@ -65,6 +70,18 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
     if (!cleaned.trim()) return;
     output.push({ messageId: message.id, turnKey, blockPath, disclosurePath, text: cleaned });
   };
+  const addReasoningChild = (child: ContentBlock, blockPath: string, disclosurePath: string[]) => {
+    if (child.type !== 'thinking') {
+      addText(getContentBlockText(child), blockPath, disclosurePath);
+      return;
+    }
+    extractReasoningHistory(getContentBlockText(child)).forEach((phase, phaseIndex) => {
+      const phasePath = `${blockPath}:p:${phaseIndex}`;
+      const phaseDisclosurePath = [...disclosurePath, `reasoning:${phasePath}`];
+      if (phase.title) addText(phase.title, phasePath, phaseDisclosurePath);
+      if (phase.body) addText(phase.body, phasePath, phaseDisclosurePath);
+    });
+  };
 
   grouped.forEach((block, blockIndex) => {
     const path = chatSearchBlockPath(blockIndex);
@@ -72,12 +89,26 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
       addText(block.text || block.content || '', path, []);
       return;
     }
+    if (block.type === 'thinking') {
+      const reasoning = extractReasoningHeading(getContentBlockText(block));
+      if (reasoning.heading) addText(reasoning.heading, `${path}:summary`, []);
+      if (reasoning.body) addText(reasoning.body, `${path}:body`, [`reasoning:${path}`]);
+      return;
+    }
     if (block.type === 'tool_result' && isStandaloneToolResult(toolResultClassification, block)) {
       addText(getStandaloneToolResultPresentation(block).searchableText, path, []);
       return;
     }
     if (block.type !== 'content_group') return;
+    if (
+      block.isReasoningPhase &&
+      block.name.trim() &&
+      block.name.trim().toLowerCase() !== 'reasoning'
+    ) {
+      addText(block.name, `${path}:summary`, []);
+    }
     if (block.isStreaming) {
+      const currentChildIndex = getResponseGroupCurrentChildIndex(block);
       block.children.forEach((child, childIndex) => {
         if (
           child.type === 'tool_result' &&
@@ -90,12 +121,16 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
           );
           return;
         }
-        if (child.type === 'text' || (child.type === 'thinking' && !block.isReasoningPhase)) {
-          addText(
-            child.text || child.content || '',
-            chatSearchBlockPath(blockIndex, childIndex),
-            [],
-          );
+        if (block.isReasoningPhase) {
+          if (childIndex === currentChildIndex && child.type !== 'tool_use') {
+            addReasoningChild(child, chatSearchBlockPath(blockIndex, childIndex), [
+              `group:${path}`,
+            ]);
+          }
+          return;
+        }
+        if (childIndex === currentChildIndex) {
+          addText(getContentBlockText(child), chatSearchBlockPath(blockIndex, childIndex), []);
         }
       });
       return;
@@ -115,8 +150,7 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
           }
           return;
         }
-        if (!rendersInline && block.name.trim().toLowerCase() === 'reasoning') return;
-        addText(getContentBlockText(child), childPath, disclosurePath);
+        addReasoningChild(child, childPath, disclosurePath);
       });
       return;
     }

@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { safeSlide } from '../animations';
+import { prefersReducedMotion, safeFade, safeSlide } from '../animations';
 
 function makeNode(computed: Partial<CSSStyleDeclaration>): Element {
   const node = document.createElement('div');
@@ -76,5 +76,16 @@ describe('safeSlide', () => {
     for (const t of [0, 0.25, 0.5, 0.75, 1]) {
       expect(config.css!(t, 1 - t)).not.toContain('NaN');
     }
+  });
+});
+
+describe('reduced motion', () => {
+  it('disables slide and fade transitions through the shared policy', () => {
+    vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: true } as MediaQueryList);
+    const node = makeNode({ height: '100px' });
+
+    expect(prefersReducedMotion()).toBe(true);
+    expect(safeSlide(node, { duration: 200 })).toEqual({ duration: 0 });
+    expect(safeFade(node, { duration: 200 })).toEqual({ duration: 0 });
   });
 });

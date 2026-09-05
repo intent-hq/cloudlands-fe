@@ -213,7 +213,7 @@ describe('editorial conversation presentation contract', () => {
 
     expect(staticContent).toContain('<div class="flex flex-col gap-0"');
     expect(streamingContent).toContain('class="relative flex flex-col gap-0"');
-    expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(2);
+    expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(3);
     expect(staticContent).toContain('{#if shouldRenderResponseGroupInline(group)}');
     expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
     expect(streamingContent).toContain(

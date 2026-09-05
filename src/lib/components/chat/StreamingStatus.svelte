@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { fade } from 'svelte/transition';
+  import { safeFade } from '$lib/utils/animations';
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
   import {
@@ -227,8 +227,8 @@
       'type-caption mt-2 flex items-center gap-2 rounded-md border border-warning/20 bg-warning/5 py-2 pl-2 pr-1',
       className,
     )}
-    in:fade={{ duration: 200, easing: cubicOut }}
-    out:fade={{ duration: 150, easing: cubicOut }}
+    in:safeFade={{ duration: 200, easing: cubicOut }}
+    out:safeFade={{ duration: 150, easing: cubicOut }}
   >
     <!-- Static live announcement: announced once when the stall appears. The
          visible label ticks every second and must stay out of the live region
@@ -280,8 +280,8 @@
           'rounded-md border border-warning/20 bg-warning/5 pl-2 pr-3',
         className,
       )}
-      in:fade={{ duration: 200, easing: cubicOut }}
-      out:fade={{ duration: 150, easing: cubicOut }}
+      in:safeFade={{ duration: 200, easing: cubicOut }}
+      out:safeFade={{ duration: 150, easing: cubicOut }}
     >
       <div class="flex items-start gap-2">
         <div class="flex min-w-0 flex-1 items-start gap-2">

@@ -4,9 +4,16 @@
 
 import { debugConfig } from '$lib/config/debug';
 import { cubicOut } from 'svelte/easing';
-import { slide } from 'svelte/transition';
+import { fade, slide } from 'svelte/transition';
 import type { TransitionConfig } from 'svelte/transition';
-import type { SlideParams, ScaleParams } from 'svelte/transition';
+import type { FadeParams, SlideParams, ScaleParams } from 'svelte/transition';
+
+export function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true
+  );
+}
 
 /**
  * Slide transition that degrades to a no-op when the node has no layout box.
@@ -19,12 +26,18 @@ import type { SlideParams, ScaleParams } from 'svelte/transition';
  * not visible, so there is nothing to animate.
  */
 export function safeSlide(node: Element, params: SlideParams = {}): TransitionConfig {
+  if (prefersReducedMotion()) return { duration: 0 };
   const dimension = (params.axis ?? 'y') === 'y' ? 'height' : 'width';
   const value = parseFloat(getComputedStyle(node)[dimension]);
   if (!Number.isFinite(value)) {
     return { duration: 0 };
   }
   return slide(node, params);
+}
+
+export function safeFade(node: Element, params: FadeParams = {}): TransitionConfig {
+  if (prefersReducedMotion()) return { duration: 0 };
+  return fade(node, params);
 }
 
 /**

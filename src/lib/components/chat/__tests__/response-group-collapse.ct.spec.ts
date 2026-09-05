@@ -195,18 +195,18 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(trigger).toHaveAttribute('aria-expanded', 'false');
       await expect(body).toHaveCount(0);
       await expect(preview).toHaveCount(1);
-      await expect(group.locator('[data-response-group-child]')).toHaveCount(2);
-      await expect(group.getByTestId(`response-group-focus-${position}`)).toHaveText(
-        `Focusable ${position} detail for initial chunk`,
+      await expect(group.getByTestId(`response-group-current-${position}`)).toHaveText(
+        'initial chunk',
       );
       const collapsedTree = await group.ariaSnapshot();
       expect(collapsedTree).toContain(`button "${position} group: earlier chunk"`);
-      expect(collapsedTree).toContain(`Focusable ${position} detail`);
+      expect(collapsedTree).toContain('- button "initial chunk"');
+      expect(collapsedTree).not.toContain(`Focusable ${position} detail`);
       await trigger.click();
       await expect(trigger).toHaveAttribute('aria-expanded', 'true');
       await expect(body).toHaveCount(1);
       await expect(preview).toHaveCount(0);
-      await expect(group.locator('[data-response-group-child]')).toHaveCount(2);
+      await expect(group.getByTestId(`response-group-current-${position}`)).toHaveCount(0);
       await expect(group.getByTestId(`response-group-focus-${position}`)).toHaveText(
         `Focusable ${position} detail for initial chunk`,
       );
@@ -227,8 +227,10 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(trigger).toHaveAttribute('aria-expanded', 'false');
       await expect(body).toHaveCount(0);
       await expect(preview).toHaveCount(1);
-      await expect(group.locator('[data-response-group-child]')).toHaveCount(2);
-      await expect(group.getByTestId(`response-group-focus-${position}`)).toHaveCount(1);
+      await expect(group.getByTestId(`response-group-current-${position}`)).toHaveText(
+        'initial chunk',
+      );
+      await expect(group.getByTestId(`response-group-focus-${position}`)).toHaveCount(0);
       await expect(groupContainer).toHaveCSS('margin-bottom', '0px');
     }
     await scroll.evaluate((element) => (element.scrollTop = element.scrollHeight));
@@ -249,9 +251,7 @@ for (const theme of ['light', 'dark'] as const) {
       const group = component.getByTestId(`response-group-${position}`);
       await expect(group.locator('[data-operational-expanded-content]')).toHaveCount(0);
       await expect(group.locator('[data-operational-preview-content]')).toHaveCount(1);
-      await expect(group.getByTestId(`response-group-focus-${position}`)).toHaveText(
-        `Focusable ${position} detail for new chunk`,
-      );
+      await expect(group.getByTestId(`response-group-current-${position}`)).toHaveText('new chunk');
     }
 
     const bottomGap = await scroll.evaluate(
@@ -267,7 +267,7 @@ for (const theme of ['light', 'dark'] as const) {
     await focusTarget.focus();
     await firstTrigger.evaluate((element) => element.click());
     await expect(firstTrigger).toHaveAttribute('aria-expanded', 'false');
-    await expect(focusTarget).toHaveCount(1);
+    await expect(focusTarget).toHaveCount(0);
     await expect(firstTrigger).toBeFocused();
     await firstTrigger.press('Space');
     await expect(firstTrigger).toHaveAttribute('aria-expanded', 'true');
