@@ -6,7 +6,7 @@ import { call, cancel, cancelled, fork, take, type SagaGenerator } from 'typed-r
 type ContextWorker<PrefixArgs extends unknown[], Message> = Saga<[...PrefixArgs, Message]>;
 type ContextSource<Message> = ActionPattern | TakeableChannel<Message>;
 type ContextDirective = string | { context: string; cancel: true };
-type VersionedContext = { context: string; generation: number };
+type VersionedContext = { context: string; generation: number; force?: boolean };
 
 type WorkerSlot = {
   task?: Task;
@@ -99,9 +99,9 @@ function* watchLatestByContext<Message, PrefixArgs extends unknown[]>(
 
   while (true) {
     const message = yield* take(source as TakeableChannel<Message>);
-    const { context, generation } = getContext(message);
+    const { context, generation, force } = getContext(message);
     const current = slots.get(context);
-    if (current && current.generation >= generation) continue;
+    if (current && !force && current.generation >= generation) continue;
     if (current?.task?.isRunning()) yield* cancel(current.task);
 
     const slot: VersionedWorkerSlot = { generation };
