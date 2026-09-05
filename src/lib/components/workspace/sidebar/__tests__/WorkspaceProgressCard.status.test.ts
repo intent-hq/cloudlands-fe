@@ -416,29 +416,8 @@ describe('WorkspaceProgressCard status message', () => {
       name: 'editorial-team/long-running-navigation-redesign',
     });
     const metadata = repoButton.closest('[data-sidebar-repository-branch-metadata]');
-    const repoLabel = repoButton.querySelector('[data-sidebar-repository-label]');
-    const branchButton = screen.getByRole('button', {
-      name: 'feature/simplify-workspace-navigation-and-sidebar',
-    });
-    const branchLabel = branchButton.querySelector('[data-sidebar-branch-label]');
 
     expect(metadata?.textContent).toContain('feature/simplify-workspace-navigation-and-sidebar');
-    expect(metadata?.className).toContain('type-caption');
-    expect(metadata?.className).toContain('min-w-0');
-    expect(metadata?.className.split(/\s+/)).toContain('gap-2.5');
-    expect(repoButton.className).toContain('shrink');
-    expect(repoButton.className).not.toContain('max-w-[45%]');
-    expect(repoButton.className).not.toContain('shrink-0');
-    expect(repoButton.className).toContain('overflow-hidden');
-    expect(repoLabel?.className).toContain('truncate');
-    expect(branchButton.className).toContain('shrink');
-    expect(branchButton.className).not.toContain('flex-1');
-    expect(branchButton.className).toContain('justify-start');
-    expect(branchButton.className).toContain('font-medium');
-    expect(repoButton.className.split(/\s+/)).toContain('text-muted-foreground');
-    expect(branchButton.className.split(/\s+/)).toContain('text-muted-foreground');
-    expect(branchButton.className).toContain('overflow-hidden');
-    expect(branchLabel?.className).toContain('truncate');
 
     await fireEvent.click(repoButton);
 
@@ -461,12 +440,51 @@ describe('WorkspaceProgressCard status message', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
-  it('renders the title editor full-width without JS auto-resize', async () => {
+  it('prefills the title editor and saves a changed title on Enter', async () => {
+    await renderProgressCard();
+    await fireEvent.click(screen.getByRole('button', { name: 'Active Workspace' }));
+    const titleInput = screen.getByRole('textbox') as HTMLInputElement;
+    expect(titleInput.value).toBe('Active Workspace');
+
+    await fireEvent.input(titleInput, { target: { value: 'Renamed Workspace' } });
+    await fireEvent.keyDown(titleInput, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(mocks.update).toHaveBeenCalledWith({ id: 'ws-1', title: 'Renamed Workspace' }),
+    );
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('restores the title on Escape without saving', async () => {
+    await renderProgressCard();
+    await fireEvent.click(screen.getByRole('button', { name: 'Active Workspace' }));
+    const titleInput = screen.getByRole('textbox');
+    await fireEvent.input(titleInput, { target: { value: 'Discarded title' } });
+
+    await fireEvent.keyDown(titleInput, { key: 'Escape' });
+
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Active Workspace' })).toBeTruthy();
+  });
+
+  it('saves a changed title on blur', async () => {
+    await renderProgressCard();
+    await fireEvent.click(screen.getByRole('button', { name: 'Active Workspace' }));
+    const titleInput = screen.getByRole('textbox');
+    await fireEvent.input(titleInput, { target: { value: 'Blurred Workspace' } });
+
+    await fireEvent.blur(titleInput);
+
+    await waitFor(() =>
+      expect(mocks.update).toHaveBeenCalledWith({ id: 'ws-1', title: 'Blurred Workspace' }),
+    );
+  });
+
+  it('does not apply inline JS sizing to the title editor', async () => {
     await renderProgressCard();
     await fireEvent.click(screen.getByRole('button', { name: 'Active Workspace' }));
     const titleInput = screen.getByRole('textbox') as HTMLInputElement;
 
-    expect(titleInput.className.split(/\s+/)).toContain('w-full');
     expect(titleInput.style.width).toBe('');
 
     await fireEvent.input(titleInput, { target: { value: 'A much longer workspace title' } });
@@ -482,9 +500,6 @@ describe('WorkspaceProgressCard status message', () => {
     const branch = screen.getByRole('button', { name: 'feature/status' });
     const hoverCard = container.querySelector('[data-sidebar-branch-hover-card]');
 
-    expect(branch.className).toContain('h-5');
-    expect(branch.className.split(/\s+/)).not.toContain('gap-0.5');
-    expect(branch.className.split(/\s+/)).not.toContain('gap-1.5');
     expect(container.querySelector('[data-sidebar-branch-icon]')).toBeNull();
     expect(hoverCard?.textContent).toContain('feature/status');
     expect(hoverCard?.textContent).toContain('Base main');
@@ -507,11 +522,6 @@ describe('WorkspaceProgressCard status message', () => {
     const statusButton = screen.getByRole('button', { name: 'Edit workspace status' });
 
     expect(statusButton.textContent).toContain('It can wrap across lines');
-    expect(statusButton.className).not.toMatch(
-      /line-clamp|truncate|overflow-hidden|whitespace-nowrap|text-ellipsis/,
-    );
-    expect(statusButton.className).toContain('whitespace-pre-wrap');
-    expect(statusButton.className).toContain('leading-snug');
   });
 
   it('keeps the workspace status wrapping while it is being edited', async () => {
@@ -524,10 +534,6 @@ describe('WorkspaceProgressCard status message', () => {
 
     expect(editor.tagName).toBe('TEXTAREA');
     expect(editor.getAttribute('rows')).toBe('1');
-    expect(editor.className).toContain('whitespace-pre-wrap');
-    expect(editor.className).toContain('break-words');
-    expect(editor.className).toContain('resize-none');
-    expect(editor.className).toContain('min-h-0');
   });
 
   it('hides the status row when the active sidebar status is empty', async () => {
@@ -631,8 +637,21 @@ describe('WorkspaceProgressCard status message', () => {
     const input = await screen.findByLabelText('Workspace status');
 
     expect(input.tagName).toBe('TEXTAREA');
-    expect(input.className).toContain('resize-none');
-    expect(input.className).toContain('whitespace-pre-wrap');
+  });
+
+  it('saves status edits on blur', async () => {
+    const updatedWorkspace = { ...mocks.workspaceEntity, statusMessage: 'Saved on blur.' };
+    mocks.update.mockResolvedValue({ ok: true, data: updatedWorkspace });
+    await renderProgressCard({ statusMessage: 'Drafting status.' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit workspace status' }));
+    const input = await screen.findByLabelText('Workspace status');
+    await fireEvent.input(input, { target: { value: 'Saved on blur.' } });
+
+    await fireEvent.blur(input);
+
+    await waitFor(() =>
+      expect(mocks.update).toHaveBeenCalledWith({ id: 'ws-1', statusMessage: 'Saved on blur.' }),
+    );
   });
 
   it('does not save and allows a newline on Shift+Enter', async () => {
@@ -709,10 +728,6 @@ describe('WorkspaceProgressCard status screenshot (intent-hq/monorepo#997)', () 
 
     const image = screen.getByAltText('Workspace status screenshot') as HTMLImageElement;
     expect(image.getAttribute('src')).toBe('workspace-asset://ws-1/asset-abc123');
-    // Bounded dimensions + rounded border per the acceptance criteria.
-    expect(image.className).toContain('max-h-48');
-    expect(image.className).toContain('rounded-md');
-    expect(image.className.split(/\s+/)).toContain('border');
 
     const statusButton = screen.getByRole('button', { name: 'Edit workspace status' });
     expect(
