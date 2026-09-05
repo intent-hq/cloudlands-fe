@@ -1,6 +1,7 @@
 import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { store } from '../../store';
 import type { OpenPrWarningItem } from './workspace-operations-types';
+import { selectWorkspaceById } from '../workspace/workspace-selectors';
 
 export const selectShowDeleteWarning = store.createSelector((state) => {
   return state.workspaceOperations.showDeleteWarning;
@@ -54,16 +55,39 @@ export const selectLocalChangesForArchive = store.createSelector((state) => {
   return state.workspaceOperations.localChangesForArchive;
 });
 
-export const selectPendingBulkRepoKey = store.createSelector((state) => {
-  return state.workspaceOperations.pendingBulkRepoKey;
+export const selectShowBulkArchiveConfirm = store.createSelector((state) => {
+  return state.workspaceOperations.showBulkArchiveConfirm;
 });
 
-export const selectBulkArchiveComputeToken = store.createSelector((state) => {
-  return state.workspaceOperations.bulkArchiveComputeToken;
+export const selectShowBulkDeleteConfirm = store.createSelector((state) => {
+  return state.workspaceOperations.showBulkDeleteConfirm;
 });
 
-export const selectPendingBulkDeleteRepoKey = store.createSelector((state) => {
-  return state.workspaceOperations.pendingBulkDeleteRepoKey;
+export const selectPendingBulkWorkspaceIds = store.createSelector((state) => {
+  return state.workspaceOperations.pendingBulkWorkspaceIds;
+});
+
+export const selectPendingBulkWorkspaces = store.createSelector((state) => {
+  return state.workspaceOperations.pendingBulkWorkspaceIds.flatMap((id) => {
+    const workspace = selectWorkspaceById.select(state, id);
+    return workspace ? [workspace] : [];
+  });
+});
+
+export const selectPendingBulkGroupLabel = store.createSelector((state) => {
+  return state.workspaceOperations.pendingBulkGroupLabel;
+});
+
+export const selectBulkActiveAgentCount = store.createSelector((state) => {
+  return state.workspaceOperations.bulkActiveAgentCount;
+});
+
+export const selectBulkActiveHookCount = store.createSelector((state) => {
+  return state.workspaceOperations.bulkActiveHookCount;
+});
+
+export const selectBulkComputeToken = store.createSelector((state) => {
+  return state.workspaceOperations.bulkComputeToken;
 });
 
 export const selectPendingRemoveRepoPath = store.createSelector((state) => {
