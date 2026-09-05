@@ -14,10 +14,11 @@ import {
 
 type VerdictMap = Record<string, ProviderAuthVerdict>;
 type Pending = { generation: number; promise: Promise<VerdictMap> };
+type Trailing = { force: boolean; promise: Promise<VerdictMap> };
 
 const cache = new Map<string, VerdictMap>();
 const pending = new Map<string, Pending>();
-const trailing = new Map<string, Promise<VerdictMap>>();
+const trailing = new Map<string, Trailing>();
 let generation = 0;
 
 const keyFor = (options: ProviderAuthStatusParams): string => options.providerId ?? '*';
@@ -58,14 +59,21 @@ export function getProviderAuthVerdicts(
   if (!options.force && active?.generation === generation) return active.promise;
   if (active) {
     const queued = trailing.get(key);
-    if (queued) return queued;
+    if (queued) {
+      queued.force ||= options.force === true;
+      return queued.promise;
+    }
+    let queuedState!: Trailing;
     const run = active.promise
       .catch(() => ({}))
-      .then(() => getProviderAuthVerdicts({ providerId: options.providerId }))
+      .then(() =>
+        getProviderAuthVerdicts({ providerId: options.providerId, force: queuedState.force }),
+      )
       .finally(() => {
-        if (trailing.get(key) === run) trailing.delete(key);
+        if (trailing.get(key) === queuedState) trailing.delete(key);
       });
-    trailing.set(key, run);
+    queuedState = { force: options.force === true, promise: run };
+    trailing.set(key, queuedState);
     return run;
   }
 

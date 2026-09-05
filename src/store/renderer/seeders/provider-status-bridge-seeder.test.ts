@@ -178,6 +178,27 @@ describe('provider-status-bridge-seeder', () => {
     expect(mockedRequest).toHaveBeenLastCalledWith('host.providerAuthStatus', {});
   });
 
+  it('preserves force on a refresh queued behind a passive auth read', async () => {
+    let resolveCached!: (value: unknown) => void;
+    mockedRequest
+      .mockReturnValueOnce(new Promise((resolve) => (resolveCached = resolve)))
+      .mockResolvedValueOnce(authOne('codex', true));
+
+    const cachedRead = getProviderAuthVerdicts({ providerId: 'codex' });
+    const freshRead = getProviderAuthVerdicts({ providerId: 'codex', force: true });
+    resolveCached(authOne('codex', false));
+
+    await expect(cachedRead).resolves.toEqual({ codex: { authenticated: false } });
+    await expect(freshRead).resolves.toEqual({ codex: { authenticated: true } });
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'host.providerAuthStatus', {
+      providerId: 'codex',
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'host.providerAuthStatus', {
+      providerId: 'codex',
+      force: true,
+    });
+  });
+
   describe('providers:get-availability → host.checkAuggie + host.toolAvailability + host.providerAuthStatus', () => {
     it.each([PROVIDERS_CHANNELS.GET_AVAILABILITY, PROVIDERS_CHANNELS.CHECK_SINGLE])(
       'preserves an Antigravity discovery failure through %s',

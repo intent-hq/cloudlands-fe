@@ -23,9 +23,10 @@ import {
 const logger = new Logger('ProviderAuthStatus');
 type VerdictMap = Record<string, ProviderAuthVerdict>;
 type Pending = { generation: number; promise: Promise<VerdictMap> };
+type Trailing = { force: boolean; promise: Promise<VerdictMap> };
 const cache = new Map<string, VerdictMap>();
 const pending = new Map<string, Pending>();
-const trailing = new Map<string, Promise<VerdictMap>>();
+const trailing = new Map<string, Trailing>();
 let generation = 0;
 let lifecycleInstalled = false;
 
@@ -71,13 +72,23 @@ export async function getProviderAuthVerdicts(
   if (!params.force && active?.generation === generation) return active.promise;
   if (active) {
     const queued = trailing.get(key);
-    if (queued) return queued;
+    if (queued) {
+      queued.force ||= params.force === true;
+      return queued.promise;
+    }
+    let queuedState!: Trailing;
     const next = active.promise
-      .then(() => getProviderAuthVerdicts({ providerId: params.providerId }, client))
+      .then(() =>
+        getProviderAuthVerdicts(
+          { providerId: params.providerId, force: queuedState.force },
+          client,
+        ),
+      )
       .finally(() => {
-        if (trailing.get(key) === next) trailing.delete(key);
+        if (trailing.get(key) === queuedState) trailing.delete(key);
       });
-    trailing.set(key, next);
+    queuedState = { force: params.force === true, promise: next };
+    trailing.set(key, queuedState);
     return next;
   }
   const requestGeneration = generation;

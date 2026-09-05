@@ -79,6 +79,27 @@ describe('main provider auth status cache', () => {
     expect(lifecycle.request).toHaveBeenCalledTimes(2);
   });
 
+  it('preserves force on a refresh queued behind a passive auth read', async () => {
+    let resolveCached!: (value: unknown) => void;
+    lifecycle.request
+      .mockReturnValueOnce(new Promise((resolve) => (resolveCached = resolve)))
+      .mockResolvedValueOnce({ providers: [{ id: 'codex', authenticated: true }] });
+
+    const cachedRead = getProviderAuthVerdicts({ providerId: 'codex' });
+    const freshRead = getProviderAuthVerdicts({ providerId: 'codex', force: true });
+    resolveCached({ providers: [{ id: 'codex', authenticated: false }] });
+
+    await expect(cachedRead).resolves.toEqual({ codex: { authenticated: false } });
+    await expect(freshRead).resolves.toEqual({ codex: { authenticated: true } });
+    expect(lifecycle.request).toHaveBeenNthCalledWith(1, 'host.providerAuthStatus', {
+      providerId: 'codex',
+    });
+    expect(lifecycle.request).toHaveBeenNthCalledWith(2, 'host.providerAuthStatus', {
+      providerId: 'codex',
+      force: true,
+    });
+  });
+
   it('does not cache transport failures as unknown verdicts', async () => {
     lifecycle.request
       .mockRejectedValueOnce(new Error('offline'))
