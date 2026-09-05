@@ -1106,6 +1106,7 @@
   "workspace_compactInitializer_attachmentPlacementFailed_error": "L'espace de travail a été créé, mais certaines pièces jointes ont échoué — réessayez ou supprimez-les pour envoyer votre message",
   "workspace_compactInitializer_checkingDependencies_label": "Vérification des dépendances...",
   "workspace_compactInitializer_createFailed_error": "Impossible de créer l'espace de travail",
+  "workspace_compactInitializer_specialistUnavailable_error": "Ce spécialiste n'existe plus. La liste des spécialistes a été actualisée ; réessayez.",
   "workspace_compactInitializer_firstMessageSendFailed_error": "L'espace de travail a été créé, mais l'envoi de votre message a échoué — appuyez à nouveau sur Créer pour réessayer",
   "workspace_compactInitializer_firstMessageSendFailedDetail_error": "L'espace de travail a été créé, mais l'envoi de votre message a échoué : {detail} — appuyez à nouveau sur Créer pour réessayer",
   "workspace_compactInitializer_createWorkspace_label": "Créer un espace de travail",

@@ -1106,6 +1106,7 @@
   "workspace_compactInitializer_attachmentPlacementFailed_error": "ワークスペースは作成されましたが、一部の添付に失敗しました — 再試行または削除してからメッセージを送信してください",
   "workspace_compactInitializer_checkingDependencies_label": "依存関係を確認しています...",
   "workspace_compactInitializer_createFailed_error": "ワークスペースを作成できませんでした",
+  "workspace_compactInitializer_specialistUnavailable_error": "そのスペシャリストは存在しません。スペシャリスト一覧を更新しました。もう一度お試しください。",
   "workspace_compactInitializer_firstMessageSendFailed_error": "ワークスペースは作成されましたが、メッセージの送信に失敗しました — もう一度作成を押して再試行してください",
   "workspace_compactInitializer_firstMessageSendFailedDetail_error": "ワークスペースは作成されましたが、メッセージの送信に失敗しました: {detail} — もう一度作成を押して再試行してください",
   "workspace_compactInitializer_createWorkspace_label": "ワークスペースを作成",

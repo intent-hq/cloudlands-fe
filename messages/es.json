@@ -1106,6 +1106,7 @@
   "workspace_compactInitializer_attachmentPlacementFailed_error": "El espacio de trabajo se creó, pero algunos adjuntos fallaron — reintenta o elimínalos para enviar tu mensaje",
   "workspace_compactInitializer_checkingDependencies_label": "Comprobando dependencias...",
   "workspace_compactInitializer_createFailed_error": "No se pudo crear el espacio de trabajo",
+  "workspace_compactInitializer_specialistUnavailable_error": "Ese especialista ya no existe. La lista de especialistas se ha actualizado; inténtalo de nuevo.",
   "workspace_compactInitializer_firstMessageSendFailed_error": "El espacio de trabajo se creó, pero el envío de tu mensaje falló — pulsa Crear de nuevo para reintentar",
   "workspace_compactInitializer_firstMessageSendFailedDetail_error": "El espacio de trabajo se creó, pero el envío de tu mensaje falló: {detail} — pulsa Crear de nuevo para reintentar",
   "workspace_compactInitializer_createWorkspace_label": "Crear espacio de trabajo",
