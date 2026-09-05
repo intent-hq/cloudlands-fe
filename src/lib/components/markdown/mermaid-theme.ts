@@ -79,6 +79,8 @@ export function createMermaidConfig(styles: TokenStyle, htmlLabels = true): Merm
       boxTextMargin: 6,
       noteMargin: 8,
       messageMargin: 24,
+      width: 140,
+      wrapPadding: 6,
     },
     class: { defaultRenderer: 'dagre-d3', htmlLabels: false },
     state: {

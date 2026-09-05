@@ -20,6 +20,10 @@ describe('diagram workbench fixtures', () => {
       'mermaid-nested-groups',
       'mermaid-flow',
       'mermaid-sequence',
+      'mermaid-sequence-simple',
+      'mermaid-sequence-alt',
+      'mermaid-sequence-loop',
+      'mermaid-sequence-note',
       'mermaid-state',
       'mermaid-class',
       'mermaid-entity-relationship',
@@ -55,6 +59,10 @@ describe('diagram workbench fixtures', () => {
         'mermaid-topology-stress',
         'mermaid-nested-groups',
         'mermaid-sequence',
+        'mermaid-sequence-simple',
+        'mermaid-sequence-alt',
+        'mermaid-sequence-loop',
+        'mermaid-sequence-note',
         'mermaid-state',
         'mermaid-class',
         'mermaid-entity-relationship',
@@ -79,8 +87,8 @@ describe('diagram workbench fixtures', () => {
       'interaction',
       'status',
     ]);
-    expect(groupedCases).toHaveLength(32);
-    expect(new Set(groupedCases).size).toBe(32);
+    expect(groupedCases).toHaveLength(36);
+    expect(new Set(groupedCases).size).toBe(36);
     expect(groupedCases.sort()).toEqual(Object.keys(DIAGRAM_WORKBENCH_CASES).sort());
   });
 

@@ -57,7 +57,12 @@ describe('Mermaid design-system theme', () => {
       rankSpacing: 40,
       wrappingWidth: 200,
     });
-    expect(config.sequence).toMatchObject({ actorMargin: 40, messageMargin: 24 });
+    expect(config.sequence).toMatchObject({
+      actorMargin: 40,
+      messageMargin: 24,
+      width: 140,
+      wrapPadding: 6,
+    });
     expect(theme).toMatchObject({
       background: 'hsl(0 0% 100%)',
       primaryColor: 'hsl(0 0% 96%)',

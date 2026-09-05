@@ -473,6 +473,34 @@ export const MERMAID_WORKBENCH_CASES = Object.freeze({
     source:
       'sequenceDiagram\n  actor User\n  participant UI as Workbench\n  participant Preview as Lazy preview\n  User->>UI: Select named state\n  UI->>Preview: Import fixture\n  alt valid source\n    Preview-->>UI: Stable diagram\n  else invalid source\n    Preview-->>UI: Error with source\n  end\n  Note over UI,Preview: Browser-only boundary',
   },
+  'mermaid-sequence-simple': {
+    kind: 'mermaid',
+    title: 'Simple sequence exchange',
+    description: 'A focused request and response with a wrapping message label.',
+    source:
+      'sequenceDiagram\n  participant Client\n  participant API\n  Client->>API: Submit account recovery request\n  API-->>Client: Recovery request accepted',
+  },
+  'mermaid-sequence-alt': {
+    kind: 'mermaid',
+    title: 'Sequence alternative branches',
+    description: 'Focused success and failure branches with preserved message order.',
+    source:
+      'sequenceDiagram\n  participant Client\n  participant Service\n  Client->>Service: Validate request\n  alt request valid\n    Service-->>Client: Accepted response\n  else validation failed\n    Service-->>Client: Explain required changes\n  end',
+  },
+  'mermaid-sequence-loop': {
+    kind: 'mermaid',
+    title: 'Sequence loop',
+    description: 'A focused repeated exchange inside one quiet loop frame.',
+    source:
+      'sequenceDiagram\n  actor User\n  participant Workbench\n  loop for each selected diagram\n    User->>Workbench: Review rendered result\n    Workbench-->>User: Show next diagram\n  end',
+  },
+  'mermaid-sequence-note': {
+    kind: 'mermaid',
+    title: 'Sequence participant note',
+    description: 'A focused compact note spanning the participants it describes.',
+    source:
+      'sequenceDiagram\n  participant Editor\n  participant Renderer\n  Note over Editor,Renderer: Shared browser rendering boundary\n  Editor->>Renderer: Render source',
+  },
   'mermaid-state': {
     kind: 'mermaid',
     title: 'Agent chat states',
@@ -650,6 +678,10 @@ export const DIAGRAM_WORKBENCH_CASE_GROUPS = Object.freeze([
     caseIds: [
       'mermaid-flow',
       'mermaid-sequence',
+      'mermaid-sequence-simple',
+      'mermaid-sequence-alt',
+      'mermaid-sequence-loop',
+      'mermaid-sequence-note',
       'mermaid-state',
       'mermaid-class',
       'mermaid-entity-relationship',

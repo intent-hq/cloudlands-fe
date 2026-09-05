@@ -447,6 +447,204 @@ ${verticalSource}`;
     }
   }
 
+  function sequenceBranchRole(text: string): 'success' | 'failure' | 'neutral' {
+    const normalized = text.toLowerCase();
+    if (/invalid|fail|error|denied|reject|unavailable/.test(normalized)) return 'failure';
+    if (/valid|success|accepted|ready|available|complete/.test(normalized)) return 'success';
+    return 'neutral';
+  }
+
+  function wrapSequenceCondition(text: string, maxWidth: number, element: SVGTextElement) {
+    const words = text
+      .replace(/^\[|\]$/g, '')
+      .trim()
+      .split(/\s+/);
+    const context = document.createElement('canvas').getContext('2d');
+    if (!context || words.length === 0) return [text];
+    const style = getComputedStyle(element);
+    context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const lines: string[] = [];
+    for (const word of words) {
+      const candidate = lines.length ? `${lines.at(-1)} ${word}` : word;
+      if (lines.length && context.measureText(candidate).width > maxWidth) lines.push(word);
+      else if (lines.length) lines[lines.length - 1] = candidate;
+      else lines.push(word);
+    }
+    return lines;
+  }
+
+  function polishSequenceDiagram(svg: SVGSVGElement) {
+    if (svg.getAttribute('aria-roledescription') !== 'sequence') return;
+
+    const actorCenters = [...svg.querySelectorAll<SVGLineElement>('.actor-line')].map((line) =>
+      Number(line.getAttribute('x1')),
+    );
+    for (const message of svg.querySelectorAll<SVGLineElement>(
+      ':scope > line.messageLine0, :scope > line.messageLine1',
+    )) {
+      const x1 = Number(message.getAttribute('x1'));
+      const x2 = Number(message.getAttribute('x2'));
+      const y1 = Number(message.getAttribute('y1'));
+      const y2 = Number(message.getAttribute('y2'));
+      const direction = Math.sign(x2 - x1);
+      if (![x1, x2, y1, y2].every(Number.isFinite) || y1 !== y2 || direction === 0) continue;
+      const target = actorCenters.reduce((nearest, center) =>
+        Math.abs(center - x2) < Math.abs(nearest - x2) ? center : nearest,
+      );
+      if (Math.abs(target - x2) > 12) continue;
+      message.setAttribute('x2', String(target - direction * 5));
+    }
+
+    for (const group of svg.querySelectorAll<SVGGElement>(':scope > g')) {
+      const frameLines = [...group.querySelectorAll<SVGLineElement>(':scope > line.loopLine')];
+      const constructLabel = group.querySelector<SVGTextElement>(':scope > text.labelText');
+      if (frameLines.length < 4 || !constructLabel) continue;
+
+      const kind =
+        constructLabel.textContent
+          ?.trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '-') || 'group';
+      group.classList.add('sequence-construct', `sequence-construct-${kind}`);
+      constructLabel.classList.add('sequence-construct-label-text');
+      group
+        .querySelector<SVGGraphicsElement>(':scope > .labelBox')
+        ?.classList.add('sequence-construct-label');
+
+      const xValues = frameLines.flatMap((line) => [
+        Number(line.getAttribute('x1')),
+        Number(line.getAttribute('x2')),
+      ]);
+      const yValues = frameLines.flatMap((line) => [
+        Number(line.getAttribute('y1')),
+        Number(line.getAttribute('y2')),
+      ]);
+      const left = Math.min(...xValues);
+      const right = Math.max(...xValues);
+      const top = Math.min(...yValues);
+      const bottom = Math.max(...yValues);
+      if (![left, right, top, bottom].every(Number.isFinite)) continue;
+
+      const dividers: number[] = [];
+      for (const line of frameLines) {
+        const x1 = Number(line.getAttribute('x1'));
+        const x2 = Number(line.getAttribute('x2'));
+        const y1 = Number(line.getAttribute('y1'));
+        const y2 = Number(line.getAttribute('y2'));
+        const isOuter =
+          (x1 === x2 && (x1 === left || x1 === right)) ||
+          (y1 === y2 && (y1 === top || y1 === bottom));
+        line.classList.add(isOuter ? 'sequence-frame-line' : 'sequence-branch-divider');
+        if (!isOuter && y1 === y2) dividers.push(y1);
+      }
+
+      const conditions = [
+        ...group.querySelectorAll<SVGTextElement>(
+          ':scope > text.loopText, :scope > text.sectionTitle',
+        ),
+      ];
+      const labelBounds = group
+        .querySelector<SVGGraphicsElement>(':scope > .sequence-construct-label')
+        ?.getBBox();
+      const conditionX = Math.max(
+        left + 12,
+        (labelBounds?.x ?? left) + (labelBounds?.width ?? 42) + 12,
+      );
+      const sectionEdges = [top, ...dividers.sort((a, b) => a - b), bottom];
+      const sections = sectionEdges.slice(0, -1).map(() => [] as SVGTextElement[]);
+
+      conditions.forEach((condition) => {
+        condition.classList.add('sequence-branch-condition');
+        condition.setAttribute('x', String(conditionX));
+        condition.setAttribute('text-anchor', 'start');
+        const y = Number(condition.getAttribute('y'));
+        const sectionIndex = Math.max(
+          0,
+          Math.min(
+            sections.length - 1,
+            sectionEdges.findIndex((edge, index) => index > 0 && y < edge) - 1,
+          ),
+        );
+        sections[sectionIndex].push(condition);
+      });
+
+      sections.forEach((sectionConditions, index) => {
+        if (sectionConditions.length === 0) return;
+        const conditionText = sectionConditions
+          .map((condition) => condition.textContent ?? '')
+          .join(' ')
+          .replace(/-\s+/g, '')
+          .replace(/\[\s+/g, '[')
+          .replace(/\s+\]/g, ']')
+          .replace(/\]\s+\[/g, ' ');
+        const role = sequenceBranchRole(conditionText);
+        const condition = sectionConditions[0];
+        for (const line of sectionConditions) {
+          if (line.previousElementSibling?.classList.contains('edge-label-knockout')) {
+            line.previousElementSibling.remove();
+          }
+          if (line !== condition) line.remove();
+        }
+        condition.replaceChildren();
+        const conditionLines = wrapSequenceCondition(
+          conditionText,
+          Math.max(48, right - conditionX - 12),
+          condition,
+        );
+        condition.setAttribute('aria-label', conditionText.replace(/^\[|\]$/g, '').trim());
+        condition.dataset.sequenceBranch = role;
+        for (const [lineIndex, lineText] of conditionLines.entries()) {
+          const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+          tspan.setAttribute('x', String(conditionX));
+          tspan.setAttribute('dy', lineIndex === 0 ? '0' : '1.15em');
+          tspan.textContent = lineText;
+          condition.append(tspan);
+        }
+        insertLabelKnockout(group, condition, condition.getBBox());
+        if (role === 'neutral') return;
+        const sectionTop = sectionEdges[index];
+        const sectionBottom = sectionEdges[index + 1];
+        const surface = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        surface.classList.add('sequence-branch-surface', `sequence-branch-${role}`);
+        surface.setAttribute('x', String(left + 4));
+        surface.setAttribute('y', String(sectionTop + 4));
+        surface.setAttribute('width', String(Math.max(0, right - left - 8)));
+        surface.setAttribute('height', String(Math.max(0, sectionBottom - sectionTop - 8)));
+        surface.setAttribute('rx', '6');
+        surface.dataset.sequenceBranch = role;
+
+        const cue = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        cue.classList.add('sequence-branch-cue', `sequence-branch-${role}`);
+        cue.setAttribute('x1', String(left + 8));
+        cue.setAttribute('x2', String(left + 8));
+        cue.setAttribute('y1', String(sectionTop + 12));
+        cue.setAttribute('y2', String(sectionBottom - 10));
+        cue.dataset.sequenceBranch = role;
+        group.insertBefore(cue, group.firstElementChild);
+        group.insertBefore(surface, group.firstElementChild);
+      });
+    }
+
+    for (const group of svg.querySelectorAll<SVGGElement>(':scope > g')) {
+      const note = group.querySelector<SVGRectElement>(':scope > rect.note');
+      const text = group.querySelector<SVGTextElement>(':scope > text.noteText');
+      if (!note || !text) continue;
+      group.classList.add('sequence-note');
+      text.classList.add('sequence-note-text');
+      const bounds = text.getBBox();
+      const width = Math.min(
+        Number(note.getAttribute('width')) || bounds.width + 20,
+        bounds.width + 20,
+      );
+      const height = Math.max(28, bounds.height + 12);
+      note.setAttribute('x', String(bounds.x + bounds.width / 2 - width / 2));
+      note.setAttribute('y', String(bounds.y - 6));
+      note.setAttribute('width', String(width));
+      note.setAttribute('height', String(height));
+      note.setAttribute('rx', '6');
+    }
+  }
+
   function arrangeClassTextGroup(element: SVGGElement | null): ClassTextGroupLayout | null {
     if (!element) return null;
     const labels = Array.from(element.children).filter(
@@ -762,6 +960,7 @@ ${verticalSource}`;
     replaceSequenceActorFigures(svg);
     alignMermaidOpenArrowheads(svg);
     if (svg.getAttribute('aria-roledescription') === 'sequence') {
+      polishSequenceDiagram(svg);
       addMermaidLabelKnockouts(svg);
       setReadableMermaidWidth(svg, svg.viewBox.baseVal.width);
       svg.dataset.layoutSettled = 'true';
@@ -1405,7 +1604,114 @@ ${verticalSource}`;
   .mermaid-presentation :global(.actor-line) {
     stroke-width: 1px !important;
     stroke-dasharray: 3 4;
-    opacity: 0.62;
+    opacity: 0.34;
+  }
+
+  .mermaid-presentation
+    :global(svg[aria-roledescription='sequence'] :is(.messageLine0, .messageLine1)) {
+    stroke: var(--diagram-connector-hover) !important;
+    stroke-width: 1.25px !important;
+    opacity: 1;
+  }
+
+  .mermaid-presentation
+    :global(svg[aria-roledescription='sequence'] marker[data-diagram-chevron='true'] path) {
+    stroke: var(--diagram-connector-hover) !important;
+  }
+
+  .mermaid-presentation
+    :global(svg[aria-roledescription='sequence'] :is(.actor.actor-box, .actor.actor-man)) {
+    fill: var(--diagram-node-title) !important;
+    font-weight: 500 !important;
+  }
+
+  .mermaid-presentation
+    :global(svg[aria-roledescription='sequence'] :is(.messageText, .sequence-branch-condition)) {
+    fill: var(--diagram-metadata) !important;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .messageText) {
+    font-weight: 500 !important;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-frame-line) {
+    stroke: var(--diagram-group-outline) !important;
+    stroke-width: var(--line-hairline) !important;
+    stroke-dasharray: none !important;
+    opacity: 0.52;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-branch-divider) {
+    stroke: var(--diagram-group-outline) !important;
+    stroke-width: var(--line-hairline) !important;
+    stroke-dasharray: none !important;
+    opacity: 0.72;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-construct-label) {
+    fill: color-mix(in srgb, hsl(var(--warning)) 22%, var(--diagram-canvas)) !important;
+    stroke: none !important;
+  }
+
+  .mermaid-presentation
+    :global(svg[aria-roledescription='sequence'] .sequence-construct-label-text) {
+    fill: hsl(var(--foreground)) !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.02em !important;
+    text-transform: uppercase;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-branch-condition) {
+    font-size: 12px !important;
+    font-weight: 500 !important;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-branch-surface) {
+    stroke: none !important;
+    opacity: 0.09;
+    pointer-events: none;
+  }
+
+  .mermaid-presentation
+    :global(svg[aria-roledescription='sequence'] .sequence-branch-surface.sequence-branch-success) {
+    fill: hsl(var(--success)) !important;
+  }
+
+  .mermaid-presentation
+    :global(svg[aria-roledescription='sequence'] .sequence-branch-surface.sequence-branch-failure) {
+    fill: hsl(var(--error-foreground)) !important;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-branch-cue) {
+    stroke-width: 2px !important;
+    stroke-linecap: round;
+    opacity: 0.48;
+    pointer-events: none;
+  }
+
+  .mermaid-presentation
+    :global(svg[aria-roledescription='sequence'] .sequence-branch-cue.sequence-branch-success) {
+    stroke: var(--diagram-connector-success) !important;
+    stroke-dasharray: none;
+  }
+
+  .mermaid-presentation
+    :global(svg[aria-roledescription='sequence'] .sequence-branch-cue.sequence-branch-failure) {
+    stroke: var(--diagram-connector-danger) !important;
+    stroke-dasharray: 2 3;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-note .note) {
+    fill: color-mix(in srgb, hsl(var(--muted-foreground)) 10%, var(--diagram-canvas)) !important;
+    stroke: none !important;
+    stroke-width: 0 !important;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-note-text) {
+    fill: var(--diagram-metadata) !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
   }
 
   .mermaid-presentation :global(text),
