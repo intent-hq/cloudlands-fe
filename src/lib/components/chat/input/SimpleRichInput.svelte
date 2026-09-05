@@ -1470,6 +1470,15 @@
           ? m.chat_richInput_queueMessage_ariaLabel()
           : m.chat_richInput_sendMessage_ariaLabel(),
   );
+  const buttonTooltipLabel = $derived(
+    buttonMode === 'stop'
+      ? m.chat_richInput_stop_label()
+      : buttonMode === 'queue'
+        ? m.chat_richInput_queueMessage_ariaLabel()
+        : editMode
+          ? m.chat_richInput_saveAndResend_label()
+          : m.chat_richInput_send_label(),
+  );
 </script>
 
 <svelte:window onkeydowncapture={handleMicEscape} />
@@ -1832,13 +1841,7 @@
         </div>
       {/if}
       <TooltipShortcut
-        label={buttonMode === 'stop'
-          ? m.chat_richInput_stop_label()
-          : buttonMode === 'queue'
-            ? m.chat_richInput_queueMessage_ariaLabel()
-            : editMode
-              ? m.chat_richInput_saveAndResend_label()
-              : m.chat_richInput_send_label()}
+        label={buttonTooltipLabel}
         shortcut={buttonMode === 'stop' ? undefined : 'Enter'}
         side="top"
       >
