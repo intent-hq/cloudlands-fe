@@ -90,6 +90,11 @@
       (diagram.states && diagram.states.length > 0 ? diagram.states[0].id : undefined),
   );
   let currentState = $derived(diagram.states?.find((s) => s.id === currentStateId) ?? null);
+  // svelte-ignore state_referenced_locally - intentional: the presented state begins at the selected initial step
+  let presentedStateId = $state(currentStateId);
+  let presentedState = $derived(
+    diagram.states?.find((state) => state.id === presentedStateId) ?? currentState,
+  );
   let cameraZoom = $derived(currentState?.camera?.zoom ?? 1);
   let automaticallyFitState = $derived(currentState !== null);
   let usesCompactPresentation = $derived(
@@ -122,6 +127,14 @@
   let settlementRevision = 0;
   let settlementFrame: number | undefined;
   let transitionRevision = 0;
+  let motionPhase = $state<'settled' | 'camera' | 'scene'>('settled');
+
+  const CAMERA_MOTION_MS = 320;
+  const SCENE_ENTRY_MS = 180;
+  const ROUTE_ENTRY_DELAY_MS = CAMERA_MOTION_MS + SCENE_ENTRY_MS;
+  const ROUTE_ENTRY_MS = 180;
+  const LABEL_ENTRY_DELAY_MS = ROUTE_ENTRY_DELAY_MS + ROUTE_ENTRY_MS;
+  const EXIT_DELAY_MS = LABEL_ENTRY_DELAY_MS + 140;
 
   function captureNodePositions() {
     const positions = new Map<string, { x: number; y: number }>();
@@ -155,7 +168,12 @@
             { transform: `translate(${deltaX}px, ${deltaY}px)` },
             { transform: 'translate(0px, 0px)' },
           ],
-          { duration: 220, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+          {
+            delay: CAMERA_MOTION_MS,
+            duration: SCENE_ENTRY_MS,
+            easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+            fill: 'backwards',
+          },
         )
         .finished.catch(() => undefined);
     }
@@ -170,6 +188,26 @@
         animation.playState !== 'idle'
       );
     });
+  }
+
+  async function completeCameraStage(revision: number, stateId: string) {
+    await tick();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    if (revision !== transitionRevision || !rendererEl) return;
+    const camera = rendererEl.querySelector<SVGSVGElement>('.diagram-svg-layer');
+    const geometry = rendererEl.querySelector<SVGGElement>(
+      '.diagram-svg-layer > .diagram-geometry-motion',
+    );
+    const animations = [camera, geometry].flatMap((element) =>
+      (element?.getAnimations({ subtree: false }) ?? []).filter((animation) => {
+        const endTime = Number(animation.effect?.getComputedTiming().endTime);
+        return Number.isFinite(endTime) && animation.playState !== 'finished';
+      }),
+    );
+    await Promise.allSettled(animations.map((animation) => animation.finished));
+    if (revision !== transitionRevision) return;
+    presentedStateId = stateId;
+    motionPhase = 'scene';
   }
 
   function motionSnapshot() {
@@ -224,6 +262,7 @@
           return;
         }
         diagramSettled = true;
+        motionPhase = 'settled';
         settlementFrame = undefined;
         return;
       }
@@ -331,13 +370,13 @@
 
   // Highlighted elements (from current state)
   let highlightedNodeSet = $derived(
-    currentState?.highlightedNodes && currentState.highlightedNodes.length > 0
-      ? new Set(currentState.highlightedNodes)
+    presentedState?.highlightedNodes && presentedState.highlightedNodes.length > 0
+      ? new Set(presentedState.highlightedNodes)
       : null,
   );
   let highlightedEdgeSet = $derived(
-    currentState?.highlightedEdges && currentState.highlightedEdges.length > 0
-      ? new Set(currentState.highlightedEdges)
+    presentedState?.highlightedEdges && presentedState.highlightedEdges.length > 0
+      ? new Set(presentedState.highlightedEdges)
       : null,
   );
   let hasStateHighlighting = $derived(highlightedNodeSet !== null || highlightedEdgeSet !== null);
@@ -896,10 +935,14 @@
     const revision = transitionRevision;
     previousVisibleEdgeIds = visibleEdgeIds;
     stateJustChanged = motionDuration(1) > 0;
+    motionPhase = stateJustChanged ? 'camera' : 'scene';
     beginDiagramSettlement();
+    if (stateJustChanged) flushSync();
     currentStateId = stateId;
     flushSync();
     animatePersistentNodes(revision, nodePositions);
+    if (stateJustChanged) void completeCameraStage(revision, stateId);
+    else presentedStateId = stateId;
 
     // Notify parent so consumers (e.g. TipTap DiagramBlock) can persist the selected step
     onUpdate?.({ currentStateId: stateId });
@@ -937,8 +980,14 @@
   class:compact-diagram={usesCompactPresentation}
   class:fitted-diagram={fitToWidth}
   class:stateful-diagram={Boolean(diagram.states?.length)}
+  class:camera-stage={motionPhase === 'camera'}
+  style:--diagram-camera-duration={`${motionDuration(CAMERA_MOTION_MS)}ms`}
+  style:--diagram-scene-entry-delay={`${motionDuration(CAMERA_MOTION_MS)}ms`}
+  style:--diagram-route-entry-delay={`${motionDuration(ROUTE_ENTRY_DELAY_MS)}ms`}
+  style:--diagram-label-entry-delay={`${motionDuration(LABEL_ENTRY_DELAY_MS)}ms`}
   data-diagram-settled={diagramSettled}
   data-diagram-state={currentStateId}
+  data-diagram-motion-phase={motionPhase}
 >
   {#if layout && diagram.model.nodes.length > 0}
     <div class="diagram-actions" role="toolbar" aria-label={m.diagram_renderer_actions_ariaLabel()}>
@@ -1151,8 +1200,11 @@
             {#if visibleGroups}
               {#each visibleGroups as group (group.id)}
                 <g
-                  in:fade={{ delay: motionDuration(60), duration: motionDuration(160) }}
-                  out:fade={{ delay: motionDuration(220), duration: motionDuration(120) }}
+                  in:fade={{
+                    delay: motionDuration(CAMERA_MOTION_MS),
+                    duration: motionDuration(SCENE_ENTRY_MS),
+                  }}
+                  out:fade={{ delay: motionDuration(EXIT_DELAY_MS), duration: motionDuration(120) }}
                 >
                   <DiagramGroup
                     {group}
@@ -1176,8 +1228,11 @@
               {@const isNewEdge = newEdgeIds.has(edge.id)}
               <g
                 class:edge-draw-in={isNewEdge}
-                in:fade={{ delay: motionDuration(120), duration: motionDuration(160) }}
-                out:fade={{ delay: motionDuration(220), duration: motionDuration(120) }}
+                in:fade={{
+                  delay: motionDuration(ROUTE_ENTRY_DELAY_MS),
+                  duration: motionDuration(ROUTE_ENTRY_MS),
+                }}
+                out:fade={{ delay: motionDuration(EXIT_DELAY_MS), duration: motionDuration(120) }}
               >
                 <DiagramEdge
                   {edge}
@@ -1194,6 +1249,7 @@
             {#each visibleEdges as edge (edge.id)}
               {#if edge.label && edgeLabelPositions.has(edge.id)}
                 {@const labelPos = edgeLabelPositions.get(edge.id)!}
+                {@const isNewLabel = newEdgeIds.has(edge.id)}
                 {@const isDimmed =
                   (hoveredNodeId !== null && !connectedEdgeIds.has(edge.id)) ||
                   (hoveredGroupId !== null && !groupEdgeIds.has(edge.id)) ||
@@ -1208,11 +1264,11 @@
                   class="edge-label-container diagram-geometry-motion {isDimmed
                     ? 'edge-label-dimmed'
                     : ''}"
+                  class:edge-label-entry={isNewLabel}
                   data-edge-id={edge.id}
                   data-semantic-style={edge.semanticStyle ?? 'default'}
                   data-truncated={labelPos.truncated}
-                  in:fade={{ delay: motionDuration(160), duration: motionDuration(140) }}
-                  out:fade={{ delay: motionDuration(220), duration: motionDuration(120) }}
+                  out:fade={{ delay: motionDuration(EXIT_DELAY_MS), duration: motionDuration(120) }}
                 >
                   {#if labelPos.truncated}
                     <Tooltip content={edge.label} side="top" class="edge-label-tooltip">
@@ -1249,11 +1305,11 @@
                 height={node.height}
                 class="diagram-geometry-motion"
                 in:fade={{
-                  delay: stateJustChanged ? motionDuration(60) : 0,
-                  duration: stateJustChanged ? motionDuration(180) : 0,
+                  delay: stateJustChanged ? motionDuration(CAMERA_MOTION_MS) : 0,
+                  duration: stateJustChanged ? motionDuration(SCENE_ENTRY_MS) : 0,
                   easing: cubicOut,
                 }}
-                out:fade={{ delay: motionDuration(220), duration: motionDuration(120) }}
+                out:fade={{ delay: motionDuration(EXIT_DELAY_MS), duration: motionDuration(120) }}
               >
                 <DiagramNodeHTML
                   {node}
@@ -1404,7 +1460,7 @@
     display: block;
     background: var(--diagram-canvas);
     transform-origin: top left;
-    transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition: transform var(--diagram-camera-duration, 220ms) cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .diagram-footer {
@@ -1450,13 +1506,38 @@
       opacity 180ms ease-out;
   }
 
+  .stateful-diagram.camera-stage :global(.diagram-geometry-motion) {
+    transition:
+      transform var(--diagram-camera-duration) cubic-bezier(0.16, 1, 0.3, 1),
+      x 220ms cubic-bezier(0.16, 1, 0.3, 1) var(--diagram-scene-entry-delay),
+      y 220ms cubic-bezier(0.16, 1, 0.3, 1) var(--diagram-scene-entry-delay),
+      width 220ms cubic-bezier(0.16, 1, 0.3, 1) var(--diagram-scene-entry-delay),
+      height 220ms cubic-bezier(0.16, 1, 0.3, 1) var(--diagram-scene-entry-delay),
+      opacity 180ms ease-out;
+  }
+
+  .stateful-diagram.camera-stage :global(.group-bg) {
+    transition-delay:
+      var(--diagram-scene-entry-delay), var(--diagram-scene-entry-delay),
+      var(--diagram-scene-entry-delay), var(--diagram-scene-entry-delay), 0ms, 0ms, 0ms;
+  }
+
+  .stateful-diagram.camera-stage :global(.group-label) {
+    transition-delay: var(--diagram-scene-entry-delay), var(--diagram-scene-entry-delay), 0ms;
+  }
+
   :global(.edge-label-dimmed) {
     opacity: 0.64;
   }
 
+  :global(.edge-label-entry) {
+    animation: revealLabel 140ms var(--diagram-label-entry-delay, 0ms) ease-out both;
+  }
+
   /* Edge path drawing animation */
   :global(.edge-draw-in path) {
-    animation: drawPath 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: drawPath 220ms var(--diagram-route-entry-delay, 0ms) cubic-bezier(0.16, 1, 0.3, 1)
+      both;
   }
 
   @keyframes drawPath {
@@ -1467,6 +1548,15 @@
     to {
       stroke-dasharray: 1000;
       stroke-dashoffset: 0;
+    }
+  }
+
+  @keyframes revealLabel {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
     }
   }
 
@@ -1507,19 +1597,29 @@
 
   :global(.catalog-reduced-motion .edge-label-container),
   :global(.catalog-reduced-motion .diagram-geometry-motion),
+  :global(.catalog-reduced-motion .diagram-svg-layer),
   :global(.catalog-reduced-motion .edge-draw-in path),
   :global(.catalog-reduced-motion) .diagram-actions {
     transition: none;
     animation: none;
   }
 
+  :global(.catalog-reduced-motion .edge-label-entry) {
+    opacity: 1;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     :global(.edge-label-container),
     :global(.diagram-geometry-motion),
+    :global(.diagram-svg-layer),
     :global(.edge-draw-in path),
     .diagram-actions {
       transition: none;
       animation: none;
+    }
+
+    :global(.edge-label-entry) {
+      opacity: 1;
     }
   }
 </style>

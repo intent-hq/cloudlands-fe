@@ -1,4 +1,4 @@
-import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const baseUrl = process.env.UI_PREVIEW_BASE_URL ?? 'http://127.0.0.1:5173';
 const framingAppearances = [
@@ -36,6 +36,14 @@ type Frame = {
   overflow: number;
   camera: string;
   footerOffset: number;
+  motionPhase: string;
+  cameraAnimationCount: number;
+  cameraDurations: number[];
+  entranceOpacity: number;
+  nodeEntryOpacity: number;
+  groupEntryOpacity: number;
+  routeEntryOpacity: number;
+  labelEntryOpacity: number;
 };
 
 async function openMotionFixture(page: Page, state: string, reduced = false) {
@@ -53,6 +61,19 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
     async (root, { buttonName, probe }) => {
       const nextFrame = () =>
         new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const beforeNodeIds = new Set(
+        [...root.querySelectorAll<SVGForeignObjectElement>('[data-node-id]')].map(
+          (node) => node.dataset.nodeId,
+        ),
+      );
+      const beforeGroupIds = new Set(
+        [...root.querySelectorAll<SVGGElement>('[data-group-id]')].map(
+          (group) => group.dataset.groupId,
+        ),
+      );
+      const beforeEdgeIds = new Set(
+        [...root.querySelectorAll<SVGGElement>('.diagram-edge')].map((edge) => edge.dataset.edgeId),
+      );
       const sideDistance = (point: DOMPoint, bounds: DOMRect) =>
         Math.min(
           Math.hypot(point.x - (bounds.left + bounds.right) / 2, point.y - bounds.top),
@@ -113,6 +134,31 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
         const footer = root.querySelector<HTMLElement>('.diagram-footer')!;
         const camera = root.querySelector<SVGSVGElement>('.diagram-svg-layer')!;
         const geometry = root.querySelector<SVGGElement>('.diagram-geometry-motion')!;
+        const cameraAnimations = [camera, geometry].flatMap((element) =>
+          element
+            .getAnimations({ subtree: false })
+            .filter((animation) => animation.playState === 'running'),
+        );
+        const enteringNodes = [
+          ...root.querySelectorAll<SVGForeignObjectElement>('[data-node-id]'),
+        ].filter((node) => !beforeNodeIds.has(node.dataset.nodeId));
+        const enteringGroups = [...root.querySelectorAll<SVGGElement>('[data-group-id]')]
+          .filter((group) => !beforeGroupIds.has(group.dataset.groupId))
+          .map((group) => group.parentElement!);
+        const enteringRoutes = [...root.querySelectorAll<SVGGElement>('.diagram-edge')]
+          .filter((edge) => !beforeEdgeIds.has(edge.dataset.edgeId))
+          .map((edge) => edge.parentElement!);
+        const enteringLabels = [
+          ...root.querySelectorAll<SVGForeignObjectElement>('.edge-label-container'),
+        ].filter((label) => !beforeEdgeIds.has(label.dataset.edgeId));
+        const maxOpacity = (elements: Element[]) =>
+          Math.max(0, ...elements.map((element) => Number(getComputedStyle(element).opacity)));
+        const entryOpacities = [
+          maxOpacity(enteringNodes),
+          maxOpacity(enteringGroups),
+          maxOpacity(enteringRoutes),
+          maxOpacity(enteringLabels),
+        ];
         return {
           settled: renderer.dataset.diagramSettled === 'true',
           state: renderer.dataset.diagramState ?? '',
@@ -144,53 +190,38 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
           camera: `${getComputedStyle(camera).transform}|${getComputedStyle(geometry).transform}`,
           footerOffset:
             footer.getBoundingClientRect().bottom - renderer.getBoundingClientRect().bottom,
+          motionPhase: renderer.dataset.diagramMotionPhase ?? '',
+          cameraAnimationCount: cameraAnimations.length,
+          cameraDurations: cameraAnimations.map((animation) =>
+            Number(animation.effect?.getTiming().duration),
+          ),
+          entranceOpacity: Math.max(...entryOpacities),
+          nodeEntryOpacity: entryOpacities[0],
+          groupEntryOpacity: entryOpacities[1],
+          routeEntryOpacity: entryOpacities[2],
+          labelEntryOpacity: entryOpacities[3],
         };
       };
       const before = frame();
       root.querySelector<HTMLButtonElement>(`button[aria-label="${buttonName}"]`)!.click();
       await Promise.resolve();
       await nextFrame();
-      const start = frame();
-      const samples = [start];
-      const deadline = performance.now() + 1_000;
-      let middle = frame();
-      const hasMidpoint = (candidate: Frame) => {
-        const nodeMoved =
-          !probe.movingNodeId ||
-          (candidate.node !== null &&
-            (candidate.node.x !== start.node?.x || candidate.node.y !== start.node?.y));
-        const groupMoved =
-          !probe.groupId ||
-          (candidate.group !== null && candidate.group.height !== start.group?.height);
-        const enteringMoved =
-          !probe.enteringNodeId ||
-          (candidate.enteringOpacity !== null &&
-            candidate.enteringOpacity > (start.enteringOpacity ?? 0) &&
-            candidate.enteringOpacity < 1);
-        const exitingMoved =
-          !probe.exitingEdgeId || candidate.exitingOpacity !== start.exitingOpacity;
-        const pathMoved = start.progress >= 1 || candidate.progress > start.progress;
-        const geometryAligned =
-          candidate.sourceDistance <= 2 &&
-          candidate.targetDistance >= 4.5 &&
-          candidate.targetDistance <= 6 &&
-          (candidate.labelDistance === null || candidate.labelDistance <= 4.5);
-        return (
-          !candidate.settled &&
-          nodeMoved &&
-          groupMoved &&
-          enteringMoved &&
-          exitingMoved &&
-          pathMoved &&
-          geometryAligned
-        );
-      };
-      while (!hasMidpoint(middle)) {
-        if (performance.now() > deadline) throw new Error('Diagram motion had no midpoint frame');
+      const deadline = performance.now() + 2_000;
+      let start = frame();
+      while (start.motionPhase === 'camera' && start.cameraAnimationCount === 0) {
+        if (performance.now() > deadline) throw new Error('Diagram camera animation did not start');
         await nextFrame();
-        middle = frame();
-        samples.push(middle);
+        start = frame();
       }
+      const cameraFrames: Frame[] = [];
+      let sample = start;
+      while (sample.motionPhase === 'camera') {
+        cameraFrames.push(sample);
+        await nextFrame();
+        sample = frame();
+      }
+      const afterCamera = sample;
+      const samples = [...cameraFrames, afterCamera];
       while (
         root.querySelector<HTMLElement>('.diagram-renderer')!.dataset.diagramSettled !== 'true'
       ) {
@@ -199,7 +230,7 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
         samples.push(frame());
       }
       const settled = frame();
-      return { before, start, middle, settled, samples };
+      return { before, start, afterCamera, settled, samples, cameraFrames };
     },
     { buttonName, probe },
   );
@@ -246,13 +277,41 @@ function expectFrameGeometry(frame: Frame) {
   expect(frame.overflow).toBeLessThanOrEqual(1);
 }
 
-function expectBetween(value: number, start: number, end: number) {
-  expect(value).toBeGreaterThan(Math.min(start, end));
-  expect(value).toBeLessThan(Math.max(start, end));
-}
-
 function isBetween(value: number, start: number, end: number) {
   return value > Math.min(start, end) && value < Math.max(start, end);
+}
+
+function expectCameraBeforeScene(transition: Awaited<ReturnType<typeof recordTransition>>) {
+  expect(transition.cameraFrames.length).toBeGreaterThan(0);
+  expect(
+    transition.cameraFrames.some((frame) =>
+      frame.cameraDurations.some((duration) => duration >= 300 && duration <= 340),
+    ),
+    JSON.stringify(transition.cameraFrames.map((frame) => frame.cameraDurations)),
+  ).toBe(true);
+  expect(
+    Math.max(...transition.cameraFrames.map((frame) => frame.entranceOpacity)),
+    JSON.stringify(
+      transition.cameraFrames.map((frame) => ({
+        phase: frame.motionPhase,
+        node: frame.nodeEntryOpacity,
+        group: frame.groupEntryOpacity,
+        route: frame.routeEntryOpacity,
+        label: frame.labelEntryOpacity,
+      })),
+    ),
+  ).toBe(0);
+  expect(transition.afterCamera.motionPhase).not.toBe('camera');
+  const firstVisibleFrame = (key: keyof Frame) =>
+    transition.samples.findIndex((frame) => Number(frame[key]) > 0.01);
+  const sceneFrame = Math.max(
+    firstVisibleFrame('nodeEntryOpacity'),
+    firstVisibleFrame('groupEntryOpacity'),
+  );
+  const routeFrame = firstVisibleFrame('routeEntryOpacity');
+  const labelFrame = firstVisibleFrame('labelEntryOpacity');
+  if (sceneFrame >= 0 && routeFrame >= 0) expect(routeFrame).toBeGreaterThan(sceneFrame);
+  if (routeFrame >= 0 && labelFrame >= 0) expect(labelFrame).toBeGreaterThan(routeFrame);
 }
 
 function expectFixedFooter(transition: Awaited<ReturnType<typeof recordTransition>>) {
@@ -273,9 +332,10 @@ function expectCameraInterpolation(transition: Awaited<ReturnType<typeof recordT
 
 test('coordinates architecture and ownership state motion through settled frames', async ({
   page,
-}, testInfo: TestInfo) => {
+}) => {
   test.setTimeout(180_000);
   await openMotionFixture(page, 'custom-architecture');
+  const architectureOrient = await readStableSignature(page, 'custom-architecture');
   const architecture12 = await recordTransition(
     page,
     'custom-architecture',
@@ -283,17 +343,19 @@ test('coordinates architecture and ownership state motion through settled frames
     { edgeId: 'a1', sourceId: 'user', targetId: 'renderer', enteringNodeId: 'daemon' },
   );
   expect(architecture12.start.settled).toBe(false);
-  expect(architecture12.middle.settled).toBe(false);
   expect(architecture12.settled.settled).toBe(true);
-  expect(architecture12.start.enteringOpacity).toBeLessThan(architecture12.middle.enteringOpacity!);
-  expect(architecture12.middle.enteringOpacity).toBeLessThanOrEqual(
-    architecture12.settled.enteringOpacity!,
-  );
+  expect(
+    architecture12.samples.some(
+      (frame) =>
+        frame.enteringOpacity !== null &&
+        frame.enteringOpacity > 0 &&
+        frame.enteringOpacity < architecture12.settled.enteringOpacity!,
+    ),
+  ).toBe(true);
+  expectCameraBeforeScene(architecture12);
   expectFixedFooter(architecture12);
   expectCameraInterpolation(architecture12);
-  for (const frame of [architecture12.start, architecture12.middle, architecture12.settled]) {
-    expectFrameGeometry(frame);
-  }
+  expectFrameGeometry(architecture12.settled);
 
   const architecture23 = await recordTransition(
     page,
@@ -321,23 +383,37 @@ test('coordinates architecture and ownership state motion through settled frames
           isBetween(sample.node.y, architecture23.start.node!.y, architecture23.settled.node!.y)),
     ),
   ).toBe(true);
-  expectBetween(
-    architecture23.middle.group!.height,
-    architecture23.start.group!.height,
-    architecture23.settled.group!.height,
-  );
-  expect(architecture23.start.progress).toBeLessThan(architecture23.middle.progress);
-  expect(architecture23.middle.progress).toBeLessThan(1);
+  expect(
+    architecture23.samples.some(
+      (frame) =>
+        frame.group !== null &&
+        isBetween(
+          frame.group.height,
+          architecture23.start.group!.height,
+          architecture23.settled.group!.height,
+        ),
+    ),
+  ).toBe(true);
+  expect(
+    architecture23.samples.some(
+      (frame) =>
+        frame.progress > architecture23.start.progress &&
+        frame.progress < architecture23.settled.progress,
+    ),
+  ).toBe(true);
   expect(architecture23.settled.progress).toBe(1);
-  expect(architecture23.start.enteringOpacity).toBeLessThan(architecture23.middle.enteringOpacity!);
-  expect(architecture23.middle.enteringOpacity).toBeLessThanOrEqual(
-    architecture23.settled.enteringOpacity!,
-  );
+  expect(
+    architecture23.samples.some(
+      (frame) =>
+        frame.enteringOpacity !== null &&
+        frame.enteringOpacity > 0 &&
+        frame.enteringOpacity < architecture23.settled.enteringOpacity!,
+    ),
+  ).toBe(true);
+  expectCameraBeforeScene(architecture23);
   expectFixedFooter(architecture23);
   expectCameraInterpolation(architecture23);
-  for (const frame of [architecture23.start, architecture23.middle, architecture23.settled]) {
-    expectFrameGeometry(frame);
-  }
+  expectFrameGeometry(architecture23.settled);
   const architectureStable = await readStableSignature(page, 'custom-architecture');
   const architecture31 = await recordTransition(
     page,
@@ -353,6 +429,7 @@ test('coordinates architecture and ownership state motion through settled frames
   );
   expect(architecture31.settled.state).toBe('orient');
   expect(architecture31.settled.exitingOpacity).toBeNull();
+  expectCameraBeforeScene(architecture31);
   expectFixedFooter(architecture31);
 
   await openMotionFixture(page, 'custom-walkthrough');
@@ -363,13 +440,24 @@ test('coordinates architecture and ownership state motion through settled frames
     { edgeId: 'w3', sourceId: 'chat', targetId: 'redux', enteringNodeId: 'daemon' },
   );
   expect(ownership12.start.path).not.toBe(ownership12.settled.path);
-  expect(ownership12.start.progress).toBeLessThan(ownership12.middle.progress);
-  expect(ownership12.middle.progress).toBeLessThan(1);
+  expect(
+    ownership12.samples.some(
+      (frame) =>
+        frame.progress > ownership12.start.progress &&
+        frame.progress < ownership12.settled.progress,
+    ),
+  ).toBe(true);
   expect(ownership12.settled.progress).toBe(1);
-  expect(ownership12.start.enteringOpacity).toBeLessThan(ownership12.middle.enteringOpacity!);
-  for (const frame of [ownership12.start, ownership12.middle, ownership12.settled]) {
-    expectFrameGeometry(frame);
-  }
+  expect(
+    ownership12.samples.some(
+      (frame) =>
+        frame.enteringOpacity !== null &&
+        frame.enteringOpacity > 0 &&
+        frame.enteringOpacity < ownership12.settled.enteringOpacity!,
+    ),
+  ).toBe(true);
+  expectCameraBeforeScene(ownership12);
+  expectFrameGeometry(ownership12.settled);
   expectFixedFooter(ownership12);
 
   const ownership23 = await recordTransition(
@@ -379,14 +467,18 @@ test('coordinates architecture and ownership state motion through settled frames
     { edgeId: 'w5', sourceId: 'daemon', targetId: 'redux', exitingEdgeId: 'w3' },
   );
   expect(ownership23.start.path).not.toBe(ownership23.settled.path);
-  expect(ownership23.start.progress).toBeLessThan(ownership23.middle.progress);
-  expect(ownership23.middle.progress).toBe(1);
   expect(ownership23.settled.progress).toBe(1);
-  expect(ownership23.start.exitingOpacity).toBeGreaterThan(ownership23.middle.exitingOpacity!);
+  expect(
+    ownership23.samples.some(
+      (frame) =>
+        frame.exitingOpacity !== null &&
+        frame.exitingOpacity < ownership23.start.exitingOpacity! &&
+        frame.exitingOpacity > 0,
+    ),
+  ).toBe(true);
   expect(ownership23.settled.exitingOpacity).toBeNull();
-  for (const frame of [ownership23.start, ownership23.middle, ownership23.settled]) {
-    expectFrameGeometry(frame);
-  }
+  expectCameraBeforeScene(ownership23);
+  expectFrameGeometry(ownership23.settled);
   expectFixedFooter(ownership23);
   const ownershipStable = await readStableSignature(page, 'custom-walkthrough');
 
@@ -395,13 +487,10 @@ test('coordinates architecture and ownership state motion through settled frames
   await root
     .getByRole('button', { name: 'State 2: 2. Follow the data' })
     .evaluate((node) => (node as HTMLButtonElement).click());
-  await page.waitForFunction(() => {
-    const section = document.querySelector('#custom-architecture')!;
-    const renderer = section.querySelector<HTMLElement>('.diagram-renderer')!;
-    const daemon = section.querySelector<SVGForeignObjectElement>('[data-node-id="daemon"]');
-    const opacity = daemon ? Number(getComputedStyle(daemon).opacity) : 1;
-    return renderer.dataset.diagramSettled === 'false' && opacity > 0 && opacity < 1;
-  });
+  await expect(root.locator('.diagram-renderer')).toHaveAttribute(
+    'data-diagram-motion-phase',
+    'camera',
+  );
   const finalStateButton = root.getByRole('button', { name: 'State 3: 3. Close the loop' });
   await finalStateButton.focus();
   await finalStateButton.evaluate((node) => (node as HTMLButtonElement).click());
@@ -412,6 +501,20 @@ test('coordinates architecture and ownership state motion through settled frames
   await expect(finalStateButton).toBeFocused();
   await expect(root.locator('.diagram-scroll-container')).toHaveJSProperty('scrollLeft', 0);
   expect(await readStableSignature(page, 'custom-architecture')).toEqual(architectureStable);
+
+  await root
+    .getByRole('button', { name: 'State 2: 2. Follow the data' })
+    .evaluate((node) => (node as HTMLButtonElement).click());
+  await expect(root.locator('.diagram-renderer')).toHaveAttribute(
+    'data-diagram-motion-phase',
+    'camera',
+  );
+  await root
+    .getByRole('button', { name: 'State 1: 1. Start in the workbench' })
+    .evaluate((node) => (node as HTMLButtonElement).click());
+  await expect(root.locator('.diagram-renderer')).toHaveAttribute('data-diagram-settled', 'true');
+  await expect(root.locator('.diagram-renderer')).toHaveAttribute('data-diagram-state', 'orient');
+  expect(await readStableSignature(page, 'custom-architecture')).toEqual(architectureOrient);
 
   await openMotionFixture(page, 'custom-walkthrough', true);
   const reducedRoot = page.locator('#custom-walkthrough');
@@ -428,45 +531,6 @@ test('coordinates architecture and ownership state motion through settled frames
   );
   await expect(reducedRoot.locator('[data-node-id="daemon"]')).toHaveCSS('opacity', '1');
   expect(await readStableSignature(page, 'custom-walkthrough')).toEqual(ownershipStable);
-
-  await openMotionFixture(page, 'custom-architecture');
-  await page
-    .locator('#custom-architecture')
-    .getByRole('button', { name: 'State 2: 2. Follow the data' })
-    .evaluate((node) => (node as HTMLButtonElement).click());
-  const architectureRoot = page.locator('#custom-architecture');
-  await page.waitForFunction(() => {
-    const daemon = document.querySelector<SVGForeignObjectElement>(
-      '#custom-architecture [data-node-id="daemon"]',
-    );
-    const opacity = daemon ? Number(getComputedStyle(daemon).opacity) : 1;
-    return opacity > 0 && opacity < 1;
-  });
-  await architectureRoot.screenshot({ path: testInfo.outputPath('architecture-midpoint.png') });
-  await expect(architectureRoot.locator('.diagram-renderer')).toHaveAttribute(
-    'data-diagram-settled',
-    'true',
-  );
-  await architectureRoot.screenshot({ path: testInfo.outputPath('architecture-settled.png') });
-
-  await openMotionFixture(page, 'custom-walkthrough');
-  const ownershipRoot = page.locator('#custom-walkthrough');
-  await ownershipRoot
-    .getByRole('button', { name: 'State 2: 2. Follow execution' })
-    .evaluate((node) => (node as HTMLButtonElement).click());
-  await page.waitForFunction(() => {
-    const daemon = document.querySelector<SVGForeignObjectElement>(
-      '#custom-walkthrough [data-node-id="daemon"]',
-    );
-    const opacity = daemon ? Number(getComputedStyle(daemon).opacity) : 1;
-    return opacity > 0 && opacity < 1;
-  });
-  await ownershipRoot.screenshot({ path: testInfo.outputPath('ownership-midpoint.png') });
-  await expect(ownershipRoot.locator('.diagram-renderer')).toHaveAttribute(
-    'data-diagram-settled',
-    'true',
-  );
-  await ownershipRoot.screenshot({ path: testInfo.outputPath('ownership-settled.png') });
 });
 
 for (const appearance of framingAppearances) {
