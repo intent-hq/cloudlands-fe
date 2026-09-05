@@ -1,5 +1,5 @@
-export const MIN_TERMINAL_OVERLAY_HEIGHT = 10;
-export const MAX_TERMINAL_OVERLAY_HEIGHT = 90;
+const MIN_TERMINAL_OVERLAY_HEIGHT = 10;
+const MAX_TERMINAL_OVERLAY_HEIGHT = 90;
 export const DEFAULT_TERMINAL_OVERLAY_HEIGHT = 50;
 
 export function isValidTerminalOverlayHeight(height: number): boolean {
