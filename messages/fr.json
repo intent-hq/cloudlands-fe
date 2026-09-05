@@ -1,5 +1,8 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
+  "workspace_fileChanges_listView_tooltip": "Vue en liste",
+  "workspace_fileChanges_mapView_tooltip": "Vue en carte",
+  "workspace_fileChanges_viewMode_ariaLabel": "Vue des modifications",
   "diffMap_groupChanged_label": "{count} modifiés",
   "diffMap_groupChangedTotal_label": "{count} modifiés · {total}",
   "diffMap_statsUnavailable_label": "Indisponible",

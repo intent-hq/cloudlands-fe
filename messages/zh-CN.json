@@ -1,5 +1,8 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
+  "workspace_fileChanges_listView_tooltip": "列表视图",
+  "workspace_fileChanges_mapView_tooltip": "地图视图",
+  "workspace_fileChanges_viewMode_ariaLabel": "更改视图",
   "diffMap_groupChanged_label": "已更改 {count} 个",
   "diffMap_groupChangedTotal_label": "已更改 {count} 个 · {total}",
   "diffMap_statsUnavailable_label": "不可用",
