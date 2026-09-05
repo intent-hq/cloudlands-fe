@@ -7,6 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 
@@ -431,6 +432,76 @@ describe('DaemonStatusIndicator', () => {
       await openDetails(down);
       expect(explanation()).toBeNull();
       expect(screen.getByText('Daemon is not connected')).toBeTruthy();
+    });
+
+    describe('uptime row freshness', () => {
+      // Fake only the clock and the component's 1s interval: the menu
+      // primitives close the details submenu from a real setTimeout, which
+      // must not fire while the clock is advanced.
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      const uptimeValue = () => screen.getByText('Uptime').parentElement!.textContent;
+
+      // Advance the faked clock synchronously (no yield to real timers), then
+      // flush Svelte's pending DOM update.
+      async function advanceClock(ms: number) {
+        vi.advanceTimersByTime(ms);
+        await tick();
+      }
+
+      // The uptime shown while healthy at the instant of the last successful
+      // check is, by construction, the value that check reported.
+      async function reportedUptime(state: DaemonHealthState): Promise<string> {
+        vi.setSystemTime(state.lastUpdated!);
+        const { unmount } = await openDetails(state);
+        const value = uptimeValue();
+        unmount();
+        return value;
+      }
+
+      it('keeps the last reported uptime while degraded instead of ticking past the stale check', async () => {
+        const healthy = await connectedState();
+        const reported = await reportedUptime(healthy);
+
+        const degraded = await failOnce(healthy);
+        vi.setSystemTime(failedAt);
+        await openDetails(degraded);
+        // The freshness note says the details below are from that check.
+        expect(explanation()!.textContent).toMatch(/last successful check/i);
+        expect(uptimeValue()).toBe(reported);
+
+        await advanceClock(3000);
+        expect(uptimeValue()).toBe(reported);
+      });
+
+      it('keeps ticking the uptime while healthy and again after a valid recovery', async () => {
+        const s = await slice();
+        const healthy = await connectedState();
+        const reported = await reportedUptime(healthy);
+
+        vi.setSystemTime(failedAt);
+        const { unmount } = await openDetails(healthy);
+        const live = uptimeValue();
+        expect(live).not.toBe(reported);
+        await advanceClock(3000);
+        expect(uptimeValue()).not.toBe(live);
+        unmount();
+
+        const recovered = s.daemonHealthReducer(
+          await failOnce(healthy),
+          s.systemStatusSuccess(payload, failedAt, healthy.connectionGeneration),
+        );
+        expect(recovered.health).toBe('healthy');
+        await openDetails(recovered);
+        const atRecovery = uptimeValue();
+        await advanceClock(3000);
+        expect(uptimeValue()).not.toBe(atRecovery);
+      });
     });
   });
 

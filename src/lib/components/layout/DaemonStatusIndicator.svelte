@@ -287,13 +287,18 @@
     }
   }
 
-  // Compute live uptime: base uptime + elapsed time since lastUpdated
+  // Compute live uptime: base uptime + elapsed time since lastUpdated. While
+  // degraded the freshness note promises the details are from the last
+  // successful check, so the uptime stays at that check's value instead of
+  // ticking as if the daemon were still confirmed up; a valid recovery
+  // (health back to healthy) resumes the live count.
   function computeLiveUptime(
     uptimeSeconds: number | undefined,
     lastUpdated: string | null,
+    health: DaemonHealth,
   ): number | undefined {
     if (uptimeSeconds === undefined) return undefined;
-    if (!lastUpdated) return uptimeSeconds;
+    if (!lastUpdated || health === 'degraded') return uptimeSeconds;
 
     const lastUpdateTime = new Date(lastUpdated).getTime();
     if (isNaN(lastUpdateTime)) {
@@ -321,7 +326,7 @@
   $effect(() => {
     if (dropdownOpen) {
       // Initialize live uptime
-      liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$);
+      liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$, $health$);
 
       // Update every second. Skip the stats poll while the daemon is down —
       // the dropdown shows the "Not running" placeholder and each poll would
@@ -331,7 +336,7 @@
           appStore.dispatch(pollSystemStatus());
           appStore.dispatch(pollUnslothStatus());
         }
-        liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$);
+        liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$, $health$);
       }, 1000);
 
       return () => {
