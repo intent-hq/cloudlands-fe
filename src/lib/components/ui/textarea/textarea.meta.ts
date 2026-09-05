@@ -14,7 +14,6 @@ export const textareaMetadata = parseUiComponentMetadata({
     'src/lib/components/chat/MessageEditor.svelte',
     'src/lib/components/chat/QueuedMessageList.svelte',
     'src/lib/components/chat/proposals/ProposalCard.svelte',
-    'src/lib/components/chat/questions/QuestionWizard.svelte',
     'src/lib/components/modals/ReplaceAgentModal.svelte',
     'src/lib/components/patterns/settings/custom-controls.ts',
     'src/lib/components/tiptap/CommentDialog.svelte',

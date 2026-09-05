@@ -261,19 +261,17 @@
   }
 
   function setIndex(next: number) {
-    const shouldRestoreFocus = restoreFocusOnNavigate && rootElement?.contains(document.activeElement);
+    const shouldRestoreFocus =
+      restoreFocusOnNavigate && rootElement?.contains(document.activeElement);
     if (currentIndex === undefined) internalIndex = next;
     onCurrentIndexChange?.(next);
-    if (shouldRestoreFocus) restoreFirstRow(next);
+    if (shouldRestoreFocus) restoreFirstRow();
   }
 
-  function restoreFirstRow(questionIndex: number) {
+  function restoreFirstRow() {
     void tick().then(() => {
-      rootElement
-        ?.querySelector<HTMLElement>(
-          `[data-question-index="${questionIndex}"] [data-question-option]:not([aria-disabled="true"])`,
-        )
-        ?.focus();
+      const firstRow = pendingRows.get(0);
+      if (firstRow?.getAttribute('aria-disabled') !== 'true') firstRow?.focus();
     });
   }
 
@@ -373,10 +371,11 @@
 
   function back() {
     if (disabled) return;
-    const shouldRestoreFocus = restoreFocusOnNavigate && rootElement?.contains(document.activeElement);
+    const shouldRestoreFocus =
+      restoreFocusOnNavigate && rootElement?.contains(document.activeElement);
     onBack?.(safeIndex);
     if (!onBack && safeIndex > 0) setIndex(safeIndex - 1);
-    else if (shouldRestoreFocus) restoreFirstRow(Math.max(0, safeIndex - 1));
+    else if (shouldRestoreFocus) restoreFirstRow();
   }
 
   function finishMulti() {
@@ -386,23 +385,32 @@
   }
 
   function handleDocumentKeydown(event: KeyboardEvent) {
-    if (!question || disabled || !globalKeyboardShortcuts || !rootElement) return;
+    if (!question || disabled || !rootElement) return;
     const target = event.target instanceof HTMLElement ? event.target : null;
     const activeInstance = mountedInstances.find((element) =>
       element.contains(document.activeElement),
     );
     if (activeInstance ? activeInstance !== rootElement : mountedInstances.at(-1) !== rootElement)
       return;
-    if (target && mountedInstances.some((element) => element !== rootElement && element.contains(target)))
+    if (
+      target &&
+      mountedInstances.some((element) => element !== rootElement && element.contains(target))
+    )
       return;
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && canSubmit) {
+    if (
+      globalKeyboardShortcuts &&
+      event.key === 'Enter' &&
+      (event.metaKey || event.ctrlKey) &&
+      canSubmit
+    ) {
       event.preventDefault();
       if (isFreeText) submitOther();
       else finishMulti();
       return;
     }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    if (target && (['INPUT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable)) return;
+    if (target && (['INPUT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable))
+      return;
     if (event.key < '1' || event.key > '9') return;
     const optionIndex = Number.parseInt(event.key, 10) - 1;
     if (optionIndex < options.length) {
@@ -537,7 +545,6 @@
       <p class="p-5 text-[13px] text-muted-foreground">No questions.</p>
     {:else}
       <div
-        data-ask-user-questions-header
         class={cn(
           'flex items-center text-muted-foreground',
           compact
@@ -547,21 +554,19 @@
       >
         {#if showCounter}
           <!-- i18n-ignore (reference primitive progress label) -->
-          <span data-question-step-counter>Question {safeIndex + 1} of {questions.length}</span>
+          <span>Question {safeIndex + 1} of {questions.length}</span>
         {/if}
         {#if question.header}
-          <span class="ml-2 min-w-0 flex-1 truncate" data-question-header-title
-            >{question.header}</span
-          >
+          <span class="ml-2 min-w-0 flex-1 truncate">{question.header}</span>
         {/if}
         {#if headerActions}
-          <span class="ml-auto flex shrink-0 items-center gap-1" data-question-header-actions>
+          <span class="ml-auto flex shrink-0 items-center gap-1">
             {@render headerActions()}
           </span>
         {/if}
       </div>
 
-      <div use:animatedHeight={true} data-ask-user-questions-morph-region>
+      <div use:animatedHeight={true}>
         <div
           class={cn(
             compact ? 'px-3.5 sm:px-4' : 'px-4 sm:px-5',
@@ -570,7 +575,6 @@
         >
           {#key questionId}
             <div
-              data-question-index={safeIndex}
               class="flex flex-col gap-2"
               in:springIn={{ tier: 'slow', y: 4 }}
               out:crispOut={{ tier: 'fast', y: -2 }}
@@ -658,8 +662,6 @@
                       data-chip-position={chipPosition}
                       data-layout={question.layout ?? 'inline'}
                       data-state={selected ? 'checked' : 'unchecked'}
-                      data-question-option
-                      data-selected={selected}
                       role={isMulti ? 'checkbox' : 'radio'}
                       aria-checked={selected}
                       aria-disabled={optionsLocked || undefined}
@@ -701,7 +703,6 @@
                     >
                       {#snippet chip()}
                         <span
-                          data-option-shortcut-chip
                           class={cn(
                             'relative inline-flex shrink-0 items-center justify-center',
                             compact ? 'size-6' : 'size-7',
@@ -728,7 +729,6 @@
                           >
                           {#if chipPosition === 'right' && !isMulti}
                             <span
-                              data-option-submit-arrow
                               aria-hidden="true"
                               class="absolute inset-0 inline-flex scale-75 items-center justify-center rounded-(--radius-small) bg-primary text-primary-ink opacity-0 transition-[opacity,transform] duration-spring-fast ease-spring-fast group-hover/question-row:scale-100 group-hover/question-row:opacity-100 group-focus/question-row:scale-100 group-focus/question-row:opacity-100 motion-reduce:transition-none"
                             >
@@ -781,7 +781,6 @@
                           class="relative inline-flex size-7 shrink-0 items-center justify-center"
                         >
                           <span
-                            data-option-submit-arrow
                             aria-hidden="true"
                             class="absolute inset-0 inline-flex scale-75 items-center justify-center rounded-(--radius-small) bg-primary text-primary-ink opacity-0 transition-[opacity,transform] duration-spring-fast ease-spring-fast group-hover/question-row:scale-100 group-hover/question-row:opacity-100 group-focus/question-row:scale-100 group-focus/question-row:opacity-100 motion-reduce:transition-none"
                           >
@@ -807,7 +806,6 @@
                       data-proximity-index={otherIndex}
                       data-chip-position={question.chipPosition ?? 'right'}
                       data-state={otherText.length > 0 ? 'checked' : 'unchecked'}
-                      data-question-other-row
                       class={cn(
                         'relative z-10 flex cursor-text items-center rounded-(--radius-small) outline-none',
                         question.chipPosition === 'left'
@@ -851,7 +849,6 @@
                       />
                       {#if question.chipPosition !== 'left'}
                         <span
-                          data-option-shortcut-chip
                           aria-hidden="true"
                           class={cn(
                             'inline-flex shrink-0 items-center justify-center text-[11px]',
@@ -869,10 +866,7 @@
       </div>
 
       {#if showFooter}
-        <div
-          data-ask-user-questions-footer
-          class={cn('pt-1', compact ? 'px-3.5 pb-1.5 sm:px-4' : 'px-4 pb-2 sm:px-5')}
-        >
+        <div class={cn('pt-1', compact ? 'px-3.5 pb-1.5 sm:px-4' : 'px-4 pb-2 sm:px-5')}>
           <div class="-mx-2 flex items-center justify-between gap-2 sm:-mx-3">
             <div class="relative flex min-w-0 flex-1 items-center gap-2">
               {#if showBackAction}
@@ -881,7 +875,7 @@
                     variant="ghost"
                     size="sm"
                     leadingIcon={arrowLeft}
-                    class="pl-3 sm:pl-[6px]"
+                    class="pl-3 sm:pl-1.5"
                     {disabled}
                     onclick={back}>{backLabel}</Button
                   >
