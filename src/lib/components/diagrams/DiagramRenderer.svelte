@@ -136,47 +136,23 @@
   const LABEL_ENTRY_DELAY_MS = ROUTE_ENTRY_DELAY_MS + ROUTE_ENTRY_MS;
   const EXIT_DELAY_MS = LABEL_ENTRY_DELAY_MS + 140;
 
-  function captureNodePositions() {
-    const positions = new Map<string, { x: number; y: number }>();
-    for (const node of rendererEl?.querySelectorAll<SVGForeignObjectElement>('[data-node-id]') ??
-      []) {
-      const id = node.dataset.nodeId;
-      if (!id) continue;
-      positions.set(id, {
-        x: Number(node.getAttribute('x')),
-        y: Number(node.getAttribute('y')),
-      });
-    }
-    return positions;
+  function captureCameraTransform() {
+    const camera = rendererEl?.querySelector<SVGSVGElement>('.diagram-svg-layer');
+    return camera ? getComputedStyle(camera).transform : null;
   }
 
-  function animatePersistentNodes(
-    revision: number,
-    positions: Map<string, { x: number; y: number }>,
-  ) {
-    if (revision !== transitionRevision || motionDuration(1) === 0 || !rendererEl) return;
-    for (const node of rendererEl.querySelectorAll<SVGForeignObjectElement>('[data-node-id]')) {
-      const id = node.dataset.nodeId;
-      const previous = id ? positions.get(id) : undefined;
-      if (!previous) continue;
-      const deltaX = previous.x - Number(node.getAttribute('x'));
-      const deltaY = previous.y - Number(node.getAttribute('y'));
-      if (Math.abs(deltaX) < 0.01 && Math.abs(deltaY) < 0.01) continue;
-      node
-        .animate(
-          [
-            { transform: `translate(${deltaX}px, ${deltaY}px)` },
-            { transform: 'translate(0px, 0px)' },
-          ],
-          {
-            delay: CAMERA_MOTION_MS,
-            duration: SCENE_ENTRY_MS,
-            easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
-            fill: 'backwards',
-          },
-        )
-        .finished.catch(() => undefined);
-    }
+  function animateCameraStage(previousTransform: string | null) {
+    if (!previousTransform || motionDuration(1) === 0 || !rendererEl) return;
+    const camera = rendererEl.querySelector<SVGSVGElement>('.diagram-svg-layer');
+    if (!camera) return;
+    for (const animation of camera.getAnimations({ subtree: false })) animation.cancel();
+    const nextTransform = getComputedStyle(camera).transform;
+    camera
+      .animate([{ transform: previousTransform }, { transform: nextTransform }], {
+        duration: CAMERA_MOTION_MS,
+        easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+      })
+      .finished.catch(() => undefined);
   }
   function activeFiniteAnimations() {
     if (!rendererEl?.getAnimations) return [];
@@ -938,7 +914,7 @@
   // Handle state change
   function changeState(stateId: string) {
     if (stateId === currentStateId) return;
-    const nodePositions = captureNodePositions();
+    const previousCameraTransform = captureCameraTransform();
     transitionRevision += 1;
     const revision = transitionRevision;
     previousVisibleEdgeIds = visibleEdgeIds;
@@ -948,7 +924,7 @@
     if (stateJustChanged) flushSync();
     currentStateId = stateId;
     flushSync();
-    animatePersistentNodes(revision, nodePositions);
+    animateCameraStage(previousCameraTransform);
     if (stateJustChanged) void completeCameraStage(revision, stateId);
     else presentedStateId = stateId;
 

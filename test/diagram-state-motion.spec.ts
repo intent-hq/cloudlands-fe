@@ -22,8 +22,10 @@ type Probe = {
 };
 
 type Frame = {
+  elapsedMs: number;
   settled: boolean;
   state: string;
+  anchor: { x: number; y: number };
   node: { x: number; y: number; width: number; height: number; opacity: number } | null;
   enteringOpacity: number | null;
   group: { x: number; y: number; width: number; height: number } | null;
@@ -61,6 +63,7 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
     async (root, { buttonName, probe }) => {
       const nextFrame = () =>
         new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      let transitionStartedAt: number | null = null;
       const beforeNodeIds = new Set(
         [...root.querySelectorAll<SVGForeignObjectElement>('[data-node-id]')].map(
           (node) => node.dataset.nodeId,
@@ -83,6 +86,7 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
         );
       const frame = (): Frame => {
         const renderer = root.querySelector<HTMLElement>('.diagram-renderer')!;
+        const rendererBounds = renderer.getBoundingClientRect();
         const path = root.querySelector<SVGPathElement>(
           `.diagram-edge[data-edge-id="${probe.edgeId}"] path.edge-path`,
         )!;
@@ -160,8 +164,13 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
           maxOpacity(enteringLabels),
         ];
         return {
+          elapsedMs: transitionStartedAt === null ? 0 : performance.now() - transitionStartedAt,
           settled: renderer.dataset.diagramSettled === 'true',
           state: renderer.dataset.diagramState ?? '',
+          anchor: {
+            x: source.left - rendererBounds.left,
+            y: source.top - rendererBounds.top,
+          },
           node: movingBounds
             ? {
                 x: movingBounds.x,
@@ -203,7 +212,9 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
         };
       };
       const before = frame();
+      transitionStartedAt = performance.now();
       root.querySelector<HTMLButtonElement>(`button[aria-label="${buttonName}"]`)!.click();
+      const afterClick = frame();
       await Promise.resolve();
       await nextFrame();
       const deadline = performance.now() + 2_000;
@@ -230,7 +241,7 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
         samples.push(frame());
       }
       const settled = frame();
-      return { before, start, afterCamera, settled, samples, cameraFrames };
+      return { before, afterClick, start, afterCamera, settled, samples, cameraFrames };
     },
     { buttonName, probe },
   );
@@ -300,6 +311,14 @@ function isBetween(value: number, start: number, end: number) {
 }
 
 function expectCameraBeforeScene(transition: Awaited<ReturnType<typeof recordTransition>>) {
+  expect(transition.afterClick.motionPhase).toBe('camera');
+  expect(transition.afterClick.entranceOpacity).toBe(0);
+  expect(
+    Math.hypot(
+      transition.afterClick.anchor.x - transition.before.anchor.x,
+      transition.afterClick.anchor.y - transition.before.anchor.y,
+    ),
+  ).toBeLessThanOrEqual(1);
   expect(transition.cameraFrames.length).toBeGreaterThan(0);
   expect(
     transition.cameraFrames.some((frame) =>
@@ -320,6 +339,8 @@ function expectCameraBeforeScene(transition: Awaited<ReturnType<typeof recordTra
     ),
   ).toBe(0);
   expect(transition.afterCamera.motionPhase).not.toBe('camera');
+  expect(transition.afterCamera.elapsedMs).toBeGreaterThanOrEqual(200);
+  expect(transition.afterCamera.elapsedMs).toBeLessThanOrEqual(650);
   const firstVisibleFrame = (key: keyof Frame) =>
     transition.samples.findIndex((frame) => Number(frame[key]) > 0.01);
   const sceneFrame = Math.max(
