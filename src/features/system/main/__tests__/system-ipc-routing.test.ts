@@ -32,6 +32,7 @@ vi.mock('electron', () => ({
 vi.mock('../../../../main/browser-ipc-broadcast-adapter', () => ({
   broadcastToBrowserIpcClients: electronMocks.broadcastToBrowserIpcClients,
 }));
+
 import { sendToWorkspaceWindows } from '../system.ipc';
 
 function makeWindow() {

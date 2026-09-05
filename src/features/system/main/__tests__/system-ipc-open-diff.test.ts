@@ -26,6 +26,7 @@ vi.mock('electron', () => ({
 vi.mock('../../../../main/browser-ipc-broadcast-adapter', () => ({
   broadcastToBrowserIpcClients: vi.fn(),
 }));
+
 vi.mock('../../../../shared/main/async-utils', () => ({
   findAuggieAsync: vi.fn(),
   findVSCodeAsync: vi.fn(),

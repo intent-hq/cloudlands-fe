@@ -36,6 +36,7 @@ vi.mock('../../../../shared/main/async-utils', () => ({
   findAuggieAsync: vi.fn(),
   findVSCodeAsync: vi.fn(),
 }));
+
 import { setupSystemIPC } from '../system.ipc';
 import { WINDOW_CHANNELS } from '../../../../shared/ipc/channels';
 import { getWindowBackgroundColor } from '../../../../shared/main/window-appearance';

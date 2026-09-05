@@ -48,6 +48,7 @@ vi.mock('electron', () => ({
 vi.mock('../../../../main/browser-ipc-broadcast-adapter', () => ({
   broadcastToBrowserIpcClients: vi.fn(),
 }));
+
 const { hostExecMock, hostExecStreamMock, spawnMock } = vi.hoisted(() => ({
   hostExecMock: vi.fn(),
   hostExecStreamMock: vi.fn(),
