@@ -209,6 +209,7 @@ describe('AgentActivityGraph', () => {
     const fileButton = screen.getByRole('button', { name: /file-1\.ts/ });
     const unrelatedButton = screen.getByRole('button', { name: /Agent two/ });
 
+    await fireEvent.mouseEnter(agentButton);
     await fireEvent.click(agentButton);
     expect(agentButton.getAttribute('data-focus-state')).toBe('focused');
     expect(taskButton.getAttribute('data-focus-state')).toBe('neighbour');
@@ -233,6 +234,11 @@ describe('AgentActivityGraph', () => {
     await fireEvent.keyDown(agentButton, { key: 'Escape' });
     expect(agentButton.getAttribute('data-focus-state')).toBe('none');
     expect(unrelatedButton.getAttribute('data-focus-state')).toBe('none');
+    expect(view.container.querySelectorAll('[data-highlighted="true"]')).toHaveLength(0);
+
+    await fireEvent.pointerMove(agentButton, { pointerId: 1 });
+    expect(agentButton.getAttribute('data-focus-state')).toBe('focused');
+    expect(unrelatedButton.getAttribute('data-focus-state')).toBe('dimmed');
   });
 
   it('cycles a task-first focus order and navigates parent, child, and siblings', async () => {

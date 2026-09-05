@@ -57,6 +57,7 @@
   let zoomBehavior: ZoomBehavior<HTMLDivElement, unknown> | null = null;
   let zoomScale = $state(1);
   let hoveredNodeId = $state<string | null>(null);
+  let dismissedHoverNodeId = $state<string | null>(null);
   let selectedNodeId = $state<string | null>(null);
   let keyboardNodeId = $state<string | null>(null);
   let spaceHeld = $state(false);
@@ -134,7 +135,8 @@
     return { nodes, edges, collapsedByAgent };
   });
 
-  const focusNodeId = $derived(hoveredNodeId ?? selectedNodeId ?? keyboardNodeId);
+  const activeHoverNodeId = $derived(hoveredNodeId === dismissedHoverNodeId ? null : hoveredNodeId);
+  const focusNodeId = $derived(activeHoverNodeId ?? selectedNodeId ?? keyboardNodeId);
   const focusIds = $derived.by(() => {
     if (!focusNodeId) return null;
     const ids = new Set([focusNodeId]);
@@ -361,6 +363,8 @@
   }
 
   function handlePointerMove(event: PointerEvent): void {
+    const nodeId = (event.currentTarget as HTMLElement).dataset.nodeId;
+    if (nodeId === dismissedHoverNodeId) dismissedHoverNodeId = null;
     if (!dragState || event.pointerId !== dragState.pointerId || !layout) return;
     const dx = (event.clientX - dragState.startX) / zoomScale;
     const dy = (event.clientY - dragState.startY) / zoomScale;
@@ -476,6 +480,7 @@
     const target = event.target;
     const fromGraphNode = target instanceof Element && Boolean(target.closest('[data-graph-node]'));
     if (event.key === 'Escape') {
+      dismissedHoverNodeId = hoveredNodeId;
       selectedNodeId = null;
       keyboardNodeId = null;
       container.focus({ preventScroll: true });
@@ -621,7 +626,10 @@
       onpointerup: handlePointerEnd,
       onpointercancel: handlePointerEnd,
       onmouseenter: () => (hoveredNodeId = node.id),
-      onmouseleave: () => (hoveredNodeId = null),
+      onmouseleave: () => {
+        hoveredNodeId = null;
+        dismissedHoverNodeId = null;
+      },
       onfocus: () => (keyboardNodeId = node.id),
     };
   }
@@ -645,6 +653,7 @@
     if (selectedNodeId && !ids.has(selectedNodeId)) selectedNodeId = null;
     if (keyboardNodeId && !ids.has(keyboardNodeId)) keyboardNodeId = null;
     if (hoveredNodeId && !ids.has(hoveredNodeId)) hoveredNodeId = null;
+    if (dismissedHoverNodeId && !ids.has(dismissedHoverNodeId)) dismissedHoverNodeId = null;
   });
 
   onMount(() => {
