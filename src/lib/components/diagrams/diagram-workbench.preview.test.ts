@@ -195,4 +195,42 @@ describe('diagram workbench fixtures', () => {
       }
     },
   );
+
+  it('preserves exact manual-column centers and a straight route', () => {
+    const fixture = CUSTOM_WORKBENCH_CASES['custom-disconnected-extremes'];
+    expect(fixture.kind).toBe('custom');
+    if (fixture.kind !== 'custom') return;
+    const layout = computeLayout(
+      fixture.diagram.model,
+      fixture.diagram.baseView,
+      fixture.diagram.grammar,
+    );
+    const unicode = layout.nodes.find(({ id }) => id === 'unicode')!;
+    const multiline = layout.nodes.find(({ id }) => id === 'multiline')!;
+    const route = layout.edges.find(({ id }) => id === 'x2')!;
+
+    expect(unicode.x + unicode.width / 2).toBe(multiline.x + multiline.width / 2);
+    expect(route.points).toEqual([
+      { x: unicode.x + unicode.width / 2, y: unicode.y + unicode.height },
+      { x: multiline.x + multiline.width / 2, y: multiline.y },
+    ]);
+  });
+
+  it('keeps exact distinct bottom and side ports for the topology fan-out', () => {
+    const fixture = CUSTOM_WORKBENCH_CASES['custom-topology-stress'];
+    expect(fixture.kind).toBe('custom');
+    if (fixture.kind !== 'custom') return;
+    const layout = computeLayout(
+      fixture.diagram.model,
+      fixture.diagram.baseView,
+      fixture.diagram.grammar,
+    );
+    const hub = layout.nodes.find(({ id }) => id === 'hub')!;
+    const start = (id: string) => layout.edges.find((edge) => edge.id === id)!.points![0];
+    const centerX = hub.x + hub.width / 2;
+
+    expect(start('z6')).toEqual({ x: centerX - 16, y: hub.y + hub.height });
+    expect(start('z7')).toEqual({ x: centerX + 16, y: hub.y + hub.height });
+    expect(start('z8')).toEqual({ x: hub.x + hub.width, y: hub.y + hub.height / 2 });
+  });
 });

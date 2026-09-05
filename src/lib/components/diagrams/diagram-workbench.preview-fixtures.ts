@@ -37,7 +37,7 @@ function customDiagram(
     baseView: {
       layout: {
         type: options.layoutType ?? (grammar === 'network' ? 'force' : 'layered'),
-        direction: options.direction ?? 'LR',
+        ...(options.direction ? { direction: options.direction } : {}),
         spacing: grammar === 'dependency_graph' ? 56 : 72,
         edgeRouting: 'orthogonal',
       },

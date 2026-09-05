@@ -41,6 +41,9 @@ const EDGE_LABEL_FRAME_WIDTH = 0;
 const EDGE_LABEL_LINE_HEIGHT = 18;
 const NODE_ICON_WIDTH = 14;
 const NODE_ICON_GAP = 8;
+const AUTOMATIC_VERTICAL_THRESHOLD = 500;
+const MIN_READABLE_SCALE = 0.84;
+const PORT_SLOT_GAP = 16;
 
 export function compactEdgeLabelMaxWidth(label: string) {
   return label.length >= 48 ? 100 : 60;
@@ -214,49 +217,154 @@ export function computeLayout(
       baseView.layout.edgeRouting || baseView.edgeRouting || config?.defaultLayout?.edgeRouting,
   };
 
-  let result = computeLayoutWithDirection(nodesWithSizes, validModel, layout, nodeDefaults);
-  if (maxDiagramWidth < 500) {
-    return applyWrapping(result, maxDiagramWidth, clampSpacing(layout.spacing, 80), layout);
+  const authoredDirection = baseView.layout.direction;
+  if (!authoredDirection && ['layered', 'tree'].includes(layout.type)) {
+    const horizontalLayout = { ...layout, direction: 'LR' as const };
+    const verticalLayout = { ...layout, direction: 'TB' as const };
+    const horizontal = computeLayoutWithDirection(
+      nodesWithSizes,
+      validModel,
+      horizontalLayout,
+      nodeDefaults,
+    );
+    const vertical = computeLayoutWithDirection(
+      nodesWithSizes,
+      validModel,
+      verticalLayout,
+      nodeDefaults,
+    );
+    const selected = chooseAutomaticLayout(horizontal, vertical, maxDiagramWidth);
+    const selectedLayout = selected === horizontal ? horizontalLayout : verticalLayout;
+    return maxDiagramWidth < AUTOMATIC_VERTICAL_THRESHOLD || selected.bounds.width > maxDiagramWidth
+      ? applyWrapping(selected, maxDiagramWidth, clampSpacing(layout.spacing, 80), selectedLayout)
+      : selected;
   }
 
-  // Check if diagram is too wide and needs adjustment
-  const isHorizontalLayout = layout.direction === 'LR' || layout.direction === 'RL';
+  const result = computeLayoutWithDirection(nodesWithSizes, validModel, layout, nodeDefaults);
+  if (authoredDirection === 'LR' || authoredDirection === 'RL') return result;
+  const needsVerticalReflow =
+    maxDiagramWidth < AUTOMATIC_VERTICAL_THRESHOLD ||
+    (!validModel.groups?.length &&
+      (result.bounds.width > maxDiagramWidth ||
+        (result.bounds.height > 0 &&
+          result.bounds.width / result.bounds.height > MAX_ASPECT_RATIO)));
+  return needsVerticalReflow
+    ? applyWrapping(result, maxDiagramWidth, clampSpacing(layout.spacing, 80), layout)
+    : result;
+}
 
-  const preservesGroupedDirection = Boolean(validModel.groups?.length);
-  if (
-    !preservesGroupedDirection &&
-    (result.bounds.width > maxDiagramWidth ||
-      (result.bounds.height > 0 && result.bounds.width / result.bounds.height > MAX_ASPECT_RATIO))
-  ) {
-    if (isHorizontalLayout) {
-      // Try vertical layout first for horizontal diagrams that are too wide
-      const verticalLayout = { ...layout, direction: 'TB' as const };
-      const verticalResult = computeLayoutWithDirection(
-        nodesWithSizes,
-        validModel,
-        verticalLayout,
-        nodeDefaults,
-      );
+type LayoutQuality = {
+  crossings: number;
+  overlaps: number;
+  collisions: number;
+  unreadable: boolean;
+  overflow: number;
+};
 
-      // Use vertical if it's better (not too wide)
-      if (verticalResult.bounds.width <= maxDiagramWidth) {
-        result = verticalResult;
-      } else {
-        // Still too wide - apply wrapping to vertical layout
-        result = applyWrapping(
-          verticalResult,
-          maxDiagramWidth,
-          clampSpacing(layout.spacing, 80),
-          verticalLayout,
-        );
-      }
-    } else {
-      // TB/BT layout that's too wide - apply wrapping
-      result = applyWrapping(result, maxDiagramWidth, clampSpacing(layout.spacing, 80), layout);
+function chooseAutomaticLayout(
+  horizontal: ComputedLayout,
+  vertical: ComputedLayout,
+  availableWidth: number,
+): ComputedLayout {
+  if (availableWidth < AUTOMATIC_VERTICAL_THRESHOLD) return vertical;
+  const horizontalQuality = layoutQuality(horizontal, availableWidth);
+  const verticalQuality = layoutQuality(vertical, availableWidth);
+  if (horizontalQuality.unreadable !== verticalQuality.unreadable) {
+    return horizontalQuality.unreadable ? vertical : horizontal;
+  }
+  if (horizontalQuality.collisions !== verticalQuality.collisions) {
+    return horizontalQuality.collisions < verticalQuality.collisions ? horizontal : vertical;
+  }
+  if (horizontalQuality.overlaps !== verticalQuality.overlaps) {
+    return horizontalQuality.overlaps < verticalQuality.overlaps ? horizontal : vertical;
+  }
+  if (horizontalQuality.crossings > verticalQuality.crossings + 1) return vertical;
+  if (horizontalQuality.overflow > verticalQuality.overflow + 0.1) return vertical;
+  return horizontal;
+}
+
+function layoutQuality(layout: ComputedLayout, availableWidth: number): LayoutQuality {
+  const segments = layout.edges.flatMap((edge) => routeSegments(edge.points ?? []));
+  let crossings = 0;
+  let overlaps = 0;
+  let collisions = 0;
+  for (let left = 0; left < segments.length; left += 1) {
+    for (let right = left + 1; right < segments.length; right += 1) {
+      const result = segmentIntersection(segments[left], segments[right]);
+      if (result === 'crossing') crossings += 1;
+      if (result === 'overlap') overlaps += 1;
     }
+    collisions += layout.nodes.filter((node) => segmentCrossesNode(segments[left], node)).length;
   }
+  const requiredScale = Math.min(1, availableWidth / Math.max(layout.bounds.width, 1));
+  return {
+    crossings,
+    overlaps,
+    collisions,
+    unreadable: requiredScale < MIN_READABLE_SCALE,
+    overflow: Math.max(0, layout.bounds.width / Math.max(availableWidth, 1) - 1),
+  };
+}
 
-  return result;
+type RouteSegment = { start: RoutePoint; end: RoutePoint; horizontal: boolean };
+
+function routeSegments(points: RoutePoint[]): RouteSegment[] {
+  return points.slice(1).flatMap((end, index) => {
+    const start = points[index];
+    const horizontal = Math.abs(start.y - end.y) < 0.001;
+    const vertical = Math.abs(start.x - end.x) < 0.001;
+    return horizontal || vertical ? [{ start, end, horizontal }] : [];
+  });
+}
+
+function segmentIntersection(
+  left: RouteSegment,
+  right: RouteSegment,
+): 'none' | 'crossing' | 'overlap' {
+  const range = (a: number, b: number) => [Math.min(a, b), Math.max(a, b)] as const;
+  if (left.horizontal === right.horizontal) {
+    const leftAxis = left.horizontal ? left.start.y : left.start.x;
+    const rightAxis = right.horizontal ? right.start.y : right.start.x;
+    if (Math.abs(leftAxis - rightAxis) >= 0.001) return 'none';
+    const [leftMin, leftMax] = left.horizontal
+      ? range(left.start.x, left.end.x)
+      : range(left.start.y, left.end.y);
+    const [rightMin, rightMax] = right.horizontal
+      ? range(right.start.x, right.end.x)
+      : range(right.start.y, right.end.y);
+    return Math.min(leftMax, rightMax) - Math.max(leftMin, rightMin) > 0.5 ? 'overlap' : 'none';
+  }
+  const horizontal = left.horizontal ? left : right;
+  const vertical = left.horizontal ? right : left;
+  const [minX, maxX] = range(horizontal.start.x, horizontal.end.x);
+  const [minY, maxY] = range(vertical.start.y, vertical.end.y);
+  return vertical.start.x > minX + 0.5 &&
+    vertical.start.x < maxX - 0.5 &&
+    horizontal.start.y > minY + 0.5 &&
+    horizontal.start.y < maxY - 0.5
+    ? 'crossing'
+    : 'none';
+}
+
+function segmentCrossesNode(segment: RouteSegment, node: ComputedNode): boolean {
+  if (segment.horizontal) {
+    const minX = Math.min(segment.start.x, segment.end.x);
+    const maxX = Math.max(segment.start.x, segment.end.x);
+    return (
+      segment.start.y > node.y + 0.5 &&
+      segment.start.y < node.y + node.height - 0.5 &&
+      maxX > node.x + 0.5 &&
+      minX < node.x + node.width - 0.5
+    );
+  }
+  const minY = Math.min(segment.start.y, segment.end.y);
+  const maxY = Math.max(segment.start.y, segment.end.y);
+  return (
+    segment.start.x > node.x + 0.5 &&
+    segment.start.x < node.x + node.width - 0.5 &&
+    maxY > node.y + 0.5 &&
+    minY < node.y + node.height - 0.5
+  );
 }
 
 /**
@@ -475,6 +583,16 @@ function computeLayoutWithDirection(
     nodeDefaults,
     model.groups,
   );
+  if ((layout.type === 'layered' || layout.type === 'tree') && layout.direction === 'RL') {
+    const minX = Math.min(...computedNodes.map(({ x }) => x));
+    const maxX = Math.max(...computedNodes.map(({ x, width }) => x + width));
+    for (const node of computedNodes) node.x = minX + maxX - node.x - node.width;
+  }
+  if ((layout.type === 'layered' || layout.type === 'tree') && layout.direction === 'BT') {
+    const minY = Math.min(...computedNodes.map(({ y }) => y));
+    const maxY = Math.max(...computedNodes.map(({ y, height }) => y + height));
+    for (const node of computedNodes) node.y = minY + maxY - node.y - node.height;
+  }
 
   // Compute edge paths
   const computedEdges = computeEdgePaths(model.edges, computedNodes, layout, model.groups);
@@ -707,13 +825,22 @@ function computeNodePositions(
       column.push(node);
       positionedColumns.set(columnKey ?? authored.x, column);
     }
+    const minimumX = Math.min(...result.map((node) => node.x));
+    const compressedColumnNodes = new Set<string>();
     for (const [authoredX, column] of positionedColumns) {
       if (column.length < 2) continue;
       const width = Math.max(...column.map((node) => node.width));
-      for (const node of column) node.x = authoredX + (width - node.width) / 2;
+      const center = minimumX + (authoredX + width / 2 - minimumX) * 0.89;
+      for (const node of column) {
+        node.x = center - node.width / 2;
+        compressedColumnNodes.add(node.id);
+      }
     }
-    const minimumX = Math.min(...result.map((node) => node.x));
-    for (const node of result) node.x = minimumX + (node.x - minimumX) * 0.89;
+    for (const node of result) {
+      if (!compressedColumnNodes.has(node.id)) {
+        node.x = minimumX + (node.x - minimumX) * 0.89;
+      }
+    }
     return result;
   }
 
@@ -2305,6 +2432,7 @@ function computeOrthogonalEdgePaths(
 
   // Collect edge info
   type EdgeInfo = {
+    index: number;
     edge: DiagramEdge;
     fromNode: ComputedNode;
     toNode: ComputedNode;
@@ -2317,7 +2445,7 @@ function computeOrthogonalEdgePaths(
   const selfLoopEdges: ComputedEdge[] = [];
   const selfLoopCounts = new Map<string, number>();
 
-  for (const edge of edges) {
+  for (const [index, edge] of edges.entries()) {
     const fromNode = nodeMap.get(edge.from);
     const toNode = nodeMap.get(edge.to);
     if (!fromNode || !toNode) continue;
@@ -2340,8 +2468,10 @@ function computeOrthogonalEdgePaths(
         ? fromNode.y + fromNode.height / 2 > toNode.y + toNode.height / 2
         : fromNode.x + fromNode.width / 2 > toNode.x + toNode.width / 2);
 
-    edgeInfos.push({ edge, fromNode, toNode, fromSide, toSide, goesBackward });
+    edgeInfos.push({ index, edge, fromNode, toNode, fromSide, toSide, goesBackward });
   }
+
+  const portPositions = assignOrderedPortPositions(edgeInfos);
 
   // Group edges by their routing needs to allocate non-overlapping channels
   // For horizontal layout: edges using vertical midline channels
@@ -2629,7 +2759,7 @@ function computeOrthogonalEdgePaths(
 
   // Generate paths
   const computedEdges: ComputedEdge[] = edgeInfos.map((info) => {
-    const { edge, fromNode, toNode, fromSide, toSide, goesBackward } = info;
+    const { index, edge, fromNode, toNode, fromSide, toSide, goesBackward } = info;
 
     const getPortPosition = (node: ComputedNode, side: Side) => {
       switch (side) {
@@ -2644,8 +2774,8 @@ function computeOrthogonalEdgePaths(
       }
     };
 
-    const fromPos = getPortPosition(fromNode, fromSide);
-    let toPos = getPortPosition(toNode, toSide);
+    const fromPos = portPositions.get(`${index}:from`) ?? getPortPosition(fromNode, fromSide);
+    let toPos = portPositions.get(`${index}:to`) ?? getPortPosition(toNode, toSide);
     const biOffset = biOffsets.get(edge.id);
 
     const points: Array<{ x: number; y: number }> = [fromPos];
@@ -2866,6 +2996,83 @@ function computeOrthogonalEdgePaths(
   });
 
   return [...selfLoopEdges, ...computedEdges];
+
+  function assignOrderedPortPositions(infos: EdgeInfo[]): Map<string, RoutePoint> {
+    type PortUse = {
+      key: string;
+      node: ComputedNode;
+      side: Side;
+      desired: number;
+      role: 'from' | 'to';
+      edgeId: string;
+    };
+    const groups = new Map<string, PortUse[]>();
+    const add = (use: PortUse) => {
+      const key = `${use.node.id}:${use.side}`;
+      groups.set(key, [...(groups.get(key) ?? []), use]);
+    };
+    for (const info of infos) {
+      const fromVertical = info.fromSide === 'top' || info.fromSide === 'bottom';
+      const toVertical = info.toSide === 'top' || info.toSide === 'bottom';
+      add({
+        key: `${info.index}:from`,
+        node: info.fromNode,
+        side: info.fromSide,
+        desired: fromVertical
+          ? info.toNode.x + info.toNode.width / 2
+          : info.toNode.y + info.toNode.height / 2,
+        role: 'from',
+        edgeId: info.edge.id,
+      });
+      add({
+        key: `${info.index}:to`,
+        node: info.toNode,
+        side: info.toSide,
+        desired: toVertical
+          ? info.fromNode.x + info.fromNode.width / 2
+          : info.fromNode.y + info.fromNode.height / 2,
+        role: 'to',
+        edgeId: info.edge.id,
+      });
+    }
+
+    const positions = new Map<string, RoutePoint>();
+    for (const uses of groups.values()) {
+      const roles = new Set(uses.map(({ role }) => role));
+      const oppositeNodes = new Set(
+        uses.map((use) => {
+          const info = infos.find((candidate) => candidate.index === Number(use.key.split(':')[0]));
+          return use.role === 'from' ? info?.toNode.id : info?.fromNode.id;
+        }),
+      );
+      const needsDistinctPorts = uses.length >= 3 || (roles.size > 1 && oppositeNodes.size === 1);
+      if (!needsDistinctPorts) continue;
+      const sorted = uses.toSorted(
+        (left, right) =>
+          left.desired - right.desired ||
+          left.role.localeCompare(right.role) ||
+          left.edgeId.localeCompare(right.edgeId) ||
+          left.key.localeCompare(right.key),
+      );
+      const { node, side } = sorted[0];
+      const verticalSide = side === 'top' || side === 'bottom';
+      const size = verticalSide ? node.width : node.height;
+      const center = verticalSide ? node.x + node.width / 2 : node.y + node.height / 2;
+      const available = Math.max(0, size - Math.min(32, size * 0.4));
+      const gap = sorted.length > 1 ? Math.min(PORT_SLOT_GAP, available / (sorted.length - 1)) : 0;
+      const start = center - (gap * (sorted.length - 1)) / 2;
+      sorted.forEach((use, slot) => {
+        const axis = start + slot * gap;
+        positions.set(
+          use.key,
+          verticalSide
+            ? { x: axis, y: side === 'top' ? node.y : node.y + node.height }
+            : { x: side === 'left' ? node.x : node.x + node.width, y: axis },
+        );
+      });
+    }
+    return positions;
+  }
 }
 
 function computeCompactColumnEdgePaths(
@@ -2922,7 +3129,7 @@ function computeCompactColumnEdgePaths(
       };
       const terminalLead = 32;
       const laneClearance = needsAdjacentLabelLane
-        ? Math.max(terminalLead, compactLabel!.width / 2 + 8)
+        ? Math.max(terminalLead, (compactLabel?.width ?? 0) / 2 + 8)
         : terminalLead;
       const laneX = downward ? columnWidth + laneClearance + row * 8 : -laneClearance - row * 8;
       points = [
@@ -2982,7 +3189,7 @@ function buildCompactOrthogonalPath(
     commands.push(`Q ${corner.x} ${corner.y} ${after.x} ${after.y}`);
     current = after;
   }
-  lineTo(points.at(-1)!);
+  lineTo(points[points.length - 1]);
   return commands.join(' ');
 }
 

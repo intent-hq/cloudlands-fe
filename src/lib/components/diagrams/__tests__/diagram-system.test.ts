@@ -240,6 +240,59 @@ describe('Diagram Validation', () => {
 });
 
 describe('Layout Engine', () => {
+  it('prefers LR for an unspecified wide layout and TB below the narrow threshold', () => {
+    const diagram = createArchitectureDiagram(
+      [
+        { id: 'source', label: 'Source' },
+        { id: 'model', label: 'Model' },
+        { id: 'frame', label: 'Frame' },
+      ],
+      [
+        { from: 'source', to: 'model' },
+        { from: 'model', to: 'frame' },
+      ],
+    );
+    diagram.baseView.layout.direction = undefined;
+
+    const wide = computeLayout(diagram.model, diagram.baseView, diagram.grammar, undefined, 900);
+    const narrow = computeLayout(diagram.model, diagram.baseView, diagram.grammar, undefined, 420);
+
+    expect(wide.nodes.map(({ x }) => x)).toEqual(
+      [...wide.nodes.map(({ x }) => x)].sort((a, b) => a - b),
+    );
+    expect(narrow.nodes.map(({ y }) => y)).toEqual(
+      [...narrow.nodes.map(({ y }) => y)].sort((a, b) => a - b),
+    );
+    expect(wide.bounds.height).toBeLessThan(narrow.bounds.height);
+  });
+
+  it.each(['LR', 'RL', 'TB', 'BT'] as const)(
+    'keeps an authored %s direction authoritative',
+    (direction) => {
+      const diagram = createArchitectureDiagram(
+        [
+          { id: 'first', label: 'First' },
+          { id: 'second', label: 'Second' },
+        ],
+        [{ from: 'first', to: 'second' }],
+      );
+      diagram.baseView.layout.direction = direction;
+
+      const layout = computeLayout(
+        diagram.model,
+        diagram.baseView,
+        diagram.grammar,
+        undefined,
+        320,
+      );
+      const [first, second] = layout.nodes;
+      if (direction === 'LR') expect(first.x).toBeLessThan(second.x);
+      if (direction === 'RL') expect(first.x).toBeGreaterThan(second.x);
+      if (direction === 'TB') expect(first.y).toBeLessThan(second.y);
+      if (direction === 'BT') expect(first.y).toBeGreaterThan(second.y);
+    },
+  );
+
   it('expands route-label height for every measured line', () => {
     expect(measureEdgeLabel('send message').lines).toBe(1);
     expect(measureEdgeLabel('send message')).toMatchObject({ lines: 1, height: 28 });
@@ -748,6 +801,7 @@ describe('Edge Routing', () => {
         { from: 'error', to: 'idle', label: 'choose another case' },
       ],
     );
+    diagram.baseView.layout.direction = 'TB';
     const layout = computeLayout(diagram.model, diagram.baseView, diagram.grammar);
     const source = layout.nodes.find(({ id }) => id === 'error')!;
     const target = layout.nodes.find(({ id }) => id === 'idle')!;

@@ -1,4 +1,5 @@
 const ORTHOGONAL_CORNER_RADIUS = 6;
+const FEEDBACK_TARGET_PORT_FRACTION = 0.18;
 const MAX_TERMINAL_CORRECTION = 4;
 const COMPACT_ARROW_SIZE = 7;
 const LABEL_TURN_CLEARANCE_CSS = 8;
@@ -99,7 +100,7 @@ export function buildFlowchartFeedbackLanePoints(
   const outerBottom =
     Math.max(...occupied.map((bounds) => bounds.y + bounds.height)) + (compact ? 12 : 28);
   const sourceY = source.y + source.height / 2;
-  const targetX = target.x + target.width / 2;
+  const targetX = target.x + target.width * FEEDBACK_TARGET_PORT_FRACTION;
   return [
     { x: source.x + source.width, y: sourceY },
     { x: outerRight, y: sourceY },
@@ -960,7 +961,7 @@ export function snapFlowchartFeedbackPorts(svg: SVGSVGElement) {
     sourceBounds.top + sourceBounds.height / 2,
   ).matrixTransform(inverse);
   const targetPort = new DOMPoint(
-    targetBounds.left + targetBounds.width / 2,
+    targetBounds.left + targetBounds.width * FEEDBACK_TARGET_PORT_FRACTION,
     targetBounds.bottom + 0.25,
   ).matrixTransform(inverse);
   points[0] = { x: sourcePort.x, y: sourcePort.y };

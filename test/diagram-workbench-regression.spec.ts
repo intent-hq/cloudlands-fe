@@ -1126,6 +1126,103 @@ for (const appearance of [
   { name: 'dark', mode: 'dark' as const, colorTheme: 'Default' },
   { name: 'nord', mode: 'light' as const, colorTheme: 'Nord' },
 ]) {
+  for (const width of [420, 960] as const) {
+    test(`separates Source feedback and forward ports in ${appearance.name} at ${width}px`, async ({
+      page,
+    }) => {
+      await openState(page, 'mermaid-dense-graph', width, appearance.mode);
+      const colorTheme = page.getByTestId('catalog-color-theme-control');
+      if (!(await colorTheme.textContent())?.includes(appearance.colorTheme)) {
+        await colorTheme.click();
+        await page.getByRole('option', { name: appearance.colorTheme, exact: true }).click();
+      }
+      const geometry = await page
+        .locator('#mermaid-dense-graph svg.flowchart[data-layout-settled="true"]')
+        .evaluate((svg) => {
+          const route = (source: string, target: string) =>
+            [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].find((path) =>
+              new RegExp(`-L_${source}_${target}_[0-9]+$`).test(path.id),
+            )!;
+          const points = (path: SVGPathElement) =>
+            path.dataset.manhattanPoints!.split(' ').map((value) => {
+              const [x, y] = value.split(',').map(Number);
+              return new DOMPoint(x, y).matrixTransform(path.getScreenCTM()!);
+            });
+          const sourceShape = [...svg.querySelectorAll<SVGGElement>('g.node')]
+            .find((node) => node.textContent?.trim() === 'Source')!
+            .querySelector<SVGGraphicsElement>(':scope > .label-container')!;
+          const source = sourceShape.getBoundingClientRect();
+          const parse = points(route('A', 'B'));
+          const feedbackPath = route('G', 'A');
+          const feedback = points(feedbackPath);
+          return {
+            feedbackFraction: (feedback.at(-1)!.x - source.left) / source.width,
+            feedbackBeforeParse: feedback.at(-1)!.x < parse[0].x,
+            feedbackParseGap: Math.abs(feedback.at(-1)!.x - parse[0].x),
+            feedbackStub: Math.hypot(
+              feedback.at(-1)!.x - feedback.at(-2)!.x,
+              feedback.at(-1)!.y - feedback.at(-2)!.y,
+            ),
+            parseStub: Math.hypot(parse[1].x - parse[0].x, parse[1].y - parse[0].y),
+            sharedParseFeedbackColumn: Math.abs(feedback.at(-1)!.x - parse[0].x) <= 1,
+            marker: feedbackPath.getAttribute('marker-end'),
+          };
+        });
+      expect(geometry.feedbackFraction).toBeCloseTo(0.18, 2);
+      expect(geometry.feedbackBeforeParse).toBe(true);
+      expect(geometry.feedbackParseGap).toBeGreaterThanOrEqual(4);
+      expect(geometry.feedbackStub).toBeGreaterThanOrEqual(6);
+      expect(geometry.parseStub).toBeGreaterThanOrEqual(8);
+      expect(geometry.sharedParseFeedbackColumn).toBe(false);
+      expect(geometry.marker).toContain('pointEnd');
+    });
+
+    test(`preserves the manual column center in ${appearance.name} at ${width}px`, async ({
+      page,
+    }) => {
+      await openState(page, 'custom-disconnected-extremes', width, appearance.mode);
+      const colorTheme = page.getByTestId('catalog-color-theme-control');
+      if (!(await colorTheme.textContent())?.includes(appearance.colorTheme)) {
+        await colorTheme.click();
+        await page.getByRole('option', { name: appearance.colorTheme, exact: true }).click();
+      }
+      const geometry = await page.locator('#custom-disconnected-extremes').evaluate((root) => {
+        const unicode = root
+          .querySelector<SVGGraphicsElement>('[data-node-id="unicode"]')!
+          .getBoundingClientRect();
+        const measured = root
+          .querySelector<SVGGraphicsElement>('[data-node-id="multiline"]')!
+          .getBoundingClientRect();
+        const route = root.querySelector<SVGPathElement>('.diagram-edge[data-edge-id="x2"] path')!;
+        const length = route.getTotalLength();
+        const end = route.getPointAtLength(length).matrixTransform(route.getScreenCTM()!);
+        const label = root
+          .querySelector<SVGGraphicsElement>('.edge-label-container[data-edge-id="x2"]')!
+          .getBoundingClientRect();
+        const stage = root.querySelector<HTMLElement>('.diagram-stage')!.getBoundingClientRect();
+        return {
+          centerDelta: Math.abs(
+            (unicode.left + unicode.right) / 2 - (measured.left + measured.right) / 2,
+          ),
+          targetGap: measured.top - end.y,
+          bends: (route.getAttribute('d')?.match(/ Q /g) ?? []).length,
+          labelContained: label.left >= stage.left - 1 && label.right <= stage.right + 1,
+        };
+      });
+      expect(geometry.centerDelta).toBeLessThanOrEqual(1);
+      expect(geometry.targetGap).toBeGreaterThanOrEqual(4.5);
+      expect(geometry.targetGap).toBeLessThanOrEqual(6);
+      if (width === 960) expect(geometry.bends).toBe(0);
+      expect(geometry.labelContained).toBe(true);
+    });
+  }
+}
+
+for (const appearance of [
+  { name: 'light', mode: 'light' as const, colorTheme: 'Default' },
+  { name: 'dark', mode: 'dark' as const, colorTheme: 'Default' },
+  { name: 'nord', mode: 'light' as const, colorTheme: 'Nord' },
+]) {
   for (const width of [320, 420, 640, 960] as const) {
     test(`keeps the Client request lane clear in ${appearance.name} at ${width}px`, async ({
       page,
