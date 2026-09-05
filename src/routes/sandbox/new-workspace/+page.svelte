@@ -11,6 +11,7 @@
     type MockTransactionHarness,
   } from '$features/new-workspace/sandbox/mock-transaction';
   import {
+    CONTROLLER_PHASES,
     reduce,
     type Capability,
     type ControllerState,
@@ -32,6 +33,14 @@
     const requested = Number(page.url.searchParams.get('width') ?? 960);
     return Number.isFinite(requested) ? Math.min(1600, Math.max(240, Math.round(requested))) : 960;
   });
+  const controllerCoverage = $derived(
+    Math.round(
+      (new Set(NEW_WORKSPACE_SCENARIOS.map((scenario) => scenario.initialControllerState.phase))
+        .size /
+        CONTROLLER_PHASES.length) *
+        100,
+    ),
+  );
 
   function scenarioUrl(id: string): string {
     return `/sandbox/new-workspace?scenario=${encodeURIComponent(id)}&width=${width}`;
@@ -264,6 +273,11 @@
           {/each}
         </tbody>
       </table>
+      <output
+        class="block border-t border-border p-3 text-right text-sm font-semibold"
+        data-testid="controller-phase-coverage"
+        aria-label={m.sandbox_newWorkspace_description()}>{controllerCoverage}%</output
+      >
     </div>
   {/if}
 </section>
