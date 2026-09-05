@@ -1616,7 +1616,7 @@
     <TipTapEditor
       bind:this={tiptap}
       class={isAutoExpand ? '' : 'h-full overflow-y-auto'}
-      {editorClassName}
+      editorClassName={cn('text-sm! leading-5!', editorClassName)}
       minHeight={20}
       maxHeight={isAutoExpand ? 9999 : 9999}
       {autoFocus}

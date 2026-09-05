@@ -15,6 +15,7 @@ export interface CatalogNavEntry {
 export const catalogShowcaseEntries: readonly CatalogNavEntry[] = [
   { slug: 'introduction', name: 'Introduction', href: '/sandbox' },
   { slug: 'recipes', name: 'Recipes', href: '/sandbox/recipes' },
+  { slug: 'chat-composer', name: 'Chat composer', href: '/sandbox/chat-composer' },
   { slug: 'directory-picker', name: 'Directory picker', href: '/sandbox/directory-picker' },
   { slug: 'question-wizard', name: 'Question wizard', href: '/sandbox/question-wizard' },
 ];

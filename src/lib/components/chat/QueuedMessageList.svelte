@@ -579,7 +579,7 @@
         <div class="flex flex-col gap-1">
           {#each messages as message (message.id)}
             <div
-              class="group relative type-body flex min-h-8 select-none items-center gap-2 rounded-(--radius-medium) bg-muted px-2.5 text-foreground/85 {message.editing
+              class="group relative type-caption flex min-h-8 select-none items-center gap-2 rounded-(--radius-medium) bg-muted px-2.5 font-normal! text-foreground/85 {message.editing
                 ? 'opacity-60'
                 : ''}"
               data-testid="queued-message-row"
@@ -600,7 +600,7 @@
                     onkeydown={handleKeydown}
                     onblur={handleEditBlur}
                     rows={1}
-                    class="type-body min-w-0 flex-1 resize-none overflow-hidden rounded bg-transparent py-0! text-foreground focus:outline-none! focus:ring-0!"
+                    class="type-caption min-w-0 flex-1 resize-none overflow-hidden rounded bg-transparent py-0! font-normal! text-foreground focus:outline-none! focus:ring-0!"
                     autocorrect="off"
                     autocapitalize="off"
                     spellcheck="false"
@@ -644,7 +644,7 @@
                   {@render fileChips(message)}
                   <Button
                     variant="plain"
-                    class="min-w-0 flex-1 cursor-default text-left outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    class="min-w-0 flex-1 cursor-default justify-start text-left font-normal! outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     data-testid="queued-message-content"
                     data-mode="display"
                     aria-label={message.content}
