@@ -50,6 +50,8 @@
   import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('MermaidRenderer');
+  const SEQUENCE_MESSAGE_INSET = 12;
+  const SEQUENCE_MESSAGE_LINE_HEIGHT = 16;
   const STATE_LABEL_TEXT = {
     streamFails: 'Stream fails', // i18n-ignore (agent-authored Mermaid content)
     agentAsksUser: 'Agent asks user', // i18n-ignore (agent-authored Mermaid content)
@@ -473,12 +475,104 @@ ${verticalSource}`;
     return lines;
   }
 
+  function wrapSequenceMessage(text: string, maxWidth: number, element: SVGTextElement) {
+    const words = text.trim().split(/\s+/);
+    const context = document.createElement('canvas').getContext('2d');
+    if (!context || words.length === 0) return [text];
+    const style = getComputedStyle(element);
+    context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const lines: string[] = [];
+    for (const word of words) {
+      const candidate = lines.length ? `${lines.at(-1)} ${word}` : word;
+      if (lines.length && context.measureText(candidate).width > maxWidth) lines.push(word);
+      else if (lines.length) lines[lines.length - 1] = candidate;
+      else lines.push(word);
+    }
+    return lines;
+  }
+
+  function shiftSequenceGeometryAfter(svg: SVGSVGElement, threshold: number, amount: number) {
+    for (const line of svg.querySelectorAll<SVGLineElement>('line')) {
+      for (const attribute of ['y1', 'y2'] as const) {
+        const value = Number(line.getAttribute(attribute));
+        if (Number.isFinite(value) && value >= threshold) {
+          line.setAttribute(attribute, String(value + amount));
+        }
+      }
+    }
+    for (const text of svg.querySelectorAll<SVGTextElement>('text')) {
+      const y = Number(text.getAttribute('y'));
+      if (Number.isFinite(y) && y >= threshold) text.setAttribute('y', String(y + amount));
+    }
+    for (const rect of svg.querySelectorAll<SVGRectElement>('rect')) {
+      const y = Number(rect.getAttribute('y'));
+      const height = Number(rect.getAttribute('height'));
+      if (![y, height].every(Number.isFinite)) continue;
+      if (y >= threshold) rect.setAttribute('y', String(y + amount));
+      else if (y + height >= threshold) rect.setAttribute('height', String(height + amount));
+    }
+  }
+
+  function insetSequenceMessageLabels(svg: SVGSVGElement, actorCenters: number[]) {
+    const groups: Array<{ labels: SVGTextElement[]; line: SVGLineElement }> = [];
+    let labels: SVGTextElement[] = [];
+    for (const child of svg.children) {
+      if (child.matches('text.messageText')) labels.push(child as SVGTextElement);
+      if (!child.matches('line.messageLine0, line.messageLine1')) continue;
+      groups.push({ labels, line: child as SVGLineElement });
+      labels = [];
+    }
+
+    for (const group of groups) {
+      if (group.labels.length === 0) continue;
+      const x1 = Number(group.line.getAttribute('x1'));
+      const x2 = Number(group.line.getAttribute('x2'));
+      const source = actorCenters.reduce((nearest, center) =>
+        Math.abs(center - x1) < Math.abs(nearest - x1) ? center : nearest,
+      );
+      const target = actorCenters.reduce((nearest, center) =>
+        Math.abs(center - x2) < Math.abs(nearest - x2) ? center : nearest,
+      );
+      const midpoint = (source + target) / 2;
+      const maxWidth = Math.abs(target - source) - SEQUENCE_MESSAGE_INSET * 2;
+      const text = group.labels.map((label) => label.textContent?.trim()).join(' ');
+      const wrapped = wrapSequenceMessage(text, maxWidth, group.labels[0]);
+      const addedHeight = (wrapped.length - group.labels.length) * SEQUENCE_MESSAGE_LINE_HEIGHT;
+      const arrowY = Number(group.line.getAttribute('y1'));
+      if (addedHeight > 0 && Number.isFinite(arrowY)) {
+        shiftSequenceGeometryAfter(svg, arrowY, addedHeight);
+      }
+
+      const template = group.labels[0];
+      const firstY = Number(template.getAttribute('y'));
+      for (const label of group.labels.slice(1)) label.remove();
+      wrapped.forEach((line, index) => {
+        const label = index === 0 ? template : (template.cloneNode(false) as SVGTextElement);
+        label.textContent = line;
+        label.setAttribute('x', String(midpoint));
+        label.setAttribute('y', String(firstY + index * SEQUENCE_MESSAGE_LINE_HEIGHT));
+        label.setAttribute('text-anchor', 'middle');
+        if (index > 0) group.line.before(label);
+      });
+    }
+  }
+
   function polishSequenceDiagram(svg: SVGSVGElement) {
     if (svg.getAttribute('aria-roledescription') !== 'sequence') return;
 
+    const originalViewBox = {
+      x: svg.viewBox.baseVal.x,
+      y: svg.viewBox.baseVal.y,
+      width: svg.viewBox.baseVal.width,
+      height: svg.viewBox.baseVal.height,
+    };
+    const originalBounds = svg.getBBox();
+    const bottomPadding =
+      originalViewBox.y + originalViewBox.height - (originalBounds.y + originalBounds.height);
     const actorCenters = [...svg.querySelectorAll<SVGLineElement>('.actor-line')].map((line) =>
       Number(line.getAttribute('x1')),
     );
+    insetSequenceMessageLabels(svg, actorCenters);
     for (const message of svg.querySelectorAll<SVGLineElement>(
       ':scope > line.messageLine0, :scope > line.messageLine1',
     )) {
@@ -642,6 +736,18 @@ ${verticalSource}`;
       note.setAttribute('width', String(width));
       note.setAttribute('height', String(height));
       note.setAttribute('rx', '6');
+    }
+
+    const finalBounds = svg.getBBox();
+    const finalHeight = Math.ceil(
+      finalBounds.y + finalBounds.height + bottomPadding - originalViewBox.y,
+    );
+    if (finalHeight > originalViewBox.height) {
+      svg.setAttribute(
+        'viewBox',
+        `${originalViewBox.x} ${originalViewBox.y} ${originalViewBox.width} ${finalHeight}`,
+      );
+      svg.setAttribute('height', String(finalHeight));
     }
   }
 
@@ -1603,22 +1709,36 @@ ${verticalSource}`;
     stroke-width: 1px !important;
   }
 
-  .mermaid-presentation :global(.actor-line) {
+  .mermaid-presentation :global(svg[aria-roledescription='sequence']) {
+    --sequence-message-stroke: color-mix(
+      in srgb,
+      hsl(var(--muted-foreground)) 76%,
+      var(--diagram-canvas)
+    );
+    --sequence-structure-stroke: color-mix(
+      in srgb,
+      hsl(var(--muted-foreground)) 64%,
+      var(--diagram-canvas)
+    );
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .actor-line) {
+    stroke: var(--sequence-structure-stroke) !important;
     stroke-width: 1px !important;
     stroke-dasharray: 3 4;
-    opacity: 0.34;
+    opacity: 0.62;
   }
 
   .mermaid-presentation
     :global(svg[aria-roledescription='sequence'] :is(.messageLine0, .messageLine1)) {
-    stroke: var(--diagram-connector-hover) !important;
+    stroke: var(--sequence-message-stroke) !important;
     stroke-width: 1.25px !important;
     opacity: 1;
   }
 
   .mermaid-presentation
     :global(svg[aria-roledescription='sequence'] marker[data-diagram-chevron='true'] path) {
-    stroke: var(--diagram-connector-hover) !important;
+    stroke: var(--sequence-message-stroke) !important;
   }
 
   .mermaid-presentation
@@ -1637,17 +1757,17 @@ ${verticalSource}`;
   }
 
   .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-frame-line) {
-    stroke: var(--diagram-group-outline) !important;
+    stroke: var(--sequence-structure-stroke) !important;
     stroke-width: var(--line-hairline) !important;
     stroke-dasharray: none !important;
-    opacity: 0.52;
+    opacity: 0.7;
   }
 
   .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-branch-divider) {
-    stroke: var(--diagram-group-outline) !important;
+    stroke: var(--sequence-structure-stroke) !important;
     stroke-width: var(--line-hairline) !important;
     stroke-dasharray: none !important;
-    opacity: 0.72;
+    opacity: 0.82;
   }
 
   .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-construct-label) {

@@ -8,18 +8,22 @@ const contracts = {
   'mermaid-sequence-simple': {
     actors: ['Client', 'API'],
     messages: ['Submit account recovery request', 'Recovery request accepted'],
+    patterns: ['solid', 'dashed'],
   },
   'mermaid-sequence-alt': {
     actors: ['Client', 'Service'],
     messages: ['Validate request', 'Accepted response', 'Explain required changes'],
+    patterns: ['solid', 'dashed', 'dashed'],
   },
   'mermaid-sequence-loop': {
     actors: ['User', 'Workbench'],
     messages: ['Review rendered result', 'Show next diagram'],
+    patterns: ['solid', 'dashed'],
   },
   'mermaid-sequence-note': {
     actors: ['Editor', 'Renderer'],
     messages: ['Render source'],
+    patterns: ['solid'],
   },
 } as const;
 
@@ -41,6 +45,7 @@ async function openSequence(page: Page, state: string, width: number, theme: str
 async function expectSequenceContract(
   svg: ReturnType<Page['locator']>,
   contract: (typeof contracts)[keyof typeof contracts],
+  theme: (typeof appearances)[number],
 ) {
   const result = await svg.evaluate((diagram) => {
     const actorLines = [...diagram.querySelectorAll<SVGLineElement>('.actor-line')];
@@ -57,48 +62,109 @@ async function expectSequenceContract(
       .sort((a, b) => a.center - b.center)
       .map(({ label }) => label);
 
-    const messages: Array<{ text: string; gap: number; destinationGap: number }> = [];
+    const participantBounds = [
+      ...diagram.querySelectorAll<SVGGraphicsElement>(
+        '[data-et="participant"], g.actor-man.actor-top',
+      ),
+    ].map((actor) => actor.getBBox());
+    const messages: Array<{
+      text: string;
+      gap: number;
+      precedingArrowGap: number | null;
+      horizontalInset: number;
+      destinationGap: number;
+      overlapsParticipant: boolean;
+      pattern: 'solid' | 'dashed';
+    }> = [];
     let pending: SVGTextElement[] = [];
+    let previousArrowY: number | null = null;
     for (const child of diagram.children) {
       if (child.matches('text.messageText')) pending.push(child as SVGTextElement);
       if (!child.matches('line.messageLine0, line.messageLine1')) continue;
       const line = child as SVGLineElement;
       const lineY = Number(line.getAttribute('y1'));
-      const labelBottom = Math.max(
-        ...pending.map((label) => label.getBBox().y + label.getBBox().height),
-      );
+      const labelBounds = pending.map((label) => label.getBBox());
+      const labelLeft = Math.min(...labelBounds.map((bounds) => bounds.x));
+      const labelRight = Math.max(...labelBounds.map((bounds) => bounds.x + bounds.width));
+      const labelTop = Math.min(...labelBounds.map((bounds) => bounds.y));
+      const labelBottom = Math.max(...labelBounds.map((bounds) => bounds.y + bounds.height));
+      const sourceX = Number(line.getAttribute('x1'));
       const destinationX = Number(line.getAttribute('x2'));
+      const sourceCenter = actorCenters.reduce((nearest, center) =>
+        Math.abs(center - sourceX) < Math.abs(nearest - sourceX) ? center : nearest,
+      );
+      const destinationCenter = actorCenters.reduce((nearest, center) =>
+        Math.abs(center - destinationX) < Math.abs(nearest - destinationX) ? center : nearest,
+      );
+      const spanLeft = Math.min(sourceCenter, destinationCenter);
+      const spanRight = Math.max(sourceCenter, destinationCenter);
+      const style = getComputedStyle(line);
       messages.push({
         text: pending.map((label) => label.textContent?.trim()).join(' '),
         gap: lineY - labelBottom,
+        precedingArrowGap: previousArrowY === null ? null : labelTop - previousArrowY,
+        horizontalInset: Math.min(labelLeft - spanLeft, spanRight - labelRight),
         destinationGap: Math.min(...actorCenters.map((center) => Math.abs(center - destinationX))),
+        overlapsParticipant: participantBounds.some(
+          (bounds) =>
+            labelLeft < bounds.x + bounds.width &&
+            labelRight > bounds.x &&
+            labelTop < bounds.y + bounds.height &&
+            labelBottom > bounds.y,
+        ),
+        pattern: style.strokeDasharray === 'none' ? 'solid' : 'dashed',
       });
       pending = [];
+      previousArrowY = lineY;
     }
 
     const messageLabels = [...diagram.querySelectorAll<SVGTextElement>('text.messageText')];
     const labelSurfaces = messageLabels
       .map((label) => label.previousElementSibling)
       .filter(Boolean);
+    const context = document.createElement('canvas').getContext('2d')!;
+    const rgb = (color: string) => {
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      return [...context.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+    };
+    const luminance = (values: number[]) => {
+      const channels = values.map((value) => {
+        const channel = value / 255;
+        return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+      });
+      return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+    };
     const canvas = getComputedStyle(diagram).backgroundColor;
-    const textContrast = (element: Element) => {
-      const context = document.createElement('canvas').getContext('2d')!;
-      const rgb = (color: string) => {
-        context.fillStyle = color;
-        context.fillRect(0, 0, 1, 1);
-        return [...context.getImageData(0, 0, 1, 1).data.slice(0, 3)];
-      };
-      const luminance = (values: number[]) => {
-        const channels = values.map((value) => {
-          const channel = value / 255;
-          return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-        });
-        return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
-      };
-      const foreground = luminance(rgb(getComputedStyle(element).fill));
-      const background = luminance(rgb(canvas));
+    const canvasRgb = rgb(canvas);
+    const contrast = (color: string, opacity = 1) => {
+      const foregroundRgb = rgb(color).map(
+        (channel, index) => channel * opacity + canvasRgb[index] * (1 - opacity),
+      );
+      const foreground = luminance(foregroundRgb);
+      const background = luminance(canvasRgb);
       return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
     };
+    const textContrast = (element: Element) => contrast(getComputedStyle(element).fill);
+    const messageLines = [
+      ...diagram.querySelectorAll<SVGLineElement>('.messageLine0, .messageLine1'),
+    ];
+    const messageStrokes = messageLines.map((line) => getComputedStyle(line).stroke);
+    const arrowheadStrokes = messageLines.map((line) => {
+      const markerId = line.getAttribute('marker-end')?.match(/#([^)]*)/)?.[1];
+      const markerPath = markerId
+        ? diagram.querySelector<SVGPathElement>(`#${CSS.escape(markerId)} path`)
+        : null;
+      return markerPath ? getComputedStyle(markerPath).stroke : null;
+    });
+    const structureElements = [
+      ...actorLines,
+      ...diagram.querySelectorAll<SVGLineElement>('.sequence-frame-line, .sequence-branch-divider'),
+    ];
+    const structureContrasts = structureElements.map((element) => {
+      const style = getComputedStyle(element);
+      return contrast(style.stroke, Number(style.opacity));
+    });
 
     const viewBox = diagram.viewBox.baseVal;
     const visibleElements = [
@@ -116,6 +182,22 @@ async function expectSequenceContract(
       messageOpacity: Number(
         getComputedStyle(diagram.querySelector('.messageLine0, .messageLine1')!).opacity,
       ),
+      minimumMessageContrast: Math.min(...messageStrokes.map((stroke) => contrast(stroke))),
+      minimumStructureContrast: Math.min(...structureContrasts),
+      maximumStructureContrast: Math.max(...structureContrasts),
+      arrowheadsMatchMessages: arrowheadStrokes.every(
+        (stroke, index) =>
+          stroke !== null &&
+          rgb(stroke).every((channel, channelIndex) =>
+            Number.isNaN(channel)
+              ? false
+              : Math.abs(channel - rgb(messageStrokes[index])[channelIndex]) <= 1,
+          ),
+      ),
+      lightMessageChannelSpread: messageStrokes.map((stroke) => {
+        const channels = rgb(stroke);
+        return Math.max(...channels) - Math.min(...channels);
+      }),
       labelWidths: messageLabels.map((label) => label.getBBox().width),
       labelSurfaceCount: labelSurfaces.filter((surface) =>
         surface?.classList.contains('edge-label-knockout'),
@@ -139,7 +221,15 @@ async function expectSequenceContract(
 
   expect(result.actors).toEqual(contract.actors);
   expect(result.messages.map(({ text }) => text)).toEqual(contract.messages);
-  expect(result.messages.every(({ gap }) => gap >= 0 && gap <= 16)).toBe(true);
+  expect(result.messages.map(({ pattern }) => pattern)).toEqual(contract.patterns);
+  expect(result.messages.every(({ gap }) => gap >= 6 && gap <= 16)).toBe(true);
+  expect(
+    result.messages.every(
+      ({ precedingArrowGap }) => precedingArrowGap === null || precedingArrowGap >= 12,
+    ),
+  ).toBe(true);
+  expect(result.messages.every(({ horizontalInset }) => horizontalInset >= 10)).toBe(true);
+  expect(result.messages.every(({ overlapsParticipant }) => !overlapsParticipant)).toBe(true);
   expect(result.messages.every(({ destinationGap }) => Math.abs(destinationGap - 5) <= 0.5)).toBe(
     true,
   );
@@ -147,6 +237,13 @@ async function expectSequenceContract(
   expect(result.labelSurfaceCount).toBe(result.labelWidths.length);
   expect(result.opaqueSurfaces).toBe(true);
   expect(result.minimumLabelContrast).toBeGreaterThanOrEqual(4.5);
+  expect(result.minimumMessageContrast).toBeGreaterThanOrEqual(3);
+  expect(result.minimumStructureContrast).toBeGreaterThanOrEqual(1.4);
+  expect(result.maximumStructureContrast).toBeLessThan(result.minimumMessageContrast);
+  expect(result.arrowheadsMatchMessages).toBe(true);
+  if (theme === 'light') {
+    expect(Math.max(...result.lightMessageChannelSpread)).toBeLessThanOrEqual(8);
+  }
   expect(result.actorWeight).toBeGreaterThanOrEqual(500);
   expect(result.lifelineOpacity).toBeLessThan(result.messageOpacity);
   expect(result.contained).toBe(true);
@@ -235,7 +332,7 @@ for (const [state, contract] of Object.entries(contracts)) {
       test(`${state} hierarchy · ${theme} · ${width}px`, async ({ page }) => {
         test.setTimeout(180_000);
         const svg = await openSequence(page, state, width, theme);
-        await expectSequenceContract(svg, contract);
+        await expectSequenceContract(svg, contract, theme);
         if (state === 'mermaid-sequence-alt') await expectAltHierarchy(svg);
         if (state === 'mermaid-sequence-loop') await expectLoopHierarchy(svg);
         if (state === 'mermaid-sequence-note') await expectNoteHierarchy(svg);
