@@ -37,6 +37,23 @@
   const resolvedLocale$ = selectResolvedLocale();
 
   onMount(() => {
+    const setWindowBlurred = (blurred: boolean) => {
+      document.documentElement.toggleAttribute('data-window-blurred', blurred);
+    };
+    const handleWindowBlur = () => setWindowBlurred(true);
+    const handleWindowFocus = () => setWindowBlurred(false);
+
+    setWindowBlurred(!document.hasFocus());
+    const electronApi = window.electronAPI;
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- root native window lifecycle bridge
+    const windowFocusListenerId = electronApi?.on?.('window:focus', (focused: boolean) => {
+      setWindowBlurred(!focused);
+    });
+    if (!windowFocusListenerId) {
+      window.addEventListener('blur', handleWindowBlur);
+      window.addEventListener('focus', handleWindowFocus);
+    }
+
     // eslint-disable-next-line intent/no-component-async-data-fetch -- root DOM splash lifecycle wiring does not own domain state.
     const stopSplashGate = wireSplashGate(document.getElementById('splash'));
     document.getElementById('app-drag-region')?.remove();
@@ -50,6 +67,14 @@
     );
 
     return () => {
+      if (windowFocusListenerId) {
+        // eslint-disable-next-line intent/no-component-async-data-fetch -- paired native window listener cleanup
+        electronApi.offById('window:focus', windowFocusListenerId);
+      } else {
+        window.removeEventListener('blur', handleWindowBlur);
+        window.removeEventListener('focus', handleWindowFocus);
+      }
+      document.documentElement.removeAttribute('data-window-blurred');
       stopSplashGate();
       cleanupMouseHistoryNavigation();
       if (historyNavigateListenerId) {

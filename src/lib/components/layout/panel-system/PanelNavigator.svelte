@@ -185,7 +185,7 @@
   data-panel-navigator
 >
   <div
-    class="panel-navigator-track pointer-events-none relative h-9 w-full max-w-xl overflow-hidden rounded-(--radius-large) bg-popover/95 text-popover-foreground shadow-(--elevation-overlay) ring-1 ring-border ring-inset backdrop-blur-md"
+    class="panel-navigator-track pointer-events-none relative h-9 w-full max-w-xl overflow-hidden rounded-(--radius-large) bg-popover text-popover-foreground shadow-(--elevation-overlay) ring-1 ring-border ring-inset"
   >
     {#each panels as panel (panel.id)}
       {@const segment = segmentGeometry.get(panel.id)}
