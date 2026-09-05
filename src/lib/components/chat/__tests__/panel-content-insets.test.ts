@@ -33,7 +33,7 @@ describe('panel content insets', () => {
     expect(panel).toContain(
       'padding: 0.5rem var(--composer-lane-inset-x) var(--composer-lane-inset-bottom)',
     );
-    expect(input).toContain("contentInsetClassName ?? (edgeDocked ? 'px-4 sm:px-6' : 'px-2')");
+    expect(input).toContain("contentInsetClassName ?? 'px-2'");
     expect(input.match(/\{contentInsetClasses\}/g)?.length).toBe(3);
   });
 });

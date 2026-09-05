@@ -21,7 +21,7 @@ describe('QueuedMessageEditMotionHost', () => {
   it('keeps the editing textarea focused through refresh and reorder controls', async () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverStub);
     const view = render(QueuedMessageEditMotionHost);
-    await fireEvent.click(screen.getAllByTestId('queued-message-content')[0]);
+    await fireEvent.dblClick(screen.getAllByTestId('queued-message-content')[0]);
     const textarea = await waitFor(() => view.container.querySelector('textarea'));
     await waitFor(() => expect(document.activeElement).toBe(textarea));
 

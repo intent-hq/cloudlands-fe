@@ -38,7 +38,7 @@ describe('queued message reduced motion', () => {
     const second = queued('two', 1);
     const view = render(QueuedMessageList, { props: { messages: [first, second], onedit } });
 
-    await fireEvent.click(screen.getAllByTestId('queued-message-content')[0]);
+    await fireEvent.dblClick(screen.getAllByTestId('queued-message-content')[0]);
     const textarea = await waitFor(() => view.container.querySelector('textarea'));
     await waitFor(() => expect(document.activeElement).toBe(textarea));
     await fireEvent.input(textarea!, { target: { value: 'selection text' } });
@@ -53,7 +53,7 @@ describe('queued message reduced motion', () => {
     await waitFor(() => expect(view.container.querySelector('textarea')).toBeNull());
     expect(animate).not.toHaveBeenCalled();
 
-    await fireEvent.click(screen.getAllByTestId('queued-message-content')[0]);
+    await fireEvent.dblClick(screen.getAllByTestId('queued-message-content')[0]);
     const savedTextarea = await waitFor(() => view.container.querySelector('textarea'));
     await fireEvent.input(savedTextarea!, { target: { value: 'saved' } });
     await fireEvent.keyDown(savedTextarea!, { key: 'Enter' });
@@ -61,7 +61,7 @@ describe('queued message reduced motion', () => {
     expect(animate).not.toHaveBeenCalled();
 
     await view.rerender({ messages: [first], onedit });
-    await fireEvent.click(screen.getByTestId('queued-message-content'));
+    await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
     await waitFor(() => expect(view.container.querySelector('textarea')).toBeTruthy());
     await view.rerender({ messages: [], onedit });
     await waitFor(() => expect(view.container.querySelector('textarea')).toBeNull());

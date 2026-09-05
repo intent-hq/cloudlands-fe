@@ -365,12 +365,13 @@ describe('editorial conversation presentation contract', () => {
     expect(suggestions).not.toContain('faPaperPlane');
   });
 
-  it('supports the nested ChatPanel composer without changing standalone chrome', () => {
+  it('uses the MessageComposer surface shell in docked and standalone contexts', () => {
     const input = source('src/lib/components/chat/input/SimpleRichInput.svelte');
 
-    expect(input).toMatch(/edgeDocked\s*\?/);
-    expect(input).toContain('rounded-lg border-0 bg-sidebar shadow-none');
-    expect(input).toContain('rounded-lg border border-border shadow-(--elevation-raised)');
+    expect(input).toContain('surfaceClasses(2, 2)');
+    expect(input).toContain('rounded-(--radius-large)');
+    expect(input).toContain("edgeDocked ? 'border-0' : 'border border-transparent'");
+    expect(input).toContain('data-ring-state={ringState}');
     expect(input).not.toContain(':global(.panel:not(.focused) .rich-input-container) {');
     expect(input).toContain('@media (prefers-reduced-motion: reduce)');
   });
@@ -470,7 +471,9 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('AuroraSofteningLayer');
     expect(panel).toContain('style:height={`calc(${composerHeight}px + 10rem)`}');
     expect(panel).toContain('height: calc(100% + 10rem)');
-    expect(panel).toContain('class="relative z-20 mt-6 {isChiefWorkspace');
+    expect(panel).toContain('{#snippet queueRegion()}');
+    expect(panel).toContain('<QueuedMessageList');
+    expect(panel).not.toContain('data-testid="queued-message-utility-area"');
     expect(panel).not.toContain('regular-composer-aurora-host');
   });
 });

@@ -1,10 +1,10 @@
 <script lang="ts">
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /* eslint-disable max-lines */
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
-  import { toast } from 'svelte-sonner';
-  import { withToastCountdown } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
+  import { withToastCountdown } from '$lib/components/patterns/notify';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -21,6 +21,9 @@
   } from '$lib/client/live/live-prompt-enhancement';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
+  import { ShortcutChip } from '$lib/components/ui/kbd';
+  import { surfaceClasses } from '$lib/components/ui/surface-context';
+  import ArrowUpIcon from 'phosphor-svelte/lib/ArrowUpIcon';
 
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
 
@@ -33,12 +36,9 @@
   import {
     faMicrophone,
     faPaperclip,
-    faArrowRight,
     faSpinner,
     faXmark,
-    faStop,
     faPlus,
-    faClock,
     faWandMagicSparkles,
     faRotateLeft,
     faAt,
@@ -56,7 +56,8 @@
   import { showVoiceSetupToast } from '$features/hardware-console/voice/voice-setup-toast';
   import { selectEffectiveVoiceEngine } from '$store/renderer/slices/voice-settings/voice-settings-selectors';
   import type { PttContext } from '$features/hardware-console/voice/ptt-controller';
-  import Button from '../../ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   import TipTapEditor from './TipTapEditor.svelte';
   import ModelPicker from './ModelPicker.svelte';
   import ModelSwitchConfirmDialog from '../ModelSwitchConfirmDialog.svelte';
@@ -82,7 +83,7 @@
     selectSelections,
   } from '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors';
 
-  import { slide } from 'svelte/transition';
+  import { safeDisclosureTransition } from '../disclosure-motion';
 
   const logger = createLogger('SimpleRichInput');
 
@@ -160,6 +161,10 @@
     contentInsetClassName?: string;
     /** Override the action bar's important trailing-edge padding (defaults to `pr-1.5!`). */
     actionBarEndClassName?: string;
+    /** Daemon-backed queue rendered inside the composer's recessed queue region. */
+    queueRegion?: Snippet;
+    /** Optional first suggested prompt shown as a Tab-accepting ghost value. */
+    placeholderSuggestion?: string;
     /**
      * The parent owns file drag-and-drop (e.g. ChatPanel's full-panel drop
      * target): the container's own drag handlers and drop overlay are disabled
@@ -231,6 +236,8 @@
     editorClassName = 'px-2!',
     contentInsetClassName = undefined,
     actionBarEndClassName = 'pr-1.5!',
+    queueRegion,
+    placeholderSuggestion,
     externalDropTarget = false,
     onsubmit,
     onforcesubmit,
@@ -254,9 +261,7 @@
   // effective provider, matching the daemon's derivation.
   const enhanceAvailable = $derived(isEnhancePromptAvailable($defaultProviderId$));
 
-  const contentInsetClasses = $derived(
-    contentInsetClassName ?? (edgeDocked ? 'px-4 sm:px-6' : 'px-2'),
-  );
+  const contentInsetClasses = $derived(contentInsetClassName ?? 'px-2');
 
   // Track if enhancement is in progress
   let isEnhancing = $state(false);
@@ -330,7 +335,7 @@
 
   const micContext: PttContext = {
     dispatch: (action) => appStore.dispatch(action as { type: string }),
-    showHint: (message) => toast.info(message),
+    showHint: (message) => notify.info(message),
   };
 
   function handleMicClick() {
@@ -511,7 +516,7 @@
       );
   }
 
-  let fileInput: HTMLInputElement;
+  let fileInput = $state<HTMLInputElement | null>(null);
 
   // Track dismissed main panel context - stores a key that identifies the dismissed context
   // When the main panel changes to something different, we reset this to show the new context
@@ -534,6 +539,9 @@
   let isResizing = $state(false);
   let containerHeight = $state<number | null>(null); // null = use auto-expand mode
   let isComposerFocused = $state(false);
+  let isComposerHovered = $state(false);
+  let isDragging = $state(false);
+  let dragCounter = $state(0);
   let initialY = 0;
   let initialHeight = 0;
 
@@ -555,6 +563,9 @@
     value.trim().length > 0 || contextItems.length > 0 || hasInlineImages,
   );
   const showPlaceholder = $derived(inputLocked || (isComposerFocused && !hasComposerContent));
+  const showPlaceholderSuggestion = $derived(
+    Boolean(placeholderSuggestion) && !hasComposerContent && !isDragging,
+  );
 
   // Automatic geometry expands only for real composer content. Focus reveals
   // the placeholder without changing the compact idle height.
@@ -576,6 +587,31 @@
 
   // When user manually resizes, we use their height; otherwise auto-expand
   let isAutoExpand = $derived(containerHeight === null);
+  const ringState = $derived(
+    isDragging
+      ? 'drag'
+      : isComposerFocused
+        ? 'focus'
+        : isComposerHovered && !disabled
+          ? 'hover'
+          : 'rest',
+  );
+  const edgeShadow = $derived(
+    ringState === 'drag'
+      ? '0 0 0 1px hsl(var(--focus-ring)), var(--shadow-surface-2)'
+      : ringState === 'focus'
+        ? '0 0 0 1px hsl(var(--foreground) / 0.2), var(--shadow-surface-2)'
+        : ringState === 'hover'
+          ? '0 0 0 1px hsl(var(--border)), var(--shadow-surface-2)'
+          : undefined,
+  );
+  const composerStyle = $derived(
+    `${
+      isAutoExpand
+        ? `min-height: ${dynamicDefaultHeight}px; max-height: ${maxAutoHeight}px;`
+        : `height: ${containerHeight}px;`
+    }${edgeShadow ? ` box-shadow: ${edgeShadow};` : ''}`,
+  );
 
   // Model selection
   // svelte-ignore state_referenced_locally -- intentional initial snapshot; later prop changes sync below.
@@ -770,7 +806,7 @@
           }),
         );
       }
-      toast.error(
+      notify.error(
         error instanceof Error
           ? error.message
           : m.chat_richInput_switchFailed_error({
@@ -849,7 +885,7 @@
         // one) based on whatever the component state holds at click time.
         const undoValueForToast = originalPrompt;
         const enhancedValueForToast = result.enhanced;
-        toast.success(
+        notify.success(
           m.chat_richInput_promptEnhanced_toast(),
           withToastCountdown({
             duration: 10000,
@@ -874,7 +910,7 @@
         return;
       }
       logger.error('Failed to enhance prompt:', error);
-      toast.error(
+      notify.error(
         error instanceof EnhancePromptUnavailableError
           ? m.chat_richInput_enhanceUnavailable_error()
           : error instanceof Error && error.message
@@ -920,10 +956,6 @@
     // Reset the input
     target.value = '';
   }
-
-  // Drag and drop state
-  let isDragging = $state(false);
-  let dragCounter = $state(0);
 
   // Handle drag events for file drop
   function handleDragEnter(e: DragEvent) {
@@ -982,7 +1014,7 @@
       // host filesystem, which a remote daemon cannot do. Any folder in the
       // drop rejects the WHOLE drop when remote (files included).
       if (isRemoteBackend()) {
-        toast.error(m.chat_richInput_folderDropRemote_error());
+        notify.error(m.chat_richInput_folderDropRemote_error());
         return;
       }
       for (const folder of folderFiles) {
@@ -1017,7 +1049,7 @@
       logger.warn('Dropped folder has no resolvable absolute path; skipping', {
         name: folder.name,
       });
-      toast.error(m.onboarding_promptStep_attachmentNoPath_error({ name: folder.name }));
+      notify.error(m.onboarding_promptStep_attachmentNoPath_error({ name: folder.name }));
       return;
     }
     // Windows-aware basename fallback ('\' or '/' separators).
@@ -1152,7 +1184,7 @@
         hasSourcePath: !!item.sourcePath,
       });
       patchItem({ placementStatus: 'failed' });
-      toast.error(m.chat_richInput_attachmentPlaceFailed_error({ name: item.label }));
+      notify.error(m.chat_richInput_attachmentPlaceFailed_error({ name: item.label }));
       return;
     }
 
@@ -1191,7 +1223,7 @@
         attachmentId: result.attachmentId,
         size: result.size,
       });
-      toast.success(m.chat_richInput_addedFile_toast({ name: result.fileName }));
+      notify.success(m.chat_richInput_addedFile_toast({ name: result.fileName }));
     } catch (error) {
       if (isPlacementCancellation(error, aborter.signal)) {
         // User removed the attachment mid-upload — the item is already gone
@@ -1206,7 +1238,7 @@
         placementError: detail,
         placementProgress: undefined,
       });
-      toast.error(
+      notify.error(
         detail
           ? m.chat_richInput_attachmentPlaceFailedDetail_error({ name: item.label, detail })
           : m.chat_richInput_attachmentPlaceFailed_error({ name: item.label }),
@@ -1334,6 +1366,23 @@
     }
   }
 
+  function handleComposerKeydownCapture(event: KeyboardEvent) {
+    if (
+      event.key !== 'Tab' ||
+      event.shiftKey ||
+      event.altKey ||
+      event.metaKey ||
+      event.ctrlKey ||
+      !placeholderSuggestion ||
+      hasComposerContent ||
+      !(event.target instanceof Element) ||
+      !event.target.closest('[data-testid="tiptap-editor"]')
+    )
+      return;
+    event.preventDefault();
+    void setContent(placeholderSuggestion).then(() => focus());
+  }
+
   // Add global mouse event listeners for resize
   $effect(() => {
     if (isResizing) {
@@ -1408,6 +1457,19 @@
 
     return groups;
   });
+
+  const buttonMode = $derived<'send' | 'queue' | 'stop'>(
+    !showStopButton ? 'send' : canSend ? 'queue' : 'stop',
+  );
+  const buttonLabel = $derived(
+    editMode
+      ? m.chat_richInput_saveAndResend_label()
+      : buttonMode === 'stop'
+        ? m.chat_richInput_stopStreaming_ariaLabel()
+        : buttonMode === 'queue'
+          ? m.chat_richInput_queueMessage_ariaLabel()
+          : m.chat_richInput_sendMessage_ariaLabel(),
+  );
 </script>
 
 <svelte:window onkeydowncapture={handleMicEscape} />
@@ -1415,20 +1477,17 @@
 <div
   bind:this={containerRef}
   class={cn(
-    'relative rich-input-container flex flex-col overflow-hidden text-card-foreground duration-(--motion-fast) ease-(--ease-standard) motion-reduce:transition-none',
+    'relative rich-input-container flex flex-col overflow-hidden rounded-(--radius-large) p-2 text-card-foreground transition-[box-shadow,color,min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+    surfaceClasses(2, 2),
     isAutoExpand
       ? 'transition-[border-color,background-color,box-shadow,min-height]'
       : 'transition-[border-color,background-color,box-shadow]',
-    edgeDocked
-      ? 'rounded-lg border-0 bg-sidebar shadow-none'
-      : 'rounded-lg border border-border shadow-(--elevation-raised) focus-within:border-ring focus-within:ring-0',
+    edgeDocked ? 'border-0' : 'border border-transparent',
     {
-      'border-primary border-dashed': isDragging,
+      'border-primary-ink border-dashed': isDragging,
     },
   )}
-  style={isAutoExpand
-    ? `min-height: ${dynamicDefaultHeight}px; max-height: ${maxAutoHeight}px;`
-    : `height: ${containerHeight}px;`}
+  style={composerStyle}
   ondragenter={externalDropTarget ? undefined : handleDragEnter}
   ondragleave={externalDropTarget ? undefined : handleDragLeave}
   ondragover={externalDropTarget ? undefined : handleDragOver}
@@ -1436,16 +1495,20 @@
   onpaste={handlePaste}
   onfocusin={handleFocusIn}
   onfocusout={handleFocusOut}
+  onmouseenter={() => (isComposerHovered = true)}
+  onmouseleave={() => (isComposerHovered = false)}
+  onkeydowncapture={handleComposerKeydownCapture}
   role="region"
   aria-label={m.chat_richInput_dropSupport_ariaLabel()}
   data-testid="message-input"
+  data-ring-state={ringState}
 >
   <!-- Drop zone overlay -->
   {#if isDragging}
     <div
       class="absolute inset-0 bg-primary/5 z-20 flex items-center justify-center pointer-events-none"
     >
-      <div class="flex flex-col items-center gap-2 text-primary">
+      <div class="flex flex-col items-center gap-2 text-primary-ink">
         <Fa icon={faPaperclip} class="w-6 h-6" />
         <span class="text-sm font-medium">{m.chat_richInput_dropFiles_label()}</span>
       </div>
@@ -1453,7 +1516,8 @@
   {/if}
 
   <!-- Resize Handle - at bottom when in edit mode, top otherwise. Double-click to reset to auto-expand -->
-  <button
+  <Button
+    variant="plain"
     class="app-resize-handle resize-handle absolute left-1/2 z-10 h-4 w-12 -translate-x-1/2 opacity-0 pointer-events-none group-[.focused]/panel:opacity-100 group-[.focused]/panel:pointer-events-auto {editMode
       ? 'bottom-[-0.5px] translate-y-1/2'
       : 'top-[-0.5px] -translate-y-1/2'}"
@@ -1463,8 +1527,14 @@
     onmousedown={startResize}
     ondblclick={handleResizeDoubleClick}
     aria-label={m.chat_richInput_resize_ariaLabel()}
-    tabindex="-1"
-  ></button>
+    tabindex={-1}
+  ></Button>
+
+  {#if queueRegion}
+    <div class="pb-1" data-chat-input-queue-region>
+      {@render queueRegion()}
+    </div>
+  {/if}
 
   <!-- Non-image context items and selections - shown above editor when present -->
   {#if nonImageItems.length > 0}
@@ -1531,7 +1601,7 @@
     class="editor-wrapper relative min-h-0 cursor-text pt-1 {isAutoExpand
       ? 'flex-1 overflow-y-auto'
       : 'flex-1 overflow-hidden'} {editMode ? 'pr-5' : ''}"
-    class:placeholder-hidden={!showPlaceholder}
+    class:placeholder-hidden={!showPlaceholder || showPlaceholderSuggestion}
     onclick={() => tiptap?.focus()}
   >
     <TipTapEditor
@@ -1580,6 +1650,24 @@
       }}
     />
 
+    {#if showPlaceholderSuggestion}
+      <div
+        class="pointer-events-none absolute inset-0 overflow-hidden {editorClassName} pt-1 text-sm leading-5 text-muted-foreground"
+        aria-hidden="true"
+        data-testid="composer-placeholder-suggestion"
+      >
+        <span class="flex max-w-full items-center gap-1.5">
+          <span class="min-w-0 truncate">{placeholderSuggestion}</span>
+          <span
+            class="inline-flex h-[18px] items-center rounded-[5px] border border-border bg-background px-1"
+          >
+            <!-- i18n-ignore (physical keyboard key label) -->
+            <ShortcutChip>Tab</ShortcutChip>
+          </span>
+        </span>
+      </div>
+    {/if}
+
     {#if isEnhancing}
       <div class="shimmer-overlay-wrapper">
         <div class="shimmer-overlay"></div>
@@ -1610,12 +1698,10 @@
   {/if}
 
   <!-- Hidden file input - accepts any file type -->
-  <input bind:this={fileInput} type="file" multiple class="hidden" onchange={handleFileChange} />
+  <Input bind:ref={fileInput} type="file" multiple class="hidden" onchange={handleFileChange} />
   <!-- Action Bar -->
   <div
-    class="action-bar flex items-center justify-between pb-1.5 {actionBarEndClassName} pt-0 text-muted-foreground transition-opacity duration-150 {edgeDocked
-      ? 'flex-wrap gap-y-1'
-      : ''} {contentInsetClasses}"
+    class="action-bar mt-1 flex items-center justify-between gap-2 pb-0 {actionBarEndClassName} pt-0 text-muted-foreground transition-opacity duration-spring-fast ease-spring-fast motion-reduce:transition-none {contentInsetClasses}"
     data-chat-input-action-bar
   >
     <div class="flex items-center gap-2 min-w-0" data-chat-input-primary-actions>
@@ -1670,10 +1756,7 @@
       />
     </div>
 
-    <div
-      class="flex items-center gap-1 min-w-0 {edgeDocked ? 'flex-wrap justify-end' : 'shrink-0'}"
-      data-chat-input-submit-actions
-    >
+    <div class="flex min-w-0 shrink-0 items-center gap-1.5" data-chat-input-submit-actions>
       <div class="relative inline-block">
         <Menu.Root>
           <Menu.Trigger>
@@ -1739,96 +1822,52 @@
         </TooltipShortcut>
       {/if}
 
-      {#if showStopButton}
-        <!-- Stop button — visible whenever the agent is responding/running,
-             mirroring the Thinking indicator so users can interrupt across
-             the pre-first-chunk, streaming, and waiting-on-subagents windows. -->
-        <TooltipShortcut label={m.chat_richInput_stop_label()} side="top">
-          <Button
-            variant="ghost-light"
-            size="icon-sm"
-            onclick={() => onstop?.()}
-            aria-label={m.chat_richInput_stopStreaming_ariaLabel()}
-            class="text-muted-foreground"
-          >
-            <Fa icon={faStop} size="sm" />
-          </Button>
-        </TooltipShortcut>
-
-        {#if canSend}
-          <div class="flex items-center gap-1" transition:slide={{ axis: 'x', duration: 200 }}>
-            <TooltipShortcut
-              label={m.chat_richInput_queueMessage_ariaLabel()}
-              shortcut="Enter"
-              side="top"
-            >
-              <Button
-                variant="ghost-light"
-                size="icon-sm"
-                onclick={handleSubmit}
-                disabled={isEnhancing}
-                aria-label={m.chat_richInput_queueMessage_ariaLabel()}
-              >
-                <Fa icon={faClock} size="sm" />
-              </Button>
-            </TooltipShortcut>
-            <TooltipShortcut
-              label={m.chat_richInput_interruptAndSend_ariaLabel()}
-              shortcut="cmd+Enter"
-              side="top"
-            >
-              <Button
-                variant="ghost-light"
-                size="icon-sm"
-                onclick={handleForceSubmit}
-                disabled={isEnhancing}
-                aria-label={m.chat_richInput_interruptAndSend_ariaLabel()}
-                data-testid="interrupt-btn"
-              >
-                <Fa icon={faArrowRight} size="sm" />
-              </Button>
-            </TooltipShortcut>
-          </div>
-        {/if}
-      {:else if editMode}
-        <!-- Edit mode: Cancel and Save buttons -->
-        <div class="flex items-center gap-1">
-          <div class="absolute top-0.5 right-0.5">
-            <TooltipShortcut label={m.chat_richInput_cancel_label()} shortcut="Escape" side="top">
-              <Button variant="ghost-light" size="xs" onclick={() => oncancel?.()}>
-                <Fa icon={faXmark} size="sm" />
-              </Button>
-            </TooltipShortcut>
-          </div>
-          <TooltipShortcut
-            label={m.chat_richInput_saveAndResend_label()}
-            shortcut="cmd+Enter"
-            side="top"
-          >
-            <Button
-              variant="ghost-light"
-              size="icon-sm"
-              aria-label={m.chat_richInput_saveAndResend_label()}
-              onclick={handleSubmit}
-              disabled={disabled || inputLocked || !canSend || isEnhancing}
-            >
-              <Fa icon={faArrowRight} size="sm" />
+      {#if editMode}
+        <div class="absolute right-2 top-2">
+          <TooltipShortcut label={m.chat_richInput_cancel_label()} shortcut="Escape" side="top">
+            <Button variant="ghost-light" size="icon-xs" onclick={() => oncancel?.()}>
+              <Fa icon={faXmark} size="sm" />
             </Button>
           </TooltipShortcut>
         </div>
-      {:else}
-        <TooltipShortcut label={m.chat_richInput_send_label()} shortcut="Enter" side="top">
-          <Button
-            variant="ghost-light"
-            size="icon-sm"
-            onclick={handleSubmit}
-            disabled={disabled || inputLocked || !canSend || isEnhancing}
-            aria-label={m.chat_richInput_sendMessage_ariaLabel()}
-          >
-            <Fa icon={faArrowRight} size="sm" />
-          </Button>
-        </TooltipShortcut>
       {/if}
+      <TooltipShortcut
+        label={buttonMode === 'stop'
+          ? m.chat_richInput_stop_label()
+          : buttonMode === 'queue'
+            ? m.chat_richInput_queueMessage_ariaLabel()
+            : editMode
+              ? m.chat_richInput_saveAndResend_label()
+              : m.chat_richInput_send_label()}
+        shortcut={buttonMode === 'stop' ? undefined : 'Enter'}
+        side="top"
+      >
+        <Button
+          variant="primary"
+          size="icon-sm"
+          iconOnly
+          onclick={buttonMode === 'stop' ? () => onstop?.() : handleSubmit}
+          disabled={buttonMode === 'stop'
+            ? disabled
+            : disabled || inputLocked || !canSend || isEnhancing}
+          aria-label={buttonLabel}
+          data-mode={buttonMode}
+          data-testid="composer-submit-button"
+        >
+          {#key buttonMode === 'stop'}
+            <span
+              class="flex items-center"
+              transition:safeDisclosureTransition={{ axis: 'x', tier: 'fast' }}
+            >
+              {#if buttonMode === 'stop'}
+                <span class="size-3 rounded-[3px] bg-current" aria-hidden="true"></span>
+              {:else}
+                <ArrowUpIcon size={19} weight="bold" aria-hidden="true" />
+              {/if}
+            </span>
+          {/key}
+        </Button>
+      </TooltipShortcut>
     </div>
   </div>
 </div>
@@ -1852,7 +1891,7 @@
 
   .editor-wrapper :global(.tiptap-editor p.is-editor-empty:first-child::before),
   .editor-wrapper :global(.tiptap-editor p.is-empty:first-child::before) {
-    transition: opacity 300ms ease-in-out;
+    transition: opacity var(--spring-slow) var(--spring-slow-ease);
   }
 
   .editor-wrapper.placeholder-hidden :global(.tiptap-editor p.is-editor-empty:first-child::before),
@@ -1883,7 +1922,7 @@
       transparent
     );
     background-size: 200% 100%;
-    animation: shimmer 2s infinite;
+    animation: shimmer calc(var(--spring-slow) * 8) var(--spring-slow-ease) infinite;
     pointer-events: none;
     overflow: hidden;
     z-index: 1;

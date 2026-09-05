@@ -170,7 +170,7 @@
   } from './new-messages-divider';
   import EventWakeupBanner from './EventWakeupBanner.svelte';
   import ConversationTurnGap from './ConversationTurnGap.svelte';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
   import { getAgentStopReasonTimestamp } from '$shared/utils/agent-attention';
@@ -228,8 +228,8 @@
   import { isFocusInEditableElement, isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
   import { faLock, faPaperclip, faSpinner, faSquareCheck } from '@fortawesome/free-solid-svg-icons';
-  import { fade } from 'svelte/transition';
-  import { safeSlide } from '$lib/utils/animations';
+  import { crispOut, spring, springIn } from '$lib/motion';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
   import { seekConversationToMessage } from '$lib/utils/open-message';
   import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -238,7 +238,7 @@
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
   import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
-  import Button from '../ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -1045,8 +1045,9 @@
     chatTranscriptBottomInsetClass({
       isChiefWorkspace,
       isCompactMode,
-      // Mirrors the render gate: retired sessions hide the queue block.
-      showQueue: queuedMessagesVisibility.showQueue && !isRetiredSession,
+      // The queue now lives in the composer, so the transcript always owns its
+      // normal trailing inset.
+      showQueue: false,
     }),
   );
 
@@ -3792,9 +3793,9 @@
   }
 
   /**
-   * Smoothly scroll to a specific position with 150ms animation.
+   * Smoothly scroll to a specific position with the moderate motion tier.
    */
-  function smoothScrollToPosition(top: number, duration: number = 150) {
+  function smoothScrollToPosition(top: number, duration: number = spring.moderate.settleMs) {
     if (!isActive) return;
     animateScrollTo(() => (isActive ? scrollContainer : null), top, duration);
   }
@@ -4883,7 +4884,7 @@
       if (result.redriven === false) {
         // Nothing was queued to redrive — the error is cleared, but no new
         // turn starts. Tell the user what to do next instead of a silent no-op.
-        toast.info(m.chat_chatPanel_nothingToRetry_toast());
+        notify.info(m.chat_chatPanel_nothingToRetry_toast());
       }
       return;
     }
@@ -5341,7 +5342,8 @@
       class="composer-aurora-host regular-panel-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"
       style:height={`calc(${composerHeight}px + 10rem)`}
       data-testid="composer-aurora-host"
-      transition:fade
+      in:springIn={{ tier: 'moderate', y: 0, scale: 1 }}
+      out:crispOut={{ tier: 'moderate' }}
     >
       <AuroraBackground {agentId} />
     </div>
@@ -5353,7 +5355,7 @@
       class="absolute inset-0 z-50 flex items-center justify-center rounded-lg border border-dashed border-primary bg-primary/5 pointer-events-none"
       data-testid="chat-panel-drop-overlay"
     >
-      <div class="flex flex-col items-center gap-2 text-primary">
+      <div class="flex flex-col items-center gap-2 text-primary-ink">
         <Fa icon={faPaperclip} class="w-6 h-6" />
         <span class="text-sm font-medium">{m.chat_richInput_dropFiles_label()}</span>
       </div>
@@ -6026,7 +6028,7 @@
                           turn.assistantMessages.length > 0,
                         )}"
                         use:attachPinnedPromptMessage={message}
-                        transition:safeSlide={{ axis: 'y', duration: 200 }}
+                        transition:safeDisclosureTransition={{ tier: 'moderate' }}
                       >
                         <EventWakeupBanner
                           metadata={message.metadata as {
@@ -6378,25 +6380,6 @@
               />
             {/key}
           {/if}
-
-          <!-- Queued messages remain in the same scroll/follow surface.
-               Hidden on retired sessions: the queue's edit/remove/send-now
-               controls all mutate daemon state a retired agent rejects. -->
-          {#if queuedMessagesVisibility.showQueue && !isRetiredSession}
-            <div
-              class="relative z-20 mt-6 {isChiefWorkspace ? 'mx-1 sm:mx-2' : 'w-full'}"
-              data-testid="queued-message-utility-area"
-            >
-              <QueuedMessageList
-                bind:this={queuedMessageListRef}
-                messages={visibleQueuedMessages}
-                onedit={handleEditQueuedMessage}
-                onremove={handleRemoveQueuedMessage}
-                onsendnow={handleSendQueuedMessageNow}
-                ondone={() => inputComponent?.focus?.()}
-              />
-            </div>
-          {/if}
         </div>
 
         <!-- Zero-size semantic end marker; followBottom owns exact bottom anchoring. -->
@@ -6438,7 +6421,8 @@
         class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"
         style="height: calc(100% + 10rem);"
         data-testid="composer-aurora-host"
-        transition:fade
+        in:springIn={{ tier: 'moderate', y: 0, scale: 1 }}
+        out:crispOut={{ tier: 'moderate' }}
       >
         <AuroraBackground {agentId} />
       </div>
@@ -6561,7 +6545,22 @@
                 externalDropTarget
                 requiresModelSwitchConfirmation={!canChangeProvider}
                 providerId={inputProviderId}
-              />
+                placeholderSuggestion={!deferTranscriptReveal ? suggestedPrompts[0] : undefined}
+              >
+                {#snippet queueRegion()}
+                  {#if queuedMessagesVisibility.showQueue}
+                    <QueuedMessageList
+                      bind:this={queuedMessageListRef}
+                      messages={visibleQueuedMessages}
+                      heldForQuestions={queuedMessagesVisibility.heldForQuestions}
+                      onedit={handleEditQueuedMessage}
+                      onremove={handleRemoveQueuedMessage}
+                      onsendnow={handleSendQueuedMessageNow}
+                      ondone={() => inputComponent?.focus?.()}
+                    />
+                  {/if}
+                {/snippet}
+              </SimpleRichInput>
             {/if}
           {/if}
         </div>
@@ -6637,22 +6636,25 @@
 
   /* Flash animation for message navigation */
   :global(.message-highlight-flash) {
-    animation: message-flash 0.6s ease-out;
+    animation: message-flash calc(var(--spring-slow) * 2.5) var(--spring-exit-ease);
   }
 
   /* Flash animation for scroll-to-turn navigation */
   :global(.highlight-flash) {
-    animation: highlight-flash 1.5s ease-out;
+    animation: highlight-flash calc(var(--spring-slow) * 6) var(--spring-exit-ease);
   }
 
   /* Transient scroll re-lock confirmation: hold briefly, then fade out.
      Forwards fill keeps it invisible until the element unmounts. */
   .lock-confirmation {
-    animation: lock-confirmation-fade 1.5s ease-out forwards;
+    animation: lock-confirmation-fade calc(var(--spring-slow) * 6) var(--spring-exit-ease) forwards;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .lock-confirmation {
+    .lock-confirmation,
+    :global(.message-highlight-flash),
+    :global(.highlight-flash),
+    .input-flash :global(.rich-input-container) {
       animation: none;
       opacity: 0.9;
     }
@@ -6690,7 +6692,7 @@
 
   /* Subtle flash animation for input when draft prompt is applied */
   .input-flash :global(.rich-input-container) {
-    animation: input-flash 0.6s ease-out;
+    animation: input-flash calc(var(--spring-slow) * 2.5) var(--spring-exit-ease);
   }
 
   .conversation-composer {

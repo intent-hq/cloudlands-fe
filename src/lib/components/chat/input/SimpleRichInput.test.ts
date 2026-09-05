@@ -37,8 +37,9 @@ vi.mock('$lib/icons/phosphor-icons', () => ({
   faRotateRight: { iconName: 'rotate-right' },
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: {
+vi.mock('$lib/components/patterns/notify', async () => ({
+  ...(await vi.importActual('$lib/components/ui/toast/toast-countdown')),
+  notify: {
     error: vi.fn(),
     success: vi.fn(),
     info: vi.fn(),
@@ -403,6 +404,25 @@ describe('SimpleRichInput draft change notification', () => {
     expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(true);
     expect(editor.getAttribute('placeholder')).toBe('Ask anything');
   });
+
+  it('shows a suggested prompt and accepts it with Tab from the empty editor', async () => {
+    const onvaluechange = vi.fn();
+    render(SimpleRichInput, {
+      props: {
+        value: '',
+        contextItems: [],
+        placeholderSuggestion: 'Summarize the workspace',
+        onvaluechange,
+      },
+    });
+
+    expect(screen.getByTestId('composer-placeholder-suggestion').textContent).toContain(
+      'Summarize the workspace',
+    );
+    const accepted = await fireEvent.keyDown(screen.getByTestId('tiptap-editor'), { key: 'Tab' });
+    expect(accepted).toBe(false);
+    expect(onvaluechange).toHaveBeenCalledWith('Summarize the workspace');
+  });
 });
 
 describe('SimpleRichInput image paste', () => {
@@ -501,7 +521,9 @@ describe('SimpleRichInput action bar layout', () => {
           const submitActions = view.container.querySelector('[data-chat-input-submit-actions]');
           expect(primaryActions?.contains(target)).toBe(false);
           expect(submitActions?.contains(target)).toBe(true);
-          expect(view.getByTestId('message-input').className).toContain('focus-within:border-ring');
+          expect(view.getByTestId('message-input').getAttribute('data-ring-state')).toMatch(
+            /^(rest|hover|focus)$/,
+          );
         },
       };
     });
@@ -541,36 +563,27 @@ describe('SimpleRichInput action bar layout', () => {
     expect(modelPickerClass).toContain('px-0');
     expect(modelPickerClass).toContain('font-medium');
     expect(modelPickerClass).toContain('hover:bg-transparent');
-    expect(screen.getByTestId('message-input').className).toContain('focus-within:border-ring');
-    expect(screen.getByTestId('message-input').className).toContain('focus-within:ring-0');
-    expect(screen.getByTestId('message-input').className).not.toContain('focus-within:ring-2');
+    const composer = screen.getByTestId('message-input');
+    await fireEvent.mouseEnter(composer);
+    expect(composer.getAttribute('data-ring-state')).toBe('hover');
+    await fireEvent.focusIn(screen.getByTestId('tiptap-editor'));
+    expect(composer.getAttribute('data-ring-state')).toBe('focus');
   });
 
-  it('uses the nested sidebar surface only when edge-docked', () => {
+  it('uses the surface-2 composer shell in edge-docked and standalone contexts', () => {
     render(SimpleRichInput, {
       props: { value: '', contextItems: [], edgeDocked: true },
     });
 
     const edgeDockedInput = screen.getByTestId('message-input');
-    expect(edgeDockedInput.className).toContain('rounded-lg');
+    expect(edgeDockedInput.className).toContain('rounded-(--radius-large)');
     expect(edgeDockedInput.className).toContain('border-0');
-    expect(edgeDockedInput.className).toContain('bg-sidebar');
-    expect(edgeDockedInput.className).not.toContain('bg-transparent');
-    expect(document.querySelector('[data-chat-input-action-bar]')?.className).toContain(
-      'flex-wrap',
-    );
-    expect(document.querySelector('[data-chat-input-submit-actions]')?.className).toContain(
-      'justify-end',
-    );
+    expect(edgeDockedInput.className).toContain('bg-surface-2');
 
     cleanup();
     render(SimpleRichInput, { props: { value: '', contextItems: [] } });
     const standaloneInput = screen.getByTestId('message-input');
-    expect(standaloneInput.className).toContain('border-border');
-    expect(standaloneInput.className).not.toContain('bg-sidebar');
-    expect(document.querySelector('[data-chat-input-action-bar]')?.className).not.toContain(
-      'flex-wrap',
-    );
+    expect(standaloneInput.className).toContain('bg-surface-2');
     expect(document.querySelector('[data-chat-input-submit-actions]')?.className).toContain(
       'shrink-0',
     );
@@ -1050,23 +1063,11 @@ describe('SimpleRichInput Stop-button visibility', () => {
     selectedModel: 'gpt5.4',
   });
 
-  // The mocked Button component strips aria-label, so locate the Send/Stop
-  // affordances via the Fa icon's data-icon attribute instead. The icon mocks
-  // above render `data-icon="stop"` for the Stop button and
-  // `data-icon="arrow-right"` for the Send button.
   function stopButton(): HTMLButtonElement | null {
-    const icon = document.body.querySelector('[data-icon="stop"]');
-    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+    return document.querySelector('[data-testid="composer-submit-button"][data-mode="stop"]');
   }
   function sendButton(): HTMLButtonElement | null {
-    const icons = document.body.querySelectorAll('[data-icon="arrow-right"]');
-    for (const icon of icons) {
-      const btn = icon.closest('button') as HTMLButtonElement | null;
-      // Skip the interrupt-and-send split button inside the Stop block; that
-      // button carries data-testid="interrupt-btn".
-      if (btn && btn.dataset.testid !== 'interrupt-btn') return btn;
-    }
-    return null;
+    return document.querySelector('[data-testid="composer-submit-button"][data-mode="send"]');
   }
 
   beforeEach(() => {
@@ -1125,15 +1126,14 @@ describe('SimpleRichInput Stop-button visibility', () => {
     expect(sendButton()).toBeNull();
   });
 
-  it('uses the same muted treatment for prompt controls and Stop', () => {
+  it('keeps prompt controls muted and makes Stop the primary morph state', () => {
     render(SimpleRichInput, { props: { ...baseProps(), isResponding: true } });
 
     expect(document.querySelector('[data-chat-input-action-bar]')?.className).toContain(
       'text-muted-foreground',
     );
     expect(screen.getByTestId('model-picker').className).toContain('text-muted-foreground');
-    expect(stopButton()?.dataset.variant).toBe('ghost-light');
-    expect(stopButton()?.className).toContain('text-muted-foreground');
+    expect(stopButton()?.dataset.variant).toBe('primary');
     expect(screen.getByTestId('prompt-actions-trigger').dataset.variant).toBe('ghost-light');
   });
 
@@ -1142,7 +1142,7 @@ describe('SimpleRichInput Stop-button visibility', () => {
     { mode: 'attachment-only', value: '', contextItems: [readyAttachment()] },
     { mode: 'mixed', value: 'follow up', contextItems: [readyAttachment()] },
   ])(
-    'renders accessible Queue and Interrupt actions while responding with $mode content',
+    'morphs to Queue while responding with $mode content and preserves force-submit',
     async ({ value, contextItems }) => {
       const onsubmit = vi.fn();
       const onforcesubmit = vi.fn();
@@ -1158,13 +1158,14 @@ describe('SimpleRichInput Stop-button visibility', () => {
       });
 
       const queue = screen.getByRole('button', { name: 'Queue message' });
-      const send = screen.getByRole('button', { name: 'Interrupt and send' });
-      expect(queue?.dataset.variant).toBe('ghost-light');
-      expect(send?.dataset.variant).toBe('ghost-light');
+      expect(queue?.dataset.variant).toBe('primary');
       expect(queue?.parentElement?.className).not.toContain('bg-sidebar');
 
       await fireEvent.click(queue!);
-      await fireEvent.click(send!);
+      await fireEvent.keyDown(screen.getByTestId('tiptap-editor'), {
+        key: 'Enter',
+        metaKey: true,
+      });
       expect(onsubmit).toHaveBeenCalledWith(value);
       expect(onforcesubmit).toHaveBeenCalledWith(value);
     },
@@ -1295,8 +1296,6 @@ describe('SimpleRichInput automatic composer geometry', () => {
     expect(composer.className).toContain(
       'transition-[border-color,background-color,box-shadow,min-height]',
     );
-    expect(composer.className).toContain('duration-(--motion-fast)');
-    expect(composer.className).toContain('ease-(--ease-standard)');
     expect(composer.className).toContain('motion-reduce:transition-none');
 
     await fireEvent.focusIn(editor);
@@ -1703,8 +1702,8 @@ describe('SimpleRichInput prompt enhancement menu (§5.31)', () => {
       );
     });
 
-    const { toast } = await import('svelte-sonner');
-    const successMock = toast.success as ReturnType<typeof vi.fn>;
+    const { notify } = await import('$lib/components/patterns/notify');
+    const successMock = notify.success as ReturnType<typeof vi.fn>;
     expect(successMock).toHaveBeenCalledTimes(1);
     const firstToastUndo = successMock.mock.calls[0]![1].action.onClick as () => void;
 
@@ -1762,8 +1761,7 @@ describe('SimpleRichInput input lock while enhancing', () => {
   }
 
   function sendButton(): HTMLButtonElement | null {
-    const icon = document.body.querySelector('[data-icon="arrow-right"]');
-    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+    return document.querySelector('[data-testid="composer-submit-button"]');
   }
 
   beforeEach(() => {
@@ -2182,9 +2180,9 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     expect(item.placementStatus).toBe('placed');
     expect(item.file).toBeUndefined();
     expect(insertMentionCalls()).toHaveLength(0);
-    const { toast } = await import('svelte-sonner');
-    expect(toast.error).not.toHaveBeenCalled();
-    expect(toast.success).toHaveBeenCalledTimes(1);
+    const { notify } = await import('$lib/components/patterns/notify');
+    expect(notify.error).not.toHaveBeenCalled();
+    expect(notify.success).toHaveBeenCalledTimes(1);
   });
 
   it('never sends base64 bytes: a file with no resolvable sourcePath becomes a failed pill', async () => {
@@ -2193,9 +2191,9 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     render(SimpleRichInput, { props: baseProps() });
     await dropFiles([makeFile('big.log', 'text/plain', 11 * 1024 * 1024)]);
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     // No wire call at all — base64 is not a fallback.
     expect(placeAttachmentMock).not.toHaveBeenCalled();
@@ -2208,9 +2206,9 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     render(SimpleRichInput, { props: baseProps() });
     await dropFiles([makeFile('huge.png', 'image/png', 31 * 1024 * 1024)]);
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     expect(placeAttachmentMock).not.toHaveBeenCalled();
     expect(insertMentionCalls()).toHaveLength(0);
@@ -2250,9 +2248,9 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     render(SimpleRichInput, { props: { ...baseProps(), value: 'hello', oncontextAdd, onsubmit } });
     await dropFiles([makeFile('big.log', 'text/plain', 11 * 1024 * 1024)]);
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     // The item stays visible as a failed pill (not silently dropped)…
     const chip = document.querySelector('[data-placement-status="failed"]');
@@ -2508,9 +2506,9 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     placeAttachmentMock.mockRejectedValueOnce(new Error('source file not found'));
     await fireEvent.click(screen.getByTestId('attachment-retry'));
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     // Still a failed pill, still blocking — the stale path surfaced visibly.
     expect(document.querySelector('[data-placement-status="failed"]')).not.toBeNull();
@@ -2593,8 +2591,8 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
     expect((mention.meta as any).fullPath).toBe('/home/user/projects/my-folder');
     // Folders are never placed as attachments.
     expect(placeAttachmentMock).not.toHaveBeenCalled();
-    const { toast } = await import('svelte-sonner');
-    expect(toast.error).not.toHaveBeenCalled();
+    const { notify } = await import('$lib/components/patterns/notify');
+    expect(notify.error).not.toHaveBeenCalled();
   });
 
   it('remote drop containing a folder rejects the WHOLE drop with one error toast', async () => {
@@ -2612,9 +2610,9 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
       ]),
     );
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     // Nothing attaches — not even the file in the same drop.
     expect(insertMentionCalls()).toHaveLength(0);
@@ -2655,8 +2653,8 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
     );
 
     expect(await screen.findByRole('img', { name: 'photo.png' })).toBeTruthy();
-    const { toast } = await import('svelte-sonner');
-    expect(toast.error).not.toHaveBeenCalled();
+    const { notify } = await import('$lib/components/patterns/notify');
+    expect(notify.error).not.toHaveBeenCalled();
     expect(insertMentionCalls()).toHaveLength(0);
   });
 
@@ -2695,9 +2693,9 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
       makeItemsDropEvent([{ file: folder, isDirectory: true }]),
     );
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     expect(insertMentionCalls()).toHaveLength(0);
   });
