@@ -69,7 +69,10 @@ export async function isGitHubConfigured(): Promise<boolean> {
   if (pendingStatus) {
     if (trailingStatus) return trailingStatus;
     const next = pendingStatus.promise
-      .then(() => isGitHubConfigured())
+      .then(() => {
+        if (trailingStatus === next) trailingStatus = undefined;
+        return isGitHubConfigured();
+      })
       .finally(() => {
         if (trailingStatus === next) trailingStatus = undefined;
       });

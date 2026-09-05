@@ -131,7 +131,10 @@ export function readSetting(path: string): Promise<SettingDefinitionWithValue | 
     if (trailing) return trailing;
     const run = pending.promise
       .catch(() => null)
-      .then(() => readSetting(path))
+      .then(() => {
+        if (trailingSettingReads.get(path) === run) trailingSettingReads.delete(path);
+        return readSetting(path);
+      })
       .finally(() => {
         if (trailingSettingReads.get(path) === run) trailingSettingReads.delete(path);
       });

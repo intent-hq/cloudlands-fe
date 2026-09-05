@@ -40,7 +40,10 @@ export function readGitHubAuthStatus(force = false): Promise<GitHubAuthStatus> {
     if (trailing) return trailing;
     const run = pending.promise
       .catch(() => undefined)
-      .then(() => readGitHubAuthStatus())
+      .then(() => {
+        if (trailing === run) trailing = undefined;
+        return readGitHubAuthStatus();
+      })
       .finally(() => {
         if (trailing === run) trailing = undefined;
       });

@@ -59,6 +59,12 @@ import type { ProviderAvailabilityResult } from '$shared/types/provider-availabi
 
 const mockedRequest = vi.mocked(backendRequest);
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => (resolve = done));
+  return { promise, resolve };
+}
+
 /** Route daemon methods to canned PROTOCOL-shaped responses. */
 type MethodResponses = Record<string, unknown | ((params: unknown) => unknown)>;
 function routeDaemon(responses: MethodResponses): void {
@@ -197,6 +203,43 @@ describe('provider-status-bridge-seeder', () => {
       providerId: 'codex',
       force: true,
     });
+  });
+
+  it('serves the newest verdict after two invalidations without concurrent reads', async () => {
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    let activeReads = 0;
+    let maxActiveReads = 0;
+    const track = (promise: Promise<unknown>) => {
+      activeReads += 1;
+      maxActiveReads = Math.max(maxActiveReads, activeReads);
+      return promise.finally(() => (activeReads -= 1));
+    };
+    mockedRequest
+      .mockImplementationOnce(() => track(first.promise))
+      .mockImplementationOnce(() => track(second.promise))
+      .mockImplementationOnce(() => track(Promise.resolve(authOne('codex', true))));
+
+    const initialRead = getProviderAuthVerdicts({ providerId: 'codex' });
+    providerLifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'provider:auth-changed' } },
+    });
+    const middleRead = getProviderAuthVerdicts({ providerId: 'codex' });
+    first.resolve(authOne('codex', false));
+    await vi.waitFor(() => expect(mockedRequest).toHaveBeenCalledTimes(2));
+    providerLifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'provider:auth-changed' } },
+    });
+    const newestRead = getProviderAuthVerdicts({ providerId: 'codex' });
+    second.resolve(authOne('codex', false));
+
+    await initialRead;
+    await middleRead;
+    await expect(newestRead).resolves.toEqual({ codex: { authenticated: true } });
+    expect(maxActiveReads).toBe(1);
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
   });
 
   describe('providers:get-availability → host.checkAuggie + host.toolAvailability + host.providerAuthStatus', () => {

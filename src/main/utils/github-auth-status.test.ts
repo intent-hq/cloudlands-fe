@@ -21,6 +21,12 @@ vi.mock('../../features/backend/main/backend.ipc', () => ({
 
 import { __resetGitHubAuthStatusForTests, isGitHubConfigured } from './github-auth-status';
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => (resolve = done));
+  return { promise, resolve };
+}
+
 describe('main GitHub auth status cache', () => {
   afterEach(() => {
     __resetGitHubAuthStatusForTests();
@@ -68,6 +74,43 @@ describe('main GitHub auth status cache', () => {
     await expect(sameFreshRead).resolves.toBe(true);
     await expect(isGitHubConfigured()).resolves.toBe(true);
     expect(lifecycle.request).toHaveBeenCalledTimes(2);
+  });
+
+  it('serves the newest status after two invalidations without concurrent reads', async () => {
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    let activeReads = 0;
+    let maxActiveReads = 0;
+    const track = (promise: Promise<unknown>) => {
+      activeReads += 1;
+      maxActiveReads = Math.max(maxActiveReads, activeReads);
+      return promise.finally(() => (activeReads -= 1));
+    };
+    lifecycle.request
+      .mockImplementationOnce(() => track(first.promise))
+      .mockImplementationOnce(() => track(second.promise))
+      .mockImplementationOnce(() => track(Promise.resolve({ isConfigured: true })));
+
+    const initialRead = isGitHubConfigured();
+    lifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'github:auth-changed' } },
+    });
+    const middleRead = isGitHubConfigured();
+    first.resolve({ isConfigured: false });
+    await vi.waitFor(() => expect(lifecycle.request).toHaveBeenCalledTimes(2));
+    lifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'github:auth-changed' } },
+    });
+    const newestRead = isGitHubConfigured();
+    second.resolve({ isConfigured: false });
+
+    await initialRead;
+    await middleRead;
+    await expect(newestRead).resolves.toBe(true);
+    expect(maxActiveReads).toBe(1);
+    expect(lifecycle.request).toHaveBeenCalledTimes(3);
   });
 
   it('does not cache transport failures as unauthenticated', async () => {

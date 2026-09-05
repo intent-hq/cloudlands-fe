@@ -66,9 +66,13 @@ export function getProviderAuthVerdicts(
     let queuedState!: Trailing;
     const run = active.promise
       .catch(() => ({}))
-      .then(() =>
-        getProviderAuthVerdicts({ providerId: options.providerId, force: queuedState.force }),
-      )
+      .then(() => {
+        if (trailing.get(key) === queuedState) trailing.delete(key);
+        return getProviderAuthVerdicts({
+          providerId: options.providerId,
+          force: queuedState.force,
+        });
+      })
       .finally(() => {
         if (trailing.get(key) === queuedState) trailing.delete(key);
       });

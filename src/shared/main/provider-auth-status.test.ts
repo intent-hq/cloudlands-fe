@@ -21,6 +21,12 @@ vi.mock('../../features/backend/main/backend.ipc', () => ({
 
 import { __resetProviderAuthStatusForTests, getProviderAuthVerdicts } from './provider-auth-status';
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => (resolve = done));
+  return { promise, resolve };
+}
+
 describe('main provider auth status cache', () => {
   afterEach(() => {
     __resetProviderAuthStatusForTests();
@@ -98,6 +104,45 @@ describe('main provider auth status cache', () => {
       providerId: 'codex',
       force: true,
     });
+  });
+
+  it('serves the newest verdict after two invalidations without concurrent reads', async () => {
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    let activeReads = 0;
+    let maxActiveReads = 0;
+    const track = (promise: Promise<unknown>) => {
+      activeReads += 1;
+      maxActiveReads = Math.max(maxActiveReads, activeReads);
+      return promise.finally(() => (activeReads -= 1));
+    };
+    lifecycle.request
+      .mockImplementationOnce(() => track(first.promise))
+      .mockImplementationOnce(() => track(second.promise))
+      .mockImplementationOnce(() =>
+        track(Promise.resolve({ providers: [{ id: 'codex', authenticated: true }] })),
+      );
+
+    const initialRead = getProviderAuthVerdicts({ providerId: 'codex' });
+    lifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'provider:auth-changed' } },
+    });
+    const middleRead = getProviderAuthVerdicts({ providerId: 'codex' });
+    first.resolve({ providers: [{ id: 'codex', authenticated: false }] });
+    await vi.waitFor(() => expect(lifecycle.request).toHaveBeenCalledTimes(2));
+    lifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'provider:auth-changed' } },
+    });
+    const newestRead = getProviderAuthVerdicts({ providerId: 'codex' });
+    second.resolve({ providers: [{ id: 'codex', authenticated: false }] });
+
+    await initialRead;
+    await middleRead;
+    await expect(newestRead).resolves.toEqual({ codex: { authenticated: true } });
+    expect(maxActiveReads).toBe(1);
+    expect(lifecycle.request).toHaveBeenCalledTimes(3);
   });
 
   it('does not cache transport failures as unknown verdicts', async () => {

@@ -78,12 +78,13 @@ export async function getProviderAuthVerdicts(
     }
     let queuedState!: Trailing;
     const next = active.promise
-      .then(() =>
-        getProviderAuthVerdicts(
+      .then(() => {
+        if (trailing.get(key) === queuedState) trailing.delete(key);
+        return getProviderAuthVerdicts(
           { providerId: params.providerId, force: queuedState.force },
           client,
-        ),
-      )
+        );
+      })
       .finally(() => {
         if (trailing.get(key) === queuedState) trailing.delete(key);
       });

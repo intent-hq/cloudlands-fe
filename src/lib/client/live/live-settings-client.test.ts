@@ -26,11 +26,18 @@ vi.mock('./backend-transport', () => ({
 import { backendRequest } from './backend-transport';
 import {
   __resetSettingsReadCacheForTests,
+  invalidateSettingsReadCache,
   LiveSettingsClient,
   readSetting,
 } from './live-settings-client';
 
 const mockedRequest = vi.mocked(backendRequest);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => (resolve = done));
+  return { promise, resolve };
+}
 
 afterEach(() => {
   __resetSettingsReadCacheForTests();
@@ -241,6 +248,44 @@ describe('LiveSettingsClient wire requests (fake transport)', () => {
     await expect(newRead).resolves.toMatchObject({ value: 'new' });
     await expect(client.get('model.defaultProvider')).resolves.toMatchObject({ value: 'new' });
     expect(mockedRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('serves the newest value after two invalidations without concurrent reads', async () => {
+    const definition = {
+      path: 'model.defaultProvider',
+      label: 'Provider',
+      description: '',
+      category: 'model',
+      type: 'string',
+    };
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    let activeReads = 0;
+    let maxActiveReads = 0;
+    const track = (promise: Promise<unknown>) => {
+      activeReads += 1;
+      maxActiveReads = Math.max(maxActiveReads, activeReads);
+      return promise.finally(() => (activeReads -= 1));
+    };
+    mockedRequest
+      .mockImplementationOnce(() => track(first.promise))
+      .mockImplementationOnce(() => track(second.promise))
+      .mockImplementationOnce(() => track(Promise.resolve({ value: 'newest', definition })));
+
+    const initialRead = readSetting('model.defaultProvider');
+    invalidateSettingsReadCache(['model.defaultProvider']);
+    const middleRead = readSetting('model.defaultProvider');
+    first.resolve({ value: 'old', definition });
+    await vi.waitFor(() => expect(mockedRequest).toHaveBeenCalledTimes(2));
+    invalidateSettingsReadCache(['model.defaultProvider']);
+    const newestRead = readSetting('model.defaultProvider');
+    second.resolve({ value: 'middle', definition });
+
+    await expect(initialRead).resolves.toMatchObject({ value: 'old' });
+    await expect(middleRead).resolves.toMatchObject({ value: 'middle' });
+    await expect(newestRead).resolves.toMatchObject({ value: 'newest' });
+    expect(maxActiveReads).toBe(1);
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
   });
 
   it('update forwards settings.update with { changes } and returns the applied list', async () => {

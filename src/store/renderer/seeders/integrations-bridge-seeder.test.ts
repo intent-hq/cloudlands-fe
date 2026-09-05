@@ -43,6 +43,12 @@ import { SENTRY_AUTH_CHANNELS } from '$features/sentry-auth/constants';
 
 const mockedRequest = vi.mocked(backendRequest);
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => (resolve = done));
+  return { promise, resolve };
+}
+
 /** PROTOCOL §5.27 wire GithubUser — derived identity only. */
 const WIRE_USER = {
   login: 'octocat',
@@ -86,6 +92,43 @@ describe('integrations-bridge-seeder', () => {
 
     expect(mockedRequest).toHaveBeenCalledTimes(3);
     expect(mockedRequest).toHaveBeenLastCalledWith('github.authStatus');
+  });
+
+  it('serves the newest auth status after two invalidations without concurrent reads', async () => {
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    let activeReads = 0;
+    let maxActiveReads = 0;
+    const track = (promise: Promise<unknown>) => {
+      activeReads += 1;
+      maxActiveReads = Math.max(maxActiveReads, activeReads);
+      return promise.finally(() => (activeReads -= 1));
+    };
+    mockedRequest
+      .mockImplementationOnce(() => track(first.promise))
+      .mockImplementationOnce(() => track(second.promise))
+      .mockImplementationOnce(() => track(Promise.resolve({ isConfigured: true })));
+
+    const initialRead = readGitHubAuthStatus();
+    githubLifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'github:auth-changed' } },
+    });
+    const middleRead = readGitHubAuthStatus();
+    first.resolve({ isConfigured: false });
+    await vi.waitFor(() => expect(mockedRequest).toHaveBeenCalledTimes(2));
+    githubLifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'github:auth-changed' } },
+    });
+    const newestRead = readGitHubAuthStatus();
+    second.resolve({ isConfigured: false });
+
+    await initialRead;
+    await middleRead;
+    await expect(newestRead).resolves.toEqual({ isConfigured: true });
+    expect(maxActiveReads).toBe(1);
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
   });
 
   it('invalidates cached auth status after a successful revoke', async () => {
