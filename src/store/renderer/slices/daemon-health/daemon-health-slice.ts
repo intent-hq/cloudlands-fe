@@ -224,14 +224,17 @@ daemonHealthReducer.with(
     const polling = sameConnection ? state.polling : false;
 
     if (status === 'connected') {
-      // Connection established — health moves to 'healthy'.
+      // Connection established — health moves to 'healthy'. A same-connection
+      // metadata refresh says nothing new about the daemon's health: a
+      // degraded connection stays degraded, with its failure context, until a
+      // valid check or a genuine reconnect.
       // Update transport info if present (additive) and clear any give-up /
       // pending-spawn state.
       return {
         ...state,
         connectionGeneration,
         polling,
-        health: 'healthy',
+        health: sameConnection ? state.health : 'healthy',
         // Stats belong to the daemon that reported them. Drop them on a
         // genuine daemon switch (mode/target changed) so selectors never
         // compare the OLD daemon's version against the NEW transport's pin
@@ -264,7 +267,7 @@ daemonHealthReducer.with(
         sidecarRunLogError: null,
         // Failure context belongs to the previous connection — never leak it
         // into this one.
-        statusCheckFailure: null,
+        statusCheckFailure: sameConnection ? state.statusCheckFailure : null,
       };
     } else if (status === 'disconnected' || status === 'connecting') {
       // Connection down or reconnecting — health moves to 'down'.

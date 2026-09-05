@@ -771,6 +771,47 @@ describe('daemonHealthReducer', () => {
       expect(applied.lastUpdated).toBe('2026-09-05T10:00:10.000Z');
     });
 
+    it('a same-connection metadata refresh keeps degraded health and its failure context', () => {
+      const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
+      const degraded = daemonHealthReducer(a, systemStatusFailure(failure, a.connectionGeneration));
+      expect(degraded.health).toBe('degraded');
+
+      const refreshed = daemonHealthReducer(
+        degraded,
+        connectionStatusChanged('connected', { ...uds, updateSupported: true }),
+      );
+      expect(refreshed.health).toBe('degraded');
+      expect(refreshed.statusCheckFailure).toBe(degraded.statusCheckFailure);
+      expect(refreshed.lastUpdated).toBe(degraded.lastUpdated);
+      expect(refreshed.connectionGeneration).toBe(a.connectionGeneration);
+      expect(refreshed.transport).toEqual({ ...uds, updateSupported: true });
+
+      const again = daemonHealthReducer(
+        refreshed,
+        systemStatusFailure(
+          { ...failure, failedAt: '2026-09-05T10:00:10.000Z' },
+          a.connectionGeneration,
+        ),
+      );
+      expect(again.health).toBe('degraded');
+      expect(again.statusCheckFailure?.consecutiveFailures).toBe(2);
+
+      const recovered = daemonHealthReducer(
+        again,
+        systemStatusSuccess(payload, '2026-09-05T10:00:20.000Z', a.connectionGeneration),
+      );
+      expect(recovered.health).toBe('healthy');
+      expect(recovered.statusCheckFailure).toBeNull();
+
+      const reconnected = daemonHealthReducer(
+        daemonHealthReducer(again, connectionStatusChanged('disconnected')),
+        connectionStatusChanged('connected', uds),
+      );
+      expect(reconnected.health).toBe('healthy');
+      expect(reconnected.statusCheckFailure).toBeNull();
+      expect(reconnected.connectionGeneration).toBe(a.connectionGeneration + 2);
+    });
+
     it('a lifecycle change invalidates the in-flight poll flag', () => {
       const polling = daemonHealthReducer(
         { ...initialState, health: 'healthy' as const },
