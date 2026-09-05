@@ -82,6 +82,7 @@
     openWorkspaceNote,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import { parseFilePathLineSuffix } from '$shared/utils/link-helpers';
 
   const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
@@ -91,23 +92,24 @@
     return workspace?.id ? String(workspace.id) : routeWorkspaceId;
   }
 
-  function getPanelOptions(event?: MouseEvent) {
+  function getPanelOptions(event?: MouseEvent, line?: number) {
     const target = event?.target;
     const sourcePanelId =
       target instanceof HTMLElement
         ? target.closest<HTMLElement>('[data-panel-id]')?.dataset.panelId
         : undefined;
     return {
+      ...(line !== undefined ? { line } : {}),
       openInAdjacentPanel: Boolean(event?.metaKey || event?.ctrlKey),
       sourcePanelId,
     };
   }
 
-  function openChatFile(path: string, event?: MouseEvent) {
+  function openChatFile(path: string, event?: MouseEvent, line?: number) {
     if (readOnly) return;
     const workspaceId = getOwningWorkspaceId();
     if (!workspaceId) return;
-    appStore.dispatch(openWorkspaceFile(workspaceId, path, getPanelOptions(event)));
+    appStore.dispatch(openWorkspaceFile(workspaceId, path, getPanelOptions(event, line)));
   }
 
   function openChatNote(noteId: string, event?: MouseEvent) {
@@ -124,6 +126,7 @@
     icon: typeof faFile;
     /** File path for file/diff pills */
     path?: string;
+    line?: number;
     /** Note ID for note pills */
     noteId?: string;
     /** External URL for external references */
@@ -167,6 +170,7 @@
         identifier?: string;
         icon: typeof faFile;
         path?: string;
+        line?: number;
         noteId?: string;
         url?: string;
       };
@@ -480,6 +484,7 @@
           foundMatch = true;
           let label: string;
           let path: string | undefined;
+          let line: number | undefined;
           let noteId: string | undefined;
 
           if ('label' in pattern && pattern.label) {
@@ -501,7 +506,9 @@
 
           // Capture path/noteId based on type
           if (pattern.type === 'file' || pattern.type === 'diff') {
-            path = match[1]; // File path
+            const parsedTarget = parseFilePathLineSuffix(match[1]);
+            path = parsedTarget.path;
+            line = parsedTarget.line;
           } else if (pattern.type === 'note') {
             // For notes, the label is the title - we'd need the ID to navigate
             // Store the title as noteId for now (the navigation will need to look it up)
@@ -515,6 +522,7 @@
             label,
             icon: pattern.icon,
             path,
+            line,
             noteId,
           });
           cleanText = cleanText.replace(pattern.regex, '');
@@ -627,16 +635,18 @@
         });
       } else {
         // File/folder mention: @path/to/file.ext
-        const path = captured;
+        const { path, line } = parseFilePathLineSuffix(captured);
         const fileName = path.split('/').pop() || path;
+        const suffix = captured.slice(path.length);
 
         segments.push({
           type: 'mention',
           mentionType: 'file',
-          label: fileName,
+          label: `${fileName}${suffix}`,
           id: path,
           icon: faFile,
           path,
+          line,
         });
       }
 
@@ -720,21 +730,25 @@
       }
       // Handle file references
       else if (refType === 'file') {
+        const parsedTarget = parseFilePathLineSuffix(ref.path || '');
         pills.push({
           type: 'file',
           label: ref.path?.split('/').pop() || ref.title || m.chat_shared_file_fallback(),
           icon: faFile,
-          path: ref.path,
+          path: parsedTarget.path || undefined,
+          line: parsedTarget.line,
           content: ref.content,
         });
       }
       // Handle diff references
       else if (refType === 'diff') {
+        const parsedTarget = parseFilePathLineSuffix(ref.path || '');
         pills.push({
           type: 'diff',
           label: ref.path?.split('/').pop() || m.chat_shared_diff_fallback(),
           icon: faCodeCompare,
-          path: ref.path,
+          path: parsedTarget.path || undefined,
+          line: parsedTarget.line,
           content: ref.content,
         });
       }
@@ -769,10 +783,10 @@
     if (pill.type === 'spec') {
       openChatNote('spec', event);
     } else if (pill.type === 'file' && pill.path) {
-      openChatFile(pill.path, event);
+      openChatFile(pill.path, event, pill.line);
     } else if (pill.type === 'diff' && pill.path) {
       // For diffs, open the file - the diff view would need to be triggered separately
-      openChatFile(pill.path, event);
+      openChatFile(pill.path, event, pill.line);
     } else if (pill.type === 'note' && pill.noteId) {
       // noteId is actually the note title from the context string
       // Look up the actual note ID from the title
@@ -784,7 +798,7 @@
         openChatNote(matchingNote.id, event);
       }
     } else if (pill.type === 'selection' && pill.path) {
-      openChatFile(pill.path, event);
+      openChatFile(pill.path, event, pill.line);
     }
   }
 
@@ -1610,7 +1624,7 @@
                             });
                           }
                         } else if (segment.path) {
-                          openChatFile(segment.path, e);
+                          openChatFile(segment.path, e, segment.line);
                         } else if (segment.noteId) {
                           if (segment.mentionType === 'spec') {
                             openChatNote('spec', e);

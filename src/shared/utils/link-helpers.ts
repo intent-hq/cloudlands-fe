@@ -44,6 +44,39 @@ export interface LinkHandlerOptions {
   customHandler?: (url: string) => Promise<boolean> | boolean;
 }
 
+export interface ParsedFilePathLineSuffix {
+  path: string;
+  line?: number;
+  column?: number;
+}
+
+/** Strip a supported trailing line reference from a file path. */
+export function parseFilePathLineSuffix(path: string): ParsedFilePathLineSuffix {
+  const hashMatch = path.match(/^(.+?)#L(\d+)(?:-\d+|C(\d+))?$/);
+  if (hashMatch) {
+    return {
+      path: hashMatch[1],
+      line: Number.parseInt(hashMatch[2], 10),
+      ...(hashMatch[3] ? { column: Number.parseInt(hashMatch[3], 10) } : {}),
+    };
+  }
+
+  const colonMatch = path.match(/^(.+?):(\d+)(?::(\d+))?$/);
+  if (
+    colonMatch &&
+    !/:\d+$/.test(colonMatch[1]) &&
+    (colonMatch[1].includes('.') || colonMatch[1].includes('/'))
+  ) {
+    return {
+      path: colonMatch[1],
+      line: Number.parseInt(colonMatch[2], 10),
+      ...(colonMatch[3] ? { column: Number.parseInt(colonMatch[3], 10) } : {}),
+    };
+  }
+
+  return { path };
+}
+
 /** Path segments that indicate an OAuth / authentication flow */
 const AUTH_PATH_PATTERNS = ['/oauth', '/authorize', '/login/oauth', '/auth/'];
 
