@@ -64,6 +64,8 @@ describe('hardcoded user-facing string gate', () => {
         'badge/badge.preview-fixtures.ts': "export const label = 'Preview fixture sentence';",
         'badge/badge.preview.svelte': '<span>Preview component sentence</span>',
         'card/operate-patterns.playwright.config.ts': "export const name = 'Desktop Chrome';",
+        'src/features/new-workspace/sandbox/scenarios.ts':
+          "export const title = 'Developer sandbox scenario';",
         'chat/streaming-status.preview-fixtures.svelte':
           '<span>Product preview fixtures sentence</span>',
         'card/Card.svelte': '<span>Rendered product text</span>',
@@ -71,7 +73,7 @@ describe('hardcoded user-facing string gate', () => {
       (dir) => {
         const result = runGate([dir]);
         expect(result.exitCode).toBe(1);
-        expect(result.output).toContain('Excluded 11 scaffolding file(s)');
+        expect(result.output).toContain('Excluded 12 scaffolding file(s)');
         expect(result.output).toContain('[template text] "Rendered product text"');
         expect(result.output).toContain('[template text] "Product preview fixtures sentence"');
         expect(result.output).not.toContain('Harness only demo text');
@@ -85,6 +87,7 @@ describe('hardcoded user-facing string gate', () => {
         expect(result.output).not.toContain('Preview fixture sentence');
         expect(result.output).not.toContain('Preview component sentence');
         expect(result.output).not.toContain('Desktop Chrome');
+        expect(result.output).not.toContain('Developer sandbox scenario');
       },
     );
   });

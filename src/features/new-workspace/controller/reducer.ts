@@ -1,4 +1,5 @@
 import type { WorkspaceDraft } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 
 import {
   createInitialControllerState,
@@ -232,7 +233,7 @@ function restoreDraft(state: ControllerState, draft: WorkspaceDraft): Controller
     return failed(
       data as ControllerState,
       'draft',
-      draft.lastError ?? 'Promoted draft has no workspace',
+      draft.lastError ?? m.newWorkspace_recovery_promotedDraftMissingWorkspace_error(),
     );
   }
   if (draft.phase === 'promoting' || draft.phase === 'failed') {
@@ -380,7 +381,7 @@ export function reduceDetailed(
         : ignored(state);
     case 'draft.deleted':
       return state.draftId === event.draftId
-        ? handled(failed(state, 'deleted', 'Draft was deleted', null))
+        ? handled(failed(state, 'deleted', m.newWorkspace_recovery_draftDeleted_error(), null))
         : ignored(state);
     case 'capability.result':
       return handled(updateCapability(state, event));

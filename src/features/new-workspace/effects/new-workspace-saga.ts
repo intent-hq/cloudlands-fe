@@ -10,6 +10,7 @@ import { backendRequest } from '$lib/client/live/backend-transport';
 import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
 import { newIdempotencyKey } from '$lib/client/live/live-support';
 import type { DraftDelivery, WorkspaceDraft } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 import {
   selectHasCheckedOnce,
   selectProviderStatusMap,
@@ -265,7 +266,7 @@ function* reconcilePromotion(
         type: 'operation.failed',
         generation: effect.generation,
         kind: 'promote',
-        error: 'Promoted draft has no workspace',
+        error: m.newWorkspace_recovery_promotedDraftMissingWorkspace_error(),
       });
       return;
     }
@@ -309,7 +310,9 @@ function* adopt(
       cached?.workspace ??
       (yield* call([client.workspaces, client.workspaces.get], effect.workspaceId));
     if (!workspace)
-      throw Object.assign(new Error('Promoted workspace was not found'), { rpcCode: -32602 });
+      throw Object.assign(new Error(m.newWorkspace_recovery_promotedWorkspaceNotFound_error()), {
+        rpcCode: -32602,
+      });
     const initialAgentId = cached?.initialAgent?.id ?? state.initialAgentId ?? undefined;
     const initialAgent =
       cached?.initialAgent ??
@@ -360,10 +363,12 @@ function* placeAttachments(
         dependencies.getState().draftId ?? '',
       );
       const item = draft.attachments.find((value) => contextItem(value) && value.id === id);
-      if (!contextItem(item)) throw new Error(`Attachment ${id} is missing from the draft`);
+      if (!contextItem(item))
+        throw new Error(m.newWorkspace_recovery_attachmentMissing_error({ id }));
       const result = yield* call(redeemStagedAttachments, effect.workspaceId, [item]);
       const replacement = result.items[0];
-      if (!replacement) throw new Error(`Attachment ${id} produced no placement result`);
+      if (!replacement)
+        throw new Error(m.newWorkspace_recovery_attachmentResultMissing_error({ id }));
       const updated = yield* call(
         [client.workspaceDrafts, client.workspaceDrafts.update],
         draft.id,
@@ -378,7 +383,8 @@ function* placeAttachments(
       if (result.failedCount > 0) {
         failures.push({
           id,
-          error: replacement.placementError ?? `Attachment ${id} could not be placed`,
+          error:
+            replacement.placementError ?? m.newWorkspace_recovery_attachmentPlacement_error({ id }),
         });
       } else {
         placedIds.push(id);
@@ -445,7 +451,7 @@ function* deliver(
           type: 'operation.failed',
           generation: effect.generation,
           kind: 'send',
-          error: result.errorDetail ?? 'The first message was rejected',
+          error: result.errorDetail ?? m.newWorkspace_recovery_firstMessageRejected_error(),
         });
       }
       return;
@@ -528,7 +534,8 @@ function* execute(
       try {
         const identity = yield* call(dependencies.identifyClient ?? identifyClient);
         const drafts = yield* call([client.workspaceDrafts, client.workspaceDrafts.list]);
-        if (!identity.clientId) throw new Error('Daemon did not return a client identity');
+        if (!identity.clientId)
+          throw new Error(m.newWorkspace_recovery_clientIdentityMissing_error());
         const requestedDraftId = dependencies.requestedDraftId;
         const draftId =
           dependencies.getState().draftId ??
