@@ -161,11 +161,13 @@ describe('terminalsReducer', () => {
           [WS]: {
             isOpen: true,
             activeTerminalId: null,
+            selectedScriptId: null,
             terminals: col([]),
             terminalsLoaded: false,
             isLoadingTerminals: false,
             recentlyCreatedTerminals: [],
             daemonBootId: null,
+            placements: {},
           },
         },
       };
@@ -173,6 +175,7 @@ describe('terminalsReducer', () => {
       const ws = getWs(state);
       expect(ws.isOpen).toBe(true);
       expect(ws.activeTerminalId).toBe('term-1');
+      expect(ws.placements).toEqual({ 'term-1': 'overlay' });
     });
   });
 
@@ -881,6 +884,30 @@ describe('terminalsReducer', () => {
       state = terminalsReducer(state, selectScript(WS, 'script-1'));
       state = terminalsReducer(state, openTerminalOverlay(WS));
       expect(getWs(state).placements).toEqual({ 'script-1': 'overlay' });
+    });
+
+    it('records overlay placement when the overlay is toggled open on the active terminal', () => {
+      let state = terminalsReducer(initialState, addTerminal(WS, 't1'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't1', 'panel'));
+      state = terminalsReducer(state, toggleTerminalOverlay(WS));
+      expect(getWs(state).isOpen).toBe(true);
+      expect(getWs(state).placements).toEqual({ t1: 'overlay' });
+    });
+
+    it('records overlay placement for the selected script when the overlay is toggled open', () => {
+      let state = terminalsReducer(initialState, addTerminal(WS, 't1'));
+      state = terminalsReducer(state, selectScript(WS, 'script-1'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 'script-1', 'panel'));
+      state = terminalsReducer(state, toggleTerminalOverlay(WS));
+      expect(getWs(state).placements).toEqual({ 'script-1': 'overlay' });
+    });
+
+    it('leaves placements alone when the overlay is toggled closed', () => {
+      let state = terminalsReducer(initialState, openTerminalOverlay(WS, 't1'));
+      state = terminalsReducer(state, setTerminalPlacement(WS, 't2', 'panel'));
+      state = terminalsReducer(state, toggleTerminalOverlay(WS));
+      expect(getWs(state).isOpen).toBe(false);
+      expect(getWs(state).placements).toEqual({ t1: 'overlay', t2: 'panel' });
     });
 
     it('records overlay placement when a panel-placed terminal is selected in the open overlay', () => {

@@ -1492,14 +1492,15 @@
                       handleClose();
                     } else if (workspaceId) {
                       if ($terminals.length === 0) createNewTerminal();
-                      appStore.dispatch(openTerminalOverlay(workspaceId));
                       const entries = selectWorkspaceScriptEntries.select(
                         appStore.state,
                         workspaceId,
                       );
+                      // Select first so the open records placement for what is shown.
                       if (entries.length > 0 && !selectedScriptId) {
                         setSelectedScript(entries[0].id);
                       }
+                      appStore.dispatch(openTerminalOverlay(workspaceId));
                     }
                   }}
                 >

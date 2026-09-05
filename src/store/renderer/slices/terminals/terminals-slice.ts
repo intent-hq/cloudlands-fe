@@ -353,6 +353,11 @@ terminalsReducer.with(toggleTerminalOverlay, (state, { payload: [wsId, termId] }
     newWs.terminals = result.terminals;
     newWs.activeTerminalId = result.defaultId;
   }
+  newWs.placements = withPlacement(
+    ws.placements,
+    newWs.selectedScriptId ?? newWs.activeTerminalId,
+    'overlay',
+  );
   newWs.isOpen = true;
   return setWs(state, wsId, newWs);
 });
