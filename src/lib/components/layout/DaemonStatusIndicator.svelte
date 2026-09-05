@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import { formatNumber } from '$lib/i18n/format';
+  import { formatNumber, formatTime } from '$lib/i18n/format';
 
   /**
    * Format raw sysinfo CPU percent (may exceed 100% on multi-core hosts)
@@ -100,6 +100,7 @@
     selectDaemonHealth,
     selectDaemonHealthStats,
     selectDaemonHealthLastUpdated,
+    selectDaemonStatusCheckFailure,
     selectDaemonVersionComparison,
     selectUnslothStatus,
     selectUnslothStopping,
@@ -139,6 +140,7 @@
   const health$ = selectDaemonHealth();
   const stats$ = selectDaemonHealthStats();
   const lastUpdated$ = selectDaemonHealthLastUpdated();
+  const statusCheckFailure$ = selectDaemonStatusCheckFailure();
   const versionComparison$ = selectDaemonVersionComparison();
   const unslothStatus$ = selectUnslothStatus();
   const unslothStopping$ = selectUnslothStopping();
@@ -220,6 +222,36 @@
             : m.layout_daemonStatus_notRunning_label(),
     }),
   );
+
+  // Why the daemon is degraded (#4439): the safe failure category recorded by
+  // the last failed system.status poll. `timeout` is only claimed when the
+  // transport tagged it as one; a degradation without recorded context (e.g.
+  // a heartbeat failure) gets an honest generic line instead of a guess.
+  const degradedReason = $derived.by(() => {
+    if ($health$ !== 'degraded') return null;
+    const failure = $statusCheckFailure$;
+    if (!failure) return m.layout_daemonStatus_degradedUnknown_description();
+    const count = failure.consecutiveFailures;
+    if (failure.kind === 'timeout') {
+      return count > 1
+        ? m.layout_daemonStatus_degradedTimeout_many({ count: formatNumber(count) })
+        : m.layout_daemonStatus_degradedTimeout_one();
+    }
+    return count > 1
+      ? m.layout_daemonStatus_degradedCheckFailed_many({ count: formatNumber(count) })
+      : m.layout_daemonStatus_degradedCheckFailed_one();
+  });
+
+  // Freshness of the stats shown beneath a degraded status: they date from
+  // the last successful check, or there has been none on this connection.
+  const degradedFreshness = $derived.by(() => {
+    if ($health$ !== 'degraded') return null;
+    return $stats$ && $lastUpdated$
+      ? m.layout_daemonStatus_lastSuccessfulCheck_description({
+          time: formatTime($lastUpdated$, { seconds: true }),
+        })
+      : m.layout_daemonStatus_noSuccessfulCheck_description();
+  });
 
   const versionMismatchTooltip = $derived.by(() => {
     if (!versionMismatch) return null;
@@ -494,6 +526,14 @@
                     : m.layout_daemonStatus_degradedState_label()}
                 </span>
               </div>
+
+              {#if degradedReason}
+                <!-- Why degraded, and how fresh the details below are -->
+                <div role="note" class="text-xs text-subtle whitespace-normal space-y-0.5">
+                  <p>{degradedReason}</p>
+                  <p>{degradedFreshness}</p>
+                </div>
+              {/if}
 
               {#if $stats$}
                 <div class="h-px bg-border my-1"></div>
