@@ -7,9 +7,21 @@ import type {
 } from '$shared/types/notes-primitives';
 
 export type DiagramWorkbenchCase =
-  | { kind: 'mermaid'; title: string; description: string; source: string }
-  | { kind: 'custom'; title: string; description: string; diagram: DiagramPrimitive }
-  | { kind: 'loading'; title: string; description: string };
+  | {
+      kind: 'mermaid';
+      title: string;
+      description: string;
+      visualContract?: string;
+      source: string;
+    }
+  | {
+      kind: 'custom';
+      title: string;
+      description: string;
+      visualContract?: string;
+      diagram: DiagramPrimitive;
+    }
+  | { kind: 'loading'; title: string; description: string; visualContract?: string };
 
 const createdAt = '2026-08-23T12:00:00.000Z';
 
@@ -286,6 +298,130 @@ const topologyStress = customDiagram(
   { direction: 'TB' },
 );
 
+const serviceBoundaries = customDiagram(
+  15,
+  'architecture',
+  [
+    { id: 'client', label: 'Desktop client', kind: 'actor', group: 'ingress' },
+    { id: 'gateway', label: 'Update gateway', kind: 'service', group: 'ingress' },
+    { id: 'queue', label: 'Release queue', kind: 'queue', group: 'processing' },
+    { id: 'worker', label: 'Manifest worker', kind: 'service', group: 'processing' },
+    { id: 'registry', label: 'Release registry', kind: 'db', group: 'storage' },
+    { id: 'archive', label: 'Audit archive', kind: 'db', group: 'storage' },
+    { id: 'metrics', label: 'Health sampler', kind: 'service', group: 'observability' },
+    { id: 'dashboard', label: 'Status dashboard', kind: 'ui_component', group: 'observability' },
+  ],
+  [
+    { id: 'sb1', from: 'client', to: 'gateway', label: 'check for update' },
+    { id: 'sb2', from: 'gateway', to: 'queue', label: 'enqueue request' },
+    { id: 'sb3', from: 'queue', to: 'worker', label: 'claim job' },
+    { id: 'sb4', from: 'worker', to: 'registry', label: 'read manifest' },
+    { id: 'sb5', from: 'registry', to: 'archive', label: 'record access', dashed: true },
+    { id: 'sb6', from: 'metrics', to: 'dashboard', label: 'publish health' },
+  ],
+  {
+    direction: 'TB',
+    groups: [
+      { id: 'ingress', label: 'Client ingress', nodeIds: ['client', 'gateway'] },
+      { id: 'processing', label: 'Release processing', nodeIds: ['queue', 'worker'] },
+      { id: 'storage', label: 'Durable storage', nodeIds: ['registry', 'archive'] },
+      {
+        id: 'observability',
+        label: 'Disconnected monitoring',
+        nodeIds: ['metrics', 'dashboard'],
+      },
+    ],
+  },
+);
+
+const deliveryWalkthrough = customDiagram(
+  16,
+  'architecture',
+  [
+    { id: 'author', label: 'Release author', kind: 'actor', group: 'authoring' },
+    { id: 'proposal', label: 'Draft release proposal', kind: 'ui_component', group: 'authoring' },
+    { id: 'checks', label: 'Verification checks', kind: 'service', group: 'verification' },
+    { id: 'artifact', label: 'Signed application artifact', kind: 'service', group: 'delivery' },
+    { id: 'registry', label: 'Release registry', kind: 'db', group: 'delivery' },
+    { id: 'updater', label: 'Desktop updater', kind: 'ui_component', group: 'delivery' },
+    { id: 'audit', label: 'Rollout audit', kind: 'queue', group: 'delivery' },
+  ],
+  [
+    { id: 'dw1', from: 'author', to: 'proposal', label: 'prepare candidate' },
+    { id: 'dw2', from: 'proposal', to: 'checks', label: 'submit for verification' },
+    { id: 'dw3', from: 'checks', to: 'proposal', label: 'request correction', dashed: true },
+    { id: 'dw4', from: 'checks', to: 'artifact', label: 'approve build' },
+    { id: 'dw5', from: 'artifact', to: 'registry', label: 'publish manifest' },
+    { id: 'dw6', from: 'registry', to: 'updater', label: 'offer update' },
+    { id: 'dw7', from: 'updater', to: 'audit', label: 'report staged result' },
+  ],
+  {
+    direction: 'TB',
+    groups: [
+      { id: 'authoring', label: 'Authoring', nodeIds: ['author', 'proposal'] },
+      { id: 'verification', label: 'Verification', nodeIds: ['checks'] },
+      {
+        id: 'delivery',
+        label: 'Delivery',
+        nodeIds: ['artifact', 'registry', 'updater', 'audit'],
+      },
+    ],
+    states: [
+      {
+        id: 'draft',
+        label: '1. Draft',
+        visibleNodes: ['author', 'proposal'],
+        visibleEdges: ['dw1'],
+        visibleGroups: ['authoring'],
+        highlightedNodes: ['proposal'],
+        camera: { focus: 'proposal', zoom: 1.08 },
+        narrative: { title: '1. Prepare', text: 'Create one reviewable release candidate.' },
+        transition: { animate: ['camera', 'visibleNodes', 'visibleEdges'] },
+      },
+      {
+        id: 'verify',
+        label: '2. Verify',
+        visibleNodes: ['proposal', 'checks'],
+        visibleEdges: ['dw2', 'dw3'],
+        visibleGroups: ['authoring', 'verification'],
+        highlightedNodes: ['checks'],
+        camera: { focus: 'checks', zoom: 1.12 },
+        narrative: {
+          title: '2. Verify',
+          text: 'Check the candidate and return clear corrections.',
+        },
+        transition: { animate: ['camera', 'visibleNodes', 'visibleEdges', 'semanticStyle'] },
+      },
+      {
+        id: 'publish',
+        label: '3. Publish',
+        visibleNodes: ['checks', 'artifact', 'registry'],
+        visibleEdges: ['dw4', 'dw5'],
+        visibleGroups: ['verification', 'delivery'],
+        highlightedNodes: ['registry'],
+        camera: { focus: 'registry', zoom: 1.04 },
+        narrative: { title: '3. Publish', text: 'Store the signed artifact and its manifest.' },
+        transition: { animate: ['camera', 'visibleNodes', 'visibleEdges'] },
+      },
+      {
+        id: 'observe',
+        label: '4. Observe',
+        visibleNodes: ['registry', 'updater', 'audit'],
+        visibleEdges: ['dw6', 'dw7'],
+        visibleGroups: ['delivery'],
+        highlightedNodes: ['audit'],
+        camera: { focus: 'updater', zoom: 1.1 },
+        narrative: {
+          title: '4. Observe',
+          text: 'Follow the staged rollout without authoring clutter.',
+        },
+        transition: { animate: ['camera', 'visibleNodes', 'visibleEdges'] },
+      },
+    ],
+    currentStateId: 'draft',
+  },
+);
+
 const sequence = customDiagram(
   2,
   'sequence',
@@ -429,6 +565,7 @@ export const MERMAID_WORKBENCH_CASES = Object.freeze({
     kind: 'mermaid',
     title: 'Single Unicode node',
     description: 'One localized node without edges.',
+    visualContract: 'The localized node hugs its content without unused graph space.',
     source: 'flowchart LR\n  Only["唯一のノード • مرحبًا • résumé"]',
   },
   'mermaid-two-node': {
@@ -452,6 +589,15 @@ export const MERMAID_WORKBENCH_CASES = Object.freeze({
     source:
       'flowchart TB\n  A[Input] -->|primary| B[Router]\n  A -.->|metadata| B\n  B -->|repair| A\n  B --> B\n  B -->|success| C[Accepted]\n  B -->|warning| D[Review]\n  C -->|record| E[Audit]\n  D -->|record warning| E\n  E -->|feedback| B',
   },
+  'mermaid-nested-routing': {
+    kind: 'mermaid',
+    title: 'Nested review routing',
+    description: 'A release review fans out, converges, loops, and crosses nested boundaries.',
+    visualContract:
+      'Parallel labels stay distinct, reciprocal and self routes remain visible, and each boundary owns its content.',
+    source:
+      'flowchart TB\n  Intake[Item]\n  subgraph Review[Review]\n    subgraph Rules[Checks]\n      Validate{Ready?}\n      Enrich[Context]\n    end\n    Merge[Decision]\n  end\n  Registry[(Log)]\n  Intake -->|in| Validate\n  Intake -.->|meta| Validate\n  Validate -->|add| Enrich\n  Enrich -->|retry| Validate\n  Validate -->|yes| Merge\n  Validate -->|no| Merge\n  Enrich -->|done| Merge\n  Merge -->|save| Registry\n  Merge --> Merge',
+  },
   'mermaid-nested-groups': {
     kind: 'mermaid',
     title: 'Nested group boundaries',
@@ -472,6 +618,13 @@ export const MERMAID_WORKBENCH_CASES = Object.freeze({
     description: 'Actors, loop, alternate path, and a note.',
     source:
       'sequenceDiagram\n  actor User\n  participant UI as Workbench\n  participant Preview as Lazy preview\n  User->>UI: Select named state\n  UI->>Preview: Import fixture\n  alt valid source\n    Preview-->>UI: Stable diagram\n  else invalid source\n    Preview-->>UI: Error with source\n  end\n  Note over UI,Preview: Browser-only boundary',
+  },
+  'mermaid-minimal-sequence': {
+    kind: 'mermaid',
+    title: 'Minimal sequence',
+    description: 'One participant establishes the smallest supported sequence canvas.',
+    visualContract: 'The participant hugs its label without an oversized empty timeline.',
+    source: 'sequenceDiagram\n  participant Worker',
   },
   'mermaid-sequence-simple': {
     kind: 'mermaid',
@@ -508,6 +661,21 @@ export const MERMAID_WORKBENCH_CASES = Object.freeze({
     source:
       'stateDiagram-v2\n  [*] --> Idle\n  Idle --> Starting: User sends message\n  Starting --> Streaming: Agent responds\n  Streaming --> RunningTool: Tool starts\n  RunningTool --> Streaming: Tool completes\n  Streaming --> NeedsInput: Agent asks user\n  NeedsInput --> Streaming: User replies\n  Streaming --> Complete: Agent finishes\n  Starting --> Failed: Request fails\n  Streaming --> Failed: Stream fails\n  Failed --> Starting: User retries',
   },
+  'mermaid-state-recovery': {
+    kind: 'mermaid',
+    title: 'State recovery paths',
+    description: 'A compact state flow branches through retry, success, and terminal paths.',
+    visualContract: 'Retry and terminal labels stay attached to distinct routes at narrow width.',
+    source:
+      'stateDiagram-v2\n  [*] --> Running\n  Running --> Complete: success\n  Running --> Failed: fail\n  Failed --> Running: retry\n  Failed --> [*]: stop\n  Complete --> [*]',
+  },
+  'mermaid-minimal-state': {
+    kind: 'mermaid',
+    title: 'Minimal state diagram',
+    description: 'An initial marker reaches one named state.',
+    visualContract: 'Both terminal marker and state remain centered in a compact canvas.',
+    source: 'stateDiagram-v2\n  [*] --> Ready',
+  },
   'mermaid-class': {
     kind: 'mermaid',
     title: 'Class relationships',
@@ -515,12 +683,26 @@ export const MERMAID_WORKBENCH_CASES = Object.freeze({
     source:
       'classDiagram\n  PreviewDefinition <|-- DiagramPreview\n  DiagramPreview *-- DiagramFixture\n  class PreviewDefinition {\n    +string id\n    +string defaultState\n    +resolveState()\n  }\n  class DiagramFixture {\n    +string title\n    +render()\n  }',
   },
+  'mermaid-minimal-class': {
+    kind: 'mermaid',
+    title: 'Minimal class diagram',
+    description: 'One empty class establishes the smallest class canvas.',
+    visualContract: 'The class outline stays compact and preserves its readable title.',
+    source: 'classDiagram\n  class Workspace',
+  },
   'mermaid-entity-relationship': {
     kind: 'mermaid',
     title: 'Entity relationship',
     description: 'Cardinality and descriptive attributes.',
     source:
       'erDiagram\n  PREVIEW ||--o{ STATE : exposes\n  STATE ||--|| FIXTURE : renders\n  PREVIEW {\n    string id PK\n    string title\n  }\n  STATE {\n    string name PK\n    string theme\n  }',
+  },
+  'mermaid-minimal-entity-relationship': {
+    kind: 'mermaid',
+    title: 'Minimal entity relationship',
+    description: 'One entity with one key establishes the smallest entity canvas.',
+    visualContract: 'The entity and its key row stay readable without unused diagram space.',
+    source: 'erDiagram\n  WORKSPACE {\n    string id PK\n  }',
   },
   'mermaid-groups': {
     kind: 'mermaid',
@@ -539,9 +721,9 @@ export const MERMAID_WORKBENCH_CASES = Object.freeze({
   'mermaid-long-labels': {
     kind: 'mermaid',
     title: 'Long labels',
-    description: 'Wrap pressure from precise explanatory text.',
+    description: 'One-, two-, and three-line nodes with precise explanatory routes.',
     source:
-      'flowchart LR\n  A[The preview source updates without starting the complete desktop application] --> B[The browser-only scene preserves the exact selected theme width and motion preference] --> C[The capture harness waits for a stable deterministic frame]',
+      'flowchart LR\n  A["Preview source update"] -->|loads fixture| B["Browser-only scene<br/>preserves selected settings"]\n  B -->|records result| C["Capture harness waits<br/>for measured layout<br/>before recording evidence"]',
   },
   'mermaid-multiline-labels': {
     kind: 'mermaid',
@@ -652,6 +834,22 @@ export const CUSTOM_WORKBENCH_CASES = Object.freeze({
       'Parallel and bidirectional pairs, a self-loop, multiple cycles, fan-out, and fan-in.',
     diagram: topologyStress,
   },
+  'custom-service-boundaries': {
+    kind: 'custom',
+    title: 'Release service boundaries',
+    description: 'Four groups connect release processing while monitoring stays disconnected.',
+    visualContract:
+      'Database cylinders stay centered, cross-group routes clear headings, and both components remain contained.',
+    diagram: serviceBoundaries,
+  },
+  'custom-delivery-walkthrough': {
+    kind: 'custom',
+    title: 'Staged delivery walkthrough',
+    description: 'Four focused states add and remove release nodes, groups, routes, and labels.',
+    visualContract:
+      'Each step changes camera focus before its scene settles and leaves only relevant delivery context.',
+    diagram: deliveryWalkthrough,
+  },
   'custom-empty-content': {
     kind: 'custom',
     title: 'Empty custom diagram',
@@ -671,6 +869,17 @@ export const DIAGRAM_WORKBENCH_CASES = Object.freeze({
 } satisfies Record<string, DiagramWorkbenchCase>);
 
 export type DiagramWorkbenchCaseId = keyof typeof DIAGRAM_WORKBENCH_CASES;
+export type DiagramWorkbenchState = DiagramWorkbenchCaseId;
+
+export const DIAGRAM_WORKBENCH_CASE_IDS = Object.freeze(
+  Object.keys(DIAGRAM_WORKBENCH_CASES) as DiagramWorkbenchCaseId[],
+);
+export const DIAGRAM_WORKBENCH_MERMAID_CASE_IDS = Object.freeze(
+  DIAGRAM_WORKBENCH_CASE_IDS.filter((id) => DIAGRAM_WORKBENCH_CASES[id].kind !== 'custom'),
+);
+export const DIAGRAM_WORKBENCH_CUSTOM_CASE_IDS = Object.freeze(
+  DIAGRAM_WORKBENCH_CASE_IDS.filter((id) => DIAGRAM_WORKBENCH_CASES[id].kind === 'custom'),
+);
 
 export const DIAGRAM_WORKBENCH_CASE_GROUPS = Object.freeze([
   {
@@ -703,6 +912,12 @@ export const DIAGRAM_WORKBENCH_CASE_GROUPS = Object.freeze([
       'custom-long-multiline-labels',
       'custom-disconnected-extremes',
       'custom-topology-stress',
+      'mermaid-minimal-sequence',
+      'mermaid-state-recovery',
+      'mermaid-minimal-state',
+      'mermaid-minimal-class',
+      'mermaid-minimal-entity-relationship',
+      'mermaid-nested-routing',
     ],
   },
   {
@@ -718,7 +933,15 @@ export const DIAGRAM_WORKBENCH_CASE_GROUPS = Object.freeze([
       'custom-dependency-graph',
     ],
   },
-  { id: 'interaction', caseIds: ['custom-walkthrough', 'custom-bindings'] },
+  {
+    id: 'interaction',
+    caseIds: [
+      'custom-walkthrough',
+      'custom-bindings',
+      'custom-service-boundaries',
+      'custom-delivery-walkthrough',
+    ],
+  },
   {
     id: 'status',
     caseIds: [

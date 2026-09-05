@@ -287,6 +287,8 @@ describe('custom diagram visual contract', () => {
   it('keeps the complete custom sandbox matrix registered', () => {
     expect(
       Object.keys(DIAGRAM_WORKBENCH_CASES).filter((state) => state.startsWith('custom-')),
-    ).toHaveLength(14);
+    ).toHaveLength(
+      Object.values(DIAGRAM_WORKBENCH_CASES).filter(({ kind }) => kind === 'custom').length,
+    );
   });
 });

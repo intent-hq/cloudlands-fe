@@ -22,17 +22,26 @@ async function openSandbox(page: Page, query: string) {
   await expect(page.locator('.mermaid-svg > svg:not([data-layout-settled="true"])')).toHaveCount(0);
 }
 
-test('renders all 36 diagram cases together without the dense review shell', async ({ page }) => {
+test('renders every registered diagram case together without the dense review shell', async ({
+  page,
+}) => {
   await openSandbox(page, 'state=mermaid-flow&theme=light&width=960&motion=reduced');
 
   const orderedCaseIds = DIAGRAM_WORKBENCH_CASE_GROUPS.flatMap(({ caseIds }) => caseIds);
+  const registeredCases = Object.values(DIAGRAM_WORKBENCH_CASES);
   expect(
     await page.locator('[data-diagram-case]').evaluateAll((cases) => cases.map(({ id }) => id)),
   ).toEqual(orderedCaseIds);
-  await expect(page.locator('[data-diagram-case]')).toHaveCount(36);
-  await expect(page.locator('[data-diagram-case] .mermaid-renderer')).toHaveCount(21);
-  await expect(page.locator('[data-diagram-case] .diagram-renderer')).toHaveCount(14);
-  await expect(page.locator('[data-diagram-case] .loading-state')).toHaveCount(1);
+  await expect(page.locator('[data-diagram-case]')).toHaveCount(registeredCases.length);
+  await expect(page.locator('[data-diagram-case] .mermaid-renderer')).toHaveCount(
+    registeredCases.filter(({ kind }) => kind === 'mermaid').length,
+  );
+  await expect(page.locator('[data-diagram-case] .diagram-renderer')).toHaveCount(
+    registeredCases.filter(({ kind }) => kind === 'custom').length,
+  );
+  await expect(page.locator('[data-diagram-case] .loading-state')).toHaveCount(
+    registeredCases.filter(({ kind }) => kind === 'loading').length,
+  );
 
   const loading = page.locator('#mermaid-loading .loading-state');
   await expect(loading).toHaveAttribute('role', 'status');
@@ -64,6 +73,11 @@ test('renders all 36 diagram cases together without the dense review shell', asy
     const diagramCase = page.locator(`[data-diagram-case="${id}"]`);
     await expect(diagramCase.getByRole('heading', { name: fixture.title })).toBeVisible();
     await expect(diagramCase.getByText(fixture.description, { exact: true })).toBeVisible();
+    if (fixture.visualContract) {
+      await expect(diagramCase.locator('[data-visual-contract]')).toHaveText(
+        fixture.visualContract,
+      );
+    }
   }
 
   await expect(page.locator('[data-diagram-review-lab], [data-review-overview]')).toHaveCount(0);

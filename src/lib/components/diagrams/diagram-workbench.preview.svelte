@@ -66,7 +66,6 @@
           (renderer.dataset.renderSettled === 'true' &&
             Boolean(renderer.querySelector('.mermaid-svg svg[data-layout-settled="true"]'))),
       );
-
       if (
         cases.length !== caseCount ||
         mermaidRenderers.length !== mermaidCaseCount ||
@@ -149,6 +148,9 @@
           <header class="case-header">
             <h3>{target.title}</h3>
             <p>{target.description}</p>
+            {#if 'visualContract' in target && target.visualContract}
+              <p class="visual-contract" data-visual-contract>{target.visualContract}</p>
+            {/if}
           </header>
           <div
             class="diagram-stage"
@@ -250,6 +252,11 @@
   }
   .case-header p {
     font-size: var(--text-body-size);
+  }
+  .case-header .visual-contract {
+    border-left: 2px solid hsl(var(--border));
+    padding-left: 0.75rem;
+    font-size: var(--text-caption-size);
   }
   .diagram-stage {
     box-sizing: border-box;

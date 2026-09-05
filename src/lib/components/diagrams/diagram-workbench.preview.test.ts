@@ -6,73 +6,32 @@ import { computeLayout } from './layout-engine';
 import {
   CUSTOM_WORKBENCH_CASES,
   DIAGRAM_WORKBENCH_CASE_GROUPS,
+  DIAGRAM_WORKBENCH_CASE_IDS,
   DIAGRAM_WORKBENCH_CASES,
+  DIAGRAM_WORKBENCH_CUSTOM_CASE_IDS,
+  DIAGRAM_WORKBENCH_MERMAID_CASE_IDS,
   MERMAID_WORKBENCH_CASES,
 } from './diagram-workbench.preview-fixtures';
 
 describe('diagram workbench fixtures', () => {
-  it('publishes the full named Mermaid and interactive case matrix', () => {
-    expect(Object.keys(DIAGRAM_WORKBENCH_CASES)).toEqual([
-      'mermaid-single-node',
-      'mermaid-two-node',
-      'mermaid-disconnected',
-      'mermaid-topology-stress',
-      'mermaid-nested-groups',
-      'mermaid-flow',
-      'mermaid-sequence',
-      'mermaid-sequence-simple',
-      'mermaid-sequence-alt',
-      'mermaid-sequence-loop',
-      'mermaid-sequence-note',
-      'mermaid-state',
-      'mermaid-class',
-      'mermaid-entity-relationship',
-      'mermaid-groups',
-      'mermaid-dense-graph',
-      'mermaid-long-labels',
-      'mermaid-multiline-labels',
-      'mermaid-cycle-fanout',
-      'mermaid-invalid-source',
-      'mermaid-empty-content',
-      'mermaid-loading',
-      'custom-architecture',
-      'custom-sequence',
-      'custom-state-machine',
-      'custom-data-flow',
-      'custom-flowchart',
-      'custom-network',
-      'custom-timeline',
-      'custom-dependency-graph',
-      'custom-walkthrough',
-      'custom-bindings',
-      'custom-long-multiline-labels',
-      'custom-disconnected-extremes',
-      'custom-topology-stress',
-      'custom-empty-content',
-    ]);
-    expect(Object.keys(MERMAID_WORKBENCH_CASES)).toEqual(
+  it('publishes stable IDs from one authoritative registry', () => {
+    expect(DIAGRAM_WORKBENCH_CASE_IDS).toEqual(Object.keys(DIAGRAM_WORKBENCH_CASES));
+    expect(DIAGRAM_WORKBENCH_MERMAID_CASE_IDS).toEqual(
+      DIAGRAM_WORKBENCH_CASE_IDS.filter((id) => DIAGRAM_WORKBENCH_CASES[id].kind !== 'custom'),
+    );
+    expect(DIAGRAM_WORKBENCH_CUSTOM_CASE_IDS).toEqual(
+      DIAGRAM_WORKBENCH_CASE_IDS.filter((id) => DIAGRAM_WORKBENCH_CASES[id].kind === 'custom'),
+    );
+    expect(DIAGRAM_WORKBENCH_CASE_IDS).toEqual(
       expect.arrayContaining([
-        'mermaid-flow',
-        'mermaid-single-node',
-        'mermaid-two-node',
-        'mermaid-disconnected',
-        'mermaid-topology-stress',
-        'mermaid-nested-groups',
-        'mermaid-sequence',
-        'mermaid-sequence-simple',
-        'mermaid-sequence-alt',
-        'mermaid-sequence-loop',
-        'mermaid-sequence-note',
-        'mermaid-state',
-        'mermaid-class',
-        'mermaid-entity-relationship',
-        'mermaid-groups',
-        'mermaid-dense-graph',
-        'mermaid-long-labels',
-        'mermaid-multiline-labels',
-        'mermaid-cycle-fanout',
-        'mermaid-invalid-source',
-        'mermaid-empty-content',
+        'mermaid-nested-routing',
+        'mermaid-minimal-sequence',
+        'mermaid-state-recovery',
+        'mermaid-minimal-state',
+        'mermaid-minimal-class',
+        'mermaid-minimal-entity-relationship',
+        'custom-service-boundaries',
+        'custom-delivery-walkthrough',
       ]),
     );
   });
@@ -87,8 +46,8 @@ describe('diagram workbench fixtures', () => {
       'interaction',
       'status',
     ]);
-    expect(groupedCases).toHaveLength(36);
-    expect(new Set(groupedCases).size).toBe(36);
+    expect(groupedCases).toHaveLength(DIAGRAM_WORKBENCH_CASE_IDS.length);
+    expect(new Set(groupedCases).size).toBe(DIAGRAM_WORKBENCH_CASE_IDS.length);
     expect(groupedCases.sort()).toEqual(Object.keys(DIAGRAM_WORKBENCH_CASES).sort());
   });
 
@@ -110,12 +69,33 @@ describe('diagram workbench fixtures', () => {
     expect(MERMAID_WORKBENCH_CASES['mermaid-entity-relationship'].source).toMatch(/^erDiagram/);
     expect(MERMAID_WORKBENCH_CASES['mermaid-groups'].source).toContain('subgraph Browser');
     expect(MERMAID_WORKBENCH_CASES['mermaid-dense-graph'].source.match(/-->/g)).toHaveLength(11);
-    expect(MERMAID_WORKBENCH_CASES['mermaid-long-labels'].source.length).toBeGreaterThan(250);
+    expect(MERMAID_WORKBENCH_CASES['mermaid-long-labels'].source.match(/<br\/>/g)).toHaveLength(3);
     expect(MERMAID_WORKBENCH_CASES['mermaid-multiline-labels'].source).toContain('<br/>');
     expect(MERMAID_WORKBENCH_CASES['mermaid-cycle-fanout'].source).toContain('Review --> Hub');
     expect(MERMAID_WORKBENCH_CASES['mermaid-invalid-source'].source).toContain('Missing close');
     expect(MERMAID_WORKBENCH_CASES['mermaid-empty-content'].source).toBe('');
     expect(DIAGRAM_WORKBENCH_CASES['mermaid-loading'].kind).toBe('loading');
+  });
+
+  it('defines minimal examples and explicit contracts for the added showcase cases', () => {
+    const showcaseIds = [
+      'mermaid-single-node',
+      'mermaid-minimal-sequence',
+      'mermaid-minimal-state',
+      'mermaid-state-recovery',
+      'mermaid-minimal-class',
+      'mermaid-minimal-entity-relationship',
+      'mermaid-nested-routing',
+      'custom-service-boundaries',
+      'custom-delivery-walkthrough',
+    ] as const;
+
+    for (const id of showcaseIds) {
+      const fixture = DIAGRAM_WORKBENCH_CASES[id];
+      expect(fixture.title.trim()).not.toBe('');
+      expect(fixture.description.trim()).not.toBe('');
+      expect(fixture.visualContract?.trim()).not.toBe('');
+    }
   });
 
   it('keeps the loading case localized, text-only, motionless, and UI-led', () => {
@@ -176,6 +156,37 @@ describe('diagram workbench fixtures', () => {
     );
     expect(architecture.diagram.model.nodes.flatMap(({ binding }) => binding?.type ?? [])).toEqual(
       expect.arrayContaining(['file', 'note']),
+    );
+  });
+
+  it('models disconnected service groups and staged delivery state changes', () => {
+    const boundaries = CUSTOM_WORKBENCH_CASES['custom-service-boundaries'];
+    const walkthrough = CUSTOM_WORKBENCH_CASES['custom-delivery-walkthrough'];
+    expect(boundaries.kind).toBe('custom');
+    expect(walkthrough.kind).toBe('custom');
+    if (boundaries.kind !== 'custom' || walkthrough.kind !== 'custom') return;
+
+    expect(boundaries.diagram.model.groups).toHaveLength(4);
+    expect(boundaries.diagram.model.nodes.filter(({ kind }) => kind === 'db')).toHaveLength(2);
+    const connectedNodeIds = new Set(
+      boundaries.diagram.model.edges.flatMap(({ from, to }) => [from, to]),
+    );
+    expect(['metrics', 'dashboard'].every((id) => connectedNodeIds.has(id))).toBe(true);
+    expect(
+      boundaries.diagram.model.edges.some(
+        ({ from, to }) => !['metrics', 'dashboard'].includes(from) && to === 'dashboard',
+      ),
+    ).toBe(false);
+
+    const states = walkthrough.diagram.states ?? [];
+    expect(states).toHaveLength(4);
+    expect(states.every(({ camera }) => Boolean(camera?.focus))).toBe(true);
+    expect(new Set(states.flatMap(({ visibleGroups }) => visibleGroups ?? [])).size).toBe(3);
+    expect(new Set(states.map(({ visibleNodes }) => visibleNodes?.join('|'))).size).toBe(
+      states.length,
+    );
+    expect(new Set(states.map(({ visibleEdges }) => visibleEdges?.join('|'))).size).toBe(
+      states.length,
     );
   });
 

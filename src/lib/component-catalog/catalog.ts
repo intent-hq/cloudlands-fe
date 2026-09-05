@@ -1,5 +1,9 @@
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 import { canonicalComponentManifest } from '$lib/components/ui/manifest';
+import {
+  DIAGRAM_WORKBENCH_CUSTOM_CASE_IDS,
+  DIAGRAM_WORKBENCH_MERMAID_CASE_IDS,
+} from '$lib/components/diagrams/diagram-workbench.preview-fixtures';
 import { m } from '$shared/paraglide/messages.js';
 
 export interface CatalogEntry {
@@ -52,21 +56,7 @@ export const catalogEntries: CatalogEntry[] = [
       {
         id: 'mermaid-cases',
         title: m.sandbox_diagramWorkbench_mermaidCases_title(),
-        states: [
-          'mermaid-flow',
-          'mermaid-sequence',
-          'mermaid-state',
-          'mermaid-class',
-          'mermaid-entity-relationship',
-          'mermaid-groups',
-          'mermaid-dense-graph',
-          'mermaid-long-labels',
-          'mermaid-multiline-labels',
-          'mermaid-cycle-fanout',
-          'mermaid-invalid-source',
-          'mermaid-empty-content',
-          'mermaid-loading',
-        ],
+        states: [...DIAGRAM_WORKBENCH_MERMAID_CASE_IDS],
         themes: ['light', 'dark'],
         viewport: 'both',
         reducedMotion: true,
@@ -74,20 +64,7 @@ export const catalogEntries: CatalogEntry[] = [
       {
         id: 'custom-cases',
         title: m.sandbox_diagramWorkbench_customCases_title(),
-        states: [
-          'custom-architecture',
-          'custom-sequence',
-          'custom-state-machine',
-          'custom-data-flow',
-          'custom-flowchart',
-          'custom-network',
-          'custom-timeline',
-          'custom-dependency-graph',
-          'custom-walkthrough',
-          'custom-bindings',
-          'custom-long-multiline-labels',
-          'custom-empty-content',
-        ],
+        states: [...DIAGRAM_WORKBENCH_CUSTOM_CASE_IDS],
         themes: ['light', 'dark'],
         viewport: 'both',
         reducedMotion: true,
