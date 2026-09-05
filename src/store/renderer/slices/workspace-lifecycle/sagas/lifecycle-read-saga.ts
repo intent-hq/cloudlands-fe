@@ -16,6 +16,7 @@ import {
   takeLeadingByAgent,
   takeLeadingByWorkspace,
   takeLeadingInContext,
+  takeLatestByContext,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
 import { bulkUpsertSessions } from '../../agent-session/agent-session-slice';
@@ -843,7 +844,12 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
         pendingInitialEventReads,
       ),
       takeLeadingByWorkspace(fetchWorkspaceTokenUsage, tokenUsageWorker, scheduler),
-      takeLeadingByWorkspace(initContextForWorkspace, contextWorker, initializedContexts),
+      takeLatestByContext(
+        initContextForWorkspace,
+        (action) => ({ context: action.payload[0], generation: action.payload[2] ?? 0 }),
+        contextWorker,
+        initializedContexts,
+      ),
       takeLeadingByWorkspace(
         hydrateTaskAgentAssociationsRequested,
         taskAgentLinksWorker,

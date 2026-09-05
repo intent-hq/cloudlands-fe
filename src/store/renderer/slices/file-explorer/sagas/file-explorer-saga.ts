@@ -16,6 +16,7 @@ import { getAgentFileEdits, propagateAgentEditsToParents } from '$lib/utils/agen
 import { stripWorkspacePrefix } from '$lib/utils/file-utils';
 import type { FileGitStatus, FileNode } from '$shared/types';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { takeLatestByContext } from '../../../utils/context-saga-effects';
 import { selectFileExplorerState } from '../file-explorer-selectors';
 import {
   addExpandedPath,
@@ -197,7 +198,7 @@ function* initializeExplorer(action: ReturnType<typeof initializeFileExplorer>) 
 
 function* hydrateExplorer(wsId: string, force = false) {
   const existing = yield* selectFileExplorerState.effect(wsId);
-  if ((!force && existing.isInitialized) || existing.isLoading) return;
+  if (!force && (existing.isInitialized || existing.isLoading)) return;
   yield* put(setFileExplorerLoading(wsId, true));
   let completed = false;
   try {
@@ -420,7 +421,11 @@ export function* fileExplorerSaga() {
   yield* takeLatest(expandToPathRequested, expandToPathWorker);
   yield* takeLatest(expandAllRequested, expandAllWorker);
   yield* takeLeading(refreshFileExplorer, refreshExplorerWorker);
-  yield* takeLeading(hydrateFileExplorerRequested, hydrateExplorerWorker);
+  yield* takeLatestByContext(
+    hydrateFileExplorerRequested,
+    (action) => ({ context: action.payload[0], generation: action.payload[2] ?? 0 }),
+    hydrateExplorerWorker,
+  );
   yield* takeLeading(refreshDirectoryRequested, refreshDirectoryWorker);
   yield* takeLeading([syncGitStatusFromStoresRequested], refreshAgentEditsWorker);
 }
