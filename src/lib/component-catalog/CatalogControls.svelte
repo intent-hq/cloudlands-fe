@@ -180,7 +180,12 @@
     font-weight: var(--text-body-strong-weight);
   }
 
-  .control-set,
+  .control-set {
+    display: grid;
+    min-width: 0;
+    gap: 0.375rem;
+  }
+
   .motion-control {
     display: flex;
     flex: none;
@@ -201,7 +206,8 @@
   }
 
   .color-theme-dropdown {
-    width: calc(var(--control-height-medium) * 3.75);
+    width: 100%;
+    min-width: 0;
   }
 
   :global(.color-theme-select) {

@@ -139,6 +139,8 @@
 <style>
   .component-page {
     display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
     width: 100%;
     max-width: 680px;
     gap: 2rem;
@@ -207,6 +209,7 @@
     overflow: hidden;
     border: 1px solid hsl(var(--border));
     border-radius: var(--radius-medium);
+    padding: 0;
   }
 
   pre {
@@ -243,5 +246,11 @@
   .chat-polish-layout {
     display: grid;
     gap: 0.75rem;
+  }
+
+  @media (max-width: 1199px) {
+    .component-page {
+      padding-block: 2rem;
+    }
   }
 </style>

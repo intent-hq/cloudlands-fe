@@ -32,6 +32,20 @@ afterEach(() => {
 });
 
 describe('catalog workspace', () => {
+  it('preserves display preferences when customization is collapsed and reopened', async () => {
+    render(CatalogShell);
+    const disclosure = screen.getByRole('button', { name: 'Customize preview' });
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(disclosure);
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+    await fireEvent.click(screen.getByRole('radio', { name: 'Dark' }));
+    await fireEvent.click(disclosure);
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(disclosure);
+    expect(screen.getByRole('radio', { name: 'Dark' }).getAttribute('aria-checked')).toBe('true');
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+  });
+
   it('uses canonical choices and persists color theme, mode, and motion', async () => {
     vi.mocked(localStorage.setItem).mockClear();
     const first = render(CatalogShell);

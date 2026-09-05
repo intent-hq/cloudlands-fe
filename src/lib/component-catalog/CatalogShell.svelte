@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, type Snippet } from 'svelte';
   import CatalogControls from './CatalogControls.svelte';
+  import { Button } from '$lib/components/ui/button';
   import * as Sidebar from '$lib/components/ui/sidebar';
   import SizeProvider from '$lib/components/ui/SizeProvider.svelte';
   import { catalogEntries } from './catalog';
@@ -30,6 +31,7 @@
   let width = $state<number | undefined>(undefined);
   let density = $state<'default' | 'compact'>('default');
   let radius = $state<'rounded' | 'square'>('rounded');
+  let customizeOpen = $state(false);
   let initialRootDark = false;
   let initialRootLight = false;
   let initialRootReducedMotion = false;
@@ -175,18 +177,31 @@
             </Sidebar.Group>
           </Sidebar.Content>
         </Sidebar.Root>
-        <main class="catalog-main">{@render children?.()}</main>
-        <aside class="catalog-customize" aria-label="Catalog customization">
-          <CatalogControls
-            bind:theme
-            bind:colorTheme
-            {resolvedTheme}
-            bind:reducedMotion
-            bind:width
-            bind:density
-            bind:radius
-          />
+        <aside
+          class="catalog-customize"
+          class:customize-open={customizeOpen}
+          aria-label="Catalog customization"
+        >
+          <Button
+            variant="outline"
+            class="catalog-customize-toggle"
+            aria-expanded={customizeOpen}
+            aria-controls="catalog-customize-content"
+            onclick={() => (customizeOpen = !customizeOpen)}>Customize preview</Button
+          >
+          <div id="catalog-customize-content">
+            <CatalogControls
+              bind:theme
+              bind:colorTheme
+              {resolvedTheme}
+              bind:reducedMotion
+              bind:width
+              bind:density
+              bind:radius
+            />
+          </div>
         </aside>
+        <main class="catalog-main">{@render children?.()}</main>
       </Sidebar.Provider>
     </SizeProvider>
   {/key}
@@ -260,29 +275,72 @@
   }
 
   .catalog-main {
+    grid-column: 2;
+    grid-row: 1;
     min-width: 0;
     overflow-x: clip;
   }
 
   .catalog-customize {
+    grid-column: 3;
+    grid-row: 1;
     position: sticky;
     top: 1rem;
     padding: 1rem;
   }
 
+  :global(.catalog-customize-toggle) {
+    display: none;
+  }
+
   @media (max-width: 1199px) {
+    :global(.catalog-customize-toggle) {
+      display: inline-flex;
+    }
+
+    .catalog-customize:not(.customize-open) #catalog-customize-content {
+      display: none;
+    }
+
+    .customize-open #catalog-customize-content {
+      margin-top: 0.75rem;
+    }
+
     :global(.catalog-layout) {
       grid-template-columns: 256px minmax(0, 1fr);
     }
 
     .catalog-customize {
-      display: none;
+      position: static;
+      grid-column: 2;
+      grid-row: 1;
+      width: 100%;
+      max-width: 680px;
+      margin-inline: auto;
+      padding: 1.5rem 1.5rem 0;
+    }
+
+    :global(.catalog-sidebar) {
+      grid-row: 1 / span 2;
+    }
+
+    .catalog-main {
+      grid-column: 2;
+      grid-row: 2;
+    }
+
+    .catalog-customize :global(.catalog-controls) {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .catalog-customize :global(.catalog-controls h2) {
+      grid-column: 1 / -1;
     }
   }
 
   @media (max-width: 767px) {
     :global(.catalog-layout) {
-      display: block;
+      grid-template-columns: minmax(0, 1fr);
     }
 
     :global(.catalog-sidebar) {
@@ -291,6 +349,24 @@
       height: auto;
       max-height: 18rem;
       border-bottom: 1px solid hsl(var(--border));
+      grid-column: 1;
+      grid-row: 1;
+    }
+
+    .catalog-customize {
+      grid-column: 1;
+      grid-row: 2;
+    }
+
+    .catalog-main {
+      grid-column: 1;
+      grid-row: 3;
+    }
+  }
+
+  @media (max-width: 479px) {
+    .catalog-customize :global(.catalog-controls) {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 
