@@ -23,7 +23,7 @@ export function pngDimensions(buffer) {
   return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
 }
 
-async function fitViewportToElement(page, locator) {
+async function fitViewportToElement(page, locator, waitForStability) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const box = await locator.boundingBox();
     if (!box) throw new Error('The component frame has no bounding box.');
@@ -31,6 +31,7 @@ async function fitViewportToElement(page, locator) {
     const current = page.viewportSize();
     if (current?.width === next.width && current.height === next.height) return;
     await page.setViewportSize(next);
+    await waitForStability();
   }
 }
 
@@ -39,9 +40,9 @@ export async function captureSandboxScreenshot(options) {
   const absoluteOutputPath = path.resolve(outputPath);
   await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
 
-  return runSandbox(options, async ({ page, url }) => {
+  return runSandbox(options, async ({ page, url, waitForStability }) => {
     const frame = page.locator('[data-testid="catalog-scene-focus"]');
-    await fitViewportToElement(page, frame);
+    await fitViewportToElement(page, frame, waitForStability);
     const png = await frame.screenshot({ path: absoluteOutputPath });
     return { outputPath, dimensions: pngDimensions(png), url };
   });

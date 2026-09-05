@@ -1,8 +1,13 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const playwright = vi.hoisted(() => ({ launch: vi.fn() }));
+vi.mock('playwright', () => ({ chromium: { launch: playwright.launch } }));
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — plain .mjs module without type declarations
-import { buildSandboxUrl, parseSandboxArgs } from './runner.mjs';
+import { buildSandboxUrl, parseSandboxArgs, runSandbox } from './runner.mjs';
+
+beforeEach(() => vi.clearAllMocks());
 
 describe('sandbox runner arguments', () => {
   it('applies deterministic capture defaults', () => {
@@ -72,5 +77,48 @@ describe('buildSandboxUrl', () => {
     expect(buildSandboxUrl('http://localhost:5173/root', options)).toBe(
       'http://localhost:5173/root/sandbox/workspace%20card?state=wide&theme=light&width=720&motion=reduced&fit=component',
     );
+  });
+});
+
+describe('runSandbox viewport', () => {
+  it('keeps a 420px request below the responsive 640px breakpoint', async () => {
+    let viewport = { width: 0, height: 0 };
+    const page = {
+      goto: vi.fn(),
+      waitForFunction: vi.fn(),
+      evaluate: vi.fn().mockResolvedValueOnce(['landscape-narrow']),
+      locator: vi.fn(() => ({ waitFor: vi.fn() })),
+      on: vi.fn(),
+      viewportSize: vi.fn(() => viewport),
+      waitForTimeout: vi.fn(),
+    };
+    const context = { newPage: vi.fn().mockResolvedValue(page) };
+    const browser = {
+      newContext: vi.fn(async ({ viewport: nextViewport }) => {
+        viewport = nextViewport;
+        return context;
+      }),
+      close: vi.fn(),
+    };
+    playwright.launch.mockResolvedValue(browser);
+
+    const isNarrow = await runSandbox(
+      parseSandboxArgs([
+        'workspace-hover-card',
+        '--state',
+        'landscape-narrow',
+        '--width',
+        '420',
+        '--base-url',
+        'http://localhost:5173',
+      ]),
+      ({ page: responsivePage }) => responsivePage.viewportSize().width < 640,
+    );
+
+    expect(isNarrow).toBe(true);
+    expect(browser.newContext).toHaveBeenCalledWith({
+      viewport: { width: 420, height: 900 },
+      deviceScaleFactor: 1,
+    });
   });
 });

@@ -190,6 +190,14 @@ async function waitForSandboxPage(page, options, url, consoleErrors) {
       `Timed out after ${options.timeout}ms waiting for scene “${options.scene}” state “${options.state}” to become ready.`,
     );
   }
+  await waitForSandboxStability(page, options);
+
+  if (!options.allowConsoleErrors && consoleErrors.length > 0) {
+    throw new Error(`Page reported console errors:\n${consoleErrors.join('\n')}`);
+  }
+}
+
+async function waitForSandboxStability(page, options) {
   try {
     await page.locator('[data-preview-stable="true"]').waitFor({ timeout: options.timeout });
   } catch {
@@ -197,10 +205,13 @@ async function waitForSandboxPage(page, options, url, consoleErrors) {
       `Timed out after ${options.timeout}ms waiting for scene “${options.scene}” state “${options.state}” to become stable.`,
     );
   }
+}
 
-  if (!options.allowConsoleErrors && consoleErrors.length > 0) {
-    throw new Error(`Page reported console errors:\n${consoleErrors.join('\n')}`);
-  }
+async function waitForResponsiveLayout(page, options) {
+  await waitForSandboxStability(page, options);
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
 }
 
 export async function runSandbox(options, action) {
@@ -226,7 +237,7 @@ export async function runSandbox(options, action) {
     browser = await chromium.launch({ headless: true, channel: 'chromium' });
     debug('Chromium started');
     const context = await browser.newContext({
-      viewport: { width: Math.max(800, options.width + 128), height: 900 },
+      viewport: { width: options.width, height: 900 },
       deviceScaleFactor: options.scale,
     });
     const page = await context.newPage();
@@ -237,7 +248,12 @@ export async function runSandbox(options, action) {
     page.on('pageerror', (error) => consoleErrors.push(`page: ${error.message}`));
     await waitForSandboxPage(page, options, url, consoleErrors);
     debug('preview ready');
-    const result = await action({ page, url, consoleErrors });
+    const result = await action({
+      page,
+      url,
+      consoleErrors,
+      waitForStability: () => waitForResponsiveLayout(page, options),
+    });
     await page.waitForTimeout(0);
     if (!options.allowConsoleErrors && consoleErrors.length > 0) {
       throw new Error(`Page reported console errors:\n${consoleErrors.join('\n')}`);
