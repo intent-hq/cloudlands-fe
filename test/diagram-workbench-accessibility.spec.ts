@@ -337,10 +337,17 @@ test('keeps the complex state machine compact with clear routes and idle actions
 }) => {
   test.setTimeout(120_000);
 
-  for (const width of [960, 640, 420]) {
+  for (const { width, theme } of [
+    { width: 960, theme: 'light' },
+    { width: 640, theme: 'light' },
+    { width: 420, theme: 'light' },
+    { width: 420, theme: 'dark' },
+    { width: 420, theme: 'nord' },
+  ] as const) {
+    const context = `${theme} ${width}px`;
     await gotoPreview(
       page,
-      `${baseUrl}/sandbox/diagram-workbench?state=mermaid-state&theme=light&width=${width}&motion=reduced`,
+      `${baseUrl}/sandbox/diagram-workbench?state=mermaid-state&theme=${theme}&width=${width}&motion=reduced`,
     );
     await page.evaluate(() => document.fonts.ready);
     const geometry = await page
@@ -484,10 +491,10 @@ test('keeps the complex state machine compact with clear routes and idle actions
     expect(geometry.labelsClearNodes).toBe(true);
     expect(geometry.nodesSeparated).toBe(true);
     expect(geometry.orthogonal).toBe(true);
-    expect(geometry.pathLabelIntersections, `${width}px path-label intersections`).toBe(0);
+    expect(geometry.pathLabelIntersections, `${context} path-label intersections`).toBe(0);
     expect(
       geometry.unrelatedPathCrossings,
-      `${width}px unavoidable path junctions`,
+      `${context} unavoidable path junctions`,
     ).toBeLessThanOrEqual(2);
     expect(geometry.longestRoute).toBeLessThan(1_500);
     expect(geometry.totalRouteLength).toBeLessThan(8_000);

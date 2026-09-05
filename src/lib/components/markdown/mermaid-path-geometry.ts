@@ -2415,7 +2415,7 @@ function stateRoutePoints(
   if (label === STATE_LABEL.requestFails) {
     const requestSource = pointAt(source, 0, compact ? 0.9 : 0.25);
     const requestTarget = pointAt(target, 0, compact ? 0.75 : 0.25);
-    const laneX = left - (compact ? 68 : 40);
+    const laneX = left - (compact ? 88 : 40);
     return [
       requestSource,
       { x: laneX, y: requestSource.y },
@@ -2717,7 +2717,7 @@ export function placeStateLabelsOnFinalRoutes(svg: SVGSVGElement, compact = fals
     const local = label.getBBox();
     const fractions = compact
       ? path.dataset.routeLabel === STATE_LABEL.requestFails
-        ? [0.04, 0.15, 0.25, 0.5, 0.75, 0.85]
+        ? [0.0285]
         : [0.5, 0.25, 0.75, 0.15, 0.35, 0.65, 0.85]
       : [0.5, 0.25, 0.75];
     const ownSegments = routeSegments.find((route) => route.path === path)?.segments ?? [];
@@ -2733,6 +2733,7 @@ export function placeStateLabelsOnFinalRoutes(svg: SVGSVGElement, compact = fals
       (compact &&
         (path.dataset.routeLabel === STATE_LABEL.agentAsksUser ||
           path.dataset.routeLabel === STATE_LABEL.toolStarts ||
+          path.dataset.routeLabel === STATE_LABEL.requestFails ||
           path.dataset.routeLabel === STATE_LABEL.userRetries)) ||
       (!compact &&
         (path.dataset.routeLabel === STATE_LABEL.agentAsksUser ||
@@ -2791,7 +2792,15 @@ export function placeStateLabelsOnFinalRoutes(svg: SVGSVGElement, compact = fals
             Math.abs(candidateSegment.x1 - candidateSegment.x2) < 0.5 &&
             (path.dataset.routeLabel === STATE_LABEL.userReplies ||
               path.dataset.routeLabel === STATE_LABEL.agentFinishes);
-          if (placesLabelInsideRightLane) midpoint.x -= local.width / 2 - 6;
+          if (placesLabelInsideRightLane) {
+            midpoint.x -=
+              local.width / 2 - (path.dataset.routeLabel === STATE_LABEL.userReplies ? 0 : 6);
+          }
+          const placesAgentResponseBetweenStates =
+            compact &&
+            Math.abs(candidateSegment.x1 - candidateSegment.x2) < 0.5 &&
+            path.dataset.routeLabel === STATE_LABEL.agentResponds;
+          if (placesAgentResponseBetweenStates) midpoint.y += 6;
           const placesLabelInsideLeftLane =
             compact &&
             Math.abs(candidateSegment.x1 - candidateSegment.x2) < 0.5 &&
@@ -2804,7 +2813,7 @@ export function placeStateLabelsOnFinalRoutes(svg: SVGSVGElement, compact = fals
                 ? 0
                 : path.dataset.routeLabel === STATE_LABEL.streamFails
                   ? -26
-                  : -1;
+                  : 0;
             midpoint.x += local.width / 2 + inset;
           }
           const placesRetryAboveShelf =
