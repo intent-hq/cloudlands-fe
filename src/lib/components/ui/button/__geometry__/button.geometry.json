@@ -1,0 +1,38 @@
+{
+  "default": {
+    "420": {
+      "probes": {},
+      "root": {
+        "height": 82,
+        "width": 420
+      }
+    }
+  },
+  "destructive": {
+    "420": {
+      "probes": {},
+      "root": {
+        "height": 82,
+        "width": 420
+      }
+    }
+  },
+  "disabled": {
+    "420": {
+      "probes": {},
+      "root": {
+        "height": 82,
+        "width": 420
+      }
+    }
+  },
+  "loading": {
+    "420": {
+      "probes": {},
+      "root": {
+        "height": 82,
+        "width": 420
+      }
+    }
+  }
+}
