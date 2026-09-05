@@ -80,6 +80,9 @@ export interface TerminalInfo {
 // In some browser builds (prod), `process` may be undefined. Guard access.
 const isWindowsPlatform = typeof process !== 'undefined' && process.platform === 'win32';
 
+/** Quiet period after the last size change before a reattached terminal is fitted. */
+const REATTACH_FIT_SETTLE_MS = 100;
+
 export class TerminalAdapter {
   private xterm: Terminal;
   private fitAddon: FitAddon;
@@ -98,6 +101,7 @@ export class TerminalAdapter {
   private eventListeners: Array<() => void> = [];
   private resizeObserver: ResizeObserver | null = null;
   private reattachFitObserver: ResizeObserver | null = null;
+  private reattachFitTimer: NodeJS.Timeout | null = null;
   private visibilityObserver: IntersectionObserver | null = null;
   private wasVisible: boolean = true;
   private isVisible: boolean = true;
@@ -1298,37 +1302,66 @@ export class TerminalAdapter {
 
   /**
    * Fit and repaint the terminal in `container` once it has a layout box.
-   * The overlay slides in and panels animate their resize, so the container is
-   * often 0×0 right after a move; fitting then would shrink the terminal and
-   * lose the output. Fit synchronously when the size is already there,
-   * otherwise wait for the first non-zero size report.
+   * The root overlay slides in (height-animated) and panels animate their
+   * resize, so the container is often 0×0 right after a move; fitting then
+   * would shrink the terminal and lose the output. Fit synchronously when the
+   * size is already there. Otherwise observe the container and fit once its
+   * size has stopped changing for REATTACH_FIT_SETTLE_MS, so an intermediate
+   * frame of the animation is never sent to the PTY.
    */
   private fitAfterReattach(container: HTMLElement): void {
     this.cancelReattachFit();
     if (this.fitReattachedContainer(container)) {
       return;
     }
-    this.reattachFitObserver = new ResizeObserver(() => {
-      if (this.fitReattachedContainer(container)) {
-        this.cancelReattachFit();
+    const observer = new ResizeObserver(() => {
+      if (this.reattachFitObserver !== observer) {
+        observer.disconnect();
+        return;
       }
+      if (!this.hasReattachedContainerBox(container)) return;
+      if (this.reattachFitTimer) {
+        clearTimeout(this.reattachFitTimer);
+      }
+      this.reattachFitTimer = setTimeout(() => {
+        this.reattachFitTimer = null;
+        if (this.fitReattachedContainer(container)) {
+          this.cancelReattachFit();
+        }
+      }, REATTACH_FIT_SETTLE_MS);
     });
-    this.reattachFitObserver.observe(container);
+    this.reattachFitObserver = observer;
+    observer.observe(container);
   }
 
+  /**
+   * Fit + repaint if `container` is still ours and has a layout box. Returns
+   * true when the fit ran or is no longer wanted (disposed / moved elsewhere),
+   * false when it should be retried once the container has a size.
+   */
   private fitReattachedContainer(container: HTMLElement): boolean {
     if (this.isDisposed || this.container !== container) return true;
+    if (!this.hasReattachedContainerBox(container)) return false;
     const { width, height } = container.getBoundingClientRect();
-    if (width <= 0 || height <= 0) return false;
     this.fitAddon.fit();
     this.lastFittedSize = { width, height };
     this.xterm.refresh(0, this.xterm.rows - 1);
     return true;
   }
 
+  private hasReattachedContainerBox(container: HTMLElement): boolean {
+    if (!this.isVisible) return false;
+    const { width, height } = container.getBoundingClientRect();
+    return width > 0 && height > 0;
+  }
+
   private cancelReattachFit(): void {
     this.reattachFitObserver?.disconnect();
     this.reattachFitObserver = null;
+    if (this.reattachFitTimer) {
+      clearTimeout(this.reattachFitTimer);
+      this.reattachFitTimer = null;
+    }
   }
 
   /**
