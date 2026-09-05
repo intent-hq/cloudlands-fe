@@ -243,12 +243,13 @@ test('keeps measured walkthrough content compact and collision free', async ({ p
         labelsClearNodes: labels.every((label) =>
           nodes.every((node) => !intersects(label.rect, node.rect, 2)),
         ),
-        pathsClearLabels: edgePaths.every((path) =>
-          labels.every(
-            (label) =>
-              path.closest('.diagram-edge')?.getAttribute('data-edge-id') === label.edgeId ||
-              !pathCrosses(path, label.rect),
-          ),
+        pathLabelCrossings: edgePaths.flatMap((path) =>
+          labels.flatMap((label) => {
+            const edgeId = path.closest('.diagram-edge')?.getAttribute('data-edge-id');
+            return edgeId !== label.edgeId && pathCrosses(path, label.rect)
+              ? [`${edgeId}->${label.edgeId}:${label.text}`]
+              : [];
+          }),
         ),
         forwardGap: redux.rect.top - user.rect.bottom,
         forwardGapLimit: send.rect.height + 32,
@@ -265,7 +266,7 @@ test('keeps measured walkthrough content compact and collision free', async ({ p
 
     expect(geometry.labelsFit).toBe(true);
     expect(geometry.labelsClearNodes).toBe(true);
-    expect(geometry.pathsClearLabels).toBe(true);
+    expect(geometry.pathLabelCrossings).toEqual([]);
     expect(geometry.forwardGap).toBeLessThanOrEqual(geometry.forwardGapLimit);
     expect(geometry.loopClearsNodes).toBe(true);
     expect(geometry.loopClearsLabels).toBe(true);

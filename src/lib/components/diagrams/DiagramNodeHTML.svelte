@@ -166,32 +166,34 @@
   title={node.label.length > 50 ? node.label : undefined}
 >
   <div class="node-content">
-    <span class="node-icon" data-node-icon aria-hidden="true">
-      <NodeIcon
-        size={14}
-        weight="regular"
-        data-icon={nodeIcon.name}
-        data-weight="regular"
-        aria-hidden="true"
-      />
-    </span>
-    <div class="node-copy">
-      <div class="node-label">
-        {#if filenameUnits}
-          {#each filenameUnits as unit, index}
-            <span class="semantic-filename-unit">{unit}</span
-            ><!-- i18n-ignore: Svelte control flow, not user-facing text -->{#if index < filenameUnits.length - 1}<wbr
-              />{/if}
-          {/each}
-        {:else}
-          {#each splitSemanticLabel(node.label) as part}
-            {part.text}{#if part.hardBreak}<br />{:else if part.breakAfter}<wbr />{/if}
-          {/each}
+    <div class="node-row">
+      <span class="node-icon" data-node-icon aria-hidden="true">
+        <NodeIcon
+          size={14}
+          weight="regular"
+          data-icon={nodeIcon.name}
+          data-weight="regular"
+          aria-hidden="true"
+        />
+      </span>
+      <div class="node-copy">
+        <div class="node-label">
+          {#if filenameUnits}
+            {#each filenameUnits as unit, index}
+              <span class="semantic-filename-unit">{unit}</span
+              ><!-- i18n-ignore: Svelte control flow, not user-facing text -->{#if index < filenameUnits.length - 1}<wbr
+                />{/if}
+            {/each}
+          {:else}
+            {#each splitSemanticLabel(node.label) as part}
+              {part.text}{#if part.hardBreak}<br />{:else if part.breakAfter}<wbr />{/if}
+            {/each}
+          {/if}
+        </div>
+        {#if node.kind}
+          <div class="node-kind-label">{node.kind}</div>
         {/if}
       </div>
-      {#if node.kind}
-        <div class="node-kind-label">{node.kind}</div>
-      {/if}
     </div>
   </div>
 </svelte:element>
@@ -334,20 +336,26 @@
   /* Node content */
   .node-content {
     display: flex;
-    flex-direction: row;
-    align-items: flex-start;
-    justify-content: flex-start;
+    flex-direction: column;
+    justify-content: center;
     width: 100%;
     height: 100%;
     padding: var(--padding-y) var(--padding-x);
     box-sizing: border-box;
+  }
+
+  .node-row {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: flex-start;
+    width: 100%;
     gap: 8px;
   }
 
-  .diagram-node-html[data-store-node='true'] .node-content {
+  .diagram-node-html[data-store-node='true'] .node-row {
     position: relative;
     z-index: 1;
-    align-items: center;
     justify-content: center;
   }
 

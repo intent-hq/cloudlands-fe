@@ -19,7 +19,11 @@ import type {
   NodeStyleConfig,
 } from './types';
 import { GRAMMAR_CONFIGS, DEFAULT_NODE_STYLE } from './types';
-import { semanticLabelTokens, semanticLabelUnits } from './diagram-label-wrap';
+import {
+  semanticFilenameUnits,
+  semanticLabelTokens,
+  semanticLabelUnits,
+} from './diagram-label-wrap';
 
 /**
  * Compute layout for a diagram
@@ -41,6 +45,7 @@ const EDGE_LABEL_FRAME_WIDTH = 0;
 const EDGE_LABEL_LINE_HEIGHT = 18;
 const NODE_ICON_WIDTH = 14;
 const NODE_ICON_GAP = 8;
+const MIN_NODE_HEIGHT = 32;
 const AUTOMATIC_VERTICAL_THRESHOLD = 500;
 const MIN_READABLE_SCALE = 0.84;
 const PORT_SLOT_GAP = 16;
@@ -236,7 +241,14 @@ export function computeLayout(
     const selected = chooseAutomaticLayout(horizontal, vertical, maxDiagramWidth);
     const selectedLayout = selected === horizontal ? horizontalLayout : verticalLayout;
     return maxDiagramWidth < AUTOMATIC_VERTICAL_THRESHOLD || selected.bounds.width > maxDiagramWidth
-      ? applyWrapping(selected, maxDiagramWidth, clampSpacing(layout.spacing, 80), selectedLayout)
+      ? applyWrapping(
+          selected,
+          maxDiagramWidth,
+          clampSpacing(layout.spacing, 80),
+          selectedLayout,
+          nodeDefaults,
+          styleConfig,
+        )
       : selected;
   }
 
@@ -249,7 +261,14 @@ export function computeLayout(
         (result.bounds.height > 0 &&
           result.bounds.width / result.bounds.height > MAX_ASPECT_RATIO)));
   return needsVerticalReflow
-    ? applyWrapping(result, maxDiagramWidth, clampSpacing(layout.spacing, 80), layout)
+    ? applyWrapping(
+        result,
+        maxDiagramWidth,
+        clampSpacing(layout.spacing, 80),
+        layout,
+        nodeDefaults,
+        styleConfig,
+      )
     : result;
 }
 
@@ -376,6 +395,8 @@ function applyWrapping(
   maxWidth: number,
   spacing: number,
   routeLayout: DiagramBaseView['layout'],
+  nodeDefaults: { width: number; height: number },
+  styleConfig: NodeStyleConfig,
 ): ComputedLayout {
   const needsCompactSemantics =
     layout.edges.some((edge) => Boolean(edge.label)) ||
@@ -385,12 +406,11 @@ function applyWrapping(
     const compactNodeWidth = Math.max(150, Math.min(260, maxWidth));
     const compactNodes = layout.nodes.map((node) => {
       const width = Math.min(node.width, compactNodeWidth);
-      const extraLines = Math.max(0, Math.ceil(node.width / width) - 1);
-      const isStoreNode = ['db', 'store', 'data_store'].includes(node.kind ?? '');
+      const measuredHeight = computeNodeSize(node, nodeDefaults, styleConfig, width).height;
       return {
         ...node,
         width,
-        height: node.height + (isStoreNode ? 20 : 32) + extraLines * 17,
+        height: node.size ? Math.max(node.size.height, measuredHeight) : measuredHeight,
       };
     });
     const columnWidth = Math.max(...compactNodes.map((node) => node.width));
@@ -630,6 +650,7 @@ function computeNodeSize(
   node: DiagramNode,
   defaults: { width: number; height: number },
   style: NodeStyleConfig,
+  availableWidth = style.maxWidth,
 ): { width: number; height: number } {
   const usesDefaultStyle = style === DEFAULT_NODE_STYLE;
   const isStoreNode = ['db', 'store', 'data_store'].includes(node.kind ?? '');
@@ -638,7 +659,8 @@ function computeNodeSize(
   const contentGap = usesDefaultStyle ? 2 : style.gap;
   const kindFontSize = usesDefaultStyle ? 11 : style.kindFontSize;
   const iconColumnWidth = NODE_ICON_WIDTH + NODE_ICON_GAP;
-  const frameBorderWidth = usesDefaultStyle ? 2 : 0;
+  const frameBorderWidth = 0;
+  const maxWidth = Math.min(style.maxWidth, availableWidth);
   const labelWrapSafety = /[^\x00-\x7f]/.test(node.label) ? 10 : 8;
   // Keep a small wrap safety margin for the application UI font stack.
   const defaultCharWidthRatio = 0.6;
@@ -682,25 +704,26 @@ function computeNodeSize(
     // Allow wider nodes for long labels, but cap at maxWidth
     const maxLineWidth = Math.min(
       longestLineWidth,
-      style.maxWidth - paddingX * 2 - iconColumnWidth - frameBorderWidth,
+      maxWidth - paddingX * 2 - iconColumnWidth - frameBorderWidth - labelWrapSafety,
     );
     const wrappedLineWidth = Math.max(maxLineWidth, longestWordWidth);
     labelWidth = wrappedLineWidth;
     const visibleLineCount = hardLines.reduce((total, line) => {
-      const lineWords = semanticLabelTokens(line);
+      const filenameUnits = semanticFilenameUnits(line);
+      const lineWords = filenameUnits ?? semanticLabelTokens(line);
       if (!lineWords.length) return total + 1;
       let count = 1;
       let current = '';
       for (const word of lineWords) {
         const wordWidth = measureLabel(word);
-        if (wordWidth + labelWrapSafety > wrappedLineWidth + 0.5) {
+        if (wordWidth > wrappedLineWidth + 0.5) {
           if (current) count += 1;
           count += Math.max(1, Math.ceil((wordWidth - 0.5) / wrappedLineWidth)) - 1;
           current = '';
           continue;
         }
-        const candidate = current ? `${current} ${word}` : word;
-        if (current && measureLabel(candidate) + labelWrapSafety > wrappedLineWidth + 0.5) {
+        const candidate = current ? `${current}${filenameUnits ? '' : ' '}${word}` : word;
+        if (current && measureLabel(candidate) > wrappedLineWidth + 0.5) {
           count += 1;
           current = word;
         } else {
@@ -731,12 +754,12 @@ function computeNodeSize(
   const minWidth = Math.max(isShortLabel ? 72 : defaults.width * 0.6, isStoreNode ? 112 : 0);
   const chromeWidth = iconColumnWidth + paddingX * 2 + frameBorderWidth;
   const width = Math.max(
-    Math.min(Math.max(contentWidth + paddingX * 2 + frameBorderWidth, minWidth), style.maxWidth),
+    Math.min(Math.max(contentWidth + paddingX * 2 + frameBorderWidth, minWidth), maxWidth),
     longestWordWidth + chromeWidth + labelWrapSafety,
   );
   const height = Math.max(
-    contentHeight + paddingY * 2 + frameBorderWidth + 2,
-    defaults.height * 0.6,
+    contentHeight + paddingY * 2 + frameBorderWidth,
+    MIN_NODE_HEIGHT,
     isStoreNode ? 80 : 0,
   );
 
@@ -3127,7 +3150,7 @@ function computeCompactColumnEdgePaths(
         x: downward ? target.x + target.width : target.x,
         y: target.y + target.height / 2,
       };
-      const terminalLead = 32;
+      const terminalLead = 32 + ORTHOGONAL_CORNER_RADIUS;
       const laneClearance = needsAdjacentLabelLane
         ? Math.max(terminalLead, (compactLabel?.width ?? 0) / 2 + 8)
         : terminalLead;
@@ -3236,11 +3259,13 @@ function determineConnectionSides(
 
   // For vertical layouts (TB/BT), prefer top/bottom connections
   if (isVerticalLayout) {
-    if (Math.abs(dy) > 10) {
-      // Significant vertical difference
-      return dy > 0 ? { fromSide: 'bottom', toSide: 'top' } : { fromSide: 'top', toSide: 'bottom' };
+    if (fromNode.y + fromNode.height <= toNode.y) {
+      return { fromSide: 'bottom', toSide: 'top' };
     }
-    // Nearly same level - use horizontal
+    if (toNode.y + toNode.height <= fromNode.y) {
+      return { fromSide: 'top', toSide: 'bottom' };
+    }
+    // Vertically overlapping nodes share a row even when their measured heights differ.
     return dx > 0 ? { fromSide: 'right', toSide: 'left' } : { fromSide: 'left', toSide: 'right' };
   }
 

@@ -29,6 +29,112 @@ async function openState(page: Page, state: string, width: number, theme: string
   ).toBeAttached();
 }
 
+async function expectContentHuggingNodes(page: Page, identity: string) {
+  const geometry = await page.evaluate(() => {
+    const cases = [
+      ['custom-long-multiline-labels', 'response', 1],
+      ['custom-dependency-graph', 'fixtures', 2],
+      ['custom-long-multiline-labels', 'tool', 3],
+      ['custom-disconnected-extremes', 'multiline', 3],
+    ] as const;
+    const nodes = cases.map(([state, nodeId, expectedLines]) => {
+      const node = document.querySelector<SVGForeignObjectElement>(
+        `#${state} [data-node-id="${nodeId}"]`,
+      )!;
+      const body = node.querySelector<HTMLElement>('.diagram-node-html')!;
+      const label = node.querySelector<HTMLElement>('.node-label')!;
+      const kind = node.querySelector<HTMLElement>('.node-kind-label')!;
+      const row = node.querySelector<HTMLElement>('.node-row')!;
+      const nodeBounds = node.getBoundingClientRect();
+      const rowBounds = row.getBoundingClientRect();
+      const scale = nodeBounds.height / Number(node.getAttribute('height'));
+      const style = getComputedStyle(body);
+      const paddingY = Number.parseFloat(style.getPropertyValue('--padding-y'));
+      const gap = Number.parseFloat(style.getPropertyValue('--gap'));
+      const labelLineHeight = Number.parseFloat(getComputedStyle(label).lineHeight);
+      const kindLineHeight = Number.parseFloat(getComputedStyle(kind).lineHeight);
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      const lineTops = [...range.getClientRects()]
+        .filter((rect) => rect.width > 0)
+        .map((rect) => Math.round(rect.top * 10) / 10);
+      const uniqueLines = new Set(lineTops).size;
+      return {
+        nodeId,
+        expectedLines,
+        expectedHeight: Math.max(
+          32,
+          labelLineHeight * expectedLines + gap + kindLineHeight + paddingY * 2,
+        ),
+        height: Number(node.getAttribute('height')),
+        uniqueLines,
+        paddingY,
+        topPadding: (rowBounds.top - nodeBounds.top) / scale,
+        bottomPadding: (nodeBounds.bottom - rowBounds.bottom) / scale,
+        contained: rowBounds.top >= nodeBounds.top && rowBounds.bottom <= nodeBounds.bottom,
+      };
+    });
+    const routeGap = (state: string, edgeId: string, nodeId: string, end: boolean) => {
+      const root = document.querySelector<HTMLElement>(`#${state}`)!;
+      const path = root.querySelector<SVGPathElement>(
+        `.diagram-edge[data-edge-id="${edgeId}"] path`,
+      )!;
+      const node = root.querySelector<SVGForeignObjectElement>(`[data-node-id="${nodeId}"]`)!;
+      const length = path.getTotalLength();
+      const point = path.getPointAtLength(end ? length : 0).matrixTransform(path.getScreenCTM()!);
+      const bounds = node.getBoundingClientRect();
+      const scale = bounds.width / Number(node.getAttribute('width'));
+      const sideCenters = [
+        { x: (bounds.left + bounds.right) / 2, y: bounds.top },
+        { x: bounds.right, y: (bounds.top + bounds.bottom) / 2 },
+        { x: (bounds.left + bounds.right) / 2, y: bounds.bottom },
+        { x: bounds.left, y: (bounds.top + bounds.bottom) / 2 },
+      ];
+      return (
+        Math.min(...sideCenters.map((side) => Math.hypot(point.x - side.x, point.y - side.y))) /
+        scale
+      );
+    };
+    return {
+      nodes,
+      incomingToolGap: routeGap('custom-long-multiline-labels', 'm1', 'tool', true),
+      outgoingToolGap: routeGap('custom-long-multiline-labels', 'm2', 'tool', false),
+      measuredGap: routeGap('custom-disconnected-extremes', 'x2', 'multiline', true),
+    };
+  });
+
+  for (const node of geometry.nodes) {
+    expect(node.height, `${identity}/${node.nodeId} ${JSON.stringify(node)} height`).toBeCloseTo(
+      node.expectedHeight,
+      2,
+    );
+    expect(node.uniqueLines, `${identity}/${node.nodeId} lines`).toBe(node.expectedLines);
+    expect([7, 12], `${identity}/${node.nodeId} supported padding`).toContain(node.paddingY);
+    expect(node.topPadding, `${identity}/${node.nodeId} top padding`).toBeCloseTo(node.paddingY, 1);
+    expect(node.bottomPadding, `${identity}/${node.nodeId} bottom padding`).toBeCloseTo(
+      node.paddingY,
+      1,
+    );
+    expect(node.contained, `${identity}/${node.nodeId} containment`).toBe(true);
+  }
+  expect(geometry.incomingToolGap, `${identity}/tool incoming port`).toBeCloseTo(5.5, 0);
+  expect(geometry.outgoingToolGap, `${identity}/tool outgoing port`).toBeCloseTo(0, 0);
+  expect(geometry.measuredGap, `${identity}/Measured route incoming port`).toBeCloseTo(5.5, 0);
+}
+
+for (const theme of themes) {
+  for (const width of widths) {
+    test(`hugs one, two, and three line node content in ${theme} at ${width}px`, async ({
+      page,
+    }) => {
+      test.setTimeout(120_000);
+      await openState(page, 'custom-long-multiline-labels', width, theme);
+      await page.evaluate(() => document.fonts.ready);
+      await expectContentHuggingNodes(page, `${theme}/${width}`);
+    });
+  }
+}
+
 test('keeps compact dependency filenames in readable semantic units', async ({ page }) => {
   test.setTimeout(180_000);
   for (const width of [320, 420]) {

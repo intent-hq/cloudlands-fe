@@ -336,7 +336,61 @@ describe('Layout Engine', () => {
       },
     );
 
-    expect(layout.nodes.map(({ height }) => height)).toEqual([32, 42, 62]);
+    expect(layout.nodes.map(({ height }) => height)).toEqual([32, 40, 60]);
+  });
+
+  it('measures compact node height from the visible lines instead of width ratios', () => {
+    const model = {
+      nodes: [
+        { id: 'one', label: 'Live response', kind: 'ui_component' },
+        { id: 'two', label: 'Diagram workbench\nrenderer', kind: 'ui_component' },
+        { id: 'three', label: 'Tool activity\nstays inside\nthe response', kind: 'process' },
+      ],
+      edges: [
+        { id: 'first', from: 'one', to: 'two', label: 'continues' },
+        { id: 'second', from: 'two', to: 'three', label: 'finishes' },
+      ],
+    };
+    const wide = computeLayout(
+      model,
+      { layout: { type: 'layered', direction: 'TB' } },
+      'data_flow',
+    );
+    const compact = computeLayout(
+      model,
+      { layout: { type: 'layered', direction: 'TB' } },
+      'data_flow',
+      undefined,
+      320,
+    );
+
+    const heights = (layout: typeof wide) =>
+      layout.nodes.map(({ height }) => Number(height.toFixed(2)));
+    expect(heights(wide)).toEqual([43.38, 59.76, 76.14]);
+    expect(heights(compact)).toEqual([43.38, 59.76, 76.14]);
+    expect(compact.edges[0].points?.at(0)?.y).toBe(compact.nodes[0].y + compact.nodes[0].height);
+    expect(compact.edges[1].points?.at(-1)?.y).toBe(compact.nodes[2].y);
+  });
+
+  it('keeps mixed-height peers on one row connected through horizontal ports', () => {
+    const layout = computeLayout(
+      {
+        nodes: [
+          { id: 'chat', label: 'Chat UI', kind: 'ui_component', position: { x: 0, y: 95 } },
+          { id: 'redux', label: 'Redux', kind: 'store', position: { x: 380, y: 95 } },
+        ],
+        edges: [{ id: 'request', from: 'chat', to: 'redux' }],
+      },
+      { layout: { type: 'manual', direction: 'TB', edgeRouting: 'orthogonal' } },
+      'sequence',
+    );
+    const chat = layout.nodes.find(({ id }) => id === 'chat')!;
+    const redux = layout.nodes.find(({ id }) => id === 'redux')!;
+    const points = layout.edges[0].points!;
+
+    expect(chat.height).toBeLessThan(redux.height);
+    expect(points[0]).toEqual({ x: chat.x + chat.width, y: chat.y + chat.height / 2 });
+    expect(points.at(-1)).toEqual({ x: redux.x, y: redux.y + redux.height / 2 });
   });
 
   it('keeps capped mixed-script editorial labels inside the node', () => {
@@ -367,7 +421,7 @@ describe('Layout Engine', () => {
     );
 
     expect(layout.nodes[0].width).toBeGreaterThan(163);
-    expect(layout.nodes[0].height).toBeCloseTo(47.38);
+    expect(layout.nodes[0].height).toBeCloseTo(43.38);
   });
 
   it('reflows an overflowing manual layout without combining manual and row offsets', () => {
