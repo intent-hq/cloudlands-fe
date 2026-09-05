@@ -126,6 +126,16 @@ describe('DaemonStatusIndicator', () => {
       expect(module.default).toBeDefined();
       expect(module.default).toBe(DaemonStatusIndicatorPreloaded);
     });
+
+    it('renders a healthy header trigger with its device icon', () => {
+      mockStoreState = {
+        daemonHealth: { health: 'healthy', stats: null, lastUpdated: null, polling: false },
+      };
+      render(DaemonStatusIndicatorPreloaded);
+
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+      expect(trigger.querySelector('svg')).toBeTruthy();
+    });
   });
 
   describe('state selectors', () => {
@@ -420,7 +430,7 @@ describe('DaemonStatusIndicator', () => {
       };
     }
 
-    const dotOf = (trigger: HTMLElement) => trigger.querySelector('.rounded-full')!;
+    const iconOf = (trigger: HTMLElement) => trigger.querySelector('svg')!;
     // Disk sizes render with decimal (SI) units so they match Finder.
     const GB = 1000 ** 3;
     const TB = 1000 ** 4;
@@ -494,7 +504,7 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.queryByText('Workspace disk')).toBeNull();
     });
 
-    it('shows the warning icon and turns the dot yellow when free space is below 10%', async () => {
+    it('shows the warning icon and turns the header icon yellow below 10% free', async () => {
       // 50 GB free of 1 TB = ~4.9% free.
       mockStoreState = withDisk({ availableBytes: 50 * GB, totalBytes: TB });
 
@@ -502,8 +512,8 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
-      expect(dotOf(trigger).classList.contains('bg-yellow-500')).toBe(true);
-      expect(dotOf(trigger).classList.contains('bg-green-500')).toBe(false);
+      expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-subtle')).toBe(false);
 
       await fireEvent.click(trigger);
       await fireEvent.click(screen.getByText(/^Status - /));
@@ -517,14 +527,14 @@ describe('DaemonStatusIndicator', () => {
       expect(statusValue.classList.contains('text-green-500')).toBe(false);
     });
 
-    it('keeps the green dot at exactly 10% free (threshold is strictly below)', async () => {
+    it('keeps the neutral healthy icon at exactly 10% free', async () => {
       mockStoreState = withDisk({ availableBytes: 0.1 * TB, totalBytes: TB });
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
 
       const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
-      expect(dotOf(trigger).classList.contains('bg-green-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-subtle')).toBe(true);
     });
 
     it('keeps the red dot and down label when the daemon is down despite low disk', async () => {
@@ -534,8 +544,8 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       const trigger = screen.getByRole('button', { name: 'intentd: not running' });
-      expect(dotOf(trigger).classList.contains('bg-red-500')).toBe(true);
-      expect(dotOf(trigger).classList.contains('bg-yellow-500')).toBe(false);
+      expect(iconOf(trigger).classList.contains('text-red-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(false);
     });
   });
 
@@ -643,9 +653,9 @@ describe('DaemonStatusIndicator', () => {
       };
     }
 
-    const dotOf = (trigger: HTMLElement) => trigger.querySelector('.rounded-full')!;
+    const iconOf = (trigger: HTMLElement) => trigger.querySelector('svg')!;
 
-    it('turns the healthy dot yellow and updates the trigger label when the daemon is behind the pin', async () => {
+    it('turns the healthy icon yellow and updates the trigger label when behind the pin', async () => {
       mockStoreState = withVersions({ daemonVersion: '0.9.0', pinnedVersion: '1.0.0' });
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
@@ -654,8 +664,8 @@ describe('DaemonStatusIndicator', () => {
       const trigger = screen.getByRole('button', {
         name: 'intentd: healthy (version mismatch)',
       });
-      expect(dotOf(trigger).classList.contains('bg-yellow-500')).toBe(true);
-      expect(dotOf(trigger).classList.contains('bg-green-500')).toBe(false);
+      expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-subtle')).toBe(false);
     });
 
     it('shows the "behind" tooltip and warning icon on the version row when the daemon is older', async () => {
@@ -710,14 +720,14 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.queryByText(/vv/)).toBeNull();
     });
 
-    it('keeps the green dot and plain version row when the versions match', async () => {
+    it('keeps the neutral healthy icon and plain version row when versions match', async () => {
       mockStoreState = withVersions({ daemonVersion: '1.0.0', pinnedVersion: '1.0.0' });
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
 
       const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
-      expect(dotOf(trigger).classList.contains('bg-green-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-subtle')).toBe(true);
 
       await fireEvent.click(trigger);
       await fireEvent.click(screen.getByText(/^Status - /));
@@ -726,14 +736,14 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.queryByText(/bundled sidecar/)).toBeNull();
     });
 
-    it('keeps the green dot when there is no pin to compare against', async () => {
+    it('keeps the neutral healthy icon when there is no pin to compare against', async () => {
       mockStoreState = withVersions({ daemonVersion: '1.0.0' });
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
 
       const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
-      expect(dotOf(trigger).classList.contains('bg-green-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-subtle')).toBe(true);
     });
 
     it('does not override the degraded label/dot with the mismatch state', async () => {
@@ -747,7 +757,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       const trigger = screen.getByRole('button', { name: 'intentd: degraded' });
-      expect(dotOf(trigger).classList.contains('bg-yellow-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(true);
     });
 
     it('keeps the red dot and down label when the daemon is down despite a mismatch', async () => {
@@ -761,8 +771,8 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       const trigger = screen.getByRole('button', { name: 'intentd: not running' });
-      expect(dotOf(trigger).classList.contains('bg-red-500')).toBe(true);
-      expect(dotOf(trigger).classList.contains('bg-yellow-500')).toBe(false);
+      expect(iconOf(trigger).classList.contains('text-red-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(false);
     });
   });
 
@@ -1254,6 +1264,7 @@ describe('DaemonStatusIndicator', () => {
       port: null,
       fingerprint: null,
       isLocal: true,
+      detectedDeviceKind: 'laptop' as const,
     };
     const remoteRecord = {
       id: 'r1',
@@ -1263,6 +1274,7 @@ describe('DaemonStatusIndicator', () => {
       port: 4180,
       fingerprint: 'AA:BB',
       isLocal: false,
+      detectedDeviceKind: 'macStudio' as const,
     };
 
     function withConnections(windowBackendId: string, activeId = windowBackendId) {
@@ -1328,6 +1340,11 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.getByText('Devices')).toBeTruthy();
       expect(screen.getByText('This machine (local)')).toBeTruthy();
       expect(screen.getByText('desk:4180')).toBeTruthy();
+
+      const localRow = screen.getByText('This machine (local)').closest('[role="menuitem"]')!;
+      const remoteRow = screen.getByText('desk:4180').closest('[role="menuitem"]')!;
+      expect(localRow.querySelector('svg')).toBeTruthy();
+      expect(remoteRow.querySelector('svg')).toBeTruthy();
 
       // Local entry appears before the remote in DOM order.
       const rows = screen.getAllByRole('menuitem');

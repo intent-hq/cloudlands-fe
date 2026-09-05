@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   forget: vi.fn(),
   updateBackend: vi.fn(),
   setSyncEnabled: vi.fn(),
+  toastError: vi.fn(),
   readable: <T>(get: () => T) => ({
     subscribe(run: (value: T) => void) {
       run(get());
@@ -77,6 +78,10 @@ vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
   setKeychainSyncEnabledRequested: (enabled: boolean) => mocks.setSyncEnabled(enabled),
 }));
 
+vi.mock('$lib/components/ui/toast', () => ({
+  toast: { error: mocks.toastError, success: vi.fn() },
+}));
+
 import DevicesSettings from './DevicesSettings.svelte';
 
 const local: ConnectionRecord = {
@@ -87,6 +92,7 @@ const local: ConnectionRecord = {
   fingerprint: null,
   isLocal: true,
   status: 'connected',
+  detectedDeviceKind: 'laptop',
 };
 
 const remote: ConnectionRecord = {
@@ -98,6 +104,7 @@ const remote: ConnectionRecord = {
   fingerprint: 'AA:BB',
   isLocal: false,
   status: 'not-open',
+  detectedDeviceKind: 'macStudio',
 };
 
 describe('DevicesSettings', () => {
@@ -530,6 +537,73 @@ describe('DevicesSettings', () => {
       expect.objectContaining({ type: expect.stringMatching(/theme/i) }),
     );
     expect(mocks.rotate).not.toHaveBeenCalled();
+  });
+
+  it('shows the detected automatic icon and persists a remote override', async () => {
+    render(DevicesSettings);
+
+    await openAction('Edit');
+    const form = screen.getByRole('form', { name: 'Edit Studio Mac' });
+    const picker = within(form).getByTestId('device-icon-picker-trigger');
+    expect(picker.getAttribute('aria-label')).toContain('Automatic (Mac Studio)');
+
+    picker.focus();
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+    await fireEvent.keyDown(picker, { key: 'End' });
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+    await fireEvent.click(within(form).getByRole('button', { name: 'Update' }));
+
+    expect(mocks.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'remote-1', deviceIcon: 'pottedPlant' }),
+    );
+  });
+
+  it('persists a local icon override through connections:update', async () => {
+    mocks.connections = [local];
+    render(DevicesSettings);
+
+    const picker = screen.getByTestId('device-icon-picker-trigger');
+    expect(picker.getAttribute('aria-label')).toContain('Automatic (Laptop)');
+    picker.focus();
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+    await fireEvent.keyDown(picker, { key: 'End' });
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(mocks.update).toHaveBeenCalledWith({
+        id: 'local',
+        label: 'This machine',
+        accent: null,
+        deviceIcon: 'pottedPlant',
+      }),
+    );
+  });
+
+  it('restores the saved local icon when the update fails', async () => {
+    let rejectUpdate!: (reason?: unknown) => void;
+    mocks.connections = [{ ...local, deviceIcon: 'robot' }];
+    mocks.update.mockImplementation((params) => ({
+      type: 'connections/updateRequested',
+      payload: [params],
+      promise: new Promise((_, reject) => {
+        rejectUpdate = reject;
+      }),
+    }));
+    render(DevicesSettings);
+
+    const picker = screen.getByTestId('device-icon-picker-trigger');
+    expect(picker.getAttribute('aria-label')).toContain('Robot');
+    picker.focus();
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+    await fireEvent.keyDown(picker, { key: 'End' });
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+
+    await waitFor(() => expect(picker.getAttribute('aria-label')).toContain('Potted plant'));
+    rejectUpdate(new Error('update failed'));
+    await waitFor(() => expect(picker.getAttribute('aria-label')).toContain('Robot'));
+    await waitFor(() =>
+      expect(mocks.toastError).toHaveBeenCalledWith(m.settings_devices_update_error()),
+    );
   });
 
   it.each(['rose', 'orange'] as const)(
