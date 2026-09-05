@@ -257,6 +257,15 @@ export interface DaemonHealthState {
    */
   statusCheckFailure: DaemonStatusCheckFailure | null;
   /**
+   * Connection lifecycle counter, bumped on every backend status change
+   * (connected, connecting, disconnected). A system.status poll captures it
+   * when the request starts and the reducer discards a result whose
+   * generation no longer matches, so a poll that settles after a
+   * disconnect, reconnect, or transport switch can never leak the previous
+   * connection's health, stats, locality, or freshness into the new one.
+   */
+  connectionGeneration: number;
+  /**
    * Last unsloth.status result, or null before the first poll. Polled only
    * while the status dropdown is open (no constant background polling), so
    * this can be stale between opens.

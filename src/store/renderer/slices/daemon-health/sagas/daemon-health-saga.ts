@@ -5,6 +5,7 @@ import {
   delay,
   fork,
   put,
+  race,
   take,
   takeEvery,
   takeLeading,
@@ -16,6 +17,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { createElectronChannel } from '$store/renderer/utils/ipc-channel';
 import { takeWithBackoff } from '$store/renderer/utils/take-with-backoff';
+import { selectDaemonConnectionGeneration } from '../daemon-health-selectors';
 import {
   connectionStatusChanged,
   fetchSidecarRunLogFailed,
@@ -275,20 +277,34 @@ function classifyStatusCheckFailure(error: unknown): DaemonStatusCheckFailureKin
 }
 
 export function* pollSystemStatusSaga() {
+  // Snapshot the connection generation before the request: the reducer
+  // discards the terminal action when a connection lifecycle change happened
+  // meanwhile, so a slow poll can never report on a connection it did not
+  // observe.
+  const connectionGeneration = yield* selectDaemonConnectionGeneration.effect();
   try {
     const status = yield* call(backendRequest<SystemStatusWirePayload>, 'system.status');
-    yield* put(systemStatusSuccess(status, new Date().toISOString()));
+    yield* put(systemStatusSuccess(status, new Date().toISOString(), connectionGeneration));
   } catch (error) {
     yield* put(
-      systemStatusFailure({
-        kind: classifyStatusCheckFailure(error),
-        failedAt: new Date().toISOString(),
-      }),
+      systemStatusFailure(
+        {
+          kind: classifyStatusCheckFailure(error),
+          failedAt: new Date().toISOString(),
+        },
+        connectionGeneration,
+      ),
     );
   }
 }
 
+/**
+ * Fixed-cadence poll trigger. The first poll waits for the first backend
+ * status so it is bound to a known connection lifecycle rather than racing
+ * the boot snapshot (which would only discard it).
+ */
 function* systemPollingLoop() {
+  yield* take(connectionStatusChanged);
   yield* put(pollSystemStatus());
   while (true) {
     yield* delay(POLL_INTERVAL_MS);
@@ -296,8 +312,26 @@ function* systemPollingLoop() {
   }
 }
 
+/**
+ * One poll in flight at a time (triggers during a poll are dropped, as with
+ * takeLeading). A connection lifecycle change cancels the in-flight poll —
+ * its result belongs to the previous connection — and, when the new
+ * lifecycle is connected, polls it right away instead of leaving its stats
+ * to the next interval.
+ */
 function* watchSystemStatusPolls() {
-  yield* takeLeading(pollSystemStatus, pollSystemStatusSaga);
+  while (true) {
+    yield* take(pollSystemStatus);
+    let poll = true;
+    while (poll) {
+      const { lifecycle } = yield* race({
+        settled: call(pollSystemStatusSaga),
+        lifecycle: take(connectionStatusChanged),
+      });
+      poll = lifecycle?.payload[0] === 'connected';
+      if (poll) yield* put(pollSystemStatus());
+    }
+  }
 }
 
 function* pollUnslothStatusSaga() {

@@ -56,6 +56,7 @@ describe('daemonHealthReducer', () => {
       sidecarRunLogPending: false,
       sidecarRunLogError: null,
       statusCheckFailure: null,
+      connectionGeneration: 0,
       unslothStatus: null,
       unslothPolling: false,
       unslothStopping: false,
@@ -587,7 +588,7 @@ describe('daemonHealthReducer', () => {
       };
       const state = { ...initialState, polling: true };
       const receivedAt = '2026-07-30T20:00:00.000Z';
-      const next = daemonHealthReducer(state, systemStatusSuccess(payload, receivedAt));
+      const next = daemonHealthReducer(state, systemStatusSuccess(payload, receivedAt, 0));
 
       expect(next.polling).toBe(false);
       expect(next.stats).toEqual({
@@ -635,7 +636,7 @@ describe('daemonHealthReducer', () => {
       const state = { ...initialState, polling: true };
       const next = daemonHealthReducer(
         state,
-        systemStatusSuccess(payload, '2026-07-30T20:00:01.000Z'),
+        systemStatusSuccess(payload, '2026-07-30T20:00:01.000Z', 0),
       );
 
       expect(next.polling).toBe(false);
@@ -674,7 +675,7 @@ describe('daemonHealthReducer', () => {
       const state = { ...initialState, hostLocality: 'local' as const };
       const next = daemonHealthReducer(
         state,
-        systemStatusSuccess(payload, '2026-07-30T20:00:02.000Z'),
+        systemStatusSuccess(payload, '2026-07-30T20:00:02.000Z', 0),
       );
 
       expect(next.hostLocality).toBe('local');
@@ -717,10 +718,132 @@ describe('daemonHealthReducer', () => {
       };
       const next = daemonHealthReducer(
         connected,
-        systemStatusSuccess(payload, '2026-08-11T00:00:00.000Z'),
+        systemStatusSuccess(payload, '2026-08-11T00:00:00.000Z', connected.connectionGeneration),
       );
 
       expect(next.stats?.transport).toEqual(bootTransport);
+    });
+  });
+
+  describe('connection generation (#4439)', () => {
+    const payload: SystemStatusWirePayload = {
+      running: true,
+      listenMode: 'uds',
+      transports: ['uds'],
+      port: null,
+      clients: 1,
+      agents: 0,
+      protocolVersion: '2.0',
+      host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
+    };
+    const failure = { kind: 'timeout' as const, failedAt: '2026-09-05T10:00:00.000Z' };
+    const uds: BackendTransportInfo = { mode: 'external-uds' };
+    const tcp: BackendTransportInfo = { mode: 'tcp', target: 'intent1:7331' };
+
+    it('starts a new generation on every connection lifecycle change', () => {
+      const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
+      const down = daemonHealthReducer(a, connectionStatusChanged('disconnected'));
+      const connecting = daemonHealthReducer(down, connectionStatusChanged('connecting'));
+      const b = daemonHealthReducer(connecting, connectionStatusChanged('connected', uds));
+      const switched = daemonHealthReducer(b, connectionStatusChanged('connected', tcp));
+      expect([a, down, connecting, b, switched].map((s) => s.connectionGeneration)).toEqual([
+        1, 2, 3, 4, 5,
+      ]);
+    });
+
+    it('a lifecycle change invalidates the in-flight poll flag', () => {
+      const polling = daemonHealthReducer(
+        { ...initialState, health: 'healthy' as const },
+        pollSystemStatus(),
+      );
+      expect(polling.polling).toBe(true);
+      expect(daemonHealthReducer(polling, connectionStatusChanged('disconnected')).polling).toBe(
+        false,
+      );
+      expect(daemonHealthReducer(polling, connectionStatusChanged('connected', uds)).polling).toBe(
+        false,
+      );
+    });
+
+    it('ignores a failure from a previous connection once the new one is healthy', () => {
+      const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
+      const down = daemonHealthReducer(a, connectionStatusChanged('disconnected'));
+      const b = daemonHealthReducer(down, connectionStatusChanged('connected', uds));
+      const polling = daemonHealthReducer(b, pollSystemStatus());
+
+      const next = daemonHealthReducer(
+        polling,
+        systemStatusFailure(failure, a.connectionGeneration),
+      );
+      expect(next).toBe(polling);
+    });
+
+    it('ignores a success from a previous connection while the new one is down', () => {
+      const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
+      const down = daemonHealthReducer(a, connectionStatusChanged('disconnected'));
+      const next = daemonHealthReducer(
+        down,
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z', a.connectionGeneration),
+      );
+      expect(next).toBe(down);
+    });
+
+    it('ignores a success from before a direct transport switch, even after the new connection has fresh stats', () => {
+      const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
+      const b = daemonHealthReducer(a, connectionStatusChanged('connected', tcp));
+      expect(b.stats).toBeNull();
+
+      const staleAfterSwitch = daemonHealthReducer(
+        b,
+        systemStatusSuccess(
+          { ...payload, hostname: 'old-daemon' },
+          '2026-09-05T10:00:05.000Z',
+          a.connectionGeneration,
+        ),
+      );
+      expect(staleAfterSwitch).toBe(b);
+
+      const fresh = daemonHealthReducer(
+        b,
+        systemStatusSuccess(
+          { ...payload, hostname: 'new-daemon', host: { ...payload.host, locality: 'remote' } },
+          '2026-09-05T10:00:06.000Z',
+          b.connectionGeneration,
+        ),
+      );
+      const staleAfterFresh = daemonHealthReducer(
+        fresh,
+        systemStatusSuccess(
+          { ...payload, hostname: 'old-daemon' },
+          '2026-09-05T10:00:07.000Z',
+          a.connectionGeneration,
+        ),
+      );
+      expect(staleAfterFresh).toBe(fresh);
+      expect(staleAfterFresh.stats?.hostname).toBe('new-daemon');
+      expect(staleAfterFresh.hostLocality).toBe('remote');
+      expect(staleAfterFresh.lastUpdated).toBe('2026-09-05T10:00:06.000Z');
+    });
+
+    it('ignores a stale failure from before a switch instead of degrading the new connection', () => {
+      const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
+      const b = daemonHealthReducer(a, connectionStatusChanged('connected', tcp));
+      const next = daemonHealthReducer(b, systemStatusFailure(failure, a.connectionGeneration));
+      expect(next).toBe(b);
+      expect(next.health).toBe('healthy');
+      expect(next.statusCheckFailure).toBeNull();
+    });
+
+    it('still applies results from the current connection', () => {
+      const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
+      const degraded = daemonHealthReducer(a, systemStatusFailure(failure, a.connectionGeneration));
+      expect(degraded.health).toBe('degraded');
+      const recovered = daemonHealthReducer(
+        degraded,
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z', a.connectionGeneration),
+      );
+      expect(recovered.health).toBe('healthy');
+      expect(recovered.stats?.clients).toBe(1);
     });
   });
 
@@ -729,14 +852,14 @@ describe('daemonHealthReducer', () => {
     const laterFailure = { kind: 'timeout' as const, failedAt: '2026-09-05T10:00:10.000Z' };
 
     it('clears polling flag', () => {
-      const state = { ...initialState, polling: true };
-      const next = daemonHealthReducer(state, systemStatusFailure(failure));
+      const state = { ...initialState, health: 'healthy' as const, polling: true };
+      const next = daemonHealthReducer(state, systemStatusFailure(failure, 0));
       expect(next.polling).toBe(false);
     });
 
     it('degrades a healthy connection and records the failure context (#4439)', () => {
       const state = { ...initialState, health: 'healthy' as const, polling: true };
-      const next = daemonHealthReducer(state, systemStatusFailure(failure));
+      const next = daemonHealthReducer(state, systemStatusFailure(failure, 0));
       expect(next.health).toBe('degraded');
       expect(next.statusCheckFailure).toEqual({
         kind: 'status-check-failed',
@@ -751,16 +874,16 @@ describe('daemonHealthReducer', () => {
         health: 'healthy' as const,
         lastUpdated: '2026-09-05T09:59:50.000Z',
       };
-      const next = daemonHealthReducer(state, systemStatusFailure(failure));
+      const next = daemonHealthReducer(state, systemStatusFailure(failure, 0));
       expect(next.lastUpdated).toBe('2026-09-05T09:59:50.000Z');
     });
 
     it('refreshes the context and counts consecutive failures while already degraded', () => {
       const degraded = daemonHealthReducer(
         { ...initialState, health: 'healthy' as const },
-        systemStatusFailure(failure),
+        systemStatusFailure(failure, 0),
       );
-      const next = daemonHealthReducer(degraded, systemStatusFailure(laterFailure));
+      const next = daemonHealthReducer(degraded, systemStatusFailure(laterFailure, 0));
       expect(next.health).toBe('degraded');
       expect(next.statusCheckFailure).toEqual({
         kind: 'timeout',
@@ -769,9 +892,9 @@ describe('daemonHealthReducer', () => {
       });
     });
 
-    it('does not let a late failure override a newer disconnected state', () => {
+    it('records nothing for a same-connection failure while already down', () => {
       const state = { ...initialState, health: 'down' as const, polling: true };
-      const next = daemonHealthReducer(state, systemStatusFailure(failure));
+      const next = daemonHealthReducer(state, systemStatusFailure(failure, 0));
       expect(next.health).toBe('down');
       expect(next.statusCheckFailure).toBeNull();
       expect(next.polling).toBe(false);
@@ -780,7 +903,7 @@ describe('daemonHealthReducer', () => {
     it('stores only the serializable category and timing, never the raw error', () => {
       const next = daemonHealthReducer(
         { ...initialState, health: 'healthy' as const },
-        systemStatusFailure(failure),
+        systemStatusFailure(failure, 0),
       );
       expect(Object.keys(next.statusCheckFailure ?? {}).sort()).toEqual([
         'consecutiveFailures',
@@ -806,13 +929,13 @@ describe('daemonHealthReducer', () => {
     it('restores healthy and clears the failure context on the next successful check', () => {
       const degraded = daemonHealthReducer(
         { ...initialState, health: 'healthy' as const },
-        systemStatusFailure(failure),
+        systemStatusFailure(failure, 0),
       );
       expect(degraded.health).toBe('degraded');
 
       const next = daemonHealthReducer(
         degraded,
-        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z'),
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z', 0),
       );
       expect(next.health).toBe('healthy');
       expect(next.statusCheckFailure).toBeNull();
@@ -826,7 +949,7 @@ describe('daemonHealthReducer', () => {
       );
       const next = daemonHealthReducer(
         degraded,
-        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z'),
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z', 0),
       );
       expect(next.health).toBe('healthy');
     });
@@ -838,8 +961,9 @@ describe('daemonHealthReducer', () => {
       );
       const next = daemonHealthReducer(
         down,
-        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z'),
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z', 0),
       );
+      expect(next).toBe(down);
       expect(next.health).toBe('down');
     });
 
@@ -850,7 +974,20 @@ describe('daemonHealthReducer', () => {
       );
       const next = daemonHealthReducer(
         connecting,
-        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z'),
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z', 0),
+      );
+      expect(next).toBe(connecting);
+      expect(next.health).toBe('down');
+    });
+
+    it('does not revive health from a same-connection success while down', () => {
+      const down = daemonHealthReducer(
+        { ...initialState, health: 'degraded' as const },
+        connectionStatusChanged('disconnected'),
+      );
+      const next = daemonHealthReducer(
+        down,
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z', down.connectionGeneration),
       );
       expect(next.health).toBe('down');
     });
@@ -858,7 +995,7 @@ describe('daemonHealthReducer', () => {
     it('keeps the failure context across a disconnect and clears it on reconnect', () => {
       const degraded = daemonHealthReducer(
         { ...initialState, health: 'healthy' as const },
-        systemStatusFailure(failure),
+        systemStatusFailure(failure, 0),
       );
       const down = daemonHealthReducer(degraded, connectionStatusChanged('disconnected'));
       expect(down.statusCheckFailure).not.toBeNull();
