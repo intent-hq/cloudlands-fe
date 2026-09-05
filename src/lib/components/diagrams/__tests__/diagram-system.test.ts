@@ -25,6 +25,7 @@ import {
   compactEdgeLabelMaxWidth,
   computeLayout,
   measureEdgeLabel,
+  measuredBidirectionalOffset,
 } from '../layout-engine';
 import { DEFAULT_NODE_STYLE } from '../types';
 import {
@@ -833,13 +834,18 @@ describe('Edge Routing', () => {
     diagram.baseView.layout.type = 'manual';
     diagram.baseView.layout.edgeRouting = 'orthogonal';
 
-    const [forward, returnEdge] = computeLayout(
-      diagram.model,
-      diagram.baseView,
-      diagram.grammar,
-    ).edges;
-    expect(forward.points?.[2].y).not.toBe(returnEdge.points?.[2].y);
+    const layout = computeLayout(diagram.model, diagram.baseView, diagram.grammar);
+    const [forward, returnEdge] = layout.edges;
+    const top = Math.min(...layout.nodes.map((node) => node.y));
+    const bottom = Math.max(...layout.nodes.map((node) => node.y + node.height));
+    expect(Math.max(...forward.points!.map((point) => point.y))).toBeGreaterThan(bottom);
+    expect(Math.min(...returnEdge.points!.map((point) => point.y))).toBeLessThan(top);
     expect(forward.path).not.toBe(returnEdge.path);
+  });
+
+  it('reserves reciprocal lanes for both measured route labels', () => {
+    expect(measuredBidirectionalOffset(68, 112)).toBe(48);
+    expect(measuredBidirectionalOffset(0, 0)).toBe(32);
   });
 
   it('routes vertical backward edges from side ports outside forward branches', () => {

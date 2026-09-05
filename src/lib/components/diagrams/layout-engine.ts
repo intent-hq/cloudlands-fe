@@ -2274,21 +2274,33 @@ function computeEdgePaths(
  * they get offset ±BIDIRECTIONAL_OFFSET perpendicular to the line between nodes.
  */
 const BIDIRECTIONAL_OFFSET = 32;
+const BIDIRECTIONAL_LABEL_CLEARANCE = 6;
 
-function buildBidirectionalOffsetMap(edges: DiagramEdge[]): Map<string, number> {
+export function measuredBidirectionalOffset(firstExtent: number, secondExtent: number) {
+  return Math.max(
+    BIDIRECTIONAL_OFFSET,
+    (firstExtent + secondExtent) / 4 + BIDIRECTIONAL_LABEL_CLEARANCE / 2,
+  );
+}
+
+function buildBidirectionalOffsetMap(
+  edges: DiagramEdge[],
+  nodes: ComputedNode[],
+): Map<string, number> {
   const offsets = new Map<string, number>();
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
 
-  // Build a map of directed pairs: "from::to" -> edge ids
-  const directedMap = new Map<string, string[]>();
+  // Build a map of directed pairs: "from::to" -> edges
+  const directedMap = new Map<string, DiagramEdge[]>();
   for (const edge of edges) {
     if (edge.from === edge.to) continue;
     const key = `${edge.from}::${edge.to}`;
-    let ids = directedMap.get(key);
-    if (!ids) {
-      ids = [];
-      directedMap.set(key, ids);
+    let directedEdges = directedMap.get(key);
+    if (!directedEdges) {
+      directedEdges = [];
+      directedMap.set(key, directedEdges);
     }
-    ids.push(edge.id);
+    directedEdges.push(edge);
   }
 
   // Only offset edges that are truly bidirectional (A→B AND B→A both exist)
@@ -2307,11 +2319,32 @@ function buildBidirectionalOffsetMap(edges: DiagramEdge[]): Map<string, number> 
     const reverseEdges = directedMap.get(reverseKey);
     if (!forwardEdges || !reverseEdges) continue;
 
-    for (const edgeId of forwardEdges) {
-      offsets.set(edgeId, BIDIRECTIONAL_OFFSET);
+    const fromNode = nodeMap.get(from);
+    const toNode = nodeMap.get(to);
+    const horizontal =
+      fromNode && toNode
+        ? Math.abs(toNode.x + toNode.width / 2 - (fromNode.x + fromNode.width / 2)) >=
+          Math.abs(toNode.y + toNode.height / 2 - (fromNode.y + fromNode.height / 2))
+        : false;
+    const widestLabel = (pair: DiagramEdge[]) =>
+      Math.max(
+        0,
+        ...pair.map((edge) => {
+          if (!edge.label) return 0;
+          const label = measureEdgeLabel(edge.label);
+          return horizontal ? label.height : label.width;
+        }),
+      );
+    const offset = measuredBidirectionalOffset(
+      widestLabel(forwardEdges),
+      widestLabel(reverseEdges),
+    );
+
+    for (const edge of forwardEdges) {
+      offsets.set(edge.id, offset);
     }
-    for (const edgeId of reverseEdges) {
-      offsets.set(edgeId, BIDIRECTIONAL_OFFSET);
+    for (const edge of reverseEdges) {
+      offsets.set(edge.id, offset);
     }
   }
 
@@ -2342,7 +2375,7 @@ function applyPerpendicularOffset(
  */
 function computeStraightEdgePaths(edges: DiagramEdge[], nodes: ComputedNode[]): ComputedEdge[] {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
-  const biOffsets = buildBidirectionalOffsetMap(edges);
+  const biOffsets = buildBidirectionalOffsetMap(edges, nodes);
   const selfLoopCounts = new Map<string, number>();
 
   return edges.map((edge) => {
@@ -2440,7 +2473,7 @@ function computeOrthogonalEdgePaths(
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
   const nodeGroup = new Map(nodes.flatMap((node) => (node.group ? [[node.id, node.group]] : [])));
   groups?.forEach((group) => group.nodeIds?.forEach((nodeId) => nodeGroup.set(nodeId, group.id)));
-  const biOffsets = buildBidirectionalOffsetMap(edges);
+  const biOffsets = buildBidirectionalOffsetMap(edges, nodes);
   const direction = layout.direction || 'TB';
   const isVerticalLayout = direction === 'TB' || direction === 'BT';
 
@@ -2941,7 +2974,7 @@ function computeOrthogonalEdgePaths(
         toPos = { x: centerX, y: toPos.y };
       } else if (Math.abs(fromNodeCenterX - toNodeCenterX) < 5) {
         const direction = fromPos.y <= toPos.y ? 1 : -1;
-        const centerX = (fromNodeCenterX + toNodeCenterX) / 2 + direction * 32;
+        const centerX = (fromNodeCenterX + toNodeCenterX) / 2 + direction * Math.abs(biOffset ?? 0);
         points[0] = { x: centerX, y: fromPos.y };
         toPos = { x: centerX, y: toPos.y };
       } else {
@@ -2977,17 +3010,32 @@ function computeOrthogonalEdgePaths(
           NODE_CLEARANCE -
           Math.abs(biOffset) / 2 -
           (edge.dashed ? 28 : 0);
-      const source = {
-        x: fromNode.x + fromNode.width * (routeBelow ? 0.65 : 0.35),
-        y: routeBelow ? fromNode.y + fromNode.height : fromNode.y,
-      };
-      const target = {
-        x: toNode.x + toNode.width * (routeBelow ? 0.35 : 0.65),
-        y: routeBelow ? toNode.y + toNode.height : toNode.y,
-      };
-      points[0] = source;
-      points.push({ x: source.x, y: laneY }, { x: target.x, y: laneY });
-      toPos = target;
+      if (!routeBelow) {
+        const source = getPortPosition(fromNode, fromSide);
+        const target = getPortPosition(toNode, toSide);
+        const stepAwayX = fromSide === 'right' ? source.x + NODE_GAP : source.x - NODE_GAP;
+        const stepToX = toSide === 'left' ? target.x - NODE_GAP : target.x + NODE_GAP;
+        points[0] = source;
+        points.push(
+          { x: stepAwayX, y: source.y },
+          { x: stepAwayX, y: laneY },
+          { x: stepToX, y: laneY },
+          { x: stepToX, y: target.y },
+        );
+        toPos = target;
+      } else {
+        const source = {
+          x: fromNode.x + fromNode.width * 0.65,
+          y: fromNode.y + fromNode.height,
+        };
+        const target = {
+          x: toNode.x + toNode.width * 0.35,
+          y: toNode.y + toNode.height,
+        };
+        points[0] = source;
+        points.push({ x: source.x, y: laneY }, { x: target.x, y: laneY });
+        toPos = target;
+      }
     } else if (!isFromVertical && !isToVertical) {
       // Horizontal to horizontal - use allocated vertical channel
       const channelX = verticalChannelX.get(edge.id) ?? (fromPos.x + toPos.x) / 2;

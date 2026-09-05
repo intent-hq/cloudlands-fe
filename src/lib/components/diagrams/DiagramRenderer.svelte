@@ -488,7 +488,7 @@
           ? Math.max(0.05, Math.min(0.35, (1 - (pairExtent + 6) / axisLength) / 2))
           : 0.35;
         const labelExtent = dx >= dy ? labelWidth : labelHeight;
-        const minimumFraction = Math.min(0.5, (labelExtent / 2 + 2 / renderedScale) / axisLength);
+        const minimumFraction = Math.min(0.5, (labelExtent / 2 + 4 / renderedScale) / axisLength);
         const fraction = Math.max(
           minimumFraction,
           Math.min(1 - minimumFraction, preferredFraction),

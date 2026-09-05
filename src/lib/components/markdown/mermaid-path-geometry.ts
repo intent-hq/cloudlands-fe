@@ -735,17 +735,17 @@ export function routeFlowchartClientRequestLane(svg: SVGSVGElement) {
     .toSorted((left, right) => right.width * right.height - left.width * left.height)[0];
   if (!boundary) return false;
 
-  if (clientNode.dataset.requestLaneRaised !== 'true') {
-    const desiredGap = Math.max(52, labelBounds.height + 24);
-    const currentGap = boundary.y - (client.y + client.height);
-    const shift = Math.max(0, desiredGap - currentGap);
-    const matrix = clientNode.transform.baseVal.consolidate()?.matrix;
-    if (matrix && shift > 0) {
-      clientNode.setAttribute('transform', `translate(${matrix.e}, ${matrix.f - shift})`);
-      clientNode.dataset.requestLaneRaised = 'true';
-      clientNode.dataset.requestLaneShift = String(shift);
-      client = { ...client, y: client.y - shift };
-    }
+  const desiredGap = Math.max(52, labelBounds.height + 24);
+  const currentGap = boundary.y - (client.y + client.height);
+  const shift = Math.max(0, desiredGap - currentGap);
+  const matrix = clientNode.transform.baseVal.consolidate()?.matrix;
+  if (matrix && shift > 0) {
+    clientNode.setAttribute('transform', `translate(${matrix.e}, ${matrix.f - shift})`);
+    clientNode.dataset.requestLaneRaised = 'true';
+    clientNode.dataset.requestLaneShift = String(
+      Number(clientNode.dataset.requestLaneShift ?? 0) + shift,
+    );
+    client = { ...client, y: client.y - shift };
   }
 
   const sourcePort = pointAt(client, 0.5, 1);
@@ -2150,6 +2150,11 @@ export function positionCompactGroupedEdgeLabels(svg: SVGSVGElement) {
   const placed: Bounds[] = [];
   paths.forEach((path, index) => {
     const label = labels[index];
+    if (path.dataset.clientRequestLane === 'downward' && label) {
+      const bounds = clientBoundsInPathSpace(label, path);
+      if (bounds) placed.push(bounds);
+      return;
+    }
     const points = (path.dataset.manhattanPoints ?? '')
       .trim()
       .split(/\s+/)
@@ -2213,11 +2218,28 @@ export function positionCompactGroupedEdgeLabels(svg: SVGSVGElement) {
         x: (longest.start.x + longest.end.x) / 2,
         y: (longest.start.y + longest.end.y) / 2,
       };
-      placement = [1, -1]
-        .map((side) => {
-          const center = vertical
-            ? { x: midpoint.x + side * (labelBounds.width / 2 + 4), y: midpoint.y }
-            : { x: midpoint.x, y: midpoint.y + side * (labelBounds.height / 2 + 4) };
+      const halfExtent = vertical ? labelBounds.width / 2 : labelBounds.height / 2;
+      const nearestObstacleCenters = obstacles.flatMap((obstacle) =>
+        vertical
+          ? [
+              { x: obstacle.x - 4 - halfExtent, y: midpoint.y },
+              { x: obstacle.x + obstacle.width + 4 + halfExtent, y: midpoint.y },
+            ]
+          : [
+              { x: midpoint.x, y: obstacle.y - 4 - halfExtent },
+              { x: midpoint.x, y: obstacle.y + obstacle.height + 4 + halfExtent },
+            ],
+      );
+      placement = [
+        vertical
+          ? { x: midpoint.x + halfExtent + 4, y: midpoint.y }
+          : { x: midpoint.x, y: midpoint.y + halfExtent + 4 },
+        vertical
+          ? { x: midpoint.x - halfExtent - 4, y: midpoint.y }
+          : { x: midpoint.x, y: midpoint.y - halfExtent - 4 },
+        ...nearestObstacleCenters,
+      ]
+        .map((center) => {
           return {
             center,
             bounds: {
@@ -2230,11 +2252,16 @@ export function positionCompactGroupedEdgeLabels(svg: SVGSVGElement) {
             capacity: longest.capacity,
           };
         })
-        .find(
+        .filter(
           ({ bounds }) =>
             obstacles.every((obstacle) => !boundsOverlap(bounds, obstacle, 4)) &&
             placed.every((existing) => !boundsOverlap(bounds, existing, 4)),
-        );
+        )
+        .toSorted(
+          (left, right) =>
+            Math.hypot(left.center.x - midpoint.x, left.center.y - midpoint.y) -
+            Math.hypot(right.center.x - midpoint.x, right.center.y - midpoint.y),
+        )[0];
     }
     if (!placement) return;
     const pathMatrix = path.getCTM();
@@ -2254,6 +2281,7 @@ export function positionCompactGroupedEdgeLabels(svg: SVGSVGElement) {
   });
   paths.forEach((path, index) => {
     const label = labels[index];
+    if (path.dataset.clientRequestLane === 'downward') return;
     const centerText = label?.dataset.finalPathCenter;
     const pointText = path.dataset.manhattanPoints;
     if (!label?.textContent?.trim() || !pointText) return;

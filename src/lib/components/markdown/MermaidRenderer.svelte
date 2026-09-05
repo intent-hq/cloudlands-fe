@@ -1221,6 +1221,7 @@ ${verticalSource}`;
       snapFlowchartFeedbackPorts(svg);
       routeFlowchartClientRequestLane(svg);
       roundOrthogonalBends(svg);
+      if (groupedFlowchart) positionCompactGroupedEdgeLabels(svg);
       alignMermaidOpenArrowheads(svg);
       const finalBounds = measureFinalFlowchartBounds(svg);
       width = Math.ceil(finalBounds.width + padding * 2);
