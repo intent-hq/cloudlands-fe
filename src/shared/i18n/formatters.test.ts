@@ -21,6 +21,26 @@ describe('formatNumber / formatInteger', () => {
   });
 });
 
+describe('formatCompactNumber', () => {
+  it('keeps the one-decimal default and supports whole-number output', () => {
+    expect(en.formatCompactNumber(1_234)).toBe('1.2K');
+    expect(en.formatCompactNumber(1_234, { maximumFractionDigits: 0 })).toBe('1K');
+    expect(en.formatCompactNumber(9_264_137, { maximumFractionDigits: 0 })).toBe('9M');
+  });
+
+  it('promotes rounded whole values at compact-unit boundaries', () => {
+    expect(en.formatCompactNumber(999_499, { maximumFractionDigits: 0 })).toBe('999K');
+    expect(en.formatCompactNumber(999_500, { maximumFractionDigits: 0 })).toBe('1M');
+    expect(en.formatCompactNumber(999_499_999, { maximumFractionDigits: 0 })).toBe('999M');
+    expect(en.formatCompactNumber(999_500_000, { maximumFractionDigits: 0 })).toBe('1B');
+  });
+
+  it('uses locale compact units and decimal separators', () => {
+    expect(de.formatCompactNumber(9_264_137)).toBe('9,3 Mio.');
+    expect(de.formatCompactNumber(9_264_137, { maximumFractionDigits: 0 })).toBe('9 Mio.');
+  });
+});
+
 describe('formatCurrency', () => {
   it('formats an ISO 4217 amount for the locale', () => {
     expect(en.formatCurrency(1.5, 'USD')).toBe('$1.50');
@@ -34,6 +54,13 @@ describe('formatCurrency', () => {
 
   it('follows the locale currency conventions', () => {
     expect(de.formatCurrency(1234.5, 'EUR')).toContain('1.234,50');
+  });
+
+  it('supports locale-aware whole-number currency output', () => {
+    expect(en.formatCurrency(1.5, 'USD', { fractionDigits: 0 })).toBe('$2');
+    expect(en.formatCurrency(0.4, 'USD', { fractionDigits: 0 })).toBe('$0');
+    expect(de.formatCurrency(1234.5, 'EUR', { fractionDigits: 0 })).toBe('1.235 €');
+    expect(en.formatCurrency(2.4, 'CREDITS', { fractionDigits: 0 })).toBe('2 CREDITS');
   });
 
   it('honours zero-decimal currency conventions for whole amounts', () => {
