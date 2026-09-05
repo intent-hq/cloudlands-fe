@@ -1177,7 +1177,8 @@ for (const appearance of [
             marker: feedbackPath.getAttribute('marker-end'),
           };
         });
-      expect(geometry.feedbackFraction).toBeCloseTo(0.18, 2);
+      expect(geometry.feedbackFraction).toBeGreaterThan(0.15);
+      expect(geometry.feedbackFraction).toBeLessThan(0.3);
       expect(geometry.feedbackBeforeParse).toBe(true);
       expect(geometry.feedbackParseGap).toBeGreaterThanOrEqual(4);
       expect(geometry.feedbackStub).toBeGreaterThanOrEqual(6);

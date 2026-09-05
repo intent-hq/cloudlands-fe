@@ -6,6 +6,7 @@ import {
   buildFlowchartDecisionReturnPoints,
   buildFlowchartFeedbackLanePoints,
   buildGroupedReturnLanePoints,
+  chooseFlowchartFeedbackTargetX,
   chooseLabelSegment,
   measuredClusterHeaderHeight,
   replacePathTerminal,
@@ -318,6 +319,14 @@ describe('Mermaid path terminal geometry', () => {
       { x: 0, y: 196 },
       { x: 0, y: 184.25 },
     ]);
+  });
+
+  it('separates a feedback target only when the same boundary side has competing ports', () => {
+    const target = { x: 0, y: 0, width: 100, height: 40 };
+
+    expect(chooseFlowchartFeedbackTargetX(target, [34, 50, 66])).toBe(26);
+    expect(chooseFlowchartFeedbackTargetX(target, [26, 42, 58, 74])).toBe(50);
+    expect(chooseFlowchartFeedbackTargetX(target, [])).toBe(50);
   });
 
   it('builds grouped return routes on an external lane with side-center ports', () => {

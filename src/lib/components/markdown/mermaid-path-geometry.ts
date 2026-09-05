@@ -8,6 +8,16 @@ type Point = { x: number; y: number };
 type Bounds = Point & { width: number; height: number };
 type Segment = { start: Point; end: Point };
 
+export function chooseFlowchartFeedbackTargetX(target: Bounds, sameSidePorts: number[]) {
+  const center = target.x + target.width / 2;
+  const occupied = sameSidePorts.filter(Number.isFinite).toSorted((left, right) => left - right);
+  if (!occupied.some((port) => Math.abs(port - center) <= 1)) return center;
+
+  const slotCount = occupied.length + 1;
+  const gap = Math.min(FLOWCHART_PORT_SLOT_GAP, (target.width * 0.6) / (slotCount - 1));
+  return center - (gap * (slotCount - 1)) / 2;
+}
+
 function segmentCssScale(path: SVGGraphicsElement, start: Point, end: Point) {
   const matrix = path.getScreenCTM();
   const localLength = Math.hypot(end.x - start.x, end.y - start.y);
@@ -959,6 +969,49 @@ export function snapFlowchartFeedbackPorts(svg: SVGSVGElement) {
   const inverse = matrix.inverse();
   const sourceBounds = source.getBoundingClientRect();
   const targetBounds = target.getBoundingClientRect();
+  const targetId = path.dataset.feedbackTarget;
+  const sameSidePorts = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].flatMap(
+    (candidate) => {
+      if (candidate === path) return [];
+      const identity = flowchartEdgeIdentity(candidate);
+      const route = (candidate.dataset.manhattanPoints ?? '')
+        .trim()
+        .split(/\s+/)
+        .map((point) => point.split(',').map(Number))
+        .filter((point) => point.length === 2 && point.every(Number.isFinite))
+        .map(([x, y]) => ({ x, y }));
+      const candidateMatrix = candidate.getScreenCTM();
+      if (!identity || !candidateMatrix || route.length < 2) return [];
+      const terminalIndex =
+        identity.source === targetId ? 0 : identity.target === targetId ? -1 : null;
+      if (terminalIndex === null) return [];
+      const terminal = route[terminalIndex === 0 ? 0 : route.length - 1];
+      const neighbor = route[terminalIndex === 0 ? 1 : route.length - 2];
+      const screenTerminal = new DOMPoint(terminal.x, terminal.y).matrixTransform(candidateMatrix);
+      const screenNeighbor = new DOMPoint(neighbor.x, neighbor.y).matrixTransform(candidateMatrix);
+      if (
+        Math.abs(screenTerminal.y - targetBounds.bottom) > 1 ||
+        Math.abs(screenTerminal.x - screenNeighbor.x) > 1
+      )
+        return [];
+      return [screenTerminal.matrixTransform(inverse).x];
+    },
+  );
+  const targetLeft = new DOMPoint(targetBounds.left, targetBounds.bottom).matrixTransform(
+    inverse,
+  ).x;
+  const targetRight = new DOMPoint(targetBounds.right, targetBounds.bottom).matrixTransform(
+    inverse,
+  ).x;
+  const targetX = chooseFlowchartFeedbackTargetX(
+    {
+      x: Math.min(targetLeft, targetRight),
+      y: 0,
+      width: Math.abs(targetRight - targetLeft),
+      height: 0,
+    },
+    sameSidePorts,
+  );
   const sourcePort = new DOMPoint(
     sourceBounds.right,
     sourceBounds.top + sourceBounds.height / 2,
@@ -967,6 +1020,7 @@ export function snapFlowchartFeedbackPorts(svg: SVGSVGElement) {
     targetBounds.left + targetBounds.width / 2,
     targetBounds.bottom + 0.25,
   ).matrixTransform(inverse);
+  targetPort.x = targetX;
   points[0] = { x: sourcePort.x, y: sourcePort.y };
   points[1].y = sourcePort.y;
   points[points.length - 2].x = targetPort.x;
