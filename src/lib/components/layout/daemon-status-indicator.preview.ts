@@ -35,6 +35,11 @@ const statusPayload: SystemStatusWirePayload = {
 
 const generation = () => selectDaemonConnectionGeneration.select(store.state);
 
+// Live uptime is base uptime plus time elapsed since the last successful
+// check, so anchor that check near "now" rather than at a fixed past date.
+const LAST_SUCCESS_AGE_MS = 90_000;
+const lastSuccessAt = () => new Date(Date.now() - LAST_SUCCESS_AGE_MS).toISOString();
+
 interface Scenario {
   stats?: boolean;
   failures?:
@@ -57,9 +62,7 @@ function setup({ stats = true, failures }: Scenario) {
   return () => {
     store.dispatch(connectionStatusChanged('connected', transport));
     if (stats) {
-      store.dispatch(
-        systemStatusSuccess(statusPayload, PREVIEW_FIXTURE_TIMESTAMPS.lastActivity, generation()),
-      );
+      store.dispatch(systemStatusSuccess(statusPayload, lastSuccessAt(), generation()));
     }
     if (failures === 'heartbeat') {
       store.dispatch(heartbeatFailed());

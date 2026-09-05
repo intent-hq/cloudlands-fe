@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import { formatNumber, formatTime } from '$lib/i18n/format';
+  import { formatDateTime, formatNumber } from '$lib/i18n/format';
 
   /**
    * Format raw sysinfo CPU percent (may exceed 100% on multi-core hosts)
@@ -247,11 +247,12 @@
 
   // Freshness of the stats shown beneath a degraded status: they date from
   // the last successful check, or there has been none on this connection.
+  // Date + time, since a check from days ago must not read like today's.
   const degradedFreshness = $derived.by(() => {
     if ($health$ !== 'degraded') return null;
     return $stats$ && $lastUpdated$
       ? m.layout_daemonStatus_lastSuccessfulCheck_description({
-          time: formatTime($lastUpdated$, { seconds: true }),
+          time: formatDateTime($lastUpdated$),
         })
       : m.layout_daemonStatus_noSuccessfulCheck_description();
   });

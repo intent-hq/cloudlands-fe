@@ -276,7 +276,7 @@ describe('DaemonStatusIndicator', () => {
     const explanation = () => screen.queryByRole('note');
 
     it('explains a known timeout beneath the Status row with the last successful check time', async () => {
-      const { formatTime } = await import('$lib/i18n/format');
+      const { formatDateTime } = await import('$lib/i18n/format');
       const state = await failOnce(await connectedState());
       expect(state.health).toBe('degraded');
 
@@ -288,10 +288,32 @@ describe('DaemonStatusIndicator', () => {
       const statusValue = screen.getByText('Degraded');
       expect(note!.closest('[role="menu"]')).toBe(statusValue.closest('[role="menu"]'));
       expect(note!.textContent).toMatch(/timed out/i);
-      expect(note!.textContent).toContain(formatTime(lastSuccessAt, { seconds: true }));
+      expect(note!.textContent).toContain(formatDateTime(lastSuccessAt));
       // Stats are still shown, framed as last-known rather than live.
       expect(screen.getByText('Agent slots')).toBeTruthy();
       expect(note!.textContent).toMatch(/last successful check/i);
+    });
+
+    it('distinguishes last successful checks on different dates at the same clock time', async () => {
+      const s = await slice();
+      const connected = await connectedState(false);
+      const twoDaysEarlier = '2026-09-03T14:03:09.000Z';
+      expect(twoDaysEarlier.slice(11)).toBe(lastSuccessAt.slice(11));
+
+      const texts: string[] = [];
+      for (const at of [lastSuccessAt, twoDaysEarlier]) {
+        const state = await failOnce(
+          s.daemonHealthReducer(
+            connected,
+            s.systemStatusSuccess(payload, at, connected.connectionGeneration),
+          ),
+        );
+        const { unmount } = await openDetails(state);
+        texts.push(explanation()!.textContent!);
+        unmount();
+      }
+
+      expect(texts[0]).not.toBe(texts[1]);
     });
 
     it('reports the number of consecutive failed checks', async () => {
