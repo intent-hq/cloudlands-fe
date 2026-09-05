@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LiveAppClient } from '$lib/client';
 import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { m } from '$shared/paraglide/messages.js';
 import type { ReduxStoreContext } from '$store/renderer/types';
 import { initAppStore, store as appStore } from '$store/renderer/store';
 import {
@@ -227,7 +228,7 @@ describe('Settings deterministic mock-BE contracts', () => {
 
     render(WebSocketApiSettings);
     const input = (await screen.findByRole('spinbutton', {
-      name: 'WebSocket API port',
+      name: m.settings_wsApi_port_ariaLabel(),
     })) as HTMLInputElement;
     await waitFor(() => expect(input.value).toBe('5181'));
     await fireEvent.input(input, { target: { value: '6123' } });
