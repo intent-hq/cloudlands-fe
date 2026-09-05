@@ -7,6 +7,14 @@ import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '$shared/
 import { m } from '$shared/paraglide/messages.js';
 import type { ProviderStatus } from '$shared/types/provider-availability';
 import type { WorkspaceDraft } from '$shared/types';
+import type { StoreState } from '$store/renderer/types';
+import {
+  daemonHealthReducer,
+  initialState as daemonHealthInitialState,
+  systemStatusSuccess,
+} from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import { selectDaemonHostRepairTarget } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+import type { SystemStatusWirePayload } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
 import {
   createInitialControllerState,
@@ -67,6 +75,18 @@ function providerReduxState(statuses: Record<string, ProviderStatus>, checked: b
   };
 }
 
+function systemStatusFixture(os: string, arch: string): SystemStatusWirePayload {
+  return {
+    running: true,
+    listenMode: 'uds',
+    transports: ['uds'],
+    clients: 1,
+    agents: 0,
+    protocolVersion: '2.6',
+    host: { os, arch, hasDisplay: true, locality: 'local' },
+  };
+}
+
 describe('new-workspace host × provider × network robustness matrix', () => {
   const originalInvoke = window.electronAPI!.invoke;
 
@@ -83,10 +103,6 @@ describe('new-workspace host × provider × network robustness matrix', () => {
   });
 
   it.each([
-    ['macOS Intel', 'git', true],
-    ['macOS ARM', 'git', true],
-    ['Windows', 'git', true],
-    ['Linux', 'git', true],
     ['Git missing', 'git', false],
     ['Node absent', 'node', false],
     ['Node too old', 'node', false],
@@ -119,15 +135,44 @@ describe('new-workspace host × provider × network robustness matrix', () => {
   );
 
   it.each([
-    ['macOS Intel', 'Mac (Intel)'],
-    ['macOS ARM', 'Mac (Apple silicon)'],
-    ['Windows', 'Windows build host'],
-    ['Linux', 'Linux build host'],
-  ])('%s missing-tool guidance names the daemon host', (_fixture, host) => {
-    expect(
-      m.newWorkspace_capabilities_repairOnHost_description({ capability: 'Git', host }),
-    ).toContain(host);
-  });
+    ['macOS Intel', 'macos', 'x86_64', 'macOS (Intel)'],
+    ['macOS ARM', 'macos', 'aarch64', 'macOS (Apple silicon)'],
+    ['Windows', 'windows', 'x86_64', 'Windows (x86-64)'],
+    ['Linux', 'linux', 'aarch64', 'Linux (ARM64)'],
+  ] as const)(
+    '%s system.status fixture selects truthful missing-Git guidance and preserves the draft',
+    async (_name, os, arch, expectedRepairTarget) => {
+      const healthState = daemonHealthReducer(
+        daemonHealthInitialState,
+        systemStatusSuccess(systemStatusFixture(os, arch), '2026-09-05T00:00:00.000Z'),
+      );
+      const repairTarget = selectDaemonHostRepairTarget.select({
+        daemonHealth: healthState,
+      } as unknown as StoreState);
+      registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, () => ({
+        ok: true,
+        result: { available: false },
+      }));
+      let state = editable('git');
+      state = reduce(state, { type: 'start.requested', requiredCapabilities: ['git'] });
+
+      state = await execute(state);
+
+      expect(repairTarget).toBe(expectedRepairTarget);
+      expect(
+        m.newWorkspace_capabilities_repairOnHost_description({
+          capability: 'Git',
+          host: repairTarget!,
+        }),
+      ).toContain(expectedRepairTarget);
+      expect(state.capabilities.git).toBe('missing');
+      expect(state.input).toMatchObject({
+        intentText: 'Retain this plan',
+        attachments: [ATTACHMENT],
+      });
+      expect(coordinatorStateFor(state)).not.toBe('live');
+    },
+  );
 
   it('native provider remains startable when Node is absent', () => {
     let state = editable('node', 'missing');

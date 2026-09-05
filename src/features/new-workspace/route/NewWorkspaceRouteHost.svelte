@@ -12,6 +12,7 @@
   import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import { selectIsActiveProviderAvailable } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectWorkspaceCreationDefaultParentPath } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-selectors';
+  import { selectDaemonHostRepairTarget } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { stageNewWorkspaceFiles } from './new-workspace-attachments';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
@@ -31,6 +32,7 @@
   const hasCheckedProviders$ = selectHasCheckedOnce();
   const activeProviderAvailable$ = selectIsActiveProviderAvailable();
   const defaultParentPath$ = selectWorkspaceCreationDefaultParentPath();
+  const daemonHostRepairTarget$ = selectDaemonHostRepairTarget();
 
   $effect(() => {
     if (!$hasCheckedProviders$) return;
@@ -79,6 +81,7 @@
 <div class="h-full p-3">
   <UntitledWorkspaceShell
     state={controllerState}
+    presentation={{ hostName: $daemonHostRepairTarget$ }}
     onEdit={(patch) => routeController.edit(patch)}
     onStart={(requiredCapabilities) =>
       routeController.dispatch({ type: 'start.requested', requiredCapabilities })}
