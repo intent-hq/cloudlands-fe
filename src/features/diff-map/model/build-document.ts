@@ -5,6 +5,7 @@ import type {
   DiffMapFile,
   DiffMapFileStatus,
   DiffMapGroup,
+  DiffMapHunk,
   DiffMapRepoTreeNode,
   DiffMapSection,
   DiffMapSource,
@@ -83,6 +84,23 @@ function lineCount(content: string | undefined): number | undefined {
   return content === '' ? 0 : content.split('\n').length;
 }
 
+function hashContent(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `fnv1a:${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function hunkRanges(hunks: PatchHunk[]): DiffMapHunk[] | undefined {
+  if (hunks.length === 0) return undefined;
+  return hunks.map((hunk) => ({
+    oldRange: { start: hunk.oldStart, end: hunk.oldStart + Math.max(hunk.oldLines, 1) - 1 },
+    newRange: { start: hunk.newStart, end: hunk.newStart + Math.max(hunk.newLines, 1) - 1 },
+  }));
+}
+
 function buildTrack(
   hunks: PatchHunk[],
   side: 'old' | 'new',
@@ -139,9 +157,23 @@ function toFile(
     : change.content?.isFullFileContent === true;
   const oldTrack = buildTrack(facts.hunks, 'old', fullContents ? lineCount(oldContent) : undefined);
   const newTrack = buildTrack(facts.hunks, 'new', fullContents ? lineCount(newContent) : undefined);
-  const contentHash = !isChatChange(change)
+  const suppliedContentHash = !isChatChange(change)
     ? (change.content?.newContentSha ?? change.content?.diffSha ?? change.content?.oldContentSha)
     : undefined;
+  const contentHash =
+    suppliedContentHash ??
+    hashContent(
+      [
+        statusFor(change, facts),
+        newContent ?? '',
+        isChatChange(change) && change.action === 'delete' ? (oldContent ?? '') : '',
+        patch ?? '',
+        String(additions ?? ''),
+        String(deletions ?? ''),
+        isChatChange(change) ? change.toolCallId : change.id,
+      ].join('\u0000'),
+    );
+  const hunks = hunkRanges(facts.hunks);
   return {
     id: path,
     path,
@@ -154,8 +186,9 @@ function toFile(
     ...(facts.renamedFrom ? { renamedFrom: facts.renamedFrom } : {}),
     ...(oldTrack ? { oldTrack } : {}),
     ...(newTrack ? { newTrack } : {}),
+    ...(hunks ? { hunks } : {}),
     ...(!isChatChange(change) && change.attribution ? { attribution: change.attribution } : {}),
-    ...(contentHash ? { contentHash } : {}),
+    contentHash,
   };
 }
 

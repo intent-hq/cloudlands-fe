@@ -72,6 +72,10 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectUnstagedWorkingChanges: mocks.selector(() => mocks.unstaged),
 }));
 
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
+  selectViewedFiles: mocks.selector(() => ({})),
+}));
+
 vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
   refreshRequested: vi.fn((wsId: string) => ({
     type: 'changes/refreshRequested',
@@ -176,7 +180,7 @@ vi.mock('$lib/components/file-tracking/accept-changes/FileRow.svelte', async () 
 vi.mock('$features/diff-map', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$features/diff-map')>();
   const { default: MockDiffMap } = await import('./mocks/MockDiffMap.svelte');
-  return { ...actual, DiffMap: MockDiffMap };
+  return { ...actual, DiffMap: MockDiffMap, ReviewSliceMap: MockDiffMap };
 });
 
 vi.mock('$lib/components/ui/Header.svelte', async () => {

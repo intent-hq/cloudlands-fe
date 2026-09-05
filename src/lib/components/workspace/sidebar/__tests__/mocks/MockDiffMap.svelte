@@ -1,5 +1,5 @@
 <script lang="ts">
-  let { document, activePath, rungOverride, onOpen }: any = $props();
+  let { document, activePath, rungOverride = 2, onOpen }: any = $props();
 </script>
 
 <div

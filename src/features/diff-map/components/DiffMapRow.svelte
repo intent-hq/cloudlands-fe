@@ -9,6 +9,7 @@
     attribution?: boolean | ReadonlyMap<string, DiffMapAttribution>;
     comments?: ReadonlyMap<string, number>;
     viewed?: ReadonlySet<string>;
+    changedSinceViewed?: ReadonlySet<string>;
   }
 
   interface Props {
@@ -49,7 +50,18 @@
       ? `+${formatInteger(file.additions)} −${formatInteger(file.deletions)}`
       : m.diffMap_statsUnavailable_label(),
   );
-  const accessibleName = $derived(`${file.path}, ${stats}`);
+  const viewed = $derived(layers?.viewed?.has(file.path) ?? false);
+  const changedSinceViewed = $derived(layers?.changedSinceViewed?.has(file.path) ?? false);
+  const freshnessLabel = $derived(
+    changedSinceViewed
+      ? m.diffMap_changedSinceViewed_label()
+      : viewed
+        ? m.chat_changesPanel_viewed_label()
+        : undefined,
+  );
+  const accessibleName = $derived(
+    [file.path, stats, freshnessLabel].filter((value) => value !== undefined).join(', '),
+  );
   const tooltip = $derived(
     file.renamedFrom ? `${accessibleName}\n${file.renamedFrom} → ${file.path}` : accessibleName,
   );
@@ -62,7 +74,6 @@
         ? file.attribution
         : undefined,
   );
-  const viewed = $derived(layers?.viewed?.has(file.path) ?? false);
   const churn = $derived(
     file.statsKnown
       ? Math.min(100, (Math.log1p(file.additions + file.deletions) / Math.log(1001)) * 100)
@@ -79,6 +90,7 @@
   data-diff-map-row
   data-file-id={file.id}
   data-status={file.status}
+  data-viewed-state={changedSinceViewed ? 'changed' : viewed ? 'viewed' : undefined}
   aria-label={accessibleName}
   aria-describedby={tooltipId}
   aria-pressed={selected}
@@ -110,6 +122,8 @@
     <span class="overlay" aria-hidden="true">{formatInteger(comments)}</span>
   {:else if attribution}
     <span class="overlay" aria-hidden="true">{attribution.agent?.agentName?.[0] ?? '•'}</span>
+  {:else if changedSinceViewed}
+    <span class="overlay overlay--changed" aria-hidden="true">!</span>
   {:else if viewed}
     <span class="overlay" aria-hidden="true">✓</span>
   {/if}
@@ -246,6 +260,11 @@
     color: hsl(var(--primary-foreground));
     font-size: 9px;
     font-weight: 700;
+  }
+
+  .overlay--changed {
+    background: rgb(217 119 6);
+    color: white;
   }
 
   .tooltip {

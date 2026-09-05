@@ -62,6 +62,26 @@ describe('DiffMap', () => {
     ]);
   });
 
+  it('renders distinct viewed and changed-since-viewed row states', async () => {
+    const first = tinyDiffMapFixture.document.files[0].path;
+    const second = tinyDiffMapFixture.document.files[1].path;
+    const { container } = render(DiffMap, {
+      props: {
+        document: tinyDiffMapFixture.document,
+        onOpen: vi.fn(),
+        layers: { viewed: new Set([first]), changedSinceViewed: new Set([second]) },
+      },
+    });
+
+    await waitFor(() => expect(rows(container)).toHaveLength(3));
+    expect(rows(container).find((row) => row.dataset.fileId === first)?.dataset.viewedState).toBe(
+      'viewed',
+    );
+    expect(rows(container).find((row) => row.dataset.fileId === second)?.dataset.viewedState).toBe(
+      'changed',
+    );
+  });
+
   it('focuses the filter with slash and dims non-matches without removing rows or count', async () => {
     const { container } = render(DiffMap, {
       props: { document: tinyDiffMapFixture.document, onOpen: vi.fn() },

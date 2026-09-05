@@ -1,11 +1,13 @@
 import type { AgentAttribution } from '$features/file-tracking/types';
 
-export type DiffMapSource =
-  | { kind: 'working-tree'; workspaceId: string; snapshotId: string }
-  | { kind: 'commit'; commitHash: string; snapshotId: string }
-  | { kind: 'range'; base: string; head: string; snapshotId: string }
-  | { kind: 'pr'; repository: string; prNumber: number; snapshotId: string }
-  | { kind: 'chat-turn'; sessionId: string; turnId: string; snapshotId: string };
+export type DiffMapSourceIdentity =
+  | { kind: 'working-tree'; workspaceId: string }
+  | { kind: 'commit'; commitHash: string }
+  | { kind: 'range'; base: string; head: string }
+  | { kind: 'pr'; repository: string; prNumber: number }
+  | { kind: 'chat-turn'; sessionId: string; turnId: string };
+
+export type DiffMapSource = DiffMapSourceIdentity & { snapshotId: string };
 
 export type DiffMapFileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'binary' | 'mode';
 
@@ -30,6 +32,7 @@ export interface DiffMapFile {
   oldTrack?: number[];
   /** Alternating normalized position and weight values: [position, weight, ...]. */
   newTrack?: number[];
+  hunks?: DiffMapHunk[];
   attribution?: DiffMapAttribution;
   contentHash?: string;
 }
@@ -58,6 +61,23 @@ export interface DiffMapSection {
 export interface DiffMapLineRange {
   start: number;
   end: number;
+}
+
+export interface DiffMapHunk {
+  oldRange: DiffMapLineRange;
+  newRange: DiffMapLineRange;
+}
+
+export interface ReviewSliceEntry {
+  path: string;
+  hunks?: DiffMapHunk[];
+  contentHash: string;
+}
+
+export interface ReviewSlice {
+  source: DiffMapSourceIdentity;
+  snapshotId: string;
+  entries: ReviewSliceEntry[];
 }
 
 export interface DiffMapFactAnnotation {

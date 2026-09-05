@@ -26,7 +26,15 @@
   import { selectAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-selectors';
   import { setAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-  import { buildDiffMapDocument, DiffMap, type DiffMapFile } from '$features/diff-map';
+  import {
+    buildDiffMapDocument,
+    diffMapFileContentHash,
+    getViewedFreshness,
+    ReviewSliceMap,
+    type DiffMapDocument,
+    type DiffMapFile,
+  } from '$features/diff-map';
+  import { selectViewedFiles } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
 
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import {
@@ -148,6 +156,7 @@
   const ftUnstagedChanges$ = selectFtUnstagedChanges(workspaceIdStore);
   const autoCommitEnabled = selectAutoCommitEnabled(workspaceIdStore);
   const lockedAgentIds$ = selectLockedAgentIds(workspaceIdStore);
+  const viewedFileHashes$ = selectViewedFiles(workspaceIdStore);
 
   // Derived change lists
   const unstagedChanges = $derived($ftUnstagedChanges$ ?? []);
@@ -172,6 +181,22 @@
       },
     }),
   );
+  function viewedLayers(document: DiffMapDocument) {
+    const viewed = new Set<string>();
+    const changedSinceViewed = new Set<string>();
+    for (const file of document.files) {
+      const freshness = getViewedFreshness(
+        $viewedFileHashes$,
+        file.path,
+        diffMapFileContentHash(file, document.source.snapshotId),
+      );
+      if (freshness === 'viewed') viewed.add(file.path);
+      if (freshness === 'changed-since-viewed') changedSinceViewed.add(file.path);
+    }
+    return { viewed, changedSinceViewed };
+  }
+  const unstagedMapLayers = $derived(viewedLayers(unstagedMapDocument));
+  const stagedMapLayers = $derived(viewedLayers(stagedMapDocument));
 
   // Get panel layout manager for opening file tabs
   const panelLayoutManager = $derived(getPanelLayoutManager(workspaceId));
@@ -742,12 +767,12 @@
 
     {#if hasUnstaged}
       {#if changesView === 'map'}
-        <div class="h-40 min-w-0 overflow-hidden rounded border border-border">
-          <DiffMap
+        <div class="h-48 min-w-0">
+          <ReviewSliceMap
+            {workspaceId}
             document={unstagedMapDocument}
+            layers={unstagedMapLayers}
             activePath={activeFileStaged === false ? (activeFilePath ?? undefined) : undefined}
-            rungOverride={2}
-            filterable={false}
             onOpen={(file, event) => handleMapFileClick(file, false, event)}
           />
         </div>
@@ -972,12 +997,12 @@
   >
     {#if hasStaged}
       {#if changesView === 'map'}
-        <div class="h-40 min-w-0 overflow-hidden rounded border border-border">
-          <DiffMap
+        <div class="h-48 min-w-0">
+          <ReviewSliceMap
+            {workspaceId}
             document={stagedMapDocument}
+            layers={stagedMapLayers}
             activePath={activeFileStaged === true ? (activeFilePath ?? undefined) : undefined}
-            rungOverride={2}
-            filterable={false}
             onOpen={(file, event) => handleMapFileClick(file, true, event)}
           />
         </div>
