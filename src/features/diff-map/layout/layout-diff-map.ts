@@ -33,6 +33,8 @@ export interface DiffMapLayoutColumn extends LayoutRect {
 export interface DiffMapLayoutBlock extends LayoutRect {
   groupId: string;
   label: string;
+  labelPrefix: string;
+  labelName: string;
   headerHeight: number;
   columns: DiffMapLayoutColumn[];
 }
@@ -110,6 +112,42 @@ function groupLabel(group: DiffMapGroup): string {
   return `${group.displayPrefix}${group.displayName}` || '.';
 }
 
+function leftEllipsis(
+  text: string,
+  maxWidth: number,
+  measure: TextMeasurer,
+  context: TextMeasureContext,
+): string {
+  if (measure(text, context) <= maxWidth) return text;
+  const ellipsis = '…';
+  let low = 0;
+  let high = text.length;
+  while (low < high) {
+    const length = Math.ceil((low + high) / 2);
+    const candidate = `${ellipsis}${text.slice(text.length - length)}`;
+    if (measure(candidate, context) <= maxWidth) low = length;
+    else high = length - 1;
+  }
+  return `${ellipsis}${text.slice(text.length - low)}`;
+}
+
+function truncateGroupLabel(
+  group: DiffMapGroup,
+  maxWidth: number,
+  measure: TextMeasurer,
+  context: TextMeasureContext,
+): { prefix: string; name: string } {
+  const name = group.displayName || '.';
+  const nameWidth = measure(name, context);
+  if (nameWidth > maxWidth) {
+    return { prefix: '', name: middleEllipsis(name, maxWidth, measure, context) };
+  }
+  return {
+    prefix: leftEllipsis(group.displayPrefix, maxWidth - nameWidth, measure, context),
+    name,
+  };
+}
+
 function buildBlock(
   group: DiffMapGroup,
   fileById: Map<string, DiffMapDocument['files'][number]>,
@@ -176,14 +214,17 @@ function buildBlock(
       })),
     };
   });
+  const label = truncateGroupLabel(
+    group,
+    Math.max(0, width - BLOCK_PADDING * 2),
+    measure,
+    groupContext,
+  );
   return {
     groupId: group.id,
-    label: middleEllipsis(
-      groupLabel(group),
-      Math.max(0, width - BLOCK_PADDING * 2),
-      measure,
-      groupContext,
-    ),
+    label: `${label.prefix}${label.name}`,
+    labelPrefix: label.prefix,
+    labelName: label.name,
     x: 0,
     y: 0,
     w: width,
@@ -220,9 +261,12 @@ function packAtRung(
       buildBlock(group, fileById, viewport, rung, measure),
     ]),
   );
-  const sections = document.sections?.length
-    ? document.sections.map((section) => ({ section, groupIds: section.groupIds }))
-    : [{ section: undefined, groupIds: document.groups.map((group) => group.id) }];
+  const documentSections = document.sections;
+  const preserveSections = documentSections?.some((section) => section.groupIds.length > 1);
+  const sections =
+    preserveSections && documentSections
+      ? documentSections.map((section) => ({ section, groupIds: section.groupIds }))
+      : [{ section: undefined, groupIds: document.groups.map((group) => group.id) }];
   const placed = new Map<string, DiffMapLayoutBlock>();
   const sectionsPlaced: DiffMapLayoutSection[] = [];
   let cursorY = 0;

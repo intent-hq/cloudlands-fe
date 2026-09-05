@@ -3,6 +3,7 @@ import {
   diffMapFixtures,
   edgeDiffMapFixture,
   hugeDiffMapFixture,
+  largeDiffMapFixture,
   typicalDiffMapFixture,
 } from '../model/fixtures';
 import type { DiffMapDocument } from '../model/types';
@@ -55,6 +56,14 @@ function expectValidLayout(document: DiffMapDocument, layout: DiffMapLayout, wid
   expectNoOverlaps(placedRows);
 }
 
+function widestShelf(layout: DiffMapLayout): number {
+  const shelves = new Map<number, DiffMapLayout['blocks']>();
+  for (const block of layout.blocks) shelves.set(block.y, [...(shelves.get(block.y) ?? []), block]);
+  return Math.max(
+    ...[...shelves.values()].map((shelf) => Math.max(...shelf.map((block) => block.x + block.w))),
+  );
+}
+
 describe('layoutDiffMap', () => {
   for (const fixture of diffMapFixtures) {
     for (const width of widths) {
@@ -100,6 +109,32 @@ describe('layoutDiffMap', () => {
     expect(layout.rung).toBe(3);
     expect(layout.overflow).toBe(true);
     expect(layout.contentHeight).toBeGreaterThan(500);
+  });
+
+  it.each([
+    ['large', largeDiffMapFixture.document, 900, 500],
+    ['huge', hugeDiffMapFixture.document, 1400, 900],
+  ] as const)('fills dense shelves for %s overflow', (_name, document, width, height) => {
+    const layout = layoutDiffMap(document, { width, height }, measure);
+    expect(layout.overflow).toBe(true);
+    expect(widestShelf(layout)).toBeGreaterThanOrEqual(width * 0.85);
+    expect(new Set(layout.blocks.map((block) => block.y)).size).toBeLessThan(layout.blocks.length);
+  });
+
+  it('keeps sibling group headers distinct at minimum width', () => {
+    const document: DiffMapDocument = {
+      ...typicalDiffMapFixture.document,
+      groups: typicalDiffMapFixture.document.groups.filter((group) =>
+        ['src/lib/auth', 'src/lib/ui'].includes(group.id),
+      ),
+    };
+    const labels = layoutDiffMap(document, { width: 240, height: 500 }, measure, {
+      rungOverride: 3,
+    }).blocks.map((block) => block.label);
+    expect(new Set(labels).size).toBe(labels.length);
+    expect(labels).toEqual(
+      expect.arrayContaining([expect.stringContaining('auth'), expect.stringContaining('ui')]),
+    );
   });
 
   it('caps long labels with a middle ellipsis', () => {

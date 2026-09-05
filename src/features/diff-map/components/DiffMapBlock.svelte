@@ -65,6 +65,7 @@
 <section
   class="diff-map-block"
   data-group-id={group.id}
+  data-rung={rung}
   style:left={`${block.x}px`}
   style:top={`${block.y}px`}
   style:width={`${block.w}px`}
@@ -79,7 +80,7 @@
     onmouseleave={() => onHover(null)}
   >
     <span class="group-path">
-      <span class="prefix">{group.displayPrefix}</span><strong>{group.displayName || '.'}</strong>
+      <span class="prefix">{block.labelPrefix}</span><strong>{block.labelName}</strong>
     </span>
     <span class="count">{countLabel}</span>
   </header>
@@ -144,5 +145,9 @@
     flex: none;
     font-size: 10px;
     white-space: nowrap;
+  }
+
+  .diff-map-block[data-rung='3'] .count {
+    display: none;
   }
 </style>
