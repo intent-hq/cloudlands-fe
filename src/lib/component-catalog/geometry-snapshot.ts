@@ -5,14 +5,12 @@ import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- This helper executes in Playwright's Node test process.
 import { basename, dirname } from 'node:path';
 import type { GeometryProbeResult } from './geometry-probe';
-import type { PreviewDefinition } from './preview-definition';
 
 type GeometrySnapshot = Record<string, Record<string, GeometryProbeResult>>;
 
 export interface GeometrySnapshotSuiteOptions<Props extends Record<string, unknown>> {
   scene: string;
   component: Component<Props>;
-  definition: PreviewDefinition<Props>;
   states?: string[];
   widths?: number[];
   selector?: string;
@@ -131,13 +129,13 @@ function updateSnapshotCell(
 
 /**
  * Defines one retryable CT test per preview state/width. The calling spec must statically import
- * both the preview component and its named definition so Playwright registers them in the browser.
- * No preview loader or CT bootstrap registration is required.
+ * the preview component so Playwright registers it in the browser. The shared CT hook resolves the
+ * matching preview definition lazily in the browser; no per-scene bootstrap registration is needed.
  *
  * @example
- * import Preview, { preview } from './example.preview.svelte';
+ * import Preview from './example.preview.svelte';
  * defineGeometrySnapshotSuite({
- *   scene: 'example', component: Preview, definition: preview, states: ['default'],
+ *   scene: 'example', component: Preview, states: ['default'],
  *   widths: [420], snapshotPath: '/absolute/example.geometry.json',
  * });
  */
