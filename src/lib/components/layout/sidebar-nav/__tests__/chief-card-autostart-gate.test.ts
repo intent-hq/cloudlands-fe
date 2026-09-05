@@ -91,9 +91,17 @@ describe('ChiefCard auto-start provider gate', () => {
     dispatchSpy.mockClear();
     render(ChiefCard, { props: { expanded: true, embedded: true, collapsed: false } });
 
-    await fireEvent.click(
-      screen.getByRole('button', { name: m.layout_chiefCard_newThread_tooltip() }),
-    );
+    const newThreadButton = screen.getByRole('button', {
+      name: m.layout_chiefCard_newThread_tooltip(),
+    });
+    // The Button component boundary can give auto-start time to acquire the
+    // double-submit guard before this test acts. Wait for that creation to
+    // settle so the click below is the launch under assertion.
+    await waitFor(() => expect((newThreadButton as HTMLButtonElement).disabled).toBe(false));
+    launchActions = [];
+    dispatchSpy.mockClear();
+
+    await fireEvent.click(newThreadButton);
 
     await waitFor(() => expect(launchActions).toHaveLength(1));
     expect(

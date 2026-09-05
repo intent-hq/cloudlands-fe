@@ -27,6 +27,16 @@ describe('settings pattern', () => {
     expect(screen.getByTestId('complex-custom')).toBeTruthy();
   });
 
+  it('renders keyed rich descriptions with accessible control association', () => {
+    render(SettingsHarness);
+    const toggle = screen.getByRole('switch', { name: 'Enable feature' });
+    const descriptionId = toggle.getAttribute('aria-describedby');
+    const description = descriptionId ? document.getElementById(descriptionId) : null;
+
+    expect(description?.textContent).toContain('enabled');
+    expect(description?.querySelector('code')?.textContent).toBe('enabled');
+  });
+
   it('evaluates when visibility reactively', async () => {
     render(SettingsHarness);
     expect(screen.queryByRole('switch', { name: 'Conditional feature' })).toBeNull();

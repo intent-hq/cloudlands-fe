@@ -19,6 +19,7 @@
     experimental = false,
     featureCode,
     leading,
+    descriptionContent,
     control,
     children,
     class: className,
@@ -38,6 +39,7 @@
     experimental?: boolean;
     featureCode?: string;
     leading?: Snippet;
+    descriptionContent?: Snippet;
     control?: Snippet<
       [
         {
@@ -54,7 +56,9 @@
   } = $props();
 
   const labelId = $derived(`${id}-label`);
-  const descriptionId = $derived(description ? `${id}-description` : undefined);
+  const descriptionId = $derived(
+    description || descriptionContent ? `${id}-description` : undefined,
+  );
   const errorId = $derived(error ? `${id}-error` : undefined);
   const orientation = $derived(compact ? 'stacked' : 'responsive');
 </script>
@@ -95,11 +99,15 @@
           {label}
         </div>
       {/if}
-      {#if description}<p
+      {#if description || descriptionContent}<p
           id={descriptionId}
           class={cn('type-body text-muted-foreground', disabled && 'opacity-60')}
         >
-          {description}
+          {#if descriptionContent}
+            {@render descriptionContent()}
+          {:else}
+            {description}
+          {/if}
         </p>{/if}
       {#if error}
         <p id={errorId} class="type-body text-danger" role="alert">{error}</p>

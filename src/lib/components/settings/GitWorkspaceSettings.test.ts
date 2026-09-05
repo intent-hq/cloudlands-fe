@@ -77,6 +77,20 @@ warmImport(
   () => import('$features/onboarding/messages/__tests__/mocks/MockDirectoryPickerModal.svelte'),
 );
 
+describe('GitWorkspaceSettings — description examples', () => {
+  afterEach(cleanup);
+
+  it('renders the SSH key path and branch-prefix examples', async () => {
+    mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
+    mocks.mockCapabilities.mockResolvedValue({});
+
+    render(GitWorkspaceSettings);
+
+    await waitFor(() => expect(screen.getByText('~/.ssh/id_ed25519')).toBeTruthy());
+    expect(screen.getByText('feature/')).toBeTruthy();
+  });
+});
+
 describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
   beforeEach(() => {
     vi.clearAllMocks();

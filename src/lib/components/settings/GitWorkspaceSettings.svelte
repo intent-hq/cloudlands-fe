@@ -292,6 +292,18 @@
   />
 {/snippet}
 
+{#snippet sshKeyDescription()}
+  {m.settings_gitWorkspace_sshKeyPath_description_before()}
+  <!-- i18n-ignore (file path) -->
+  <code class="bg-muted px-1 rounded">~/.ssh/id_ed25519</code>)
+{/snippet}
+
+{#snippet branchPrefixDescription()}
+  {m.settings_gitWorkspace_branchPrefix_description_before()}
+  <!-- i18n-ignore (branch prefix example) -->
+  <code class="bg-muted px-1 rounded">feature/</code>)
+{/snippet}
+
 {#snippet worktreesControl()}
   <PathSettingField
     bind:value={worktreesLocation}
@@ -331,5 +343,9 @@
       'cow-isolation': cowControl,
       'cli-optimization': shellAdditionsControl,
     })}
+    descriptions={{
+      'ssh-key-path': sshKeyDescription,
+      'branch-prefix': branchPrefixDescription,
+    }}
   />
 </div>

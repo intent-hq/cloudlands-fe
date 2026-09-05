@@ -4,7 +4,12 @@
   import { SettingsPageShell } from '$lib/components/ui/settings-page-shell';
   import * as Tabs from '$lib/components/ui/tabs';
   import SettingsForm from './SettingsForm.svelte';
-  import type { SettingsCustomControls, SettingsSchema, SettingsTab } from './types';
+  import type {
+    SettingsCustomControls,
+    SettingsDescriptionSnippets,
+    SettingsSchema,
+    SettingsTab,
+  } from './types';
 
   let {
     title,
@@ -12,6 +17,7 @@
     schema,
     searchQuery = '',
     custom = {},
+    descriptions = {},
     navigation: navigationContent,
     activeTab,
     onSelect,
@@ -25,6 +31,7 @@
     schema?: SettingsSchema;
     searchQuery?: string;
     custom?: SettingsCustomControls;
+    descriptions?: SettingsDescriptionSnippets;
     navigation?: Snippet;
     activeTab: SettingsTab;
     onSelect: (tab: SettingsTab) => void;
@@ -60,7 +67,7 @@
             {/if}
           </div>
         {/snippet}
-        <SettingsForm {schema} {searchQuery} {custom} />
+        <SettingsForm {schema} {searchQuery} {custom} {descriptions} />
       </SettingsPageShell>
     </div>
   {/if}

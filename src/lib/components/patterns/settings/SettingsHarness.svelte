@@ -112,6 +112,10 @@
   <div data-testid="complex-custom">Embedded server manager</div>
 {/snippet}
 
+{#snippet enabledDescription()}
+  Controls the feature (for example, <code>enabled</code>).
+{/snippet}
+
 {#snippet agentsNavigation()}<button type="button">Example specialist</button>{/snippet}
 
 <SettingsPage
@@ -119,6 +123,7 @@
   {schema}
   {searchQuery}
   custom={{ servers: serversControl }}
+  descriptions={{ enabled: enabledDescription }}
   {activeTab}
   onSelect={(tab) => (activeTab = tab)}
   {agentsNavigation}

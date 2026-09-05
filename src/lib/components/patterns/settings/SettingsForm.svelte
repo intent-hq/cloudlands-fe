@@ -3,16 +3,22 @@
   import SettingsSection from './SettingsSection.svelte';
   import SettingsControl from './SettingsControl.svelte';
   import { matchesSettingsSearch, resolveSetting } from './schema';
-  import type { SettingsCustomControls, SettingsSchema } from './types';
+  import type {
+    SettingsCustomControls,
+    SettingsDescriptionSnippets,
+    SettingsSchema,
+  } from './types';
 
   let {
     schema,
     searchQuery = '',
     custom = {},
+    descriptions = {},
   }: {
     schema: SettingsSchema;
     searchQuery?: string;
     custom?: SettingsCustomControls;
+    descriptions?: SettingsDescriptionSnippets;
   } = $props();
   const sections = $derived(
     schema.sections
@@ -42,6 +48,7 @@
           id={entry.id}
           label={entry.label}
           description={entry.description}
+          descriptionContent={descriptions[entry.id]}
           htmlFor={hasLabelTarget(entry.kind) ? controlId : undefined}
           {disabled}
           {busy}

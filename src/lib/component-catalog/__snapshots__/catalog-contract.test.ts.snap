@@ -2207,7 +2207,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                               <div class="font-medium text-foreground type-body" id="enabled-label">
                                 "Enable feature"
                               <p class="text-muted-foreground type-body" id="enabled-description">
-                                "Controls the feature."
+                                "Controls the feature (for example,"
+                                <code>
+                                  "enabled"
+                                ")."
                           <div class="max-w-full md:justify-self-end md:w-auto min-w-0 w-full" data-field-control="" data-orientation="responsive">
                             <div class="min-w-0" data-settings-control-kind="switch">
                               <button aria-checked="true" aria-describedby="enabled-description" aria-labelledby="enabled-label" aria-required="false" class="active:bg-active after:-inset-x-1 after:-inset-y-2 after:absolute after:content-[''] bg-muted border border-border cursor-pointer data-[state=checked]:active:bg-primary data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60 duration-spring-fast ease-spring-fast hover:bg-hover inline-flex items-center motion-reduce:transition-none peer relative rounded-full shadow-(--elevation-raised) shrink-0 transition-[background-color,box-shadow,opacity]" data-state="checked" data-switch-root="" id="setting-enabled" role="switch" type="button">
@@ -2430,7 +2433,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                               <div class="font-medium text-foreground type-body" id="enabled-label">
                                 "Enable feature"
                               <p class="text-muted-foreground type-body" id="enabled-description">
-                                "Controls the feature."
+                                "Controls the feature (for example,"
+                                <code>
+                                  "enabled"
+                                ")."
                           <div class="max-w-full md:justify-self-end md:w-auto min-w-0 w-full" data-field-control="" data-orientation="responsive">
                             <div class="min-w-0" data-settings-control-kind="switch">
                               <button aria-checked="true" aria-describedby="enabled-description" aria-labelledby="enabled-label" aria-required="false" class="active:bg-active after:-inset-x-1 after:-inset-y-2 after:absolute after:content-[''] bg-muted border border-border cursor-pointer data-[state=checked]:active:bg-primary data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60 duration-spring-fast ease-spring-fast hover:bg-hover inline-flex items-center motion-reduce:transition-none peer relative rounded-full shadow-(--elevation-raised) shrink-0 transition-[background-color,box-shadow,opacity]" data-state="checked" data-switch-root="" id="setting-enabled" role="switch" type="button">
@@ -2812,7 +2818,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                               <div class="font-medium text-foreground type-body" id="enabled-label">
                                 "Enable feature"
                               <p class="text-muted-foreground type-body" id="enabled-description">
-                                "Controls the feature."
+                                "Controls the feature (for example,"
+                                <code>
+                                  "enabled"
+                                ")."
                           <div class="max-w-full md:justify-self-end md:w-auto min-w-0 w-full" data-field-control="" data-orientation="responsive">
                             <div class="min-w-0" data-settings-control-kind="switch">
                               <button aria-checked="true" aria-describedby="enabled-description" aria-labelledby="enabled-label" aria-required="false" class="active:bg-active after:-inset-x-1 after:-inset-y-2 after:absolute after:content-[''] bg-muted border border-border cursor-pointer data-[state=checked]:active:bg-primary data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60 duration-spring-fast ease-spring-fast hover:bg-hover inline-flex items-center motion-reduce:transition-none peer relative rounded-full shadow-(--elevation-raised) shrink-0 transition-[background-color,box-shadow,opacity]" data-state="checked" data-switch-root="" id="setting-enabled" role="switch" type="button">
@@ -3035,7 +3044,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                               <div class="font-medium text-foreground type-body" id="enabled-label">
                                 "Enable feature"
                               <p class="text-muted-foreground type-body" id="enabled-description">
-                                "Controls the feature."
+                                "Controls the feature (for example,"
+                                <code>
+                                  "enabled"
+                                ")."
                           <div class="max-w-full md:justify-self-end md:w-auto min-w-0 w-full" data-field-control="" data-orientation="responsive">
                             <div class="min-w-0" data-settings-control-kind="switch">
                               <button aria-checked="true" aria-describedby="enabled-description" aria-labelledby="enabled-label" aria-required="false" class="active:bg-active after:-inset-x-1 after:-inset-y-2 after:absolute after:content-[''] bg-muted border border-border cursor-pointer data-[state=checked]:active:bg-primary data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60 duration-spring-fast ease-spring-fast hover:bg-hover inline-flex items-center motion-reduce:transition-none peer relative rounded-full shadow-(--elevation-raised) shrink-0 transition-[background-color,box-shadow,opacity]" data-state="checked" data-switch-root="" id="setting-enabled" role="switch" type="button">
@@ -3258,7 +3270,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                               <div class="font-medium text-foreground type-body" id="enabled-label">
                                 "Enable feature"
                               <p class="text-muted-foreground type-body" id="enabled-description">
-                                "Controls the feature."
+                                "Controls the feature (for example,"
+                                <code>
+                                  "enabled"
+                                ")."
                           <div class="max-w-full md:justify-self-end md:w-auto min-w-0 w-full" data-field-control="" data-orientation="responsive">
                             <div class="min-w-0" data-settings-control-kind="switch">
                               <button aria-checked="true" aria-describedby="enabled-description" aria-labelledby="enabled-label" aria-required="false" class="active:bg-active after:-inset-x-1 after:-inset-y-2 after:absolute after:content-[''] bg-muted border border-border cursor-pointer data-[state=checked]:active:bg-primary data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60 duration-spring-fast ease-spring-fast hover:bg-hover inline-flex items-center motion-reduce:transition-none peer relative rounded-full shadow-(--elevation-raised) shrink-0 transition-[background-color,box-shadow,opacity]" data-state="checked" data-switch-root="" id="setting-enabled" role="switch" type="button">
@@ -3481,7 +3496,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                               <div class="font-medium text-foreground type-body" id="enabled-label">
                                 "Enable feature"
                               <p class="text-muted-foreground type-body" id="enabled-description">
-                                "Controls the feature."
+                                "Controls the feature (for example,"
+                                <code>
+                                  "enabled"
+                                ")."
                           <div class="max-w-full md:justify-self-end md:w-auto min-w-0 w-full" data-field-control="" data-orientation="responsive">
                             <div class="min-w-0" data-settings-control-kind="switch">
                               <button aria-checked="true" aria-describedby="enabled-description" aria-labelledby="enabled-label" aria-required="false" class="active:bg-active after:-inset-x-1 after:-inset-y-2 after:absolute after:content-[''] bg-muted border border-border cursor-pointer data-[state=checked]:active:bg-primary data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60 duration-spring-fast ease-spring-fast hover:bg-hover inline-flex items-center motion-reduce:transition-none peer relative rounded-full shadow-(--elevation-raised) shrink-0 transition-[background-color,box-shadow,opacity]" data-state="checked" data-switch-root="" id="setting-enabled" role="switch" type="button">

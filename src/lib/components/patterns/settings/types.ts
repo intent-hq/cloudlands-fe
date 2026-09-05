@@ -127,3 +127,4 @@ export interface SettingsControlContext {
 }
 
 export type SettingsCustomControls = Record<string, Snippet<[SettingsControlContext]>>;
+export type SettingsDescriptionSnippets = Record<string, Snippet>;
