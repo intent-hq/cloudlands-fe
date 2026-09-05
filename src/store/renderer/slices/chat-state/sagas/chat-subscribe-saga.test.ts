@@ -73,6 +73,7 @@ import {
   removeSession,
   removeWorkspaceSessions,
   updateSession,
+  upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { clearPanelLayout, openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -577,6 +578,28 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       'm-pre-1',
       'm-pre-2',
     ]);
+  });
+
+  it('waits for the post-reducer batch commit instead of a membership-only upsert', async () => {
+    const agentId = 'agent-sub-presession-batch';
+    const sub = openChat(agentId);
+    sub.handler({
+      ...transcript([makeMessage('m-pre-batch', 'ready')]),
+      fromSnapshot: true,
+    });
+
+    appStore.dispatch(upsertSession(makeSession(agentId)));
+    await Promise.resolve();
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toBeUndefined();
+    expect(selectAgentMessages.select(appStore.state, agentId)).toEqual([]);
+
+    appStore.dispatch(bulkUpsertSessions([makeSession(agentId)]));
+    await vi.waitFor(() => {
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
+    });
+    expect(
+      selectAgentMessages.select(appStore.state, agentId).map((message) => message.id),
+    ).toEqual(['m-pre-batch']);
   });
 
   it('replays the newest deferred delta after the pre-session snapshot on session upsert', async () => {

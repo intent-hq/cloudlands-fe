@@ -9,14 +9,22 @@ import {
 } from '$lib/utils/smartScroll';
 
 const mocks = vi.hoisted(() => {
+  let activeReadableSubscriptions = 0;
   const mutableReadable = <T>(initial: T) => {
     let value = initial;
     const subscribers = new Set<(current: T) => void>();
     return {
       subscribe(run: (current: T) => void) {
         subscribers.add(run);
+        activeReadableSubscriptions += 1;
         run(value);
-        return () => subscribers.delete(run);
+        let subscribed = true;
+        return () => {
+          if (!subscribed) return;
+          subscribed = false;
+          subscribers.delete(run);
+          activeReadableSubscriptions -= 1;
+        };
       },
       set(next: T) {
         value = next;
@@ -26,8 +34,14 @@ const mocks = vi.hoisted(() => {
   };
   const readable = <T>(value: T) => ({
     subscribe(run: (current: T) => void) {
+      activeReadableSubscriptions += 1;
       run(value);
-      return () => {};
+      let subscribed = true;
+      return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        activeReadableSubscriptions -= 1;
+      };
     },
   });
   const selector = <T>(value: T) => Object.assign(() => readable(value), { select: () => value });
@@ -82,6 +96,7 @@ const mocks = vi.hoisted(() => {
     // endDividerSession.
     dividerSessionValue: { anchorId: null } as { anchorId: string | null } | null,
     prefersReducedMotion: false,
+    activeReadableSubscriptions: () => activeReadableSubscriptions,
     followBottomOptions: null as {
       enabled?: boolean;
       follow: boolean;
@@ -350,6 +365,7 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import ChatPanel from '../ChatPanel.svelte';
+import RetainedChatPanelOwnershipHarness from './RetainedChatPanelOwnershipHarness.svelte';
 import { clearDraftCacheForTests } from '../chat-draft-cache';
 import {
   clearCachedChatScroll,
@@ -358,10 +374,111 @@ import {
   setCachedChatScroll,
 } from '../chat-scroll-cache';
 import { SCROLL_BUTTON_SHOW_SETTLE_MS } from '../scroll-bottom-button-visibility';
+import {
+  chatInterestLeaseCount,
+  clearAllChatInterestLeases,
+} from '$features/agent/utils/chat-interest-leases';
 
 type Frame = { id: number; callback: FrameRequestCallback };
 let frames: Frame[];
 let nextFrameId: number;
+
+class OwnershipResizeObserver {
+  static live = new Set<OwnershipResizeObserver>();
+
+  constructor(callback: ResizeObserverCallback) {
+    OwnershipResizeObserver.live.add(this);
+    mocks.resizeConstructor(callback);
+  }
+
+  observe = mocks.resizeObserve;
+  unobserve = vi.fn();
+  disconnect = vi.fn(() => {
+    OwnershipResizeObserver.live.delete(this);
+    mocks.resizeDisconnect();
+  });
+}
+
+class OwnershipIntersectionObserver {
+  static live = new Set<OwnershipIntersectionObserver>();
+  observed = new Set<Element>();
+
+  constructor(_callback: IntersectionObserverCallback) {
+    OwnershipIntersectionObserver.live.add(this);
+  }
+
+  observe(element: Element) {
+    this.observed.add(element);
+  }
+
+  unobserve(element: Element) {
+    this.observed.delete(element);
+  }
+
+  disconnect() {
+    this.observed.clear();
+    OwnershipIntersectionObserver.live.delete(this);
+  }
+}
+
+function trackChatWindowListeners() {
+  const eventTypes = new Set([
+    'editor:selection-change',
+    'navigate-message',
+    'agent:scroll-to-turn',
+    'agent:scroll-to-activity',
+    'agent:scroll-to-subscription',
+    'chat:open-message',
+    'panel:focus-content',
+    'chat:resend-message',
+  ]);
+  const registrations: Array<{
+    type: string;
+    listener: EventListenerOrEventListenerObject;
+    capture: boolean;
+  }> = [];
+  const originalAdd = window.addEventListener.bind(window);
+  const originalRemove = window.removeEventListener.bind(window);
+  const addSpy = vi.spyOn(window, 'addEventListener').mockImplementation(((
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | AddEventListenerOptions,
+  ) => {
+    if (eventTypes.has(type)) {
+      const capture = typeof options === 'boolean' ? options : (options?.capture ?? false);
+      if (
+        !registrations.some(
+          (entry) =>
+            entry.type === type && entry.listener === listener && entry.capture === capture,
+        )
+      ) {
+        registrations.push({ type, listener, capture });
+      }
+    }
+    originalAdd(type, listener, options);
+  }) as typeof window.addEventListener);
+  const removeSpy = vi.spyOn(window, 'removeEventListener').mockImplementation(((
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | EventListenerOptions,
+  ) => {
+    if (eventTypes.has(type)) {
+      const capture = typeof options === 'boolean' ? options : (options?.capture ?? false);
+      const index = registrations.findIndex(
+        (entry) => entry.type === type && entry.listener === listener && entry.capture === capture,
+      );
+      if (index >= 0) registrations.splice(index, 1);
+    }
+    originalRemove(type, listener, options);
+  }) as typeof window.removeEventListener);
+  return {
+    count: () => registrations.length,
+    restore: () => {
+      addSpy.mockRestore();
+      removeSpy.mockRestore();
+    },
+  };
+}
 
 class MockChatIntersectionObserver {
   static instances: MockChatIntersectionObserver[] = [];
@@ -529,6 +646,7 @@ beforeEach(() => {
   });
   clearDraftCacheForTests();
   clearChatScrollCacheForTests();
+  clearAllChatInterestLeases();
   mocks.draftSet.mockResolvedValue({ ok: true, updatedAt: '2026-01-01T00:00:00.000Z' });
   mocks.listUserMessages.mockResolvedValue({ ok: true, items: [], total: 0 });
   for (const key of Object.keys(mocks.chatDrafts)) delete mocks.chatDrafts[key];
@@ -570,6 +688,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  clearAllChatInterestLeases();
   Reflect.deleteProperty(globalThis.CSS, 'highlights');
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -734,6 +853,148 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.getByTestId('composer-aurora-host')).toBeTruthy();
   });
 
+  it('bounds production resource ownership across retained A → B → C → D switches', async () => {
+    const workspaceIds = ['workspace-a', 'workspace-b', 'workspace-c', 'workspace-d'];
+    OwnershipResizeObserver.live.clear();
+    OwnershipIntersectionObserver.live.clear();
+    vi.stubGlobal('ResizeObserver', OwnershipResizeObserver);
+    vi.stubGlobal('IntersectionObserver', OwnershipIntersectionObserver);
+    const listenerTracker = trackChatWindowListeners();
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+    mocks.agentMessages.set([searchableAssistant('resource-message', 'resource ownership')]);
+    mocks.draftGet.mockImplementation((workspaceId: string) =>
+      workspaceId === 'workspace-c'
+        ? Promise.reject(new Error('expected restore failure'))
+        : Promise.resolve(null),
+    );
+
+    const view = render(RetainedChatPanelOwnershipHarness, {
+      props: {
+        activeWorkspaceId: workspaceIds[0],
+        openWorkspaceIds: workspaceIds,
+        workspaceEntityIds: workspaceIds,
+      },
+    });
+    const settle = async () => {
+      await tick();
+      for (let pass = 0; pass < 4; pass += 1) {
+        await Promise.resolve();
+        await tick();
+      }
+      for (let pass = 0; pass < 8 && frames.length > 0; pass += 1) {
+        flushFrame();
+        await tick();
+      }
+      for (let pass = 0; pass < 4; pass += 1) {
+        await Promise.resolve();
+        await tick();
+      }
+    };
+    const ownership = () => {
+      const clearedTimers = new Set(clearTimeoutSpy.mock.calls.map(([handle]) => handle));
+      const timerDelays = setTimeoutSpy.mock.calls
+        .map(([, delay], index) => ({
+          handle: setTimeoutSpy.mock.results[index]?.value,
+          delay: Number(delay ?? 0),
+        }))
+        .filter(({ handle, delay }) => delay > 0 && !clearedTimers.has(handle))
+        .map(({ delay }) => delay)
+        .sort((a, b) => a - b);
+      return {
+        resizeObservers: OwnershipResizeObserver.live.size,
+        intersectionObservers: OwnershipIntersectionObserver.live.size,
+        intersectionTargets: [...OwnershipIntersectionObserver.live].reduce(
+          (total, observer) => total + observer.observed.size,
+          0,
+        ),
+        windowListeners: listenerTracker.count(),
+        ipcListeners: mocks.ipcListenerCleanups.filter((stop) => stop.mock.calls.length === 0)
+          .length,
+        readableSubscriptions: mocks.activeReadableSubscriptions(),
+        chatSubscriptionLeases: workspaceIds.reduce(
+          (total, workspaceId) => total + chatInterestLeaseCount(`agent-${workspaceId}`),
+          0,
+        ),
+        timerDelays,
+      };
+    };
+    const surfaceCount = () =>
+      view.container.querySelectorAll('[data-retained-workspace-surface]').length;
+    const switchTo = async (
+      activeWorkspaceId: string,
+      openWorkspaceIds = workspaceIds,
+      workspaceEntityIds = workspaceIds,
+    ) => {
+      await view.rerender({ activeWorkspaceId, openWorkspaceIds, workspaceEntityIds });
+      await settle();
+    };
+
+    try {
+      await settle();
+      expect(surfaceCount()).toBe(1);
+      const singleSurfaceOwnership = ownership();
+      expect(singleSurfaceOwnership).toMatchObject({
+        resizeObservers: expect.any(Number),
+        intersectionObservers: 1,
+        intersectionTargets: 1,
+        windowListeners: expect.any(Number),
+        ipcListeners: 3,
+        chatSubscriptionLeases: 1,
+      });
+      expect(singleSurfaceOwnership.resizeObservers).toBeGreaterThan(0);
+      expect(singleSurfaceOwnership.windowListeners).toBeGreaterThan(0);
+      expect(singleSurfaceOwnership.readableSubscriptions).toBeGreaterThan(0);
+
+      await switchTo('workspace-b');
+      expect(surfaceCount()).toBe(2);
+      const activePlusOneOwnership = ownership();
+
+      await switchTo('workspace-c');
+      expect(surfaceCount()).toBe(2);
+      expect(ownership()).toEqual(activePlusOneOwnership);
+
+      const activeEditor = view.container.querySelector<HTMLInputElement>(
+        '[data-retained-workspace-active="true"] [data-testid="mock-rich-input-editor"]',
+      );
+      expect(activeEditor).not.toBeNull();
+      await fireEvent.input(activeEditor!, { target: { value: 'flush before eviction' } });
+      await tick();
+      expect(ownership().timerDelays.length).toBeGreaterThan(
+        activePlusOneOwnership.timerDelays.length,
+      );
+
+      await switchTo('workspace-d');
+      expect(surfaceCount()).toBe(2);
+      expect(ownership()).toEqual(activePlusOneOwnership);
+      expect(mocks.draftSet).toHaveBeenCalledWith(
+        'workspace-c',
+        'agent-workspace-c',
+        'flush before eviction',
+        undefined,
+      );
+
+      await switchTo('workspace-d', ['workspace-a', 'workspace-b', 'workspace-d']);
+      expect(surfaceCount()).toBe(1);
+      expect(ownership()).toEqual(singleSurfaceOwnership);
+
+      await switchTo('workspace-a', ['workspace-a', 'workspace-b', 'workspace-d']);
+      expect(surfaceCount()).toBe(2);
+      expect(ownership()).toEqual(activePlusOneOwnership);
+
+      await switchTo(
+        'workspace-a',
+        ['workspace-a', 'workspace-b'],
+        ['workspace-a', 'workspace-b', 'workspace-c'],
+      );
+      expect(surfaceCount()).toBe(1);
+      expect(ownership()).toEqual(singleSurfaceOwnership);
+    } finally {
+      listenerTracker.restore();
+      view.unmount();
+    }
+  });
+
   it('keeps an active response running on Escape and stops it from the visible control', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentSessionIsStreaming.set(true);
@@ -816,6 +1077,7 @@ describe('ChatPanel mounted lifecycle', () => {
       const newer = view.container.querySelector('[data-lazy-turn-key="assistant-18"]')!;
 
       observer.fire([{ target: older, isIntersecting: true }]);
+      flushFrame();
       await tick();
       // The frontier is a retention barrier, never a hydration trigger: only
       // the intersecting row hydrates; unseen newer rows stay placeholders.
@@ -823,6 +1085,7 @@ describe('ChatPanel mounted lifecycle', () => {
       expect(newer.getAttribute('data-lazy-visible')).toBe('false');
 
       observer.fire([{ target: newer, isIntersecting: true }]);
+      flushFrame();
       await tick();
       expect(newer.getAttribute('data-lazy-visible')).toBe('true');
 
@@ -831,6 +1094,7 @@ describe('ChatPanel mounted lifecycle', () => {
         { target: older, isIntersecting: false },
         { target: newer, isIntersecting: false },
       ]);
+      flushFrame();
       await vi.advanceTimersByTimeAsync(260);
       await tick();
 
