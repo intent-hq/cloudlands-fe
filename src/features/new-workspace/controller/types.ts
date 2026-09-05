@@ -149,6 +149,7 @@ export const CONTROLLER_EVENT_TYPES = [
   'draft.conflict',
   'draft.promoted',
   'draft.deleted',
+  'capabilities.recheckRequested',
   'capability.result',
   'start.requested',
   'promote.issued',
@@ -190,6 +191,7 @@ export type ControllerEvent =
       initialAgentId?: string;
     } & Generated)
   | ({ type: 'draft.deleted'; draftId: string } & Generated)
+  | { type: 'capabilities.recheckRequested'; capabilities: Capability[] }
   | ({ type: 'capability.result'; capability: Capability; status: CapabilityStatus } & Generated)
   | { type: 'start.requested'; requiredCapabilities: Capability[] }
   | { type: 'promote.issued'; operationKey: string }

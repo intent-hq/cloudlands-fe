@@ -15,9 +15,16 @@ export function effectsFor(state: ControllerState): ControllerEffect[] {
         : [];
     case 'pristine':
     case 'editing': {
+      const probes = (Object.keys(state.capabilities) as Capability[])
+        .filter((capability) => state.capabilities[capability] === 'pending')
+        .map((capability) => ({
+          type: 'probeCapability' as const,
+          generation: state.generation,
+          capability,
+        }));
       if (!state.draft) {
         return state.creationIssued
-          ? []
+          ? probes
           : [
               {
                 type: 'createDraft',
@@ -26,6 +33,7 @@ export function effectsFor(state: ControllerState): ControllerEffect[] {
                 inputVersion: state.inputVersion,
                 input: state.input,
               },
+              ...probes,
             ];
       }
       if (
@@ -42,9 +50,10 @@ export function effectsFor(state: ControllerState): ControllerEffect[] {
             inputVersion: state.inputVersion,
             input: state.input,
           },
+          ...probes,
         ];
       }
-      return [];
+      return probes;
     }
     case 'starting': {
       const effects: ControllerEffect[] = [];

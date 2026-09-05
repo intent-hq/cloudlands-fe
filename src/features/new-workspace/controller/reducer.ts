@@ -383,6 +383,18 @@ export function reduceDetailed(
       return state.draftId === event.draftId
         ? handled(failed(state, 'deleted', m.newWorkspace_recovery_draftDeleted_error(), null))
         : ignored(state);
+    case 'capabilities.recheckRequested':
+      return state.phase === 'pristine' || state.phase === 'editing' || state.phase === 'starting'
+        ? handled({
+            ...state,
+            capabilities: {
+              ...state.capabilities,
+              ...Object.fromEntries(
+                event.capabilities.map((capability) => [capability, 'pending']),
+              ),
+            },
+          })
+        : ignored(state);
     case 'capability.result':
       return handled(updateCapability(state, event));
     case 'start.requested': {

@@ -114,6 +114,8 @@ function sampleEvent(type: ControllerEventType): ControllerEvent {
       };
     case 'draft.deleted':
       return { type, generation: GENERATION, draftId: 'draft-1' };
+    case 'capabilities.recheckRequested':
+      return { type, capabilities: ['git', 'node', 'github'] };
     case 'capability.result':
       return { type, generation: GENERATION, capability: 'provider', status: 'ready' };
     case 'start.requested':
@@ -247,6 +249,22 @@ describe('new-workspace controller', () => {
       expect(state.input.intentText).toBe('Never clear this');
     }
     expect(state.phase).toBe('promoting');
+  });
+
+  it('rechecks host capabilities after PATH changes without touching acknowledged input', () => {
+    let state = restore(draft({ intentText: 'Keep this', attachments: [{ id: 'file-1' }] }));
+    state = reduce(state, {
+      type: 'capabilities.recheckRequested',
+      capabilities: ['git', 'node', 'github'],
+    });
+
+    expect(effectsFor(state)).toEqual([
+      { type: 'probeCapability', generation: GENERATION, capability: 'git' },
+      { type: 'probeCapability', generation: GENERATION, capability: 'node' },
+      { type: 'probeCapability', generation: GENERATION, capability: 'github' },
+    ]);
+    expect(state.input).toMatchObject({ intentText: 'Keep this', attachments: [{ id: 'file-1' }] });
+    expect(hasUnsavedInput(state)).toBe(false);
   });
 
   it('rejects late async results from the previous backend generation', () => {

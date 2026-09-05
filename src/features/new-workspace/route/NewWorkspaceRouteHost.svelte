@@ -92,6 +92,11 @@
         source: { kind: 'newFolder', parentPath: $defaultParentPath$, name },
       })}
     onProviderSelected={selectProvider}
+    onRecheckCapabilities={() =>
+      routeController.dispatch({
+        type: 'capabilities.recheckRequested',
+        capabilities: ['git', 'node', 'github'],
+      })}
     onAddFiles={() => fileInput?.click()}
   />
 </div>
