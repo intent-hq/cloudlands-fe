@@ -160,7 +160,7 @@ describe('IntentMarkLoader', () => {
         loops.every(({ frames }) =>
           frames.every((frame) =>
             Object.keys(frame).every((property) =>
-              ['offset', 'opacity', 'transform'].includes(property),
+              ['easing', 'offset', 'opacity', 'transform'].includes(property),
             ),
           ),
         ),
@@ -257,7 +257,7 @@ describe('IntentMarkLoader', () => {
     expect(secondLoops.every(({ cancel }) => cancel.mock.calls.length === 0)).toBe(true);
   });
 
-  it('samples Bloom sparsely with compositor properties and no JS frame loop', () => {
+  it('samples every Bloom frame with compositor properties and no JS frame loop', () => {
     expect(intentMarkMotionTiming).toMatchObject({
       settleMs: 160,
       bloomMs: 61_000 / 30,
@@ -267,8 +267,11 @@ describe('IntentMarkLoader', () => {
     render(IntentMarkLoader, { props: { variant: 'bloom', playing: true } });
     completeTransition();
     const loops = records.slice(-5);
-    expect(loops.every(({ frames }) => frames.length === 11)).toBe(true);
+    expect(loops.every(({ frames }) => frames.length === 63)).toBe(true);
     expect(loops.every(({ options }) => options.duration === 61_000 / 30)).toBe(true);
+    expect(
+      loops.every(({ frames }) => frames.every(({ easing }) => easing === 'steps(1, end)')),
+    ).toBe(true);
     expect(
       loops.every(({ frames }) =>
         frames.every(

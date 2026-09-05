@@ -56,7 +56,6 @@ interface VariantGeometry {
   pathData: string;
   strokeWidth: number;
   transformOrigin: string;
-  armTransformOrigin: string;
 }
 
 function variantGeometry(variant: IntentMarkVariant, index: number): VariantGeometry {
@@ -65,7 +64,6 @@ function variantGeometry(variant: IntentMarkVariant, index: number): VariantGeom
     pathData: bloom ? bloomPathData[index] : legacyPathData[index],
     strokeWidth: bloom ? 18.45088 : 18,
     transformOrigin: bloom ? '128px 101px' : '128px 96px',
-    armTransformOrigin: bloom ? '50% 48.557692%' : '50% 46.153846%',
   };
 }
 
@@ -88,7 +86,7 @@ function applyVariantGeometry(
   path.setAttribute('d', geometry.pathData);
   path.style.strokeWidth = String(geometry.strokeWidth);
   path.style.transformOrigin = geometry.transformOrigin;
-  arm.style.transformOrigin = geometry.armTransformOrigin;
+  arm.style.transformOrigin = '0px 0px';
 }
 
 interface LottieScalarKeyframe {
@@ -154,7 +152,33 @@ const bloomArmTrimEnd: readonly LottieScalarKeyframe[] = [
   { frame: 43, value: 100, incoming: [0, 1], outgoing: [0.001, 0.141] },
   { frame: 65, value: 50 },
 ];
-const bloomMotionSampleFrames = [0, 10, 20, 25, 30, 35, 40, 50, 55.999, 56, 61] as const;
+const legacyTrimOrigins = [
+  [76, 8],
+  [180, 8],
+  [16, 104],
+  [240, 104],
+  [128, 126],
+] as const;
+const bloomTrimOrigins = [
+  [107.22094, 77.541115],
+  [151.413589, 77.625977],
+  [100.004395, 117.659111],
+  [155.99559, 117.659126],
+  [128, 171.838196],
+] as const;
+
+function compositedTransform(
+  variant: IntentMarkVariant,
+  index: number,
+  rotation = 0,
+  scale = 1,
+  visible = 1,
+): string {
+  const bloom = variant === 'bloom';
+  const centerY = bloom ? 101 : 96;
+  const [trimX, trimY] = (bloom ? bloomTrimOrigins : legacyTrimOrigins)[index];
+  return `translate(128px, ${centerY}px) rotate(${rotation}deg) scale(${scale}) translate(-128px, ${-centerY}px) translate(${trimX}px, ${trimY}px) scale(${visible}) translate(${-trimX}px, ${-trimY}px)`;
+}
 
 function cubicCoordinate(progress: number, first: number, second: number): number {
   const inverse = 1 - progress;
@@ -243,18 +267,21 @@ function bloomPose(index: number, frame: number): Keyframe {
       sampleLottieTrack(bloomArmRotations[sourceIndex], frame),
   );
   return {
-    opacity: frame < bloomLayerOutFrame ? visibility : 0,
-    transform: `translate(0px, 0px) rotate(${rotation}deg) scale(1)`,
+    opacity: frame < bloomLayerOutFrame ? 1 : 0,
+    transform: compositedTransform('bloom', index, rotation, 1, visibility),
   };
 }
 
 function bloomFrames(index: number): Keyframe[] {
-  return bloomMotionSampleFrames.map((frame) => {
+  const sourceFrames = Array.from({ length: bloomFrameCount + 1 }, (_, frame) => frame);
+  sourceFrames.splice(bloomLayerOutFrame, 0, bloomLayerOutFrame - 0.001);
+  return sourceFrames.map((frame) => {
     const pose = bloomPose(index, frame);
     return {
       opacity: pose.opacity,
       transform: pose.transform,
       offset: frame / bloomFrameCount,
+      easing: 'steps(1, end)',
     };
   });
 }
@@ -266,15 +293,15 @@ function twistFrames(index: number): Keyframe[] {
   const transitionOffset = intentMarkMotionTiming.settleMs / intentMarkMotionTiming.twistMs;
   const loopNeutralFrame: Keyframe = {
     opacity: neutralFrame.opacity,
-    transform: neutralFrame.transform,
+    transform: compositedTransform('twist', index),
   };
   const sourceEntryFrame: Keyframe = {
     opacity: 0.12,
-    transform: `translate(0px, 0px) rotate(${direction * 12}deg) scale(0.72)`,
+    transform: compositedTransform('twist', index, direction * 12, 0.72, 0.16),
   };
   const sourceExitFrame: Keyframe = {
     opacity: 0.12,
-    transform: `translate(0px, 0px) rotate(${-direction * 10}deg) scale(0.68)`,
+    transform: compositedTransform('twist', index, -direction * 10, 0.68, 0.08),
   };
   return [
     { ...loopNeutralFrame, offset: 0 },
@@ -311,9 +338,10 @@ function interpolateTransform(from: string, to: string, progress: number): strin
     [...transform.matchAll(/-?[\d.]+/g)].map(([value]) => Number(value));
   const start = values(from);
   const end = values(to);
-  if (start.length !== 4 || end.length !== 4) return progress < 0.5 ? from : to;
+  if (start.length !== end.length) return progress < 0.5 ? from : to;
   const at = (index: number) => rounded(start[index] + (end[index] - start[index]) * progress);
-  return `translate(${at(0)}px, ${at(1)}px) rotate(${at(2)}deg) scale(${at(3)})`;
+  let index = 0;
+  return to.replace(/-?[\d.]+/g, () => String(at(index++)));
 }
 
 function loopPoseAt(variant: IntentMarkVariant, index: number, phase: number): Keyframe {
@@ -448,6 +476,7 @@ export function createIntentMarkMotion(
       ...variantFrame(variant, index),
       ...neutralFrame,
       ...loopPoseAt(variant, index, phase),
+      transformOrigin: '0px 0px',
     }));
     cancelAnimations();
     activeVariant = undefined;
