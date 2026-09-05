@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.137.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.137.0...v2.137.1) (2026-09-05)
+
+
+### 🐛 Bug Fixes
+
+* **hud:** gate background agents from the summary isBackground flag ([#2111](https://github.com/intent-hq/cloudlands-fe/issues/2111)) ([89e8460](https://github.com/intent-hq/cloudlands-fe/commit/89e8460b17ef3646bb7b930ed0a867c7ffe0e594))
+
 ## [2.137.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.136.3...v2.137.0) (2026-09-05)
 
 
