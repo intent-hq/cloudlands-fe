@@ -30,6 +30,8 @@
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
     SUBSCRIPTION_ICON_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_CLASS,
+    SUBSCRIPTION_WAKE_BODY_PADDING_CLASS,
     EVENT_WAKEUP_IN_THREAD_SPACING_CLASS,
     safeSubscriptionRowTransition,
     safeSubscriptionSlide,
@@ -464,11 +466,17 @@
                 />
               </div>
             {:else}
-              <Fa
-                icon={faBell}
-                size={14}
-                class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
-              />
+              <span
+                class={SUBSCRIPTION_LEADING_COLUMN_CLASS}
+                aria-hidden="true"
+                data-testid="event-wakeup-leading-column"
+              >
+                <Fa
+                  icon={faBell}
+                  size={14}
+                  class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                />
+              </span>
             {/if}
             <button
               type="button"
@@ -521,7 +529,7 @@
           {#if detailsOpen}
             <div
               id={detailsId}
-              class="w-full min-w-0 max-w-full overflow-hidden border-t border-border px-3 py-2"
+              class="w-full min-w-0 max-w-full overflow-hidden border-t border-border {SUBSCRIPTION_WAKE_BODY_PADDING_CLASS}"
               role="region"
               aria-label={m.chat_eventWakeup_subscriptionWakeup_tooltip()}
               data-testid="event-wakeup-details"

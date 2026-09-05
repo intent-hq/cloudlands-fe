@@ -14,7 +14,7 @@ const expected: Array<
   ['blocked', 'icon', 'xmark', 'text-danger', 'Blocked'],
   ['needs_attention', 'icon', 'circle-question', 'text-warning', 'Needs attention'],
   ['in_progress', 'dot', null, 'workspace-status-color-active', 'In progress'],
-  ['waiting', 'icon', 'clock', 'text-muted-foreground', 'Waiting'],
+  ['waiting', 'icon', 'hourglass', 'text-muted-foreground', 'Waiting'],
   ['unread', 'dot', null, 'workspace-status-color-unread', 'Unread'],
   ['not_started', 'dot', null, 'text-muted-foreground/35', 'Not started'],
   ['idle', 'dot', null, 'text-muted-foreground/35', 'Idle'],

@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faHourglassHalf, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
+  import { faHourglass, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
   import { navigateToNote, findSourcePanelId } from '$lib/utils/workspace-navigation';
   import type { NoteId } from '$shared/types';
@@ -77,7 +77,7 @@
       class="shrink-0 inline-flex items-center"
       title={m.workspace_taskRelationLink_unmet_tooltip()}
     >
-      <Fa icon={faHourglassHalf} size="xs" />
+      <Fa icon={faHourglass} size="xs" />
     </span>
   {/if}
 </button>

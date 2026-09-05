@@ -2,9 +2,9 @@ import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import {
   faCircleCheck,
   faCircleQuestion,
-  faClock,
   faCodeMerge,
   faCodePullRequest,
+  faHourglass,
   faHourglassHalf,
   faTriangleExclamation,
   faXmark,
@@ -52,7 +52,7 @@ const VISUALS: Record<
     icon: null,
     className: 'workspace-status-color-active',
   },
-  waiting: { visual: 'icon', icon: faClock, className: 'text-muted-foreground' },
+  waiting: { visual: 'icon', icon: faHourglass, className: 'text-muted-foreground' },
   unread: {
     visual: 'dot',
     icon: null,

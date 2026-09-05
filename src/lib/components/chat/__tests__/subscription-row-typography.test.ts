@@ -14,12 +14,7 @@ const readable = <T>(value: T) => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  // BrowserTabsRow reads the real panel-layout selectors, which expect the
-  // panelLayout slice to exist on the store state.
-  return createAppStoreMockModule({
-    state: () => ({ panelLayout: { byWorkspaceId: {} } }),
-    dispatch: dispatchMock,
-  });
+  return createAppStoreMockModule({ state: () => ({}), dispatch: dispatchMock });
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: () =>
@@ -82,6 +77,8 @@ vi.mock('$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-sele
     ]),
   selectAgentSubscriptionStatuses: () =>
     readable({ 'agent-a': 'running', 'agent-b': 'completed', 'agent-c': 'completed' }),
+  selectAgentSubscriptionLane: () =>
+    readable({ visible: true, count: 1, participantAgentIds: ['agent-a'] }),
   selectDelegationGroups: () => readable([]),
   selectWokenUpInfo: () => readable(null),
   selectWaitingState: () => readable('waiting'),
@@ -255,5 +252,8 @@ describe('subscription row typography', () => {
       expect(tone(icon)).toEqual(tone(label));
       expect(tone(icon).opacity).toBe('1');
     }
+    expect(tone(screen.getAllByTestId('agent-card-name')[0])).toEqual(
+      tone(screen.getByTestId('one-shot-summary-title')),
+    );
   });
 });
