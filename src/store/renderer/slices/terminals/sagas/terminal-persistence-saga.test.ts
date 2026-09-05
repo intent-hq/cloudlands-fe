@@ -232,6 +232,36 @@ describe('terminalPersistenceSaga', () => {
     await task.toPromise();
   });
 
+  it('drops a stored placement removed before the first load instead of resurrecting it', async () => {
+    storage.values.set(
+      WORKSPACE_STATE_STORAGE_KEY,
+      JSON.stringify({
+        'ws-1': {
+          isOpen: false,
+          activeTerminalId: null,
+          placements: { 'term-1': 'panel', 'script-1': 'panel' },
+        },
+      }),
+    );
+    const { getTerminals, send, task } = startSaga();
+    await settle();
+    send(addTerminal('ws-1', 'term-1'));
+    send(removeTerminal('ws-1', 'term-1'));
+    await settle();
+
+    expect(JSON.parse(storage.values.get(WORKSPACE_STATE_STORAGE_KEY) ?? '{}')).toEqual({
+      'ws-1': { isOpen: false, activeTerminalId: null, placements: { 'script-1': 'panel' } },
+    });
+
+    send(loadWorkspaceTerminals('ws-1', [], null, 'boot-1'));
+    await settle();
+
+    expect(getTerminals().workspaces['ws-1'].placements).toEqual({ 'script-1': 'panel' });
+    expect(getTerminals().workspacePlacements['ws-1']).toBeUndefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('hydrates per-workspace heights from workspace state and skips invalid ones', async () => {
     storage.values.set(STORAGE_KEY, '64');
     storage.values.set(

@@ -213,5 +213,30 @@ describe('terminals selectors', () => {
       expect(selectTerminalPlacement.select(state, WS, 'term-1')).toBe('panel');
       expect(selectTerminalPlacement.select(state, WS, 'script-1')).toBe('overlay');
     });
+
+    it('falls back to the boot-hydrated placement before the first terminal load', () => {
+      const terminals = terminalState([], null, { 'term-1': 'overlay' });
+      const state = {
+        terminals: {
+          ...terminals,
+          workspacePlacements: { [WS]: { 'term-1': 'panel', 'script-1': 'panel' } },
+        },
+      } as unknown as StoreState;
+
+      expect(selectTerminalPlacement.select(state, WS, 'term-1')).toBe('overlay');
+      expect(selectTerminalPlacement.select(state, WS, 'script-1')).toBe('panel');
+      expect(selectTerminalPlacement.select(state, WS, 'script-2')).toBe('overlay');
+    });
+
+    it('reads the boot-hydrated placement for a workspace with no terminal state', () => {
+      const state = {
+        terminals: {
+          ...terminalState([]),
+          workspacePlacements: { 'ws-other': { 'script-1': 'panel' } },
+        },
+      } as unknown as StoreState;
+
+      expect(selectTerminalPlacement.select(state, 'ws-other', 'script-1')).toBe('panel');
+    });
   });
 });

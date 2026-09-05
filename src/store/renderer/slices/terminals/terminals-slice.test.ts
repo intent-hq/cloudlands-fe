@@ -912,6 +912,29 @@ describe('terminalsReducer', () => {
       state = terminalsReducer(state, loadWorkspaceTerminals(WS, terminals, null, 'boot-1'));
       expect(getWs(state).placements).toEqual({});
     });
+
+    it('prunes a removed terminal from the pending hydrated entry before the first load', () => {
+      let state = terminalsReducer(
+        initialState,
+        hydratePlacements({ [WS]: { t1: 'panel', s1: 'panel' }, 'ws-other': { t1: 'panel' } }),
+      );
+      state = terminalsReducer(state, addTerminal(WS, 't1'));
+      state = terminalsReducer(state, removeTerminal(WS, 't1'));
+      expect(state.workspacePlacements).toEqual({
+        [WS]: { s1: 'panel' },
+        'ws-other': { t1: 'panel' },
+      });
+      state = terminalsReducer(state, loadWorkspaceTerminals(WS, [], null, 'boot-1'));
+      expect(getWs(state).placements).toEqual({ s1: 'panel' });
+    });
+
+    it('leaves the pending hydrated entry untouched when removing an unrelated terminal', () => {
+      let state = terminalsReducer(initialState, hydratePlacements({ [WS]: { s1: 'panel' } }));
+      state = terminalsReducer(state, addTerminal(WS, 't1'));
+      const before = state.workspacePlacements;
+      state = terminalsReducer(state, removeTerminal(WS, 't1'));
+      expect(state.workspacePlacements).toBe(before);
+    });
   });
 
   describe('placement (last surface a terminal/script was shown on)', () => {

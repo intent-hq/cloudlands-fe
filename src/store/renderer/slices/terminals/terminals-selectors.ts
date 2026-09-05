@@ -84,10 +84,17 @@ export const selectWorkspaceTerminalState = store.createSelector((state, wsId: s
 /**
  * Surface a terminal (`id` = terminal id) or script output (`id` = script id)
  * was last shown on in the workspace; unknown ids read as `'overlay'`.
+ * In-memory placements win; before the workspace's first terminal load the
+ * boot-hydrated entry (not yet consumed) answers so an early click on a
+ * script does not fall back to the overlay default.
  */
 export const selectTerminalPlacement = store.createSelector(
   (state, wsId: string, id: string): TerminalPlacement => {
-    return getWsById(state, wsId).placements[id] ?? DEFAULT_TERMINAL_PLACEMENT;
+    return (
+      getWsById(state, wsId).placements[id] ??
+      state.terminals.workspacePlacements[wsId]?.[id] ??
+      DEFAULT_TERMINAL_PLACEMENT
+    );
   },
 );
 

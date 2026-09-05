@@ -446,13 +446,22 @@ terminalsReducer.with(removeTerminal, (state, { payload: [wsId, termId] }) => {
   // terminals creates a stuck state.
   const isOpen = newTerminals.ids.length > 0 ? ws.isOpen : false;
 
-  return setWs(state, wsId, {
+  const next = setWs(state, wsId, {
     ...ws,
     terminals: newTerminals,
     activeTerminalId: newActiveId,
     isOpen,
     placements: withoutPlacement(ws.placements, termId),
   });
+  const hydrated = state.workspacePlacements[wsId];
+  if (!hydrated || !(termId in hydrated)) return next;
+  return {
+    ...next,
+    workspacePlacements: {
+      ...next.workspacePlacements,
+      [wsId]: withoutPlacement(hydrated, termId),
+    },
+  };
 });
 terminalsReducer.with(setTerminalOverlayHeight, (state, { payload: [wsId, height] }) => {
   if (!Number.isFinite(height)) return state;
