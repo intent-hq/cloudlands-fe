@@ -81,12 +81,13 @@ afterEach(cleanup);
 
 describe('diagram presentation integration', () => {
   it('keeps the shared surface borderless and transparent at runtime', () => {
-    const result = render(MermaidBlockNodeView, { props: noteProps(diagram) });
+    const result = render(MermaidBlockNodeView, { props: noteProps(diagram, true, true) });
     const surface = result.container.querySelector<HTMLElement>('[data-diagram-presentation]')!;
     const surfaceStyle = getComputedStyle(surface);
 
     expect(surfaceStyle.borderTopStyle).toBe('none');
     expect(surfaceStyle.backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    expect(['', 'none']).toContain(surfaceStyle.boxShadow);
   });
 
   it.each([
@@ -96,6 +97,7 @@ describe('diagram presentation integration', () => {
     const completed = render(MessageContent, { props: { content: [block] } });
     const completedSurface = completed.container.querySelector('[data-diagram-presentation]');
     expect(completedSurface?.getAttribute('data-diagram-kind')).toBe(kind);
+    expect(completed.getByRole('button', { name: 'Diagram actions' })).toBeTruthy();
     cleanup();
 
     const streaming = render(StreamingMessageContent, {
@@ -103,6 +105,7 @@ describe('diagram presentation integration', () => {
     });
     const streamingSurface = streaming.container.querySelector('[data-diagram-presentation]');
     expect(streamingSurface?.getAttribute('data-diagram-kind')).toBe(kind);
+    expect(streaming.getByRole('button', { name: 'Diagram actions' })).toBeTruthy();
   });
 
   it('keeps the streaming surface node stable while content updates', async () => {
@@ -124,6 +127,9 @@ describe('diagram presentation integration', () => {
     const editableView = within(editable.container);
 
     expect(editable.container.querySelector('[data-diagram-kind="mermaid"]')).toBeTruthy();
+    const exportMenu = editableView.getByRole('button', { name: 'Diagram actions' });
+    exportMenu.focus();
+    expect(document.activeElement).toBe(exportMenu);
     const editableSurface = editable.container.querySelector('[data-diagram-presentation]');
     expect(editableView.getByRole('button', { name: 'Fullscreen' })).toBeTruthy();
     await fireEvent.click(editableView.getByRole('button', { name: 'Edit code' }));
@@ -144,5 +150,6 @@ describe('diagram presentation integration', () => {
     expect(surface?.getAttribute('data-diagram-kind')).toBe('custom');
     expect(result.container.querySelector('[data-diagram-presentation-header]')).toBeTruthy();
     expect(result.container.querySelector('[data-diagram-presentation-content]')).toBeTruthy();
+    expect(result.getByRole('button', { name: 'Diagram actions' })).toBeTruthy();
   });
 });

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import DiagramActionsMenu from './DiagramActionsMenu.svelte';
 
   interface Props {
     kind: 'mermaid' | 'custom';
@@ -7,9 +8,20 @@
     header?: Snippet;
     actions?: Snippet;
     selected?: boolean;
+    exportable?: boolean;
+    fileName?: string;
   }
 
-  let { kind, children, header, actions, selected = false }: Props = $props();
+  let {
+    kind,
+    children,
+    header,
+    actions,
+    selected = false,
+    exportable = true,
+    fileName,
+  }: Props = $props();
+  let contentElement: HTMLDivElement | undefined = $state();
 </script>
 
 <section
@@ -24,13 +36,20 @@
     </header>
   {/if}
 
-  {#if actions}
+  {#if actions || exportable}
     <div class="diagram-presentation-actions" data-diagram-presentation-actions>
-      {@render actions()}
+      {@render actions?.()}
+      {#if exportable}
+        <DiagramActionsMenu container={contentElement} {fileName} />
+      {/if}
     </div>
   {/if}
 
-  <div class="diagram-presentation-content" data-diagram-presentation-content>
+  <div
+    bind:this={contentElement}
+    class="diagram-presentation-content"
+    data-diagram-presentation-content
+  >
     {@render children()}
   </div>
 </section>
@@ -42,17 +61,17 @@
     width: fit-content;
     max-width: 100%;
     min-width: min(100%, 16rem);
-    margin-block: var(--space-4);
-    margin-inline: auto;
-    overflow: hidden;
+    margin: 24px auto;
+    overflow: visible;
     border: 0;
     background: transparent;
     color: hsl(var(--card-foreground));
     box-shadow: none;
   }
 
-  .diagram-presentation.selected {
-    box-shadow: 0 0 0 1px hsl(var(--ring) / 0.28);
+  :global([data-diagram-presentation] [data-diagram-presentation]) {
+    margin-top: 0;
+    margin-bottom: 0;
   }
 
   .diagram-presentation-header {
