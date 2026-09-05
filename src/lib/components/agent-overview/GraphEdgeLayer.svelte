@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { GraphEdge, GraphNode } from './types';
-  import { EDGE_STYLES, GRAPH_ACTIVE_ACCENT, GRAPH_NODE_DIMENSIONS } from './constants';
+  import { EDGE_STYLES, GRAPH_NODE_DIMENSIONS } from './constants';
   import {
     activityMotion,
     edgeAnimationDuration,
@@ -19,6 +19,7 @@
     edges: GraphEdge[];
     nodes: GraphNode[];
     positions: Map<string, GraphPosition>;
+    focusNodeId?: string | null;
     spotlightNodeId?: string | null;
     playbackSpeed?: PlaybackSpeed;
     onMessageArrival?: (targetId: string) => void;
@@ -28,12 +29,14 @@
     edges,
     nodes,
     positions,
+    focusNodeId = null,
     spotlightNodeId = null,
     playbackSpeed = 1,
     onMessageArrival = () => {},
   }: Props = $props();
 
   const nodeById = $derived(new Map(nodes.map((node) => [node.id, node])));
+  const activeFocusNodeId = $derived(focusNodeId ?? spotlightNodeId);
 
   let travelingEdges = $state<GraphEdge[]>([]);
   const seenMessageEvents = new Set<string>();
@@ -57,10 +60,17 @@
 
   function opacityFor(edge: GraphEdge): number {
     const style = EDGE_STYLES[edge.type] ?? EDGE_STYLES.default;
-    if (!spotlightNodeId) return style.opacity;
-    return edge.sourceId === spotlightNodeId || edge.targetId === spotlightNodeId
+    if (!activeFocusNodeId) return style.opacity;
+    return edge.sourceId === activeFocusNodeId || edge.targetId === activeFocusNodeId
       ? Math.min(1, style.opacity + 0.28)
       : 0.12;
+  }
+
+  function isHighlighted(edge: GraphEdge): boolean {
+    return (
+      activeFocusNodeId !== null &&
+      (edge.sourceId === activeFocusNodeId || edge.targetId === activeFocusNodeId)
+    );
   }
 
   function isActiveNow(edge: GraphEdge): boolean {
@@ -77,13 +87,6 @@
       target?.type === 'task' &&
       target.state === 'in_progress'
     );
-  }
-
-  function arrowAngle(source: GraphPosition, target: GraphPosition): number {
-    const dx = target.x - source.x;
-    const dy = target.y - source.y;
-    if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 0 : 180;
-    return dy >= 0 ? 90 : -90;
   }
 
   function completeMessageTravel(element: SVGAnimateMotionElement, initialEdge: GraphEdge) {
@@ -135,17 +138,34 @@
     };
   }
 
-  function pathFor(source: GraphPosition, target: GraphPosition): string {
+  function edgeCurve(edgeId: string): number {
+    let hash = 2166136261;
+    for (let index = 0; index < edgeId.length; index += 1) {
+      hash ^= edgeId.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    const unit = (hash >>> 0) / 4294967296;
+    const direction = unit < 0.5 ? -1 : 1;
+    return direction * (0.15 + (unit % 0.5) * 0.2);
+  }
+
+  function pathFor(edge: GraphEdge, source: GraphPosition, target: GraphPosition): string {
     const dx = target.x - source.x;
     const dy = target.y - source.y;
-    if (Math.abs(dx) >= Math.abs(dy)) {
-      const bend = Math.min(96, Math.max(24, Math.abs(dx) * 0.36));
-      const direction = Math.sign(dx) || 1;
-      return `M ${source.x} ${source.y} C ${source.x + bend * direction} ${source.y}, ${target.x - bend * direction} ${target.y}, ${target.x} ${target.y}`;
-    }
-    const bend = Math.min(96, Math.max(24, Math.abs(dy) * 0.36));
-    const direction = Math.sign(dy) || 1;
-    return `M ${source.x} ${source.y} C ${source.x} ${source.y + bend * direction}, ${target.x} ${target.y - bend * direction}, ${target.x} ${target.y}`;
+    const distance = Math.hypot(dx, dy);
+    if (distance === 0) return `M ${source.x} ${source.y}`;
+    const offset = distance * edgeCurve(edge.id);
+    const perpendicularX = (-dy / distance) * offset;
+    const perpendicularY = (dx / distance) * offset;
+    const first = {
+      x: source.x + dx / 3 + perpendicularX,
+      y: source.y + dy / 3 + perpendicularY,
+    };
+    const second = {
+      x: source.x + (dx * 2) / 3 + perpendicularX,
+      y: source.y + (dy * 2) / 3 + perpendicularY,
+    };
+    return `M ${source.x} ${source.y} C ${first.x} ${first.y}, ${second.x} ${second.y}, ${target.x} ${target.y}`;
   }
 
   function labelFor(edge: GraphEdge): string | null {
@@ -168,12 +188,14 @@
     {@const target = positions.get(edge.targetId)}
     {@const style = EDGE_STYLES[edge.type] ?? EDGE_STYLES.default}
     {@const working = isWorkingEdge(edge)}
-    {@const stroke = isActiveNow(edge) || working ? GRAPH_ACTIVE_ACCENT : style.stroke}
+    {@const prominent = isActiveNow(edge) || working}
+    {@const stroke = prominent ? 'var(--color-foreground)' : style.stroke}
     {#if source && target}
       {@const endpoints = endpointsFor(edge, source, target)}
-      {@const path = pathFor(endpoints.source, endpoints.target)}
+      {@const path = pathFor(edge, endpoints.source, endpoints.target)}
       {@const label = labelFor(edge)}
       {@const edgeOpacity = opacityFor(edge)}
+      {@const highlighted = isHighlighted(edge)}
       {@const drawDuration = playbackDuration(350, playbackSpeed)}
       <path
         class="edge-path"
@@ -184,33 +206,29 @@
         pathLength="1"
         fill="none"
         {stroke}
-        stroke-width={style.strokeWidth}
+        stroke-width={prominent ? 1.5 : style.strokeWidth}
         stroke-dasharray={style.strokeDasharray}
         stroke-linecap="round"
         opacity={edgeOpacity}
-        style:--edge-draw-duration={`${drawDuration}ms`}
+        style:animation-duration={working ? `${drawDuration}ms, 3s` : `${drawDuration}ms`}
+        style:animation-delay={working ? `0ms, ${drawDuration}ms` : '0ms'}
         data-edge-id={edge.id}
         data-edge-type={edge.type}
         data-active={edge.isActive}
+        data-highlighted={highlighted}
+        data-dimmed={activeFocusNodeId !== null && !highlighted}
         data-last-activity-at={edge.timestamp}
       />
       <circle
-        cx={endpoints.source.x}
-        cy={endpoints.source.y}
-        r="2"
+        class="edge-terminal"
+        cx={endpoints.target.x}
+        cy={endpoints.target.y}
+        r="2.25"
         fill={stroke}
         opacity={edgeOpacity}
+        style:animation-delay={`${Math.max(0, drawDuration - 80)}ms`}
       />
-      <path
-        class="edge-arrow"
-        d="M 0 -2 L 4 0 L 0 2 Z"
-        fill={stroke}
-        opacity={edgeOpacity}
-        transform={`translate(${endpoints.target.x} ${endpoints.target.y}) rotate(${arrowAngle(endpoints.source, endpoints.target)})`}
-        style:--edge-draw-duration={`${drawDuration}ms`}
-        style:--edge-opacity={edgeOpacity}
-      />
-      {#if label}
+      {#if label && (activeFocusNodeId === null || highlighted)}
         {@const labelWidth = 12 + label.length * 6}
         <g
           transform={`translate(${(endpoints.source.x + endpoints.target.x) / 2} ${(endpoints.source.y + endpoints.target.y) / 2})`}
@@ -230,7 +248,6 @@
             text-anchor="middle"
             dominant-baseline="central"
             fill="var(--color-muted-foreground)"
-            font-family="var(--font-code)"
             font-size="10">{label}</text
           >
         </g>
@@ -255,18 +272,17 @@
           height="14"
           rx="7"
           fill="var(--color-card)"
-          stroke={GRAPH_ACTIVE_ACCENT}
+          stroke="var(--color-foreground)"
         />
         <text
           text-anchor="middle"
           dominant-baseline="central"
-          fill={GRAPH_ACTIVE_ACCENT}
-          font-family="var(--font-code)"
+          fill="var(--color-foreground)"
           font-size="9"><!-- i18n-ignore (compact graph edge-kind token) -->msg</text
         >
         <animateMotion
           use:completeMessageTravel={edge}
-          path={pathFor(endpoints.source, endpoints.target)}
+          path={pathFor(edge, endpoints.source, endpoints.target)}
           dur={`${edgeAnimationDuration(endpoints.source, endpoints.target, playbackSpeed)}s`}
           calcMode="spline"
           keyTimes="0;1"
@@ -284,16 +300,16 @@
     animation: delegation-pulse 900ms ease-out 1;
   }
   .edge-path {
-    animation: edge-draw var(--edge-draw-duration) ease-out 1;
+    animation: edge-draw 350ms ease-out 1;
   }
   .edge-path.working-drift {
-    stroke-dasharray: 5 5;
+    stroke-dasharray: 2 3;
     animation:
-      edge-draw var(--edge-draw-duration) ease-out 1,
-      working-drift 3s linear var(--edge-draw-duration) infinite;
+      edge-draw 350ms ease-out 1,
+      working-drift 3s linear 350ms infinite;
   }
-  .edge-arrow {
-    animation: edge-arrow-in 120ms ease-out calc(var(--edge-draw-duration) - 80ms) both;
+  .edge-terminal {
+    animation: edge-terminal-in 120ms ease-out both;
   }
   .waiting-breathe {
     animation: waiting-breathe 2.8s ease-in-out infinite;
@@ -302,7 +318,7 @@
     display: none;
   }
   :global(.edge-layer[data-motion-enabled='false'])
-    :is(.edge-path, .edge-arrow, .delegation-pulse, .waiting-breathe, .working-drift) {
+    :is(.edge-path, .edge-terminal, .delegation-pulse, .waiting-breathe, .working-drift) {
     animation: none;
   }
   @keyframes edge-draw {
@@ -315,17 +331,14 @@
       stroke-dashoffset: 0;
     }
   }
-  @keyframes edge-arrow-in {
+  @keyframes edge-terminal-in {
     from {
       opacity: 0;
-    }
-    to {
-      opacity: var(--edge-opacity);
     }
   }
   @keyframes working-drift {
     to {
-      stroke-dashoffset: -10;
+      stroke-dashoffset: -5;
     }
   }
   @keyframes delegation-pulse {
@@ -344,7 +357,7 @@
       display: none;
     }
     .edge-path,
-    .edge-arrow,
+    .edge-terminal,
     .delegation-pulse,
     .waiting-breathe,
     .working-drift {

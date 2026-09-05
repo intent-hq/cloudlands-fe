@@ -247,6 +247,87 @@ describe('AgentActivityGraph', () => {
     expect(graphFitTransitionIds(viewport)).toEqual([initialTransitionId]);
   });
 
+  it('draws stable per-edge curves with hairline dashes and target dots', () => {
+    const target = file(1);
+    const edges = [
+      { ...edge(target), id: 'edge:curve-a' },
+      { ...edge(target), id: 'edge:curve-b' },
+    ];
+    const props = {
+      edges,
+      nodes: [agent(), target],
+      positions: new Map([
+        ['agent:one', { x: 100, y: 100 }],
+        [target.id, { x: 300, y: 180 }],
+      ]),
+    };
+    const first = render(GraphEdgeLayer, { props });
+    const second = render(GraphEdgeLayer, { props });
+    const pathsFor = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('.edge-path'), (path) => path.getAttribute('d'));
+
+    expect(pathsFor(second.container)).toEqual(pathsFor(first.container));
+    expect(new Set(pathsFor(first.container)).size).toBe(2);
+    expect(pathsFor(first.container).every((path) => path?.includes(' C '))).toBe(true);
+    expect(first.container.querySelector('.edge-path')?.getAttribute('stroke-width')).toBe('0.75');
+    expect(first.container.querySelector('.edge-path')?.getAttribute('stroke-dasharray')).toBe(
+      '2 3',
+    );
+    expect(first.container.querySelectorAll('.edge-terminal')).toHaveLength(2);
+    expect(first.container.querySelector('.edge-terminal')?.getAttribute('r')).toBe('2.25');
+    expect(first.container.querySelector('.edge-arrow')).toBeNull();
+  });
+
+  it('marks the focused neighbourhood and hides unrelated write labels', () => {
+    const connectedTarget = file(1);
+    const dimmedTarget = file(2);
+    const connected: GraphEdge = {
+      ...edge(connectedTarget),
+      id: 'edge:connected-write',
+      type: 'file-write',
+      additions: 4,
+      deletions: 2,
+    };
+    const dimmed: GraphEdge = {
+      ...edge(dimmedTarget),
+      id: 'edge:dimmed-write',
+      type: 'file-write',
+      sourceId: 'agent:two',
+      agentId: 'two',
+      additions: 7,
+      deletions: 3,
+    };
+    const props = {
+      edges: [connected, dimmed],
+      nodes: [agent(), agent('two'), connectedTarget, dimmedTarget],
+      positions: new Map([
+        ['agent:one', { x: 100, y: 100 }],
+        ['agent:two', { x: 100, y: 300 }],
+        [connectedTarget.id, { x: 300, y: 100 }],
+        [dimmedTarget.id, { x: 300, y: 300 }],
+      ]),
+    };
+    const defaultView = render(GraphEdgeLayer, { props });
+    const focusedView = render(GraphEdgeLayer, {
+      props: { ...props, focusNodeId: 'agent:one' },
+    });
+
+    expect(defaultView.container.textContent).toContain('+4 −2');
+    expect(defaultView.container.textContent).toContain('+7 −3');
+    expect(
+      focusedView.container
+        .querySelector('[data-edge-id="edge:connected-write"]')
+        ?.getAttribute('data-highlighted'),
+    ).toBe('true');
+    expect(
+      focusedView.container
+        .querySelector('[data-edge-id="edge:dimmed-write"]')
+        ?.getAttribute('data-dimmed'),
+    ).toBe('true');
+    expect(focusedView.container.textContent).toContain('+4 −2');
+    expect(focusedView.container.textContent).not.toContain('+7 −3');
+  });
+
   it('completes message particles from native animation events without timers', async () => {
     const message: GraphEdge = {
       id: 'message:one',
@@ -277,6 +358,13 @@ describe('AgentActivityGraph', () => {
       expect(timeout).not.toHaveBeenCalled();
       const motion = container.querySelector('animateMotion');
       expect(motion).toBeTruthy();
+      expect(container.querySelector('.edge-path')?.getAttribute('stroke')).toBe(
+        'var(--color-foreground)',
+      );
+      expect(container.querySelector('.edge-path')?.getAttribute('stroke-width')).toBe('1.5');
+      expect(motion?.getAttribute('path')).toBe(
+        container.querySelector('.edge-path')?.getAttribute('d'),
+      );
       motion?.dispatchEvent(new Event('endEvent'));
       await tick();
 

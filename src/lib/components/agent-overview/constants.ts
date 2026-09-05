@@ -102,9 +102,6 @@ export const EDGE_ANIMATION = {
 // Edge Styling
 // ============================================================================
 
-/** The graph's sole chromatic accent. Use only for activity happening now. */
-export const GRAPH_ACTIVE_ACCENT = 'var(--color-primary)';
-
 /** Edge visual styles by type */
 export const EDGE_STYLES = {
   delegation: {
@@ -121,55 +118,55 @@ export const EDGE_STYLES = {
   },
   message: {
     stroke: 'var(--color-muted-foreground)',
-    strokeWidth: 1,
+    strokeWidth: 0.75,
     strokeDasharray: 'none',
     opacity: 0.58,
   },
   'waiting-on': {
     stroke: 'var(--color-muted-foreground)',
-    strokeWidth: 1,
-    strokeDasharray: '4,4',
+    strokeWidth: 0.75,
+    strokeDasharray: '2 3',
     opacity: 0.64,
   },
   'file-read': {
     stroke: 'var(--color-border)',
-    strokeWidth: 1,
-    strokeDasharray: '1,5',
+    strokeWidth: 0.75,
+    strokeDasharray: '2 3',
     opacity: 0.38,
   },
   'note-read': {
     stroke: 'var(--color-border)',
-    strokeWidth: 1,
-    strokeDasharray: '1,5',
+    strokeWidth: 0.75,
+    strokeDasharray: '2 3',
     opacity: 0.38,
   },
   'file-write': {
     stroke: 'var(--color-muted-foreground)',
-    strokeWidth: 1,
+    strokeWidth: 0.75,
     strokeDasharray: 'none',
     opacity: 0.54,
   },
   'note-write': {
     stroke: 'var(--color-muted-foreground)',
-    strokeWidth: 1,
+    strokeWidth: 0.75,
     strokeDasharray: 'none',
     opacity: 0.54,
   },
   'task-create': {
     stroke: 'var(--color-border)',
-    strokeWidth: 1,
-    strokeDasharray: '2,4',
+    strokeWidth: 0.75,
+    strokeDasharray: '2 3',
     opacity: 0.5,
   },
   'task-update': {
     stroke: 'var(--color-border)',
-    strokeWidth: 1,
-    strokeDasharray: '2,4',
+    strokeWidth: 0.75,
+    strokeDasharray: '2 3',
     opacity: 0.5,
   },
   default: {
     stroke: 'var(--color-border)',
-    strokeWidth: 1,
+    strokeWidth: 0.75,
     strokeDasharray: 'none',
     opacity: 0.4,
   },
