@@ -51,7 +51,9 @@ function createMockGL() {
     clear: vi.fn(),
     useProgram: vi.fn(),
     uniform1f: vi.fn(),
+    uniform1fv: vi.fn(),
     uniform2f: vi.fn(),
+    uniform2fv: vi.fn(),
     uniform3f: vi.fn(),
     drawArrays: vi.fn(),
     getExtension: vi.fn((name: string) => (name === 'WEBGL_lose_context' ? { loseContext } : null)),
@@ -83,6 +85,7 @@ describe('AuroraBackground cleanup', () => {
   let mockGL: ReturnType<typeof createMockGL>;
   let getContextSpy: ReturnType<typeof vi.spyOn>;
   let getComputedStyleSpy: ReturnType<typeof vi.spyOn>;
+  let hasFocusSpy: ReturnType<typeof vi.spyOn>;
   let rafCallbacks: FrameRequestCallback[];
   let computedAuroraColor: string;
   let originalRootClass: string;
@@ -103,6 +106,7 @@ describe('AuroraBackground cleanup', () => {
       }
       return getComputedStyle(element);
     });
+    hasFocusSpy = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
     rafCallbacks = [];
     vi.stubGlobal(
       'requestAnimationFrame',
@@ -122,6 +126,7 @@ describe('AuroraBackground cleanup', () => {
     document.documentElement.style.cssText = originalRootStyle;
     getContextSpy.mockRestore();
     getComputedStyleSpy.mockRestore();
+    hasFocusSpy.mockRestore();
     vi.unstubAllGlobals();
   });
 
@@ -273,6 +278,78 @@ describe('AuroraBackground cleanup', () => {
     now.mockRestore();
   });
 
+  it('uploads stable phases once and moving centers for each drawn frame', () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+    render(AuroraBackground);
+
+    expect(mockGL.gl.uniform1fv).toHaveBeenCalledTimes(1);
+    expect(Array.from(mockGL.gl.uniform1fv.mock.calls[0][1])).toHaveLength(5);
+
+    now.mockReturnValue(34);
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
+    expect(mockGL.gl.uniform2fv).toHaveBeenCalledTimes(1);
+    const firstCenters = Array.from(mockGL.gl.uniform2fv.mock.calls[0][1]);
+
+    now.mockReturnValue(68);
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(2);
+    expect(mockGL.gl.uniform2fv).toHaveBeenCalledTimes(2);
+    const secondCenters = Array.from(mockGL.gl.uniform2fv.mock.calls[1][1]);
+
+    expect(firstCenters).toHaveLength(10);
+    expect(secondCenters).not.toEqual(firstCenters);
+    expect(mockGL.gl.uniform1fv).toHaveBeenCalledTimes(1);
+    now.mockRestore();
+  });
+
+  it('stops drawing after window blur, including focus while the page is hidden', () => {
+    let hidden = false;
+    const hiddenSpy = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+    render(AuroraBackground);
+
+    now.mockReturnValue(34);
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new Event('blur'));
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
+    expect(rafCallbacks).toHaveLength(0);
+
+    hidden = true;
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('focus'));
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
+    expect(rafCallbacks).toHaveLength(0);
+
+    hiddenSpy.mockRestore();
+    now.mockRestore();
+  });
+
+  it('resumes drawing when the window regains focus', () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+    render(AuroraBackground);
+
+    now.mockReturnValue(34);
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new Event('blur'));
+    flushRafCallbacks();
+    expect(rafCallbacks).toHaveLength(0);
+
+    now.mockReturnValue(68);
+    window.dispatchEvent(new Event('focus'));
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(2);
+    expect(rafCallbacks).toHaveLength(1);
+
+    now.mockRestore();
+  });
+
   it('caps Retina backing work across common sizes without frame layout reads', () => {
     const devicePixelRatio = vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(2);
     const clientWidth = vi
@@ -296,20 +373,24 @@ describe('AuroraBackground cleanup', () => {
       [1440, 360],
     ]) {
       MockResizeObserver.instances[0].fire(width, height);
-      expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, width, height);
-      expect([canvas.width, canvas.height]).toEqual([width, height]);
-      expect(canvas.width * canvas.height).toBe((width * 2 * height * 2) / 4);
+      expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, width / 2, height / 2);
+      expect([canvas.width, canvas.height]).toEqual([width / 2, height / 2]);
+      expect(canvas.width * canvas.height).toBe((width * height) / 4);
     }
     expect(clientWidth).toHaveBeenCalledTimes(1);
     expect(clientHeight).toHaveBeenCalledTimes(1);
 
     MockResizeObserver.instances[0].fire(640.25, 360.25);
-    expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, 640, 360);
-    expect([canvas.width, canvas.height]).toEqual([640, 360]);
+    expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, 320, 180);
+    expect([canvas.width, canvas.height]).toEqual([320, 180]);
 
     mockGL.gl.viewport.mockClear();
     MockResizeObserver.instances[0].fire(640.25, 360.25);
     expect(mockGL.gl.viewport).not.toHaveBeenCalled();
+
+    MockResizeObserver.instances[0].fire(0, 0);
+    expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, 1, 1);
+    expect([canvas.width, canvas.height]).toEqual([1, 1]);
 
     devicePixelRatio.mockRestore();
     clientWidth.mockRestore();

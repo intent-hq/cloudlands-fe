@@ -7,7 +7,7 @@
    *
    * Performance optimizations:
    * - Throttled to 30fps instead of 60fps (halves GPU usage)
-   * - Caps the backing buffer at one render pixel per CSS pixel
+   * - Renders the backing buffer at half the CSS resolution
    * - Pauses when tab is hidden (Page Visibility API)
    * - Simplified shader with fewer blobs (5 instead of 10)
    * - Respects prefers-reduced-motion
@@ -33,6 +33,7 @@
   let initFailed = false;
   let startTime = $state<number>(0);
   let isPageVisible = $state<boolean>(true);
+  let isWindowFocused = $state<boolean>(true);
   let prefersReducedMotion = $state<boolean>(false);
   let lastFrameTime = $state<number>(0);
   let semanticColorReady = false;
@@ -40,10 +41,44 @@
   // Target 30fps instead of 60fps to reduce GPU usage
   const TARGET_FRAME_TIME = 1000 / 30; // ~33ms per frame
   // The effect is intentionally soft, so Retina supersampling adds fragment work without useful detail.
-  const MAX_RENDER_DPR = 1;
+  const MAX_RENDER_DPR = 0.5;
 
   // Random seed for variety each session
   const seed = Math.random() * 1000;
+
+  const fract = (value: number) => value - Math.floor(value);
+
+  function seededRandom(id: number) {
+    let x = fract((id * 127.1 + seed) * 0.1031);
+    let y = fract((id * 311.7 + seed * 1.7) * 0.1031);
+    let z = x;
+    const offset = x * (y + 33.33) + y * (z + 33.33) + z * (x + 33.33);
+    x += offset;
+    y += offset;
+    z += offset;
+    return fract((x + y) * z);
+  }
+
+  const phaseOffsets = new Float32Array(
+    Array.from({ length: 5 }, (_, index) => seededRandom(index + 1) * 6.28),
+  );
+  const blobCenters = new Float32Array(10);
+
+  function updateBlobCenters(time: number) {
+    const [r1, r2, r3, r4, r5] = phaseOffsets;
+    blobCenters.set([
+      0.15 + Math.sin(time * 0.8 + r1) * 0.35 + Math.cos(time * 0.5 + r1) * 0.15,
+      0.25 + Math.cos(time * 0.7 + r1) * 0.4,
+      0.85 + Math.cos(time * 0.7 + r2) * 0.4,
+      0.3 + Math.sin(time * 0.65 + r2) * 0.45,
+      0.35 + Math.sin(time * 0.9 + r3) * 0.3,
+      0.2 + Math.cos(time * 0.85 + r3) * 0.4,
+      0.5 + Math.sin(time + r4) * 0.35,
+      0.35 + Math.sin(time * 2 + r4) * 0.25,
+      0.65 + Math.cos(time * 0.85 + r5) * 0.35,
+      0.28 + Math.sin(time * 0.75 + r5) * 0.4,
+    ]);
+  }
 
   // Cached uniform locations (avoid getUniformLocation every frame)
   let uniformLocations: {
@@ -52,7 +87,8 @@
     color1: WebGLUniformLocation | null;
     color2: WebGLUniformLocation | null;
     color3: WebGLUniformLocation | null;
-    seed: WebGLUniformLocation | null;
+    centers: WebGLUniformLocation | null;
+    phases: WebGLUniformLocation | null;
   } | null = null;
 
   // Cached device pixel ratio (updated on resize, not every frame)
@@ -139,18 +175,14 @@
     uniform vec3 u_color1;
     uniform vec3 u_color2;
     uniform vec3 u_color3;
-    uniform float u_seed;
+    uniform vec2 u_centers[5];
+    uniform float u_phases[5];
 
     // Hash function for grain and randomness
     float hash(vec2 p) {
       vec3 p3 = fract(vec3(p.xyx) * 0.1031);
       p3 += dot(p3, p3.yzx + 33.33);
       return fract((p3.x + p3.y) * p3.z);
-    }
-
-    // Seeded random - different each session
-    float rand(float id) {
-      return hash(vec2(id * 127.1 + u_seed, id * 311.7 + u_seed * 1.7));
     }
 
     // Smooth noise function
@@ -195,50 +227,29 @@
       vec3 color4 = mix(u_color1, u_color3, 0.5);
       vec3 color5 = mix(u_color2, u_color1, 0.65);
 
-      // Random offsets per blob for variety each session
-      float r1 = rand(1.0) * 6.28;
-      float r2 = rand(2.0) * 6.28;
-      float r3 = rand(3.0) * 6.28;
-      float r4 = rand(4.0) * 6.28;
-      float r5 = rand(5.0) * 6.28;
+      float r1 = u_phases[0];
+      float r2 = u_phases[1];
+      float r3 = u_phases[2];
+      float r4 = u_phases[3];
+      float r5 = u_phases[4];
 
-      // Blob 1 - circular, big movement
-      vec2 c1 = vec2(
-        0.15 + sin(time * 0.8 + r1) * 0.35 + cos(time * 0.5 + r1) * 0.15,
-        0.25 + cos(time * 0.7 + r1) * 0.4
-      );
+      vec2 c1 = u_centers[0];
       float b1 = blob(uv, c1, 0.56);
       b1 *= 0.6 + fbm(uv * 2.5 + time * 0.6 + r1) * 0.6;
 
-      // Blob 2 - sweeps across
-      vec2 c2 = vec2(
-        0.85 + cos(time * 0.7 + r2) * 0.4,
-        0.3 + sin(time * 0.65 + r2) * 0.45
-      );
+      vec2 c2 = u_centers[1];
       float b2 = blob(uv, c2, 0.504);
       b2 *= 0.6 + fbm(uv * 2.8 + time * 0.5 + r2) * 0.6;
 
-      // Blob 3 - circular orbit
-      vec2 c3 = vec2(
-        0.35 + sin(time * 0.9 + r3) * 0.3,
-        0.2 + cos(time * 0.85 + r3) * 0.4
-      );
+      vec2 c3 = u_centers[2];
       float b3 = blob(uv, c3, 0.616);
       b3 *= 0.6 + fbm(uv * 2.2 + time * 0.55 + r3) * 0.6;
 
-      // Blob 4 - figure 8 motion
-      vec2 c4 = vec2(
-        0.5 + sin(time * 1.0 + r4) * 0.35,
-        0.35 + sin(time * 2.0 + r4) * 0.25
-      );
+      vec2 c4 = u_centers[3];
       float b4 = blob(uv, c4, 0.538);
       b4 *= 0.6 + fbm(uv * 3.0 + time * 0.6 + r4) * 0.6;
 
-      // Blob 5 - opposite phase
-      vec2 c5 = vec2(
-        0.65 + cos(time * 0.85 + r5) * 0.35,
-        0.28 + sin(time * 0.75 + r5) * 0.4
-      );
+      vec2 c5 = u_centers[4];
       float b5 = blob(uv, c5, 0.47);
       b5 *= 0.6 + fbm(uv * 2.6 + time * 0.5 + r5) * 0.6;
 
@@ -263,7 +274,7 @@
       intensity *= 0.85 + sin(time * 0.5) * 0.15;
 
       // Simplified grain (less expensive)
-      float grainValue = hash(gl_FragCoord.xy * 0.5);
+      float grainValue = hash(gl_FragCoord.xy);
       color = color + (grainValue - 0.5) * 0.15;
 
       float alpha = intensity * 0.9;
@@ -357,15 +368,18 @@
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    // Cache uniform locations once (avoids 6x getUniformLocation calls per frame)
+    // Cache uniform locations once
     uniformLocations = {
       time: gl.getUniformLocation(program, 'u_time'),
       resolution: gl.getUniformLocation(program, 'u_resolution'),
       color1: gl.getUniformLocation(program, 'u_color1'),
       color2: gl.getUniformLocation(program, 'u_color2'),
       color3: gl.getUniformLocation(program, 'u_color3'),
-      seed: gl.getUniformLocation(program, 'u_seed'),
+      centers: gl.getUniformLocation(program, 'u_centers[0]'),
+      phases: gl.getUniformLocation(program, 'u_phases[0]'),
     };
+    gl.useProgram(program);
+    gl.uniform1fv(uniformLocations.phases, phaseOffsets);
     scheduleSemanticColorSync();
 
     updateCanvasSize();
@@ -382,8 +396,8 @@
     cachedCanvasWidth = cssWidth;
     cachedCanvasHeight = cssHeight;
 
-    const pixelWidth = Math.round(cssWidth * cachedDpr);
-    const pixelHeight = Math.round(cssHeight * cachedDpr);
+    const pixelWidth = Math.max(1, Math.round(cssWidth * cachedDpr));
+    const pixelHeight = Math.max(1, Math.round(cssHeight * cachedDpr));
     if (canvas.width === pixelWidth && canvas.height === pixelHeight) return;
 
     canvas.width = pixelWidth;
@@ -406,7 +420,15 @@
   }
 
   function scheduleRender() {
-    if (animationFrame || !gl || !program || !isPageVisible || prefersReducedMotion) return;
+    if (
+      animationFrame ||
+      !gl ||
+      !program ||
+      !isPageVisible ||
+      !isWindowFocused ||
+      prefersReducedMotion
+    )
+      return;
     animationFrame = requestAnimationFrame(render);
   }
 
@@ -421,8 +443,8 @@
     animationFrame = 0;
     if (!gl || !program || !canvas) return;
 
-    // Skip rendering if page is hidden or user prefers reduced motion
-    if (!isPageVisible || prefersReducedMotion) {
+    // Skip rendering if the page or window is inactive, or the user prefers reduced motion
+    if (!isPageVisible || !isWindowFocused || prefersReducedMotion) {
       return;
     }
 
@@ -446,9 +468,9 @@
     // Use cached uniform locations (set once in initWebGL)
     if (!uniformLocations) return;
 
-    gl.uniform1f(uniformLocations.time, (performance.now() - startTime) / 1000);
+    const elapsedSeconds = (performance.now() - startTime) / 1000;
+    gl.uniform1f(uniformLocations.time, elapsedSeconds);
     gl.uniform2f(uniformLocations.resolution, width, height);
-    gl.uniform1f(uniformLocations.seed, seed);
 
     if (!semanticColorReady) {
       // Sync runs in the batched read phase, never from the render loop —
@@ -458,6 +480,8 @@
       return;
     }
 
+    updateBlobCenters(elapsedSeconds * 0.6);
+    gl.uniform2fv(uniformLocations.centers, blobCenters);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
     scheduleRender();
@@ -503,6 +527,16 @@
     else cancelScheduledRender();
   }
 
+  function handleWindowBlur() {
+    isWindowFocused = false;
+    cancelScheduledRender();
+  }
+
+  function handleWindowFocus() {
+    isWindowFocused = true;
+    scheduleRender();
+  }
+
   // Handle reduced motion preference changes
   function handleMotionPreference(e: MediaQueryListEvent) {
     prefersReducedMotion = e.matches;
@@ -533,11 +567,14 @@
   onMount(() => {
     // Check initial states
     isPageVisible = !document.hidden;
+    isWindowFocused = document.hasFocus();
     prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     cachedDpr = Math.min(window.devicePixelRatio || 1, MAX_RENDER_DPR);
 
     // Listen for visibility changes
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
 
     // Listen for motion preference changes
     const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -559,6 +596,8 @@
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
       motionQuery.removeEventListener('change', handleMotionPreference);
       window.removeEventListener('theme-changed', handleSemanticColorChange);
       themeObserver.disconnect();
