@@ -15,8 +15,10 @@ import {
 type VerdictMap = Record<string, ProviderAuthVerdict>;
 type Pending = { generation: number; promise: Promise<VerdictMap> };
 type Trailing = { force: boolean; promise: Promise<VerdictMap> };
+type Cached = { expiresAt: number; verdicts: VerdictMap };
 
-const cache = new Map<string, VerdictMap>();
+const PROVIDER_AUTH_CACHE_TTL_MS = 60_000;
+const cache = new Map<string, Cached>();
 const pending = new Map<string, Pending>();
 const trailing = new Map<string, Trailing>();
 let generation = 0;
@@ -53,7 +55,11 @@ export function getProviderAuthVerdicts(
 ): Promise<VerdictMap> {
   const key = keyFor(options);
   if (options.force) invalidateProviderAuthStatus(options.providerId);
-  else if (cache.has(key)) return Promise.resolve(cache.get(key) ?? {});
+  else {
+    const cached = cache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.verdicts);
+    if (cached) cache.delete(key);
+  }
 
   const active = pending.get(key);
   if (!options.force && active?.generation === generation) return active.promise;
@@ -88,7 +94,9 @@ export function getProviderAuthVerdicts(
   )
     .then(toAuthVerdictMap)
     .then((verdicts) => {
-      if (requestGeneration === generation) cache.set(key, verdicts);
+      if (requestGeneration === generation) {
+        cache.set(key, { verdicts, expiresAt: Date.now() + PROVIDER_AUTH_CACHE_TTL_MS });
+      }
       return verdicts;
     })
     .finally(() => {

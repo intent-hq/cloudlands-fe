@@ -24,7 +24,9 @@ const logger = new Logger('ProviderAuthStatus');
 type VerdictMap = Record<string, ProviderAuthVerdict>;
 type Pending = { generation: number; promise: Promise<VerdictMap> };
 type Trailing = { force: boolean; promise: Promise<VerdictMap> };
-const cache = new Map<string, VerdictMap>();
+type Cached = { expiresAt: number; verdicts: VerdictMap };
+const PROVIDER_AUTH_CACHE_TTL_MS = 60_000;
+const cache = new Map<string, Cached>();
 const pending = new Map<string, Pending>();
 const trailing = new Map<string, Trailing>();
 let generation = 0;
@@ -66,7 +68,11 @@ export async function getProviderAuthVerdicts(
   const params = buildProviderAuthStatusParams(options);
   const key = params.providerId ?? '*';
   if (params.force) invalidateProviderAuthStatus();
-  else if (cache.has(key)) return cache.get(key) ?? {};
+  else {
+    const cached = cache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.verdicts;
+    if (cached) cache.delete(key);
+  }
 
   const active = pending.get(key);
   if (!params.force && active?.generation === generation) return active.promise;
@@ -101,7 +107,9 @@ export async function getProviderAuthVerdicts(
         params,
       );
       const verdicts = toAuthVerdictMap(response);
-      if (requestGeneration === generation) cache.set(key, verdicts);
+      if (requestGeneration === generation) {
+        cache.set(key, { verdicts, expiresAt: Date.now() + PROVIDER_AUTH_CACHE_TTL_MS });
+      }
       return verdicts;
     } catch (error) {
       logger.warn('host.providerAuthStatus RPC failed; auth verdicts degrade to unknown', {

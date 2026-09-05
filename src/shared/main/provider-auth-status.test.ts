@@ -30,6 +30,7 @@ function deferred<T>() {
 describe('main provider auth status cache', () => {
   afterEach(() => {
     __resetProviderAuthStatusForTests();
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -59,6 +60,28 @@ describe('main provider auth status cache', () => {
     expect(lifecycle.request).toHaveBeenLastCalledWith('host.providerAuthStatus', {
       providerId: 'codex',
     });
+  });
+
+  it('refreshes cached auth verdicts after the daemon-aligned TTL expires', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-05T12:00:00Z'));
+    lifecycle.request
+      .mockResolvedValueOnce({ providers: [{ id: 'codex', authenticated: false }] })
+      .mockResolvedValueOnce({ providers: [{ id: 'codex', authenticated: true }] });
+
+    await expect(getProviderAuthVerdicts({ providerId: 'codex' })).resolves.toEqual({
+      codex: { authenticated: false },
+    });
+    vi.advanceTimersByTime(59_999);
+    await expect(getProviderAuthVerdicts({ providerId: 'codex' })).resolves.toEqual({
+      codex: { authenticated: false },
+    });
+    vi.advanceTimersByTime(1);
+    await expect(getProviderAuthVerdicts({ providerId: 'codex' })).resolves.toEqual({
+      codex: { authenticated: true },
+    });
+
+    expect(lifecycle.request).toHaveBeenCalledTimes(2);
   });
 
   it('coalesces an invalidated in-flight read into one fresh trailing request', async () => {

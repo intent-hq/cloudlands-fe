@@ -157,6 +157,7 @@ describe('provider-status-bridge-seeder', () => {
 
   afterEach(() => {
     __resetProviderAuthStatusForTests();
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -182,6 +183,28 @@ describe('provider-status-bridge-seeder', () => {
 
     expect(mockedRequest).toHaveBeenCalledTimes(3);
     expect(mockedRequest).toHaveBeenLastCalledWith('host.providerAuthStatus', {});
+  });
+
+  it('refreshes cached auth verdicts after the daemon-aligned TTL expires', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-05T12:00:00Z'));
+    mockedRequest
+      .mockResolvedValueOnce(authOne('codex', false))
+      .mockResolvedValueOnce(authOne('codex', true));
+
+    await expect(getProviderAuthVerdicts({ providerId: 'codex' })).resolves.toEqual({
+      codex: { authenticated: false },
+    });
+    vi.advanceTimersByTime(59_999);
+    await expect(getProviderAuthVerdicts({ providerId: 'codex' })).resolves.toEqual({
+      codex: { authenticated: false },
+    });
+    vi.advanceTimersByTime(1);
+    await expect(getProviderAuthVerdicts({ providerId: 'codex' })).resolves.toEqual({
+      codex: { authenticated: true },
+    });
+
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
   });
 
   it('preserves force on a refresh queued behind a passive auth read', async () => {
