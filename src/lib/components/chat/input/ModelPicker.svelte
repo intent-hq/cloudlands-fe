@@ -95,7 +95,7 @@
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import {
     faArrowsRotate,
@@ -770,7 +770,7 @@
             error: errorMsg,
           });
           if (errorMsg) {
-            toast.error(errorMsg, { duration: 6000 });
+            notify.error(errorMsg, { duration: 6000 });
           }
         }
       } catch (error) {
@@ -1143,7 +1143,7 @@
     if (hasNoAvailableProvider) {
       if (!noProviderToastShown) {
         noProviderToastShown = true;
-        toast.error(m.chat_modelPicker_noProviderAvailable_toast(), {
+        notify.error(m.chat_modelPicker_noProviderAvailable_toast(), {
           id: 'no-provider-available',
           duration: 6000,
           action: {
@@ -1594,7 +1594,7 @@
       });
 
       // Show toast notification explaining the switch
-      toast.info(
+      notify.info(
         m.chat_modelPicker_unavailableSwitched_toast({
           from: unavailableModelName,
           to: fallbackModelName,
@@ -1683,7 +1683,7 @@
       }
 
       const providerName = providerDisplayName(currentProvider);
-      toast.warning(m.chat_modelPicker_noModelsForProvider_toast({ provider: providerName }), {
+      notify.warning(m.chat_modelPicker_noModelsForProvider_toast({ provider: providerName }), {
         description: m.chat_modelPicker_tryRefreshing_description(),
       });
     })();
@@ -2030,7 +2030,7 @@
               icon={faArrowsRotate}
               size={10}
               class={cn(
-                'text-subtle transition-transform duration-500',
+                'text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none',
                 refreshingProviders.has(activeBrowseProviderId) && 'animate-spin',
               )}
             />
@@ -2089,7 +2089,7 @@
                 {option.label}
               </span>
               {#if selected}
-                <Fa icon={faCheck} class="text-xs text-primary shrink-0" />
+                <Fa icon={faCheck} class="text-xs text-primary-ink shrink-0" />
               {/if}
             </div>
             {#if option.description}

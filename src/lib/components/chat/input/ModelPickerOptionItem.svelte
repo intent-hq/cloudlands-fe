@@ -56,7 +56,7 @@
           {option.label}
         </span>
         {#if selected}
-          <Fa icon={faCheck} class="h-3 w-3 shrink-0 text-primary" />
+          <Fa icon={faCheck} class="h-3 w-3 shrink-0 text-primary-ink" />
         {/if}
       </div>
       {#if option.description}

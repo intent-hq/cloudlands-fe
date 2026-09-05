@@ -58,6 +58,7 @@
     faBolt,
   } from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/free-solid-svg-icons';
+  import { Button } from '$lib/components/ui/button';
 
   interface Props {
     items: (MentionCandidate | MentionGroup)[];
@@ -334,17 +335,21 @@
     <div class="mention-list-section">
       {#if breadcrumbs.length > 0}
         <div class="breadcrumbs">
-          <button class="breadcrumb-item" onclick={() => breadcrumbController.navigateToRoot()}>
+          <Button
+            variant="plain"
+            class="breadcrumb-item"
+            onclick={() => breadcrumbController.navigateToRoot()}
+          >
             {m.chat_mentionList_all_label()}
-          </button>
+          </Button>
           {#each breadcrumbs as crumb, i (crumb.id || `crumb-${i}`)}
             <span class="breadcrumb-separator">›</span>
-            <button class="breadcrumb-item" onclick={() => navigateToBreadcrumb(i)}>
+            <Button variant="plain" class="breadcrumb-item" onclick={() => navigateToBreadcrumb(i)}>
               {#if crumb.icon}
                 <span class="breadcrumb-icon">{crumb.icon}</span>
               {/if}
               {crumb.label}
-            </button>
+            </Button>
           {/each}
         </div>
       {/if}
@@ -367,9 +372,9 @@
               {@const icon = getIcon(item)}
               {@const isSelected = visualIndex === selectedIndex}
               {@const isAgent = !isMentionGroup(item) && item.type === 'agent'}
-              <button
-                class="mention-item"
-                class:selected={isSelected}
+              <Button
+                variant="plain"
+                class="mention-item {isSelected ? 'selected' : ''}"
                 onclick={() => selectItem(visualIndex)}
                 onmouseenter={() => {
                   if (!ignoreMouseUntilMove) selectedIndex = visualIndex;
@@ -397,7 +402,7 @@
                 {#if isMentionGroup(item)}
                   <span class="group-arrow"><Fa icon={faChevronRight} size="xs" /></span>
                 {/if}
-              </button>
+              </Button>
             {/each}
           {/each}
         </div>
@@ -418,7 +423,7 @@
     border-radius: 0;
     overflow: hidden;
     font-family: var(--font-family);
-    animation: mention-appear 0.08s ease-out;
+    animation: mention-appear var(--spring-fast) var(--spring-fast-ease);
   }
 
   @keyframes mention-appear {
@@ -465,8 +470,8 @@
     padding: 2px 6px;
     border-radius: 0;
     transition:
-      all 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-      transform 0.1s ease;
+      all var(--spring-moderate) var(--spring-moderate-ease),
+      transform var(--spring-fast) var(--spring-fast-ease);
     display: flex;
     align-items: center;
     gap: 3px;
@@ -507,7 +512,7 @@
   .mention-items::-webkit-scrollbar-thumb {
     background: hsl(var(--muted));
     border-radius: 0;
-    transition: background 0.2s ease;
+    transition: background var(--spring-moderate) var(--spring-moderate-ease);
   }
 
   .mention-items::-webkit-scrollbar-thumb:hover {
@@ -526,9 +531,9 @@
     text-align: left;
     width: 100%;
     transition:
-      background-color 0.15s ease,
-      transform 0.1s ease,
-      box-shadow 0.15s ease;
+      background-color var(--spring-fast) var(--spring-fast-ease),
+      transform var(--spring-fast) var(--spring-fast-ease),
+      box-shadow var(--spring-fast) var(--spring-fast-ease);
     color: hsl(var(--foreground));
     position: relative;
   }
@@ -547,7 +552,7 @@
   }
 
   .mention-item:focus-visible {
-    outline: 2px solid hsl(var(--primary));
+    outline: 2px solid hsl(var(--primary-ink));
     outline-offset: 2px;
   }
 
@@ -563,8 +568,8 @@
     color: hsl(var(--foreground));
     opacity: 0.2;
     transition:
-      all 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-      transform 0.15s ease;
+      all var(--spring-moderate) var(--spring-moderate-ease),
+      transform var(--spring-fast) var(--spring-fast-ease);
   }
 
   .mention-item:hover .mention-icon {
@@ -619,8 +624,8 @@
     flex-shrink: 0;
     color: hsl(var(--muted-foreground) / 0.5);
     transition:
-      transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-      color 0.15s ease;
+      transform var(--spring-moderate) var(--spring-moderate-ease),
+      color var(--spring-fast) var(--spring-fast-ease);
   }
 
   .mention-item:hover .group-arrow {
@@ -628,7 +633,7 @@
   }
 
   .mention-item.selected .group-arrow {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
 
   /* Empty state */
@@ -657,7 +662,7 @@
     height: 8px;
     border-radius: 2px;
     background: hsl(var(--muted-foreground) / 0.1);
-    animation: skeleton-pulse 1s ease-in-out infinite;
+    animation: skeleton-pulse calc(var(--spring-slow) * 4) var(--spring-slow-ease) infinite;
     flex-shrink: 0;
   }
 
@@ -665,22 +670,22 @@
     height: 10px;
     border-radius: 3px;
     background: hsl(var(--muted-foreground) / 0.1);
-    animation: skeleton-pulse 1s ease-in-out infinite;
+    animation: skeleton-pulse calc(var(--spring-slow) * 4) var(--spring-slow-ease) infinite;
   }
 
   .mention-skeleton:nth-child(2) .skeleton-icon,
   .mention-skeleton:nth-child(2) .skeleton-text {
-    animation-delay: 0.1s;
+    animation-delay: calc(var(--spring-fast-exit) * 2);
   }
 
   .mention-skeleton:nth-child(3) .skeleton-icon,
   .mention-skeleton:nth-child(3) .skeleton-text {
-    animation-delay: 0.2s;
+    animation-delay: calc(var(--spring-fast-exit) * 4);
   }
 
   .mention-skeleton:nth-child(4) .skeleton-icon,
   .mention-skeleton:nth-child(4) .skeleton-text {
-    animation-delay: 0.3s;
+    animation-delay: calc(var(--spring-fast-exit) * 6);
   }
 
   @keyframes skeleton-pulse {
@@ -690,6 +695,22 @@
     }
     50% {
       opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .enhanced-mention-list,
+    .skeleton-icon,
+    .skeleton-text {
+      animation: none;
+    }
+
+    .breadcrumb-item,
+    .mention-items::-webkit-scrollbar-thumb,
+    .mention-item,
+    .mention-icon,
+    .group-arrow {
+      transition: none;
     }
   }
 </style>

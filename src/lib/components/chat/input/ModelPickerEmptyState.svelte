@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fade } from 'svelte/transition';
+  import { crispOut, springIn } from '$lib/motion';
   import { faArrowsRotate, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
@@ -7,6 +7,7 @@
   import { cn } from '$lib/utils';
   import type { ProviderLoadError } from './model-picker-provider-errors';
   import { m } from '$shared/paraglide/messages.js';
+  import { Button } from '$lib/components/ui/button';
 
   interface Props {
     isLoadingModels: boolean;
@@ -25,7 +26,11 @@
   }: Props = $props();
 </script>
 
-<div class="px-1 py-1" transition:fade={{ duration: 150 }}>
+<div
+  class="px-1 py-1"
+  in:springIn={{ tier: 'fast', y: 0, scale: 1 }}
+  out:crispOut={{ tier: 'fast' }}
+>
   {#if hasNoAvailableProvider}
     <div class="flex items-start gap-2.5 px-3 py-3" role="status">
       <Fa
@@ -39,8 +44,9 @@
         <div class="type-caption mt-0.5 leading-snug text-subtle">
           {m.chat_modelPicker_noProviderAvailable_description()}
         </div>
-        <button
+        <Button
           type="button"
+          variant="plain"
           class={cn(
             'type-caption mt-2 flex items-center gap-1.5 rounded-md px-2 py-1 font-medium',
             'bg-muted hover:bg-muted/80 text-foreground transition-colors',
@@ -50,7 +56,7 @@
         >
           <Fa icon={faSettings} class="h-3 w-3" />
           {m.chat_modelPicker_noProviderAvailable_openSettings_label()}
-        </button>
+        </Button>
       </div>
     </div>
   {:else if isLoadingModels}
@@ -86,8 +92,9 @@
           <div class="mt-1 text-subtle">{blockingLoadError.hint}</div>
         {/if}
       </div>
-      <button
+      <Button
         type="button"
+        variant="plain"
         class={cn(
           'type-caption flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium',
           'bg-muted hover:bg-muted/80 text-foreground transition-colors',
@@ -97,13 +104,14 @@
       >
         <Fa icon={faArrowsRotate} class="h-3 w-3" />
         {m.chat_modelPicker_retry_label()}
-      </button>
+      </Button>
     </div>
   {:else}
     <div class="flex flex-col items-center gap-2.5 py-4 px-3 text-muted-foreground">
       <span class="type-body">{m.chat_modelPicker_noModels_label()}</span>
-      <button
+      <Button
         type="button"
+        variant="plain"
         class={cn(
           'type-caption flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium',
           'bg-muted hover:bg-muted/80 text-foreground transition-colors',
@@ -113,7 +121,7 @@
       >
         <Fa icon={faArrowsRotate} class="h-3 w-3" />
         {m.chat_modelPicker_retry_label()}
-      </button>
+      </Button>
     </div>
   {/if}
 </div>

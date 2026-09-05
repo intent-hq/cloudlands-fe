@@ -219,8 +219,8 @@ vi.mock('$lib/utils/workspace-navigation', () => ({
   navigateToSettings: vi.fn(),
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: {
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
     error: vi.fn(),
     info: vi.fn(),
     warning: vi.fn(),
@@ -1260,7 +1260,7 @@ describe('ModelPicker multi-provider mode', () => {
       },
     });
 
-    // Wait for the debounced $effect (50ms) to fire the fetches.
+    // Wait for the debounced $effect to fire the fetches.
     await waitFor(() => {
       expect(getModelsForProvider).toHaveBeenCalledWith('auggie');
       expect(getModelsForProvider).toHaveBeenCalledWith('claude-code');
@@ -1380,7 +1380,7 @@ describe('ModelPicker multi-provider mode', () => {
     // fetch is observable — ['codex'] sorts to a key different from
     // 'auggie,codex', so the fetch actually runs — and wait for it, proving
     // the dedup key moved off 'auggie,codex' before restoring the full list.
-    // A fixed sleep here races the 50ms debounce: if the intermediate timer is
+    // A fixed sleep here races the debounce: if the intermediate timer is
     // cleared by the re-set before firing, the dedup check would skip the
     // refetch entirely and the final waitFor could never pass.
     enabledProviderIds$.set(['codex']);
@@ -1694,7 +1694,7 @@ describe('ModelPicker multi-provider mode', () => {
 
   it('does not silently switch when the selected model is a compound default-provider ID matching a bare dropdown entry', async () => {
     const { agentClient } = await import('$features/agent/agent.client');
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     vi.mocked(getModelsForProvider).mockImplementation((providerId) => {
       if (providerId === 'auggie') {
         return Promise.resolve([{ value: 'sonnet4.6', label: 'Sonnet 4.6', description: 'Smart' }]);
@@ -1724,12 +1724,12 @@ describe('ModelPicker multi-provider mode', () => {
 
     expect(onModelChange).not.toHaveBeenCalled();
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
-    expect(vi.mocked(toast.info)).not.toHaveBeenCalled();
+    expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
   });
 
   it('never rewrites a <provider>:default selection mapped by D2 (no setModel, no fallback toast)', async () => {
     const { agentClient } = await import('$features/agent/agent.client');
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     // Settled catalog with real rows but no isDefault row — the selection
     // renders via the D2 first-model mapping; the persisted value must not
     // be rewritten (filtering is display-only).
@@ -1764,11 +1764,11 @@ describe('ModelPicker multi-provider mode', () => {
 
     expect(onModelChange).not.toHaveBeenCalled();
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
-    expect(vi.mocked(toast.info)).not.toHaveBeenCalled();
+    expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
   });
 
   it('still triggers fallback when a non-default-provider compound model ID is unavailable', async () => {
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     vi.mocked(getModelsForProvider).mockImplementation((providerId) => {
       if (providerId === 'auggie') {
         return Promise.resolve([
@@ -1804,7 +1804,7 @@ describe('ModelPicker multi-provider mode', () => {
         modelId: 'real-model',
       });
     });
-    expect(vi.mocked(toast.info)).toHaveBeenCalled();
+    expect(vi.mocked(notify.info)).toHaveBeenCalled();
 
     // Reset for other tests
     activeProviderId$.set('auggie');
@@ -1836,7 +1836,7 @@ describe('ModelPicker availability gating', () => {
   });
 
   it('does not show the no-provider failure notice or toast while availability has not been checked yet', async () => {
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     hasCheckedOnce$.set(false);
     availableProviderOverride$.set([]);
 
@@ -1847,7 +1847,7 @@ describe('ModelPicker availability gating', () => {
     await screen.findByRole('button');
 
     expect(screen.queryByText('No provider available')).toBeNull();
-    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+    expect(vi.mocked(notify.error)).not.toHaveBeenCalled();
   });
 
   it('loads enabled provider models while the availability check is still pending', async () => {
@@ -1871,7 +1871,7 @@ describe('ModelPicker availability gating', () => {
   });
 
   it('shows the no-provider state only inside the dropdown and fires a toast', async () => {
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     availableProviderOverride$.set([]);
 
     render(ModelPicker, {
@@ -1879,7 +1879,7 @@ describe('ModelPicker availability gating', () => {
     });
 
     await waitFor(() => {
-      expect(vi.mocked(toast.error)).toHaveBeenCalled();
+      expect(vi.mocked(notify.error)).toHaveBeenCalled();
     });
     expect(screen.queryByText('No provider available')).toBeNull();
 
@@ -1908,15 +1908,15 @@ describe('ModelPicker availability gating', () => {
   it('passes a stable toast id so no-provider toasts from multiple instances or re-fires collapse into one', async () => {
     // Regression (intent-hq/monorepo#1856): the per-instance dedupe flag does
     // not prevent stacking across mounted pickers or condition flickers — the
-    // stable svelte-sonner id is the authoritative dedupe.
-    const { toast } = await import('svelte-sonner');
+    // stable $lib/components/patterns/notify id is the authoritative dedupe.
+    const { notify } = await import('$lib/components/patterns/notify');
     availableProviderOverride$.set([]);
 
     render(ModelPicker, { props: { portal: false } });
     render(ModelPicker, { props: { portal: false } });
 
     await waitFor(() => {
-      expect(vi.mocked(toast.error).mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(vi.mocked(notify.error).mock.calls.length).toBeGreaterThanOrEqual(2);
     });
 
     // Flicker the condition false -> true to re-fire the toast. Wait for the
@@ -1928,18 +1928,18 @@ describe('ModelPicker availability gating', () => {
     });
     availableProviderOverride$.set([]);
 
-    const callsSoFar = vi.mocked(toast.error).mock.calls.length;
+    const callsSoFar = vi.mocked(notify.error).mock.calls.length;
     await waitFor(() => {
-      expect(vi.mocked(toast.error).mock.calls.length).toBeGreaterThan(callsSoFar);
+      expect(vi.mocked(notify.error).mock.calls.length).toBeGreaterThan(callsSoFar);
     });
 
-    for (const call of vi.mocked(toast.error).mock.calls) {
+    for (const call of vi.mocked(notify.error).mock.calls) {
       expect((call[1] as { id?: string } | undefined)?.id).toBe('no-provider-available');
     }
   });
 
   it('gives the no-provider toast an action that opens provider settings', async () => {
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     const { navigateToSettings } = await import('$lib/utils/workspace-navigation');
     vi.mocked(navigateToSettings).mockResolvedValue(undefined);
     availableProviderOverride$.set([]);
@@ -1949,10 +1949,10 @@ describe('ModelPicker availability gating', () => {
     });
 
     await waitFor(() => {
-      expect(vi.mocked(toast.error)).toHaveBeenCalled();
+      expect(vi.mocked(notify.error)).toHaveBeenCalled();
     });
 
-    const options = vi.mocked(toast.error).mock.calls[0][1] as
+    const options = vi.mocked(notify.error).mock.calls[0][1] as
       { action?: { label: string; onClick: () => void } } | undefined;
     expect(options?.action?.label).toBe('Open Settings');
 
@@ -1969,7 +1969,7 @@ describe('ModelPicker availability gating', () => {
     // run its bulk probe before the daemon socket is up — every probe fails,
     // hasCheckedOnce flips, and availableEnabledProviderIds is [] — which
     // must NOT fire the D1(B) toast/notice while daemon health is 'down'.
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     daemonHealth$.set('down');
     hasCheckedOnce$.set(true);
     availableProviderOverride$.set([]);
@@ -1982,14 +1982,14 @@ describe('ModelPicker availability gating', () => {
     await new Promise((r) => setTimeout(r, 50));
 
     expect(screen.queryByText('No provider available')).toBeNull();
-    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+    expect(vi.mocked(notify.error)).not.toHaveBeenCalled();
 
     // Once the daemon connects, a still-empty availability map is a real
     // confirmed failure — the toast fires and the dropdown owns the visible state.
     daemonHealth$.set('healthy');
 
     await waitFor(() => {
-      expect(vi.mocked(toast.error)).toHaveBeenCalled();
+      expect(vi.mocked(notify.error)).toHaveBeenCalled();
     });
     expect(screen.queryByText('No provider available')).toBeNull();
     await fireEvent.click(screen.getByRole('button'));
@@ -1997,7 +1997,7 @@ describe('ModelPicker availability gating', () => {
   });
 
   it('suppresses the no-provider notice and toast while daemon heartbeat health is degraded', async () => {
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     daemonHealth$.set('degraded');
     hasCheckedOnce$.set(true);
     availableProviderOverride$.set([]);
@@ -2010,11 +2010,11 @@ describe('ModelPicker availability gating', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(screen.queryByText('No provider available')).toBeNull();
-    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+    expect(vi.mocked(notify.error)).not.toHaveBeenCalled();
   });
 
   it('does not show the no-provider failure notice or toast when a provider is available', async () => {
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
       models: [{ value: 'auggie:sonnet4.6', label: 'Sonnet 4.6', description: 'Smart model' }],
     });
@@ -2028,11 +2028,11 @@ describe('ModelPicker availability gating', () => {
     });
 
     expect(screen.queryByText('No provider available')).toBeNull();
-    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+    expect(vi.mocked(notify.error)).not.toHaveBeenCalled();
   });
 
   it('excludes an enabled-but-unavailable provider from the rendered model list', async () => {
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
       if (providerId === 'codex') {
         return {
@@ -2057,7 +2057,7 @@ describe('ModelPicker availability gating', () => {
 
     expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
     expect(screen.queryByRole('option', { name: /Sonnet 4\.6/ })).toBeNull();
-    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+    expect(vi.mocked(notify.error)).not.toHaveBeenCalled();
   });
 
   it('dispatches ensureProvidersChecked on mount so availability is populated outside onboarding', async () => {

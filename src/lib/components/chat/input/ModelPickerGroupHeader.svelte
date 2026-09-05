@@ -58,12 +58,18 @@
         <Fa
           icon={faArrowsRotate}
           size={10}
-          class={cn('text-subtle transition-transform duration-500', refreshing && 'animate-spin')}
+          class={cn(
+            'text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none',
+            refreshing && 'animate-spin',
+          )}
         />
       </Button>
       <Fa
         icon={faChevronDown}
-        class={cn('text-subtle transition-transform duration-150', collapsed && 'rotate-90')}
+        class={cn(
+          'text-subtle transition-transform duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+          collapsed && 'rotate-90',
+        )}
         size={12}
       />
     </span>

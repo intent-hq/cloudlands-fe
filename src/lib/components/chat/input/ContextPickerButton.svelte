@@ -448,8 +448,9 @@
           {:else}
             <div class="py-1">
               {#each searchResults as result (result.id)}
-                <button
+                <Button
                   type="button"
+                  variant="plain"
                   onclick={() => handleSelectSearchResult(result)}
                   class="type-body flex w-full items-center gap-2 px-3 py-2
                          hover:bg-muted/40 cursor-pointer transition-colors text-left"
@@ -463,7 +464,7 @@
                       </div>
                     {/if}
                   </div>
-                </button>
+                </Button>
               {/each}
             </div>
           {/if}
@@ -481,8 +482,9 @@
                 {#each group.panels as panel (panel.id)}
                   {@const isCurrentAgent =
                     panel.type === 'agent' && panel.agentId === currentAgentId}
-                  <button
+                  <Button
                     type="button"
+                    variant="plain"
                     onclick={() => !isCurrentAgent && handleToggleItem(panel.id)}
                     disabled={isCurrentAgent}
                     class={cn(
@@ -510,13 +512,14 @@
                         >{m.chat_contextPicker_active_badge()}</span
                       >
                     {/if}
-                  </button>
+                  </Button>
                 {/each}
 
                 <!-- Selections in this group -->
                 {#each group.selections as selection (selection.id)}
-                  <button
+                  <Button
                     type="button"
+                    variant="plain"
                     onclick={() => handleToggleSelectionItem(selection.id)}
                     class="type-body flex w-full items-center gap-2 px-3 py-2
                            hover:bg-muted/40 cursor-pointer transition-colors"
@@ -528,7 +531,7 @@
                     />
                     <Fa icon={faQuoteLeft} class="h-3.5 w-3.5 text-ghost" />
                     <span class="flex-1 truncate text-left">{truncateText(selection.text)}</span>
-                  </button>
+                  </Button>
                 {/each}
               {/each}
             </div>

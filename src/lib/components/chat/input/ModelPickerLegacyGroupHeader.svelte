@@ -46,7 +46,7 @@
   <Fa
     icon={faChevronDown}
     class={cn(
-      'ml-auto text-subtle transition-[color,transform] duration-150 group-hover:text-muted-foreground',
+      'ml-auto text-subtle transition-[color,transform] duration-spring-fast ease-spring-fast motion-reduce:transition-none group-hover:text-muted-foreground',
       !expanded && 'rotate-90',
     )}
     size={12}

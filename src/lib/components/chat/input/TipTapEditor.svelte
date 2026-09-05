@@ -751,7 +751,7 @@
               return /^https?:\/\//.test(url) || url.startsWith('intent://');
             },
             HTMLAttributes: {
-              class: 'text-primary underline',
+              class: 'text-primary-ink underline',
             },
           }),
           Placeholder.configure({
@@ -1683,7 +1683,7 @@
     -webkit-user-select: none;
     white-space: nowrap;
     vertical-align: baseline;
-    transition: opacity var(--motion-fast);
+    transition: opacity var(--spring-fast) var(--spring-fast-ease);
   }
 
   .tiptap-container :global(.prompt-trailing-hint[data-state='ready']) {
@@ -1733,7 +1733,7 @@
     font-size: var(--text-caption-size);
     line-height: var(--text-caption-line-height);
     white-space: nowrap;
-    animation: prompt-trailing-tooltip-in var(--motion-fast) var(--ease-emphasized-out);
+    animation: prompt-trailing-tooltip-in var(--spring-fast) var(--spring-fast-ease);
   }
 
   :global(.prompt-trailing-hint-tooltip[data-side='top']) {
@@ -1745,7 +1745,7 @@
   }
 
   .tiptap-container :global(.prompt-trailing-hint[data-state='enhanced']) {
-    animation: prompt-enhanced 260ms ease-out both;
+    animation: prompt-enhanced var(--spring-slow) var(--spring-slow-ease) both;
   }
 
   @keyframes prompt-enhanced {

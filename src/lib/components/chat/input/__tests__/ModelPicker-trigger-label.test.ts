@@ -253,7 +253,7 @@ vi.mock('$shared/types/agent-session', () => ({
 }));
 
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: vi.fn() }));
-vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
 import { store as appStore } from '$store/renderer/store';
 import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';

@@ -282,13 +282,13 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
 
     // Q1 single-select: advances on selection.
     await fireEvent.click(screen.getByText('OS keychain'));
-    // Q2 multi-select: toggle two options, add an (Other) reply, Next.
+    // Q2 multi-select: toggle two options, add an (Other) reply, Continue.
     await fireEvent.click(screen.getByText('Desktop app'));
     await fireEvent.click(screen.getByText('CLI'));
-    await fireEvent.input(screen.getByPlaceholderText('Or type your own answer…'), {
+    await fireEvent.input(screen.getAllByPlaceholderText('Or type your own answer…').at(-1)!, {
       target: { value: 'and the docs site' },
     });
-    await fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    await fireEvent.click(screen.getByRole('button', { name: /continue/i }));
     // Q3 final single-select: one option click completes and sends immediately.
     await fireEvent.click(screen.getByText('Force re-login'));
 

@@ -60,15 +60,21 @@ for (const state of states) {
       .toBe(`${idle}px`);
     await expect(editorWrapper).toHaveClass(/placeholder-hidden/);
     await expect(editor.locator('p')).toHaveAttribute('data-placeholder', 'Ask anything');
-    /* The placeholder fades out over 0.3s after blur; on fast runners the
+    /* The placeholder fades out over the slow motion tier after blur; on fast runners the
        assertions above settle sooner than that, so sampling opacity without
        waiting reads a mid-transition value. Poll to the terminal value first. */
     await expect.poll(async () => (await placeholderMotion(editor)).opacity).toBe(0);
+    const slowTier = await input.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        duration: `${Number.parseFloat(style.getPropertyValue('--spring-slow')) / 1000}s`,
+        easing: style.getPropertyValue('--spring-slow-ease').trim(),
+      };
+    });
     expect(await placeholderMotion(editor)).toEqual({
       opacity: 0,
       property: 'opacity',
-      duration: '0.3s',
-      easing: 'ease-in-out',
+      ...slowTier,
     });
     const motion = await input.evaluate((node) => {
       const style = getComputedStyle(node);
@@ -79,8 +85,15 @@ for (const state of states) {
       };
     });
     expect(motion.property).toContain('min-height');
-    expect(motion.duration).toBe('0.1s');
-    expect(motion.easing).toBe('cubic-bezier(0.2, 0, 0, 1)');
+    const fastTier = await input.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        duration: `${Number.parseFloat(style.getPropertyValue('--spring-fast')) / 1000}s`,
+        easing: style.getPropertyValue('--spring-fast-ease').trim(),
+      };
+    });
+    expect(motion.duration).toBe(fastTier.duration);
+    expect(motion.easing).toBe(fastTier.easing);
 
     const idleRendered = await composerHeight(input, state.zoom);
     await editor.focus();
