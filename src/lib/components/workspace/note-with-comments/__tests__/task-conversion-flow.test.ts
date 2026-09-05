@@ -765,9 +765,11 @@ describe('NoteWithComments task conversion regression', () => {
     const TRAVERSAL_MARKDOWN = `![Escape](${TRAVERSAL_SRC})`;
     const RESOLVED_IMAGE_SRC = `workspace-file://${WORKSPACE_ID}/${IMAGE_PATH}`;
 
+    // Rewritten workspace-file URLs carry a per-render `?v=` cache-busting token;
+    // the stable contract under test is the `workspace-file://{ws}/{path}` part.
     function renderedImageSrcs(container: HTMLElement): string[] {
-      return Array.from(container.querySelectorAll('.ProseMirror img')).map(
-        (img) => img.getAttribute('src') ?? '',
+      return Array.from(container.querySelectorAll('.ProseMirror img')).map((img) =>
+        (img.getAttribute('src') ?? '').replace(/\?.*$/, ''),
       );
     }
 
