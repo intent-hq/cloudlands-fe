@@ -5,6 +5,9 @@
 
   interface Props {
     node: TaskNode;
+    focusState?: 'focused' | 'neighbour' | 'dimmed' | 'none';
+    zoomBand?: 'full' | 'mid' | 'far';
+    tabindex?: number;
     isActive?: boolean;
     lastActivityAt?: string;
     enterDelay?: number;
@@ -23,6 +26,9 @@
 
   let {
     node,
+    focusState = 'none',
+    zoomBand = 'full',
+    tabindex = 0,
     isActive = false,
     lastActivityAt,
     enterDelay = 0,
@@ -42,6 +48,9 @@
   data-active={isActive}
   data-task-state={node.state}
   data-last-activity-at={lastActivityAt}
+  data-focus-state={focusState}
+  data-zoom-band={zoomBand}
+  {tabindex}
   {...events}
 >
   <span class="mt-0.5 contents" inert>
@@ -59,7 +68,18 @@
     --agent-overview-font-serif: 'Source Serif 4 Variable', Georgia, serif;
 
     font-family: var(--agent-overview-font-serif);
-    transition: opacity 180ms ease;
+    transition:
+      opacity 120ms ease,
+      filter 120ms ease;
+  }
+  .task-anchor[data-focus-state='dimmed'] {
+    filter: opacity(0.28);
+  }
+  .task-title {
+    transition: opacity 120ms ease;
+  }
+  .task-anchor[data-zoom-band='far'] .task-title {
+    opacity: 0;
   }
   .task-anchor[data-motion-enabled='false'] {
     animation: none;

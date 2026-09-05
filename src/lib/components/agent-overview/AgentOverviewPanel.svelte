@@ -61,14 +61,14 @@
   // svelte-ignore state_referenced_locally - one-shot init-time dispatch; workspaceId doesn't change during component lifecycle
   appStore.dispatch(loadEventsRequested(workspaceId));
 
-  function navigationOptions(event: MouseEvent) {
+  function navigationOptions(event: MouseEvent | KeyboardEvent) {
     return {
       openInAdjacentPanel: event.metaKey || event.ctrlKey,
       sourcePanelId: findSourcePanelId(event.target),
     };
   }
 
-  function handleAgentClick(agentId: string, event: MouseEvent) {
+  function handleAgentClick(agentId: string, event: MouseEvent | KeyboardEvent) {
     const options = navigationOptions(event);
 
     appStore.dispatch(
@@ -80,11 +80,11 @@
     );
   }
 
-  function handleNoteClick(noteId: string, event: MouseEvent) {
+  function handleNoteClick(noteId: string, event: MouseEvent | KeyboardEvent) {
     appStore.dispatch(openWorkspaceNote(workspaceId, noteId, navigationOptions(event)));
   }
 
-  function handleFileClick(path: string, event: MouseEvent) {
+  function handleFileClick(path: string, event: MouseEvent | KeyboardEvent) {
     appStore.dispatch(openWorkspaceFile(workspaceId, path, navigationOptions(event)));
   }
 

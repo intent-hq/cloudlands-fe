@@ -14,6 +14,9 @@
 
   interface Props {
     node: FileNode | NoteNode;
+    focusState?: 'focused' | 'neighbour' | 'dimmed' | 'none';
+    zoomBand?: 'full' | 'mid' | 'far';
+    tabindex?: number;
     access: 'read' | 'write';
     additions?: number;
     deletions?: number;
@@ -37,6 +40,9 @@
 
   let {
     node,
+    focusState = 'none',
+    zoomBand = 'full',
+    tabindex = 0,
     access,
     additions = 0,
     deletions = 0,
@@ -80,6 +86,9 @@
   data-active={isActive}
   data-access={access}
   data-last-activity-at={lastActivityAt}
+  data-focus-state={focusState}
+  data-zoom-band={zoomBand}
+  {tabindex}
   title={tooltip}
   aria-label={ariaLabel}
   style:--resource-brightness={brightness}
@@ -96,7 +105,7 @@
       <span class="absolute right-1 top-1"><Fa icon={faArrowUpRightFromSquare} size="xs" /></span>
     {/if}
   </span>
-  <span class="line-clamp-2 w-full text-[11px] leading-[1.15]">{label}</span>
+  <span class="resource-label line-clamp-2 w-full text-[11px] leading-[1.15]">{label}</span>
 </button>
 
 <style>
@@ -106,7 +115,28 @@
     transition:
       opacity 600ms linear,
       border-color 180ms ease,
-      color 180ms ease;
+      color 120ms ease,
+      filter 120ms ease;
+  }
+  .resource-node[data-focus-state='dimmed'] {
+    filter: opacity(0.28);
+  }
+  .resource-card,
+  .resource-label {
+    transition:
+      opacity 120ms ease,
+      scale 120ms ease;
+  }
+  .resource-node[data-zoom-band='mid'] .resource-label,
+  .resource-node[data-zoom-band='far'] .resource-label,
+  .resource-node[data-zoom-band='mid'] .resource-card > :global(*),
+  .resource-node[data-zoom-band='far'] .resource-card > :global(*) {
+    opacity: 0;
+  }
+  .resource-node[data-zoom-band='mid'] .resource-card,
+  .resource-node[data-zoom-band='far'] .resource-card {
+    border-radius: 9999px;
+    scale: 0.22;
   }
   .resource-node[data-active='true'] .resource-card,
   .resource-node:hover .resource-card {

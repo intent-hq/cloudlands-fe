@@ -77,6 +77,19 @@ function edge(target: FileNode): GraphEdge {
   };
 }
 
+function assignment(agentId = 'one', taskId = 'one'): GraphEdge {
+  return {
+    id: `assignment:${agentId}:${taskId}`,
+    type: 'task-assignment',
+    sourceId: `agent:${agentId}`,
+    targetId: `task:${taskId}`,
+    agentId,
+    taskId,
+    timestamp,
+    isActive: false,
+  };
+}
+
 function graph(nodes: GraphState['nodes'] = [], edges: GraphEdge[] = []): GraphState {
   return {
     nodes,
@@ -166,16 +179,116 @@ describe('AgentActivityGraph', () => {
     expect(screen.getByText('No agents yet')).toBeTruthy();
   });
 
-  it('dispatches task and agent navigation from accessible node buttons', async () => {
+  it('selects on click and opens agent and task navigation from double click or Enter', async () => {
     const onAgentClick = vi.fn();
     const onTaskClick = vi.fn();
     renderGraph(graph([agent(), task()]), { onAgentClick, onTaskClick });
+    const agentButton = screen.getByRole('button', { name: /Agent One/ });
+    const taskButton = screen.getByRole('button', { name: /Task One/ });
 
-    await fireEvent.click(screen.getByRole('button', { name: /Agent One/ }));
-    await fireEvent.click(screen.getByRole('button', { name: /Task One/ }));
+    await fireEvent.click(agentButton);
+    expect(agentButton.getAttribute('data-focus-state')).toBe('focused');
+    expect(onAgentClick).not.toHaveBeenCalled();
+
+    await fireEvent.dblClick(agentButton);
+    taskButton.focus();
+    await fireEvent.keyDown(taskButton, { key: 'Enter' });
 
     expect(onAgentClick).toHaveBeenCalledWith('one', expect.any(MouseEvent));
-    expect(onTaskClick).toHaveBeenCalledWith('one', expect.any(MouseEvent));
+    expect(onTaskClick).toHaveBeenCalledWith('one', expect.any(KeyboardEvent));
+  });
+
+  it('pins neighbourhood focus and preserves it across graph updates until cleared', async () => {
+    const unrelated = agent('two');
+    const target = file(1);
+    const view = renderGraph(
+      graph([target, unrelated, task(), agent()], [assignment(), edge(target)]),
+    );
+    const agentButton = screen.getByRole('button', { name: /Agent One/ });
+    const taskButton = screen.getByRole('button', { name: /Task One/ });
+    const fileButton = screen.getByRole('button', { name: /file-1\.ts/ });
+    const unrelatedButton = screen.getByRole('button', { name: /Agent two/ });
+
+    await fireEvent.click(agentButton);
+    expect(agentButton.getAttribute('data-focus-state')).toBe('focused');
+    expect(taskButton.getAttribute('data-focus-state')).toBe('neighbour');
+    expect(fileButton.getAttribute('data-focus-state')).toBe('neighbour');
+    expect(unrelatedButton.getAttribute('data-focus-state')).toBe('dimmed');
+    await waitFor(() =>
+      expect(
+        view.container
+          .querySelector('[data-edge-id="assignment:one:one"]')
+          ?.getAttribute('data-highlighted'),
+      ).toBe('true'),
+    );
+
+    await view.rerender({
+      graph: graph(
+        [target, unrelated, task(), { ...agent(), status: 'responding' }],
+        [assignment(), edge(target)],
+      ),
+    });
+    expect(agentButton.getAttribute('data-focus-state')).toBe('focused');
+
+    await fireEvent.keyDown(agentButton, { key: 'Escape' });
+    expect(agentButton.getAttribute('data-focus-state')).toBe('none');
+    expect(unrelatedButton.getAttribute('data-focus-state')).toBe('none');
+  });
+
+  it('cycles a task-first focus order and navigates parent, child, and siblings', async () => {
+    useViewport();
+    const secondAgent = agent('two');
+    const target = file(1);
+    const view = renderGraph(
+      graph(
+        [target, secondAgent, agent(), task()],
+        [assignment(), assignment('two'), edge(target)],
+      ),
+    );
+    const { viewport } = graphElements(view.container);
+    const taskButton = screen.getByRole('button', { name: /Task One/ });
+    const firstAgent = screen.getByRole('button', { name: /Agent One/ });
+    const fileButton = screen.getByRole('button', { name: /file-1\.ts/ });
+
+    viewport.focus();
+    await fireEvent.keyDown(viewport, { key: 'Tab' });
+    expect(document.activeElement).toBe(taskButton);
+    await fireEvent.keyDown(taskButton, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(firstAgent);
+    await fireEvent.keyDown(firstAgent, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /Agent two/ }));
+    await fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(taskButton);
+    await fireEvent.keyDown(taskButton, { key: 'Tab' });
+    expect(document.activeElement).toBe(firstAgent);
+    await fireEvent.keyDown(firstAgent, { key: 'Tab' });
+    expect(document.activeElement).toBe(fileButton);
+  });
+
+  it('pans on plain wheel and zooms into semantic bands with a modifier', async () => {
+    useViewport();
+    const view = renderGraph(graph([agent(), task()]));
+    const { viewport, scene } = graphElements(view.container);
+    await waitForFit(scene);
+    const initialZoom = (viewport as HTMLElement & { __zoom: { x: number; y: number; k: number } })
+      .__zoom;
+
+    await fireEvent.wheel(viewport, { deltaX: 24, deltaY: 80, clientX: 400, clientY: 300 });
+    const pannedZoom = (viewport as HTMLElement & { __zoom: { x: number; y: number; k: number } })
+      .__zoom;
+    expect(pannedZoom.k).toBe(initialZoom.k);
+    expect([pannedZoom.x, pannedZoom.y]).not.toEqual([initialZoom.x, initialZoom.y]);
+
+    await fireEvent.wheel(viewport, {
+      deltaY: 5_000,
+      ctrlKey: true,
+      clientX: 400,
+      clientY: 300,
+    });
+    await waitFor(() => expect(scene.getAttribute('data-zoom-band')).toBe('far'));
+    expect(screen.getByRole('button', { name: /Agent One/ }).getAttribute('data-zoom-band')).toBe(
+      'far',
+    );
   });
 
   it('caps resources per agent and expands the remainder', async () => {

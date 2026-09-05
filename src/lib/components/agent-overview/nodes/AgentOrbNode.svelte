@@ -6,6 +6,9 @@
 
   interface Props {
     node: AgentNode;
+    focusState?: 'focused' | 'neighbour' | 'dimmed' | 'none';
+    zoomBand?: 'full' | 'mid' | 'far';
+    tabindex?: number;
     isActive?: boolean;
     lastActivityAt?: string;
     enterDelay?: number;
@@ -24,6 +27,9 @@
 
   let {
     node,
+    focusState = 'none',
+    zoomBand = 'full',
+    tabindex = 0,
     isActive = false,
     lastActivityAt,
     enterDelay = 0,
@@ -57,6 +63,9 @@
   data-active={isActive}
   data-last-activity-at={lastActivityAt}
   data-agent-status={node.status}
+  data-focus-state={focusState}
+  data-zoom-band={zoomBand}
+  {tabindex}
   title={agentLabel}
   aria-label={agentLabel}
   {...events}
@@ -67,7 +76,7 @@
     variant="prominent"
     state={avatarState}
   />
-  <span class="w-full truncate text-[12px] leading-tight" class:font-semibold={isActive}
+  <span class="agent-name w-full truncate text-[12px] leading-tight" class:font-semibold={isActive}
     >{node.name}</span
   >
 </button>
@@ -76,9 +85,19 @@
   .agent-orb {
     position: relative;
     transition:
-      opacity 180ms ease,
-      filter 180ms ease,
-      scale 180ms ease;
+      opacity 120ms ease,
+      filter 120ms ease,
+      scale 120ms ease;
+  }
+  .agent-orb[data-focus-state='dimmed'] {
+    filter: opacity(0.28);
+  }
+  .agent-name {
+    transition: opacity 120ms ease;
+  }
+  .agent-orb[data-zoom-band='mid'] .agent-name,
+  .agent-orb[data-zoom-band='far'] .agent-name {
+    opacity: 0;
   }
   .agent-orb[data-agent-status='waiting'] {
     animation: waiting-pulse 2.8s ease-in-out infinite;

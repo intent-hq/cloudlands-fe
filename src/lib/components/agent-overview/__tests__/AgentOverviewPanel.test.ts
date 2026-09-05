@@ -167,13 +167,15 @@ describe('AgentOverviewPanel', () => {
     expect(screen.queryByRole('button', { name: /one\.ts/ })).toBeNull();
   });
 
-  it('routes agent, task, note, and file clicks through panel navigation actions', async () => {
+  it('routes agent, task, note, and file open gestures through panel navigation actions', async () => {
     renderPanel();
 
-    await fireEvent.click(screen.getByRole('button', { name: /Agent One/ }), { ctrlKey: true });
-    await fireEvent.click(screen.getByRole('button', { name: /Task One/ }));
-    await fireEvent.click(screen.getByRole('button', { name: /Note One/ }));
-    await fireEvent.click(screen.getByRole('button', { name: /one\.ts/ }));
+    await fireEvent.dblClick(screen.getByRole('button', { name: /Agent One/ }), { ctrlKey: true });
+    const taskButton = screen.getByRole('button', { name: /Task One/ });
+    taskButton.focus();
+    await fireEvent.keyDown(taskButton, { key: 'Enter' });
+    await fireEvent.dblClick(screen.getByRole('button', { name: /Note One/ }));
+    await fireEvent.dblClick(screen.getByRole('button', { name: /one\.ts/ }));
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       openAgentTabRequested('workspace-one', {

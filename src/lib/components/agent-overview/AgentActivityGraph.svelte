@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { easeCubicOut, select, zoom, zoomIdentity, type ZoomBehavior } from 'd3';
+  import { easeCubicOut, select, zoom, zoomIdentity, zoomTransform, type ZoomBehavior } from 'd3';
   import Fa from 'svelte-fa';
   import { faExpand } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
@@ -12,6 +12,7 @@
   import TaskAnchorNode from './nodes/TaskAnchorNode.svelte';
   import {
     GRAPH_FIT_PADDING,
+    GRAPH_NODE_DIMENSIONS,
     GRAPH_ZOOM_EXTENT,
     MAX_VISIBLE_RESOURCES_PER_AGENT,
   } from './constants';
@@ -25,12 +26,14 @@
     messages: boolean;
   }
 
+  export type GraphOpenEvent = MouseEvent | KeyboardEvent;
+
   interface Props {
     graph: GraphState;
-    onAgentClick: (agentId: string, event: MouseEvent) => void;
-    onTaskClick: (taskId: string, event: MouseEvent) => void;
-    onNoteClick: (noteId: string, event: MouseEvent) => void;
-    onFileClick: (path: string, event: MouseEvent) => void;
+    onAgentClick: (agentId: string, event: GraphOpenEvent) => void;
+    onTaskClick: (taskId: string, event: GraphOpenEvent) => void;
+    onNoteClick: (noteId: string, event: GraphOpenEvent) => void;
+    onFileClick: (path: string, event: GraphOpenEvent) => void;
     layers: GraphLayers;
     fitRequest?: number;
     showFitControl?: boolean;
@@ -53,9 +56,13 @@
   let layout: ConstellationLayout | null = null;
   let zoomBehavior: ZoomBehavior<HTMLDivElement, unknown> | null = null;
   let zoomScale = $state(1);
+  let hoveredNodeId = $state<string | null>(null);
+  let selectedNodeId = $state<string | null>(null);
+  let keyboardNodeId = $state<string | null>(null);
+  let spaceHeld = $state(false);
+  let canvasPanning = $state(false);
   let positions = $state<Map<string, GraphPosition>>(new Map());
   let expandedAgentIds = $state<Set<string>>(new Set());
-  let spotlightNodeId = $state<string | null>(null);
   let previousNodeIds = '';
   let autoFitPending = false;
   let autoFitTransitionActive = false;
@@ -74,6 +81,8 @@
     moved: boolean;
   } | null>(null);
   const suppressedClicks = new Set<string>();
+  type FocusState = 'focused' | 'neighbour' | 'dimmed' | 'none';
+  type ZoomBand = 'full' | 'mid' | 'far';
 
   const visibleGraph = $derived.by(() => {
     const baseNodes = graph.nodes.filter(
@@ -125,14 +134,48 @@
     return { nodes, edges, collapsedByAgent };
   });
 
-  const spotlightIds = $derived.by(() => {
-    if (!spotlightNodeId) return null;
-    const ids = new Set([spotlightNodeId]);
+  const focusNodeId = $derived(hoveredNodeId ?? selectedNodeId ?? keyboardNodeId);
+  const focusIds = $derived.by(() => {
+    if (!focusNodeId) return null;
+    const ids = new Set([focusNodeId]);
     for (const edge of visibleGraph.edges) {
-      if (edge.sourceId === spotlightNodeId) ids.add(edge.targetId);
-      if (edge.targetId === spotlightNodeId) ids.add(edge.sourceId);
+      if (edge.sourceId === focusNodeId) ids.add(edge.targetId);
+      if (edge.targetId === focusNodeId) ids.add(edge.sourceId);
     }
     return ids;
+  });
+  const zoomBand = $derived<ZoomBand>(
+    zoomScale >= 0.6 ? 'full' : zoomScale >= 0.35 ? 'mid' : 'far',
+  );
+
+  const focusOrder = $derived.by(() => {
+    const ordered: GraphNode[] = [];
+    const added = new Set<string>();
+    const append = (node: GraphNode | undefined) => {
+      if (node && !added.has(node.id)) {
+        added.add(node.id);
+        ordered.push(node);
+      }
+    };
+    const tasks = visibleGraph.nodes.filter((node) => node.type === 'task');
+    const agents = visibleGraph.nodes
+      .filter((node) => node.type === 'agent')
+      .toSorted((a, b) => a.id.localeCompare(b.id));
+    const resources = visibleGraph.nodes
+      .filter((node) => node.type === 'file' || node.type === 'note')
+      .toSorted((a, b) => a.id.localeCompare(b.id));
+    for (const task of tasks) {
+      append(task);
+      const taskAgents = agents.filter((agent) => parentIdFor(agent.id) === task.id);
+      for (const agent of taskAgents) {
+        append(agent);
+        resources.filter((resource) => parentIdFor(resource.id) === agent.id).forEach(append);
+      }
+    }
+    agents.forEach(append);
+    resources.forEach(append);
+    visibleGraph.nodes.forEach(append);
+    return ordered;
   });
 
   const hasPrimaryNodes = $derived(
@@ -142,6 +185,36 @@
   function resourceTimestamp(node: GraphNode | undefined): number {
     if (!node || (node.type !== 'file' && node.type !== 'note')) return 0;
     return Date.parse(node.lastActionTimestamp) || 0;
+  }
+
+  function parentIdFor(nodeId: string): string | null {
+    const node = visibleGraph.nodes.find((candidate) => candidate.id === nodeId);
+    if (!node || node.type === 'task') return null;
+    if (node.type === 'file' || node.type === 'note') {
+      return (
+        visibleGraph.edges.find(
+          (edge) => edge.targetId === node.id && edge.sourceId.startsWith('agent:'),
+        )?.sourceId ?? null
+      );
+    }
+    return (
+      visibleGraph.edges.find(
+        (edge) => edge.type === 'task-assignment' && edge.sourceId === node.id,
+      )?.targetId ??
+      visibleGraph.edges.find((edge) => edge.type === 'delegation' && edge.targetId === node.id)
+        ?.sourceId ??
+      null
+    );
+  }
+
+  function childrenFor(nodeId: string): GraphNode[] {
+    return focusOrder.filter((node) => parentIdFor(node.id) === nodeId);
+  }
+
+  function focusStateFor(nodeId: string): FocusState {
+    if (!focusNodeId || !focusIds) return 'none';
+    if (nodeId === focusNodeId) return 'focused';
+    return focusIds.has(nodeId) ? 'neighbour' : 'dimmed';
   }
 
   function publishPositions(nodes: GraphNode[], alpha = 1): void {
@@ -194,6 +267,21 @@
   function applyFit(coalesce: boolean): void {
     if (!layout || !zoomBehavior || !container || visibleGraph.nodes.length === 0) return;
     const bounds = layout.fitBounds();
+    applyBounds(bounds, coalesce);
+  }
+
+  function applyBounds(
+    bounds: {
+      minX: number;
+      minY: number;
+      maxX: number;
+      maxY: number;
+      width: number;
+      height: number;
+    },
+    coalesce: boolean,
+  ): void {
+    if (!zoomBehavior || !container) return;
     const width = container.clientWidth;
     const height = container.clientHeight;
     const [minimumScale, maximumScale] = GRAPH_ZOOM_EXTENT;
@@ -229,7 +317,7 @@
     autoFitTransitionActive = true;
     selection
       .transition('graph-fit')
-      .duration(500)
+      .duration(250)
       .ease(easeCubicOut)
       .call(zoomBehavior.transform, transform)
       .on('end.graph-fit', finishAutoFitTransition)
@@ -241,6 +329,19 @@
     if (target instanceof Element && !target.closest('[data-graph-node], [data-graph-controls]')) {
       fitToView();
     }
+  }
+
+  function canvasTarget(target: EventTarget | null): boolean {
+    return (
+      !(target instanceof Element) || !target.closest('[data-graph-node], [data-graph-controls]')
+    );
+  }
+
+  function handleCanvasClick(event: MouseEvent): void {
+    if (!canvasTarget(event.target)) return;
+    selectedNodeId = null;
+    keyboardNodeId = null;
+    container.focus({ preventScroll: true });
   }
 
   function handlePointerDown(node: GraphNode, event: PointerEvent): void {
@@ -281,16 +382,169 @@
       event.preventDefault();
       return;
     }
+    event.stopPropagation();
+    selectedNodeId = node.id;
+    keyboardNodeId = node.id;
+  }
+
+  function handleNodeDoubleClick(node: GraphNode, event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (node.type === 'task') fitTaskCluster(node.id);
+    else openNode(node, event);
+  }
+
+  function openNode(node: GraphNode, event: GraphOpenEvent): void {
     if (node.type === 'agent') onAgentClick(node.agentId, event);
     else if (node.type === 'task') onTaskClick(node.taskId, event);
     else if (node.type === 'note') onNoteClick(node.noteId, event);
     else onFileClick(node.path, event);
   }
 
-  function handleNodeDoubleClick(node: GraphNode, event: MouseEvent): void {
+  function fitTaskCluster(taskId: string): void {
+    const included = new Set([taskId]);
+    const agentIds = visibleGraph.nodes
+      .filter((node) => node.type === 'agent' && parentIdFor(node.id) === taskId)
+      .map((node) => node.id);
+    agentIds.forEach((id) => included.add(id));
+    for (const node of visibleGraph.nodes) {
+      if (
+        (node.type === 'file' || node.type === 'note') &&
+        agentIds.includes(parentIdFor(node.id) ?? '')
+      ) {
+        included.add(node.id);
+      }
+    }
+    const nodes = visibleGraph.nodes.filter((node) => included.has(node.id));
+    const bounds = nodes.reduce(
+      (result, node) => {
+        const position = positions.get(node.id) ?? node;
+        const dimensions = GRAPH_NODE_DIMENSIONS[node.type];
+        result.minX = Math.min(result.minX, position.x - dimensions.width / 2);
+        result.minY = Math.min(result.minY, position.y - dimensions.height / 2);
+        result.maxX = Math.max(result.maxX, position.x + dimensions.width / 2);
+        result.maxY = Math.max(result.maxY, position.y + dimensions.height / 2);
+        return result;
+      },
+      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
+    );
+    if (!Number.isFinite(bounds.minX)) return;
+    applyBounds(
+      { ...bounds, width: bounds.maxX - bounds.minX, height: bounds.maxY - bounds.minY },
+      false,
+    );
+  }
+
+  function nodeElement(nodeId: string): HTMLElement | undefined {
+    return Array.from(container.querySelectorAll<HTMLElement>('[data-graph-node]')).find(
+      (element) => element.dataset.nodeId === nodeId,
+    );
+  }
+
+  function ensureNodeVisible(nodeId: string): void {
+    if (!zoomBehavior) return;
+    const position = positions.get(nodeId) ?? visibleGraph.nodes.find((node) => node.id === nodeId);
+    if (!position) return;
+    const transform = zoomTransform(container);
+    const inset = 48;
+    const screenX = transform.applyX(position.x);
+    const screenY = transform.applyY(position.y);
+    const targetX = Math.max(inset, Math.min(container.clientWidth - inset, screenX));
+    const targetY = Math.max(inset, Math.min(container.clientHeight - inset, screenY));
+    if (targetX === screenX && targetY === screenY) return;
+    const next = zoomIdentity
+      .translate(transform.x + targetX - screenX, transform.y + targetY - screenY)
+      .scale(transform.k);
+    const selection = select(container).interrupt('graph-focus');
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    if (reduced) selection.call(zoomBehavior.transform, next);
+    else
+      selection
+        .transition('graph-focus')
+        .duration(220)
+        .ease(easeCubicOut)
+        .call(zoomBehavior.transform, next);
+  }
+
+  function focusNode(node: GraphNode): void {
+    keyboardNodeId = node.id;
+    nodeElement(node.id)?.focus({ preventScroll: true });
+    ensureNodeVisible(node.id);
+  }
+
+  function handleGraphKeyDown(event: KeyboardEvent): void {
+    const target = event.target;
+    const fromGraphNode = target instanceof Element && Boolean(target.closest('[data-graph-node]'));
+    if (event.key === 'Escape') {
+      selectedNodeId = null;
+      keyboardNodeId = null;
+      container.focus({ preventScroll: true });
+      return;
+    }
+    if (event.key === ' ' && (target === container || fromGraphNode)) {
+      spaceHeld = true;
+      event.preventDefault();
+      return;
+    }
+    if (event.key === 'Enter' && fromGraphNode && keyboardNodeId) {
+      const node = visibleGraph.nodes.find((candidate) => candidate.id === keyboardNodeId);
+      if (node) openNode(node, event);
+      event.preventDefault();
+      return;
+    }
+    if (!['Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    if (!(target === container || fromGraphNode) || focusOrder.length === 0) return;
+    const currentIndex = focusOrder.findIndex((node) => node.id === keyboardNodeId);
+    let next: GraphNode | undefined;
+    if (event.key === 'Tab') {
+      const offset = event.shiftKey ? -1 : 1;
+      const base = currentIndex < 0 ? (event.shiftKey ? 0 : -1) : currentIndex;
+      next = focusOrder[(base + offset + focusOrder.length) % focusOrder.length];
+    } else if (event.key === 'ArrowUp' && keyboardNodeId) {
+      const parentId = parentIdFor(keyboardNodeId);
+      next = focusOrder.find((node) => node.id === parentId);
+    } else if (event.key === 'ArrowDown' && keyboardNodeId) {
+      next = childrenFor(keyboardNodeId)[0];
+    } else if (keyboardNodeId) {
+      const parentId = parentIdFor(keyboardNodeId);
+      const siblings = parentId
+        ? childrenFor(parentId)
+        : focusOrder.filter((node) => !parentIdFor(node.id));
+      const siblingIndex = siblings.findIndex((node) => node.id === keyboardNodeId);
+      const offset = event.key === 'ArrowLeft' ? -1 : 1;
+      if (siblingIndex >= 0)
+        next = siblings[(siblingIndex + offset + siblings.length) % siblings.length];
+    }
+    if (next) focusNode(next);
     event.preventDefault();
-    event.stopPropagation();
-    layout?.unpin(node.id);
+  }
+
+  function handleGraphKeyUp(event: KeyboardEvent): void {
+    if (event.key === ' ') spaceHeld = false;
+  }
+
+  function handleWindowBlur(): void {
+    spaceHeld = false;
+  }
+
+  function handleWheel(event: WheelEvent): void {
+    if (event.ctrlKey || event.metaKey || !zoomBehavior) return;
+    event.preventDefault();
+    const factor =
+      event.deltaMode === WheelEvent.DOM_DELTA_LINE
+        ? 16
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+          ? container.clientHeight
+          : 1;
+    const transform = zoomTransform(container);
+    const next = transform.translate(
+      (-event.deltaX * factor) / transform.k,
+      (-event.deltaY * factor) / transform.k,
+    );
+    select(container)
+      .interrupt('graph-fit')
+      .interrupt('graph-focus')
+      .call(zoomBehavior.transform, next);
   }
 
   function resourceAccess(node: FileNode | NoteNode): {
@@ -329,7 +583,7 @@
     );
     if (reduced || !target || target.dataset.motionEnabled === 'false') return;
     target.animate(
-      [{ borderColor: 'var(--color-primary)' }, { borderColor: 'var(--color-primary)' }],
+      [{ borderColor: 'var(--color-foreground)' }, { borderColor: 'var(--color-foreground)' }],
       { duration: 180, easing: 'ease-out' },
     );
   }
@@ -366,10 +620,9 @@
       onpointermove: handlePointerMove,
       onpointerup: handlePointerEnd,
       onpointercancel: handlePointerEnd,
-      onmouseenter: () => (spotlightNodeId = node.id),
-      onmouseleave: () => (spotlightNodeId = null),
-      onfocus: () => (spotlightNodeId = node.id),
-      onblur: () => (spotlightNodeId = null),
+      onmouseenter: () => (hoveredNodeId = node.id),
+      onmouseleave: () => (hoveredNodeId = null),
+      onfocus: () => (keyboardNodeId = node.id),
     };
   }
 
@@ -387,6 +640,13 @@
     if (fitRequest > 0 && layout) requestAnimationFrame(fitToView);
   });
 
+  $effect(() => {
+    const ids = new Set(visibleGraph.nodes.map((node) => node.id));
+    if (selectedNodeId && !ids.has(selectedNodeId)) selectedNodeId = null;
+    if (keyboardNodeId && !ids.has(keyboardNodeId)) keyboardNodeId = null;
+    if (hoveredNodeId && !ids.has(hoveredNodeId)) hoveredNodeId = null;
+  });
+
   onMount(() => {
     const width = Math.max(1, container.clientWidth);
     const height = Math.max(1, container.clientHeight);
@@ -397,25 +657,36 @@
     zoomBehavior = zoom<HTMLDivElement, unknown>()
       .scaleExtent(GRAPH_ZOOM_EXTENT)
       .filter((event) => {
-        if (event.type === 'wheel') return true;
-        const target = event.target;
-        return (
-          !(target instanceof Element) ||
-          !target.closest('[data-graph-node], [data-graph-controls]')
-        );
+        if (event.type === 'wheel') return event.ctrlKey || event.metaKey;
+        if (event.type.startsWith('touch')) return canvasTarget(event.target);
+        return event.type === 'mousedown' && spaceHeld && canvasTarget(event.target);
+      })
+      .on('start', (event) => {
+        if (event.sourceEvent) {
+          canvasPanning = true;
+          select(container).interrupt('graph-fit').interrupt('graph-focus');
+        }
       })
       .on('zoom', (event) => {
         if (event.sourceEvent) {
           autoFitPending = false;
           autoFitQueued = false;
           select(container).interrupt('graph-fit');
+          select(container).interrupt('graph-focus');
         }
         zoomScale = event.transform.k;
         if (scene) {
           scene.style.transform = `translate(${event.transform.x}px, ${event.transform.y}px) scale(${event.transform.k})`;
         }
-      });
+      })
+      .on('end', () => (canvasPanning = false));
     select(container).call(zoomBehavior).on('dblclick.zoom', null);
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    container.addEventListener('click', handleCanvasClick);
+    container.addEventListener('dblclick', handleCanvasDoubleClick);
+    container.addEventListener('keydown', handleGraphKeyDown);
+    window.addEventListener('keyup', handleGraphKeyUp);
+    window.addEventListener('blur', handleWindowBlur);
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => fitToView());
       resizeObserver.observe(container);
@@ -429,6 +700,12 @@
 
   onDestroy(() => {
     resizeObserver?.disconnect();
+    container?.removeEventListener('wheel', handleWheel);
+    container?.removeEventListener('click', handleCanvasClick);
+    container?.removeEventListener('dblclick', handleCanvasDoubleClick);
+    container?.removeEventListener('keydown', handleGraphKeyDown);
+    window.removeEventListener('keyup', handleGraphKeyUp);
+    window.removeEventListener('blur', handleWindowBlur);
     unsubscribeTick?.();
     layout?.stop();
     select(container).interrupt('graph-fit');
@@ -439,9 +716,9 @@
 <div
   bind:this={container}
   class="relative h-full min-h-64 w-full touch-none overflow-hidden bg-background"
-  class:cursor-grabbing={dragState !== null}
-  class:cursor-grab={dragState === null}
-  ondblclick={handleCanvasDoubleClick}
+  class:cursor-grabbing={spaceHeld && canvasPanning}
+  class:cursor-grab={spaceHeld && !canvasPanning}
+  tabindex="-1"
   role="application"
   aria-label={m.ui_zoomPanViewport_viewport_ariaLabel()}
   data-agent-activity-graph
@@ -457,12 +734,13 @@
     <div
       bind:this={scene}
       class="graph-scene absolute inset-0 origin-top-left will-change-transform"
+      data-zoom-band={zoomBand}
     >
       <GraphEdgeLayer
         edges={visibleGraph.edges}
         nodes={visibleGraph.nodes}
         {positions}
-        {spotlightNodeId}
+        {focusNodeId}
         {playbackSpeed}
         onMessageArrival={handleMessageArrival}
       />
@@ -470,8 +748,7 @@
         {@const position = positions.get(node.id) ?? node}
         {@const activity = nodeActivity(node)}
         <div
-          class="absolute transition-opacity duration-150"
-          class:opacity-35={spotlightIds !== null && !spotlightIds.has(node.id)}
+          class="absolute"
           style:transform={`translate(${position.x}px, ${position.y}px) translate(-50%, -50%)`}
           style:z-index={node.type === 'task' ? 2 : node.type === 'agent' ? 3 : 1}
         >
@@ -481,6 +758,9 @@
               {...activity}
               enterDelay={nodeEnterDelay(index, playbackSpeed)}
               {playbackSpeed}
+              focusState={focusStateFor(node.id)}
+              {zoomBand}
+              tabindex={node.id === (keyboardNodeId ?? focusOrder[0]?.id) ? 0 : -1}
               {...nodeEvents(node)}
             />
           {:else if node.type === 'agent'}
@@ -489,6 +769,9 @@
               {...activity}
               enterDelay={nodeEnterDelay(index, playbackSpeed)}
               {playbackSpeed}
+              focusState={focusStateFor(node.id)}
+              {zoomBand}
+              tabindex={node.id === (keyboardNodeId ?? focusOrder[0]?.id) ? 0 : -1}
               {...nodeEvents(node)}
             />
             {#if visibleGraph.collapsedByAgent.has(node.id)}
@@ -511,6 +794,9 @@
               {...access}
               enterDelay={nodeEnterDelay(index, playbackSpeed)}
               {playbackSpeed}
+              focusState={focusStateFor(node.id)}
+              {zoomBand}
+              tabindex={node.id === (keyboardNodeId ?? focusOrder[0]?.id) ? 0 : -1}
               {...nodeEvents(node)}
             />
           {/if}
