@@ -10,9 +10,9 @@ import {
   type Collection,
 } from '@augmentcode/themis/utils/collections/collection-utils';
 import {
-  MAX_TERMINAL_OVERLAY_HEIGHT,
-  MIN_TERMINAL_OVERLAY_HEIGHT,
+  DEFAULT_TERMINAL_OVERLAY_HEIGHT,
   clampTerminalOverlayHeight,
+  isValidTerminalOverlayHeight,
 } from '$shared/utils/terminal-overlay-height';
 import { setScriptsData } from '../scripts/scripts-slice';
 
@@ -20,8 +20,7 @@ import { setScriptsData } from '../scripts/scripts-slice';
 // Constants
 // ============================================================================
 
-const DEFAULT_HEIGHT = 50;
-
+/** Legacy global height key; still read as the fallback for never-resized workspaces. */
 export const STORAGE_KEY = 'terminal-overlay-height';
 export const CUSTOM_NAMES_STORAGE_KEY = 'terminal-custom-names';
 export const WORKSPACE_STATE_STORAGE_KEY = 'terminal-overlay-workspace-state';
@@ -76,10 +75,19 @@ export interface PersistedWorkspaceState {
   activeTerminalId: string | null;
   /** Optional for backward compat with entries persisted before it existed. */
   selectedScriptId?: string | null;
+  /** Optional for backward compat with entries persisted before it existed. */
+  height?: number;
 }
 
 export type TerminalOverlayState = {
+  /** Fallback height for workspaces without their own (legacy global value or default). */
   height: number;
+  /**
+   * Per-workspace overlay heights in vh. Kept outside `workspaces` so boot
+   * hydration never materializes a workspace entry — persistence relies on the
+   * `emptyWorkspaceState` identity to skip not-yet-loaded workspaces.
+   */
+  workspaceHeights: Record<string, number>;
   workspaces: Record<string, WorkspaceTerminalState>;
 };
 
@@ -99,7 +107,8 @@ export const emptyWorkspaceState: WorkspaceTerminalState = {
 };
 
 const initialState: TerminalOverlayState = {
-  height: DEFAULT_HEIGHT,
+  height: DEFAULT_TERMINAL_OVERLAY_HEIGHT,
+  workspaceHeights: {},
   workspaces: {},
 };
 
@@ -141,7 +150,8 @@ export const removeTerminal = createAction<[wsId: string, termId: string]>(
   'terminals/removeTerminal',
 );
 
-export const setTerminalOverlayHeight = createAction<[height: number]>('terminals/setHeight');
+export const setTerminalOverlayHeight =
+  createAction<[wsId: string, height: number]>('terminals/setHeight');
 
 export const renameTerminal = createAction<[wsId: string, termId: string, newName: string]>(
   'terminals/renameTerminal',
@@ -166,8 +176,15 @@ export const loadWorkspaceTerminals = createAction<
   ]
 >('terminals/loadWorkspaceTerminals');
 
-/** Hydrate height from localStorage (dispatched by init saga) */
-export const hydrateHeight = createAction<[height: number]>('terminals/hydrateHeight');
+/**
+ * Hydrate heights from localStorage (dispatched by init saga): the legacy
+ * global value becomes the fallback, `workspaceHeights` seeds per-workspace
+ * heights. Out-of-range entries are ignored individually.
+ */
+export const hydrateHeight =
+  createAction<[height: number, workspaceHeights?: Record<string, number>]>(
+    'terminals/hydrateHeight',
+  );
 
 export const createTerminalRequested = createAction<[wsId: string]>(
   'terminals/createTerminalRequested',
@@ -202,6 +219,15 @@ function setWs(
   ws: WorkspaceTerminalState,
 ): TerminalOverlayState {
   return { ...state, workspaces: { ...state.workspaces, [wsId]: ws } };
+}
+
+function setWsHeight(
+  state: TerminalOverlayState,
+  wsId: string,
+  height: number,
+): TerminalOverlayState {
+  if (state.workspaceHeights[wsId] === height) return state;
+  return { ...state, workspaceHeights: { ...state.workspaceHeights, [wsId]: height } };
 }
 
 function ensureDefaultTerminal(
@@ -337,10 +363,9 @@ terminalsReducer.with(removeTerminal, (state, { payload: [wsId, termId] }) => {
     isOpen,
   });
 });
-terminalsReducer.with(setTerminalOverlayHeight, (state, { payload: [height] }) => {
-  const clamped = clampTerminalOverlayHeight(height);
-  if (clamped === state.height) return state;
-  return { ...state, height: clamped };
+terminalsReducer.with(setTerminalOverlayHeight, (state, { payload: [wsId, height] }) => {
+  if (!Number.isFinite(height)) return state;
+  return setWsHeight(state, wsId, clampTerminalOverlayHeight(height));
 });
 terminalsReducer.with(renameTerminal, (state, { payload: [wsId, termId, newName] }) => {
   const ws = getWs(state, wsId);
@@ -377,7 +402,11 @@ terminalsReducer.with(
 );
 terminalsReducer.with(
   loadWorkspaceTerminals,
-  (state, { payload: [wsId, terminals, savedState, daemonBootId] }) => {
+  (rawState, { payload: [wsId, terminals, savedState, daemonBootId] }) => {
+    const state =
+      savedState?.height !== undefined && isValidTerminalOverlayHeight(savedState.height)
+        ? setWsHeight(rawState, wsId, savedState.height)
+        : rawState;
     const collection = createCollection<TerminalTab, 'id'>('id', terminals);
     const prior = getWs(state, wsId);
     const nextBootId = daemonBootId ?? prior.daemonBootId;
@@ -467,9 +496,16 @@ terminalsReducer.with(
     return setWs(state, wsId, wsState);
   },
 );
-terminalsReducer.with(hydrateHeight, (state, { payload: [height] }) => {
-  if (height < MIN_TERMINAL_OVERLAY_HEIGHT || height > MAX_TERMINAL_OVERLAY_HEIGHT) return state;
-  return { ...state, height };
+terminalsReducer.with(hydrateHeight, (state, { payload: [height, workspaceHeights] }) => {
+  let next = state;
+  if (isValidTerminalOverlayHeight(height) && height !== state.height) {
+    next = { ...next, height };
+  }
+  for (const [wsId, wsHeight] of Object.entries(workspaceHeights ?? {})) {
+    if (!isValidTerminalOverlayHeight(wsHeight)) continue;
+    next = setWsHeight(next, wsId, wsHeight);
+  }
+  return next;
 });
 
 terminalsReducer.with(setScriptsData, (state, { payload: { wsId, scripts } }) => {

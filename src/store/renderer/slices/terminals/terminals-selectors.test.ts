@@ -5,6 +5,7 @@ import type { TerminalOverlayState, TerminalTab } from './terminals-slice';
 import {
   selectSelectedScriptId,
   selectTerminalDisplayName,
+  selectTerminalOverlayHeight,
   selectWorkspaceSetupTerminal,
 } from './terminals-selectors';
 import { m } from '$shared/paraglide/messages.js';
@@ -17,6 +18,7 @@ function terminalState(
 ): TerminalOverlayState {
   return {
     height: 50,
+    workspaceHeights: {},
     workspaces: {
       [WS]: {
         isOpen: false,
@@ -162,6 +164,25 @@ describe('terminals selectors', () => {
       });
 
       expect(selectSelectedScriptId.select(state, 'ws-1')).toBe('script-1');
+    });
+  });
+
+  describe('selectTerminalOverlayHeight', () => {
+    it('reads the fallback for a workspace without its own height', () => {
+      const state = stateWith([]);
+
+      expect(selectTerminalOverlayHeight.select(state, WS)).toBe(50);
+      expect(selectTerminalOverlayHeight.select(state, 'ws-unknown')).toBe(50);
+    });
+
+    it('prefers the workspace height over the fallback', () => {
+      const terminals = terminalState([]);
+      terminals.workspaceHeights = { [WS]: 15, 'ws-unloaded': 80 };
+      const state = { terminals } as unknown as StoreState;
+
+      expect(selectTerminalOverlayHeight.select(state, WS)).toBe(15);
+      expect(selectTerminalOverlayHeight.select(state, 'ws-unloaded')).toBe(80);
+      expect(selectTerminalOverlayHeight.select(state, 'ws-unknown')).toBe(50);
     });
   });
 });

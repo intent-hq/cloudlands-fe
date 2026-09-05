@@ -86,12 +86,12 @@ beforeEach(() => {
 });
 
 describe('terminalPersistenceSaga', () => {
-  it('hydrates the stored height before installing persistence watchers', async () => {
+  it('hydrates the legacy global height as the fallback before installing persistence watchers', async () => {
     storage.values.set(STORAGE_KEY, '64');
     const { dispatched, task } = startSaga();
     await settle();
 
-    expect(dispatched).toEqual([{ type: 'terminals/hydrateHeight', payload: [64] }]);
+    expect(dispatched).toEqual([{ type: 'terminals/hydrateHeight', payload: [64, {}] }]);
     task.cancel();
     await task.toPromise();
   });
@@ -101,19 +101,154 @@ describe('terminalPersistenceSaga', () => {
     const { dispatched, task } = startSaga();
     await settle();
 
-    expect(dispatched).toEqual([{ type: 'terminals/hydrateHeight', payload: [50] }]);
+    expect(dispatched).toEqual([{ type: 'terminals/hydrateHeight', payload: [50, {}] }]);
     task.cancel();
     await task.toPromise();
   });
 
-  it('persists the post-reducer clamped terminal height', async () => {
-    const { send, task } = startSaga();
-    await settle();
-    storage.setItem.mockClear();
-    send(setTerminalOverlayHeight(100));
+  it('hydrates per-workspace heights from workspace state and skips invalid ones', async () => {
+    storage.values.set(STORAGE_KEY, '64');
+    storage.values.set(
+      WORKSPACE_STATE_STORAGE_KEY,
+      JSON.stringify({
+        'ws-1': { isOpen: true, activeTerminalId: 'term-1', height: 15 },
+        'ws-2': { isOpen: false, activeTerminalId: null },
+        'ws-3': { isOpen: false, activeTerminalId: null, height: 5 },
+        'ws-4': { isOpen: false, activeTerminalId: null, height: 'tall' },
+      }),
+    );
+    const { dispatched, task } = startSaga();
     await settle();
 
-    expect(storage.setItem.mock.calls).toEqual([[STORAGE_KEY, '90']]);
+    expect(dispatched).toEqual([
+      { type: 'terminals/hydrateHeight', payload: [64, { 'ws-1': 15 }] },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('persists the post-reducer clamped height in the workspace state entry', async () => {
+    storage.values.set(
+      WORKSPACE_STATE_STORAGE_KEY,
+      JSON.stringify({ 'ws-2': { isOpen: false, activeTerminalId: null, height: 30 } }),
+    );
+    const { send, task } = startSaga();
+    await settle();
+    storage.setJSON.mockClear();
+    send(setTerminalOverlayHeight('ws-1', 100));
+    await settle();
+    send(setTerminalOverlayHeight('ws-1', 5));
+    await settle();
+
+    expect(storage.setItem).not.toHaveBeenCalled();
+    expect(storage.setJSON.mock.calls).toEqual([
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        {
+          'ws-1': { isOpen: false, activeTerminalId: null, height: 90 },
+          'ws-2': { isOpen: false, activeTerminalId: null, height: 30 },
+        },
+      ],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        {
+          'ws-1': { isOpen: false, activeTerminalId: null, height: 10 },
+          'ws-2': { isOpen: false, activeTerminalId: null, height: 30 },
+        },
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('round-trips a workspace height through workspace-state storage', async () => {
+    const first = startSaga();
+    await settle();
+    first.send(setTerminalOverlayHeight('ws-1', 25));
+    await settle();
+    first.task.cancel();
+    await first.task.toPromise();
+
+    const second = startSaga();
+    await settle();
+
+    expect(second.dispatched).toEqual([
+      { type: 'terminals/hydrateHeight', payload: [50, { 'ws-1': 25 }] },
+    ]);
+    second.task.cancel();
+    await second.task.toPromise();
+  });
+
+  it('keeps the workspace height when later overlay-state triggers persist', async () => {
+    const { send, task } = startSaga();
+    await settle();
+    send(setTerminalOverlayHeight('ws-1', 25));
+    await settle();
+    storage.setJSON.mockClear();
+    send(openTerminalOverlay('ws-1', 'term-1'));
+    await settle();
+
+    expect(storage.setJSON.mock.calls).toEqual([
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: true, activeTerminalId: 'term-1', height: 25 } },
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('merges a resize into the stored entry of a loaded workspace', async () => {
+    const { send, task } = startSaga();
+    await settle();
+    send(openTerminalOverlay('ws-1', 'term-1'));
+    await settle();
+    storage.setJSON.mockClear();
+    send(setTerminalOverlayHeight('ws-1', 35));
+    await settle();
+
+    expect(storage.setJSON.mock.calls).toEqual([
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: true, activeTerminalId: 'term-1', height: 35 } },
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not write storage for a non-finite height', async () => {
+    const { send, task } = startSaga();
+    await settle();
+    storage.setJSON.mockClear();
+    send(setTerminalOverlayHeight('ws-1', Number.NaN));
+    await settle();
+
+    expect(storage.setJSON.mock.calls).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps hydrated heights from exposing not-yet-loaded workspaces to persistence', async () => {
+    const stored = {
+      'ws-1': { isOpen: true, activeTerminalId: 'term-1', height: 15 },
+      'ws-2': { isOpen: true, activeTerminalId: 'term-2' },
+    };
+    storage.values.set(WORKSPACE_STATE_STORAGE_KEY, JSON.stringify(stored));
+    const { send, task } = startSaga();
+    await settle();
+    send(removeTerminal('ws-1', 'term-gone'));
+    await settle();
+    send(closeTerminalOverlay('ws-1'));
+    await settle();
+    send(removeTerminal('ws-2', 'term-gone'));
+    await settle();
+
+    const workspaceStateWrites = storage.setJSON.mock.calls.filter(
+      ([key]) => key === WORKSPACE_STATE_STORAGE_KEY,
+    );
+    expect(workspaceStateWrites).toEqual([]);
+    expect(JSON.parse(storage.values.get(WORKSPACE_STATE_STORAGE_KEY) ?? '{}')).toEqual(stored);
     task.cancel();
     await task.toPromise();
   });
@@ -384,10 +519,11 @@ describe('terminalPersistenceSaga', () => {
     await task.toPromise();
     resolveHeight('70');
     await settle();
-    send(setTerminalOverlayHeight(70));
+    send(setTerminalOverlayHeight('ws-1', 70));
     await settle();
 
     expect(dispatched).toEqual([]);
     expect(storage.setItem.mock.calls).toEqual([]);
+    expect(storage.setJSON.mock.calls).toEqual([]);
   });
 });

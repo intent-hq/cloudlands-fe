@@ -110,7 +110,6 @@
 
   // Store bindings
   const isOpen = selectIsTerminalOverlayOpenForWorkspace(workspaceIdStore);
-  const height = selectTerminalOverlayHeight();
   const activeTerminalId = selectActiveTerminalIdForWorkspace(workspaceIdStore);
   const terminals = selectTerminalsForWorkspace(workspaceIdStore);
   const workspaceTerminalState$ = selectWorkspaceTerminalState(workspaceIdStore);
@@ -130,6 +129,11 @@
   const terminalWorkspaceId = $derived(
     workspaceId === 'new' ? ROOT_WORKSPACE_ID : (workspaceId ?? ROOT_WORKSPACE_ID),
   );
+  // The overlay height follows the terminal's workspace so onboarding shares
+  // the root terminal's height rather than persisting a separate one.
+  const heightWorkspaceIdStore = writable<string>(ROOT_WORKSPACE_ID);
+  $effect(() => heightWorkspaceIdStore.set(terminalWorkspaceId));
+  const height = selectTerminalOverlayHeight(heightWorkspaceIdStore);
 
   // UI state
   let isResizing = $state(false);
@@ -893,7 +897,8 @@
     getHeight: () => $height,
     setPreviewHeight: (height) => (resizePreviewHeight = height),
     setResizing: (resizing) => (isResizing = resizing),
-    commitHeight: (height) => appStore.dispatch(setTerminalOverlayHeight(height)),
+    commitHeight: (height) =>
+      appStore.dispatch(setTerminalOverlayHeight(terminalWorkspaceId, height)),
   });
 
   // ============================================================================

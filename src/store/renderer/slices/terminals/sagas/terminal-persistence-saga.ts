@@ -1,9 +1,12 @@
 import { call, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import {
+  DEFAULT_TERMINAL_OVERLAY_HEIGHT,
+  isValidTerminalOverlayHeight,
+} from '$shared/utils/terminal-overlay-height';
+import {
   getLocalStorageItem,
   getLocalStorageJSON,
-  setLocalStorageItem,
   setLocalStorageJSON,
 } from '../../../utils/safe-local-storage-saga';
 import { selectTerminalOverlayHeight, selectWorkspaceTerminalState } from '../terminals-selectors';
@@ -118,18 +121,41 @@ function* loadTerminalMetadata(workspaceId: string): SagaGenerator<TerminalMetad
   return metadata;
 }
 
+function* loadWorkspaceStates(): SagaGenerator<Record<string, PersistedWorkspaceState>> {
+  return (
+    (yield* call(
+      getLocalStorageJSON<Record<string, PersistedWorkspaceState>>,
+      WORKSPACE_STATE_STORAGE_KEY,
+    )) ?? {}
+  );
+}
+
 function* persistWorkspaceState(workspaceId: string): SagaGenerator<void> {
   const workspaceState = yield* selectWorkspaceTerminalState.effect(workspaceId);
   if (workspaceState === emptyWorkspaceState) return;
 
-  const states =
-    (yield* call(
-      getLocalStorageJSON<Record<string, PersistedWorkspaceState>>,
-      WORKSPACE_STATE_STORAGE_KEY,
-    )) ?? {};
+  const states = yield* call(loadWorkspaceStates);
+  const height = states[workspaceId]?.height;
   states[workspaceId] = {
     isOpen: workspaceState.isOpen,
     activeTerminalId: workspaceState.activeTerminalId,
+    ...(height !== undefined ? { height } : {}),
+  };
+  yield* call(setLocalStorageJSON, WORKSPACE_STATE_STORAGE_KEY, states);
+}
+
+/**
+ * Heights persist independently of the loaded-workspace guard above: the
+ * resize handle only renders for a mounted overlay, and the root overlay is
+ * never hydrated through `loadWorkspaceTerminals`, so the height is merged
+ * into whatever entry storage already holds instead of overwriting it.
+ */
+function* persistWorkspaceHeight(workspaceId: string): SagaGenerator<void> {
+  const height = yield* selectTerminalOverlayHeight.effect(workspaceId);
+  const states = yield* call(loadWorkspaceStates);
+  states[workspaceId] = {
+    ...(states[workspaceId] ?? { isOpen: false, activeTerminalId: null }),
+    height,
   };
   yield* call(setLocalStorageJSON, WORKSPACE_STATE_STORAGE_KEY, states);
 }
@@ -137,12 +163,25 @@ function* persistWorkspaceState(workspaceId: string): SagaGenerator<void> {
 function* hydrateTerminalHeightWorker(): SagaGenerator<void> {
   const stored = yield* call(getLocalStorageItem, STORAGE_KEY);
   const parsed = stored ? Number.parseInt(stored, 10) : Number.NaN;
-  yield* put(hydrateHeight(Number.isNaN(parsed) ? 50 : parsed));
+  const fallback = Number.isNaN(parsed) ? DEFAULT_TERMINAL_OVERLAY_HEIGHT : parsed;
+
+  const states = yield* call(loadWorkspaceStates);
+  const workspaceHeights: Record<string, number> = {};
+  for (const [workspaceId, state] of Object.entries(states)) {
+    const height = state?.height;
+    if (typeof height === 'number' && isValidTerminalOverlayHeight(height)) {
+      workspaceHeights[workspaceId] = height;
+    }
+  }
+  yield* put(hydrateHeight(fallback, workspaceHeights));
 }
 
-function* persistTerminalHeightWorker(): SagaGenerator<void> {
-  const height = yield* selectTerminalOverlayHeight.effect();
-  yield* call(setLocalStorageItem, STORAGE_KEY, String(height));
+function* persistTerminalHeightWorker(
+  action: ReturnType<typeof setTerminalOverlayHeight>,
+): SagaGenerator<void> {
+  const [workspaceId, height] = action.payload;
+  if (!Number.isFinite(height)) return;
+  yield* call(persistWorkspaceHeight, workspaceId);
 }
 
 function* persistTerminalNameWorker(
