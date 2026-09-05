@@ -1,5 +1,8 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
+  "diffMap_groupChanged_label": "{count} 件変更",
+  "diffMap_groupChangedTotal_label": "{count} 件変更 · {total}",
+  "diffMap_statsUnavailable_label": "利用できません",
   "sandbox_catalogScene_allStates_label": "すべて",
   "sandbox_catalogScene_stateHeading_title": "状態: {state}",
   "error_page_title": "問題が発生しました",

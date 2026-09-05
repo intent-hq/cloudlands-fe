@@ -1,5 +1,8 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
+  "diffMap_groupChanged_label": "{count} geändert",
+  "diffMap_groupChangedTotal_label": "{count} geändert · {total}",
+  "diffMap_statsUnavailable_label": "Nicht verfügbar",
   "sandbox_catalogScene_allStates_label": "Alle",
   "sandbox_catalogScene_stateHeading_title": "Status: {state}",
   "error_page_title": "Etwas ist schiefgelaufen",

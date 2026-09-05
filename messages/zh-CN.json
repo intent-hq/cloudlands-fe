@@ -1,5 +1,8 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
+  "diffMap_groupChanged_label": "已更改 {count} 个",
+  "diffMap_groupChangedTotal_label": "已更改 {count} 个 · {total}",
+  "diffMap_statsUnavailable_label": "不可用",
   "sandbox_catalogScene_allStates_label": "全部",
   "sandbox_catalogScene_stateHeading_title": "状态：{state}",
   "error_page_title": "出错了",

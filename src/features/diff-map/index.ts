@@ -1,5 +1,6 @@
 export { buildDiffMapDocument } from './model/build-document';
 export type { BuildDiffMapDocumentOptions } from './model/build-document';
+export { default as DiffMap } from './components/DiffMap.svelte';
 export * from './layout/layout-diff-map';
 export * from './model/fixtures';
 export * from './model/types';
