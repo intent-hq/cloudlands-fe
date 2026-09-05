@@ -162,7 +162,6 @@ export function defineGeometrySnapshotSuite<Props extends Record<string, unknown
         const component = await mount(options.component, {
           hooksConfig: {
             geometrySnapshot: {
-              definition: options.definition,
               scene: options.scene,
               state: stateName,
             },
