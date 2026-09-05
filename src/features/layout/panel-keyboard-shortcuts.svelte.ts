@@ -54,7 +54,6 @@ export type LeaderAction =
   | 'navigate-next'
   | 'navigate-prev'
   | 'split-right'
-  | 'split-down'
   | 'resize-left'
   | 'resize-right'
   | 'resize-up'
@@ -164,13 +163,6 @@ export function createPanelKeyboardShortcuts(
         if (focusedId && panelIds.length < 4) {
           layoutManager.splitPanel(focusedId, 'horizontal');
         }
-        break;
-      }
-
-      case 'split-down': {
-        const focusedId = selectFocusedPanelId.select(appStore.state, layoutManager.workspaceId);
-        const panelIds = selectPanelIds.select(appStore.state, layoutManager.workspaceId);
-        if (focusedId && panelIds.length < 4) layoutManager.splitPanel(focusedId, 'vertical');
         break;
       }
 
@@ -483,7 +475,6 @@ export function createPanelKeyboardShortcuts(
     const cycle = match('leader.next-previous-panel');
     if (cycle >= 0) return cycle === 0 ? 'navigate-next' : 'navigate-prev';
     if (match('leader.split-right') >= 0) return 'split-right';
-    if (match('leader.split-down') >= 0) return 'split-down';
     if (match('leader.toggle-zoom') >= 0) return 'zoom-toggle';
     if (match('leader.close-panel') >= 0) return 'close-panel';
     if (match('leader.equalize-sizes') >= 0) return 'resize-equal';

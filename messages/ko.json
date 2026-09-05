@@ -4824,7 +4824,6 @@
   "ui_shortcuts_navigatePanels_label": "패널 탐색",
   "ui_shortcuts_resizePanels_label": "패널 크기 조정",
   "ui_shortcuts_splitRight_label": "오른쪽으로 분할",
-  "ui_shortcuts_splitDown_label": "아래로 분할",
   "ui_shortcuts_toggleZoom_label": "확대 전환",
   "ui_shortcuts_closePanel_label": "패널 닫기",
   "ui_shortcuts_nextPrevPanel_label": "다음/이전 패널",
