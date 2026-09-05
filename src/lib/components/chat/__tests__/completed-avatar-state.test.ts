@@ -9,7 +9,11 @@ const makeReadable = <T>(value: T) => ({
 });
 
 /** Mutable BE-owned activity flags the avatar-state derivation reads. */
-const agentFlags = vi.hoisted(() => ({ isResponding: false, isBlockedWaiting: false }));
+const agentFlags = vi.hoisted(() => ({
+  isResponding: false,
+  isBlockedWaiting: false,
+  isWaitingOnTool: false,
+}));
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: () =>
@@ -23,13 +27,17 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
             status: agentFlags.isBlockedWaiting ? 'waiting' : 'active',
             messages: [],
             isResponding: agentFlags.isResponding,
+            isWaitingOnTool: agentFlags.isWaitingOnTool,
             isWaitingForOtherAgents: agentFlags.isBlockedWaiting,
           }
         : null,
     ),
   selectAgentIsResponding: () => makeReadable(agentFlags.isResponding),
   selectAgentPreview: Object.assign(() => makeReadable(null), { select: () => null }),
-  selectAgentIsWaiting: () => makeReadable(agentFlags.isBlockedWaiting),
+  // Mirrors the stored-session predicate: the raw waiting reason includes an
+  // unresolved tool_use on the in-flight turn.
+  selectAgentIsWaiting: () =>
+    makeReadable(agentFlags.isBlockedWaiting || agentFlags.isWaitingOnTool),
   selectAgentIsBlockedWaiting: () => makeReadable(agentFlags.isBlockedWaiting),
   selectAgentSessionStreamingContent: () => makeReadable(''),
   selectAgentSessionHasStreamOwnedMessage: () => makeReadable(false),
@@ -70,6 +78,7 @@ describe('isCompleted avatar state wiring', () => {
   beforeEach(() => {
     agentFlags.isResponding = false;
     agentFlags.isBlockedWaiting = false;
+    agentFlags.isWaitingOnTool = false;
   });
   afterEach(() => cleanup());
 
@@ -179,6 +188,23 @@ describe('isCompleted avatar state wiring', () => {
     agentFlags.isBlockedWaiting = true;
 
     render(AgentCard, { props: { agentId: 'agent-1' } });
+
+    expect(screen.getByTestId('mock-avatar-with-state').dataset.state).toBe('waiting');
+  });
+
+  it('InlineAgentAvatar renders running, not waiting, while a tool is executing mid-turn', () => {
+    agentFlags.isResponding = true;
+    agentFlags.isWaitingOnTool = true;
+
+    render(InlineAgentAvatar, { props: { agentId: 'agent-1' } });
+
+    expect(screen.getByTestId('mock-avatar-with-state').dataset.state).toBe('running');
+  });
+
+  it('InlineAgentAvatar renders waiting for a genuinely blocked agent', () => {
+    agentFlags.isBlockedWaiting = true;
+
+    render(InlineAgentAvatar, { props: { agentId: 'agent-1' } });
 
     expect(screen.getByTestId('mock-avatar-with-state').dataset.state).toBe('waiting');
   });
