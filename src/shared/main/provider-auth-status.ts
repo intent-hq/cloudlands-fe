@@ -25,16 +25,47 @@ type VerdictMap = Record<string, ProviderAuthVerdict>;
 type Pending = { generation: number; promise: Promise<VerdictMap> };
 type Trailing = { force: boolean; promise: Promise<VerdictMap> };
 type Cached = { expiresAt: number; verdicts: VerdictMap };
+type ClientState = {
+  cache: Map<string, Cached>;
+  generation: number;
+  lifecycleEpoch: number;
+  pending: Map<string, Pending>;
+  trailing: Map<string, Trailing>;
+};
 const PROVIDER_AUTH_CACHE_TTL_MS = 60_000;
-const cache = new Map<string, Cached>();
-const pending = new Map<string, Pending>();
-const trailing = new Map<string, Trailing>();
-let generation = 0;
+let clientStates = new WeakMap<JsonRpcClient, ClientState>();
+let lifecycleEpoch = 0;
 let lifecycleInstalled = false;
 
+function getClientState(client: JsonRpcClient): ClientState {
+  let state = clientStates.get(client);
+  if (!state) {
+    state = {
+      cache: new Map(),
+      generation: 0,
+      lifecycleEpoch,
+      pending: new Map(),
+      trailing: new Map(),
+    };
+    clientStates.set(client, state);
+  } else if (state.lifecycleEpoch !== lifecycleEpoch) {
+    state.lifecycleEpoch = lifecycleEpoch;
+    state.generation += 1;
+    state.cache.clear();
+  }
+  return state;
+}
+
+function invalidateClientState(state: ClientState, providerId?: string): void {
+  state.generation += 1;
+  if (providerId) {
+    state.cache.delete(providerId);
+    state.cache.delete('*');
+  } else state.cache.clear();
+}
+
 function invalidateProviderAuthStatus(): void {
-  generation += 1;
-  cache.clear();
+  lifecycleEpoch += 1;
 }
 
 function ensureLifecycle(): void {
@@ -65,19 +96,21 @@ export async function getProviderAuthVerdicts(
   client?: JsonRpcClient,
 ): Promise<Record<string, ProviderAuthVerdict>> {
   ensureLifecycle();
+  const backend = client ?? getBackendClient();
+  const state = getClientState(backend);
   const params = buildProviderAuthStatusParams(options);
   const key = params.providerId ?? '*';
-  if (params.force) invalidateProviderAuthStatus();
+  if (params.force) invalidateClientState(state, params.providerId);
   else {
-    const cached = cache.get(key);
+    const cached = state.cache.get(key);
     if (cached && cached.expiresAt > Date.now()) return cached.verdicts;
-    if (cached) cache.delete(key);
+    if (cached) state.cache.delete(key);
   }
 
-  const active = pending.get(key);
-  if (!params.force && active?.generation === generation) return active.promise;
+  const active = state.pending.get(key);
+  if (!params.force && active?.generation === state.generation) return active.promise;
   if (active) {
-    const queued = trailing.get(key);
+    const queued = state.trailing.get(key);
     if (queued) {
       queued.force ||= params.force === true;
       return queued.promise;
@@ -85,30 +118,30 @@ export async function getProviderAuthVerdicts(
     let queuedState!: Trailing;
     const next = active.promise
       .then(() => {
-        if (trailing.get(key) === queuedState) trailing.delete(key);
+        if (state.trailing.get(key) === queuedState) state.trailing.delete(key);
         return getProviderAuthVerdicts(
           { providerId: params.providerId, force: queuedState.force },
-          client,
+          backend,
         );
       })
       .finally(() => {
-        if (trailing.get(key) === queuedState) trailing.delete(key);
+        if (state.trailing.get(key) === queuedState) state.trailing.delete(key);
       });
     queuedState = { force: params.force === true, promise: next };
-    trailing.set(key, queuedState);
+    state.trailing.set(key, queuedState);
     return next;
   }
-  const requestGeneration = generation;
+  const requestGeneration = state.generation;
   let run!: Promise<VerdictMap>;
   run = (async (): Promise<VerdictMap> => {
     try {
-      const response = await (client ?? getBackendClient()).request<ProviderAuthStatusResponse>(
+      const response = await backend.request<ProviderAuthStatusResponse>(
         PROVIDER_AUTH_STATUS_METHOD,
         params,
       );
       const verdicts = toAuthVerdictMap(response);
-      if (requestGeneration === generation) {
-        cache.set(key, { verdicts, expiresAt: Date.now() + PROVIDER_AUTH_CACHE_TTL_MS });
+      if (requestGeneration === state.generation) {
+        state.cache.set(key, { verdicts, expiresAt: Date.now() + PROVIDER_AUTH_CACHE_TTL_MS });
       }
       return verdicts;
     } catch (error) {
@@ -118,18 +151,16 @@ export async function getProviderAuthVerdicts(
       });
       return {};
     } finally {
-      if (pending.get(key)?.promise === run) pending.delete(key);
+      if (state.pending.get(key)?.promise === run) state.pending.delete(key);
     }
   })();
-  pending.set(key, { generation: requestGeneration, promise: run });
+  state.pending.set(key, { generation: requestGeneration, promise: run });
   return run;
 }
 
 export function __resetProviderAuthStatusForTests(): void {
-  cache.clear();
-  pending.clear();
-  trailing.clear();
-  generation += 1;
+  clientStates = new WeakMap<JsonRpcClient, ClientState>();
+  lifecycleEpoch += 1;
 }
 
 /** Single-provider convenience over {@link getProviderAuthVerdicts}. */

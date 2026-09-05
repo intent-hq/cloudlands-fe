@@ -1,14 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const lifecycle = vi.hoisted(() => ({
-  notification: undefined as
-    ((notification: { method: string; params?: unknown }) => void) | undefined,
-  reconnected: undefined as (() => void) | undefined,
-  request: vi.fn(),
-}));
+const lifecycle = vi.hoisted(() => {
+  const request = vi.fn();
+  return {
+    defaultClient: { request },
+    notification: undefined as
+      ((notification: { method: string; params?: unknown }) => void) | undefined,
+    reconnected: undefined as (() => void) | undefined,
+    request,
+  };
+});
 
 vi.mock('../../features/backend/main/backend.ipc', () => ({
-  getBackendClient: vi.fn(() => ({ request: lifecycle.request })),
+  getBackendClient: vi.fn(() => lifecycle.defaultClient),
   onBackendNotification: vi.fn((handler) => {
     lifecycle.notification = handler;
     return () => {};
@@ -26,6 +30,10 @@ function deferred<T>() {
   const promise = new Promise<T>((done) => (resolve = done));
   return { promise, resolve };
 }
+
+type BackendClient = NonNullable<Parameters<typeof getProviderAuthVerdicts>[1]>;
+const backendClient = (request: ReturnType<typeof vi.fn>) =>
+  ({ request }) as unknown as BackendClient;
 
 describe('main provider auth status cache', () => {
   afterEach(() => {
@@ -82,6 +90,58 @@ describe('main provider auth status cache', () => {
     });
 
     expect(lifecycle.request).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps sequential explicit and default backend verdicts isolated', async () => {
+    const remoteRequest = vi
+      .fn()
+      .mockResolvedValue({ providers: [{ id: 'codex', authenticated: false }] });
+    const remote = backendClient(remoteRequest);
+    lifecycle.request.mockResolvedValue({ providers: [{ id: 'codex', authenticated: true }] });
+
+    await expect(getProviderAuthVerdicts({ providerId: 'codex' }, remote)).resolves.toEqual({
+      codex: { authenticated: false },
+    });
+    await expect(getProviderAuthVerdicts({ providerId: 'codex' })).resolves.toEqual({
+      codex: { authenticated: true },
+    });
+    await getProviderAuthVerdicts({ providerId: 'codex', force: true }, remote);
+    await getProviderAuthVerdicts({ providerId: 'codex' });
+
+    expect(remoteRequest).toHaveBeenCalledTimes(2);
+    expect(lifecycle.request).toHaveBeenCalledTimes(1);
+  });
+
+  it('single-flights overlapping reads independently for two backends', async () => {
+    const firstResponse = deferred<unknown>();
+    const secondResponse = deferred<unknown>();
+    const firstRequest = vi.fn(() => firstResponse.promise);
+    const secondRequest = vi.fn(() => secondResponse.promise);
+    const firstClient = backendClient(firstRequest);
+    const secondClient = backendClient(secondRequest);
+
+    const firstReads = [
+      getProviderAuthVerdicts({ providerId: 'codex' }, firstClient),
+      getProviderAuthVerdicts({ providerId: 'codex' }, firstClient),
+    ];
+    const secondReads = [
+      getProviderAuthVerdicts({ providerId: 'codex' }, secondClient),
+      getProviderAuthVerdicts({ providerId: 'codex' }, secondClient),
+    ];
+    expect(firstRequest).toHaveBeenCalledTimes(1);
+    expect(secondRequest).toHaveBeenCalledTimes(1);
+
+    firstResponse.resolve({ providers: [{ id: 'codex', authenticated: false }] });
+    secondResponse.resolve({ providers: [{ id: 'codex', authenticated: true }] });
+
+    await expect(Promise.all(firstReads)).resolves.toEqual([
+      { codex: { authenticated: false } },
+      { codex: { authenticated: false } },
+    ]);
+    await expect(Promise.all(secondReads)).resolves.toEqual([
+      { codex: { authenticated: true } },
+      { codex: { authenticated: true } },
+    ]);
   });
 
   it('coalesces an invalidated in-flight read into one fresh trailing request', async () => {
