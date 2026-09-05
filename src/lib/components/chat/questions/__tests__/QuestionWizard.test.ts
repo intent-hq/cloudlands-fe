@@ -532,6 +532,64 @@ describe('QuestionWizard', () => {
     expect(onDismiss).not.toHaveBeenCalled();
   });
 
+  it('the close control closes the idle dialog without dismissing questions', async () => {
+    const onDismiss = vi.fn();
+    render(QuestionWizard, { props: { questions: [SINGLE], onDismiss } });
+    const dismissTrigger = screen.getByRole('button', { name: 'Dismiss' });
+    dismissTrigger.focus();
+    await fireEvent.click(dismissTrigger);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(onDismiss).not.toHaveBeenCalled();
+    await waitFor(() => expect(document.activeElement).toBe(dismissTrigger));
+  });
+
+  it('blocks every close path while dismissal is pending', async () => {
+    let resolveDismiss!: () => void;
+    const onDismiss = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveDismiss = resolve;
+        }),
+    );
+    render(QuestionWizard, { props: { questions: [SINGLE], onDismiss } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss questions' }));
+
+    const dialog = screen.getByRole('dialog');
+    const close = screen.getByRole('button', { name: 'Close' });
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    const confirm = screen.getByRole('button', { name: 'Dismiss questions' });
+    const overlay = document.querySelector('[data-slot="dialog-overlay"]')!;
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect((close as HTMLButtonElement).disabled).toBe(true);
+    expect((cancel as HTMLButtonElement).disabled).toBe(true);
+    expect(confirm.getAttribute('aria-busy')).toBe('true');
+
+    await fireEvent.click(close);
+    // Exercise the controlled Root guard independently of the disabled control.
+    (close as HTMLButtonElement).disabled = false;
+    await fireEvent.click(close);
+    (close as HTMLButtonElement).disabled = true;
+    await fireEvent.keyDown(dialog, { key: 'Escape' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await fireEvent.pointerDown(overlay, {
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+      pointerType: 'mouse',
+    });
+    await fireEvent.click(cancel);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    resolveDismiss();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
   it('Dismiss on the Hide-collapsed banner also goes through the confirm dialog', async () => {
     const onDismiss = vi.fn();
     render(QuestionWizard, {

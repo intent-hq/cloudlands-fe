@@ -36,10 +36,13 @@
   }
 </script>
 
-<Dialog.Root {open} onOpenChange={handleOpenChange}>
+<Dialog.Root bind:open={() => open, handleOpenChange}>
   <Dialog.Content
     class="max-w-sm gap-0 overflow-hidden p-0"
+    closeDisabled={busy}
     closeLabel={m.chat_questionWizard_dismissDialog_close_ariaLabel()}
+    escapeKeydownBehavior={busy ? 'ignore' : 'close'}
+    interactOutsideBehavior={busy ? 'ignore' : 'close'}
     onOpenAutoFocus={handleOpenAutoFocus}
   >
     <div class="p-5 pr-12">
