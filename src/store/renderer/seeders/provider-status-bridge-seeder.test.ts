@@ -600,6 +600,36 @@ describe('provider-status-bridge-seeder', () => {
       });
     });
 
+    it('does not warn on claude-code when npx is missing but the daemon runs a path override (intent#4378)', async () => {
+      // Since intentd#1714 discovery reports the npx-only provider installed
+      // from a valid `providers.paths` override while `resolvedPath` stays the
+      // (absent) auto-detected npx — the daemon execs the override, so npx
+      // is not involved. Reuses the discovery round-trip already made for
+      // Antigravity.
+      routeDaemon({
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': {
+          tools: {
+            ...NO_TOOLS.tools,
+            claude: { available: true, path: '/usr/local/bin/claude' },
+          },
+        },
+        'host.providerAuthStatus': authSweep({ 'claude-code': true }),
+        'host.providerDiscovery': {
+          providers: [{ id: 'claude-code', installed: true }],
+        },
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(response.data?.providers.claudeCode).toEqual({ available: true, authenticated: true });
+      expect(
+        mockedRequest.mock.calls.filter(([method]) => method === 'host.providerDiscovery'),
+      ).toHaveLength(1);
+    });
+
     it('reports codex available on the real CLI alone (no local adapter needed)', async () => {
       routeDaemon({
         'host.checkAuggie': { available: false },
@@ -773,6 +803,53 @@ describe('provider-status-bridge-seeder', () => {
           throw new Error('transport down');
         },
         'host.providerAuthStatus': authOne('claude-code', true),
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'claude-code');
+
+      expect(response).toEqual({
+        success: true,
+        providerId: 'claude-code',
+        data: { available: true, authenticated: true },
+      });
+    });
+
+    it('does not warn when npx is missing but the daemon runs a path override (intent#4378)', async () => {
+      routeDaemon({
+        'host.findBinary': (params) => {
+          const { name } = params as { name: string };
+          return name === 'claude'
+            ? { available: true, path: '/usr/local/bin/claude' }
+            : { available: false };
+        },
+        'host.providerAuthStatus': authOne('claude-code', true),
+        'host.providerDiscovery': {
+          providers: [{ id: 'claude-code', installed: true }],
+        },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'claude-code');
+
+      expect(mockedRequest).toHaveBeenCalledWith('host.providerDiscovery', {});
+      expect(response).toEqual({
+        success: true,
+        providerId: 'claude-code',
+        data: { available: true, authenticated: true },
+      });
+    });
+
+    it('does not warn when npx is missing and the discovery read fails (unknown, not confirmed absence)', async () => {
+      routeDaemon({
+        'host.findBinary': (params) => {
+          const { name } = params as { name: string };
+          return name === 'claude'
+            ? { available: true, path: '/usr/local/bin/claude' }
+            : { available: false };
+        },
+        'host.providerAuthStatus': authOne('claude-code', true),
+        'host.providerDiscovery': () => {
+          throw new Error('discovery transport down');
+        },
       });
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'claude-code');
@@ -1137,6 +1214,16 @@ describe('provider-status-bridge-seeder', () => {
               npxPackage: '@agentclientprotocol/claude-agent-acp@1.2.3',
             },
             {
+              id: 'pi',
+              displayName: 'Pi',
+              command: 'npx',
+              installed: true,
+              resolvedPath: '/usr/local/bin/npx',
+              hasNpxFallback: false,
+              npxOnly: true,
+              npxPackage: 'pi-acp@0.0.33',
+            },
+            {
               id: 'grok',
               displayName: 'Grok',
               command: 'grok',
@@ -1185,11 +1272,16 @@ describe('provider-status-bridge-seeder', () => {
           paths: {
             auggie: '/usr/local/bin/auggie',
             'claude-code': '/usr/local/bin/npx',
+            pi: '/usr/local/bin/npx',
             grok: '/home/user/.grok/bin/grok',
             unsloth: '/home/user/.opencode/bin/opencode',
             codex: null,
           },
           secondaryPaths: { unsloth: '/usr/local/bin/unsloth' },
+          // Only npx-only providers whose path override the daemon honors
+          // carry their pinned package spec (their path is npx, not the
+          // adapter); pi stays pinned-npx-only and is excluded.
+          npxPackages: { 'claude-code': '@agentclientprotocol/claude-agent-acp@1.2.3' },
           // npx rides the same discovery round-trip so the onboarding bulk
           // check can read it without the aggregated auth sweep.
           npx: { resolvedPath: '/usr/local/bin/npx', version: '10.2.4', versionOk: true },
@@ -1230,6 +1322,7 @@ describe('provider-status-bridge-seeder', () => {
         data: {
           paths: { unsloth: '/home/user/.opencode/bin/opencode' },
           secondaryPaths: { unsloth: null },
+          npxPackages: {},
           npx: { resolvedPath: null, version: null, versionOk: false },
         },
       });
@@ -1242,7 +1335,7 @@ describe('provider-status-bridge-seeder', () => {
 
       expect(response).toEqual({
         success: true,
-        data: { paths: {}, secondaryPaths: {} },
+        data: { paths: {}, secondaryPaths: {}, npxPackages: {} },
       });
     });
   });

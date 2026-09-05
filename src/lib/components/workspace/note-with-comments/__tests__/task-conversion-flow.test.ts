@@ -448,6 +448,7 @@ vi.mock('../comment-mark-click-handler', () => ({
 
 vi.mock('$lib/utils/editor-config', async () => {
   const StarterKit = (await import('@tiptap/starter-kit')).default;
+  const Image = (await import('@tiptap/extension-image')).default;
   const TaskList = (await import('@tiptap/extension-task-list')).default;
   const { CustomTaskItem } = await import('$lib/components/tiptap/CustomTaskItem');
   const { createWorkspacesLink } = await import('$lib/utils/tiptap-link-extension');
@@ -464,6 +465,7 @@ vi.mock('$lib/utils/editor-config', async () => {
             link: false,
           }),
           createWorkspacesLink({ openOnClick: false }),
+          Image,
           TaskList,
           CustomTaskItem.configure({
             nested: true,
@@ -754,5 +756,98 @@ describe('NoteWithComments task conversion regression', () => {
     expect(container.querySelector('.ProseMirror')?.innerHTML).toContain(
       `intent://local/task/${TASK_NOTE_ID}`,
     );
+  });
+
+  describe('workspace-relative images', () => {
+    const IMAGE_PATH = 'ui-tweak-artifacts/example.png';
+    const IMAGE_MARKDOWN = `![Example](intent://local/file/${IMAGE_PATH})`;
+    const TRAVERSAL_SRC = 'intent://local/file/../outside.png';
+    const TRAVERSAL_MARKDOWN = `![Escape](${TRAVERSAL_SRC})`;
+    const RESOLVED_IMAGE_SRC = `workspace-file://${WORKSPACE_ID}/${IMAGE_PATH}`;
+
+    // Rewritten workspace-file URLs carry a per-render `?v=` cache-busting token;
+    // the stable contract under test is the `workspace-file://{ws}/{path}` part.
+    function renderedImageSrcs(container: HTMLElement): string[] {
+      return Array.from(container.querySelectorAll('.ProseMirror img')).map((img) =>
+        (img.getAttribute('src') ?? '').replace(/\?.*$/, ''),
+      );
+    }
+
+    function workspaceFileSrcs(container: HTMLElement): string[] {
+      return renderedImageSrcs(container).filter((src) => src.startsWith('workspace-file://'));
+    }
+
+    it('resolves short-form intent file images against the owner workspace on initial load', async () => {
+      const view = await renderInitializedNote(
+        'image-note',
+        `${IMAGE_MARKDOWN}\n\n${TRAVERSAL_MARKDOWN}`,
+      );
+
+      await waitFor(() => {
+        expect(renderedImageSrcs(view.container)).toContain(RESOLVED_IMAGE_SRC);
+      });
+      expect(workspaceFileSrcs(view.container)).toEqual([RESOLVED_IMAGE_SRC]);
+      expect(renderedImageSrcs(view.container)).toContain(TRAVERSAL_SRC);
+    });
+
+    it('resolves intent file images against the owner workspace on deferred large-note load', async () => {
+      const content = `${IMAGE_MARKDOWN}\n\n${'x'.repeat(5001)}`;
+      const view = await renderInitializedNote('large-image-note', content);
+
+      await waitFor(() => {
+        expect(renderedImageSrcs(view.container)).toContain(RESOLVED_IMAGE_SRC);
+      });
+    });
+
+    it('resolves intent file images against the owner workspace after switching notes', async () => {
+      const view = await renderInitializedNote();
+
+      await view.rerender({
+        workspace: { id: WORKSPACE_ID } as any,
+        noteId: 'switched-image-note',
+        content: IMAGE_MARKDOWN,
+        editable: true,
+        showSuggestions: false,
+        showComments: true,
+      });
+
+      await waitFor(() => {
+        expect(renderedImageSrcs(view.container)).toContain(RESOLVED_IMAGE_SRC);
+      });
+    });
+
+    it('re-resolves intent file images against the new owner when the workspace changes', async () => {
+      const view = await renderInitializedNote('image-note', IMAGE_MARKDOWN);
+      await waitFor(() => {
+        expect(renderedImageSrcs(view.container)).toContain(RESOLVED_IMAGE_SRC);
+      });
+
+      await view.rerender({
+        workspace: { id: 'ws-2' } as any,
+        noteId: 'image-note',
+        content: IMAGE_MARKDOWN,
+        editable: true,
+        showSuggestions: false,
+        showComments: true,
+      });
+
+      await waitFor(() => {
+        expect(renderedImageSrcs(view.container)).toContain(`workspace-file://ws-2/${IMAGE_PATH}`);
+      });
+      expect(renderedImageSrcs(view.container)).not.toContain(RESOLVED_IMAGE_SRC);
+    });
+
+    it('resolves intent file images against the owner workspace on live external updates', async () => {
+      const view = await renderInitializedNote(SPEC_NOTE_ID, 'Spec before image');
+
+      replaceNotes([createNote(SPEC_NOTE_ID, 'Spec', IMAGE_MARKDOWN)]);
+
+      await waitFor(
+        () => {
+          expect(renderedImageSrcs(view.container)).toContain(RESOLVED_IMAGE_SRC);
+        },
+        { timeout: 2500 },
+      );
+    });
   });
 });

@@ -6,6 +6,7 @@
   import Fa from 'svelte-fa';
   import { faSpinner } from '@fortawesome/free-solid-svg-icons';
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
+  import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
   import type { NoteId } from '$shared/types';
 
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
@@ -19,6 +20,10 @@
   }
 
   let { workspaceId, noteId, class: className = '' }: Props = $props();
+
+  // One cache-busting token per preview instance: re-rendering on note
+  // updates keeps workspace image URLs stable.
+  const workspaceFileVersion = createWorkspaceFileVersion();
 
   const workspaceId$ = toStore(() => workspaceId);
   const noteId$ = toStore(() => noteId);
@@ -44,6 +49,7 @@
         allowEmpty: true,
         processPrimitives: false,
         workspaceId,
+        workspaceFileVersion,
       }).then((html) => {
         if (destroyed) return;
         renderedHtml = html;

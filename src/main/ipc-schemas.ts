@@ -9,7 +9,12 @@ import { z } from 'zod';
 import { BROWSER_PROTOCOLS } from '../shared/constants';
 import { FirstVisitStateSchema, WorkspaceStatusMessageSchema } from '../shared/schemas';
 import { isValidWorkspaceId } from '../shared/types/branded-ids';
-import { CONNECTION_ACCENTS } from '../shared/types/connections';
+import {
+  CONNECTION_ACCENTS,
+  DETECTED_DEVICE_KINDS,
+  DEVICE_KINDS,
+  type DeviceKind,
+} from '../shared/types/connections';
 // IPC allow-list of workspace event-type strings.
 //
 // Mirrors the runtime values declared in `features/events/types.ts`
@@ -1088,9 +1093,13 @@ export const ConnectionsCaptureFingerprintSchema = z.object({
   token: z.string().min(1, 'Token is required'),
 });
 
+const DeviceIconKindSchema: z.ZodType<DeviceKind> = z.enum(DEVICE_KINDS);
+
 export const ConnectionsAddSchema = z.object({
   label: z.string().min(1, 'Label is required'),
   accent: z.enum(CONNECTION_ACCENTS).nullable().optional(),
+  detectedDeviceKind: z.enum(DETECTED_DEVICE_KINDS).nullable().optional(),
+  deviceIcon: z.union([z.literal('auto'), DeviceIconKindSchema]).optional(),
   host: z.string().min(1, 'Host is required'),
   port: z.number().int().positive('Port must be a positive integer'),
   fingerprint: z.string().min(1, 'Fingerprint is required'),
@@ -1108,6 +1117,8 @@ export const ConnectionsUpdateSchema = z
     id: z.string().min(1, 'Connection ID is required'),
     label: z.string().trim().min(1, 'Label is required'),
     accent: z.enum(CONNECTION_ACCENTS).nullable(),
+    detectedDeviceKind: z.enum(DETECTED_DEVICE_KINDS).nullable().optional(),
+    deviceIcon: z.union([z.literal('auto'), DeviceIconKindSchema]).optional(),
     host: z.string().trim().min(1, 'Host is required').optional(),
     port: z.number().int().min(1).max(65_535).optional(),
     confirmedFingerprint: z.string().trim().min(1).optional(),

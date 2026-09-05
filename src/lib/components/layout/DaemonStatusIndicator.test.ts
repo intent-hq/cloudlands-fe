@@ -21,6 +21,7 @@ let mockStoreState: Partial<StoreState> = {
 };
 let mockDispatch = vi.fn();
 const mockNavigateToSettings = vi.fn();
+const mockToastError = vi.fn();
 
 // Default connections slice, merged under whatever a test sets on
 // `mockStoreState` so the component's connections selectors always resolve
@@ -42,6 +43,10 @@ vi.mock('svelte-fa', () => ({
 
 vi.mock('$lib/utils/workspace-navigation', () => ({
   navigateToSettings: mockNavigateToSettings,
+}));
+
+vi.mock('$lib/components/ui/toast', () => ({
+  toast: { error: mockToastError },
 }));
 
 // Mock tooltip with a passthrough component so the real dropdown can render.
@@ -1360,6 +1365,54 @@ describe('DaemonStatusIndicator', () => {
         }),
       );
       expect(screen.queryByText('Devices')).toBeNull();
+    });
+
+    it('surfaces a secret-unavailable open as an error and routes to Devices settings (#3783)', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+      // Settle the open the way the saga would: a RESOLVED secret-unavailable
+      // status (the stored token cannot be read), not a rejection.
+      mockDispatch.mockImplementation(
+        (action: { type: string; success?: (r: unknown) => void }) => {
+          if (action.type === 'connections/openRequested') {
+            action.success?.({ status: 'secret-unavailable' });
+          }
+          return action;
+        },
+      );
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText('desk:4180').closest('[role="menuitem"]')!);
+
+      await vi.waitFor(() => expect(mockToastError).toHaveBeenCalledTimes(1));
+      expect(String(mockToastError.mock.calls[0][0])).toContain('desk:4180');
+      expect(mockNavigateToSettings).toHaveBeenCalledWith({ tab: 'devices' });
+    });
+
+    it('does not surface an error or navigate when the open resolves opened', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+      mockDispatch.mockImplementation(
+        (action: { type: string; success?: (r: unknown) => void }) => {
+          if (action.type === 'connections/openRequested') {
+            action.success?.({ status: 'opened', id: 'r1' });
+          }
+          return action;
+        },
+      );
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText('desk:4180').closest('[role="menuitem"]')!);
+
+      await vi.waitFor(() =>
+        expect(mockDispatch).toHaveBeenCalledWith(
+          expect.objectContaining({ type: 'connections/openRequested' }),
+        ),
+      );
+      expect(mockToastError).not.toHaveBeenCalled();
+      expect(mockNavigateToSettings).not.toHaveBeenCalled();
     });
 
     it('routes the final CTA to Devices settings when a remote is saved', async () => {

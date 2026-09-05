@@ -19,6 +19,7 @@
     processHTMLToMarkdown,
     extractFrontMatter,
   } from '$lib/utils/markdown-processor';
+  import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
   import BubbleMenu from '$lib/components/tiptap/BubbleMenu.svelte';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -34,6 +35,10 @@
   }
 
   let { value = $bindable(), readOnly = false, externalContentVersion = 0 }: Props = $props();
+
+  // One cache-busting token per editor instance so external content syncs
+  // keep identical workspace image URLs (no per-sync image re-fetch).
+  const workspaceFileVersion = createWorkspaceFileVersion();
 
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
@@ -96,6 +101,7 @@
       preserveAnchors: false,
       processPrimitives: false,
       workspaceId,
+      workspaceFileVersion,
     });
 
     lastMarkdownFromParent = value;
@@ -185,6 +191,7 @@
         preserveAnchors: false,
         processPrimitives: false,
         workspaceId,
+        workspaceFileVersion,
       })
         .then((html) => {
           if (syncSequence !== externalContentSyncSequence) return;

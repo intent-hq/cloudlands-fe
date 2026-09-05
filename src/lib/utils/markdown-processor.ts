@@ -4,7 +4,9 @@ import { renderTaskBlocksAsReadableMarkdown } from './tiptap-task-block-extensio
 import { normalizeAnchorPositions } from './anchor-normalization';
 import { sanitizeMarkdownHTML } from './html-sanitizer';
 import {
+  createWorkspaceFileVersion,
   rewriteIntentFileImageSrcs,
+  stampWorkspaceFileImageVersions,
   workspaceFileImageUrlToIntentFileUrl,
   workspaceFileMediaUrlToIntentFileUrl,
 } from './workspace-file-image';
@@ -464,6 +466,15 @@ export async function processMarkdownToHTML(
     workspaceId?: string;
     /** Render Mermaid and diff fences as visible source instead of TipTap node placeholders */
     renderRichFencesAsCode?: boolean;
+    /**
+     * Cache-busting token appended as `?v=` to rewritten workspace-file image
+     * URLs. Defaults to a fresh token per call so a regenerated file renders
+     * its current bytes. Long-lived callers that re-process the same document
+     * (editors, comments, streaming viewers) should pass one token per
+     * instance (`createWorkspaceFileVersion()` at init) so re-processing keeps
+     * identical image URLs instead of re-fetching every image per update.
+     */
+    workspaceFileVersion?: string;
   } = {},
 ): Promise<string> {
   const {
@@ -474,7 +485,14 @@ export async function processMarkdownToHTML(
     taskBlockRenderMode = 'placeholder',
     workspaceId,
     renderRichFencesAsCode = false,
+    workspaceFileVersion,
   } = options;
+
+  // Applied after the cache so cached HTML stays version-free and reusable.
+  const stampVersions = (html: string): string =>
+    html.includes('workspace-file://')
+      ? stampWorkspaceFileImageVersions(html, workspaceFileVersion ?? createWorkspaceFileVersion())
+      : html;
 
   // Handle empty content
   if (!content || content.trim() === '') {
@@ -502,7 +520,7 @@ export async function processMarkdownToHTML(
   const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}|${workspaceId ?? ''}|${renderRichFencesAsCode}`;
   const cached = getCachedMarkdown(cacheKey);
   if (cached !== null) {
-    return cached;
+    return stampVersions(cached);
   }
 
   try {
@@ -617,7 +635,7 @@ export async function processMarkdownToHTML(
 
     // Cache the result before returning
     setCachedMarkdown(cacheKey, htmlOut);
-    return htmlOut;
+    return stampVersions(htmlOut);
   } catch (error) {
     logger.error('[markdown-processor] Failed to parse markdown:', error as Error);
     // Callers inject the result with {@html}, so the fallback must be sanitized too.

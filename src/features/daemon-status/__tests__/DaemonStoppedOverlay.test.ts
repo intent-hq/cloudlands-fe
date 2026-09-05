@@ -695,6 +695,77 @@ describe('DaemonStoppedOverlay', () => {
       ).toBe(false);
       dispatchSpy.mockRestore();
     });
+
+    it('surfaces a secret-unavailable open inline and prefills the re-pair modal for that backend (#3783)', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      bindWindowToRemote();
+
+      // No connections saga runs here: settle the open's promise the way the
+      // saga would, with the resolved (not rejected) secret-unavailable status.
+      const originalDispatch = appStore.dispatch.bind(appStore);
+      const dispatchSpy = vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
+        const result = originalDispatch(action);
+        if ((action as { type: string }).type === openConnectionRequested.type) {
+          (action as ReturnType<typeof openConnectionRequested>).success({
+            status: 'secret-unavailable',
+          });
+        }
+        return result;
+      });
+
+      await fireEvent.click(screen.getByTestId('daemon-stopped-open-backend'));
+
+      const notice = await vi.waitFor(() =>
+        screen.getByTestId('daemon-stopped-open-secret-unavailable'),
+      );
+      expect(notice.textContent).toContain('Other Mac');
+      // Nothing opened: the overlay stays up rather than reading as success.
+      expect(overlay()).toBeTruthy();
+
+      // Recovery routes into the existing re-pair flow, prefilled for the
+      // backend whose token is unavailable (not the auth-rejected one).
+      await fireEvent.click(screen.getByTestId('daemon-stopped-reenter-token'));
+      const hostInput = (await screen.findByLabelText(/host/i)) as HTMLInputElement;
+      expect(hostInput.value).toBe('10.0.0.6');
+      expect((screen.getByLabelText(/port/i) as HTMLInputElement).value).toBe('8443');
+      expect((screen.getByLabelText(/name/i) as HTMLInputElement).value).toBe('Other Mac');
+
+      // Closing the re-pair modal retires the notice: the outcome it reported
+      // is stale once a re-add ran (or the user backed out to retry Open).
+      await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+      await vi.waitFor(() =>
+        expect(screen.queryByTestId('daemon-stopped-open-secret-unavailable')).toBeNull(),
+      );
+      expect(screen.queryByTestId('daemon-stopped-reenter-token')).toBeNull();
+      expect(overlay()).toBeTruthy();
+      dispatchSpy.mockRestore();
+    });
+
+    it('does not show the secret-unavailable notice when the open resolves opened', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      bindWindowToRemote();
+
+      const originalDispatch = appStore.dispatch.bind(appStore);
+      const dispatchSpy = vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
+        const result = originalDispatch(action);
+        if ((action as { type: string }).type === openConnectionRequested.type) {
+          (action as ReturnType<typeof openConnectionRequested>).success({
+            status: 'opened',
+            id: 'remote-2',
+          });
+        }
+        return result;
+      });
+
+      await fireEvent.click(screen.getByTestId('daemon-stopped-open-backend'));
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(screen.queryByTestId('daemon-stopped-open-secret-unavailable')).toBeNull();
+      expect(screen.queryByTestId('daemon-stopped-reenter-token')).toBeNull();
+      dispatchSpy.mockRestore();
+    });
   });
 
   it('keeps the spawn section visible when the transport flips to sidecar-uds mid-spawn', async () => {

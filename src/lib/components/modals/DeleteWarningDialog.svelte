@@ -6,6 +6,10 @@
   import { formatInteger } from '$lib/i18n/format';
   import { openExternalUrl } from '$lib/utils/open-external';
   import type { OpenPrWarningItem } from '$lib/utils/delete-warning-utils';
+  import type {
+    LocalChangesRoot,
+    LocalChangesWarning,
+  } from '$store/renderer/slices/workspace-operations/workspace-operations-types';
 
   interface Props {
     open?: boolean;
@@ -14,6 +18,8 @@
     agentNames?: string[];
     hookNames?: string[];
     openPrs?: OpenPrWarningItem[];
+    /** `workspace.localChanges` result; null when unavailable (fail-open). */
+    localChanges?: LocalChangesWarning | null;
     onDeleteAnyway?: () => void;
     onCancel?: () => void;
   }
@@ -24,11 +30,36 @@
     agentNames = [],
     hookNames = [],
     openPrs = [],
+    localChanges = null,
     onDeleteAnyway,
     onCancel,
   }: Props = $props();
 
   const isArchive = $derived(mode === 'archive');
+  const hasLocalChanges = $derived(
+    localChanges != null && (localChanges.hasUnpushedCommits || localChanges.hasUncommittedChanges),
+  );
+  // Roots with local work; rows the daemon could not read carry `error` and are skipped.
+  const localChangeRoots = $derived(
+    hasLocalChanges
+      ? (localChanges?.roots ?? []).filter(
+          (root) => !root.error && (root.unpushedCount > 0 || root.uncommittedCount > 0),
+        )
+      : [],
+  );
+
+  function rootBranchLabel(root: LocalChangesRoot): string {
+    return root.branch || m.workspace_branchDisplay_noBranch_label();
+  }
+
+  function rootLabel(root: LocalChangesRoot): string {
+    if (root.kind === 'primary') return rootBranchLabel(root);
+    const name = root.path.split(/[/\\]/).filter(Boolean).pop() || root.path;
+    return m.modals_deleteWarning_localChanges_secondaryRoot_label({
+      name,
+      branch: rootBranchLabel(root),
+    });
+  }
   const closeAriaLabel = $derived(
     isArchive
       ? m.modals_archiveWarning_close_ariaLabel()
@@ -76,7 +107,7 @@
         </Dialog.Description>
       </Dialog.Header>
 
-      {#if agentNames.length > 0 || hookNames.length > 0 || openPrs.length > 0}
+      {#if agentNames.length > 0 || hookNames.length > 0 || openPrs.length > 0 || hasLocalChanges}
         <div class="rounded-md border border-border bg-muted/40 p-3">
           {#if agentNames.length > 0}
             <p class="text-sm font-medium text-foreground">
@@ -146,6 +177,39 @@
                   {#if pr.mergeConflicts === true}
                     <Badge variant="destructive">
                       {m.modals_deleteWarning_prMergeConflicts_label()}
+                    </Badge>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          {#if hasLocalChanges}
+            <p
+              class="text-sm font-medium text-foreground"
+              class:mt-3={agentNames.length > 0 || hookNames.length > 0 || openPrs.length > 0}
+            >
+              {isArchive
+                ? m.modals_archiveWarning_localChanges_description()
+                : m.modals_deleteWarning_localChanges_description()}
+            </p>
+            <ul class="mt-2 max-h-28 space-y-1 overflow-auto pr-1">
+              {#each localChangeRoots as root (root.gitRootId ?? root.path)}
+                <li class="flex items-center gap-2 text-sm text-subtle">
+                  <span class="min-w-0 truncate">{rootLabel(root)}</span>
+                  {#if root.unpushedCount > 0}
+                    <Badge variant="secondary" class="shrink-0">
+                      {root.unpushedCount === 1
+                        ? m.modals_deleteWarning_localChanges_unpushed_one({
+                            count: formatInteger(root.unpushedCount),
+                          })
+                        : m.modals_deleteWarning_localChanges_unpushed_many({
+                            count: formatInteger(root.unpushedCount),
+                          })}
+                    </Badge>
+                  {/if}
+                  {#if root.uncommittedCount > 0}
+                    <Badge variant="secondary" class="shrink-0">
+                      {m.modals_deleteWarning_localChanges_uncommitted_label()}
                     </Badge>
                   {/if}
                 </li>

@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
-import type { AgentMessage, AgentSession } from '$shared/types';
+import type { AgentMessage, AgentSession, Note } from '$shared/types';
 
 const { reportStreamLifecycleSpy } = vi.hoisted(() => ({ reportStreamLifecycleSpy: vi.fn() }));
 
@@ -258,6 +258,7 @@ import {
 import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
 import {
   resolveFinishReasonNotice,
+  resolveStoppedIndicatorLabel,
   shouldShowStoppedIndicator,
 } from '$lib/components/chat/message-display-utils';
 import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
@@ -2468,13 +2469,14 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
 
     // `interrupt_inner` emits the single terminal `agent:stream:end` (the
     // aborted worker no longer reaches its own emit) — now carrying
-    // `stopReason: "interrupted"` + the turn's `messageId` — followed by the
-    // STAB-28 `agent:idle { reason: "interrupted" }`.
+    // `stopReason: "interrupted"` + `interruptReason` (§7.2) + the turn's
+    // `messageId` — followed by the STAB-28 `agent:idle { reason: "interrupted" }`.
     handler(
       notification('agent:stream:end', {
         agentId: AGENT,
         streamId: STREAM_ID,
         stopReason: 'interrupted',
+        interruptReason: 'user_stop',
         messageId: MESSAGE_ID,
       }),
     );
@@ -2507,15 +2509,83 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     expect(assistantMessages[0].streamingComplete).toBe(true);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
 
-    // The wire `stopReason: "interrupted"` applies the interrupted metadata at
-    // stream:end time — the Stopped indicator renders LIVE, no rehydrate needed.
-    expect(assistantMessages[0].metadata).toMatchObject({
+    // The wire `stopReason: "interrupted"` + `interruptReason` apply the
+    // interrupted metadata at stream:end time — exactly what the daemon
+    // persists on the row (§7.2; no `interruptedBy` on a plain user stop) —
+    // so the Stopped indicator renders LIVE, no rehydrate needed.
+    expect(assistantMessages[0].metadata).toEqual({
       interrupted: true,
       stopReason: 'interrupted',
+      interruptReason: 'user_stop',
     });
     expect(shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false })).toBe(
       true,
     );
+    expect(resolveStoppedIndicatorLabel(assistantMessages[0])).toEqual({ kind: 'stopped' });
+  });
+
+  it('user preemption mid-stream (§7.2 preempted_by_message + interruptedBy user): the live metadata mirrors the persisted row', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    streamPartialTurn(handler);
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        stopReason: 'interrupted',
+        interruptReason: 'preempted_by_message',
+        interruptedBy: { kind: 'user' },
+        messageId: MESSAGE_ID,
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expectPartialBlocksIntact(assistantMessages[0]);
+    expect(assistantMessages[0].metadata).toEqual({
+      interrupted: true,
+      stopReason: 'interrupted',
+      interruptReason: 'preempted_by_message',
+      interruptedBy: { kind: 'user' },
+    });
+    expect(resolveStoppedIndicatorLabel(assistantMessages[0])).toEqual({
+      kind: 'preempted-by-message',
+    });
+  });
+
+  it('agent preemption mid-stream (§7.2 interruptedBy agent): the reason-specific label resolves LIVE without a reload', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    streamPartialTurn(handler);
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        stopReason: 'interrupted',
+        interruptReason: 'preempted_by_message',
+        interruptedBy: { kind: 'agent', agentId: 'agent-child', name: 'Child' },
+        messageId: MESSAGE_ID,
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expectPartialBlocksIntact(assistantMessages[0]);
+    expect(assistantMessages[0].metadata).toEqual({
+      interrupted: true,
+      stopReason: 'interrupted',
+      interruptReason: 'preempted_by_message',
+      interruptedBy: { kind: 'agent', agentId: 'agent-child', name: 'Child' },
+    });
+    expect(shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false })).toBe(
+      true,
+    );
+    expect(resolveStoppedIndicatorLabel(assistantMessages[0])).toEqual({
+      kind: 'preempted-by-agent',
+      name: 'Child',
+    });
   });
 
   it('normal agent:stream:end (no stopReason) finalizes WITHOUT interrupted metadata — no Stopped indicator', async () => {
@@ -2531,10 +2601,48 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     expect(assistantMessages[0].isStreaming).toBe(false);
     expect(assistantMessages[0].streamingComplete).toBe(true);
     expect(assistantMessages[0].metadata?.interrupted).toBeUndefined();
+    expect(assistantMessages[0].metadata?.interruptReason).toBeUndefined();
+    expect(assistantMessages[0].metadata?.interruptedBy).toBeUndefined();
     expect(shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false })).toBe(
       false,
     );
   });
+
+  it.each([
+    ['unknown kind', { kind: 'system' }],
+    ['non-string agentId', { kind: 'agent', agentId: 42, name: 'Child' }],
+    ['non-string name', { kind: 'agent', agentId: 'agent-child', name: { first: 'Child' } }],
+    ['non-object value', 'agent-child'],
+  ])(
+    'malformed interruptedBy (%s) is dropped whole — interruptReason still lands, no partial attribution',
+    async (_label, interruptedBy) => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      streamPartialTurn(handler);
+      handler(
+        notification('agent:stream:end', {
+          agentId: AGENT,
+          streamId: STREAM_ID,
+          stopReason: 'interrupted',
+          interruptReason: 'preempted_by_message',
+          interruptedBy,
+          messageId: MESSAGE_ID,
+        }),
+      );
+
+      const assistantMessages = readAssistantMessages();
+      expect(assistantMessages).toHaveLength(1);
+      expect(assistantMessages[0].metadata).toEqual({
+        interrupted: true,
+        stopReason: 'interrupted',
+        interruptReason: 'preempted_by_message',
+      });
+      expect(
+        shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false }),
+      ).toBe(true);
+    },
+  );
 
   it('thinking-only turn stopped: interrupted metadata lands and the Stopped indicator shows despite no visible content', async () => {
     await primeBridge();
@@ -2585,6 +2693,7 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
         agentId: AGENT,
         streamId: STREAM_ID,
         stopReason: 'interrupted',
+        interruptReason: 'user_stop',
         messageId: MESSAGE_ID,
       }),
     );
@@ -2595,13 +2704,45 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     expect(assistantMessages[0].contentBlocks).toEqual([]);
     expect(assistantMessages[0].isStreaming).toBe(false);
     expect(assistantMessages[0].streamingComplete).toBe(true);
-    expect(assistantMessages[0].metadata).toMatchObject({
+    expect(assistantMessages[0].metadata).toEqual({
       interrupted: true,
       stopReason: 'interrupted',
+      interruptReason: 'user_stop',
     });
     expect(shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false })).toBe(
       true,
     );
+  });
+
+  it('pre-first-token agent preemption (§7.2): the empty placeholder carries interruptReason + interruptedBy so the reason-specific label resolves live', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        stopReason: 'interrupted',
+        interruptReason: 'preempted_by_message',
+        interruptedBy: { kind: 'agent', agentId: 'agent-child', name: 'Child' },
+        messageId: MESSAGE_ID,
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
+    expect(assistantMessages[0].contentBlocks).toEqual([]);
+    expect(assistantMessages[0].metadata).toEqual({
+      interrupted: true,
+      stopReason: 'interrupted',
+      interruptReason: 'preempted_by_message',
+      interruptedBy: { kind: 'agent', agentId: 'agent-child', name: 'Child' },
+    });
+    expect(resolveStoppedIndicatorLabel(assistantMessages[0])).toEqual({
+      kind: 'preempted-by-agent',
+      name: 'Child',
+    });
   });
 
   it('normal agent:stream:end with NO local stream state stays a no-op (no phantom placeholder)', async () => {
@@ -3093,13 +3234,15 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
       }),
     );
     // …but the terminal stream:end targets a DIFFERENT turn B with an
-    // interrupt stopReason. Turn A must finalize clean; turn B's placeholder
-    // carries the interrupted metadata.
+    // interrupt stopReason + §7.2 attribution. Turn A must finalize clean;
+    // turn B's placeholder carries the full interrupted metadata.
     handler(
       notification('agent:stream:end', {
         agentId: AGENT,
         streamId: 'stream_2',
         stopReason: 'interrupted',
+        interruptReason: 'preempted_by_message',
+        interruptedBy: { kind: 'agent', agentId: 'agent-child', name: 'Child' },
         messageId: OTHER_MESSAGE_ID,
       }),
     );
@@ -3108,8 +3251,15 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
     expect(assistantMessages.map((m) => m.id)).toEqual([MESSAGE_ID, OTHER_MESSAGE_ID]);
     const [turnA, turnB] = assistantMessages;
     expect(turnA.metadata?.interrupted).toBeUndefined();
+    expect(turnA.metadata?.interruptReason).toBeUndefined();
+    expect(turnA.metadata?.interruptedBy).toBeUndefined();
     expect(shouldShowStoppedIndicator({ message: turnA, isStreaming: false })).toBe(false);
-    expect(turnB.metadata).toMatchObject({ interrupted: true, stopReason: 'interrupted' });
+    expect(turnB.metadata).toEqual({
+      interrupted: true,
+      stopReason: 'interrupted',
+      interruptReason: 'preempted_by_message',
+      interruptedBy: { kind: 'agent', agentId: 'agent-child', name: 'Child' },
+    });
     expect(shouldShowStoppedIndicator({ message: turnB, isStreaming: false })).toBe(true);
   });
 
@@ -6795,6 +6945,128 @@ describe('daemonEventsBridge (task:status-changed → applyTaskStatusChanged)', 
     const task = getItem(state.workspaceTasks.byWorkspaceId[TASK_WS].tasks as never, 'note-t1') as
       { status: string } | undefined;
     expect(task?.status).toBe('in_progress');
+  });
+
+  // intent#4362: the context sidebar (NotesPanel) renders task icons from
+  // `note.metadata.task.status` on the workspace-notes slice, so a
+  // `task:status-changed` edge must land there too — not only on the
+  // workspace-tasks slice — or the row icon stays stale until the note is
+  // opened and refetched.
+  it('applies task:status-changed onto the workspace-notes slice so sidebar task icons update live', async () => {
+    const NOTES_WS = 'ws-task-notes-icon';
+    const { ContentType, NoteVisibility } = await import('$shared/types');
+    const { loadWorkspaceNotesSucceeded } =
+      await import('$store/renderer/slices/workspace-notes/workspace-notes-slice');
+    const { selectNoteById } =
+      await import('$store/renderer/slices/workspace-notes/workspace-notes-selectors');
+    const taskNote = {
+      id: 'task-note-icon-1',
+      workspaceId: NOTES_WS,
+      title: 'Task icon',
+      content: '',
+      contentType: ContentType.Markdown,
+      tags: [],
+      isPinned: false,
+      isArchived: false,
+      visibility: NoteVisibility.Private,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      metadata: { task: { status: 'not_started' } },
+    } as unknown as Note;
+    appStore.dispatch(loadWorkspaceNotesSucceeded([NOTES_WS], { [NOTES_WS]: [taskNote] }));
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-task-notes-icon-1',
+          workspaceId: NOTES_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'task:status-changed',
+          actor: { type: 'agent', id: AGENT },
+          data: {
+            noteId: 'task-note-icon-1',
+            noteTitle: 'Task icon',
+            previousStatus: 'not_started',
+            newStatus: 'in_progress',
+            changedAt: '2026-01-02T00:00:00.000Z',
+          },
+        },
+      },
+    });
+
+    expect(
+      selectNoteById.select(appStore.state, NOTES_WS, 'task-note-icon-1')?.metadata?.task?.status,
+    ).toBe('in_progress');
+  });
+
+  it('a burst of task:status-changed events lands every status on the workspace-notes slice', async () => {
+    const BURST_WS = 'ws-task-notes-burst';
+    const { ContentType, NoteVisibility } = await import('$shared/types');
+    const { loadWorkspaceNotesSucceeded } =
+      await import('$store/renderer/slices/workspace-notes/workspace-notes-slice');
+    const { selectNoteById } =
+      await import('$store/renderer/slices/workspace-notes/workspace-notes-selectors');
+    const mkTaskNote = (id: string) =>
+      ({
+        id,
+        workspaceId: BURST_WS,
+        title: id,
+        content: '',
+        contentType: ContentType.Markdown,
+        tags: [],
+        isPinned: false,
+        isArchived: false,
+        visibility: NoteVisibility.Private,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        metadata: { task: { status: 'not_started' } },
+      }) as unknown as Note;
+    appStore.dispatch(
+      loadWorkspaceNotesSucceeded([BURST_WS], {
+        [BURST_WS]: [mkTaskNote('burst-a'), mkTaskNote('burst-b'), mkTaskNote('burst-c')],
+      }),
+    );
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const edges: Array<[string, string]> = [
+      ['burst-a', 'in_progress'],
+      ['burst-b', 'complete'],
+      ['burst-a', 'complete'],
+      ['burst-c', 'blocked'],
+    ];
+    for (const [noteId, newStatus] of edges) {
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: `evt-${noteId}-${newStatus}`,
+            workspaceId: BURST_WS,
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'task:status-changed',
+            actor: { type: 'agent', id: AGENT },
+            data: {
+              noteId,
+              noteTitle: noteId,
+              previousStatus: 'not_started',
+              newStatus,
+              changedAt: '2026-01-02T00:00:00.000Z',
+            },
+          },
+        },
+      });
+    }
+
+    const statusOf = (id: string) =>
+      selectNoteById.select(appStore.state, BURST_WS, id)?.metadata?.task?.status;
+    expect(statusOf('burst-a')).toBe('complete');
+    expect(statusOf('burst-b')).toBe('complete');
+    expect(statusOf('burst-c')).toBe('blocked');
   });
 
   it('drops task:status-changed events lacking a workspaceId envelope', async () => {

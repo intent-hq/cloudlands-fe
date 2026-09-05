@@ -228,6 +228,25 @@ export const SETTINGS_PROTOCOL_FIXTURES = {
       },
     },
   },
+  // With the config key absent the daemon reports `value: null` and the
+  // catalog default is what spawns actually use (PROTOCOL §5.12).
+  acpNodeMaxOldSpaceMb: {
+    request: { method: 'settings.get', params: { path: 'agents.acpNodeMaxOldSpaceMb' } },
+    response: {
+      path: 'agents.acpNodeMaxOldSpaceMb',
+      value: null,
+      definition: {
+        path: 'agents.acpNodeMaxOldSpaceMb',
+        label: 'ACP Node heap limit (MB)',
+        description: '',
+        category: 'agents',
+        type: 'number',
+        min: 1024,
+        max: 65536,
+        defaultValue: 8192,
+      },
+    },
+  },
   resetMaxConcurrent: {
     request: { method: 'settings.reset', params: { path: 'agents.maxConcurrent' } },
     response: { path: 'agents.maxConcurrent', value: 0 },

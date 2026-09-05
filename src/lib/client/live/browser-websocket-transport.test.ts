@@ -102,6 +102,16 @@ describe('resolveBrowserWsUrl', () => {
     expect(resolveBrowserWsUrl(' ws://localhost:9100/rpc ')).toBe('ws://localhost:9100/rpc');
   });
 
+  it('resolves a same-origin path using the page host', () => {
+    vi.stubGlobal('location', { protocol: 'http:', host: '127.0.0.1:64197' });
+    expect(resolveBrowserWsUrl('/intentd/ws')).toBe('ws://127.0.0.1:64197/intentd/ws');
+  });
+
+  it('uses a secure WebSocket for an HTTPS page', () => {
+    vi.stubGlobal('location', { protocol: 'https:', host: 'localhost:8443' });
+    expect(resolveBrowserWsUrl('/intentd/ws')).toBe('wss://localhost:8443/intentd/ws');
+  });
+
   it('accepts wss:// URLs with a token query param', () => {
     expect(resolveBrowserWsUrl('wss://daemon.example/rpc?token=abc')).toBe(
       'wss://daemon.example/rpc?token=abc',

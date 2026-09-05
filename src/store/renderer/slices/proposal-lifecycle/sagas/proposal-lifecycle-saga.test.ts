@@ -38,6 +38,7 @@ import {
   proposalApplySucceeded,
   proposalFailed,
   hydrateProposalLifecycle,
+  proposalResolutionReconciled,
   proposalUndoStarted,
   proposalUndoSucceeded,
   undoProposalRequested,
@@ -57,6 +58,7 @@ import {
   handleUndoProposal,
   hydrateProposalLifecycleSaga,
   persistProposalLifecycleSaga,
+  proposalLifecycleSaga,
   PROPOSAL_LIFECYCLE_STORAGE_KEY,
   validateProposalLifecycleEntries,
 } from './proposal-lifecycle-saga';
@@ -360,5 +362,39 @@ describe('persistence', () => {
     expect(mocks.setJSON).toHaveBeenCalledWith(PROPOSAL_LIFECYCLE_STORAGE_KEY, {
       entries: { 'p-applied': applied },
     });
+  });
+
+  it('persists a dismissal when resolution reconciliation completes', async () => {
+    vi.useFakeTimers();
+    mocks.getJSON.mockReturnValue(undefined);
+    const channel = stdChannel();
+    const state = emptyState();
+    const task = runSaga(
+      {
+        channel,
+        dispatch: (action) => action,
+        getState: () => state,
+      },
+      proposalLifecycleSaga,
+    );
+    await Promise.resolve();
+    const dismissed = { status: 'dismissed', completedAt: Date.now(), lastAction: 'dismiss' };
+    state.proposalLifecycle['agent-a::p-dismissed'] = dismissed;
+
+    channel.put(
+      proposalResolutionReconciled({
+        proposalId: 'agent-a::p-dismissed',
+        outcome: 'dismissed',
+        completedAt: dismissed.completedAt,
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(mocks.setJSON).toHaveBeenCalledWith(PROPOSAL_LIFECYCLE_STORAGE_KEY, {
+      entries: { 'agent-a::p-dismissed': dismissed },
+    });
+    task.cancel();
+    await task.toPromise();
+    vi.useRealTimers();
   });
 });

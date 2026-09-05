@@ -9,6 +9,7 @@
   import InitialsAvatar from './InitialsAvatar.svelte';
   import { faEdit, faCheck, faTimes } from '@fortawesome/free-solid-svg-icons';
   import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
+  import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
 
   import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
   import { updateCommentAction } from '$store/renderer/slices/comments/comments-slice';
@@ -88,6 +89,9 @@
 
   const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
   const markdownWorkspaceId = $derived(workspace?.id ?? routeWorkspaceId);
+  // One cache-busting token per comment instance: re-rendering the same
+  // comment keeps its workspace image URLs stable.
+  const workspaceFileVersion = createWorkspaceFileVersion();
 
   function formatTimestamp(dateStr?: string) {
     if (!dateStr) return '';
@@ -125,6 +129,7 @@
         processMarkdownToHTML(comment.content || '', {
           allowEmpty: true,
           workspaceId: markdownWorkspaceId,
+          workspaceFileVersion,
         }),
       );
       internalEditHTML = html || '';
@@ -177,7 +182,11 @@
     let destroyed = false;
     const content = comment.content || '';
     Promise.resolve(
-      processMarkdownToHTML(content, { allowEmpty: true, workspaceId: markdownWorkspaceId }),
+      processMarkdownToHTML(content, {
+        allowEmpty: true,
+        workspaceId: markdownWorkspaceId,
+        workspaceFileVersion,
+      }),
     ).then((h) => {
       if (destroyed) return;
       commentHtml = h || '';

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { execSync } from 'child_process';
+import { intentdBridgePlugin } from './scripts/vite-plugin-intentd-bridge.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -288,7 +289,7 @@ const excludeNodeModules = () => ({
   },
 });
 
-export default defineConfig(({ command, mode }) => {
+export default defineConfig(({ command, mode, isPreview }) => {
   // Web profile: `INTENT_BUILD_TARGET=web` (set by the dev:web / build:web
   // scripts) builds the renderer for a plain browser — no Electron main or
   // preload. svelte.config.js switches the adapter output to dist/web for the
@@ -297,6 +298,9 @@ export default defineConfig(({ command, mode }) => {
   // remains a dev:web convenience; without either URL the app uses the mock.
   const isWebBuild = process.env.INTENT_BUILD_TARGET === 'web';
   const isUiPreview = command === 'serve' && process.env.INTENT_UI_PREVIEW === '1';
+  const intentdBridgeRequested =
+    command === 'serve' && !isPreview && isWebBuild && process.env.INTENT_DEV_DAEMON_BRIDGE === '1';
+  const useIntentdBridge = intentdBridgeRequested && process.platform !== 'win32';
   const useBundledMessages = mode === 'production';
   const i18nVirtualMessages = '\0intent-paraglide-messages';
   const i18nVirtualRuntime = '\0intent-paraglide-runtime';
@@ -304,7 +308,8 @@ export default defineConfig(({ command, mode }) => {
 
   const webDefines = {};
   const isProductionWebBuild = isWebBuild && mode === 'production';
-  const hasBuildTimeBrowserWsUrl = !isProductionWebBuild && Boolean(env.VITE_INTENTD_WS_URL);
+  const browserWsUrl = env.VITE_INTENTD_WS_URL || (useIntentdBridge ? '/intentd/ws' : '');
+  const hasBuildTimeBrowserWsUrl = !isProductionWebBuild && Boolean(browserWsUrl);
   if (isWebBuild && !hasBuildTimeBrowserWsUrl && env.VITE_ENABLE_BROWSER_MOCK === undefined) {
     // Production web builds are gated out of the browser mock by default
     // (hooks.client.ts only loads it in DEV or under an explicit opt-in).
@@ -372,6 +377,7 @@ export default defineConfig(({ command, mode }) => {
             outputStructure: 'locale-modules',
           }),
       devHealthProbeSilencer(),
+      intentdBridgeRequested && intentdBridgePlugin(),
       preventSvelteKitRegenHMR(),
       sveltekit(),
       handleUnhandledSvelteKitModules(),
@@ -455,12 +461,16 @@ export default defineConfig(({ command, mode }) => {
 
       cors: true,
 
-      // Configure HMR for Electron (will use the same port as the server)
-      hmr: {
-        protocol: 'ws',
-        host: '127.0.0.1',
-        // HMR port will auto-match server port when not specified
-      },
+      // Electron connects directly to this host. Web clients derive HMR host
+      // and port from the page URL so a daemon-side tunnel also carries HMR.
+      ...(isWebBuild
+        ? {}
+        : {
+            hmr: {
+              protocol: 'ws',
+              host: '127.0.0.1',
+            },
+          }),
 
       fs: {
         allow: ['..'],
@@ -547,11 +557,12 @@ export default defineConfig(({ command, mode }) => {
 
     define: {
       'process.env.IS_ELECTRON': JSON.stringify(!isWebBuild),
+      // Renderer-visible build profile: a web build never receives a preload
+      // bridge, even when it is loaded inside the app's own <webview>.
+      'process.env.INTENT_BUILD_TARGET': JSON.stringify(isWebBuild ? 'web' : 'electron'),
       // Never compile production web credentials into versioned static JS.
       // /runtime-config.js is loaded before the application bootstrap instead.
-      'process.env.VITE_INTENTD_WS_URL': JSON.stringify(
-        isProductionWebBuild ? '' : (env.VITE_INTENTD_WS_URL ?? ''),
-      ),
+      'process.env.VITE_INTENTD_WS_URL': JSON.stringify(isProductionWebBuild ? '' : browserWsUrl),
       ...webDefines,
       __APP_VERSION__: JSON.stringify(packageJson.version),
       __DEV_GIT_BRANCH__: JSON.stringify(

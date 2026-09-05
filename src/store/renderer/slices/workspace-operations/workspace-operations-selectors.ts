@@ -24,6 +24,10 @@ export const selectOpenPrsForDelete = store.createSelector((state): OpenPrWarnin
   );
 });
 
+export const selectLocalChangesForDelete = store.createSelector((state) => {
+  return state.workspaceOperations.localChangesForDelete;
+});
+
 export const selectShowArchiveWarning = store.createSelector((state) => {
   return state.workspaceOperations.showArchiveWarning;
 });
@@ -44,6 +48,10 @@ export const selectOpenPrsForArchive = store.createSelector((state): OpenPrWarni
   return getItems<OpenPrWarningItem, 'number'>(
     state.workspaceOperations.openPrsForArchive as Collection<OpenPrWarningItem, 'number'>,
   );
+});
+
+export const selectLocalChangesForArchive = store.createSelector((state) => {
+  return state.workspaceOperations.localChangesForArchive;
 });
 
 export const selectPendingBulkRepoKey = store.createSelector((state) => {
