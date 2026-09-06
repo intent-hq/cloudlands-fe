@@ -13,6 +13,10 @@ describe('semantic map preview', () => {
       'focus-region',
       'replay',
       'unsorted-heavy',
+      'detail-region',
+      'detail-agent',
+      'detail-route',
+      'detail-crossing',
     ]);
   });
 
