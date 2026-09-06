@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { hunkTrackColor } from './hunk-track-colors';
+
   interface Props {
     oldTrack?: number[];
     newTrack?: number[];
@@ -21,20 +23,22 @@
 
 <span class="hunk-tracks" aria-hidden="true">
   <span class="track-label track-label--old">−</span>
-  <span class="track track--old">
+  <span class="track track--old" style:background={hunkTrackColor('background')}>
     {#each segments(oldTrack) as segment, index (index)}
       <span
         class="segment"
+        style:background={hunkTrackColor('old')}
         style:left={`${segment.position * 100}%`}
         style:width={`${segment.size * 100}%`}
       ></span>
     {/each}
   </span>
   <span class="track-label track-label--new">+</span>
-  <span class="track track--new">
+  <span class="track track--new" style:background={hunkTrackColor('background')}>
     {#each segments(newTrack) as segment, index (index)}
       <span
         class="segment"
+        style:background={hunkTrackColor('new')}
         style:left={`${segment.position * 100}%`}
         style:width={`${segment.size * 100}%`}
       ></span>
@@ -69,7 +73,6 @@
     position: relative;
     overflow: hidden;
     border-radius: 9999px;
-    background: hsl(var(--muted));
   }
 
   .segment {
@@ -79,14 +82,6 @@
     min-width: 2px;
     transform: translateX(-50%);
     border-radius: inherit;
-  }
-
-  .track--old .segment {
-    background: rgb(239 68 68);
-  }
-
-  .track--new .segment {
-    background: rgb(16 185 129);
   }
 
   :global(.dark) .track-label--old {
