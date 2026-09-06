@@ -35,7 +35,7 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
 }));
 
 import { PANEL_LAYOUT_STORAGE_KEY_PREFIX } from '../../panel-layout/panel-layout-types';
-import { panelLayoutReducer } from '../../panel-layout/panel-layout-slice';
+import { emptyWorkspaceState, panelLayoutReducer } from '../../panel-layout/panel-layout-slice';
 import { browserIpcSaga } from './browser-ipc-saga';
 
 const NOW = new Date('2026-07-31T00:00:00.000Z').getTime();
@@ -263,12 +263,155 @@ describe('browserIpcSaga', () => {
         payload: ['ws-1', 'browser-checked', 'agent-1'],
       },
       {
-        type: 'panelLayout/setActiveTab',
+        type: 'panelLayout/activateVisibleTab',
         payload: { wsId: 'ws-1', tabId: 'browser-checked' },
       },
+      { type: 'panelLayout/consumePanelReveal', payload: ['ws-1', 'browser-checked'] },
+      { type: 'panelLayout/consumePendingFocus', payload: ['ws-1', 'browser-checked'] },
     ]);
     task.cancel();
     await task.toPromise();
+  });
+
+  // An agent visible replace adopting an existing visible tab must activate
+  // it without moving focus, like every other agent-driven visible open
+  // (monorepo#3045). Driven through the real reducer: the adopted tab becomes
+  // active in its own panel (even one that is not focused), the reveal is
+  // marked preserveFocus (BrowserTabType's autofocus gate), and neither the
+  // focused panel nor the focus history changes. A user replace keeps its
+  // focusing setActiveTab path.
+  describe('agent visible position:replace adoption (monorepo#3045)', () => {
+    const twoPanelState = (focusedPanelId: 'left' | 'right') => ({
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            ...emptyWorkspaceState,
+            root: {
+              type: 'split',
+              direction: 'horizontal',
+              children: [
+                { type: 'panel', panelId: 'left' },
+                { type: 'panel', panelId: 'right' },
+              ],
+              sizes: [50, 50],
+            },
+            panels: {
+              left: {
+                id: 'left',
+                tabs: [{ id: 'note-left', type: 'note', title: 'Left' }],
+                activeTabId: 'note-left',
+              },
+              right: {
+                id: 'right',
+                tabs: [
+                  { id: 'note-right', type: 'note', title: 'Right' },
+                  {
+                    id: 'browser-1',
+                    type: 'browser',
+                    title: 'Browser',
+                    browserUrl: 'https://old.test',
+                    ownerAgentId: 'agent-1',
+                    closable: true,
+                  },
+                ],
+                activeTabId: 'note-right',
+              },
+            },
+            focusedPanelId,
+          },
+        },
+      },
+      tabState: { workspaceStacks: [] },
+    });
+    const startWithReducer = () => {
+      const actions: unknown[] = [];
+      const task = start((action: any) => {
+        actions.push(action);
+        state = { ...state, panelLayout: panelLayoutReducer(state.panelLayout, action) };
+      });
+      return { actions, task };
+    };
+    const ws = () => state.panelLayout.byWorkspaceId['ws-1'];
+
+    it.each(['right', 'left'] as const)(
+      'activates the adopted tab in place without moving focus (focused panel: %s)',
+      async (focusedPanelId) => {
+        const { actions, task } = startWithReducer();
+        state = twoPanelState(focusedPanelId);
+
+        await emit({
+          url: 'https://replaced.test',
+          position: 'replace',
+          workspaceId: 'ws-1',
+          ownerAgentId: 'agent-1',
+          visible: true,
+          replaceTabId: 'browser-1',
+        });
+
+        expect(actions.map((a: any) => a.type)).toEqual([
+          'panelLayout/updateTabBrowserUrl',
+          'panelLayout/setTabOwnerAgent',
+          'panelLayout/activateVisibleTab',
+          'panelLayout/consumePanelReveal',
+          'panelLayout/consumePendingFocus',
+        ]);
+        expect(ws().panels.right.activeTabId).toBe('browser-1');
+        expect(ws().panels.right.tabs[1]).toMatchObject({ browserUrl: 'https://replaced.test' });
+        expect(ws().focusedPanelId).toBe(focusedPanelId);
+        expect(ws().focusHistory).toEqual([]);
+        // The queued reveal was consumed because jsdom's route is `/`, not
+        // this workspace (its preserveFocus marker is asserted below).
+        expect(ws().pendingPanelReveal).toBeNull();
+        expect(ws().pendingFocusTabId).toBeNull();
+        task.cancel();
+        await task.toPromise();
+      },
+    );
+
+    it('queues the reveal marked preserveFocus before the not-displayed drop', async () => {
+      const seen: unknown[] = [];
+      const task = start((action: any) => {
+        state = { ...state, panelLayout: panelLayoutReducer(state.panelLayout, action) };
+        if (action.type === 'panelLayout/activateVisibleTab') seen.push(ws().pendingPanelReveal);
+      });
+      state = twoPanelState('right');
+
+      await emit({
+        url: 'https://replaced.test',
+        position: 'replace',
+        workspaceId: 'ws-1',
+        ownerAgentId: 'agent-1',
+        visible: true,
+        replaceTabId: 'browser-1',
+      });
+
+      expect(seen).toEqual([
+        { panelId: 'right', tabId: 'browser-1', requestId: 'browser-1', preserveFocus: true },
+      ]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('a user replace still activates through the focusing setActiveTab path', async () => {
+      const { actions, task } = startWithReducer();
+      state = twoPanelState('right');
+
+      await emit({
+        url: 'https://user-replaced.test',
+        position: 'replace',
+        workspaceId: 'ws-1',
+        replaceTabId: 'browser-1',
+      });
+
+      expect(actions.map((a: any) => a.type)).toEqual([
+        'panelLayout/updateTabBrowserUrl',
+        'panelLayout/setActiveTab',
+      ]);
+      expect(ws().panels.right.activeTabId).toBe('browser-1');
+      expect(ws().focusHistory).toHaveLength(1);
+      task.cancel();
+      await task.toPromise();
+    });
   });
 
   // Hidden-replace (monorepo#2857): an AGENT replace bound to a hidden

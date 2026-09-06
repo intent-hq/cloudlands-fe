@@ -261,6 +261,16 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       // focus — the adopted tab keeps its place, only its URL changed
       // (monorepo#3045). Adoption never hides a visible tab.
       if (hiddenOpen) return;
+      // An agent visible replace activates the adopted tab in whichever
+      // panel holds it without moving focus — the same preserveFocus contract
+      // as every other agent-driven visible open (monorepo#3045). setActiveTab
+      // only searches the focused panel and records focus history, so it is
+      // reserved for user replaces.
+      if (ownerAgentId) {
+        yield* put(activateVisibleTab(workspaceId, existing.id));
+        yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, existing.id);
+        return;
+      }
       yield* put(setActiveTab(workspaceId, existing.id));
       return;
     }
