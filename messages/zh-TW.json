@@ -3250,6 +3250,9 @@
   "newWorkspace_shell_saving_label": "正在儲存…",
   "newWorkspace_shell_unsaved_label": "未儲存",
   "newWorkspace_source_title": "工作區來源",
+  "newWorkspace_setup_title": "工作區設定",
+  "newWorkspace_source_composerMenu_description": "使用訊息輸入框中的 + 選單選擇或變更儲存庫或資料夾。",
+  "newWorkspace_source_folderName_label": "資料夾名稱",
   "newWorkspace_capabilities_ariaLabel": "工作區功能",
   "newWorkspace_capabilities_defaultHost_label": "常駐程式主機",
   "newWorkspace_capabilities_hostMacAppleSilicon_label": "macOS (Apple silicon)",
@@ -5946,8 +5949,5 @@
   "workspace_sidebarSearch_clear_ariaLabel": "清除搜尋",
   "layout_allCard_archived_label": "已歸檔",
   "providers_antigravity_authUnknown": "登入狀態未知。請重新整理以再次檢查。",
-  "providers_antigravity_discoveryUnavailable": "無法探索供應商。請重新連線至常駐程式後再試。",
-  "newWorkspace_setup_title": "工作區設定",
-  "newWorkspace_source_composerMenu_description": "使用訊息輸入框中的 + 選單選擇或變更儲存庫或資料夾。",
-  "newWorkspace_source_folderName_label": "資料夾名稱"
+  "providers_antigravity_discoveryUnavailable": "無法探索供應商。請重新連線至常駐程式後再試。"
 }

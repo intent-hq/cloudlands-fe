@@ -3251,6 +3251,9 @@
   "newWorkspace_shell_saving_label": "Saving…",
   "newWorkspace_shell_unsaved_label": "Unsaved",
   "newWorkspace_source_title": "Workspace source",
+  "newWorkspace_setup_title": "Workspace setup",
+  "newWorkspace_source_composerMenu_description": "Use the + menu in the message box to choose or change a repository or folder.",
+  "newWorkspace_source_folderName_label": "Folder name",
   "newWorkspace_capabilities_ariaLabel": "Workspace capabilities",
   "newWorkspace_capabilities_defaultHost_label": "daemon host",
   "newWorkspace_capabilities_hostMacAppleSilicon_label": "macOS (Apple silicon)",
@@ -5946,8 +5949,5 @@
   "workspace_sidebarSearch_clear_ariaLabel": "Clear search",
   "layout_allCard_archived_label": "Archived",
   "providers_antigravity_authUnknown": "Sign-in status unknown. Refresh to check again.",
-  "providers_antigravity_discoveryUnavailable": "Provider discovery is unavailable. Reconnect to the daemon and try again.",
-  "newWorkspace_setup_title": "Workspace setup",
-  "newWorkspace_source_composerMenu_description": "Use the + menu in the message box to choose or change a repository or folder.",
-  "newWorkspace_source_folderName_label": "Folder name"
+  "providers_antigravity_discoveryUnavailable": "Provider discovery is unavailable. Reconnect to the daemon and try again."
 }

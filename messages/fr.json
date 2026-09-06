@@ -3250,6 +3250,9 @@
   "newWorkspace_shell_saving_label": "Enregistrement…",
   "newWorkspace_shell_unsaved_label": "Non enregistré",
   "newWorkspace_source_title": "Source de l’espace de travail",
+  "newWorkspace_setup_title": "Configuration de l’espace de travail",
+  "newWorkspace_source_composerMenu_description": "Utilisez le menu + de la zone de message pour choisir ou changer de dépôt ou de dossier.",
+  "newWorkspace_source_folderName_label": "Nom du dossier",
   "newWorkspace_capabilities_ariaLabel": "Capacités de l’espace de travail",
   "newWorkspace_capabilities_defaultHost_label": "hôte du daemon",
   "newWorkspace_capabilities_hostMacAppleSilicon_label": "macOS (Apple silicon)",
@@ -5946,8 +5949,5 @@
   "workspace_sidebarSearch_clear_ariaLabel": "Effacer la recherche",
   "layout_allCard_archived_label": "Archivés",
   "providers_antigravity_authUnknown": "État de connexion inconnu. Actualisez pour vérifier à nouveau.",
-  "providers_antigravity_discoveryUnavailable": "La détection des fournisseurs est indisponible. Reconnectez-vous au daemon et réessayez.",
-  "newWorkspace_setup_title": "Configuration de l’espace de travail",
-  "newWorkspace_source_composerMenu_description": "Utilisez le menu + de la zone de message pour choisir ou changer de dépôt ou de dossier.",
-  "newWorkspace_source_folderName_label": "Nom du dossier"
+  "providers_antigravity_discoveryUnavailable": "La détection des fournisseurs est indisponible. Reconnectez-vous au daemon et réessayez."
 }

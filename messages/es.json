@@ -3250,6 +3250,9 @@
   "newWorkspace_shell_saving_label": "Guardando…",
   "newWorkspace_shell_unsaved_label": "Sin guardar",
   "newWorkspace_source_title": "Origen del espacio de trabajo",
+  "newWorkspace_setup_title": "Configuración del espacio de trabajo",
+  "newWorkspace_source_composerMenu_description": "Usa el menú + del cuadro de mensaje para elegir o cambiar un repositorio o una carpeta.",
+  "newWorkspace_source_folderName_label": "Nombre de la carpeta",
   "newWorkspace_capabilities_ariaLabel": "Capacidades del espacio de trabajo",
   "newWorkspace_capabilities_defaultHost_label": "host del daemon",
   "newWorkspace_capabilities_hostMacAppleSilicon_label": "macOS (Apple silicon)",
@@ -5946,8 +5949,5 @@
   "workspace_sidebarSearch_clear_ariaLabel": "Borrar búsqueda",
   "layout_allCard_archived_label": "Archivados",
   "providers_antigravity_authUnknown": "Estado de inicio de sesión desconocido. Actualiza para comprobarlo de nuevo.",
-  "providers_antigravity_discoveryUnavailable": "La detección de proveedores no está disponible. Vuelve a conectarte al daemon e inténtalo de nuevo.",
-  "newWorkspace_setup_title": "Configuración del espacio de trabajo",
-  "newWorkspace_source_composerMenu_description": "Usa el menú + del cuadro de mensaje para elegir o cambiar un repositorio o una carpeta.",
-  "newWorkspace_source_folderName_label": "Nombre de la carpeta"
+  "providers_antigravity_discoveryUnavailable": "La detección de proveedores no está disponible. Vuelve a conectarte al daemon e inténtalo de nuevo."
 }

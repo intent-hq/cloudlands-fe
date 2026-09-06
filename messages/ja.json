@@ -3250,6 +3250,9 @@
   "newWorkspace_shell_saving_label": "保存中…",
   "newWorkspace_shell_unsaved_label": "未保存",
   "newWorkspace_source_title": "ワークスペースのソース",
+  "newWorkspace_setup_title": "ワークスペースの設定",
+  "newWorkspace_source_composerMenu_description": "メッセージ欄の + メニューからリポジトリやフォルダーを選択・変更できます。",
+  "newWorkspace_source_folderName_label": "フォルダー名",
   "newWorkspace_capabilities_ariaLabel": "ワークスペースの機能",
   "newWorkspace_capabilities_defaultHost_label": "デーモンホスト",
   "newWorkspace_capabilities_hostMacAppleSilicon_label": "macOS (Apple silicon)",
@@ -5946,8 +5949,5 @@
   "workspace_sidebarSearch_clear_ariaLabel": "検索をクリア",
   "layout_allCard_archived_label": "アーカイブ済み",
   "providers_antigravity_authUnknown": "ログイン状態が不明です。更新して再確認してください。",
-  "providers_antigravity_discoveryUnavailable": "プロバイダーを検出できません。デーモンに再接続して、もう一度お試しください。",
-  "newWorkspace_setup_title": "ワークスペースの設定",
-  "newWorkspace_source_composerMenu_description": "メッセージ欄の + メニューからリポジトリやフォルダーを選択・変更できます。",
-  "newWorkspace_source_folderName_label": "フォルダー名"
+  "providers_antigravity_discoveryUnavailable": "プロバイダーを検出できません。デーモンに再接続して、もう一度お試しください。"
 }

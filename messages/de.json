@@ -3250,6 +3250,9 @@
   "newWorkspace_shell_saving_label": "Wird gespeichert…",
   "newWorkspace_shell_unsaved_label": "Nicht gespeichert",
   "newWorkspace_source_title": "Arbeitsbereichsquelle",
+  "newWorkspace_setup_title": "Arbeitsbereich einrichten",
+  "newWorkspace_source_composerMenu_description": "Wähle oder ändere ein Repository oder einen Ordner über das Menü + im Nachrichtenfeld.",
+  "newWorkspace_source_folderName_label": "Ordnername",
   "newWorkspace_capabilities_ariaLabel": "Arbeitsbereichsfunktionen",
   "newWorkspace_capabilities_defaultHost_label": "Daemon-Host",
   "newWorkspace_capabilities_hostMacAppleSilicon_label": "macOS (Apple silicon)",
@@ -5946,8 +5949,5 @@
   "workspace_sidebarSearch_clear_ariaLabel": "Suche löschen",
   "layout_allCard_archived_label": "Archiviert",
   "providers_antigravity_authUnknown": "Anmeldestatus unbekannt. Aktualisieren Sie den Status, um erneut zu prüfen.",
-  "providers_antigravity_discoveryUnavailable": "Die Anbietererkennung ist nicht verfügbar. Verbinden Sie sich erneut mit dem Daemon und versuchen Sie es noch einmal.",
-  "newWorkspace_setup_title": "Arbeitsbereich einrichten",
-  "newWorkspace_source_composerMenu_description": "Wähle oder ändere ein Repository oder einen Ordner über das Menü + im Nachrichtenfeld.",
-  "newWorkspace_source_folderName_label": "Ordnername"
+  "providers_antigravity_discoveryUnavailable": "Die Anbietererkennung ist nicht verfügbar. Verbinden Sie sich erneut mit dem Daemon und versuchen Sie es noch einmal."
 }
