@@ -219,14 +219,18 @@ function* promote(
   yield* put(beginWorkspaceCreateProgress(effect.operationKey));
   try {
     const state = dependencies.getState();
+    const { model, provider, specialist } = state.input.config;
     const result = yield* call(
       [client.workspaceDrafts, client.workspaceDrafts.promote],
       effect.draftId,
       effect.expectedRevision,
       {
         prompt: '',
-        specialist: 'spec-writer',
-        ...(state.input.config.model ? { model: state.input.config.model } : {}),
+        ...(specialist === null
+          ? {}
+          : { specialist: typeof specialist === 'string' ? specialist : 'spec-writer' }),
+        ...(model ? { model } : {}),
+        ...(provider ? { provider } : {}),
       },
     );
     rememberPromotion(runtime, result);

@@ -32,6 +32,10 @@ export interface WorkspaceDraftConfig {
   model?: string;
   setupScript?: string;
   isRemote?: boolean;
+  specialist?: string | null;
+  reasoningEffort?: string;
+  isTeamMode?: boolean;
+  provider?: string;
   setupPanelExpanded?: boolean;
   [key: string]: unknown;
 }

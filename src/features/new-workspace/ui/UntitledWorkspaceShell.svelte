@@ -16,8 +16,6 @@
     type ControllerState,
     type DraftInput,
   } from '../controller';
-  import CapabilityStrip from './CapabilityStrip.svelte';
-  import CoordinatorPanel from './CoordinatorPanel.svelte';
   import SourceCard, { type SourcePickerMode } from './SourceCard.svelte';
   import ProjectSetupPanel from './setup/ProjectSetupPanel.svelte';
   import { coordinatorStateFor, isProgressPhase, type NewWorkspacePresentation } from './types';
@@ -304,6 +302,12 @@
                 {#if controllerState.phase === 'pristine' || controllerState.phase === 'editing'}
                   <ProjectSetupPanel
                     {source}
+                    intentText={controllerState.input.intentText}
+                    contextLinks={controllerState.input.contextLinks}
+                    config={controllerState.input.config}
+                    capabilities={controllerState.capabilities}
+                    {coordinator}
+                    host={presentation.host}
                     presentation={presentation.source}
                     expanded={setupPanelExpanded}
                     disabled={composerLocked}
@@ -314,6 +318,9 @@
                     onOpenPicker={openSourcePicker}
                     onChooseNewFolder={chooseNewFolder}
                     onSourceSelected={selectSource}
+                    {onEdit}
+                    {onProviderSelected}
+                    {onRecheckCapabilities}
                   />
                 {:else}
                   {#key progressId}
@@ -336,13 +343,6 @@
                   {/key}
                 {/if}
               </div>
-
-              <CoordinatorPanel presentation={coordinator} {onProviderSelected} />
-              <CapabilityStrip
-                capabilities={controllerState.capabilities}
-                host={presentation.host}
-                onRecheck={onRecheckCapabilities}
-              />
 
               {#if presentation.specContent?.trim()}
                 <p

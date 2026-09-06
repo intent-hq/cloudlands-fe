@@ -2,15 +2,28 @@
   import Fa from 'svelte-fa';
   import { faChevronDown } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
-  import type { DraftSource } from '$shared/types/workspace-draft';
+  import type { DraftSource, WorkspaceDraftConfig } from '$shared/types/workspace-draft';
+  import type { ControllerState } from '../../controller';
   import { projectDescription, projectName } from './project-section';
+  import { hasModifiedOptions, readinessState } from './setup-sections';
 
   interface Props {
     source: DraftSource | null;
+    config: WorkspaceDraftConfig;
+    capabilities: ControllerState['capabilities'];
     onExpand?: () => void;
   }
 
-  let { source, onExpand }: Props = $props();
+  let { source, config, capabilities, onExpand }: Props = $props();
+  const readiness = $derived(readinessState(capabilities));
+  const optionsModified = $derived(hasModifiedOptions(source, config));
+  const readinessLabel = $derived(
+    readiness === 'ready'
+      ? m.newWorkspace_capabilities_ready_label()
+      : readiness === 'attention'
+        ? m.workspace_statusIcon_needsAttention_label()
+        : m.newWorkspace_capabilities_pending_label(),
+  );
 </script>
 
 <button
@@ -28,8 +41,14 @@
       {source ? projectDescription(source) : m.newWorkspace_setup_noProject_description()}
     </span>
   </span>
-  {#if source && (source.kind === 'local' || source.kind === 'github') && source.branch}
-    <span class="type-caption shrink-0 text-muted-foreground">{source.branch}</span>
-  {/if}
+  <span class="type-caption hidden min-w-0 truncate text-muted-foreground sm:block">
+    {[
+      source && (source.kind === 'local' || source.kind === 'github') ? source.branch : undefined,
+      optionsModified ? m.settings_aiBehavior_modifiedBadge() : undefined,
+      readinessLabel,
+    ]
+      .filter(Boolean)
+      .join(' · ')}
+  </span>
   <Fa icon={faChevronDown} class="size-3.5 shrink-0 text-muted-foreground" />
 </button>

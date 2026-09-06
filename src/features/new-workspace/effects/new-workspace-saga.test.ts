@@ -237,6 +237,41 @@ describe('newWorkspaceEffectSaga', () => {
     expect(result.state).toMatchObject({ phase: 'conflict', remote });
   });
 
+  it('round-trips setup controls through the exact workspaceDraft.update payload', async () => {
+    const contextLink = {
+      kind: 'issue' as const,
+      url: 'https://github.com/intent-hq/cloudlands-fe/issues/42',
+      owner: 'intent-hq',
+      repo: 'cloudlands-fe',
+      number: 42,
+    };
+    const input = {
+      ...baseState().input,
+      intentText: '#42 Fix setup',
+      source: {
+        kind: 'local' as const,
+        path: '/projects/cloudlands-fe',
+        branch: 'feature/setup',
+        isolation: 'in-place' as const,
+      },
+      contextLinks: [contextLink],
+      config: {
+        model: 'claude-sonnet',
+        specialist: 'implementor',
+        setupScript: 'pnpm install',
+        isRemote: true,
+      },
+    };
+    const update = vi.fn().mockResolvedValue(draft({ revision: 2, ...input }));
+    const state = { ...baseState(), input, inputVersion: 1 } as ControllerState;
+
+    const result = await execute(state, client({ workspaceDrafts: { update } }));
+
+    expect(update).toHaveBeenCalledWith(FIXED_IDS.draft, 1, input);
+    expect(result.state.input).toEqual(input);
+    expect(result.state.acknowledgedRevision).toBe(2);
+  });
+
   it('adopts a fully promoted draft without making another promote call', async () => {
     const promoted = draft({
       revision: 2,
@@ -311,6 +346,32 @@ describe('newWorkspaceEffectSaga', () => {
       });
     },
   );
+
+  it('promotes with the initial agent choices restored from draft config', async () => {
+    const promote = vi.fn().mockResolvedValue({
+      draft: draft({ phase: 'promoted', promotedWorkspaceId: FIXED_IDS.workspace }),
+      workspace: { id: FIXED_IDS.workspace },
+    });
+    const state = {
+      ...baseState(),
+      phase: 'promoting',
+      operationKey: FIXED_IDS.operation,
+      promoteAttempt: 'not-issued',
+      input: {
+        ...baseState().input,
+        config: { specialist: 'implementor', model: 'claude-sonnet', provider: 'claude-code' },
+      },
+    } as ControllerState;
+
+    await execute(state, client({ workspaceDrafts: { promote } }));
+
+    expect(promote).toHaveBeenCalledWith(FIXED_IDS.draft, 1, {
+      prompt: '',
+      specialist: 'implementor',
+      model: 'claude-sonnet',
+      provider: 'claude-code',
+    });
+  });
 
   it('never reissues promotion for a promoted draft whose workspace id is missing', async () => {
     const promote = vi.fn();

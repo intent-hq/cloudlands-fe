@@ -33,21 +33,30 @@
     variant?: 'default' | 'ghost';
     repoPath: string;
     compact?: boolean;
+    value?: RemoteSetup | null;
     onchange?: (event: CustomEvent<{ setup: RemoteSetup | null }>) => void;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  let { variant = 'default', repoPath, compact = false, onchange }: Props = $props();
+  let { variant = 'default', repoPath, compact = false, value = null, onchange }: Props = $props();
 
   // State
   let isExpanded = $state(false);
-  let selectedSetup: RemoteSetup | null = $state(null);
-  let selectedSetupId = $state('');
+  // svelte-ignore state_referenced_locally - prop seeds local selection; the effect below handles later changes
+  let selectedSetup: RemoteSetup | null = $state(value);
+  // svelte-ignore state_referenced_locally - prop seeds local selection; the effect below handles later changes
+  let selectedSetupId = $state(value?.id ?? '');
   let remoteSetups: RemoteSetup[] = $state($workspaceCreationRemoteSetups$);
   let showAddModal = $state(false);
 
   $effect(() => {
     remoteSetups = $workspaceCreationRemoteSetups$;
+  });
+
+  $effect(() => {
+    if ((value?.id ?? '') === selectedSetupId) return;
+    selectedSetup = value;
+    selectedSetupId = value?.id ?? '';
   });
 
   // Remote setups are hydrated from Redux; persistence is handled by the saga.

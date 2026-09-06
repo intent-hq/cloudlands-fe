@@ -381,6 +381,36 @@ describe('new-workspace controller', () => {
     expect(restored.input.config.setupPanelExpanded).toBe(false);
   });
 
+  it('restores starting point and option selections from the daemon draft', () => {
+    const restored = restore(
+      draft({
+        intentText: '#42 Fix setup',
+        source: {
+          kind: 'local',
+          path: '/projects/cloudlands-fe',
+          branch: 'feature/setup',
+          isolation: 'in-place',
+        },
+        contextLinks: [
+          {
+            kind: 'issue',
+            url: 'https://github.com/intent-hq/cloudlands-fe/issues/42',
+            owner: 'intent-hq',
+            repo: 'cloudlands-fe',
+            number: 42,
+          },
+        ],
+        config: { model: 'claude-sonnet', specialist: 'implementor', setupScript: 'pnpm install' },
+      }),
+    );
+
+    expect(restored.input).toMatchObject({
+      source: { branch: 'feature/setup', isolation: 'in-place' },
+      contextLinks: [{ number: 42 }],
+      config: { model: 'claude-sonnet', specialist: 'implementor', setupScript: 'pnpm install' },
+    });
+  });
+
   it('surfaces revision conflicts and can keep local input against the remote revision', () => {
     let state = restore(draft({ intentText: 'base' }));
     state = reduce(state, { type: 'user.edited', patch: { intentText: 'local' } });
