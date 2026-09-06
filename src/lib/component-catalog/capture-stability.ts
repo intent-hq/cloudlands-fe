@@ -1,3 +1,5 @@
+import { shouldReduceMotion } from '$lib/utils/motion-preference';
+
 const DEFAULT_CAPTURE_STABILITY_TIMEOUT_MS = 5_000;
 
 export interface CaptureStabilityOptions {
@@ -139,9 +141,7 @@ export async function waitForCaptureStability(
     const imageCount = await waitForImages(root, controller.signal);
     await waitForAnimationFrame(documentRef, controller.signal);
 
-    const reducedMotion =
-      documentRef.documentElement.classList.contains('catalog-reduced-motion') ||
-      documentRef.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+    const reducedMotion = shouldReduceMotion(documentRef);
     return { imageCount, reducedMotion };
   } catch (error) {
     if (timedOut) throw new CaptureStabilityTimeoutError(timeoutMs);

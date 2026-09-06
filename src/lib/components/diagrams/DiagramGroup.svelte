@@ -120,9 +120,9 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    :global(.diagram-group),
-    :global(.group-bg),
-    :global(.group-label) {
+    :global(html:not(.catalog-full-motion) .diagram-group),
+    :global(html:not(.catalog-full-motion) .group-bg),
+    :global(html:not(.catalog-full-motion) .group-label) {
       transition: none;
     }
   }

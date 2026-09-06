@@ -4,6 +4,7 @@
    */
   import { untrack } from 'svelte';
   import type { ComputedEdge } from './types';
+  import { shouldReduceMotion } from '$lib/utils/motion-preference';
   import { buildRoundedOrthogonalPath } from './layout-engine';
 
   interface Props {
@@ -96,10 +97,7 @@
   $effect(() => {
     const targetPoints = insetTerminal(edge.points ?? [], terminalGap);
     const targetPath = terminalGap > 0 ? buildRoundedOrthogonalPath(targetPoints) : edge.path;
-    const reduced =
-      typeof document === 'undefined' ||
-      document.documentElement.classList.contains('catalog-reduced-motion') ||
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduced = shouldReduceMotion();
     if (
       reduced ||
       (previousTargetPath === targetPath && previousEdgeReference === edge) ||
@@ -326,11 +324,11 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    :global(.edge-path) {
+    :global(html:not(.catalog-full-motion) .edge-path) {
       transition: none;
     }
 
-    :global(.edge-animated .edge-path) {
+    :global(html:not(.catalog-full-motion) .edge-animated .edge-path) {
       animation: none;
     }
   }

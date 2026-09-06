@@ -10,6 +10,11 @@ const framingWidths = [
   { name: 'wide', value: 960 },
   { name: 'narrow', value: 420 },
 ] as const;
+const steppedFixtures = [
+  { id: 'custom-architecture', steps: 3 },
+  { id: 'custom-walkthrough', steps: 3 },
+  { id: 'custom-delivery-walkthrough', steps: 4 },
+] as const;
 
 type Probe = {
   edgeId: string;
@@ -56,6 +61,96 @@ async function openMotionFixture(page: Page, state: string, reduced = false) {
   const scene = page.getByTestId('catalog-scene');
   if (!(await scene.isVisible({ timeout: 3_000 }).catch(() => false))) await page.reload();
   await expect(scene).toHaveAttribute('data-preview-ready', 'true', { timeout: 30_000 });
+}
+
+async function recordControlMotion(page: Page, rootId: string, direction: 'forward' | 'backward') {
+  const root = page.locator(`#${rootId}`);
+  const baseline = await root.evaluate((element) => ({
+    state: element.querySelector<HTMLElement>('.diagram-renderer')!.dataset.diagramState,
+    nodeIds: [...element.querySelectorAll<HTMLElement>('[data-node-id]')].map(
+      (node) => node.dataset.nodeId,
+    ),
+    groupIds: [...element.querySelectorAll<HTMLElement>('[data-group-id]')].map(
+      (group) => group.dataset.groupId,
+    ),
+    edgeIds: [...element.querySelectorAll<HTMLElement>('.diagram-edge')].map(
+      (edge) => edge.dataset.edgeId,
+    ),
+  }));
+  const renderer = await root.locator('.diagram-renderer').elementHandle();
+  await root
+    .locator('.diagram-nav-button')
+    .nth(direction === 'forward' ? 1 : 0)
+    .click();
+  const frames = [];
+  const deadline = Date.now() + 2_500;
+  while (Date.now() < deadline) {
+    frames.push(
+      await root.evaluate((element, before) => {
+        const diagram = element.querySelector<HTMLElement>('.diagram-renderer')!;
+        const camera = element.querySelector<SVGSVGElement>('.diagram-svg-layer')!;
+        const geometry = element.querySelector<SVGGElement>('.diagram-geometry-motion')!;
+        const entered = (selector: string, ids: Array<string | undefined>, key: string) =>
+          [...element.querySelectorAll<HTMLElement>(selector)].filter(
+            (node) => !ids.includes(node.dataset[key as keyof DOMStringMap]),
+          );
+        const maximumOpacity = (elements: Element[]) =>
+          Math.max(0, ...elements.map((node) => Number(getComputedStyle(node).opacity)));
+        const maximumDelay = (elements: Element[]) =>
+          Math.max(
+            0,
+            ...elements.flatMap((node) =>
+              node
+                .getAnimations({ subtree: true })
+                .map((animation) => Number(animation.effect?.getTiming().delay)),
+            ),
+          );
+        const nodes = entered('[data-node-id]', before.nodeIds, 'nodeId');
+        const groups = entered('[data-group-id]', before.groupIds, 'groupId').map(
+          (group) => group.parentElement!,
+        );
+        const routes = entered('.diagram-edge', before.edgeIds, 'edgeId').map(
+          (edge) => edge.parentElement!,
+        );
+        const labels = entered('.edge-label-container', before.edgeIds, 'edgeId');
+        const cameraAnimations = [camera, geometry].flatMap((node) =>
+          node
+            .getAnimations({ subtree: false })
+            .filter((animation) => animation.playState === 'running'),
+        );
+        return {
+          state: diagram.dataset.diagramState,
+          selectedStep: Number(
+            element
+              .querySelector('[data-diagram-step-index][aria-current="step"]')
+              ?.getAttribute('data-diagram-step-index'),
+          ),
+          phase: diagram.dataset.diagramMotionPhase,
+          settled: diagram.dataset.diagramSettled === 'true',
+          camera: getComputedStyle(camera).transform,
+          cameraAnimationCount: cameraAnimations.length,
+          cameraDurations: cameraAnimations.map((animation) =>
+            Number(animation.effect?.getTiming().duration),
+          ),
+          enteredCounts: [nodes.length, groups.length, routes.length, labels.length],
+          entryOpacities: [nodes, groups, routes, labels].map(maximumOpacity),
+          entryDelays: [nodes, groups, routes, labels].map(maximumDelay),
+        };
+      }, baseline),
+    );
+    if (frames.at(-1)!.settled && frames.length > 1) break;
+    await page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    );
+  }
+  return {
+    baseline,
+    frames,
+    sameMount: await renderer.evaluate(
+      (node, selector) => node === document.querySelector(selector),
+      `#${rootId} .diagram-renderer`,
+    ),
+  };
 }
 
 async function recordTransition(page: Page, rootId: string, buttonName: string, probe: Probe) {
@@ -396,6 +491,83 @@ function expectCameraInterpolation(transition: Awaited<ReturnType<typeof recordT
   expect(cameraProgress(transition.before, midpoint, transition.settled)).toBeGreaterThan(0.05);
   expect(cameraProgress(transition.before, midpoint, transition.settled)).toBeLessThan(0.8);
 }
+
+test('keeps explicit full motion active for every stepped sandbox control', async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(
+    `${baseUrl}/sandbox/diagram-workbench?state=custom-architecture&theme=light&width=960&motion=full`,
+  );
+  await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
+    timeout: 30_000,
+  });
+  expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(
+    true,
+  );
+  await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'full');
+  await expect(page.locator('html')).toHaveClass(/catalog-full-motion/);
+
+  for (const fixture of steppedFixtures) {
+    const root = page.locator(`#${fixture.id}`);
+    await expect(root.locator('[data-diagram-step-index]')).toHaveCount(fixture.steps);
+    for (const direction of ['forward', 'backward'] as const) {
+      for (let index = 0; index < fixture.steps - 1; index += 1) {
+        const transition = await recordControlMotion(page, fixture.id, direction);
+        const expectedStep = direction === 'forward' ? index + 1 : fixture.steps - index - 2;
+        expect(transition.sameMount).toBe(true);
+        expect(transition.frames[0].state).not.toBe(transition.baseline.state);
+        expect(transition.frames[0].selectedStep).toBe(expectedStep);
+        expect(transition.frames[0].phase).toBe('camera');
+        expect(transition.frames[0].settled).toBe(false);
+        expect(
+          transition.frames.some(
+            (frame) =>
+              frame.phase === 'camera' &&
+              frame.cameraAnimationCount > 0 &&
+              frame.cameraDurations.some((duration) => duration >= 300 && duration <= 340),
+          ),
+        ).toBe(true);
+        const sceneIndex = transition.frames.findIndex((frame) => frame.phase === 'scene');
+        expect(sceneIndex).toBeGreaterThan(0);
+        expect(
+          Math.max(
+            ...transition.frames.slice(0, sceneIndex).flatMap((frame) => frame.entryOpacities),
+          ),
+        ).toBe(0);
+        expect(transition.frames.at(-1)).toMatchObject({
+          selectedStep: expectedStep,
+          settled: true,
+          phase: 'settled',
+        });
+
+        const firstVisible = (category: number) =>
+          transition.frames.findIndex(
+            (frame) => frame.enteredCounts[category] > 0 && frame.entryOpacities[category] > 0.01,
+          );
+        const sceneEntry = Math.max(firstVisible(0), firstVisible(1));
+        const routeEntry = firstVisible(2);
+        const labelEntry = firstVisible(3);
+        if (sceneEntry >= 0 && routeEntry >= 0) {
+          expect(routeEntry).toBeGreaterThanOrEqual(sceneEntry);
+        }
+        const stagedFrame = transition.frames.find(
+          (frame) => frame.enteredCounts[2] > 0 && frame.enteredCounts[3] > 0,
+        );
+        if (stagedFrame) {
+          const sceneDelay = Math.max(stagedFrame.entryDelays[0], stagedFrame.entryDelays[1]);
+          if (sceneDelay > 0) expect(stagedFrame.entryDelays[2]).toBeGreaterThan(sceneDelay);
+          expect(stagedFrame.entryDelays[3]).toBeGreaterThan(stagedFrame.entryDelays[2]);
+        }
+        if (routeEntry >= 0 && labelEntry >= 0) {
+          expect(
+            labelEntry,
+            JSON.stringify({ fixture: fixture.id, direction, index, frames: transition.frames }),
+          ).toBeGreaterThanOrEqual(routeEntry);
+        }
+      }
+    }
+  }
+});
 
 test('coordinates architecture and ownership state motion through settled frames', async ({
   page,

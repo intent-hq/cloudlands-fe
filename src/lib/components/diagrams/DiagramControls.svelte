@@ -12,6 +12,7 @@
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { m } from '$shared/paraglide/messages.js';
+  import { shouldReduceMotion } from '$lib/utils/motion-preference';
 
   interface Props {
     states: DiagramState[];
@@ -45,11 +46,7 @@
   let navigationElement = $state<HTMLDivElement | null>(null);
 
   function motionDuration(duration: number): number {
-    if (typeof document === 'undefined') return duration;
-    return document.documentElement.classList.contains('catalog-reduced-motion') ||
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      ? 0
-      : duration;
+    return shouldReduceMotion() ? 0 : duration;
   }
 
   // Navigation stops at the first and last step so progression stays predictable.
@@ -352,8 +349,8 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .stepper-dot,
-    .stepper-dot::after {
+    :global(html:not(.catalog-full-motion)) .stepper-dot,
+    :global(html:not(.catalog-full-motion)) .stepper-dot::after {
       transition: none;
     }
   }

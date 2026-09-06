@@ -450,7 +450,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .diagram-node-html {
+    :global(html:not(.catalog-full-motion)) .diagram-node-html {
       transition: none;
     }
   }

@@ -22,6 +22,7 @@
   let initialRootDark = false;
   let initialRootLight = false;
   let initialRootReducedMotion = false;
+  let initialRootFullMotion = false;
   let initialRootStyle: string | null = null;
 
   const resolvedTheme = $derived(theme === 'system' ? (systemDark ? 'dark' : 'light') : theme);
@@ -31,6 +32,7 @@
     initialRootDark = root.classList.contains('dark');
     initialRootLight = root.classList.contains('light');
     initialRootReducedMotion = root.classList.contains('catalog-reduced-motion');
+    initialRootFullMotion = root.classList.contains('catalog-full-motion');
     initialRootStyle = root.getAttribute('style');
     const saved = readCatalogPreferences(localStorage);
     const urlSettings = parseCatalogUrlSettings(new URLSearchParams(window.location.search));
@@ -50,6 +52,7 @@
       root.classList.toggle('dark', initialRootDark);
       root.classList.toggle('light', initialRootLight);
       root.classList.toggle('catalog-reduced-motion', initialRootReducedMotion);
+      root.classList.toggle('catalog-full-motion', initialRootFullMotion);
       if (initialRootStyle === null) root.removeAttribute('style');
       else root.setAttribute('style', initialRootStyle);
     };
@@ -72,6 +75,7 @@
     root.classList.toggle('dark', resolvedTheme === 'dark');
     root.classList.toggle('light', resolvedTheme === 'light');
     root.classList.toggle('catalog-reduced-motion', reducedMotion);
+    root.classList.toggle('catalog-full-motion', !reducedMotion);
 
     if (activeSlug) {
       const url = new URL(window.location.href);

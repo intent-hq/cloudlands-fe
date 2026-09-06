@@ -21,6 +21,7 @@
   import { cubicOut } from 'svelte/easing';
   import { flushSync, onDestroy, onMount, tick } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import { shouldReduceMotion } from '$lib/utils/motion-preference';
 
   interface Props {
     diagram: DiagramPrimitive;
@@ -57,11 +58,7 @@
   const ARROW_TERMINAL_GAP_CSS_PX = 5;
   const ARROW_TIP_RADIUS_CSS_PX = 0.5;
   function motionDuration(duration: number): number {
-    if (typeof document === 'undefined') return duration;
-    return document.documentElement.classList.contains('catalog-reduced-motion') ||
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      ? 0
-      : duration;
+    return shouldReduceMotion() ? 0 : duration;
   }
 
   // Computed layout
@@ -1596,16 +1593,16 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    :global(.edge-label-container),
-    :global(.diagram-geometry-motion),
-    :global(.diagram-svg-layer),
-    :global(.edge-draw-in path),
-    .diagram-actions {
+    :global(html:not(.catalog-full-motion) .edge-label-container),
+    :global(html:not(.catalog-full-motion) .diagram-geometry-motion),
+    :global(html:not(.catalog-full-motion) .diagram-svg-layer),
+    :global(html:not(.catalog-full-motion) .edge-draw-in path),
+    :global(html:not(.catalog-full-motion)) .diagram-actions {
       transition: none;
       animation: none;
     }
 
-    :global(.edge-label-entry) {
+    :global(html:not(.catalog-full-motion) .edge-label-entry) {
       opacity: 1;
     }
   }
