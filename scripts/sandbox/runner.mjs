@@ -141,7 +141,7 @@ async function startSandboxServer() {
     debug('creating Vite server');
     server = await createServer({
       logLevel: 'error',
-      server: { host: '127.0.0.1', port: 0, strictPort: true, watch: { ignored: ['**/*'] } },
+      server: { host: '127.0.0.1', strictPort: false, watch: { ignored: ['**/*'] } },
     });
     debug('starting Vite server');
     await server.listen();

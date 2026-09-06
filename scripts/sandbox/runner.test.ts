@@ -1,4 +1,8 @@
 // @vitest-environment node
+import { spawn } from 'node:child_process';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const playwright = vi.hoisted(() => ({ launch: vi.fn() }));
@@ -6,6 +10,24 @@ vi.mock('playwright', () => ({ chromium: { launch: playwright.launch } }));
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — plain .mjs module without type declarations
 import { buildSandboxUrl, parseSandboxArgs, runSandbox } from './runner.mjs';
+
+const repoRoot = path.resolve(__dirname, '../..');
+const shotCli = path.join(repoRoot, 'scripts', 'sandbox', 'shot.mjs');
+
+function runShot(outputPath: string): Promise<{ code: number | null; output: string }> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(
+      process.execPath,
+      [shotCli, 'button', '--state', 'default', '--out', outputPath],
+      { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    let output = '';
+    child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString()));
+    child.stderr.on('data', (chunk: Buffer) => (output += chunk.toString()));
+    child.on('error', rejectPromise);
+    child.on('exit', (code) => resolvePromise({ code, output }));
+  });
+}
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -121,4 +143,26 @@ describe('runSandbox viewport', () => {
       deviceScaleFactor: 1,
     });
   });
+});
+
+describe('default sandbox server', () => {
+  it('captures from two concurrent runners on distinct resolved URLs', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'sandbox-concurrent-'));
+    const outputPaths = [path.join(directory, 'first.png'), path.join(directory, 'second.png')];
+
+    try {
+      const results = await Promise.all(outputPaths.map(runShot));
+      for (const result of results) {
+        expect(result.code, result.output).toBe(0);
+      }
+      const captures = await Promise.all(outputPaths.map((outputPath) => readFile(outputPath)));
+      expect(captures.every((capture) => capture.toString('ascii', 1, 4) === 'PNG')).toBe(true);
+
+      const urls = results.map(({ output }) => output.match(/https?:\/\/[^\s]+/)?.[0]);
+      expect(urls.every(Boolean)).toBe(true);
+      expect(new Set(urls).size).toBe(2);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }, 120_000);
 });
