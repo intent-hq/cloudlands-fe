@@ -74,6 +74,25 @@ describe('workspaces-link-handler', () => {
         expect(result.orgId).toBe('local');
         expect(result.workspaceId).toBeUndefined();
         expect(result.resourceId).toBe('README.md');
+        expect(result).not.toHaveProperty('line');
+      });
+
+      it('should parse a short file link with a line fragment', () => {
+        const result = parseIntentLink('intent://local/file/src/a.ts#L10');
+
+        expect(result).toMatchObject({
+          type: 'file',
+          resourceId: 'src/a.ts',
+          line: 10,
+          valid: true,
+        });
+      });
+
+      it('should ignore non-line fragments on file links', () => {
+        const result = parseIntentLink('intent://local/file/README.md#installation');
+
+        expect(result.resourceId).toBe('README.md');
+        expect(result).not.toHaveProperty('line');
       });
 
       it('should join nested path segments', () => {
@@ -95,6 +114,18 @@ describe('workspaces-link-handler', () => {
         expect(result.type).toBe('file');
         expect(result.workspaceId).toBe('workspace-abc-123');
         expect(result.resourceId).toBe('a/b.png');
+      });
+
+      it('should parse a long file link with a line-range fragment', () => {
+        const result = parseIntentLink('intent://local/workspace-abc-123/file/src/a.ts#L10-20');
+
+        expect(result).toMatchObject({
+          type: 'file',
+          workspaceId: 'workspace-abc-123',
+          resourceId: 'src/a.ts',
+          line: 10,
+          valid: true,
+        });
       });
 
       it('should reject empty file path', () => {

@@ -59,6 +59,15 @@ describe('findInlineMentions', () => {
     ]);
   });
 
+  it.each(['@src/a.ts:10', '@src/a.ts:10:5', '@src/a.ts#L10', '@src/a.ts#L10-20'])(
+    'includes the complete line suffix in %s',
+    (mention) => {
+      expect(findInlineMentions(`check ${mention} now`)).toEqual([
+        { index: 6, fullMatch: mention, captured: mention.slice(1) },
+      ]);
+    },
+  );
+
   it('matches a bare file mention at the start of the string', () => {
     expect(findInlineMentions('@file.ts is broken')).toEqual([
       { index: 0, fullMatch: '@file.ts', captured: 'file.ts' },

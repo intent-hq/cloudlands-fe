@@ -34,7 +34,7 @@
     onCodeBlockAction?: (action: string, code: string, language?: string) => void;
     onFileClick?: (
       path: string,
-      options?: { openInAdjacentPanel?: boolean; sourcePanelId?: string },
+      options?: { line?: number; openInAdjacentPanel?: boolean; sourcePanelId?: string },
     ) => void;
     taskBlockRenderMode?: 'placeholder' | 'content';
     /** Chat transcript only: render inline workspace-file images as fixed square thumbnails. */
@@ -480,12 +480,16 @@
 
         // Use onFileClick callback if provided, otherwise use direct navigation
         if (onFileClick) {
-          onFileClick(filePath, { openInAdjacentPanel, sourcePanelId });
+          onFileClick(filePath, { line: meta.line, openInAdjacentPanel, sourcePanelId });
         } else {
           const wsId = workspaceId;
           if (wsId) {
             appStore.dispatch(
-              openWorkspaceFile(wsId, filePath, { openInAdjacentPanel, sourcePanelId }),
+              openWorkspaceFile(wsId, filePath, {
+                line: meta.line,
+                openInAdjacentPanel,
+                sourcePanelId,
+              }),
             );
           }
         }
