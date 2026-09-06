@@ -167,6 +167,12 @@
      * `handleDroppedFiles()`.
      */
     externalDropTarget?: boolean;
+    /** Delegate the attach-files action to a pre-workspace staging flow. */
+    onAttachFiles?: () => void;
+    /** Allow a pre-workspace flow to submit without text or context. */
+    allowEmptySubmit?: boolean;
+    /** Stable selector for a caller-specific submit action contract. */
+    submitTestId?: string;
     onsubmit?: (value: string) => void;
     onforcesubmit?: (value: string) => void; // Interrupt streaming and send immediately
     onenhance?: () => void | Promise<void>;
@@ -232,6 +238,9 @@
     contentInsetClassName = undefined,
     actionBarEndClassName = 'pr-1.5!',
     externalDropTarget = false,
+    onAttachFiles,
+    allowEmptySubmit = false,
+    submitTestId,
     onsubmit,
     onforcesubmit,
     onenhance,
@@ -291,7 +300,7 @@
   // Blocked while any attachment placement is in flight or failed — a failed
   // pill must be retried or removed before the message can go out.
   let canSend = $derived(
-    (value.trim() || contextItems.length > 0 || hasInlineImages) &&
+    (allowEmptySubmit || value.trim() || contextItems.length > 0 || hasInlineImages) &&
       !hasBlockingAttachments(contextItems),
   );
 
@@ -907,6 +916,10 @@
   }
 
   function handleFileSelect() {
+    if (onAttachFiles) {
+      onAttachFiles();
+      return;
+    }
     fileInput?.click();
   }
 
@@ -1824,6 +1837,7 @@
             onclick={handleSubmit}
             disabled={disabled || inputLocked || !canSend || isEnhancing}
             aria-label={m.chat_richInput_sendMessage_ariaLabel()}
+            data-testid={submitTestId}
           >
             <Fa icon={faArrowRight} size="sm" />
           </Button>

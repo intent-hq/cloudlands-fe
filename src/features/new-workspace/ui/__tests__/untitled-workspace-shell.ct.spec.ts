@@ -11,10 +11,7 @@ test.describe('new-workspace shell', () => {
 
     await page.evaluate(() => window.dispatchEvent(new Event('new-workspace-probes-settled')));
 
-    await expect(component.locator('[data-capability="git"]')).toHaveAttribute(
-      'data-status',
-      'ready',
-    );
+    await expect(component.locator('[data-capability]')).toHaveCount(0);
     await expect(editor).toBeFocused();
   });
 
@@ -37,7 +34,8 @@ test.describe('new-workspace shell', () => {
     await component.getByRole('button', { name: 'Use Augment Auggie' }).click();
 
     await expect(component.getByTestId('provider-selection-count')).toHaveText('1');
-    await expect(component.locator('[data-coordinator-state="ready-idle"]')).toBeVisible();
+    await expect(component.locator('[data-coordinator-state]')).toHaveCount(0);
+    await expect(component.getByTestId('draft-start')).toBeEnabled();
   });
 
   test('selects a fresh local project with a validated folder name', async ({ mount }) => {
@@ -76,15 +74,11 @@ test.describe('new-workspace shell', () => {
     );
   });
 
-  test('disables pending probe animation for reduced motion', async ({ mount, page }) => {
-    await page.emulateMedia({ reducedMotion: 'reduce' });
+  test('does not render pending probes as missing guidance', async ({ mount }) => {
     const component = await mount(UntitledWorkspaceShellHost, {
       props: { pendingCapabilities: true },
     });
-    const pendingCapability = component.locator('[data-capability="git"]');
 
-    expect(
-      await pendingCapability.evaluate((node) => node.getAnimations({ subtree: true }).length),
-    ).toBe(0);
+    await expect(component.locator('[data-capability]')).toHaveCount(0);
   });
 });

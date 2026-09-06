@@ -1,13 +1,4 @@
 <script lang="ts">
-  import Fa from 'svelte-fa';
-  import {
-    faFolder,
-    faGlobe,
-    faLink,
-    faLock,
-    faTriangleExclamation,
-    faGithub,
-  } from '$lib/icons/phosphor-icons';
   import { Button } from '$lib/components/ui/button';
   import Input from '$lib/components/ui/input/input.svelte';
   import RepoSelector, {
@@ -118,44 +109,21 @@
   }
 </script>
 
-<section class="rounded-xl border border-border bg-card p-4" data-source-state={sourceState}>
-  <div class="flex items-start gap-3">
-    <div class="mt-0.5 text-muted-foreground">
-      {#if sourceState === 'new-folder-invalid'}
-        <Fa icon={faTriangleExclamation} class="text-danger" />
-      {:else if sourceState === 'unresolved-link'}
-        <Fa icon={faLink} />
-      {:else if sourceState === 'github-public'}
-        <Fa icon={faGlobe} />
-      {:else if sourceState === 'github-private'}
-        <Fa icon={faLock} />
-      {:else if sourceState === 'github-no-access'}
-        <Fa icon={faTriangleExclamation} />
-      {:else if source?.kind === 'github'}
-        <Fa icon={faGithub} />
-      {:else}
-        <Fa icon={faFolder} />
-      {/if}
-    </div>
-    <div class="min-w-0 flex-1">
-      <h2 class="text-sm font-semibold">{title}</h2>
-      <p class="mt-1 break-all text-xs text-muted-foreground">{summary}</p>
-      {#if sourceState === 'new-folder-invalid' && activeNewFolderError}
-        <p class="mt-2 text-xs text-danger" role="alert">{errorLabel(activeNewFolderError)}</p>
-      {:else if sourceState === 'unresolved-link'}
-        <p class="mt-2 text-xs text-muted-foreground">
-          {m.newWorkspace_source_unresolved_description()}
-        </p>
-      {:else if sourceState === 'non-git'}
-        <p class="mt-2 text-xs text-muted-foreground">
-          {m.workspace_validation_nonGitInit_warning()}
-        </p>
-      {/if}
-    </div>
+<div class="space-y-3" data-source-state={sourceState}>
+  <div class="type-caption min-w-0 text-muted-foreground">
+    <span class="font-medium text-foreground">{title}</span>
+    <span class="ml-1 break-all">{summary}</span>
+    {#if sourceState === 'new-folder-invalid' && activeNewFolderError}
+      <p class="mt-1 text-danger" role="alert">{errorLabel(activeNewFolderError)}</p>
+    {:else if sourceState === 'unresolved-link'}
+      <p class="mt-1">{m.newWorkspace_source_unresolved_description()}</p>
+    {:else if sourceState === 'non-git'}
+      <p class="mt-1">{m.workspace_validation_nonGitInit_warning()}</p>
+    {/if}
   </div>
 
   {#if source?.kind === 'local' || source?.kind === 'github'}
-    <details class="mt-3 text-xs">
+    <details class="type-caption">
       <summary class="cursor-pointer font-medium text-muted-foreground">
         {m.settings_aiBehavior_advanced_label()}
       </summary>
@@ -177,7 +145,7 @@
   {/if}
 
   {#if sourceState === 'none' || sourceState === 'new-folder-invalid' || sourceState === 'unresolved-link' || sourceState === 'github-no-access'}
-    <div class="mt-4 border-b border-border pb-4">
+    <div>
       <RepoSelector
         value=""
         onchange={selectRepo}
@@ -187,12 +155,11 @@
         showTriggerChevron
       />
     </div>
-    <div class="mt-4 rounded-lg border border-border bg-background p-3">
-      <h3 class="text-sm font-semibold">{m.newWorkspace_source_newProject_title()}</h3>
-      <p class="mt-1 text-xs text-muted-foreground">
-        {m.newWorkspace_source_newProject_description()}
+    <div>
+      <p class="type-caption mb-2 font-medium text-foreground">
+        {m.newWorkspace_source_newProject_title()}
       </p>
-      <div class="mt-3 flex gap-2">
+      <div class="flex flex-col gap-2 sm:flex-row">
         <Input
           value={newFolderName}
           oninput={(event) => (newFolderName = event.currentTarget.value)}
@@ -212,4 +179,4 @@
       </div>
     </div>
   {/if}
-</section>
+</div>

@@ -3,6 +3,11 @@
   import { UntitledWorkspaceShell } from '../ui';
   import { reduce, type Capability, type DraftInput } from '../controller';
   import { getScenario } from './scenarios';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    beginWorkspaceCreateProgress,
+    workspaceCreateProgressReceived,
+  } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
 
   interface Props {
     scenarioId: string;
@@ -11,6 +16,18 @@
   let { scenarioId }: Props = $props();
   const scenario = getScenario(scenarioId);
   if (!scenario) throw new Error(`Unknown new-workspace scenario: ${scenarioId}`);
+
+  const cloneProgress = scenario.presentation?.progress?.clone;
+  const progressId = scenario.initialControllerState.draft?.operationKey;
+  if (cloneProgress && progressId && cloneProgress.percent !== undefined) {
+    appStore.dispatch(beginWorkspaceCreateProgress(progressId));
+    appStore.dispatch(
+      workspaceCreateProgressReceived(progressId, {
+        phase: cloneProgress.phase,
+        percent: cloneProgress.percent,
+      }),
+    );
+  }
 
   let controllerState = $state(scenario.initialControllerState);
 

@@ -78,7 +78,7 @@
 </script>
 
 <input class="hidden" type="file" multiple bind:this={fileInput} onchange={handleFilesSelected} />
-<div class="h-full p-3">
+<div class="h-full">
   <UntitledWorkspaceShell
     state={controllerState}
     presentation={{ host: $daemonHostRepairTarget$ }}

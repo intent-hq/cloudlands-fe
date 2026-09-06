@@ -13,6 +13,7 @@
    * - "this terminal" → focuses the setup terminal
    * - Specialist name → rich tooltip with description, prompt preview, settings link
    */
+  import type { Snippet } from 'svelte';
   import { slide, blur } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
@@ -40,7 +41,7 @@
     OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS,
   } from '$lib/components/chat/operational-disclosure-row';
 
-  type StepStatus = 'pending' | 'active' | 'done';
+  type StepStatus = 'pending' | 'active' | 'done' | 'error';
 
   interface Props {
     /** Display name of the repository (e.g. "wattenberger-2023") */
@@ -75,6 +76,8 @@
     repoStatus?: StepStatus;
     branchStatus?: StepStatus;
     agentStatus?: StepStatus;
+    /** Inline source chooser shown in the repository step before creation begins. */
+    repoPendingContent?: Snippet;
     /** If true, the workspace works directly on the branch without an isolated checkout (worktree or CoW clone) */
     skipIsolation?: boolean;
     /**
@@ -105,6 +108,7 @@
     repoStatus = 'pending',
     branchStatus = 'pending',
     agentStatus = 'pending',
+    repoPendingContent,
     skipIsolation = false,
     progressId,
   }: Props = $props();
@@ -219,6 +223,8 @@
     )}
       <div
         class="relative flex items-start overflow-hidden rounded-md py-0.75 text-base leading-relaxed"
+        class:text-danger={status === 'error'}
+        data-step-status={status}
         style:gap="var(--operational-leading-gap)"
         style:padding-inline="var(--operational-row-inline-padding)"
         transition:slide={{ duration: 300, easing: cubicOut }}
@@ -255,7 +261,15 @@
     {/snippet}
 
     <!-- Step 1: Repository -->
-    {#if repoStatus !== 'pending'}
+    {#if repoStatus === 'pending' && repoPendingContent}
+      <div
+        class="pb-4"
+        style:padding-inline="var(--operational-row-inline-padding)"
+        data-testid="workspace-setup-repo-pending"
+      >
+        {@render repoPendingContent()}
+      </div>
+    {:else if repoStatus !== 'pending'}
       {@render stepRow(
         repoStatus,
         faFolderOpen,

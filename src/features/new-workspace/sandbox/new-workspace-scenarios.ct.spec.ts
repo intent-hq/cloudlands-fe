@@ -19,16 +19,16 @@ async function expectActionableControl(
       await expect(component.locator('[data-source-state] button:enabled').first()).toBeVisible();
       return;
     case 'retry':
-      await expect(component.locator('section[role="alert"] button:enabled').first()).toBeVisible();
+      await expect(component.locator('[role="alert"] button:enabled').first()).toBeVisible();
       return;
     case 'reconnect':
-      await expect(component.locator('section[role="alert"] button:enabled')).toHaveCount(1);
+      await expect(component.locator('[role="alert"] button:enabled')).toHaveCount(1);
       return;
     case 'conflict':
-      await expect(component.locator('section[role="alert"] button:enabled')).toHaveCount(2);
+      await expect(component.locator('[role="alert"] button:enabled')).toHaveCount(2);
       return;
     case 'none':
-      await expect(component.locator('[data-coordinator-state]')).toBeVisible();
+      await expect(component.getByTestId('draft-composer')).toBeVisible();
   }
 }
 
@@ -55,10 +55,10 @@ test.describe('new-workspace scenario contracts', () => {
         await expect(editor).toBeFocused();
       }
 
-      const progress = component.locator('progress');
+      const progress = component.getByTestId('setup-card-progress-bar');
       if (scenario.contract.allowsClonePercent) {
         await expect(progress).toHaveCount(1);
-        await expect(progress).toHaveAttribute('value', '47');
+        await expect(progress).toHaveAttribute('aria-valuenow', '47');
       } else {
         await expect(progress).toHaveCount(0);
       }

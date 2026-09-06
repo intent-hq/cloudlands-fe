@@ -1,10 +1,12 @@
 <script lang="ts">
-  import Fa from 'svelte-fa';
-  import { faPaperclip, faTriangleExclamation } from '$lib/icons/phosphor-icons';
-  import EditableName from '$lib/components/ui/EditableName.svelte';
-  import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
+  import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
+  import type { ContextItem } from '$lib/components/chat/input/context-api';
+  import StreamingStatus from '$lib/components/chat/StreamingStatus.svelte';
+  import { CHAT_TRANSCRIPT_OVERFLOW_CLASS } from '$lib/components/chat/chat-queue-edge-layout';
   import { Button } from '$lib/components/ui/button';
-  import IssueSuggestions from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
+  import SidebarSkeleton from '$lib/components/workspace/SidebarSkeleton.svelte';
+  import WorkspaceLayout from '$lib/components/workspace/WorkspaceLayout.svelte';
+  import WorkspaceSetupCard from '$lib/components/workspace/creation/WorkspaceSetupCard.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import {
     hasUnsavedInput,
@@ -15,12 +17,7 @@
   import CapabilityStrip from './CapabilityStrip.svelte';
   import CoordinatorPanel from './CoordinatorPanel.svelte';
   import SourceCard from './SourceCard.svelte';
-  import {
-    coordinatorStateFor,
-    isEditorEnabled,
-    isProgressPhase,
-    type NewWorkspacePresentation,
-  } from './types';
+  import { coordinatorStateFor, isProgressPhase, type NewWorkspacePresentation } from './types';
 
   interface Props {
     state: ControllerState;
@@ -54,13 +51,10 @@
     onProviderSelected,
   }: Props = $props();
 
-  let showSuggestions = $state(false);
-
   const coordinator = $derived({
     ...presentation.coordinator,
     state: presentation.coordinator?.state ?? coordinatorStateFor(controllerState),
   });
-  const editorEnabled = $derived(isEditorEnabled(controllerState));
   const requiredCapabilities = $derived<Capability[]>(
     presentation.requiredCapabilities ?? ['provider'],
   );
@@ -80,290 +74,339 @@
       return 'saving';
     return controllerState.draft ? 'saved' : 'saving';
   });
+  const composerLocked = $derived(
+    controllerState.phase !== 'pristine' && controllerState.phase !== 'editing',
+  );
+  const progressId = $derived(controllerState.draft?.operationKey);
+  const source = $derived(controllerState.input.source);
+  const repoName = $derived.by(() => {
+    if (!source) return m.chat_chatPanel_yourProject_fallback();
+    if (source.kind === 'github') return `${source.owner}/${source.name}`;
+    if (source.kind === 'newFolder') return source.name;
+    return (
+      source.path.split(/[\\/]/).filter(Boolean).pop() || m.chat_chatPanel_yourProject_fallback()
+    );
+  });
+  const repoPath = $derived(source?.kind === 'local' ? source.path : undefined);
+  const branch = $derived(
+    source?.kind === 'local' || source?.kind === 'github' ? source.branch : undefined,
+  );
+  const setupScriptContent = $derived(
+    typeof controllerState.input.config.setupScript === 'string'
+      ? controllerState.input.config.setupScript
+      : presentation.progress?.setup?.error,
+  );
 
-  function progressLabel(): string {
-    switch (controllerState.phase) {
-      case 'starting':
-        return m.newWorkspace_progress_checkingPrerequisites_label();
-      case 'promoting':
-        return m.newWorkspace_progress_promoting_label();
-      case 'adopting':
-        return m.newWorkspace_progress_adopting_label();
-      case 'placingAttachments':
-        return m.newWorkspace_progress_attachments_label();
-      case 'sending':
-        return m.newWorkspace_progress_sending_label();
-      default:
-        return m.newWorkspace_progress_preparing_label();
-    }
-  }
-
-  function setupLabel(): string | undefined {
+  function setupStatus(): 'pending' | 'active' | 'done' | 'error' | undefined {
     switch (presentation.progress?.setup?.state) {
       case 'none':
         return undefined;
       case 'running':
-        return m.newWorkspace_progress_setupRunning_label();
+        return 'active';
       case 'succeeded':
-        return m.newWorkspace_progress_setupSucceeded_label();
+        return 'done';
       case 'failed':
-        return m.newWorkspace_progress_setupFailed_label();
+        return 'error';
       case 'unknown':
-        return m.newWorkspace_progress_setupUnknown_label();
+        return 'error';
       case undefined:
         return undefined;
     }
   }
 
+  function workspaceStepStatus(): 'pending' | 'active' | 'done' | 'error' {
+    if (controllerState.phase === 'failed') return 'error';
+    if (controllerState.phase === 'live') return 'done';
+    if (isProgressPhase(controllerState)) return 'active';
+    return 'pending';
+  }
+
+  function contextLinkId(link: DraftInput['contextLinks'][number]): string {
+    return `draft-context-${link.kind}-${link.owner}-${link.repo}-${link.number}`;
+  }
+
+  function attachmentContextItem(value: unknown, index: number): ContextItem | null {
+    if (!value || typeof value !== 'object') return null;
+    const item = value as Partial<ContextItem> & { name?: unknown };
+    const label =
+      typeof item.label === 'string'
+        ? item.label
+        : typeof item.name === 'string'
+          ? item.name
+          : null;
+    if (!label) return null;
+    const id = typeof item.id === 'string' ? item.id : `draft-attachment-${index}`;
+    const allowedTypes: ContextItem['type'][] = [
+      'file',
+      'note',
+      'selection',
+      'workspace',
+      'memory',
+      'personality',
+      'folder',
+    ];
+    const type = allowedTypes.includes(item.type as ContextItem['type'])
+      ? (item.type as ContextItem['type'])
+      : 'file';
+    return { ...item, id, label, type } as ContextItem;
+  }
+
+  const contextItems = $derived([
+    ...controllerState.input.attachments
+      .map(attachmentContextItem)
+      .filter((item): item is ContextItem => item !== null),
+    ...controllerState.input.contextLinks.map((link) => ({
+      id: contextLinkId(link),
+      type: 'workspace' as const,
+      label: `${link.owner}/${link.repo}#${link.number}`,
+      description: link.url,
+    })),
+  ]);
+
   function start(): void {
     if (canStart) onStart?.(requiredCapabilities);
   }
 
-  function appendSuggestion(text: string): void {
-    const separator = controllerState.input.intentText.trim() ? '\n\n' : '';
-    onEdit?.({ intentText: `${controllerState.input.intentText}${separator}${text}` });
-    showSuggestions = false;
+  function addContextItem(item: ContextItem): void {
+    if (
+      controllerState.input.attachments.some(
+        (value) => attachmentContextItem(value, 0)?.id === item.id,
+      )
+    )
+      return;
+    onEdit?.({ attachments: [...controllerState.input.attachments, item] });
+  }
+
+  function removeContextItem(id: string): void {
+    const contextLinks = controllerState.input.contextLinks.filter(
+      (link) => contextLinkId(link) !== id,
+    );
+    const attachments = controllerState.input.attachments.filter(
+      (value, index) => attachmentContextItem(value, index)?.id !== id,
+    );
+    if (contextLinks.length !== controllerState.input.contextLinks.length)
+      onEdit?.({ contextLinks });
+    else if (attachments.length !== controllerState.input.attachments.length)
+      onEdit?.({ attachments });
   }
 </script>
 
 <main
-  class="new-workspace-shell h-full min-h-[36rem] overflow-hidden rounded-xl border border-border bg-sidebar text-foreground"
+  class="h-full min-h-0 w-full overflow-hidden text-foreground"
   aria-label={m.newWorkspace_shell_ariaLabel()}
   data-controller-phase={controllerState.phase}
+  data-save-state={saveState}
 >
-  <header
-    class="flex min-h-14 items-center justify-between gap-3 border-b border-border bg-background px-4"
-  >
-    <EditableName
-      value={controllerState.input.title ?? m.ui_editableName_placeholder()}
-      onSave={(title) => onEdit?.({ title })}
-      disabled={!editorEnabled}
-      textClass="text-base font-semibold"
-      maxWidth={360}
-    />
-    <span
-      class="rounded-full px-2 py-1 text-xs {saveState === 'unsaved'
-        ? 'bg-warning/15 text-warning-foreground'
-        : 'bg-muted text-muted-foreground'}"
-      data-save-state={saveState}
-    >
-      {saveState === 'saved'
-        ? m.newWorkspace_shell_saved_label()
-        : saveState === 'unsaved'
-          ? m.newWorkspace_shell_unsaved_label()
-          : m.newWorkspace_shell_saving_label()}
-    </span>
-  </header>
+  {#snippet sidebarContent()}
+    <SidebarSkeleton />
+  {/snippet}
 
-  <div class="shell-body grid min-h-0 gap-3 p-3">
-    <aside
-      class="grid min-h-0 content-start gap-3 overflow-auto"
-      aria-label={m.newWorkspace_source_title()}
-    >
-      <SourceCard
-        source={controllerState.input.source}
-        presentation={presentation.source}
-        disabled={!editorEnabled}
-        {onChooseNewFolder}
-        {onSourceSelected}
-      />
-      <CapabilityStrip
-        capabilities={controllerState.capabilities}
-        host={presentation.host}
-        onRecheck={onRecheckCapabilities}
-      />
-
-      {#if presentation.specContent?.trim()}
-        <section class="rounded-xl border border-border bg-card p-4" data-testid="draft-spec-pane">
-          <h2 class="text-sm font-semibold">{m.chat_shared_spec_label()}</h2>
-          <p class="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
-            {presentation.specContent}
-          </p>
-        </section>
-      {/if}
-    </aside>
-
-    <div class="grid min-h-0 gap-3 overflow-hidden">
-      <CoordinatorPanel presentation={coordinator} {onProviderSelected} />
-
-      {#if isProgressPhase(controllerState)}
-        <section
-          class="rounded-xl border border-border bg-card p-4"
-          role="status"
-          data-testid="draft-progress"
-        >
-          <h2 class="text-sm font-semibold">{m.newWorkspace_progress_title()}</h2>
-          <p class="mt-1 text-sm text-muted-foreground">{progressLabel()}</p>
-          {#if presentation.progress?.clone}
-            <div class="mt-3" data-clone-phase={presentation.progress.clone.phase}>
-              <div class="flex justify-between gap-3 text-xs text-muted-foreground">
-                <span>{presentation.progress.clone.phase}</span>
-                {#if presentation.progress.clone.percent !== undefined}
-                  <span>{presentation.progress.clone.percent}%</span>
-                {/if}
-              </div>
-              {#if presentation.progress.clone.percent !== undefined}
-                <progress class="mt-1 w-full" max="100" value={presentation.progress.clone.percent}
-                ></progress>
-              {/if}
-            </div>
-          {/if}
-          {#if setupLabel()}
-            <p
-              class="mt-2 text-xs text-muted-foreground"
-              data-setup-state={presentation.progress?.setup?.state}
-            >
-              {setupLabel()}
-              {#if presentation.progress?.setup?.error}
-                — {presentation.progress.setup.error}
-              {/if}
-            </p>
-          {/if}
-        </section>
-      {/if}
-
-      {#if controllerState.phase === 'failed'}
-        <section class="rounded-xl border border-danger/50 bg-danger/10 p-4" role="alert">
-          <div class="flex gap-2">
-            <Fa icon={faTriangleExclamation} class="mt-0.5 text-danger" />
-            <div>
-              <h2 class="text-sm font-semibold">{m.newWorkspace_recovery_failed_title()}</h2>
-              <p class="mt-1 text-sm text-muted-foreground">{controllerState.error}</p>
-              {#if controllerState.retryState}
-                <Button class="mt-3" size="sm" variant="outline" onclick={onRetry}>
-                  {m.ui_errorToast_retry_label()}
-                </Button>
-              {/if}
-            </div>
-          </div>
-        </section>
-      {:else if controllerState.phase === 'offline'}
-        <section class="rounded-xl border border-warning/50 bg-warning/10 p-4" role="alert">
-          <h2 class="text-sm font-semibold">{m.newWorkspace_recovery_offline_title()}</h2>
-          <p class="mt-1 text-sm text-muted-foreground">
-            {m.newWorkspace_recovery_offline_description()}
-          </p>
-          <Button class="mt-3" size="sm" variant="outline" onclick={onReconnect}>
-            {m.sandbox_newWorkspace_reconnect_label()}
-          </Button>
-        </section>
-      {:else if controllerState.phase === 'conflict'}
-        <section class="rounded-xl border border-warning/50 bg-warning/10 p-4" role="alert">
-          <h2 class="text-sm font-semibold">{m.newWorkspace_recovery_conflict_title()}</h2>
-          <p class="mt-1 text-sm text-muted-foreground">
-            {m.newWorkspace_recovery_conflict_description()}
-          </p>
-          <div class="mt-3 flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onclick={onAcceptRemote}>
-              {m.newWorkspace_recovery_useRemote_label()}
-            </Button>
-            <Button size="sm" onclick={onKeepLocal}>
-              {m.newWorkspace_recovery_keepLocal_label()}
-            </Button>
-          </div>
-        </section>
-      {/if}
-
-      <section
-        class="rounded-xl border border-border bg-background p-3"
-        data-testid="draft-composer"
+  {#snippet chatContent()}
+    <div class="flex h-full min-h-0 w-full flex-1">
+      <div
+        class="chat-panel-container group/panel relative z-20 flex h-full w-full min-w-0 flex-col bg-background"
+        role="region"
+        aria-label={m.notification_specialist_coordinator()}
       >
-        <RichTextarea
-          value={controllerState.input.intentText}
-          placeholder={m.workspace_phase_planningPlaceholder_subtitle()}
-          disabled={!editorEnabled}
-          repoPath={controllerState.input.source?.kind === 'local'
-            ? controllerState.input.source.path
-            : undefined}
-          minHeight={88}
-          maxHeight={220}
-          onchange={(intentText) => {
-            if (intentText !== controllerState.input.intentText) onEdit?.({ intentText });
-          }}
-          onsubmit={start}
-        />
-
-        {#if controllerState.input.attachments.length}
-          <p class="mt-2 text-xs text-muted-foreground">
-            {controllerState.input.attachments.length === 1
-              ? m.newWorkspace_composer_attachments_one({ count: 1 })
-              : m.newWorkspace_composer_attachments_many({
-                  count: controllerState.input.attachments.length,
-                })}
-          </p>
-        {/if}
-
-        {#if showSuggestions}
-          <div class="mt-3 max-h-72 overflow-auto rounded-lg border border-border p-2">
-            <IssueSuggestions onSelect={appendSuggestion} initiallyExpanded />
-          </div>
-        {/if}
-
-        <div
-          class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3"
-        >
-          <div class="flex flex-wrap gap-2">
-            <Button size="sm" variant="ghost" disabled={!editorEnabled} onclick={onAddFiles}>
-              <Fa icon={faPaperclip} />
-              {m.workspaceCreation_addFiles_tooltip()}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={!editorEnabled}
-              aria-expanded={showSuggestions}
-              onclick={() => (showSuggestions = !showSuggestions)}
+        <div class="relative z-10 flex min-h-0 w-full flex-1 flex-col">
+          <div
+            class="flex-1 {CHAT_TRANSCRIPT_OVERFLOW_CLASS}"
+            data-testid="chat-transcript-scroll-viewport"
+          >
+            <div
+              class="conversation-column chat-content-measure regular-chat-content-inset mx-auto flex min-h-full w-full min-w-0 flex-col px-4 pt-8 sm:px-6"
+              data-testid="chat-transcript-inner"
             >
-              {m.workspace_issueSuggestions_addContext_label()}
-            </Button>
-          </div>
-          <div class="text-right">
-            {#if missingCapabilities.length}
-              <p class="mb-1 text-xs text-muted-foreground">
-                {m.newWorkspace_composer_prerequisites_description({
-                  capabilities: missingCapabilities.join(', '),
-                })}
-              </p>
-            {/if}
-            <Button disabled={!canStart} onclick={start} data-testid="draft-start">
-              {m.chat_toolClassifier_start_label()}
-              <span class="opacity-50">⌘↵</span>
-            </Button>
+              <div
+                class="workspace-setup-card-alignment pt-16 pb-6"
+                data-testid="draft-progress"
+                data-setup-state={presentation.progress?.setup?.state}
+              >
+                {#snippet repoPendingContent()}
+                  <SourceCard
+                    source={controllerState.input.source}
+                    presentation={presentation.source}
+                    disabled={composerLocked}
+                    {onChooseNewFolder}
+                    {onSourceSelected}
+                  />
+                {/snippet}
+                {#key progressId}
+                  <WorkspaceSetupCard
+                    {repoName}
+                    {repoPath}
+                    {branch}
+                    baseRef="origin/main"
+                    specialistName={m.notification_specialist_coordinator()}
+                    hasPrompt={Boolean(controllerState.input.intentText.trim())}
+                    repoStatus={workspaceStepStatus()}
+                    branchStatus={workspaceStepStatus()}
+                    agentStatus={workspaceStepStatus()}
+                    setupScriptStatus={setupStatus()}
+                    {setupScriptContent}
+                    skipIsolation={source?.kind === 'local' && source.isolation === 'in-place'}
+                    {progressId}
+                    {repoPendingContent}
+                  />
+                {/key}
+              </div>
+
+              <CoordinatorPanel presentation={coordinator} {onProviderSelected} />
+              <CapabilityStrip
+                capabilities={controllerState.capabilities}
+                host={presentation.host}
+                onRecheck={onRecheckCapabilities}
+              />
+
+              {#if presentation.specContent?.trim()}
+                <p
+                  class="type-caption whitespace-pre-wrap py-2 text-muted-foreground"
+                  data-testid="draft-spec-pane"
+                >
+                  {presentation.specContent}
+                </p>
+              {/if}
+
+              {#if controllerState.phase === 'failed'}
+                <StreamingStatus
+                  error={controllerState.error}
+                  onRetry={controllerState.retryState ? onRetry : undefined}
+                  class="mb-2"
+                />
+              {:else if controllerState.phase === 'offline'}
+                <div class="type-caption flex items-start gap-3 py-2 pr-1" role="alert">
+                  <div class="min-w-0 flex-1">
+                    <p class="font-medium text-warning">
+                      {m.newWorkspace_recovery_offline_title()}
+                    </p>
+                    <p class="text-muted-foreground">
+                      {m.newWorkspace_recovery_offline_description()}
+                    </p>
+                  </div>
+                  <Button size="sm" variant="ghost-light" onclick={onReconnect}>
+                    {m.sandbox_newWorkspace_reconnect_label()}
+                  </Button>
+                </div>
+              {:else if controllerState.phase === 'conflict'}
+                <div class="type-caption flex items-start gap-3 py-2 pr-1" role="alert">
+                  <div class="min-w-0 flex-1">
+                    <p class="font-medium text-warning">
+                      {m.newWorkspace_recovery_conflict_title()}
+                    </p>
+                    <p class="text-muted-foreground">
+                      {m.newWorkspace_recovery_conflict_description()}
+                    </p>
+                  </div>
+                  <div class="flex shrink-0 flex-wrap gap-1">
+                    <Button size="sm" variant="ghost-light" onclick={onAcceptRemote}>
+                      {m.newWorkspace_recovery_useRemote_label()}
+                    </Button>
+                    <Button size="sm" variant="ghost-light" onclick={onKeepLocal}>
+                      {m.newWorkspace_recovery_keepLocal_label()}
+                    </Button>
+                  </div>
+                </div>
+              {/if}
+            </div>
           </div>
         </div>
-      </section>
+
+        <div class="conversation-composer relative z-10 w-full" data-testid="draft-composer">
+          <div class="composer-prompt-layer relative z-10 w-full">
+            <div class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0">
+              <div class="w-full min-w-0">
+                {#if saveState === 'unsaved'}
+                  <p class="regular-composer-content-inset type-caption pb-1 text-warning">
+                    {m.newWorkspace_shell_unsaved_label()}
+                  </p>
+                {/if}
+                <SimpleRichInput
+                  value={controllerState.input.intentText}
+                  onvaluechange={(intentText) => {
+                    if (intentText !== controllerState.input.intentText) onEdit?.({ intentText });
+                  }}
+                  onsubmit={start}
+                  onforcesubmit={start}
+                  disabled={!canStart || composerLocked}
+                  editableWhileDisabled={!composerLocked}
+                  inputLocked={composerLocked}
+                  workspace={null}
+                  placeholder={m.workspace_phase_planningPlaceholder_subtitle()}
+                  {contextItems}
+                  oncontextAdd={addContextItem}
+                  oncontextRemove={removeContextItem}
+                  onAttachFiles={onAddFiles}
+                  allowEmptySubmit
+                  submitTestId="draft-start"
+                  selectedModel={typeof controllerState.input.config.model === 'string'
+                    ? controllerState.input.config.model
+                    : null}
+                  onmodelChange={(model) =>
+                    onEdit?.({ config: { ...controllerState.input.config, model } })}
+                  editorClassName="regular-composer-content-inset w-full"
+                  contentInsetClassName="regular-composer-content-inset w-full"
+                  actionBarEndClassName="regular-composer-content-inset"
+                  edgeDocked
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-  </div>
+  {/snippet}
+
+  <WorkspaceLayout
+    sidebar={sidebarContent}
+    content={chatContent}
+    sidebarStorageKey="new-workspace-left-panel-width"
+    sidebarExpandedStorageKey="new-workspace-left-panel-expanded-width"
+    startCollapsed
+  />
 </main>
 
 <style>
-  .new-workspace-shell {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+  .chat-panel-container {
+    container: chat-panel / inline-size;
   }
 
-  .shell-body {
-    grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
+  .regular-chat-content-inset {
+    padding-left: 1rem;
+    padding-right: 1rem;
   }
 
-  .shell-body > div {
-    grid-template-rows: minmax(10rem, 1fr) auto auto;
+  :global(.regular-composer-content-inset) {
+    padding-right: 1rem !important;
+    padding-left: 1rem !important;
   }
 
-  @media (max-width: 720px) {
-    .new-workspace-shell {
-      min-height: 52rem;
-      overflow: auto;
+  .workspace-setup-card-alignment {
+    --chat-operational-row-inline-padding: 0.5rem;
+    --chat-operational-leading-gap: 0.5rem;
+    margin-left: -0.5rem;
+    text-align: left;
+  }
+
+  @container chat-panel (max-width: 639.98px) {
+    .regular-chat-content-inset {
+      --chat-operational-row-inline-padding: 0.125rem;
+      --chat-operational-leading-gap: 0.625rem;
     }
 
-    .shell-body {
-      grid-template-columns: minmax(0, 1fr);
-      overflow: visible;
+    .workspace-setup-card-alignment {
+      margin-left: 1.5rem;
+    }
+  }
+
+  @container chat-panel (min-width: 640px) {
+    .regular-chat-content-inset {
+      padding-left: 3.1rem;
+      padding-right: 3.1rem;
     }
 
-    .shell-body > aside,
-    .shell-body > div {
-      overflow: visible;
+    :global(.regular-composer-content-inset) {
+      padding-right: 1.5rem !important;
+      padding-left: 1.5rem !important;
     }
   }
 </style>
