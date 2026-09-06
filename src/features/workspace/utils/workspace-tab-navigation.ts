@@ -22,8 +22,7 @@ import {
   selectPanelColumnCount,
   selectFocusedPanel,
   selectFocusedPanelId,
-  selectLastClosedPanelColumn,
-  selectRecentlyClosed,
+  selectLastPanelClose,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 import { toggleSidebar } from '$store/renderer/slices/ui-layout/ui-layout-slice';
@@ -204,19 +203,9 @@ export function reopenPanelOrWorkspaceTab(
   const workspaceId = match && match[1] !== 'new' ? match[1] : null;
 
   const lastClosedWorkspace = selectLastClosedWorkspaceTab.select(store.state);
-  const lastClosedPanelTab = workspaceId
-    ? (selectRecentlyClosed.select(store.state, workspaceId)[0] ?? null)
+  const lastPanelClose = workspaceId
+    ? selectLastPanelClose.select(store.state, workspaceId)
     : null;
-  const lastClosedPanelColumn = workspaceId
-    ? selectLastClosedPanelColumn.select(store.state, workspaceId)
-    : null;
-  const lastPanelClose =
-    lastClosedPanelColumn &&
-    (!lastClosedPanelTab || lastClosedPanelColumn.closedAt >= lastClosedPanelTab.closedAt)
-      ? { kind: 'column' as const, closedAt: lastClosedPanelColumn.closedAt }
-      : lastClosedPanelTab
-        ? { kind: 'tab' as const, closedAt: lastClosedPanelTab.closedAt }
-        : null;
 
   if (
     workspaceId &&
