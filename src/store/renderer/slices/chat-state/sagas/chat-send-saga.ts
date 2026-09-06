@@ -569,7 +569,16 @@ function* handleRetryWithProvider(action: RetryProviderAction): SagaGenerator<vo
       providerId,
       model: model.value,
     });
-    const redrive = agentSessionRetryLastMessageRequested(agentId, wsId);
+    // Redrive with an EXPLICIT model override rather than the plain
+    // last-message retry. The plain path resolves the wire model as
+    // `lastAttempted.options?.model ?? session.model` — the first is the
+    // exhausted provider's model recorded on the original attempt, and the
+    // second is the Redux session, which still holds the old model until the
+    // daemon's asynchronous `agent:updated` lands. Either way the redrive
+    // would re-send the model we just switched away from, defeating the whole
+    // recovery. Passing `model.value` wins that `??` chain outright, so the
+    // turn is issued on the provider the user actually picked.
+    const redrive = agentSessionRetryWithModelRequested(agentId, wsId, model.value);
     // Nothing awaits the redrive's promise — it settles on a later turn of the
     // per-agent FIFO, so awaiting it here would deadlock behind this handler.
     // Swallow its rejection so a failed retry (which reports itself) cannot

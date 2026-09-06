@@ -975,11 +975,21 @@ describe('chatSendSaga', () => {
 
       expect(mocks.getModelsForProvider).toHaveBeenCalledWith(OTHER_PROVIDER);
       expect(mocks.setModel).toHaveBeenCalledWith(AGENT, 'gpt-5-codex', WS, OTHER_PROVIDER);
+      // The redrive MUST carry the newly picked model as an explicit
+      // override: the plain last-message retry resolves the wire model from
+      // the recorded attempt (the exhausted provider's model) or the stale
+      // Redux session, either of which re-sends the model we just switched
+      // away from and defeats the recovery.
+      const redrives = run.dispatch.mock.calls.filter(
+        ([action]) => action.type === agentSessionRetryWithModelRequested.type,
+      );
+      expect(redrives).toHaveLength(1);
+      expect(redrives[0][0].payload).toEqual([AGENT, WS, 'gpt-5-codex']);
       expect(
         run.dispatch.mock.calls.filter(
           ([action]) => action.type === agentSessionRetryLastMessageRequested.type,
         ),
-      ).toHaveLength(1);
+      ).toHaveLength(0);
       expect(mocks.toastError).not.toHaveBeenCalled();
       run.task.cancel();
       await run.task.toPromise();
