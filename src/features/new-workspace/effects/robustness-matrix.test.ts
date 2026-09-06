@@ -88,6 +88,25 @@ function systemStatusFixture(os: string, arch: string): SystemStatusWirePayload 
   };
 }
 
+function healthStateFor(os: string, arch: string) {
+  const currentGeneration = (
+    daemonHealthInitialState as typeof daemonHealthInitialState & { connectionGeneration?: number }
+  ).connectionGeneration;
+  const successForCurrentConnection = systemStatusSuccess as unknown as (
+    payload: SystemStatusWirePayload,
+    receivedAt: string,
+    connectionGeneration?: number,
+  ) => ReturnType<typeof systemStatusSuccess>;
+  return daemonHealthReducer(
+    daemonHealthInitialState,
+    successForCurrentConnection(
+      systemStatusFixture(os, arch),
+      '2026-09-05T00:00:00.000Z',
+      currentGeneration,
+    ),
+  );
+}
+
 describe('new-workspace host × provider × network robustness matrix', () => {
   const originalInvoke = window.electronAPI!.invoke;
 
@@ -143,10 +162,7 @@ describe('new-workspace host × provider × network robustness matrix', () => {
   ] as const)(
     '%s system.status fixture selects truthful missing-Git guidance and preserves the draft',
     async (_name, os, arch) => {
-      const healthState = daemonHealthReducer(
-        daemonHealthInitialState,
-        systemStatusSuccess(systemStatusFixture(os, arch), '2026-09-05T00:00:00.000Z'),
-      );
+      const healthState = healthStateFor(os, arch);
       const repairTarget = selectDaemonHostRepairTarget.select({
         daemonHealth: healthState,
       } as unknown as StoreState);
@@ -184,10 +200,7 @@ describe('new-workspace host × provider × network robustness matrix', () => {
       ['windows', 'x86_64'],
       ['linux', 'aarch64'],
     ].map(([os, arch]) => {
-      const healthState = daemonHealthReducer(
-        daemonHealthInitialState,
-        systemStatusSuccess(systemStatusFixture(os, arch), '2026-09-05T00:00:00.000Z'),
-      );
+      const healthState = healthStateFor(os, arch);
       const host = selectDaemonHostRepairTarget.select({
         daemonHealth: healthState,
       } as unknown as StoreState);
