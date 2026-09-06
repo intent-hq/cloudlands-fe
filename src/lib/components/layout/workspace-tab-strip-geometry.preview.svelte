@@ -1,3 +1,16 @@
+<script lang="ts" module>
+  import { definePreview } from '$lib/component-catalog/preview-definition';
+
+  export const preview = definePreview({
+    id: 'workspace-tab-strip-geometry',
+    title: 'Workspace tab strip geometry',
+    defaultState: 'default',
+    states: {
+      default: { props: {} },
+    },
+  });
+</script>
+
 <script lang="ts">
   import { WorkspaceStatus, type Workspace } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
