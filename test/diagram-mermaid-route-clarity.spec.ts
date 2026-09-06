@@ -687,7 +687,10 @@ for (const appearance of appearances) {
             minimumDistance,
             marker: outer.getAttribute('marker-end'),
             targetCenterError: Math.abs(screenEnd.x - (targetBox.left + targetBox.right) / 2),
-            targetGap: screenEnd.y - targetBox.bottom,
+            targetGap:
+              outer.dataset.feedbackTargetSide === 'top'
+                ? targetBox.top - screenEnd.y
+                : screenEnd.y - targetBox.bottom,
           };
         });
       expect(feedback).toMatchObject({

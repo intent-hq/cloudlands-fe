@@ -596,7 +596,7 @@ export const MERMAID_WORKBENCH_CASES = Object.freeze({
     visualContract:
       'Parallel labels stay distinct, reciprocal and self routes remain visible, and each boundary owns its content.',
     source:
-      'flowchart TB\n  Intake[Item]\n  subgraph Review[Review]\n    subgraph Rules[Checks]\n      Validate{Ready?}\n      Enrich[Context]\n    end\n    Merge[Decision]\n  end\n  Registry[(Log)]\n  Intake -->|in| Validate\n  Intake -.->|meta| Validate\n  Validate -->|add| Enrich\n  Enrich -->|retry| Validate\n  Validate -->|yes| Merge\n  Validate -->|no| Merge\n  Enrich -->|done| Merge\n  Merge -->|save| Registry\n  Merge --> Merge',
+      'flowchart LR\n  Intake[Item]\n  subgraph Review[Review]\n    subgraph Rules[Checks]\n      Validate{Ready?}\n      Enrich[Context]\n    end\n    Merge[Decision]\n  end\n  Registry[(Log)]\n  Intake -->|in| Validate\n  Intake -.->|meta| Validate\n  Validate -->|add| Enrich\n  Enrich -->|retry| Validate\n  Validate -->|yes| Merge\n  Validate -->|no| Merge\n  Enrich -->|done| Merge\n  Merge -->|save| Registry\n  Merge --> Merge',
   },
   'mermaid-nested-groups': {
     kind: 'mermaid',
@@ -695,7 +695,7 @@ export const MERMAID_WORKBENCH_CASES = Object.freeze({
     title: 'Entity relationship',
     description: 'Cardinality and descriptive attributes.',
     source:
-      'erDiagram\n  PREVIEW ||--o{ STATE : exposes\n  STATE ||--|| FIXTURE : renders\n  PREVIEW {\n    string id PK\n    string title\n  }\n  STATE {\n    string name PK\n    string theme\n  }',
+      'erDiagram\n  PREVIEW ||--o{ STATE : exposes\n  STATE ||--|| FIXTURE : renders\n  PREVIEW {\n    string id PK\n    string title\n  }\n  STATE {\n    string name PK\n    string theme FK\n  }',
   },
   'mermaid-minimal-entity-relationship': {
     kind: 'mermaid',

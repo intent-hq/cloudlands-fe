@@ -3089,23 +3089,79 @@ function computeOrthogonalEdgePaths(
       nodeGroup.has(toNode.id) &&
       nodeGroup.get(fromNode.id) !== nodeGroup.get(toNode.id)
     ) {
-      // Enter a lower group from the side so the route does not cross its heading.
-      const source = {
-        x: fromNode.x + fromNode.width,
-        y: fromNode.y + fromNode.height / 2,
-      };
-      const target = {
-        x: toNode.x + toNode.width,
-        y: toNode.y + toNode.height / 2,
-      };
-      const trackX = Math.max(
-        maxX + NODE_CLEARANCE + NODE_GAP,
-        source.x + NODE_GAP,
-        target.x + NODE_GAP,
+      // Use the open left exterior lane so aligned groups and their headings stay clear.
+      const labelWidth = edge.label ? estimateEdgeLabelWidth(edge.label) : 0;
+      const endpointGroupIds = new Set(
+        [nodeGroup.get(fromNode.id), nodeGroup.get(toNode.id)].filter(
+          (groupId): groupId is string => groupId !== undefined,
+        ),
       );
-      points[0] = source;
-      points.push({ x: trackX, y: source.y }, { x: trackX, y: target.y });
-      toPos = target;
+      const endpointGroups = (groups ?? []).filter((group) => endpointGroupIds.has(group.id));
+      const endpointRight = Math.max(
+        fromNode.x + fromNode.width,
+        toNode.x + toNode.width,
+        ...endpointGroups.map((group) => group.x + group.width),
+      );
+      const routeTop = Math.min(fromNode.y, toNode.y);
+      const routeBottom = Math.max(fromNode.y + fromNode.height, toNode.y + toNode.height);
+      const rightExteriorIsOccupied = (groups ?? []).some(
+        (group) =>
+          !endpointGroupIds.has(group.id) &&
+          group.x >= endpointRight &&
+          group.y < routeBottom &&
+          group.y + group.height > routeTop,
+      );
+      const sourceCenterX = fromNode.x + fromNode.width / 2;
+      const targetCenterX = toNode.x + toNode.width / 2;
+      const hasClearCentralCorridor =
+        (groups?.length ?? 0) >= 3 &&
+        Math.abs(sourceCenterX - targetCenterX) < 12 &&
+        !verticalCorridorIsBlocked(info);
+      if (hasClearCentralCorridor && !rightExteriorIsOccupied) {
+        points[0] = {
+          x: (sourceCenterX + targetCenterX) / 2,
+          y: fromNode.y + fromNode.height,
+        };
+        toPos = {
+          x: points[0].x,
+          y: toNode.y,
+        };
+      } else if (!rightExteriorIsOccupied) {
+        const source = {
+          x: fromNode.x + fromNode.width,
+          y: fromNode.y + fromNode.height / 2,
+        };
+        const target = {
+          x: toNode.x + toNode.width,
+          y: toNode.y + toNode.height / 2,
+        };
+        const trackX = Math.max(
+          maxX + NODE_CLEARANCE + NODE_GAP,
+          source.x + NODE_GAP,
+          target.x + NODE_GAP,
+        );
+        points[0] = source;
+        points.push({ x: trackX, y: source.y }, { x: trackX, y: target.y });
+        toPos = target;
+      } else {
+        const source = {
+          x: fromNode.x,
+          y: fromNode.y + fromNode.height / 2,
+        };
+        const target = {
+          x: toNode.x,
+          y: toNode.y + toNode.height / 2,
+        };
+        const endpointLeft = Math.min(
+          source.x,
+          target.x,
+          ...endpointGroups.map((group) => group.x),
+        );
+        const trackX = endpointLeft - NODE_CLEARANCE - labelWidth / 2 - ROUTE_LABEL_CLEARANCE;
+        points[0] = source;
+        points.push({ x: trackX, y: source.y }, { x: trackX, y: target.y });
+        toPos = target;
+      }
     } else if (
       isVerticalLayout &&
       isFromVertical &&
@@ -3351,6 +3407,7 @@ function computeCompactColumnEdgePaths(
 ): ComputedEdge[] {
   const nodeMap = new Map(nodes.map((node, index) => [node.id, { node, index }]));
   const sourceRows = new Map<string, number>();
+  const exteriorRows = new Map<string, number>();
   const columnWidth = Math.max(...nodes.map((node) => node.x + node.width));
   const terminalLead = (edges.length >= nodes.length * 1.5 ? 24 : 32) + ORTHOGONAL_CORNER_RADIUS;
 
@@ -3390,6 +3447,8 @@ function computeCompactColumnEdgePaths(
       ];
     } else {
       const downward = targetIndex > sourceIndex;
+      const exteriorRow = exteriorRows.get(edge.from) ?? 0;
+      exteriorRows.set(edge.from, exteriorRow + 1);
       const start = {
         x: downward ? source.x + source.width : source.x,
         y: source.y + source.height / 2,
@@ -3399,7 +3458,23 @@ function computeCompactColumnEdgePaths(
         y: target.y + target.height / 2,
       };
       const laneClearance = Math.max(terminalLead, (compactLabel?.width ?? 0) / 2 + 10);
-      const laneX = downward ? columnWidth + laneClearance + row * 8 : -laneClearance - row * 8;
+      const routeTop = Math.min(start.y, end.y);
+      const routeBottom = Math.max(start.y, end.y);
+      const interveningNodes = nodes.filter(
+        (node) =>
+          node.id !== source.id &&
+          node.id !== target.id &&
+          node.y < routeBottom &&
+          node.y + node.height > routeTop,
+      );
+      const localRight = Math.max(
+        source.x + source.width + terminalLead,
+        target.x + target.width + terminalLead,
+        ...interveningNodes.map(
+          (node) => node.x + node.width + (compactLabel?.width ?? 0) / 2 + 10,
+        ),
+      );
+      const laneX = downward ? localRight + exteriorRow * 8 : -laneClearance - exteriorRow * 8;
       points = [
         start,
         { x: start.x + (downward ? terminalLead : -terminalLead), y: start.y },

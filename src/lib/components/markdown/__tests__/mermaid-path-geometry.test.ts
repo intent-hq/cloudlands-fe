@@ -8,6 +8,7 @@ import {
   buildGroupedReturnLanePoints,
   chooseFlowchartFeedbackTargetX,
   chooseLabelSegment,
+  diamondRayIntersection,
   measuredClusterHeaderHeight,
   replacePathTerminal,
   routeOrthogonalAroundObstacles,
@@ -227,6 +228,14 @@ describe('Mermaid path terminal geometry', () => {
     expect(measuredClusterHeaderHeight(12)).toBe(66);
   });
 
+  it('intersects rays with the rhombus boundary instead of its rectangular bounds', () => {
+    const bounds = { x: 10, y: 20, width: 100, height: 80 };
+    const center = { x: 60, y: 60 };
+
+    expect(diamondRayIntersection(center, { x: 50, y: 40 }, bounds)).toEqual({ x: 85, y: 80 });
+    expect(diamondRayIntersection(center, { x: 0, y: -40 }, bounds)).toEqual({ x: 60, y: 20 });
+  });
+
   it('builds independent upper and lower decision branch lanes', () => {
     const source = { x: 0, y: 0, width: 100, height: 100 };
     const occupied = [source, { x: 200, y: 0, width: 80, height: 160 }];
@@ -240,9 +249,7 @@ describe('Mermaid path terminal geometry', () => {
       ),
     ).toEqual([
       { x: 75, y: 25 },
-      { x: 128, y: 25 },
-      { x: 128, y: 20 },
-      { x: 200, y: 20 },
+      { x: 200, y: 25 },
     ]);
     expect(
       buildFlowchartDecisionBranchPoints(
@@ -253,9 +260,8 @@ describe('Mermaid path terminal geometry', () => {
       ),
     ).toEqual([
       { x: 75, y: 75 },
-      { x: 140, y: 75 },
-      { x: 140, y: 140 },
-      { x: 200, y: 140 },
+      { x: 212, y: 75 },
+      { x: 212, y: 120 },
     ]);
   });
 
@@ -299,18 +305,16 @@ describe('Mermaid path terminal geometry', () => {
     const occupied = [source, target];
 
     expect(buildFlowchartDecisionBranchPoints(source, target, 'upper', occupied)).toEqual([
-      { x: 75, y: 25 },
-      { x: 132, y: 25 },
-      { x: 132, y: 220 },
-      { x: 90, y: 220 },
+      { x: 60, y: 100 },
+      { x: 60, y: 150 },
+      { x: 58, y: 150 },
+      { x: 58, y: 200 },
     ]);
     expect(buildFlowchartDecisionBranchPoints(source, target, 'lower', occupied, true)).toEqual([
       { x: 75, y: 75 },
-      { x: 148, y: 75 },
-      { x: 148, y: 118 },
-      { x: -16, y: 118 },
-      { x: -16, y: 220 },
-      { x: 10, y: 220 },
+      { x: 116, y: 75 },
+      { x: 116, y: 220 },
+      { x: 90, y: 220 },
     ]);
   });
 
@@ -379,6 +383,20 @@ describe('Mermaid path terminal geometry', () => {
       { x: 80, y: 420 },
       { x: 148, y: 420 },
       { x: 148, y: 40 },
+      { x: 90, y: 40 },
+    ]);
+
+    expect(
+      buildGroupedReturnLanePoints(
+        { x: 20, y: 400, width: 60, height: 40 },
+        { x: 10, y: 20, width: 80, height: 40 },
+        [{ x: 0, y: 0, width: 120, height: 460 }],
+        true,
+      ),
+    ).toEqual([
+      { x: 80, y: 420 },
+      { x: 138, y: 420 },
+      { x: 138, y: 40 },
       { x: 90, y: 40 },
     ]);
   });

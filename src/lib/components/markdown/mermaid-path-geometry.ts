@@ -44,26 +44,29 @@ export function buildFlowchartDecisionBranchPoints(
   const sourcePort = pointAt(source, 0.75, upper ? 0.25 : 0.75);
   const targetToRight = target.x >= source.x + source.width;
   if (targetToRight) {
-    const laneX = Math.min(
-      target.x - 12,
-      Math.max(source.x + source.width + (upper ? 28 : 40), sourcePort.x + 44),
-    );
-    const targetPort = pointAt(target, 0, 0.5);
-    return [sourcePort, { x: laneX, y: sourcePort.y }, { x: laneX, y: targetPort.y }, targetPort];
+    if (sourcePort.y >= target.y && sourcePort.y <= target.y + target.height) {
+      return [sourcePort, { x: target.x, y: sourcePort.y }];
+    }
+    const targetAbove = target.y + target.height < sourcePort.y;
+    const targetPort = pointAt(target, 0.15, targetAbove ? 1 : 0);
+    return [sourcePort, { x: targetPort.x, y: sourcePort.y }, targetPort];
   }
-  if (!upper) {
-    const stubX = source.x + source.width + 48;
-    const bridgeY = source.y + source.height + 18;
-    const laneX = Math.min(...occupied.map((bounds) => bounds.x)) - (compact ? 16 : 32);
-    const targetPort = pointAt(target, 0, 0.5);
+  if (upper && target.y >= source.y + source.height) {
+    const directSource = pointAt(source, 0.6, 1);
+    const targetPort = pointAt(target, 0.6, 0);
+    const laneY = (directSource.y + targetPort.y) / 2;
     return [
-      sourcePort,
-      { x: stubX, y: sourcePort.y },
-      { x: stubX, y: bridgeY },
-      { x: laneX, y: bridgeY },
-      { x: laneX, y: targetPort.y },
+      directSource,
+      { x: directSource.x, y: laneY },
+      { x: targetPort.x, y: laneY },
       targetPort,
     ];
+  }
+  if (!upper) {
+    const laneX =
+      Math.max(...occupied.map((bounds) => bounds.x + bounds.width)) + (compact ? 16 : 32);
+    const targetPort = pointAt(target, 1, 0.5);
+    return [sourcePort, { x: laneX, y: sourcePort.y }, { x: laneX, y: targetPort.y }, targetPort];
   }
   const laneX = Math.max(...occupied.map((bounds) => bounds.x + bounds.width)) + 32;
   const targetPort = pointAt(target, 1, 0.5);
@@ -126,8 +129,14 @@ export function buildFlowchartFeedbackLanePoints(
   ];
 }
 
-export function buildGroupedReturnLanePoints(source: Bounds, target: Bounds, occupied: Bounds[]) {
-  const laneX = Math.max(...occupied.map((bounds) => bounds.x + bounds.width)) + 28;
+export function buildGroupedReturnLanePoints(
+  source: Bounds,
+  target: Bounds,
+  occupied: Bounds[],
+  compact = false,
+) {
+  const laneX =
+    Math.max(...occupied.map((bounds) => bounds.x + bounds.width)) + (compact ? 18 : 28);
   const sourceY = source.y + source.height / 2;
   const targetY = target.y + target.height / 2;
   return [
@@ -409,11 +418,63 @@ function cylinderBoundary(bounds: Bounds, shape: SVGGraphicsElement) {
   return points;
 }
 
+function isDiamondShape(shape: SVGGraphicsElement) {
+  if (shape.tagName.toLowerCase() !== 'polygon') return false;
+  const coordinates = shape
+    .getAttribute('points')
+    ?.match(/-?(?:\d+(?:\.\d*)?|\.\d+)/g)
+    ?.map(Number);
+  return coordinates?.length === 8;
+}
+
+function diamondBoundary(bounds: Bounds): Point[] {
+  const center = pointAt(bounds, 0.5, 0.5);
+  return [
+    { x: center.x, y: bounds.y },
+    { x: bounds.x + bounds.width, y: center.y },
+    { x: center.x, y: bounds.y + bounds.height },
+    { x: bounds.x, y: center.y },
+  ];
+}
+
+export function diamondRayIntersection(origin: Point, direction: Point, bounds: Bounds) {
+  const cross = (left: Point, right: Point) => left.x * right.y - left.y * right.x;
+  const boundary = diamondBoundary(bounds);
+  return boundary
+    .map((start, index) => ({ start, end: boundary[(index + 1) % boundary.length] }))
+    .flatMap(({ start, end }) => {
+      const side = { x: end.x - start.x, y: end.y - start.y };
+      const denominator = cross(direction, side);
+      if (Math.abs(denominator) < 0.0001) return [];
+      const offset = { x: start.x - origin.x, y: start.y - origin.y };
+      const rayProgress = cross(offset, side) / denominator;
+      const sideProgress = cross(offset, direction) / denominator;
+      return rayProgress >= 0 && sideProgress >= 0 && sideProgress <= 1
+        ? [
+            {
+              point: {
+                x: origin.x + direction.x * rayProgress,
+                y: origin.y + direction.y * rayProgress,
+              },
+              rayProgress,
+            },
+          ]
+        : [];
+    })
+    .toSorted((left, right) => left.rayProgress - right.rayProgress)[0]?.point;
+}
+
 function distanceToShape(point: Point, bounds: Bounds, shape: SVGGraphicsElement) {
-  if (shape.dataset.diagramCylinder !== 'true') return distanceToBounds(point, bounds);
-  const boundary = cylinderBoundary(bounds, shape);
+  const boundary = isDiamondShape(shape)
+    ? diamondBoundary(bounds)
+    : shape.dataset.diagramCylinder === 'true'
+      ? cylinderBoundary(bounds, shape)
+      : null;
+  if (!boundary) return distanceToBounds(point, bounds);
   return Math.min(
-    ...boundary.slice(1).map((end, index) => distanceToSegment(point, boundary[index], end)),
+    ...boundary.map((start, index) =>
+      distanceToSegment(point, start, boundary[(index + 1) % boundary.length]),
+    ),
   );
 }
 
@@ -425,7 +486,10 @@ function rayShapeEntry(
   edgeTolerance = 0,
 ) {
   const boundsEntry = rayBoundsEntry(origin, direction, bounds, edgeTolerance);
-  if (!boundsEntry || shape.dataset.diagramCylinder !== 'true') return boundsEntry;
+  if (!boundsEntry) return null;
+  if (isDiamondShape(shape))
+    return diamondRayIntersection(origin, direction, bounds) ?? boundsEntry;
+  if (shape.dataset.diagramCylinder !== 'true') return boundsEntry;
   const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
   let near = Math.hypot(boundsEntry.x - origin.x, boundsEntry.y - origin.y);
   let far = (center.x - origin.x) * direction.x + (center.y - origin.y) * direction.y;
@@ -517,6 +581,10 @@ export function applyMermaidTerminalGaps(svg: SVGSVGElement, cssGap = 5) {
 
   for (const path of svg.querySelectorAll<SVGPathElement>('.edgePaths path[marker-end]')) {
     if (markerForPath(svg, path)?.dataset.diagramChevron !== 'true') continue;
+    const basePath = path.dataset.terminalGapBasePath ?? path.getAttribute('d');
+    if (!basePath) continue;
+    path.dataset.terminalGapBasePath = basePath;
+    path.setAttribute('d', basePath);
     const length = path.getTotalLength();
     if (length < 0.25) continue;
     const terminal = path.getPointAtLength(length);
@@ -785,6 +853,50 @@ export function repairFlowchartNodeOutlines(svg: SVGSVGElement) {
     outline.setAttribute('aria-hidden', 'true');
     outline.setAttribute('focusable', 'false');
     node.append(outline);
+  }
+}
+
+export function repairEntityDividers(svg: SVGSVGElement) {
+  if (svg.getAttribute('aria-roledescription') !== 'er') return;
+  for (const node of svg.querySelectorAll<SVGGElement>('g.node')) {
+    node
+      .querySelectorAll(':scope > .er-negative-space-divider')
+      .forEach((divider) => divider.remove());
+    const rows = [
+      ...node.querySelectorAll<SVGGElement>(':scope > .row-rect-odd, :scope > .row-rect-even'),
+    ].map((row) => row.getBBox());
+    if (!rows.length) continue;
+    const originalDividers = [...node.querySelectorAll<SVGGElement>(':scope > .divider')];
+    const verticalDividers = originalDividers
+      .map((divider) => divider.getBBox())
+      .filter((bounds) => bounds.height > bounds.width)
+      .toSorted((left, right) => right.x - left.x);
+    originalDividers.forEach((divider) => divider.remove());
+    const left = Math.min(...rows.map((row) => row.x));
+    const right = Math.max(...rows.map((row) => row.x + row.width));
+    const bottom = Math.max(...rows.map((row) => row.y + row.height));
+    const addDivider = (kind: 'row' | 'key', start: Point, end: Point) => {
+      const divider = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      divider.classList.add('er-negative-space-divider');
+      divider.dataset.dividerKind = kind;
+      divider.setAttribute('x1', String(start.x));
+      divider.setAttribute('y1', String(start.y));
+      divider.setAttribute('x2', String(end.x));
+      divider.setAttribute('y2', String(end.y));
+      divider.setAttribute('aria-hidden', 'true');
+      node.insertBefore(divider, node.querySelector(':scope > .label'));
+    };
+    for (const y of rows.map((row) => row.y)) {
+      addDivider('row', { x: left, y }, { x: right, y });
+    }
+    const hasKeys = [...node.querySelectorAll<SVGGElement>(':scope > .label.attribute-keys')].some(
+      (label) => Boolean(label.textContent?.trim()),
+    );
+    const keyBoundary = verticalDividers[0];
+    if (hasKeys && keyBoundary) {
+      const x = keyBoundary.x + keyBoundary.width / 2;
+      addDivider('key', { x, y: rows[0].y }, { x, y: bottom });
+    }
   }
 }
 
@@ -1107,7 +1219,12 @@ function routeGroupedReturnEdgesWithTarget(
         return bounds ? [bounds] : [];
       }),
     ];
-    const points = buildGroupedReturnLanePoints(source, target, occupied);
+    const points = buildGroupedReturnLanePoints(
+      source,
+      target,
+      occupied,
+      path.dataset.compactFlowchart === 'true',
+    );
     path.setAttribute(
       'd',
       points.map((point, pointIndex) => `${pointIndex ? 'L' : 'M'}${point.x},${point.y}`).join(''),
@@ -1156,6 +1273,9 @@ export function snapFlowchartFeedbackPorts(svg: SVGSVGElement) {
   const sourceBounds = source.getBoundingClientRect();
   const targetBounds = target.getBoundingClientRect();
   const targetId = path.dataset.feedbackTarget;
+  const targetOutDegree = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].filter(
+    (candidate) => flowchartEdgeIdentity(candidate)?.source === targetId,
+  ).length;
   const sameSidePorts = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].flatMap(
     (candidate) => {
       if (candidate === path) return [];
@@ -1202,6 +1322,29 @@ export function snapFlowchartFeedbackPorts(svg: SVGSVGElement) {
     sourceBounds.right,
     sourceBounds.top + sourceBounds.height / 2,
   ).matrixTransform(inverse);
+  if (targetOutDegree >= 3 && points.length >= 7) {
+    const targetPort = new DOMPoint(
+      targetBounds.left + targetBounds.width / 2,
+      targetBounds.top - 0.25,
+    ).matrixTransform(inverse);
+    const targetLead = new DOMPoint(
+      targetBounds.left + targetBounds.width / 2,
+      targetBounds.top - 12,
+    ).matrixTransform(inverse);
+    points[0] = { x: sourcePort.x, y: sourcePort.y };
+    points[1].y = sourcePort.y;
+    points[4] = { x: points[3].x, y: targetLead.y };
+    points[5] = { x: targetLead.x, y: targetLead.y };
+    points[6] = { x: targetPort.x, y: targetPort.y };
+    path.dataset.feedbackTargetSide = 'top';
+    path.dataset.manhattanPoints = points.map(({ x, y }) => `${x},${y}`).join(' ');
+    path.setAttribute(
+      'd',
+      points.map(({ x, y }, index) => `${index === 0 ? 'M' : 'L'}${x},${y}`).join(''),
+    );
+    placeFlowchartLabelOnRoute(flowchartLabelForPath(svg, path), path, points);
+    return;
+  }
   const targetPort = new DOMPoint(
     targetBounds.left + targetBounds.width / 2,
     targetBounds.bottom + 0.25,
@@ -1537,9 +1680,23 @@ export function snapFlowchartPorts(svg: SVGSVGElement) {
         } else {
           const distance = 24 + (Math.ceil(Math.abs(lane)) - 1) * 16;
           const above = lane < 0;
+          const corridorLeft = Math.min(sourceCenter.x, targetCenter.x);
+          const corridorRight = Math.max(sourceCenter.x, targetCenter.x);
+          const intervening = nodeObstacles.filter(
+            ({ node, bounds }) =>
+              node !== sourceNode &&
+              node !== targetNode &&
+              bounds.right > corridorLeft &&
+              bounds.left < corridorRight,
+          );
           const laneY = above
-            ? Math.min(source.top, target.top) - distance
-            : Math.max(source.bottom, target.bottom) + distance;
+            ? Math.min(source.top, target.top, ...intervening.map(({ bounds }) => bounds.top)) -
+              distance
+            : Math.max(
+                source.bottom,
+                target.bottom,
+                ...intervening.map(({ bounds }) => bounds.bottom),
+              ) + distance;
           const sourceY = above ? source.top : source.bottom;
           const targetY = above ? target.top : target.bottom;
           specialPoints = [
@@ -1575,6 +1732,86 @@ export function snapFlowchartPorts(svg: SVGSVGElement) {
   }
 }
 
+export function snapFlowchartDiamondPorts(svg: SVGSVGElement) {
+  if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2') return;
+  const portsByNode = new Map<string, Point[]>();
+  const distinctPort = (node: SVGGElement, origin: Point, direction: Point, bounds: Bounds) => {
+    const occupied = portsByNode.get(node.id) ?? [];
+    const directionLength = Math.hypot(direction.x, direction.y);
+    const separation = Math.min(bounds.width, bounds.height) * 0.12;
+    const candidates = [direction];
+    if (directionLength > 0.001) {
+      const perpendicular = {
+        x: -direction.y / directionLength,
+        y: direction.x / directionLength,
+      };
+      for (const multiplier of [1, -1, 2, -2]) {
+        candidates.push({
+          x: direction.x + perpendicular.x * separation * multiplier,
+          y: direction.y + perpendicular.y * separation * multiplier,
+        });
+      }
+    }
+    const port = candidates
+      .map((candidate) => diamondRayIntersection(origin, candidate, bounds))
+      .find(
+        (candidate): candidate is Point =>
+          Boolean(candidate) &&
+          occupied.every(
+            (current) => Math.hypot(candidate.x - current.x, candidate.y - current.y) >= 4,
+          ),
+      );
+    if (port) portsByNode.set(node.id, [...occupied, port]);
+    return port;
+  };
+  for (const path of svg.querySelectorAll<SVGPathElement>('.edgePaths path')) {
+    const identity = flowchartEdgeIdentity(path);
+    const sourceNode = identity && flowchartNode(svg, identity.source);
+    const targetNode = identity && flowchartNode(svg, identity.target);
+    const sourceShape = sourceNode && shapeForNode(sourceNode);
+    const targetShape = targetNode && shapeForNode(targetNode);
+    const points = (path.dataset.manhattanPoints ?? '')
+      .trim()
+      .split(/\s+/)
+      .map((point) => point.split(',').map(Number))
+      .filter((point) => point.length === 2 && point.every(Number.isFinite))
+      .map(([x, y]) => ({ x, y }));
+    if (points.length < 2) continue;
+    if (sourceShape && isDiamondShape(sourceShape)) {
+      const bounds = boundsInPathSpace(sourceShape, path);
+      if (bounds) {
+        const origin = pointAt(bounds, 0.5, 0.5);
+        const direction = { x: points[1].x - origin.x, y: points[1].y - origin.y };
+        const port = distinctPort(sourceNode, origin, direction, bounds);
+        if (port) {
+          points[0] = port;
+          path.dataset.diamondSourcePort = `${port.x},${port.y}`;
+        }
+      }
+    }
+    if (targetShape && isDiamondShape(targetShape)) {
+      const bounds = boundsInPathSpace(targetShape, path);
+      const previous = points[points.length - 2];
+      if (bounds) {
+        const origin = pointAt(bounds, 0.5, 0.5);
+        const direction = { x: previous.x - origin.x, y: previous.y - origin.y };
+        const port = targetNode && distinctPort(targetNode, origin, direction, bounds);
+        if (port && targetNode) {
+          points[points.length - 1] = port;
+          path.dataset.diamondTargetPort = `${port.x},${port.y}`;
+          path.dataset.terminalTarget = targetNode.id;
+          path.dataset.terminalDirection = `${port.x - previous.x},${port.y - previous.y}`;
+        }
+      }
+    }
+    path.dataset.manhattanPoints = points.map(({ x, y }) => `${x},${y}`).join(' ');
+    path.setAttribute(
+      'd',
+      points.map(({ x, y }, index) => `${index === 0 ? 'M' : 'L'}${x},${y}`).join(''),
+    );
+  }
+}
+
 export function routeFlowchartCenteredFanouts(svg: SVGSVGElement) {
   if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2') return;
   const edges = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].flatMap((path) => {
@@ -1595,7 +1832,58 @@ export function routeFlowchartCenteredFanouts(svg: SVGSVGElement) {
       return source && target ? [{ ...branch, targetId: branch.target, source, target }] : [];
     });
     if (routes.length !== branches.length) continue;
+    if (new Set(routes.map(({ targetId }) => targetId)).size !== routes.length) continue;
     const sourceRight = routes[0].source.x + routes[0].source.width;
+    const sourceBottom = routes[0].source.y + routes[0].source.height;
+    const sameDownstreamRank =
+      routes.length === 3 &&
+      routes.every((route) => route.target.y >= sourceBottom + 16) &&
+      Math.max(...routes.map((route) => route.target.y)) -
+        Math.min(...routes.map((route) => route.target.y)) <=
+        8;
+    if (sameDownstreamRank) {
+      const ordered = routes.toSorted(
+        (left, right) =>
+          left.target.x + left.target.width / 2 - (right.target.x + right.target.width / 2),
+      );
+      const source = ordered[0].source;
+      const sourceCenterY = source.y + source.height / 2;
+      const starts = [
+        { x: source.x, y: sourceCenterY },
+        { x: source.x + source.width / 2, y: sourceBottom },
+        { x: sourceRight, y: sourceCenterY },
+      ];
+      ordered.forEach((route, index) => {
+        const start = starts[index];
+        const outward =
+          index === 0
+            ? { x: start.x - 16, y: start.y }
+            : index === 1
+              ? { x: start.x, y: start.y + 16 }
+              : { x: start.x + 16, y: start.y };
+        const targetX = route.target.x + route.target.width / 2;
+        const targetY = route.target.y;
+        const laneY = targetY - 16;
+        const points = [outward, { x: outward.x, y: laneY }, { x: targetX, y: laneY }];
+        points.unshift(start);
+        points.push({ x: targetX, y: targetY });
+        route.path.setAttribute(
+          'd',
+          points
+            .map((point, pointIndex) => `${pointIndex ? 'L' : 'M'}${point.x},${point.y}`)
+            .join(''),
+        );
+        route.path.dataset.fanoutSource = sourceId;
+        route.path.dataset.fanoutTarget = route.targetId;
+        route.path.dataset.fanoutPort = `${start.x},${start.y}`;
+        route.path.dataset.fanoutTrunk = `${start.x},${start.y} ${outward.x},${outward.y}`;
+        route.path.dataset.manhattanPoints = points
+          .map((point) => `${point.x},${point.y}`)
+          .join(' ');
+        placeFlowchartLabelOnRoute(flowchartLabelForPath(svg, route.path), route.path, points);
+      });
+      continue;
+    }
     if (routes.some((route) => route.target.x <= sourceRight + 16)) continue;
     const firstTargetX = Math.min(...routes.map((route) => route.target.x));
     const trunkX = sourceRight + Math.min(36, Math.max(16, (firstTargetX - sourceRight) / 2));
@@ -1630,8 +1918,8 @@ function placeDecisionLabel(label: SVGGElement, path: SVGPathElement, start: Poi
   const labelParentMatrix = (label.parentElement as SVGGraphicsElement | null)?.getCTM();
   if (!pathMatrix || !labelParentMatrix) return;
   const midpoint = {
-    x: start.x + (end.x - start.x) * 0.85,
-    y: start.y + (end.y - start.y) * 0.85,
+    x: start.x + (end.x - start.x) * 0.55,
+    y: start.y + (end.y - start.y) * 0.55,
   };
   const center = new DOMPoint(midpoint.x, midpoint.y)
     .matrixTransform(pathMatrix)
@@ -2102,8 +2390,8 @@ function routeCompactGroupedEdges(svg: SVGSVGElement) {
   const allBounds = nodes
     .map(flowchartNodeBounds)
     .filter((bounds): bounds is Bounds => Boolean(bounds));
-  const outerLeft = Math.min(...allBounds.map((bounds) => bounds.x)) - 36;
-  const outerRight = Math.max(...allBounds.map((bounds) => bounds.x + bounds.width)) + 36;
+  const outerLeft = Math.min(...allBounds.map((bounds) => bounds.x)) - 24;
+  const outerRight = Math.max(...allBounds.map((bounds) => bounds.x + bounds.width)) + 24;
   for (const route of routes) {
     const { path, source: sourceId, target: targetId, side } = route;
     const sourceNode = flowchartNode(svg, sourceId);
@@ -2165,7 +2453,7 @@ export function routeFlowchartAroundClusterHeaders(svg: SVGSVGElement) {
   if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2') return;
   const clusters = [...svg.querySelectorAll<SVGGElement>('g.cluster')];
   for (const path of svg.querySelectorAll<SVGPathElement>('.edgePaths path')) {
-    if (path.dataset.feedbackLane || path.dataset.compactGroupedRoute) continue;
+    if (path.dataset.feedbackLane) continue;
     const fanoutIdentity = path.dataset.fanoutSource && flowchartEdgeIdentity(path);
     const fanoutSourceNode = fanoutIdentity && flowchartNode(svg, fanoutIdentity.source);
     const fanoutTargetNode = fanoutIdentity && flowchartNode(svg, fanoutIdentity.target);
@@ -2476,6 +2764,14 @@ export function positionCompactGroupedEdgeLabels(svg: SVGSVGElement) {
         )[0];
     }
     if (!placement) return;
+    if (path.dataset.groupedReturnLane === 'right' && !placement.horizontal) {
+      const inset = local.width / 2 - 6;
+      placement = {
+        ...placement,
+        center: { ...placement.center, x: placement.center.x - inset },
+        bounds: { ...placement.bounds, x: placement.bounds.x - inset },
+      };
+    }
     const pathMatrix = path.getCTM();
     const labelParentMatrix = (label.parentElement as SVGGraphicsElement | null)?.getCTM();
     const center =
@@ -2601,7 +2897,7 @@ function stateRoutePoints(
 ): Point[] {
   const left = Math.min(...allNodes.map((bounds) => bounds.x));
   const right = Math.max(...allNodes.map((bounds) => bounds.x + bounds.width));
-  const bottom = Math.max(...allNodes.map((bounds) => bounds.y + bounds.height));
+  const top = Math.min(...allNodes.map((bounds) => bounds.y));
   const sourceBottom = pointAt(source, 0.5, 1);
   const targetTop = pointAt(target, 0.5, 0);
   if (label === STATE_LABEL.userSendsMessage) return [sourceBottom, targetTop];
@@ -2706,15 +3002,15 @@ function stateRoutePoints(
         failureTarget,
       ];
     }
-    const failSource = pointAt(source, 0, 1);
+    const failSource = pointAt(source, 0.5, 0);
     const failureTarget = pointAt(target, 0, 0.5);
-    const targetLaneX = failureTarget.x - 20;
-    const laneY = bottom + (compact ? 25 : 45);
+    const laneX = left - 80;
+    const upperLaneY = top - 40;
     return [
       failSource,
-      { x: failSource.x, y: laneY },
-      { x: targetLaneX, y: laneY },
-      { x: targetLaneX, y: failureTarget.y },
+      { x: failSource.x, y: upperLaneY },
+      { x: laneX, y: upperLaneY },
+      { x: laneX, y: failureTarget.y },
       failureTarget,
     ];
   }
@@ -2937,6 +3233,51 @@ export function rewriteStateRoutes(svg: SVGSVGElement, compact = false) {
     ...routePoints.map((point) => point.y),
   );
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+export function repairUpwardStateFailureRoutes(svg: SVGSVGElement) {
+  if (!svg.classList.contains('statediagram')) return;
+  const paths = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')];
+  const labels = [...svg.querySelectorAll<SVGGElement>('.edgeLabels > .edgeLabel')];
+  paths.forEach((path, index) => {
+    const label = labels[index];
+    if (label?.textContent?.replace(/\s+/g, ' ').trim().toLowerCase() !== 'fail') return;
+    const length = path.getTotalLength();
+    if (!length) return;
+    const start = path.getPointAtLength(0);
+    const end = path.getPointAtLength(length);
+    const nodes = [...svg.querySelectorAll<SVGGElement>('g.node')].flatMap((node) => {
+      const shape = shapeForNode(node);
+      const bounds = shape && boundsInPathSpace(shape, path);
+      return shape && bounds ? [{ node, bounds }] : [];
+    });
+    const source = nodes.toSorted(
+      (left, right) => distanceToBounds(start, left.bounds) - distanceToBounds(start, right.bounds),
+    )[0];
+    const target = nodes.toSorted(
+      (left, right) => distanceToBounds(end, left.bounds) - distanceToBounds(end, right.bounds),
+    )[0];
+    if (!source || !target || source === target || target.bounds.y >= source.bounds.y) return;
+    const overlapLeft = Math.max(source.bounds.x, target.bounds.x);
+    const overlapRight = Math.min(
+      source.bounds.x + source.bounds.width,
+      target.bounds.x + target.bounds.width,
+    );
+    if (overlapRight <= overlapLeft) return;
+    const x = overlapLeft + (overlapRight - overlapLeft) * 0.75;
+    const points = [
+      { x, y: source.bounds.y },
+      { x, y: target.bounds.y + target.bounds.height },
+    ];
+    path.setAttribute('d', `M${points[0].x},${points[0].y}L${points[1].x},${points[1].y}`);
+    path.dataset.manhattanPoints = points.map((point) => `${point.x},${point.y}`).join(' ');
+    path.dataset.manhattanSegments = '1';
+    path.dataset.labelSegment = `${points[0].x},${points[0].y} ${points[1].x},${points[1].y}`;
+    path.dataset.routeLabel = 'fail';
+    path.dataset.terminalTarget = target.node.id;
+    path.dataset.terminalDirection = '0,-1';
+    label.dataset.routePathId = path.id;
+  });
 }
 
 export function placeStateLabelsOnFinalRoutes(svg: SVGSVGElement, compact = false): Bounds | null {

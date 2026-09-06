@@ -686,10 +686,143 @@ async function expectStateObstacleGeometry(page: Page, context: string) {
   );
 }
 
-async function expectNestedReviewGeometry(page: Page, context: string) {
+async function expectStateFailureTerminal(page: Page, context: string) {
+  const geometry = await page
+    .locator('#mermaid-state-recovery svg[data-layout-settled=true]')
+    .evaluate((svg) => {
+      const labels = [...svg.querySelectorAll<SVGGElement>('.edgeLabels > .edgeLabel')];
+      const paths = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')];
+      const path = paths.find((_, index) => labels[index]?.textContent?.trim() === 'fail')!;
+      const points = (path.dataset.manhattanPoints ?? '').split(' ').map((value) => {
+        const [x, y] = value.split(',').map(Number);
+        return { x, y };
+      });
+      return {
+        pointCount: points.length,
+        verticalDrift: Math.abs(points[0].x - points.at(-1)!.x),
+        rise: points[0].y - points.at(-1)!.y,
+        direction: path.dataset.terminalDirection,
+        marker: path.getAttribute('marker-end'),
+        moveCommands: (path.getAttribute('d')?.match(/M/g) ?? []).length,
+      };
+    });
+  expect(geometry.pointCount, `${context} fail segments`).toBe(2);
+  expect(geometry.verticalDrift, `${context} fail shaft alignment`).toBeLessThanOrEqual(0.01);
+  expect(geometry.rise, `${context} upward fail terminal`).toBeGreaterThan(40);
+  expect(geometry.direction, `${context} fail arrow direction`).toBe('0,-1');
+  expect(geometry.marker, `${context} fail marker`).toContain('barbEnd');
+  expect(geometry.moveCommands, `${context} continuous fail route`).toBe(1);
+}
+
+async function expectEntityDividerGeometry(page: Page, state: string, context: string) {
+  const geometry = await page.locator(`#${state} svg[data-layout-settled=true]`).evaluate((svg) => {
+    const canvas = getComputedStyle(svg).backgroundColor;
+    const entities = [...svg.querySelectorAll<SVGGElement>('g.node')].flatMap((node) => {
+      const rows = [
+        ...node.querySelectorAll<SVGGraphicsElement>(
+          ':scope > .row-rect-odd, :scope > .row-rect-even',
+        ),
+      ];
+      if (!rows.length) return [];
+      const dividers = [
+        ...node.querySelectorAll<SVGLineElement>(':scope > .er-negative-space-divider'),
+      ];
+      const textBounds = [...node.querySelectorAll<SVGGraphicsElement>('text, foreignObject')].map(
+        (text) => text.getBoundingClientRect(),
+      );
+      const crossings = dividers.flatMap((divider) => {
+        const matrix = divider.getScreenCTM()!;
+        const start = new DOMPoint(
+          Number(divider.getAttribute('x1')),
+          Number(divider.getAttribute('y1')),
+        ).matrixTransform(matrix);
+        const end = new DOMPoint(
+          Number(divider.getAttribute('x2')),
+          Number(divider.getAttribute('y2')),
+        ).matrixTransform(matrix);
+        return textBounds.filter((bounds) =>
+          divider.dataset.dividerKind === 'row'
+            ? start.y > bounds.top + 1 &&
+              start.y < bounds.bottom - 1 &&
+              Math.max(start.x, end.x) > bounds.left &&
+              Math.min(start.x, end.x) < bounds.right
+            : start.x > bounds.left + 1 &&
+              start.x < bounds.right - 1 &&
+              Math.max(start.y, end.y) > bounds.top &&
+              Math.min(start.y, end.y) < bounds.bottom,
+        );
+      });
+      return [
+        {
+          rows: rows.length,
+          rowDividers: dividers.filter((divider) => divider.dataset.dividerKind === 'row').length,
+          keyDividers: dividers.filter((divider) => divider.dataset.dividerKind === 'key').length,
+          canvasStrokes: dividers.every((divider) => getComputedStyle(divider).stroke === canvas),
+          crossings: crossings.length,
+        },
+      ];
+    });
+    return {
+      entities,
+      keys: [...svg.querySelectorAll<SVGGraphicsElement>('.label.attribute-keys')]
+        .map((label) => label.textContent?.trim())
+        .filter(Boolean),
+      originalDividers: svg.querySelectorAll('g.node > .divider').length,
+    };
+  });
+  expect(geometry.entities.length, `${context} populated entities`).toBe(
+    state.includes('minimal') ? 1 : 2,
+  );
+  expect(geometry.entities.every(({ rows, rowDividers }) => rows === rowDividers)).toBe(true);
+  expect(geometry.entities.every(({ keyDividers }) => keyDividers === 1)).toBe(true);
+  expect(geometry.entities.every(({ canvasStrokes }) => canvasStrokes)).toBe(true);
+  expect(geometry.entities.every(({ crossings }) => crossings === 0)).toBe(true);
+  expect(geometry.originalDividers, `${context} original grid dividers`).toBe(0);
+  expect(geometry.keys).toContain('PK');
+  if (!state.includes('minimal')) expect(geometry.keys).toContain('FK');
+}
+
+async function expectServiceBoundaryRouting(page: Page, context: string, width: number) {
+  const geometry = await page.locator('#custom-service-boundaries').evaluate((root) => {
+    const path = (id: string) =>
+      root.querySelector<SVGPathElement>(`.diagram-edge[data-edge-id="${id}"] .edge-path`)!;
+    const group = (id: string) =>
+      root.querySelector<SVGGraphicsElement>(`.diagram-group[data-group-id="${id}"]`)!;
+    const enqueue = path('sb2');
+    const manifest = path('sb4');
+    const endpointGroups = [group('ingress'), group('processing')].map((item) =>
+      item.getBoundingClientRect(),
+    );
+    const enqueueBounds = enqueue.getBoundingClientRect();
+    const manifestStart = manifest.getPointAtLength(0);
+    const manifestEnd = manifest.getPointAtLength(manifest.getTotalLength());
+    return {
+      enqueueExteriorGap:
+        Math.min(...endpointGroups.map((bounds) => bounds.left)) - enqueueBounds.left,
+      enqueueMoveCommands: (enqueue.getAttribute('d')?.match(/M/g) ?? []).length,
+      manifestLength: manifest.getTotalLength(),
+      manifestStraightDistance: Math.hypot(
+        manifestEnd.x - manifestStart.x,
+        manifestEnd.y - manifestStart.y,
+      ),
+      manifestBends: (manifest.getAttribute('d')?.match(/[QL]/g) ?? []).length - 1,
+    };
+  });
+  expect(geometry.enqueueMoveCommands, `${context} continuous enqueue route`).toBe(1);
+  if (width >= 960) {
+    expect(geometry.enqueueExteriorGap, `${context} left exterior enqueue lane`).toBeGreaterThan(8);
+  }
+  expect(
+    geometry.manifestLength - geometry.manifestStraightDistance,
+    `${context} shortest manifest corridor`,
+  ).toBeLessThanOrEqual(1);
+  expect(geometry.manifestBends, `${context} manifest bends`).toBe(0);
+}
+
+async function expectNestedReviewGeometry(page: Page, context: string, width: number) {
   const geometry = await page
     .locator('#mermaid-nested-routing svg[data-layout-settled=true]')
-    .evaluate((svg) => {
+    .evaluate((svg, landscape) => {
       const nodes = [...svg.querySelectorAll<SVGGElement>('g.node')].map((node) => ({
         text: node.textContent?.trim() ?? '',
         bounds: node.getBoundingClientRect(),
@@ -738,6 +871,10 @@ async function expectNestedReviewGeometry(page: Page, context: string) {
         const start = screenPoint(path, 0);
         const end = screenPoint(path, 1);
         const bounds = path.getBoundingClientRect();
+        if (landscape) {
+          const terminalCenterY = (start.y + end.y) / 2;
+          return terminalCenterY - bounds.top > bounds.bottom - terminalCenterY ? 'upper' : 'lower';
+        }
         const terminalCenterX = (start.x + end.x) / 2;
         return terminalCenterX - bounds.left > bounds.right - terminalCenterX ? 'left' : 'right';
       };
@@ -758,8 +895,84 @@ async function expectNestedReviewGeometry(page: Page, context: string) {
             label.bottom > bounds.top,
         ),
       ).length;
+      const groups = [...svg.querySelectorAll<SVGGElement>('g.cluster')].map((group) => {
+        const bounds = group
+          .querySelector<SVGGraphicsElement>(':scope > rect')!
+          .getBoundingClientRect();
+        return {
+          text: group.querySelector(':scope > .cluster-label')?.textContent?.trim(),
+          bounds,
+        };
+      });
+      const ready = [...svg.querySelectorAll<SVGGElement>('g.node')].find(
+        (node) => node.textContent?.trim() === 'Ready?',
+      )!;
+      const readyBounds = ready.getBoundingClientRect();
+      const center = {
+        x: (readyBounds.left + readyBounds.right) / 2,
+        y: (readyBounds.top + readyBounds.bottom) / 2,
+      };
+      const diamondBoundary = [
+        { x: center.x, y: readyBounds.top },
+        { x: readyBounds.right, y: center.y },
+        { x: center.x, y: readyBounds.bottom },
+        { x: readyBounds.left, y: center.y },
+      ];
+      const segmentDistance = (
+        point: DOMPoint,
+        start: { x: number; y: number },
+        end: { x: number; y: number },
+      ) => {
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const progress = Math.max(
+          0,
+          Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)),
+        );
+        return Math.hypot(point.x - (start.x + dx * progress), point.y - (start.y + dy * progress));
+      };
+      const diamondRoutes = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')]
+        .filter((path) => path.id.includes('_Validate_'))
+        .map((path) => {
+          const matrix = path.getScreenCTM()!;
+          const logical = (path.dataset.manhattanPoints ?? '').split(' ').map((value) => {
+            const [x, y] = value.split(',').map(Number);
+            return new DOMPoint(x, y).matrixTransform(matrix);
+          });
+          const outbound = path.id.includes('-L_Validate_');
+          const port = outbound ? logical[0] : logical.at(-1)!;
+          const adjacent = outbound ? logical[1] : logical.at(-2)!;
+          const actual = path
+            .getPointAtLength(outbound ? 0 : path.getTotalLength())
+            .matrixTransform(matrix);
+          const normalized =
+            Math.abs(port.x - center.x) / (readyBounds.width / 2) +
+            Math.abs(port.y - center.y) / (readyBounds.height / 2);
+          return {
+            port: `${port.x.toFixed(1)},${port.y.toFixed(1)}`,
+            boundaryError: Math.abs(normalized - 1),
+            boundaryGap: Math.min(
+              ...diamondBoundary.map((start, index) =>
+                segmentDistance(actual, start, diamondBoundary[(index + 1) % 4]),
+              ),
+            ),
+            outbound,
+            tangent: Math.hypot(port.x - adjacent.x, port.y - adjacent.y),
+            marker: path.getAttribute('marker-end'),
+            moveCommands: (path.getAttribute('d')?.match(/M/g) ?? []).length,
+          };
+        });
       return {
-        progression: nodes.map(({ text, bounds }) => ({ text, top: bounds.top })),
+        progression: nodes.map(({ text, bounds }) => ({
+          text,
+          left: bounds.left,
+          top: bounds.top,
+        })),
+        groupRatios: groups.map(({ text, bounds }) => ({
+          text,
+          ratio: bounds.width / bounds.height,
+        })),
+        diamondRoutes,
         crossings,
         labelNodeOverlaps,
         intakeSides: new Set(intake.map(lane)).size,
@@ -770,15 +983,34 @@ async function expectNestedReviewGeometry(page: Page, context: string) {
         reciprocalSides: new Set(reciprocal.map(lane)).size,
         reciprocalPorts: new Set(reciprocal.map(ports)).size,
       };
-    });
-  const tops = new Map(geometry.progression.map(({ text, top }) => [text, top]));
-  expect(tops.get('Item'), `${context} Item before Ready`).toBeLessThan(tops.get('Ready?')!);
-  expect(tops.get('Ready?'), `${context} Ready before Context`).toBeLessThan(tops.get('Context')!);
-  expect(tops.get('Context'), `${context} Context before Decision`).toBeLessThan(
-    tops.get('Decision')!,
+    }, width >= 960);
+  const axis = new Map(
+    geometry.progression.map(({ text, left, top }) => [text, width >= 960 ? left : top]),
   );
+  expect(axis.get('Item'), `${context} Item before Ready`).toBeLessThan(axis.get('Ready?')!);
+  expect(axis.get('Ready?'), `${context} Ready before Context`).toBeLessThan(axis.get('Context')!);
+  expect(axis.get('Context'), `${context} Context before Decision`).toBeLessThan(
+    axis.get('Decision')!,
+  );
+  expect(axis.get('Decision'), `${context} Decision before Log`).toBeLessThan(axis.get('Log')!);
+  if (width >= 960) {
+    for (const group of geometry.groupRatios) {
+      expect(group.ratio, `${context} ${group.text} landscape ratio`).toBeGreaterThan(1);
+    }
+  }
   expect(geometry.crossings, `${context} unrelated node crossings`).toEqual([]);
   expect(geometry.labelNodeOverlaps, `${context} label/node overlaps`).toBe(0);
+  expect(geometry.diamondRoutes, `${context} Ready? incident routes`).toHaveLength(6);
+  expect(geometry.diamondRoutes.every(({ boundaryError }) => boundaryError <= 0.03)).toBe(true);
+  expect(new Set(geometry.diamondRoutes.map(({ port }) => port)).size).toBe(6);
+  expect(
+    geometry.diamondRoutes.every(({ outbound, boundaryGap }) =>
+      outbound ? boundaryGap <= 1 : boundaryGap >= 4 && boundaryGap <= 7,
+    ),
+  ).toBe(true);
+  expect(geometry.diamondRoutes.every(({ tangent }) => tangent >= 6)).toBe(true);
+  expect(geometry.diamondRoutes.every(({ marker }) => marker?.includes('pointEnd'))).toBe(true);
+  expect(geometry.diamondRoutes.every(({ moveCommands }) => moveCommands === 1)).toBe(true);
   expect(geometry.intakeSides).toBe(2);
   expect(geometry.intakePorts).toBe(2);
   expect(geometry.intakeDashes).toBe(2);
@@ -1406,8 +1638,7 @@ for (const appearance of [
             (left, right) => left.x - right.x,
           );
           return {
-            feedbackFraction: (feedback.at(-1)!.x - source.left) / source.width,
-            feedbackBeforeParse: feedback.at(-1)!.x < parse[0].x,
+            feedbackTopFraction: (feedback.at(-1)!.y - source.top) / source.height,
             feedbackParseGap: Math.abs(feedback.at(-1)!.x - parse[0].x),
             feedbackStub: Math.hypot(
               feedback.at(-1)!.x - feedback.at(-2)!.x,
@@ -1421,9 +1652,8 @@ for (const appearance of [
             marker: feedbackPath.getAttribute('marker-end'),
           };
         });
-      expect(geometry.feedbackFraction).toBeGreaterThan(0.15);
-      expect(geometry.feedbackFraction).toBeLessThan(0.3);
-      expect(geometry.feedbackBeforeParse).toBe(true);
+      expect(geometry.feedbackTopFraction).toBeGreaterThan(-0.01);
+      expect(geometry.feedbackTopFraction).toBeLessThan(0.01);
       expect(geometry.feedbackParseGap).toBeGreaterThanOrEqual(4);
       expect(geometry.feedbackStub).toBeGreaterThanOrEqual(6);
       expect(geometry.parseStub).toBeGreaterThanOrEqual(8);
@@ -1958,13 +2188,33 @@ for (const appearance of [
       await expect(async () => {
         await expectTerminalArrowGeometry(page, 'mermaid-state-recovery', stateRecoveryTargets);
       }).toPass({ timeout: 10_000 });
+      await expectStateFailureTerminal(page, `${appearance.name}/${width}/state-recovery`);
 
       await openState(page, 'mermaid-nested-routing', width, appearance.mode);
       await expect(page.locator('#mermaid-nested-routing .mermaid-renderer')).toHaveAttribute(
         'data-render-settled',
         'true',
       );
-      await expectNestedReviewGeometry(page, `${appearance.name}/${width}/nested`);
+      await expectNestedReviewGeometry(page, `${appearance.name}/${width}/nested`, width);
+
+      await openState(page, 'custom-service-boundaries', width, appearance.mode);
+      await expect(colorTheme).toContainText(appearance.colorTheme);
+      await expectServiceBoundaryRouting(
+        page,
+        `${appearance.name}/${width}/service-boundaries`,
+        width,
+      );
+
+      if (width !== 420) {
+        for (const state of [
+          'mermaid-entity-relationship',
+          'mermaid-minimal-entity-relationship',
+        ]) {
+          await openState(page, state, width, appearance.mode);
+          await expect(colorTheme).toContainText(appearance.colorTheme);
+          await expectEntityDividerGeometry(page, state, `${appearance.name}/${width}/${state}`);
+        }
+      }
     });
   }
 }

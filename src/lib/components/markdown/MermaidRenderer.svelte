@@ -32,6 +32,7 @@
     placeStateLabelsOnFinalRoutes,
     positionCompactGroupedEdgeLabels,
     reflowCompactFlowchart,
+    repairEntityDividers,
     refineMermaidCylinderNodes,
     repairFlowchartNodeOutlines,
     reserveFlowchartClusterHeaderBands,
@@ -43,6 +44,8 @@
     routeFlowchartDecisionBranches,
     routeFlowchartFeedbackLane,
     routeGroupedReturnEdges,
+    repairUpwardStateFailureRoutes,
+    snapFlowchartDiamondPorts,
     snapFlowchartFanoutPorts,
     snapFlowchartPorts,
     snapFlowchartFeedbackPorts,
@@ -1078,6 +1081,7 @@ ${verticalSource}`;
     padMermaidEdgeLabels(svg);
     addMermaidLabelKnockouts(svg);
     reserveFlowchartClusterHeaderBands(svg);
+    repairEntityDividers(svg);
     refineMermaidCylinderNodes(svg);
     repairFlowchartNodeOutlines(svg);
     if (compactLayout) {
@@ -1111,6 +1115,7 @@ ${verticalSource}`;
     const shouldRewriteStateRoutes =
       !normalizedState || svg.dataset.stateRouteLayout !== stateRouteLayout;
     if (shouldRewriteStateRoutes) rewriteStateRoutes(svg, narrowLayout);
+    repairUpwardStateFailureRoutes(svg);
     if (normalizedState && shouldRewriteStateRoutes) {
       svg.dataset.stateRouteLayout = stateRouteLayout;
     }
@@ -1152,9 +1157,11 @@ ${verticalSource}`;
     if (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) return false;
     const flowchart = svg.getAttribute('aria-roledescription') === 'flowchart-v2';
     const groupedFlowchart = Boolean(svg.querySelector('g.cluster'));
-    const padding = flowchart
+    let padding = flowchart
       ? compactLayout
-        ? 12
+        ? svg.querySelector('g.cluster')
+          ? 14
+          : 20
         : 28
       : groupedFlowchart
         ? 24
@@ -1219,9 +1226,13 @@ ${verticalSource}`;
       snapFlowchartFanoutPorts(svg);
       snapFlowchartFeedbackPorts(svg);
       routeFlowchartClientRequestLane(svg);
+      snapFlowchartDiamondPorts(svg);
       roundOrthogonalBends(svg);
       if (groupedFlowchart) positionCompactGroupedEdgeLabels(svg);
       alignMermaidOpenArrowheads(svg);
+      if (compactLayout && svg.querySelector('path[data-grouped-return-lane="right"]')) {
+        padding = Math.max(padding, 23);
+      }
       const finalBounds = measureFinalFlowchartBounds(svg);
       width = Math.ceil(finalBounds.width + padding * 2);
       height = Math.ceil(finalBounds.height + padding * 2);
@@ -1252,6 +1263,9 @@ ${verticalSource}`;
       svg.setAttribute('width', String(width));
       svg.setAttribute('height', String(height));
       setReadableMermaidWidth(svg, width);
+      if (groupedFlowchart) {
+        svg.style.setProperty('--mermaid-readable-width', '0px');
+      }
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       if (generation !== renderGeneration || fit !== fitGeneration) return false;
     }
@@ -1684,6 +1698,13 @@ ${verticalSource}`;
   .mermaid-presentation :global(.classDiagram .class-box-divider) {
     stroke: hsl(var(--border)) !important;
     stroke-width: var(--line-hairline) !important;
+    pointer-events: none;
+  }
+
+  .mermaid-presentation :global(.erDiagram .er-negative-space-divider) {
+    stroke: var(--diagram-canvas) !important;
+    stroke-width: 2px !important;
+    vector-effect: non-scaling-stroke;
     pointer-events: none;
   }
 
