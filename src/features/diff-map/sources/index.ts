@@ -10,7 +10,7 @@ import { LineType, type DiffChunk } from '$shared/types';
 import { buildDiffMapDocument } from '../model/build-document';
 import type { DiffMapDocument, DiffMapFileStatus, DiffMapSource } from '../model/types';
 
-export interface PullRequestDiffFile {
+interface PullRequestDiffFile {
   path: string;
   additions?: number;
   deletions?: number;
