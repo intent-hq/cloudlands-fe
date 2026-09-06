@@ -483,7 +483,9 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
       const ws = seed();
       daemonWorkspaces.set(ws.id, { ...ws });
 
+      expect(reconnectHandlers.size).toBe(0);
       await service.listWorkspaces();
+      expect(reconnectHandlers.size).toBe(1);
       for (const handler of reconnectHandlers) handler();
       await service.listWorkspaces();
 
