@@ -3341,7 +3341,8 @@
             {#if isViewed}
               <Fa icon={faCheck} class="w-2! h-2! text-primary-foreground" />
             {:else if changedSinceViewed}
-              <span class="text-xs font-bold leading-none text-amber-600" aria-hidden="true">!</span>
+              <span class="text-xs font-bold leading-none text-amber-600" aria-hidden="true">!</span
+              >
             {/if}
           </span>
           <span class="text-xs text-subtle">
