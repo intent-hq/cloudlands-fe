@@ -34,6 +34,8 @@ vi.mock('$lib/constants/specialists', () => ({
       description: 'Default',
       defaultBehaviorPrompt: 'Default prompt',
       hidden: true,
+      defaultModel: 'gpt',
+      reasoningEffort: 'high',
     },
   ],
 }));
@@ -247,6 +249,30 @@ describe('specialistsSaga', () => {
       ([action]) => action.type === setBundledSpecialists.type,
     )?.[0];
     expect(bundledAction.payload[0].map((s: { id: string }) => s.id)).toEqual(['builtin']);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('carries reasoningEffort through the hardcoded fallback mapping', async () => {
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel: stdChannel(), dispatch, getState: () => sagaState() },
+      specialistsSaga,
+    );
+    await settle();
+    mocks.subscription?.([]);
+    await settle();
+    const bundledAction = dispatch.mock.calls.find(
+      ([action]) => action.type === setBundledSpecialists.type,
+    )?.[0];
+    expect(bundledAction.payload[0]).toEqual([
+      expect.objectContaining({
+        id: 'builtin',
+        source: 'bundled',
+        defaultModel: 'gpt',
+        reasoningEffort: 'high',
+      }),
+    ]);
     task.cancel();
     await task.toPromise();
   });
