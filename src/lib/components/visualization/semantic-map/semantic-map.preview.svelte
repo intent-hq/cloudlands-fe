@@ -3,7 +3,16 @@
   import { definePreview } from '$lib/component-catalog/preview-definition';
 
   export type SemanticMapPreviewState =
-    'rest' | 'busy' | 'route' | 'focus-region' | 'replay' | 'unsorted-heavy';
+    | 'rest'
+    | 'busy'
+    | 'route'
+    | 'focus-region'
+    | 'replay'
+    | 'unsorted-heavy'
+    | 'detail-region'
+    | 'detail-agent'
+    | 'detail-route'
+    | 'detail-crossing';
 
   export interface SemanticMapPreviewProps {
     state: SemanticMapPreviewState;
@@ -24,6 +33,10 @@
       'focus-region': previewState('focus-region'),
       replay: previewState('replay'),
       'unsorted-heavy': previewState('unsorted-heavy'),
+      'detail-region': previewState('detail-region'),
+      'detail-agent': previewState('detail-agent'),
+      'detail-route': previewState('detail-route'),
+      'detail-crossing': previewState('detail-crossing'),
     },
   });
 </script>
@@ -34,6 +47,7 @@
   import { Button } from '$lib/components/ui/button';
   import { Slider } from '$lib/components/ui/slider';
   import SemanticMapCanvas from './SemanticMapCanvas.svelte';
+  import SemanticMapDetail, { type SemanticMapDetailSelection } from './SemanticMapDetail.svelte';
   import manifestJson from './fixtures/intent-manifest.json';
   import { computeBudget } from './layout/budget';
   import { placeRegions } from './layout/place';
@@ -55,8 +69,9 @@
     return Number.isInteger(value) && value >= 240 && value <= maximum ? value : fallback;
   }
 
-  const width = queryDimension('w', 900, 1600);
+  const width = queryDimension('w', 1200, 1600);
   const height = queryDimension('h', 620, 1200);
+  const canvasWidth = Math.max(240, width - 304);
   const script = createSemanticMapScript();
   const baseManifest = manifestJson as Manifest;
   const kinds = ['read', 'edit', 'tool', 'thinking'] as const;
@@ -77,13 +92,46 @@
   let playing = $state(initialMode === 'busy');
   let selectedAgentIds = $state<string[]>(SCRIPT_AGENTS.map(({ id }) => id));
   let enabledKinds = $state<MapActivityKind[]>([...kinds]);
-  let selection = $state<SemanticMapSelection>(
-    initialMode === 'route'
-      ? { type: 'agent', agentId: SCRIPT_AGENTS[0].id }
-      : initialMode === 'focus-region'
-        ? { type: 'region', regionIds: ['renderer-ui'] }
-        : null,
+  let routeAgentId = $state<string | null>(
+    initialMode === 'route' ||
+      initialMode === 'detail-agent' ||
+      initialMode === 'detail-route' ||
+      initialMode === 'detail-crossing'
+      ? SCRIPT_AGENTS[0].id
+      : null,
   );
+  let selection = $state<SemanticMapSelection>(
+    initialMode === 'route' || initialMode === 'detail-agent'
+      ? { type: 'agent', agentId: SCRIPT_AGENTS[0].id }
+      : initialMode === 'focus-region' || initialMode === 'detail-region'
+        ? { type: 'region', regionIds: ['renderer-ui'] }
+        : initialMode === 'detail-route' || initialMode === 'detail-crossing'
+          ? { type: 'route' }
+          : null,
+  );
+  let detailSelection = $state<SemanticMapDetailSelection>(
+    initialMode === 'detail-region'
+      ? { type: 'region', regionId: 'renderer-ui' }
+      : initialMode === 'detail-agent'
+        ? { type: 'agent', agentId: SCRIPT_AGENTS[0].id }
+        : initialMode === 'detail-route'
+          ? { type: 'route' }
+          : initialMode === 'detail-crossing'
+            ? { type: 'crossing', transitionIndex: 0 }
+            : null,
+  );
+  const detailAgents = SCRIPT_AGENTS.map(({ id, name }, index) => ({
+    id,
+    name,
+    status: ['active', 'waiting', 'completed'][index], // i18n-ignore (daemon-shaped status fixture)
+  }));
+  const detailFileChanges = [
+    {
+      path: 'packages/intentd/crates/intent-core/src/events/mod.rs',
+      additions: 18,
+      deletions: 4,
+    },
+  ];
 
   const manifest = $derived<Manifest>(
     mode === 'unsorted-heavy'
@@ -116,18 +164,16 @@
           ({ ts }) => Date.parse(ts) <= currentTime,
         ),
   );
-  const route = $derived(
-    selection?.type === 'agent' ? script.routes[selection.agentId] : undefined,
-  );
+  const route = $derived(routeAgentId ? script.routes[routeAgentId] : undefined);
   const geometry = $derived.by(() => ({
-    rest: placeRegions(manifest, computeBudget(manifest), { width, height }),
+    rest: placeRegions(manifest, computeBudget(manifest), { width: canvasWidth, height }),
     focus: placeRegions(
       manifest,
       computeBudget(manifest, {
         regionIds: selection?.type === 'region' ? selection.regionIds : undefined,
         route,
       }),
-      { width, height },
+      { width: canvasWidth, height },
     ),
   }));
   const filters = $derived({ agentIds: selectedAgentIds, kinds: enabledKinds });
@@ -142,6 +188,29 @@
     enabledKinds = enabledKinds.includes(kind)
       ? enabledKinds.filter((candidate) => candidate !== kind)
       : [...enabledKinds, kind];
+  }
+
+  function selectRegion(regionIds: string[]): void {
+    routeAgentId = null;
+    selection = { type: 'region', regionIds };
+    detailSelection = { type: 'region', regionId: regionIds[0] };
+  }
+
+  function selectAgent(agentId: string): void {
+    routeAgentId = agentId;
+    selection = { type: 'agent', agentId };
+    detailSelection = { type: 'agent', agentId };
+  }
+
+  function selectRoute(): void {
+    selection = { type: 'route' };
+    detailSelection = { type: 'route' };
+  }
+
+  function clearSelection(): void {
+    routeAgentId = null;
+    selection = null;
+    detailSelection = null;
   }
 
   function kindLabel(kind: (typeof kinds)[number]): string {
@@ -243,19 +312,37 @@
     {/if}
   </div>
 
-  <SemanticMapCanvas
-    {manifest}
-    {geometry}
-    {activities}
-    {route}
-    {selection}
-    {filters}
-    {timeWindow}
-    {width}
-    {height}
-    onSelectRegion={(regionIds) => (selection = { type: 'region', regionIds })}
-    onSelectAgent={(agentId) => (selection = { type: 'agent', agentId })}
-    onSelectRoute={() => (selection = { type: 'route' })}
-    onClearSelection={() => (selection = null)}
-  />
+  <div
+    class="grid min-w-0 grid-cols-[minmax(0,1fr)_18rem] overflow-hidden rounded-lg border border-border bg-background"
+  >
+    <SemanticMapCanvas
+      {manifest}
+      {geometry}
+      {activities}
+      {route}
+      {selection}
+      {filters}
+      {timeWindow}
+      width={canvasWidth}
+      {height}
+      onSelectRegion={selectRegion}
+      onSelectAgent={selectAgent}
+      onSelectRoute={selectRoute}
+      onClearSelection={clearSelection}
+    />
+    <aside class="overflow-y-auto border-l border-border p-4" style="height: {height}px">
+      <SemanticMapDetail
+        {manifest}
+        {activities}
+        {route}
+        selection={detailSelection}
+        agents={detailAgents}
+        fileChanges={detailFileChanges}
+        routeSubjectLabel={SCRIPT_AGENTS.find(({ id }) => id === routeAgentId)?.name}
+        onSelectCrossing={(transitionIndex) =>
+          (detailSelection = { type: 'crossing', transitionIndex })}
+        onSelectFile={(path) => (detailSelection = { type: 'file', path })}
+      />
+    </aside>
+  </div>
 </section>
