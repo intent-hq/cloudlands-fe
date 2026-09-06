@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
   import ListRow from './ListRow.svelte';
   import ListView from './ListView.svelte';
   import RowActions from './RowActions.svelte';
@@ -25,6 +26,7 @@
       {#snippet title()}{item.name}{/snippet}
       {#snippet description()}{item.description}{/snippet}
       {#snippet trailing()}
+        <Input aria-label={`Edit ${item.name}`} />
         <RowActions
           actions={[
             {
