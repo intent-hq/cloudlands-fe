@@ -157,7 +157,11 @@ describe('hardware-console production composition', () => {
     expect(hardware.client.call).toHaveBeenCalledWith('v.oai.rgbcfg', expect.any(Object));
 
     hardware.emitRaw({ m: 'v.oai.hid', p: { k: 'ACT06', act: 1 } });
-    await vi.waitFor(() => expect(navigateToRoute).toHaveBeenCalledWith('/workspace/new'));
+    await vi.waitFor(() =>
+      expect(navigateToRoute).toHaveBeenCalledWith(
+        expect.stringMatching(/^\/workspace\/new\?instance=/),
+      ),
+    );
 
     const input = document.createElement('textarea');
     document.body.appendChild(input);

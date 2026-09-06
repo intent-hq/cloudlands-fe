@@ -195,7 +195,9 @@ describe('handleActionKeyPress', () => {
     // Slot 0 (ACT06) = new-workspace, always available.
     const result = handleActionKeyPress('ACT06');
     expect(result).toBe('new-workspace');
-    expect(navigateToRoute).toHaveBeenCalledWith('/workspace/new');
+    expect(navigateToRoute).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/workspace\/new\?instance=/),
+    );
   });
 
   it('no-ops with the no-attention-agents hint when no agents need attention', () => {
@@ -621,7 +623,9 @@ describe('installHardwareConsoleActionKeys', () => {
     expect(manager.rawListenerCount()).toBe(1);
 
     manager.emitRaw({ m: 'v.oai.hid', p: { k: 'ACT06', act: 1 } });
-    expect(navigateToRoute).toHaveBeenCalledWith('/workspace/new');
+    expect(navigateToRoute).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/workspace\/new\?instance=/),
+    );
 
     teardown();
     expect(manager.rawListenerCount()).toBe(0);
