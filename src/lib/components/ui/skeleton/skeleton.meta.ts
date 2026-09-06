@@ -27,7 +27,6 @@ export const skeletonMetadata = parseUiComponentMetadata({
     'src/lib/components/layout/sidebar-nav/WorkspaceCardSkeleton.svelte',
     'src/lib/components/notes/NotesPanel.svelte',
     'src/lib/components/notes/primitives/ReferenceBlock.svelte',
-    'src/lib/components/patterns/collection/ListView.svelte',
     'src/lib/components/patterns/screen/LoadingState.svelte',
     'src/lib/components/patterns/settings/custom-controls.ts',
     'src/lib/components/terminal/TerminalSidebar.svelte',
