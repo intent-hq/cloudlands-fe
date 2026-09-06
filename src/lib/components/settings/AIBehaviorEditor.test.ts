@@ -365,6 +365,34 @@ describe('DefaultAgentModelSettings Default model picker', () => {
 
     expect(screen.getByTestId('picker-selected').textContent).toBe('claude-code:sonnet4.5');
   });
+
+  it('persists a cross-provider default pick through the atomic write and a Providers page remount (monorepo#4102 recurrence)', async () => {
+    // v2.139.1 regression: picking Codex/Astra as the default model, then
+    // leaving and returning to Providers, showed Auggie/Opus4.8 again.
+    selectedModel$.set('auggie:opus4.8');
+    render(DefaultAgentModelSettings);
+
+    await fireEvent.click(screen.getByTestId('pick-cross-provider-model'));
+
+    // ModelPicker's own `updateGlobalDefault` dispatch (`selectModel`, mocked
+    // away here) is the SOLE owner of persisting the provider+model default
+    // via the atomic `model.defaultProvider` + `model.providerDefaults`
+    // write. A redundant `setActiveProvider` dispatch here raced a second,
+    // non-atomic `model.defaultProvider` write from provider-settings-saga
+    // against that atomic write and corrupted the persisted default.
+    expect(mocks.dispatched.some((a) => a.type === 'providerSettings/setActiveProvider')).toBe(
+      false,
+    );
+    expect(mocks.dispatched.some((a) => a.type === 'model/reloadModelsForProvider')).toBe(false);
+
+    // Simulate the atomic write landing and the store hydrating the new
+    // default (`selectSelectedModel`), then leave and return to Providers.
+    selectedModel$.set('codex:cross-provider-model');
+    cleanup();
+    render(DefaultAgentModelSettings);
+
+    expect(screen.getByTestId('picker-selected').textContent).toBe('codex:cross-provider-model');
+  });
 });
 
 describe('DefaultAgentModelSettings default model reasoning', () => {
