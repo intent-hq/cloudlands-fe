@@ -211,6 +211,100 @@ describe('specialists selectors', () => {
       expect(selectOrchestratorSpecialist.select(state)?.id).toBe('my-lead');
     });
 
+    it('prefers the bundled orchestrator over an earlier-sorting user orchestrator', () => {
+      const specWriter = SPECIALISTS.find(({ id }) => id === 'spec-writer')!;
+      const state = mockState({
+        bundledSpecialists: [{ ...specWriter, source: 'bundled' as const }],
+        fileSpecialists: createCollection('id', [
+          {
+            id: 'role-round-trip',
+            name: 'Role Round Trip',
+            description: 'custom orchestrator',
+            model: '',
+            behaviorPrompt: 'prompt',
+            filePath: '/Users/test/.intent/specialists/role-round-trip.md',
+            source: 'user' as const,
+            role: 'orchestrator' as const,
+          },
+        ]),
+      });
+
+      expect(selectOrchestratorSpecialist.select(state)?.id).toBe('spec-writer');
+    });
+
+    it('keeps a winning user-tier spec-writer override at shipped rank', () => {
+      const state = mockState({
+        fileSpecialists: createCollection('id', [
+          {
+            id: 'spec-writer',
+            name: 'Customized Coordinator',
+            description: 'overridden orchestrator',
+            model: '',
+            behaviorPrompt: 'custom prompt',
+            filePath: '/Users/test/.intent/specialists/spec-writer.md',
+            source: 'user' as const,
+            role: 'orchestrator' as const,
+          },
+          {
+            id: 'role-round-trip',
+            name: 'Role Round Trip',
+            description: 'custom orchestrator',
+            model: '',
+            behaviorPrompt: 'prompt',
+            filePath: '/Users/test/.intent/specialists/role-round-trip.md',
+            source: 'user' as const,
+            role: 'orchestrator' as const,
+          },
+        ]),
+      });
+
+      expect(selectOrchestratorSpecialist.select(state)).toMatchObject({
+        id: 'spec-writer',
+        source: 'user',
+      });
+    });
+
+    it('ranks a user-tier spec-writer from specialist.list above an earlier novel id', () => {
+      const state = mockState({
+        bundledSpecialists: [
+          {
+            id: 'daemon-bundled',
+            name: 'Daemon Bundled',
+            description: 'another bundled specialist',
+            defaultBehaviorPrompt: 'prompt',
+            source: 'bundled' as const,
+          },
+        ],
+        fileSpecialists: createCollection('id', [
+          {
+            id: 'spec-writer',
+            name: 'Customized Coordinator',
+            description: 'winning user tier from specialist.list',
+            model: '',
+            behaviorPrompt: 'custom prompt',
+            filePath: '/Users/test/.intent/specialists/spec-writer.md',
+            source: 'user' as const,
+            role: 'orchestrator' as const,
+          },
+          {
+            id: 'aaa-fixture',
+            name: 'AAA Fixture',
+            description: 'novel user orchestrator',
+            model: '',
+            behaviorPrompt: 'prompt',
+            filePath: '/Users/test/.intent/specialists/aaa-fixture.md',
+            source: 'user' as const,
+            role: 'orchestrator' as const,
+          },
+        ]),
+      });
+
+      expect(selectOrchestratorSpecialist.select(state)).toMatchObject({
+        id: 'spec-writer',
+        source: 'user',
+      });
+    });
+
     it('returns null when no orchestrator exists (team card hidden)', () => {
       const state = mockState({
         bundledSpecialists: [
@@ -227,7 +321,7 @@ describe('specialists selectors', () => {
       expect(selectOrchestratorSpecialist.select(state)).toBeNull();
     });
 
-    it('breaks ties between multiple orchestrators by id order', () => {
+    it('breaks ties within the same source rank by id order', () => {
       const orchestrator = (id: string) => ({
         id,
         name: id,
