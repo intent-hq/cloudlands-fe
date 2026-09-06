@@ -12,6 +12,9 @@ import { buttonFixtures } from './button.fixtures';
 import { buttonMetadata } from './button.meta';
 import {
   activeButtonSurfaceVariants,
+  buttonCompatibilityAliases,
+  buttonEmphasisLadder,
+  buttonSizeLadder,
   buttonSurfaceVariants,
   buttonVariants,
   type ButtonSize,
@@ -39,6 +42,29 @@ describe('Button', () => {
     expect(buttonVariants()).not.toContain('focus-visible:ring');
     expect(buttonVariants()).toContain('type-caption');
     expect(buttonVariants()).not.toMatch(/\btext-(?:xs|sm|base)\b/);
+  });
+
+  it('publishes the canonical emphasis, size, and compatibility ladders', () => {
+    expect(buttonEmphasisLadder.map(({ value }) => value)).toEqual([
+      'primary',
+      'secondary',
+      'ghost',
+      'destructive',
+    ]);
+    expect(buttonSizeLadder).toEqual([
+      { value: 'sm', iconValue: 'icon-sm', label: 'Small' },
+      { value: 'default', iconValue: 'icon', label: 'Medium' },
+      { value: 'lg', iconValue: 'icon-lg', label: 'Large' },
+    ]);
+    expect(buttonCompatibilityAliases).toEqual([
+      { prop: 'variant', alias: 'default', replacement: 'primary' },
+      { prop: 'variant', alias: 'tertiary', replacement: 'outline' },
+      { prop: 'variant', alias: 'neumorphic', replacement: 'outline' },
+      { prop: 'size', alias: 'xs', replacement: 'compact' },
+      { prop: 'size', alias: 'icon-xs', replacement: 'icon-compact' },
+    ]);
+    expect(buttonVariants()).toBe(buttonVariants({ variant: 'primary', size: 'default' }));
+    expect(buttonMetadata.apiGuidance?.emphasis).toEqual(buttonEmphasisLadder);
   });
 
   it('gives default, primary, and secondary solid raised surfaces with pressed states', () => {
@@ -235,9 +261,13 @@ describe('Button', () => {
     const states = new Set(buttonFixtures.flatMap((fixture) => fixture.states));
     expect(states).toEqual(
       new Set([
+        'emphasis-ladder',
+        'size-ladder',
+        'guidance',
         'default',
         'primary',
         'secondary',
+        'ghost',
         'outline',
         'destructive',
         'active',

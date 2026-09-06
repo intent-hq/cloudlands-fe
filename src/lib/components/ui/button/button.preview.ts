@@ -18,6 +18,9 @@ export const preview = definePreview<ComponentProps<typeof Button>>({
   states: {
     default: { props: { children: label('Continue') } },
     primary: { props: { children: label('Continue'), variant: 'primary' } },
+    secondary: { props: { children: label('Continue'), variant: 'secondary' } },
+    ghost: { props: { children: label('Continue'), variant: 'ghost' } },
+    outline: { props: { children: label('Continue'), variant: 'outline' } },
     active: { props: { active: true, children: label('Open menu'), variant: 'outline' } },
     'icon-weight': {
       props: { children: label('Next'), leadingIcon: arrowIcon, variant: 'primary' },

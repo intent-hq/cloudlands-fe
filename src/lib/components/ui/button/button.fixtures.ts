@@ -5,9 +5,13 @@ export const buttonFixtures = [
     id: 'interaction-states',
     title: 'Button interaction states',
     states: [
+      'emphasis-ladder',
+      'size-ladder',
+      'guidance',
       'default',
       'primary',
       'secondary',
+      'ghost',
       'outline',
       'destructive',
       'active',

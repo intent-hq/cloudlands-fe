@@ -64,39 +64,77 @@
   {:else if componentId === 'button'}
     {#if fixture.id === 'interaction-states'}
       <div
-        class="flex flex-wrap items-center gap-2"
-        data-catalog-rendered-state="default primary secondary outline destructive active focus disabled loading loading-variants icon-only icon-weight action-feedback"
+        class="grid min-w-0 gap-4"
+        data-catalog-rendered-state="emphasis-ladder size-ladder guidance default primary secondary outline ghost destructive active focus disabled loading loading-variants icon-only icon-weight action-feedback"
       >
-        <Button onclick={() => recordButtonAction('Run action completed')}>
-          <span
-            class="inline-flex size-4 items-center justify-center rounded-full border border-current"
-            aria-hidden="true"><Fa icon={faPlus} size="xs" /></span
+        <div class="grid gap-1">
+          <p class="type-caption font-medium">Preferred emphasis ladder</p>
+          <p class="type-caption text-muted-foreground">
+            Choose the lowest emphasis that communicates the action. Use one primary action per
+            region.
+          </p>
+          <ol class="mt-1 flex flex-wrap items-center gap-2" aria-label="Button emphasis ladder">
+            <li>
+              <Button
+                variant="primary"
+                leadingIcon={arrowIcon}
+                onclick={() => recordButtonAction('Primary action completed')}>1. Primary</Button
+              >
+            </li>
+            <li>
+              <Button
+                variant="secondary"
+                onclick={() => recordButtonAction('Secondary action completed')}
+                >2. Secondary</Button
+              >
+            </li>
+            <li>
+              <Button variant="ghost" onclick={() => recordButtonAction('Ghost action completed')}
+                >3. Ghost</Button
+              >
+            </li>
+            <li>
+              <Button variant="destructive" onclick={() => recordButtonAction('Delete requested')}
+                ><Fa icon={faTrash} size="xs" />4. Destructive</Button
+              >
+            </li>
+          </ol>
+          <p class="type-caption text-muted-foreground">
+            Use outline for a bordered neutral control. Default, tertiary, and neumorphic are
+            compatibility aliases only.
+          </p>
+        </div>
+        <div class="grid gap-1">
+          <p class="type-caption font-medium">Preferred size ladder</p>
+          <div class="flex flex-wrap items-center gap-2">
+            <Button size="sm">Small</Button>
+            <Button>Medium</Button>
+            <Button size="lg">Large</Button>
+            <Button size="icon-sm" iconOnly aria-label="Small icon button"
+              ><Fa icon={faPlus} size="xs" /></Button
+            >
+            <Button size="icon" iconOnly aria-label="Medium icon button"
+              ><Fa icon={faPlus} size="xs" /></Button
+            >
+            <Button size="icon-lg" iconOnly aria-label="Large icon button"
+              ><Fa icon={faPlus} size="xs" /></Button
+            >
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <Button variant="outline" active>Active</Button>
+          <Button disabled>Disabled action</Button>
+          <Button loading>Loading action</Button>
+          <Button variant="outline" loading>Outline loading</Button>
+          <Button variant="ghost" loading>Ghost loading</Button>
+          <Button size="sm" loading>Small loading</Button>
+          <Button size="icon" iconOnly aria-label="Icon loading" loading
+            ><Fa icon={faPlus} size="xs" /></Button
           >
-          Run action
-        </Button>
-        <Button variant="primary" leadingIcon={arrowIcon}>Primary</Button>
-        <Button variant="secondary" onclick={() => recordButtonAction('Secondary action completed')}
-          >Secondary</Button
-        >
-        <Button variant="outline" onclick={() => recordButtonAction('Outline action completed')}
-          >Outline</Button
-        >
-        <Button variant="outline" active>Active</Button>
-        <Button variant="destructive" onclick={() => recordButtonAction('Delete requested')}>
-          <Fa icon={faTrash} size="xs" />
-          Delete
-        </Button>
-        <Button disabled>Disabled action</Button>
-        <Button loading>Loading action</Button>
-        <Button variant="outline" loading>Outline loading</Button>
-        <Button variant="ghost" loading>Ghost loading</Button>
-        <Button size="sm" loading>Compact loading</Button>
-        <Button size="icon" iconOnly aria-label="Icon loading" loading
-          ><Fa icon={faPlus} size="xs" /></Button
-        >
-        <Button size="icon" aria-label="Add item" onclick={() => recordButtonAction('Item added')}
-          ><Fa icon={faPlus} size="xs" /></Button
-        >
+          <Button size="icon" aria-label="Add item" onclick={() => recordButtonAction('Item added')}
+            ><Fa icon={faPlus} size="xs" /></Button
+          >
+        </div>
         <output
           class="type-caption min-w-full text-muted-foreground"
           aria-label="Button action status"

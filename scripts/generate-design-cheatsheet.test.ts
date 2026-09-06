@@ -22,4 +22,23 @@ describe('generated design-system cheatsheet', () => {
     );
     expect(cheatsheet).toContain('single indeterminate indicator');
   });
+
+  it('documents the Button emphasis order, sizes, and compatibility aliases', async () => {
+    const cheatsheet = await generateDesignCheatsheet();
+    const primary = cheatsheet.indexOf('**Primary:** `primary`');
+    const secondary = cheatsheet.indexOf('**Secondary:** `secondary`');
+    const ghost = cheatsheet.indexOf('**Ghost:** `ghost`');
+    const destructive = cheatsheet.indexOf('**Destructive:** `destructive`');
+
+    expect(primary).toBeGreaterThan(-1);
+    expect(primary).toBeLessThan(secondary);
+    expect(secondary).toBeLessThan(ghost);
+    expect(ghost).toBeLessThan(destructive);
+    expect(cheatsheet).toContain('**Small:** `sm`; icon-only `icon-sm`');
+    expect(cheatsheet).toContain('**Medium:** `default`; icon-only `icon`');
+    expect(cheatsheet).toContain('**Large:** `lg`; icon-only `icon-lg`');
+    expect(cheatsheet).toContain('`variant="default"` → `variant="primary"`');
+    expect(cheatsheet).toContain('`variant="neumorphic"` → `variant="outline"`');
+    expect(cheatsheet).toContain('`size="xs"` → `size="compact"`');
+  });
 });

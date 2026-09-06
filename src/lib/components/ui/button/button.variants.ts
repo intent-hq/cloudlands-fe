@@ -3,6 +3,31 @@ import type { HTMLAnchorAttributes, HTMLButtonAttributes } from 'svelte/elements
 import { tv, type VariantProps } from 'tailwind-variants';
 import type { WithElementRef } from '$lib/utils.js';
 
+export const buttonEmphasisLadder = [
+  { value: 'primary', label: 'Primary', guidance: 'One highest-priority action per region.' },
+  { value: 'secondary', label: 'Secondary', guidance: 'Supporting actions that remain visible.' },
+  { value: 'ghost', label: 'Ghost', guidance: 'Low-emphasis or repeated toolbar actions.' },
+  {
+    value: 'destructive',
+    label: 'Destructive',
+    guidance: 'Irreversible or damaging actions only.',
+  },
+] as const;
+
+export const buttonSizeLadder = [
+  { value: 'sm', iconValue: 'icon-sm', label: 'Small' },
+  { value: 'default', iconValue: 'icon', label: 'Medium' },
+  { value: 'lg', iconValue: 'icon-lg', label: 'Large' },
+] as const;
+
+export const buttonCompatibilityAliases = [
+  { prop: 'variant', alias: 'default', replacement: 'primary' },
+  { prop: 'variant', alias: 'tertiary', replacement: 'outline' },
+  { prop: 'variant', alias: 'neumorphic', replacement: 'outline' },
+  { prop: 'size', alias: 'xs', replacement: 'compact' },
+  { prop: 'size', alias: 'icon-xs', replacement: 'icon-compact' },
+] as const;
+
 export const buttonVariants = tv({
   base: 'type-caption group/button relative isolate inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-(--radius-medium) border border-transparent bg-transparent font-medium transition-[color,opacity] duration-spring-fast ease-spring-fast disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-invalid:ring-1 aria-invalid:ring-danger motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0',
   variants: {
@@ -38,7 +63,7 @@ export const buttonVariants = tv({
     trailingIcon: { true: 'pr-[var(--button-icon-padding)]' },
   },
   defaultVariants: {
-    variant: 'default',
+    variant: 'primary',
     size: 'default',
   },
 });

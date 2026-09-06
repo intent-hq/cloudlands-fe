@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { format } from 'prettier';
 import { canonicalPatternManifest } from '../src/lib/components/patterns/manifest';
+import { buttonMetadata } from '../src/lib/components/ui/button/button.meta';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const cheatsheetPath = path.resolve(
@@ -16,6 +17,24 @@ function bullets(values: readonly string[], fallback = 'None recorded.'): string
 }
 
 export async function generateDesignCheatsheet(): Promise<string> {
+  const buttonGuidance = buttonMetadata.apiGuidance;
+  if (!buttonGuidance) throw new Error('Button metadata must publish API guidance.');
+  const buttonEmphasis = buttonGuidance.emphasis
+    .map(
+      ({ value, label, guidance }, index) =>
+        `${index + 1}. **${label}:** \`${value}\` — ${guidance}`,
+    )
+    .join('\n');
+  const buttonSizes = buttonGuidance.sizes
+    .map(
+      ({ value, iconValue, label }) => `- **${label}:** \`${value}\`; icon-only \`${iconValue}\`.`,
+    )
+    .join('\n');
+  const buttonAliases = buttonGuidance.compatibilityAliases
+    .map(
+      ({ prop, alias, replacement }) => `- \`${prop}="${alias}"\` → \`${prop}="${replacement}"\``,
+    )
+    .join('\n');
   const sections = canonicalPatternManifest.map(
     (pattern) => `## ${pattern.id}
 
@@ -67,6 +86,25 @@ Pattern-first routing for product UI. Open the catalog URL in \`pnpm run dev:ui\
 
 - **Import:** \`IntentMarkLoader\` and \`Spinner\` from \`$lib/components/ui/indicators\`
 - **Use:** IntentMarkLoader is the single indeterminate indicator shared by thinking rows and loading buttons. Spinner remains the inline pulse-row indicator. Use the Screen pattern's \`LoadingState\` for structured loading shells.
+
+## Button
+
+- **Import:** \`${buttonMetadata.publicImport}\`
+- **Rule:** Choose the lowest emphasis that still communicates the action. Use one primary action per region.
+
+### Preferred emphasis ladder
+
+${buttonEmphasis}
+
+### Preferred size ladder
+
+${buttonSizes}
+
+### Compatibility aliases
+
+Existing callers may retain these names, but new code must use the canonical replacement:
+
+${buttonAliases}
 
 ${sections.join('\n')}\n`;
   return format(markdown, { parser: 'markdown' });

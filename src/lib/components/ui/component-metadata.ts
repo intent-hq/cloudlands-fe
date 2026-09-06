@@ -17,6 +17,25 @@ const uiComponentFixtureSchema = z.object({
   reducedMotion: z.boolean().optional(),
 });
 
+const uiComponentApiOptionSchema = z.object({
+  value: z.string().min(1),
+  label: z.string().min(1),
+  guidance: z.string().min(1).optional(),
+  iconValue: z.string().min(1).optional(),
+});
+
+const uiComponentCompatibilityAliasSchema = z.object({
+  prop: z.string().min(1),
+  alias: z.string().min(1),
+  replacement: z.string().min(1),
+});
+
+const uiComponentApiGuidanceSchema = z.object({
+  emphasis: z.array(uiComponentApiOptionSchema).min(1),
+  sizes: z.array(uiComponentApiOptionSchema).min(1),
+  compatibilityAliases: z.array(uiComponentCompatibilityAliasSchema),
+});
+
 const pathSchema = z
   .string()
   .min(1)
@@ -42,6 +61,7 @@ const uiComponentMetadataSchema = z
     useWhen: z.array(z.string().min(1)).optional(),
     dontUseWhen: z.array(z.string().min(1)).optional(),
     replaces: z.array(z.string().min(1)).optional(),
+    apiGuidance: uiComponentApiGuidanceSchema.optional(),
   })
   .superRefine((record, context) => {
     if (!['deprecated-wrapper', 'deletion-candidate'].includes(record.category)) return;

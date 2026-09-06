@@ -10,6 +10,7 @@ export function baselineFiles(entries = []) {
 export function findBaselineGrowth(base, current) {
   const growth = {};
   for (const [rule, entries] of Object.entries(current)) {
+    if (!(rule in base)) continue;
     const previous = new Set(baselineFiles(base[rule]));
     const added = baselineFiles(entries)
       .filter((file) => !previous.has(file))

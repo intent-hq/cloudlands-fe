@@ -40,14 +40,16 @@ describe('CatalogFixtureList real previews', () => {
     const { container } = renderEntry('button');
 
     expect(container.querySelectorAll('[data-catalog-preview="button"]')).toHaveLength(2);
-    await fireEvent.click(screen.getByRole('button', { name: 'Run action' }));
+    await fireEvent.click(screen.getByRole('button', { name: '1. Primary' }));
     expect(screen.getByLabelText('Button click count').textContent).toBe('1');
-    expect(screen.getByLabelText('Button action status').textContent).toBe('Run action completed');
+    expect(screen.getByLabelText('Button action status').textContent).toBe(
+      'Primary action completed',
+    );
 
     for (const [name, status] of [
-      ['Secondary', 'Secondary action completed'],
-      ['Outline', 'Outline action completed'],
-      ['Delete', 'Delete requested'],
+      ['2. Secondary', 'Secondary action completed'],
+      ['3. Ghost', 'Ghost action completed'],
+      ['4. Destructive', 'Delete requested'],
       ['Add item', 'Item added'],
     ] as const) {
       await fireEvent.click(screen.getByRole('button', { name }));

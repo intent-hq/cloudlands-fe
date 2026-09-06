@@ -199,7 +199,7 @@ describe('CatalogScene', () => {
       expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('true'),
     );
     expect(screen.getByTestId('catalog-scene').dataset.previewState).toBe('missing');
-    expect(screen.getByRole('button', { name: 'Run action' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: '1. Primary' })).not.toBeNull();
   });
 
   it('shows a terminal error when the preview import rejects', async () => {

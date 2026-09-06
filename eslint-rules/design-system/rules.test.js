@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { designSystemRules } from './index.js';
 import noAdhocTransitions from './no-adhoc-transitions.js';
 import noArbitraryMotionOrColor from './no-arbitrary-motion-or-color.js';
+import noButtonCompatibilityAliases from './no-button-compatibility-aliases.js';
 import noDialogRootOutsidePatterns from './no-dialog-root-outside-patterns.js';
 import noDirectToast from './no-direct-toast.js';
 import noNativeDialogs from './no-native-dialogs.js';
@@ -53,6 +54,39 @@ svelteTester.run('no-raw-controls', noRawControls, {
         { message: 'Use `Button` instead — /sandbox/button' },
         { message: 'Use `Input` instead — /sandbox/input' },
       ],
+    },
+  ],
+});
+
+svelteTester.run('no-button-compatibility-aliases', noButtonCompatibilityAliases, {
+  valid: [
+    '<script>import { Button } from "$lib/components/ui/button";</script><Button variant="primary" size="sm">Save</Button>',
+    '<script>import { Button } from "$lib/components/ui/button";</script><Button variant={variant} size={size}>Save</Button>',
+    '<Button variant="default" size="xs">Unrelated component</Button>',
+    '<Badge variant="default" size="xs">Status</Badge>',
+  ],
+  invalid: [
+    {
+      code: '<script>import { Button } from "$lib/components/ui/button";</script><Button variant="default" size="xs">Save</Button>',
+      errors: [
+        { message: 'Use `variant="primary"` instead — /sandbox/button' },
+        { message: 'Use `size="compact"` instead — /sandbox/button' },
+      ],
+    },
+    {
+      code: '<script>import PrimaryButton from "$lib/components/ui/button/button.svelte";</script><PrimaryButton variant="tertiary" size="icon-xs" aria-label="More" />',
+      errors: [
+        { message: 'Use `variant="outline"` instead — /sandbox/button' },
+        { message: 'Use `size="icon-compact"` instead — /sandbox/button' },
+      ],
+    },
+    {
+      code: '<script>import { Button as ActionButton } from "$lib/components/ui/button";</script><ActionButton variant="neumorphic">Save</ActionButton>',
+      errors: [{ message: 'Use `variant="outline"` instead — /sandbox/button' }],
+    },
+    {
+      code: '<script>import { Button } from "$lib/components/ui/button/index.js";</script><Button variant="default">Save</Button>',
+      errors: [{ message: 'Use `variant="primary"` instead — /sandbox/button' }],
     },
   ],
 });

@@ -25,16 +25,23 @@ describe('design-system baseline growth guard', () => {
           files: ['src/A.svelte', 'src/B.svelte', 'src/C.svelte'],
         },
       ],
-      'no-native-dialogs': [
-        { owner: 'dialogs', reason: 'Legacy dialog', files: ['src/Dialog.svelte'] },
-      ],
     };
     expect(() => assertBaselineOnlyShrinks(original, larger)).toThrow(
       'Design-system baseline entries may only be removed',
     );
     expect(findBaselineGrowth(original, larger)).toEqual({
-      'no-native-dialogs': ['src/Dialog.svelte'],
       'no-raw-controls': ['src/C.svelte'],
     });
+  });
+
+  it('allows a new rule to establish its initial baseline', () => {
+    const withNewRule = {
+      ...original,
+      'no-native-dialogs': [
+        { owner: 'dialogs', reason: 'Legacy dialog', files: ['src/Dialog.svelte'] },
+      ],
+    };
+
+    expect(findBaselineGrowth(original, withNewRule)).toEqual({});
   });
 });

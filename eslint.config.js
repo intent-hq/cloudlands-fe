@@ -622,6 +622,7 @@ export default [
     rules: {
       'intent/no-adhoc-transitions': 'error',
       'intent/no-arbitrary-motion-or-color': 'error',
+      'intent/no-button-compatibility-aliases': 'warn',
       'intent/no-dialog-root-outside-patterns': 'error',
       'intent/no-direct-toast': 'error',
       'intent/no-native-dialogs': 'error',

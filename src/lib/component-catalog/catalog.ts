@@ -38,9 +38,9 @@ const componentProps: Record<string, CatalogProp[]> = {
   button: [
     {
       name: 'variant',
-      type: "'default' | 'secondary' | 'outline' | 'ghost' | 'destructive'",
-      defaultValue: "'default'",
-      description: 'Visual treatment for the action.',
+      type: "'primary' | 'secondary' | 'ghost' | 'destructive' | 'outline'",
+      defaultValue: "'primary'",
+      description: 'Canonical emphasis; outline is the supplemental bordered treatment.',
     },
     {
       name: 'size',

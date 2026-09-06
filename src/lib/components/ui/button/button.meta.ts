@@ -1,5 +1,10 @@
 import { parseUiComponentMetadata } from '../component-metadata';
 import { buttonFixtures } from './button.fixtures';
+import {
+  buttonCompatibilityAliases,
+  buttonEmphasisLadder,
+  buttonSizeLadder,
+} from './button.variants';
 
 export const buttonMetadata = parseUiComponentMetadata({
   id: 'button',
@@ -16,4 +21,11 @@ export const buttonMetadata = parseUiComponentMetadata({
     'Retain while exported and behavior, accessibility, shared loading indicator, and fixtures pass.',
   dynamicImports: [],
   fixtures: buttonFixtures,
+  useWhen: ['Triggering an immediate action with explicit emphasis and accessible labeling.'],
+  dontUseWhen: ['Navigating to another location; use a link instead.'],
+  apiGuidance: {
+    emphasis: buttonEmphasisLadder,
+    sizes: buttonSizeLadder,
+    compatibilityAliases: buttonCompatibilityAliases,
+  },
 });
