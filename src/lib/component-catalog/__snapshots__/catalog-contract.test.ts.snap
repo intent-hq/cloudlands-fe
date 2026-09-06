@@ -4859,6 +4859,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:button:int
     "default",
     "primary",
     "secondary",
+    "ghost",
     "outline",
     "destructive",
     "active",
@@ -5096,7 +5097,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:button:int
                 <dt>
                   "States"
                 <dd class="mt-1 text-foreground">
-                  "emphasis-ladder, size-ladder, guidance, default, primary, secondary, outline, destructive, active, keyboard-focus, disabled, loading, loading-variants, icon-only, icon-weight, action-feedback"
+                  "emphasis-ladder, size-ladder, guidance, default, primary, secondary, ghost, outline, destructive, active, keyboard-focus, disabled, loading, loading-variants, icon-only, icon-weight, action-feedback"
               <div>
                 <dt>
                   "Themes"
