@@ -4,6 +4,9 @@
   import { m } from '$shared/paraglide/messages.js';
   import type { DraftSource, WorkspaceDraftConfig } from '$shared/types/workspace-draft';
   import type { ControllerState } from '../../controller';
+  import { selectOrchestratorSpecialist } from '$store/renderer/slices/specialists/specialists-selectors';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { projectDescription, projectName } from './project-section';
   import {
     defaultSetupScriptForSource,
@@ -19,10 +22,15 @@
   }
 
   let { source, config, capabilities, onExpand }: Props = $props();
+  const orchestrator$ = selectOrchestratorSpecialist();
+  const activeProviderId$ = selectActiveProviderId();
+  const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const readiness = $derived(readinessState(capabilities));
   const optionsModified = $derived(
     hasModifiedOptions(source, config, {
       setupScript: source ? defaultSetupScriptForSource(source) : undefined,
+      specialist: $orchestrator$?.id,
+      provider: $activeProviderId$ || $defaultProviderId$ || undefined,
     }),
   );
   const readinessLabel = $derived(

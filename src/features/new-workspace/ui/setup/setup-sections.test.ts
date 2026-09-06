@@ -74,8 +74,11 @@ describe('setup section draft mappings', () => {
       path: '/projects/intent',
       isolation: 'worktree' as const,
     };
-    expect(hasModifiedOptions(source, { specialist: 'orchestrator' })).toBe(false);
-    expect(hasModifiedOptions(source, { specialist: 'implementor', isTeamMode: false })).toBe(true);
+    const defaults = { specialist: 'orchestrator', provider: 'auggie' };
+    expect(hasModifiedOptions(source, { specialist: 'orchestrator' }, defaults)).toBe(false);
+    expect(hasModifiedOptions(source, { specialist: 'implementor' }, defaults)).toBe(true);
+    expect(hasModifiedOptions(source, { provider: 'auggie' }, defaults)).toBe(false);
+    expect(hasModifiedOptions(source, { provider: 'codex' }, defaults)).toBe(true);
     expect(hasModifiedOptions(source, { reasoningEffort: 'high' })).toBe(true);
     expect(hasModifiedOptions({ ...source, isolation: 'in-place' }, {})).toBe(true);
     expect(

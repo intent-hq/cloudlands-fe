@@ -14,6 +14,12 @@ interface IssueSelection {
 
 export type ReadinessState = 'checking' | 'ready' | 'attention';
 
+export interface WorkspaceOptionDefaults {
+  setupScript?: string;
+  specialist?: string | null;
+  provider?: string;
+}
+
 export function sourceRepoKey(source: DraftSource): string {
   if (source.kind === 'github') return `${source.owner}/${source.name}`;
   if (source.kind === 'newFolder') return `${source.parentPath}/${source.name}`;
@@ -81,7 +87,7 @@ export function readinessState(
 export function hasModifiedOptions(
   source: DraftSource | null,
   config: WorkspaceDraftConfig,
-  defaults: { setupScript?: string } = {},
+  defaults: WorkspaceOptionDefaults = {},
 ): boolean {
   const setupScriptModified = Boolean(
     config.setupScript && config.setupScript.trim() !== defaults.setupScript?.trim(),
@@ -89,6 +95,8 @@ export function hasModifiedOptions(
   return (
     (source?.kind === 'local' && source.isolation === 'in-place') ||
     config.isTeamMode === false ||
+    (config.specialist !== undefined && config.specialist !== defaults.specialist) ||
+    (config.provider !== undefined && config.provider !== defaults.provider) ||
     Boolean(config.model) ||
     Boolean(config.reasoningEffort) ||
     setupScriptModified ||

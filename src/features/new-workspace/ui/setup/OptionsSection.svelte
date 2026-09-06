@@ -11,6 +11,9 @@
   import type { DraftSource, WorkspaceDraftConfig } from '$shared/types';
   import { selectWorkspaceCreationRemoteSetups } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectOrchestratorSpecialist } from '$store/renderer/slices/specialists/specialists-selectors';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import {
     configWith,
     defaultSetupScriptForSource,
@@ -30,10 +33,17 @@
   let { source, config, disabled = false, onEdit }: Props = $props();
   const remoteSetups$ = selectWorkspaceCreationRemoteSetups();
   const workspaceItems$ = selectWorkspaceItems();
+  const orchestrator$ = selectOrchestratorSpecialist();
+  const activeProviderId$ = selectActiveProviderId();
+  const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const repoKey = $derived(sourceRepoKey(source));
   const remoteSetup = $derived(isRemoteSetup(config.remoteSetup) ? config.remoteSetup : null);
   const modified = $derived(
-    hasModifiedOptions(source, config, { setupScript: defaultSetupScriptForSource(source) }),
+    hasModifiedOptions(source, config, {
+      setupScript: defaultSetupScriptForSource(source),
+      specialist: $orchestrator$?.id,
+      provider: $activeProviderId$ || $defaultProviderId$ || undefined,
+    }),
   );
   let isolationMode = $state<IsolationMode>('worktree');
   // svelte-ignore state_referenced_locally - the draft config seeds picker-local binding state
