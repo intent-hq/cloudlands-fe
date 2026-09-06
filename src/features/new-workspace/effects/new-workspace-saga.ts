@@ -412,6 +412,14 @@ function transcriptContains(
   return messages.some((entry) => entry.id === id || entry.appMessageId === id);
 }
 
+function* deleteDraftBestEffort(client: AppClient, draftId: string): SagaGenerator<void> {
+  try {
+    yield* call([client.workspaceDrafts, client.workspaceDrafts.delete], draftId);
+  } catch {
+    // Delivery is already confirmed, so cleanup failure must not block the live workspace.
+  }
+}
+
 function* deliver(
   effect: Extract<ControllerEffect, { type: 'sendFirstMessage' }>,
   dependencies: NewWorkspaceSagaDependencies,
@@ -482,6 +490,7 @@ function* reconcileDelivery(
   try {
     const draft = yield* call([client.workspaceDrafts, client.workspaceDrafts.get], effect.draftId);
     if (draft.delivery.state === 'sent') {
+      yield* deleteDraftBestEffort(client, effect.draftId);
       yield* emit(dependencies, {
         type: 'delivery.reconciled',
         generation: effect.generation,
@@ -502,7 +511,7 @@ function* reconcileDelivery(
         yield* call([client.workspaceDrafts, client.workspaceDrafts.markDelivery], effect.draftId, {
           ...sentDelivery,
         } as DraftDelivery);
-        yield* call([client.workspaceDrafts, client.workspaceDrafts.delete], effect.draftId);
+        yield* deleteDraftBestEffort(client, effect.draftId);
         yield* emit(dependencies, { type: 'send.ack', generation: effect.generation, messageId });
         return;
       }

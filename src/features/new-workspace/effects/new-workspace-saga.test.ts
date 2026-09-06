@@ -435,6 +435,32 @@ describe('newWorkspaceEffectSaga', () => {
     expect(second.state.phase).toBe('live');
   });
 
+  it('best-effort deletes a sent draft before reconciliation reaches live', async () => {
+    const sent = draft({ delivery: { state: 'sent', messageId: FIXED_IDS.message } });
+    const remove = vi.fn().mockRejectedValue(new Error('cleanup unavailable'));
+    const state = {
+      ...baseState(sent),
+      phase: 'sending',
+      workspaceId: FIXED_IDS.workspace,
+      initialAgentId: FIXED_IDS.agent,
+      deliveryStage: 'needs-reconcile',
+    } as ControllerState;
+
+    const result = await execute(
+      state,
+      client({
+        workspaceDrafts: {
+          get: vi.fn().mockResolvedValue(sent),
+          delete: remove,
+        },
+      }),
+    );
+
+    expect(remove).toHaveBeenCalledWith(FIXED_IDS.draft);
+    expect(result.state).toMatchObject({ phase: 'live', workspaceId: FIXED_IDS.workspace });
+    expect(result.events).not.toContainEqual(expect.objectContaining({ type: 'operation.failed' }));
+  });
+
   it('retries only attachment placements that did not finish', async () => {
     const firstAttachment = { id: 'file-1', type: 'file', label: 'one.txt', sourcePath: '/one' };
     const secondAttachment = { id: 'file-2', type: 'file', label: 'two.txt', sourcePath: '/two' };
