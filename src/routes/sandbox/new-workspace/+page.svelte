@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
+  import { tick } from 'svelte';
   import {
     NEW_WORKSPACE_SCENARIOS,
     getScenario,
@@ -19,6 +20,10 @@
   } from '$features/new-workspace/controller';
   import { UntitledWorkspaceShell } from '$features/new-workspace/ui';
   import { m } from '$shared/paraglide/messages.js';
+  import {
+    applySetupScenarioDom,
+    installSetupScenarioFixtures,
+  } from '$features/new-workspace/sandbox/setup-fixtures';
 
   let resetGeneration = $state(0);
   let harness = $state<MockTransactionHarness>();
@@ -119,11 +124,21 @@
       return;
     }
     controllerState = scenario.initialControllerState;
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous sandbox-only mock wiring
+    const disposeFixtures = installSetupScenarioFixtures(scenario.fixtures);
     const nextHarness = createMockTransactionHarness(scenario.fixtures);
     harness = nextHarness;
     void nextHarness.runScript(scenario.script).finally(refreshDeveloperFrame);
     queueMicrotask(refreshDeveloperFrame);
-    return () => nextHarness.dispose();
+    void tick().then(() => {
+      const root = document.querySelector(`[data-sandbox-scenario="${scenario.id}"]`);
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous sandbox-only DOM state
+      if (root) applySetupScenarioDom(root, scenario.fixtures);
+    });
+    return () => {
+      disposeFixtures();
+      nextHarness.dispose();
+    };
   });
 </script>
 

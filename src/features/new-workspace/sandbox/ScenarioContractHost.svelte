@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { UntitledWorkspaceShell } from '../ui';
   import { reduce, type Capability, type DraftInput } from '../controller';
   import { getScenario } from './scenarios';
@@ -8,6 +8,7 @@
     beginWorkspaceCreateProgress,
     workspaceCreateProgressReceived,
   } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
+  import { applySetupScenarioDom, installSetupScenarioFixtures } from './setup-fixtures';
 
   interface Props {
     scenarioId: string;
@@ -16,6 +17,9 @@
   let { scenarioId }: Props = $props();
   const scenario = getScenario(scenarioId);
   if (!scenario) throw new Error(`Unknown new-workspace scenario: ${scenarioId}`);
+  // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous sandbox-only mock wiring
+  const disposeFixtures = installSetupScenarioFixtures(scenario.fixtures);
+  onDestroy(disposeFixtures);
 
   const cloneProgress = scenario.presentation?.progress?.clone;
   const progressId = scenario.initialControllerState.draft?.operationKey;
@@ -58,12 +62,24 @@
   }
 
   onMount(() => {
+    void tick().then(() => {
+      const root = document.querySelector(`[data-scenario-id="${scenario.id}"]`);
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous sandbox-only DOM state
+      if (root) applySetupScenarioDom(root, scenario.fixtures);
+    });
     window.addEventListener('new-workspace-scenario-refresh', refresh);
     return () => window.removeEventListener('new-workspace-scenario-refresh', refresh);
   });
 </script>
 
-<div data-scenario-id={scenario.id} data-capture-stable="true">
+<div
+  data-scenario-id={scenario.id}
+  data-source-kind={controllerState.input.source?.kind ?? ''}
+  data-source-name={controllerState.input.source?.kind === 'newFolder'
+    ? controllerState.input.source.name
+    : ''}
+  data-capture-stable="true"
+>
   <UntitledWorkspaceShell
     state={controllerState}
     presentation={scenario.presentation}

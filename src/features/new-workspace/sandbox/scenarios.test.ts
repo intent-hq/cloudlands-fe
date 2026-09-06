@@ -41,4 +41,19 @@ describe('new workspace sandbox scenarios', () => {
       ),
     ).toEqual(['transaction-clone-progress']);
   });
+
+  it('provides realistic setup fixtures and explicit absent counterparts', () => {
+    const byId = Object.fromEntries(
+      NEW_WORKSPACE_SCENARIOS.map((scenario) => [scenario.id, scenario]),
+    );
+    expect(byId['setup-empty'].fixtures.setup.recentRepos).toEqual([]);
+    expect(byId['setup-empty'].fixtures.setup.github.connected).toBe(false);
+    expect(byId['setup-suggestions'].fixtures.setup.recentRepos).toHaveLength(2);
+    expect(byId['setup-suggestions'].fixtures.setup.github.issues).toHaveLength(1);
+    expect(byId['setup-suggestions'].fixtures.setup.branches.branches).toContain('main');
+    expect(byId['setup-suggestions'].fixtures.setup.providerAvailability.hasAnyProvider).toBe(true);
+    expect(byId['setup-readiness-missing'].fixtures.setup.providerAvailability.hasAnyProvider).toBe(
+      false,
+    );
+  });
 });

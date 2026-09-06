@@ -82,18 +82,18 @@ test.describe('new-workspace scenario contracts', () => {
   }
 });
 
-test('source details expose isolation with keyboard focus', async ({ mount, page }) => {
+test('selected source setup expands with keyboard focus', async ({ mount }) => {
   const component = await mount(ScenarioContractHost, {
     props: { scenarioId: 'source-local-repo' },
   });
-  const summary = component.locator('summary');
-  await summary.focus();
-  await summary.press('Enter');
-  await expect(component.locator('details')).toHaveAttribute('open', '');
-  await expect(summary).toBeFocused();
-  expect(await summary.evaluate((node) => getComputedStyle(node).outlineStyle)).not.toBe('none');
-  await page.keyboard.press('Space');
-  await expect(component.locator('details')).not.toHaveAttribute('open', '');
+  const expand = component.getByRole('button', { name: 'Expand project setup' });
+  await expand.focus();
+  await expect(expand).toBeFocused();
+  await expand.press('Enter');
+  await expect(component.getByTestId('selected-project')).toBeVisible();
+  const change = component.getByRole('button', { name: 'Change' });
+  await change.focus();
+  await expect(change).toBeFocused();
 });
 
 test('conflict actions remain readable and reachable in a narrow panel', async ({

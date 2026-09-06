@@ -1,4 +1,6 @@
 import type { SetupResult, WorkspaceDraft } from '$shared/types/workspace-draft';
+import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
+import type { WorkspaceCreationRecentRepo } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-types';
 import { CONTROLLER_PHASES, type ControllerState, type ControllerPhase } from '../controller';
 import type { NewWorkspacePresentation } from '../ui/types';
 import {
@@ -43,6 +45,23 @@ export interface ScenarioFixtures {
   setupResult: SetupResult;
   attachmentPlacement: { placed: string[]; failed: string[] };
   sendResult: { messageId: string; queued: boolean };
+  setup: {
+    recentRepos: WorkspaceCreationRecentRepo[];
+    branchByRepo: Record<string, string>;
+    branches: {
+      branches: string[];
+      remoteBranches: string[];
+      defaultBranch: string;
+      currentBranch: string;
+    };
+    github: {
+      connected: boolean;
+      issues: Record<string, unknown>[];
+      pulls: Record<string, unknown>[];
+    };
+    providerAvailability: ProviderAvailabilityResult;
+    optionsOpen: boolean;
+  };
 }
 
 export interface ScenarioScriptStep {
@@ -76,6 +95,25 @@ export const FIXED_IDS = {
 } as const;
 
 export const FIXED_TIMESTAMP = '2026-01-15T12:00:00.000Z';
+
+const PROVIDERS_UNAVAILABLE = {
+  auggie: { available: false },
+  claudeCode: { available: false },
+  codex: { available: false },
+  cortex: { available: false },
+  mock: { available: false },
+  opencode: { available: false },
+  pi: { available: false },
+  droid: { available: false },
+  grok: { available: false },
+  unsloth: { available: false },
+};
+
+const DEFAULT_PROVIDER_AVAILABILITY: ProviderAvailabilityResult = {
+  hasAnyProvider: true,
+  providers: { ...PROVIDERS_UNAVAILABLE, auggie: { available: true, authenticated: true } },
+  hiddenProviders: [],
+};
 
 export const DEFAULT_SCENARIO_FIXTURES: ScenarioFixtures = {
   draft: {
@@ -114,6 +152,19 @@ export const DEFAULT_SCENARIO_FIXTURES: ScenarioFixtures = {
   },
   attachmentPlacement: { placed: [], failed: [] },
   sendResult: { messageId: FIXED_IDS.message, queued: false },
+  setup: {
+    recentRepos: [],
+    branchByRepo: {},
+    branches: {
+      branches: ['main', 'feat/setup-panel'],
+      remoteBranches: ['origin/main'],
+      defaultBranch: 'main',
+      currentBranch: 'main',
+    },
+    github: { connected: false, issues: [], pulls: [] },
+    providerAvailability: DEFAULT_PROVIDER_AVAILABILITY,
+    optionsOpen: false,
+  },
 };
 
 const RETAINED_TEXT = 'Retained draft text for browser verification';
@@ -129,6 +180,15 @@ function fixtures(
   overrides: Partial<Omit<ScenarioFixtures, 'draft'>> = {},
 ): ScenarioFixtures {
   return { ...DEFAULT_SCENARIO_FIXTURES, ...overrides, draft: scenarioDraft };
+}
+
+function setupFixtures(
+  scenarioDraft: WorkspaceDraft,
+  overrides: Partial<ScenarioFixtures['setup']> = {},
+): ScenarioFixtures {
+  return fixtures(scenarioDraft, {
+    setup: { ...DEFAULT_SCENARIO_FIXTURES.setup, ...overrides },
+  });
 }
 
 function providerPresentation(
@@ -216,6 +276,61 @@ const invalidFolderDraft = draft({
   intentText: RETAINED_TEXT,
   source: { kind: 'newFolder', parentPath: '/sandbox/projects', name: '../outside' },
 });
+const newFolderDraft = draft({
+  source: { kind: 'newFolder', parentPath: '/sandbox/projects', name: 'greenfield-app' },
+  config: { setupPanelExpanded: true },
+});
+const githubSetupDraft = draft({
+  source: {
+    kind: 'github',
+    url: 'https://github.com/intent-hq/intent',
+    owner: 'intent-hq',
+    name: 'intent',
+    branch: 'main',
+  },
+  config: { setupPanelExpanded: true },
+});
+const pickedIssueDraft = draft({
+  ...githubSetupDraft,
+  intentText: '#4321 Make setup suggestions deterministic',
+  contextLinks: [
+    {
+      kind: 'issue',
+      url: 'https://github.com/intent-hq/intent/issues/4321',
+      owner: 'intent-hq',
+      repo: 'intent',
+      number: 4321,
+    },
+  ],
+});
+const setupRecentRepos: WorkspaceCreationRecentRepo[] = [
+  {
+    path: 'intent-hq/intent',
+    type: 'github',
+    githubUrl: 'https://github.com/intent-hq/intent',
+    owner: 'intent-hq',
+    name: 'intent',
+  },
+  { path: '/sandbox/cloudlands-fe', type: 'local', name: 'cloudlands-fe' },
+];
+const setupIssues = [
+  {
+    id: '4321',
+    number: 4321,
+    title: 'Make setup suggestions deterministic',
+    htmlUrl: 'https://github.com/intent-hq/intent/issues/4321',
+    state: 'open',
+    owner: 'intent-hq',
+    repo: 'intent',
+    labels: ['component:fe'],
+    updatedAt: FIXED_TIMESTAMP,
+  },
+];
+const connectedSetup = {
+  recentRepos: setupRecentRepos,
+  branchByRepo: { 'intent-hq/intent': 'main', '/sandbox/cloudlands-fe': 'main' },
+  github: { connected: true, issues: setupIssues, pulls: [] },
+};
 
 export const REQUIRED_SCENARIO_IDS = [
   'entry-pristine',
@@ -223,6 +338,14 @@ export const REQUIRED_SCENARIO_IDS = [
   'entry-restored-attachments',
   'entry-restore-failed',
   'entry-existing-workspace-boot',
+  'setup-empty',
+  'setup-suggestions',
+  'setup-suggestions-existing-intent',
+  'setup-issue-picked',
+  'setup-options-open',
+  'setup-collapsed-summary',
+  'setup-readiness-missing',
+  'setup-new-folder',
   'capability-checking',
   'capability-no-provider',
   'capability-login-required',
@@ -279,6 +402,103 @@ export const NEW_WORKSPACE_SCENARIOS: readonly Scenario[] = [
     attachmentDraft,
     restoredState(attachmentDraft),
     { contract: { control: 'start', width: 1280 } },
+  ),
+
+  scenario(
+    'setup-empty',
+    'entry',
+    'Setup panel without suggestions',
+    emptyDraft,
+    restoredState(emptyDraft),
+    {
+      fixtures: setupFixtures(emptyDraft),
+      contract: { control: 'start', width: 1280 },
+    },
+  ),
+  scenario(
+    'setup-suggestions',
+    'entry',
+    'Setup panel with recent and GitHub suggestions',
+    emptyDraft,
+    restoredState(emptyDraft),
+    {
+      fixtures: setupFixtures(emptyDraft, connectedSetup),
+      contract: { control: 'start', width: 1280 },
+    },
+  ),
+  scenario(
+    'setup-suggestions-existing-intent',
+    'entry',
+    'Issue suggestion preserves existing intent',
+    textDraft,
+    restoredState(textDraft),
+    {
+      fixtures: setupFixtures(textDraft, connectedSetup),
+      contract: { control: 'start', width: 1280 },
+    },
+  ),
+  scenario(
+    'setup-issue-picked',
+    'entry',
+    'Issue suggestion picked',
+    pickedIssueDraft,
+    restoredState(pickedIssueDraft),
+    {
+      fixtures: setupFixtures(pickedIssueDraft, connectedSetup),
+      contract: { control: 'start', width: 1280 },
+    },
+  ),
+  scenario(
+    'setup-options-open',
+    'entry',
+    'Setup options open',
+    githubSetupDraft,
+    restoredState(githubSetupDraft),
+    {
+      fixtures: setupFixtures(githubSetupDraft, { ...connectedSetup, optionsOpen: true }),
+      contract: { control: 'start', width: 1280 },
+    },
+  ),
+  scenario(
+    'setup-collapsed-summary',
+    'entry',
+    'Collapsed setup summary',
+    publicRepoDraft,
+    restoredState(publicRepoDraft),
+    {
+      fixtures: setupFixtures(publicRepoDraft, connectedSetup),
+      contract: { control: 'start', width: 1280 },
+    },
+  ),
+  scenario(
+    'setup-readiness-missing',
+    'entry',
+    'Setup readiness missing provider and Git',
+    githubSetupDraft,
+    restoredState(githubSetupDraft, { ...READY_CAPABILITIES, provider: 'missing', git: 'missing' }),
+    {
+      fixtures: setupFixtures(githubSetupDraft, {
+        ...connectedSetup,
+        providerAvailability: {
+          hasAnyProvider: false,
+          providers: PROVIDERS_UNAVAILABLE,
+          hiddenProviders: [],
+        },
+      }),
+      presentation: providerPresentation('connect-provider'),
+      contract: { control: 'provider', width: 1280 },
+    },
+  ),
+  scenario(
+    'setup-new-folder',
+    'entry',
+    'New project setup',
+    newFolderDraft,
+    restoredState(newFolderDraft),
+    {
+      fixtures: setupFixtures(newFolderDraft),
+      contract: { control: 'start', width: 1280 },
+    },
   ),
   scenario(
     'entry-restore-failed',
