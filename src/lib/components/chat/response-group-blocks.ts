@@ -1,14 +1,20 @@
 import type { ContentBlock } from '$shared/types';
-import type { ContentBlockGroup, RenderContentBlock } from '$lib/utils/messageParser';
+import {
+  parseSuggestedPrompts,
+  type ContentBlockGroup,
+  type RenderContentBlock,
+} from '$lib/utils/messageParser';
 import {
   getIdBackedContentBlockKey,
   getToolResultContentBlockKey,
   getToolUseContentBlockKey,
 } from '$shared/utils/content-block-helpers';
 import {
+  extractReasoningDisclosureHeading,
   extractReasoningHeading,
   extractReasoningHistory,
   extractStandaloneReasoningTitle,
+  isGenericReasoningHeading,
 } from './reasoning-heading';
 import { getProposalFromBlock } from '$shared/types/proposal-resource';
 
@@ -45,14 +51,27 @@ export function normalizeResponseGroup(block: ContentBlockGroup): ContentBlockGr
   if (!isReasoningPhaseGroupName(block.name)) return block;
 
   const parsedReasoning = block.children.map((child) =>
-    child.type === 'thinking' ? extractReasoningHeading(child.text ?? child.content ?? '') : null,
+    child.type === 'thinking'
+      ? extractReasoningDisclosureHeading(child.text ?? child.content ?? '')
+      : null,
   );
-  const firstNamedReasoning = parsedReasoning.findIndex((reasoning) => reasoning?.heading);
+  const firstSpecificReasoning = parsedReasoning.findIndex(
+    (reasoning) => reasoning?.heading && !isGenericReasoningHeading(reasoning.heading),
+  );
+  const firstNamedReasoning =
+    firstSpecificReasoning >= 0
+      ? firstSpecificReasoning
+      : parsedReasoning.findIndex((reasoning) => reasoning?.heading);
   const children = block.children.flatMap((child, index) => {
     if (child.type !== 'thinking') return [child];
     const reasoning = parsedReasoning[index];
     const text =
-      index === firstNamedReasoning ? (reasoning?.body ?? '') : (child.text ?? child.content ?? '');
+      index === firstNamedReasoning ||
+      (firstSpecificReasoning >= 0 &&
+        reasoning?.heading &&
+        isGenericReasoningHeading(reasoning.heading))
+        ? (reasoning?.body ?? '')
+        : (child.text ?? child.content ?? '');
     const normalized = reasoningWithText(child, text);
     return normalized ? [normalized] : [];
   });
@@ -66,48 +85,78 @@ export function normalizeResponseGroup(block: ContentBlockGroup): ContentBlockGr
   };
 }
 
+function normalizeResponseGroupWithExternalTitle(
+  block: ContentBlockGroup,
+  name: string,
+): ContentBlockGroup {
+  const children = block.children.flatMap((child) => {
+    if (child.type !== 'thinking') return [child];
+    const reasoning = extractReasoningHeading(child.text ?? child.content ?? '');
+    const text =
+      reasoning.heading && isGenericReasoningHeading(reasoning.heading)
+        ? reasoning.body
+        : (child.text ?? child.content ?? '');
+    const normalized = reasoningWithText(child, text);
+    return normalized ? [normalized] : [];
+  });
+  return { ...block, name, sourceName: block.name, isReasoningPhase: true, children };
+}
+
+function insertAdjacentReasoning(
+  children: ContentBlock[],
+  preceding: ContentBlock[],
+): ContentBlock[] {
+  if (children[0]?.type !== 'text') return [...preceding, ...children];
+  return [children[0], ...preceding, ...children.slice(1)];
+}
+
 function pairAdjacentReasoningGroup(
-  preceding: ContentBlock,
+  preceding: ContentBlock[],
   group: ContentBlockGroup,
 ): ContentBlockGroup | null {
-  if (preceding.type !== 'thinking' || !isReasoningPhaseGroupName(group.name)) return null;
-
-  const precedingReasoning = extractReasoningHeading(preceding.text ?? preceding.content ?? '');
+  if (!preceding.length || !isReasoningPhaseGroupName(group.name)) return null;
+  const lastPreceding = preceding.at(-1);
+  if (!lastPreceding) return null;
+  const precedingReasoning = extractReasoningHeading(
+    lastPreceding.text ?? lastPreceding.content ?? '',
+  );
   const normalizedGroup = normalizeResponseGroup(group);
-  if (!group.isStreaming && !precedingReasoning.heading && !normalizedGroup.name) {
-    const precedingHistory = reasoningWithText(preceding, precedingReasoning.body);
-    if (!precedingHistory) return null;
-
-    const [firstChild, ...remainingChildren] = normalizedGroup.children;
-    const children =
-      firstChild?.type === 'text'
-        ? [firstChild, precedingHistory, ...remainingChildren]
-        : [precedingHistory, ...normalizedGroup.children];
-    return {
-      ...normalizedGroup,
-      hasAdjacentReasoningHistory: true,
-      children,
-    };
-  }
-
   const description = group.children[0];
-  if (description?.type !== 'text' || !(description.text ?? description.content ?? '').trim()) {
-    return null;
+  const externalTitle =
+    description?.type === 'text' && (description.text ?? description.content ?? '').trim()
+      ? extractStandaloneReasoningTitle(precedingReasoning.body)
+      : null;
+  let namedGroup = normalizedGroup;
+  let histories = preceding.slice();
+
+  if (precedingReasoning.heading && externalTitle) {
+    namedGroup = normalizeResponseGroupWithExternalTitle(group, externalTitle);
+    const previousHistory = reasoningWithText(lastPreceding, precedingReasoning.heading);
+    histories = [...preceding.slice(0, -1), ...(previousHistory ? [previousHistory] : [])];
+  } else if (!namedGroup.name) {
+    for (let index = histories.length - 1; index >= 0; index -= 1) {
+      const reasoning = extractReasoningHeading(
+        histories[index].text ?? histories[index].content ?? '',
+      );
+      if (!reasoning.heading || isGenericReasoningHeading(reasoning.heading)) continue;
+      namedGroup = { ...namedGroup, name: reasoning.heading };
+      const remaining = reasoningWithText(histories[index], reasoning.body);
+      histories = [
+        ...histories.slice(0, index),
+        ...(remaining ? [remaining] : []),
+        ...histories.slice(index + 1),
+      ];
+      break;
+    }
   }
 
-  if (!precedingReasoning.heading) return null;
-
-  const title = extractStandaloneReasoningTitle(precedingReasoning.body);
-  if (!title) return null;
-
-  const precedingHistory = reasoningWithText(preceding, precedingReasoning.heading);
-  const children = normalizedGroup.children;
+  histories = histories.filter((block) => (block.text ?? block.content ?? '').trim());
 
   return {
-    ...normalizedGroup,
-    name: title,
+    ...namedGroup,
     hasAdjacentReasoningHistory: true,
-    children: precedingHistory ? [children[0], precedingHistory, ...children.slice(1)] : children,
+    adjacentReasoningHistoryCount: histories.length,
+    children: insertAdjacentReasoning(namedGroup.children, histories),
   };
 }
 
@@ -161,12 +210,16 @@ export function normalizeResponseGroups(
 
   for (let index = 0; index < blocks.length; index += 1) {
     const block = blocks[index];
-    const next = blocks[index + 1];
-    if (block.type !== 'content_group' && next?.type === 'content_group') {
-      const paired = pairAdjacentReasoningGroup(block, next);
+    if (block.type === 'thinking') {
+      let groupIndex = index;
+      while (blocks[groupIndex]?.type === 'thinking') groupIndex += 1;
+      const group = blocks[groupIndex];
+      const preceding = blocks.slice(index, groupIndex) as ContentBlock[];
+      const paired =
+        group?.type === 'content_group' ? pairAdjacentReasoningGroup(preceding, group) : null;
       if (paired) {
         normalized.push(paired);
-        index += 1;
+        index = groupIndex;
         continue;
       }
     }
@@ -182,10 +235,46 @@ export function normalizeResponseGroups(
   return hoistProposalBlocksFromResponseGroups(normalized);
 }
 
-export function shouldRenderResponseGroupInline(
-  group: Pick<ContentBlockGroup, 'isReasoningPhase' | 'isStreaming' | 'name'>,
+export function isTerminalResponseGroup(
+  blocks: readonly RenderContentBlock[],
+  groupIndex: number,
 ): boolean {
-  return group.isReasoningPhase === true && !group.isStreaming && !group.name.trim();
+  for (let index = groupIndex + 1; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (block.type === 'content_group') return false;
+    if (
+      block.type === 'text' &&
+      parseSuggestedPrompts(block.text ?? block.content ?? '').cleanedContent.trim()
+    ) {
+      return false;
+    }
+    if (block.type === 'image' && (block.data || block.dataTruncated) && block.mimeType)
+      return false;
+    if (block.type === 'video' && block.source) return false;
+    if (
+      (block.type === 'nav-link' || block.kind === 'nav-link') &&
+      block.target &&
+      (block.label || block.target)
+    ) {
+      return false;
+    }
+    if (getProposalFromBlock(block as ContentBlock)) return false;
+  }
+  return true;
+}
+
+export function shouldRenderResponseGroupInline(
+  group: Pick<ContentBlockGroup, 'isReasoningPhase' | 'isStreaming' | 'name'> & {
+    children?: readonly ContentBlock[];
+  },
+): boolean {
+  return (
+    group.isReasoningPhase === true &&
+    !group.isStreaming &&
+    !group.name.trim() &&
+    group.children?.some((child) => child.type === 'tool_result') === true &&
+    !group.children.some((child) => child.type === 'thinking')
+  );
 }
 
 export function isNestedReasoningSectionStart(
@@ -261,6 +350,23 @@ export function getResponseGroupCurrentBlockIndex(blocks: readonly ContentBlock[
   }
 
   return -1;
+}
+
+export function getResponseGroupCurrentChildIndex(
+  group: Pick<
+    ContentBlockGroup,
+    'children' | 'hasAdjacentReasoningHistory' | 'adjacentReasoningHistoryCount'
+  >,
+): number {
+  const adjacentHistoryCount = Math.max(group.adjacentReasoningHistoryCount ?? 1, 1);
+  if (
+    group.hasAdjacentReasoningHistory &&
+    getResponseGroupCurrentBlockIndex(group.children.slice(adjacentHistoryCount + 1)) < 0
+  ) {
+    return group.children.length > 0 ? 0 : -1;
+  }
+
+  return getResponseGroupCurrentBlockIndex(group.children);
 }
 
 export function getResponseGroupCurrentBlock(

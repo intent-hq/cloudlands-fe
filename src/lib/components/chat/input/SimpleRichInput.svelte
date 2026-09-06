@@ -150,7 +150,7 @@
     editMode?: boolean;
     /** Whether the parent panel is focused - dims action bar when false */
     panelFocused?: boolean;
-    /** Whether to use compact mode (shorter height for short panels) */
+    /** Compact geometry authority; omit to fall back to the parent panel height. */
     compactMode?: boolean;
     /** Render as the inset ChatPanel composer surface. */
     edgeDocked?: boolean;
@@ -226,7 +226,7 @@
 
     panelFocused = true,
 
-    compactMode: _compactMode = false, // Reserved for future use
+    compactMode,
     edgeDocked = false,
     editorClassName = 'px-2!',
     contentInsetClassName = undefined,
@@ -546,7 +546,7 @@
   const IDLE_MIN_HEIGHT = 56;
   const DEFAULT_HEIGHT = 100;
   const IDLE_DEFAULT_HEIGHT = 80;
-  const COMPACT_PANEL_THRESHOLD = 640; // Keep the composer compact in short and stacked panels
+  const COMPACT_PANEL_THRESHOLD = 640; // Fallback for hosts that do not provide compactMode
   const MAX_HEIGHT_PERCENTAGE = 0.8; // Max 80% of parent panel
   const MAX_HEIGHT_ABSOLUTE = 800; // Absolute max in pixels
   const FALLBACK_MAX_HEIGHT = 300;
@@ -555,11 +555,14 @@
     value.trim().length > 0 || contextItems.length > 0 || hasInlineImages,
   );
   const showPlaceholder = $derived(inputLocked || (isComposerFocused && !hasComposerContent));
+  const effectiveCompactMode = $derived(
+    compactMode ?? !(parentPanelHeight && parentPanelHeight > COMPACT_PANEL_THRESHOLD),
+  );
 
   // Automatic geometry expands only for real composer content. Focus reveals
   // the placeholder without changing the compact idle height.
   let dynamicDefaultHeight = $derived.by(() => {
-    if (parentPanelHeight && parentPanelHeight > COMPACT_PANEL_THRESHOLD) {
+    if (!effectiveCompactMode) {
       return hasComposerContent ? DEFAULT_HEIGHT : IDLE_DEFAULT_HEIGHT;
     }
     return hasComposerContent ? MIN_HEIGHT : IDLE_MIN_HEIGHT;
@@ -1439,6 +1442,7 @@
   role="region"
   aria-label={m.chat_richInput_dropSupport_ariaLabel()}
   data-testid="message-input"
+  data-compact={effectiveCompactMode}
 >
   <!-- Drop zone overlay -->
   {#if isDragging}

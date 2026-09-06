@@ -2558,6 +2558,7 @@
   bind:this={panelRootRef}
   class="h-full w-full flex flex-col overflow-hidden relative"
   tabindex="-1"
+  data-panel-find-shortcut-owner
   onpointerdown={handlePanelPointerDown}
 >
   {#if allChangesSearchOpen}

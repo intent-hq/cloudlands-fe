@@ -259,12 +259,7 @@ for (const theme of ['light', 'dark'] as const) {
             expect(row.labelStart - row.rowEdges[0]).toBeCloseTo(labelInset * zoom, 1);
             expect(row.insets[2] - row.insets[1]).toBeCloseTo(0, 1);
             expect(row.summary).toEqual(['0px', 'hidden', 'ellipsis', 'nowrap']);
-            expect(row.margins).toEqual([
-              '0px',
-              row.kind === 'response-group' ? '12px' : '0px',
-              '0px',
-              '0px',
-            ]);
+            expect(row.margins).toEqual(['0px', '0px', '0px', '0px']);
           }
           if (width === 320) expect(geometry.some((row) => row.summaryClipped)).toBe(true);
           const pairOrders = new Set<string>();

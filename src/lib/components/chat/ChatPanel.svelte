@@ -344,6 +344,8 @@
     type ChatSearchMatch,
   } from './chat-search';
   import { requestSearchDisclosure } from './chat-search-disclosure';
+  import { resolveChatPanelCompactMode } from './chat-panel-compact-mode';
+  import { getComposerAttentionBodyMaxHeight } from './composer-attention-layout';
   import { resolveHydratedInputModel } from './input-hydration';
   import {
     deriveQueuedMessagesVisibility,
@@ -882,9 +884,11 @@
   // This is NOT reactive ($state) intentionally - we want to read it without triggering reactive tracking.
   let isComponentDestroyed = false;
 
-  // Track container height for compact mode (line clamp 1 when short)
-  // Use hysteresis to prevent flickering at the threshold boundary
+  // The transcript viewport drives transcript-only layout such as the pinned prompt.
   let containerHeight = $state(0);
+  // The panel root is the compact composer authority. The transcript height changes
+  // with composer content and cannot safely own this decision.
+  let panelClientHeight = $state(0);
   const COMPACT_HEIGHT_ENTER = 600; // Enter compact mode below this
   const COMPACT_HEIGHT_EXIT = 640; // Exit compact mode above this
   let isCompactMode = $state(false);
@@ -899,16 +903,6 @@
     workspace?.id;
     agentId;
     hasVisibleTranscriptUtility = false;
-  });
-
-  $effect(() => {
-    if (containerHeight > 0) {
-      if (!isCompactMode && containerHeight < COMPACT_HEIGHT_ENTER) {
-        isCompactMode = true;
-      } else if (isCompactMode && containerHeight > COMPACT_HEIGHT_EXIT) {
-        isCompactMode = false;
-      }
-    }
   });
 
   // Hoist suggested prompts so keyboard handlers can reference them
@@ -4334,17 +4328,19 @@
     pinnedPrompt = next;
   }
 
-  // Track container height for compact mode using ResizeObserver
+  // Track transcript, composer, and authoritative panel geometry with one observer.
   $effect(() => {
     if (!isActive) return;
     let destroyed = false;
     let readinessFrame: number | null = null;
+    let compactMeasurementFrame: number | null = null;
+    let pendingPanelHeight = 0;
     let observer: ResizeObserver | null = null;
 
     const setupWhenReady = () => {
       readinessFrame = null;
       if (destroyed) return;
-      if (!scrollContainer || !composerElement) {
+      if (!panelElement || !scrollContainer || !composerElement) {
         readinessFrame = requestAnimationFrame(setupWhenReady);
         return;
       }
@@ -4362,6 +4358,21 @@
             if (newHeight !== composerHeight) {
               composerHeight = newHeight;
             }
+          } else if (entry.target === panelElement) {
+            pendingPanelHeight = entry.contentRect.height;
+            if (compactMeasurementFrame === null) {
+              compactMeasurementFrame = requestAnimationFrame(() => {
+                compactMeasurementFrame = null;
+                if (destroyed) return;
+                panelClientHeight = pendingPanelHeight;
+                isCompactMode = resolveChatPanelCompactMode(
+                  isCompactMode,
+                  pendingPanelHeight,
+                  COMPACT_HEIGHT_ENTER,
+                  COMPACT_HEIGHT_EXIT,
+                );
+              });
+            }
           }
         }
         if (scrollContainerResized && scrollContainer) {
@@ -4373,12 +4384,14 @@
       });
       observer.observe(scrollContainer);
       observer.observe(composerElement);
+      observer.observe(panelElement);
     };
     readinessFrame = requestAnimationFrame(setupWhenReady);
 
     return () => {
       destroyed = true;
       if (readinessFrame !== null) cancelAnimationFrame(readinessFrame);
+      if (compactMeasurementFrame !== null) cancelAnimationFrame(compactMeasurementFrame);
       observer?.disconnect();
     };
   });
@@ -5304,7 +5317,7 @@
     if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
       // Only open search if this panel is focused and active, and focus is not in terminal
       if (
-        isPanelFocused &&
+        isChatFocused &&
         isActive &&
         !isFocusInTerminal(document.activeElement as HTMLElement | null)
       ) {
@@ -5349,6 +5362,7 @@
   role="region"
   aria-label={agentName}
   data-agent-model={agentModel}
+  data-panel-find-shortcut-owner={isActive && isChatFocused ? '' : undefined}
   onfocusin={() => {
     isInternallyFocused = true;
   }}
@@ -6418,6 +6432,7 @@
               <QueuedMessageList
                 bind:this={queuedMessageListRef}
                 messages={visibleQueuedMessages}
+                compactMode={isCompactMode}
                 onedit={handleEditQueuedMessage}
                 onremove={handleRemoveQueuedMessage}
                 onsendnow={handleSendQueuedMessageNow}
@@ -6483,7 +6498,7 @@
         data-testid="chat-composer-lane"
       >
         <div
-          class="w-full min-w-0"
+          class="flex w-full min-w-0 flex-col gap-2"
           data-testid="chat-composer-controls-inner"
           onfocusout={flushPendingDraftWrite}
         >
@@ -6532,6 +6547,8 @@
                     questions={pendingQuestions.questions}
                     draftKey={wizardDraftKey(agentId, pendingQuestions.messageId)}
                     collapsed={questionWizardCollapsed}
+                    compactMode={isCompactMode}
+                    maxBodyHeight={getComposerAttentionBodyMaxHeight(panelClientHeight)}
                     onToggleCollapsed={(collapsed) => {
                       // Can be invoked around the teardown frame after the
                       // pending-questions source is already nulled.

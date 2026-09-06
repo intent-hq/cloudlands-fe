@@ -30,7 +30,7 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import Fa from 'svelte-fa';
   import {
     faChevronLeft,
@@ -38,7 +38,7 @@
     faArrowUp,
     faCheck,
   } from '@fortawesome/free-solid-svg-icons';
-  import { fade } from 'svelte/transition';
+  import { safeFade, prefersReducedMotion } from '$lib/utils/animations';
   import Button from '$lib/components/ui/button/button.svelte';
   import DismissQuestionsConfirmDialog from './DismissQuestionsConfirmDialog.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -61,6 +61,8 @@
     draftKey?: string;
     /** Host-owned Ignore state — true renders the compact banner. */
     collapsed?: boolean;
+    compactMode?: boolean;
+    maxBodyHeight?: number;
     onToggleCollapsed?: (collapsed: boolean) => void;
     onComplete?: (answers: QuestionAnswer[]) => void;
     /**
@@ -75,6 +77,8 @@
     questions,
     draftKey = undefined,
     collapsed = false,
+    compactMode = false,
+    maxBodyHeight = 480,
     onToggleCollapsed,
     onComplete,
     onDismiss,
@@ -105,6 +109,12 @@
   let completed = $state(false);
   // Dismiss is destructive and persistent — gate it behind a confirm dialog.
   let confirmingDismiss = $state(false);
+  let dismissing = $state(false);
+  let collapsedToggle = $state<HTMLButtonElement>();
+  let expandedToggle = $state<HTMLButtonElement>();
+  let questionHeading = $state<HTMLHeadingElement>();
+  let previousCollapsed = $state<boolean>();
+  let transferDisclosureFocus = false;
   // Intentional initial capture: the host remounts the wizard ({#key} on the
   // question-bearing message id) whenever a different question set pends.
   // svelte-ignore state_referenced_locally
@@ -129,12 +139,27 @@
   // options + free text together).
   const optionsLocked = $derived(!isMulti && draft.text.length > 0);
 
+  $effect(() => {
+    const nextCollapsed = collapsed;
+    if (nextCollapsed === previousCollapsed) return;
+    previousCollapsed = nextCollapsed;
+    if (!transferDisclosureFocus) return;
+    transferDisclosureFocus = false;
+    tick().then(() => (nextCollapsed ? collapsedToggle : expandedToggle)?.focus());
+  });
+
+  function toggleCollapsed(nextCollapsed: boolean, event: MouseEvent) {
+    transferDisclosureFocus = document.activeElement === event.currentTarget;
+    onToggleCollapsed?.(nextCollapsed);
+  }
+
+  async function focusQuestionHeading() {
+    await tick();
+    questionHeading?.focus({ preventScroll: true });
+  }
+
   // Motion: snappy 150ms step transitions, none under prefers-reduced-motion.
-  const stepDuration =
-    typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
-      ? 0
-      : 150;
+  const stepDuration = prefersReducedMotion() ? 0 : 150;
 
   // ── Draft persistence (only when `draftKey` is set) ────────────────────
   // Saves are debounced so typing does not write every keystroke; the
@@ -218,6 +243,7 @@
       return;
     }
     idx += 1;
+    void focusQuestionHeading();
   }
 
   function selectOption(oi: number) {
@@ -249,6 +275,7 @@
   function handleBack() {
     if (completed) return;
     idx = Math.max(idx - 1, 0);
+    void focusQuestionHeading();
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -260,6 +287,10 @@
 
 <div
   class="min-w-0 overflow-hidden rounded-(--radius-large) border-0 bg-card"
+  role="region"
+  aria-label={m.chat_questionWizard_title()}
+  aria-busy={dismissing}
+  data-compact={compactMode}
   data-question-wizard
   data-testid="question-wizard-card"
 >
@@ -269,8 +300,13 @@
     <div class="flex min-w-0 w-full items-center">
       <button
         type="button"
-        class="flex min-w-0 flex-1 items-center gap-2 border-none bg-transparent px-3 py-2.5 text-left font-[inherit] cursor-pointer hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-4"
-        onclick={() => onToggleCollapsed?.(false)}
+        bind:this={collapsedToggle}
+        class="flex min-w-0 flex-1 items-center gap-2 border-none bg-transparent px-3 {compactMode
+          ? 'py-2'
+          : 'py-2.5'} text-left font-[inherit] cursor-pointer hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-4"
+        onclick={(event) => toggleCollapsed(false, event)}
+        aria-expanded="false"
+        aria-controls="question-wizard-content"
       >
         <span class="type-caption font-medium text-foreground">{m.chat_questionWizard_title()}</span
         >
@@ -285,6 +321,7 @@
           class="shrink-0 border-none bg-transparent px-3 py-2.5 type-caption text-danger cursor-pointer font-[inherit] hover:bg-danger hover:text-danger-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           title={m.chat_questionWizard_dismiss_tooltip()}
           onclick={() => (confirmingDismiss = true)}
+          disabled={dismissing}
         >
           {m.chat_questionWizard_dismiss_label()}
         </button>
@@ -292,7 +329,8 @@
     </div>
   {:else}
     <div
-      class="flex min-h-7 min-w-0 items-center gap-2 px-3 pt-3 sm:px-4"
+      class="flex min-h-7 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 pt-3 sm:px-4"
+      class:pt-2={compactMode}
       data-question-wizard-header
     >
       {#if multiStep}
@@ -309,9 +347,12 @@
       <span class="flex shrink-0 items-center gap-1" data-question-header-actions>
         <button
           type="button"
+          bind:this={expandedToggle}
           class="border-none bg-transparent type-caption text-subtle cursor-pointer font-[inherit] px-1.5 py-1 rounded-(--radius-small) hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           title={m.chat_questionWizard_hide_tooltip()}
-          onclick={() => onToggleCollapsed?.(true)}
+          onclick={(event) => toggleCollapsed(true, event)}
+          aria-expanded="true"
+          aria-controls="question-wizard-content"
         >
           {m.chat_questionWizard_hide_label()}
         </button>
@@ -321,6 +362,7 @@
             class="border-none bg-transparent type-caption text-danger cursor-pointer font-[inherit] px-1.5 py-1 rounded-(--radius-small) hover:bg-danger hover:text-danger-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             title={m.chat_questionWizard_dismiss_tooltip()}
             onclick={() => (confirmingDismiss = true)}
+            disabled={dismissing}
           >
             {m.chat_questionWizard_dismiss_label()}
           </button>
@@ -329,9 +371,22 @@
     </div>
 
     {#key idx}
-      <div in:fade={{ duration: stepDuration }}>
-        <div class="flex flex-col gap-4 px-3 pt-3 pb-3 sm:px-4">
-          <h2 class="type-title font-medium text-foreground">{current.question}</h2>
+      <div in:safeFade={{ duration: stepDuration }}>
+        <div
+          id="question-wizard-content"
+          class="flex flex-col gap-4 overflow-y-auto px-3 pt-3 pb-3 sm:px-4"
+          class:gap-3={compactMode}
+          class:pt-2={compactMode}
+          class:pb-2={compactMode}
+          style:max-height={`${maxBodyHeight}px`}
+        >
+          <h2
+            class="type-title font-medium text-foreground focus-visible:outline-none"
+            tabindex="-1"
+            bind:this={questionHeading}
+          >
+            {current.question}
+          </h2>
 
           <div class="flex flex-col divide-y divide-border">
             {#each current.options as option, oi (oi)}
@@ -399,7 +454,11 @@
           </div>
         </div>
 
-        <div class="flex items-center gap-2 px-3 py-3 sm:px-4" data-testid="question-wizard-footer">
+        <div
+          class="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-3 sm:px-4"
+          class:py-2={compactMode}
+          data-testid="question-wizard-footer"
+        >
           {#if multiStep}
             <button
               type="button"
@@ -419,11 +478,12 @@
               type="button"
               class="border-none bg-transparent type-body text-subtle cursor-pointer font-[inherit] px-2 py-1.5 rounded-(--radius-small) hover:text-foreground"
               onclick={handleSkip}
+              disabled={completed}
             >
               {m.chat_questionWizard_skip_label()}
             </button>
             {#if showNext}
-              <Button size="sm" disabled={nextDisabled} onclick={handleNext}>
+              <Button size="sm" disabled={nextDisabled || completed} onclick={handleNext}>
                 {isLast ? m.chat_questionWizard_send_label() : m.chat_questionWizard_next_label()}
                 <Fa icon={isLast ? faArrowUp : faArrowRight} class="text-[10px] a11y-ignore" />
               </Button>
@@ -437,8 +497,10 @@
 
 <DismissQuestionsConfirmDialog
   open={confirmingDismiss}
+  busy={dismissing}
   onConfirm={async () => {
-    confirmingDismiss = false;
+    if (dismissing) return;
+    dismissing = true;
     try {
       await onDismiss?.();
       // Only clear once the dismissal is confirmed — a rejected dismissal
@@ -446,6 +508,9 @@
       resolveDraft();
     } catch {
       // Host surfaces the failure; the draft stays for the retry.
+    } finally {
+      dismissing = false;
+      confirmingDismiss = false;
     }
   }}
   onCancel={() => (confirmingDismiss = false)}
