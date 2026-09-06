@@ -1,0 +1,460 @@
+{
+  "version": 1,
+  "regions": [
+    {
+      "id": "daemon-platform",
+      "label": "Daemon platform",
+      "responsibility": "This is where the daemon's shared domain types, service composition, process entry points, and end-to-end safety net are maintained.",
+      "anchor": [0.1, 0.48],
+      "paths": [
+        "packages/intentd/crates/intentd/src/**",
+        "packages/intentd/crates/intent-core/**",
+        "packages/intentd/crates/*/Cargo.toml",
+        "packages/intentd/crates/*/build.rs"
+      ]
+    },
+    {
+      "id": "renderer-ui",
+      "label": "Renderer UI surface",
+      "responsibility": "This is where the desktop product's visual surfaces, navigation, shared presentation utilities, and assets are assembled.",
+      "anchor": [0.86, 0.58],
+      "paths": [
+        "packages/cloudlands-fe/src/lib/components/**",
+        "packages/cloudlands-fe/src/lib/utils/**",
+        "packages/cloudlands-fe/src/lib/component-catalog/**",
+        "packages/cloudlands-fe/src/lib/services/**",
+        "packages/cloudlands-fe/src/lib/icons/**",
+        "packages/cloudlands-fe/src/lib/styles/**",
+        "packages/cloudlands-fe/src/lib/ui/**",
+        "packages/cloudlands-fe/src/assets/**",
+        "packages/cloudlands-fe/src/routes/**",
+        "packages/cloudlands-fe/src/features/hud/**",
+        "packages/cloudlands-fe/src/features/layout/**",
+        "packages/cloudlands-fe/src/features/navigation/**",
+        "packages/cloudlands-fe/src/features/notifications/**",
+        "packages/cloudlands-fe/src/features/onboarding/**",
+        "packages/cloudlands-fe/src/app.css",
+        "packages/cloudlands-fe/src/app.d.ts",
+        "packages/cloudlands-fe/src/app.html",
+        "packages/cloudlands-fe/src/hooks.client.ts"
+      ]
+    },
+    {
+      "id": "store-migrations",
+      "label": "Store & migrations",
+      "responsibility": "This is where durable SQLite state, repositories, migrations, and persistence invariants are defined.",
+      "anchor": [0.14, 0.3],
+      "paths": ["packages/intentd/crates/intent-store/**"]
+    },
+    {
+      "id": "renderer-state",
+      "label": "Renderer state",
+      "responsibility": "This is where transient Redux state, selectors, middleware, sagas, and frontend orchestration mirror daemon-owned truth.",
+      "anchor": [0.72, 0.7],
+      "paths": [
+        "packages/cloudlands-fe/src/store/renderer/**",
+        "packages/cloudlands-fe/src/store/utils/**",
+        "packages/cloudlands-fe/src/features/**/sagas.ts",
+        "packages/cloudlands-fe/src/features/**/sagas/**",
+        "packages/cloudlands-fe/src/features/**/*slice*.ts",
+        "packages/cloudlands-fe/src/features/**/*selector*.ts"
+      ]
+    },
+    {
+      "id": "electron-main",
+      "label": "Electron main",
+      "responsibility": "This is where Electron windows, preload bridges, native permissions, menus, IPC security, and desktop process lifecycle are owned.",
+      "anchor": [0.87, 0.34],
+      "paths": [
+        "packages/cloudlands-fe/src/main/**",
+        "packages/cloudlands-fe/src/preload/**",
+        "packages/cloudlands-fe/src/features/**/main/**",
+        "packages/cloudlands-fe/src/store/main/**",
+        "packages/cloudlands-fe/src/shared/main/**"
+      ]
+    },
+    {
+      "id": "protocol-client",
+      "label": "Protocol clients & sync",
+      "responsibility": "This is where frontend clients connect to intentd, validate wire requests, subscribe before fetching, and reconcile daemon state.",
+      "anchor": [0.61, 0.52],
+      "paths": [
+        "packages/cloudlands-fe/src/lib/client/**",
+        "packages/cloudlands-fe/src/shared/ipc/**",
+        "packages/cloudlands-fe/src/features/backend/**",
+        "packages/cloudlands-fe/src/features/protocol/**",
+        "packages/cloudlands-fe/src/features/daemon-status/**",
+        "packages/cloudlands-fe/src/shared/types/backend*.ts",
+        "packages/cloudlands-fe/src/shared/types/protocol*.ts"
+      ]
+    },
+    {
+      "id": "workspace-lifecycle",
+      "label": "Workspace lifecycle",
+      "responsibility": "This is where workspaces are created, isolated, opened, archived, duplicated, hydrated, and safely removed.",
+      "anchor": [0.2, 0.58],
+      "paths": [
+        "packages/intentd/crates/intent-services/src/clone_ops.rs",
+        "packages/intentd/crates/intent-services/src/clone_ops/**",
+        "packages/intentd/crates/intent-services/src/create_progress.rs",
+        "packages/intentd/crates/intent-services/src/delete_grace.rs",
+        "packages/intentd/crates/intent-services/src/disk_usage.rs",
+        "packages/intentd/crates/intent-services/src/nested_repos.rs",
+        "packages/intentd/crates/intent-services/src/repo_config.rs",
+        "packages/intentd/crates/intent-services/src/sandbox_ops.rs",
+        "packages/intentd/crates/intent-git/src/cow_checkout.rs",
+        "packages/intentd/crates/intent-git/src/repo_cache.rs",
+        "packages/intentd/crates/intent-git/src/worktree.rs",
+        "packages/intentd/crates/intent-store/src/workspace*.rs",
+        "packages/intentd/crates/intentd/tests/**/*workspace*.rs",
+        "packages/intentd/crates/intentd/tests/**/*archive*.rs",
+        "packages/intentd/crates/intentd/tests/**/*checkout*.rs",
+        "packages/cloudlands-fe/src/features/workspace/**",
+        "packages/cloudlands-fe/src/lib/components/workspace/**",
+        "packages/cloudlands-fe/src/store/renderer/slices/workspace*/**",
+        "packages/cloudlands-fe/src/store/renderer/slices/**/*workspace*.ts",
+        "packages/cloudlands-fe/src/routes/**/*workspace*"
+      ]
+    },
+    {
+      "id": "agent-execution",
+      "label": "Agent execution (ACP)",
+      "responsibility": "This is where provider-agnostic agents are created, prompted, streamed, queued, delegated, sandboxed, and connected back to workspace tools.",
+      "anchor": [0.31, 0.7],
+      "paths": [
+        "packages/intentd/crates/intent-acp/**",
+        "packages/intentd/crates/intent-providers/**",
+        "packages/intentd/crates/intent-services/src/agent*.rs",
+        "packages/intentd/crates/intent-services/src/agent*/**",
+        "packages/intentd/crates/intent-services/src/acp_adapter.rs",
+        "packages/intentd/crates/intent-services/src/harness/**",
+        "packages/intentd/crates/intent-services/src/harness.rs",
+        "packages/intentd/crates/intent-services/src/history_xml.rs",
+        "packages/intentd/crates/intent-services/src/history_xml/**",
+        "packages/intentd/crates/intent-services/src/instructions.rs",
+        "packages/intentd/crates/intent-services/src/one_shot_acp.rs",
+        "packages/intentd/crates/intent-services/src/one_shot_acp/**",
+        "packages/intentd/crates/intent-services/src/provider*.rs",
+        "packages/intentd/crates/intent-services/src/provider*/**",
+        "packages/intentd/crates/intent-services/src/rules.rs",
+        "packages/intentd/crates/intent-services/src/skills.rs",
+        "packages/intentd/crates/intent-services/src/specialists.rs",
+        "packages/intentd/crates/intent-services/resources/**",
+        "packages/intentd/crates/intent-store/src/agent*.rs",
+        "packages/intentd/crates/intent-store/src/completion*.rs",
+        "packages/intentd/crates/intent-store/src/delegation_group_repo.rs",
+        "packages/intentd/crates/intent-store/src/message*.rs",
+        "packages/intentd/crates/intentd/tests/**/*agent*.rs",
+        "packages/intentd/crates/intentd/tests/**/*delegate*.rs",
+        "packages/intentd/crates/intentd/tests/**/*harness*.rs",
+        "packages/cloudlands-fe/src/features/agent/**",
+        "packages/cloudlands-fe/src/features/acp-official/**",
+        "packages/cloudlands-fe/src/features/antigravity/**",
+        "packages/cloudlands-fe/src/features/auggie/**",
+        "packages/cloudlands-fe/src/features/claude-code/**",
+        "packages/cloudlands-fe/src/features/codex/**",
+        "packages/cloudlands-fe/src/features/cortex/**",
+        "packages/cloudlands-fe/src/features/droid/**",
+        "packages/cloudlands-fe/src/features/opencode/**",
+        "packages/cloudlands-fe/src/features/pi/**",
+        "packages/cloudlands-fe/src/features/providers/**",
+        "packages/cloudlands-fe/src/features/rules/**",
+        "packages/cloudlands-fe/src/features/specialists/**",
+        "packages/cloudlands-fe/src/lib/components/chat/**",
+        "packages/cloudlands-fe/src/lib/components/agent-overview/**",
+        "packages/cloudlands-fe/src/store/renderer/slices/agent*/**",
+        "packages/cloudlands-fe/src/store/renderer/slices/chat*/**",
+        "packages/cloudlands-fe/src/store/renderer/slices/**/*agent*.ts"
+      ]
+    },
+    {
+      "id": "event-stream",
+      "label": "Event stream & subscriptions",
+      "responsibility": "This is where durable and transient events are typed, published, queried, filtered, subscribed to, and delivered to live consumers.",
+      "anchor": [0.46, 0.69],
+      "paths": [
+        "packages/intentd/crates/intent-core/src/events/**",
+        "packages/intentd/crates/intent-core/src/events.rs",
+        "packages/intentd/crates/intent-services/src/events/**",
+        "packages/intentd/crates/intent-services/src/event*.rs",
+        "packages/intentd/crates/intent-services/src/event*/**",
+        "packages/intentd/crates/intent-store/src/event*.rs",
+        "packages/intentd/crates/intentd/tests/**/*event*.rs",
+        "packages/intentd/crates/intentd/tests/**/*subscription*.rs",
+        "packages/cloudlands-fe/src/features/events/**",
+        "packages/cloudlands-fe/src/lib/client/live/live-events-client.ts",
+        "packages/cloudlands-fe/src/lib/client/live/**/*event*.ts",
+        "packages/cloudlands-fe/src/store/renderer/slices/event*/**",
+        "packages/cloudlands-fe/src/store/renderer/slices/**/*event*.ts",
+        "packages/cloudlands-fe/src/shared/types/**/*event*.ts"
+      ]
+    },
+    {
+      "id": "transport-rpc",
+      "label": "Transport & RPC",
+      "responsibility": "This is where local and secure network listeners, authentication, JSON-RPC routing, framing, and method contracts meet shared services.",
+      "anchor": [0.47, 0.46],
+      "paths": [
+        "docs/protocol/**",
+        "packages/intentd/crates/intent-transport/**",
+        "packages/intentd/crates/intentd/src/client.rs",
+        "packages/intentd/crates/intentd/src/git_credential.rs",
+        "packages/intentd/crates/intentd/tests/**/*transport*.rs",
+        "packages/intentd/crates/intentd/tests/**/*uds*.rs",
+        "packages/intentd/crates/intentd/tests/**/*wss*.rs",
+        "packages/cloudlands-fe/src/main/protocol-handlers.ts",
+        "packages/cloudlands-fe/src/main/window-backend.ts",
+        "packages/cloudlands-fe/src/main/utils/workspace-backend-client.ts",
+        "packages/cloudlands-fe/src/shared/**/*pipe-name*.ts",
+        "packages/cloudlands-fe/src/features/backend/main/**"
+      ]
+    },
+    {
+      "id": "notes-tasks-spec",
+      "label": "Notes, tasks & spec",
+      "responsibility": "This is where collaborative notes, CRDT versions, comments, task graphs, primitives, attachments, and specifications become durable workspace knowledge.",
+      "anchor": [0.26, 0.42],
+      "paths": [
+        "packages/intentd/crates/intent-services/src/attachment_upload.rs",
+        "packages/intentd/crates/intent-services/src/crdt_notes.rs",
+        "packages/intentd/crates/intent-services/src/line_attribution.rs",
+        "packages/intentd/crates/intent-services/src/note_ops.rs",
+        "packages/intentd/crates/intent-services/src/primitive_ops.rs",
+        "packages/intentd/crates/intent-services/src/task*.rs",
+        "packages/intentd/crates/intent-store/src/attachment_repo.rs",
+        "packages/intentd/crates/intent-store/src/comment_repo.rs",
+        "packages/intentd/crates/intent-store/src/note*.rs",
+        "packages/intentd/crates/intent-store/src/task*.rs",
+        "packages/intentd/crates/intentd/tests/**/*note*.rs",
+        "packages/intentd/crates/intentd/tests/**/*task*.rs",
+        "packages/intentd/crates/intentd/tests/**/*comment*.rs",
+        "packages/cloudlands-fe/src/features/notes/**",
+        "packages/cloudlands-fe/src/features/comments/**",
+        "packages/cloudlands-fe/src/lib/components/notes/**",
+        "packages/cloudlands-fe/src/lib/components/editor/**",
+        "packages/cloudlands-fe/src/lib/components/markdown/**",
+        "packages/cloudlands-fe/src/lib/components/tiptap/**",
+        "packages/cloudlands-fe/src/store/renderer/slices/note*/**",
+        "packages/cloudlands-fe/src/store/renderer/slices/task*/**",
+        "packages/cloudlands-fe/src/store/renderer/slices/comment*/**",
+        "packages/cloudlands-fe/src/store/renderer/slices/**/*note*.ts",
+        "packages/cloudlands-fe/src/store/renderer/slices/**/*task*.ts"
+      ]
+    },
+    {
+      "id": "git-pr",
+      "label": "Git & pull requests",
+      "responsibility": "This is where source changes, branches, worktrees, diffs, commits, GitHub authentication, pull requests, and reviews are coordinated.",
+      "anchor": [0.12, 0.78],
+      "paths": [
+        "packages/intentd/crates/intent-git/**",
+        "packages/intentd/crates/intent-sourcecontrol/**",
+        "packages/intentd/crates/intent-services/src/accept_changes.rs",
+        "packages/intentd/crates/intent-services/src/auto_commit.rs",
+        "packages/intentd/crates/intent-services/src/auto_commit/**",
+        "packages/intentd/crates/intent-services/src/diffs.rs",
+        "packages/intentd/crates/intent-services/src/file_tracking.rs",
+        "packages/intentd/crates/intent-services/src/file_tracking_ops.rs",
+        "packages/intentd/crates/intent-services/src/git*.rs",
+        "packages/intentd/crates/intent-services/src/github*.rs",
+        "packages/intentd/crates/intent-services/src/pr_ops.rs",
+        "packages/intentd/crates/intent-store/src/diffs_repo.rs",
+        "packages/intentd/crates/intent-store/src/tracked_changes_repo.rs",
+        "packages/intentd/crates/intent-store/src/workspace_git_root_repo.rs",
+        "packages/intentd/crates/intentd/tests/**/*git*.rs",
+        "packages/intentd/crates/intentd/tests/**/*github*.rs",
+        "packages/intentd/crates/intentd/tests/**/*pull_request*.rs",
+        "packages/cloudlands-fe/src/features/accept-changes/**",
+        "packages/cloudlands-fe/src/features/file-tracking/**",
+        "packages/cloudlands-fe/src/features/git/**",
+        "packages/cloudlands-fe/src/features/github-auth/**",
+        "packages/cloudlands-fe/src/lib/components/code-review/**",
+        "packages/cloudlands-fe/src/lib/components/file-tracking/**",
+        "packages/cloudlands-fe/src/lib/components/file-explorer/**",
+        "packages/cloudlands-fe/src/store/renderer/slices/git*/**",
+        "packages/cloudlands-fe/src/store/renderer/slices/**/*git*.ts",
+        "packages/cloudlands-fe/src/store/renderer/slices/**/*pullRequest*.ts"
+      ]
+    },
+    {
+      "id": "hooks-monitors",
+      "label": "Hooks & monitors",
+      "responsibility": "This is where agents schedule durable condition checks and centralized pull-request monitors that wake them on meaningful change.",
+      "anchor": [0.3, 0.88],
+      "paths": [
+        "packages/intentd/crates/intent-services/src/hook_manager.rs",
+        "packages/intentd/crates/intent-services/src/pr_monitor.rs",
+        "packages/intentd/crates/intent-store/src/hook_repo.rs",
+        "packages/intentd/crates/intent-store/src/pr_monitor_repo.rs",
+        "packages/intentd/crates/intentd/tests/**/*hook*.rs",
+        "packages/intentd/crates/intentd/tests/**/*pr_monitor*.rs",
+        "packages/cloudlands-fe/src/store/renderer/slices/hook*/**",
+        "packages/cloudlands-fe/src/store/renderer/slices/**/*monitor*.ts"
+      ]
+    },
+    {
+      "id": "tools-integrations",
+      "label": "Tools & integrations",
+      "responsibility": "This is where terminals, scripts, browser automation, search, context, voice, external MCP servers, and third-party services extend the workspace.",
+      "anchor": [0.45, 0.2],
+      "paths": [
+        "packages/intentd/crates/intent-context/**",
+        "packages/intentd/crates/intent-js/**",
+        "packages/intentd/crates/intent-linear/**",
+        "packages/intentd/crates/intent-pty/**",
+        "packages/intentd/crates/intent-search/**",
+        "packages/intentd/crates/intent-sentry/**",
+        "packages/intentd/crates/intent-voice/**",
+        "packages/intentd/crates/intentd-sitter/**",
+        "packages/intentd/crates/intent-services/src/browser_ops.rs",
+        "packages/intentd/crates/intent-services/src/browser_ops/**",
+        "packages/intentd/crates/intent-services/src/host_exec*.rs",
+        "packages/intentd/crates/intent-services/src/linear_ops.rs",
+        "packages/intentd/crates/intent-services/src/mcp*.rs",
+        "packages/intentd/crates/intent-services/src/script_ops.rs",
+        "packages/intentd/crates/intent-services/src/search_ops.rs",
+        "packages/intentd/crates/intent-services/src/sentry_ops.rs",
+        "packages/intentd/crates/intent-services/src/setup_scripts.rs",
+        "packages/intentd/crates/intent-services/src/terminal_ops.rs",
+        "packages/intentd/crates/intent-services/src/voice_ops.rs",
+        "packages/intentd/crates/intentd/tests/**/*browser*.rs",
+        "packages/intentd/crates/intentd/tests/**/*host*.rs",
+        "packages/intentd/crates/intentd/tests/**/*mcp*.rs",
+        "packages/intentd/crates/intentd/tests/**/*search*.rs",
+        "packages/intentd/crates/intentd/tests/**/*terminal*.rs",
+        "packages/cloudlands-fe/src/features/browser/**",
+        "packages/cloudlands-fe/src/features/cdp/**",
+        "packages/cloudlands-fe/src/features/external-editors/**",
+        "packages/cloudlands-fe/src/features/hardware-console/**",
+        "packages/cloudlands-fe/src/features/ide/**",
+        "packages/cloudlands-fe/src/features/linear/**",
+        "packages/cloudlands-fe/src/features/mcp/**",
+        "packages/cloudlands-fe/src/features/scripts/**",
+        "packages/cloudlands-fe/src/features/setup-scripts/**",
+        "packages/cloudlands-fe/src/features/terminal/**",
+        "packages/cloudlands-fe/src/features/tools/**",
+        "packages/cloudlands-fe/src/features/voice/**",
+        "packages/cloudlands-fe/src/lib/components/browser/**",
+        "packages/cloudlands-fe/src/lib/components/terminal/**"
+      ]
+    },
+    {
+      "id": "observability-ops",
+      "label": "Settings & observability",
+      "responsibility": "This is where configuration, feature gates, diagnostics, logs, usage accounting, metrics, and runtime health make the system operable.",
+      "anchor": [0.27, 0.18],
+      "paths": [
+        "packages/intentd/crates/intent-core/src/config*.rs",
+        "packages/intentd/crates/intent-services/src/config_watcher.rs",
+        "packages/intentd/crates/intent-services/src/metrics.rs",
+        "packages/intentd/crates/intent-services/src/session_stats.rs",
+        "packages/intentd/crates/intent-services/src/settings*.rs",
+        "packages/intentd/crates/intent-services/src/stack_sample.rs",
+        "packages/intentd/crates/intent-services/src/token_usage.rs",
+        "packages/intentd/crates/intent-store/src/metrics_repo.rs",
+        "packages/intentd/crates/intent-store/src/settings_repo.rs",
+        "packages/intentd/crates/intent-store/src/usage*.rs",
+        "packages/intentd/crates/intentd/tests/**/*config*.rs",
+        "packages/intentd/crates/intentd/tests/**/*diagnostic*.rs",
+        "packages/intentd/crates/intentd/tests/**/*settings*.rs",
+        "packages/intentd/crates/intentd/tests/**/*status*.rs",
+        "packages/cloudlands-fe/src/features/config/**",
+        "packages/cloudlands-fe/src/features/log/**",
+        "packages/cloudlands-fe/src/features/settings/**",
+        "packages/cloudlands-fe/src/features/stats/**",
+        "packages/cloudlands-fe/src/features/system/**",
+        "packages/cloudlands-fe/src/features/token-usage/**",
+        "packages/cloudlands-fe/src/lib/components/debug/**",
+        "packages/cloudlands-fe/src/lib/components/error/**",
+        "packages/cloudlands-fe/src/lib/components/settings/**",
+        "packages/cloudlands-fe/src/store/renderer/slices/settings*/**",
+        "packages/cloudlands-fe/src/store/renderer/slices/**/*status*.ts"
+      ]
+    },
+    {
+      "id": "release-ci",
+      "label": "Release & CI",
+      "responsibility": "This is where automated checks, packaging, update delivery, release notes, and channel promotion keep shipped builds trustworthy.",
+      "anchor": [0.63, 0.12],
+      "paths": [
+        ".github/**",
+        "scripts/**",
+        "docs/RELEASING.md",
+        "docs/fe/DEPLOYING.md",
+        "docs/fe/RELEASING.md",
+        "packages/intentd/.github/**",
+        "packages/cloudlands-fe/.github/**",
+        "packages/cloudlands-fe/src/features/auto-update/**",
+        "packages/cloudlands-fe/src/features/release-notes/**",
+        "packages/cloudlands-fe/src/lib/components/UpdateNotification.svelte"
+      ]
+    }
+  ],
+  "crossings": [
+    {
+      "from": "store-migrations",
+      "to": "workspace-lifecycle",
+      "label": "persisted workspace state drives lifecycle decisions"
+    },
+    {
+      "from": "agent-execution",
+      "to": "event-stream",
+      "label": "ACP updates become agent lifecycle and activity events"
+    },
+    {
+      "from": "event-stream",
+      "to": "protocol-client",
+      "label": "subscribed notifications keep thin clients synchronized"
+    },
+    {
+      "from": "transport-rpc",
+      "to": "protocol-client",
+      "label": "JSON-RPC contracts cross the daemon and client boundary"
+    },
+    {
+      "from": "workspace-lifecycle",
+      "to": "renderer-state",
+      "label": "workspace snapshots and deltas hydrate transient client state"
+    },
+    {
+      "from": "notes-tasks-spec",
+      "to": "renderer-state",
+      "label": "durable knowledge is mirrored for editing and task coordination"
+    },
+    {
+      "from": "git-pr",
+      "to": "renderer-state",
+      "label": "source-control results populate change and review state"
+    },
+    {
+      "from": "hooks-monitors",
+      "to": "agent-execution",
+      "label": "meaningful external changes wake the owning agent"
+    },
+    {
+      "from": "renderer-state",
+      "to": "renderer-ui",
+      "label": "selectors turn synchronized state into visible product surfaces"
+    },
+    {
+      "from": "electron-main",
+      "to": "protocol-client",
+      "label": "desktop process bridges connect renderer requests to the daemon"
+    },
+    {
+      "from": "tools-integrations",
+      "to": "agent-execution",
+      "label": "workspace tools extend what an agent can observe and change"
+    },
+    {
+      "from": "observability-ops",
+      "to": "daemon-platform",
+      "label": "configuration and diagnostics govern the composed runtime"
+    },
+    {
+      "from": "release-ci",
+      "to": "electron-main",
+      "label": "packaging and update channels deliver the desktop application"
+    }
+  ]
+}

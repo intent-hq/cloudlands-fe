@@ -27,7 +27,7 @@
 
   const MIN_SCALE = 0.5;
   const MAX_SCALE = 4;
-  const TWEEN_DURATION_MS = 400;
+  const TWEEN_DURATION_MS = 300;
   const READ_DURATION_MS = 2_000;
   const MOVE_DURATION_MS = 1_000;
   const TOOL_DURATION_MS = 1_200;
@@ -124,6 +124,16 @@
       accent: cssValue(style, '--color-primary', '#8b5cf6'),
     };
     createHatchPattern();
+  }
+
+  function resolveReducedMotion(): void {
+    reducedMotion =
+      document.documentElement.classList.contains('catalog-reduced-motion') ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reducedMotion) {
+      currentGeometry = targetGeometry;
+      tweening = false;
+    }
   }
 
   function createHatchPattern(): void {
@@ -551,13 +561,12 @@
   });
 
   onMount(() => {
-    reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reducedMotion) {
-      currentGeometry = targetGeometry;
-      tweening = false;
-    }
+    resolveReducedMotion();
     resolveColors();
-    const themeObserver = new MutationObserver(resolveColors);
+    const themeObserver = new MutationObserver(() => {
+      resolveColors();
+      resolveReducedMotion();
+    });
     themeObserver.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ['class', 'data-theme', 'style'],
