@@ -196,10 +196,11 @@
               <ul class="space-y-1">
                 {#each group.paths as path (path)}
                   <li>
-                    <button
-                      class="break-all py-0.5 text-left font-mono text-xs leading-relaxed text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
+                    <Button
+                      variant="link"
+                      class="h-auto justify-start whitespace-normal rounded-none border-0 px-0 py-0.5 text-left font-mono !text-xs !font-normal !leading-relaxed !tracking-normal underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
                       type="button"
-                      onclick={() => onOpenFile?.(path)}>{path}</button
+                      onclick={() => onOpenFile?.(path)}>{path}</Button
                     >
                   </li>
                 {/each}
@@ -254,10 +255,11 @@
       {#if route?.transitions.length}
         <div class="mt-3 space-y-1">
           {#each route.transitions as transition, index (`${transition.from}-${transition.to}-${index}`)}
-            <button
+            <Button
               type="button"
-              class="block w-full rounded border border-border px-2 py-1.5 text-left hover:bg-muted"
-              onclick={() => onSelectCrossing?.(index)}>{transitionLabel(transition)}</button
+              variant="outline"
+              class="block h-auto w-full whitespace-normal rounded px-2 py-1.5 text-left hover:bg-muted"
+              onclick={() => onSelectCrossing?.(index)}>{transitionLabel(transition)}</Button
             >
           {/each}
         </div>
@@ -276,9 +278,10 @@
       <ol class="space-y-2">
         {#each route.transitions as transition, index (`${transition.from}-${transition.to}-${index}`)}
           <li>
-            <button
+            <Button
               type="button"
-              class="w-full rounded border border-border p-2 text-left hover:bg-muted"
+              variant="outline"
+              class="h-auto w-full whitespace-normal rounded p-2 text-left hover:bg-muted"
               onclick={() => onSelectCrossing?.(index)}
             >
               <span class="block font-medium">{transitionLabel(transition)}</span>
@@ -287,7 +290,7 @@
                   count: formatInteger(transition.count),
                 })}</span
               >
-            </button>
+            </Button>
           </li>
         {/each}
       </ol>
@@ -311,10 +314,11 @@
       <ul class="space-y-1">
         {#each selectedTransition.evidence as path (path)}
           <li>
-            <button
+            <Button
               type="button"
-              class="break-all py-0.5 text-left font-mono text-xs leading-relaxed text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
-              onclick={() => onSelectFile?.(path)}>{path}</button
+              variant="link"
+              class="h-auto justify-start whitespace-normal rounded-none border-0 px-0 py-0.5 text-left font-mono !text-xs !font-normal !leading-relaxed !tracking-normal underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
+              onclick={() => onSelectFile?.(path)}>{path}</Button
             >
           </li>
         {/each}
