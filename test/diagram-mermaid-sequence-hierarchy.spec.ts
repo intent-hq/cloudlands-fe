@@ -254,16 +254,39 @@ async function expectAltHierarchy(svg: ReturnType<Page['locator']>) {
     const conditions = [...group.querySelectorAll<SVGTextElement>('.sequence-branch-condition')];
     const cues = [...group.querySelectorAll<SVGLineElement>('.sequence-branch-cue')];
     const label = group.querySelector<SVGTextElement>('.sequence-construct-label-text')!;
-    const surface = group.querySelector<SVGRectElement>('.sequence-branch-surface')!;
+    const surfaces = [...group.querySelectorAll<SVGRectElement>('.sequence-branch-surface')];
+    const canvas = document.createElement('canvas').getContext('2d')!;
+    const rgb = (color: string) => {
+      canvas.fillStyle = color;
+      canvas.fillRect(0, 0, 1, 1);
+      return [...canvas.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+    };
+    const luminance = (color: string) => {
+      const channels = rgb(color).map((value) => {
+        const channel = value / 255;
+        return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+      });
+      return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+    };
+    const canvasColor = getComputedStyle(group.ownerSVGElement!).backgroundColor;
+    const surfaceFills = surfaces.map((surface) => getComputedStyle(surface).fill);
+    const surfaceContrasts = surfaceFills.map((fill) => {
+      const foreground = luminance(fill);
+      const background = luminance(canvasColor);
+      return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+    });
     return {
       outer: group.querySelectorAll('.sequence-frame-line').length,
       dividers: group.querySelectorAll('.sequence-branch-divider').length,
       conditionXs: conditions.map((condition) => condition.getAttribute('x')),
       conditionAnchors: conditions.map((condition) => condition.getAttribute('text-anchor')),
       roles: [...new Set(conditions.map((condition) => condition.dataset.sequenceBranch))],
-      surfaces: group.querySelectorAll('.sequence-branch-surface').length,
-      surfaceOpacity: Number(getComputedStyle(surface).opacity),
+      surfaceRoles: [...new Set(surfaces.map((surface) => surface.dataset.sequenceBranch))],
+      surfaces: surfaces.length,
+      surfaceFills: surfaceFills.map(rgb),
+      surfaceContrasts,
       cuePatterns: cues.map((cue) => getComputedStyle(cue).strokeDasharray),
+      cueStrokes: cues.map((cue) => rgb(getComputedStyle(cue).stroke)),
       labelSize: Number.parseFloat(getComputedStyle(label).fontSize),
     };
   });
@@ -271,24 +294,35 @@ async function expectAltHierarchy(svg: ReturnType<Page['locator']>) {
   expect(new Set(result.conditionXs).size).toBe(1);
   expect(result.conditionAnchors.every((anchor) => anchor === 'start')).toBe(true);
   expect(result.roles.sort()).toEqual(['failure', 'success']);
-  expect(result.surfaceOpacity).toBeLessThanOrEqual(0.1);
+  expect(result.surfaceRoles).toEqual(['neutral']);
+  expect(new Set(result.surfaceFills.map((fill) => fill.join(','))).size).toBe(1);
+  expect(result.surfaceContrasts.every((contrast) => contrast > 1 && contrast < 1.2)).toBe(true);
   expect(new Set(result.cuePatterns).size).toBe(2);
+  expect(new Set(result.cueStrokes.map((stroke) => stroke.join(','))).size).toBe(1);
 }
 
 async function expectLoopHierarchy(svg: ReturnType<Page['locator']>) {
-  const result = await svg.locator('.sequence-construct-loop').evaluate((group) => ({
-    outer: group.querySelectorAll('.sequence-frame-line').length,
-    dividers: group.querySelectorAll('.sequence-branch-divider').length,
-    surfaces: group.querySelectorAll('.sequence-branch-surface').length,
-    conditionXs: [...group.querySelectorAll<SVGTextElement>('.sequence-branch-condition')].map(
-      (condition) => condition.getAttribute('x'),
-    ),
-    conditionLabel: group
-      .querySelector<SVGTextElement>('.sequence-branch-condition')
-      ?.getAttribute('aria-label'),
-    conditionLines: group.querySelectorAll('.sequence-branch-condition tspan').length,
-  }));
-  expect(result).toMatchObject({ outer: 4, dividers: 0, surfaces: 0 });
+  const result = await svg.locator('.sequence-construct-loop').evaluate((group) => {
+    const surface = group.querySelector<SVGRectElement>('.sequence-branch-surface')!;
+    const style = getComputedStyle(surface);
+    return {
+      outer: group.querySelectorAll('.sequence-frame-line').length,
+      dividers: group.querySelectorAll('.sequence-branch-divider').length,
+      surfaces: group.querySelectorAll('.sequence-branch-surface').length,
+      surfaceRole: surface.dataset.sequenceBranch,
+      surfaceFill: style.fill,
+      canvasFill: getComputedStyle(group.ownerSVGElement!).backgroundColor,
+      conditionXs: [...group.querySelectorAll<SVGTextElement>('.sequence-branch-condition')].map(
+        (condition) => condition.getAttribute('x'),
+      ),
+      conditionLabel: group
+        .querySelector<SVGTextElement>('.sequence-branch-condition')
+        ?.getAttribute('aria-label'),
+      conditionLines: group.querySelectorAll('.sequence-branch-condition tspan').length,
+    };
+  });
+  expect(result).toMatchObject({ outer: 4, dividers: 0, surfaces: 1, surfaceRole: 'neutral' });
+  expect(result.surfaceFill).not.toBe(result.canvasFill);
   expect(new Set(result.conditionXs).size).toBe(1);
   expect(result.conditionLabel).toBe('for each selected diagram');
   expect(result.conditionLines).toBeLessThanOrEqual(4);

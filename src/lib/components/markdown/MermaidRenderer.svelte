@@ -695,17 +695,16 @@ ${verticalSource}`;
           condition.append(tspan);
         }
         insertLabelKnockout(group, condition, condition.getBBox());
-        if (role === 'neutral') return;
         const sectionTop = sectionEdges[index];
         const sectionBottom = sectionEdges[index + 1];
         const surface = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        surface.classList.add('sequence-branch-surface', `sequence-branch-${role}`);
+        surface.classList.add('sequence-branch-surface');
         surface.setAttribute('x', String(left + 4));
         surface.setAttribute('y', String(sectionTop + 4));
         surface.setAttribute('width', String(Math.max(0, right - left - 8)));
         surface.setAttribute('height', String(Math.max(0, sectionBottom - sectionTop - 8)));
         surface.setAttribute('rx', '6');
-        surface.dataset.sequenceBranch = role;
+        surface.dataset.sequenceBranch = 'neutral';
 
         const cue = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         cue.classList.add('sequence-branch-cue', `sequence-branch-${role}`);
@@ -1772,7 +1771,7 @@ ${verticalSource}`;
   }
 
   .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-construct-label) {
-    fill: color-mix(in srgb, hsl(var(--warning)) 22%, var(--diagram-canvas)) !important;
+    fill: color-mix(in srgb, hsl(var(--muted-foreground)) 14%, var(--diagram-canvas)) !important;
     stroke: none !important;
   }
 
@@ -1791,37 +1790,23 @@ ${verticalSource}`;
   }
 
   .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-branch-surface) {
+    fill: color-mix(in srgb, hsl(var(--muted-foreground)) 8%, var(--diagram-canvas)) !important;
     stroke: none !important;
-    opacity: 0.09;
+    opacity: 1;
     pointer-events: none;
-  }
-
-  .mermaid-presentation
-    :global(svg[aria-roledescription='sequence'] .sequence-branch-surface.sequence-branch-success) {
-    fill: hsl(var(--success)) !important;
-  }
-
-  .mermaid-presentation
-    :global(svg[aria-roledescription='sequence'] .sequence-branch-surface.sequence-branch-failure) {
-    fill: hsl(var(--error-foreground)) !important;
   }
 
   .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-branch-cue) {
+    stroke: var(--sequence-structure-stroke) !important;
     stroke-width: 2px !important;
     stroke-linecap: round;
-    opacity: 0.48;
-    pointer-events: none;
-  }
-
-  .mermaid-presentation
-    :global(svg[aria-roledescription='sequence'] .sequence-branch-cue.sequence-branch-success) {
-    stroke: var(--diagram-connector-success) !important;
     stroke-dasharray: none;
+    opacity: 0.68;
+    pointer-events: none;
   }
 
   .mermaid-presentation
     :global(svg[aria-roledescription='sequence'] .sequence-branch-cue.sequence-branch-failure) {
-    stroke: var(--diagram-connector-danger) !important;
     stroke-dasharray: 2 3;
   }
 
