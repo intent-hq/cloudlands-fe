@@ -27,6 +27,7 @@
   import { refreshPRStatusRequested } from '$store/renderer/slices/pr-status/pr-status-slice';
   import { gitCache } from '$features/git/git-cache';
   import { gitClient } from '$features/git/git.client';
+  import { DiffMap, fromPullRequest } from '$features/diff-map';
   import { loadGitStatus, setGitOperationFlag } from '$store/renderer/slices/git/git-slice';
   import {
     selectGitAhead,
@@ -707,6 +708,19 @@
       logger.error('[handlePRFileClick] Failed to fetch file content', { error, filePath });
     }
   }
+
+  function buildPRDiffMap(pr: PRInfo) {
+    const repository =
+      $workspace$?.repositoryOwner && $workspace$?.repositoryName
+        ? `${$workspace$.repositoryOwner}/${$workspace$.repositoryName}`
+        : ($workspace$?.repositoryName ?? repoPath);
+    return fromPullRequest({
+      repository,
+      number: pr.number,
+      updatedAt: pr.updatedAt,
+      files: prFiles,
+    });
+  }
 </script>
 
 <!-- Divider with Create PR, Push Commits button, or Synced status (only when
@@ -1077,6 +1091,10 @@
                no local file data to expand. -->
           {@const hasPRFiles =
             localFiles && !pr.monitorOnly && (prFiles.length > 0 || prFilesUnknown)}
+          {@const diffMapDocument =
+            isPRExpanded && localFiles && !pr.monitorOnly && prFiles.length > 0
+              ? buildPRDiffMap(pr)
+              : undefined}
           <div>
             <!-- PR header -->
             <div
@@ -1169,6 +1187,20 @@
                 class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
                 transition:slide={{ duration: 150 }}
               >
+                {#if diffMapDocument}
+                  <div class="h-48 mb-1 overflow-hidden rounded border border-border">
+                    <DiffMap
+                      document={diffMapDocument}
+                      activePath={activeFilePath ?? undefined}
+                      filterable={false}
+                      onOpen={(file) => {
+                        handlePRFileClick(file.path).catch((error) => {
+                          logger.error('Error in handlePRFileClick', { error });
+                        });
+                      }}
+                    />
+                  </div>
+                {/if}
                 {#each prFiles as file (file.path)}
                   <FileRow
                     {file}

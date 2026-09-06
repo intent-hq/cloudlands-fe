@@ -128,6 +128,7 @@ describe('UI component inventory gate', () => {
       'src/lib/component-catalog/CatalogControls.svelte',
       'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
       'src/lib/components/settings/ColorThemeSettings.svelte',
+      'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
     ]);
     expect(dropdownMenu?.callers).toHaveLength(17);
     expect(dropdownMenu?.callers).toContain('src/lib/components/chat/RegularAgentWelcome.svelte');

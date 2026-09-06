@@ -358,6 +358,24 @@ console.log('hello');
     });
   });
 
+  it('parses compact ws-block:diffmap data as a note primitive', () => {
+    const markdown = `
+\`\`\`ws-block:diffmap
+{"files":[{"path":"src/app.ts","additions":2,"deletions":1,"status":"modified"}]}
+\`\`\`
+`;
+
+    const parsed = serializer.parseMarkdown(markdown);
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].primitive.type).toBe('diffmap');
+    expect(parsed[0].primitive).toMatchObject({
+      document: {
+        files: [{ path: 'src/app.ts', additions: 2, deletions: 1, status: 'modified' }],
+      },
+    });
+  });
+
   describe('serializeToMarkdown', () => {
     it('should serialize primitives to markdown', () => {
       const refId = uuidv4();

@@ -35,6 +35,7 @@
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import ChatCliBlock from './ChatCliBlock.svelte';
   import ChatAgentActionBlock from './ChatAgentActionBlock.svelte';
+  import DiffMapRichBlock from '$features/diff-map/components/DiffMapRichBlock.svelte';
   import InlineProposal from './proposals/InlineProposal.svelte';
   import {
     parseAgentMessage,
@@ -446,6 +447,19 @@
     <ChatReferenceBlock
       reference={parsedBlock.metadata.referenceData}
       onOpenFile={handleOpenFile}
+    />
+  {:else if parsedBlock.type === 'diffmap' && parsedBlock.metadata?.diffMapData}
+    <DiffMapRichBlock
+      document={parsedBlock.metadata.diffMapData}
+      onOpen={(file, event) => {
+        const openInAdjacentPanel = event.metaKey || event.ctrlKey;
+        const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
+        handleOpenFile({
+          path: file.path,
+          openInAdjacentPanel,
+          sourcePanelId: panelElement?.getAttribute('data-panel-id') ?? undefined,
+        });
+      }}
     />
   {:else if parsedBlock.type === 'cli' && parsedBlock.metadata?.cliData}
     <ChatCliBlock command={parsedBlock.metadata.cliData.command} />

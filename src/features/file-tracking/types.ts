@@ -154,6 +154,8 @@ export interface CommitFile {
   additions?: number;
   deletions?: number;
   status?: string;
+  /** Previous path when this commit entry represents a rename. */
+  renamedFrom?: string;
 }
 
 export interface CommitInfo {

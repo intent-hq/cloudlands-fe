@@ -26,6 +26,15 @@
   import { selectAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-selectors';
   import { setAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
+  import {
+    buildDiffMapDocument,
+    diffMapFileContentHash,
+    getViewedFreshness,
+    ReviewSliceMap,
+    type DiffMapDocument,
+    type DiffMapFile,
+  } from '$features/diff-map';
+  import { selectViewedFiles } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
 
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import {
@@ -36,7 +45,9 @@
   import { Button } from '$lib/components/ui/button';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { toast } from '$lib/components/ui/toast';
+  import { safeLocalStorage } from '$lib/utils/safe-storage';
   import { m } from '$shared/paraglide/messages.js';
   import { faNote } from '$lib/icons/faNote';
   import { logger } from '$lib/utils/client-logger';
@@ -49,7 +60,7 @@
     faSpinner,
     faUser,
   } from '@fortawesome/free-solid-svg-icons';
-  import { tick } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { flip } from 'svelte/animate';
@@ -99,6 +110,21 @@
     activePanelTab,
   }: Props = $props();
 
+  type ChangesView = 'list' | 'map';
+  const CHANGES_VIEW_STORAGE_KEY = 'workspace:fileChangesView';
+  let changesView: ChangesView = $state('list');
+
+  onMount(() => {
+    const stored = safeLocalStorage.getItem(CHANGES_VIEW_STORAGE_KEY);
+    if (stored === 'list' || stored === 'map') changesView = stored;
+  });
+
+  function setChangesView(value: string) {
+    if (value !== 'list' && value !== 'map') return;
+    changesView = value;
+    safeLocalStorage.setItem(CHANGES_VIEW_STORAGE_KEY, value);
+  }
+
   // Transition functions matching parent's animation coordination
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function send(node: Element, params: { key: any }) {
@@ -130,12 +156,47 @@
   const ftUnstagedChanges$ = selectFtUnstagedChanges(workspaceIdStore);
   const autoCommitEnabled = selectAutoCommitEnabled(workspaceIdStore);
   const lockedAgentIds$ = selectLockedAgentIds(workspaceIdStore);
+  const viewedFileHashes$ = selectViewedFiles(workspaceIdStore);
 
   // Derived change lists
   const unstagedChanges = $derived($ftUnstagedChanges$ ?? []);
   const stagedChanges = $derived($ftStagedChanges$ ?? []);
   const hasUnstaged = $derived(unstagedChanges.length > 0);
   const hasStaged = $derived(stagedChanges.length > 0);
+  const unstagedMapDocument = $derived(
+    buildDiffMapDocument(unstagedChanges, {
+      source: {
+        kind: 'working-tree',
+        workspaceId,
+        snapshotId: `unstaged:${unstagedChanges.map((change) => change.id).join('|')}`,
+      },
+    }),
+  );
+  const stagedMapDocument = $derived(
+    buildDiffMapDocument(stagedChanges, {
+      source: {
+        kind: 'working-tree',
+        workspaceId,
+        snapshotId: `staged:${stagedChanges.map((change) => change.id).join('|')}`,
+      },
+    }),
+  );
+  function viewedLayers(document: DiffMapDocument) {
+    const viewed = new Set<string>();
+    const changedSinceViewed = new Set<string>();
+    for (const file of document.files) {
+      const freshness = getViewedFreshness(
+        $viewedFileHashes$,
+        file.path,
+        diffMapFileContentHash(file, document.source.snapshotId),
+      );
+      if (freshness === 'viewed') viewed.add(file.path);
+      if (freshness === 'changed-since-viewed') changedSinceViewed.add(file.path);
+    }
+    return { viewed, changedSinceViewed };
+  }
+  const unstagedMapLayers = $derived(viewedLayers(unstagedMapDocument));
+  const stagedMapLayers = $derived(viewedLayers(stagedMapDocument));
 
   // Get panel layout manager for opening file tabs
   const panelLayoutManager = $derived(getPanelLayoutManager(workspaceId));
@@ -327,6 +388,15 @@
   ) {
     const change = findChange(path, staged ?? false);
     if (change) onOpenChange?.(change, event);
+  }
+
+  function handleMapFileClick(
+    file: DiffMapFile,
+    staged: boolean,
+    event: MouseEvent | KeyboardEvent,
+  ) {
+    trackLastClicked(file.path, staged);
+    handleFileClick(file.path, undefined, staged, event);
   }
 
   function handleOpenFile(relativePath: string) {
@@ -628,6 +698,36 @@
   }
 </script>
 
+<div class="flex justify-end pb-1 pr-1">
+  <ToggleGroup.Root
+    type="single"
+    value={changesView}
+    onValueChange={setChangesView}
+    variant="flat"
+    size="xs"
+    aria-label={m.workspace_fileChanges_viewMode_ariaLabel()}
+  >
+    <ToggleGroup.Item
+      value="list"
+      tooltip={m.workspace_fileChanges_listView_tooltip()}
+      aria-label={m.workspace_fileChanges_listView_tooltip()}
+    >
+      <svg viewBox="0 0 12 12" class="size-3" aria-hidden="true">
+        <path d="M1 2h2v2H1zM4 2h7v2H4zM1 5h2v2H1zM4 5h7v2H4zM1 8h2v2H1zM4 8h7v2H4z" />
+      </svg>
+    </ToggleGroup.Item>
+    <ToggleGroup.Item
+      value="map"
+      tooltip={m.workspace_fileChanges_mapView_tooltip()}
+      aria-label={m.workspace_fileChanges_mapView_tooltip()}
+    >
+      <svg viewBox="0 0 12 12" class="size-3" aria-hidden="true">
+        <path d="m1 2 3-1 4 1 3-1v9l-3 1-4-1-3 1zm3 0v7m4-6v7" fill="none" stroke="currentColor" />
+      </svg>
+    </ToggleGroup.Item>
+  </ToggleGroup.Root>
+</div>
+
 <!-- UNSTAGED SECTION -->
 <div>
   <TimelineSection
@@ -644,7 +744,7 @@
             ? m.workspace_fileChanges_autoCommitOn_tooltip()
             : m.workspace_fileChanges_autoCommitOff_tooltip()}
           side="right"
-          contentClass="w-[12rem]"
+          contentClass="w-48"
           disableHoverableContent={false}
           disableCloseOnTriggerClick={true}
         >
@@ -666,7 +766,17 @@
     {/snippet}
 
     {#if hasUnstaged}
-      {#if hasAnyAgentAttribution}
+      {#if changesView === 'map'}
+        <div class="h-48 min-w-0">
+          <ReviewSliceMap
+            {workspaceId}
+            document={unstagedMapDocument}
+            layers={unstagedMapLayers}
+            activePath={activeFileStaged === false ? (activeFilePath ?? undefined) : undefined}
+            onOpen={(file, event) => handleMapFileClick(file, false, event)}
+          />
+        </div>
+      {:else if hasAnyAgentAttribution}
         <!-- Grouped view with agent headers -->
         <div class="space-y-1">
           {#each unstagedByAgent as group (group.agentId ?? 'manual')}
@@ -677,9 +787,9 @@
             <div class="space-y-px">
               <!-- Agent header -->
               <div class="relative group/agent-header flex items-center gap-1.5 py-0.5 -ml-1 px-1">
-                <button
-                  type="button"
-                  class="group/row flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-1 -mx-1"
+                <Button
+                  variant="ghost"
+                  class="group/row -mx-1 h-auto min-w-0 flex-1 cursor-pointer justify-start rounded border-0 bg-transparent px-1 text-left font-normal shadow-none hover:bg-transparent"
                   onclick={() => toggleAgentGroup(group.agentId)}
                 >
                   {#if isLocked}
@@ -708,7 +818,7 @@
                         : ''}"
                     />
                   {/if}
-                </button>
+                </Button>
                 <!-- Action buttons -->
                 <div
                   class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform {commitState !==
@@ -886,7 +996,17 @@
     activeColor="bg-emerald-500"
   >
     {#if hasStaged}
-      {#if hasAnyAgentAttribution}
+      {#if changesView === 'map'}
+        <div class="h-48 min-w-0">
+          <ReviewSliceMap
+            {workspaceId}
+            document={stagedMapDocument}
+            layers={stagedMapLayers}
+            activePath={activeFileStaged === true ? (activeFilePath ?? undefined) : undefined}
+            onOpen={(file, event) => handleMapFileClick(file, true, event)}
+          />
+        </div>
+      {:else if hasAnyAgentAttribution}
         <!-- Grouped view with agent headers -->
         <div class="space-y-1">
           {#each stagedByAgent as group (group.agentId ?? 'manual')}
@@ -897,9 +1017,9 @@
             <div class="space-y-px">
               <!-- Agent header -->
               <div class="relative group/agent-header flex items-center gap-1.5 py-0.5 -ml-1 px-1">
-                <button
-                  type="button"
-                  class="group/row flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-1 -mx-1"
+                <Button
+                  variant="ghost"
+                  class="group/row -mx-1 h-auto min-w-0 flex-1 cursor-pointer justify-start rounded border-0 bg-transparent px-1 text-left font-normal shadow-none hover:bg-transparent"
                   onclick={() => toggleAgentGroup(group.agentId)}
                 >
                   <span class="text-ui opacity-50 truncate flex-1">
@@ -921,7 +1041,7 @@
                         : ''}"
                     />
                   {/if}
-                </button>
+                </Button>
                 <!-- Action buttons -->
                 <div
                   class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform {commitState !==

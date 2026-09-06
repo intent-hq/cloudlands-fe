@@ -4,6 +4,7 @@ import {
   initialState,
   setChatDraft,
   setSidebarActiveTab,
+  setViewedFiles,
   toggleRawNoteView,
   transientUiReducer,
 } from './transient-ui-slice';
@@ -49,6 +50,12 @@ describe('transientUiReducer', () => {
       stateWithDraft,
     );
     expect(transientUiReducer(initialState, setChatDraft(WS_1, 'agent-1', ''))).toBe(initialState);
+  });
+
+  it('stores viewed content hashes by workspace and file path', () => {
+    const state = transientUiReducer(initialState, setViewedFiles(WS_1, { 'src/a.ts': 'hash-a' }));
+
+    expect(state.byWorkspaceId[WS_1].viewedFiles).toEqual({ 'src/a.ts': 'hash-a' });
   });
 
   it('toggles raw note view state', () => {

@@ -287,6 +287,17 @@ function parseMarkdownToPrimitives(
           }
         }
 
+        if (parsed.type === 'diffmap' && !parsed.document) {
+          const { id, type, version, createdAt, createdBy, createdByAgentId, ...document } = parsed;
+          parsed.document = document;
+          parsed.id = id;
+          parsed.type = type;
+          parsed.version = version;
+          parsed.createdAt = createdAt;
+          parsed.createdBy = createdBy;
+          if (createdByAgentId) parsed.createdByAgentId = createdByAgentId;
+        }
+
         // Validate schema if requested
         if (validateSchema) {
           const result = NotePrimitiveSchema.safeParse(parsed);

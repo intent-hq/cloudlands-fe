@@ -46,6 +46,7 @@ import { CliBlockNode } from './tiptap-primitives/cli-block-node';
 import { AgentActionBlockNode } from './tiptap-primitives/agent-action-block-node';
 import { PatchBlockNode } from './tiptap-primitives/patch-block-node';
 import { DiagramBlockNode } from './tiptap-primitives/diagram-block-node';
+import { DiffMapBlockNode } from './tiptap-primitives/diffmap-block-node';
 
 // Import details block extension
 import { DetailsBlock, DetailsSummary, DetailsContent } from '$lib/components/tiptap/DetailsBlock';
@@ -476,6 +477,9 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
               DiagramBlockNode.configure({
                 workspaceId: workspace.id,
               }),
+              DiffMapBlockNode.configure({
+                workspaceId: workspace.id,
+              }),
             ]
           : []),
 
@@ -888,6 +892,9 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
                 workspaceId: workspace.id,
               }),
               DiagramBlockNode.configure({
+                workspaceId: workspace.id,
+              }),
+              DiffMapBlockNode.configure({
                 workspaceId: workspace.id,
               }),
             ]

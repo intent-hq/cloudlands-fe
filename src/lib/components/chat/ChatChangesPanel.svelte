@@ -285,6 +285,15 @@
   import { selectAgentFileRefreshes } from '$store/renderer/slices/chat-changes/chat-changes-selectors';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { store as appStore } from '$store/renderer/store';
+  import { safeLocalStorage } from '$lib/utils/safe-storage';
+  import { buildDiffMapDocument } from '$features/diff-map/model/build-document';
+  import {
+    diffMapFileContentHash,
+    getViewedFreshness,
+  } from '$features/diff-map/model/review-slice';
+  import type { DiffMapFile, DiffMapGroup } from '$features/diff-map/model/types';
+  import DiffMap from '$features/diff-map/components/DiffMap.svelte';
+  import ReviewSliceAction from '$features/diff-map/components/ReviewSliceAction.svelte';
 
   /**
    * Get the expand/collapse key for a change entry.
@@ -407,23 +416,7 @@
     if (!routeWorkspaceId) return {};
     return selectViewedFiles.select(appStore.state, routeWorkspaceId);
   }
-
-  /**
-   * Get a commit fingerprint for a file path.
-   * Returns a string derived from the sorted commit hashes that touch this file.
-   * Used for invalidation: if the fingerprint changes, the file has new commits.
-   *
-   * Uses reactiveChanges (pre-merge) instead of mergedChanges because in combined
-   * mode, merging can collapse multiple committed entries into one, losing individual
-   * commit hashes needed for accurate invalidation.
-   */
-  function getCommitFingerprint(filePath: string): string {
-    const hashes = reactiveChanges
-      .filter((c) => c.filePath === filePath && c.commitHash)
-      .map((c) => c.commitHash!)
-      .sort();
-    return hashes.join(',');
-  }
+  let viewedFileHashes = $state<Record<string, string>>(getStoredViewedFilesRecord());
 
   // Track whether we've already restored viewed files from the transient store
   let hasRestoredViewedFiles = false;
@@ -437,25 +430,31 @@
     if (!currentWorkspaceId || currentMergedChanges.length === 0) return;
     if (hasRestoredViewedFiles) return;
 
-    const stored = getStoredViewedFilesRecord();
+    const stored = viewedFileHashes;
     if (Object.keys(stored).length === 0) {
       hasRestoredViewedFiles = true;
       return;
     }
 
     const restoredViewed = new Set<string>();
-    for (const [filePath, storedFingerprint] of Object.entries(stored)) {
-      const currentFingerprint = getCommitFingerprint(filePath);
-      if (currentFingerprint === storedFingerprint) {
-        restoredViewed.add(filePath);
+    for (const change of currentMergedChanges) {
+      const displayPath = getDisplayPath(change.filePath);
+      const file = diffMapDocument.files.find((candidate) => candidate.path === displayPath);
+      if (
+        file &&
+        getViewedFreshness(
+          stored,
+          displayPath,
+          diffMapFileContentHash(file, diffMapDocument.source.snapshotId),
+        ) === 'viewed'
+      ) {
+        restoredViewed.add(change.filePath);
       }
-      // else: fingerprint changed → new commits → don't restore
     }
 
     hasRestoredViewedFiles = true;
 
     if (restoredViewed.size > 0) {
-      viewedFiles = restoredViewed;
       // Also collapse viewed files — remove all expand keys that match viewed file paths
       const newExpanded = new Set(expandedFiles);
       for (const change of mergedChanges) {
@@ -1284,6 +1283,66 @@
     mergedChanges = sorted;
   });
 
+  const DIFF_MAP_COLLAPSE_STORAGE_KEY = 'chat-changes-panel.diff-map-collapsed';
+  let diffMapCollapsed = $state(safeLocalStorage.getItem(DIFF_MAP_COLLAPSE_STORAGE_KEY) === 'true');
+  let activeDiffMapPath = $state<string | undefined>();
+  let hoveredDiffMapGroupPath = $state<string | undefined>();
+
+  function patchHeaders(change: LocalFileChange): string | undefined {
+    if (!change.chunks?.length) return undefined;
+    return change.chunks
+      .map(
+        (chunk) =>
+          `@@ -${chunk.oldStart},${chunk.oldLines} +${chunk.newStart},${chunk.newLines} @@`,
+      )
+      .join('\n');
+  }
+
+  let diffMapDocument = $derived.by(() => {
+    const normalizedChanges = mergedChanges.map((change) => ({
+      ...change,
+      filePath: getDisplayPath(change.filePath),
+    }));
+    const patches = new Map<string, string>();
+    for (const change of reactiveChanges) {
+      const patch = patchHeaders(change);
+      if (!patch) continue;
+      const path = getDisplayPath(change.filePath);
+      const current = patches.get(path);
+      patches.set(path, current ? `${current}\n${patch}` : patch);
+    }
+    const snapshotId = normalizedChanges
+      .map(
+        (change) =>
+          `${change.filePath}:${getChangeCategory(change)}:${change.additions}:${change.deletions}`,
+      )
+      .join('|');
+    return buildDiffMapDocument(normalizedChanges, {
+      source: { kind: 'working-tree', workspaceId: routeWorkspaceId, snapshotId },
+      patches,
+    });
+  });
+  let diffMapSelection = $state(new Set<string>());
+  let diffMapLayers = $derived.by(() => {
+    const viewed = new Set<string>();
+    const changedSinceViewed = new Set<string>();
+    for (const file of diffMapDocument.files) {
+      const freshness = getViewedFreshness(
+        viewedFileHashes,
+        file.path,
+        diffMapFileContentHash(file, diffMapDocument.source.snapshotId),
+      );
+      if (freshness === 'viewed') viewed.add(file.path);
+      if (freshness === 'changed-since-viewed') changedSinceViewed.add(file.path);
+    }
+    return { viewed, changedSinceViewed };
+  });
+
+  function toggleDiffMap() {
+    diffMapCollapsed = !diffMapCollapsed;
+    safeLocalStorage.setItem(DIFF_MAP_COLLAPSE_STORAGE_KEY, String(diffMapCollapsed));
+  }
+
   // For aggregate views, we need to fetch git:diff to get correct content
   // The snippet-based content has wrong line numbers when aggregated
   let gitDiffChanges = $state<LocalFileChange[]>([]);
@@ -1392,8 +1451,45 @@
   // Once a file becomes visible, we keep the DiffViewer mounted to avoid re-init on scroll back
   let visibleFiles = $state<Set<string>>(new Set());
 
-  // Track which files the user has marked as "viewed" (like GitHub PR reviews)
-  let viewedFiles = $state<Set<string>>(new Set());
+  // Track the content hash the user actually viewed, preserving stale observations.
+  let viewedFiles = $derived(
+    new Set(
+      mergedChanges
+        .filter((change) => {
+          const file = diffMapDocument.files.find(
+            (candidate) => candidate.path === getDisplayPath(change.filePath),
+          );
+          return (
+            file !== undefined &&
+            getViewedFreshness(
+              viewedFileHashes,
+              file.path,
+              diffMapFileContentHash(file, diffMapDocument.source.snapshotId),
+            ) === 'viewed'
+          );
+        })
+        .map((change) => change.filePath),
+    ),
+  );
+  let changedSinceViewedFiles = $derived(
+    new Set(
+      mergedChanges
+        .filter((change) => {
+          const file = diffMapDocument.files.find(
+            (candidate) => candidate.path === getDisplayPath(change.filePath),
+          );
+          return (
+            file !== undefined &&
+            getViewedFreshness(
+              viewedFileHashes,
+              file.path,
+              diffMapFileContentHash(file, diffMapDocument.source.snapshotId),
+            ) === 'changed-since-viewed'
+          );
+        })
+        .map((change) => change.filePath),
+    ),
+  );
   let viewedCount = $derived(viewedFiles.size);
   let totalFileCount = $derived(new Set(mergedChanges.map((c) => c.filePath)).size);
   let totalAdditions = $derived(mergedChanges.reduce((sum, c) => sum + (c.additions ?? 0), 0));
@@ -1959,6 +2055,29 @@
     });
   }
 
+  function findChangeForDiffMapPath(path: string): LocalFileChange | undefined {
+    return mergedChanges.find((change) => getDisplayPath(change.filePath) === path);
+  }
+
+  function handleDiffMapOpen(file: DiffMapFile) {
+    const change = findChangeForDiffMapPath(file.path);
+    if (!change) return;
+
+    if (groupByCommit && change.commitHash && !expandedCommits.has(change.commitHash)) {
+      expandedCommits = new Set([...expandedCommits, change.commitHash]);
+    }
+    const expandKey = getExpandKey(change);
+    if (!expandedFiles.has(expandKey)) {
+      expandedFiles = new Set([...expandedFiles, expandKey]);
+    }
+    activeDiffMapPath = file.path;
+    void tick().then(() => requestAnimationFrame(() => scrollFileHeaderIntoView(expandKey)));
+  }
+
+  function handleDiffMapHover(group: DiffMapGroup | null) {
+    hoveredDiffMapGroupPath = group?.path;
+  }
+
   function scheduleViewedCollapseScroll(expandKey: string) {
     const targetExpandKey = getViewedScrollTargetExpandKey(expandKey);
 
@@ -2001,12 +2120,19 @@
       scheduleViewedCollapseScroll(expandKey);
     }
 
-    // Persist to transient store
+    // Persist the current per-file content hash without discarding stale observations.
     if (routeWorkspaceId) {
-      const newStoredViewed: Record<string, string> = {};
-      for (const fp of newViewed) {
-        newStoredViewed[fp] = getCommitFingerprint(fp);
+      const displayPath = getDisplayPath(filePath);
+      const file = diffMapDocument.files.find((candidate) => candidate.path === displayPath);
+      const newStoredViewed = { ...viewedFileHashes };
+      if (wasViewed) delete newStoredViewed[displayPath];
+      else if (file) {
+        newStoredViewed[displayPath] = diffMapFileContentHash(
+          file,
+          diffMapDocument.source.snapshotId,
+        );
       }
+      viewedFileHashes = newStoredViewed;
       appStore.dispatch(setViewedFiles(routeWorkspaceId, newStoredViewed));
     }
   }
@@ -2045,6 +2171,52 @@
 
   // Reference to scroll container for preserving scroll position
   let scrollContainerRef: HTMLElement | null = $state(null);
+  let activePathAnimationFrame: number | undefined;
+
+  function updateActiveDiffMapPath() {
+    activePathAnimationFrame = undefined;
+    const container = scrollContainerRef;
+    const content = virtualizerContentRef;
+    if (!container || !content) return;
+
+    const headers = [...content.querySelectorAll<HTMLElement>('[data-change-map-path]')];
+    if (headers.length === 0) return;
+    const activationTop = container.getBoundingClientRect().top + 32;
+    let activeHeader = headers[0];
+    let closestPastTop = Number.NEGATIVE_INFINITY;
+    let closestFutureTop = Number.POSITIVE_INFINITY;
+
+    for (const header of headers) {
+      const card = header.closest<HTMLElement>('[data-change-card-key]');
+      const top = (card ?? header).getBoundingClientRect().top;
+      if (top <= activationTop && top > closestPastTop) {
+        closestPastTop = top;
+        activeHeader = header;
+      } else if (closestPastTop === Number.NEGATIVE_INFINITY && top < closestFutureTop) {
+        closestFutureTop = top;
+        activeHeader = header;
+      }
+    }
+
+    activeDiffMapPath = activeHeader.dataset.changeMapPath;
+  }
+
+  function scheduleActiveDiffMapPathUpdate() {
+    if (!showCategoryFilter || activePathAnimationFrame !== undefined) return;
+    activePathAnimationFrame = requestAnimationFrame(updateActiveDiffMapPath);
+  }
+
+  $effect(() => {
+    if (!showCategoryFilter || diffMapDocument.files.length === 0) return;
+    diffMapDocument.source.snapshotId;
+    groupByCommit;
+    expandedCommits;
+    void tick().then(scheduleActiveDiffMapPathUpdate);
+  });
+
+  onDestroy(() => {
+    if (activePathAnimationFrame !== undefined) cancelAnimationFrame(activePathAnimationFrame);
+  });
 
   // Wave 5a: Single pierre `Virtualizer` instance scoped to this panel's
   // scroll container. `VirtualizedFileDiff` (inside each `DiffViewer`)
@@ -2577,8 +2749,53 @@
     />
   {/if}
 
+  {#if showCategoryFilter && diffMapDocument.files.length > 0}
+    <section
+      class="flex shrink-0 flex-col overflow-hidden border-b border-border bg-background {!diffMapCollapsed
+        ? 'h-2/5 min-h-48 max-h-90'
+        : ''}"
+    >
+      <div class="flex h-8 shrink-0 items-center pr-2">
+        <Button
+          variant="ghost"
+          class="h-8 min-w-0 flex-1 justify-start rounded-none border-0 bg-transparent px-4 text-xs font-medium text-subtle shadow-none hover:bg-transparent hover:text-foreground"
+          aria-expanded={!diffMapCollapsed}
+          aria-label={diffMapCollapsed
+            ? m.ui_vscodePanel_expand_ariaLabel()
+            : m.ui_vscodePanel_collapse_ariaLabel()}
+          onclick={toggleDiffMap}
+        >
+          <Fa icon={diffMapCollapsed ? faChevronLeft : faChevronDown} class="h-2.5! w-2.5!" />
+          <span>{m.workspace_sidebarChanges_rootChangedFiles_label()}</span>
+        </Button>
+        <ReviewSliceAction
+          workspaceId={routeWorkspaceId}
+          document={diffMapDocument}
+          selection={diffMapSelection}
+        />
+      </div>
+      {#if !diffMapCollapsed}
+        <div class="min-h-0 flex-1 overflow-hidden px-3 pb-3">
+          <DiffMap
+            document={diffMapDocument}
+            bind:selection={diffMapSelection}
+            layers={diffMapLayers}
+            activePath={activeDiffMapPath}
+            filterable={false}
+            onOpen={handleDiffMapOpen}
+            onHoverGroup={handleDiffMapHover}
+          />
+        </div>
+      {/if}
+    </section>
+  {/if}
+
   <!-- Scroll container -->
-  <div class="h-full overflow-auto p-5 pt-0" bind:this={scrollContainerRef}>
+  <div
+    class="min-h-0 flex-1 overflow-auto p-5 pt-0"
+    bind:this={scrollContainerRef}
+    onscroll={scheduleActiveDiffMapPathUpdate}
+  >
     <!--
       Single content wrapper for the pierre Virtualizer's `resizeObserver`.
       All diff rows must live inside this wrapper so the virtualizer can
@@ -2920,6 +3137,7 @@
   {@const displayPath = getDisplayPath(change.filePath)}
   {@const expandKey = getExpandKey(change)}
   {@const isViewed = viewedFiles.has(change.filePath)}
+  {@const changedSinceViewed = changedSinceViewedFiles.has(change.filePath)}
   {@const locked = isFileLocked(change.filePath)}
   {@const stickyTop = inCommitGroup ? '64px' : '31.5px'}
   <div
@@ -2937,11 +3155,15 @@
         ? 'ring-1 ring-yellow-400/60 bg-yellow-400/10'
         : ''} {allChangesSearchCurrentHeaderKey === expandKey
         ? 'ring-2 ring-blue-400/70 bg-blue-500/10'
+        : ''} {hoveredDiffMapGroupPath !== undefined &&
+      getDirectoryPath(displayPath) === hoveredDiffMapGroupPath
+        ? 'ring-2 ring-primary/60 bg-primary/10'
         : ''}"
       style="top: {stickyTop}; border-bottom: 1px solid {expandedFiles.has(expandKey)
         ? 'var(--border)'
         : 'transparent'}"
       data-change-header-key={expandKey}
+      data-change-map-path={displayPath}
       data-change-sticky-top={stickyTop}
       data-change-search-text={displayPath}
     >
@@ -3101,7 +3323,9 @@
           class="shrink-0 flex items-center gap-1.5 cursor-pointer ml-1"
           title={isViewed
             ? m.chat_changesPanel_markNotViewed_title()
-            : m.chat_changesPanel_markViewed_title()}
+            : changedSinceViewed
+              ? m.diffMap_changedSinceViewed_label()
+              : m.chat_changesPanel_markViewed_title()}
           onclick={(e: MouseEvent) => e.stopPropagation()}
         >
           <input
@@ -3116,9 +3340,16 @@
           >
             {#if isViewed}
               <Fa icon={faCheck} class="w-2! h-2! text-primary-foreground" />
+            {:else if changedSinceViewed}
+              <span class="text-xs font-bold leading-none text-amber-600" aria-hidden="true">!</span
+              >
             {/if}
           </span>
-          <span class="text-xs text-subtle">{m.chat_changesPanel_viewed_label()}</span>
+          <span class="text-xs text-subtle">
+            {changedSinceViewed
+              ? m.diffMap_changedSinceViewed_label()
+              : m.chat_changesPanel_viewed_label()}
+          </span>
         </label>
       </div>
     </div>

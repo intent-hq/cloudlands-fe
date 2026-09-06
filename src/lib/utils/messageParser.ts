@@ -22,6 +22,8 @@ import { Logger } from '$shared/logger';
 import type { SuggestedPrompt } from '$shared/types';
 import type { ContentBlock } from '$shared/types/content-block';
 import type { VideoSource } from '$shared/types/content-block';
+import { parseDiffMapDocument } from '$features/diff-map/model/parse-rich-block';
+import type { DiffMapDocument } from '$features/diff-map/model/types';
 import { splitWorkspaceVideoMarkdown } from './workspace-file-video';
 
 const logger = new Logger('MessageParser');
@@ -45,6 +47,7 @@ export interface ParsedContent {
     | 'video'
     | 'patch'
     | 'reference'
+    | 'diffmap'
     | 'cli'
     | 'agent_action'
     | 'detected_scripts'
@@ -73,6 +76,7 @@ export interface ParsedContent {
       description?: string;
       snapshot?: { code: string; filePath: string; languageId?: string };
     };
+    diffMapData?: DiffMapDocument;
     cliData?: { command: string; description?: string; cwd?: string };
     agentActionData?: { agentId: string; goal: string; description?: string };
     detectedScriptsData?: Array<{
@@ -116,6 +120,8 @@ const SPECIAL_BLOCK_PATTERNS = {
   // Reference blocks - separate patterns for backtick vs tilde
   reference:
     /(?:(`{3,})ws-block:reference\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})ws-block:reference\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
+  diffmap:
+    /(?:(`{3,})ws-block:diffmap\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})ws-block:diffmap\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
   // CLI blocks - separate patterns for backtick vs tilde
   cli: /(?:(`{3,})ws-block:cli\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})ws-block:cli\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
   // Agent action blocks - separate patterns for backtick vs tilde
@@ -140,7 +146,7 @@ const SPECIAL_BLOCK_PATTERNS = {
 // Closing fences are line-anchored (^) with multiline flag to prevent matching within content.
 // Separate branches for backtick vs tilde fences to prevent mismatched fence types.
 const COMBINED_SPECIAL_REGEX =
-  /(<augment_code_snippet\s+path="[^"]+"(?:\s+mode="[^"]+")?\s*>\s*(`{4,})\w*\s*\n[\s\S]*?\n\s*\2\s*<\/augment_code_snippet>|(`{4,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{4,}\s*$|(`{3,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{3,}\s*$|(?:`{3,}diff\n[\s\S]*?^`{3,}\s*$|~{3,}diff\n[\s\S]*?^~{3,}\s*$)|<COMMIT_MESSAGE>[\s\S]*?<\/COMMIT_MESSAGE>|(?:`{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^`{3,}\s*$|~{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:patch\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:patch\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:reference\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:reference\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:cli\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:cli\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:agent_action\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:agent_action\s*\n[\s\S]*?^~{3,}\s*$)|`{3,}workspace\s*\n[\s\S]*?^`{3,}\s*$|^@@@workspace[ \t]*\n[\s\S]*?^@@@[ \t]*$|(?:`{3,}nav-link\s*\n[\s\S]*?^`{3,}\s*$|~{3,}nav-link\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}mermaid\s*\n[\s\S]*?^`{3,}\s*$|~{3,}mermaid\s*\n[\s\S]*?^~{3,}\s*$)|<agent_digest>[\s\S]*?<\/agent_digest>|<<<DETECTED_SCRIPTS>>>[\s\S]*?<<<\/DETECTED_SCRIPTS>>>)/gm;
+  /(<augment_code_snippet\s+path="[^"]+"(?:\s+mode="[^"]+")?\s*>\s*(`{4,})\w*\s*\n[\s\S]*?\n\s*\2\s*<\/augment_code_snippet>|(`{4,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{4,}\s*$|(`{3,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{3,}\s*$|(?:`{3,}diff\n[\s\S]*?^`{3,}\s*$|~{3,}diff\n[\s\S]*?^~{3,}\s*$)|<COMMIT_MESSAGE>[\s\S]*?<\/COMMIT_MESSAGE>|(?:`{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^`{3,}\s*$|~{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:patch\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:patch\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:reference\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:reference\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:diffmap\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:diffmap\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:cli\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:cli\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:agent_action\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:agent_action\s*\n[\s\S]*?^~{3,}\s*$)|`{3,}workspace\s*\n[\s\S]*?^`{3,}\s*$|^@@@workspace[ \t]*\n[\s\S]*?^@@@[ \t]*$|(?:`{3,}nav-link\s*\n[\s\S]*?^`{3,}\s*$|~{3,}nav-link\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}mermaid\s*\n[\s\S]*?^`{3,}\s*$|~{3,}mermaid\s*\n[\s\S]*?^~{3,}\s*$)|<agent_digest>[\s\S]*?<\/agent_digest>|<<<DETECTED_SCRIPTS>>>[\s\S]*?<<<\/DETECTED_SCRIPTS>>>)/gm;
 
 const WORKSPACE_LINK_PREFIX = 'intent://local/workspace/';
 
@@ -189,6 +195,22 @@ function parseNavLinkBody(body: string): { target: string; label?: string } | nu
   const label = firstLine.slice(pipeIdx + 1).trim();
   if (!target) return null;
   return label ? { target, label } : { target };
+}
+
+function parseDiffMapBlock(blockText: string): ParsedContent | null {
+  const marker = blockText.startsWith('`') ? '`' : '~';
+  const match = blockText.match(
+    new RegExp(`${marker}{3,}ws-block:diffmap\\s*\\n([\\s\\S]*?)^${marker}{3,}\\s*$`, 'm'),
+  );
+  if (!match) return null;
+  try {
+    const document = parseDiffMapDocument(JSON.parse(match[1].trim()));
+    if (!document) throw new Error('Invalid diff map document');
+    return { type: 'diffmap', content: '', metadata: { diffMapData: document } };
+  } catch (error) {
+    logger.warn('[parseSpecialBlock] Failed to parse diff map JSON:', error);
+    return { type: 'text', content: blockText };
+  }
 }
 
 /**
@@ -271,6 +293,10 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
         content: match[1].trim(),
       };
     }
+  }
+
+  if (/^[`~]{3,}ws-block:diffmap/.test(blockText)) {
+    return parseDiffMapBlock(blockText);
   }
 
   // Check commit message

@@ -7,6 +7,7 @@
   import type { UndoCommitMetadata } from '$features/accept-changes/types';
   import { gitCache } from '$features/git/git-cache';
   import { gitClient } from '$features/git/git.client';
+  import { DiffMap, fromCommit, type DiffMapDocument } from '$features/diff-map';
   import { handleLink } from '$features/navigation/link-handler';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import {
@@ -132,12 +133,14 @@
   // cleared on failure so a later expand retries. Reset on workspace switch so
   // the cache doesn't grow unbounded or leak across workspaces.
   let commitFileCache = $state<Record<string, CommitFile[] | null>>({});
+  let commitDiffMapCache = $state<Record<string, DiffMapDocument | null>>({});
   // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below tracks later changes
   let cacheWorkspaceId = workspaceId;
   $effect(() => {
     if (workspaceId !== cacheWorkspaceId) {
       cacheWorkspaceId = workspaceId;
       commitFileCache = {};
+      commitDiffMapCache = {};
       expandedCommits = new Set();
     }
   });
@@ -179,6 +182,23 @@
       logger.error('Failed to fetch commit details', { hash: commit.hash, error });
       clearCommitFileMarker(commit.hash);
     });
+  }
+
+  function fetchCommitDiffMapIfNeeded(commit: CommitInfo) {
+    if (commitDiffMapCache[commit.hash] !== undefined || !workspaceId) return;
+    const requestWorkspaceId = workspaceId;
+    commitDiffMapCache = { ...commitDiffMapCache, [commit.hash]: null };
+    fromCommit(requestWorkspaceId, commit.hash)
+      .then((document) => {
+        if (workspaceId !== requestWorkspaceId) return;
+        commitDiffMapCache = { ...commitDiffMapCache, [commit.hash]: document };
+      })
+      .catch((error) => {
+        logger.error('Failed to build commit diff map', { hash: commit.hash, error });
+        if (workspaceId !== requestWorkspaceId) return;
+        const { [commit.hash]: _, ...rest } = commitDiffMapCache;
+        commitDiffMapCache = rest;
+      });
   }
   let commitEdit = $state<{
     hash: string | null;
@@ -411,6 +431,7 @@
     } else {
       newSet.add(commit.hash);
       fetchCommitFilesIfNeeded(commit);
+      fetchCommitDiffMapIfNeeded(commit);
     }
     expandedCommits = newSet;
   }
@@ -732,6 +753,7 @@
         {@const isOperatingOnThis = undoState.commitHash === commit.hash}
         {@const isExpanded = expandedCommits.has(commit.hash)}
         {@const commitFiles = getCommitFiles(commit)}
+        {@const diffMapDocument = commitDiffMapCache[commit.hash]}
         {@const files = commitFiles.map((f) => ({
           path: f.path,
           additions: f.additions,
@@ -899,6 +921,20 @@
           <!-- Expanded panel content -->
           {#if isExpanded}
             <div class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px" transition:slide={{ duration: 150 }}>
+              {#if diffMapDocument}
+                <div class="h-48 mb-1 overflow-hidden rounded border border-border">
+                  <DiffMap
+                    document={diffMapDocument}
+                    activePath={activeFilePath ?? undefined}
+                    filterable={false}
+                    onOpen={(file) => {
+                      handleCommitFileClick(file.path, commit.hash).catch((error) => {
+                        logger.error('Error in handleCommitFileClick', { error });
+                      });
+                    }}
+                  />
+                </div>
+              {/if}
               <!-- Files list -->
               {#each files as file (file.path)}
                 <FileRow
@@ -962,6 +998,7 @@
       {#each olderCommits as commit (commit.hash)}
         {@const isExpanded = expandedCommits.has(commit.hash)}
         {@const commitFiles = getCommitFiles(commit)}
+        {@const diffMapDocument = commitDiffMapCache[commit.hash]}
         {@const files = commitFiles.map((f) => ({
           path: f.path,
           additions: f.additions,
@@ -1013,6 +1050,20 @@
 
           {#if isExpanded}
             <div class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px" transition:slide={{ duration: 150 }}>
+              {#if diffMapDocument}
+                <div class="h-48 mb-1 overflow-hidden rounded border border-border">
+                  <DiffMap
+                    document={diffMapDocument}
+                    activePath={activeFilePath ?? undefined}
+                    filterable={false}
+                    onOpen={(file) => {
+                      handleCommitFileClick(file.path, commit.hash).catch((error) => {
+                        logger.error('Error in handleCommitFileClick', { error });
+                      });
+                    }}
+                  />
+                </div>
+              {/if}
               {#each files as file (file.path)}
                 <FileRow
                   {file}

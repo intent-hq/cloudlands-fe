@@ -28,6 +28,8 @@ export interface UIFileChange {
   deletions: number;
   staged: boolean;
   status?: 'added' | 'modified' | 'deleted' | 'renamed';
+  /** Previous path when this file represents a rename. */
+  renamedFrom?: string;
   attribution?: FileChangeAttribution;
   /** Whether this file is locked due to active agent work (auto-commit pending) */
   locked?: boolean;

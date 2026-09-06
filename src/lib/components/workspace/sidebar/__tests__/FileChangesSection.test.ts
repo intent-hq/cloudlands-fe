@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => {
   let autoCommit = false;
   let lockedAgentIds: Record<string, true> = {};
   let workspaceAgents: Array<{ id: string; name: string }> = [];
+  let storedChangesView: string | null = null;
   const openTab = vi.fn();
   const stageFiles = vi.fn();
   const unstageFiles = vi.fn();
@@ -45,6 +46,10 @@ const mocks = vi.hoisted(() => {
     setAgents: (v: Array<{ id: string; name: string }>) => {
       workspaceAgents = v;
     },
+    getStoredChangesView: () => storedChangesView,
+    setStoredChangesView: (value: string | null) => {
+      storedChangesView = value;
+    },
   };
 });
 
@@ -65,6 +70,10 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectStagedWorkingChanges: mocks.selector(() => mocks.staged),
   selectUnstagedWorkingChanges: mocks.selector(() => mocks.unstaged),
+}));
+
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
+  selectViewedFiles: mocks.selector(() => ({})),
 }));
 
 vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
@@ -147,6 +156,13 @@ vi.mock('$features/git/git-write-service', () => ({
   commit: vi.fn(),
 }));
 
+vi.mock('$lib/utils/safe-storage', () => ({
+  safeLocalStorage: {
+    getItem: () => mocks.getStoredChangesView(),
+    setItem: (_key: string, value: string) => mocks.setStoredChangesView(value),
+  },
+}));
+
 vi.mock('$lib/components/ui/toast', () => ({
   toast: {
     error: vi.fn(),
@@ -159,6 +175,12 @@ vi.mock('$lib/components/ui/toast', () => ({
 vi.mock('$lib/components/file-tracking/accept-changes/FileRow.svelte', async () => {
   const { default: MockComponent } = await import('./mocks/MockFileRow.svelte');
   return { default: MockComponent };
+});
+
+vi.mock('$features/diff-map', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$features/diff-map')>();
+  const { default: MockDiffMap } = await import('./mocks/MockDiffMap.svelte');
+  return { ...actual, DiffMap: MockDiffMap, ReviewSliceMap: MockDiffMap };
 });
 
 vi.mock('$lib/components/ui/Header.svelte', async () => {
@@ -230,6 +252,7 @@ describe('FileChangesSection', () => {
     mocks.setAutoCommit(false);
     mocks.setLockedAgentIds({});
     mocks.setAgents([]);
+    mocks.setStoredChangesView(null);
   });
 
   it('renders unstaged and staged file rows from selectors', async () => {
@@ -252,6 +275,39 @@ describe('FileChangesSection', () => {
     expect(rows.filter((row) => row.getAttribute('data-file-path') === 'src/dual.ts')).toHaveLength(
       2,
     );
+  });
+
+  it('renders separate unstaged and staged maps and opens through the matching list handler', async () => {
+    const unstaged = makeChange('src/dual.ts');
+    const staged = makeChange('src/dual.ts', { id: 'staged-dual', stage: ChangeStage.Staged });
+    const onOpenChange = vi.fn();
+    const onFileClicked = vi.fn();
+    mocks.unstaged.push(unstaged);
+    mocks.staged.push(staged);
+
+    const { getByRole, getAllByTestId } = await renderSection({ onOpenChange, onFileClicked });
+    await fireEvent.click(getByRole('radio', { name: 'Map view' }));
+
+    const maps = getAllByTestId('diff-map');
+    expect(maps).toHaveLength(2);
+    expect(maps.every((map) => map.getAttribute('data-rung') === '2')).toBe(true);
+    const stagedFile = maps[1].querySelector('[data-map-file="src/dual.ts"]') as HTMLElement;
+    await fireEvent.click(stagedFile);
+
+    expect(onOpenChange).toHaveBeenCalledWith(staged, expect.any(MouseEvent));
+    expect(onFileClicked).toHaveBeenCalledWith('src/dual.ts', true);
+  });
+
+  it('persists the selected map view across remounts', async () => {
+    mocks.unstaged.push(makeChange('src/a.ts'));
+    const first = await renderSection();
+    await fireEvent.click(first.getByRole('radio', { name: 'Map view' }));
+    expect(mocks.getStoredChangesView()).toBe('map');
+    first.unmount();
+
+    const second = await renderSection();
+    await waitFor(() => expect(second.getAllByTestId('diff-map')).toHaveLength(1));
+    expect(second.queryAllByTestId('file-row')).toHaveLength(0);
   });
 
   it('handleStageAll stages all unstaged paths through the git-write-service seam', async () => {
