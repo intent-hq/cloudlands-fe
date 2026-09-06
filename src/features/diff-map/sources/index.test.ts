@@ -15,6 +15,27 @@ vi.mock('$lib/client', () => ({
 
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
 
+const branchDiffFixture = [
+  {
+    file: 'src/changed.ts',
+    oldContent: 'old value',
+    newContent: 'new value\nextra value',
+    chunks: [
+      {
+        oldStart: 4,
+        oldLines: 1,
+        newStart: 4,
+        newLines: 2,
+        lines: [
+          { type: LineType.Deletion, content: 'old value' },
+          { type: LineType.Addition, content: 'new value' },
+          { type: LineType.Addition, content: 'extra value' },
+        ],
+      },
+    ],
+  },
+];
+
 describe('diff map source adapters', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -63,8 +84,8 @@ describe('diff map source adapters', () => {
   it('builds a range document from branchDiff and numstat responses', async () => {
     mocks.backendRequest.mockImplementation((method: string) =>
       method === 'git.branchDiff'
-        ? Promise.resolve([{ file: 'src/new.ts', oldContent: '', newContent: 'one\ntwo' }])
-        : Promise.resolve([{ filePath: 'src/new.ts', additions: 2, deletions: 0 }]),
+        ? Promise.resolve(branchDiffFixture)
+        : Promise.resolve([{ filePath: 'src/changed.ts', additions: 2, deletions: 1 }]),
     );
 
     const document = await fromRange('base-sha', 'head-sha', { workspaceId: 'ws-1' });
@@ -78,7 +99,14 @@ describe('diff map source adapters', () => {
       head: 'head-sha',
       snapshotId: 'base-sha..head-sha',
     });
-    expect(document.files[0]).toMatchObject({ path: 'src/new.ts', status: 'added', additions: 2 });
+    expect(document.files[0]).toMatchObject({
+      path: 'src/changed.ts',
+      status: 'modified',
+      additions: 2,
+      hunks: [{ oldRange: { start: 4, end: 4 }, newRange: { start: 4, end: 5 } }],
+    });
+    expect(document.files[0].oldTrack).toBeDefined();
+    expect(document.files[0].newTrack).toBeDefined();
   });
 
   it('builds a pull request document from the existing PR file list', () => {

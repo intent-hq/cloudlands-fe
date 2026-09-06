@@ -40,6 +40,7 @@ export interface RangeDiffOptions {
 
 interface RangeDiffEntry {
   file: string;
+  chunks: DiffChunk['chunks'];
   oldContent?: string;
   newContent?: string;
 }
@@ -122,7 +123,7 @@ function statsFromChunk(chunk: DiffChunk): Pick<PullRequestDiffFile, 'additions'
   return { additions, deletions };
 }
 
-function patchFromChunk(chunk: DiffChunk): string {
+function patchFromChunk(chunk: Pick<DiffChunk, 'chunks'>): string {
   return chunk.chunks
     .map((hunk) => `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`)
     .join('\n');
@@ -186,12 +187,17 @@ export async function fromRange(
             : 'modified',
     };
   });
-  return buildSourceDocument(files, {
-    kind: 'range',
-    base,
-    head,
-    snapshotId: `${base}..${head}`,
-  });
+  const patches = new Map(entries.map((entry) => [entry.file, patchFromChunk(entry)]));
+  return buildSourceDocument(
+    files,
+    {
+      kind: 'range',
+      base,
+      head,
+      snapshotId: `${base}..${head}`,
+    },
+    patches,
+  );
 }
 
 export function fromPullRequest(pr: PullRequestDiffSource): DiffMapDocument {
