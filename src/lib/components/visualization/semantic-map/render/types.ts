@@ -17,7 +17,7 @@ export interface SemanticMapTimeWindow {
   end: string;
 }
 
-export interface SemanticMapGeometry {
+interface SemanticMapGeometry {
   rest: RegionGeometry[];
   focus: RegionGeometry[];
 }

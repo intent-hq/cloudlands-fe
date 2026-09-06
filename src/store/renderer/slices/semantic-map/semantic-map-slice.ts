@@ -16,7 +16,7 @@ export interface SemanticMapTimeWindow {
   endTs: string | null;
 }
 
-export type SemanticMapHydrationStatus = 'idle' | 'loading' | 'loaded' | 'error';
+type SemanticMapHydrationStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
 export interface SemanticMapWorkspaceState {
   hydrationStatus: SemanticMapHydrationStatus;
