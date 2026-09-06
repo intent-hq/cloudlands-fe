@@ -204,10 +204,7 @@ export function pathFuzzyMatch(query: string, targetPath: string): FuzzyMatchRes
  * Match query segments against path segments in order
  * Returns indices of matched path segments, or null if no match
  */
-function matchPathSegments(
-  querySegments: string[],
-  pathSegments: string[],
-): number[] | null {
+function matchPathSegments(querySegments: string[], pathSegments: string[]): number[] | null {
   const matchedIndices: number[] = [];
   let pathIdx = 0;
 
@@ -288,7 +285,10 @@ function calculatePathScore(
   score += consecutiveBonus;
 
   // Bonus for matching the last path segment (filename)
-  if (matchedIndices.length > 0 && matchedIndices[matchedIndices.length - 1] === pathSegments.length - 1) {
+  if (
+    matchedIndices.length > 0 &&
+    matchedIndices[matchedIndices.length - 1] === pathSegments.length - 1
+  ) {
     score += 0.3;
   }
 

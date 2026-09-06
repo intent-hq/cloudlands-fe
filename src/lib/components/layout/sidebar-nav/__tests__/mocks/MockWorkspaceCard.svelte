@@ -22,4 +22,3 @@
 >
   {workspace?.title}
 </div>
-

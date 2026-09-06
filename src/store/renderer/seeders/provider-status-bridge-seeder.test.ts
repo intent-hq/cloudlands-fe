@@ -11,9 +11,23 @@
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+const providerLifecycle = vi.hoisted(() => ({
+  notification: undefined as
+    ((notification: { method: string; params?: unknown }) => void) | undefined,
+  reconnected: undefined as (() => void) | undefined,
+}));
+
 // FAKE transport only: the daemon bridge is mocked so no IPC ever fires.
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
+  onBackendNotification: vi.fn((handler) => {
+    providerLifecycle.notification = handler;
+    return () => {};
+  }),
+  onBackendReconnected: vi.fn((handler) => {
+    providerLifecycle.reconnected = handler;
+    return () => {};
+  }),
 }));
 
 // The seeder reads known provider ids / gating metadata from the
@@ -33,6 +47,10 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 import { backendRequest } from '$lib/client/live/backend-transport';
+import {
+  __resetProviderAuthStatusForTests,
+  getProviderAuthVerdicts,
+} from '$features/providers/provider-auth-status.client';
 import { mockInvoke } from '$shared/ipc-mock-router';
 import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
@@ -40,6 +58,12 @@ import { CODEX_ADAPTER_MISSING_WARNING } from '$shared/constants/codex';
 import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
 
 const mockedRequest = vi.mocked(backendRequest);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => (resolve = done));
+  return { promise, resolve };
+}
 
 /** Route daemon methods to canned PROTOCOL-shaped responses. */
 type MethodResponses = Record<string, unknown | ((params: unknown) => unknown)>;
@@ -132,7 +156,113 @@ describe('provider-status-bridge-seeder', () => {
   });
 
   afterEach(() => {
+    __resetProviderAuthStatusForTests();
+    vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it('single-flights auth reads and refetches after auth events and reconnects', async () => {
+    mockedRequest.mockResolvedValue(authSweep({ codex: true }));
+
+    const [first, second] = await Promise.all([
+      getProviderAuthVerdicts(),
+      getProviderAuthVerdicts(),
+    ]);
+    expect(first.codex?.authenticated).toBe(true);
+    expect(second).toEqual(first);
+    await getProviderAuthVerdicts();
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+
+    providerLifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'provider:auth-changed' } },
+    });
+    await getProviderAuthVerdicts();
+    providerLifecycle.reconnected?.();
+    await getProviderAuthVerdicts();
+
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+    expect(mockedRequest).toHaveBeenLastCalledWith('host.providerAuthStatus', {});
+  });
+
+  it('refreshes cached auth verdicts after the daemon-aligned TTL expires', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-05T12:00:00Z'));
+    mockedRequest
+      .mockResolvedValueOnce(authOne('codex', false))
+      .mockResolvedValueOnce(authOne('codex', true));
+
+    await expect(getProviderAuthVerdicts({ providerId: 'codex' })).resolves.toEqual({
+      codex: { authenticated: false },
+    });
+    vi.advanceTimersByTime(59_999);
+    await expect(getProviderAuthVerdicts({ providerId: 'codex' })).resolves.toEqual({
+      codex: { authenticated: false },
+    });
+    vi.advanceTimersByTime(1);
+    await expect(getProviderAuthVerdicts({ providerId: 'codex' })).resolves.toEqual({
+      codex: { authenticated: true },
+    });
+
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves force on a refresh queued behind a passive auth read', async () => {
+    let resolveCached!: (value: unknown) => void;
+    mockedRequest
+      .mockReturnValueOnce(new Promise((resolve) => (resolveCached = resolve)))
+      .mockResolvedValueOnce(authOne('codex', true));
+
+    const cachedRead = getProviderAuthVerdicts({ providerId: 'codex' });
+    const freshRead = getProviderAuthVerdicts({ providerId: 'codex', force: true });
+    resolveCached(authOne('codex', false));
+
+    await expect(cachedRead).resolves.toEqual({ codex: { authenticated: false } });
+    await expect(freshRead).resolves.toEqual({ codex: { authenticated: true } });
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'host.providerAuthStatus', {
+      providerId: 'codex',
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'host.providerAuthStatus', {
+      providerId: 'codex',
+      force: true,
+    });
+  });
+
+  it('serves the newest verdict after two invalidations without concurrent reads', async () => {
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    let activeReads = 0;
+    let maxActiveReads = 0;
+    const track = (promise: Promise<unknown>) => {
+      activeReads += 1;
+      maxActiveReads = Math.max(maxActiveReads, activeReads);
+      return promise.finally(() => (activeReads -= 1));
+    };
+    mockedRequest
+      .mockImplementationOnce(() => track(first.promise))
+      .mockImplementationOnce(() => track(second.promise))
+      .mockImplementationOnce(() => track(Promise.resolve(authOne('codex', true))));
+
+    const initialRead = getProviderAuthVerdicts({ providerId: 'codex' });
+    providerLifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'provider:auth-changed' } },
+    });
+    const middleRead = getProviderAuthVerdicts({ providerId: 'codex' });
+    first.resolve(authOne('codex', false));
+    await vi.waitFor(() => expect(mockedRequest).toHaveBeenCalledTimes(2));
+    providerLifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'provider:auth-changed' } },
+    });
+    const newestRead = getProviderAuthVerdicts({ providerId: 'codex' });
+    second.resolve(authOne('codex', false));
+
+    await initialRead;
+    await middleRead;
+    await expect(newestRead).resolves.toEqual({ codex: { authenticated: true } });
+    expect(maxActiveReads).toBe(1);
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
   });
 
   describe('providers:get-availability → host.checkAuggie + host.toolAvailability + host.providerAuthStatus', () => {
@@ -470,6 +600,36 @@ describe('provider-status-bridge-seeder', () => {
       });
     });
 
+    it('does not warn on claude-code when npx is missing but the daemon runs a path override (intent#4378)', async () => {
+      // Since intentd#1714 discovery reports the npx-only provider installed
+      // from a valid `providers.paths` override while `resolvedPath` stays the
+      // (absent) auto-detected npx — the daemon execs the override, so npx
+      // is not involved. Reuses the discovery round-trip already made for
+      // Antigravity.
+      routeDaemon({
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': {
+          tools: {
+            ...NO_TOOLS.tools,
+            claude: { available: true, path: '/usr/local/bin/claude' },
+          },
+        },
+        'host.providerAuthStatus': authSweep({ 'claude-code': true }),
+        'host.providerDiscovery': {
+          providers: [{ id: 'claude-code', installed: true }],
+        },
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(response.data?.providers.claudeCode).toEqual({ available: true, authenticated: true });
+      expect(
+        mockedRequest.mock.calls.filter(([method]) => method === 'host.providerDiscovery'),
+      ).toHaveLength(1);
+    });
+
     it('reports codex available on the real CLI alone (no local adapter needed)', async () => {
       routeDaemon({
         'host.checkAuggie': { available: false },
@@ -643,6 +803,53 @@ describe('provider-status-bridge-seeder', () => {
           throw new Error('transport down');
         },
         'host.providerAuthStatus': authOne('claude-code', true),
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'claude-code');
+
+      expect(response).toEqual({
+        success: true,
+        providerId: 'claude-code',
+        data: { available: true, authenticated: true },
+      });
+    });
+
+    it('does not warn when npx is missing but the daemon runs a path override (intent#4378)', async () => {
+      routeDaemon({
+        'host.findBinary': (params) => {
+          const { name } = params as { name: string };
+          return name === 'claude'
+            ? { available: true, path: '/usr/local/bin/claude' }
+            : { available: false };
+        },
+        'host.providerAuthStatus': authOne('claude-code', true),
+        'host.providerDiscovery': {
+          providers: [{ id: 'claude-code', installed: true }],
+        },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'claude-code');
+
+      expect(mockedRequest).toHaveBeenCalledWith('host.providerDiscovery', {});
+      expect(response).toEqual({
+        success: true,
+        providerId: 'claude-code',
+        data: { available: true, authenticated: true },
+      });
+    });
+
+    it('does not warn when npx is missing and the discovery read fails (unknown, not confirmed absence)', async () => {
+      routeDaemon({
+        'host.findBinary': (params) => {
+          const { name } = params as { name: string };
+          return name === 'claude'
+            ? { available: true, path: '/usr/local/bin/claude' }
+            : { available: false };
+        },
+        'host.providerAuthStatus': authOne('claude-code', true),
+        'host.providerDiscovery': () => {
+          throw new Error('discovery transport down');
+        },
       });
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'claude-code');
@@ -1007,6 +1214,16 @@ describe('provider-status-bridge-seeder', () => {
               npxPackage: '@agentclientprotocol/claude-agent-acp@1.2.3',
             },
             {
+              id: 'pi',
+              displayName: 'Pi',
+              command: 'npx',
+              installed: true,
+              resolvedPath: '/usr/local/bin/npx',
+              hasNpxFallback: false,
+              npxOnly: true,
+              npxPackage: 'pi-acp@0.0.33',
+            },
+            {
               id: 'grok',
               displayName: 'Grok',
               command: 'grok',
@@ -1055,11 +1272,16 @@ describe('provider-status-bridge-seeder', () => {
           paths: {
             auggie: '/usr/local/bin/auggie',
             'claude-code': '/usr/local/bin/npx',
+            pi: '/usr/local/bin/npx',
             grok: '/home/user/.grok/bin/grok',
             unsloth: '/home/user/.opencode/bin/opencode',
             codex: null,
           },
           secondaryPaths: { unsloth: '/usr/local/bin/unsloth' },
+          // Only npx-only providers whose path override the daemon honors
+          // carry their pinned package spec (their path is npx, not the
+          // adapter); pi stays pinned-npx-only and is excluded.
+          npxPackages: { 'claude-code': '@agentclientprotocol/claude-agent-acp@1.2.3' },
           // npx rides the same discovery round-trip so the onboarding bulk
           // check can read it without the aggregated auth sweep.
           npx: { resolvedPath: '/usr/local/bin/npx', version: '10.2.4', versionOk: true },
@@ -1100,6 +1322,7 @@ describe('provider-status-bridge-seeder', () => {
         data: {
           paths: { unsloth: '/home/user/.opencode/bin/opencode' },
           secondaryPaths: { unsloth: null },
+          npxPackages: {},
           npx: { resolvedPath: null, version: null, versionOk: false },
         },
       });
@@ -1112,7 +1335,7 @@ describe('provider-status-bridge-seeder', () => {
 
       expect(response).toEqual({
         success: true,
-        data: { paths: {}, secondaryPaths: {} },
+        data: { paths: {}, secondaryPaths: {}, npxPackages: {} },
       });
     });
   });

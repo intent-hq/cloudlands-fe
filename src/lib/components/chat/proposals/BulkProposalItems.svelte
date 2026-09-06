@@ -33,7 +33,7 @@
   }
 </script>
 
-<div class="min-w-0 rounded-(--radius-medium) border border-border bg-background">
+<div class="min-w-0 overflow-hidden rounded-(--radius-large) border border-border bg-muted/20">
   <div class="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
     <div class="type-caption font-medium uppercase tracking-wide text-muted-foreground">
       {m.chat_bulkProposalItems_bulkChanges_label()}
@@ -72,14 +72,12 @@
           {#if item.before !== undefined || item.after !== undefined}
             <div class="type-caption grid min-w-0 gap-1 sm:grid-cols-2">
               <div
-                class="min-w-0 break-words rounded-(--radius-small) border border-border bg-muted/30 px-2 py-1 text-muted-foreground"
+                class="min-w-0 break-words rounded-md bg-background px-2 py-1 text-muted-foreground"
               >
                 <span class="font-medium">{m.chat_shared_before_label()}</span>
                 {formatValue(item.before)}
               </div>
-              <div
-                class="min-w-0 break-words rounded-(--radius-small) border border-primary/30 bg-accent/60 px-2 py-1 text-accent-foreground"
-              >
+              <div class="min-w-0 break-words rounded-md bg-primary/10 px-2 py-1 text-foreground">
                 <span class="font-medium">{m.chat_shared_after_label()}</span>
                 {formatValue(item.after)}
               </div>

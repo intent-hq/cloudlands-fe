@@ -1,19 +1,14 @@
 import type { SagaGenerator } from 'typed-redux-saga';
 import { all, call, put, takeEvery, takeLeading } from 'typed-redux-saga';
 
-import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
 import { externalEditorsClient } from '$features/external-editors/external-editors.client';
 import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
 import type { GithubRepo } from '$features/github-auth/types';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { KnownRepo } from '$shared/types/known-repo';
-import {
-  loadWorkspaceDataRequested,
-  refreshAcceptChangesStatus,
-} from '../../changes/changes-slice';
+import { loadWorkspaceDataRequested } from '../../changes/changes-slice';
 import {
   CACHE_TTL_MS,
   clearError,
@@ -28,9 +23,6 @@ import {
   selectLastFetched,
 } from '../../external-editors/external-editors-selectors';
 import { hydrateFileExplorerRequested } from '../../file-explorer/file-explorer-slice';
-import { setPostMergeState } from '../../git/git-slice';
-import { selectPostMergeState } from '../../git/git-selectors';
-import type { PostMergeState } from '../../git/git-types';
 import {
   loadGithubRepos,
   setGithubRepos,
@@ -114,41 +106,9 @@ function* refreshKnownRepos(): SagaGenerator<void> {
   }
 }
 
-function* refreshAcceptChanges(workspaceId: string): SagaGenerator<void> {
-  const current: PostMergeState = yield* selectPostMergeState.effect(workspaceId);
-  try {
-    const status: Awaited<ReturnType<typeof AcceptChangesClient.getStatus>> = yield* call(
-      [AcceptChangesClient, AcceptChangesClient.getStatus],
-      workspaceId as WorkspaceId,
-    );
-    yield* put(
-      setPostMergeState(workspaceId, {
-        ...current,
-        aheadOfTrunk: status.aheadOfTrunk,
-        behindTrunk: status.behindTrunk,
-        hasConflicts: status.hasConflicts,
-        hasRemote: status.hasRemote,
-        isContentMergedToTrunk: status.isContentMergedToTrunk ?? false,
-      }),
-    );
-  } catch (error) {
-    logger.warn('Failed to fetch accept-changes status', { workspaceId, error });
-    yield* put(
-      setPostMergeState(workspaceId, {
-        ...current,
-        aheadOfTrunk: null,
-        behindTrunk: 0,
-        hasConflicts: false,
-        isContentMergedToTrunk: false,
-      }),
-    );
-  }
-}
-
 function* fanOutWorkspaceMounted(workspaceId: string): SagaGenerator<void> {
   yield* put(ensureWorkspaceTasksLoaded(workspaceId));
   yield* put(loadEventsRequested(workspaceId));
-  yield* put(refreshAcceptChangesStatus(workspaceId));
   yield* put(refreshScripts(workspaceId));
   yield* put(loadSkillsRequested(workspaceId));
   yield* put(refreshPRStatusRequested(workspaceId, false, false));
@@ -162,13 +122,6 @@ function* fanOutWorkspaceMounted(workspaceId: string): SagaGenerator<void> {
 
 function* refreshEditorsWorker(action: ReturnType<typeof fetchEditors>): SagaGenerator<void> {
   yield* refreshEditors(Boolean(action.payload[0]));
-}
-
-function* refreshAcceptChangesWorker(
-  action: ReturnType<typeof refreshAcceptChangesStatus>,
-): SagaGenerator<void> {
-  const [workspaceId] = action.payload;
-  if (workspaceId) yield* refreshAcceptChanges(workspaceId);
 }
 
 function* workspaceMountedWorker(action: ReturnType<typeof workspaceMounted>): SagaGenerator<void> {
@@ -190,7 +143,6 @@ export function* lifecycleIpcReadSaga(): SagaGenerator<void> {
     takeLeading(loadGithubRepos, refreshGithubRepos),
     takeLeading(fetchEditors, refreshEditorsWorker),
     takeLeading(loadKnownRepos, refreshKnownRepos),
-    takeLeading(refreshAcceptChangesStatus, refreshAcceptChangesWorker),
     takeEvery(workspaceHydrationRequested, workspaceHydrationRequestedWorker),
     takeEvery(workspaceMounted, workspaceMountedWorker),
   ]);

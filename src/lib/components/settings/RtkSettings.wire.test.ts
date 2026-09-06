@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: mocks.mockBackendRequest,
+  onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
   BackendError: class BackendError extends Error {
     constructor(payload: { code: string; message: string }) {
       super(payload.message);
@@ -39,6 +41,7 @@ vi.mock('$store/renderer/store', () => ({
 }));
 
 import RtkSettings from './RtkSettings.svelte';
+import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 
 describe('RtkSettings wire contract (PROTOCOL §5.12)', () => {
   beforeEach(() => {
@@ -46,6 +49,7 @@ describe('RtkSettings wire contract (PROTOCOL §5.12)', () => {
   });
 
   afterEach(() => {
+    __resetSettingsReadCacheForTests();
     cleanup();
   });
 
@@ -68,7 +72,9 @@ describe('RtkSettings wire contract (PROTOCOL §5.12)', () => {
     render(RtkSettings);
 
     await waitFor(() => {
-      expect(mocks.mockBackendRequest).toHaveBeenCalledWith('settings.get', { path: 'rtk.enabled' });
+      expect(mocks.mockBackendRequest).toHaveBeenCalledWith('settings.get', {
+        path: 'rtk.enabled',
+      });
     });
   });
 
@@ -102,9 +108,9 @@ describe('RtkSettings wire contract (PROTOCOL §5.12)', () => {
     await fireEvent.click(toggle);
 
     await waitFor(() => {
-      const updateCall = vi.mocked(mocks.mockBackendRequest).mock.calls.find(
-        (call) => call[0] === 'settings.update'
-      );
+      const updateCall = vi
+        .mocked(mocks.mockBackendRequest)
+        .mock.calls.find((call) => call[0] === 'settings.update');
       expect(updateCall).toBeDefined();
       expect(updateCall![1]).toEqual({
         changes: [{ path: 'rtk.enabled', value: true }],

@@ -20,6 +20,7 @@ import { cardStateColor } from '../grid/hud-card-meta';
 import type { HudCardStateKey } from '$store/renderer/slices/hud/hud-types';
 import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 
 import FeedPanel from './FeedPanel.svelte';
 
@@ -303,7 +304,7 @@ describe('FeedPanel WORKSPACE STATUS rows', () => {
       ['not_started', 'NOT STARTED'],
       ['complete', 'COMPLETE'],
       ['pr_ready', 'PR MERGEABLE'],
-      ['pr_queued', 'QUEUED TO MERGE'],
+      ['pr_queued', m.hud_card_statePrQueued_label()],
       ['pr_open', 'PR OPEN'],
       ['pr_merged', 'PR MERGED'],
     ];

@@ -13,18 +13,17 @@
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
 
-
   import {
-  selectAutoUpdateToastVisible,
-  selectAutoUpdateStatus,
-  selectAutoUpdateDismissedAt,
-} from '$store/renderer/slices/auto-update/auto-update-selectors';
+    selectAutoUpdateToastVisible,
+    selectAutoUpdateStatus,
+    selectAutoUpdateDismissedAt,
+  } from '$store/renderer/slices/auto-update/auto-update-selectors';
   import {
-  hideToast,
-  showToast,
-  dismissDownloadedToast,
-  initAutoUpdate,
-} from '$store/renderer/slices/auto-update/auto-update-slice';
+    hideToast,
+    showToast,
+    dismissDownloadedToast,
+    initAutoUpdate,
+  } from '$store/renderer/slices/auto-update/auto-update-slice';
   import { store as appStore } from '$store/renderer/store';
 
   const toastVisible$ = selectAutoUpdateToastVisible();

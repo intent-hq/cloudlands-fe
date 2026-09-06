@@ -34,8 +34,10 @@ import {
   removeTerminal,
   renameTerminal,
   saveTerminalMetadata,
+  selectScript,
   selectTerminal,
   setTerminalOverlayHeight,
+  setTerminalPlacement,
   terminalsReducer,
   toggleTerminalOverlay,
 } from '../terminals-slice';
@@ -66,8 +68,10 @@ function startSaga() {
     terminals = terminalsReducer(terminals, action as never);
     input.put(action as never);
   };
-  return { dispatched, send, task };
+  return { dispatched, send, task, getTerminals: () => terminals };
 }
+
+const noHydratedPlacements = { type: 'terminals/hydratePlacements', payload: [{}] };
 
 beforeEach(() => {
   storage.values.clear();
@@ -86,12 +90,15 @@ beforeEach(() => {
 });
 
 describe('terminalPersistenceSaga', () => {
-  it('hydrates the stored height before installing persistence watchers', async () => {
+  it('hydrates the legacy global height as the fallback before installing persistence watchers', async () => {
     storage.values.set(STORAGE_KEY, '64');
     const { dispatched, task } = startSaga();
     await settle();
 
-    expect(dispatched).toEqual([{ type: 'terminals/hydrateHeight', payload: [64] }]);
+    expect(dispatched).toEqual([
+      { type: 'terminals/hydrateHeight', payload: [64, {}] },
+      noHydratedPlacements,
+    ]);
     task.cancel();
     await task.toPromise();
   });
@@ -101,19 +108,319 @@ describe('terminalPersistenceSaga', () => {
     const { dispatched, task } = startSaga();
     await settle();
 
-    expect(dispatched).toEqual([{ type: 'terminals/hydrateHeight', payload: [50] }]);
+    expect(dispatched).toEqual([
+      { type: 'terminals/hydrateHeight', payload: [50, {}] },
+      noHydratedPlacements,
+    ]);
     task.cancel();
     await task.toPromise();
   });
 
-  it('persists the post-reducer clamped terminal height', async () => {
-    const { send, task } = startSaga();
-    await settle();
-    storage.setItem.mockClear();
-    send(setTerminalOverlayHeight(100));
+  it('hydrates stored placements per workspace at start, dropping malformed entries', async () => {
+    storage.values.set(
+      WORKSPACE_STATE_STORAGE_KEY,
+      JSON.stringify({
+        'ws-1': {
+          isOpen: false,
+          activeTerminalId: null,
+          placements: { 'term-1': 'panel', 'script-1': 'overlay', bogus: 'floating' },
+        },
+        'ws-2': { isOpen: true, activeTerminalId: 'term-9' },
+        'ws-3': { isOpen: false, activeTerminalId: null, placements: 'panel' },
+      }),
+    );
+    const { dispatched, getTerminals, task } = startSaga();
     await settle();
 
-    expect(storage.setItem.mock.calls).toEqual([[STORAGE_KEY, '90']]);
+    expect(dispatched).toEqual([
+      { type: 'terminals/hydrateHeight', payload: [50, {}] },
+      {
+        type: 'terminals/hydratePlacements',
+        payload: [{ 'ws-1': { 'term-1': 'panel', 'script-1': 'overlay' } }],
+      },
+    ]);
+    expect(getTerminals().workspaces).toEqual({});
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('restores placements through the production load shape (terminals, null, bootId)', async () => {
+    storage.values.set(
+      WORKSPACE_STATE_STORAGE_KEY,
+      JSON.stringify({
+        'ws-1': {
+          isOpen: false,
+          activeTerminalId: null,
+          placements: { 'term-1': 'panel', 'script-1': 'panel' },
+        },
+      }),
+    );
+    const { dispatched, getTerminals, send, task } = startSaga();
+    await settle();
+    dispatched.length = 0;
+    storage.setJSON.mockClear();
+    send(loadWorkspaceTerminals('ws-1', [{ id: 'term-1', name: 'Terminal 1' }], null, 'boot-1'));
+    await settle();
+
+    expect(dispatched).toEqual([]);
+    expect(getTerminals().workspaces['ws-1'].placements).toEqual({
+      'term-1': 'panel',
+      'script-1': 'panel',
+    });
+    expect(getTerminals().workspacePlacements).toEqual({});
+    expect(storage.setJSON.mock.calls).toEqual([
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        {
+          'ws-1': {
+            isOpen: false,
+            activeTerminalId: 'term-1',
+            placements: { 'term-1': 'panel', 'script-1': 'panel' },
+          },
+        },
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not clobber stored placements on a persist that precedes the first load', async () => {
+    storage.values.set(
+      WORKSPACE_STATE_STORAGE_KEY,
+      JSON.stringify({
+        'ws-1': { isOpen: false, activeTerminalId: null, placements: { 'term-1': 'panel' } },
+      }),
+    );
+    const { getTerminals, send, task } = startSaga();
+    await settle();
+    send(addTerminal('ws-1', 'term-2'));
+    await settle();
+
+    expect(JSON.parse(storage.values.get(WORKSPACE_STATE_STORAGE_KEY) ?? '{}')).toEqual({
+      'ws-1': { isOpen: false, activeTerminalId: 'term-2', placements: { 'term-1': 'panel' } },
+    });
+
+    send(setTerminalPlacement('ws-1', 'term-2', 'panel'));
+    await settle();
+
+    expect(JSON.parse(storage.values.get(WORKSPACE_STATE_STORAGE_KEY) ?? '{}')).toEqual({
+      'ws-1': {
+        isOpen: false,
+        activeTerminalId: 'term-2',
+        placements: { 'term-1': 'panel', 'term-2': 'panel' },
+      },
+    });
+
+    send(
+      loadWorkspaceTerminals(
+        'ws-1',
+        [
+          { id: 'term-1', name: 'Terminal 1' },
+          { id: 'term-2', name: 'Terminal 2' },
+        ],
+        null,
+        'boot-1',
+      ),
+    );
+    await settle();
+
+    expect(getTerminals().workspaces['ws-1'].placements).toEqual({
+      'term-1': 'panel',
+      'term-2': 'panel',
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('drops a stored placement removed before the first load instead of resurrecting it', async () => {
+    storage.values.set(
+      WORKSPACE_STATE_STORAGE_KEY,
+      JSON.stringify({
+        'ws-1': {
+          isOpen: false,
+          activeTerminalId: null,
+          placements: { 'term-1': 'panel', 'script-1': 'panel' },
+        },
+      }),
+    );
+    const { getTerminals, send, task } = startSaga();
+    await settle();
+    send(addTerminal('ws-1', 'term-1'));
+    send(removeTerminal('ws-1', 'term-1'));
+    await settle();
+
+    expect(JSON.parse(storage.values.get(WORKSPACE_STATE_STORAGE_KEY) ?? '{}')).toEqual({
+      'ws-1': { isOpen: false, activeTerminalId: null, placements: { 'script-1': 'panel' } },
+    });
+
+    send(loadWorkspaceTerminals('ws-1', [], null, 'boot-1'));
+    await settle();
+
+    expect(getTerminals().workspaces['ws-1'].placements).toEqual({ 'script-1': 'panel' });
+    expect(getTerminals().workspacePlacements['ws-1']).toBeUndefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('hydrates per-workspace heights from workspace state and skips invalid ones', async () => {
+    storage.values.set(STORAGE_KEY, '64');
+    storage.values.set(
+      WORKSPACE_STATE_STORAGE_KEY,
+      JSON.stringify({
+        'ws-1': { isOpen: true, activeTerminalId: 'term-1', height: 15 },
+        'ws-2': { isOpen: false, activeTerminalId: null },
+        'ws-3': { isOpen: false, activeTerminalId: null, height: 5 },
+        'ws-4': { isOpen: false, activeTerminalId: null, height: 'tall' },
+      }),
+    );
+    const { dispatched, task } = startSaga();
+    await settle();
+
+    expect(dispatched).toEqual([
+      { type: 'terminals/hydrateHeight', payload: [64, { 'ws-1': 15 }] },
+      noHydratedPlacements,
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('persists the post-reducer clamped height in the workspace state entry', async () => {
+    storage.values.set(
+      WORKSPACE_STATE_STORAGE_KEY,
+      JSON.stringify({ 'ws-2': { isOpen: false, activeTerminalId: null, height: 30 } }),
+    );
+    const { send, task } = startSaga();
+    await settle();
+    storage.setJSON.mockClear();
+    send(setTerminalOverlayHeight('ws-1', 100));
+    await settle();
+    send(setTerminalOverlayHeight('ws-1', 5));
+    await settle();
+
+    expect(storage.setItem).not.toHaveBeenCalled();
+    expect(storage.setJSON.mock.calls).toEqual([
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        {
+          'ws-1': { isOpen: false, activeTerminalId: null, height: 90 },
+          'ws-2': { isOpen: false, activeTerminalId: null, height: 30 },
+        },
+      ],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        {
+          'ws-1': { isOpen: false, activeTerminalId: null, height: 10 },
+          'ws-2': { isOpen: false, activeTerminalId: null, height: 30 },
+        },
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('round-trips a workspace height through workspace-state storage', async () => {
+    const first = startSaga();
+    await settle();
+    first.send(setTerminalOverlayHeight('ws-1', 25));
+    await settle();
+    first.task.cancel();
+    await first.task.toPromise();
+
+    const second = startSaga();
+    await settle();
+
+    expect(second.dispatched).toEqual([
+      { type: 'terminals/hydrateHeight', payload: [50, { 'ws-1': 25 }] },
+      noHydratedPlacements,
+    ]);
+    second.task.cancel();
+    await second.task.toPromise();
+  });
+
+  it('keeps the workspace height when later overlay-state triggers persist', async () => {
+    const { send, task } = startSaga();
+    await settle();
+    send(setTerminalOverlayHeight('ws-1', 25));
+    await settle();
+    storage.setJSON.mockClear();
+    send(openTerminalOverlay('ws-1', 'term-1'));
+    await settle();
+
+    expect(storage.setJSON.mock.calls).toEqual([
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        {
+          'ws-1': {
+            isOpen: true,
+            activeTerminalId: 'term-1',
+            placements: { 'term-1': 'overlay' },
+            height: 25,
+          },
+        },
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('merges a resize into the stored entry of a loaded workspace', async () => {
+    const { send, task } = startSaga();
+    await settle();
+    send(openTerminalOverlay('ws-1', 'term-1'));
+    await settle();
+    storage.setJSON.mockClear();
+    send(setTerminalOverlayHeight('ws-1', 35));
+    await settle();
+
+    expect(storage.setJSON.mock.calls).toEqual([
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        {
+          'ws-1': {
+            isOpen: true,
+            activeTerminalId: 'term-1',
+            placements: { 'term-1': 'overlay' },
+            height: 35,
+          },
+        },
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not write storage for a non-finite height', async () => {
+    const { send, task } = startSaga();
+    await settle();
+    storage.setJSON.mockClear();
+    send(setTerminalOverlayHeight('ws-1', Number.NaN));
+    await settle();
+
+    expect(storage.setJSON.mock.calls).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps hydrated heights from exposing not-yet-loaded workspaces to persistence', async () => {
+    const stored = {
+      'ws-1': { isOpen: true, activeTerminalId: 'term-1', height: 15 },
+      'ws-2': { isOpen: true, activeTerminalId: 'term-2' },
+    };
+    storage.values.set(WORKSPACE_STATE_STORAGE_KEY, JSON.stringify(stored));
+    const { send, task } = startSaga();
+    await settle();
+    send(removeTerminal('ws-1', 'term-gone'));
+    await settle();
+    send(closeTerminalOverlay('ws-1'));
+    await settle();
+    send(removeTerminal('ws-2', 'term-gone'));
+    await settle();
+
+    const workspaceStateWrites = storage.setJSON.mock.calls.filter(
+      ([key]) => key === WORKSPACE_STATE_STORAGE_KEY,
+    );
+    expect(workspaceStateWrites).toEqual([]);
+    expect(JSON.parse(storage.values.get(WORKSPACE_STATE_STORAGE_KEY) ?? '{}')).toEqual(stored);
     task.cancel();
     await task.toPromise();
   });
@@ -246,13 +553,74 @@ describe('terminalPersistenceSaga', () => {
     await settle();
     send(selectTerminal('ws-1', 'term-1'));
     await settle();
+    send(selectScript('ws-1', 'script-1'));
+    await settle();
+
+    const placements = { 'term-1': 'overlay' };
+    expect(storage.setJSON.mock.calls).toEqual([
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: true, activeTerminalId: 'term-1', placements } },
+      ],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: false, activeTerminalId: 'term-1', placements } },
+      ],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: true, activeTerminalId: 'term-1', placements } },
+      ],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: true, activeTerminalId: 'term-2', placements } },
+      ],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: true, activeTerminalId: 'term-1', placements } },
+      ],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        {
+          'ws-1': {
+            isOpen: true,
+            activeTerminalId: 'term-1',
+            placements: { ...placements, 'script-1': 'overlay' },
+          },
+        },
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('round-trips terminal placement through workspace-state persistence', async () => {
+    const { dispatched, send, task } = startSaga();
+    await settle();
+    storage.setJSON.mockClear();
+    send(setTerminalPlacement('ws-1', 'term-1', 'panel'));
+    await settle();
 
     expect(storage.setJSON.mock.calls).toEqual([
-      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: true, activeTerminalId: 'term-1' } }],
-      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: false, activeTerminalId: 'term-1' } }],
-      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: true, activeTerminalId: 'term-1' } }],
-      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: true, activeTerminalId: 'term-2' } }],
-      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: true, activeTerminalId: 'term-1' } }],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: false, activeTerminalId: null, placements: { 'term-1': 'panel' } } },
+      ],
+    ]);
+
+    dispatched.length = 0;
+    const terminals = [{ id: 'term-1', name: 'Terminal 1' }];
+    send(loadWorkspaceTerminals('ws-1', terminals));
+    await settle();
+
+    expect(dispatched).toEqual([
+      {
+        type: 'terminals/loadWorkspaceTerminals',
+        payload: [
+          'ws-1',
+          terminals,
+          { isOpen: false, activeTerminalId: null, placements: { 'term-1': 'panel' } },
+        ],
+      },
     ]);
     task.cancel();
     await task.toPromise();
@@ -282,7 +650,10 @@ describe('terminalPersistenceSaga', () => {
     expect(storage.setJSON.mock.calls).toEqual([
       [CUSTOM_NAMES_STORAGE_KEY, {}],
       ['terminal-metadata-ws-1', []],
-      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: false, activeTerminalId: null } }],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: false, activeTerminalId: null, placements: {} } },
+      ],
     ]);
     task.cancel();
     await task.toPromise();
@@ -329,7 +700,10 @@ describe('terminalPersistenceSaga', () => {
 
     expect(dispatched).toEqual([]);
     expect(storage.setJSON.mock.calls).toEqual([
-      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: true, activeTerminalId: 'term-1' } }],
+      [
+        WORKSPACE_STATE_STORAGE_KEY,
+        { 'ws-1': { isOpen: true, activeTerminalId: 'term-1', placements: {} } },
+      ],
     ]);
     task.cancel();
     await task.toPromise();
@@ -384,10 +758,11 @@ describe('terminalPersistenceSaga', () => {
     await task.toPromise();
     resolveHeight('70');
     await settle();
-    send(setTerminalOverlayHeight(70));
+    send(setTerminalOverlayHeight('ws-1', 70));
     await settle();
 
     expect(dispatched).toEqual([]);
     expect(storage.setItem.mock.calls).toEqual([]);
+    expect(storage.setJSON.mock.calls).toEqual([]);
   });
 });

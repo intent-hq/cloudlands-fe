@@ -3,11 +3,11 @@
  *
  * Purely observational: watches the existing t=0 triggers
  * (`initializeChatRequested` / `markAgentAsViewed`) and the reveal-gate
- * actions (hydration lifecycle, seq-0 snapshot, utility-footer readiness,
- * footer data seeds), records `performance.mark` entries via the
+ * actions (hydration lifecycle, seq-0 snapshot, footer data seeds), records
+ * `performance.mark` entries via the
  * switch-timing module, and finalizes ONE consolidated log line when the
  * reveal condition composes true (`shouldDeferTranscriptReveal` inputs:
- * hydration settled + both reveal gates clear). Dispatches nothing and owns
+ * hydration settled + the transcript snapshot gate clear). Dispatches nothing and owns
  * no state; registered as a no-op outside dev builds.
  */
 import { call, takeEvery, type SagaGenerator } from 'typed-redux-saga';
@@ -25,7 +25,6 @@ import {
   chatLiveStreamPhaseChanged,
   chatSwitchBackRevealTimedOut,
   chatTranscriptSnapshotApplied,
-  chatUtilityFooterReady,
   initializeChatRequested,
   transcriptHydrationFailed,
   transcriptHydrationSettled,
@@ -33,7 +32,6 @@ import {
 } from '../chat-state-slice';
 import {
   selectAwaitingSwitchBackSnapshot,
-  selectAwaitingUtilityFooter,
   selectTranscriptHydration,
 } from '../chat-state-selectors';
 import { selectAgentSessionWorkspaceId } from '../../agent-session/agent-session-selectors';
@@ -54,8 +52,7 @@ function* checkReveal(agentId: string): SagaGenerator<void> {
   const hydration = yield* selectTranscriptHydration.effect(agentId);
   if (hydration !== 'settled') return;
   const awaitingSnapshot = yield* selectAwaitingSwitchBackSnapshot.effect(agentId);
-  const awaitingFooter = yield* selectAwaitingUtilityFooter.effect(agentId);
-  if (awaitingSnapshot || awaitingFooter) return;
+  if (awaitingSnapshot) return;
   finalizeAgentView(agentId);
 }
 
@@ -107,22 +104,15 @@ function phaseChangedWorker(action: ReturnType<typeof chatLiveStreamPhaseChanged
   markAgentGate(agentId, PHASE_GATES[phase]);
 }
 
-function* subscriptionSnapshotWorker(
-  action: ReturnType<typeof setSubscriptionSnapshot>,
-): SagaGenerator<void> {
-  // The snapshot can be the action that clears the final reveal gate
-  // (footer readiness) — re-check so the consolidated log is not deferred
-  // to an unrelated later gate action.
+function subscriptionSnapshotWorker(action: ReturnType<typeof setSubscriptionSnapshot>): void {
   markAgentGate(action.payload.agentId, 'subscriptionsFetched');
-  yield* call(checkReveal, action.payload.agentId);
 }
 
-function* subscriptionFetchFailedWorker(
+function subscriptionFetchFailedWorker(
   action: ReturnType<typeof subscriptionSnapshotFetchFailed>,
-): SagaGenerator<void> {
+): void {
   const [, agentId] = action.payload;
   markAgentGate(agentId, 'subscriptionsFetched');
-  yield* call(checkReveal, agentId);
 }
 
 function hydrationStartedWorker(action: ReturnType<typeof transcriptHydrationStarted>): void {
@@ -140,13 +130,6 @@ function* snapshotAppliedWorker(
   action: ReturnType<typeof chatTranscriptSnapshotApplied>,
 ): SagaGenerator<void> {
   markAgentGate(action.payload[0], 'snapshotApplied');
-  yield* call(checkReveal, action.payload[0]);
-}
-
-function* footerReadyWorker(
-  action: ReturnType<typeof chatUtilityFooterReady>,
-): SagaGenerator<void> {
-  markAgentGate(action.payload[0], 'footerReady');
   yield* call(checkReveal, action.payload[0]);
 }
 
@@ -177,7 +160,6 @@ export function* switchTimingSaga(): SagaGenerator<void> {
   yield* takeEvery(transcriptHydrationSettled, hydrationSettledWorker);
   yield* takeEvery(transcriptHydrationFailed, hydrationFailedWorker);
   yield* takeEvery(chatTranscriptSnapshotApplied, snapshotAppliedWorker);
-  yield* takeEvery(chatUtilityFooterReady, footerReadyWorker);
   yield* takeEvery(chatSwitchBackRevealTimedOut, revealTimedOutWorker);
   yield* takeEvery(chatLiveStreamPhaseChanged, phaseChangedWorker);
   yield* takeEvery(setSubscriptionSnapshot, subscriptionSnapshotWorker);

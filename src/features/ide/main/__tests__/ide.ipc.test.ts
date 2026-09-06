@@ -1,12 +1,5 @@
 import { EventEmitter } from 'events';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Wire-contract tests for ide.ipc.ts.
@@ -21,21 +14,28 @@ import {
  * `access()` fallbacks).
  */
 
-const { mockRequest, mockSpawn, mockExecAsync, mockExecFileAsync, mockFindBinary, mockFindVSCodeAsync, loggerSpies } =
-  vi.hoisted(() => ({
-    mockRequest: vi.fn(),
-    mockSpawn: vi.fn(),
-    mockExecAsync: vi.fn(),
-    mockExecFileAsync: vi.fn(),
-    mockFindBinary: vi.fn(),
-    mockFindVSCodeAsync: vi.fn(),
-    loggerSpies: {
-      debug: vi.fn(),
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-    },
-  }));
+const {
+  mockRequest,
+  mockSpawn,
+  mockExecAsync,
+  mockExecFileAsync,
+  mockFindBinary,
+  mockFindVSCodeAsync,
+  loggerSpies,
+} = vi.hoisted(() => ({
+  mockRequest: vi.fn(),
+  mockSpawn: vi.fn(),
+  mockExecAsync: vi.fn(),
+  mockExecFileAsync: vi.fn(),
+  mockFindBinary: vi.fn(),
+  mockFindVSCodeAsync: vi.fn(),
+  loggerSpies: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mockRequest }),
@@ -141,7 +141,10 @@ describe('openInVSCode (host.listInstalledEditors flatpak wire contract)', () =>
       expect.objectContaining({ detached: true, stdio: 'ignore' }),
     );
     // No local detection probes.
-    expect(mockExecAsync).not.toHaveBeenCalledWith(expect.stringMatching(/flatpak info/), expect.anything());
+    expect(mockExecAsync).not.toHaveBeenCalledWith(
+      expect.stringMatching(/flatpak info/),
+      expect.anything(),
+    );
     expect(mockExecAsync).not.toHaveBeenCalledWith(expect.stringMatching(/^which /));
   });
 
@@ -149,7 +152,13 @@ describe('openInVSCode (host.listInstalledEditors flatpak wire contract)', () =>
     mockFindBinary.mockResolvedValue(null);
     mockRequest.mockResolvedValue({
       editors: [
-        { id: 'vscode', installed: true, source: 'binary', path: '/usr/bin/code', flatpakId: 'com.visualstudio.code' },
+        {
+          id: 'vscode',
+          installed: true,
+          source: 'binary',
+          path: '/usr/bin/code',
+          flatpakId: 'com.visualstudio.code',
+        },
       ],
     });
 
@@ -166,7 +175,9 @@ describe('openInVSCode (host.listInstalledEditors flatpak wire contract)', () =>
   it('does not launch via Flatpak when the vscode entry is `installed:false` (no verbose truthy coercion)', async () => {
     mockFindBinary.mockResolvedValue(null);
     mockRequest.mockResolvedValue({
-      editors: [{ id: 'vscode', installed: false, source: 'flatpak', flatpakId: 'com.visualstudio.code' }],
+      editors: [
+        { id: 'vscode', installed: false, source: 'flatpak', flatpakId: 'com.visualstudio.code' },
+      ],
     });
 
     const { openInVSCode } = await loadFreshModule();
@@ -175,7 +186,10 @@ describe('openInVSCode (host.listInstalledEditors flatpak wire contract)', () =>
     for (const call of mockSpawn.mock.calls) {
       expect(call[0]).not.toBe('flatpak');
     }
-    expect(mockExecAsync).not.toHaveBeenCalledWith(expect.stringMatching(/flatpak info/), expect.anything());
+    expect(mockExecAsync).not.toHaveBeenCalledWith(
+      expect.stringMatching(/flatpak info/),
+      expect.anything(),
+    );
   });
 
   it('degrades to no flatpak launch (no `flatpak info` shell-out) when the wire call rejects', async () => {
@@ -189,10 +203,12 @@ describe('openInVSCode (host.listInstalledEditors flatpak wire contract)', () =>
     for (const call of mockSpawn.mock.calls) {
       expect(call[0]).not.toBe('flatpak');
     }
-    expect(mockExecAsync).not.toHaveBeenCalledWith(expect.stringMatching(/flatpak info/), expect.anything());
+    expect(mockExecAsync).not.toHaveBeenCalledWith(
+      expect.stringMatching(/flatpak info/),
+      expect.anything(),
+    );
   });
 });
-
 
 describe('openInJetBrains (host.listInstalledEditors wire contract)', () => {
   beforeEach(() => {
@@ -226,9 +242,7 @@ describe('openInJetBrains (host.listInstalledEditors wire contract)', () => {
   it('consumes `source:"binary"` + `path` verbatim on Linux and launches with the daemon-reported path', async () => {
     setPlatform('linux');
     mockRequest.mockResolvedValue({
-      editors: [
-        { id: 'intellij', installed: true, source: 'binary', path: '/usr/local/bin/idea' },
-      ],
+      editors: [{ id: 'intellij', installed: true, source: 'binary', path: '/usr/local/bin/idea' }],
     });
 
     const { openInJetBrains } = await loadFreshModule();
@@ -243,7 +257,12 @@ describe('openInJetBrains (host.listInstalledEditors wire contract)', () => {
     mockRequest.mockResolvedValue({
       editors: [
         { id: 'intellij', installed: false },
-        { id: 'intellij-ce', installed: true, source: 'flatpak', flatpakId: 'com.jetbrains.IntelliJ-IDEA-Community' },
+        {
+          id: 'intellij-ce',
+          installed: true,
+          source: 'flatpak',
+          flatpakId: 'com.jetbrains.IntelliJ-IDEA-Community',
+        },
       ],
     });
 
@@ -251,17 +270,23 @@ describe('openInJetBrains (host.listInstalledEditors wire contract)', () => {
     const result = await openInJetBrains({ folder: '/tmp/project' });
 
     expect(result).toEqual({ success: true });
-    expect(mockExecFileAsync).toHaveBeenCalledWith(
-      'flatpak',
-      ['run', 'com.jetbrains.IntelliJ-IDEA-Community', '/tmp/project'],
-    );
+    expect(mockExecFileAsync).toHaveBeenCalledWith('flatpak', [
+      'run',
+      'com.jetbrains.IntelliJ-IDEA-Community',
+      '/tmp/project',
+    ]);
   });
 
   it('consumes `source:"macAppBundle"` verbatim on macOS and launches via `open -a "AppName"`', async () => {
     setPlatform('darwin');
     mockRequest.mockResolvedValue({
       editors: [
-        { id: 'webstorm', installed: true, source: 'macAppBundle', path: '/Applications/WebStorm.app' },
+        {
+          id: 'webstorm',
+          installed: true,
+          source: 'macAppBundle',
+          path: '/Applications/WebStorm.app',
+        },
       ],
     });
 
@@ -276,7 +301,12 @@ describe('openInJetBrains (host.listInstalledEditors wire contract)', () => {
     setPlatform('darwin');
     mockRequest.mockResolvedValue({
       editors: [
-        { id: 'intellij', installed: true, source: 'macAppBundle', path: '/Applications/IntelliJ IDEA.app' },
+        {
+          id: 'intellij',
+          installed: true,
+          source: 'macAppBundle',
+          path: '/Applications/IntelliJ IDEA.app',
+        },
       ],
     });
 
@@ -293,9 +323,7 @@ describe('openInJetBrains (host.listInstalledEditors wire contract)', () => {
   it('keeps hostile paths (backtick, $(), single quote) literal as a single argv entry — no shell string (monorepo#672)', async () => {
     setPlatform('linux');
     mockRequest.mockResolvedValue({
-      editors: [
-        { id: 'intellij', installed: true, source: 'binary', path: '/usr/bin/idea' },
-      ],
+      editors: [{ id: 'intellij', installed: true, source: 'binary', path: '/usr/bin/idea' }],
     });
 
     const hostilePath = "/tmp/it`s $(bad)'dir";
@@ -312,7 +340,12 @@ describe('openInJetBrains (host.listInstalledEditors wire contract)', () => {
     setPlatform('darwin');
     mockRequest.mockResolvedValue({
       editors: [
-        { id: 'intellij', installed: true, source: 'macAppBundle', path: '/Applications/IntelliJ IDEA.app' },
+        {
+          id: 'intellij',
+          installed: true,
+          source: 'macAppBundle',
+          path: '/Applications/IntelliJ IDEA.app',
+        },
       ],
     });
 
@@ -323,7 +356,11 @@ describe('openInJetBrains (host.listInstalledEditors wire contract)', () => {
 
     expect(result).toEqual({ success: true });
     expect(mockExecFileAsync).toHaveBeenCalledTimes(2);
-    expect(mockExecFileAsync).toHaveBeenNthCalledWith(1, 'open', ['-a', 'IntelliJ IDEA', hostileFolder]);
+    expect(mockExecFileAsync).toHaveBeenNthCalledWith(1, 'open', [
+      '-a',
+      'IntelliJ IDEA',
+      hostileFolder,
+    ]);
     expect(mockExecFileAsync).toHaveBeenNthCalledWith(
       2,
       '/Applications/IntelliJ IDEA.app/Contents/MacOS/idea',

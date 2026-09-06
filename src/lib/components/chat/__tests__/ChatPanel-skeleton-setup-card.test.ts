@@ -62,7 +62,7 @@ vi.mock('$lib/client', () => ({
       set: vi.fn().mockResolvedValue({ ok: true }),
       clear: vi.fn().mockResolvedValue({ ok: true }),
     },
-    agents: { retry: vi.fn(), editQueued: vi.fn() },
+    agents: { retry: vi.fn(), editQueued: vi.fn(), getQueue: vi.fn().mockResolvedValue([]) },
   },
 }));
 vi.mock('$lib/electron-bridge', () => ({
@@ -96,7 +96,6 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectAwaitingSwitchBackSnapshot: testState.selector(false),
-  selectAwaitingUtilityFooter: testState.selector(false),
   selectChatError: testState.selector(null),
   selectChatFailureCorrelation: testState.selector(undefined),
   selectChatLastChunkTime: testState.selector(null),

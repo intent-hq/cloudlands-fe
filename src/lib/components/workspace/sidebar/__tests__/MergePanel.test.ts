@@ -1,15 +1,5 @@
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
-import {
-  render,
-  fireEvent,
-  waitFor,
-} from '@testing-library/svelte';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
 import { ChangeStage } from '$features/file-tracking/types';
 import { warmImport } from '../../../../../test/warm-import';
@@ -44,7 +34,8 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -57,9 +48,18 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
-  setSidebarMergeWhenReady: vi.fn((...args: unknown[]) => ({ type: 'changes/setSidebarMergeWhenReady', payload: args })),
-  refreshRequested: vi.fn((wsId: string) => ({ type: 'changes/refreshRequested', payload: [wsId] })),
-  clearOlderCommits: vi.fn((wsId: string) => ({ type: 'changes/clearOlderCommits', payload: wsId })),
+  setSidebarMergeWhenReady: vi.fn((...args: unknown[]) => ({
+    type: 'changes/setSidebarMergeWhenReady',
+    payload: args,
+  })),
+  refreshRequested: vi.fn((wsId: string) => ({
+    type: 'changes/refreshRequested',
+    payload: [wsId],
+  })),
+  clearOlderCommits: vi.fn((wsId: string) => ({
+    type: 'changes/clearOlderCommits',
+    payload: wsId,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
@@ -75,20 +75,32 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
-  setWorkspaceEntity: vi.fn((...args: unknown[]) => ({ type: 'workspace/setWorkspaceEntity', payload: args })),
+  setWorkspaceEntity: vi.fn((...args: unknown[]) => ({
+    type: 'workspace/setWorkspaceEntity',
+    payload: args,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { update: vi.fn().mockResolvedValue({ ok: true, data: mocks.workspaceEntity }) },
 }));
 
-vi.mock('$store/renderer/slices/background-agent-executor/background-agent-executor-selectors', () => ({
-  selectExecutorState: mocks.selector(() => mocks.executorState),
-}));
+vi.mock(
+  '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors',
+  () => ({
+    selectExecutorState: mocks.selector(() => mocks.executorState),
+  }),
+);
 
 vi.mock('$store/renderer/slices/background-agent-executor/background-agent-executor-slice', () => ({
-  executeBackgroundAgent: vi.fn((...args: unknown[]) => ({ type: 'backgroundAgentExecutor/execute', payload: args })),
-  cancelExecution: vi.fn((...args: unknown[]) => ({ type: 'backgroundAgentExecutor/cancel', payload: args })),
+  executeBackgroundAgent: vi.fn((...args: unknown[]) => ({
+    type: 'backgroundAgentExecutor/execute',
+    payload: args,
+  })),
+  cancelExecution: vi.fn((...args: unknown[]) => ({
+    type: 'backgroundAgentExecutor/cancel',
+    payload: args,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/git/git-slice', () => ({
@@ -96,7 +108,10 @@ vi.mock('$store/renderer/slices/git/git-slice', () => ({
 }));
 
 vi.mock('$store/renderer/slices/pr-status/pr-status-slice', () => ({
-  refreshPRStatusRequested: vi.fn((...args: unknown[]) => ({ type: 'prStatus/refreshRequested', payload: args })),
+  refreshPRStatusRequested: vi.fn((...args: unknown[]) => ({
+    type: 'prStatus/refreshRequested',
+    payload: args,
+  })),
 }));
 
 const mockExecute = vi.fn().mockResolvedValue({ success: true, result: { newHeadSha: 'h1' } });
@@ -109,7 +124,6 @@ vi.mock('$features/accept-changes/accept-changes.client', () => ({
 vi.mock('$features/git/git-cache', () => ({
   gitCache: { invalidate: vi.fn(), invalidateWorkspace: vi.fn(), set: vi.fn() },
 }));
-
 
 vi.mock('$lib/utils/client-logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -210,7 +224,9 @@ describe('MergePanel', () => {
 
   it('triggerMerge invokes AcceptChangesClient.execute with merge target branch and strategy', async () => {
     const { component } = await renderMerge({ targetBranch: 'develop' });
-    await (component as unknown as { triggerMerge: (opts?: { squash?: boolean }) => void }).triggerMerge({
+    await (
+      component as unknown as { triggerMerge: (opts?: { squash?: boolean }) => void }
+    ).triggerMerge({
       squash: true,
     });
     await waitFor(() => expect(mockExecute).toHaveBeenCalled());
@@ -244,7 +260,9 @@ describe('MergePanel', () => {
   it('getMergeOptions reflects viaPR and pushAfter defaults based on props', async () => {
     const { component } = await renderMerge({ hasOpenPR: true, hasRemote: true });
     await waitFor(() => {
-      const opts = (component as unknown as { getMergeOptions: () => Record<string, boolean> }).getMergeOptions();
+      const opts = (
+        component as unknown as { getMergeOptions: () => Record<string, boolean> }
+      ).getMergeOptions();
       expect(opts.viaPR).toBe(true);
       expect(opts.pushAfter).toBe(true);
     });
@@ -260,7 +278,9 @@ describe('MergePanel', () => {
     });
     await waitFor(() => {
       const buttons = Array.from(container.querySelectorAll('button'));
-      const stopBtn = buttons.find((b) => b.textContent?.includes('Auto-fill') && b.querySelector('[data-icon="stop"]'));
+      const stopBtn = buttons.find(
+        (b) => b.textContent?.includes('Auto-fill') && b.querySelector('[data-icon="stop"]'),
+      );
       expect(stopBtn).toBeDefined();
     });
     const buttons = Array.from(container.querySelectorAll('button'));

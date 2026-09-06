@@ -1,8 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createTiptapTaskListMarked } from '../tiptap-task-list-extension';
 
 describe('Tiptap Task List Extension for Marked', () => {

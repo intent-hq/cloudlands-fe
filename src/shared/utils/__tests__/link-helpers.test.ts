@@ -1,8 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   isAuthUrl,
@@ -75,7 +71,9 @@ describe('link-helpers', () => {
 
     it('returns null for non-GitHub hosts and invalid URLs', () => {
       expect(parseGitHubIssueOrPrUrl('https://gitlab.com/acme/widgets/issues/42')).toBeNull();
-      expect(parseGitHubIssueOrPrUrl('https://api.github.com/repos/acme/widgets/issues/42')).toBeNull();
+      expect(
+        parseGitHubIssueOrPrUrl('https://api.github.com/repos/acme/widgets/issues/42'),
+      ).toBeNull();
       expect(parseGitHubIssueOrPrUrl('not a url')).toBeNull();
     });
   });

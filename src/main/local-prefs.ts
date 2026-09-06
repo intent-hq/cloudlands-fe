@@ -74,26 +74,30 @@ export async function hasLocalPref(key: string): Promise<boolean> {
 
 /** Write a single FE-local preference (serialized). */
 export async function setLocalPref(key: string, value: unknown): Promise<void> {
-  writeChain = writeChain.then(async () => {
-    const all = await readAll();
-    all[key] = value;
-    await writeAll(all);
-  }).catch((error) => {
-    logger.error('Failed to write local-prefs', error as Error);
-  });
+  writeChain = writeChain
+    .then(async () => {
+      const all = await readAll();
+      all[key] = value;
+      await writeAll(all);
+    })
+    .catch((error) => {
+      logger.error('Failed to write local-prefs', error as Error);
+    });
   return writeChain;
 }
 
 /** Delete a single FE-local preference (serialized). */
 export async function deleteLocalPref(key: string): Promise<void> {
-  writeChain = writeChain.then(async () => {
-    const all = await readAll();
-    if (!Object.prototype.hasOwnProperty.call(all, key)) return;
-    delete all[key];
-    await writeAll(all);
-  }).catch((error) => {
-    logger.error('Failed to delete local-prefs key', error as Error);
-  });
+  writeChain = writeChain
+    .then(async () => {
+      const all = await readAll();
+      if (!Object.prototype.hasOwnProperty.call(all, key)) return;
+      delete all[key];
+      await writeAll(all);
+    })
+    .catch((error) => {
+      logger.error('Failed to delete local-prefs key', error as Error);
+    });
   return writeChain;
 }
 

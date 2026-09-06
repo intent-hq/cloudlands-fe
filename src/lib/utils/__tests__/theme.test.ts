@@ -2,14 +2,7 @@
  * Tests for ThemeManager custom theme support
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { ThemeManager } from '../theme';
 
 // ── Test fixtures ───────────────────────────────────────────────────────────
@@ -24,14 +17,14 @@ const CATPPUCCIN_DARK = {
     'sideBar.foreground': '#cdd6f4',
     'button.background': '#89b4fa',
     'button.foreground': '#1e1e2e',
-    'focusBorder': '#89b4fa',
+    focusBorder: '#89b4fa',
     'input.background': '#313244',
     'panel.border': '#45475a',
     'badge.background': '#f5c2e7',
     'list.activeSelectionBackground': '#45475a',
     'tab.inactiveBackground': '#181825',
-    'descriptionForeground': '#a6adc8',
-    'errorForeground': '#f38ba8',
+    descriptionForeground: '#a6adc8',
+    errorForeground: '#f38ba8',
     'terminal.background': '#1e1e2e',
     'terminal.foreground': '#cdd6f4',
     'terminal.ansiBlack': '#45475a',
@@ -61,9 +54,7 @@ const SOLARIZED_LIGHT = {
     'terminal.background': '#fdf6e3',
     'terminal.foreground': '#657b83',
   },
-  tokenColors: [
-    { scope: 'comment', settings: { foreground: '#93a1a1' } },
-  ],
+  tokenColors: [{ scope: 'comment', settings: { foreground: '#93a1a1' } }],
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -132,12 +123,8 @@ describe('ThemeManager custom theme support', () => {
     manager.setCustomTheme(CATPPUCCIN_DARK);
 
     const ls = getLocalStorageMock();
-    expect(ls.setItem).toHaveBeenCalledWith(
-      'custom-vscode-theme',
-      JSON.stringify(CATPPUCCIN_DARK),
-    );
+    expect(ls.setItem).toHaveBeenCalledWith('custom-vscode-theme', JSON.stringify(CATPPUCCIN_DARK));
   });
-
 
   it('sets dark class on html element for dark custom theme', () => {
     manager.setCustomTheme(CATPPUCCIN_DARK);

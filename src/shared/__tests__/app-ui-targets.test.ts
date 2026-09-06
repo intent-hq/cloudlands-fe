@@ -39,8 +39,7 @@ describe('app UI targets registry', () => {
       'open-in': 'app-behavior',
       'github-link-action': 'app-behavior',
       'agent-features': 'agent-behavior',
-      agents: 'agent-behavior',
-      'quickActions.defaultModel': 'agent-behavior',
+      'global-instructions': 'agent-behavior',
       appearance: 'display',
       'font-style': 'display',
       language: 'display',
@@ -50,6 +49,7 @@ describe('app UI targets registry', () => {
       'code-font': 'display',
       general: 'advanced',
       devices: 'devices',
+      'websocket-api': 'devices',
     } as const;
 
     const targets = getAppUiTargets();
@@ -100,22 +100,37 @@ describe('app UI targets registry', () => {
     expect(isResolvableNavTarget(route)).toBe(true);
   });
 
-  it('resolves the default-model hash to the canonical background agent target', () => {
+  it('resolves the default-model hash to the Providers default model target', () => {
     const target = resolveHashToTarget('default-model');
 
     expect(target).toMatchObject({
-      id: 'quickActions.defaultModel',
-      tab: 'agent-behavior',
-      scrollSelector: '#global-instructions',
-      highlightSelector: '[data-highlight-id="quickActions.defaultModel"]',
+      id: 'utility-default-model',
+      tab: 'providers',
+      scrollSelector: '#utility-default-model',
+      highlightSelector: '[data-highlight-id="utility-default-model"]',
+      route: '/settings?tab=providers#utility-default-model',
     });
+  });
+
+  it('resolves agent-behavior hashes to the Global Instructions target', () => {
+    for (const hash of ['global-instructions', 'agents', 'specialists', 'all-agents']) {
+      expect(resolveHashToTarget(hash), hash).toMatchObject({
+        id: 'global-instructions',
+        tab: 'agent-behavior',
+        scrollSelector: '#global-instructions',
+        highlightSelector: '[data-highlight-id="global-instructions"]',
+      });
+    }
+    expect(getHighlightIdFromRoute('/settings?tab=agent-behavior#global-instructions')).toBe(
+      'global-instructions',
+    );
   });
 
   // monorepo#1729: the hash is UI-only, so links minted before the
   // backgroundAgents.* → quickActions.* rename must keep resolving.
   it('still resolves the pre-rename backgroundAgents.defaultModel hash', () => {
     expect(resolveHashToTarget('backgroundAgents.defaultModel')).toMatchObject({
-      id: 'quickActions.defaultModel',
+      id: 'utility-default-model',
     });
     expect(isResolvableNavTarget('/settings#backgroundAgents.defaultModel')).toBe(true);
   });
@@ -123,6 +138,14 @@ describe('app UI targets registry', () => {
   it('resolves the legacy machines hash to the canonical Devices target', () => {
     expect(resolveHashToTarget('machines')).toMatchObject({ id: 'devices', tab: 'devices' });
     expect(isResolvableNavTarget('/settings?tab=machines#machines')).toBe(true);
+  });
+
+  it('resolves the remote-access alias to the websocket-api target on the Devices tab', () => {
+    const canonical = resolveHashToTarget('websocket-api');
+    expect(canonical).toMatchObject({ id: 'websocket-api', tab: 'devices' });
+    expect(resolveHashToTarget('remote-access')).toEqual(canonical);
+    expect(isResolvableNavTarget('/settings?tab=advanced#websocket-api')).toBe(true);
+    expect(isResolvableNavTarget('/settings#remote-access')).toBe(true);
   });
 
   it('returns undefined for an unknown hash', () => {

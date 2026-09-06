@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { WORKSPACE_DISPLAY_STATUS_VALUES } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 import {
   getWorkspaceStatusPresentation,
   resolveWorkspaceStatusState,
@@ -10,7 +11,7 @@ const expected: Array<
   [WorkspaceStatusPresentationState, 'dot' | 'icon', string | null, string, string]
 > = [
   ['failed', 'icon', 'triangle-exclamation', 'text-foreground', 'Failed'],
-  ['blocked', 'icon', 'xmark', 'text-destructive', 'Blocked'],
+  ['blocked', 'icon', 'xmark', 'text-danger', 'Blocked'],
   ['needs_attention', 'icon', 'circle-question', 'text-warning', 'Needs attention'],
   ['in_progress', 'dot', null, 'workspace-status-color-active', 'In progress'],
   ['waiting', 'icon', 'hourglass', 'text-muted-foreground', 'Waiting'],
@@ -18,7 +19,7 @@ const expected: Array<
   ['not_started', 'dot', null, 'text-muted-foreground/35', 'Not started'],
   ['idle', 'dot', null, 'text-muted-foreground/35', 'Idle'],
   ['complete', 'icon', 'circle-check', 'text-success', 'Complete'],
-  ['pr_queued', 'icon', 'hourglass-half', 'text-info', 'Queued to merge'],
+  ['pr_queued', 'icon', 'hourglass-half', 'text-info', m.workspace_statusIcon_prQueued_label()],
   ['pr_ready', 'icon', 'code-pull-request', 'text-success', 'PR Mergeable'],
   ['pr_open', 'icon', 'code-pull-request', 'text-info', 'PR open'],
   ['pr_merged', 'icon', 'code-merge', 'text-purple-500', 'PR merged'],

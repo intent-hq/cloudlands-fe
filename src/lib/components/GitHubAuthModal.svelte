@@ -108,7 +108,7 @@
 
       <div class="p-6 text-center text-foreground">
         {#if $error$}
-          <div class="text-error-foreground">
+          <div class="text-danger">
             <p>{$error$}</p>
             <button
               class="mt-3 bg-muted border-none px-4 py-2 rounded cursor-pointer text-foreground hover:bg-muted/80"

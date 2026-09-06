@@ -50,7 +50,7 @@
       noFocusStyle
         ? 'focus-visible:outline-none focus-visible:ring-0'
         : 'focus-visible:border-ring focus-visible:outline-none focus-visible:ring-0',
-      'aria-invalid:border-destructive-foreground aria-invalid:ring-1 aria-invalid:ring-destructive-foreground/25',
+      'aria-invalid:border-danger aria-invalid:ring-1 aria-invalid:ring-danger/25',
       className,
     )}
     type="file"
@@ -67,7 +67,7 @@
       noFocusStyle
         ? 'focus-visible:outline-none focus-visible:ring-0'
         : 'focus-visible:border-ring focus-visible:outline-none focus-visible:ring-0',
-      'aria-invalid:border-destructive-foreground aria-invalid:ring-1 aria-invalid:ring-destructive-foreground/25',
+      'aria-invalid:border-danger aria-invalid:ring-1 aria-invalid:ring-danger/25',
       className,
     )}
     {type}

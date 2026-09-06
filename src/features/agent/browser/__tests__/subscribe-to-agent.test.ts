@@ -4,14 +4,7 @@
  * ignores unrelated store updates.
  */
 
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Store } from '@augmentcode/themis/svelte-store';
 
 vi.mock('svelte', async (importOriginal) => ({
@@ -25,12 +18,14 @@ import {
   renameSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 
-const { storeRef, stateListeners, selectorSubscribeSpy, capturedSelectorFuncs } = vi.hoisted(() => ({
-  storeRef: { current: null as any },
-  stateListeners: new Set<() => void>(),
-  selectorSubscribeSpy: vi.fn(),
-  capturedSelectorFuncs: [] as Array<(state: any, ...args: any[]) => any>,
-}));
+const { storeRef, stateListeners, selectorSubscribeSpy, capturedSelectorFuncs } = vi.hoisted(
+  () => ({
+    storeRef: { current: null as any },
+    stateListeners: new Set<() => void>(),
+    selectorSubscribeSpy: vi.fn(),
+    capturedSelectorFuncs: [] as Array<(state: any, ...args: any[]) => any>,
+  }),
+);
 
 const synchronousStateMiddleware = (() => (next: any) => (action: any) => {
   const result = next(action);
@@ -54,27 +49,27 @@ vi.mock('$store/renderer/store', async () => {
     get state() {
       return storeRef.current?.state;
     },
-    createSelector: (selectorFunc: (state: any, ...args: any[]) => any) => Object.assign(
-      (...args: any[]) => {
-        capturedSelectorFuncs.push(selectorFunc);
-        return readable(() => selectorFunc(mockStore.state, ...args));
-      },
-      {
-        select: selectorFunc,
-        effect: (...args: any[]) => selectorFunc(mockStore.state, ...args),
-        withStore: (storeSource: { state?: unknown }) =>
-          (...args: any[]) => readable(() => selectorFunc(storeSource.state ?? mockStore.state, ...args)),
-      },
-    ),
+    createSelector: (selectorFunc: (state: any, ...args: any[]) => any) =>
+      Object.assign(
+        (...args: any[]) => {
+          capturedSelectorFuncs.push(selectorFunc);
+          return readable(() => selectorFunc(mockStore.state, ...args));
+        },
+        {
+          select: selectorFunc,
+          effect: (...args: any[]) => selectorFunc(mockStore.state, ...args),
+          withStore:
+            (storeSource: { state?: unknown }) =>
+            (...args: any[]) =>
+              readable(() => selectorFunc(storeSource.state ?? mockStore.state, ...args)),
+        },
+      ),
   };
 
   return createStoreMockModule(mockStore);
 });
 
-import {
-  subscribeToAgent,
-  notifyAgentSubscribers,
-} from '$features/agent/browser';
+import { subscribeToAgent, notifyAgentSubscribers } from '$features/agent/browser';
 import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 
@@ -99,10 +94,13 @@ function makeAgent(overrides: Partial<AgentSession> = {}): AgentSession {
 }
 
 function makeStore() {
-  const store = new Store({
-    agentSessions: agentSessionReducer,
-    unrelated: unrelatedReducer,
-  }, synchronousStateMiddleware);
+  const store = new Store(
+    {
+      agentSessions: agentSessionReducer,
+      unrelated: unrelatedReducer,
+    },
+    synchronousStateMiddleware,
+  );
   store.init();
   storeRef.current = store;
   return store;

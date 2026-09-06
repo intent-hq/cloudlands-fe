@@ -149,10 +149,14 @@ describe('host-requirements selectors', () => {
 
   it('allRequirementsMet ignores gh (informational only — never gates)', () => {
     expect(
-      selectAllRequirementsMet.select(storeWith({ ...met, gh: { checked: true, available: false } })),
+      selectAllRequirementsMet.select(
+        storeWith({ ...met, gh: { checked: true, available: false } }),
+      ),
     ).toBe(true);
     expect(
-      selectAllRequirementsMet.select(storeWith({ ...met, gh: { checked: false, available: false } })),
+      selectAllRequirementsMet.select(
+        storeWith({ ...met, gh: { checked: false, available: false } }),
+      ),
     ).toBe(true);
   });
 });

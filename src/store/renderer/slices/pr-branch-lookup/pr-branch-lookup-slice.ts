@@ -1,5 +1,5 @@
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   PrBranchLookupPayload,
   PrBranchLookupRequest,
@@ -31,23 +31,23 @@ export const prBranchLookupFailed = createAction<
 
 export const prBranchLookupReducer = createReducer<PrBranchLookupState>(initialState);
 prBranchLookupReducer.with(prBranchLookupStarted, (state, { payload }) => ({
-    ...state,
-    byKey: {
-      ...state.byKey,
-      [payload.key]: { status: 'loading' },
-    },
-  }));
+  ...state,
+  byKey: {
+    ...state.byKey,
+    [payload.key]: { status: 'loading' },
+  },
+}));
 prBranchLookupReducer.with(prBranchLookupSucceeded, (state, { payload }) => ({
-    ...state,
-    byKey: {
-      ...state.byKey,
-      [payload.key]: { status: 'succeeded', branch: payload.branch },
-    },
-  }));
+  ...state,
+  byKey: {
+    ...state.byKey,
+    [payload.key]: { status: 'succeeded', branch: payload.branch },
+  },
+}));
 prBranchLookupReducer.with(prBranchLookupFailed, (state, { payload }) => ({
-    ...state,
-    byKey: {
-      ...state.byKey,
-      [payload.key]: { status: 'failed', error: payload.error },
-    },
-  }));
+  ...state,
+  byKey: {
+    ...state.byKey,
+    [payload.key]: { status: 'failed', error: payload.error },
+  },
+}));

@@ -268,5 +268,4 @@ export class PerformanceMonitor {
       this.rafHandle = null;
     });
   }
-
 }

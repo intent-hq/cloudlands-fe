@@ -26,7 +26,7 @@
       </div>
     {/if}
     <Sheet.Footer>
-      <button class="text-destructive" onclick={() => (destructiveCount += 1)}>Delete item</button>
+      <button class="text-danger" onclick={() => (destructiveCount += 1)}>Delete item</button>
     </Sheet.Footer>
     <output aria-label="Sheet destructive count">{destructiveCount}</output>
   </Sheet.Content>

@@ -21,4 +21,3 @@ export type AgentLockWorkspaceState = {
 export type AgentLockState = {
   byWorkspaceId: Record<string, AgentLockWorkspaceState>;
 };
-

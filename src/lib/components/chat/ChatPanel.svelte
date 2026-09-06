@@ -51,7 +51,6 @@
     saveAgentSessionRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
-    agentProposalResolveRequested,
     agentSessionDismissQuestionsRequested,
     agentSessionEditAndRegenerateRequested,
     agentSessionRegenerateFromMessageRequested,
@@ -120,7 +119,6 @@
   } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
     selectAwaitingSwitchBackSnapshot,
-    selectAwaitingUtilityFooter,
     selectChatError,
     selectChatFailureCorrelation,
     selectChatLastChunkTime,
@@ -146,7 +144,7 @@
 
   import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
-  import type { Workspace, AgentMetadata } from '$shared/types';
+  import type { Workspace, AgentMetadata, PendingProposalRef } from '$shared/types';
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
   import {
@@ -187,34 +185,10 @@
     deriveWizardPendingQuestions,
   } from './questions/wizard-gate';
   import { classifyPendingQuestionMarker } from './questions/pending-questions';
-  import ProposalTray, { trayBodyMaxHeight } from './proposals/ProposalTray.svelte';
-  import {
-    derivePendingProposalRecoveryState,
-    deriveTrayPendingProposals,
-    proposalTrayVisible,
-  } from './proposals/proposal-tray-gate';
-  import {
-    clearTrayDraft,
-    loadTrayCollapsed,
-    saveTrayCollapsed,
-  } from './proposals/proposal-tray-storage';
-  import {
-    classifyPendingProposalRefs,
-    type PendingProposalEntry,
-  } from './proposals/pending-proposals';
-  import { getProposalId } from './proposals/proposal-id';
-  import {
-    applySpecialistProposal,
-    undoSpecialistProposal,
-  } from './proposals/specialist-proposal-actions';
-  import {
-    applySettingsProposal,
-    undoSettingsProposal,
-  } from './proposals/settings-proposal-actions';
-  import { applyWorkspaceProposal } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import { derivePendingProposalRecoveryState } from './proposals/pending-proposal-recovery';
+  import { classifyPendingProposalRefs } from './proposals/pending-proposals';
+  import { reconcileAppliedProposals } from './proposals/proposal-action-handlers';
   import { selectProposalLifecycleMap } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
-  import { agentScopedProposalKey } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
-  import type { ProposalActionDetail } from '$shared/types/proposal';
   import {
     initialWizardCollapsed,
     saveWizardCollapsed,
@@ -505,10 +479,6 @@
   // Switch-back gate: true while a re-viewed conversation's (re)opening
   // standing subscription has not yet delivered its fresh seq-0 snapshot.
   const awaitingSwitchBackSnapshot$ = selectAwaitingSwitchBackSnapshot(agentIdStore);
-  // Utility-footer gate: true while the footer data sources (subscriptions,
-  // hooks, monitored PRs) have not all settled — transcript and footer
-  // reveal in the same paint (saga-cleared, bounded fallback).
-  const awaitingUtilityFooter$ = selectAwaitingUtilityFooter(agentIdStore);
   // Indeterminate first-hydration gate: while the INITIAL hydration is in
   // flight (never settled before for this agent), a partially-loaded message
   // list — e.g. the standing subscription's newest page landing ahead of the
@@ -523,6 +493,16 @@
       $agentSession$ ?? null,
       $transcriptSnapshotMeta$?.totalMessages ?? 0,
     ),
+  );
+  // The transcript is KNOWN empty (not merely not-yet-hydrated): hydration
+  // settled, no switch-back snapshot outstanding, and no durable evidence of
+  // messages. A fresh mount over a still-hydrating conversation must not be
+  // mistaken for an empty chat.
+  const transcriptSettledEmpty = $derived(
+    $agentMessages$.length === 0 &&
+      $transcriptHydration$ === 'settled' &&
+      !$awaitingSwitchBackSnapshot$ &&
+      !authoritativeConversationEvidence,
   );
   // Latched "New messages" divider viewing session (entry-only, frozen).
   const dividerSession$ = selectDividerSession(agentIdStore);
@@ -953,12 +933,13 @@
 
   // Agent Q&A: the daemon's pending marker is authoritative when present, so
   // its selected question-bearing assistant message stays pending across later
-  // rows until cleared, dismissed, or superseded. Transcript parsing remains
-  // the content source; legacy sessions use the daemon's non-system tail rule.
-  // The gate (own active turn, NOT the broad running gate — an agent paused
-  // on delegated agents has ended its turn and its questions must surface)
-  // lives in deriveWizardPendingQuestions so the regression suite exercises
-  // the real production gate.
+  // rows AND later automatic/user turns until cleared, dismissed, or
+  // superseded. Transcript parsing remains the content source; legacy sessions
+  // use the daemon's non-system tail rule, gated on the agent's own active
+  // turn (NOT the broad running gate — an agent paused on delegated agents has
+  // ended its turn and its questions must surface). Both live in
+  // deriveWizardPendingQuestions so the regression suite exercises the real
+  // production gate.
   const markedQuestionRecovery = $derived.by(() => {
     void $agentMessages$;
     void $agentHistoryMessages$;
@@ -1047,9 +1028,7 @@
   const visibleQueuedMessages = $derived($queuedMessages$.filter(isUserQueuedMessage));
 
   // Queue visibility around the wizard: hidden while the wizard is expanded,
-  // shown with a held-for-questions hint while Ignore-collapsed (the daemon
-  // parks automatic deliveries behind the pending Q&A — question hold,
-  // PROTOCOL §5.5). Derivation shared with the regression suite.
+  // shown while Ignore-collapsed. Derivation shared with the regression suite.
   const queuedMessagesVisibility = $derived(
     deriveQueuedMessagesVisibility({
       queueLength: visibleQueuedMessages.length,
@@ -1070,7 +1049,8 @@
   // `dismissedQuestionsMessageId` into session metadata optimistically (the
   // wizard-gate reads it, so the wizard hides immediately) and forwards
   // `agent.dismissQuestions` — the daemon persists the marker (survives
-  // reload) and releases the question hold. On failure the middleware rolls
+  // reload) and clears the pending question set, so the sticky wizard stays
+  // hidden across later turns. On failure the middleware rolls
   // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
   // Returns the action promise so the wizard clears its stored draft only
   // after the dismissal is confirmed (a failure keeps the draft).
@@ -1108,25 +1088,8 @@
     void performLocalSendCleanup({ followBottom: true });
   }
 
-  // ── Pending-proposal tray (composer slot) ────────────────────────────────
-  // Derived from the daemon's `pendingProposals` session metadata (PROTOCOL
-  // §5.5) intersected with transcript resource blocks + the targeted-recovery
-  // cache. Unlike the Q&A wizard there is NO turn-active gating: proposals
-  // hold no deliveries, so the tray stays visible/actionable while the agent
-  // runs later turns. The void reads keep the $derived reactive to every
-  // store input the shared helper re-reads from state.
-  const trayPendingProposals = $derived.by(() => {
-    void $agentSession$?.metadata?.pendingProposals;
-    void $pendingProposalRecovery$;
-    void $proposalLifecycleMap$;
-    return deriveTrayPendingProposals(appStore.state, agentId, $agentMessages$);
-  });
-  const showProposalTray = $derived(
-    proposalTrayVisible({
-      hasPendingProposals: trayPendingProposals.length > 0,
-      hasPendingQuestions: !!pendingQuestions,
-      questionWizardCollapsed,
-    }),
+  const pendingProposalRefs = $derived(
+    classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals),
   );
 
   // Targeted recovery for refs whose carrying message is not hydrated
@@ -1143,7 +1106,7 @@
   });
   $effect(() => {
     if ($agentSession$?.id !== agentId) return;
-    const refs = classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals);
+    const refs = pendingProposalRefs;
     const tracked = $pendingProposalRecovery$;
     const keep = [...new Set(refs.map((ref) => ref.messageId))];
     if (tracked && Object.keys(tracked).some((messageId) => !keep.includes(messageId))) {
@@ -1157,118 +1120,21 @@
     }
   });
 
-  // Measured panel height driving the tray body's scroll cap, so a tall
-  // proposal card in a short/narrow panel (the Chief sidebar) scrolls
-  // internally instead of pushing the composer out of reach.
-  let panelClientHeight = $state(0);
-
-  // Hide state is host-owned and persisted per agent, like the wizard's
-  // collapse flag; the initial value restores from storage (untracked so the
-  // load never re-runs on unrelated state flips).
-  let proposalTrayCollapsedOverride = $state<{ agentId: string; collapsed: boolean } | null>(null);
-  const proposalTrayCollapsed = $derived.by(() => {
-    if (proposalTrayCollapsedOverride?.agentId === agentId) {
-      return proposalTrayCollapsedOverride.collapsed;
-    }
-    return untrack(() => loadTrayCollapsed(agentId)) ?? false;
-  });
-
-  // Apply routing: workspace-create/bulk-op go through the
-  // workspace-operations saga, specialist edits through the specialist
-  // actions, everything else through the settings actions. Lifecycle success
-  // is bridged to the daemon resolution below.
-  function handleProposalTrayApply(detail: ProposalActionDetail) {
-    const { proposal } = detail;
-    if (proposal.kind === 'workspace-create' || proposal.kind === 'bulk-op') {
-      appStore.dispatch(
-        applyWorkspaceProposal({
-          proposal,
-          editedFields: detail.editedFields,
-          selectedBulkItemIds: detail.selectedBulkItemIds,
-        }),
-      );
-      return;
-    }
-    if (applySpecialistProposal(detail)) return;
-    applySettingsProposal(detail);
-  }
-
-  function handleProposalTrayUndo(proposalId: string) {
-    if (undoSpecialistProposal(proposalId)) return;
-    undoSettingsProposal(proposalId);
-  }
-
-  // Dismiss is persistent: `agent.resolveProposal { outcome: 'dismissed' }`.
-  // The wire ack reconciles lifecycle (the saga dispatches
-  // proposalResolutionReconciled), which retires the entry from the gate; a
-  // failure (middleware toasts) rethrows so the tray keeps the entry pending.
-  async function handleProposalTrayDismiss(entry: PendingProposalEntry): Promise<void> {
-    if (!workspace) return;
-    proposalResolveSent.add(entry.proposalId);
-    const action = agentProposalResolveRequested(agentId, workspace.id, {
-      proposalId: entry.proposalId,
-      outcome: 'dismissed',
-    });
-    appStore.dispatch(action);
-    try {
-      await action.promise;
-      clearTrayDraft(agentId, entry.proposalId);
-    } catch (error) {
-      proposalResolveSent.delete(entry.proposalId);
-      throw error;
-    }
-  }
-
   // Apply→resolve bridge. Applies key lifecycle under
   // `getProposalId(proposal)` — which can differ from the daemon's metadata
-  // ref key — and the gate retires an entry the instant its lifecycle turns
-  // 'applied', so the bridge works off a captured ref→local identity
-  // map rather than the filtered entries. Any still-pending metadata ref
+  // ref key. Inline proposal hosts capture the ref→local identity while they
+  // are rendered. Any still-pending metadata ref
   // whose lifecycle shows 'applied' under either identity gets ONE
   // resolve(applied) (daemon resolution is idempotent; first outcome wins).
-  const trayProposalIdentities = new Map<string, string>();
-  const proposalResolveSent = new Set<string>();
-  $effect(() => {
-    for (const entry of trayPendingProposals) {
-      trayProposalIdentities.set(entry.proposalId, getProposalId(entry.proposal));
-    }
-  });
   $effect(() => {
     const wsId = workspace?.id;
     if (!wsId || $agentSession$?.id !== agentId) return;
-    const lifecycle = $proposalLifecycleMap$ ?? {};
-    const refs = classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals);
-    for (const ref of refs) {
-      if (proposalResolveSent.has(ref.proposalId)) continue;
-      const localId = trayProposalIdentities.get(ref.proposalId);
-      const scopedEntry = lifecycle[agentScopedProposalKey(agentId, ref.proposalId)];
-      const localEntry = localId !== undefined ? lifecycle[localId] : undefined;
-      const appliedEntry =
-        scopedEntry?.status === 'applied'
-          ? scopedEntry
-          : localEntry?.status === 'applied'
-            ? localEntry
-            : undefined;
-      if (!appliedEntry) continue;
-      proposalResolveSent.add(ref.proposalId);
-      clearTrayDraft(agentId, ref.proposalId);
-      // Workspace-create applies carry the created workspace id in the
-      // lifecycle result; forward it as the resolution detail so the
-      // daemon's applied notice gives the model the created-workspace
-      // context (PROTOCOL §5.5).
-      const createdWorkspaceId = appliedEntry.result?.workspaceId;
-      // i18n-ignore (wire detail appended to the model notice, not UI copy)
-      const detail = createdWorkspaceId ? `Created workspace ${createdWorkspaceId}.` : undefined;
-      const action = agentProposalResolveRequested(agentId, wsId, {
-        proposalId: ref.proposalId,
-        outcome: 'applied',
-        ...(detail ? { detail } : {}),
-      });
-      appStore.dispatch(action);
-      // A wire failure (middleware toasts) drops the sent mark so a later
-      // pass retries the resolution — mirrors the dismiss path.
-      action.promise.catch(() => proposalResolveSent.delete(ref.proposalId));
-    }
+    reconcileAppliedProposals({
+      agentId,
+      workspaceId: wsId,
+      refs: pendingProposalRefs,
+      lifecycle: $proposalLifecycleMap$ ?? {},
+    });
   });
 
   // Search state
@@ -1278,6 +1144,8 @@
   // intermediate keystrokes don't trigger a full rewalk + turn re-render cascade.
   let debouncedSearchQuery = $state('');
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  type PendingSearchWork = { bindingKey: string };
+  let pendingSearchWork: PendingSearchWork | null = null;
   const SEARCH_DEBOUNCE_MS = 150;
   // Number of match-neighbors (before + after the current index) to force-render
   // via LazyTurn in addition to the current match's turn. Keeps initial search
@@ -1622,6 +1490,7 @@
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingSearchWork = null;
     if (debouncedSearchQuery !== searchQuery) {
       debouncedSearchQuery = searchQuery;
     }
@@ -1637,6 +1506,7 @@
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingSearchWork = null;
     showSearch = false;
     searchQuery = '';
     debouncedSearchQuery = '';
@@ -1660,24 +1530,50 @@
   // Handle search input changes — debounce the expensive match derivation so
   // intermediate keystrokes don't trigger a full rewalk + LazyTurn re-render
   // cascade. An empty query flushes immediately to clear highlights.
+  function searchBindingKey(): string {
+    return `${workspace?.id ?? ''}\u0000${agentId ?? ''}`;
+  }
+
+  function armPendingSearch(work: PendingSearchWork) {
+    if (searchDebounceTimer !== null) return;
+    const timer = setTimeout(() => {
+      if (searchDebounceTimer !== timer) return;
+      searchDebounceTimer = null;
+      if (
+        isComponentDestroyed ||
+        !isActive ||
+        !showSearch ||
+        pendingSearchWork !== work ||
+        work.bindingKey !== searchBindingKey()
+      ) {
+        return;
+      }
+      pendingSearchWork = null;
+      if (debouncedSearchQuery === searchQuery) return;
+      debouncedSearchQuery = searchQuery;
+      triggerHighlight();
+    }, SEARCH_DEBOUNCE_MS);
+    searchDebounceTimer = timer;
+  }
+
   function handleSearchInput() {
     if (!isActive) return;
     currentSearchIndex = 0;
+    if (debouncedSearchQuery !== searchQuery) searchHighlightRequest += 1;
     if (searchDebounceTimer !== null) {
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingSearchWork = null;
     if (!searchQuery.trim()) {
       debouncedSearchQuery = '';
       triggerHighlight();
       return;
     }
-    searchDebounceTimer = setTimeout(() => {
-      if (!isActive) return;
-      searchDebounceTimer = null;
-      debouncedSearchQuery = searchQuery;
-      triggerHighlight();
-    }, SEARCH_DEBOUNCE_MS);
+    if (debouncedSearchQuery === searchQuery) return;
+    const work = { bindingKey: searchBindingKey() };
+    pendingSearchWork = work;
+    armPendingSearch(work);
   }
 
   function openSearchFromSelection() {
@@ -1689,6 +1585,7 @@
         clearTimeout(searchDebounceTimer);
         searchDebounceTimer = null;
       }
+      pendingSearchWork = null;
       searchQuery = selectedText;
       debouncedSearchQuery = selectedText;
       currentSearchIndex = 0;
@@ -1703,11 +1600,31 @@
     });
   }
 
+  // svelte-ignore state_referenced_locally -- identity snapshot is refreshed by the effect below.
+  let lastSearchBindingKey = searchBindingKey();
   $effect(() => {
-    if (isActive) return;
-    searchHighlightRequest += 1;
-    if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
-    searchDebounceTimer = null;
+    const bindingKey = searchBindingKey();
+    if (bindingKey !== lastSearchBindingKey) {
+      lastSearchBindingKey = bindingKey;
+      searchHighlightRequest += 1;
+      if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+      pendingSearchWork = null;
+      return;
+    }
+    if (!isActive) {
+      searchHighlightRequest += 1;
+      if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+      return;
+    }
+    const work = pendingSearchWork;
+    if (!work) return;
+    if (!showSearch || searchQuery === debouncedSearchQuery || work.bindingKey !== bindingKey) {
+      pendingSearchWork = null;
+      return;
+    }
+    armPendingSearch(work);
   });
 
   // Context items for the input
@@ -2163,25 +2080,19 @@
   // Alias for backward compatibility
   let pendingInitialPrompt = $derived(pendingInitialData.prompt);
 
-  // Transcript reveal deferral: keep the indeterminate skeleton up (and
-  // suppress everything that would paint stale conversation state) until the
-  // resubscribe snapshot applies AND the utility-footer data sources settle
-  // (or the subscription closes / the saga-owned bounded fallback clears the
-  // gates) — then reveal transcript and footer in one paint.
+  // Transcript reveal deferral: keep the indeterminate skeleton up until the
+  // resubscribe snapshot applies (or the saga-owned bounded recovery clears
+  // the gate). Utility-footer reads populate independently after reveal.
   const deferTranscriptReveal = $derived(
     shouldDeferTranscriptReveal({
       awaitingSwitchBackSnapshot: $awaitingSwitchBackSnapshot$,
-      awaitingUtilityFooter: $awaitingUtilityFooter$,
       transcriptHydratedOnce: $transcriptHydratedOnce$,
       hasPendingInitialPrompt: Boolean(pendingInitialPrompt),
     }),
   );
 
-  // Utility stack gate: the hooks/monitors/subscriptions card never renders
-  // before the transcript reveal — hidden until this agent's first hydration
-  // settles and the reveal deferral clears, so it mounts in the SAME flip
-  // that reveals the transcript (data prefetch is unaffected; only the
-  // render is gated).
+  // The utility stack never precedes the transcript. Once transcript hydration
+  // settles, each footer source owns its loading/failure/empty presentation.
   const showTranscriptUtilityCard = $derived(
     shouldShowTranscriptUtilityStack({
       transcriptHydratedOnce: $transcriptHydratedOnce$,
@@ -3490,6 +3401,103 @@
   // matches in virtualized message placeholders can be force-rendered during search.
   const messageIdToTurnKey = $derived(conversationTurnIndex.turnKeyByMessageId);
 
+  let offscreenPendingProposalMessageId = $state<string | null>(null);
+
+  function findPendingProposalCard(
+    message: HTMLElement,
+    ref: PendingProposalRef,
+    claimed: Set<Element> = new Set(),
+  ): HTMLElement | null {
+    const exact = message.querySelector<HTMLElement>(
+      `[data-apply-tool-call-id="${CSS.escape(ref.proposalId)}"]`,
+    );
+    if (exact && !claimed.has(exact)) return exact;
+    return (
+      Array.from(message.querySelectorAll<HTMLElement>('[data-proposal-kind]')).find(
+        (candidate) => !claimed.has(candidate),
+      ) ?? null
+    );
+  }
+
+  // Watch pending turns against the transcript viewport. The persistent
+  // LazyTurn shell survives content hydration changes, so observation does
+  // not go stale when a card is replaced by a placeholder and restored.
+  $effect(() => {
+    const refs = pendingProposalRefs;
+    const root = scrollContainer;
+    void $agentMessages$;
+    void $pendingProposalRecovery$;
+    void $proposalLifecycleMap$;
+    if (!isActive || !root || refs.length === 0) {
+      offscreenPendingProposalMessageId = null;
+      return;
+    }
+
+    let disposed = false;
+    let observer: IntersectionObserver | null = null;
+    tick().then(() => {
+      if (disposed || !isActive || scrollContainer !== root) return;
+      const refKeysByTarget = new Map<Element, string[]>();
+      const visibility = new Map<string, boolean>();
+      const claimed = new Set<Element>();
+      const recovered = $pendingProposalRecovery$;
+      for (const ref of refs) {
+        const refKey = `${ref.messageId}\u0000${ref.proposalId}`;
+        const message = root.querySelector<HTMLElement>(
+          `[data-message-id="${CSS.escape(ref.messageId)}"]`,
+        );
+        let target = message?.closest<HTMLElement>('[data-lazy-turn-key]') ?? null;
+        if (!target) {
+          const turnKey = messageIdToTurnKey.get(ref.messageId);
+          target = turnKey
+            ? root.querySelector<HTMLElement>(`[data-lazy-turn-key="${CSS.escape(turnKey)}"]`)
+            : null;
+        }
+        if (!target && message) target = findPendingProposalCard(message, ref, claimed);
+        if (!target) {
+          const recoveredEntry = recovered?.[ref.messageId];
+          if (
+            recoveredEntry?.status === 'found' &&
+            recoveredEntry.proposals?.some((entry) => entry.proposalId === ref.proposalId)
+          ) {
+            visibility.set(refKey, false);
+          }
+          continue;
+        }
+        claimed.add(target);
+        refKeysByTarget.set(target, [...(refKeysByTarget.get(target) ?? []), refKey]);
+      }
+      if (refKeysByTarget.size === 0 || typeof IntersectionObserver === 'undefined') {
+        offscreenPendingProposalMessageId =
+          refs.find((ref) => visibility.get(`${ref.messageId}\u0000${ref.proposalId}`) === false)
+            ?.messageId ?? null;
+        return;
+      }
+      offscreenPendingProposalMessageId =
+        refs.find((ref) => visibility.get(`${ref.messageId}\u0000${ref.proposalId}`) === false)
+          ?.messageId ?? null;
+      observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            for (const refKey of refKeysByTarget.get(entry.target) ?? []) {
+              visibility.set(refKey, entry.isIntersecting);
+            }
+          }
+          offscreenPendingProposalMessageId =
+            refs.find((ref) => visibility.get(`${ref.messageId}\u0000${ref.proposalId}`) === false)
+              ?.messageId ?? null;
+        },
+        { root, threshold: 0.01 },
+      );
+      for (const target of refKeysByTarget.keys()) observer.observe(target);
+    });
+
+    return () => {
+      disposed = true;
+      observer?.disconnect();
+    };
+  });
+
   // --- Auto-commit status (fetched once, shared across all AutoCommitStatus instances) ---
   let autoCommitStatuses = $state<CommitStatus[]>([]);
 
@@ -3648,7 +3656,12 @@
     // delivered message once it arrives.
 
     // Empty chats start at the top and unlock until the first send. Non-empty
-    // chats are positioned by the follow action itself.
+    // chats are positioned by the follow action itself. A still-hydrating
+    // transcript (empty store, hydration not settled) is left untouched: the
+    // first-hydration auto-scroll effect owns that entry. The settled-empty
+    // branch only fires on a remount over an already-settled store (a new
+    // agent's hydration settles after this frame); either way an empty
+    // container sits at 0, so this is a no-op safeguard, not the entry owner.
     const initialScrollFrame = requestAnimationFrame(() => {
       if (!isActive) return;
       if (scrollContainer) {
@@ -3661,7 +3674,7 @@
             shouldFollowBottom = true;
             followToBottom(scrollContainer);
           }
-        } else {
+        } else if (transcriptSettledEmpty) {
           // Scroll to top for empty panel (shows specialist switcher)
           scrollContainer.scrollTop = 0;
           // Don't auto-follow until user sends a message
@@ -4128,6 +4141,25 @@
     return null;
   }
 
+  async function scrollToPendingProposal(): Promise<void> {
+    const messageId = offscreenPendingProposalMessageId;
+    const ref = pendingProposalRefs.find((candidate) => candidate.messageId === messageId);
+    if (!messageId || !ref) return;
+    if (!messageIdToTurnKey.has(messageId)) {
+      if (!(await seekConversationToMessage(agentId, messageId)) || !isActive) return;
+      await tick();
+    }
+    const message = await forceRenderAndFindMessage(messageId);
+    if (!message || !isActive) return;
+    await tick();
+    if (!isActive) return;
+    const target = findPendingProposalCard(message, ref) ?? message;
+    smoothScrollTo(target, 'center');
+    target.classList.add('highlight-flash');
+    scheduleHighlightRemoval(target, 'highlight-flash', 1500);
+    scheduleDeepOpenRelease();
+  }
+
   // Entry positioning for the unread marker: force-render the anchor message's
   // turn (it may be a virtualized LazyTurn placeholder), then decide where to
   // land. If the divider would still be visible with the viewport scrolled
@@ -4343,8 +4375,6 @@
             if (newHeight !== composerHeight) {
               composerHeight = newHeight;
             }
-          } else if (entry.target === panelElement) {
-            panelClientHeight = entry.contentRect.height;
           }
         }
         if (scrollContainerResized && scrollContainer) {
@@ -4356,9 +4386,6 @@
       });
       observer.observe(scrollContainer);
       observer.observe(composerElement);
-      // The panel root's height is layout-fixed (h-full), so observing it
-      // creates no feedback loop with the tray's capped body height.
-      if (panelElement) observer.observe(panelElement);
     };
     readinessFrame = requestAnimationFrame(setupWhenReady);
 
@@ -4531,6 +4558,8 @@
 
     logger.info('ChatPanel destroyed', { instanceId, agentId });
     // Clean up subscriptions and scroll manager
+    searchHighlightRequest += 1;
+    pendingSearchWork = null;
     if (searchDebounceTimer !== null) {
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
@@ -5329,7 +5358,7 @@
 
 <div
   bind:this={panelElement}
-  class="group/panel flex flex-col h-full w-full min-w-0 relative z-20"
+  class="chat-panel-container group/panel flex flex-col h-full w-full min-w-0 relative z-20"
   role="region"
   aria-label={agentName}
   data-agent-model={agentModel}
@@ -5413,6 +5442,7 @@
           class="chat-content-measure mx-auto w-full min-w-0 {isChiefWorkspace
             ? 'px-0'
             : 'px-4 sm:px-6'}"
+          class:regular-chat-content-inset={!isChiefWorkspace}
           data-testid="pinned-prompt-overlay-lane"
         >
           <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
@@ -5456,6 +5486,7 @@
         class="conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col {isChiefWorkspace
           ? 'px-0'
           : 'px-4 pt-8 sm:px-6'} {transcriptBottomInsetClass}"
+        class:regular-chat-content-inset={!isChiefWorkspace}
         data-testid="chat-transcript-inner"
       >
         <!-- Task Assignment Pill -->
@@ -5535,7 +5566,7 @@
           />
         {:else if onboardingContext && shouldShowSetupCardOnly( { isInitialWorkspaceAgent, hasOnboardingContext: true, hasOnboardingPrompt: Boolean(onboardingContext.prompt?.trim()), hasMessages: $agentMessages$.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt), hydrationSettled: $transcriptHydration$ === 'settled' } )}
           <!-- Initial workspace agent with no prompt, hydration settled — show setup card only, no skeletons (a loading transcript falls through to the skeleton branch below) -->
-          <div class="pt-16 pb-6">
+          <div class="workspace-setup-card-alignment pt-16 pb-6">
             <WorkspaceSetupCard
               repoName={onboardingContext.projectName ||
                 onboardingContext.projectPath?.split('/').pop() ||
@@ -5579,7 +5610,7 @@
               <!-- No animation - parent already showed optimistic message, but we need to keep showing it -->
               <div class="w-full">
                 {#if isInitialWorkspaceAgent && onboardingContext}
-                  <div class="pt-16 pb-6">
+                  <div class="workspace-setup-card-alignment pt-16 pb-6">
                     <WorkspaceSetupCard
                       repoName={onboardingContext.projectName ||
                         onboardingContext.projectPath?.split('/').pop() ||
@@ -5691,7 +5722,7 @@
               <!-- NOTE: Removed in:fly transition to debug duplicate flash issue -->
               <div class="w-full">
                 {#if isInitialWorkspaceAgent && onboardingContext}
-                  <div class="pt-16 pb-6">
+                  <div class="workspace-setup-card-alignment pt-16 pb-6">
                     <WorkspaceSetupCard
                       repoName={onboardingContext.projectName ||
                         onboardingContext.projectPath?.split('/').pop() ||
@@ -5855,7 +5886,7 @@
                    falsely signals the beginning of the conversation; the
                    older-history loading affordance below renders instead. -->
               {#if isInitialWorkspaceAgent && onboardingContext && conversationStartLoaded}
-                <div class="pt-16 pb-6">
+                <div class="workspace-setup-card-alignment pt-16 pb-6">
                   <WorkspaceSetupCard
                     repoName={onboardingContext.projectName ||
                       onboardingContext.projectPath?.split('/').pop() ||
@@ -6401,7 +6432,6 @@
               <QueuedMessageList
                 bind:this={queuedMessageListRef}
                 messages={visibleQueuedMessages}
-                heldForQuestions={queuedMessagesVisibility.heldForQuestions}
                 onedit={handleEditQueuedMessage}
                 onremove={handleRemoveQueuedMessage}
                 onsendnow={handleSendQueuedMessageNow}
@@ -6492,6 +6522,23 @@
               </Button>
             </div>
           {:else}
+            {#if offscreenPendingProposalMessageId}
+              <div
+                class="flex w-full justify-center px-4 pb-2"
+                data-testid="pending-proposal-chip-slot"
+              >
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  class="h-7 rounded-full bg-background px-3 type-caption shadow-sm"
+                  data-testid="pending-proposal-chip"
+                  onclick={scrollToPendingProposal}
+                >
+                  {m.chat_proposalTray_title()}
+                </Button>
+              </div>
+            {/if}
             {#if pendingQuestions}
               {#key pendingQuestions.messageId}
                 <div class="w-full" data-testid="question-wizard-slot">
@@ -6514,25 +6561,6 @@
                     }}
                     onComplete={handleQuestionWizardComplete}
                     onDismiss={handleQuestionWizardDismiss}
-                  />
-                </div>
-              {/key}
-            {/if}
-            {#if showProposalTray}
-              {#key agentId}
-                <div class="w-full" data-testid="proposal-tray-slot">
-                  <ProposalTray
-                    {agentId}
-                    entries={trayPendingProposals}
-                    maxBodyHeight={trayBodyMaxHeight(panelClientHeight)}
-                    collapsed={proposalTrayCollapsed}
-                    onToggleCollapsed={(collapsed) => {
-                      proposalTrayCollapsedOverride = { agentId, collapsed };
-                      saveTrayCollapsed(agentId, collapsed);
-                    }}
-                    onApply={handleProposalTrayApply}
-                    onDismiss={handleProposalTrayDismiss}
-                    onUndo={handleProposalTrayUndo}
                   />
                 </div>
               {/key}
@@ -6562,9 +6590,15 @@
                 {agentId}
                 selectedModel={hydratedInputModel}
                 compactMode={isCompactMode}
-                editorClassName={isChiefWorkspace ? 'w-full px-3!' : 'w-full px-4! sm:px-6!'}
-                contentInsetClassName={isChiefWorkspace ? 'w-full px-3' : 'w-full px-4 sm:px-6'}
-                actionBarEndClassName={isChiefWorkspace ? 'pr-3!' : undefined}
+                editorClassName={isChiefWorkspace
+                  ? 'w-full px-3!'
+                  : 'regular-composer-content-inset w-full'}
+                contentInsetClassName={isChiefWorkspace
+                  ? 'w-full px-3'
+                  : 'regular-composer-content-inset w-full'}
+                actionBarEndClassName={isChiefWorkspace
+                  ? 'pr-3!'
+                  : 'regular-composer-content-inset'}
                 edgeDocked
                 externalDropTarget
                 requiresModelSwitchConfirmation={!canChangeProvider}
@@ -6579,6 +6613,50 @@
 </div>
 
 <style>
+  .chat-panel-container {
+    container: chat-panel / inline-size;
+  }
+
+  .regular-chat-content-inset {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  :global(.regular-composer-content-inset) {
+    padding-right: 1rem !important;
+    padding-left: 1rem !important;
+  }
+
+  .workspace-setup-card-alignment {
+    --chat-operational-row-inline-padding: 0.5rem;
+    --chat-operational-leading-gap: 0.5rem;
+    margin-left: -0.5rem;
+    text-align: left;
+  }
+
+  @container chat-panel (max-width: 639.98px) {
+    .regular-chat-content-inset {
+      --chat-operational-row-inline-padding: 0.125rem;
+      --chat-operational-leading-gap: 0.625rem;
+    }
+
+    .workspace-setup-card-alignment {
+      margin-left: 1.5rem;
+    }
+  }
+
+  @container chat-panel (min-width: 640px) {
+    .regular-chat-content-inset {
+      padding-left: 3.1rem;
+      padding-right: 3.1rem;
+    }
+
+    :global(.regular-composer-content-inset) {
+      padding-right: 1.5rem !important;
+      padding-left: 1.5rem !important;
+    }
+  }
+
   .regular-panel-aurora-host {
     border-bottom-left-radius: var(--panel-shell-radius);
     border-bottom-right-radius: var(--panel-shell-radius);
@@ -6671,7 +6749,7 @@
     padding: 0.5rem var(--composer-lane-inset-x) var(--composer-lane-inset-bottom);
   }
 
-  @media (min-width: 640px) {
+  @container chat-panel (min-width: 640px) {
     .conversation-composer {
       --composer-lane-inset-x: 1.5rem;
       --composer-lane-inset-bottom: 1.5rem;

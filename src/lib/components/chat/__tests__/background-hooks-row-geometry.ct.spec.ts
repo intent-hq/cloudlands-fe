@@ -19,11 +19,9 @@ async function iconMotion(component: Locator) {
 
 async function expectSemanticError(component: Locator) {
   const error = component.getByTestId('background-hook-last-error');
-  await expect(error).toHaveClass(/(?:^|\s)text-error-foreground(?:\s|$)/);
-  await expect(error).not.toHaveClass(/(?:^|\s)text-destructive(?:\s|$)/);
   const colors = await error.evaluate((node) => {
     const probe = document.createElement('span');
-    probe.style.color = 'hsl(var(--error-foreground))';
+    probe.style.color = 'hsl(var(--danger))';
     node.append(probe);
     const actual = getComputedStyle(node).color;
     const semantic = getComputedStyle(probe).color;

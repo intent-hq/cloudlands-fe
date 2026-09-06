@@ -541,11 +541,7 @@ const SHARED_CSS = `
   }
 `;
 
-export function getHtmlTemplate(
-  title: string,
-  messagesHtml: string,
-  exportedAt?: Date,
-): string {
+export function getHtmlTemplate(title: string, messagesHtml: string, exportedAt?: Date): string {
   const timestamp = formatDateTime(exportedAt ?? new Date());
 
   return `<!DOCTYPE html>

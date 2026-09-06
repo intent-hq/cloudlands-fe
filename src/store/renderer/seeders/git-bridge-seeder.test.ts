@@ -360,9 +360,11 @@ describe('git-bridge-seeder', () => {
 
   describe('workspace:rename-branch → git.renameBranch (§5.6)', () => {
     it('reads the current branch via git.status and forwards it to git.renameBranch', async () => {
-      mockedRequest
-        .mockResolvedValueOnce({ branch: 'add-dark-mode' })
-        .mockResolvedValueOnce({ ok: true, oldBranch: 'add-dark-mode', newBranch: 'feature/renamed' });
+      mockedRequest.mockResolvedValueOnce({ branch: 'add-dark-mode' }).mockResolvedValueOnce({
+        ok: true,
+        oldBranch: 'add-dark-mode',
+        newBranch: 'feature/renamed',
+      });
 
       const result = await mockInvoke(IPC_CHANNELS.WORKSPACE.RENAME_BRANCH, {
         id: 'ws-1',

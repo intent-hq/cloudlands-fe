@@ -126,26 +126,14 @@ import {
   chatSwitchBackRevealTimedOut,
   chatTranscriptSnapshotApplied,
   chatTranscriptSnapshotRerequested,
-  chatUtilityFooterReady,
   initializeChatRequested,
   refreshChatTranscriptRequested,
   transcriptHydrationSettled,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
   selectAwaitingSwitchBackSnapshot,
-  selectAwaitingUtilityFooter,
   selectTranscriptHydration,
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
-import {
-  setSubscriptionSnapshot,
-  subscriptionSnapshotFetchFailed,
-} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
-import { selectSubscriptionSnapshotFetched } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
-import { backgroundHooksUpdated } from '$store/renderer/slices/background-hooks/background-hooks-slice';
-import { selectBackgroundHooksSnapshotDelivered } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
-import { prMonitorsUpdated } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
-import { selectPrMonitorsSnapshotDelivered } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
-import { isUtilityFooterReady } from '$lib/components/chat/chat-panel-visibility';
 import {
   bulkUpsertSessions,
   clearAllSessions,
@@ -161,9 +149,9 @@ import {
   markAgentAsViewed,
 } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
 import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
-import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { createLogger } from '$lib/utils/client-logger';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   clearChatSubscriptionAcquiring,
   clearStandingChatSubscription,
@@ -944,101 +932,35 @@ export const SWITCH_BACK_REVEAL_WAIT_MS =
   SNAPSHOT_TIMEOUT_MS + INITIAL_RETRY_DELAY_MS + SWITCH_BACK_REVEAL_MARGIN_MS;
 
 /**
- * Composed utility-footer readiness for one (workspace, agent): the agent's
- * `agent.getSubscriptions` read plus the workspace's `hook.list` and
- * `prMonitor.list` seeds have all settled (success or failure both latch —
- * a failed read renders the same as empty). The chief virtual workspace is
- * EXEMPT (always ready): its footer seeds come only from the two
- * active-workspace watchers keyed on `currentTabId`, and the Chief panel is
- * a standing surface outside the tab strip — the seeds would never arrive
- * ahead of the card mount, so gating a chief thread on them could only ever
- * resolve via the bounded fallback (a full-length skeleton on every open).
- * Chief threads keep the pre-gate behavior: reveal on transcript readiness,
- * with the footer populating from the card's own mount-time fetches. The
- * same short-circuit is deliberately NOT applied to ordinary non-active-tab
- * workspaces (multi-panel layouts): their entries seed on tab activation and
- * are retained across the swap (pr-monitors on reconcile, hooks stale-marked
- * on lease release), so the gate still converges without the fallback in the
- * common case.
- */
-function* isFooterReadyForReveal(wsId: string, agentId: string): SagaGenerator<boolean> {
-  if (wsId === CHIEF_WORKSPACE_ID) return true;
-  const subscriptionSnapshotFetched = yield* selectSubscriptionSnapshotFetched.effect(
-    wsId,
-    agentId,
-  );
-  const backgroundHooksSnapshotDelivered =
-    yield* selectBackgroundHooksSnapshotDelivered.effect(wsId);
-  const prMonitorsSnapshotDelivered = yield* selectPrMonitorsSnapshotDelivered.effect(wsId);
-  return isUtilityFooterReady({
-    subscriptionSnapshotFetched,
-    backgroundHooksSnapshotDelivered,
-    prMonitorsSnapshotDelivered,
-  });
-}
-
-/**
- * Saga-owned watcher for the armed transcript reveal gates (the switch-back
- * snapshot gate and/or the utility-footer gate — both first open and
- * switch-back share it). One bounded timer per agent: it clears the footer
- * gate (`chatUtilityFooterReady`) the moment the footer data sources are all
- * settled, exits once every gate is clear (snapshot applied / subscription
- * closed already clear their gates in the reducer), and on timeout with any
- * gate STILL armed dispatches the fallback clear — the transcript reveals
- * without the footer (today's behavior) rather than an indefinite skeleton.
+ * Saga-owned watcher for the switch-back transcript snapshot gate. One bounded
+ * timer per agent exits when the fresh snapshot applies (or the subscription
+ * closes), and clears the gate on timeout so recovery cannot wedge reveal.
  * `startRevealGateWatcher` cancels a superseded watcher before forking a
  * fresh one, so exactly one runs per agent instead of duplicates racing; the
  * reducer additionally no-ops a stale timeout dispatch, so a superseded
  * watcher can never re-clear a re-armed gate.
  */
-function* revealGateWatcher(agentId: string, wsId: string): SagaGenerator<void> {
-  const mayChangeGates = (action: { type: string; payload?: unknown }): boolean => {
+function* revealGateWatcher(agentId: string): SagaGenerator<void> {
+  const mayChangeGate = (action: { type: string; payload?: unknown }): boolean => {
     switch (action.type) {
       case chatTranscriptSnapshotApplied.type:
       case chatLiveStreamPhaseChanged.type:
       case chatSwitchBackRevealTimedOut.type:
-      case chatUtilityFooterReady.type:
         return Array.isArray(action.payload) && action.payload[0] === agentId;
-      case setSubscriptionSnapshot.type: {
-        const payload = action.payload as { workspaceId?: string; agentId?: string } | undefined;
-        return payload?.workspaceId === wsId && payload?.agentId === agentId;
-      }
-      case subscriptionSnapshotFetchFailed.type:
-        return (
-          Array.isArray(action.payload) &&
-          action.payload[0] === wsId &&
-          action.payload[1] === agentId
-        );
-      case backgroundHooksUpdated.type:
-      case prMonitorsUpdated.type:
-        return Array.isArray(action.payload) && action.payload[0] === wsId;
       default:
         return false;
     }
   };
-  function* gatesSettled(): SagaGenerator<void> {
-    while (true) {
-      if (
-        (yield* selectAwaitingUtilityFooter.effect(agentId)) &&
-        (yield* isFooterReadyForReveal(wsId, agentId))
-      ) {
-        yield* put(chatUtilityFooterReady(agentId));
-      }
-      const snapshotArmed = yield* selectAwaitingSwitchBackSnapshot.effect(agentId);
-      const footerArmed = yield* selectAwaitingUtilityFooter.effect(agentId);
-      if (!snapshotArmed && !footerArmed) return;
-      yield* take(mayChangeGates);
+  function* snapshotSettled(): SagaGenerator<void> {
+    while (yield* selectAwaitingSwitchBackSnapshot.effect(agentId)) {
+      yield* take(mayChangeGate);
     }
   }
   const { timedOut } = yield* race({
-    settled: call(gatesSettled),
+    settled: call(snapshotSettled),
     timedOut: delay(SWITCH_BACK_REVEAL_WAIT_MS),
   });
-  if (
-    timedOut &&
-    ((yield* selectAwaitingSwitchBackSnapshot.effect(agentId)) ||
-      (yield* selectAwaitingUtilityFooter.effect(agentId)))
-  ) {
+  if (timedOut && (yield* selectAwaitingSwitchBackSnapshot.effect(agentId))) {
     yield* put(chatSwitchBackRevealTimedOut(agentId));
   }
 }
@@ -1048,21 +970,11 @@ function* startRevealGateWatcher(
   coordinator: SubscriptionCoordinator,
   agentId: string,
 ): SagaGenerator<void> {
-  const wsId =
-    coordinator.slots.get(agentId)?.wsId ??
-    coordinator.subscriptions.get(agentId)?.wsId ??
-    (yield* selectAgentSession.effect(agentId))?.workspaceId;
-  if (!wsId) {
-    // No workspace to watch footer readiness for — fail OPEN (clear both
-    // gates immediately) rather than leaving an armed gate with no watcher.
-    yield* put(chatSwitchBackRevealTimedOut(agentId));
-    return;
-  }
   const existing = coordinator.revealGateWatchers.get(agentId);
   if (existing?.isRunning()) yield* cancel(existing);
   const task = yield* fork(function* runWatcher(): SagaGenerator<void> {
     try {
-      yield* call(revealGateWatcher, agentId, wsId);
+      yield* call(revealGateWatcher, agentId);
     } finally {
       // Self-prune on completion (settled, timed out, or cancelled) so the
       // map holds only live watchers; a superseded watcher's cancellation
@@ -1275,28 +1187,16 @@ function* routeLifecycleAction(
     if (coordinator.slots.has(agentId)) coordinator.locallyStartedTurns.add(agentId);
   } else if (action.type === markAgentAsViewed.type) {
     const [agentId] = action.payload as ReturnType<typeof markAgentAsViewed>['payload'];
-    // The reducer armed the switch-back reveal gates synchronously with this
+    // The reducer armed the switch-back snapshot gate synchronously with this
     // action (when the transcript hydrated before and no current-subscription
-    // snapshot exists); own their bounded fallback here so a snapshot or
-    // footer seed that never arrives cannot leave an indefinite skeleton.
-    if (
-      (yield* selectAwaitingSwitchBackSnapshot.effect(agentId)) ||
-      (yield* selectAwaitingUtilityFooter.effect(agentId))
-    ) {
+    // snapshot exists); own its bounded fallback here so a missing snapshot
+    // cannot leave an indefinite skeleton.
+    if (yield* selectAwaitingSwitchBackSnapshot.effect(agentId)) {
       yield* startRevealGateWatcher(coordinator, agentId);
     }
     yield* handleViewed(coordinator, agentId);
   } else if (action.type === transcriptHydrationSettled.type) {
     const [agentId] = action.payload as ReturnType<typeof transcriptHydrationSettled>['payload'];
-    // The FIRST settle armed the utility-footer reveal gate (same-paint
-    // reveal of transcript + footer on first open); own its bounded wait
-    // unless a switch-back watcher already runs for this agent.
-    if (
-      (yield* selectAwaitingUtilityFooter.effect(agentId)) &&
-      !coordinator.revealGateWatchers.get(agentId)?.isRunning()
-    ) {
-      yield* startRevealGateWatcher(coordinator, agentId);
-    }
     enqueueHydrationSettled(coordinator, agentId);
   } else if (action.type === refreshChatTranscriptRequested.type) {
     const [wsId, agentId] = action.payload as ReturnType<

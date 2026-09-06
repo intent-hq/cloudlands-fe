@@ -87,7 +87,12 @@ import {
   type SelfPairingInfo,
 } from './self-publish';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
-import { LOCAL_CONNECTION_ID, type ConnectionRecord } from '../../../shared/types/connections';
+import {
+  LOCAL_CONNECTION_ID,
+  isDetectedDeviceKind,
+  type ConnectionRecord,
+  type DetectedDeviceKind,
+} from '../../../shared/types/connections';
 import type {
   AddConnectionResult,
   CaptureFingerprintResult,
@@ -168,6 +173,84 @@ function logDaemonHelloBuild(helloResult: unknown, connectionId: string): void {
     version: helloBuild.version,
     buildCommit: helloBuild.buildCommit ?? 'unknown',
   });
+}
+
+/**
+ * How long a successful `system.requestUpdate` keeps marking a backend's
+ * `backend:status` payloads with `daemonUpdateDisconnectedAt` when no
+ * reconnect completes the restart (sitter never restarted, socket never
+ * dropped).
+ */
+export const DAEMON_UPDATE_PENDING_TTL_MS = 5 * 60_000;
+
+/**
+ * Additive `backend:status` marker: the drop is caused by a requested update.
+ * Carries the epoch ms of the FIRST drop main observed for the backend, so
+ * every window of that backend (including one opened mid-outage) shares the
+ * same countdown deadline.
+ */
+interface DaemonUpdateMarker {
+  daemonUpdateDisconnectedAt?: number;
+}
+
+// Backends with a user-requested daemon update in flight: `Date.now()` of the
+// successful `system.requestUpdate`, keyed by backend id. Main is the only
+// process that knows this for every window of a backend, so every
+// `backend:status` payload for the id carries `daemonUpdateDisconnectedAt`
+// once the client dropped and while the entry is fresh — the renderer shows
+// an "updating" dialog instead of the connection-loss overlay when the sitter
+// restarts the daemon.
+const pendingDaemonUpdates = new Map<string, number>();
+// Ids whose client reported a non-connected status since the request, with
+// the `Date.now()` of that first drop: the next `connected` for such an id
+// means the restart completed and the entry is dropped. A `connected` without
+// a prior drop is not a completed restart.
+const pendingDaemonUpdateDrops = new Map<string, number>();
+
+function clearPendingDaemonUpdate(id: string): void {
+  pendingDaemonUpdates.delete(id);
+  pendingDaemonUpdateDrops.delete(id);
+}
+
+function isDaemonUpdatePending(id: string): boolean {
+  const requestedAt = pendingDaemonUpdates.get(id);
+  if (requestedAt === undefined) return false;
+  if (Date.now() - requestedAt >= DAEMON_UPDATE_PENDING_TTL_MS) {
+    clearPendingDaemonUpdate(id);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Marker fields to spread into a `backend:status` payload for `id`: empty
+ * unless an update is pending AND the client has dropped since the request.
+ */
+function daemonUpdateMarker(id: string): DaemonUpdateMarker {
+  if (!isDaemonUpdatePending(id)) return {};
+  const disconnectedAt = pendingDaemonUpdateDrops.get(id);
+  return disconnectedAt === undefined ? {} : { daemonUpdateDisconnectedAt: disconnectedAt };
+}
+
+/**
+ * Track a status transition for a pending update: the first non-connected
+ * status records the drop time, and a `connected` after a recorded drop
+ * completes the restart and clears the entry (so that connected broadcast and
+ * everything after it no longer carry the marker).
+ */
+function notePendingDaemonUpdateStatus(id: string, status: ConnectionStatus): void {
+  if (!isDaemonUpdatePending(id)) return;
+  if (status !== 'connected') {
+    if (!pendingDaemonUpdateDrops.has(id)) pendingDaemonUpdateDrops.set(id, Date.now());
+    return;
+  }
+  if (pendingDaemonUpdateDrops.has(id)) clearPendingDaemonUpdate(id);
+}
+
+/** @internal Test seam: forget every pending daemon update. */
+export function __resetPendingDaemonUpdatesForTesting(): void {
+  pendingDaemonUpdates.clear();
+  pendingDaemonUpdateDrops.clear();
 }
 
 /** @internal Test seam: clear the per-connection daemon-build log dedupe. */
@@ -678,6 +761,8 @@ async function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
   }
   try {
     await target.request('system.requestUpdate');
+    pendingDaemonUpdates.set(id, Date.now());
+    pendingDaemonUpdateDrops.delete(id);
     return { ok: true };
   } catch (error) {
     if (error instanceof JsonRpcError && error.rpcCode === -32601) {
@@ -734,6 +819,9 @@ export function disconnectBackendClient(id: string): void {
   if (!instance) return;
   backendClients.delete(id);
   connectedDaemonVersions.delete(id);
+  // A user-driven dispose ends any update-caused outage as far as the UI is
+  // concerned: the rebuilt client's first status must not carry the marker.
+  clearPendingDaemonUpdate(id);
   clearBackendFailureState(id);
   disposeTransferConnectionsForBackend(id);
   void cancelInflightHostExecStreamsForBackendSwitch(instance);
@@ -827,6 +915,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
                 instance.getConnectedVia(),
               ),
               reconnectAttempts: instance.getReconnectAttempts(),
+              ...daemonUpdateMarker(id),
             },
             id,
           );
@@ -836,6 +925,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
         // remote capture above. Fire-and-forget/fail-soft; the capture
         // itself guards on external + UDS and clears otherwise.
         void captureLocalUpdateSupported();
+        void captureLocalDeviceKind();
       }
     },
   });
@@ -845,6 +935,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
   });
   instance.on('status', (status: ConnectionStatus) => {
     if (status !== 'connected') connectedDaemonVersions.delete(id);
+    notePendingDaemonUpdateStatus(id, status);
     broadcast(
       BACKEND.STATUS,
       {
@@ -855,6 +946,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        ...daemonUpdateMarker(id),
       },
       id,
     );
@@ -862,6 +954,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     refreshConnectionsForStatusChange();
   });
   instance.on('reconnected', () => {
+    notePendingDaemonUpdateStatus(id, 'connected');
     broadcast(
       BACKEND.STATUS,
       {
@@ -873,6 +966,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        ...daemonUpdateMarker(id),
       },
       id,
     );
@@ -1222,14 +1316,41 @@ async function captureRemoteHostname(id: string): Promise<void> {
     const client = getBackendClientForId(id);
     const result = await client.request('host.status');
     const hostname = extractHostname(result);
+    const deviceKind = extractDeviceKind(result);
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
-    if (hostname && backendClients.get(id) === client) {
-      await connectionsStore.setHostname(id, hostname);
-      await broadcastConnectionsChanged();
+    if (backendClients.get(id) === client) {
+      const kindChanged = await connectionsStore.setDetectedDeviceKind(id, deviceKind);
+      if (hostname) await connectionsStore.setHostname(id, hostname);
+      if (hostname || kindChanged) await broadcastConnectionsChanged();
     }
   } catch (error) {
     logger.warn('Failed to capture remote hostname for connection label', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function extractDeviceKind(result: unknown): DetectedDeviceKind | null {
+  if (!result || typeof result !== 'object') return null;
+  const value = (result as { deviceKind?: unknown }).deviceKind;
+  return isDetectedDeviceKind(value) ? value : null;
+}
+
+/** Capture the synthesized local record's kind from the connected daemon. */
+async function captureLocalDeviceKind(): Promise<void> {
+  try {
+    const client = backendClients.get(LOCAL_CONNECTION_ID);
+    if (!client) return;
+    const result = await client.request('host.status');
+    if (backendClients.get(LOCAL_CONNECTION_ID) !== client) return;
+    if (
+      await connectionsStore.setDetectedDeviceKind(LOCAL_CONNECTION_ID, extractDeviceKind(result))
+    ) {
+      await broadcastConnectionsChanged();
+    }
+  } catch (error) {
+    logger.warn('Failed to capture local device kind', {
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -1405,6 +1526,7 @@ async function captureLocalUpdateSupported(): Promise<void> {
               client.getConnectedVia(),
             ),
             reconnectAttempts: client.getReconnectAttempts(),
+            ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
           },
           LOCAL_CONNECTION_ID,
         );
@@ -1927,6 +2049,7 @@ async function performSpawnSidecar(): Promise<{
             client.getConnectedVia(),
           ),
           reconnectAttempts: client.getReconnectAttempts(),
+          ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
         },
         LOCAL_CONNECTION_ID,
       );
@@ -2001,6 +2124,8 @@ async function doPerformRestartOrphanedSidecar(): Promise<RestartOrphanedSidecar
     });
     if (result.ok) {
       const client = getLocalBackendClient();
+      // Unscoped broadcast: deliberately carries no daemon-update marker,
+      // which is a LOCAL-client fact and must not reach remote windows.
       broadcast(BACKEND.STATUS, {
         status: client.getStatus(),
         transport: formatTransportInfo(
@@ -2211,12 +2336,14 @@ export function registerBackendHandlers(): void {
         reconnectAttempts: client.getReconnectAttempts(),
         sidecarStartupFailed: true as const,
         sidecarStartupFailedReason: startupFailure.reason,
+        ...daemonUpdateMarker(backendId),
       };
     }
     return {
       status: client.getStatus(),
       transport,
       reconnectAttempts: client.getReconnectAttempts(),
+      ...daemonUpdateMarker(backendId),
     };
   });
 
@@ -2252,6 +2379,7 @@ export function registerBackendHandlers(): void {
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
       },
       LOCAL_CONNECTION_ID,
     );
@@ -2279,6 +2407,7 @@ export function registerBackendHandlers(): void {
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
       },
       LOCAL_CONNECTION_ID,
     );
@@ -2517,6 +2646,7 @@ function registerConnectionsHandlers(): void {
                   rebuilt.getConnectedVia(),
                 ),
                 reconnectAttempts: rebuilt.getReconnectAttempts(),
+                ...daemonUpdateMarker(connection.id),
               },
               connection.id,
             );
@@ -2543,6 +2673,11 @@ function registerConnectionsHandlers(): void {
       ConnectionsUpdateSchema,
       async (_event, params) =>
         enqueueConnectionOperation(async () => {
+          if (params.id === LOCAL_CONNECTION_ID) {
+            const connection = await connectionsStore.updateMetadata(params.id, params);
+            await broadcastConnectionsChanged();
+            return { status: 'updated', connection } satisfies UpdateConnectionResult;
+          }
           const saved = await getRemoteConnection(params.id);
           const host = params.host ?? saved.host;
           const port = params.port ?? saved.port;
@@ -2569,6 +2704,8 @@ function registerConnectionsHandlers(): void {
             host,
             port,
             fingerprint,
+            detectedDeviceKind: params.detectedDeviceKind,
+            deviceIcon: params.deviceIcon,
             detectHosts: params.detectHosts,
             syncExcluded: params.syncExcluded,
           });
@@ -2859,6 +2996,7 @@ async function upsertSelfRecord(
     port: info.port,
     fingerprint: info.certFingerprint,
     token: info.token,
+    detectedDeviceKind: info.deviceKind,
     detectHosts: true,
     ...(opts.syncExcluded !== undefined ? { syncExcluded: opts.syncExcluded } : {}),
   });
@@ -2876,6 +3014,7 @@ async function upsertSelfRecord(
   // it whenever the tunnel is down, so `null` clears a stale address and a
   // rotation propagates to the user's other devices via keychain sync.
   await connectionsStore.setTcAddress(record.id, info.tcAddress);
+  await connectionsStore.setDetectedDeviceKind(LOCAL_CONNECTION_ID, info.deviceKind);
   return record;
 }
 

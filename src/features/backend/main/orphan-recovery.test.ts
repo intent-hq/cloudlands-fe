@@ -13,7 +13,10 @@ import {
 } from './orphan-recovery';
 import type { RespondingAgent } from '../../../main/running-agents';
 
-const ORPHAN: OrphanedSidecarState = { pid: 4242, executablePath: '/app/resources/intentd/intentd' };
+const ORPHAN: OrphanedSidecarState = {
+  pid: 4242,
+  executablePath: '/app/resources/intentd/intentd',
+};
 const AGENT: RespondingAgent = { agentId: 'a1', name: 'Agent One', workspaceId: 'ws1' };
 
 /** Deps whose orphan is alive until killed; every step is spied. */

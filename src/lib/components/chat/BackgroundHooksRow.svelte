@@ -34,7 +34,10 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatDateTime, formatInteger, formatSalientDuration } from '$lib/i18n/format';
   import type { BackgroundHook } from '$features/hooks/background-hooks-service';
-  import { selectBackgroundHooks } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
+  import {
+    selectBackgroundHooks,
+    selectBackgroundHooksSnapshotStatus,
+  } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
   import {
     backgroundHooksSubscribeRequested,
     backgroundHooksUnsubscribeRequested,
@@ -81,6 +84,7 @@
   });
 
   const hooks$ = selectBackgroundHooks(workspaceIdStore);
+  const snapshotStatus$ = selectBackgroundHooksSnapshotStatus(workspaceIdStore);
 
   // Refcounted live subscription: the read middleware opens the `hook:*`
   // events.subscribe on the first subscriber and disposes on the last.
@@ -102,7 +106,7 @@
   );
 
   $effect(() => {
-    visible = agentHooks.length > 0;
+    visible = agentHooks.length > 0 || $snapshotStatus$ !== 'ready';
     count = agentHooks.length;
   });
 
@@ -197,6 +201,24 @@
     return hook.delayMs ? formatSalientDuration(hook.delayMs) : '—';
   }
 </script>
+
+{#if agentHooks.length === 0 && $snapshotStatus$ !== 'ready'}
+  <div
+    class="flex min-h-10 items-center gap-2 px-3 py-2 text-muted-foreground {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+    data-testid="background-hooks-snapshot-status"
+    data-snapshot-status={$snapshotStatus$}
+    role={$snapshotStatus$ === 'failed' ? 'alert' : 'status'}
+  >
+    {#if $snapshotStatus$ === 'loading'}
+      <span
+        class="size-3 shrink-0 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground"
+      ></span>
+      <span>{m.chat_chatMessage_loading_label()}</span>
+    {:else}
+      <span>{m.chat_streamingStatus_responseFailed_label()}</span>
+    {/if}
+  </div>
+{/if}
 
 {#if agentHooks.length > 0}
   <div
@@ -379,7 +401,7 @@
               </div>
             </dl>
             {#if hook.lastError}<div
-                class="break-words border-t border-border px-3 py-2 text-error-foreground"
+                class="break-words border-t border-border px-3 py-2 text-danger"
                 data-testid="background-hook-last-error"
               >
                 {hook.lastError}

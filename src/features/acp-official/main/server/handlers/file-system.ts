@@ -14,7 +14,10 @@ import { fsyncFile } from '../../../../../shared/main/file-sync-utils';
 const logger = new Logger('ACPFileSystemHandler');
 
 export class FileSystemHandler {
-  constructor(private workspacePath: string, private scope?: string) {}
+  constructor(
+    private workspacePath: string,
+    private scope?: string,
+  ) {}
 
   /**
    * Resolve and validate a file path
@@ -22,14 +25,10 @@ export class FileSystemHandler {
    */
   private resolvePath(filePath: string): string {
     // Determine the effective base path (apply scope if present)
-    const basePath = this.scope
-      ? path.join(this.workspacePath, this.scope)
-      : this.workspacePath;
+    const basePath = this.scope ? path.join(this.workspacePath, this.scope) : this.workspacePath;
 
     // If path is already absolute, ensure it's within the effective base
-    const resolvedPath = path.isAbsolute(filePath)
-      ? filePath
-      : path.resolve(basePath, filePath);
+    const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(basePath, filePath);
 
     // Security check: ensure path is within the scoped workspace
     const relative = path.relative(basePath, resolvedPath);

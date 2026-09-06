@@ -1,9 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test } from '@playwright/experimental-ct-svelte';
+import { recordCdpLifecycle } from '../../../test/ct-cdp-lifecycle-recorder';
 import DeferredThemeRealSurfaceHost from './DeferredThemeRealSurfaceHost.svelte';
 
 test.setTimeout(60_000);
+recordCdpLifecycle(test);
 test.afterEach(async ({ page }) => {
   await page.locator('#root').evaluate(async (root) => {
     if (root.childElementCount > 0) await window.playwrightUnmount(root);

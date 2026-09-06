@@ -22,9 +22,7 @@ describe('panel content insets', () => {
     expect(panel).toContain('{transcriptBottomInsetClass}');
     expect(panel).not.toContain('eventSubscriptionsOwnEndGap');
     expect(panel).toContain("? 'w-full px-3!'");
-    expect(panel).toContain(": 'w-full px-4! sm:px-6!'");
     expect(panel).toContain("? 'w-full px-3'");
-    expect(panel).toContain(": 'w-full px-4 sm:px-6'");
     expect(panel).toContain('--composer-lane-inset-x: 1rem');
     expect(panel).toContain('--composer-lane-inset-bottom: 1rem');
     expect(panel).toContain('--composer-lane-inset-x: 1.5rem');

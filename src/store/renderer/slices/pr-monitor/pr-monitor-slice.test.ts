@@ -5,8 +5,13 @@ import { describe, expect, it } from 'vitest';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
-import { initialState, prMonitorReducer, prMonitorsUpdated } from './pr-monitor-slice';
-import { selectPrMonitors, selectPrMonitorsSnapshotDelivered } from './pr-monitor-selectors';
+import {
+  initialState,
+  prMonitorReducer,
+  prMonitorsSnapshotFailed,
+  prMonitorsUpdated,
+} from './pr-monitor-slice';
+import { selectPrMonitors, selectPrMonitorsSnapshotStatus } from './pr-monitor-selectors';
 
 function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
   return {
@@ -119,17 +124,19 @@ describe('selectPrMonitors', () => {
   it('returns all monitors (active + completed) in seed order', () => {
     const active = makeMonitor();
     const completed = makeMonitor({ monitorId: 'mon-2', state: 'completed' });
-    expect(selectPrMonitors.select({ prMonitor: stateWith([active, completed]) }, 'ws-1')).toEqual(
-      [active, completed],
-    );
+    expect(selectPrMonitors.select({ prMonitor: stateWith([active, completed]) }, 'ws-1')).toEqual([
+      active,
+      completed,
+    ]);
   });
 
-  it('selectPrMonitorsSnapshotDelivered flips once any list (even empty) is delivered', () => {
-    expect(selectPrMonitorsSnapshotDelivered.select({ prMonitor: initialState }, 'ws-1')).toBe(
-      false,
+  it('tracks loading, failed, and ready snapshot states', () => {
+    expect(selectPrMonitorsSnapshotStatus.select({ prMonitor: initialState }, 'ws-1')).toBe(
+      'loading',
     );
-    expect(selectPrMonitorsSnapshotDelivered.select({ prMonitor: stateWith([]) }, 'ws-1')).toBe(
-      true,
-    );
+    const failed = prMonitorReducer(initialState, prMonitorsSnapshotFailed('ws-1'));
+    expect(selectPrMonitorsSnapshotStatus.select({ prMonitor: failed }, 'ws-1')).toBe('failed');
+    const ready = prMonitorReducer(failed, prMonitorsUpdated('ws-1', []));
+    expect(selectPrMonitorsSnapshotStatus.select({ prMonitor: ready }, 'ws-1')).toBe('ready');
   });
 });

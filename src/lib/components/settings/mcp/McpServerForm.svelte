@@ -155,7 +155,7 @@
   <!-- Server Name -->
   <div>
     <span class="block text-sm font-medium mb-1.5">
-      {m.settings_mcp_form_serverName_label()} <span class="text-error-foreground">*</span>
+      {m.settings_mcp_form_serverName_label()} <span class="text-danger">*</span>
     </span>
     <Input
       bind:value={form.name}
@@ -164,7 +164,7 @@
       maxlength={MCP_SERVER_NAME_MAX_LENGTH}
     />
     {#if nameError && !editMode}
-      <p class="text-xs text-error-foreground mt-1">{nameError}</p>
+      <p class="text-xs text-danger mt-1">{nameError}</p>
     {:else}
       <p class="text-xs text-subtle mt-1">{m.settings_mcp_form_serverName_hint()}</p>
     {/if}
@@ -174,7 +174,7 @@
   <div>
     <span class="block text-sm font-medium mb-1.5">
       {m.settings_mcp_form_connectionType_label()}
-      <span class="text-error-foreground">*</span>
+      <span class="text-danger">*</span>
     </span>
     <div class="flex gap-1 p-1 bg-muted rounded-lg w-fit">
       {#each transportTypes as type (type.value)}
@@ -206,7 +206,7 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
         <span class="block text-sm font-medium mb-1.5">
-          {m.settings_mcp_form_command_label()} <span class="text-error-foreground">*</span>
+          {m.settings_mcp_form_command_label()} <span class="text-danger">*</span>
         </span>
         <!-- i18n-ignore (example command) -->
         <Input bind:value={form.command} placeholder="npx -y @some/mcp-server" />
@@ -244,7 +244,7 @@
               <!-- i18n-ignore (env var format examples) -->
               <Input bind:value={pair.value} placeholder="value" class="flex-1" />
               <Button size="sm" variant="ghost" onclick={() => removeEnvVar(pair.id)}>
-                <Fa icon={faTrash} size="xs" class="text-error-foreground" />
+                <Fa icon={faTrash} size="xs" class="text-danger" />
               </Button>
             </div>
           {/each}
@@ -255,7 +255,7 @@
     <!-- Remote fields (http/sse) -->
     <div>
       <span class="block text-sm font-medium mb-1.5">
-        {m.settings_mcp_form_url_label()} <span class="text-error-foreground">*</span>
+        {m.settings_mcp_form_url_label()} <span class="text-danger">*</span>
       </span>
       <!-- i18n-ignore (example URL) -->
       <Input bind:value={form.url} placeholder="https://example.com/mcp" />
@@ -315,7 +315,7 @@
                 <!-- i18n-ignore (header format examples) -->
                 <Input bind:value={pair.value} placeholder="value" class="flex-1" />
                 <Button size="sm" variant="ghost" onclick={() => removeHeader(pair.id)}>
-                  <Fa icon={faTrash} size="xs" class="text-error-foreground" />
+                  <Fa icon={faTrash} size="xs" class="text-danger" />
                 </Button>
               </div>
             {/each}
@@ -335,7 +335,7 @@
 
   <!-- Error message -->
   {#if error}
-    <div class="text-sm text-error-foreground">{error}</div>
+    <div class="text-sm text-danger">{error}</div>
   {/if}
 
   <!-- Actions -->

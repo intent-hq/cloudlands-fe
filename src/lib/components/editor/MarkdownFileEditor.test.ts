@@ -141,6 +141,7 @@ describe('MarkdownFileEditor external content sync', () => {
       preserveAnchors: false,
       processPrimitives: false,
       workspaceId: 'workspace-1',
+      workspaceFileVersion: expect.any(String),
     });
     expect(processHTMLToMarkdown).not.toHaveBeenCalled();
   });
@@ -193,6 +194,7 @@ describe('MarkdownFileEditor external content sync', () => {
         preserveAnchors: false,
         processPrimitives: false,
         workspaceId: 'workspace-1',
+        workspaceFileVersion: expect.any(String),
       }),
     );
 
@@ -202,8 +204,19 @@ describe('MarkdownFileEditor external content sync', () => {
         preserveAnchors: false,
         processPrimitives: false,
         workspaceId: 'workspace-1',
+        workspaceFileVersion: expect.any(String),
       }),
     );
+    // The same editor instance reuses one image cache-bust token across
+    // external syncs, so its workspace image URLs stay stable.
+    const versions = new Set(
+      vi
+        .mocked(processMarkdownToHTML)
+        .mock.calls.map(
+          ([, options]) => (options as { workspaceFileVersion?: string }).workspaceFileVersion,
+        ),
+    );
+    expect(versions.size).toBe(1);
 
     second.resolve('<p>second marker</p>');
     await waitFor(() =>

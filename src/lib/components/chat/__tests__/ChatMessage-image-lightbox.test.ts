@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentMessage } from '$shared/types';
+import { WorkspaceId } from '$shared/types/branded-ids';
 import { ChatTranscriptReconciler } from '$lib/client/live/live-chat-client';
 
 const dispatchMock = vi.hoisted(() => vi.fn());
@@ -52,6 +53,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 
 import ChatMessage from '../ChatMessage.svelte';
+import ChatMessageRouteContextHarness from './ChatMessageRouteContextHarness.test.svelte';
 import { store as mockStore } from '$store/renderer/store';
 
 describe('ChatMessage image lightbox', () => {
@@ -175,6 +177,29 @@ describe('ChatMessage image lightbox', () => {
 
     const image = screen.getByRole('img', { name: 'Attached image 1' });
     expect(image.getAttribute('src')).toBe(`data:${mockImageMimeType};base64,${mockImageData}`);
+  });
+
+  it('resolves assistant workspace image links from the route when no workspace prop is given', async () => {
+    const { container } = render(ChatMessageRouteContextHarness, {
+      props: {
+        workspaceId: WorkspaceId('ws-1'),
+        message: {
+          id: 'msg-agent-workspace-image',
+          role: 'assistant',
+          contentBlocks: [
+            { type: 'text', text: '![chart](intent://local/file/charts/bridge_tracking.png)' },
+          ],
+          timestamp: new Date('2024-01-01T12:00:00Z'),
+        } satisfies AgentMessage,
+      },
+    });
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('img[src^="workspace-file://ws-1/charts/bridge_tracking.png?v="]'),
+      ).toBeTruthy();
+    });
+    expect(container.querySelector('img[src^="intent://"]')).toBeNull();
   });
 
   it('opens lightbox when image thumbnail is clicked', async () => {
@@ -430,8 +455,7 @@ describe('ChatMessage image lightbox', () => {
   });
 
   describe('lazy attachment hydration (§5.5 slim → v7.2 agent.getMessageBlock)', () => {
-    const thumbnailData =
-      'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    const thumbnailData = 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     const fullImageData =
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 

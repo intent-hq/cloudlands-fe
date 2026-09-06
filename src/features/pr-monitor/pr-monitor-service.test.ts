@@ -208,13 +208,19 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
 
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-  it('emits the cached (empty) list when the initial prMonitor.list seed fails (ready-with-empty)', async () => {
+  it('preserves cached rows and reports when the initial prMonitor.list seed fails', async () => {
     mockedRequest.mockRejectedValueOnce(new Error('list failed'));
     const seen: PrMonitorRow[][] = [];
-    const { dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
+    const statuses: string[] = [];
+    const { dispose } = subscribePrMonitors(
+      'ws-1',
+      (monitors) => seen.push(monitors),
+      (status) => statuses.push(status),
+    );
     await flush();
 
     expect(seen.at(-1)).toEqual([]);
+    expect(statuses).toEqual(['failed']);
     dispose();
   });
 
@@ -401,9 +407,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
     let resolveSecondList: ((value: unknown) => void) | undefined;
     mockedRequest
       .mockResolvedValueOnce({ monitors: [makeMonitor()] })
-      .mockImplementationOnce(
-        () => new Promise((resolve) => (resolveSecondList = resolve)),
-      );
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveSecondList = resolve)));
     const seen: PrMonitorRow[][] = [];
     const { refetch, dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
     await flush();
@@ -435,9 +439,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
     let resolveSecondList: ((value: unknown) => void) | undefined;
     mockedRequest
       .mockResolvedValueOnce({ monitors: [makeMonitor()] })
-      .mockImplementationOnce(
-        () => new Promise((resolve) => (resolveSecondList = resolve)),
-      )
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveSecondList = resolve)))
       .mockResolvedValueOnce({
         monitors: [makeMonitor({ pendingChanges: [], hasPendingChanges: false })],
       });

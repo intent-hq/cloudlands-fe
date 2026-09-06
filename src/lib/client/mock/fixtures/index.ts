@@ -13,7 +13,7 @@ import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import type { TerminalTab } from '$store/renderer/slices/terminals/terminals-slice';
 import type { ScriptWithState } from '$store/renderer/slices/scripts/scripts-types';
 import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
-import type { SpecialistDef } from '../../app-client';
+import type { GitHubIssueDetails, GitHubPullRequestDetails, SpecialistDef } from '../../app-client';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { RecentUrl } from '$store/renderer/slices/browser/browser-types';
 import type { ReleaseNotes } from '$store/renderer/slices/release-notes/release-notes-types';
@@ -291,6 +291,34 @@ export const mockGitHubUser: GitHubUser = {
   name: 'Mona Octocat',
   email: 'mona@example.com',
   avatar_url: 'https://avatars.githubusercontent.com/u/583231?v=4',
+};
+
+/** One PR for the GitHub link hover card (`github.pulls.get` mock). */
+export const mockGitHubPullRequest: GitHubPullRequestDetails = {
+  owner: 'acme',
+  repo: 'web-app',
+  number: 42,
+  title: 'Add dark mode toggle to the settings panel',
+  state: 'open',
+  author: 'octocat',
+  createdAt: '2026-01-02T09:00:00.000Z',
+  updatedAt: '2026-01-02T14:00:00.000Z',
+  url: 'https://github.com/acme/web-app/pull/42',
+  headRef: 'feat/dark-mode-toggle',
+  baseRef: 'main',
+};
+
+/** One issue for the GitHub link hover card (`github.issues.get` mock). */
+export const mockGitHubIssue: GitHubIssueDetails = {
+  owner: 'acme',
+  repo: 'web-app',
+  number: 17,
+  title: 'Theme flashes light mode on first paint',
+  state: 'open',
+  author: 'octocat',
+  createdAt: '2026-01-01T08:00:00.000Z',
+  updatedAt: '2026-01-02T10:00:00.000Z',
+  url: 'https://github.com/acme/web-app/issues/17',
 };
 
 /** Assigned Linear issues for the connected Linear mock state. */

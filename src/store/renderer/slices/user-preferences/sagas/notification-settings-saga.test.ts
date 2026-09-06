@@ -2,7 +2,11 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ backendRequest: vi.fn(), warn: vi.fn() }));
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.backendRequest,
+  onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
+}));
 vi.mock('$lib/utils/client-logger', () => ({ createLogger: () => ({ warn: mocks.warn }) }));
 
 import {
@@ -17,6 +21,7 @@ import {
   notificationSettingsSaga,
   persistNotificationSettingsWorker,
 } from './notification-settings-saga';
+import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 
 const paths = [
   'notifications.enabled',
@@ -35,6 +40,7 @@ describe('notificationSettingsSaga', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    __resetSettingsReadCacheForTests();
   });
   afterEach(() => vi.useRealTimers());
 
@@ -46,7 +52,16 @@ describe('notificationSettingsSaga', () => {
       'notifications.volume': 0.7,
     };
     mocks.backendRequest.mockImplementation((_method: string, params: { path: string }) =>
-      Promise.resolve({ value: values[params.path] }),
+      Promise.resolve({
+        value: values[params.path],
+        definition: {
+          path: params.path,
+          label: params.path,
+          description: '',
+          category: 'notifications',
+          type: 'boolean',
+        },
+      }),
     );
     const dispatch = vi.fn();
     await runSaga(
@@ -67,12 +82,24 @@ describe('notificationSettingsSaga', () => {
 
   it('ignores invalid hydration values and swallows read failures', async () => {
     const dispatch = vi.fn();
-    mocks.backendRequest.mockResolvedValueOnce({ value: 'yes' }).mockResolvedValue({});
+    mocks.backendRequest.mockImplementation((_method: string, params: { path: string }) =>
+      Promise.resolve({
+        value: params.path === paths[0] ? 'yes' : null,
+        definition: {
+          path: params.path,
+          label: params.path,
+          description: '',
+          category: 'notifications',
+          type: 'boolean',
+        },
+      }),
+    );
     await runSaga(
       { dispatch, getState: () => ({}) },
       hydrateNotificationSettingsWorker,
     ).toPromise();
     mocks.backendRequest.mockReset().mockRejectedValue(new Error('offline'));
+    __resetSettingsReadCacheForTests();
     await runSaga(
       { dispatch, getState: () => ({}) },
       hydrateNotificationSettingsWorker,

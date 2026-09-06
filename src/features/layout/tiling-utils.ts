@@ -5,7 +5,6 @@
  * Used for applying presets that tile multiple items (agents, files, etc.)
  */
 
-
 /**
  * Tiling configuration based on container dimensions
  */

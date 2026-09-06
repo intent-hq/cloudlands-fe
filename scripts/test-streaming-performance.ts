@@ -196,7 +196,11 @@ class StreamingPerformanceTester {
       const content = fs.readFileSync(filePath, 'utf-8');
 
       // Check for scroll handlers without throttling
-      if (content.includes('on:scroll') && !content.includes('throttle') && !content.includes('debounce')) {
+      if (
+        content.includes('on:scroll') &&
+        !content.includes('throttle') &&
+        !content.includes('debounce')
+      ) {
         this.issues.push({
           file,
           line: 0,
@@ -206,7 +210,11 @@ class StreamingPerformanceTester {
       }
 
       // Check for input handlers without debouncing
-      if (content.includes('on:input') && !content.includes('debounce') && !content.includes('throttle')) {
+      if (
+        content.includes('on:input') &&
+        !content.includes('debounce') &&
+        !content.includes('throttle')
+      ) {
         this.issues.push({
           file,
           line: 0,
@@ -258,7 +266,11 @@ class StreamingPerformanceTester {
         }
 
         // Check for forced reflows
-        if (line.includes('offsetHeight') || line.includes('offsetWidth') || line.includes('getBoundingClientRect')) {
+        if (
+          line.includes('offsetHeight') ||
+          line.includes('offsetWidth') ||
+          line.includes('getBoundingClientRect')
+        ) {
           if (line.includes('style.') || line.includes('classList.')) {
             this.issues.push({
               file,
@@ -277,7 +289,7 @@ class StreamingPerformanceTester {
    */
   generateReport(): void {
     console.log('\n🔍 Performance Test Results\n');
-    console.log('=' .repeat(50));
+    console.log('='.repeat(50));
 
     if (this.issues.length === 0) {
       console.log('\n✅ No performance issues found!');
@@ -285,37 +297,39 @@ class StreamingPerformanceTester {
     }
 
     // Group by severity
-    const highSeverity = this.issues.filter(i => i.severity === 'high');
-    const mediumSeverity = this.issues.filter(i => i.severity === 'medium');
-    const lowSeverity = this.issues.filter(i => i.severity === 'low');
+    const highSeverity = this.issues.filter((i) => i.severity === 'high');
+    const mediumSeverity = this.issues.filter((i) => i.severity === 'medium');
+    const lowSeverity = this.issues.filter((i) => i.severity === 'low');
 
     if (highSeverity.length > 0) {
       console.log('\n🔴 High Severity Issues:');
-      highSeverity.forEach(issue => {
-        console.log(`   ${issue.file}${issue.line > 0 ? `:${  issue.line}` : ''}`);
+      highSeverity.forEach((issue) => {
+        console.log(`   ${issue.file}${issue.line > 0 ? `:${issue.line}` : ''}`);
         console.log(`   └─ ${issue.issue}`);
       });
     }
 
     if (mediumSeverity.length > 0) {
       console.log('\n🟡 Medium Severity Issues:');
-      mediumSeverity.forEach(issue => {
-        console.log(`   ${issue.file}${issue.line > 0 ? `:${  issue.line}` : ''}`);
+      mediumSeverity.forEach((issue) => {
+        console.log(`   ${issue.file}${issue.line > 0 ? `:${issue.line}` : ''}`);
         console.log(`   └─ ${issue.issue}`);
       });
     }
 
     if (lowSeverity.length > 0) {
       console.log('\n🟢 Low Severity Issues:');
-      lowSeverity.forEach(issue => {
-        console.log(`   ${issue.file}${issue.line > 0 ? `:${  issue.line}` : ''}`);
+      lowSeverity.forEach((issue) => {
+        console.log(`   ${issue.file}${issue.line > 0 ? `:${issue.line}` : ''}`);
         console.log(`   └─ ${issue.issue}`);
       });
     }
 
-    console.log(`\n${  '='.repeat(50)}`);
+    console.log(`\n${'='.repeat(50)}`);
     console.log(`\nTotal issues found: ${this.issues.length}`);
-    console.log(`High: ${highSeverity.length}, Medium: ${mediumSeverity.length}, Low: ${lowSeverity.length}`);
+    console.log(
+      `High: ${highSeverity.length}, Medium: ${mediumSeverity.length}, Low: ${lowSeverity.length}`,
+    );
   }
 
   /**
@@ -332,7 +346,7 @@ class StreamingPerformanceTester {
 
     this.generateReport();
 
-    if (this.issues.filter(i => i.severity === 'high').length > 0) {
+    if (this.issues.filter((i) => i.severity === 'high').length > 0) {
       process.exit(1);
     } else {
       process.exit(0);
@@ -342,7 +356,7 @@ class StreamingPerformanceTester {
 
 // Run tests
 const tester = new StreamingPerformanceTester();
-tester.runAllTests().catch(error => {
+tester.runAllTests().catch((error) => {
   console.error('Performance test runner failed:', error);
   process.exit(1);
 });

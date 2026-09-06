@@ -1,13 +1,5 @@
-import {
-  describe,
-  it,
-  expect,
-  vi,
-} from 'vitest';
-import {
-  render,
-  fireEvent,
-} from '@testing-library/svelte';
+import { describe, it, expect, vi } from 'vitest';
+import { render, fireEvent } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import ZoomPanViewport from '../ZoomPanViewport.svelte';
 
@@ -38,11 +30,9 @@ async function setup(props: { minZoom?: number; maxZoom?: number } = {}) {
   const result = render(ZoomPanViewport, { props: { children, ...props } });
   await tick();
   const viewport = result.container.querySelector<HTMLElement>(
-    '[data-testid="zoom-pan-viewport"]'
+    '[data-testid="zoom-pan-viewport"]',
   )!;
-  const content = result.container.querySelector<HTMLElement>(
-    '[data-testid="zoom-pan-content"]'
-  )!;
+  const content = result.container.querySelector<HTMLElement>('[data-testid="zoom-pan-content"]')!;
   return { ...result, viewport, content };
 }
 
@@ -53,9 +43,7 @@ function getScale(content: HTMLElement): number {
 }
 
 function getTranslate(content: HTMLElement): { x: number; y: number } {
-  const match = content
-    .getAttribute('style')
-    ?.match(/translate\((-?[\d.]+)px, (-?[\d.]+)px\)/);
+  const match = content.getAttribute('style')?.match(/translate\((-?[\d.]+)px, (-?[\d.]+)px\)/);
   expect(match).toBeTruthy();
   return { x: Number.parseFloat(match![1]), y: Number.parseFloat(match![2]) };
 }
@@ -125,9 +113,7 @@ describe('ZoomPanViewport', () => {
 
   it('updates scale from slider input', async () => {
     const { container, content } = await setup();
-    const slider = container.querySelector<HTMLInputElement>(
-      '[data-testid="zoom-pan-slider"]'
-    )!;
+    const slider = container.querySelector<HTMLInputElement>('[data-testid="zoom-pan-slider"]')!;
     expect(slider.min).toBe('0.25');
     expect(slider.max).toBe('8');
 
@@ -137,29 +123,19 @@ describe('ZoomPanViewport', () => {
 
   it('shows the zoom percentage readout and updates it', async () => {
     const { container } = await setup();
-    const percent = container.querySelector<HTMLElement>(
-      '[data-testid="zoom-pan-percent"]'
-    )!;
+    const percent = container.querySelector<HTMLElement>('[data-testid="zoom-pan-percent"]')!;
     expect(percent.textContent).toContain('100%');
 
-    const slider = container.querySelector<HTMLInputElement>(
-      '[data-testid="zoom-pan-slider"]'
-    )!;
+    const slider = container.querySelector<HTMLInputElement>('[data-testid="zoom-pan-slider"]')!;
     await fireEvent.input(slider, { target: { value: '2' } });
     expect(percent.textContent).toContain('200%');
   });
 
   it('zoom buttons zoom in/out and reset button restores fit', async () => {
     const { container, content } = await setup();
-    const zoomIn = container.querySelector<HTMLButtonElement>(
-      'button[title="Zoom in"]'
-    )!;
-    const zoomOut = container.querySelector<HTMLButtonElement>(
-      'button[title="Zoom out"]'
-    )!;
-    const reset = container.querySelector<HTMLButtonElement>(
-      'button[title="Reset zoom"]'
-    )!;
+    const zoomIn = container.querySelector<HTMLButtonElement>('button[title="Zoom in"]')!;
+    const zoomOut = container.querySelector<HTMLButtonElement>('button[title="Zoom out"]')!;
+    const reset = container.querySelector<HTMLButtonElement>('button[title="Reset zoom"]')!;
 
     await fireEvent.click(zoomIn);
     expect(getScale(content)).toBeCloseTo(1.25, 5);

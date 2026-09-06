@@ -11,7 +11,10 @@
   import RecursiveMarkdownViewer from './MarkdownViewer.svelte';
   import MediaUnavailable from '$lib/components/ui/MediaUnavailable.svelte';
   import { parseWorkspaceFileImageUrl } from '$lib/utils/image-actions';
-  import { parseIntentFileTarget } from '$lib/utils/workspace-file-image';
+  import {
+    createWorkspaceFileVersion,
+    parseIntentFileTarget,
+  } from '$lib/utils/workspace-file-image';
 
   import {
     openWorkspaceFile,
@@ -55,6 +58,11 @@
     forceExternalLinks = false,
     renderRichFencesAsCode = false,
   }: Props = $props();
+
+  // One cache-busting token per viewer instance: re-processing the same
+  // message (streaming ticks, prop changes) keeps its image URLs stable, while
+  // a newly mounted viewer fetches the file's current bytes.
+  const workspaceFileVersion = createWorkspaceFileVersion();
 
   const mediaSegments = $derived(splitWorkspaceVideoMarkdown(content, workspaceId));
   const hasVideoSegments = $derived(mediaSegments.some((segment) => segment.type === 'video'));
@@ -160,6 +168,7 @@
         taskBlockRenderMode,
         workspaceId,
         renderRichFencesAsCode,
+        workspaceFileVersion,
       });
       processedContent = html;
       lastProcessedContent = markdown;
@@ -208,6 +217,7 @@
         taskBlockRenderMode,
         workspaceId,
         renderRichFencesAsCode,
+        workspaceFileVersion,
       });
       lastProcessedContent = markdown;
       lastProcessedWorkspaceId = workspaceId;
@@ -336,7 +346,7 @@
       media: HTMLImageElement | HTMLVideoElement,
       reason: MediaUnavailableReason,
     ) {
-      const source = media.getAttribute('src') || '';
+      const source = media.getAttribute('src') || media.getAttribute('data-media-src') || '';
       const workspaceFile = parseWorkspaceFileImageUrl(source);
       const intentFile = parseIntentFileTarget(source, workspaceId);
       const path = workspaceFile?.path ?? intentFile?.path;
@@ -368,6 +378,9 @@
       }
       for (const media of node.querySelectorAll<HTMLImageElement>('[data-media-unsupported]')) {
         replaceMedia(media, 'unsupported');
+      }
+      for (const media of node.querySelectorAll<HTMLImageElement>('[data-media-unavailable]')) {
+        replaceMedia(media, 'load-failed');
       }
       for (const [host, component] of mountedPlaceholders) {
         if (!node.contains(host)) {

@@ -1,9 +1,5 @@
-import {
-  describe,
-  expect,
-  it,
-} from "vitest";
-import { getItems } from "@augmentcode/themis/utils/collections/collection-utils";
+import { describe, expect, it } from 'vitest';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import {
   bulkArchiveActiveWorkComputed,
   closeArchiveWarning,
@@ -18,32 +14,55 @@ import {
   openDeleteWarning,
   openRemoveRepoConfirm,
   workspaceOperationsReducer,
-} from "./workspace-operations-slice";
+} from './workspace-operations-slice';
 
 const openPr = {
   number: 7,
-  title: "feat: add thing",
-  url: "https://github.com/o/r/pull/7",
-  status: "Open" as const,
+  title: 'feat: add thing',
+  url: 'https://github.com/o/r/pull/7',
+  status: 'Open' as const,
 };
 
-describe("workspaceOperationsReducer", () => {
-  it("opens and clears the delete warning state", () => {
+const localChanges = {
+  roots: [
+    {
+      kind: 'primary' as const,
+      path: '/work/repo',
+      branch: 'feat/x',
+      hasRemoteRefs: true,
+      unpushedCount: 3,
+      uncommittedCount: 2,
+    },
+  ],
+  hasUnpushedCommits: true,
+  hasUncommittedChanges: true,
+};
+
+describe('workspaceOperationsReducer', () => {
+  it('starts with no local-changes data for either warning', () => {
+    expect(initialState.localChangesForDelete).toBeNull();
+    expect(initialState.localChangesForArchive).toBeNull();
+  });
+
+  it('opens and clears the delete warning state', () => {
     const opened = workspaceOperationsReducer(
       initialState,
       openDeleteWarning({
-        workspaceId: "ws-1",
-        agentNames: ["Agent One"],
-        hookNames: ["ci-watch"],
+        workspaceId: 'ws-1',
+        agentNames: ['Agent One'],
+        hookNames: ['ci-watch'],
         openPrs: [openPr],
-      })
+        localChanges,
+      }),
     );
 
     expect(opened.showDeleteWarning).toBe(true);
-    expect(opened.pendingDeleteWorkspaceId).toBe("ws-1");
-    expect(opened.runningAgentNamesForDelete).toEqual(["Agent One"]);
-    expect(opened.activeHookNamesForDelete).toEqual(["ci-watch"]);
+    expect(opened.pendingDeleteWorkspaceId).toBe('ws-1');
+    expect(opened.runningAgentNamesForDelete).toEqual(['Agent One']);
+    expect(opened.activeHookNamesForDelete).toEqual(['ci-watch']);
     expect(getItems(opened.openPrsForDelete)).toEqual([openPr]);
+    expect(opened.localChangesForDelete).toEqual(localChanges);
+    expect(opened.localChangesForArchive).toBeNull();
 
     const closed = workspaceOperationsReducer(opened, closeDeleteWarning());
 
@@ -52,26 +71,45 @@ describe("workspaceOperationsReducer", () => {
     expect(closed.runningAgentNamesForDelete).toEqual([]);
     expect(closed.activeHookNamesForDelete).toEqual([]);
     expect(getItems(closed.openPrsForDelete)).toEqual([]);
+    expect(closed.localChangesForDelete).toBeNull();
   });
 
-  it("opens and clears the archive warning state", () => {
+  it('opens the delete warning with null local changes when none were supplied', () => {
+    const opened = workspaceOperationsReducer(
+      initialState,
+      openDeleteWarning({
+        workspaceId: 'ws-1',
+        agentNames: ['Agent One'],
+        hookNames: [],
+        openPrs: [],
+      }),
+    );
+
+    expect(opened.showDeleteWarning).toBe(true);
+    expect(opened.localChangesForDelete).toBeNull();
+  });
+
+  it('opens and clears the archive warning state', () => {
     const opened = workspaceOperationsReducer(
       initialState,
       openArchiveWarning({
-        workspaceId: "ws-2",
-        agentNames: ["Agent Two"],
-        hookNames: ["pr-watch"],
-        openPrs: [{ ...openPr, status: "Draft" as const, mergeConflicts: true }],
-      })
+        workspaceId: 'ws-2',
+        agentNames: ['Agent Two'],
+        hookNames: ['pr-watch'],
+        openPrs: [{ ...openPr, status: 'Draft' as const, mergeConflicts: true }],
+        localChanges,
+      }),
     );
 
     expect(opened.showArchiveWarning).toBe(true);
-    expect(opened.pendingArchiveWorkspaceId).toBe("ws-2");
-    expect(opened.runningAgentNamesForArchive).toEqual(["Agent Two"]);
-    expect(opened.activeHookNamesForArchive).toEqual(["pr-watch"]);
+    expect(opened.pendingArchiveWorkspaceId).toBe('ws-2');
+    expect(opened.runningAgentNamesForArchive).toEqual(['Agent Two']);
+    expect(opened.activeHookNamesForArchive).toEqual(['pr-watch']);
     expect(getItems(opened.openPrsForArchive)).toEqual([
-      { ...openPr, status: "Draft", mergeConflicts: true },
+      { ...openPr, status: 'Draft', mergeConflicts: true },
     ]);
+    expect(opened.localChangesForArchive).toEqual(localChanges);
+    expect(opened.localChangesForDelete).toBeNull();
 
     const closed = workspaceOperationsReducer(opened, closeArchiveWarning());
 
@@ -80,21 +118,38 @@ describe("workspaceOperationsReducer", () => {
     expect(closed.runningAgentNamesForArchive).toEqual([]);
     expect(closed.activeHookNamesForArchive).toEqual([]);
     expect(getItems(closed.openPrsForArchive)).toEqual([]);
+    expect(closed.localChangesForArchive).toBeNull();
   });
 
-  it("tracks and clears bulk delete warning details", () => {
+  it('opens the archive warning with null local changes when the RPC failed', () => {
+    const opened = workspaceOperationsReducer(
+      initialState,
+      openArchiveWarning({
+        workspaceId: 'ws-2',
+        agentNames: [],
+        hookNames: ['pr-watch'],
+        openPrs: [],
+        localChanges: null,
+      }),
+    );
+
+    expect(opened.showArchiveWarning).toBe(true);
+    expect(opened.localChangesForArchive).toBeNull();
+  });
+
+  it('tracks and clears bulk delete warning details', () => {
     const opened = workspaceOperationsReducer(
       initialState,
       openBulkDeleteWarningConfirm({
-        repoKey: "owner/repo",
+        repoKey: 'owner/repo',
         workspaceCount: 3,
         agentCount: 2,
         hookCount: 1,
-      })
+      }),
     );
 
     expect(opened.showBulkDeleteWarningConfirm).toBe(true);
-    expect(opened.pendingBulkDeleteRepoKey).toBe("owner/repo");
+    expect(opened.pendingBulkDeleteRepoKey).toBe('owner/repo');
     expect(opened.bulkDeleteWorkspaceCount).toBe(3);
     expect(opened.bulkDeleteActiveAgentCount).toBe(2);
     expect(opened.bulkDeleteActiveHookCount).toBe(1);
@@ -108,11 +163,8 @@ describe("workspaceOperationsReducer", () => {
     expect(closed.bulkDeleteActiveHookCount).toBe(0);
   });
 
-  it("folds computed active work into an open bulk archive confirm and clears it on close", () => {
-    const opened = workspaceOperationsReducer(
-      initialState,
-      openBulkArchiveConfirm("owner/repo")
-    );
+  it('folds computed active work into an open bulk archive confirm and clears it on close', () => {
+    const opened = workspaceOperationsReducer(initialState, openBulkArchiveConfirm('owner/repo'));
 
     expect(opened.bulkArchiveActiveAgentCount).toBe(0);
     expect(opened.bulkArchiveActiveHookCount).toBe(0);
@@ -120,11 +172,11 @@ describe("workspaceOperationsReducer", () => {
     const computed = workspaceOperationsReducer(
       opened,
       bulkArchiveActiveWorkComputed({
-        repoKey: "owner/repo",
+        repoKey: 'owner/repo',
         agentCount: 2,
         hookCount: 1,
         token: opened.bulkArchiveComputeToken,
-      })
+      }),
     );
 
     expect(computed.bulkArchiveActiveAgentCount).toBe(2);
@@ -137,62 +189,59 @@ describe("workspaceOperationsReducer", () => {
     expect(closed.bulkArchiveActiveHookCount).toBe(0);
   });
 
-  it("drops late active-work results when the confirm is closed or for another repo", () => {
+  it('drops late active-work results when the confirm is closed or for another repo', () => {
     const firstOpen = workspaceOperationsReducer(
       initialState,
-      openBulkArchiveConfirm("owner/repo")
+      openBulkArchiveConfirm('owner/repo'),
     );
     const closedState = workspaceOperationsReducer(firstOpen, closeBulkArchiveConfirm());
     const afterLate = workspaceOperationsReducer(
       closedState,
       bulkArchiveActiveWorkComputed({
-        repoKey: "owner/repo",
+        repoKey: 'owner/repo',
         agentCount: 2,
         hookCount: 1,
         token: firstOpen.bulkArchiveComputeToken,
-      })
+      }),
     );
 
     expect(afterLate.bulkArchiveActiveAgentCount).toBe(0);
     expect(afterLate.bulkArchiveActiveHookCount).toBe(0);
 
-    const reopened = workspaceOperationsReducer(
-      closedState,
-      openBulkArchiveConfirm("other/repo")
-    );
+    const reopened = workspaceOperationsReducer(closedState, openBulkArchiveConfirm('other/repo'));
     const afterMismatch = workspaceOperationsReducer(
       reopened,
       bulkArchiveActiveWorkComputed({
-        repoKey: "owner/repo",
+        repoKey: 'owner/repo',
         agentCount: 2,
         hookCount: 1,
         token: reopened.bulkArchiveComputeToken,
-      })
+      }),
     );
 
     expect(afterMismatch.bulkArchiveActiveAgentCount).toBe(0);
     expect(afterMismatch.bulkArchiveActiveHookCount).toBe(0);
   });
 
-  it("drops a stale compute after a close→reopen for the same repo (token mismatch)", () => {
+  it('drops a stale compute after a close→reopen for the same repo (token mismatch)', () => {
     const firstOpen = workspaceOperationsReducer(
       initialState,
-      openBulkArchiveConfirm("owner/repo")
+      openBulkArchiveConfirm('owner/repo'),
     );
     const reopened = workspaceOperationsReducer(
       workspaceOperationsReducer(firstOpen, closeBulkArchiveConfirm()),
-      openBulkArchiveConfirm("owner/repo")
+      openBulkArchiveConfirm('owner/repo'),
     );
 
     // Stale compute from the first open carries the old token — dropped.
     const afterStale = workspaceOperationsReducer(
       reopened,
       bulkArchiveActiveWorkComputed({
-        repoKey: "owner/repo",
+        repoKey: 'owner/repo',
         agentCount: 2,
         hookCount: 1,
         token: firstOpen.bulkArchiveComputeToken,
-      })
+      }),
     );
 
     expect(afterStale.bulkArchiveActiveAgentCount).toBe(0);
@@ -202,25 +251,22 @@ describe("workspaceOperationsReducer", () => {
     const afterFresh = workspaceOperationsReducer(
       afterStale,
       bulkArchiveActiveWorkComputed({
-        repoKey: "owner/repo",
+        repoKey: 'owner/repo',
         agentCount: 0,
         hookCount: 0,
         token: reopened.bulkArchiveComputeToken,
-      })
+      }),
     );
 
     expect(afterFresh.bulkArchiveActiveAgentCount).toBe(0);
     expect(afterFresh.bulkArchiveActiveHookCount).toBe(0);
   });
 
-  it("tracks and clears pending repo removal", () => {
-    const opened = workspaceOperationsReducer(
-      initialState,
-      openRemoveRepoConfirm("/tmp/repo")
-    );
+  it('tracks and clears pending repo removal', () => {
+    const opened = workspaceOperationsReducer(initialState, openRemoveRepoConfirm('/tmp/repo'));
 
     expect(opened.showRemoveRepoConfirm).toBe(true);
-    expect(opened.pendingRemoveRepoPath).toBe("/tmp/repo");
+    expect(opened.pendingRemoveRepoPath).toBe('/tmp/repo');
 
     const closed = workspaceOperationsReducer(opened, closeRemoveRepoConfirm());
 

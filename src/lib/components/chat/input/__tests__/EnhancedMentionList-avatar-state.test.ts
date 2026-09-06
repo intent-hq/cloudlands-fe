@@ -76,6 +76,15 @@ describe('EnhancedMentionList agent avatar state', () => {
     );
     await waitFor(() => expect(avatar?.getAttribute('data-avatar-state')).toBe('waiting'));
 
+    appStore.dispatch(
+      updateSession(agentId, {
+        status: AgentStatus.Active,
+        isResponding: true,
+        isWaitingOnTool: true,
+      }),
+    );
+    await waitFor(() => expect(avatar?.getAttribute('data-avatar-state')).toBe('running'));
+
     expect(view.container.querySelector('.mention-item')).toBe(row);
     expect(view.container.querySelector('[data-agent-avatar-with-state]')).toBe(avatar);
   });

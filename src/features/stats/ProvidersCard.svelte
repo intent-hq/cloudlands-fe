@@ -67,7 +67,10 @@
       <div class="callout-label">{msg.stats_providersCard_mostUsed_label()}</div>
       <div class="callout-provider">{top ? providerDisplayName(top.provider) : '—'}</div>
       <div class="callout-sub">
-        {#if top}{msg.stats_providersCard_calloutSub_label({ tokens: formatTokens(top.tokens), runs: formatInt(top.runs) })}{:else}—{/if}
+        {#if top}{msg.stats_providersCard_calloutSub_label({
+            tokens: formatTokens(top.tokens),
+            runs: formatInt(top.runs),
+          })}{:else}—{/if}
       </div>
     </div>
   </div>

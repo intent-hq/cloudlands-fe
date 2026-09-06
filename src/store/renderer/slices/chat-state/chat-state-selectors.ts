@@ -181,19 +181,6 @@ export const selectAwaitingSwitchBackSnapshot = store.createSelector(
 );
 
 /**
- * Utility-footer reveal gate: true while the transcript reveal is holding for
- * the footer data sources (agent subscriptions, background hooks, monitored
- * PRs) to settle, so transcript and footer flip in the same paint. Cleared by
- * the subscribe saga when `isUtilityFooterReady` composes true, by its
- * bounded fallback, or on subscription teardown (see
- * `shouldDeferTranscriptReveal` in chat-panel-visibility.ts).
- */
-export const selectAwaitingUtilityFooter = store.createSelector(
-  (state, agentId: string): boolean =>
-    getAgentChatState(state, agentId).awaitingUtilityFooter === true,
-);
-
-/**
  * Select one lazily hydrated content block entry (§5.5 slim projection →
  * v7.2 `agent.getMessageBlock`), or undefined when never requested. Keyed by
  * `{messageId}|{blockId}` via `hydratedBlockKey`.

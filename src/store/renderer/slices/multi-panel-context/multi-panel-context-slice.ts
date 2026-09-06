@@ -1,5 +1,5 @@
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   addItem,
   createCollection,
@@ -9,8 +9,8 @@ import {
   type Collection,
   updateItem,
   upsertItem,
-} from "@augmentcode/themis/utils/collections/collection-utils";
-import { deepEqual } from "fast-equals";
+} from '@augmentcode/themis/utils/collections/collection-utils';
+import { deepEqual } from 'fast-equals';
 
 // ============================================================================
 // Types
@@ -51,15 +51,15 @@ export interface SelectionContextItem {
 // ============================================================================
 
 export type MultiPanelContextState = {
-  panels: Collection<PanelContextItem, "id">;
-  selections: Collection<SelectionContextItem, "id">;
+  panels: Collection<PanelContextItem, 'id'>;
+  selections: Collection<SelectionContextItem, 'id'>;
   currentAgentPanelId: string | null;
   workspaceId: string | null;
 };
 
 const initialState: MultiPanelContextState = {
-  panels: createCollection<PanelContextItem, "id">("id"),
-  selections: createCollection<SelectionContextItem, "id">("id"),
+  panels: createCollection<PanelContextItem, 'id'>('id'),
+  selections: createCollection<SelectionContextItem, 'id'>('id'),
   currentAgentPanelId: null,
   workspaceId: null,
 };
@@ -68,22 +68,37 @@ const initialState: MultiPanelContextState = {
 // Actions
 // ============================================================================
 
-export const setWorkspace = createAction<[workspaceId: string | null]>("multiPanelContext/setWorkspace");
-export const updatePanels = createAction<[panels: PanelContextItem[]]>("multiPanelContext/updatePanels");
-export const togglePanel = createAction<[id: string]>("multiPanelContext/togglePanel");
-export const setSelection = createAction<[selection: Omit<SelectionContextItem, 'id' | 'checked'> & { timestamp: number }]>("multiPanelContext/setSelection");
-export const clearSelection = createAction<[panelId: string, tabId: string]>("multiPanelContext/clearSelection");
-export const toggleSelection = createAction<[id: string]>("multiPanelContext/toggleSelection");
-export const addSearchedItem = createAction<[item: { id: string; type: PanelContextItem['type']; label: string; filePath?: string; noteId?: string }]>("multiPanelContext/addSearchedItem");
-
+export const setWorkspace = createAction<[workspaceId: string | null]>(
+  'multiPanelContext/setWorkspace',
+);
+export const updatePanels = createAction<[panels: PanelContextItem[]]>(
+  'multiPanelContext/updatePanels',
+);
+export const togglePanel = createAction<[id: string]>('multiPanelContext/togglePanel');
+export const setSelection = createAction<
+  [selection: Omit<SelectionContextItem, 'id' | 'checked'> & { timestamp: number }]
+>('multiPanelContext/setSelection');
+export const clearSelection = createAction<[panelId: string, tabId: string]>(
+  'multiPanelContext/clearSelection',
+);
+export const toggleSelection = createAction<[id: string]>('multiPanelContext/toggleSelection');
+export const addSearchedItem = createAction<
+  [
+    item: {
+      id: string;
+      type: PanelContextItem['type'];
+      label: string;
+      filePath?: string;
+      noteId?: string;
+    },
+  ]
+>('multiPanelContext/addSearchedItem');
 
 // ============================================================================
 // Reducer
 // ============================================================================
 
 export const multiPanelContextReducer = createReducer<MultiPanelContextState>(initialState);
-
-
 
 multiPanelContextReducer.with(setWorkspace, (state, { payload: [workspaceId] }) => {
   if (state.workspaceId === workspaceId) return state;
@@ -162,9 +177,12 @@ multiPanelContextReducer.with(clearSelection, (state, { payload: [panelId, tabId
   if (!getItem(state.selections, id)) return state;
   return {
     ...state,
-    selections: filterCollection(state.selections, (selection): selection is SelectionContextItem => {
-      return !(selection.panelId === panelId && selection.tabId === tabId);
-    }),
+    selections: filterCollection(
+      state.selections,
+      (selection): selection is SelectionContextItem => {
+        return !(selection.panelId === panelId && selection.tabId === tabId);
+      },
+    ),
   };
 });
 multiPanelContextReducer.with(toggleSelection, (state, { payload: [id] }) => {

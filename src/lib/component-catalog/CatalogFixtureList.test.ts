@@ -74,7 +74,7 @@ describe('CatalogFixtureList real previews', () => {
 
   it('keeps machine-readable fixture state out of the visual preview', () => {
     const checkboxRender = renderEntry('checkbox');
-    expect(screen.getByText('Selection required').className).toContain('text-error-foreground');
+    expect(screen.getByText('Selection required').className).toContain('text-danger');
     checkboxRender.unmount();
 
     const toggleGroupRender = renderEntry('toggle-group');

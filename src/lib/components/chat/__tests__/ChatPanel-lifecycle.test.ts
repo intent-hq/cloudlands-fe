@@ -47,6 +47,16 @@ const mocks = vi.hoisted(() => {
     agentMessages: mutableReadable<unknown[]>([]),
     agentSession: mutableReadable<unknown>(null),
     agentSessionIsStreaming: mutableReadable(false),
+    pendingProposalRecovery: mutableReadable<
+      | Record<
+          string,
+          {
+            status: 'loading' | 'found' | 'not-found' | 'error';
+            proposals?: Array<{ proposalId: string; proposal: unknown }>;
+          }
+        >
+      | undefined
+    >(undefined),
     chatError: mutableReadable<string | null>(null),
     failureCorrelation: mutableReadable<
       { turnCorrelation?: string; turnIdCorrelation?: string } | undefined
@@ -54,7 +64,6 @@ const mocks = vi.hoisted(() => {
     reportStreamLifecycle: vi.fn(),
     animateScrollTo: vi.fn(),
     awaitingSwitchBackSnapshot: mutableReadable(false),
-    awaitingUtilityFooter: mutableReadable(false),
     transcriptHydration: mutableReadable('settled'),
     transcriptHydratedOnce: mutableReadable(true),
     transcriptSnapshotMeta: mutableReadable<
@@ -82,6 +91,7 @@ const mocks = vi.hoisted(() => {
       enabled: boolean;
       onChange: (prompt: { id: string; message: unknown } | null) => void;
     } | null,
+    seekConversationToMessage: vi.fn(),
     selector,
   };
 });
@@ -135,9 +145,6 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectAwaitingSwitchBackSnapshot: Object.assign(() => mocks.awaitingSwitchBackSnapshot, {
     select: () => false,
   }),
-  selectAwaitingUtilityFooter: Object.assign(() => mocks.awaitingUtilityFooter, {
-    select: () => false,
-  }),
   selectChatError: Object.assign(() => mocks.chatError, { select: () => null }),
   selectChatFailureCorrelation: Object.assign(() => mocks.failureCorrelation, {
     select: () => undefined,
@@ -158,7 +165,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   }),
   selectHistoryExhausted: mocks.selector(false),
   selectHistorySeekUnsupported: mocks.selector(false),
-  selectPendingProposalRecovery: mocks.selector(undefined),
+  selectPendingProposalRecovery: () => mocks.pendingProposalRecovery,
   selectPendingQuestionRecovery: mocks.selector(undefined),
   selectTranscriptHydration: Object.assign(() => mocks.transcriptHydration, {
     select: () => 'settled',
@@ -308,6 +315,9 @@ vi.mock('$features/agent/services/consolidated-backend.service', () => ({
   unifiedOrchestrator: { editQueuedMessage: vi.fn() },
 }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToTask: vi.fn() }));
+vi.mock('$lib/utils/open-message', () => ({
+  seekConversationToMessage: mocks.seekConversationToMessage,
+}));
 vi.mock('../input/SimpleRichInput.svelte', async () => ({
   default: (await import('./mocks/MockSimpleRichInput.svelte')).default,
 }));
@@ -324,6 +334,9 @@ vi.mock('../AuroraBackground.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../BackgroundHooksRow.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../MonitoredPrsRow.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../questions/QuestionWizard.svelte', async () => ({
@@ -357,10 +370,12 @@ let nextFrameId: number;
 class MockChatIntersectionObserver {
   static instances: MockChatIntersectionObserver[] = [];
   callback: IntersectionObserverCallback;
+  options?: IntersectionObserverInit;
   observed = new Set<Element>();
 
-  constructor(callback: IntersectionObserverCallback) {
+  constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
     this.callback = callback;
+    this.options = options;
     MockChatIntersectionObserver.instances.push(this);
   }
 
@@ -416,6 +431,15 @@ function optimisticUserMessage(appMessageId: string, text: string) {
   };
 }
 
+function searchableAssistant(id: string, text: string) {
+  return {
+    id,
+    role: 'assistant',
+    contentBlocks: [{ type: 'text', text }],
+    timestamp: '2026-01-01T00:00:00.000Z',
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -430,6 +454,36 @@ function flushFrame() {
   const pending = frames;
   frames = [];
   for (const frame of pending) frame.callback(performance.now());
+}
+
+function installSearchHighlightSpy() {
+  const deleteHighlight = vi.fn();
+  Object.defineProperty(globalThis.CSS, 'highlights', {
+    configurable: true,
+    value: { delete: deleteHighlight, get: vi.fn(), set: vi.fn() },
+  });
+  return () => deleteHighlight.mock.calls.filter(([name]) => name === 'search-results').length;
+}
+
+async function openChatSearch(): Promise<HTMLInputElement> {
+  window.dispatchEvent(
+    new KeyboardEvent('keydown', {
+      key: 'f',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  await tick();
+  return screen.getByRole('search').querySelector('input') as HTMLInputElement;
+}
+
+async function settleSearchHighlight() {
+  await vi.advanceTimersByTimeAsync(150);
+  await tick();
+  await tick();
+  while (frames.length > 0) flushFrame();
+  await Promise.resolve();
 }
 
 beforeEach(() => {
@@ -493,10 +547,10 @@ beforeEach(() => {
   mocks.agentMessages.set([]);
   mocks.agentSession.set(null);
   mocks.agentSessionIsStreaming.set(false);
+  mocks.pendingProposalRecovery.set(undefined);
   mocks.chatError.set(null);
   mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
-  mocks.awaitingUtilityFooter.set(false);
   mocks.transcriptHydration.set('settled');
   mocks.transcriptHydratedOnce.set(true);
   mocks.transcriptSnapshotMeta.set(undefined);
@@ -520,6 +574,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  Reflect.deleteProperty(globalThis.CSS, 'highlights');
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -1699,6 +1754,264 @@ describe('ChatPanel mounted lifecycle', () => {
     );
   });
 
+  it('restarts a pending search debounce when a retained panel reactivates', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'reactivation needle')]);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: {
+        workspace: currentWorkspace,
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const search = await openChatSearch();
+    await fireEvent.input(search, { target: { value: 'needle' } });
+
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: false,
+      isPanelFocused: true,
+    });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(screen.queryByText('1 / 1')).toBeNull();
+
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: true,
+      isPanelFocused: true,
+    });
+    await settleSearchHighlight();
+    expect(screen.getByText('1 / 1')).toBeTruthy();
+    expect(highlightPasses()).toBe(1);
+  });
+
+  it('keeps one restartable search through rapid activation changes', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'rapid needle')]);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: {
+        workspace: currentWorkspace,
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    await fireEvent.input(await openChatSearch(), { target: { value: 'needle' } });
+
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: false,
+      isPanelFocused: true,
+    });
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: true,
+      isPanelFocused: true,
+    });
+    await vi.advanceTimersByTimeAsync(50);
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: false,
+      isPanelFocused: true,
+    });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(highlightPasses()).toBe(0);
+
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: true,
+      isPanelFocused: true,
+    });
+    await settleSearchHighlight();
+    expect(screen.getByText('1 / 1')).toBeTruthy();
+    expect(highlightPasses()).toBe(1);
+  });
+
+  it('does not restart search after it closes while inactive', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'closed needle')]);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: {
+        workspace: currentWorkspace,
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const search = await openChatSearch();
+    await fireEvent.input(search, { target: { value: 'needle' } });
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: false,
+      isPanelFocused: true,
+    });
+    await fireEvent.keyDown(search, { key: 'Escape' });
+
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: true,
+      isPanelFocused: true,
+    });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(screen.queryByRole('search')).toBeNull();
+    expect(highlightPasses()).toBe(0);
+  });
+
+  it('drops an inactive search restart when the agent binding changes', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'old needle')]);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: {
+        workspace: currentWorkspace,
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const search = await openChatSearch();
+    await fireEvent.input(search, { target: { value: 'needle' } });
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: false,
+      isPanelFocused: true,
+    });
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-b',
+      isActive: false,
+      isPanelFocused: true,
+    });
+    mocks.agentMessages.set([searchableAssistant('message-b', 'needle final')]);
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-b',
+      isActive: true,
+      isPanelFocused: true,
+    });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(screen.queryByText('1 / 1')).toBeNull();
+    expect(highlightPasses()).toBe(0);
+
+    await fireEvent.input(screen.getByRole('search').querySelector('input')!, {
+      target: { value: 'final' },
+    });
+    await settleSearchHighlight();
+    expect(screen.getByText('1 / 1')).toBeTruthy();
+    expect(highlightPasses()).toBe(1);
+  });
+
+  it('invalidates a late highlight generation as soon as a newer query arrives', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'old old final')]);
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const search = await openChatSearch();
+    await fireEvent.input(search, { target: { value: 'old' } });
+    await vi.advanceTimersByTimeAsync(150);
+    await tick();
+    await tick();
+    expect(screen.getByText('1 / 2')).toBeTruthy();
+
+    await fireEvent.input(search, { target: { value: 'final' } });
+    while (frames.length > 0) flushFrame();
+    await Promise.resolve();
+    await settleSearchHighlight();
+    expect(screen.getByText('1 / 1')).toBeTruthy();
+    expect(highlightPasses()).toBe(1);
+  });
+
+  it('clears restartable search work when the query returns to the published value', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'needle other')]);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: {
+        workspace: currentWorkspace,
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const search = await openChatSearch();
+    await fireEvent.input(search, { target: { value: 'needle' } });
+    await settleSearchHighlight();
+    expect(highlightPasses()).toBe(1);
+
+    await fireEvent.input(search, { target: { value: 'other' } });
+    await fireEvent.input(search, { target: { value: 'needle' } });
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: false,
+      isPanelFocused: true,
+    });
+    await view.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isActive: true,
+      isPanelFocused: true,
+    });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(highlightPasses()).toBe(1);
+  });
+
+  it('invalidates a cleared search timer callback when destroyed', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    mocks.draftGet.mockResolvedValue(null);
+    const view = render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    await fireEvent.input(await openChatSearch(), { target: { value: 'needle' } });
+    const searchTimerCall = setTimeoutSpy.mock.calls.findLastIndex(([, delay]) => delay === 150);
+    expect(searchTimerCall).toBeGreaterThanOrEqual(0);
+    const staleCallback = setTimeoutSpy.mock.calls[searchTimerCall]?.[0] as () => void;
+
+    view.unmount();
+    staleCallback();
+    await tick();
+    while (frames.length > 0) flushFrame();
+    expect(highlightPasses()).toBe(0);
+  });
+
   it('cancels pending turn highlights and open-message frames while inactive', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([
@@ -1811,6 +2124,133 @@ describe('ChatPanel mounted lifecycle', () => {
     staleHighlightCallback();
     expect(target.classList.contains('message-highlight-flash')).toBe(false);
     expect(target.classList.contains('highlight-flash')).toBe(true);
+  });
+
+  it('shows a pending-proposal chip for an off-screen inline card and scrolls to it', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    MockChatIntersectionObserver.instances = [];
+    vi.stubGlobal('IntersectionObserver', MockChatIntersectionObserver);
+    const pendingSession = {
+      id: 'agent-a',
+      status: 'idle',
+      messages: [],
+      backendSessionId: 'backend-session-a',
+      metadata: {
+        pendingProposals: [{ proposalId: 'toolu-1', messageId: 'proposal-message' }],
+      },
+    };
+    mocks.agentSession.set(pendingSession);
+    mocks.agentMessages.set([
+      {
+        id: 'proposal-message',
+        role: 'assistant',
+        content: 'Proposal',
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+
+    const message = view.container.querySelector<HTMLElement>(
+      '[data-message-id="proposal-message"]',
+    );
+    expect(message).not.toBeNull();
+    const card = document.createElement('section');
+    card.dataset.proposalKind = 'workspace-create';
+    card.dataset.applyToolCallId = 'toolu-1';
+    message?.append(card);
+    await view.rerender({
+      workspace: workspace('workspace-a'),
+      agentId: 'agent-a',
+      isActive: false,
+    });
+    await view.rerender({
+      workspace: workspace('workspace-a'),
+      agentId: 'agent-a',
+      isActive: true,
+    });
+    await tick();
+    await tick();
+
+    const shell = message?.closest('[data-lazy-turn-key]');
+    expect(shell).not.toBeNull();
+    const observer = MockChatIntersectionObserver.instances.find(
+      (candidate) => candidate.options?.threshold === 0.01 && candidate.observed.has(shell!),
+    );
+    expect(observer).toBeDefined();
+    expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
+
+    observer?.fire([{ target: shell!, isIntersecting: false }]);
+    await tick();
+    expect(screen.queryByTestId('pending-proposal-chip')).not.toBeNull();
+
+    await fireEvent.click(screen.getByTestId('pending-proposal-chip'));
+    await tick();
+    expect(frames.length).toBeGreaterThan(0);
+
+    observer?.fire([{ target: shell!, isIntersecting: true }]);
+    await tick();
+    expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
+  });
+
+  it('loads a recovered nonresident proposal message before scrolling to its inline card', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSession.set({
+      id: 'agent-a',
+      status: 'idle',
+      messages: [],
+      backendSessionId: 'backend-session-a',
+      metadata: {
+        pendingProposals: [{ proposalId: 'toolu-far', messageId: 'proposal-message-far' }],
+      },
+    });
+    mocks.agentMessages.set([
+      {
+        id: 'tail-message',
+        role: 'assistant',
+        content: 'Tail',
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    mocks.pendingProposalRecovery.set({
+      'proposal-message-far': {
+        status: 'found',
+        proposals: [
+          {
+            proposalId: 'toolu-far',
+            proposal: { kind: 'workspace-create', applyToolCallId: 'toolu-far' },
+          },
+        ],
+      },
+    });
+    mocks.seekConversationToMessage.mockImplementation(async () => {
+      mocks.agentMessages.set([
+        {
+          id: 'proposal-message-far',
+          role: 'assistant',
+          content: 'Recovered proposal',
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+      return true;
+    });
+
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    await tick();
+
+    expect(screen.queryByTestId('pending-proposal-chip')).not.toBeNull();
+    await fireEvent.click(screen.getByTestId('pending-proposal-chip'));
+    await tick();
+    flushFrame();
+    await tick();
+
+    expect(mocks.seekConversationToMessage).toHaveBeenCalledWith('agent-a', 'proposal-message-far');
+    expect(view.container.querySelector('[data-message-id="proposal-message-far"]')).not.toBeNull();
   });
 
   it('cancels draftPrompt apply and focus while inactive and restores on reactivation', async () => {
@@ -2616,16 +3056,12 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
   });
 
-  it('reveals transcript and utility footer in the same flip on switch-back', async () => {
-    // Same-paint reveal: while EITHER gate holds (here the footer gate after
-    // the snapshot gate cleared), the skeleton stays up and the utility card
-    // stays unmounted; clearing the last gate flips both in one paint.
+  it('reveals the transcript as soon as the switch-back snapshot settles', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([
       { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
     ]);
     mocks.awaitingSwitchBackSnapshot.set(true);
-    mocks.awaitingUtilityFooter.set(true);
     const view = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
     });
@@ -2634,65 +3070,44 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).toBeNull();
 
-    // The fresh snapshot applies but the footer sources are still settling:
-    // still one deferred surface — no partial reveal.
+    // Utility reads are not part of this transition: the fresh transcript
+    // snapshot is the only reveal condition.
     mocks.awaitingSwitchBackSnapshot.set(false);
-    await tick();
-    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).toBeNull();
-
-    // Footer ready: transcript and utility card mount in the SAME flip.
-    mocks.awaitingUtilityFooter.set(false);
     await tick();
     expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
     expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).not.toBeNull();
   });
 
-  it('reveals transcript and utility footer in the same flip on first open', async () => {
-    // First open: hydration settles (latch true) with the footer gate armed —
-    // the skeleton keeps covering until the footer sources settle, then both
-    // reveal together.
+  it('reveals the transcript immediately after first-open hydration settles', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([
       { id: 'm1', role: 'assistant', content: 'first', timestamp: '2026-01-01T00:00:00.000Z' },
     ]);
-    mocks.awaitingUtilityFooter.set(true);
     const view = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
     });
     await tick();
 
-    expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-conversation-turn]')).toBeNull();
-    expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).toBeNull();
-
-    mocks.awaitingUtilityFooter.set(false);
-    await tick();
     expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
     expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="event-subscriptions-card"]')).not.toBeNull();
   });
 
-  it('reveals without the footer when the bounded fallback clears the gates', async () => {
-    // Fallback (footer sources never settled in the window): the saga clears
-    // both flags — the transcript reveals and the (empty-data) card mounts
-    // hidden; late footer data pops in afterwards (out of scope here).
+  it('reveals when bounded recovery clears a missing switch-back snapshot', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([
       { id: 'm1', role: 'assistant', content: 'retained', timestamp: '2026-01-01T00:00:00.000Z' },
     ]);
     mocks.awaitingSwitchBackSnapshot.set(true);
-    mocks.awaitingUtilityFooter.set(true);
     const view = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
     });
     await tick();
     expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).not.toBeNull();
 
-    // chatSwitchBackRevealTimedOut clears BOTH gates in the reducer.
+    // chatSwitchBackRevealTimedOut clears the transcript snapshot gate.
     mocks.awaitingSwitchBackSnapshot.set(false);
-    mocks.awaitingUtilityFooter.set(false);
     await tick();
     expect(view.container.querySelector('[data-testid="chat-transcript-skeleton"]')).toBeNull();
     expect(view.container.querySelector('[data-conversation-turn]')).not.toBeNull();
@@ -2885,5 +3300,81 @@ describe('ChatPanel mounted lifecycle', () => {
 
     // Hidden IMMEDIATELY — no quiet-window timer needed.
     expect(view.container.querySelector('[data-testid="chat-older-history-loading"]')).toBeNull();
+  });
+
+  it('does not commit the empty-chat entry while the transcript is hydrating', async () => {
+    // Regression (blank transcript on workspace switch-back): only the active
+    // and the most-recently-inactive surfaces are retained, so switching back
+    // to an older workspace remounts ChatPanel fresh. The mount-time entry
+    // frame used to treat a still-empty store (hydration in flight) as an
+    // empty chat — scrollTop 0, follow off — ahead of the hydration that
+    // fills it. The first-hydration snap must be the only entry commit.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.transcriptHydration.set('loading');
+    mocks.transcriptHydratedOnce.set(false);
+    mocks.awaitingSwitchBackSnapshot.set(true);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    // Emulate the browser's clamp to the scrollable range and record every
+    // programmatic write so an entry commit is observable even at 0.
+    const scrollTopWrites: number[] = [];
+    let scrollTopValue = 0;
+    Object.defineProperty(scrollContainer, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTopValue,
+      set(value: number) {
+        scrollTopWrites.push(value);
+        const max = Math.max(0, this.scrollHeight - this.clientHeight);
+        scrollTopValue = Math.max(0, Math.min(value, max));
+      },
+    });
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    // Mount-time entry frame: the store is still empty and the container is
+    // collapsed. Nothing may be committed yet.
+    flushFrame();
+    expect(scrollTopWrites).toEqual([]);
+    expect(scrollToBottomUtil).not.toHaveBeenCalled();
+
+    // Hydration lands a multi-row transcript before the rows are laid out.
+    mocks.transcriptHydration.set('settled');
+    mocks.transcriptHydratedOnce.set(true);
+    mocks.awaitingSwitchBackSnapshot.set(false);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'user', content: 'one', timestamp: '2026-01-01T00:00:00.000Z' },
+      { id: 'm2', role: 'assistant', content: 'two', timestamp: '2026-01-01T00:00:01.000Z' },
+      { id: 'm3', role: 'user', content: 'three', timestamp: '2026-01-01T00:00:02.000Z' },
+    ]);
+    await tick();
+    await tick();
+    expect(mocks.followBottomOptions?.follow).toBe(true);
+    expect(scrollToBottomUtil).toHaveBeenCalledWith(scrollContainer);
+  });
+
+  it('still enters a settled-empty transcript at the top', async () => {
+    // Guard for the genuinely-empty chat: hydration settled with no messages
+    // and no conversation evidence keeps the top entry (specialist switcher
+    // visible).
+    mocks.draftGet.mockResolvedValue(null);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 800 },
+      clientHeight: { configurable: true, value: 500 },
+    });
+    scrollContainer.scrollTop = 120;
+    await tick();
+    await Promise.resolve();
+    await tick();
+    flushFrame();
+
+    expect(scrollContainer.scrollTop).toBe(0);
+    expect(scrollToBottomUtil).not.toHaveBeenCalled();
   });
 });
