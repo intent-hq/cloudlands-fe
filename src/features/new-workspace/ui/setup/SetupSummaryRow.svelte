@@ -5,7 +5,11 @@
   import type { DraftSource, WorkspaceDraftConfig } from '$shared/types/workspace-draft';
   import type { ControllerState } from '../../controller';
   import { projectDescription, projectName } from './project-section';
-  import { hasModifiedOptions, readinessState } from './setup-sections';
+  import {
+    defaultSetupScriptForSource,
+    hasModifiedOptions,
+    readinessState,
+  } from './setup-sections';
 
   interface Props {
     source: DraftSource | null;
@@ -16,7 +20,11 @@
 
   let { source, config, capabilities, onExpand }: Props = $props();
   const readiness = $derived(readinessState(capabilities));
-  const optionsModified = $derived(hasModifiedOptions(source, config));
+  const optionsModified = $derived(
+    hasModifiedOptions(source, config, {
+      setupScript: source ? defaultSetupScriptForSource(source) : undefined,
+    }),
+  );
   const readinessLabel = $derived(
     readiness === 'ready'
       ? m.newWorkspace_capabilities_ready_label()

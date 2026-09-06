@@ -3276,6 +3276,7 @@
   "newWorkspace_setup_title": "工作區設定",
   "newWorkspace_setup_panel_title": "設定專案",
   "newWorkspace_setup_panel_description": "選擇開始位置。選擇期間仍可繼續輸入。",
+  "newWorkspace_setup_changeProject_label": "變更",
   "newWorkspace_setup_project_title": "專案",
   "newWorkspace_setup_startingPoint_title": "起點",
   "newWorkspace_setup_issues_label": "議題",

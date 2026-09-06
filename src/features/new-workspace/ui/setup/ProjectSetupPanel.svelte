@@ -84,7 +84,7 @@
       <Fa icon={faChevronUp} class="mt-1 size-3.5 shrink-0 text-muted-foreground" />
     </button>
     <div id="project-setup-content" class="border-t border-border px-4 py-4">
-      <ProjectSection {disabled} {onOpenPicker} onSelectSource={onSourceSelected} />
+      <ProjectSection {source} {disabled} {onOpenPicker} onSelectSource={onSourceSelected} />
       {#if source && source.kind !== 'newFolder'}
         <StartingPointSection {source} {intentText} {contextLinks} {disabled} {onEdit} />
       {/if}

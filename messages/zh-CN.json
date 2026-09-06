@@ -3276,6 +3276,7 @@
   "newWorkspace_setup_title": "工作区设置",
   "newWorkspace_setup_panel_title": "设置项目",
   "newWorkspace_setup_panel_description": "选择开始位置。选择期间仍可继续输入。",
+  "newWorkspace_setup_changeProject_label": "更改",
   "newWorkspace_setup_project_title": "项目",
   "newWorkspace_setup_startingPoint_title": "起点",
   "newWorkspace_setup_issues_label": "议题",

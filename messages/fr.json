@@ -3276,6 +3276,7 @@
   "newWorkspace_setup_title": "Configuration de l’espace de travail",
   "newWorkspace_setup_panel_title": "Configurez votre projet",
   "newWorkspace_setup_panel_description": "Choisissez votre point de départ. Vous pouvez continuer à écrire pendant ce temps.",
+  "newWorkspace_setup_changeProject_label": "Modifier",
   "newWorkspace_setup_project_title": "Projet",
   "newWorkspace_setup_startingPoint_title": "Point de départ",
   "newWorkspace_setup_issues_label": "Problèmes",

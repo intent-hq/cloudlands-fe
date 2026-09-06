@@ -39,3 +39,7 @@ export function projectDescription(source: DraftSource): string {
   if (source.kind === 'newFolder') return `${source.parentPath}/${source.name}`;
   return source.branch ?? source.url;
 }
+
+export function projectIsolation(source: DraftSource): 'worktree' | 'in-place' | null {
+  return source.kind === 'local' ? source.isolation : null;
+}

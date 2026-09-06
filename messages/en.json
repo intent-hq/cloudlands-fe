@@ -3277,6 +3277,7 @@
   "newWorkspace_setup_title": "Workspace setup",
   "newWorkspace_setup_panel_title": "Set up your project",
   "newWorkspace_setup_panel_description": "Choose where to start. You can keep typing while you decide.",
+  "newWorkspace_setup_changeProject_label": "Change",
   "newWorkspace_setup_project_title": "Project",
   "newWorkspace_setup_startingPoint_title": "Starting point",
   "newWorkspace_setup_issues_label": "Issues",

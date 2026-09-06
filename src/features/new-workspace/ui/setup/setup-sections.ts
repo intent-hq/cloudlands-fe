@@ -1,4 +1,9 @@
 import type { DraftInput } from '../../controller';
+import {
+  getLastUsedSetupScript,
+  getTemplateContent,
+  SETUP_SCRIPT_TEMPLATES,
+} from '$features/setup-scripts';
 import type { ContextLink, DraftSource, WorkspaceDraftConfig } from '$shared/types';
 import type { WorkspaceCreationRemoteSetup } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-types';
 
@@ -76,16 +81,29 @@ export function readinessState(
 export function hasModifiedOptions(
   source: DraftSource | null,
   config: WorkspaceDraftConfig,
+  defaults: { setupScript?: string } = {},
 ): boolean {
+  const setupScriptModified = Boolean(
+    config.setupScript && config.setupScript.trim() !== defaults.setupScript?.trim(),
+  );
   return (
     (source?.kind === 'local' && source.isolation === 'in-place') ||
     config.isTeamMode === false ||
     Boolean(config.model) ||
     Boolean(config.reasoningEffort) ||
-    Boolean(config.setupScript) ||
+    setupScriptModified ||
     Boolean(config.isRemote) ||
     Boolean(config.remoteSetup)
   );
+}
+
+export function defaultSetupScriptForSource(source: DraftSource): string | undefined {
+  const lastUsed = getLastUsedSetupScript(
+    sourceRepoKey(source),
+    source.kind === 'github' ? source.url : null,
+  );
+  const genericTemplate = SETUP_SCRIPT_TEMPLATES.find((template) => template.id === 'generic');
+  return lastUsed?.content ?? (genericTemplate ? getTemplateContent(genericTemplate) : undefined);
 }
 
 export function isRemoteSetup(value: unknown): value is WorkspaceCreationRemoteSetup {

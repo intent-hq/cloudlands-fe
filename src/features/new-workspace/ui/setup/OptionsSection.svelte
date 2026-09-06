@@ -13,6 +13,7 @@
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     configWith,
+    defaultSetupScriptForSource,
     hasModifiedOptions,
     isRemoteSetup,
     sourceRepoKey,
@@ -31,7 +32,9 @@
   const workspaceItems$ = selectWorkspaceItems();
   const repoKey = $derived(sourceRepoKey(source));
   const remoteSetup = $derived(isRemoteSetup(config.remoteSetup) ? config.remoteSetup : null);
-  const modified = $derived(hasModifiedOptions(source, config));
+  const modified = $derived(
+    hasModifiedOptions(source, config, { setupScript: defaultSetupScriptForSource(source) }),
+  );
   let isolationMode = $state<IsolationMode>('worktree');
   // svelte-ignore state_referenced_locally - the draft config seeds picker-local binding state
   let modelWasOverridden = $state(Boolean(config.model));

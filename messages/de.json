@@ -3276,6 +3276,7 @@
   "newWorkspace_setup_title": "Arbeitsbereich einrichten",
   "newWorkspace_setup_panel_title": "Projekt einrichten",
   "newWorkspace_setup_panel_description": "Wähle einen Ausgangspunkt. Du kannst währenddessen weiterschreiben.",
+  "newWorkspace_setup_changeProject_label": "Ändern",
   "newWorkspace_setup_project_title": "Projekt",
   "newWorkspace_setup_startingPoint_title": "Startpunkt",
   "newWorkspace_setup_issues_label": "Probleme",

@@ -3276,6 +3276,7 @@
   "newWorkspace_setup_title": "ワークスペースの設定",
   "newWorkspace_setup_panel_title": "プロジェクトをセットアップ",
   "newWorkspace_setup_panel_description": "開始場所を選択してください。選んでいる間も入力を続けられます。",
+  "newWorkspace_setup_changeProject_label": "変更",
   "newWorkspace_setup_project_title": "プロジェクト",
   "newWorkspace_setup_startingPoint_title": "開始点",
   "newWorkspace_setup_issues_label": "Issue",

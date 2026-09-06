@@ -78,5 +78,11 @@ describe('setup section draft mappings', () => {
     expect(hasModifiedOptions(source, { specialist: 'implementor', isTeamMode: false })).toBe(true);
     expect(hasModifiedOptions(source, { reasoningEffort: 'high' })).toBe(true);
     expect(hasModifiedOptions({ ...source, isolation: 'in-place' }, {})).toBe(true);
+    expect(
+      hasModifiedOptions(source, { setupScript: 'echo default' }, { setupScript: 'echo default' }),
+    ).toBe(false);
+    expect(
+      hasModifiedOptions(source, { setupScript: 'echo custom' }, { setupScript: 'echo default' }),
+    ).toBe(true);
   });
 });
