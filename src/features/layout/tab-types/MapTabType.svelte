@@ -148,11 +148,29 @@
     bind:clientWidth={canvasWidth}
     bind:clientHeight={canvasHeight}
   >
-    {#if $mapState.source === 'structural'}
+    {#if $mapState.hydrationStatus === 'idle' || $mapState.hydrationStatus === 'loading'}
+      <p
+        class="absolute inset-0 z-10 flex items-center justify-center text-sm text-muted-foreground"
+        role="status"
+        aria-live="polite"
+      >
+        {m.semanticMap_panel_loading_description()}
+      </p>
+    {:else if $mapState.hydrationStatus === 'error'}
+      <p
+        class="absolute inset-0 z-10 flex items-center justify-center text-sm text-destructive"
+        role="alert"
+      >
+        {m.semanticMap_panel_error_description()}
+      </p>
+    {/if}
+    {#if $mapState.hydrationStatus === 'loaded' && $mapState.source === 'structural'}
       <p
         class="absolute left-5 top-5 z-10 rounded bg-background/90 px-2 py-1 text-xs text-muted-foreground"
+        data-testid="semantic-map-source-hint"
+        data-map-source="structural"
       >
-        {m.semanticMap_canvas_selectionNone_description()}
+        {m.semanticMap_panel_structuralHint_description()}
       </p>
     {/if}
     {#if $mapState.manifest && geometry}

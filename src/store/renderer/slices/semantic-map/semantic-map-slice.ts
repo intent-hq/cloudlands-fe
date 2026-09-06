@@ -16,7 +16,10 @@ export interface SemanticMapTimeWindow {
   endTs: string | null;
 }
 
+export type SemanticMapHydrationStatus = 'idle' | 'loading' | 'loaded' | 'error';
+
 export interface SemanticMapWorkspaceState {
+  hydrationStatus: SemanticMapHydrationStatus;
   manifest: Manifest | null;
   source: MapSource | null;
   activities: MapActivity[];
@@ -34,6 +37,7 @@ export interface SemanticMapState {
 }
 
 export const emptySemanticMapWorkspaceState: SemanticMapWorkspaceState = {
+  hydrationStatus: 'idle',
   manifest: null,
   source: null,
   activities: [],
@@ -54,6 +58,9 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWork
 
 export const semanticMapLoaded =
   createAction<[workspaceId: string, manifest: Manifest, source: MapSource]>('semanticMap/loaded');
+export const semanticMapLoadStarted =
+  createAction<[workspaceId: string]>('semanticMap/loadStarted');
+export const semanticMapLoadFailed = createAction<[workspaceId: string]>('semanticMap/loadFailed');
 export const semanticMapActivitiesLoaded = createAction<
   [workspaceId: string, activities: MapActivity[]]
 >('semanticMap/activitiesLoaded');
@@ -90,13 +97,32 @@ export const semanticMapCleared = createAction<[workspaceId: string]>('semanticM
 
 export const semanticMapReducer = createReducer<SemanticMapState>(initialState);
 
+semanticMapReducer.with(semanticMapLoadStarted, (state, { payload: [workspaceId] }) => {
+  const workspaceState = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, {
+    ...workspaceState,
+    hydrationStatus: 'loading',
+  });
+});
 semanticMapReducer.with(
   semanticMapLoaded,
   (state, { payload: [workspaceId, manifest, source] }) => {
     const workspaceState = getWorkspaceState(state, workspaceId);
-    return setWorkspaceState(state, workspaceId, { ...workspaceState, manifest, source });
+    return setWorkspaceState(state, workspaceId, {
+      ...workspaceState,
+      hydrationStatus: 'loaded',
+      manifest,
+      source,
+    });
   },
 );
+semanticMapReducer.with(semanticMapLoadFailed, (state, { payload: [workspaceId] }) => {
+  const workspaceState = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, {
+    ...workspaceState,
+    hydrationStatus: 'error',
+  });
+});
 semanticMapReducer.with(
   semanticMapActivitiesLoaded,
   (state, { payload: [workspaceId, activities] }) => {

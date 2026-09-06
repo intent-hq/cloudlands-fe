@@ -13,6 +13,8 @@ import {
   semanticMapActivitiesLoaded,
   semanticMapActivityReceived,
   semanticMapCleared,
+  semanticMapLoadFailed,
+  semanticMapLoadStarted,
   semanticMapLoaded,
   semanticMapRefreshRequested,
   semanticMapRouteLoaded,
@@ -29,6 +31,7 @@ type MapReadAction =
 
 function* readMapWorker(action: MapReadAction) {
   const [workspaceId] = action.payload;
+  yield* put(semanticMapLoadStarted(workspaceId));
   try {
     const snapshot: Awaited<ReturnType<SemanticMapClient['get']>> = yield* call(
       [client, client.get],
@@ -44,6 +47,7 @@ function* readMapWorker(action: MapReadAction) {
       yield* put(semanticMapActivitiesLoaded(workspaceId, activities));
     }
   } catch (error) {
+    yield* put(semanticMapLoadFailed(workspaceId));
     logger.warn('Semantic map hydration failed', { workspaceId, error });
   }
 }

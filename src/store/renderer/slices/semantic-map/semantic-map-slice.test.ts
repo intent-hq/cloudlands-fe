@@ -9,6 +9,8 @@ import {
   semanticMapAgentFilterChanged,
   semanticMapCleared,
   semanticMapKindFilterChanged,
+  semanticMapLoadFailed,
+  semanticMapLoadStarted,
   semanticMapLoaded,
   semanticMapReducer,
   semanticMapRouteLoaded,
@@ -34,13 +36,31 @@ describe('semanticMapReducer', () => {
   });
 
   it('stores the daemon manifest and source for one workspace', () => {
-    const state = semanticMapReducer(
-      initialState,
+    let state = semanticMapReducer(initialState, semanticMapLoadStarted(WORKSPACE_ID));
+    expect(state.byWorkspaceId[WORKSPACE_ID].hydrationStatus).toBe('loading');
+
+    state = semanticMapReducer(
+      state,
       semanticMapLoaded(WORKSPACE_ID, SEMANTIC_MAP_FIXTURE_MANIFEST, 'curated'),
     );
 
+    expect(state.byWorkspaceId[WORKSPACE_ID].hydrationStatus).toBe('loaded');
     expect(state.byWorkspaceId[WORKSPACE_ID].manifest).toBe(SEMANTIC_MAP_FIXTURE_MANIFEST);
     expect(state.byWorkspaceId[WORKSPACE_ID].source).toBe('curated');
+  });
+
+  it('exposes hydration failure without replacing the last daemon snapshot', () => {
+    let state = semanticMapReducer(
+      initialState,
+      semanticMapLoaded(WORKSPACE_ID, SEMANTIC_MAP_FIXTURE_MANIFEST, 'structural'),
+    );
+    state = semanticMapReducer(state, semanticMapLoadFailed(WORKSPACE_ID));
+
+    expect(state.byWorkspaceId[WORKSPACE_ID]).toMatchObject({
+      hydrationStatus: 'error',
+      manifest: SEMANTIC_MAP_FIXTURE_MANIFEST,
+      source: 'structural',
+    });
   });
 
   it('caps both loaded and incrementally received activity at 5,000 newest entries', () => {
