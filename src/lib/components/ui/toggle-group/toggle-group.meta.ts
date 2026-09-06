@@ -15,6 +15,7 @@ export const toggleGroupMetadata = {
     'src/lib/component-catalog/CatalogControls.svelte',
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
     'src/lib/components/settings/ColorThemeSettings.svelte',
+    'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/toggle-group/toggle-group.test.ts',

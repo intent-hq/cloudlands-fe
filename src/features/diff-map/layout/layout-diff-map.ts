@@ -28,7 +28,7 @@ export interface DiffMapLayoutRow extends LayoutRect {
   label: string;
 }
 
-export interface DiffMapLayoutColumn extends LayoutRect {
+interface DiffMapLayoutColumn extends LayoutRect {
   rows: DiffMapLayoutRow[];
 }
 
@@ -41,7 +41,7 @@ export interface DiffMapLayoutBlock extends LayoutRect {
   columns: DiffMapLayoutColumn[];
 }
 
-export interface DiffMapLayoutSection extends LayoutRect {
+interface DiffMapLayoutSection extends LayoutRect {
   sectionId: string;
   label: string;
 }

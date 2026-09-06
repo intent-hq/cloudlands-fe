@@ -699,7 +699,7 @@ export const DiagramPrimitiveSchema = BasePrimitiveSchema.extend({
   currentStateId: z.string().optional(),
 });
 
-export const DiffMapPrimitiveSchema = BasePrimitiveSchema.extend({
+const DiffMapPrimitiveSchema = BasePrimitiveSchema.extend({
   type: z.literal('diffmap'),
   document: z.record(z.unknown()),
 });
