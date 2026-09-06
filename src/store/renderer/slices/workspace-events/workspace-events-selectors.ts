@@ -13,3 +13,31 @@ export const selectEventsLoading = store.createSelector<[workspaceId: string], b
     return (state.workspaceEvents.byWorkspaceId[workspaceId] ?? emptyWorkspaceEventsState).loading;
   },
 );
+
+export const selectOlderEventsNextToken = store.createSelector<
+  [workspaceId: string],
+  string | null
+>((state, workspaceId) => {
+  return (state.workspaceEvents.byWorkspaceId[workspaceId] ?? emptyWorkspaceEventsState).nextToken;
+});
+
+export const selectOlderEventsLoading = store.createSelector<[workspaceId: string], boolean>(
+  (state, workspaceId) => {
+    return (state.workspaceEvents.byWorkspaceId[workspaceId] ?? emptyWorkspaceEventsState)
+      .loadingOlder;
+  },
+);
+
+export const selectOlderEventsError = store.createSelector<[workspaceId: string], string | null>(
+  (state, workspaceId) => {
+    return (state.workspaceEvents.byWorkspaceId[workspaceId] ?? emptyWorkspaceEventsState)
+      .olderError;
+  },
+);
+
+export const selectOlderEventsEndReached = store.createSelector<[workspaceId: string], boolean>(
+  (state, workspaceId) => {
+    return (state.workspaceEvents.byWorkspaceId[workspaceId] ?? emptyWorkspaceEventsState)
+      .endReached;
+  },
+);

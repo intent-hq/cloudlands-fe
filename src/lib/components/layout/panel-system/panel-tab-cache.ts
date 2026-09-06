@@ -9,7 +9,7 @@ export type PanelTabCacheTab = { id: string; type?: string; ownerAgentId?: strin
  * lifetime (monorepo#2857): always cached (even before first activation),
  * exempt from TTL eviction and from the inactive-tab cap.
  */
-function isAlwaysMountedTab(tab: PanelTabCacheTab): boolean {
+export function isAlwaysMountedTab(tab: PanelTabCacheTab): boolean {
   return (
     tab.type === 'browser' && typeof tab.ownerAgentId === 'string' && tab.ownerAgentId.length > 0
   );

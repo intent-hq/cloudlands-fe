@@ -592,7 +592,6 @@ const SHORTCUT_IDS_BY_CATEGORY: Record<ShortcutCategory, readonly ShortcutId[]> 
     'leader.navigate-panels',
     'leader.resize-panels',
     'leader.split-right',
-    'leader.split-down',
     'leader.toggle-zoom',
     'leader.close-panel',
     'leader.next-previous-panel',
@@ -934,13 +933,6 @@ export const SHORTCUT_CATEGORIES: Record<
         key: '%',
         get label() {
           return m.ui_shortcuts_splitRight_label();
-        },
-        contexts: ['panel'],
-      },
-      {
-        key: '"',
-        get label() {
-          return m.ui_shortcuts_splitDown_label();
         },
         contexts: ['panel'],
       },

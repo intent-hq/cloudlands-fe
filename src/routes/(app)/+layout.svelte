@@ -103,7 +103,11 @@
   import { onDestroy, onMount, untrack } from 'svelte';
 
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
-  import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
+  import {
+    preloadRestoredTabTypes,
+    registerAllTabTypes,
+  } from '$features/layout/tab-types/register-all';
+  import { selectPanelLayoutWorkspaces } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import RootQuakeTerminalOverlay from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
@@ -149,6 +153,7 @@
   const releaseNotes$ = selectReleaseNotes();
   const currentConnection$ = selectCurrentConnection();
   const shellTransparencyEnabled$ = selectShellTransparencyEnabled();
+  const panelLayouts = selectPanelLayoutWorkspaces();
   const applicationShellTint = $derived(
     connectionShellTint($currentConnection$?.accent, $currentConnection$?.isLocal ?? true),
   );
@@ -156,6 +161,10 @@
   // Register all tab types early
   // This must happen before any panels are rendered
   registerAllTabTypes();
+
+  $effect(() => {
+    if (workspaceId) void preloadRestoredTabTypes($panelLayouts[workspaceId]);
+  });
 
   // Preload the diff highlighter early to avoid blocking when opening first diff
   // This runs during idle time and doesn't block the main thread

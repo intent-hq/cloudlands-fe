@@ -1,4 +1,5 @@
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
+import { antigravitySetupReducer } from './slices/antigravity-setup/antigravity-setup-slice';
 import { providerCatalogReducer } from './slices/provider-catalog/provider-catalog-slice';
 import { providerModelsReducer } from './slices/provider-models/provider-models-slice';
 import { backgroundAgentSettingsReducer } from './slices/background-agent-settings/background-agent-settings-slice';
@@ -94,6 +95,7 @@ import { workspaceImportReducer } from './slices/workspace-import/workspace-impo
 
 export const reducers = {
   providerSettings: providerSettingsReducer,
+  antigravitySetup: antigravitySetupReducer,
   providerCatalog: providerCatalogReducer,
   providerModels: providerModelsReducer,
   backgroundAgentSettings: backgroundAgentSettingsReducer,

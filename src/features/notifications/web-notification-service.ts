@@ -37,6 +37,7 @@
 import { store as appStore } from '$store/renderer/store';
 import type { StoreState } from '$store/renderer/types';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { readSetting } from '$lib/client/live/live-settings-client';
 import { createLogger } from '$lib/utils/client-logger';
 import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { m } from '$shared/paraglide/messages.js';
@@ -144,8 +145,8 @@ async function fetchNotificationPrefs(): Promise<NotificationPrefs> {
   };
   try {
     const [enabled, soundOnlyWhenUnfocused] = await Promise.all([
-      backendRequest('settings.get', { path: SETTING_PATH_ENABLED }),
-      backendRequest('settings.get', { path: SETTING_PATH_SOUND_ONLY_WHEN_UNFOCUSED }),
+      readSetting(SETTING_PATH_ENABLED),
+      readSetting(SETTING_PATH_SOUND_ONLY_WHEN_UNFOCUSED),
     ]);
     const enabledValue = (enabled as { value?: unknown } | null)?.value;
     const soundValue = (soundOnlyWhenUnfocused as { value?: unknown } | null)?.value;

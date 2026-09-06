@@ -210,6 +210,8 @@ const ALLOWED_CHANNELS = [
   'grok:get-models',
   'unsloth:get-models',
   'antigravity:get-models',
+  'antigravity:setup',
+  'antigravity:close-setup',
   'providers:get-availability',
   'providers:get-paths',
   'providers:check-single',

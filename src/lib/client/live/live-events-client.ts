@@ -15,6 +15,8 @@
  */
 import type { WorkspaceEvent } from '$features/events/types';
 import type {
+  EventQueryPage,
+  EventQueryPageOptions,
   EventQueryOptions,
   EventsClient,
   SubscriptionHandler,
@@ -37,6 +39,17 @@ export class LiveEventsClient implements EventsClient {
       ...options,
     });
     return Array.isArray(result) ? (result as WorkspaceEvent[]) : [];
+  }
+
+  async queryPage(
+    workspaceId: string,
+    options: EventQueryPageOptions = {},
+  ): Promise<EventQueryPage> {
+    return backendRequest<EventQueryPage>('event.query', {
+      workspaceId,
+      ...options,
+      paginate: true,
+    });
   }
 
   subscribe(workspaceId: string, handler: SubscriptionHandler<WorkspaceEvent[]>): Unsubscribe {

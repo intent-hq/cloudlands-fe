@@ -36,6 +36,7 @@
     renameTerminal,
     selectScript,
     clearScriptSelection,
+    setTerminalPlacement,
     type TerminalTab,
   } from '$store/renderer/slices/terminals/terminals-slice';
   import { appClient } from '$lib/client';
@@ -110,7 +111,6 @@
 
   // Store bindings
   const isOpen = selectIsTerminalOverlayOpenForWorkspace(workspaceIdStore);
-  const height = selectTerminalOverlayHeight();
   const activeTerminalId = selectActiveTerminalIdForWorkspace(workspaceIdStore);
   const terminals = selectTerminalsForWorkspace(workspaceIdStore);
   const workspaceTerminalState$ = selectWorkspaceTerminalState(workspaceIdStore);
@@ -130,6 +130,11 @@
   const terminalWorkspaceId = $derived(
     workspaceId === 'new' ? ROOT_WORKSPACE_ID : (workspaceId ?? ROOT_WORKSPACE_ID),
   );
+  // The overlay height follows the terminal's workspace so onboarding shares
+  // the root terminal's height rather than persisting a separate one.
+  const heightWorkspaceIdStore = writable<string>(ROOT_WORKSPACE_ID);
+  $effect(() => heightWorkspaceIdStore.set(terminalWorkspaceId));
+  const height = selectTerminalOverlayHeight(heightWorkspaceIdStore);
 
   // UI state
   let isResizing = $state(false);
@@ -535,6 +540,7 @@
         workspaceId,
         closable: true,
       });
+      appStore.dispatch(setTerminalPlacement(workspaceId, selectedScript.id, 'panel'));
     } else if (activeTerminal) {
       getPanelLayoutManager(workspaceId).openUserTab({
         type: 'terminal',
@@ -543,6 +549,7 @@
         workspaceId,
         closable: true,
       });
+      appStore.dispatch(setTerminalPlacement(workspaceId, activeTerminal.id, 'panel'));
     } else {
       return;
     }
@@ -893,7 +900,8 @@
     getHeight: () => $height,
     setPreviewHeight: (height) => (resizePreviewHeight = height),
     setResizing: (resizing) => (isResizing = resizing),
-    commitHeight: (height) => appStore.dispatch(setTerminalOverlayHeight(height)),
+    commitHeight: (height) =>
+      appStore.dispatch(setTerminalOverlayHeight(terminalWorkspaceId, height)),
   });
 
   // ============================================================================
@@ -1484,14 +1492,15 @@
                       handleClose();
                     } else if (workspaceId) {
                       if ($terminals.length === 0) createNewTerminal();
-                      appStore.dispatch(openTerminalOverlay(workspaceId));
                       const entries = selectWorkspaceScriptEntries.select(
                         appStore.state,
                         workspaceId,
                       );
+                      // Select first so the open records placement for what is shown.
                       if (entries.length > 0 && !selectedScriptId) {
                         setSelectedScript(entries[0].id);
                       }
+                      appStore.dispatch(openTerminalOverlay(workspaceId));
                     }
                   }}
                 >

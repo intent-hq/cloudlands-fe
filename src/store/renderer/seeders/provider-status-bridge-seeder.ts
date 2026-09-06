@@ -65,12 +65,9 @@ import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
 import { CODEX_ADAPTER_MISSING_WARNING } from '$shared/constants/codex';
 import { m } from '$shared/paraglide/messages.js';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { getProviderAuthVerdicts } from '$features/providers/provider-auth-status.client';
 import {
-  PROVIDER_AUTH_STATUS_METHOD,
-  buildProviderAuthStatusParams,
-  toAuthVerdictMap,
   type ProviderAuthStatusParams,
-  type ProviderAuthStatusResponse,
   type ProviderAuthVerdict,
 } from '$shared/provider-auth-status';
 import {
@@ -125,11 +122,7 @@ async function getAuthVerdicts(
   options: ProviderAuthStatusParams = {},
 ): Promise<Record<string, ProviderAuthVerdict>> {
   try {
-    const response = await backendRequest<ProviderAuthStatusResponse>(
-      PROVIDER_AUTH_STATUS_METHOD,
-      buildProviderAuthStatusParams(options),
-    );
-    return toAuthVerdictMap(response);
+    return await getProviderAuthVerdicts(options);
   } catch {
     return {};
   }

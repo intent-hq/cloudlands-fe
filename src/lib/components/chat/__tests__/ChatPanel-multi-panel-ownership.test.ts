@@ -115,7 +115,6 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectAwaitingSwitchBackSnapshot: testState.selector(false),
-  selectAwaitingUtilityFooter: testState.selector(false),
   selectChatError: testState.selector(null),
   selectChatFailureCorrelation: testState.selector(undefined),
   selectChatLastChunkTime: testState.selector(null),
@@ -249,10 +248,11 @@ vi.mock('$lib/components/workspace/creation/WorkspaceSetupCard.svelte', async ()
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 
+import ChatPanel from '../ChatPanel.svelte';
+
 const workspace = { id: 'ws-1', title: 'Workspace' };
 
 async function renderChatPanel(isActive: boolean, targetWorkspace = workspace) {
-  const ChatPanel = (await import('../ChatPanel.svelte')).default;
   render(ChatPanel, { props: { workspace: targetWorkspace, agentId: 'agent-1', isActive } });
   await Promise.resolve();
 }

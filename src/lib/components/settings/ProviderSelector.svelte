@@ -65,6 +65,9 @@
   import Button from '../ui/button/button.svelte';
   import DropdownMenu from '../ui/dropdown-menu.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import AntigravityConnect from '$features/antigravity/AntigravityConnect.svelte';
+  import { selectAntigravitySetupPolicy } from '$store/renderer/slices/antigravity-setup/antigravity-setup-selectors';
+  const antigravitySetupPolicy$ = selectAntigravitySetupPolicy();
 
   const logger = createLogger('ProviderSelector');
   const activeProviderId = selectActiveProviderId();
@@ -227,6 +230,12 @@
   }
 
   function handleToggleProvider(providerId: string, enabled: boolean) {
+    if (
+      enabled &&
+      providerId === 'antigravity' &&
+      !selectAntigravitySetupPolicy.select(appStore.state).canEnable
+    )
+      return;
     if (!enabled) {
       const reason = $providerInUseReasons$[providerId];
       if (reason) {
@@ -491,11 +500,16 @@
             {@const canManageEnablement = canManageProviderEnablement(provider.id)}
             {@const inUseReason = $providerInUseReasons$[provider.id] ?? null}
             {@const canDisable = canManageEnablement && !isActive && isEnabled}
-            {@const canEnable = canManageEnablement && !isActive && !isEnabled && isReady}
+            {@const canEnable =
+              canManageEnablement &&
+              !isActive &&
+              !isEnabled &&
+              isReady &&
+              (provider.id !== 'antigravity' || $antigravitySetupPolicy$.canEnable)}
             {@const needsLogin = provider.available && provider.authenticated === false}
-            {@const canLogIn = needsLogin && provider.loginDocsUrl}
+            {@const canLogIn = provider.id !== 'antigravity' && needsLogin && provider.loginDocsUrl}
             {@const canSetDefault = provider.available && !isActive && isReady}
-            {@const canInstall = !provider.available}
+            {@const canInstall = provider.id !== 'antigravity' && !provider.available}
             {@const hasPiAdapterWarning =
               !provider.statusPending &&
               provider.id === 'pi' &&
@@ -838,6 +852,9 @@
                   </div>
                 </div>
               </div>
+              {#if provider.id === 'antigravity'}
+                <AntigravityConnect ready={isReady} />
+              {/if}
             </div>
           {/each}
         </div>

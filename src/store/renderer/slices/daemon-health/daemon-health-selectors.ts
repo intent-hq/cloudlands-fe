@@ -23,6 +23,24 @@ export const selectDaemonHealthLastUpdated = store.createSelector(
   (state) => state.daemonHealth.lastUpdated,
 );
 
+/**
+ * Context for the failed system.status poll behind a degraded health, or
+ * null while checks succeed (#4439). Pair with `selectDaemonHealthLastUpdated`
+ * for last-success freshness.
+ */
+export const selectDaemonStatusCheckFailure = store.createSelector(
+  (state) => state.daemonHealth.statusCheckFailure,
+);
+
+/**
+ * Connection lifecycle counter a system.status poll captures before its
+ * request so the reducer can discard the result if the connection changed
+ * meanwhile (see DaemonHealthState.connectionGeneration).
+ */
+export const selectDaemonConnectionGeneration = store.createSelector(
+  (state) => state.daemonHealth.connectionGeneration,
+);
+
 /** Last-known transport info; survives disconnects (see DaemonHealthState.transport). */
 export const selectDaemonTransport = store.createSelector((state) => state.daemonHealth.transport);
 

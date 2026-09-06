@@ -557,6 +557,9 @@ export default defineConfig(({ command, mode, isPreview }) => {
 
     define: {
       'process.env.IS_ELECTRON': JSON.stringify(!isWebBuild),
+      // Renderer-visible build profile: a web build never receives a preload
+      // bridge, even when it is loaded inside the app's own <webview>.
+      'process.env.INTENT_BUILD_TARGET': JSON.stringify(isWebBuild ? 'web' : 'electron'),
       // Never compile production web credentials into versioned static JS.
       // /runtime-config.js is loaded before the application bootstrap instead.
       'process.env.VITE_INTENTD_WS_URL': JSON.stringify(isProductionWebBuild ? '' : browserWsUrl),

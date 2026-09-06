@@ -190,6 +190,94 @@ describe('browser-mock DEV gate', () => {
 });
 
 /**
+ * Regression tests for intent-hq/monorepo#3606: a dev Electron window must
+ * never install the browser mock over the preload bridge, even when
+ * window.electronAPI is absent at the moment the mock module evaluates
+ * (bridge presence at import time is not a safe signal). The Electron check
+ * is synchronous (user agent + build target), so preload state cannot change
+ * the outcome. The web build inside the app's own <webview> (Loop A) shares
+ * the Electron UA but never gets a preload, so it must keep the mock.
+ */
+describe('browser-mock never shadows the Electron preload bridge (monorepo#3606)', () => {
+  const ELECTRON_UA =
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Cloudlands/2.3.0 Chrome/136.0.7103.115 Electron/36.4.0 Safari/537.36';
+  const originalElectronAPI = (window as any).electronAPI;
+
+  /** Own-property override of the prototype getter; deleted in afterEach to restore jsdom's UA. */
+  function setUserAgent(value: string) {
+    Object.defineProperty(window.navigator, 'userAgent', { value, configurable: true });
+  }
+
+  beforeEach(() => {
+    delete (window as any).electronAPI;
+    vi.stubEnv('DEV', true);
+    vi.stubEnv('VITE_ENABLE_BROWSER_MOCK', '');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    delete (window.navigator as any).userAgent;
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    (window as any).electronAPI = originalElectronAPI;
+  });
+
+  it('DEV Electron renderer with no bridge yet: import does not install the mock, and the late preload bridge wins', async () => {
+    setUserAgent(ELECTRON_UA);
+    expect((window as any).electronAPI).toBeUndefined();
+
+    const { installBrowserMock, isBrowserMockEnabled } = await importBrowserMock();
+
+    // The DEV gate is open, yet the auto-install on import must not have fired.
+    expect(isBrowserMockEnabled()).toBe(true);
+    expect((window as any).electronAPI).toBeUndefined();
+    expect(installBrowserMock()).toBe(false);
+    expect((window as any).electronAPI).toBeUndefined();
+
+    // The real bridge, whenever it lands, is installed unopposed and stays
+    // the bridge.
+    const realBridge = { invoke: vi.fn(), versions: { electron: '36.4.0' } };
+    (window as any).electronAPI = realBridge;
+    expect(installBrowserMock()).toBe(false);
+    expect((window as any).electronAPI).toBe(realBridge);
+  });
+
+  it('explicit VITE_ENABLE_BROWSER_MOCK opt-in does not override the Electron guard', async () => {
+    setUserAgent(ELECTRON_UA);
+    vi.stubEnv('DEV', false);
+    vi.stubEnv('VITE_ENABLE_BROWSER_MOCK', 'true');
+
+    const { installBrowserMock } = await importBrowserMock();
+
+    expect(installBrowserMock()).toBe(false);
+    expect((window as any).electronAPI).toBeUndefined();
+  });
+
+  it('plain browser (no Electron UA) with no bridge still installs the mock in DEV', async () => {
+    setUserAgent(
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+    );
+
+    await importBrowserMock();
+
+    const api = (window as any).electronAPI;
+    expect(api).toBeDefined();
+    expect(api.versions.electron).toBe('0.0.0-browser');
+  });
+
+  it('web build loaded inside the app <webview> (Electron UA, no preload) still installs the mock', async () => {
+    setUserAgent(ELECTRON_UA);
+    vi.stubEnv('INTENT_BUILD_TARGET', 'web');
+
+    await importBrowserMock();
+
+    const api = (window as any).electronAPI;
+    expect(api).toBeDefined();
+    expect(api.versions.electron).toBe('0.0.0-browser');
+  });
+});
+
+/**
  * Regression tests for the `backend:*` transport envelope (STAB entry: mock
  * boots hit an unhandled BackendError).
  *

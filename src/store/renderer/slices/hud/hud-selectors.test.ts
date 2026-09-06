@@ -1033,6 +1033,38 @@ describe('selectHudAttentionItems', () => {
     expect(selectHudAttnCount.select(failedRoot)).toBe(1);
   });
 
+  it('a summary-only failed background agent raises no row before session hydration (§5.1 isBackground)', () => {
+    // intent-hq/intent#3789: the §5.1 summary row carries the additive
+    // `isBackground` flag, so the gate holds with NO tracked session — the
+    // previous session-only read let the failed row through until
+    // hydration. A summary-only failed FOREGROUND root (no flag) still
+    // raises the row, proving the gate keys on the summary field alone.
+    const summaryOnly = (root: Record<string, unknown>): StoreState => {
+      const base = mockState([
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 1,
+            agentIds: ['root'],
+            agents: [{ id: 'root', name: 'Watcher', status: 'error', ...root }],
+          } as Workspace['agentSummary'],
+        }),
+      ]);
+      return {
+        ...base,
+        agentSessions: { byAgentId: {}, agentIdsByWorkspace: {} },
+      } as unknown as StoreState;
+    };
+    const background = summaryOnly({ isBackground: true });
+    expect(selectHudAttentionItems.select(background)).toEqual([]);
+    expect(selectHudAttnCount.select(background)).toBe(0);
+    const foreground = summaryOnly({});
+    expect(selectHudAttentionItems.select(foreground).map((item) => item.kind)).toEqual([
+      'agent_failed',
+    ]);
+    expect(selectHudAttnCount.select(foreground)).toBe(1);
+  });
+
   it('an attention card state whose only per-agent signal is gated out falls back to a generic row', () => {
     // Card state `failed` (BE rollup) while the only failed agent is a
     // delegated sub-agent: the gated-out agent covers nothing, so the

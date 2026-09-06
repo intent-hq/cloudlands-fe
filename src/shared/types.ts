@@ -635,6 +635,13 @@ export interface WorkspaceAgentInfo {
    * for root agents, so clients can rebuild the delegation tree.
    */
   parentAgentId?: string;
+  /**
+   * The session's persisted background flag (PROTOCOL §5.1, additive —
+   * intent-hq/intent#3789): the same value as `metadata.isBackground` on
+   * §5.5 loads, omitted when false, so the HUD can gate background agents
+   * from the summary alone before session hydration.
+   */
+  isBackground?: boolean;
 }
 
 /**

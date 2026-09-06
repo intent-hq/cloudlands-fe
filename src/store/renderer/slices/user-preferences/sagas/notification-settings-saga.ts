@@ -1,6 +1,6 @@
 import { all, call, delay, put, takeLatest } from 'typed-redux-saga';
 
-import { backendRequest } from '$lib/client/live/backend-transport';
+import { readSetting, updateSettings } from '$lib/client/live/live-settings-client';
 import { createLogger } from '$lib/utils/client-logger';
 import {
   selectNotificationEnabled,
@@ -29,10 +29,10 @@ type SettingResponse = { value?: unknown };
 export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<object>) {
   try {
     const [enabled, soundEnabled, soundOnlyWhenUnfocused, volume] = yield* all([
-      call(backendRequest, 'settings.get', { path: NOTIFICATION_PATHS.enabled }),
-      call(backendRequest, 'settings.get', { path: NOTIFICATION_PATHS.soundEnabled }),
-      call(backendRequest, 'settings.get', { path: NOTIFICATION_PATHS.soundOnlyWhenUnfocused }),
-      call(backendRequest, 'settings.get', { path: NOTIFICATION_PATHS.volume }),
+      call(readSetting, NOTIFICATION_PATHS.enabled),
+      call(readSetting, NOTIFICATION_PATHS.soundEnabled),
+      call(readSetting, NOTIFICATION_PATHS.soundOnlyWhenUnfocused),
+      call(readSetting, NOTIFICATION_PATHS.volume),
     ]);
     if (typeof (enabled as SettingResponse).value === 'boolean') {
       const action = setNotificationEnabled((enabled as { value: boolean }).value);
@@ -83,17 +83,15 @@ export function* persistNotificationSettingsWorker() {
   const soundOnlyWhenUnfocused = yield* selectSoundOnlyWhenUnfocused.effect();
   const volume = yield* selectNotificationVolume.effect();
   try {
-    yield* call(backendRequest, 'settings.update', {
-      changes: [
-        { path: NOTIFICATION_PATHS.enabled, value: enabled ?? true },
-        { path: NOTIFICATION_PATHS.soundEnabled, value: soundEnabled ?? true },
-        {
-          path: NOTIFICATION_PATHS.soundOnlyWhenUnfocused,
-          value: soundOnlyWhenUnfocused ?? false,
-        },
-        { path: NOTIFICATION_PATHS.volume, value: volume ?? 0.5 },
-      ],
-    });
+    yield* call(updateSettings, [
+      { path: NOTIFICATION_PATHS.enabled, value: enabled ?? true },
+      { path: NOTIFICATION_PATHS.soundEnabled, value: soundEnabled ?? true },
+      {
+        path: NOTIFICATION_PATHS.soundOnlyWhenUnfocused,
+        value: soundOnlyWhenUnfocused ?? false,
+      },
+      { path: NOTIFICATION_PATHS.volume, value: volume ?? 0.5 },
+    ]);
   } catch (error) {
     logger.warn('Failed to persist notification settings to daemon', { error });
   }

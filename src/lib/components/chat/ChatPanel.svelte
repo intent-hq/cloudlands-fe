@@ -119,7 +119,6 @@
   } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
     selectAwaitingSwitchBackSnapshot,
-    selectAwaitingUtilityFooter,
     selectChatError,
     selectChatFailureCorrelation,
     selectChatLastChunkTime,
@@ -276,7 +275,12 @@
     createLazyTurnHeightCache,
     type LazyTurnHeightCache,
   } from './lazy-turn-height-cache';
-  import { createMessageHydrationPolicy, type HydrationMessage } from './message-hydration-policy';
+  import {
+    CHAT_HYDRATION_FRAME_BUDGET_MS,
+    CHAT_HYDRATION_MAX_ROWS_PER_FRAME,
+    createMessageHydrationPolicy,
+    type HydrationMessage,
+  } from './message-hydration-policy';
   import {
     CHIEF_LAZY_MESSAGE_THRESHOLD,
     INITIAL_LAZY_MODE_TRACKER,
@@ -332,6 +336,7 @@
     indexConversationTurns,
     type ConversationTurn,
   } from './conversation-turns';
+  import { createChatTranscriptStructureProjector } from './chat-transcript-structure';
   import {
     collectSearchRanges,
     createRangeForSpan,
@@ -480,10 +485,6 @@
   // Switch-back gate: true while a re-viewed conversation's (re)opening
   // standing subscription has not yet delivered its fresh seq-0 snapshot.
   const awaitingSwitchBackSnapshot$ = selectAwaitingSwitchBackSnapshot(agentIdStore);
-  // Utility-footer gate: true while the footer data sources (subscriptions,
-  // hooks, monitored PRs) have not all settled — transcript and footer
-  // reveal in the same paint (saga-cleared, bounded fallback).
-  const awaitingUtilityFooter$ = selectAwaitingUtilityFooter(agentIdStore);
   // Indeterminate first-hydration gate: while the INITIAL hydration is in
   // flight (never settled before for this agent), a partially-loaded message
   // list — e.g. the standing subscription's newest page landing ahead of the
@@ -752,6 +753,8 @@
   // one per transitioned row (a mass transition would otherwise be O(n²)).
   const messageHydrationPolicy = createMessageHydrationPolicy([], {
     onHydrationChange: syncHydratedMessageIds,
+    frameBudgetMs: CHAT_HYDRATION_FRAME_BUDGET_MS,
+    maxRowsPerFrame: CHAT_HYDRATION_MAX_ROWS_PER_FRAME,
   });
 
   $effect(() => {
@@ -1149,6 +1152,8 @@
   // intermediate keystrokes don't trigger a full rewalk + turn re-render cascade.
   let debouncedSearchQuery = $state('');
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  type PendingSearchWork = { bindingKey: string };
+  let pendingSearchWork: PendingSearchWork | null = null;
   const SEARCH_DEBOUNCE_MS = 150;
   // Number of match-neighbors (before + after the current index) to force-render
   // via LazyTurn in addition to the current match's turn. Keeps initial search
@@ -1493,6 +1498,7 @@
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingSearchWork = null;
     if (debouncedSearchQuery !== searchQuery) {
       debouncedSearchQuery = searchQuery;
     }
@@ -1508,6 +1514,7 @@
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingSearchWork = null;
     showSearch = false;
     searchQuery = '';
     debouncedSearchQuery = '';
@@ -1531,24 +1538,50 @@
   // Handle search input changes — debounce the expensive match derivation so
   // intermediate keystrokes don't trigger a full rewalk + LazyTurn re-render
   // cascade. An empty query flushes immediately to clear highlights.
+  function searchBindingKey(): string {
+    return `${workspace?.id ?? ''}\u0000${agentId ?? ''}`;
+  }
+
+  function armPendingSearch(work: PendingSearchWork) {
+    if (searchDebounceTimer !== null) return;
+    const timer = setTimeout(() => {
+      if (searchDebounceTimer !== timer) return;
+      searchDebounceTimer = null;
+      if (
+        isComponentDestroyed ||
+        !isActive ||
+        !showSearch ||
+        pendingSearchWork !== work ||
+        work.bindingKey !== searchBindingKey()
+      ) {
+        return;
+      }
+      pendingSearchWork = null;
+      if (debouncedSearchQuery === searchQuery) return;
+      debouncedSearchQuery = searchQuery;
+      triggerHighlight();
+    }, SEARCH_DEBOUNCE_MS);
+    searchDebounceTimer = timer;
+  }
+
   function handleSearchInput() {
     if (!isActive) return;
     currentSearchIndex = 0;
+    if (debouncedSearchQuery !== searchQuery) searchHighlightRequest += 1;
     if (searchDebounceTimer !== null) {
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingSearchWork = null;
     if (!searchQuery.trim()) {
       debouncedSearchQuery = '';
       triggerHighlight();
       return;
     }
-    searchDebounceTimer = setTimeout(() => {
-      if (!isActive) return;
-      searchDebounceTimer = null;
-      debouncedSearchQuery = searchQuery;
-      triggerHighlight();
-    }, SEARCH_DEBOUNCE_MS);
+    if (debouncedSearchQuery === searchQuery) return;
+    const work = { bindingKey: searchBindingKey() };
+    pendingSearchWork = work;
+    armPendingSearch(work);
   }
 
   function openSearchFromSelection() {
@@ -1560,6 +1593,7 @@
         clearTimeout(searchDebounceTimer);
         searchDebounceTimer = null;
       }
+      pendingSearchWork = null;
       searchQuery = selectedText;
       debouncedSearchQuery = selectedText;
       currentSearchIndex = 0;
@@ -1574,11 +1608,31 @@
     });
   }
 
+  // svelte-ignore state_referenced_locally -- identity snapshot is refreshed by the effect below.
+  let lastSearchBindingKey = searchBindingKey();
   $effect(() => {
-    if (isActive) return;
-    searchHighlightRequest += 1;
-    if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
-    searchDebounceTimer = null;
+    const bindingKey = searchBindingKey();
+    if (bindingKey !== lastSearchBindingKey) {
+      lastSearchBindingKey = bindingKey;
+      searchHighlightRequest += 1;
+      if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+      pendingSearchWork = null;
+      return;
+    }
+    if (!isActive) {
+      searchHighlightRequest += 1;
+      if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+      return;
+    }
+    const work = pendingSearchWork;
+    if (!work) return;
+    if (!showSearch || searchQuery === debouncedSearchQuery || work.bindingKey !== bindingKey) {
+      pendingSearchWork = null;
+      return;
+    }
+    armPendingSearch(work);
   });
 
   // Context items for the input
@@ -2034,25 +2088,19 @@
   // Alias for backward compatibility
   let pendingInitialPrompt = $derived(pendingInitialData.prompt);
 
-  // Transcript reveal deferral: keep the indeterminate skeleton up (and
-  // suppress everything that would paint stale conversation state) until the
-  // resubscribe snapshot applies AND the utility-footer data sources settle
-  // (or the subscription closes / the saga-owned bounded fallback clears the
-  // gates) — then reveal transcript and footer in one paint.
+  // Transcript reveal deferral: keep the indeterminate skeleton up until the
+  // resubscribe snapshot applies (or the saga-owned bounded recovery clears
+  // the gate). Utility-footer reads populate independently after reveal.
   const deferTranscriptReveal = $derived(
     shouldDeferTranscriptReveal({
       awaitingSwitchBackSnapshot: $awaitingSwitchBackSnapshot$,
-      awaitingUtilityFooter: $awaitingUtilityFooter$,
       transcriptHydratedOnce: $transcriptHydratedOnce$,
       hasPendingInitialPrompt: Boolean(pendingInitialPrompt),
     }),
   );
 
-  // Utility stack gate: the hooks/monitors/subscriptions card never renders
-  // before the transcript reveal — hidden until this agent's first hydration
-  // settles and the reveal deferral clears, so it mounts in the SAME flip
-  // that reveals the transcript (data prefetch is unaffected; only the
-  // render is gated).
+  // The utility stack never precedes the transcript. Once transcript hydration
+  // settles, each footer source owns its loading/failure/empty presentation.
   const showTranscriptUtilityCard = $derived(
     shouldShowTranscriptUtilityStack({
       transcriptHydratedOnce: $transcriptHydratedOnce$,
@@ -3179,22 +3227,20 @@
     }
     return true;
   }
-  // Get the auggie session ID from the most recent assistant message's metadata
-  // This is the raw UUID format that auggie uses, needed for debugging/support
-  let auggieSessionId = $derived.by(() => {
-    // Look for auggieSessionId in assistant messages (most recent first)
-    for (let i = $agentMessages$.length - 1; i >= 0; i--) {
-      const msg = $agentMessages$[i];
-      if (msg.role === 'assistant' && msg.metadata?.auggieSessionId) {
-        return msg.metadata.auggieSessionId as string;
-      }
-    }
-    return undefined;
-  });
-
-  // PERF: Pre-compute total turn count for lazy loading decisions
-  // Count user messages as proxy for turns (each user message starts a turn)
-  const totalTurnCount = $derived($agentMessages$.filter((m) => m.role === 'user').length);
+  // Structural transcript metadata is derived in one pass. During a live turn,
+  // replacing only the final assistant row's content reuses this projection;
+  // ChatMessage keeps subscribing to that row by id, so volatile text stays live.
+  const projectTranscriptStructure = createChatTranscriptStructureProjector();
+  const transcriptStructure = $derived(
+    projectTranscriptStructure({
+      messages: $agentMessages$,
+      isStreaming: $agentSessionIsStreaming$,
+      isActive,
+      snapshotSequence: $transcriptSnapshotMeta$?.seq,
+    }),
+  );
+  const auggieSessionId = $derived(transcriptStructure.latestAuggieSessionId);
+  const totalTurnCount = $derived(transcriptStructure.userTurnCount);
 
   // PERF: Enable lazy loading only for larger conversations, latched across
   // background older-history prepends (see nextLazyMode). The decision crosses
@@ -3220,28 +3266,6 @@
       messageThreshold,
     );
     return lazyModeTracker.mode;
-  });
-
-  // PERF: Pre-compute message index and turn number maps for O(1) lookups
-  // This avoids O(n²) complexity from indexOf/slice/filter in the render loop
-  const messageIndexMap = $derived.by(() => {
-    const map = new Map<string, number>();
-    for (let i = 0; i < $agentMessages$.length; i++) {
-      map.set($agentMessages$[i].id, i);
-    }
-    return map;
-  });
-
-  const messageTurnNumberMap = $derived.by(() => {
-    const map = new Map<string, number>();
-    let turnCount = 0;
-    for (const message of $agentMessages$) {
-      if (message.role === 'assistant') {
-        turnCount++;
-        map.set(message.id, turnCount);
-      }
-    }
-    return map;
   });
 
   // Track previous message count and newest row to detect new messages and to
@@ -3309,11 +3333,11 @@
 
   // Helper functions for O(1) lookups
   function getMessageIndex(messageId: string): number {
-    return messageIndexMap.get(messageId) ?? -1;
+    return transcriptStructure.messageIndexById.get(messageId) ?? -1;
   }
 
   function getMessageTurnNumber(messageId: string): number {
-    return messageTurnNumberMap.get(messageId) ?? 0;
+    return transcriptStructure.assistantTurnNumberById.get(messageId) ?? 0;
   }
 
   // Compute the turn structure and both virtualization/search indexes in one
@@ -4042,6 +4066,9 @@
   // dehydrate once hydrated (see message-hydration-policy.ts).
   $effect(() => {
     const messages = hydrationMessages;
+    messageHydrationPolicy.setScope(
+      `${String(workspace?.id ?? '')}:${agentId}:${$agentSession$?.backendSessionId ?? $agentSession$?.acpSessionId ?? ''}`,
+    );
     messageHydrationPolicy.setActive(isActive);
     if (!isActive) return;
     messageHydrationPolicy.updateMessages(messages);
@@ -4518,6 +4545,8 @@
 
     logger.info('ChatPanel destroyed', { instanceId, agentId });
     // Clean up subscriptions and scroll manager
+    searchHighlightRequest += 1;
+    pendingSearchWork = null;
     if (searchDebounceTimer !== null) {
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
@@ -5446,6 +5475,7 @@
           : 'px-4 pt-8 sm:px-6'} {transcriptBottomInsetClass}"
         class:regular-chat-content-inset={!isChiefWorkspace}
         data-testid="chat-transcript-inner"
+        data-structural-recompute-count={transcriptStructure.recomputeCount}
       >
         <!-- Task Assignment Pill -->
         {#if $agentTasks$.length > 0}
@@ -5556,14 +5586,12 @@
           <!-- Pending initial prompt - shown as optimistic UI immediately -->
           <!-- FIX: Keep showing pendingMessage until a USER message arrives in $agentMessages$ -->
           <!-- This prevents the flash where pendingMessage disappears but only assistant streaming content has arrived -->
-          {@const hasUserMessage = $agentMessages$.some((m) => m.role === 'user')}
+          {@const hasUserMessage = transcriptStructure.hasUserMessage}
           {@const pendingCondition = pendingMessage && !hasUserMessage}
           {@const messagesCondition = hasUserMessage || $agentMessages$.length > 0}
           {#if pendingCondition}
             <!-- Get any streaming assistant messages to render alongside the pending user message -->
-            {@const streamingAssistantMessages = $agentMessages$.filter(
-              (m) => m.role === 'assistant',
-            )}
+            {@const streamingAssistantMessageIds = transcriptStructure.assistantMessageIds}
             {#if initialPromptProp}
               <!-- No animation - parent already showed optimistic message, but we need to keep showing it -->
               <div class="w-full">
@@ -5604,17 +5632,17 @@
                   </div>
 
                   <!-- Render any streaming assistant messages -->
-                  {#each streamingAssistantMessages as message, index (message.id)}
-                    {@const isLastMessage = index === streamingAssistantMessages.length - 1}
+                  {#each streamingAssistantMessageIds as messageId, index (messageId)}
+                    {@const isLastMessage = index === streamingAssistantMessageIds.length - 1}
                     {@const isCurrentlyStreaming = isLastMessage && $agentSessionIsStreaming$}
                     <div
-                      data-message-id={message.id}
+                      data-message-id={messageId}
                       data-message-role="assistant"
                       class="message-nav-target"
                     >
                       <ChatMessage
                         {agentId}
-                        messageId={message.id}
+                        {messageId}
                         ownsMessageIdentity={false}
                         {workspace}
                         isStreaming={isCurrentlyStreaming}
@@ -5649,7 +5677,7 @@
                   {/each}
 
                   <!-- Show streaming status while waiting for first assistant message -->
-                  {#if streamingAssistantMessages.length === 0}
+                  {#if streamingAssistantMessageIds.length === 0}
                     <div class="mb-4">
                       <StreamingStatus
                         isStreaming={$agentSessionIsStreaming$}
@@ -5716,17 +5744,17 @@
                   </div>
 
                   <!-- Render any streaming assistant messages -->
-                  {#each streamingAssistantMessages as message, index (message.id)}
-                    {@const isLastMessage = index === streamingAssistantMessages.length - 1}
+                  {#each streamingAssistantMessageIds as messageId, index (messageId)}
+                    {@const isLastMessage = index === streamingAssistantMessageIds.length - 1}
                     {@const isCurrentlyStreaming = isLastMessage && $agentSessionIsStreaming$}
                     <div
-                      data-message-id={message.id}
+                      data-message-id={messageId}
                       data-message-role="assistant"
                       class="message-nav-target"
                     >
                       <ChatMessage
                         {agentId}
-                        messageId={message.id}
+                        {messageId}
                         ownsMessageIdentity={false}
                         {workspace}
                         isStreaming={isCurrentlyStreaming}
@@ -5761,7 +5789,7 @@
                   {/each}
 
                   <!-- Show streaming status while waiting for first assistant message -->
-                  {#if streamingAssistantMessages.length === 0}
+                  {#if streamingAssistantMessageIds.length === 0}
                     <div class="mb-4">
                       <StreamingStatus
                         isStreaming={$agentSessionIsStreaming$}

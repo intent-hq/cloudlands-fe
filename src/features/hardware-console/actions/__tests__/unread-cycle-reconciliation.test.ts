@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   workspaces: { list: vi.fn(), recentViews: vi.fn(), getTokenUsage: vi.fn(), getContext: vi.fn() },
+  workspaceServiceList: vi.fn(),
   tasks: { list: vi.fn(), listAgentLinks: vi.fn() },
   events: { list: vi.fn() },
   skills: { list: vi.fn() },
@@ -41,6 +42,9 @@ vi.mock('$lib/client', () => ({
     agents: mocks.agents,
     terminals: mocks.terminals,
   },
+}));
+vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
+  workspaceClient: { list: mocks.workspaceServiceList },
 }));
 vi.mock('$features/line-changes/line-changes.client', () => ({ getAgentLineStats: vi.fn() }));
 vi.mock('$features/agent/utils/pending-agent-deletions', () => ({
@@ -196,6 +200,7 @@ describe('unread-cycle reconciliation (multi-window divergence)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetActionKeyCycleCursors();
+    mocks.workspaceServiceList.mockResolvedValue({ ok: true, data: [] });
     mocks.workspaces.recentViews.mockResolvedValue({});
   });
 
@@ -226,11 +231,14 @@ describe('unread-cycle reconciliation (multi-window divergence)', () => {
 
     // This window becomes the console owner: the real saga refetches
     // workspace.list and the real reducer applies the daemon's truth.
-    mocks.workspaces.list.mockResolvedValue([wire('ws-1', 'none'), wire('ws-2', 'unread')]);
+    mocks.workspaceServiceList.mockResolvedValue({
+      ok: true,
+      data: [wire('ws-1', 'none'), wire('ws-2', 'unread')],
+    });
     run.channel.put(consoleOwnerChanged(true));
     await settle();
     await settle();
-    expect(mocks.workspaces.list.mock.calls).toEqual([[{ includeArchived: true }]]);
+    expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
 
     const state = makeCycleState(run.workspaces(), agents);
     const context = makeContext(state, 'ws-1');
@@ -281,16 +289,19 @@ describe('unread-cycle reconciliation (multi-window divergence)', () => {
 
     // The window regains focus: the real saga refetches and the store
     // converges on the daemon's truth (only ws-4 still unread).
-    mocks.workspaces.list.mockResolvedValue([
-      wire('ws-1', 'none'),
-      wire('ws-2', 'none'),
-      wire('ws-3', 'none'),
-      wire('ws-4', 'unread'),
-    ]);
+    mocks.workspaceServiceList.mockResolvedValue({
+      ok: true,
+      data: [
+        wire('ws-1', 'none'),
+        wire('ws-2', 'none'),
+        wire('ws-3', 'none'),
+        wire('ws-4', 'unread'),
+      ],
+    });
     window.dispatchEvent(new Event('focus'));
     await settle();
     await settle();
-    expect(mocks.workspaces.list.mock.calls).toEqual([[{ includeArchived: true }]]);
+    expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
 
     const state = makeCycleState(run.workspaces(), {
       ...agents,
@@ -325,7 +336,10 @@ describe('unread-cycle reconciliation (multi-window divergence)', () => {
       definition().isAvailable(makeContext(makeCycleState(run.workspaces(), agents), 'ws-1')),
     ).toBe(true);
 
-    mocks.workspaces.list.mockResolvedValue([wire('ws-1', 'none'), wire('ws-2', 'none')]);
+    mocks.workspaceServiceList.mockResolvedValue({
+      ok: true,
+      data: [wire('ws-1', 'none'), wire('ws-2', 'none')],
+    });
     window.dispatchEvent(new Event('focus'));
     await settle();
     await settle();

@@ -121,6 +121,7 @@ const ENFORCED_DIRS = [
   'src/features/opencode',
   'src/features/pi',
   'src/features/providers',
+  'src/features/antigravity',
   // remaining feature dirs (final flip). agent/testing, agent/agent-launch-core,
   // acp-official main/server + parsers/plans, and cortex/cortex-acp emit
   // agent-facing prompt/wire content — intentionally not enforced.

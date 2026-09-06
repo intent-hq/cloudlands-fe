@@ -157,10 +157,6 @@ export const SHORTCUT_RUNTIME_CONSUMERS = {
     source: 'features/layout/panel-keyboard-shortcuts.svelte.ts',
     handler: 'leader pattern',
   },
-  'leader.split-down': {
-    source: 'features/layout/panel-keyboard-shortcuts.svelte.ts',
-    handler: 'leader pattern',
-  },
   'leader.toggle-zoom': {
     source: 'features/layout/panel-keyboard-shortcuts.svelte.ts',
     handler: 'leader pattern',
