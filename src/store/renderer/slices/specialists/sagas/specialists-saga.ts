@@ -16,6 +16,7 @@ import { appClient } from '$lib/client';
 import type { AppliedSettingChange, SpecialistDef } from '$lib/client/app-client';
 import { SPECIALISTS, type Specialist } from '$lib/constants/specialists';
 import { createLogger } from '$lib/utils/client-logger';
+import type { RequireSharedKeys } from '$lib/utils/mapped-shape';
 import { m } from '$shared/paraglide/messages.js';
 import type { SpecialistFileScope } from '$shared/specialist-file-types';
 import { settingsChanged } from '../../settings-events/settings-events-slice';
@@ -75,6 +76,9 @@ function touchesModelResolutionSettings(action: { type: string; payload?: unknow
   );
 }
 
+// The `satisfies RequireSharedKeys<...>` on each mapper makes omitting a key
+// shared by the wire def and the store type a compile error (see the
+// #2217 `reasoningEffort` drop). Renamed fields stay hand-mapped.
 function toBundledSpecialist(def: SpecialistDef): Specialist {
   return {
     id: def.id,
@@ -94,29 +98,29 @@ function toBundledSpecialist(def: SpecialistDef): Specialist {
     role: def.role,
     teamAgents: def.teamAgents,
     icon: def.icon,
-  };
+  } satisfies RequireSharedKeys<SpecialistDef, Specialist>;
 }
 
 function bundledFallback(builtin: Specialist): Specialist {
-  const mapped: Specialist = {
+  return {
     id: builtin.id,
     name: builtin.name,
     description: builtin.description,
+    codingAgent: builtin.codingAgent,
+    defaultModel: builtin.defaultModel,
     defaultBehaviorPrompt: builtin.defaultBehaviorPrompt,
+    roleReminder: builtin.roleReminder,
     source: 'bundled',
-  };
-  if (builtin.codingAgent !== undefined) mapped.codingAgent = builtin.codingAgent;
-  if (builtin.defaultModel !== undefined) mapped.defaultModel = builtin.defaultModel;
-  if (builtin.roleReminder !== undefined) mapped.roleReminder = builtin.roleReminder;
-  if (builtin.defaultAgentType !== undefined) mapped.defaultAgentType = builtin.defaultAgentType;
-  if (builtin.hidden !== undefined) mapped.hidden = builtin.hidden;
-  if (builtin.modelOptions !== undefined) mapped.modelOptions = builtin.modelOptions;
-  if (builtin.resolvedModel !== undefined) mapped.resolvedModel = builtin.resolvedModel;
-  if (builtin.resolvedProvider !== undefined) mapped.resolvedProvider = builtin.resolvedProvider;
-  if (builtin.role !== undefined) mapped.role = builtin.role;
-  if (builtin.teamAgents !== undefined) mapped.teamAgents = builtin.teamAgents;
-  if (builtin.icon !== undefined) mapped.icon = builtin.icon;
-  return mapped;
+    defaultAgentType: builtin.defaultAgentType,
+    hidden: builtin.hidden,
+    modelOptions: builtin.modelOptions,
+    reasoningEffort: builtin.reasoningEffort,
+    resolvedModel: builtin.resolvedModel,
+    resolvedProvider: builtin.resolvedProvider,
+    role: builtin.role,
+    teamAgents: builtin.teamAgents,
+    icon: builtin.icon,
+  } satisfies RequireSharedKeys<Specialist, Specialist>;
 }
 
 function toFileSpecialist(def: SpecialistDef): FileSpecialist {
@@ -141,7 +145,7 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
     role: def.role,
     teamAgents: def.teamAgents,
     icon: def.icon,
-  };
+  } satisfies RequireSharedKeys<SpecialistDef, FileSpecialist>;
 }
 
 function* applySpecialistList(defs: SpecialistDef[]) {
