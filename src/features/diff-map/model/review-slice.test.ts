@@ -55,6 +55,17 @@ describe('review slices', () => {
     expect(getStaleReviewSliceEntries(slice, edited).map(({ path }) => path)).toEqual(['b.ts']);
   });
 
+  it('omits empty hunk sides from review slices', () => {
+    const document = buildDiffMapDocument([change('added.ts', 'hash-added')], {
+      source,
+      patches: new Map([['added.ts', '@@ -0,0 +1,3 @@']]),
+    });
+
+    expect(createReviewSlice(document, new Set(['added.ts'])).entries[0].hunks).toEqual([
+      { newRange: { start: 1, end: 3 } },
+    ]);
+  });
+
   it('distinguishes current, stale, and absent viewed hashes', () => {
     const viewed = { 'a.ts': 'hash-a', 'b.ts': 'hash-old' };
 

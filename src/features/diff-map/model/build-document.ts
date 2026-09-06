@@ -96,8 +96,12 @@ function hashContent(value: string): string {
 function hunkRanges(hunks: PatchHunk[]): DiffMapHunk[] | undefined {
   if (hunks.length === 0) return undefined;
   return hunks.map((hunk) => ({
-    oldRange: { start: hunk.oldStart, end: hunk.oldStart + Math.max(hunk.oldLines, 1) - 1 },
-    newRange: { start: hunk.newStart, end: hunk.newStart + Math.max(hunk.newLines, 1) - 1 },
+    ...(hunk.oldLines > 0
+      ? { oldRange: { start: hunk.oldStart, end: hunk.oldStart + hunk.oldLines - 1 } }
+      : {}),
+    ...(hunk.newLines > 0
+      ? { newRange: { start: hunk.newStart, end: hunk.newStart + hunk.newLines - 1 } }
+      : {}),
   }));
 }
 

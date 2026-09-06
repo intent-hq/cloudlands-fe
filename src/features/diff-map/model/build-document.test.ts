@@ -81,6 +81,32 @@ describe('buildDiffMapDocument', () => {
     );
   });
 
+  it('omits ranges and tracks for zero-length hunk sides', () => {
+    const document = buildDiffMapDocument(
+      [tracked('src/added.ts', 3, 0), tracked('src/deleted.ts', 0, 2)],
+      {
+        source,
+        patches: new Map([
+          ['src/added.ts', '@@ -0,0 +1,3 @@'],
+          ['src/deleted.ts', '@@ -4,2 +3,0 @@'],
+        ]),
+      },
+    );
+
+    expect(document.files[0]).toMatchObject({
+      hunks: [{ newRange: { start: 1, end: 3 } }],
+      newTrack: expect.any(Array),
+    });
+    expect(document.files[0].hunks?.[0]).not.toHaveProperty('oldRange');
+    expect(document.files[0].oldTrack).toBeUndefined();
+    expect(document.files[1]).toMatchObject({
+      hunks: [{ oldRange: { start: 4, end: 5 } }],
+      oldTrack: expect.any(Array),
+    });
+    expect(document.files[1].hunks?.[0]).not.toHaveProperty('newRange');
+    expect(document.files[1].newTrack).toBeUndefined();
+  });
+
   it('adapts chat file changes without manufacturing attribution', () => {
     const chatChange: ChatFileChange = {
       filePath: 'src/chat-created.ts',

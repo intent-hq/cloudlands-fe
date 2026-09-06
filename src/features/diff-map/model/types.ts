@@ -58,14 +58,14 @@ export interface DiffMapSection {
   totalCount?: number;
 }
 
-export interface DiffMapLineRange {
+interface DiffMapLineRange {
   start: number;
   end: number;
 }
 
 export interface DiffMapHunk {
-  oldRange: DiffMapLineRange;
-  newRange: DiffMapLineRange;
+  oldRange?: DiffMapLineRange;
+  newRange?: DiffMapLineRange;
 }
 
 export interface ReviewSliceEntry {
@@ -80,7 +80,7 @@ export interface ReviewSlice {
   entries: ReviewSliceEntry[];
 }
 
-export interface DiffMapFactAnnotation {
+interface DiffMapFactAnnotation {
   id: string;
   kind: 'attribution' | 'comment' | 'review' | 'changed-since-review' | 'test' | 'custom';
   fileId?: string;
