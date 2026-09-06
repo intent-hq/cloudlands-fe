@@ -1,0 +1,141 @@
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import type {
+  Manifest,
+  MapActivity,
+  MapActivityKind,
+  MapSource,
+} from '$lib/components/visualization/semantic-map/core/types';
+import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
+
+export const SEMANTIC_MAP_ACTIVITY_LIMIT = 5_000;
+
+export interface SemanticMapTimeWindow {
+  startTs: string | null;
+  endTs: string | null;
+}
+
+export interface SemanticMapWorkspaceState {
+  manifest: Manifest | null;
+  source: MapSource | null;
+  activities: MapActivity[];
+  selectedAgentId: string | null;
+  selectedRegionId: string | null;
+  timeWindow: SemanticMapTimeWindow;
+  kindFilter: MapActivityKind[];
+  agentFilter: string[];
+}
+
+export interface SemanticMapState {
+  byWorkspaceId: Record<string, SemanticMapWorkspaceState>;
+}
+
+export const emptySemanticMapWorkspaceState: SemanticMapWorkspaceState = {
+  manifest: null,
+  source: null,
+  activities: [],
+  selectedAgentId: null,
+  selectedRegionId: null,
+  timeWindow: { startTs: null, endTs: null },
+  kindFilter: [],
+  agentFilter: [],
+};
+
+export const initialState: SemanticMapState = { byWorkspaceId: {} };
+
+const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
+  emptySemanticMapWorkspaceState,
+);
+
+export const semanticMapLoaded =
+  createAction<[workspaceId: string, manifest: Manifest, source: MapSource]>('semanticMap/loaded');
+export const semanticMapActivitiesLoaded = createAction<
+  [workspaceId: string, activities: MapActivity[]]
+>('semanticMap/activitiesLoaded');
+export const semanticMapActivityReceived = createAction<
+  [workspaceId: string, activity: MapActivity]
+>('semanticMap/activityReceived');
+export const semanticMapSelectedAgentChanged = createAction<
+  [workspaceId: string, agentId: string | null]
+>('semanticMap/selectedAgentChanged');
+export const semanticMapSelectedRegionChanged = createAction<
+  [workspaceId: string, regionId: string | null]
+>('semanticMap/selectedRegionChanged');
+export const semanticMapTimeWindowChanged = createAction<
+  [workspaceId: string, timeWindow: SemanticMapTimeWindow]
+>('semanticMap/timeWindowChanged');
+export const semanticMapKindFilterChanged = createAction<
+  [workspaceId: string, kinds: MapActivityKind[]]
+>('semanticMap/kindFilterChanged');
+export const semanticMapAgentFilterChanged = createAction<
+  [workspaceId: string, agentIds: string[]]
+>('semanticMap/agentFilterChanged');
+export const semanticMapCleared = createAction<[workspaceId: string]>('semanticMap/cleared');
+
+export const semanticMapReducer = createReducer<SemanticMapState>(initialState);
+
+semanticMapReducer.with(
+  semanticMapLoaded,
+  (state, { payload: [workspaceId, manifest, source] }) => {
+    const workspaceState = getWorkspaceState(state, workspaceId);
+    return setWorkspaceState(state, workspaceId, { ...workspaceState, manifest, source });
+  },
+);
+semanticMapReducer.with(
+  semanticMapActivitiesLoaded,
+  (state, { payload: [workspaceId, activities] }) => {
+    const workspaceState = getWorkspaceState(state, workspaceId);
+    return setWorkspaceState(state, workspaceId, {
+      ...workspaceState,
+      activities: activities.slice(-SEMANTIC_MAP_ACTIVITY_LIMIT),
+    });
+  },
+);
+semanticMapReducer.with(
+  semanticMapActivityReceived,
+  (state, { payload: [workspaceId, activity] }) => {
+    const workspaceState = getWorkspaceState(state, workspaceId);
+    return setWorkspaceState(state, workspaceId, {
+      ...workspaceState,
+      activities: [...workspaceState.activities, activity].slice(-SEMANTIC_MAP_ACTIVITY_LIMIT),
+    });
+  },
+);
+semanticMapReducer.with(
+  semanticMapSelectedAgentChanged,
+  (state, { payload: [workspaceId, selectedAgentId] }) => {
+    const workspaceState = getWorkspaceState(state, workspaceId);
+    return setWorkspaceState(state, workspaceId, { ...workspaceState, selectedAgentId });
+  },
+);
+semanticMapReducer.with(
+  semanticMapSelectedRegionChanged,
+  (state, { payload: [workspaceId, selectedRegionId] }) => {
+    const workspaceState = getWorkspaceState(state, workspaceId);
+    return setWorkspaceState(state, workspaceId, { ...workspaceState, selectedRegionId });
+  },
+);
+semanticMapReducer.with(
+  semanticMapTimeWindowChanged,
+  (state, { payload: [workspaceId, timeWindow] }) => {
+    const workspaceState = getWorkspaceState(state, workspaceId);
+    return setWorkspaceState(state, workspaceId, { ...workspaceState, timeWindow });
+  },
+);
+semanticMapReducer.with(
+  semanticMapKindFilterChanged,
+  (state, { payload: [workspaceId, kindFilter] }) => {
+    const workspaceState = getWorkspaceState(state, workspaceId);
+    return setWorkspaceState(state, workspaceId, { ...workspaceState, kindFilter });
+  },
+);
+semanticMapReducer.with(
+  semanticMapAgentFilterChanged,
+  (state, { payload: [workspaceId, agentFilter] }) => {
+    const workspaceState = getWorkspaceState(state, workspaceId);
+    return setWorkspaceState(state, workspaceId, { ...workspaceState, agentFilter });
+  },
+);
+semanticMapReducer.with(semanticMapCleared, (state, { payload: [workspaceId] }) =>
+  clearWorkspaceState(state, workspaceId),
+);

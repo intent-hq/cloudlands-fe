@@ -23,6 +23,13 @@ import {
   getWebDaemonStatusSource,
   onWebDaemonStatusSourceRegistered,
 } from './client/live/web-daemon-status';
+import {
+  SEMANTIC_MAP_FIXTURE_ACTIVITIES,
+  SEMANTIC_MAP_FIXTURE_ASSIGNMENTS,
+  SEMANTIC_MAP_FIXTURE_MANIFEST,
+  SEMANTIC_MAP_FIXTURE_ROUTE,
+  SEMANTIC_MAP_FIXTURE_SOURCE,
+} from './components/visualization/semantic-map/core/fixtures';
 import { expectsElectronPreloadBridge } from './utils/platform-capabilities';
 
 /**
@@ -193,6 +200,19 @@ function mockBackendMethodResult(method: string, params?: Record<string, unknown
   }
   // `event.query` (§5.10) returns a bare newest→oldest array.
   if (method === 'event.query') return [];
+  if (method === 'map.get') {
+    return {
+      manifest: SEMANTIC_MAP_FIXTURE_MANIFEST,
+      source: SEMANTIC_MAP_FIXTURE_SOURCE,
+      coverage: {
+        matched: SEMANTIC_MAP_FIXTURE_MANIFEST.regions.length,
+        total: SEMANTIC_MAP_FIXTURE_MANIFEST.regions.length,
+      },
+    };
+  }
+  if (method === 'map.classify') return SEMANTIC_MAP_FIXTURE_ASSIGNMENTS;
+  if (method === 'map.activity') return SEMANTIC_MAP_FIXTURE_ACTIVITIES;
+  if (method === 'map.route') return SEMANTIC_MAP_FIXTURE_ROUTE;
   // The daemon-events-bridge firehose issues `events.subscribe` over
   // `backend:request` (not the `backend:subscribe` channel).
   if (method === 'events.subscribe') {
