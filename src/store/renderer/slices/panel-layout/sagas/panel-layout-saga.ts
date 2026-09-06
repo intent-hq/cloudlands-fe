@@ -64,6 +64,7 @@ import {
 import { selectPanelLayoutWorkspace } from '../panel-layout-selectors';
 import { migratePanelLayoutForWorkspace } from '../panel-layout-migration';
 import {
+  activateVisibleTab,
   clearPanelLayout,
   bootstrapNewWorkspaceLayout,
   closeActiveTab,
@@ -158,6 +159,7 @@ const PERSIST_ACTIONS = [
   destroyTabsByOwnerAgent,
   destroyOwnedTabsForWorkspace,
   restoreHiddenTab,
+  activateVisibleTab,
   reopenClosedTab,
   setActiveTab,
   selectNextTab,
@@ -218,6 +220,7 @@ const HISTORY_ACTIONS = [
   moveTabToSplit,
   moveTabToSplitLevel,
   setActiveTab,
+  activateVisibleTab,
   goBack,
   goForward,
   resetLayout,

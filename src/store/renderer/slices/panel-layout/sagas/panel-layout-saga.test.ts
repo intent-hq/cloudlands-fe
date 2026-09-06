@@ -47,6 +47,7 @@ import {
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  activateVisibleTab,
   clearPanelLayout,
   bootstrapNewWorkspaceLayout,
   closeActiveTab,
@@ -358,6 +359,7 @@ const persistActionCreators = [
   removeScript,
   reopenClosedTab,
   setActiveTab,
+  activateVisibleTab,
   selectNextTab,
   selectPreviousTab,
   reorderTabs,
@@ -1694,6 +1696,27 @@ describe('panelLayoutSaga', () => {
       await cancelSaga(task);
     },
   );
+
+  // showTab on a visible-but-inactive tab dispatches only activateVisibleTab,
+  // so the activation must persist and snapshot on its own or it is lost on
+  // relaunch until an unrelated layout action runs.
+  it('persists and snapshots an in-place tab activation (activateVisibleTab)', async () => {
+    mocks.getJSON.mockReturnValue(undefined);
+    const { channel, task } = startSaga();
+    await settle();
+    channel.put(activateVisibleTab(WS_1, 'tab-1'));
+    await settle();
+
+    expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, layout]]);
+    await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
+    await settle();
+    expect(mocks.saveHistory).toHaveBeenCalledWith(
+      WS_1,
+      expect.objectContaining({ workspaceId: WS_1, history: [snapshot] }),
+      LOCAL_CONNECTION_ID,
+    );
+    await cancelSaga(task);
+  });
 
   it('persists and snapshots a reopened panel column through one watcher', async () => {
     const { channel, task } = startSaga();
