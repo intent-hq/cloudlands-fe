@@ -31,18 +31,29 @@ describe('empty panel chrome', () => {
     expect(emptyState).not.toContain('border-t border-border');
   });
 
-  it('removes border and elevation from tabless shells without changing populated defaults', () => {
+  it('removes elevation from tabless shells while preserving their focus border', () => {
     const panel = source('../Panel.svelte');
 
     expect(panel).toContain(
       "data-empty-panel-shell={panel.tabs.length === 0 ? 'true' : undefined}",
     );
     expect(panel).toMatch(
-      /\.panel\[data-empty-panel-shell='true'\]\s*\{\s*border-width: 0;\s*box-shadow: none;/,
+      /\.panel\[data-empty-panel-shell='true'\]:not\(\[data-focus-border-visible='true'\]\)\s*\{\s*border-width: 0;/,
     );
+    expect(panel).toMatch(/\.panel\[data-empty-panel-shell='true'\]\s*\{\s*box-shadow: none;/);
     expect(panel).toMatch(
       /\.panel\s*\{[\s\S]*?border: 1px solid transparent;[\s\S]*?box-shadow: var\(--elevation-raised\);/,
     );
+    expect(panel).toMatch(
+      /\.panel\[data-focus-border-visible='true'\]\s*\{\s*border-color: hsl\(var\(--border\)\);/,
+    );
+  });
+
+  it('keeps a visible inset keyboard outline on every empty-state row', () => {
+    const emptyState = source('../PanelEmptyState.svelte');
+
+    expect(emptyState.match(/focus-visible:outline-ring/g)).toHaveLength(4);
+    expect(emptyState).not.toContain('focus-visible:outline-none');
   });
 
   it('closes tabless panels from their semantic header without making the panel focusable', () => {

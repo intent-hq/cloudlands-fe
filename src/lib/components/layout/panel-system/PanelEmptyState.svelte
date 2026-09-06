@@ -220,7 +220,7 @@
     <div class="creation-list flex flex-col gap-0.5">
       {#each creationActions as action (action.id)}
         <button
-          class="creation-action empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-medium text-foreground transition-colors hover:text-muted-foreground focus-visible:outline-none motion-reduce:transition-none"
+          class="creation-action empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-medium text-foreground transition-colors hover:text-muted-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
           onclick={action.action}
           title={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
           aria-label={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
@@ -245,7 +245,7 @@
     {#if recentItems.length > 0}
       <div class="recent-list mt-5 flex flex-col gap-0.5">
         <button
-          class="reopen-hint empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none motion-reduce:transition-none"
+          class="reopen-hint empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
           onclick={handleReopenItem}
           title={m.layout_panelEmptyState_reopenLastClosed_label()}
         >
@@ -258,7 +258,7 @@
         </button>
         {#each recentItems as item (item.tab.id + '-' + item.closedAt)}
           <button
-            class="recent-item empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center px-2 py-1 text-left font-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none motion-reduce:transition-none"
+            class="recent-item empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center px-2 py-1 text-left font-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
             onclick={handleReopenItem}
             title={m.layout_panelEmptyState_reopen_tooltip({ title: item.tab.title })}
           >
@@ -276,7 +276,7 @@
     <div class="shortcut-list mt-5 flex flex-col gap-0.5">
       {#each utilityActions as action (action.label)}
         <button
-          class="shortcut-item empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none motion-reduce:transition-none"
+          class="shortcut-item empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
           onclick={action.action}
           title={action.label}
           aria-label={action.label}
