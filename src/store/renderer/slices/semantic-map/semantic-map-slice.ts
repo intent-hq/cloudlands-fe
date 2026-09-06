@@ -1,5 +1,11 @@
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import {
+  addItem,
+  createCollection,
+  removeItem,
+  type Collection,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import type {
   Manifest,
   MapActivity,
@@ -22,13 +28,13 @@ export interface SemanticMapWorkspaceState {
   hydrationStatus: SemanticMapHydrationStatus;
   manifest: Manifest | null;
   source: MapSource | null;
-  activities: MapActivity[];
+  activities: Collection<MapActivity, 'id'>;
   route: Route | null;
   selectedAgentId: string | null;
   selectedTaskNoteId: string | null;
   selectedRegionId: string | null;
   timeWindow: SemanticMapTimeWindow;
-  kindFilter: MapActivityKind[];
+  kindFilter: Array<'read' | 'edit' | 'create' | 'delete' | 'move' | 'tool' | 'thinking'>;
   agentFilter: string[];
 }
 
@@ -40,7 +46,7 @@ export const emptySemanticMapWorkspaceState: SemanticMapWorkspaceState = {
   hydrationStatus: 'idle',
   manifest: null,
   source: null,
-  activities: [],
+  activities: createCollection('id'),
   route: null,
   selectedAgentId: null,
   selectedTaskNoteId: null,
@@ -129,7 +135,7 @@ semanticMapReducer.with(
     const workspaceState = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, {
       ...workspaceState,
-      activities: activities.slice(-SEMANTIC_MAP_ACTIVITY_LIMIT),
+      activities: createCollection('id', activities.slice(-SEMANTIC_MAP_ACTIVITY_LIMIT)),
     });
   },
 );
@@ -137,9 +143,13 @@ semanticMapReducer.with(
   semanticMapActivityReceived,
   (state, { payload: [workspaceId, activity] }) => {
     const workspaceState = getWorkspaceState(state, workspaceId);
+    let activities = addItem(workspaceState.activities, activity);
+    if (activities.ids.length > SEMANTIC_MAP_ACTIVITY_LIMIT) {
+      activities = removeItem(activities, activities.ids[0]);
+    }
     return setWorkspaceState(state, workspaceId, {
       ...workspaceState,
-      activities: [...workspaceState.activities, activity].slice(-SEMANTIC_MAP_ACTIVITY_LIMIT),
+      activities,
     });
   },
 );

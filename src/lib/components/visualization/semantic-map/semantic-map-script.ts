@@ -107,7 +107,8 @@ export function createSemanticMapScript(): SemanticMapScript {
   const steps = createSteps();
   return {
     workspaceEvents: steps.map(toWorkspaceEvent),
-    activities: steps.map((step) => ({
+    activities: steps.map((step, index) => ({
+      id: `semantic-map-event-${index}`,
       regionId: step.regionId,
       agentId: SCRIPT_AGENTS[step.agentIndex].id,
       agentName: SCRIPT_AGENTS[step.agentIndex].name,

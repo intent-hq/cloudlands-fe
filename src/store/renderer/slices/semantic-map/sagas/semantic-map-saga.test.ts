@@ -1,4 +1,5 @@
 import { runSaga, stdChannel } from 'redux-saga';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), activity: vi.fn(), route: vi.fn() }));
@@ -85,8 +86,8 @@ describe('semanticMapSaga', () => {
       hydrationStatus: 'loaded',
       manifest: SEMANTIC_MAP_FIXTURE_MANIFEST,
       source: 'curated',
-      activities: SEMANTIC_MAP_FIXTURE_ACTIVITIES,
     });
+    expect(getItems(harness.state().activities)).toEqual(SEMANTIC_MAP_FIXTURE_ACTIVITIES);
 
     harness.dispatch(applyNoteCreated('ws-1', { tags: ['semantic-map'] } as never));
     await settle();

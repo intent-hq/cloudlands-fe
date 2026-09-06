@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { MapActivity, Route } from '$lib/components/visualization/semantic-map/core/types';
 import { SEMANTIC_MAP_FIXTURE_MANIFEST } from '$lib/components/visualization/semantic-map/core/fixtures';
 import {
@@ -24,6 +25,7 @@ const WORKSPACE_ID = 'ws-1';
 
 function activity(index: number): MapActivity {
   return {
+    id: `activity-${index}`,
     agentId: `agent-${index % 3}`,
     kind: index % 2 === 0 ? 'read' : 'edit',
     ts: new Date(index * 1_000).toISOString(),
@@ -71,13 +73,17 @@ describe('semanticMapReducer', () => {
       initialState,
       semanticMapActivitiesLoaded(WORKSPACE_ID, activities),
     );
-    expect(state.byWorkspaceId[WORKSPACE_ID].activities).toHaveLength(SEMANTIC_MAP_ACTIVITY_LIMIT);
-    expect(state.byWorkspaceId[WORKSPACE_ID].activities[0]).toBe(activities[2]);
+    expect(getItems(state.byWorkspaceId[WORKSPACE_ID].activities)).toHaveLength(
+      SEMANTIC_MAP_ACTIVITY_LIMIT,
+    );
+    expect(getItems(state.byWorkspaceId[WORKSPACE_ID].activities)[0]).toBe(activities[2]);
 
     const newest = activity(SEMANTIC_MAP_ACTIVITY_LIMIT + 2);
     state = semanticMapReducer(state, semanticMapActivityReceived(WORKSPACE_ID, newest));
-    expect(state.byWorkspaceId[WORKSPACE_ID].activities).toHaveLength(SEMANTIC_MAP_ACTIVITY_LIMIT);
-    expect(state.byWorkspaceId[WORKSPACE_ID].activities.at(-1)).toBe(newest);
+    expect(getItems(state.byWorkspaceId[WORKSPACE_ID].activities)).toHaveLength(
+      SEMANTIC_MAP_ACTIVITY_LIMIT,
+    );
+    expect(getItems(state.byWorkspaceId[WORKSPACE_ID].activities).at(-1)).toBe(newest);
   });
 
   it('updates selection and filter state without changing daemon-owned activity', () => {
@@ -101,8 +107,8 @@ describe('semanticMapReducer', () => {
     state = semanticMapReducer(state, semanticMapKindFilterChanged(WORKSPACE_ID, ['edit']));
     state = semanticMapReducer(state, semanticMapAgentFilterChanged(WORKSPACE_ID, ['agent-1']));
 
+    expect(getItems(state.byWorkspaceId[WORKSPACE_ID].activities)).toEqual(activities);
     expect(state.byWorkspaceId[WORKSPACE_ID]).toMatchObject({
-      activities,
       selectedAgentId: null,
       selectedRegionId: 'renderer-state',
       timeWindow: {

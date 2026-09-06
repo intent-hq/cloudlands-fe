@@ -57,6 +57,7 @@ export const SEMANTIC_MAP_FIXTURE_ASSIGNMENTS: Assignment[] = [
 
 export const SEMANTIC_MAP_FIXTURE_ACTIVITIES: MapActivity[] = [
   {
+    id: 'activity-1',
     regionId: 'agent-execution',
     agentId: 'agent-1',
     agentName: BACKEND_AGENT_NAME,
@@ -65,6 +66,7 @@ export const SEMANTIC_MAP_FIXTURE_ACTIVITIES: MapActivity[] = [
     ts: '2026-09-06T02:00:00.000Z',
   },
   {
+    id: 'activity-2',
     regionId: 'event-stream',
     agentId: 'agent-1',
     agentName: BACKEND_AGENT_NAME,
@@ -73,6 +75,7 @@ export const SEMANTIC_MAP_FIXTURE_ACTIVITIES: MapActivity[] = [
     ts: '2026-09-06T02:01:00.000Z',
   },
   {
+    id: 'activity-3',
     regionId: 'renderer-state',
     agentId: 'agent-2',
     agentName: FRONTEND_AGENT_NAME,
@@ -81,6 +84,7 @@ export const SEMANTIC_MAP_FIXTURE_ACTIVITIES: MapActivity[] = [
     ts: '2026-09-06T02:02:00.000Z',
   },
   {
+    id: 'activity-4',
     agentId: 'agent-3',
     agentName: RESEARCH_AGENT_NAME,
     kind: 'thinking',

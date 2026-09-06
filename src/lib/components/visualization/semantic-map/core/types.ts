@@ -34,6 +34,7 @@ export interface Assignment {
 export type MapActivityKind = 'read' | 'edit' | 'create' | 'delete' | 'move' | 'tool' | 'thinking';
 
 export interface MapActivity {
+  id: string;
   regionId?: string;
   agentId?: string;
   agentName?: string;
