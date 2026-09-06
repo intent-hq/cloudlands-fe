@@ -336,6 +336,31 @@ describe('browser-mock backend:* transport envelope', () => {
     expect(typeof sub.result?.subscriptionId).toBe('string');
   });
 
+  it('backend:request serves semantic-map fixture responses', async () => {
+    const snapshot = await api.invoke('backend:request', {
+      method: 'map.get',
+      params: { workspaceId: 'mock-ws-1' },
+    });
+    const assignments = await api.invoke('backend:request', {
+      method: 'map.classify',
+      params: { workspaceId: 'mock-ws-1', paths: ['src/a.ts'] },
+    });
+    const activities = await api.invoke('backend:request', {
+      method: 'map.activity',
+      params: { workspaceId: 'mock-ws-1' },
+    });
+    const route = await api.invoke('backend:request', {
+      method: 'map.route',
+      params: { workspaceId: 'mock-ws-1', agentId: 'agent-1' },
+    });
+
+    expect(snapshot.result?.source).toBe('curated');
+    expect(snapshot.result?.manifest?.regions.length).toBeGreaterThan(0);
+    expect(assignments.result?.[0]).toMatchObject({ confidence: 'curated' });
+    expect(activities.result?.[0]).toMatchObject({ kind: 'read' });
+    expect(route.result?.visits).toEqual(['agent-execution', 'event-stream']);
+  });
+
   it('backend:request workspace.get resolves the workspace by id as { ok: true, result: { workspace } } (monorepo#2605)', async () => {
     const res = await api.invoke('backend:request', {
       method: 'workspace.get',

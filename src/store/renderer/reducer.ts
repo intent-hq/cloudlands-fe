@@ -93,6 +93,7 @@ import { hudReducer } from './slices/hud/hud-slice';
 import { setupPromptReducer } from './slices/setup-prompt/setup-prompt-slice';
 import { workspaceTransferReducer } from './slices/workspace-transfer/workspace-transfer-slice';
 import { workspaceImportReducer } from './slices/workspace-import/workspace-import-slice';
+import { semanticMapReducer } from './slices/semantic-map/semantic-map-slice';
 
 export const reducers = {
   providerSettings: providerSettingsReducer,
@@ -190,4 +191,5 @@ export const reducers = {
   setupPrompt: setupPromptReducer,
   workspaceTransfer: workspaceTransferReducer,
   workspaceImport: workspaceImportReducer,
+  semanticMap: semanticMapReducer,
 } as const;
