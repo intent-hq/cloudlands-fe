@@ -29,6 +29,7 @@ import type {
 
 const logger = createLogger('WorkspaceCreationSettingsSaga');
 const SETTINGS_PATH = 'workspaceCreationSettings.state';
+const LEGACY_SETTINGS_PATH = 'workspaceInitializer.state';
 
 type HydrationGate = { settled: boolean; queued: boolean };
 
@@ -47,6 +48,21 @@ function stringRecord(value: unknown): Record<string, string> | undefined {
 
 function objectArray<T>(value: unknown): T[] | undefined {
   return Array.isArray(value) ? (value.filter(isRecord) as T[]) : undefined;
+}
+
+function hydrationStateFromBag(
+  daemonBag: Record<string, unknown>,
+): WorkspaceCreationSettingsHydrationState {
+  return {
+    lastSelectedRepo: isRecord(daemonBag.lastSelectedRepo)
+      ? (daemonBag.lastSelectedRepo as unknown as WorkspaceCreationRepoSelection)
+      : null,
+    branchByRepo: stringRecord(daemonBag.branchByRepo),
+    defaultParentPath:
+      typeof daemonBag.defaultParentPath === 'string' ? daemonBag.defaultParentPath : undefined,
+    recentRepos: objectArray<WorkspaceCreationRecentRepo>(daemonBag.recentRepos),
+    remoteSetups: objectArray<WorkspaceCreationRemoteSetup>(daemonBag.remoteSetups),
+  };
 }
 
 let warnedNonCloneableBag = false;
@@ -106,18 +122,30 @@ export function* persistWorkspaceCreationSettingsWorker() {
 export function* hydrateWorkspaceCreationSettingsWorker() {
   try {
     const setting = yield* call([appClient.settings, appClient.settings.get], SETTINGS_PATH);
-    if (setting === null) throw new Error(`settings.get(${SETTINGS_PATH}) returned null`);
-    const daemonBag = isRecord(setting.value) ? setting.value : {};
-    const hydrationState: WorkspaceCreationSettingsHydrationState = {
-      lastSelectedRepo: isRecord(daemonBag.lastSelectedRepo)
-        ? (daemonBag.lastSelectedRepo as unknown as WorkspaceCreationRepoSelection)
-        : null,
-      branchByRepo: stringRecord(daemonBag.branchByRepo),
-      defaultParentPath:
-        typeof daemonBag.defaultParentPath === 'string' ? daemonBag.defaultParentPath : undefined,
-      recentRepos: objectArray<WorkspaceCreationRecentRepo>(daemonBag.recentRepos),
-      remoteSetups: objectArray<WorkspaceCreationRemoteSetup>(daemonBag.remoteSetups),
-    };
+    const daemonBag = isRecord(setting?.value) ? setting.value : {};
+    if (Object.keys(daemonBag).length === 0) {
+      const legacySetting = yield* call(
+        [appClient.settings, appClient.settings.get],
+        LEGACY_SETTINGS_PATH,
+      );
+      const legacyBag = isRecord(legacySetting?.value) ? legacySetting.value : null;
+      if (legacyBag && Object.keys(legacyBag).length > 0) {
+        const migratedBag = hydrationStateFromBag(legacyBag);
+        yield* put(hydrateWorkspaceCreationSettings(migratedBag));
+        logger.info(`Migrated ${LEGACY_SETTINGS_PATH} to ${SETTINGS_PATH}`);
+        try {
+          yield* call(
+            [appClient.settings, appClient.settings.update],
+            [{ path: SETTINGS_PATH, value: migratedBag }],
+          );
+        } catch (error) {
+          logger.error(`Failed to persist migrated ${SETTINGS_PATH} bag`, { error });
+        }
+        return true;
+      }
+    }
+
+    const hydrationState = hydrationStateFromBag(daemonBag);
     yield* put(hydrateWorkspaceCreationSettings(hydrationState));
     return true;
   } catch (error) {
