@@ -86,7 +86,15 @@ describe('diff map source adapters', () => {
       repository: 'intent-hq/cloudlands-fe',
       number: 42,
       headSha: 'pr-head',
-      files: [{ path: 'src/pr.ts', additions: 5, deletions: 3, status: 'renamed' }],
+      files: [
+        {
+          path: 'src/pr.ts',
+          additions: 5,
+          deletions: 3,
+          status: 'renamed',
+          renamedFrom: 'src/old-pr.ts',
+        },
+      ],
     });
 
     expect(document.source).toEqual({
@@ -95,7 +103,11 @@ describe('diff map source adapters', () => {
       prNumber: 42,
       snapshotId: 'pr-head',
     });
-    expect(document.files[0]).toMatchObject({ path: 'src/pr.ts', status: 'renamed' });
+    expect(document.files[0]).toMatchObject({
+      path: 'src/pr.ts',
+      status: 'renamed',
+      renamedFrom: 'src/old-pr.ts',
+    });
     expect(document.files[0].attribution).toBeUndefined();
   });
 

@@ -655,6 +655,37 @@ describe('aggregatePRFiles', () => {
     const commits = [makeCommit({ files: undefined, timestamp: 100 })];
     expect(aggregatePRFiles(commits)).toEqual([]);
   });
+
+  it.each([
+    ['added', undefined],
+    ['deleted', undefined],
+    ['renamed', 'src/old.ts'],
+  ] as const)('preserves %s file status and rename source', (status, renamedFrom) => {
+    const commits = [
+      makeCommit({
+        files: [
+          {
+            path: 'src/current.ts',
+            additions: 2,
+            deletions: 1,
+            status,
+            ...(renamedFrom ? { renamedFrom } : {}),
+          },
+        ],
+      }),
+    ];
+
+    expect(aggregatePRFiles(commits)).toEqual([
+      {
+        path: 'src/current.ts',
+        additions: 2,
+        deletions: 1,
+        staged: false,
+        status,
+        ...(renamedFrom ? { renamedFrom } : {}),
+      },
+    ]);
+  });
 });
 
 // ─── computeTotalStats ─────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ export interface PullRequestDiffFile {
   additions?: number;
   deletions?: number;
   status?: DiffMapFileStatus;
+  renamedFrom?: string;
   oldContent?: string;
   newContent?: string;
 }
@@ -85,16 +86,17 @@ function buildSourceDocument(
   source: DiffMapSource,
   patches?: ReadonlyMap<string, string>,
 ): DiffMapDocument {
-  const statusByPath = new Map(files.map((file) => [file.path, file.status]));
+  const sourceByPath = new Map(files.map((file) => [file.path, file]));
   const document = buildDiffMapDocument(files.map(trackedChange), { source, patches });
   return {
     ...document,
     files: document.files.map((file) => {
-      const status = statusByPath.get(file.path);
+      const input = sourceByPath.get(file.path);
       const { attribution: _, ...withoutAttribution } = file;
       return {
         ...withoutAttribution,
-        ...(status ? { status } : {}),
+        ...(input?.status ? { status: input.status } : {}),
+        ...(input?.renamedFrom ? { renamedFrom: input.renamedFrom } : {}),
       };
     }),
   };
@@ -194,7 +196,10 @@ export async function fromRange(
 
 export function fromPullRequest(pr: PullRequestDiffSource): DiffMapDocument {
   const fileSnapshot = pr.files
-    .map((file) => `${file.path}:${file.additions ?? '?'}:${file.deletions ?? '?'}`)
+    .map(
+      (file) =>
+        `${file.path}:${file.additions ?? '?'}:${file.deletions ?? '?'}:${file.status ?? '?'}:${file.renamedFrom ?? '?'}`,
+    )
     .sort()
     .join('|');
   const snapshotId = pr.headSha ?? pr.updatedAt ?? `${pr.repository}#${pr.number}:${fileSnapshot}`;

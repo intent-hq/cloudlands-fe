@@ -494,7 +494,9 @@ describe('PRSection', () => {
       hasOpenPR: true,
       pullRequests: [testPR],
       pushedCommits: [
-        makePushedCommit('abc', { files: [{ path: 'src/a.ts', additions: 2, deletions: 0 }] }),
+        makePushedCommit('abc', {
+          files: [{ path: 'src/a.ts', additions: 2, deletions: 0, status: 'added' }],
+        }),
       ],
       hasPushedCommits: true,
     });
@@ -515,7 +517,7 @@ describe('PRSection', () => {
       repository: 'octocat/demo',
       number: 7,
       updatedAt: undefined,
-      files: [{ path: 'src/a.ts', additions: 2, deletions: 0, staged: false }],
+      files: [{ path: 'src/a.ts', additions: 2, deletions: 0, staged: false, status: 'added' }],
     });
     expect(container.querySelector('[data-testid="diff-map"]')).toBeTruthy();
   });
