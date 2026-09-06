@@ -335,6 +335,7 @@ export function registerWorkspaceTabShortcuts({
       key,
       alt: true,
       global: true,
+      allowInTerminal: true,
       description,
       action: withWorkspace(action),
     });
