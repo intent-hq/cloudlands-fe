@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.138.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.138.3...v2.138.4) (2026-09-06)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.29 ([#2223](https://github.com/intent-hq/cloudlands-fe/issues/2223)) ([0ef8a4a](https://github.com/intent-hq/cloudlands-fe/commit/0ef8a4aca1b11609c04caec19365f07d0c0f432e))
+
+
+### ⚡ Performance
+
+* tier workspace hydration and stage chat rendering (load-path batch C) ([#2120](https://github.com/intent-hq/cloudlands-fe/issues/2120)) ([3d1806f](https://github.com/intent-hq/cloudlands-fe/commit/3d1806f8407a9dae6d35e629f3181843a4fb0922))
+
 ## [2.138.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.138.2...v2.138.3) (2026-09-06)
 
 
