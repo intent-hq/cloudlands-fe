@@ -6,6 +6,7 @@ import type {
   DiffMapFile,
   DiffMapFileStatus,
   DiffMapGroup,
+  DiffMapSection,
   DiffMapSource,
 } from './types';
 
@@ -56,6 +57,20 @@ function validGroup(value: unknown): value is DiffMapGroup {
   );
 }
 
+function validSection(value: unknown, groupIds: ReadonlySet<string>): value is DiffMapSection {
+  return (
+    record(value) &&
+    typeof value.id === 'string' &&
+    typeof value.path === 'string' &&
+    typeof value.displayPrefix === 'string' &&
+    typeof value.displayName === 'string' &&
+    Array.isArray(value.groupIds) &&
+    value.groupIds.every((id) => typeof id === 'string' && groupIds.has(id)) &&
+    typeof value.changedCount === 'number' &&
+    (value.totalCount === undefined || typeof value.totalCount === 'number')
+  );
+}
+
 function annotations(value: unknown): DiffMapAnnotation[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((candidate, index) => {
@@ -93,6 +108,14 @@ function fullDocument(value: Record<string, unknown>): DiffMapDocument | null {
     !value.files.every(validFile) ||
     !Array.isArray(value.groups) ||
     !value.groups.every(validGroup)
+  ) {
+    return null;
+  }
+  const groupIds = new Set((value.groups as DiffMapGroup[]).map((group) => group.id));
+  if (
+    value.sections !== undefined &&
+    (!Array.isArray(value.sections) ||
+      !value.sections.every((section) => validSection(section, groupIds)))
   ) {
     return null;
   }
