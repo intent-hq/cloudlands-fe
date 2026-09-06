@@ -932,7 +932,7 @@ describe('screenshot Page-domain hang fallback (#3154)', () => {
     await vi.advanceTimersByTimeAsync(5_100);
 
     await expect(pending).rejects.toThrow(
-      'Screenshot capture failed: CDP stage: Page.getLayoutMetrics failed: Page domain unavailable; Electron fallback stage: capturePage timed out after 5000ms: the tab is not painting (its surface may be hidden or occluded).',
+      'Screenshot capture failed: CDP stage: Page.getLayoutMetrics failed: Page domain unavailable; Electron fallback stage: capturePage timed out after 5000ms: the tab is not painting (it is not the active (displayed) tab of a visible panel, or its surface is occluded). Use { action: "showTab", tabId } to activate it in its panel without stealing focus (or focusTab to activate and focus), check listTabs "displayed", then capture again.',
     );
     expect(wc.capturePage).toHaveBeenCalledTimes(1);
     service.unregisterTab('tab-fallback-hang');

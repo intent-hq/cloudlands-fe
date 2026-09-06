@@ -24,6 +24,7 @@ import {
   selectAllTabs,
   selectHiddenTabs,
   selectPanelLayoutWorkspaces,
+  selectPanels,
 } from '../../panel-layout/panel-layout-selectors';
 import {
   hydrateWorkspaceLayout,
@@ -501,6 +502,16 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
   // are alive offscreen and their owner must keep seeing them
   // (monorepo#2857). They carry `hidden: true` so main can project the
   // listTabs `visibility` field and guard focusTab (monorepo#3045).
+  // Panel-mounted tabs that are their panel's active tab carry
+  // `active: true`: a mounted-but-inactive tab renders nothing in the
+  // tabless UI, so main projects `displayed` from it and agents can tell a
+  // painted tab from one that merely sits in a panel.
+  const panels = yield* selectPanels.effect(workspaceId);
+  const activeTabIds = new Set(
+    Object.values(panels)
+      .map((panel) => panel.activeTabId)
+      .filter((tabId): tabId is string => typeof tabId === 'string'),
+  );
   const toReplyTab = (tab: PanelTab, hidden: boolean) => ({
     tabId: tab.id,
     url: tab.browserUrl || '',
@@ -518,6 +529,7 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
       : {}),
     ...(isBrowserTabViewport(tab.viewport) ? { viewport: tab.viewport } : {}),
     ...(hidden ? { hidden: true } : {}),
+    ...(!hidden && activeTabIds.has(tab.id) ? { active: true } : {}),
   });
   const browserTabs = [
     ...(yield* selectAllTabs.effect(workspaceId))

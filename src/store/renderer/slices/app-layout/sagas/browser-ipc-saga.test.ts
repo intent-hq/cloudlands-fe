@@ -1232,6 +1232,7 @@ describe('browserIpcSaga', () => {
                     ownerAgentId: 'agent-1',
                   },
                 ],
+                activeTabId: null,
               },
             },
             hiddenTabs: createCollection('id', [
@@ -1264,6 +1265,74 @@ describe('browserIpcSaga', () => {
           tabId: 'browser-hidden',
           url: 'http://b/',
           title: 'B',
+          closable: true,
+          ownerAgentId: 'agent-1',
+          hidden: true,
+        },
+      ],
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  // A panel-mounted tab is `active` only when it is its panel's active tab
+  // (the one actually painted); a mounted-but-inactive tab and a hidden tab
+  // carry no marker, even when a stale activeTabId still names the hidden one.
+  it("marks each panel's active tab with active: true in list replies", async () => {
+    const task = start();
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: {
+              one: {
+                tabs: [
+                  { id: 'browser-active', type: 'browser', browserUrl: 'http://a/', title: 'A' },
+                  { id: 'browser-inactive', type: 'browser', browserUrl: 'http://b/', title: 'B' },
+                ],
+                activeTabId: 'browser-active',
+              },
+              two: {
+                tabs: [
+                  { id: 'note-1', type: 'note', title: 'Note' },
+                  { id: 'browser-behind', type: 'browser', browserUrl: 'http://c/', title: 'C' },
+                ],
+                activeTabId: 'note-1',
+              },
+              three: { tabs: [], activeTabId: 'browser-hidden' },
+            },
+            hiddenTabs: createCollection('id', [
+              {
+                id: 'browser-hidden',
+                type: 'browser',
+                browserUrl: 'http://d/',
+                title: 'D',
+                ownerAgentId: 'agent-1',
+              },
+            ]),
+          },
+        },
+      },
+    };
+
+    await emit({ workspaceId: 'ws-1', requestId: 'req-active' }, 'browser:list-tabs-request');
+
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
+      requestId: 'req-active',
+      tabs: [
+        {
+          tabId: 'browser-active',
+          url: 'http://a/',
+          title: 'A',
+          closable: true,
+          active: true,
+        },
+        { tabId: 'browser-inactive', url: 'http://b/', title: 'B', closable: true },
+        { tabId: 'browser-behind', url: 'http://c/', title: 'C', closable: true },
+        {
+          tabId: 'browser-hidden',
+          url: 'http://d/',
+          title: 'D',
           closable: true,
           ownerAgentId: 'agent-1',
           hidden: true,
@@ -1705,11 +1774,15 @@ describe('browserIpcSaga', () => {
       expect(mocks.invoke.mock.calls.map(([, payload]: any[]) => payload)).toEqual([
         {
           requestId: 'req-h3a',
-          tabs: [{ tabId: 'browser-1', url: 'http://a/', title: 'A', closable: true }],
+          tabs: [
+            { tabId: 'browser-1', url: 'http://a/', title: 'A', closable: true, active: true },
+          ],
         },
         {
           requestId: 'req-h3b',
-          tabs: [{ tabId: 'browser-1', url: 'http://a/', title: 'A', closable: true }],
+          tabs: [
+            { tabId: 'browser-1', url: 'http://a/', title: 'A', closable: true, active: true },
+          ],
         },
       ]);
       task.cancel();
@@ -1770,7 +1843,7 @@ describe('browserIpcSaga', () => {
 
       expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
         requestId: 'req-r1',
-        tabs: [{ tabId: 'browser-1', url: 'http://a/', title: 'A', closable: true }],
+        tabs: [{ tabId: 'browser-1', url: 'http://a/', title: 'A', closable: true, active: true }],
       });
       task.cancel();
       await task.toPromise();
@@ -1881,7 +1954,9 @@ describe('browserIpcSaga', () => {
         { requestId: 'req-e2a', error: 'layout hydration failed: storage exploded' },
         {
           requestId: 'req-e2b',
-          tabs: [{ tabId: 'browser-1', url: 'http://a/', title: 'A', closable: true }],
+          tabs: [
+            { tabId: 'browser-1', url: 'http://a/', title: 'A', closable: true, active: true },
+          ],
         },
       ]);
       task.cancel();
@@ -1916,7 +1991,7 @@ describe('browserIpcSaga', () => {
       await emit({ workspaceId: 'ws-hyd-ok', requestId: 'req-ok' }, 'browser:list-tabs-request');
       expect(mocks.invoke).toHaveBeenCalledWith('browser:list-tabs-response', {
         requestId: 'req-ok',
-        tabs: [{ tabId: 'browser-2', url: 'http://b/', title: 'B', closable: true }],
+        tabs: [{ tabId: 'browser-2', url: 'http://b/', title: 'B', closable: true, active: true }],
       });
       task.cancel();
       await task.toPromise();

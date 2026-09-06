@@ -97,6 +97,12 @@ interface PanelBrowserTab {
    * agent-owned tabs can be hidden; absent = visible.
    */
   hidden?: boolean;
+  /**
+   * The tab is its panel's active tab, i.e. the one the panel actually paints
+   * (a mounted-but-inactive tab renders nothing in the tabless UI). Never set
+   * on hidden tabs; absent = not the active tab.
+   */
+  active?: boolean;
 }
 
 /**
@@ -581,6 +587,7 @@ class EmbeddedBrowserCdpService {
       emulatedSize?: { width: number; height: number };
       viewport: BrowserTabViewport;
       hidden?: boolean;
+      active?: boolean;
     })[];
     stale: boolean;
   }> {
@@ -601,18 +608,20 @@ class EmbeddedBrowserCdpService {
     // Panel tabs only, marking whether each is backed by a live webview.
     // Each tab is annotated with its owner from the ownership registry
     // (rehydrated from the panel reply above) so agents can see which tabs
-    // they may manipulate (monorepo#2857), and with `hidden` when the tab
-    // sits in the workspace's hidden set (monorepo#3045).
+    // they may manipulate (monorepo#2857), with `hidden` when the tab sits
+    // in the workspace's hidden set (monorepo#3045), and with `active` when
+    // it is its panel's painted (active) tab.
     const tabs = panelTabs.map((panelTab) => {
       const ownership = this.tabOwnership.get(panelTab.tabId);
       const owner = ownership
         ? { ownerAgentId: ownership.ownerAgentId, emulatedSize: ownership.emulatedSize }
         : {};
       const hidden = panelTab.hidden === true ? { hidden: true } : {};
+      const active = panelTab.active === true ? { active: true } : {};
       const viewport = this.tabViewports.get(panelTab.tabId) ?? { mode: 'fit' as const };
       const mounted = mountedTabs.find((t) => t.tabId === panelTab.tabId);
       if (mounted) {
-        return { ...mounted, mounted: true, ...owner, viewport, ...hidden };
+        return { ...mounted, mounted: true, ...owner, viewport, ...hidden, ...active };
       }
       return {
         tabId: panelTab.tabId,
@@ -623,6 +632,7 @@ class EmbeddedBrowserCdpService {
         viewport,
         ...owner,
         ...hidden,
+        ...active,
       };
     });
     return { tabs, stale };
@@ -1744,7 +1754,7 @@ class EmbeddedBrowserCdpService {
               reject(
                 new Error(
                   // i18n-ignore (agent-facing protocol error, not user-facing)
-                  `capturePage timed out after ${SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS}ms: the tab is not painting (its surface may be hidden or occluded).`,
+                  `capturePage timed out after ${SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS}ms: the tab is not painting (it is not the active (displayed) tab of a visible panel, or its surface is occluded). Use { action: "showTab", tabId } to activate it in its panel without stealing focus (or focusTab to activate and focus), check listTabs "displayed", then capture again.`,
                 ),
               ),
             SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS,
@@ -1755,14 +1765,14 @@ class EmbeddedBrowserCdpService {
       if (image.isEmpty?.() || size.width <= 0 || size.height <= 0) {
         throw new Error(
           // i18n-ignore (agent-facing operational diagnostic, not user-facing)
-          `webContents.capturePage returned an empty image (${size.width}x${size.height}): the tab surface has not painted. Try focusTab/showTab or resizing the tab before capturing again.`,
+          `webContents.capturePage returned an empty image (${size.width}x${size.height}): the tab surface has not painted — it is not the active (displayed) tab of a visible panel. Use { action: "showTab", tabId } to activate it in its panel without stealing focus (or focusTab to activate and focus), check listTabs "displayed", then capture again.`,
         );
       }
       const jpeg = image.toJPEG(80);
       if (jpeg.length === 0) {
         throw new Error(
           // i18n-ignore (agent-facing operational diagnostic, not user-facing)
-          `webContents.capturePage encoded an empty image (${size.width}x${size.height}): the tab surface has not painted. Try focusTab/showTab or resizing the tab before capturing again.`,
+          `webContents.capturePage encoded an empty image (${size.width}x${size.height}): the tab surface has not painted — it is not the active (displayed) tab of a visible panel. Use { action: "showTab", tabId } to activate it in its panel without stealing focus (or focusTab to activate and focus), check listTabs "displayed", then capture again.`,
         );
       }
       return {
