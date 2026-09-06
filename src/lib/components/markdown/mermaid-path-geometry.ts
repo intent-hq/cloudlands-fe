@@ -2706,7 +2706,7 @@ function stateRoutePoints(
         failureTarget,
       ];
     }
-    const failSource = pointAt(source, 0.35, 1);
+    const failSource = pointAt(source, 0, 1);
     const failureTarget = pointAt(target, 0, 0.5);
     const targetLaneX = failureTarget.x - 20;
     const laneY = bottom + (compact ? 25 : 45);

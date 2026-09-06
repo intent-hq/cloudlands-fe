@@ -1154,7 +1154,7 @@ ${verticalSource}`;
     const groupedFlowchart = Boolean(svg.querySelector('g.cluster'));
     const padding = flowchart
       ? compactLayout
-        ? 24
+        ? 12
         : 28
       : groupedFlowchart
         ? 24

@@ -3371,7 +3371,7 @@ function computeCompactColumnEdgePaths(
     let points: Array<{ x: number; y: number }>;
 
     if (edge.from === edge.to) {
-      const laneClearance = edge.label ? 64 : 44;
+      const laneClearance = edge.label ? 64 : 28;
       const start = { x: source.x + source.width / 2, y: source.y };
       const end = { x: source.x + source.width, y: source.y + source.height / 2 };
       const laneX = columnWidth + laneClearance;
