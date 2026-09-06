@@ -20,6 +20,7 @@
   import { navigateToNote } from '$lib/utils/workspace-navigation';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
   import ChatMessageNavigator from '$lib/components/chat/ChatMessageNavigator.svelte';
+  import BrowserTabsMenu from '$lib/components/chat/BrowserTabsMenu.svelte';
   import type { ChatNavigationState } from '$lib/components/chat/chat-message-navigation';
   import * as Menu from '$lib/components/ui/menu';
   import AgentViewSettingsDropdown from './AgentViewSettingsDropdown.svelte';
@@ -237,14 +238,19 @@
 </script>
 
 {#snippet agentPrimaryActions()}
-  <ChatMessageNavigator
-    messages={chatNavigationState.userMessages}
-    isAtBottom={chatNavigationState.isAtBottom}
-    isLoadingIndex={chatNavigationState.isLoadingUserMessageIndex}
-    onSelectMessage={(messageId) => chatPanelRef?.navigateToUserMessage(messageId) ?? false}
-    onScrollToBottom={() => chatPanelRef?.scrollToBottom()}
-    onOpen={() => chatPanelRef?.refreshUserMessageIndex()}
-  />
+  <div class="flex min-w-0 items-center gap-1.5">
+    {#if tab.agentId}
+      <BrowserTabsMenu {workspaceId} agentId={tab.agentId} />
+    {/if}
+    <ChatMessageNavigator
+      messages={chatNavigationState.userMessages}
+      isAtBottom={chatNavigationState.isAtBottom}
+      isLoadingIndex={chatNavigationState.isLoadingUserMessageIndex}
+      onSelectMessage={(messageId) => chatPanelRef?.navigateToUserMessage(messageId) ?? false}
+      onScrollToBottom={() => chatPanelRef?.scrollToBottom()}
+      onOpen={() => chatPanelRef?.refreshUserMessageIndex()}
+    />
+  </div>
 {/snippet}
 
 {#snippet agentDisplayActions()}

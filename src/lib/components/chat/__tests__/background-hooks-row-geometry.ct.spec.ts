@@ -108,8 +108,64 @@ for (const theme of ['light', 'dark'] as const) {
             .getByTestId('background-hook-icon')
             .locator('svg')
             .boundingBox();
-          expect(iconBox?.width).toBeCloseTo(16 * zoom, 1);
-          expect(iconBox?.height).toBeCloseTo(16 * zoom, 1);
+          expect(iconBox?.width).toBeCloseTo(14 * zoom, 1);
+          expect(iconBox?.height).toBeCloseTo(14 * zoom, 1);
+
+          const summaryGeometry = await component
+            .getByTestId('background-hook-summary-row')
+            .evaluate((row) => {
+              const bounds = row.getBoundingClientRect();
+              const leading = row
+                .querySelector<HTMLElement>('[data-testid="background-hook-icon"]')!
+                .getBoundingClientRect();
+              const title = row
+                .querySelector<HTMLElement>('[data-testid="background-hook-title"]')!
+                .getBoundingClientRect();
+              const chevron = row
+                .querySelector<HTMLElement>('[data-testid="background-hook-chevron"]')!
+                .getBoundingClientRect();
+              const kebab = row
+                .querySelector<HTMLElement>('[data-testid="background-hook-chip"]')!
+                .getBoundingClientRect();
+              const mutedProbe = document.createElement('span');
+              mutedProbe.style.color = 'hsl(var(--muted-foreground))';
+              row.append(mutedProbe);
+              const titleColor = getComputedStyle(
+                row.querySelector<HTMLElement>('[data-testid="background-hook-title"]')!,
+              ).color;
+              const iconColor = getComputedStyle(
+                row.querySelector<HTMLElement>('[data-testid="background-hook-icon"]')!,
+              ).color;
+              const kebabColor = getComputedStyle(
+                row.querySelector<HTMLElement>('[data-testid="background-hook-chip"]')!,
+              ).color;
+              const mutedColor = getComputedStyle(mutedProbe).color;
+              mutedProbe.remove();
+              return {
+                row: [bounds.left, bounds.right, bounds.height],
+                leading: [leading.left, leading.width],
+                titleLeft: title.left,
+                chevron: [chevron.right, chevron.width],
+                kebab: [kebab.left, kebab.right, kebab.width],
+                overflow: [row.scrollWidth, row.clientWidth],
+                colors: [titleColor, iconColor, kebabColor, mutedColor],
+              };
+            });
+          expect(summaryGeometry.row[2]).toBeCloseTo(36 * zoom, 1);
+          expect(summaryGeometry.leading[1]).toBeCloseTo(20 * zoom, 1);
+          expect(summaryGeometry.titleLeft - summaryGeometry.row[0]).toBeCloseTo(40 * zoom, 1);
+          expect(summaryGeometry.chevron[1]).toBeCloseTo(24 * zoom, 1);
+          expect(summaryGeometry.kebab[2]).toBeCloseTo(24 * zoom, 1);
+          expect(summaryGeometry.kebab[1]).toBeLessThanOrEqual(
+            summaryGeometry.chevron[0] - 24 * zoom,
+          );
+          expect(summaryGeometry.row[1] - summaryGeometry.chevron[0]).toBeCloseTo(12 * zoom, 1);
+          expect(summaryGeometry.overflow[0]).toBeLessThanOrEqual(summaryGeometry.overflow[1]);
+          expect(summaryGeometry.colors.slice(0, -1)).toEqual([
+            summaryGeometry.colors.at(-1),
+            summaryGeometry.colors.at(-1),
+            summaryGeometry.colors.at(-1),
+          ]);
 
           const boxes = await metrics.evaluateAll((nodes) =>
             nodes.map((node) => {
@@ -192,6 +248,33 @@ test('uses one internal separator between embedded hooks without gaps or doubled
   expect(geometry.map(({ borderBottom }) => Number.parseFloat(borderBottom))).toEqual([0, 0, 0]);
   expect(geometry[1].top).toBeCloseTo(geometry[0].bottom, 1);
   expect(geometry[2].top).toBeCloseTo(geometry[1].bottom, 1);
+});
+
+test('preserves the hook name before secondary labels at 280px', async ({ mount }) => {
+  const component = await mount(BackgroundHooksRowGeometryHost, {
+    props: { embedded: true, width: 280 },
+  });
+  const summary = component.getByTestId('background-hook-summary');
+  const lanes = await summary.evaluate((row) => {
+    const measure = (testId: string) => {
+      const node = row.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!;
+      return {
+        width: node.getBoundingClientRect().width,
+        client: node.clientWidth,
+        scroll: node.scrollWidth,
+      };
+    };
+    return {
+      title: measure('background-hook-title'),
+      status: measure('background-hook-state'),
+      containment: { client: row.clientWidth, scroll: row.scrollWidth },
+    };
+  });
+
+  expect(lanes.title.width).toBeGreaterThanOrEqual(64);
+  expect(lanes.title.width).toBeGreaterThan(lanes.status.width);
+  expect(lanes.status.scroll).toBeGreaterThan(lanes.status.client);
+  expect(lanes.containment.scroll).toBeLessThanOrEqual(lanes.containment.client);
 });
 
 test('supports keyboard disclosure and reduced motion', async ({ mount, page }) => {

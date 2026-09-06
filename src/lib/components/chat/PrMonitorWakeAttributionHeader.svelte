@@ -21,6 +21,11 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import {
+    SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
+    SUBSCRIPTION_ICON_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_CLASS,
+  } from './subscription-disclosure';
 
   interface Props {
     attribution: PrMonitorWakeAttribution;
@@ -54,18 +59,31 @@
 </script>
 
 <div
-  class="flex items-center gap-1.5 rounded-md text-xs {className}"
+  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} rounded-md {className}"
   data-testid="pr-monitor-wake-attribution"
 >
-  <Fa icon={faCodePullRequest} class="w-3 h-3 text-ghost" />
-  <button
-    type="button"
-    class="min-w-0 break-words text-left text-foreground font-medium hover:underline cursor-pointer"
-    data-testid="pr-monitor-wake-chip"
-    title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
-    onclick={handleOpenPr}
+  <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true">
+    <Fa
+      icon={faCodePullRequest}
+      size={14}
+      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+    />
+  </span>
+  <span
+    class="grid min-w-0 flex-1 grid-cols-[minmax(4rem,max-content)_minmax(0,1fr)] items-baseline gap-1 overflow-hidden whitespace-nowrap"
   >
-    {chipLabel}
-  </button>
-  <span class="text-subtle">{m.chat_prMonitorWakeAttribution_wokeAgent_after()}</span>
+    <button
+      type="button"
+      class="min-w-0 max-w-full cursor-pointer truncate border-none bg-transparent p-0 text-left font-normal text-muted-foreground hover:underline"
+      data-testid="pr-monitor-wake-chip"
+      title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
+      onclick={handleOpenPr}
+    >
+      {chipLabel}
+    </button>
+    <span
+      class="min-w-0 truncate whitespace-nowrap font-normal text-muted-foreground"
+      data-testid="pr-monitor-wake-status">{m.chat_prMonitorWakeAttribution_wokeAgent_after()}</span
+    >
+  </span>
 </div>

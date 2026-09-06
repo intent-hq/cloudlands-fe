@@ -20,6 +20,7 @@ export const {
   formatRelativeTime,
   formatCompactRelativeTime,
   formatCompactDuration,
+  formatSalientDuration,
   formatTime,
   formatDate,
   formatShortDate,

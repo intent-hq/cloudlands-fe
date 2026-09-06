@@ -35,7 +35,7 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
-  import { formatInteger, formatTime } from '$lib/i18n/format';
+  import { formatDateTime, formatInteger } from '$lib/i18n/format';
   import { getPrRepoLabel } from '$lib/utils/pr-chip-label';
   import { handleLink, openInBrowserPanel } from '$features/navigation/link-handler';
   import type { WorkspaceId } from '$shared/types/branded-ids';
@@ -54,13 +54,17 @@
   import {
     safeSubscriptionRowTransition,
     safeSubscriptionSlide,
-    SUBSCRIPTION_ACTION_ICON_CLASS,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_ICON_CLASS,
     SUBSCRIPTION_ICON_BUTTON_CLASS,
     SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_CLASS,
+    SUBSCRIPTION_LEADING_CONTENT_CLASS,
+    SUBSCRIPTION_ROW_GEOMETRY_CLASS,
     SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
+    SUBSCRIPTION_TRAILING_CONTROLS_CLASS,
+    SUBSCRIPTION_WAKE_BODY_PADDING_CLASS,
   } from './subscription-disclosure';
   import { getExpandedPrMonitorId, setExpandedPrMonitorId } from './agent-subscriptions-view-state';
 
@@ -302,163 +306,181 @@
         transition:safeSubscriptionRowTransition
       >
         <div
-          class="flex min-h-9 min-w-0 max-w-full items-center gap-2 px-3 py-2 text-muted-foreground"
+          class="{SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+          data-testid="monitored-pr-summary-row"
         >
           <Button
             variant="plain"
             type="button"
-            class="h-auto min-h-0 w-auto min-w-0 max-w-full flex-1 shrink overflow-hidden whitespace-normal rounded border-0 text-left {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} focus-visible:ring-1"
+            class="h-auto min-h-0 w-auto min-w-0 max-w-full flex-1 shrink justify-start overflow-hidden whitespace-nowrap rounded border-0 p-0! text-left {SUBSCRIPTION_LEADING_CONTENT_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
             data-testid="monitored-pr-summary"
             data-subscription-row="pr-monitor"
             aria-expanded={expandedMonitorId === monitor.monitorId}
             aria-controls={detailsId}
             onclick={() => toggleMonitorDetails(monitor.monitorId)}
           >
-            <Fa icon={faCodePullRequest} class="h-3.5 w-3.5 shrink-0 {SUBSCRIPTION_ICON_CLASS}" />
-            <span class="min-w-0 flex-1 truncate">{monitorLabel(monitor)}</span>
-            {#if monitor.hasPendingChanges}
-              <span
-                class="block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500/80"
-                title={m.chat_monitoredPrs_pendingDot_tooltip()}
-              ></span>
-            {/if}
-          </Button>
-          <DropdownMenu
-            side="top"
-            align="end"
-            collisionPadding={12}
-            contentClass="monitored-pr-menu-content p-0"
-          >
-            {#snippet trigger({ props })}
-              <Button
-                {...props}
-                variant="plain"
-                size="icon-xs"
-                type="button"
-                onclick={(event) => {
-                  event.stopPropagation();
-                  (props.onclick as ((event: MouseEvent) => void) | undefined)?.(event);
-                }}
-                class="h-6 w-6 border-0 {SUBSCRIPTION_ACTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
-                data-testid="monitored-pr-chip"
-                aria-label={m.chat_monitoredPrs_row_ariaLabel()}
-              >
-                <KebabIcon class="h-3 w-3" />
-              </Button>
-            {/snippet}
-            {#snippet content({ close }: { close: () => void })}
-              <div
-                class="flex w-full min-w-0 flex-col p-1"
-                data-testid="monitored-pr-menu"
-                data-viewport-padding="12"
-              >
-                <Button
-                  variant="ghost-light"
-                  size="xs"
-                  class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
-                  data-testid="monitored-pr-check-flush-item"
-                  onclick={() => handleCheckAndFlush(monitor, close)}
-                >
-                  <Fa icon={faArrowsRotate} class="mt-0.5 h-2.5 w-2.5" />
-                  <span class="min-w-0 break-words leading-4">
-                    {m.chat_monitoredPrs_checkAndFlush_label()}
-                  </span>
-                </Button>
-                <Button
-                  variant="ghost-light"
-                  size="xs"
-                  class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
-                  data-testid="monitored-pr-open-in-app-item"
-                  onclick={() => handleOpenInApp(monitor, close)}
-                >
-                  <Fa icon={faWindowMaximize} class="mt-0.5 h-2.5 w-2.5" />
-                  <span class="min-w-0 break-words leading-4">
-                    {m.chat_monitoredPrs_openInApp_label()}
-                  </span>
-                </Button>
-                <Button
-                  variant="ghost-light"
-                  size="xs"
-                  class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
-                  data-testid="monitored-pr-open-external-item"
-                  onclick={() => handleOpenExternal(monitor, close)}
-                >
-                  <Fa icon={faArrowUpRightFromSquare} class="mt-0.5 h-2.5 w-2.5" />
-                  <span class="min-w-0 break-words leading-4">
-                    {m.chat_monitoredPrs_openInExternalBrowser_label()}
-                  </span>
-                </Button>
-                <Button
-                  variant="ghost-light"
-                  size="xs"
-                  class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
-                  data-testid="monitored-pr-cancel-item"
-                  onclick={() => handleCancel(monitor, close)}
-                >
-                  <Fa icon={faXmark} class="mt-0.5 h-2.5 w-2.5" />
-                  <span class="min-w-0 break-words leading-4">
-                    {m.chat_monitoredPrs_cancel_label()}
-                  </span>
-                </Button>
-              </div>
-            {/snippet}
-          </DropdownMenu>
-          <Button
-            variant="plain"
-            size="icon-xs"
-            type="button"
-            class="h-6 w-6 border-0 {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
-            data-testid="monitored-pr-disclosure"
-            aria-label={monitorLabel(monitor)}
-            aria-expanded={expandedMonitorId === monitor.monitorId}
-            aria-controls={detailsId}
-            onclick={(event) => {
-              event.stopPropagation();
-              toggleMonitorDetails(monitor.monitorId);
-            }}
-          >
-            <span data-testid="monitored-pr-chevron">
-              <Fa
-                icon={faChevronDown}
-                size={16}
-                class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {expandedMonitorId ===
-                monitor.monitorId
-                  ? ''
-                  : 'rotate-90'}"
-              />
+            <span
+              class="{SUBSCRIPTION_LEADING_COLUMN_CLASS} {SUBSCRIPTION_ICON_CLASS}"
+              data-testid="monitored-pr-icon"
+              aria-hidden="true"
+            >
+              <Fa icon={faCodePullRequest} size={14} class="h-3.5 w-3.5 shrink-0" />
             </span>
+            <span
+              class="min-w-0 flex-1 truncate text-muted-foreground"
+              data-testid="monitored-pr-label">{monitorLabel(monitor)}</span
+            >
           </Button>
+          <div
+            class={SUBSCRIPTION_TRAILING_CONTROLS_CLASS}
+            data-testid="monitored-pr-trailing-controls"
+          >
+            <DropdownMenu
+              side="top"
+              align="end"
+              collisionPadding={12}
+              contentClass="monitored-pr-menu-content p-0"
+            >
+              {#snippet trigger({ props })}
+                <Button
+                  {...props}
+                  variant="plain"
+                  size="icon-xs"
+                  type="button"
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    (props.onclick as ((event: MouseEvent) => void) | undefined)?.(event);
+                  }}
+                  class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+                  data-testid="monitored-pr-chip"
+                  aria-label={m.chat_monitoredPrs_row_ariaLabel()}
+                >
+                  <KebabIcon class="h-3 w-3" />
+                </Button>
+              {/snippet}
+              {#snippet content({ close }: { close: () => void })}
+                <div
+                  class="flex w-full min-w-0 flex-col p-1"
+                  data-testid="monitored-pr-menu"
+                  data-viewport-padding="12"
+                >
+                  <Button
+                    variant="ghost-light"
+                    size="xs"
+                    class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
+                    data-testid="monitored-pr-check-flush-item"
+                    onclick={() => handleCheckAndFlush(monitor, close)}
+                  >
+                    <Fa icon={faArrowsRotate} class="mt-0.5 h-2.5 w-2.5" />
+                    <span class="min-w-0 break-words leading-4">
+                      {m.chat_monitoredPrs_checkAndFlush_label()}
+                    </span>
+                  </Button>
+                  <Button
+                    variant="ghost-light"
+                    size="xs"
+                    class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
+                    data-testid="monitored-pr-open-in-app-item"
+                    onclick={() => handleOpenInApp(monitor, close)}
+                  >
+                    <Fa icon={faWindowMaximize} class="mt-0.5 h-2.5 w-2.5" />
+                    <span class="min-w-0 break-words leading-4">
+                      {m.chat_monitoredPrs_openInApp_label()}
+                    </span>
+                  </Button>
+                  <Button
+                    variant="ghost-light"
+                    size="xs"
+                    class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
+                    data-testid="monitored-pr-open-external-item"
+                    onclick={() => handleOpenExternal(monitor, close)}
+                  >
+                    <Fa icon={faArrowUpRightFromSquare} class="mt-0.5 h-2.5 w-2.5" />
+                    <span class="min-w-0 break-words leading-4">
+                      {m.chat_monitoredPrs_openInExternalBrowser_label()}
+                    </span>
+                  </Button>
+                  <Button
+                    variant="ghost-light"
+                    size="xs"
+                    class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
+                    data-testid="monitored-pr-cancel-item"
+                    onclick={() => handleCancel(monitor, close)}
+                  >
+                    <Fa icon={faXmark} class="mt-0.5 h-2.5 w-2.5" />
+                    <span class="min-w-0 break-words leading-4">
+                      {m.chat_monitoredPrs_cancel_label()}
+                    </span>
+                  </Button>
+                </div>
+              {/snippet}
+            </DropdownMenu>
+            <Button
+              variant="plain"
+              size="icon-xs"
+              type="button"
+              class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+              data-testid="monitored-pr-disclosure"
+              aria-label={monitorLabel(monitor)}
+              aria-expanded={expandedMonitorId === monitor.monitorId}
+              aria-controls={detailsId}
+              onclick={(event) => {
+                event.stopPropagation();
+                toggleMonitorDetails(monitor.monitorId);
+              }}
+            >
+              <span
+                class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                data-testid="monitored-pr-chevron"
+              >
+                <Fa
+                  icon={faChevronDown}
+                  size={16}
+                  class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {expandedMonitorId ===
+                  monitor.monitorId
+                    ? ''
+                    : 'rotate-90'}"
+                />
+              </span>
+            </Button>
+          </div>
         </div>
         {#if expandedMonitorId === monitor.monitorId}
           <div
             id={detailsId}
-            class="grid gap-1 overflow-hidden px-9 pb-2 text-xs text-subtle"
+            class="grid gap-1 overflow-hidden text-xs text-muted-foreground {SUBSCRIPTION_WAKE_BODY_PADDING_CLASS}"
             data-testid="monitored-pr-details"
             transition:safeSubscriptionSlide
           >
-            <strong class="font-medium text-muted-foreground">{readinessSummary(monitor)}</strong>
+            <span class="text-muted-foreground">{readinessSummary(monitor)}</span>
             {#if !workspaceRepo || monitor.repo !== workspaceRepo}
               <!-- i18n-ignore (org/repo#number identifier, not user-facing prose) -->
-              <span>{monitor.repo}#{monitor.prNumber}</span>
+              <span class="text-muted-foreground">{monitor.repo}#{monitor.prNumber}</span>
             {/if}
-            {#if checksSummary(monitor)}<span>{checksSummary(monitor)}</span>{/if}
-            {#if approvalsSummary(monitor)}<span>{approvalsSummary(monitor)}</span>{/if}
-            {#if threadsSummary(monitor)}<span>{threadsSummary(monitor)}</span>{/if}
+            {#if checksSummary(monitor)}
+              <span class="text-muted-foreground">{checksSummary(monitor)}</span>
+            {/if}
+            {#if approvalsSummary(monitor)}
+              <span class="text-muted-foreground">{approvalsSummary(monitor)}</span>
+            {/if}
+            {#if threadsSummary(monitor)}
+              <span class="text-muted-foreground">{threadsSummary(monitor)}</span>
+            {/if}
             {#if monitor.lastChangeAt}
-              <span
-                >{m.chat_monitoredPrs_hover_lastChange_label({
-                  time: formatTime(monitor.lastChangeAt, { seconds: true }),
-                })}</span
-              >
+              <span class="text-muted-foreground">
+                {m.chat_monitoredPrs_details_lastChangeAt({
+                  time: formatDateTime(monitor.lastChangeAt),
+                })}
+              </span>
             {/if}
             {#if monitor.hasPendingChanges}
-              <span data-testid="monitored-pr-pending"
-                >{monitor.pendingChanges.length === 1
+              <span class="text-muted-foreground" data-testid="monitored-pr-pending">
+                {monitor.pendingChanges.length === 1
                   ? m.chat_monitoredPrs_hover_pending_one()
                   : m.chat_monitoredPrs_hover_pending_many({
                       count: formatInteger(monitor.pendingChanges.length),
-                    })}</span
-              >
+                    })}
+              </span>
             {/if}
           </div>
         {/if}

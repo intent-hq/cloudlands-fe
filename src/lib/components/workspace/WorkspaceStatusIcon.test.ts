@@ -38,6 +38,14 @@ describe('WorkspaceStatusIcon', () => {
     expect(view.container.querySelector('svg')).not.toBeNull();
   });
 
+  it('uses the canonical hourglass icon while waiting', () => {
+    render(WorkspaceStatusIcon, { props: { status: 'waiting' } });
+
+    const indicator = screen.getByRole('img', { name: 'Waiting' });
+    expect(indicator.getAttribute('data-workspace-status-icon')).toBe('hourglass');
+    expect(indicator.className).toContain('text-muted-foreground');
+  });
+
   it('can be decorative when a parent provides the accessible status text', () => {
     const view = render(WorkspaceStatusIcon, {
       props: { status: 'complete', decorative: true },

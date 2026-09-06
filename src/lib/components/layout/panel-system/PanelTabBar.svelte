@@ -2016,7 +2016,7 @@
       <!-- Right: all actions at the far edge in stable order. -->
       <div class="flex shrink-0 items-center gap-0" data-panel-header-actions>
         {#if contentActions?.primary}
-          <span class="flex items-center" data-panel-header-content-actions>
+          <span class="flex min-w-0 items-center" data-panel-header-content-actions>
             {@render contentActions.primary()}
           </span>
         {/if}
