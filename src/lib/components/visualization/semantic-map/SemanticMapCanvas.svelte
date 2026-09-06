@@ -132,9 +132,14 @@
     return style.getPropertyValue(name).trim() || fallback;
   }
 
+  let uiFont = 'sans-serif';
+  let badgeForeground = '#18181b';
+
   function resolveColors(): void {
     if (!container) return;
     const style = getComputedStyle(container);
+    uiFont = cssValue(style, '--font-ui', 'sans-serif');
+    badgeForeground = `hsl(${cssValue(style, '--agent-avatar-foreground', '0 0% 0%')})`;
     colors = {
       background: cssValue(style, '--color-background', '#ffffff'),
       surface: cssValue(style, '--color-card', '#ffffff'),
@@ -266,7 +271,15 @@
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = `600 ${label.fontSize}px "Source Serif 4 Variable", Georgia, serif`;
-    ctx.fillText(label.text, label.x, label.y, label.width);
+    const lines = label.lines ?? [label.text];
+    for (let index = 0; index < lines.length; index += 1) {
+      ctx.fillText(
+        lines[index],
+        label.x,
+        label.y + (index - (lines.length - 1) / 2) * (label.fontSize + 3),
+        label.width,
+      );
+    }
   }
 
   function drawRoute(ctx: CanvasRenderingContext2D, edges: RouteEdge[]): void {
@@ -291,11 +304,26 @@
   function drawRouteLabels(ctx: CanvasRenderingContext2D): void {
     for (const label of [...labelLayout.edges, ...labelLayout.counts]) {
       ctx.save();
+      ctx.fillStyle = colors.background;
+      ctx.fillRect(
+        label.x - label.width / 2,
+        label.y - label.height / 2,
+        label.width,
+        label.height,
+      );
       ctx.fillStyle = colors.accent;
-      ctx.font = `${label.fontSize}px var(--font-ui)`;
+      ctx.font = `${label.fontSize}px ${uiFont}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(label.text, label.x, label.y, label.width);
+      const lines = label.lines ?? [label.text];
+      for (let index = 0; index < lines.length; index += 1) {
+        ctx.fillText(
+          lines[index],
+          label.x,
+          label.y + (index - (lines.length - 1) / 2) * (label.fontSize + 3 / transform.scale),
+          label.width,
+        );
+      }
       ctx.restore();
     }
   }
@@ -370,8 +398,8 @@
     ctx.arc(badge.x, badge.y, (BADGE_RADIUS * breathing) / transform.scale, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = colors.foreground;
-    ctx.font = `600 ${10 / transform.scale}px var(--font-ui)`;
+    ctx.fillStyle = badgeForeground;
+    ctx.font = `600 ${10 / transform.scale}px ${uiFont}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(badge.name.slice(0, 1).toUpperCase(), badge.x, badge.y);

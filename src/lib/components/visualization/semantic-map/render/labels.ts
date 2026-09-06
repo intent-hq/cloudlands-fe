@@ -16,6 +16,7 @@ export interface LabelBox {
 export interface PlacedLabel extends LabelBox {
   text: string;
   fontSize: number;
+  lines?: string[];
 }
 
 export interface LabelLayout {
@@ -41,6 +42,17 @@ export function boxesOverlap(left: LabelBox, right: LabelBox): boolean {
 
 function estimateWidth(text: string, fontSize: number, maximum = Infinity): number {
   return Math.min(maximum, Math.max(fontSize, text.length * fontSize * 0.56));
+}
+
+function wrapLabel(text: string, maxCharacters: number): string[] {
+  const lines = [''];
+  for (const word of text.split(' ')) {
+    const last = lines.length - 1;
+    const candidate = lines[last] ? `${lines[last]} ${word}` : word;
+    if (candidate.length > maxCharacters && lines[last]) lines.push(word);
+    else lines[last] = candidate;
+  }
+  return lines;
 }
 
 function inside(box: LabelBox, width: number, height: number): boolean {
@@ -118,37 +130,40 @@ export function layoutSceneLabels(input: {
   const regions = input.regions.flatMap((region) => {
     const text = input.regionLabels.get(region.id);
     if (!text) return [];
-    const fontSize = Math.max(11, Math.min(16, region.radius * 0.15));
-    const width = estimateWidth(text, fontSize, Math.max(54, region.radius * 1.45));
+    const fontSize = Math.max(13, Math.min(16, region.radius * 0.15));
+    const lines = wrapLabel(text, 22);
+    const width = Math.max(...lines.map((line) => estimateWidth(line, fontSize)));
+    const height = lines.length * (fontSize + 3) + 4;
     const box = place(
-      { id: region.id, kind: 'region', width, height: fontSize + 4 },
+      { id: region.id, kind: 'region', width, height },
       [
         [region.x, region.y],
-        [region.x, region.y - fontSize],
-        [region.x, region.y + fontSize],
+        [region.x, region.y - height],
+        [region.x, region.y + height],
       ],
       occupied,
       viewport,
     );
-    return box ? [{ ...box, text, fontSize }] : [];
+    return box ? [{ ...box, text, fontSize, lines }] : [];
   });
   const edges = input.edges.flatMap((edge, index) => {
-    const fontSize = 11 / scale;
+    const fontSize = 12 / scale;
+    const lines = wrapLabel(edge.label, 36);
     const box = place(
       {
         id: `edge-${index}`,
         kind: 'edge',
-        width: estimateWidth(edge.label, fontSize, 260 / scale),
-        height: fontSize + 4 / scale,
+        width: Math.max(...lines.map((line) => estimateWidth(line, fontSize))),
+        height: lines.length * (fontSize + 3 / scale) + 4 / scale,
       },
       edgeCandidates(edge, 14 / scale),
       occupied,
       viewport,
     );
-    return box ? [{ ...box, text: edge.label, fontSize }] : [];
+    return box ? [{ ...box, text: edge.label, fontSize, lines }] : [];
   });
   const counts = input.edges.flatMap((edge, index) => {
-    const fontSize = 10 / scale;
+    const fontSize = 11 / scale;
     const text = `${edge.count}×`;
     const box = place(
       {

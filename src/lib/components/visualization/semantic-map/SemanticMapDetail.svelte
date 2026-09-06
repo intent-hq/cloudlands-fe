@@ -197,7 +197,7 @@
                 {#each group.paths as path (path)}
                   <li>
                     <button
-                      class="break-all text-left font-mono text-xs text-primary hover:underline"
+                      class="break-all py-0.5 text-left font-mono text-xs leading-relaxed text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
                       type="button"
                       onclick={() => onOpenFile?.(path)}>{path}</button
                     >
@@ -313,7 +313,7 @@
           <li>
             <button
               type="button"
-              class="break-all text-left font-mono text-xs text-primary hover:underline"
+              class="break-all py-0.5 text-left font-mono text-xs leading-relaxed text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
               onclick={() => onSelectFile?.(path)}>{path}</button
             >
           </li>

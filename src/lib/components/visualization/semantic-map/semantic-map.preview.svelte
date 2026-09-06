@@ -242,7 +242,9 @@
 </script>
 
 <section class="grid gap-4" data-semantic-map-preview data-semantic-map-state={mode}>
-  <div class="grid gap-3 rounded-lg border border-border bg-card p-3 text-sm">
+  <div
+    class="flex flex-wrap items-start gap-x-8 gap-y-3 rounded-lg border border-border bg-card p-3 text-sm"
+  >
     <fieldset class="flex flex-wrap items-center gap-2">
       <legend class="mr-2 inline font-medium">{m.semanticMap_sandbox_agents_label()}</legend>
       {#each SCRIPT_AGENTS as agent (agent.id)}
@@ -267,14 +269,14 @@
         >
       {/each}
     </fieldset>
-    <label class="grid grid-cols-[auto_1fr_auto] items-center gap-3">
+    <label class="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3">
       <span>{m.semanticMap_sandbox_timeWindow_label()}</span>
       <Slider min="1" max={SCRIPT_DURATION_MINUTES} step="1" bind:value={timeWindowMinutes} />
       <span>{m.semanticMap_sandbox_minutes_label({ count: formatInteger(timeWindowMinutes) })}</span
       >
     </label>
     {#if mode === 'replay'}
-      <div class="grid grid-cols-[auto_1fr_auto] items-center gap-3">
+      <div class="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3">
         <Button
           type="button"
           size="sm"
@@ -286,7 +288,7 @@
             ? m.agentOverview_timeScrubber_live_label()
             : m.agentOverview_timeScrubber_paused_label()}
         </Button>
-        <label class="grid grid-cols-[auto_1fr_auto] items-center gap-3">
+        <label class="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3">
           <span>{m.semanticMap_sandbox_scrub_label()}</span>
           <Slider min="0" max={SCRIPT_DURATION_MINUTES} step="0.25" bind:value={currentMinute} />
           <span
