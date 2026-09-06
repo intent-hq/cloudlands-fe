@@ -66,7 +66,7 @@ vi.mock('$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice'
 function renderEmptyState(props: Record<string, unknown> = {}) {
   const layoutManager = {
     splitPanel: vi.fn(),
-    reopenClosedTab: vi.fn(),
+    reopenLastClosed: vi.fn(),
   };
   render(PanelEmptyState, {
     props: { workspaceId: 'workspace-1', panelId: 'panel-1', ...props },
@@ -139,7 +139,7 @@ describe('PanelEmptyState', () => {
     expect(onCreateTerminal).toHaveBeenCalledOnce();
     expect(onCreateTerminal).toHaveBeenCalledWith('panel-1');
     expect(onOpenBrowser).toHaveBeenCalledWith('panel-1');
-    expect(layoutManager.reopenClosedTab).toHaveBeenCalledOnce();
+    expect(layoutManager.reopenLastClosed).toHaveBeenCalledOnce();
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'palette/open' });
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'uiLayout/toggleSidebar', payload: [] });
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'shortcuts/open', payload: 'global' });
@@ -149,7 +149,7 @@ describe('PanelEmptyState', () => {
     const withoutRecents = renderEmptyState();
     expect(screen.queryByRole('button', { name: /^Reopen last closed/i })).toBeNull();
 
-    withoutRecents.reopenClosedTab.mockClear();
+    withoutRecents.reopenLastClosed.mockClear();
     mocks.recentlyClosed = [
       {
         tab: { id: 'recent-note', type: 'note', title: 'Recent note' },
@@ -160,6 +160,6 @@ describe('PanelEmptyState', () => {
     expect(screen.getByTitle('Reopen Recent note').textContent?.trim()).toBe('Recent note');
     await fireEvent.click(screen.getByRole('button', { name: /^Reopen last closed/i }));
 
-    expect(withRecents.reopenClosedTab).toHaveBeenCalledOnce();
+    expect(withRecents.reopenLastClosed).toHaveBeenCalledOnce();
   });
 });

@@ -108,7 +108,7 @@
   }
 
   function handleReopenItem() {
-    layoutManager?.reopenClosedTab();
+    layoutManager?.reopenLastClosed();
   }
 
   function handleCreateAgent() {
