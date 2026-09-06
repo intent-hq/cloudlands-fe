@@ -143,8 +143,9 @@
 
   {#if rung === 0 && (file.oldTrack || file.newTrack)}
     <span class="tracks"><HunkTracks oldTrack={file.oldTrack} newTrack={file.newTrack} /></span>
-  {:else if rung === 2 && file.statsKnown}
-    <span class="churn" style:width={`${churn}%`}></span>
+  {/if}
+  {#if rung <= 2 && file.statsKnown}
+    <span class="churn-track"><span class="churn" style:width={`${churn}%`}></span></span>
   {/if}
 
   <span id={tooltipId} role="tooltip" class="tooltip">{tooltip}</span>
@@ -255,15 +256,21 @@
   .tracks {
     position: absolute;
     right: 5px;
-    bottom: 2px;
-    left: 24px;
+    bottom: 4px;
+    left: 28px;
+  }
+
+  .churn-track {
+    position: absolute;
+    right: 5px;
+    bottom: 1px;
+    left: 28px;
+    height: 2px;
   }
 
   .churn {
-    position: absolute;
-    bottom: 1px;
-    left: 0;
-    height: 2px;
+    display: block;
+    height: 100%;
     border-radius: 9999px;
     background: hsl(var(--primary) / 0.55);
   }

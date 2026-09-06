@@ -80,7 +80,7 @@ const MAX_STRETCH_FACTOR = 1.6;
 const STRETCH_EPSILON = 0.000001;
 
 const RUNGS = [
-  { rowHeight: 28, headerHeight: 24, minColumnWidth: 180, maxColumnWidth: 320, chrome: 116 },
+  { rowHeight: 32, headerHeight: 24, minColumnWidth: 180, maxColumnWidth: 320, chrome: 116 },
   { rowHeight: 22, headerHeight: 22, minColumnWidth: 150, maxColumnWidth: 280, chrome: 76 },
   { rowHeight: 18, headerHeight: 20, minColumnWidth: 128, maxColumnWidth: 240, chrome: 42 },
   { rowHeight: 18, headerHeight: 20, minColumnWidth: 96, maxColumnWidth: 184, chrome: 26 },

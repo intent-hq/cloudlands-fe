@@ -103,6 +103,24 @@ function deepHeaderDocument(): DiffMapDocument {
 }
 
 describe('layoutDiffMap', () => {
+  it.each([
+    [0, 32],
+    [1, 22],
+    [2, 18],
+    [3, 18],
+  ] as const)('uses the visual encoding height for rung %i', (rung, rowHeight) => {
+    const layout = layoutDiffMap(
+      typicalDiffMapFixture.document,
+      { width: 900, height: 500 },
+      measure,
+      {
+        rungOverride: rung,
+      },
+    );
+
+    expect(rows(layout).every((row) => row.h === rowHeight)).toBe(true);
+  });
+
   for (const fixture of diffMapFixtures) {
     for (const width of widths) {
       for (const height of heights) {
