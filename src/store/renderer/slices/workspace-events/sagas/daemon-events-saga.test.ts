@@ -247,6 +247,7 @@ describe('daemonEventsSaga', () => {
     expect(FILE_EVENTS_SUBSCRIBE_TYPES).toEqual(['file:*']);
     expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toEqual([
       'agent:*',
+      'map:*',
       'note:*',
       'comment:*',
       'script:*',

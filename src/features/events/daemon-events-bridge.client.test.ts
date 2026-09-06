@@ -269,6 +269,8 @@ import {
   setRetiredCount,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { selectRetiredCount } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+import { selectSemanticMapState } from '$store/renderer/slices/semantic-map/semantic-map-selectors';
+import { semanticMapCleared } from '$store/renderer/slices/semantic-map/semantic-map-slice';
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -11743,5 +11745,25 @@ describe('daemonEventsBridge (create-progress wire contract — git:clone:progre
       sawFrame: false,
       done: false,
     });
+  });
+});
+
+describe('daemonEventsBridge (semantic map activity)', () => {
+  beforeEach(() => appStore.dispatch(semanticMapCleared(WS)));
+
+  it('routes the exact map:activity payload into the workspace ring buffer', () => {
+    const activity = {
+      regionId: 'renderer',
+      agentId: AGENT,
+      agentName: 'Map Agent',
+      path: 'src/map.ts',
+      kind: 'edit',
+      ts: '2026-01-02T00:00:00.000Z',
+    } as const;
+    const frame = notification('map:activity', activity);
+
+    routeDaemonEventsNotification(frame.method, frame.params);
+
+    expect(selectSemanticMapState.select(appStore.state, WS).activities).toEqual([activity]);
   });
 });

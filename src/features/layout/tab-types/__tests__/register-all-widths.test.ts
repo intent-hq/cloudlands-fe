@@ -19,6 +19,7 @@ vi.mock('../ActivityChangesTabType.svelte', mockTabType);
 vi.mock('../HookScriptTabType.svelte', mockTabType);
 vi.mock('../SettingsTabType.svelte', mockTabType);
 vi.mock('../OverviewTabType.svelte', mockTabType);
+vi.mock('../MapTabType.svelte', mockTabType);
 
 import { preloadRestoredTabTypes, registerAllTabTypes } from '../register-all';
 import { tabTypeRegistry } from '../registry';
@@ -36,6 +37,7 @@ const expectedTiers = {
   file: 'wide',
   'hook-script': 'medium',
   'local-changes': 'wide',
+  map: 'wide',
   note: 'medium',
   overview: 'narrow',
   settings: 'narrow',

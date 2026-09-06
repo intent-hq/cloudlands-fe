@@ -8,6 +8,7 @@
 
 import { tabTypeRegistry } from './registry';
 import type { WorkspacePanelLayoutState } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import MapTabType from './MapTabType.svelte';
 
 // Icons
 import {
@@ -21,6 +22,7 @@ import {
   faCodeCommit,
   faRobot,
   faCode,
+  faLayerGroup,
 } from '@fortawesome/free-solid-svg-icons';
 import { RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
 import { m } from '$shared/paraglide/messages.js';
@@ -31,6 +33,20 @@ import { m } from '$shared/paraglide/messages.js';
  * Call this function during app initialization to register all tab types.
  */
 export function registerAllTabTypes(): void {
+  tabTypeRegistry.register({
+    type: 'map',
+    component: MapTabType,
+    defaultWidthTier: 'wide',
+    icon: faLayerGroup,
+    get defaultTitle() {
+      return m.semanticMap_sandbox_title();
+    },
+    get categoryLabel() {
+      return m.layout_tabTypes_panel_category();
+    },
+    renameable: false,
+  });
+
   // Browser tab
   tabTypeRegistry.register({
     type: 'browser',

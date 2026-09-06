@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { MapActivity } from '$lib/components/visualization/semantic-map/core/types';
+import type { MapActivity, Route } from '$lib/components/visualization/semantic-map/core/types';
 import { SEMANTIC_MAP_FIXTURE_MANIFEST } from '$lib/components/visualization/semantic-map/core/fixtures';
 import {
   initialState,
@@ -11,8 +11,10 @@ import {
   semanticMapKindFilterChanged,
   semanticMapLoaded,
   semanticMapReducer,
+  semanticMapRouteLoaded,
   semanticMapSelectedAgentChanged,
   semanticMapSelectedRegionChanged,
+  semanticMapSelectedTaskChanged,
   semanticMapTimeWindowChanged,
 } from './semantic-map-slice';
 
@@ -81,7 +83,7 @@ describe('semanticMapReducer', () => {
 
     expect(state.byWorkspaceId[WORKSPACE_ID]).toMatchObject({
       activities,
-      selectedAgentId: 'agent-1',
+      selectedAgentId: null,
       selectedRegionId: 'renderer-state',
       timeWindow: {
         startTs: '2026-09-06T02:00:00.000Z',
@@ -89,6 +91,29 @@ describe('semanticMapReducer', () => {
       },
       kindFilter: ['edit'],
       agentFilter: ['agent-1'],
+    });
+  });
+
+  it('stores daemon routes and clears stale routes when selection changes', () => {
+    const route: Route = {
+      visits: ['one', 'two'],
+      transitions: [{ from: 'one', to: 'two', count: 1, evidence: ['src/x.ts'] }],
+    };
+    let state = semanticMapReducer(initialState, semanticMapRouteLoaded(WORKSPACE_ID, route));
+    expect(state.byWorkspaceId[WORKSPACE_ID].route).toBe(route);
+
+    state = semanticMapReducer(state, semanticMapSelectedTaskChanged(WORKSPACE_ID, 'task-1'));
+    expect(state.byWorkspaceId[WORKSPACE_ID]).toMatchObject({
+      route: null,
+      selectedAgentId: null,
+      selectedTaskNoteId: 'task-1',
+    });
+
+    state = semanticMapReducer(state, semanticMapSelectedAgentChanged(WORKSPACE_ID, 'agent-1'));
+    expect(state.byWorkspaceId[WORKSPACE_ID]).toMatchObject({
+      route: null,
+      selectedAgentId: 'agent-1',
+      selectedTaskNoteId: null,
     });
   });
 
