@@ -37,6 +37,10 @@ import type {
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { LiveIntegrationsClient } from '$lib/client/live/live-integrations-client';
 import { createLogger } from '$lib/utils/client-logger';
+import {
+  invalidateGitHubAuthStatus,
+  readGitHubAuthStatus,
+} from '$features/github-auth/renderer/github-auth-status.client';
 
 const logger = createLogger('IntegrationsBridgeSeeder');
 
@@ -57,7 +61,7 @@ function errorMessage(error: unknown): string {
 /** `github.authStatus` — probes the env PAT via GET /user; null = probe failed. */
 async function githubAuthStatus(): Promise<GitHubAuthStatus | null> {
   try {
-    return await backendRequest<GitHubAuthStatus>('github.authStatus');
+    return await readGitHubAuthStatus();
   } catch {
     return null;
   }
@@ -135,6 +139,7 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.START_AUTH, async (): Promise<StartA
       typeof result.expiresIn === 'number' &&
       typeof result.interval === 'number'
     ) {
+      invalidateGitHubAuthStatus();
       return {
         success: true,
         oauthUrl: result.verificationUri,
@@ -173,6 +178,7 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, async () => {
     if (result?.ok !== true) {
       return { success: false, error: 'The daemon did not confirm the cancel.' };
     }
+    invalidateGitHubAuthStatus();
     return { success: true };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
@@ -190,6 +196,7 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.LOGOUT, async () => {
     if (result?.ok !== true) {
       return { success: false, error: 'The daemon did not confirm the revoke.' };
     }
+    invalidateGitHubAuthStatus();
     return { success: true };
   } catch (error) {
     return { success: false, error: errorMessage(error) };

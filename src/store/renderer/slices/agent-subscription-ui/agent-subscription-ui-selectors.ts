@@ -11,6 +11,7 @@ import type {
   AgentStatus,
   WaitingState,
   WokenUpInfo,
+  SubscriptionSnapshotStatus,
 } from './agent-subscription-ui-types';
 
 // ---------------------------------------------------------------------------
@@ -69,17 +70,12 @@ export const selectWokenUpInfo = store.createSelector<
   return selectEntry.select(state, workspaceId, agentId).wokenUpInfo;
 });
 
-/**
- * Utility-footer readiness latch: true once an `agent.getSubscriptions`
- * snapshot read has settled (success OR failure) for this (workspace, agent).
- * A failed read counts as ready-with-empty so the footer readiness gate can
- * never wedge the transcript reveal on subscription data.
- */
-export const selectSubscriptionSnapshotFetched = store.createSelector<
+/** Per-source footer state; `ready` plus no rows is authoritative empty. */
+export const selectSubscriptionSnapshotStatus = store.createSelector<
   [workspaceId: string, agentId: string],
-  boolean
+  SubscriptionSnapshotStatus
 >((state, workspaceId, agentId) => {
-  return selectEntry.select(state, workspaceId, agentId).snapshotFetched;
+  return selectEntry.select(state, workspaceId, agentId).snapshotStatus;
 });
 
 /**

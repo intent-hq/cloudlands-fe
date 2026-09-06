@@ -27,6 +27,8 @@ vi.mock('../../../../shared/main/find-binary', () => ({
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mocks.backendRequest }),
+  onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 vi.mock('../../../auggie/main/auggie-path', () => ({

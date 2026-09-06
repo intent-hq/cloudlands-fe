@@ -119,7 +119,6 @@
   } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
     selectAwaitingSwitchBackSnapshot,
-    selectAwaitingUtilityFooter,
     selectChatError,
     selectChatFailureCorrelation,
     selectChatLastChunkTime,
@@ -480,10 +479,6 @@
   // Switch-back gate: true while a re-viewed conversation's (re)opening
   // standing subscription has not yet delivered its fresh seq-0 snapshot.
   const awaitingSwitchBackSnapshot$ = selectAwaitingSwitchBackSnapshot(agentIdStore);
-  // Utility-footer gate: true while the footer data sources (subscriptions,
-  // hooks, monitored PRs) have not all settled — transcript and footer
-  // reveal in the same paint (saga-cleared, bounded fallback).
-  const awaitingUtilityFooter$ = selectAwaitingUtilityFooter(agentIdStore);
   // Indeterminate first-hydration gate: while the INITIAL hydration is in
   // flight (never settled before for this agent), a partially-loaded message
   // list — e.g. the standing subscription's newest page landing ahead of the
@@ -1149,6 +1144,8 @@
   // intermediate keystrokes don't trigger a full rewalk + turn re-render cascade.
   let debouncedSearchQuery = $state('');
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  type PendingSearchWork = { bindingKey: string };
+  let pendingSearchWork: PendingSearchWork | null = null;
   const SEARCH_DEBOUNCE_MS = 150;
   // Number of match-neighbors (before + after the current index) to force-render
   // via LazyTurn in addition to the current match's turn. Keeps initial search
@@ -1493,6 +1490,7 @@
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingSearchWork = null;
     if (debouncedSearchQuery !== searchQuery) {
       debouncedSearchQuery = searchQuery;
     }
@@ -1508,6 +1506,7 @@
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingSearchWork = null;
     showSearch = false;
     searchQuery = '';
     debouncedSearchQuery = '';
@@ -1531,24 +1530,50 @@
   // Handle search input changes — debounce the expensive match derivation so
   // intermediate keystrokes don't trigger a full rewalk + LazyTurn re-render
   // cascade. An empty query flushes immediately to clear highlights.
+  function searchBindingKey(): string {
+    return `${workspace?.id ?? ''}\u0000${agentId ?? ''}`;
+  }
+
+  function armPendingSearch(work: PendingSearchWork) {
+    if (searchDebounceTimer !== null) return;
+    const timer = setTimeout(() => {
+      if (searchDebounceTimer !== timer) return;
+      searchDebounceTimer = null;
+      if (
+        isComponentDestroyed ||
+        !isActive ||
+        !showSearch ||
+        pendingSearchWork !== work ||
+        work.bindingKey !== searchBindingKey()
+      ) {
+        return;
+      }
+      pendingSearchWork = null;
+      if (debouncedSearchQuery === searchQuery) return;
+      debouncedSearchQuery = searchQuery;
+      triggerHighlight();
+    }, SEARCH_DEBOUNCE_MS);
+    searchDebounceTimer = timer;
+  }
+
   function handleSearchInput() {
     if (!isActive) return;
     currentSearchIndex = 0;
+    if (debouncedSearchQuery !== searchQuery) searchHighlightRequest += 1;
     if (searchDebounceTimer !== null) {
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingSearchWork = null;
     if (!searchQuery.trim()) {
       debouncedSearchQuery = '';
       triggerHighlight();
       return;
     }
-    searchDebounceTimer = setTimeout(() => {
-      if (!isActive) return;
-      searchDebounceTimer = null;
-      debouncedSearchQuery = searchQuery;
-      triggerHighlight();
-    }, SEARCH_DEBOUNCE_MS);
+    if (debouncedSearchQuery === searchQuery) return;
+    const work = { bindingKey: searchBindingKey() };
+    pendingSearchWork = work;
+    armPendingSearch(work);
   }
 
   function openSearchFromSelection() {
@@ -1560,6 +1585,7 @@
         clearTimeout(searchDebounceTimer);
         searchDebounceTimer = null;
       }
+      pendingSearchWork = null;
       searchQuery = selectedText;
       debouncedSearchQuery = selectedText;
       currentSearchIndex = 0;
@@ -1574,11 +1600,31 @@
     });
   }
 
+  // svelte-ignore state_referenced_locally -- identity snapshot is refreshed by the effect below.
+  let lastSearchBindingKey = searchBindingKey();
   $effect(() => {
-    if (isActive) return;
-    searchHighlightRequest += 1;
-    if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
-    searchDebounceTimer = null;
+    const bindingKey = searchBindingKey();
+    if (bindingKey !== lastSearchBindingKey) {
+      lastSearchBindingKey = bindingKey;
+      searchHighlightRequest += 1;
+      if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+      pendingSearchWork = null;
+      return;
+    }
+    if (!isActive) {
+      searchHighlightRequest += 1;
+      if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+      return;
+    }
+    const work = pendingSearchWork;
+    if (!work) return;
+    if (!showSearch || searchQuery === debouncedSearchQuery || work.bindingKey !== bindingKey) {
+      pendingSearchWork = null;
+      return;
+    }
+    armPendingSearch(work);
   });
 
   // Context items for the input
@@ -2034,25 +2080,19 @@
   // Alias for backward compatibility
   let pendingInitialPrompt = $derived(pendingInitialData.prompt);
 
-  // Transcript reveal deferral: keep the indeterminate skeleton up (and
-  // suppress everything that would paint stale conversation state) until the
-  // resubscribe snapshot applies AND the utility-footer data sources settle
-  // (or the subscription closes / the saga-owned bounded fallback clears the
-  // gates) — then reveal transcript and footer in one paint.
+  // Transcript reveal deferral: keep the indeterminate skeleton up until the
+  // resubscribe snapshot applies (or the saga-owned bounded recovery clears
+  // the gate). Utility-footer reads populate independently after reveal.
   const deferTranscriptReveal = $derived(
     shouldDeferTranscriptReveal({
       awaitingSwitchBackSnapshot: $awaitingSwitchBackSnapshot$,
-      awaitingUtilityFooter: $awaitingUtilityFooter$,
       transcriptHydratedOnce: $transcriptHydratedOnce$,
       hasPendingInitialPrompt: Boolean(pendingInitialPrompt),
     }),
   );
 
-  // Utility stack gate: the hooks/monitors/subscriptions card never renders
-  // before the transcript reveal — hidden until this agent's first hydration
-  // settles and the reveal deferral clears, so it mounts in the SAME flip
-  // that reveals the transcript (data prefetch is unaffected; only the
-  // render is gated).
+  // The utility stack never precedes the transcript. Once transcript hydration
+  // settles, each footer source owns its loading/failure/empty presentation.
   const showTranscriptUtilityCard = $derived(
     shouldShowTranscriptUtilityStack({
       transcriptHydratedOnce: $transcriptHydratedOnce$,
@@ -4518,6 +4558,8 @@
 
     logger.info('ChatPanel destroyed', { instanceId, agentId });
     // Clean up subscriptions and scroll manager
+    searchHighlightRequest += 1;
+    pendingSearchWork = null;
     if (searchDebounceTimer !== null) {
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;

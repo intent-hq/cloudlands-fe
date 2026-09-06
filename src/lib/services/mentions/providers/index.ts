@@ -93,8 +93,11 @@ export class NoteProvider implements Provider {
     }
 
     try {
-      const { appClient } = await import('$lib/client');
-      const allWorkspaces = await appClient.workspaces.list();
+      const [{ store: appStore }, { selectWorkspaceItems }] = await Promise.all([
+        import('$store/renderer/store'),
+        import('$store/renderer/slices/workspace/workspace-selectors'),
+      ]);
+      const allWorkspaces = selectWorkspaceItems.select(appStore.state);
       const currentWorkspace = allWorkspaces.find((w) => w.id === currentWorkspaceId);
 
       if (!currentWorkspace || !currentWorkspace.repositoryPath) {

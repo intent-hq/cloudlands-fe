@@ -227,6 +227,23 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
       matching.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
       return matching.slice(0, options.limit || 50);
     },
+    queryPage: async (workspaceId, options = {}) => {
+      if (workspaceId !== String(fx.MOCK_WORKSPACE_ID)) return { items: [], nextToken: null };
+      const matching = fx.mockWorkspaceEvents
+        .filter(
+          (event) =>
+            (!options.eventType || event.type === options.eventType) &&
+            (!options.actorType || event.actor?.type === options.actorType) &&
+            (!options.actorId || event.actor?.id === options.actorId),
+        )
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      const start = Number.parseInt(options.nextToken ?? '0', 10) || 0;
+      const end = start + (options.limit || 50);
+      return {
+        items: matching.slice(start, end),
+        nextToken: end < matching.length ? String(end) : null,
+      };
+    },
     subscribe: (workspaceId, handler) =>
       emitOnce(handler, workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockWorkspaceEvents : []),
   };

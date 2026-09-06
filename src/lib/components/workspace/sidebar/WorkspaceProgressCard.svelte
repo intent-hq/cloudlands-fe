@@ -50,14 +50,14 @@
   } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { listenSync } from '$lib/electron-bridge';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
-  import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
-  import type { WorkspaceGitStatus } from '$features/accept-changes/types';
   import {
-    shouldClearGitStatusBeforeLoad,
-    shouldApplyGitStatusResult,
-    shouldClearGitStatusOnError,
-    isFetchCurrent,
-  } from './git-status-refresh-utils';
+    acceptChangesConsumerMounted,
+    acceptChangesConsumerUnmounted,
+  } from '$store/renderer/slices/git/git-slice';
+  import {
+    selectAcceptChangesStatus,
+    selectAcceptChangesStatusLoading,
+  } from '$store/renderer/slices/git/git-selectors';
   import FlameGraph from './FlameGraph.svelte';
   import WorkspaceTokenUsage from './WorkspaceTokenUsage.svelte';
 
@@ -122,137 +122,16 @@
   // the workflow-stage, headline, and action logic.
   const progressActions$ = selectWorkspaceProgressActions(workspaceIdStore, progressInput$);
 
-  // Git status state for workflow awareness
-  let gitStatus = $state<WorkspaceGitStatus | null>(null);
-  let gitStatusLoading = $state(false);
-  let lastLoadedWorkspaceId: string | undefined;
-  // Monotonic counter to guard against overlapping fetches for the same workspace.
-  // Incremented at the start of each loadGitStatus() call; only the most recent
-  // fetch's result is applied.
-  let fetchGeneration = 0;
+  const gitStatus$ = selectAcceptChangesStatus(workspaceIdStore);
+  const gitStatusLoading$ = selectAcceptChangesStatusLoading(workspaceIdStore);
+  const gitStatus = $derived($gitStatus$);
+  const gitStatusLoading = $derived($gitStatusLoading$);
 
-  // Load git status when workspace is available
-  async function loadGitStatus() {
-    if (!workspaceId) return;
-
-    const capturedWorkspaceId = workspaceId; // Capture for async guard
-    fetchGeneration++;
-    const capturedGeneration = fetchGeneration;
-    gitStatusLoading = true;
-
-    // Only clear stale data when switching to a different workspace
-    if (shouldClearGitStatusBeforeLoad(workspaceId, lastLoadedWorkspaceId)) {
-      gitStatus = null;
-    }
-
-    try {
-      const result = await AcceptChangesClient.getStatus(WorkspaceId(capturedWorkspaceId));
-      // Guard: only apply if workspace hasn't changed AND this is still the latest fetch
-      if (
-        shouldApplyGitStatusResult(workspaceId, capturedWorkspaceId) &&
-        isFetchCurrent(capturedGeneration, fetchGeneration)
-      ) {
-        gitStatus = result;
-        lastLoadedWorkspaceId = capturedWorkspaceId;
-      }
-    } catch {
-      // Silently handle errors - git status is optional
-      // For same-workspace refresh, keep existing data instead of nulling it out
-      if (
-        shouldApplyGitStatusResult(workspaceId, capturedWorkspaceId) &&
-        isFetchCurrent(capturedGeneration, fetchGeneration) &&
-        shouldClearGitStatusOnError(workspaceId, capturedWorkspaceId, lastLoadedWorkspaceId)
-      ) {
-        gitStatus = null;
-      }
-    } finally {
-      if (
-        shouldApplyGitStatusResult(workspaceId, capturedWorkspaceId) &&
-        isFetchCurrent(capturedGeneration, fetchGeneration)
-      ) {
-        gitStatusLoading = false;
-      }
-    }
-  }
-
-  // Load git status on mount and when workspace changes
-  // Keep this as an effect since it needs to react to workspaceId changes
   $effect(() => {
-    if (workspaceId) {
-      loadGitStatus();
-    }
-  });
-
-  // Listen for git status changes to refresh
-  // Using onMount with listenSync for proper cleanup on unmount
-  onMount(() => {
-    if (!workspaceId) return;
-
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const DEBOUNCE_MS = 5000; // 5 seconds debounce to avoid rate limiting GitHub API
-
-    // Capture workspaceId at mount time
-    const mountedWorkspaceId = workspaceId;
-
-    // Debounced version of loadGitStatus to prevent excessive GitHub API calls
-    const debouncedLoadGitStatus = () => {
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-      }
-      debounceTimer = setTimeout(() => {
-        loadGitStatus();
-        debounceTimer = null;
-      }, DEBOUNCE_MS);
-    };
-
-    // Use listenSync for synchronous cleanup - no race conditions on unmount
-    const unsubscribe1 = listenSync<{ workspaceId: string }>('git:status-changed', (event) => {
-      if (event.payload?.workspaceId === mountedWorkspaceId) {
-        debouncedLoadGitStatus();
-      }
-    });
-
-    // Also listen for file tracking changes
-    // NOTE: file-tracking:changes-updated can fire very frequently during agent activity.
-    // We debounce this to avoid hitting GitHub API rate limits, since loadGitStatus
-    // calls AcceptChangesClient.getStatus which fetches PR info from GitHub.
-    const unsubscribe2 = listenSync<{ workspaceId: string }>(
-      'file-tracking:changes-updated',
-      (event) => {
-        if (event.payload?.workspaceId === mountedWorkspaceId) {
-          debouncedLoadGitStatus();
-        }
-      },
-    );
-
-    // Listen for workspace updates (e.g., PR discovered via refresh)
-    const unsubscribe3 = listenSync<{ workspaceId: string; changes: Record<string, unknown> }>(
-      'workspace:updated',
-      (event) => {
-        if (event.payload?.workspaceId === mountedWorkspaceId) {
-          // Check if PR-related fields changed
-          const changes = event.payload?.changes;
-          if (
-            changes &&
-            ('activePullRequest' in changes ||
-              'prStatus' in changes ||
-              'prNumber' in changes ||
-              'pullRequests' in changes)
-          ) {
-            debouncedLoadGitStatus();
-          }
-        }
-      },
-    );
-
-    return () => {
-      unsubscribe1();
-      unsubscribe2();
-      unsubscribe3();
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-      }
-    };
+    const visibleWorkspaceId = workspaceId;
+    if (!visibleWorkspaceId) return;
+    appStore.dispatch(acceptChangesConsumerMounted(visibleWorkspaceId));
+    return () => appStore.dispatch(acceptChangesConsumerUnmounted(visibleWorkspaceId));
   });
 
   // Header editing state

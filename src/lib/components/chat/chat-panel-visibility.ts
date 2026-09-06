@@ -104,32 +104,22 @@ export function shouldShowTranscriptSkeleton(state: TranscriptSkeletonState): bo
 
 type TranscriptRevealDeferralState = {
   awaitingSwitchBackSnapshot: boolean;
-  awaitingUtilityFooter: boolean;
   transcriptHydratedOnce: boolean;
   hasPendingInitialPrompt: boolean;
 };
 
 /**
- * Transcript reveal gate. Defers the reveal (renders the skeleton) while
- * either armed gate holds, so transcript and utility footer flip in ONE
- * paint:
- * - `awaitingSwitchBackSnapshot`: a re-viewed conversation's (re)opening
- *   standing subscription has not delivered its fresh seq-0 snapshot yet —
- *   the retained transcript may be stale.
- * - `awaitingUtilityFooter`: the footer data sources (agent subscriptions,
- *   background hooks, monitored PRs) have not all settled their initial
- *   snapshots yet (armed on the first hydration settle and on switch-back).
- * Both gates are saga-cleared (snapshot applied / footer ready / subscription
- * closed) and share one bounded fallback, so the deferral can never wedge.
+ * Transcript reveal gate. A re-viewed conversation stays behind the skeleton
+ * until its standing subscription delivers a fresh seq-0 snapshot. Utility
+ * footer reads are deliberately independent and never participate here.
  * The FIRST hydration's in-flight window keeps the existing
  * `shouldShowTranscriptSkeleton` logic (`transcriptHydratedOnce` false never
- * defers here — it flips true in the same dispatch that arms the footer gate
- * on first settle), and a pending initial prompt (brand-new agent) never
- * defers — there is no earlier transcript to paint stale.
+ * defers here; it flips true when the first hydration settles), and a pending
+ * initial prompt never defers — there is no earlier transcript to paint stale.
  */
 export function shouldDeferTranscriptReveal(state: TranscriptRevealDeferralState): boolean {
   return (
-    (state.awaitingSwitchBackSnapshot || state.awaitingUtilityFooter) &&
+    state.awaitingSwitchBackSnapshot &&
     state.transcriptHydratedOnce &&
     !state.hasPendingInitialPrompt
   );
@@ -197,38 +187,13 @@ type TranscriptUtilityStackState = {
  * Utility stack gate (EventSubscriptionsCard: agent subscriptions, background
  * hooks, monitored PRs). The card must never pop in ahead of (or during) the
  * transcript skeleton, so it stays hidden until the current agent's FIRST
- * transcript hydration has settled AND the reveal deferral has cleared — it
- * mounts in the SAME paint that reveals the transcript
- * (`shouldDeferTranscriptReveal`). Refresh re-hydrations (latch already true)
- * keep it visible; a first hydration that fails into the error/retry surface
- * keeps it hidden until a retry settles. Data prefetch is unaffected — only
- * the render is gated.
+ * transcript hydration has settled AND the transcript reveal deferral has
+ * cleared. Its three sources then render their own loading/failure/empty state.
+ * Refresh re-hydrations (latch already true) keep it visible; a first hydration
+ * that fails into the error/retry surface keeps it hidden until a retry settles.
  */
 export function shouldShowTranscriptUtilityStack(state: TranscriptUtilityStackState): boolean {
   return (state.transcriptHydratedOnce || state.hydrationSettled) && !state.revealDeferred;
-}
-
-type UtilityFooterReadinessState = {
-  subscriptionSnapshotFetched: boolean;
-  backgroundHooksSnapshotDelivered: boolean;
-  prMonitorsSnapshotDelivered: boolean;
-};
-
-/**
- * Utility-footer readiness for the synchronized reveal: true once each footer
- * data source has settled its initial snapshot — the agent's
- * `agent.getSubscriptions` read plus the workspace's `hook.list` and
- * `prMonitor.list` seeds. Every input latches on failure too (a failed
- * fetch/seed renders the same as empty), and the reveal gate that consumes
- * this must pair it with a bounded wait — footer readiness must NEVER wedge
- * the transcript reveal.
- */
-export function isUtilityFooterReady(state: UtilityFooterReadinessState): boolean {
-  return (
-    state.subscriptionSnapshotFetched &&
-    state.backgroundHooksSnapshotDelivered &&
-    state.prMonitorsSnapshotDelivered
-  );
 }
 
 type QueuedMessagesVisibilityState = {

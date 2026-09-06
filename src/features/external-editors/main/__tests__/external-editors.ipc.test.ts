@@ -12,18 +12,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * failure rather than falling back to a local probe.
  */
 
-const { mockRequest, loggerSpies } = vi.hoisted(() => ({
-  mockRequest: vi.fn(),
-  loggerSpies: {
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  },
-}));
+const { backendMocks, mockRequest, loggerSpies } = vi.hoisted(() => {
+  const request = vi.fn();
+  return {
+    backendMocks: { client: { request } },
+    mockRequest: request,
+    loggerSpies: {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    },
+  };
+});
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
-  getBackendClient: () => ({ request: mockRequest }),
+  getBackendClient: () => backendMocks.client,
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 vi.mock('$lib/utils/logger', () => ({
@@ -44,6 +49,7 @@ async function loadFreshModule(): Promise<ExternalEditorsModule> {
 
 describe('isAppInstalledMacOS (host.findApp wire contract)', () => {
   beforeEach(() => {
+    backendMocks.client = { request: mockRequest };
     mockRequest.mockReset();
     loggerSpies.debug.mockReset();
     loggerSpies.info.mockReset();
@@ -109,6 +115,7 @@ describe('isAppInstalledMacOS (host.findApp wire contract)', () => {
 
 describe('getInstalledFlatpakApps (host.listInstalledEditors wire contract)', () => {
   beforeEach(() => {
+    backendMocks.client = { request: mockRequest };
     mockRequest.mockReset();
     loggerSpies.debug.mockReset();
     loggerSpies.info.mockReset();
@@ -189,6 +196,60 @@ describe('getInstalledFlatpakApps (host.listInstalledEditors wire contract)', ()
     expect(mockRequest).toHaveBeenCalledWith('host.listInstalledEditors');
   });
 
+  it('does not cache a rejected installed-editors probe', async () => {
+    mockRequest.mockRejectedValueOnce(new Error('transport down')).mockResolvedValueOnce({
+      editors: [{ id: 'zed', installed: true, flatpakId: 'dev.zed.Zed', source: 'flatpak' }],
+    });
+
+    const { getInstalledFlatpakApps } = await loadFreshModule();
+
+    expect((await getInstalledFlatpakApps()).size).toBe(0);
+    expect((await getInstalledFlatpakApps()).has('dev.zed.Zed')).toBe(true);
+    expect(mockRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats a malformed installed-editors response as an uncached probe failure', async () => {
+    mockRequest.mockResolvedValueOnce({ installed: true }).mockResolvedValueOnce({ editors: [] });
+
+    const { getInstalledFlatpakApps } = await loadFreshModule();
+
+    expect((await getInstalledFlatpakApps()).size).toBe(0);
+    expect((await getInstalledFlatpakApps()).size).toBe(0);
+    expect(mockRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('shares one host.listInstalledEditors request across concurrent callers', async () => {
+    let resolveProbe!: (value: { editors: Array<Record<string, unknown>> }) => void;
+    mockRequest.mockReturnValue(
+      new Promise((resolve) => {
+        resolveProbe = resolve;
+      }),
+    );
+
+    const { getInstalledFlatpakApps } = await loadFreshModule();
+    const first = getInstalledFlatpakApps();
+    const second = getInstalledFlatpakApps();
+    resolveProbe({
+      editors: [{ id: 'zed', installed: true, flatpakId: 'dev.zed.Zed', source: 'flatpak' }],
+    });
+
+    const [firstIds, secondIds] = await Promise.all([first, second]);
+    expect(firstIds).toBe(secondIds);
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('force refresh bypasses an authoritative negative editor TTL', async () => {
+    mockRequest.mockResolvedValueOnce({ editors: [] }).mockResolvedValueOnce({
+      editors: [{ id: 'zed', installed: true, flatpakId: 'dev.zed.Zed', source: 'flatpak' }],
+    });
+
+    const { getInstalledFlatpakApps } = await loadFreshModule();
+
+    expect((await getInstalledFlatpakApps()).size).toBe(0);
+    expect((await getInstalledFlatpakApps(true)).has('dev.zed.Zed')).toBe(true);
+    expect(mockRequest).toHaveBeenCalledTimes(2);
+  });
+
   it('caches the editors response within the TTL so a second call is wire-free', async () => {
     mockRequest.mockResolvedValue({
       editors: [{ id: 'zed', installed: true, flatpakId: 'dev.zed.Zed', source: 'flatpak' }],
@@ -200,5 +261,19 @@ describe('getInstalledFlatpakApps (host.listInstalledEditors wire contract)', ()
 
     expect(first).toBe(second);
     expect(mockRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('invalidates the editors cache when the backend client identity changes', async () => {
+    mockRequest.mockResolvedValue({ editors: [] });
+    const { getInstalledFlatpakApps } = await loadFreshModule();
+    expect((await getInstalledFlatpakApps()).size).toBe(0);
+
+    const replacementRequest = vi.fn().mockResolvedValue({
+      editors: [{ id: 'zed', installed: true, flatpakId: 'dev.zed.Zed', source: 'flatpak' }],
+    });
+    backendMocks.client = { request: replacementRequest };
+
+    expect((await getInstalledFlatpakApps()).has('dev.zed.Zed')).toBe(true);
+    expect(replacementRequest).toHaveBeenCalledTimes(1);
   });
 });
