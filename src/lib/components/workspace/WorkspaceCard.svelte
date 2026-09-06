@@ -592,8 +592,10 @@
 
     <div class="relative z-10 flex min-w-0 flex-1 items-center gap-2">
       <span class="flex min-w-0 flex-1 items-center gap-1" data-workspace-card-title-group>
+        <!-- The fade + marquee assume LTR overflow (negative X translate and right-edge mask/action coverage); all registered locales are LTR, so pin the title LTR until logical-edge measurement and mirrored translate/mask support RTL. -->
         <span
           bind:this={titleElement}
+          dir="ltr"
           class="wc-title type-body min-w-0 truncate font-normal!
           {isCurrent
             ? 'text-foreground'
