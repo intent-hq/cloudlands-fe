@@ -7,6 +7,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { createConstellationLayout, type ConstellationLayout } from './constellation-layout';
   import GraphEdgeLayer, { type GraphPosition } from './GraphEdgeLayer.svelte';
+  import GraphHullLayer from './GraphHullLayer.svelte';
   import AgentOrbNode from './nodes/AgentOrbNode.svelte';
   import ResourceNode from './nodes/ResourceNode.svelte';
   import TaskAnchorNode from './nodes/TaskAnchorNode.svelte';
@@ -745,6 +746,12 @@
       class="graph-scene absolute inset-0 origin-top-left will-change-transform"
       data-zoom-band={zoomBand}
     >
+      <GraphHullLayer
+        edges={visibleGraph.edges}
+        nodes={visibleGraph.nodes}
+        {positions}
+        {focusNodeId}
+      />
       <GraphEdgeLayer
         edges={visibleGraph.edges}
         nodes={visibleGraph.nodes}
