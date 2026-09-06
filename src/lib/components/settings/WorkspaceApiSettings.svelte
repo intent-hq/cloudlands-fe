@@ -52,6 +52,13 @@
     await loadSettings();
   });
 
+  // A number input bound with bind:value yields a number, or null when blank;
+  // a blank/whitespace field must never be read as 0.
+  function parseIntegerInput(raw: string | number | null): number {
+    if (raw === null || String(raw).trim() === '') return Number.NaN;
+    return Number(raw);
+  }
+
   async function loadSettings() {
     try {
       loading = true;
@@ -96,13 +103,14 @@
     try {
       const result = await appClient.settings.update([{ path: TOON_OUTPUT_PATH, value: checked }]);
 
-      // Check if the daemon rolled back the setting on failure
+      // A missing entry means the daemon did not apply the change; treat it
+      // like a rollback.
       const applied = result.find(
         (r: { path: string; value: unknown }) => r.path === TOON_OUTPUT_PATH,
       );
-      if (applied && applied.value !== checked) {
+      if (!applied || applied.value !== checked) {
         toast.error(m.settings_workspaceApi_toonOutput_rollbackError());
-        toonOutput = applied.value !== false;
+        toonOutput = applied ? applied.value !== false : !checked;
         return;
       }
 
@@ -118,7 +126,7 @@
   }
 
   async function handleMaxCharsSave() {
-    const newValue = Number(editedMaxOutputChars);
+    const newValue = parseIntegerInput(editedMaxOutputChars);
     if (
       !Number.isInteger(newValue) ||
       newValue < 0 ||
@@ -134,13 +142,14 @@
         { path: MAX_OUTPUT_CHARS_PATH, value: newValue },
       ]);
 
-      // Check if the daemon rolled back the setting on failure
+      // A missing entry means the daemon did not apply the change; treat it
+      // like a rollback.
       const applied = result.find(
         (r: { path: string; value: unknown }) => r.path === MAX_OUTPUT_CHARS_PATH,
       );
-      if (applied && applied.value !== newValue) {
+      if (!applied || applied.value !== newValue) {
         const rolledBackValue =
-          typeof applied.value === 'number' ? applied.value : persistedMaxOutputChars;
+          typeof applied?.value === 'number' ? applied.value : persistedMaxOutputChars;
         toast.error(m.settings_workspaceApi_maxOutputChars_rollbackError());
         persistedMaxOutputChars = rolledBackValue;
         editedMaxOutputChars = String(rolledBackValue);
@@ -162,7 +171,7 @@
   }
 
   async function handleReplayCharsSave() {
-    const newValue = Number(editedReplayChars);
+    const newValue = parseIntegerInput(editedReplayChars);
     if (!Number.isInteger(newValue) || newValue < 500 || newValue > 100_000) {
       return; // invalid input, do nothing
     }
@@ -173,13 +182,14 @@
         { path: REPLAY_CHARS_PATH, value: newValue },
       ]);
 
-      // Check if the daemon rolled back the setting on failure
+      // A missing entry means the daemon did not apply the change; treat it
+      // like a rollback.
       const applied = result.find(
         (r: { path: string; value: unknown }) => r.path === REPLAY_CHARS_PATH,
       );
-      if (applied && applied.value !== newValue) {
+      if (!applied || applied.value !== newValue) {
         const rolledBackValue =
-          typeof applied.value === 'number' ? applied.value : persistedReplayChars;
+          typeof applied?.value === 'number' ? applied.value : persistedReplayChars;
         toast.error(m.settings_workspaceApi_replayChars_rollbackError());
         persistedReplayChars = rolledBackValue;
         editedReplayChars = String(rolledBackValue);
@@ -201,7 +211,7 @@
   }
 
   async function handleRetentionDaysSave() {
-    const newValue = Number(editedRetentionDays);
+    const newValue = parseIntegerInput(editedRetentionDays);
     if (!Number.isInteger(newValue) || newValue < 0 || newValue > 3650) {
       return; // invalid input, do nothing
     }
@@ -212,13 +222,14 @@
         { path: RETENTION_DAYS_PATH, value: newValue },
       ]);
 
-      // Check if the daemon rolled back the setting on failure
+      // A missing entry means the daemon did not apply the change; treat it
+      // like a rollback.
       const applied = result.find(
         (r: { path: string; value: unknown }) => r.path === RETENTION_DAYS_PATH,
       );
-      if (applied && applied.value !== newValue) {
+      if (!applied || applied.value !== newValue) {
         const rolledBackValue =
-          typeof applied.value === 'number' ? applied.value : persistedRetentionDays;
+          typeof applied?.value === 'number' ? applied.value : persistedRetentionDays;
         toast.error(m.settings_workspaceApi_retentionDays_rollbackError());
         persistedRetentionDays = rolledBackValue;
         editedRetentionDays = String(rolledBackValue);
@@ -244,7 +255,7 @@
   <!-- Max output chars -->
   <section class="px-6 py-4">
     {#snippet maxCharsValidation()}
-      {@const parsed = Number(editedMaxOutputChars)}
+      {@const parsed = parseIntegerInput(editedMaxOutputChars)}
       <!-- i18n-ignore (template expression, not user-facing text) -->
       {@const isValid =
         Number.isInteger(parsed) && (parsed === 0 || (parsed >= 1000 && parsed <= 10_000_000))}
@@ -269,7 +280,7 @@
               class="h-9 text-sm"
             />
           </div>
-          {#if Number(editedMaxOutputChars) !== persistedMaxOutputChars}
+          {#if parsed !== persistedMaxOutputChars}
             <button
               type="button"
               onclick={handleMaxCharsSave}
@@ -295,7 +306,7 @@
   <!-- Replay tool output characters -->
   <section class="px-6 py-4">
     {#snippet replayCharsValidation()}
-      {@const parsed = Number(editedReplayChars)}
+      {@const parsed = parseIntegerInput(editedReplayChars)}
       <!-- i18n-ignore (template expression, not user-facing text) -->
       {@const isValid = Number.isInteger(parsed) && parsed >= 500 && parsed <= 100_000}
       <div class="flex items-center justify-between gap-3">
@@ -319,7 +330,7 @@
               class="h-9 text-sm"
             />
           </div>
-          {#if Number(editedReplayChars) !== persistedReplayChars}
+          {#if parsed !== persistedReplayChars}
             <button
               type="button"
               onclick={handleReplayCharsSave}
@@ -345,7 +356,7 @@
   <!-- Tool payload retention (days) -->
   <section class="px-6 py-4">
     {#snippet retentionDaysValidation()}
-      {@const parsed = Number(editedRetentionDays)}
+      {@const parsed = parseIntegerInput(editedRetentionDays)}
       <!-- i18n-ignore (template expression, not user-facing text) -->
       {@const isValid = Number.isInteger(parsed) && parsed >= 0 && parsed <= 3650}
       <div class="flex items-center justify-between gap-3">
@@ -369,7 +380,7 @@
               class="h-9 text-sm"
             />
           </div>
-          {#if Number(editedRetentionDays) !== persistedRetentionDays}
+          {#if parsed !== persistedRetentionDays}
             <button
               type="button"
               onclick={handleRetentionDaysSave}
