@@ -132,6 +132,10 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
     source: def.source as SpecialistFileScope,
     hidden: def.hidden,
     modelOptions: def.modelOptions,
+    // Must be mapped from the daemon def: the post-mutation refetch replaces the
+    // stored specialist, so dropping it here reset the Model row picker to Auto
+    // and let the next save erase the level on the daemon (hidden-dolphin ws).
+    reasoningEffort: def.reasoningEffort,
     resolvedModel: def.resolvedModel,
     resolvedProvider: def.resolvedProvider,
     role: def.role,
