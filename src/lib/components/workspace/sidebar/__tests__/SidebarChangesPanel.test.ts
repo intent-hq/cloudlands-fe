@@ -326,7 +326,9 @@ const mockGitOperationFlags = {
   isResettingToTrunk: false,
 };
 
-vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({}));
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
+  selectViewedFiles: createMockFtSelector(() => ({}) as Record<string, string>),
+}));
 
 vi.mock('$store/renderer/slices/agent-lock/agent-lock-selectors', () => ({
   selectLockedAgentIds: vi.fn().mockReturnValue({
