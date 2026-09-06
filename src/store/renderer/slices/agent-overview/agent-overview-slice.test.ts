@@ -183,6 +183,164 @@ describe('selectGraphState', () => {
     expect(graph.maxTime).toBe(currentTime);
   });
 
+  it('reveals tasks at their creation event and hides assignment edges while they are absent', () => {
+    const agent = makeSession('a1', {
+      createdAt: '2026-03-20T13:00:00.000Z',
+      metadata: { taskNoteId: 'task-1' as any },
+    });
+    const tasks: WorkspaceTask[] = [{ id: 'task-1', title: 'Replay task', status: 'in_progress' }];
+    const created = makeTaskEvent('task-created', 'task:created', '2026-03-20T13:10:00.000Z', {
+      noteId: 'task-1',
+      noteTitle: 'Replay task',
+      status: 'not_started',
+      createdAt: '2026-03-20T13:10:00.000Z',
+    });
+    const state = makeOverviewState(agent, [], tasks, {}, [created]);
+
+    const before = selectGraphStateAt.select(state, WS, '2026-03-20T13:09:59.999Z');
+    expect(before.nodes).not.toContainEqual(
+      expect.objectContaining({ type: 'task', taskId: 'task-1' }),
+    );
+    expect(before.edges).not.toContainEqual(
+      expect.objectContaining({ type: 'task-assignment', targetId: 'task-1' }),
+    );
+
+    const atCreation = selectGraphStateAt.select(state, WS, '2026-03-20T13:10:00.000Z');
+    expect(atCreation.nodes).toContainEqual(
+      expect.objectContaining({ type: 'task', taskId: 'task-1' }),
+    );
+    expect(atCreation.edges).toContainEqual(
+      expect.objectContaining({ type: 'task-assignment', targetId: 'task-1' }),
+    );
+  });
+
+  it('starts the timeline before the earliest derived task creation time', () => {
+    const tasks: WorkspaceTask[] = [{ id: 'task-1', title: 'Replay task', status: 'not_started' }];
+    const created = makeTaskEvent('task-created', 'task:created', '2026-03-20T13:10:00.000Z', {
+      noteId: 'task-1',
+    });
+    const graph = selectGraphStateAt.select(
+      makeOverviewState([], [], tasks, {}, [created]),
+      WS,
+      '2026-03-20T13:20:00.000Z',
+    );
+
+    expect(graph.minTime).toBe('2026-03-20T13:09:48.000Z');
+  });
+
+  it('uses note creation and the first status change as task creation fallbacks', () => {
+    const tasks: WorkspaceTask[] = [
+      { id: 'from-note', title: 'Created note', status: 'not_started' },
+      { id: 'from-status', title: 'Older task', status: 'in_progress' },
+    ];
+    const events = [
+      makeTaskEvent('note-created', 'note:created', '2026-03-20T13:05:00.000Z', {
+        noteId: 'from-note',
+        action: 'create',
+      }),
+      makeTaskEvent('status-changed', 'task:status-changed', '2026-03-20T13:10:00.000Z', {
+        noteId: 'from-status',
+        previousStatus: 'not_started',
+        newStatus: 'in_progress',
+        changedAt: '2026-03-20T13:10:00.000Z',
+      }),
+    ];
+    const state = makeOverviewState([], [], tasks, {}, events);
+
+    const graph = selectGraphStateAt.select(state, WS, '2026-03-20T13:07:00.000Z');
+    expect(graph.nodes).toContainEqual(expect.objectContaining({ taskId: 'from-note' }));
+    expect(graph.nodes).not.toContainEqual(expect.objectContaining({ taskId: 'from-status' }));
+  });
+
+  it('keeps tasks without creation events visible and never gates tasks in live mode', () => {
+    const tasks: WorkspaceTask[] = [
+      { id: 'known', title: 'Known task', status: 'not_started' },
+      { id: 'fallback', title: 'Fallback task', status: 'waiting' },
+    ];
+    const created = makeTaskEvent('task-created', 'task:created', '2026-03-20T13:10:00.000Z', {
+      noteId: 'known',
+    });
+    const state = makeOverviewState([], [], tasks, {}, [created]);
+
+    const replay = selectGraphStateAt.select(state, WS, '2026-03-20T13:00:00.000Z');
+    expect(replay.nodes).not.toContainEqual(expect.objectContaining({ taskId: 'known' }));
+    expect(replay.nodes).toContainEqual(expect.objectContaining({ taskId: 'fallback' }));
+    expect(
+      selectGraphState.select(state, WS).nodes.filter((node) => node.type === 'task'),
+    ).toHaveLength(2);
+  });
+
+  it('rewinds task status before, between, and after recorded transitions', () => {
+    const task: WorkspaceTask = { id: 'task-1', title: 'Replay task', status: 'complete' };
+    const events = [
+      makeTaskEvent('task-created', 'task:created', '2026-03-20T13:00:00.000Z', {
+        noteId: task.id,
+      }),
+      makeTaskEvent('task-started', 'task:status-changed', '2026-03-20T13:10:00.000Z', {
+        noteId: task.id,
+        previousStatus: 'not_started',
+        newStatus: 'in_progress',
+        changedAt: '2026-03-20T13:10:00.000Z',
+      }),
+      makeTaskEvent('task-completed', 'task:status-changed', '2026-03-20T13:30:00.000Z', {
+        noteId: task.id,
+        previousStatus: 'in_progress',
+        newStatus: 'complete',
+      }),
+    ];
+    const state = makeOverviewState([], [], [task], {}, events);
+    const statusAt = (timestamp: string) =>
+      selectGraphStateAt
+        .select(state, WS, timestamp)
+        .nodes.find((node) => node.type === 'task' && node.taskId === task.id)?.state;
+
+    expect(statusAt('2026-03-20T13:05:00.000Z')).toBe('not_started');
+    expect(statusAt('2026-03-20T13:20:00.000Z')).toBe('in_progress');
+    expect(statusAt('2026-03-20T13:35:00.000Z')).toBe('complete');
+    const timeline = selectGraphStateAt.select(state, WS, '2026-03-20T13:20:00.000Z');
+    expect(timeline.maxTime).toBe('2026-03-20T13:30:00.000Z');
+    expect(timeline.eventTimes).toEqual(
+      expect.arrayContaining([
+        '2026-03-20T13:00:00.000Z',
+        '2026-03-20T13:10:00.000Z',
+        '2026-03-20T13:30:00.000Z',
+      ]),
+    );
+  });
+
+  it('uses current task status without status events and throughout live mode', () => {
+    const fallback: WorkspaceTask = { id: 'fallback', title: 'Fallback', status: 'waiting' };
+    const current: WorkspaceTask = { id: 'current', title: 'Current', status: 'cancelled' };
+    const currentEvents = [
+      makeTaskEvent('current-created', 'task:created', '2026-03-20T13:00:00.000Z', {
+        noteId: current.id,
+      }),
+      makeTaskEvent('current-changed', 'task:status-changed', '2026-03-20T13:10:00.000Z', {
+        noteId: current.id,
+        previousStatus: 'not_started',
+        newStatus: 'complete',
+        changedAt: '2026-03-20T13:10:00.000Z',
+      }),
+    ];
+
+    const fallbackGraph = selectGraphStateAt.select(
+      makeOverviewState([], [], [fallback]),
+      WS,
+      '2026-03-20T13:20:00.000Z',
+    );
+    expect(fallbackGraph.nodes).toContainEqual(
+      expect.objectContaining({ taskId: fallback.id, state: 'waiting' }),
+    );
+
+    const liveGraph = selectGraphState.select(
+      makeOverviewState([], [], [current], {}, currentEvents),
+      WS,
+    );
+    expect(liveGraph.nodes).toContainEqual(
+      expect.objectContaining({ taskId: current.id, state: 'cancelled' }),
+    );
+  });
+
   it('derives graph interactions from canonical workspace events via .select', () => {
     const session: AgentSession = {
       id: 'a1' as any,
@@ -505,4 +663,13 @@ function makeSession(id: string, overrides: Partial<AgentSession> = {}): AgentSe
     updatedAt: '2026-03-20T13:00:00.000Z',
     ...overrides,
   };
+}
+
+function makeTaskEvent(
+  id: string,
+  type: string,
+  timestamp: string,
+  data: Record<string, unknown>,
+): WorkspaceEvent {
+  return makeWorkspaceEvent({ id, type: type as any, timestamp, data });
 }

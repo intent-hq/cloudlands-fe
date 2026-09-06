@@ -44,15 +44,22 @@ import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agent
 import { selectWorkspaceTasks } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
 import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+import type { WorkspaceEvent } from '$features/events/types';
+
+const TIMELINE_CREATION_LEAD_RATIO = 0.02;
+const MIN_TIMELINE_CREATION_LEAD_MS = 1_000;
 
 // ============================================================================
 // Private graph derivation helpers
 // ============================================================================
 
-function deriveInteractionEvents(state: StoreState, workspaceId: string): InteractionEvent[] {
+function selectSourceEvents(state: StoreState, workspaceId: string): WorkspaceEvent[] {
   const workspaceEvents = state.workspaceEvents.byWorkspaceId[workspaceId]?.events ?? [];
   const historyEvents = state.agentOverviewHistory.byWorkspaceId[workspaceId]?.events ?? [];
-  const sourceEvents = historyEvents.length > 0 ? historyEvents : workspaceEvents;
+  return historyEvents.length > 0 ? historyEvents : workspaceEvents;
+}
+
+function deriveInteractionEvents(sourceEvents: WorkspaceEvent[]): InteractionEvent[] {
   const interactions: InteractionEvent[] = [];
   const seenQueueMessageIds = new Set<string>();
 
@@ -65,11 +72,83 @@ function deriveInteractionEvents(state: StoreState, workspaceId: string): Intera
   );
 }
 
-function deriveCurrentTime(events: InteractionEvent[]): string {
-  if (events.length === 0) return new Date().toISOString();
-  return new Date(
-    Math.max(...events.map((event) => new Date(event.timestamp).getTime())),
-  ).toISOString();
+interface TaskStatusChange {
+  timestamp: number;
+  previousStatus: TaskStatus;
+  newStatus: TaskStatus;
+}
+
+interface TaskHistory {
+  createdAtByTaskId: Map<string, number>;
+  statusChangesByTaskId: Map<string, TaskStatusChange[]>;
+}
+
+function deriveTaskHistory(events: WorkspaceEvent[]): TaskHistory {
+  const createdAtByTaskId = new Map<string, number>();
+  const statusChangesByTaskId = new Map<string, TaskStatusChange[]>();
+
+  for (const event of events) {
+    const data =
+      event.data && typeof event.data === 'object'
+        ? (event.data as Record<string, unknown>)
+        : undefined;
+    const taskId = typeof data?.noteId === 'string' ? data.noteId : null;
+    if (!taskId) continue;
+
+    const eventType = String(event.type);
+    const eventTimestamp = Date.parse(event.timestamp);
+    const isCreationEvent =
+      eventType === 'task:created' ||
+      (eventType === 'note:created' && data?.action === 'create') ||
+      eventType === 'task:status-changed';
+    if (isCreationEvent && Number.isFinite(eventTimestamp)) {
+      const existing = createdAtByTaskId.get(taskId);
+      if (existing === undefined || eventTimestamp < existing) {
+        createdAtByTaskId.set(taskId, eventTimestamp);
+      }
+    }
+
+    if (
+      eventType !== 'task:status-changed' ||
+      typeof data?.previousStatus !== 'string' ||
+      typeof data?.newStatus !== 'string'
+    ) {
+      continue;
+    }
+    const changedAt = typeof data.changedAt === 'string' ? Date.parse(data.changedAt) : NaN;
+    const timestamp = Number.isFinite(changedAt) ? changedAt : eventTimestamp;
+    if (!Number.isFinite(timestamp)) continue;
+    const changes = statusChangesByTaskId.get(taskId) ?? [];
+    changes.push({
+      timestamp,
+      previousStatus: data.previousStatus as TaskStatus,
+      newStatus: data.newStatus as TaskStatus,
+    });
+    statusChangesByTaskId.set(taskId, changes);
+  }
+
+  for (const changes of statusChangesByTaskId.values()) {
+    changes.sort((a, b) => a.timestamp - b.timestamp);
+  }
+  return { createdAtByTaskId, statusChangesByTaskId };
+}
+
+function taskTimelineTimestamps(taskHistory: TaskHistory): number[] {
+  return [
+    ...taskHistory.createdAtByTaskId.values(),
+    ...[...taskHistory.statusChangesByTaskId.values()].flatMap((changes) =>
+      changes.map((change) => change.timestamp),
+    ),
+  ];
+}
+
+function deriveCurrentTime(events: InteractionEvent[], taskTimestamps: number[]): string {
+  const timestamps = [
+    ...events.map((event) => new Date(event.timestamp).getTime()),
+    ...taskTimestamps,
+  ].filter(Number.isFinite);
+  if (timestamps.length === 0) return new Date().toISOString();
+  return new Date(Math.max(...timestamps)).toISOString();
 }
 
 // ============================================================================
@@ -82,8 +161,11 @@ function deriveCurrentTime(events: InteractionEvent[]): string {
  */
 export const selectGraphStateAt = store.createSelector(
   (state, workspaceId: string, requestedTime: string | null): GraphState => {
-    const events = deriveInteractionEvents(state, workspaceId);
-    const currentTime = requestedTime ?? deriveCurrentTime(events);
+    const sourceEvents = selectSourceEvents(state, workspaceId);
+    const events = deriveInteractionEvents(sourceEvents);
+    const taskHistory = deriveTaskHistory(sourceEvents);
+    const taskTimestamps = taskTimelineTimestamps(taskHistory);
+    const currentTime = requestedTime ?? deriveCurrentTime(events, taskTimestamps);
     const fileChanges: FileLineChange[] = selectWorkspaceFileChanges.select(state, workspaceId);
     const tasks = selectWorkspaceTasks.select(state, workspaceId);
     const workspace = selectWorkspaceById.select(state, workspaceId);
@@ -130,6 +212,8 @@ export const selectGraphStateAt = store.createSelector(
       notesMap,
       tasks,
       taskAssignments,
+      taskHistory,
+      taskTimestamps,
     );
   },
 );
@@ -154,6 +238,11 @@ function computeGraphState(
   notesMap?: Map<string, Note>,
   tasks: WorkspaceTask[] = [],
   taskAssignments: Record<string, string> = {},
+  taskHistory: TaskHistory = {
+    createdAtByTaskId: new Map(),
+    statusChangesByTaskId: new Map(),
+  },
+  taskTimestamps: number[] = [],
 ): GraphState {
   const currentTimestamp = new Date(currentTime).getTime();
 
@@ -188,12 +277,17 @@ function computeGraphState(
 
   // Canonical tasks are constellation anchors, including tasks without agents.
   for (const task of tasks) {
+    const createdAt = taskHistory.createdAtByTaskId.get(task.id);
+    if (!isLive && createdAt !== undefined && createdAt > currentTimestamp) continue;
+    const statusChanges = taskHistory.statusChangesByTaskId.get(task.id);
+    const historicalStatus =
+      !isLive && statusChanges ? taskStatusAt(statusChanges, currentTimestamp) : null;
     const taskNode: TaskNode = {
       id: task.id,
       type: 'task',
       taskId: task.id,
       title: task.title,
-      state: task.status,
+      state: historicalStatus ?? task.status,
       dependsOn: task.dependsOn?.map(String) ?? [],
       lastActionTimestamp: task.updatedAt,
       x: 0,
@@ -461,11 +555,21 @@ function computeGraphState(
   const agentCreatedAtTimestamps = Object.values(agents)
     .map((session) => new Date(String(session.createdAt)).getTime())
     .filter(Number.isFinite);
-  const maxTimestamp = Math.max(currentTimestamp, ...timestamps, ...agentCreatedAtTimestamps);
+  const taskCreatedAtTimestamps = [...taskHistory.createdAtByTaskId.values()];
+  const creationTimestamps = [...agentCreatedAtTimestamps, ...taskCreatedAtTimestamps];
+  const maxTimestamp = Math.max(
+    currentTimestamp,
+    ...timestamps,
+    ...creationTimestamps,
+    ...taskTimestamps,
+  );
   let minTimestamp = timestamps.length > 0 ? Math.min(...timestamps) : currentTimestamp;
-  if (agentCreatedAtTimestamps.length > 0) {
-    minTimestamp = Math.min(minTimestamp, ...agentCreatedAtTimestamps);
-    const leadTime = Math.max(1_000, (maxTimestamp - minTimestamp) * 0.02);
+  if (creationTimestamps.length > 0) {
+    minTimestamp = Math.min(minTimestamp, ...creationTimestamps);
+    const leadTime = Math.max(
+      MIN_TIMELINE_CREATION_LEAD_MS,
+      (maxTimestamp - minTimestamp) * TIMELINE_CREATION_LEAD_RATIO,
+    );
     minTimestamp -= leadTime;
   }
   const minTime = new Date(minTimestamp).toISOString();
@@ -504,7 +608,10 @@ function computeGraphState(
     isLive,
     minTime,
     maxTime,
-    eventTimes: events.map((event) => event.timestamp),
+    eventTimes: [
+      ...events.map((event) => event.timestamp),
+      ...taskTimestamps.map((timestamp) => new Date(timestamp).toISOString()),
+    ],
   };
 }
 
@@ -517,6 +624,11 @@ interface PendingEdge {
   sourceRawId: string;
   targetRawId: string;
   edge: GraphEdge;
+}
+
+function taskStatusAt(changes: TaskStatusChange[], currentTimestamp: number): TaskStatus {
+  const latest = changes.findLast((change) => change.timestamp <= currentTimestamp);
+  return latest?.newStatus ?? changes[0].previousStatus;
 }
 
 function historicalAgentStatus(
