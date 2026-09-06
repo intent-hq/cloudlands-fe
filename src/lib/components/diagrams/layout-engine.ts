@@ -512,14 +512,8 @@ function computeGroupBoundsFromNodes(
   nodes: ComputedNode[],
 ): ComputedGroup[] {
   return groups.map((group) => {
-    // Find nodes that were in this group's bounds
-    const groupNodes = nodes.filter(
-      (n) =>
-        n.x >= group.x - 30 &&
-        n.x <= group.x + group.width + 30 &&
-        n.y >= group.y - 30 &&
-        n.y <= group.y + group.height + 30,
-    );
+    const nodeIds = new Set(group.nodeIds ?? []);
+    const groupNodes = nodes.filter((node) => node.group === group.id || nodeIds.has(node.id));
 
     if (groupNodes.length === 0) {
       return group;
@@ -619,8 +613,11 @@ function computeLayoutWithDirection(
     for (const node of computedNodes) node.y = minY + maxY - node.y - node.height;
   }
 
+  // Compute group bounds before routes so disconnected groups can act as obstacles.
+  const computedGroups = model.groups ? computeGroupBounds(model.groups, computedNodes) : undefined;
+
   // Compute edge paths
-  const computedEdges = computeEdgePaths(model.edges, computedNodes, layout, model.groups);
+  const computedEdges = computeEdgePaths(model.edges, computedNodes, layout, computedGroups);
 
   // Deduplicate edge IDs to prevent Svelte {#each} key collisions
   const edgeIdCounts = new Map<string, number>();
@@ -632,9 +629,6 @@ function computeLayoutWithDirection(
     }
     edgeIdCounts.set(originalId, count + 1);
   }
-
-  // Compute group bounds
-  const computedGroups = model.groups ? computeGroupBounds(model.groups, computedNodes) : undefined;
 
   // Compute overall bounds (including groups and edge routing tracks)
   const bounds = computeBounds(computedNodes, computedGroups, computedEdges);
@@ -2250,7 +2244,7 @@ function computeEdgePaths(
   edges: DiagramEdge[],
   nodes: ComputedNode[],
   layout: DiagramBaseView['layout'],
-  groups?: DiagramGroup[],
+  groups?: ComputedGroup[],
 ): ComputedEdge[] {
   const edgeRouting = layout.edgeRouting || 'polyline';
 
@@ -2468,7 +2462,7 @@ function computeOrthogonalEdgePaths(
   edges: DiagramEdge[],
   nodes: ComputedNode[],
   layout: DiagramBaseView['layout'],
-  groups?: DiagramGroup[],
+  groups?: ComputedGroup[],
 ): ComputedEdge[] {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
   const nodeGroup = new Map(nodes.flatMap((node) => (node.group ? [[node.id, node.group]] : [])));
@@ -2480,6 +2474,10 @@ function computeOrthogonalEdgePaths(
   const TRACK_SPACING = 16; // Space between parallel routing tracks
   const NODE_CLEARANCE = 24; // Minimum clearance from node edge for routing
   const NODE_GAP = 32; // Keep a clear lead between a node and the first turn
+  const ROUTE_NODE_CLEARANCE = 10;
+  const ROUTE_GROUP_CLEARANCE = 12;
+  const ROUTE_LABEL_CLEARANCE = 10;
+  const ROUTE_LABEL_LANE_CLEARANCE = 12;
 
   // Find the bounding box of all nodes
   let minX = Infinity,
@@ -2832,6 +2830,184 @@ function computeOrthogonalEdgePaths(
     return compactLabel.lines >= 3 && gap < compactLabel.height + 16;
   };
 
+  type RouteObstacle = { left: number; right: number; top: number; bottom: number };
+  const segmentEntersObstacle = (start: RoutePoint, end: RoutePoint, obstacle: RouteObstacle) => {
+    if (Math.abs(start.x - end.x) < 0.001) {
+      return (
+        start.x > obstacle.left &&
+        start.x < obstacle.right &&
+        Math.max(start.y, end.y) > obstacle.top &&
+        Math.min(start.y, end.y) < obstacle.bottom
+      );
+    }
+    return (
+      start.y > obstacle.top &&
+      start.y < obstacle.bottom &&
+      Math.max(start.x, end.x) > obstacle.left &&
+      Math.min(start.x, end.x) < obstacle.right
+    );
+  };
+  const routeEntersObstacles = (points: RoutePoint[], obstacles: RouteObstacle[]) =>
+    points
+      .slice(1)
+      .some((point, index) =>
+        obstacles.some((obstacle) => segmentEntersObstacle(points[index], point, obstacle)),
+      );
+  const stepToward = (point: RoutePoint, adjacent: RoutePoint) => {
+    if (Math.abs(adjacent.x - point.x) >= Math.abs(adjacent.y - point.y)) {
+      return { x: point.x + Math.sign(adjacent.x - point.x) * NODE_GAP, y: point.y };
+    }
+    return { x: point.x, y: point.y + Math.sign(adjacent.y - point.y) * NODE_GAP };
+  };
+  const routeLength = (points: RoutePoint[]) =>
+    points
+      .slice(1)
+      .reduce(
+        (total, point, index) =>
+          total + Math.abs(point.x - points[index].x) + Math.abs(point.y - points[index].y),
+        0,
+      );
+  const avoidRouteObstacles = (info: EdgeInfo, routePoints: RoutePoint[]) => {
+    const routeDirection = (from: RoutePoint, to: RoutePoint) =>
+      Math.abs(to.x - from.x) >= Math.abs(to.y - from.y)
+        ? `${Math.sign(to.x - from.x)},0`
+        : `0,${Math.sign(to.y - from.y)}`;
+    const endpointGroups = new Set(
+      [nodeGroup.get(info.fromNode.id), nodeGroup.get(info.toNode.id)].filter(
+        (groupId): groupId is string => groupId !== undefined,
+      ),
+    );
+    const nodeObstacles = nodes
+      .filter((node) => node.id !== info.fromNode.id && node.id !== info.toNode.id)
+      .map((node) => ({
+        left: node.x - ROUTE_NODE_CLEARANCE,
+        right: node.x + node.width + ROUTE_NODE_CLEARANCE,
+        top: node.y - ROUTE_NODE_CLEARANCE,
+        bottom: node.y + node.height + ROUTE_NODE_CLEARANCE,
+      }));
+    const groupObstacles = (groups ?? [])
+      .filter((group) => !endpointGroups.has(group.id) && group.width > 0 && group.height > 0)
+      .map((group) => ({
+        left: group.x - ROUTE_GROUP_CLEARANCE,
+        right: group.x + group.width + ROUTE_GROUP_CLEARANCE,
+        top: group.y - ROUTE_GROUP_CLEARANCE,
+        bottom: group.y + group.height + ROUTE_GROUP_CLEARANCE,
+      }));
+    const obstacles = [...nodeObstacles, ...groupObstacles];
+    const original = simplifyOrthogonalPoints(routePoints);
+    if (!routeEntersObstacles(original, obstacles)) return original;
+
+    const label = info.edge.label ? measureEdgeLabel(info.edge.label) : undefined;
+    const labelObstacles = [
+      ...nodes.map((node) => ({
+        left: node.x,
+        right: node.x + node.width,
+        top: node.y,
+        bottom: node.y + node.height,
+      })),
+      ...(groups ?? [])
+        .filter((group) => !endpointGroups.has(group.id) && group.width > 0 && group.height > 0)
+        .map((group) => ({
+          left: group.x,
+          right: group.x + group.width,
+          top: group.y,
+          bottom: group.y + group.height,
+        })),
+    ];
+    const labelPlacementCount = (points: RoutePoint[]) => {
+      if (!label) return Number.POSITIVE_INFINITY;
+      const fractions = [0.5, 0.25, 0.75, 0.125, 0.875];
+      return points.slice(1).reduce((count, point, index) => {
+        const start = points[index];
+        return (
+          count +
+          fractions.filter((fraction) => {
+            const x = start.x + (point.x - start.x) * fraction;
+            const y = start.y + (point.y - start.y) * fraction;
+            const bounds = {
+              left: x - label.width / 2 - ROUTE_LABEL_CLEARANCE,
+              right: x + label.width / 2 + ROUTE_LABEL_CLEARANCE,
+              top: y - label.height / 2 - ROUTE_LABEL_CLEARANCE,
+              bottom: y + label.height / 2 + ROUTE_LABEL_CLEARANCE,
+            };
+            return !labelObstacles.some(
+              (obstacle) =>
+                bounds.left < obstacle.right &&
+                bounds.right > obstacle.left &&
+                bounds.top < obstacle.bottom &&
+                bounds.bottom > obstacle.top,
+            );
+          }).length
+        );
+      }, 0);
+    };
+    const supportsLabel = (points: RoutePoint[]) => labelPlacementCount(points) >= 3;
+    const start = original[0];
+    const end = original[original.length - 1];
+    const startDirection = routeDirection(start, routePoints[1]);
+    const endDirection = routeDirection(routePoints[routePoints.length - 2], end);
+    const startLead = stepToward(start, original[1]);
+    const endLead = stepToward(end, original[original.length - 2]);
+    const unique = (values: number[]) => [...new Set(values)].sort((left, right) => left - right);
+    const xLanes = unique([
+      ...obstacles.flatMap(({ left, right }) => [left, right]),
+      ...(label
+        ? labelObstacles.flatMap(({ left, right }) => [
+            left - label.width / 2 - ROUTE_LABEL_LANE_CLEARANCE,
+            right + label.width / 2 + ROUTE_LABEL_LANE_CLEARANCE,
+          ])
+        : []),
+    ]);
+    const yLanes = unique([
+      ...obstacles.flatMap(({ top, bottom }) => [top, bottom]),
+      ...(label
+        ? labelObstacles.flatMap(({ top, bottom }) => [
+            top - label.height / 2 - ROUTE_LABEL_LANE_CLEARANCE,
+            bottom + label.height / 2 + ROUTE_LABEL_LANE_CLEARANCE,
+          ])
+        : []),
+    ]);
+    const validCandidates = [
+      ...xLanes.map((x) =>
+        simplifyOrthogonalPoints([
+          start,
+          startLead,
+          { x, y: startLead.y },
+          { x, y: endLead.y },
+          endLead,
+          end,
+        ]),
+      ),
+      ...yLanes.map((y) =>
+        simplifyOrthogonalPoints([
+          start,
+          startLead,
+          { x: startLead.x, y },
+          { x: endLead.x, y },
+          endLead,
+          end,
+        ]),
+      ),
+    ].filter(
+      (candidate) =>
+        !routeEntersObstacles(candidate, obstacles) &&
+        routeDirection(candidate[0], candidate[1]) === startDirection &&
+        routeDirection(candidate[candidate.length - 2], candidate[candidate.length - 1]) ===
+          endDirection,
+    );
+    const labelCandidates = validCandidates.filter(supportsLabel);
+    const candidates = labelCandidates.length > 0 ? labelCandidates : validCandidates;
+
+    return (
+      candidates.toSorted((left, right) => {
+        const score = (points: RoutePoint[]) => routeLength(points) + points.length * TRACK_SPACING;
+        return (
+          score(left) - score(right) || JSON.stringify(left).localeCompare(JSON.stringify(right))
+        );
+      })[0] ?? original
+    );
+  };
+
   // Generate paths
   const computedEdges: ComputedEdge[] = edgeInfos.map((info) => {
     const { index, edge, fromNode, toNode, fromSide, toSide, goesBackward } = info;
@@ -2897,8 +3073,9 @@ function computeOrthogonalEdgePaths(
         toPos = target;
       } else {
         const trackY = maxY + NODE_CLEARANCE + (trackNum + 1) * TRACK_SPACING;
-        const stepAwayX = fromSide === 'right' ? fromPos.x + NODE_GAP : fromPos.x - NODE_GAP;
-        const stepToX = toSide === 'left' ? toPos.x - NODE_GAP : toPos.x + NODE_GAP;
+        const lead = NODE_GAP + trackNum * TRACK_SPACING;
+        const stepAwayX = fromSide === 'right' ? fromPos.x + lead : fromPos.x - lead;
+        const stepToX = toSide === 'left' ? toPos.x - lead : toPos.x + lead;
         points.push({ x: stepAwayX, y: fromPos.y });
         points.push({ x: stepAwayX, y: trackY });
         points.push({ x: stepToX, y: trackY });
@@ -3079,7 +3256,7 @@ function computeOrthogonalEdgePaths(
     }
 
     points.push(toPos);
-    const simplifiedPoints = simplifyOrthogonalPoints(points);
+    const simplifiedPoints = avoidRouteObstacles(info, points);
 
     return {
       ...edge,
@@ -3221,9 +3398,7 @@ function computeCompactColumnEdgePaths(
         x: downward ? target.x + target.width : target.x,
         y: target.y + target.height / 2,
       };
-      const laneClearance = needsAdjacentLabelLane
-        ? Math.max(terminalLead, (compactLabel?.width ?? 0) / 2 + 8)
-        : terminalLead;
+      const laneClearance = Math.max(terminalLead, (compactLabel?.width ?? 0) / 2 + 10);
       const laneX = downward ? columnWidth + laneClearance + row * 8 : -laneClearance - row * 8;
       points = [
         start,
