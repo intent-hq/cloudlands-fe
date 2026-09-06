@@ -34,13 +34,25 @@ describe('screen pattern', () => {
     const onRetry = vi.fn();
     const empty = render(ScreenHarness, { state: 'empty' });
     expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy();
+    expect(empty.container.querySelector('[data-slot="empty-state-title"]')).toBeNull();
+    expect(empty.container.querySelector('[data-slot="empty-state-description"]')).toBeTruthy();
     empty.unmount();
 
-    render(ScreenHarness, { state: 'error', onRetry });
+    const failed = render(ScreenHarness, { state: 'error', onRetry });
+    const errorState = failed.container.querySelector('[data-state-kind="error"]');
+    expect(errorState?.getAttribute('data-severity')).toBe('routine');
+    expect(errorState?.querySelector('[data-slot="empty-state-title"]')).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(onRetry).toHaveBeenCalledOnce();
     await fireEvent.click(screen.getByText('Details'));
     expect(screen.getByText('Error details')).toBeTruthy();
+  });
+
+  it('reserves danger severity for an explicit error state', () => {
+    const { container } = render(ScreenHarness, { state: 'error-danger' });
+    expect(
+      container.querySelector('[data-state-kind="error"]')?.getAttribute('data-severity'),
+    ).toBe('danger');
   });
 
   it('provides list, card-grid, and form loading fixture recipes', () => {
@@ -48,7 +60,7 @@ describe('screen pattern', () => {
     expect(screen.getByRole('status', { name: 'Loading screen' })).toBeTruthy();
     expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(4);
     expect(screenFixtures.flatMap((fixture) => fixture.states)).toEqual(
-      expect.arrayContaining(['loading-list', 'loading-card-grid', 'loading-form']),
+      expect.arrayContaining(['error-danger', 'loading-list', 'loading-card-grid', 'loading-form']),
     );
   });
 

@@ -1,12 +1,13 @@
 <script lang="ts" generics="T">
   import { ProximityHighlight } from '$lib/components/ui/proximity-highlight';
-  import { Skeleton } from '$lib/components/ui/skeleton';
+  import { EmptyState, ErrorState, LoadingState } from '$lib/components/patterns/screen';
   import { createProximityHover, proximityItem, type ProximityHover } from '$lib/interaction';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
   import type { Snippet } from 'svelte';
   import type { Action } from 'svelte/action';
   import type { HTMLAttributes } from 'svelte/elements';
+  import { LIST_STATE_GEOMETRY, type StateDensity } from '../state-geometry';
   import type { ListKey, ListRowContext, SelectionMode } from './types';
 
   interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
@@ -25,6 +26,7 @@
     virtualize?: boolean | 'auto';
     rowHeight?: number;
     overscan?: number;
+    stateDensity?: StateDensity;
     ariaLabel?: string;
     class?: string;
   }
@@ -43,8 +45,9 @@
     loading,
     error,
     virtualize = 'auto',
-    rowHeight = 48,
+    rowHeight = LIST_STATE_GEOMETRY.default.rowHeight,
     overscan = 4,
+    stateDensity = 'compact',
     ariaLabel,
     class: className,
     ...restProps
@@ -76,6 +79,9 @@
   const selectedSet = $derived(new Set(selectedKeys));
   const selectedIndexes = $derived(
     items.flatMap((item, index) => (selectedSet.has(getKey(item, index)) ? [index] : [])),
+  );
+  const loadingDensity = $derived(
+    rowHeight === LIST_STATE_GEOMETRY.compact.rowHeight ? 'compact' : 'default',
   );
 
   $effect(() => {
@@ -143,7 +149,7 @@
     });
   }
 
-  function isNestedControl(event: MouseEvent): boolean {
+  function isNestedControl(event: MouseEvent | KeyboardEvent): boolean {
     const target = event.target as Element | null;
     const rowElement = event.currentTarget as HTMLElement;
     const control = target?.closest(
@@ -161,6 +167,7 @@
   }
 
   function handleKeydown(event: KeyboardEvent, item: T, index: number) {
+    if (isNestedControl(event)) return;
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       focusIndex(index + (event.key === 'ArrowDown' ? 1 : -1));
@@ -200,27 +207,38 @@
   }
 </script>
 
+{#snippet defaultErrorMessage()}{m.error_page_title()}{/snippet}
+{#snippet defaultEmptyMessage()}{m.ui_list_empty_label()}{/snippet}
+
 {#if status === 'loading'}
   {#if loading}
     {@render loading()}
   {:else}
-    <div class="space-y-2 p-2" role="status" aria-label={m.ui_spinner_loading_ariaLabel()}>
-      {#each [0, 1, 2] as row (row)}
-        <Skeleton class="h-10 w-full" />
-      {/each}
-    </div>
+    <LoadingState
+      recipe="list"
+      count={3}
+      label={m.ui_spinner_loading_ariaLabel()}
+      density={loadingDensity}
+      {rowHeight}
+      class={className}
+    />
   {/if}
 {:else if status === 'error'}
   {#if error}
     {@render error()}
   {:else}
-    <p class="p-4 text-sm text-danger" role="alert">{m.error_page_title()}</p>
+    <ErrorState message={defaultErrorMessage} density={stateDensity} class={className} />
   {/if}
 {:else if items.length === 0}
   {#if empty}
     {@render empty()}
   {:else}
-    <p class="p-4 text-center text-sm text-muted-foreground">{m.ui_list_empty_label()}</p>
+    <EmptyState
+      description={defaultEmptyMessage}
+      density={stateDensity}
+      class={className}
+      data-state-kind="empty"
+    />
   {/if}
 {:else}
   <div

@@ -69,6 +69,17 @@ describe('collection pattern', () => {
     expect(first.getAttribute('aria-selected')).toBe('false');
   });
 
+  it('leaves arrow keys owned by a nested input', async () => {
+    const { container } = render(CollectionHarness);
+    const list = within(container).getByRole('listbox', { name: 'Test collection' });
+    const first = within(list).getAllByRole('option')[0];
+    const input = within(first).getByRole('textbox', { name: 'Edit Alpha' });
+
+    input.focus();
+    expect(await fireEvent.keyDown(input, { key: 'ArrowDown' })).toBe(true);
+    expect(document.activeElement).toBe(input);
+  });
+
   it('covers the required state fixtures', () => {
     expect(() => parsePatternMetadata(collectionMetadata)).not.toThrow();
     expect(collectionFixtures.flatMap(({ states }) => states)).toEqual(
@@ -78,15 +89,24 @@ describe('collection pattern', () => {
 
   it('uses default states and virtualizes collections above the threshold', () => {
     const loading = render(CollectionStateHarness, { props: { status: 'loading' } });
-    expect(within(loading.container).getByRole('status', { name: 'Loading' })).toBeTruthy();
+    const loadingState = within(loading.container).getByRole('status', { name: 'Loading' });
+    expect(loadingState.getAttribute('data-recipe')).toBe('list');
+    expect(loadingState.style.getPropertyValue('--state-list-row-height')).toBe('48px');
+    expect(loading.container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3);
     loading.unmount();
 
     const failed = render(CollectionStateHarness, { props: { status: 'error' } });
-    expect(within(failed.container).getByRole('alert')).toBeTruthy();
+    const errorState = within(failed.container).getByRole('alert');
+    expect(errorState.getAttribute('data-state-kind')).toBe('error');
+    expect(errorState.getAttribute('data-severity')).toBe('routine');
+    expect(errorState.getAttribute('data-density')).toBe('compact');
     failed.unmount();
 
     const empty = render(CollectionStateHarness);
     expect(empty.container.textContent).toContain('No items');
+    expect(
+      empty.container.querySelector('[data-state-kind="empty"]')?.getAttribute('data-density'),
+    ).toBe('compact');
     empty.unmount();
 
     const virtualized = render(CollectionStateHarness, { props: { count: 205 } });

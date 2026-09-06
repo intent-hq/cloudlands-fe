@@ -9,6 +9,7 @@ export const screenFixtures = [
       'takeover',
       'empty',
       'error',
+      'error-danger',
       'loading-list',
       'loading-card-grid',
       'loading-form',

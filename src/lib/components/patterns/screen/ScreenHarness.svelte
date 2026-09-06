@@ -12,8 +12,23 @@
   let {
     state = 'screen',
     onRetry = () => {},
-  }: { state?: 'screen' | 'takeover' | 'empty' | 'error' | 'loading'; onRetry?: () => void } =
-    $props();
+  }: {
+    state?:
+      | 'screen'
+      | 'takeover'
+      | 'empty'
+      | 'error'
+      | 'error-danger'
+      | 'loading'
+      | 'loading-list'
+      | 'loading-card-grid'
+      | 'loading-form';
+    onRetry?: () => void;
+  } = $props();
+
+  const loadingRecipe = $derived(
+    state === 'loading-list' ? 'list' : state === 'loading-card-grid' ? 'card-grid' : 'form',
+  );
 </script>
 
 {#snippet title()}<h1>Example screen</h1>{/snippet}
@@ -23,17 +38,26 @@
 {#snippet secondary()}<Button variant="outline">Cancel</Button>{/snippet}
 {#snippet primary()}<Button>Continue</Button>{/snippet}
 {#snippet details()}<p>Error details</p>{/snippet}
+{#snippet emptyMessage()}<p>Nothing here yet</p>{/snippet}
+{#snippet errorMessage()}<p>We could not load this screen</p>{/snippet}
 
 {#if state === 'takeover'}
   <TakeoverScreen {title} {description} {counter} {secondary} {primary}>
     {@render body()}
   </TakeoverScreen>
 {:else if state === 'empty'}
-  <EmptyState {title} {description} actions={primary} />
-{:else if state === 'error'}
-  <ErrorState message={title} retryLabel="Retry" {onRetry} {details} detailsLabel="Details" />
-{:else if state === 'loading'}
-  <LoadingState recipe="form" count={2} label="Loading screen" />
+  <EmptyState description={emptyMessage} actionLabel="Continue" onAction={() => undefined} />
+{:else if state === 'error' || state === 'error-danger'}
+  <ErrorState
+    message={errorMessage}
+    retryLabel="Retry"
+    {onRetry}
+    {details}
+    detailsLabel="Details"
+    severity={state === 'error-danger' ? 'danger' : 'routine'}
+  />
+{:else if state.startsWith('loading')}
+  <LoadingState recipe={loadingRecipe} count={2} label="Loading screen" />
 {:else}
   <Screen>
     <ScreenHeader {title} {description} />
