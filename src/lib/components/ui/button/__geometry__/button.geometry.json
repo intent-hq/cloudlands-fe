@@ -1,7 +1,22 @@
 {
   "default": {
     "420": {
-      "probes": {},
+      "probes": {
+        "data-slot=button": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 88.2,
+          "x": 25,
+          "y": 25
+        }
+      },
       "root": {
         "height": 82,
         "width": 420
@@ -10,7 +25,22 @@
   },
   "destructive": {
     "420": {
-      "probes": {},
+      "probes": {
+        "data-slot=button": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 147.23,
+          "x": 25,
+          "y": 25
+        }
+      },
       "root": {
         "height": 82,
         "width": 420
@@ -19,7 +49,22 @@
   },
   "disabled": {
     "420": {
-      "probes": {},
+      "probes": {
+        "data-slot=button": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 105.77,
+          "x": 25,
+          "y": 25
+        }
+      },
       "root": {
         "height": 82,
         "width": 420
@@ -28,7 +73,22 @@
   },
   "loading": {
     "420": {
-      "probes": {},
+      "probes": {
+        "data-slot=button": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 91.2,
+          "x": 25,
+          "y": 25
+        }
+      },
       "root": {
         "height": 82,
         "width": 420
