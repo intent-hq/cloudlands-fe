@@ -65,6 +65,31 @@ function widestShelf(layout: DiffMapLayout): number {
   );
 }
 
+function shelfDocument(groupSizes: number[], fileName = 'file.ts'): DiffMapDocument {
+  const template = typicalDiffMapFixture.document.files[0];
+  const files = groupSizes.flatMap((size, groupIndex) =>
+    Array.from({ length: size }, (_, fileIndex) => ({
+      ...template,
+      id: `group-${groupIndex}/file-${fileIndex}`,
+      path: `group-${groupIndex}/${fileName}-${fileIndex}`,
+      name: fileName,
+    })),
+  );
+  let fileOffset = 0;
+  const groups = groupSizes.map((size, groupIndex) => {
+    const fileIds = files.slice(fileOffset, fileOffset + size).map((file) => file.id);
+    fileOffset += size;
+    return {
+      id: `group-${groupIndex}`,
+      displayPrefix: 'src/',
+      displayName: `group-${groupIndex}`,
+      fileIds,
+      changedCount: size,
+    };
+  });
+  return { ...typicalDiffMapFixture.document, files, groups, sections: undefined };
+}
+
 describe('layoutDiffMap', () => {
   for (const fixture of diffMapFixtures) {
     for (const width of widths) {
@@ -120,6 +145,76 @@ describe('layoutDiffMap', () => {
     expect(layout.overflow).toBe(true);
     expect(widestShelf(layout)).toBeGreaterThanOrEqual(width * 0.85);
     expect(new Set(layout.blocks.map((block) => block.y)).size).toBeLessThan(layout.blocks.length);
+  });
+
+  it('stretches a full shelf to the container width and recomputes row label budgets', () => {
+    const fileName = 'a-very-long-file-name-for-shelf-stretch.ts';
+    const layout = layoutDiffMap(
+      shelfDocument([1, 1, 1], fileName),
+      { width: 900, height: 500 },
+      measure,
+      {
+        rungOverride: 0,
+      },
+    );
+    const shelves = Map.groupBy(layout.blocks, (block) => block.y);
+    const fullShelf = [...shelves.values()][0];
+    const lastShelf = [...shelves.values()][1];
+
+    expect(Math.max(...fullShelf.map((block) => block.x + block.w))).toBeCloseTo(900);
+    expect(fullShelf[0].columns[0].rows[0].label).toBe(fileName);
+    expect(lastShelf[0].columns[0].rows[0].label).not.toBe(fileName);
+  });
+
+  it('leaves the last partial shelf left-aligned at base widths', () => {
+    const document = shelfDocument([1, 1, 1]);
+    document.sections = [
+      {
+        id: 'src',
+        path: 'src',
+        displayPrefix: '',
+        displayName: 'src',
+        groupIds: ['group-0', 'group-1'],
+        changedCount: 2,
+      },
+      {
+        id: 'tests',
+        path: 'tests',
+        displayPrefix: '',
+        displayName: 'tests',
+        groupIds: ['group-2'],
+        changedCount: 1,
+      },
+    ];
+    const layout = layoutDiffMap(document, { width: 500, height: 500 }, measure, {
+      rungOverride: 0,
+    });
+    const shelves = [...Map.groupBy(layout.blocks, (block) => block.y).values()];
+
+    expect(shelves).toHaveLength(2);
+    expect(shelves[1][0].x).toBe(0);
+    expect(shelves[1][0].w).toBeLessThan(shelves[0][0].w);
+  });
+
+  it('stretches the partial shelf when it is the only shelf', () => {
+    const layout = layoutDiffMap(shelfDocument([1, 1]), { width: 500, height: 500 }, measure, {
+      rungOverride: 0,
+    });
+
+    expect(new Set(layout.blocks.map((block) => block.y)).size).toBe(1);
+    expect(Math.max(...layout.blocks.map((block) => block.x + block.w))).toBeCloseTo(500);
+  });
+
+  it('distributes shelf space proportionally to block column counts', () => {
+    const document = shelfDocument([1, 4]);
+    const base = layoutDiffMap(document, { width: 576, height: 120 }, measure, { rungOverride: 0 });
+    const stretched = layoutDiffMap(document, { width: 900, height: 120 }, measure, {
+      rungOverride: 0,
+    });
+    const additions = stretched.blocks.map((block, index) => block.w - base.blocks[index].w);
+
+    expect(base.blocks.map((block) => block.columns.length)).toEqual([1, 2]);
+    expect(additions[1]).toBeCloseTo(additions[0] * 2);
   });
 
   it('keeps sibling group headers distinct at minimum width', () => {

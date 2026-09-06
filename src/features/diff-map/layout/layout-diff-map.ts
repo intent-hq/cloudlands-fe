@@ -76,6 +76,8 @@ const COLUMN_GAP = 4;
 const HEADER_GAP = 6;
 const SECTION_HEADER_HEIGHT = 22;
 const NARROW_WIDTH = 480;
+const MAX_STRETCH_FACTOR = 1.6;
+const STRETCH_EPSILON = 0.000001;
 
 const RUNGS = [
   { rowHeight: 28, headerHeight: 24, minColumnWidth: 180, maxColumnWidth: 320, chrome: 116 },
@@ -273,6 +275,98 @@ function translateBlock(block: DiffMapLayoutBlock, x: number, y: number): DiffMa
   };
 }
 
+function resizeBlock(
+  block: DiffMapLayoutBlock,
+  width: number,
+  group: DiffMapGroup,
+  fileById: Map<string, DiffMapDocument['files'][number]>,
+  rung: DiffMapDensityRung,
+  measure: TextMeasurer,
+): DiffMapLayoutBlock {
+  const config = RUNGS[rung];
+  const columnWidth = Math.max(
+    0,
+    (width - BLOCK_PADDING * 2 - COLUMN_GAP * Math.max(0, block.columns.length - 1)) /
+      block.columns.length,
+  );
+  const fileContext = { role: 'file', rung } as const;
+  const groupContext = { role: 'group', rung } as const;
+  const fileLabelWidth = Math.max(0, columnWidth - config.chrome);
+  const columns = block.columns.map((column, columnIndex) => {
+    const x = BLOCK_PADDING + columnIndex * (columnWidth + COLUMN_GAP);
+    return {
+      ...column,
+      x,
+      w: columnWidth,
+      rows: column.rows.map((row) => ({
+        ...row,
+        label: middleEllipsis(
+          fileById.get(row.fileId)?.name ?? row.label,
+          fileLabelWidth,
+          measure,
+          fileContext,
+        ),
+        x,
+        w: columnWidth,
+      })),
+    };
+  });
+  const countWidth = measure(diffMapGroupCountLabel(group), groupContext);
+  const label = truncateGroupLabel(
+    group,
+    Math.max(0, width - BLOCK_PADDING * 2 - (rung < 3 ? countWidth + HEADER_GAP : 0)),
+    measure,
+    groupContext,
+    rung < 3,
+  );
+  return {
+    ...block,
+    label: `${label.prefix}${label.name}`,
+    labelPrefix: label.prefix,
+    labelName: label.name,
+    w: width,
+    columns,
+  };
+}
+
+function stretchShelf(
+  blocks: DiffMapLayoutBlock[],
+  width: number,
+  groupById: Map<string, DiffMapGroup>,
+  fileById: Map<string, DiffMapDocument['files'][number]>,
+  rung: DiffMapDensityRung,
+  measure: TextMeasurer,
+): DiffMapLayoutBlock[] {
+  const widths = blocks.map((block) => block.w);
+  let remaining = Math.max(
+    0,
+    width -
+      BLOCK_GAP * Math.max(0, blocks.length - 1) -
+      widths.reduce((sum, value) => sum + value, 0),
+  );
+  let active = blocks.map((_, index) => index);
+  while (remaining > STRETCH_EPSILON && active.length > 0) {
+    const totalWeight = active.reduce((sum, index) => sum + blocks[index].columns.length, 0);
+    let distributed = 0;
+    const nextActive: number[] = [];
+    for (const index of active) {
+      const capacity = blocks[index].w * MAX_STRETCH_FACTOR - widths[index];
+      const share = (remaining * blocks[index].columns.length) / totalWeight;
+      const addition = Math.min(capacity, share);
+      widths[index] += addition;
+      distributed += addition;
+      if (capacity - addition > STRETCH_EPSILON) nextActive.push(index);
+    }
+    if (distributed <= STRETCH_EPSILON) break;
+    remaining -= distributed;
+    active = nextActive;
+  }
+  return blocks.map((block, index) => {
+    const group = groupById.get(block.groupId);
+    return group ? resizeBlock(block, widths[index], group, fileById, rung, measure) : block;
+  });
+}
+
 function packAtRung(
   document: DiffMapDocument,
   viewport: DiffMapViewport,
@@ -280,6 +374,7 @@ function packAtRung(
   measure: TextMeasurer,
 ): DiffMapLayout {
   const fileById = new Map(document.files.map((file) => [file.id, file]));
+  const groupById = new Map(document.groups.map((group) => [group.id, group]));
   const blocksById = new Map(
     document.groups.map((group) => [
       group.id,
@@ -292,30 +387,51 @@ function packAtRung(
     preserveSections && documentSections
       ? documentSections.map((section) => ({ section, groupIds: section.groupIds }))
       : [{ section: undefined, groupIds: document.groups.map((group) => group.id) }];
-  const placed = new Map<string, DiffMapLayoutBlock>();
-  const sectionsPlaced: DiffMapLayoutSection[] = [];
-  let cursorY = 0;
-
-  for (const { section, groupIds } of sections) {
-    const sectionY = cursorY;
-    if (section) cursorY += SECTION_HEADER_HEIGHT;
-    let shelfX = 0;
-    let shelfY = cursorY;
-    let shelfHeight = 0;
+  const packedSections = sections.map(({ section, groupIds }) => {
+    const shelves: DiffMapLayoutBlock[][] = [];
+    let shelf: DiffMapLayoutBlock[] = [];
+    let shelfWidth = 0;
     for (const groupId of groupIds) {
       const block = blocksById.get(groupId);
       if (!block) continue;
       const narrow = viewport.width < NARROW_WIDTH;
-      if (shelfX > 0 && (narrow || shelfX + block.w > viewport.width)) {
-        shelfY += shelfHeight + BLOCK_GAP;
-        shelfX = 0;
-        shelfHeight = 0;
+      if (shelf.length > 0 && (narrow || shelfWidth + BLOCK_GAP + block.w > viewport.width)) {
+        shelves.push(shelf);
+        shelf = [];
+        shelfWidth = 0;
       }
-      placed.set(groupId, translateBlock(block, shelfX, shelfY));
-      shelfX += block.w + BLOCK_GAP;
-      shelfHeight = Math.max(shelfHeight, block.h);
+      shelf.push(block);
+      shelfWidth += (shelf.length > 1 ? BLOCK_GAP : 0) + block.w;
     }
-    cursorY = groupIds.length > 0 ? shelfY + shelfHeight : cursorY;
+    if (shelf.length > 0) shelves.push(shelf);
+    return { section, shelves };
+  });
+  const shelfCount = packedSections.reduce((count, entry) => count + entry.shelves.length, 0);
+  const placed = new Map<string, DiffMapLayoutBlock>();
+  const sectionsPlaced: DiffMapLayoutSection[] = [];
+  let cursorY = 0;
+  let globalShelfIndex = 0;
+
+  for (const { section, shelves } of packedSections) {
+    const sectionY = cursorY;
+    if (section) cursorY += SECTION_HEADER_HEIGHT;
+    let shelfY = cursorY;
+    for (let shelfIndex = 0; shelfIndex < shelves.length; shelfIndex++) {
+      const shouldStretch = shelfCount === 1 || globalShelfIndex < shelfCount - 1;
+      const blocks = shouldStretch
+        ? stretchShelf(shelves[shelfIndex], viewport.width, groupById, fileById, rung, measure)
+        : shelves[shelfIndex];
+      let shelfX = 0;
+      let shelfHeight = 0;
+      for (const block of blocks) {
+        placed.set(block.groupId, translateBlock(block, shelfX, shelfY));
+        shelfX += block.w + BLOCK_GAP;
+        shelfHeight = Math.max(shelfHeight, block.h);
+      }
+      shelfY += shelfHeight + (shelfIndex < shelves.length - 1 ? BLOCK_GAP : 0);
+      globalShelfIndex += 1;
+    }
+    cursorY = shelves.length > 0 ? shelfY : cursorY;
     if (section) {
       sectionsPlaced.push({
         sectionId: section.id,
