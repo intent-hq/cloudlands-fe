@@ -332,9 +332,11 @@ function workspaceNotVisibleWarning(workspaceId: string | undefined): { warning?
 }
 
 /**
- * Whether `tabId` is actually painted: visible AND its panel's active tab. A
- * visible-but-inactive tab is mounted in a panel yet renders nothing, so a
- * screenshot of it comes back empty. Read from the layout, never inferred
+ * Whether `tabId` is displayed in the saved layout: visible AND its panel's
+ * active tab. A visible-but-inactive tab is mounted in a panel yet renders
+ * nothing, so a screenshot of it comes back empty. This is a layout fact, not
+ * a paint guarantee: a displayed tab still paints only while its workspace is
+ * in view and its panel is not hidden (e.g. by zoom). Read from the layout, never inferred
  * from the request; `undefined` when the renderer could not confirm (stale
  * or unavailable tab list, unknown tab) so the caller omits the field rather
  * than guessing.
@@ -705,10 +707,12 @@ async function executeAction(
             // unowned (user) tabs are always visible.
             visibility:
               ownerAgentId && hidden === true ? ('hidden' as const) : ('visible' as const),
-            // Whether the tab is actually painted: visible AND its panel's
+            // Layout fact, not a paint guarantee: visible AND its panel's
             // active tab. A visible-but-inactive tab is mounted in a panel
             // yet renders nothing, so screenshots of it come back empty —
-            // showTab activates it without stealing focus.
+            // showTab activates it without stealing focus. A displayed tab
+            // still paints only while its workspace is in view and its
+            // panel is not hidden by zoom.
             displayed: !(ownerAgentId && hidden === true) && active === true,
           };
         });
@@ -1222,9 +1226,10 @@ async function executeAction(
             };
           }
         }
-        // A visible open reports whether the tab is actually painted (its
-        // panel's active tab) so the caller knows up front whether a
-        // screenshot will capture anything.
+        // A visible open reports whether the tab is displayed in the layout
+        // (its panel's active tab) so the caller knows up front whether it
+        // sits behind a sibling; painting additionally needs the workspace
+        // in view and the panel not hidden by zoom.
         const displayed =
           result.success && effectiveTabId && visible === true
             ? await readTabDisplayed(workspaceId, effectiveTabId)

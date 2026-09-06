@@ -1277,7 +1277,7 @@ describe('browserIpcSaga', () => {
   });
 
   // A panel-mounted tab is `active` only when it is its panel's active tab
-  // (the one actually painted); a mounted-but-inactive tab and a hidden tab
+  // (the only one the panel can paint); a mounted-but-inactive tab and a hidden tab
   // carry no marker, even when a stale activeTabId still names the hidden one.
   it("marks each panel's active tab with active: true in list replies", async () => {
     const task = start();

@@ -98,9 +98,10 @@ interface PanelBrowserTab {
    */
   hidden?: boolean;
   /**
-   * The tab is its panel's active tab, i.e. the one the panel actually paints
-   * (a mounted-but-inactive tab renders nothing in the tabless UI). Never set
-   * on hidden tabs; absent = not the active tab.
+   * The tab is its panel's active tab, i.e. the only one the panel can paint
+   * (a mounted-but-inactive tab renders nothing in the tabless UI). A layout
+   * fact, not a paint guarantee. Never set on hidden tabs; absent = not the
+   * active tab.
    */
   active?: boolean;
 }
@@ -610,7 +611,7 @@ class EmbeddedBrowserCdpService {
     // (rehydrated from the panel reply above) so agents can see which tabs
     // they may manipulate (monorepo#2857), with `hidden` when the tab sits
     // in the workspace's hidden set (monorepo#3045), and with `active` when
-    // it is its panel's painted (active) tab.
+    // it is its panel's active tab.
     const tabs = panelTabs.map((panelTab) => {
       const ownership = this.tabOwnership.get(panelTab.tabId);
       const owner = ownership
@@ -755,7 +756,7 @@ class EmbeddedBrowserCdpService {
    * Activate an agent-owned tab in a visible panel (monorepo#3045). A hidden
    * tab is revealed into a panel; a visible-but-inactive tab is brought to
    * the front of its panel. With `focus: false` (the default) the tab becomes
-   * its panel's active tab (so it paints) without moving panel/keyboard
+   * its panel's active tab (`displayed`) without moving panel/keyboard
    * focus; `focus: true` activates and focuses the panel. Both are idempotent
    * on an already-displayed tab (`focus: true` still focuses its panel).
    *
@@ -1754,7 +1755,7 @@ class EmbeddedBrowserCdpService {
               reject(
                 new Error(
                   // i18n-ignore (agent-facing protocol error, not user-facing)
-                  `capturePage timed out after ${SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS}ms: the tab is not painting. A visible tab paints only while it is its panel's active tab (listTabs reports displayed: true); use { action: "showTab", tabId } to activate it without stealing focus (or focusTab to activate and focus), then capture again.`,
+                  `capturePage timed out after ${SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS}ms: the tab is not painting. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
                 ),
               ),
             SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS,
@@ -1765,14 +1766,14 @@ class EmbeddedBrowserCdpService {
       if (image.isEmpty?.() || size.width <= 0 || size.height <= 0) {
         throw new Error(
           // i18n-ignore (agent-facing operational diagnostic, not user-facing)
-          `webContents.capturePage returned an empty image (${size.width}x${size.height}): the tab surface has not painted. A visible tab paints only while it is its panel's active tab (listTabs reports displayed: true); use { action: "showTab", tabId } to activate it without stealing focus (or focusTab to activate and focus), then capture again.`,
+          `webContents.capturePage returned an empty image (${size.width}x${size.height}): the tab surface has not painted. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
         );
       }
       const jpeg = image.toJPEG(80);
       if (jpeg.length === 0) {
         throw new Error(
           // i18n-ignore (agent-facing operational diagnostic, not user-facing)
-          `webContents.capturePage encoded an empty image (${size.width}x${size.height}): the tab surface has not painted. A visible tab paints only while it is its panel's active tab (listTabs reports displayed: true); use { action: "showTab", tabId } to activate it without stealing focus (or focusTab to activate and focus), then capture again.`,
+          `webContents.capturePage encoded an empty image (${size.width}x${size.height}): the tab surface has not painted. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
         );
       }
       return {
