@@ -159,6 +159,8 @@ import type { AppliedSettingChange } from '$lib/client/app-client';
 import { isAcceptChangesStatusEvent } from './accept-changes-status-events';
 import { store as appStore } from '$store/renderer/store';
 import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+import { semanticMapActivityReceived } from '$store/renderer/slices/semantic-map/semantic-map-slice';
+import type { MapActivity } from '$lib/components/visualization/semantic-map/core/types';
 import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
 import {
   streamStatusReceived,
@@ -3594,6 +3596,14 @@ export function routeDaemonEventsNotification(
     appStore.dispatch(acceptChangesStatusInvalidated(workspaceId));
   }
 
+  if (type === 'map:activity') {
+    const data = (event as { data?: unknown }).data;
+    if (data && typeof data === 'object') {
+      appStore.dispatch(semanticMapActivityReceived(workspaceId, data as MapActivity));
+    }
+    return;
+  }
+
   // Workspace lifecycle: purge every Redux trace of the deleted workspace so a
   // recreated same-slug workspace does not surface ghost agents (§7).
   if (type === 'workspace:deleted') {
@@ -4086,6 +4096,7 @@ export function routeDaemonEventsNotification(
  */
 export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'agent:*',
+  'map:*',
   // `file:*` is deliberately ABSENT: system-actor watcher bursts from every
   // open workspace would otherwise reach every window. The daemon-events-saga
   // carries file events on a separate subscription scoped to the active

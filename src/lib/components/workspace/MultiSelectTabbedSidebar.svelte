@@ -455,6 +455,15 @@
   }
 
   function handleTabClick(tabId: TabId) {
+    if (tabId === 'map') {
+      panelLayoutManager.openUserTab({
+        type: 'map',
+        title: m.semanticMap_sandbox_title(),
+        closable: true,
+        workspaceId,
+      });
+      return;
+    }
     const previousTabId = [...selectedTabs][0] ?? 'overview';
     const nextTabId = previousTabId === tabId ? 'overview' : tabId;
     if (previousTabId !== 'overview' && nextTabId !== 'overview') {

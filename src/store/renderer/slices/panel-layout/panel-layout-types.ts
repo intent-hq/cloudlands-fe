@@ -38,7 +38,8 @@ export type PanelTabType =
   | 'activity'
   | 'activity-changes'
   | 'code-review'
-  | 'agent-overview';
+  | 'agent-overview'
+  | 'map';
 
 /** A single tab within a panel */
 export interface PanelTab {
