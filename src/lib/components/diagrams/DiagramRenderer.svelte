@@ -130,6 +130,7 @@
   let motionPhase = $state<'settled' | 'camera' | 'scene'>('settled');
 
   const CAMERA_MOTION_MS = 320;
+  const CAMERA_MOTION_EASING = 'cubic-bezier(0.65, 0, 0.35, 1)';
   const SCENE_ENTRY_MS = 180;
   const ROUTE_ENTRY_DELAY_MS = CAMERA_MOTION_MS + SCENE_ENTRY_MS;
   const ROUTE_ENTRY_MS = 180;
@@ -150,7 +151,7 @@
     camera
       .animate([{ transform: previousTransform }, { transform: nextTransform }], {
         duration: CAMERA_MOTION_MS,
-        easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+        easing: CAMERA_MOTION_EASING,
       })
       .finished.catch(() => undefined);
   }
@@ -966,6 +967,7 @@
   class:stateful-diagram={Boolean(diagram.states?.length)}
   class:camera-stage={motionPhase === 'camera'}
   style:--diagram-camera-duration={`${motionDuration(CAMERA_MOTION_MS)}ms`}
+  style:--diagram-camera-easing={CAMERA_MOTION_EASING}
   style:--diagram-scene-entry-delay={`${motionDuration(CAMERA_MOTION_MS)}ms`}
   style:--diagram-route-entry-delay={`${motionDuration(ROUTE_ENTRY_DELAY_MS)}ms`}
   style:--diagram-label-entry-delay={`${motionDuration(LABEL_ENTRY_DELAY_MS)}ms`}
@@ -1444,7 +1446,8 @@
     display: block;
     background: var(--diagram-canvas);
     transform-origin: top left;
-    transition: transform var(--diagram-camera-duration, 220ms) cubic-bezier(0.16, 1, 0.3, 1);
+    transition: transform var(--diagram-camera-duration, 220ms)
+      var(--diagram-camera-easing, cubic-bezier(0.65, 0, 0.35, 1));
   }
 
   .diagram-footer {
@@ -1492,7 +1495,7 @@
 
   .stateful-diagram.camera-stage :global(.diagram-geometry-motion) {
     transition:
-      transform var(--diagram-camera-duration) cubic-bezier(0.16, 1, 0.3, 1),
+      transform var(--diagram-camera-duration) var(--diagram-camera-easing),
       x 220ms cubic-bezier(0.16, 1, 0.3, 1) var(--diagram-scene-entry-delay),
       y 220ms cubic-bezier(0.16, 1, 0.3, 1) var(--diagram-scene-entry-delay),
       width 220ms cubic-bezier(0.16, 1, 0.3, 1) var(--diagram-scene-entry-delay),

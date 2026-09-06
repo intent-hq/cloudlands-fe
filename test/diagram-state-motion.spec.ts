@@ -310,6 +310,27 @@ function isBetween(value: number, start: number, end: number) {
   return value > Math.min(start, end) && value < Math.max(start, end);
 }
 
+function cameraMatrix(frame: Frame) {
+  const values = frame.camera
+    .split('|')[0]
+    .match(/-?(?:\d+(?:\.\d*)?|\.\d+)/g)
+    ?.map(Number);
+  if (!values || values.length !== 6) throw new Error(`Invalid camera matrix: ${frame.camera}`);
+  return values;
+}
+
+function cameraProgress(start: Frame, current: Frame, end: Frame) {
+  const from = cameraMatrix(start);
+  const at = cameraMatrix(current);
+  const to = cameraMatrix(end);
+  const delta = to.map((value, index) => value - from[index]);
+  const distanceSquared = delta.reduce((total, value) => total + value * value, 0);
+  return (
+    delta.reduce((total, value, index) => total + (at[index] - from[index]) * value, 0) /
+    distanceSquared
+  );
+}
+
 function expectCameraBeforeScene(transition: Awaited<ReturnType<typeof recordTransition>>) {
   expect(transition.afterClick.motionPhase).toBe('camera');
   expect(transition.afterClick.entranceOpacity).toBe(0);
@@ -367,6 +388,13 @@ function expectCameraInterpolation(transition: Awaited<ReturnType<typeof recordT
         frame.camera !== transition.start.camera && frame.camera !== transition.settled.camera,
     ),
   ).toBe(true);
+  const midpoint = transition.cameraFrames.reduce((closest, frame) =>
+    Math.abs(frame.elapsedMs - 160) < Math.abs(closest.elapsedMs - 160) ? frame : closest,
+  );
+  expect(midpoint.elapsedMs).toBeGreaterThanOrEqual(120);
+  expect(midpoint.elapsedMs).toBeLessThanOrEqual(210);
+  expect(cameraProgress(transition.before, midpoint, transition.settled)).toBeGreaterThan(0.05);
+  expect(cameraProgress(transition.before, midpoint, transition.settled)).toBeLessThan(0.8);
 }
 
 test('coordinates architecture and ownership state motion through settled frames', async ({
