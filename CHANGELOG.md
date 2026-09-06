@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.139.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.138.5...v2.139.0) (2026-09-06)
+
+
+### 🚀 Features
+
+* **settings:** add tool replay cap and payload retention rows ([#2221](https://github.com/intent-hq/cloudlands-fe/issues/2221)) ([fdc1e31](https://github.com/intent-hq/cloudlands-fe/commit/fdc1e31c41e9adce86e160cf7ea6f38e46418036))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.31 ([#2227](https://github.com/intent-hq/cloudlands-fe/issues/2227)) ([c69698f](https://github.com/intent-hq/cloudlands-fe/commit/c69698f1dfeba3cf367a531fb5389f58308c7295))
+
 ## [2.138.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.138.4...v2.138.5) (2026-09-06)
 
 
