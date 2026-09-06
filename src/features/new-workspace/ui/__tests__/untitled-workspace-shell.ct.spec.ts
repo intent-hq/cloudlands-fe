@@ -38,24 +38,28 @@ test.describe('new-workspace shell', () => {
     await expect(component.getByTestId('draft-start')).toBeEnabled();
   });
 
-  test('selects a fresh local project with a validated folder name', async ({ mount }) => {
+  test('selects a fresh local project with a validated folder name', async ({ mount, page }) => {
     const component = await mount(UntitledWorkspaceShellHost);
-    const input = component.getByRole('textbox', { name: 'my-project' });
+    await component.getByTestId('prompt-actions-trigger').click();
+    await page.getByRole('menuitem', { name: 'Start a new project' }).click();
+    const input = page.getByRole('textbox', { name: 'my-project' });
     await input.fill('fresh-project');
-    await component.getByRole('button', { name: 'Select folder…' }).click();
+    await page.getByRole('button', { name: 'Select folder…' }).click();
 
     await expect(component.getByTestId('source-kind')).toHaveText('newFolder');
     await expect(component.getByTestId('source-name')).toHaveText('fresh-project');
   });
 
-  test('rejects unsafe fresh-project folder names', async ({ mount }) => {
+  test('rejects unsafe fresh-project folder names', async ({ mount, page }) => {
     const component = await mount(UntitledWorkspaceShellHost);
-    const input = component.getByRole('textbox', { name: 'my-project' });
+    await component.getByTestId('prompt-actions-trigger').click();
+    await page.getByRole('menuitem', { name: 'Start a new project' }).click();
+    const input = page.getByRole('textbox', { name: 'my-project' });
     await input.fill('../outside');
 
     await expect(input).toHaveAttribute('aria-invalid', 'true');
-    await expect(component.locator('[data-source-state="new-folder-invalid"]')).toBeVisible();
-    await expect(component.getByRole('button', { name: 'Select folder…' })).toBeDisabled();
+    await expect(page.getByRole('alert')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Select folder…' })).toBeDisabled();
     await expect(component.getByTestId('source-kind')).toBeEmpty();
   });
 

@@ -1,6 +1,8 @@
 <script lang="ts">
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import type { ContextItem } from '$lib/components/chat/input/context-api';
+  import type { StackedMenuGroup } from '$lib/components/ui/menu';
+  import { faFolderOpen, faFolderPlus, faGithub } from '$lib/icons/phosphor-icons';
   import StreamingStatus from '$lib/components/chat/StreamingStatus.svelte';
   import { CHAT_TRANSCRIPT_OVERFLOW_CLASS } from '$lib/components/chat/chat-queue-edge-layout';
   import { Button } from '$lib/components/ui/button';
@@ -16,7 +18,7 @@
   } from '../controller';
   import CapabilityStrip from './CapabilityStrip.svelte';
   import CoordinatorPanel from './CoordinatorPanel.svelte';
-  import SourceCard from './SourceCard.svelte';
+  import SourceCard, { type SourcePickerMode } from './SourceCard.svelte';
   import { coordinatorStateFor, isProgressPhase, type NewWorkspacePresentation } from './types';
 
   interface Props {
@@ -96,6 +98,43 @@
       ? controllerState.input.config.setupScript
       : presentation.progress?.setup?.error,
   );
+  let sourcePickerOpen = $state(false);
+  let sourcePickerMode = $state<SourcePickerMode>('github');
+  const sourceActionGroups = $derived.by((): StackedMenuGroup[] =>
+    composerLocked
+      ? []
+      : [
+          {
+            id: 'workspace-source',
+            label: m.newWorkspace_source_title(),
+            items: [
+              {
+                id: 'workspace-source-local',
+                icon: faFolderOpen,
+                label: m.workspace_repoSelector_copyLocalRepo_tab(),
+                onSelect: () => openSourcePicker('local'),
+              },
+              {
+                id: 'workspace-source-github',
+                icon: faGithub,
+                label: m.workspace_repoSelector_pickARepo_tab(),
+                onSelect: () => openSourcePicker('github'),
+              },
+              {
+                id: 'workspace-source-new-folder',
+                icon: faFolderPlus,
+                label: m.newWorkspace_source_newProject_title(),
+                onSelect: () => openSourcePicker('new-folder'),
+              },
+            ],
+          },
+        ],
+  );
+
+  function openSourcePicker(mode: SourcePickerMode): void {
+    sourcePickerMode = mode;
+    sourcePickerOpen = true;
+  }
 
   function setupStatus(): 'pending' | 'active' | 'done' | 'error' | undefined {
     switch (presentation.progress?.setup?.state) {
@@ -227,6 +266,9 @@
                     source={controllerState.input.source}
                     presentation={presentation.source}
                     disabled={composerLocked}
+                    pickerOpen={sourcePickerOpen}
+                    pickerMode={sourcePickerMode}
+                    onPickerOpenChange={(open) => (sourcePickerOpen = open)}
                     {onChooseNewFolder}
                     {onSourceSelected}
                   />
@@ -336,6 +378,7 @@
                   oncontextAdd={addContextItem}
                   oncontextRemove={removeContextItem}
                   onAttachFiles={onAddFiles}
+                  extraActionGroups={sourceActionGroups}
                   allowEmptySubmit
                   submitTestId="draft-start"
                   selectedModel={typeof controllerState.input.config.model === 'string'

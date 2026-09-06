@@ -173,6 +173,8 @@
     allowEmptySubmit?: boolean;
     /** Stable selector for a caller-specific submit action contract. */
     submitTestId?: string;
+    /** Caller-owned action groups rendered before the built-in context actions. */
+    extraActionGroups?: StackedMenuGroup[];
     onsubmit?: (value: string) => void;
     onforcesubmit?: (value: string) => void; // Interrupt streaming and send immediately
     onenhance?: () => void | Promise<void>;
@@ -241,6 +243,7 @@
     onAttachFiles,
     allowEmptySubmit = false,
     submitTestId,
+    extraActionGroups = [],
     onsubmit,
     onforcesubmit,
     onenhance,
@@ -1365,6 +1368,7 @@
 
   const promptActionGroups = $derived.by((): StackedMenuGroup[] => {
     const groups: StackedMenuGroup[] = [
+      ...extraActionGroups,
       {
         id: 'context',
         items: [
@@ -1695,7 +1699,7 @@
                 {...props}
                 variant="ghost-light"
                 size="icon-sm"
-                {disabled}
+                disabled={disabled && extraActionGroups.length === 0}
                 aria-label={m.ui_breadcrumb_more_label()}
                 data-testid="prompt-actions-trigger"
               >

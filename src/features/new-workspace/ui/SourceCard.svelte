@@ -4,14 +4,20 @@
   import RepoSelector, {
     type RepoChangeDetail,
   } from '$lib/components/workspace/initializer/RepoSelector.svelte';
+  import * as Dialog from '$lib/components/ui/dialog';
   import { m } from '$shared/paraglide/messages.js';
   import type { DraftSource } from '$shared/types/workspace-draft';
   import { getNewFolderNameError, type NewFolderNameError, type SourcePresentation } from './types';
+
+  export type SourcePickerMode = 'local' | 'github' | 'new-folder';
 
   interface Props {
     source: DraftSource | null;
     presentation?: SourcePresentation;
     disabled?: boolean;
+    pickerOpen?: boolean;
+    pickerMode?: SourcePickerMode;
+    onPickerOpenChange?: (open: boolean) => void;
     onChooseNewFolder?: (name: string) => void;
     onSourceSelected?: (source: DraftSource) => void;
   }
@@ -20,6 +26,9 @@
     source,
     presentation = {},
     disabled = false,
+    pickerOpen = false,
+    pickerMode = 'github',
+    onPickerOpenChange,
     onChooseNewFolder,
     onSourceSelected,
   }: Props = $props();
@@ -33,7 +42,6 @@
 
   const sourceState = $derived.by(() => {
     if (presentation.unresolvedLink) return 'unresolved-link';
-    if (!source && activeNewFolderError) return 'new-folder-invalid';
     if (!source) return 'none';
     if (source.kind === 'local') return presentation.localKind === 'non-git' ? 'non-git' : 'local';
     if (source.kind === 'newFolder')
@@ -91,7 +99,10 @@
   }
 
   function chooseNewFolder(): void {
-    if (!newFolderNameError) onChooseNewFolder?.(newFolderName.trim());
+    if (!newFolderNameError) {
+      onChooseNewFolder?.(newFolderName.trim());
+      onPickerOpenChange?.(false);
+    }
   }
 
   function selectRepo(event: CustomEvent<RepoChangeDetail>): void {
@@ -101,15 +112,17 @@
       const match = url.match(/github\.com[/:]([^/]+)\/([^/#]+?)(?:\.git)?$/);
       if (!match) return;
       onSourceSelected?.({ kind: 'github', url, owner: match[1], name: match[2] });
+      onPickerOpenChange?.(false);
       return;
     }
     if (selection.type === 'local' && selection.path) {
       onSourceSelected?.({ kind: 'local', path: selection.path, isolation: 'worktree' });
+      onPickerOpenChange?.(false);
     }
   }
 </script>
 
-<div class="space-y-3" data-source-state={sourceState}>
+<div class="space-y-2" data-source-state={sourceState}>
   <div class="type-caption min-w-0 text-muted-foreground">
     <span class="font-medium text-foreground">{title}</span>
     <span class="ml-1 break-all">{summary}</span>
@@ -119,6 +132,11 @@
       <p class="mt-1">{m.newWorkspace_source_unresolved_description()}</p>
     {:else if sourceState === 'non-git'}
       <p class="mt-1">{m.workspace_validation_nonGitInit_warning()}</p>
+    {:else if sourceState === 'none'}
+      <p class="mt-1 flex items-center gap-1.5">
+        <kbd class="rounded border border-border bg-muted px-1.5 py-0.5 font-medium">+</kbd>
+        {m.workspaceCreation_selectRepoHint_label()}
+      </p>
     {/if}
   </div>
 
@@ -143,22 +161,24 @@
       </dl>
     </details>
   {/if}
+</div>
 
-  {#if sourceState === 'none' || sourceState === 'new-folder-invalid' || sourceState === 'unresolved-link' || sourceState === 'github-no-access'}
-    <div>
-      <RepoSelector
-        value=""
-        onchange={selectRepo}
-        triggerClass="w-full justify-start"
-        emptyLabel={m.workspace_repoSelector_selectRepository_label()}
-        showEmptyIcon
-        showTriggerChevron
-      />
-    </div>
-    <div>
-      <p class="type-caption mb-2 font-medium text-foreground">
-        {m.newWorkspace_source_newProject_title()}
-      </p>
+<Dialog.Root open={pickerOpen} onOpenChange={(open) => onPickerOpenChange?.(open)}>
+  <Dialog.Content class="max-w-md" data-testid="draft-source-picker">
+    <Dialog.Header>
+      <Dialog.Title>
+        {pickerMode === 'new-folder'
+          ? m.newWorkspace_source_newProject_title()
+          : m.newWorkspace_source_title()}
+      </Dialog.Title>
+      <Dialog.Description>
+        {pickerMode === 'new-folder'
+          ? m.newWorkspace_source_newProject_description()
+          : m.workspace_repoSelector_whichRepo_description()}
+      </Dialog.Description>
+    </Dialog.Header>
+
+    {#if pickerMode === 'new-folder'}
       <div class="flex flex-col gap-2 sm:flex-row">
         <Input
           value={newFolderName}
@@ -177,6 +197,19 @@
           {m.workspaceCreation_newProjectTab_selectFolder_label()}
         </Button>
       </div>
-    </div>
-  {/if}
-</div>
+      {#if newFolderNameError}
+        <p class="type-caption text-danger" role="alert">{errorLabel(newFolderNameError)}</p>
+      {/if}
+    {:else}
+      <RepoSelector
+        value=""
+        initialTab={pickerMode}
+        onchange={selectRepo}
+        triggerClass="w-full justify-start"
+        emptyLabel={m.workspace_repoSelector_selectRepository_label()}
+        showEmptyIcon
+        showTriggerChevron
+      />
+    {/if}
+  </Dialog.Content>
+</Dialog.Root>

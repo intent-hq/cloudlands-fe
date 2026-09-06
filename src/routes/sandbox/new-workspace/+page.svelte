@@ -202,6 +202,7 @@
               onAcceptRemote={() => dispatchSimpleEvent('conflict.acceptRemote')}
               onKeepLocal={() => dispatchSimpleEvent('conflict.keepLocal')}
               onChooseNewFolder={chooseNewFolder}
+              onSourceSelected={(source) => editDraft({ source })}
               onProviderSelected={chooseProvider}
             />
           {/if}

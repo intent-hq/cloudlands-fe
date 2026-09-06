@@ -1,10 +1,12 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
+import type { Page } from '@playwright/test';
 import ScenarioContractHost from './ScenarioContractHost.svelte';
 import { NEW_WORKSPACE_SCENARIOS, type Scenario } from './scenarios';
 
 async function expectActionableControl(
   component: ReturnType<Parameters<typeof test>[0]>,
   scenario: Scenario,
+  page: Page,
 ) {
   switch (scenario.contract.control) {
     case 'start':
@@ -16,7 +18,8 @@ async function expectActionableControl(
       ).toBeVisible();
       return;
     case 'source':
-      await expect(component.locator('[data-source-state] button:enabled').first()).toBeVisible();
+      await component.getByTestId('prompt-actions-trigger').click();
+      await expect(page.getByRole('menuitem', { name: 'Pick a repo' })).toBeEnabled();
       return;
     case 'retry':
       await expect(component.locator('[role="alert"] button:enabled').first()).toBeVisible();
@@ -42,7 +45,7 @@ test.describe('new-workspace scenario contracts', () => {
       const editor = component.locator('.tiptap-editor');
 
       await expect(shell).toHaveAttribute('data-controller-phase', scenario.expectedPhase);
-      await expectActionableControl(component, scenario);
+      await expectActionableControl(component, scenario, page);
 
       if (scenario.initialControllerState.input.intentText) {
         await expect(editor).toContainText(scenario.initialControllerState.input.intentText);

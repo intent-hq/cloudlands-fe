@@ -145,6 +145,8 @@
     triggerChevronClass?: string;
     triggerIcon?: any;
     triggerAriaLabel?: string;
+    /** Tab shown when an empty selector is opened. */
+    initialTab?: 'local' | 'github';
     onClear?: () => void;
   }
 
@@ -163,6 +165,7 @@
     triggerChevronClass = 'ml-2 opacity-50',
     triggerIcon,
     triggerAriaLabel,
+    initialTab = 'github',
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onClear,
   }: Props = $props();
@@ -558,8 +561,7 @@
         }
       }
     } else {
-      // No value selected, default to the "Pick a repo" tab
-      activeTab = 'github';
+      activeTab = initialTab;
     }
 
     // Focus input - always autofocus for better UX

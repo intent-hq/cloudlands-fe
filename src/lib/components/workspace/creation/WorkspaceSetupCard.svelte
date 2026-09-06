@@ -76,7 +76,7 @@
     repoStatus?: StepStatus;
     branchStatus?: StepStatus;
     agentStatus?: StepStatus;
-    /** Inline source chooser shown in the repository step before creation begins. */
+    /** Compact source status shown in the repository step before creation begins. */
     repoPendingContent?: Snippet;
     /** If true, the workspace works directly on the branch without an isolated checkout (worktree or CoW clone) */
     skipIsolation?: boolean;
