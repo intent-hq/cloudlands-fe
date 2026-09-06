@@ -24,6 +24,8 @@ const mocks = vi.hoisted(() => {
   };
   // Mutable so individual tests can render with a typed-path or create hint.
   const overrides = {
+    loading: false,
+    error: null as string | null,
     pathError: null as string | null,
     createError: null as string | null,
   };
@@ -37,8 +39,8 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({
       directoryPicker: {
         listing: mocks.listing,
-        loading: false,
-        error: null,
+        loading: mocks.overrides.loading,
+        error: mocks.overrides.error,
         requestedPath: null,
         pathError: mocks.overrides.pathError,
         createError: mocks.overrides.createError,
@@ -100,6 +102,8 @@ beforeAll(() => {
 
 beforeEach(() => {
   mocks.dispatch.mockClear();
+  mocks.overrides.loading = false;
+  mocks.overrides.error = null;
   mocks.overrides.pathError = null;
   mocks.overrides.createError = null;
 });
@@ -205,6 +209,31 @@ describe('DirectoryPickerModal navigation', () => {
   });
 });
 
+describe('DirectoryPickerModal listing states', () => {
+  const baseProps = { open: true, onSelect: vi.fn(), onClose: vi.fn() };
+
+  it('announces loading while withholding stale directory options', async () => {
+    mocks.overrides.loading = true;
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    expect(screen.getByRole('status', { name: 'Loading…' })).toBeTruthy();
+    expect(screen.queryByRole('option')).toBeNull();
+  });
+
+  it('offers a retry when the directory listing fails', async () => {
+    mocks.overrides.error = 'Read failed';
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    expect(screen.getByRole('alert').textContent).toContain('Read failed');
+    expect(screen.queryByRole('option')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(requestedPath(loadCalls().at(-1)!)).toBe('/Users/me');
+  });
+});
+
 describe('DirectoryPickerModal editable path input', () => {
   const baseProps = { open: true, onSelect: vi.fn(), onClose: vi.fn() };
 
@@ -299,13 +328,16 @@ describe('DirectoryPickerModal editable path input', () => {
     render(DirectoryPickerModal, { props: { ...baseProps } });
     await flush();
 
-    expect(screen.getByRole('alert').textContent?.trim()).toBe('Path not found');
+    expect(screen.getByRole('alert').textContent).toContain('Path not found');
+    expect(screen.queryByRole('option')).toBeNull();
 
-    // The listing is still rendered — the failed navigation did not clear it.
-    expect(screen.getByRole('option', { name: /code/ })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(
+      mocks.dispatch.mock.calls.some(([action]) => action?.type === clearPathNavigationError.type),
+    ).toBe(true);
 
-    // A failed commit keeps the typed value in the input for correction.
-    const input = await pathInput();
+    // Retry returns focus to the path input so the failed value can be corrected.
+    const input = screen.getByRole('textbox', { name: 'Path' }) as HTMLInputElement;
     await fireEvent.input(input, { target: { value: '/does/not/exist' } });
     expect(
       mocks.dispatch.mock.calls.some(([action]) => action?.type === clearPathNavigationError.type),

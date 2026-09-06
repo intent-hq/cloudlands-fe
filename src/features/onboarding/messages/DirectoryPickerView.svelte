@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
+  import { EmptyState, ErrorState, LoadingState } from '$lib/components/patterns/screen';
   import { untrack } from 'svelte';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import {
@@ -15,7 +16,6 @@
     faHouse,
     faMagnifyingGlass,
     faPen,
-    faSpinner,
     faXmark,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -253,6 +253,16 @@
     if (path) onSelect(path);
   }
 
+  function retryListing() {
+    requestNavigation(listing?.path);
+  }
+
+  function retryPathNavigation() {
+    onClearPathError();
+    if (pathEditing) queueMicrotask(() => pathInputRef?.focus());
+    else beginPathEdit();
+  }
+
   function handleKeydown(event: KeyboardEvent) {
     if (
       !open ||
@@ -333,6 +343,21 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
+{#snippet listingErrorMessage()}
+  <span>{m.onboarding_dirPicker_readError_title()}</span>
+  <span class="mt-1 block type-caption break-all">{error}</span>
+{/snippet}
+
+{#snippet pathErrorMessage()}{pathError}{/snippet}
+
+{#snippet emptyMessage()}
+  {searchDraft.trim()
+    ? m.onboarding_dirPicker_noSearchResults_description()
+    : showFiles
+      ? m.onboarding_dirPicker_emptyFolder_description()
+      : m.onboarding_dirPicker_noSubfolders_description({ label: selectButtonLabel })}
+{/snippet}
+
 {#if open}
   <div
     bind:this={dialogRef}
@@ -349,9 +374,12 @@
       </div>
       <Button
         type="button"
-        class="cursor-pointer rounded p-1 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+        variant="ghost-light"
+        size="icon-compact"
+        iconOnly
         onclick={onClose}
         aria-label={m.onboarding_dirPicker_close_ariaLabel()}
+        tooltip={m.onboarding_dirPicker_close_ariaLabel()}
       >
         <Fa icon={faXmark} size="sm" />
       </Button>
@@ -366,11 +394,11 @@
           {#each defaultFavorites as favorite (favorite.id)}
             <Button
               type="button"
+              variant="ghost-light"
+              size="sm"
               class={cn(
-                'flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
-                activeFavoriteId === favorite.id
-                  ? 'bg-muted/70 text-foreground'
-                  : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
+                'flex w-full justify-start gap-2 px-2 text-left text-xs',
+                activeFavoriteId === favorite.id && 'bg-selected text-foreground',
               )}
               aria-current={activeFavoriteId === favorite.id ? 'location' : undefined}
               title={favorite.path}
@@ -389,16 +417,13 @@
         >
           <Button
             type="button"
-            class={cn(
-              'rounded p-1.5 transition-colors',
-              listing?.parent && !loading
-                ? 'cursor-pointer text-foreground hover:bg-muted/50'
-                : 'cursor-not-allowed text-ghost',
-            )}
+            variant="ghost"
+            size="icon-compact"
+            iconOnly
             disabled={!listing?.parent || loading}
             onclick={navigateUp}
             aria-label={m.onboarding_dirPicker_goUp_ariaLabel()}
-            title={m.onboarding_dirPicker_goUp_tooltip()}
+            tooltip={m.onboarding_dirPicker_goUp_tooltip()}
           >
             <Fa icon={faArrowUp} size="sm" />
           </Button>
@@ -429,7 +454,9 @@
                 {#if index > 0}<span class="px-0.5 text-ghost">/</span>{/if}
                 <Button
                   type="button"
-                  class="min-w-0 cursor-pointer truncate rounded px-1 py-0.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                  variant="ghost-light"
+                  size="compact"
+                  class="min-w-0 truncate px-1"
                   title={breadcrumb.path}
                   onclick={() => requestNavigation(breadcrumb.path)}
                 >
@@ -439,10 +466,12 @@
             </nav>
             <Button
               type="button"
-              class="cursor-pointer rounded p-1.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+              variant="ghost-light"
+              size="icon-compact"
+              iconOnly
               onclick={beginPathEdit}
               aria-label={m.onboarding_dirPicker_editPath_ariaLabel()}
-              title={m.onboarding_dirPicker_editPath_ariaLabel()}
+              tooltip={m.onboarding_dirPicker_editPath_ariaLabel()}
             >
               <Fa icon={faPen} size="xs" />
             </Button>
@@ -466,15 +495,6 @@
           </label>
         </div>
 
-        {#if pathError}
-          <div
-            class="shrink-0 border-b border-border bg-danger-background/10 px-3 py-1.5 text-xs text-danger"
-            role="alert"
-          >
-            {pathError}
-          </div>
-        {/if}
-
         <div
           bind:this={listContainerRef}
           class="min-h-0 flex-1 overflow-y-auto py-1"
@@ -482,23 +502,33 @@
           aria-label={m.onboarding_dirPicker_contents_ariaLabel()}
         >
           {#if loading}
-            <div class="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-              <Fa icon={faSpinner} class="animate-spin" size="sm" />
-              <span>{m.onboarding_dirPicker_loading_label()}</span>
-            </div>
+            <LoadingState
+              recipe="list"
+              count={6}
+              rowHeight={32}
+              label={m.onboarding_dirPicker_loading_label()}
+              class="py-1"
+            />
+          {:else if pathError}
+            <ErrorState
+              message={pathErrorMessage}
+              retryLabel={m.ui_errorToast_retry_label()}
+              onRetry={retryPathNavigation}
+              class="h-full min-h-full"
+            />
           {:else if error}
-            <div class="px-5 py-10 text-sm text-danger">
-              <p class="mb-1 font-medium">{m.onboarding_dirPicker_readError_title()}</p>
-              <p class="break-all text-xs text-muted-foreground">{error}</p>
-            </div>
+            <ErrorState
+              message={listingErrorMessage}
+              retryLabel={m.ui_errorToast_retry_label()}
+              onRetry={retryListing}
+              class="h-full min-h-full"
+            />
           {:else if visibleEntries.length === 0}
-            <div class="px-4 py-12 text-center text-sm text-muted-foreground">
-              {searchDraft.trim()
-                ? m.onboarding_dirPicker_noSearchResults_description()
-                : showFiles
-                  ? m.onboarding_dirPicker_emptyFolder_description()
-                  : m.onboarding_dirPicker_noSubfolders_description({ label: selectButtonLabel })}
-            </div>
+            <EmptyState
+              description={emptyMessage}
+              class="h-full min-h-full"
+              data-state-kind="empty"
+            />
           {:else}
             <ul>
               {#each visibleEntries as entry, index (entry.path)}
@@ -510,6 +540,7 @@
                 <li>
                   <Button
                     type="button"
+                    variant="ghost"
                     role="option"
                     aria-selected={mode === 'file'
                       ? isSelected
@@ -523,11 +554,11 @@
                       entry.isDirectory || mode === 'file'
                         ? 'cursor-default'
                         : 'cursor-not-allowed text-ghost',
-                      isSelected
-                        ? 'bg-blue-500/20'
+                      isSelected || (mode === 'directory' && !selectedFolderEntry && isFocused)
+                        ? 'bg-selected'
                         : isFocused
-                          ? 'bg-blue-500/15'
-                          : 'hover:bg-muted/30',
+                          ? 'bg-active'
+                          : undefined,
                     )}
                     onclick={() => {
                       focusedIndex = index;
@@ -593,12 +624,8 @@
         {:else}
           <Button
             type="button"
-            class={cn(
-              'rounded-md px-3 py-1.5 text-sm transition-colors',
-              listing && !loading
-                ? 'cursor-pointer text-muted-foreground hover:bg-muted/50 hover:text-foreground'
-                : 'cursor-not-allowed text-muted-foreground/40',
-            )}
+            variant="ghost"
+            size="sm"
             disabled={!listing || loading}
             onclick={openNewFolder}
           >
@@ -606,21 +633,14 @@
           </Button>
         {/if}
       {/if}
-      <Button
-        type="button"
-        class="ml-auto cursor-pointer rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-        onclick={onClose}
-      >
+      <Button type="button" variant="secondary" size="sm" class="ml-auto" onclick={onClose}>
         {m.onboarding_dirPicker_cancel_label()}
       </Button>
       <Button
         type="button"
-        class={cn(
-          'max-w-56 truncate rounded-md px-3 py-1.5 text-sm transition-colors',
-          canSelect && !loading
-            ? 'cursor-pointer bg-foreground text-background hover:bg-foreground/90'
-            : 'cursor-not-allowed bg-muted/30 text-ghost',
-        )}
+        variant={canSelect && !loading ? 'primary' : 'ghost'}
+        size="sm"
+        class="max-w-56"
         disabled={!canSelect || loading}
         onclick={handleSelect}
       >
