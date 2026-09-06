@@ -68,7 +68,9 @@
         : undefined,
   );
   const accessibleName = $derived(
-    [file.path, stats, freshnessLabel].filter((value) => value !== undefined).join(', '),
+    [file.path, file.status, stats, freshnessLabel]
+      .filter((value) => value !== undefined)
+      .join(', '),
   );
   const tooltip = $derived(
     file.renamedFrom ? `${accessibleName}\n${file.renamedFrom} → ${file.path}` : accessibleName,
@@ -95,6 +97,7 @@
   class:diff-map-row--active={active}
   class:diff-map-row--selected={selected}
   class:diff-map-row--dense={rung >= 2}
+  class:diff-map-row--minimal={rung === 3}
   data-diff-map-row
   data-file-id={file.id}
   data-status={file.status}
@@ -112,28 +115,30 @@
   onkeydown={(event) => onKeydown(file, event)}
   onfocus={() => onFocus(file)}
 >
-  <span class="status" aria-hidden="true">{glyphs[file.status]}</span>
-  <span class="filename">{row.label}</span>
+  <span class="status" aria-hidden="true" style:grid-column="1">{glyphs[file.status]}</span>
+  <span class="filename" style:grid-column="2">{row.label}</span>
+
+  {#if comments !== undefined && comments > 0}
+    <span class="overlay" aria-hidden="true" style:grid-column="3">{formatInteger(comments)}</span>
+  {:else if attribution}
+    <span class="overlay" aria-hidden="true" style:grid-column="3"
+      >{attribution.agent?.agentName?.[0] ?? '•'}</span
+    >
+  {:else if changedSinceViewed}
+    <span class="overlay overlay--changed" aria-hidden="true" style:grid-column="3">!</span>
+  {:else if viewed}
+    <span class="overlay" aria-hidden="true" style:grid-column="3">✓</span>
+  {/if}
 
   {#if rung <= 1 && !suppressZeroStats}
     {#if file.statsKnown}
-      <span class="stats" aria-hidden="true">
+      <span class="stats" aria-hidden="true" style:grid-column="4">
         <span class="additions">+{formatInteger(file.additions)}</span>
         <span class="deletions">−{formatInteger(file.deletions)}</span>
       </span>
     {:else}
-      <span class="stats stats--unknown" aria-hidden="true">{stats}</span>
+      <span class="stats stats--unknown" aria-hidden="true" style:grid-column="4">{stats}</span>
     {/if}
-  {/if}
-
-  {#if comments !== undefined && comments > 0}
-    <span class="overlay" aria-hidden="true">{formatInteger(comments)}</span>
-  {:else if attribution}
-    <span class="overlay" aria-hidden="true">{attribution.agent?.agentName?.[0] ?? '•'}</span>
-  {:else if changedSinceViewed}
-    <span class="overlay overlay--changed" aria-hidden="true">!</span>
-  {:else if viewed}
-    <span class="overlay" aria-hidden="true">✓</span>
   {/if}
 
   {#if rung === 0 && (file.oldTrack || file.newTrack)}
@@ -149,7 +154,7 @@
   .diff-map-row {
     position: absolute;
     display: grid;
-    grid-template-columns: 18px minmax(0, 1fr) auto;
+    grid-template-columns: 18px minmax(0, 1fr) auto auto;
     align-items: center;
     gap: 5px;
     overflow: visible;
@@ -278,6 +283,15 @@
   .overlay--changed {
     background: rgb(217 119 6);
     color: white;
+  }
+
+  .diff-map-row--minimal .overlay {
+    width: 6px;
+    min-width: 6px;
+    height: 6px;
+    overflow: hidden;
+    color: transparent;
+    font-size: 0;
   }
 
   .tooltip {

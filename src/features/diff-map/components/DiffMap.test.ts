@@ -79,9 +79,12 @@ describe('DiffMap', () => {
     });
 
     await waitFor(() => expect(rows(container)).toHaveLength(3));
-    expect(rows(container).find((row) => row.dataset.fileId === first)?.dataset.viewedState).toBe(
-      'viewed',
-    );
+    const viewedRow = rows(container).find((row) => row.dataset.fileId === first);
+    expect(viewedRow?.dataset.viewedState).toBe('viewed');
+    expect(viewedRow?.getAttribute('aria-label')).toContain('modified');
+    expect(viewedRow?.getAttribute('aria-label')).toContain('Viewed');
+    expect(getComputedStyle(viewedRow!.querySelector('.status')!).gridColumn).toBe('1');
+    expect(getComputedStyle(viewedRow!.querySelector('.overlay')!).gridColumn).toBe('3');
     expect(rows(container).find((row) => row.dataset.fileId === second)?.dataset.viewedState).toBe(
       'changed',
     );
