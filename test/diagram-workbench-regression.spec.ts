@@ -387,14 +387,14 @@ async function expectTerminalArrowGeometry(
   expectedTargets: Record<string, string>,
 ) {
   const root = page.locator(`#${state}`);
-  const pathSelector =
-    state === 'mermaid-state' ? '.edgePaths path[marker-end]' : '.diagram-edge path[marker-end]';
+  const mermaid = state.startsWith('mermaid-');
+  const pathSelector = mermaid ? '.edgePaths path[marker-end]' : '.diagram-edge path[marker-end]';
   await expect(root.locator(pathSelector)).toHaveCount(Object.keys(expectedTargets).length, {
     timeout: 30_000,
   });
   const result = await root.evaluate(
     (section, args) => {
-      const isMermaid = args.state === 'mermaid-state';
+      const isMermaid = args.state.startsWith('mermaid-');
       const paths = [
         ...section.querySelectorAll<SVGPathElement>(
           isMermaid ? '.edgePaths path[marker-end]' : '.diagram-edge path[marker-end]',
@@ -403,11 +403,12 @@ async function expectTerminalArrowGeometry(
       const nodes = isMermaid
         ? [...section.querySelectorAll<SVGGElement>('g.node')].flatMap((node) => {
             const shape = node.querySelector<SVGGraphicsElement>(
-              ':scope > .label-container, :scope > rect, :scope > circle, :scope > ellipse',
+              ':scope > .label-container, :scope > rect, :scope > circle, :scope > ellipse, :scope > .outer-path, :scope > .basic.label-container, :scope > polygon',
             );
-            return shape ? [{ label: node.textContent?.trim() ?? '', shape }] : [];
+            return shape ? [{ id: node.id, label: node.textContent?.trim() ?? '', shape }] : [];
           })
         : [...section.querySelectorAll<HTMLElement>('.diagram-node-html')].map((node) => ({
+            id: node.parentElement?.id ?? '',
             label: node.querySelector('.node-label')?.textContent?.trim() ?? '',
             shape: node.parentElement as unknown as SVGGraphicsElement,
           }));
@@ -471,7 +472,10 @@ async function expectTerminalArrowGeometry(
         const tangentScreen = pathMatrix
           ? new DOMPoint(tangent.x, tangent.y).matrixTransform(pathMatrix)
           : new DOMPoint();
-        const target = nodes.find((node) => node.label === expectedTarget);
+        const terminalTarget = path.dataset.terminalTarget;
+        const target = terminalTarget
+          ? nodes.find((node) => node.id === terminalTarget)
+          : nodes.find((node) => node.label === expectedTarget);
         const targetBounds = target?.shape.getBoundingClientRect();
         const center = targetBounds
           ? {
@@ -484,10 +488,11 @@ async function expectTerminalArrowGeometry(
           (tip.y - tangentScreen.y) * (center.y - tip.y);
         const closestTarget = nodes
           .map((node) => ({
+            id: node.id,
             label: node.label,
             distance: Math.abs(signedBoundaryDistance(tip, node.shape.getBoundingClientRect())),
           }))
-          .sort((left, right) => left.distance - right.distance)[0]?.label;
+          .sort((left, right) => left.distance - right.distance)[0];
         const markerJoinDistance = Math.min(
           ...markerSamples.map((point) => Math.hypot(point.x - refX, point.y - refY)),
         );
@@ -512,8 +517,12 @@ async function expectTerminalArrowGeometry(
         const strokeWidth = Number.parseFloat(pathStyle.strokeWidth);
         return {
           key,
+          pathId: path.id,
+          terminalTarget,
           expectedTarget,
-          closestTarget,
+          targetId: target?.id,
+          targetLabel: target?.label,
+          closestTargetId: closestTarget?.id,
           boundaryDistance: targetBounds
             ? signedBoundaryDistance(tip, targetBounds) - markerTipRadius
             : null,
@@ -548,7 +557,11 @@ async function expectTerminalArrowGeometry(
 
   expect(result).toHaveLength(Object.keys(expectedTargets).length);
   for (const edge of result) {
-    expect(edge.closestTarget, `${state}/${edge.key} target`).toBe(edge.expectedTarget);
+    expect(edge.targetLabel, `${state}/${edge.key} target label`).toBe(edge.expectedTarget);
+    expect(
+      edge.closestTargetId,
+      `${state}/${edge.key} target (${edge.pathId}, terminal ${edge.terminalTarget ?? 'unset'})`,
+    ).toBe(edge.targetId);
     expect(
       Math.abs((edge.boundaryDistance ?? Infinity) - 5),
       `${state}/${edge.key} painted terminal gap`,
@@ -607,6 +620,172 @@ async function expectRunningToolClearance(page: Page, context: string) {
   expect(result.settled, `${context} final label placement`).toBe(true);
   expect(result.before, `${context} visible segment after turn`).toBeGreaterThanOrEqual(7.75);
   expect(result.after, `${context} visible outgoing stub`).toBeGreaterThanOrEqual(7.75);
+}
+
+async function expectStateObstacleGeometry(page: Page, context: string) {
+  const geometry = await page
+    .locator('#mermaid-state svg[data-layout-settled=true]')
+    .evaluate((svg) => {
+      const nodes = [...svg.querySelectorAll<SVGGElement>('g.node')].flatMap((node) => {
+        const shape = node.querySelector<SVGGraphicsElement>(
+          ':scope > .label-container, :scope > rect, :scope > circle, :scope > ellipse',
+        );
+        return shape ? [{ node, shape, bounds: shape.getBoundingClientRect() }] : [];
+      });
+      const paths = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path[marker-end]')];
+      const screenPoint = (path: SVGPathElement, ratio: number) => {
+        const point = path.getPointAtLength(path.getTotalLength() * ratio);
+        return point.matrixTransform(path.getScreenCTM()!);
+      };
+      const rectDistance = (point: DOMPoint, bounds: DOMRect) =>
+        Math.hypot(
+          Math.max(bounds.left - point.x, 0, point.x - bounds.right),
+          Math.max(bounds.top - point.y, 0, point.y - bounds.bottom),
+        );
+      const crossings = paths.flatMap((path) => {
+        const start = screenPoint(path, 0);
+        const end = screenPoint(path, 1);
+        const source = nodes.toSorted(
+          (left, right) => rectDistance(start, left.bounds) - rectDistance(start, right.bounds),
+        )[0]?.node;
+        const target = nodes.toSorted(
+          (left, right) => rectDistance(end, left.bounds) - rectDistance(end, right.bounds),
+        )[0]?.node;
+        return nodes.flatMap(({ node, bounds }) => {
+          if (node === source || node === target) return [];
+          const crosses = Array.from({ length: 199 }, (_, index) =>
+            screenPoint(path, (index + 1) / 200),
+          ).some(
+            (point) =>
+              point.x > bounds.left + 0.5 &&
+              point.x < bounds.right - 0.5 &&
+              point.y > bounds.top + 0.5 &&
+              point.y < bounds.bottom - 0.5,
+          );
+          return crosses ? [`${path.id}/${node.textContent?.trim()}`] : [];
+        });
+      });
+      const labels = [...svg.querySelectorAll<SVGGElement>('.edgeLabels > .edgeLabel')];
+      const streamLabel = labels.find((label) => label.textContent?.trim() === 'Stream fails')!;
+      const streamPath = svg.querySelector<SVGPathElement>(
+        `#${CSS.escape(streamLabel.dataset.routePathId!)}`,
+      )!;
+      const needsInput = nodes.find(
+        ({ node }) => node.textContent?.trim() === 'NeedsInput',
+      )!.bounds;
+      const streamClearance = Math.min(
+        ...Array.from({ length: 401 }, (_, index) =>
+          rectDistance(screenPoint(streamPath, index / 400), needsInput),
+        ),
+      );
+      return { crossings, streamClearance };
+    });
+  expect(geometry.crossings, `${context} unrelated node crossings`).toEqual([]);
+  expect(geometry.streamClearance, `${context} Stream fails clearance`).toBeGreaterThanOrEqual(
+    7.75,
+  );
+}
+
+async function expectNestedReviewGeometry(page: Page, context: string) {
+  const geometry = await page
+    .locator('#mermaid-nested-routing svg[data-layout-settled=true]')
+    .evaluate((svg) => {
+      const nodes = [...svg.querySelectorAll<SVGGElement>('g.node')].map((node) => ({
+        text: node.textContent?.trim() ?? '',
+        bounds: node.getBoundingClientRect(),
+      }));
+      const paths = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path[marker-end]')];
+      const route = (source: string, target: string) =>
+        paths.filter((path) => new RegExp(`-L_${source}_${target}_[0-9]+$`).test(path.id));
+      const screenPoint = (path: SVGPathElement, ratio: number) => {
+        const point = path.getPointAtLength(path.getTotalLength() * ratio);
+        return point.matrixTransform(path.getScreenCTM()!);
+      };
+      const rectDistance = (point: DOMPoint, bounds: DOMRect) =>
+        Math.hypot(
+          Math.max(bounds.left - point.x, 0, point.x - bounds.right),
+          Math.max(bounds.top - point.y, 0, point.y - bounds.bottom),
+        );
+      const crossings = paths.flatMap((path) => {
+        const source = nodes.toSorted(
+          (left, right) =>
+            rectDistance(screenPoint(path, 0), left.bounds) -
+            rectDistance(screenPoint(path, 0), right.bounds),
+        )[0];
+        const target = nodes.toSorted(
+          (left, right) =>
+            rectDistance(screenPoint(path, 1), left.bounds) -
+            rectDistance(screenPoint(path, 1), right.bounds),
+        )[0];
+        return nodes.flatMap((node) => {
+          if (node === source || node === target) return [];
+          const crosses = Array.from({ length: 199 }, (_, index) =>
+            screenPoint(path, (index + 1) / 200),
+          ).some(
+            (point) =>
+              point.x > node.bounds.left + 0.5 &&
+              point.x < node.bounds.right - 0.5 &&
+              point.y > node.bounds.top + 0.5 &&
+              point.y < node.bounds.bottom - 0.5,
+          );
+          return crosses ? [`${path.id}/${node.text}`] : [];
+        });
+      });
+      const intake = route('Intake', 'Validate');
+      const decision = route('Validate', 'Merge');
+      const reciprocal = [...route('Validate', 'Enrich'), ...route('Enrich', 'Validate')];
+      const lane = (path: SVGPathElement) => {
+        const start = screenPoint(path, 0);
+        const end = screenPoint(path, 1);
+        const bounds = path.getBoundingClientRect();
+        const terminalCenterX = (start.x + end.x) / 2;
+        return terminalCenterX - bounds.left > bounds.right - terminalCenterX ? 'left' : 'right';
+      };
+      const ports = (path: SVGPathElement) => {
+        const start = screenPoint(path, 0);
+        const end = screenPoint(path, 1);
+        return `${start.x.toFixed(1)},${start.y.toFixed(1)} ${end.x.toFixed(1)},${end.y.toFixed(1)}`;
+      };
+      const labels = [...svg.querySelectorAll<SVGGElement>('.edgeLabels > .edgeLabel')]
+        .filter((label) => label.textContent?.trim())
+        .map((label) => label.getBoundingClientRect());
+      const labelNodeOverlaps = labels.filter((label) =>
+        nodes.some(
+          ({ bounds }) =>
+            label.left < bounds.right &&
+            label.right > bounds.left &&
+            label.top < bounds.bottom &&
+            label.bottom > bounds.top,
+        ),
+      ).length;
+      return {
+        progression: nodes.map(({ text, bounds }) => ({ text, top: bounds.top })),
+        crossings,
+        labelNodeOverlaps,
+        intakeSides: new Set(intake.map(lane)).size,
+        intakePorts: new Set(intake.map(ports)).size,
+        intakeDashes: new Set(intake.map((path) => getComputedStyle(path).strokeDasharray)).size,
+        decisionSides: new Set(decision.map(lane)).size,
+        decisionPorts: new Set(decision.map(ports)).size,
+        reciprocalSides: new Set(reciprocal.map(lane)).size,
+        reciprocalPorts: new Set(reciprocal.map(ports)).size,
+      };
+    });
+  const tops = new Map(geometry.progression.map(({ text, top }) => [text, top]));
+  expect(tops.get('Item'), `${context} Item before Ready`).toBeLessThan(tops.get('Ready?')!);
+  expect(tops.get('Ready?'), `${context} Ready before Context`).toBeLessThan(tops.get('Context')!);
+  expect(tops.get('Context'), `${context} Context before Decision`).toBeLessThan(
+    tops.get('Decision')!,
+  );
+  expect(geometry.crossings, `${context} unrelated node crossings`).toEqual([]);
+  expect(geometry.labelNodeOverlaps, `${context} label/node overlaps`).toBe(0);
+  expect(geometry.intakeSides).toBe(2);
+  expect(geometry.intakePorts).toBe(2);
+  expect(geometry.intakeDashes).toBe(2);
+  expect(geometry.decisionSides).toBe(2);
+  expect(geometry.decisionPorts).toBe(2);
+  expect(geometry.reciprocalSides).toBe(2);
+  expect(geometry.reciprocalPorts).toBe(2);
 }
 
 async function expectStoreNodeGeometry(
@@ -1453,6 +1632,15 @@ test('terminal arrow tips keep an exact five-pixel gap from the correct target',
   }
 });
 
+const stateRecoveryTargets = {
+  '0': 'Running',
+  '1': 'Complete',
+  '2': 'Failed',
+  '3': 'Running',
+  '4': '',
+  '5': '',
+};
+
 for (const appearance of [
   { name: 'light', mode: 'light' as const, colorTheme: 'Default' },
   { name: 'dark', mode: 'dark' as const, colorTheme: 'Default' },
@@ -1742,6 +1930,44 @@ test('keeps the reported state labels and group header bands clear', async ({ pa
     }
   }
 });
+
+for (const appearance of [
+  { name: 'Light', mode: 'light' as const, colorTheme: 'Default' },
+  { name: 'Dark', mode: 'dark' as const, colorTheme: 'Default' },
+  { name: 'Nord', mode: 'light' as const, colorTheme: 'Nord' },
+]) {
+  for (const width of [320, 420, 960] as const) {
+    test(`keeps state and nested routes clear in ${appearance.name} at ${width}px`, async ({
+      page,
+    }) => {
+      test.setTimeout(180_000);
+      await openState(page, 'mermaid-state', width, appearance.mode);
+      const colorTheme = page.getByTestId('catalog-color-theme-control');
+      if (!(await colorTheme.textContent())?.includes(appearance.colorTheme)) {
+        await colorTheme.click();
+        await page.getByRole('option', { name: appearance.colorTheme, exact: true }).click();
+      }
+      await expect(colorTheme).toContainText(appearance.colorTheme);
+      await expect(page.locator('#mermaid-state .mermaid-renderer')).toHaveAttribute(
+        'data-render-settled',
+        'true',
+      );
+      await expectStateObstacleGeometry(page, `${appearance.name}/${width}/state`);
+
+      await openState(page, 'mermaid-state-recovery', width, appearance.mode);
+      await expect(async () => {
+        await expectTerminalArrowGeometry(page, 'mermaid-state-recovery', stateRecoveryTargets);
+      }).toPass({ timeout: 10_000 });
+
+      await openState(page, 'mermaid-nested-routing', width, appearance.mode);
+      await expect(page.locator('#mermaid-nested-routing .mermaid-renderer')).toHaveAttribute(
+        'data-render-settled',
+        'true',
+      );
+      await expectNestedReviewGeometry(page, `${appearance.name}/${width}/nested`);
+    });
+  }
+}
 
 test('keeps data-flow feedback continuous from Preview source to Capture evidence', async ({
   page,

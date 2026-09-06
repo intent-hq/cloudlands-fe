@@ -10,6 +10,7 @@ import {
   chooseLabelSegment,
   measuredClusterHeaderHeight,
   replacePathTerminal,
+  routeOrthogonalAroundObstacles,
   simplifyOrthogonalPoints,
   snapOrthogonalTerminals,
 } from '../mermaid-path-geometry';
@@ -102,6 +103,41 @@ describe('Mermaid path terminal geometry', () => {
         { x: 40, y: 30 },
       ]),
     ).toBe('M 0 0 L 34 0 Q 40 0 40 6 L 40 30');
+  });
+
+  it('detours orthogonal routes outside unrelated node clearance', () => {
+    const routed = routeOrthogonalAroundObstacles(
+      [
+        { x: 50, y: 0 },
+        { x: 50, y: 100 },
+      ],
+      [{ x: 30, y: 30, width: 40, height: 40 }],
+      8,
+    );
+
+    expect(routed).toEqual([
+      { x: 50, y: 0 },
+      { x: 50, y: 22 },
+      { x: 22, y: 22 },
+      { x: 22, y: 78 },
+      { x: 50, y: 78 },
+      { x: 50, y: 100 },
+    ]);
+  });
+
+  it('selects the unoccupied side when obstacle detours have equal length', () => {
+    const routed = routeOrthogonalAroundObstacles(
+      [
+        { x: 50, y: 0 },
+        { x: 50, y: 100 },
+      ],
+      [{ x: 30, y: 30, width: 40, height: 40 }],
+      8,
+      [{ start: { x: 22, y: 22 }, end: { x: 22, y: 78 } }],
+    );
+
+    expect(routed.some((point) => point.x === 78)).toBe(true);
+    expect(routed.some((point) => point.x === 22)).toBe(false);
   });
 
   it('keeps snapped cardinal ports connected by orthogonal segments', () => {
