@@ -259,6 +259,11 @@ export const panelLayoutScopeUnmounted = createAction<[layoutId: string]>(
 );
 
 // --- Tab Operations ---
+/**
+ * `preserveFocus` (agent-driven opens) activates the tab in the target panel
+ * so its content paints, but keeps the current panel focus — the same
+ * contract as `openTabInRightmostColumn`, for `position: same` opens.
+ */
 export const openTab = createAction(
   'panelLayout/openTab',
   (
@@ -269,6 +274,7 @@ export const openTab = createAction(
     force?: boolean,
     timestamp?: number,
     allowDuplicate?: boolean,
+    preserveFocus?: boolean,
   ) => ({
     wsId,
     tab,
@@ -277,6 +283,7 @@ export const openTab = createAction(
     force: force ?? false,
     timestamp: timestamp ?? Date.now(),
     ...(allowDuplicate === undefined ? {} : { allowDuplicate }),
+    ...(preserveFocus === true ? { preserveFocus: true } : {}),
   }),
 );
 
@@ -2148,6 +2155,18 @@ panelLayoutReducer.with(openTab, (state, { payload }) => {
   const existing = payload.allowDuplicate
     ? null
     : findEquivalentPanelTab(wsId, ws, tab, targetPanelId);
+  if (payload.preserveFocus) {
+    if (existing) {
+      return setWorkspaceState(
+        state,
+        wsId,
+        activateEquivalentTabPreservingFocus(ws, existing, tab, newTabId),
+      );
+    }
+    if (!targetPanelId) return state;
+    const next = activateTabPreservingFocus(ws, targetPanelId, tab, newTabId, timestamp);
+    return next === ws ? state : setWorkspaceState(state, wsId, next);
+  }
   if (existing) {
     return setWorkspaceState(
       state,

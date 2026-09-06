@@ -741,6 +741,47 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
+  // An agent-driven visible position:same open must activate the tab without
+  // moving focus, exactly like the adjacent branch (monorepo#3045): the
+  // preserveFocus flag rides on the openTab action; a user open never
+  // carries it.
+  it('activates an agent visible position:same open with preserveFocus', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({
+      url: 'https://agent-same.test',
+      position: 'same',
+      workspaceId: 'ws-1',
+      tabId: 'tab-main-1',
+      ownerAgentId: 'agent-1',
+      visible: true,
+    });
+    await emit({
+      url: 'https://user-same.test',
+      position: 'same',
+      workspaceId: 'ws-1',
+      tabId: 'tab-main-2',
+    });
+
+    expect(actions[0]).toMatchObject({
+      type: 'panelLayout/openTab',
+      payload: {
+        wsId: 'ws-1',
+        newTabId: 'tab-main-1',
+        preserveFocus: true,
+        tab: { ...TAB('https://agent-same.test'), ownerAgentId: 'agent-1' },
+      },
+    });
+    const userOpen = actions.find(
+      (a: any) => a.type === 'panelLayout/openTab' && a.payload.newTabId === 'tab-main-2',
+    ) as { payload: Record<string, unknown> } | undefined;
+    expect(userOpen).toBeDefined();
+    expect(userOpen?.payload).not.toHaveProperty('preserveFocus');
+    task.cancel();
+    await task.toPromise();
+  });
+
   // Only owned tabs are emulated (§5.9): a size arriving without an owner is
   // dropped at the boundary rather than recorded on a native tab.
   it('drops emulatedSize on unowned opens', async () => {

@@ -314,6 +314,9 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     yield* put(openAction);
     return;
   }
+  // An agent-driven visible open activates the tab in the focused panel
+  // without moving focus — the same preserveFocus contract as the adjacent
+  // branch (monorepo#3045).
   const openAction = openTab(
     workspaceId,
     browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize, ownerAgentName),
@@ -322,6 +325,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     undefined,
     undefined,
     allowDuplicate,
+    ownerAgentId !== undefined ? true : undefined,
   );
   yield* put(openAction);
   if (ownerAgentId !== undefined) {
