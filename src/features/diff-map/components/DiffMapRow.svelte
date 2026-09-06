@@ -141,10 +141,16 @@
     {/if}
   {/if}
 
-  {#if rung === 0 && (file.oldTrack || file.newTrack)}
-    <span class="tracks"><HunkTracks oldTrack={file.oldTrack} newTrack={file.newTrack} /></span>
-  {/if}
-  {#if rung <= 2 && file.statsKnown}
+  {#if rung === 0}
+    <span class="row-encoding">
+      {#if file.statsKnown}
+        <span class="churn-track"><span class="churn" style:width={`${churn}%`}></span></span>
+      {/if}
+      {#if file.oldTrack || file.newTrack}
+        <span class="tracks"><HunkTracks oldTrack={file.oldTrack} newTrack={file.newTrack} /></span>
+      {/if}
+    </span>
+  {:else if rung <= 2 && file.statsKnown}
     <span class="churn-track"><span class="churn" style:width={`${churn}%`}></span></span>
   {/if}
 
@@ -253,11 +259,19 @@
     color: hsl(var(--muted-foreground));
   }
 
-  .tracks {
+  .row-encoding {
     position: absolute;
     right: 5px;
-    bottom: 4px;
+    bottom: 2px;
     left: 28px;
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 5px;
+    height: 6px;
+  }
+
+  .tracks {
+    grid-column: 2;
   }
 
   .churn-track {
@@ -266,6 +280,11 @@
     bottom: 1px;
     left: 28px;
     height: 2px;
+  }
+
+  .row-encoding .churn-track {
+    position: static;
+    align-self: center;
   }
 
   .churn {

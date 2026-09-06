@@ -104,7 +104,7 @@ function deepHeaderDocument(): DiffMapDocument {
 
 describe('layoutDiffMap', () => {
   it.each([
-    [0, 32],
+    [0, 28],
     [1, 22],
     [2, 18],
     [3, 18],
@@ -156,7 +156,7 @@ describe('layoutDiffMap', () => {
       { width: 900, height: 500 },
       measure,
     );
-    expect(layout.rung).toBeLessThanOrEqual(1);
+    expect(layout.rung).toBe(0);
     expect(layout.overflow).toBe(false);
   });
 
