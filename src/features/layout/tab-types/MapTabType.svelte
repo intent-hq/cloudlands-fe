@@ -158,7 +158,7 @@
       </p>
     {:else if $mapState.hydrationStatus === 'error'}
       <p
-        class="absolute inset-0 z-10 flex items-center justify-center text-sm text-destructive"
+        class="absolute inset-0 z-10 flex items-center justify-center text-sm text-danger"
         role="alert"
       >
         {m.semanticMap_panel_error_description()}
