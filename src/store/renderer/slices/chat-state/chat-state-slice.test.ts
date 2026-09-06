@@ -193,6 +193,40 @@ describe('chatStateReducer', () => {
     expect(agent.modelUnavailable).toBeNull();
   });
 
+  it('chatSendFailed records a quota failure so the retry-on-another-provider banner can show (#4455)', () => {
+    const state = chatStateReducer(
+      chatStateReducer(initialState, chatSendStarted(AGENT)),
+      chatSendFailed(AGENT, 'rate limit reached', 'turn-quota-1', undefined, {
+        providerId: 'claude-code',
+      }),
+    );
+    const agent = state.byAgentId[AGENT];
+    expect(agent.error).toBe('rate limit reached');
+    expect(agent.quotaExceeded).toEqual({ providerId: 'claude-code' });
+  });
+
+  it('chatSendFailed leaves quotaExceeded null for ordinary failures (#4455)', () => {
+    // A pre-#4455 daemon sends no errorCode, so the bridge passes undefined —
+    // the banner must stay on the plain "Try again" path.
+    const state = chatStateReducer(
+      chatStateReducer(initialState, chatSendStarted(AGENT)),
+      chatSendFailed(AGENT, 'network error'),
+    );
+    expect(state.byAgentId[AGENT].quotaExceeded).toBeNull();
+  });
+
+  it('a new turn clears a previous quota failure (#4455)', () => {
+    const failed = chatStateReducer(
+      chatStateReducer(initialState, chatSendStarted(AGENT)),
+      chatSendFailed(AGENT, 'quota exhausted', undefined, undefined, {
+        providerId: 'claude-code',
+      }),
+    );
+    expect(failed.byAgentId[AGENT].quotaExceeded).not.toBeNull();
+    const restarted = chatStateReducer(failed, chatSendStarted(AGENT));
+    expect(restarted.byAgentId[AGENT].quotaExceeded).toBeNull();
+  });
+
   it('chatSendFailed preserves lastAttemptedMessage so the banner retries the failed message (#969)', () => {
     // The send paths record the attempt (chatLastAttemptedMessageSet) BEFORE
     // the wire call; a failure must not wipe it — "Try again" pairs the error

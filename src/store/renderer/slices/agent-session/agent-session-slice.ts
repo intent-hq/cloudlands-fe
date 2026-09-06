@@ -1248,6 +1248,23 @@ export const agentSessionRetryWithModelRequested = createAsyncAction<
 >('agentSessions/retryWithModel', 'agentSessions/retryWithModelRequested');
 
 /**
+ * Saga-owned retry-on-another-provider side effect trigger (#4455).
+ *
+ * The quota-exceeded banner offers sibling providers, not models, but
+ * `agent.setModel` is the only FE→daemon path that can move a LIVE agent to
+ * another provider — and it requires a concrete modelId. So the saga first
+ * resolves a model on `providerId` from that provider's `models.list`
+ * catalog, switches the session with it, and only then redrives the failed
+ * turn via `agentSessionRetryLastMessageRequested`. Kept as its own action
+ * (rather than reusing retry-with-model) because the caller genuinely does
+ * not know a model id — picking one is the saga's job.
+ */
+export const agentSessionRetryWithProviderRequested = createAsyncAction<
+  [agentId: string, wsId: string, providerId: string],
+  void
+>('agentSessions/retryWithProvider', 'agentSessions/retryWithProviderRequested');
+
+/**
  * Saga-owned retry-from-stalled side effect trigger (monorepo#3402): cancels
  * the hung turn, waits for the stop to settle, then re-sends the identical
  * last user input. A no-op when the stall is no longer active by the time

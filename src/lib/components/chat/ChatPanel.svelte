@@ -57,6 +57,7 @@
     agentSessionRetryFromStalledRequested,
     agentSessionRetryLastMessageRequested,
     agentSessionRetryWithModelRequested,
+    agentSessionRetryWithProviderRequested,
     agentSessionStopChatRequested,
     clearHistorySegment,
     updateSession as updateAgentSessionFields,
@@ -123,6 +124,7 @@
     selectChatFailureCorrelation,
     selectChatLastChunkTime,
     selectChatModelUnavailable,
+    selectChatQuotaExceeded,
     selectChatReceivedFirstChunk,
     selectChatStatusEvents,
     selectChatStreamingStartTime,
@@ -325,8 +327,12 @@
   import {
     selectEffectiveDefaultProviderId,
     selectProviderAuthFailureGuidance,
+    selectProviderCatalogEntries,
     selectProviderCatalogLoaded,
+    selectProviderDisplayName,
+    selectNormalizedProviderId,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectAvailableEnabledProviderIds } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
@@ -475,6 +481,14 @@
   const chatStreamingStartTime$ = selectChatStreamingStartTime(agentIdStore);
   const chatLastChunkTime$ = selectChatLastChunkTime(agentIdStore);
   const chatModelUnavailable$ = selectChatModelUnavailable(agentIdStore);
+  // Quota-exceeded recovery (#4455): the provider that ran out on the last
+  // turn, plus the sibling providers we may offer instead.
+  const chatQuotaExceeded$ = selectChatQuotaExceeded(agentIdStore);
+  const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
+  // Read purely as a reactivity anchor for the display-name derivation below:
+  // provider display names come from the catalog, which hydrates
+  // asynchronously and can land after the quota failure does.
+  const providerCatalogEntries$ = selectProviderCatalogEntries();
   const chatStatusEvents$ = selectChatStatusEvents(agentIdStore);
   const chatReceivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
@@ -4944,6 +4958,14 @@
     appStore.dispatch(agentSessionRetryWithModelRequested(agentId, workspace.id, model));
   }
 
+  // Handle retrying the quota-failed turn on a different provider (#4455).
+  // The saga owns the two-step move (resolve a model on the target provider,
+  // switch the live session, then redrive) — this only names the provider.
+  function handleRetryWithProvider(providerId: string) {
+    if (!workspace) return;
+    appStore.dispatch(agentSessionRetryWithProviderRequested(agentId, workspace.id, providerId));
+  }
+
   // Handle retrying from a stalled turn: cancel it and re-send the same input
   // (monorepo#3402). The saga no-ops if the stall cleared before it runs.
   function handleStalledRetry() {
@@ -4957,7 +4979,40 @@
   // guard.
   const gatedRetry = $derived(isRetiredSession ? undefined : handleRetry);
   const gatedRetryWithModel = $derived(isRetiredSession ? undefined : handleRetryWithModel);
+  const gatedRetryWithProvider = $derived(isRetiredSession ? undefined : handleRetryWithProvider);
   const gatedStalledRetry = $derived(isRetiredSession ? undefined : handleStalledRetry);
+
+  /**
+   * The exhausted provider, carrying its catalog display name — StreamingStatus
+   * cannot resolve that name itself because the offer list below deliberately
+   * excludes the exhausted provider.
+   */
+  const quotaExceeded = $derived.by(() => {
+    const quota = $chatQuotaExceeded$;
+    if (!quota) return null;
+    void $providerCatalogEntries$;
+    return {
+      ...quota,
+      displayName: selectProviderDisplayName.select(appStore.state, quota.providerId),
+    };
+  });
+
+  /**
+   * Providers we can offer as a quota retry target: the canonical
+   * "enabled ∧ visible ∧ probe-available ∧ model-access-allowed" set, minus
+   * the provider that just ran out. Offering the exhausted one back would
+   * only reproduce the same failure, and an empty list makes StreamingStatus
+   * fall back to the plain error banner rather than dangling a dead action.
+   */
+  const quotaRetryProviders = $derived.by(() => {
+    const quota = $chatQuotaExceeded$;
+    if (!quota) return [];
+    void $providerCatalogEntries$;
+    const exhausted = selectNormalizedProviderId.select(appStore.state, quota.providerId);
+    return $availableEnabledProviderIds$
+      .filter((id) => selectNormalizedProviderId.select(appStore.state, id) !== exhausted)
+      .map((id) => ({ id, displayName: selectProviderDisplayName.select(appStore.state, id) }));
+  });
 
   // Handle changing the specialist for an agent
   // The specialist can be changed at any time - even after messages have been sent.
@@ -5680,9 +5735,12 @@
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
+                          {quotaExceeded}
+                          {quotaRetryProviders}
                           {hasPendingPermission}
                           onRetry={gatedRetry}
                           onRetryWithModel={gatedRetryWithModel}
+                          onRetryWithProvider={gatedRetryWithProvider}
                           onStop={handleStop}
                           onStalledRetry={gatedStalledRetry}
                           seed={agentId}
@@ -5707,9 +5765,12 @@
                         sessionCorrupted={effectiveSessionCorrupted}
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
+                        {quotaExceeded}
+                        {quotaRetryProviders}
                         {hasPendingPermission}
                         onRetry={gatedRetry}
                         onRetryWithModel={gatedRetryWithModel}
+                        onRetryWithProvider={gatedRetryWithProvider}
                         onStop={handleStop}
                         onStalledRetry={gatedStalledRetry}
                         seed={agentId}
@@ -5792,9 +5853,12 @@
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
+                          {quotaExceeded}
+                          {quotaRetryProviders}
                           {hasPendingPermission}
                           onRetry={gatedRetry}
                           onRetryWithModel={gatedRetryWithModel}
+                          onRetryWithProvider={gatedRetryWithProvider}
                           onStop={handleStop}
                           onStalledRetry={gatedStalledRetry}
                           seed={agentId}
@@ -5819,9 +5883,12 @@
                         sessionCorrupted={effectiveSessionCorrupted}
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
+                        {quotaExceeded}
+                        {quotaRetryProviders}
                         {hasPendingPermission}
                         onRetry={gatedRetry}
                         onRetryWithModel={gatedRetryWithModel}
+                        onRetryWithProvider={gatedRetryWithProvider}
                         onStop={handleStop}
                         onStalledRetry={gatedStalledRetry}
                         seed={agentId}
@@ -5851,9 +5918,12 @@
                   sessionCorrupted={effectiveSessionCorrupted}
                   failedAt={effectiveFailedAt}
                   modelUnavailable={$chatModelUnavailable$}
+                  {quotaExceeded}
+                  {quotaRetryProviders}
                   {hasPendingPermission}
                   onRetry={gatedRetry}
                   onRetryWithModel={gatedRetryWithModel}
+                  onRetryWithProvider={gatedRetryWithProvider}
                   onStop={handleStop}
                   onStalledRetry={gatedStalledRetry}
                   seed={agentId}
@@ -6184,9 +6254,12 @@
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
+                          {quotaExceeded}
+                          {quotaRetryProviders}
                           {hasPendingPermission}
                           onRetry={gatedRetry}
                           onRetryWithModel={gatedRetryWithModel}
+                          onRetryWithProvider={gatedRetryWithProvider}
                           onStop={handleStop}
                           onStalledRetry={gatedStalledRetry}
                           seed={agentId}
@@ -6269,9 +6342,12 @@
                                 sessionCorrupted={effectiveSessionCorrupted}
                                 failedAt={effectiveFailedAt}
                                 modelUnavailable={$chatModelUnavailable$}
+                                {quotaExceeded}
+                                {quotaRetryProviders}
                                 {hasPendingPermission}
                                 onRetry={gatedRetry}
                                 onRetryWithModel={gatedRetryWithModel}
+                                onRetryWithProvider={gatedRetryWithProvider}
                                 onStop={handleStop}
                                 onStalledRetry={gatedStalledRetry}
                                 seed={agentId}
@@ -6348,9 +6424,12 @@
                     sessionCorrupted={effectiveSessionCorrupted}
                     failedAt={effectiveFailedAt}
                     modelUnavailable={$chatModelUnavailable$}
+                    {quotaExceeded}
+                    {quotaRetryProviders}
                     {hasPendingPermission}
                     onRetry={gatedRetry}
                     onRetryWithModel={gatedRetryWithModel}
+                    onRetryWithProvider={gatedRetryWithProvider}
                     onStop={handleStop}
                     onStalledRetry={gatedStalledRetry}
                     seed={agentId}

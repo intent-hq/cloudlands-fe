@@ -8,6 +8,7 @@ import type {
   LastAttemptedMessage,
   LiveStreamPhase,
   ModelUnavailableInfo,
+  QuotaExceededInfo,
   QueuedRetryRecord,
   SendMessagePayload,
   InitializeChatOptions,
@@ -51,6 +52,7 @@ export const emptyChatAgentState: ChatAgentState = {
   lastAttemptedMessage: null,
   queuedRetryRecords: {},
   modelUnavailable: null,
+  quotaExceeded: null,
   statusEvents: [],
   trackedWorkspaceId: null,
   isRebinding: false,
@@ -360,6 +362,7 @@ function reduceQueueProcessing(
     queuedRetryRecords: remaining,
     error: null,
     modelUnavailable: null,
+    quotaExceeded: null,
   });
 }
 
@@ -434,6 +437,7 @@ function reduceAgentStreamUpdate(
     return updateAgent(state, payload.agentId, {
       error: null,
       modelUnavailable: null,
+      quotaExceeded: null,
       lastChunkTime: timestamp,
       receivedFirstChunk: false,
       statusEvents: [],
@@ -475,6 +479,7 @@ function reduceAgentStreamUpdate(
           ? null
           : getAgent(state, payload.agentId).lastAttemptedMessage,
       modelUnavailable,
+      quotaExceeded: null,
       error: failureMessage,
     });
   }
@@ -483,6 +488,7 @@ function reduceAgentStreamUpdate(
       streamingStartTime: null,
       statusEvents: [],
       modelUnavailable: null,
+      quotaExceeded: null,
       error: getStreamFailureMessage(payload) || m.chat_state_interrupted_error(),
     });
   }
@@ -600,7 +606,20 @@ export const chatQueuedRetryRecordsCleared = createAction<[agentId: string]>(
  */
 export const chatSendFailed =
   createAction<
-    [agentId: string, error: string, turnId?: string, failureCorrelation?: StreamFailureCorrelation]
+    [
+      agentId: string,
+      error: string,
+      turnId?: string,
+      failureCorrelation?: StreamFailureCorrelation,
+      /**
+       * Present only when the daemon classified the failure as a provider
+       * usage/quota exhaustion (`errorCode: "quota-exceeded"`). Drives the
+       * retry-on-another-provider banner; absent for every other failure, so
+       * older daemons (which never send the code) simply keep today's
+       * behavior.
+       */
+      quotaExceeded?: QuotaExceededInfo,
+    ]
   >('chatState/sendFailed');
 
 /**
@@ -949,6 +968,7 @@ chatStateReducer.with(chatSendStarted, (state, { payload: { agentId, timestamp }
     error: null,
     failureCorrelation: undefined,
     modelUnavailable: null,
+    quotaExceeded: null,
     streamingStartTime: timestamp,
     lastMessageTime: timestamp,
     lastChunkTime: null,
@@ -1019,7 +1039,7 @@ chatStateReducer.with(chatQueueProcessingReceived, (state, { payload: [agentId, 
 );
 chatStateReducer.with(
   chatSendFailed,
-  (state, { payload: [agentId, error, turnId, failureCorrelation] }) => {
+  (state, { payload: [agentId, error, turnId, failureCorrelation, quotaExceeded] }) => {
     // monorepo#1057: when the failure names a turn whose record is still
     // PARKED (e.g. an agent.retry redrive that failed again — its requeued
     // entry has a new id, so no processing event promoted it under this
@@ -1036,6 +1056,7 @@ chatStateReducer.with(
         error,
         failureCorrelation,
         modelUnavailable: null,
+        quotaExceeded: quotaExceeded ?? null,
         lastAttemptedMessage: agent.queuedRetryRecords[key].record,
         queuedRetryRecords: remaining,
       });
@@ -1045,6 +1066,7 @@ chatStateReducer.with(
       error,
       failureCorrelation,
       modelUnavailable: null,
+      quotaExceeded: quotaExceeded ?? null,
     });
   },
 );
