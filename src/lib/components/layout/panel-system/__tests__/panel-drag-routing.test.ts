@@ -907,6 +907,7 @@ describe('panel context menu routing', () => {
     const moveRight = screen.getByRole('menuitem', { name: 'Move right' });
     expect(moveLeft.getAttribute('aria-disabled')).toBe('true');
     expect(moveRight.getAttribute('aria-disabled')).toBe('false');
+    expect(menu.querySelector('[data-panel-actions-section="actions"]')).toBeTruthy();
     expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeTruthy();
     expect(screen.queryByRole('menuitem', { name: /Close tabs to the right/ })).toBeNull();
     await fireEvent.click(moveRight);
