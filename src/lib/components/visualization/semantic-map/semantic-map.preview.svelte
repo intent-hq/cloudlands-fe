@@ -49,8 +49,14 @@
   let { state: mode }: SemanticMapPreviewProps = $props();
   const initialMode = untrack(() => mode);
 
-  const width = 900;
-  const height = 620;
+  function queryDimension(name: 'w' | 'h', fallback: number, maximum: number): number {
+    if (typeof window === 'undefined') return fallback;
+    const value = Number(new URL(window.location.href).searchParams.get(name));
+    return Number.isInteger(value) && value >= 240 && value <= maximum ? value : fallback;
+  }
+
+  const width = queryDimension('w', 900, 1600);
+  const height = queryDimension('h', 620, 1200);
   const script = createSemanticMapScript();
   const baseManifest = manifestJson as Manifest;
   const kinds = ['read', 'edit', 'tool', 'thinking'] as const;
