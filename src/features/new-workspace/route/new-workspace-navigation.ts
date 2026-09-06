@@ -7,14 +7,23 @@ function newInstanceId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 }
 
+interface NewWorkspaceRouteOptions {
+  instanceId?: string;
+  carrier?: 'session' | 'url';
+}
+
 export function buildNewWorkspaceRoute(
   input?: ResolveStartInput,
-  instanceId = newInstanceId(),
+  options: NewWorkspaceRouteOptions = {},
 ): string {
-  if (typeof sessionStorage !== 'undefined' && input) {
+  const instanceId = options.instanceId ?? newInstanceId();
+  const params = new URLSearchParams({ instance: instanceId });
+  if (input && options.carrier === 'url') {
+    params.set('start', JSON.stringify(input));
+  } else if (typeof sessionStorage !== 'undefined' && input) {
     sessionStorage.setItem(`${START_INPUT_PREFIX}${instanceId}`, JSON.stringify(input));
   }
-  return `/workspace/new?instance=${encodeURIComponent(instanceId)}`;
+  return `/workspace/new?${params.toString()}`;
 }
 
 export function requestedDraftIdForRoute(url: URL): string | null | undefined {
@@ -25,10 +34,13 @@ export function requestedDraftIdForRoute(url: URL): string | null | undefined {
 
 export function consumeNewWorkspaceStartInput(url: URL): ResolveStartInput {
   const instanceId = url.searchParams.get('instance');
-  if (!instanceId || typeof sessionStorage === 'undefined') return {};
-  const key = `${START_INPUT_PREFIX}${instanceId}`;
-  const raw = sessionStorage.getItem(key);
-  sessionStorage.removeItem(key);
+  let raw: string | null = null;
+  if (instanceId && typeof sessionStorage !== 'undefined') {
+    const key = `${START_INPUT_PREFIX}${instanceId}`;
+    raw = sessionStorage.getItem(key);
+    sessionStorage.removeItem(key);
+  }
+  raw ??= url.searchParams.get('start');
   if (!raw) return {};
   try {
     return JSON.parse(raw) as ResolveStartInput;

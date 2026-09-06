@@ -63,7 +63,7 @@
 
     // Command-click (or Ctrl-click on non-Mac) opens in new window
     if (event?.metaKey || event?.ctrlKey) {
-      const route = buildNewWorkspaceRoute(input);
+      const route = buildNewWorkspaceRoute(input, { carrier: 'url' });
       invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route }).catch(() => goto(route));
       return;
     }
