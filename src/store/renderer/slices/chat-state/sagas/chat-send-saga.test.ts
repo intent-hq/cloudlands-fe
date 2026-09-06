@@ -135,6 +135,12 @@ function harness(
   seedSession: AgentSession | AgentSession[] = session(),
   getStateError?: () => Error | undefined,
   workspaceRecord?: Workspace | null,
+  /**
+   * `model.providerDefaults` mirrored renderer-side — the user's configured
+   * model per provider. Seeded here so the quota-retry pick can assert that a
+   * user's own choice wins over the provider's advertised default.
+   */
+  providerModels: Record<string, string> = {},
 ) {
   const channel = stdChannel();
   const seedSessions = Array.isArray(seedSession) ? seedSession : [seedSession];
@@ -162,7 +168,7 @@ function harness(
       getState: () => {
         const error = getStateError?.();
         if (error) throw error;
-        return { agentSessions, chatState, agentQueue, workspace };
+        return { agentSessions, chatState, agentQueue, workspace, model: { providerModels } };
       },
     },
     chatSendSaga,
@@ -991,6 +997,50 @@ describe('chatSendSaga', () => {
         ),
       ).toHaveLength(0);
       expect(mocks.toastError).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it("honours the user's configured model for the target provider (#4455)", async () => {
+      // `model.providerDefaults` is where the user has already said which
+      // model this provider should use — the same setting the model picker
+      // and the daemon's creation-time chain honour. A failover that landed
+      // on the provider's advertised default instead would silently override
+      // an explicit preference.
+      mocks.setModel.mockResolvedValue({ ok: true, data: { success: true } });
+      const run = harness(session(), undefined, undefined, {
+        [OTHER_PROVIDER]: 'gpt-5-mini',
+      });
+      run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'retry me', options: {} }));
+
+      const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+      run.channel.put(retry);
+      await expect(retry.promise).resolves.toBeUndefined();
+
+      // 'gpt-5-codex' is the catalog's isDefault row; the user's choice wins.
+      expect(mocks.setModel).toHaveBeenCalledWith(AGENT, 'gpt-5-mini', WS, OTHER_PROVIDER);
+      const redrives = run.dispatch.mock.calls.filter(
+        ([action]) => action.type === agentSessionRetryWithModelRequested.type,
+      );
+      expect(redrives[0][0].payload).toEqual([AGENT, WS, 'gpt-5-mini']);
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('ignores a configured model the provider no longer serves (#4455)', async () => {
+      // A persisted id that has been renamed or retired must not reach
+      // agent.setModel, which would reject it — fall back to the catalog.
+      mocks.setModel.mockResolvedValue({ ok: true, data: { success: true } });
+      const run = harness(session(), undefined, undefined, {
+        [OTHER_PROVIDER]: 'model-that-no-longer-exists',
+      });
+      run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'retry me', options: {} }));
+
+      const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+      run.channel.put(retry);
+      await expect(retry.promise).resolves.toBeUndefined();
+
+      expect(mocks.setModel).toHaveBeenCalledWith(AGENT, 'gpt-5-codex', WS, OTHER_PROVIDER);
       run.task.cancel();
       await run.task.toPromise();
     });

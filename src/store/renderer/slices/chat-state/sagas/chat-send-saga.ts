@@ -45,6 +45,7 @@ import {
 } from '../../agent-queue/agent-queue-slice';
 import { selectAgentQueueMessages } from '../../agent-queue/agent-queue-selectors';
 import { getModelsForProviderForLoadingState } from '../../model/model-utils';
+import { selectProviderModels } from '../../model/model-selectors';
 import { CHIEF_WORKSPACE_ID } from '../../sidebar-nav/sidebar-nav-types';
 import {
   getChiefThreadTitle,
@@ -479,12 +480,32 @@ async function showRetryProviderError(message: string): Promise<void> {
 /**
  * Pick the model to land on when moving a live session to `providerId`
  * (#4455). The banner offers a PROVIDER, but `agent.setModel` only speaks
- * models, so one has to be chosen for the user: the provider's advertised
- * default when it flags one, otherwise the catalog's own first row (the
- * daemon already returns `models.list` in picker order, so row 0 is the
- * provider's most prominent choice — never a re-sort of our own).
+ * models, so one has to be chosen for the user.
+ *
+ * The USER'S OWN CHOICE WINS. `persisted` is this provider's entry in the
+ * `model.providerDefaults` setting — the model they already told Intent to
+ * use for this provider, and the same value the model picker and the
+ * daemon's creation-time resolution chain honour. Silently landing on the
+ * provider's advertised default instead would override a preference the
+ * user had explicitly expressed, which is precisely the complaint that
+ * motivates configurable failover.
+ *
+ * It is still validated against the live catalog: a persisted id the
+ * provider no longer serves (renamed, retired, plan downgrade) must not be
+ * handed to `agent.setModel`, which would reject it. Falling back then, and
+ * when nothing is persisted at all: the provider's advertised default, else
+ * the catalog's first row (the daemon returns `models.list` in picker order,
+ * so row 0 is the provider's most prominent choice — never a re-sort of our
+ * own).
  */
-function pickModelForProvider(models: AuggieModel[]): AuggieModel | undefined {
+function pickModelForProvider(
+  models: AuggieModel[],
+  persisted: string | undefined,
+): AuggieModel | undefined {
+  if (persisted) {
+    const chosen = models.find((model) => model.value === persisted);
+    if (chosen) return chosen;
+  }
   return models.find((model) => model.isDefault === true) ?? models[0];
 }
 
@@ -522,7 +543,11 @@ function* handleRetryWithProvider(action: RetryProviderAction): SagaGenerator<vo
         error,
       });
     }
-    const model = pickModelForProvider(models);
+    // The user's configured model for this provider (`model.providerDefaults`,
+    // mirrored renderer-side as `providerModels`), so a failover lands where
+    // they already said it should.
+    const providerModels = yield* selectProviderModels.effect();
+    const model = pickModelForProvider(models, providerModels[providerId]);
     if (!model) {
       yield* call(
         showRetryProviderError,
