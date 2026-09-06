@@ -21,7 +21,7 @@ export const uiComponentGuardrails = {
     '$lib/components/ui/tooltip/index.js': 2,
     '$lib/components/ui/tooltip/link-tooltip-state.svelte': 1,
     'relative:src/lib/components/ui/CollapsiblePanel.svelte': 1,
-    'relative:src/lib/components/ui/Header.svelte': 4,
+    'relative:src/lib/components/ui/Header.svelte': 2,
     'relative:src/lib/components/ui/MediaLightbox.svelte': 1,
     'relative:src/lib/components/ui/Portal.svelte': 3,
     'relative:src/lib/components/ui/VSCodePanel.svelte': 1,

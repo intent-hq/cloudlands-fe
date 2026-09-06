@@ -17,6 +17,7 @@ import {
 const root = process.cwd();
 const canonicalImports = [
   'accordion',
+  'ask-user-questions',
   'badge',
   'breadcrumb',
   'button',
@@ -38,6 +39,7 @@ const canonicalImports = [
   'label',
   'list',
   'menu',
+  'message-composer',
   'proximity-highlight',
   'radio-group',
   'scroll-area',
