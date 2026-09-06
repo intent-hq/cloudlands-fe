@@ -1314,9 +1314,46 @@ describe('panelLayoutReducer', () => {
         panelId: 'right',
         tabId: 'new-right',
         requestId: 'new-right',
+        preserveFocus: true,
       });
       expect(result.layoutHistory).toHaveLength(1);
       expect(result.layoutHistory[0].panels.right).toMatchObject({ activeTabId: 'old-right' });
+    });
+
+    // Single column: the rightmost panel already is the focused panel, so the
+    // reveal must carry the no-focus intent for the layout/tab to honour.
+    it('preserveFocus marks the reveal when the rightmost column is already focused', () => {
+      const state = stateWithPanel('p1', [{ id: 'note', type: 'note', title: 'Note' }]);
+      const result = panelLayoutReducer(
+        state,
+        openTabInRightmostColumn(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          { newTabId: 'browser', preserveFocus: true },
+          10,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.p1.activeTabId).toBe('browser');
+      expect(result.focusedPanelId).toBe('p1');
+      expect(result.pendingFocusTabId).toBeNull();
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'p1',
+        tabId: 'browser',
+        requestId: 'browser',
+        preserveFocus: true,
+      });
+
+      const userOpen = panelLayoutReducer(
+        state,
+        openTabInRightmostColumn(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://user.test', closable: true },
+          { newTabId: 'user-browser' },
+          10,
+        ),
+      ).byWorkspaceId[WS];
+      expect(userOpen.pendingPanelReveal?.preserveFocus).toBeUndefined();
     });
 
     it('preserveFocus activates an equivalent inactive tab in place without moving focus', () => {
@@ -1356,6 +1393,7 @@ describe('panelLayoutReducer', () => {
         panelId: 'right',
         tabId: 'existing-browser',
         requestId: 'request-1',
+        preserveFocus: true,
       });
     });
   });

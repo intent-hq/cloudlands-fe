@@ -897,8 +897,9 @@ function addBackgroundTab(
 
 /**
  * Activate a new tab in `panelId` (so its content paints) while keeping the
- * current panel focus and focus history untouched; the queued reveal only
- * scrolls the panel into view (agent-driven visible opens, monorepo#3045).
+ * current panel focus and focus history untouched; the queued reveal is
+ * marked `preserveFocus` so it only scrolls the panel into view and the tab
+ * does not autofocus on mount (agent-driven visible opens, monorepo#3045).
  */
 function activateTabPreservingFocus(
   ws: WorkspacePanelLayoutState,
@@ -921,7 +922,7 @@ function activateTabPreservingFocus(
         pristine: false,
       },
     },
-    pendingPanelReveal: createPanelRevealRequest(panelId, tabId, tabId),
+    pendingPanelReveal: createPanelRevealRequest(panelId, tabId, tabId, true),
   };
 }
 
@@ -943,7 +944,7 @@ function activateEquivalentTabPreservingFocus(
         tabs: updateEquivalentTabData(panel, match, requested),
       },
     },
-    pendingPanelReveal: createPanelRevealRequest(match.panelId, match.tab.id, requestId),
+    pendingPanelReveal: createPanelRevealRequest(match.panelId, match.tab.id, requestId, true),
   };
 }
 
@@ -977,8 +978,11 @@ function createPanelRevealRequest(
   panelId: string,
   tabId: string | null,
   requestId: string,
+  preserveFocus = false,
 ): PanelRevealRequest {
-  return { panelId, tabId, requestId };
+  return preserveFocus
+    ? { panelId, tabId, requestId, preserveFocus }
+    : { panelId, tabId, requestId };
 }
 
 function restoreExpandedWorkspaceLayout(
