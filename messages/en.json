@@ -3304,7 +3304,7 @@
   "newWorkspace_recovery_firstMessageRejected_error": "The first message was rejected",
   "newWorkspace_recovery_clientIdentityMissing_error": "Daemon did not return a client identity",
   "newWorkspace_recovery_offline_title": "Daemon offline",
-  "newWorkspace_recovery_offline_description": "Keep editing if needed. These changes are unsaved until Intent reconnects.",
+  "newWorkspace_recovery_offline_description": "Your draft is preserved. Reconnect to continue editing and save your changes.",
   "newWorkspace_recovery_conflict_title": "Draft changed elsewhere",
   "newWorkspace_recovery_conflict_description": "Choose the daemon version or keep your local edits.",
   "newWorkspace_recovery_useRemote_label": "Use daemon version",
@@ -5946,5 +5946,8 @@
   "workspace_sidebarSearch_clear_ariaLabel": "Clear search",
   "layout_allCard_archived_label": "Archived",
   "providers_antigravity_authUnknown": "Sign-in status unknown. Refresh to check again.",
-  "providers_antigravity_discoveryUnavailable": "Provider discovery is unavailable. Reconnect to the daemon and try again."
+  "providers_antigravity_discoveryUnavailable": "Provider discovery is unavailable. Reconnect to the daemon and try again.",
+  "newWorkspace_setup_title": "Workspace setup",
+  "newWorkspace_source_composerMenu_description": "Use the + menu in the message box to choose or change a repository or folder.",
+  "newWorkspace_source_folderName_label": "Folder name"
 }

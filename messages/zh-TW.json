@@ -3303,7 +3303,7 @@
   "newWorkspace_recovery_firstMessageRejected_error": "第一則訊息被拒絕",
   "newWorkspace_recovery_clientIdentityMissing_error": "常駐程式未傳回用戶端身分",
   "newWorkspace_recovery_offline_title": "常駐程式離線",
-  "newWorkspace_recovery_offline_description": "需要時可繼續編輯。在 Intent 重新連接前，這些變更不會儲存。",
+  "newWorkspace_recovery_offline_description": "草稿已保留。重新連線後即可繼續編輯並儲存變更。",
   "newWorkspace_recovery_conflict_title": "草稿已在其他位置變更",
   "newWorkspace_recovery_conflict_description": "請選擇常駐程式版本或保留本機編輯。",
   "newWorkspace_recovery_useRemote_label": "使用常駐程式版本",
@@ -5946,5 +5946,8 @@
   "workspace_sidebarSearch_clear_ariaLabel": "清除搜尋",
   "layout_allCard_archived_label": "已歸檔",
   "providers_antigravity_authUnknown": "登入狀態未知。請重新整理以再次檢查。",
-  "providers_antigravity_discoveryUnavailable": "無法探索供應商。請重新連線至常駐程式後再試。"
+  "providers_antigravity_discoveryUnavailable": "無法探索供應商。請重新連線至常駐程式後再試。",
+  "newWorkspace_setup_title": "工作區設定",
+  "newWorkspace_source_composerMenu_description": "使用訊息輸入框中的 + 選單選擇或變更儲存庫或資料夾。",
+  "newWorkspace_source_folderName_label": "資料夾名稱"
 }

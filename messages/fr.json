@@ -3303,7 +3303,7 @@
   "newWorkspace_recovery_firstMessageRejected_error": "Le premier message a été rejeté",
   "newWorkspace_recovery_clientIdentityMissing_error": "Le daemon n’a renvoyé aucune identité client",
   "newWorkspace_recovery_offline_title": "Daemon hors ligne",
-  "newWorkspace_recovery_offline_description": "Continuez à modifier si nécessaire. Ces changements restent non enregistrés jusqu’à la reconnexion d’Intent.",
+  "newWorkspace_recovery_offline_description": "Votre brouillon est conservé. Reconnectez-vous pour continuer à le modifier et enregistrer vos changements.",
   "newWorkspace_recovery_conflict_title": "Le brouillon a été modifié ailleurs",
   "newWorkspace_recovery_conflict_description": "Choisissez la version du daemon ou conservez vos modifications locales.",
   "newWorkspace_recovery_useRemote_label": "Utiliser la version du daemon",
@@ -5946,5 +5946,8 @@
   "workspace_sidebarSearch_clear_ariaLabel": "Effacer la recherche",
   "layout_allCard_archived_label": "Archivés",
   "providers_antigravity_authUnknown": "État de connexion inconnu. Actualisez pour vérifier à nouveau.",
-  "providers_antigravity_discoveryUnavailable": "La détection des fournisseurs est indisponible. Reconnectez-vous au daemon et réessayez."
+  "providers_antigravity_discoveryUnavailable": "La détection des fournisseurs est indisponible. Reconnectez-vous au daemon et réessayez.",
+  "newWorkspace_setup_title": "Configuration de l’espace de travail",
+  "newWorkspace_source_composerMenu_description": "Utilisez le menu + de la zone de message pour choisir ou changer de dépôt ou de dossier.",
+  "newWorkspace_source_folderName_label": "Nom du dossier"
 }

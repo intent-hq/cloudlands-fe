@@ -3303,7 +3303,7 @@
   "newWorkspace_recovery_firstMessageRejected_error": "El primer mensaje fue rechazado",
   "newWorkspace_recovery_clientIdentityMissing_error": "El daemon no devolvió una identidad de cliente",
   "newWorkspace_recovery_offline_title": "Daemon sin conexión",
-  "newWorkspace_recovery_offline_description": "Sigue editando si lo necesitas. Estos cambios no se guardarán hasta que Intent vuelva a conectarse.",
+  "newWorkspace_recovery_offline_description": "Tu borrador se conserva. Vuelve a conectarte para seguir editando y guardar los cambios.",
   "newWorkspace_recovery_conflict_title": "El borrador cambió en otro lugar",
   "newWorkspace_recovery_conflict_description": "Elige la versión del daemon o conserva tus cambios locales.",
   "newWorkspace_recovery_useRemote_label": "Usar versión del daemon",
@@ -5946,5 +5946,8 @@
   "workspace_sidebarSearch_clear_ariaLabel": "Borrar búsqueda",
   "layout_allCard_archived_label": "Archivados",
   "providers_antigravity_authUnknown": "Estado de inicio de sesión desconocido. Actualiza para comprobarlo de nuevo.",
-  "providers_antigravity_discoveryUnavailable": "La detección de proveedores no está disponible. Vuelve a conectarte al daemon e inténtalo de nuevo."
+  "providers_antigravity_discoveryUnavailable": "La detección de proveedores no está disponible. Vuelve a conectarte al daemon e inténtalo de nuevo.",
+  "newWorkspace_setup_title": "Configuración del espacio de trabajo",
+  "newWorkspace_source_composerMenu_description": "Usa el menú + del cuadro de mensaje para elegir o cambiar un repositorio o una carpeta.",
+  "newWorkspace_source_folderName_label": "Nombre de la carpeta"
 }

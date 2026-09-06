@@ -3303,7 +3303,7 @@
   "newWorkspace_recovery_firstMessageRejected_error": "Die erste Nachricht wurde abgelehnt",
   "newWorkspace_recovery_clientIdentityMissing_error": "Der Daemon hat keine Client-Identität zurückgegeben",
   "newWorkspace_recovery_offline_title": "Daemon nicht erreichbar",
-  "newWorkspace_recovery_offline_description": "Bearbeite bei Bedarf weiter. Diese Änderungen bleiben ungespeichert, bis Intent wieder verbunden ist.",
+  "newWorkspace_recovery_offline_description": "Dein Entwurf bleibt erhalten. Stelle die Verbindung wieder her, um weiterzubearbeiten und deine Änderungen zu speichern.",
   "newWorkspace_recovery_conflict_title": "Entwurf wurde anderswo geändert",
   "newWorkspace_recovery_conflict_description": "Wähle die Daemon-Version oder behalte deine lokalen Änderungen.",
   "newWorkspace_recovery_useRemote_label": "Daemon-Version verwenden",
@@ -5946,5 +5946,8 @@
   "workspace_sidebarSearch_clear_ariaLabel": "Suche löschen",
   "layout_allCard_archived_label": "Archiviert",
   "providers_antigravity_authUnknown": "Anmeldestatus unbekannt. Aktualisieren Sie den Status, um erneut zu prüfen.",
-  "providers_antigravity_discoveryUnavailable": "Die Anbietererkennung ist nicht verfügbar. Verbinden Sie sich erneut mit dem Daemon und versuchen Sie es noch einmal."
+  "providers_antigravity_discoveryUnavailable": "Die Anbietererkennung ist nicht verfügbar. Verbinden Sie sich erneut mit dem Daemon und versuchen Sie es noch einmal.",
+  "newWorkspace_setup_title": "Arbeitsbereich einrichten",
+  "newWorkspace_source_composerMenu_description": "Wähle oder ändere ein Repository oder einen Ordner über das Menü + im Nachrichtenfeld.",
+  "newWorkspace_source_folderName_label": "Ordnername"
 }

@@ -3303,7 +3303,7 @@
   "newWorkspace_recovery_firstMessageRejected_error": "最初のメッセージが拒否されました",
   "newWorkspace_recovery_clientIdentityMissing_error": "デーモンからクライアント ID が返されませんでした",
   "newWorkspace_recovery_offline_title": "デーモンはオフラインです",
-  "newWorkspace_recovery_offline_description": "必要に応じて編集を続けられます。Intent が再接続するまで変更は未保存です。",
+  "newWorkspace_recovery_offline_description": "下書きは保持されています。再接続すると編集を続けて変更を保存できます。",
   "newWorkspace_recovery_conflict_title": "下書きが別の場所で変更されました",
   "newWorkspace_recovery_conflict_description": "デーモンのバージョンを使用するか、ローカルの編集を保持してください。",
   "newWorkspace_recovery_useRemote_label": "デーモン版を使用",
@@ -5946,5 +5946,8 @@
   "workspace_sidebarSearch_clear_ariaLabel": "検索をクリア",
   "layout_allCard_archived_label": "アーカイブ済み",
   "providers_antigravity_authUnknown": "ログイン状態が不明です。更新して再確認してください。",
-  "providers_antigravity_discoveryUnavailable": "プロバイダーを検出できません。デーモンに再接続して、もう一度お試しください。"
+  "providers_antigravity_discoveryUnavailable": "プロバイダーを検出できません。デーモンに再接続して、もう一度お試しください。",
+  "newWorkspace_setup_title": "ワークスペースの設定",
+  "newWorkspace_source_composerMenu_description": "メッセージ欄の + メニューからリポジトリやフォルダーを選択・変更できます。",
+  "newWorkspace_source_folderName_label": "フォルダー名"
 }

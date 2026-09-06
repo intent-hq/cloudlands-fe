@@ -149,10 +149,18 @@
   const completedSteps = $derived(steps.filter((s) => s === 'done').length);
   const currentStep = $derived(Math.min(completedSteps + 1, totalSteps));
   const allDone = $derived(completedSteps === totalSteps);
+  const awaitingInput = $derived(
+    Boolean(repoPendingContent) && steps.every((s) => s === 'pending'),
+  );
+  const draftFailed = $derived(Boolean(repoPendingContent) && steps.some((s) => s === 'error'));
   const title = $derived(
-    allDone
-      ? m.workspaceCreation_setupCard_ready_title()
-      : m.workspaceCreation_setupCard_settingUp_title(),
+    draftFailed
+      ? m.newWorkspace_recovery_failed_title()
+      : awaitingInput
+        ? m.newWorkspace_setup_title()
+        : allDone
+          ? m.workspaceCreation_setupCard_ready_title()
+          : m.workspaceCreation_setupCard_settingUp_title(),
   );
 
   function copyToClipboard(text: string, label: string) {
@@ -171,9 +179,7 @@
   }
 </script>
 
-<div
-  class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} w-full overflow-hidden transition-all duration-500"
->
+<div class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} w-full overflow-hidden">
   <!-- Header -->
   <div
     class="flex items-baseline gap-2.5 pt-3 pb-2"
@@ -196,7 +202,7 @@
         </h3>
       {/key}
     </div>
-    {#if !allDone}
+    {#if !allDone && !awaitingInput && !draftFailed}
       <span class="text-sm font-mono text-muted-foreground tabular-nums">
         <span class="inline-grid *:[grid-area:1/1]">
           {#key currentStep}
@@ -269,7 +275,7 @@
       >
         {@render repoPendingContent()}
       </div>
-    {:else if repoStatus !== 'pending'}
+    {:else if repoStatus !== 'pending' && !(draftFailed && repoStatus === 'error')}
       {@render stepRow(
         repoStatus,
         faFolderOpen,
@@ -358,7 +364,7 @@
     {/snippet}
 
     <!-- Step 2: Branch -->
-    {#if branchStatus !== 'pending' && !skipIsolation}
+    {#if branchStatus !== 'pending' && !skipIsolation && !(draftFailed && branchStatus === 'error')}
       {@render stepRow(branchStatus, faCodeBranch, '', branchActive, branchDone)}
     {/if}
     {#snippet branchActive()}
@@ -388,7 +394,7 @@
         onclick={() => copyToClipboard(copyValue ?? text, label)}
       >
         {text}<span
-          class="inline-flex w-0 overflow-hidden opacity-0 group-hover/copy:w-3.5 group-hover/copy:opacity-40 transition-all duration-200"
+          class="inline-flex w-0 overflow-hidden opacity-0 group-hover/copy:w-3.5 group-hover/copy:opacity-40 transition-[width,opacity] duration-200"
           ><Fa icon={faCopy} size="xs" class="ml-0.5" /></span
         >
       </button>
@@ -420,7 +426,7 @@
     {/snippet}
 
     <!-- Step 3: Setup Script (optional) -->
-    {#if setupScriptStatus && setupScriptStatus !== 'pending'}
+    {#if setupScriptStatus && setupScriptStatus !== 'pending' && !(draftFailed && setupScriptStatus === 'error')}
       {@render stepRow(setupScriptStatus, faTerminal, 'ml-[0.5px]', setupActive, setupDone)}
     {/if}
     {#snippet setupActive()}
@@ -457,7 +463,7 @@
     {/snippet}
 
     <!-- Step 4: Agent -->
-    {#if agentStatus !== 'pending'}
+    {#if agentStatus !== 'pending' && !(draftFailed && agentStatus === 'error')}
       {@render stepRow(agentStatus, faRobot, 'ml-[-0.5px]', agentActive, agentDone)}
     {/if}
     {#snippet specialistWithTooltip()}

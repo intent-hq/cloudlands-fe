@@ -81,3 +81,37 @@ test.describe('new-workspace scenario contracts', () => {
     });
   }
 });
+
+test('source details expose isolation with keyboard focus', async ({ mount, page }) => {
+  const component = await mount(ScenarioContractHost, {
+    props: { scenarioId: 'source-local-repo' },
+  });
+  const summary = component.locator('summary');
+  await summary.focus();
+  await summary.press('Enter');
+  await expect(component.locator('details')).toHaveAttribute('open', '');
+  await expect(summary).toBeFocused();
+  expect(await summary.evaluate((node) => getComputedStyle(node).outlineStyle)).not.toBe('none');
+  await page.keyboard.press('Space');
+  await expect(component.locator('details')).not.toHaveAttribute('open', '');
+});
+
+test('conflict actions remain readable and reachable in a narrow panel', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 900 });
+  const component = await mount(ScenarioContractHost, {
+    props: { scenarioId: 'recovery-draft-conflict' },
+  });
+  const alert = component.getByRole('alert');
+  const bounds = await alert.boundingBox();
+  const buttons = alert.getByRole('button');
+  for (const button of await buttons.all()) {
+    await button.focus();
+    await expect(button).toBeFocused();
+    const box = await button.boundingBox();
+    expect(box!.x).toBeGreaterThanOrEqual(bounds!.x);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width + 1);
+  }
+});

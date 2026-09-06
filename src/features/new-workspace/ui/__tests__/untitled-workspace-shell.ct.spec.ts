@@ -31,7 +31,9 @@ test.describe('new-workspace shell', () => {
 
     await expect(component.locator('[data-coordinator-state="connect-provider"]')).toBeVisible();
     await expect(component.getByText('SANDBOX-CODE')).toBeVisible();
-    await component.getByRole('button', { name: 'Use Augment Auggie' }).click();
+    const provider = component.getByRole('button', { name: 'Use Augment Auggie' });
+    await provider.focus();
+    await provider.press('Enter');
 
     await expect(component.getByTestId('provider-selection-count')).toHaveText('1');
     await expect(component.locator('[data-coordinator-state]')).toHaveCount(0);
@@ -42,7 +44,7 @@ test.describe('new-workspace shell', () => {
     const component = await mount(UntitledWorkspaceShellHost);
     await component.getByTestId('prompt-actions-trigger').click();
     await page.getByRole('menuitem', { name: 'Start a new project' }).click();
-    const input = page.getByRole('textbox', { name: 'my-project' });
+    const input = page.getByRole('textbox', { name: 'Folder name' });
     await input.fill('fresh-project');
     await page.getByRole('button', { name: 'Select folder…' }).click();
 
@@ -54,13 +56,18 @@ test.describe('new-workspace shell', () => {
     const component = await mount(UntitledWorkspaceShellHost);
     await component.getByTestId('prompt-actions-trigger').click();
     await page.getByRole('menuitem', { name: 'Start a new project' }).click();
-    const input = page.getByRole('textbox', { name: 'my-project' });
+    const input = page.getByRole('textbox', { name: 'Folder name' });
     await input.fill('../outside');
 
     await expect(input).toHaveAttribute('aria-invalid', 'true');
     await expect(page.getByRole('alert')).toBeVisible();
+    await expect(input).toHaveAccessibleDescription(/.+/);
     await expect(page.getByRole('button', { name: 'Select folder…' })).toBeDisabled();
     await expect(component.getByTestId('source-kind')).toBeEmpty();
+    await input.fill('safe-project');
+    await expect(input).not.toHaveAttribute('aria-invalid', 'true');
+    await expect(input).not.toHaveAttribute('aria-describedby');
+    await expect(page.getByRole('button', { name: 'Select folder…' })).toBeEnabled();
   });
 
   test('keeps the shell and composer contained at narrow width', async ({ mount, page }) => {

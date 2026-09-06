@@ -316,9 +316,12 @@
                   class="mb-2"
                 />
               {:else if controllerState.phase === 'offline'}
-                <div class="type-caption flex items-start gap-3 py-2 pr-1" role="alert">
+                <div
+                  class="recovery-notice type-caption flex items-start gap-2 py-2 pr-1"
+                  role="alert"
+                >
                   <div class="min-w-0 flex-1">
-                    <p class="font-medium text-warning">
+                    <p class="font-medium text-foreground">
                       {m.newWorkspace_recovery_offline_title()}
                     </p>
                     <p class="text-muted-foreground">
@@ -330,9 +333,12 @@
                   </Button>
                 </div>
               {:else if controllerState.phase === 'conflict'}
-                <div class="type-caption flex items-start gap-3 py-2 pr-1" role="alert">
+                <div
+                  class="recovery-notice type-caption flex items-start gap-2 py-2 pr-1"
+                  role="alert"
+                >
                   <div class="min-w-0 flex-1">
-                    <p class="font-medium text-warning">
+                    <p class="font-medium text-foreground">
                       {m.newWorkspace_recovery_conflict_title()}
                     </p>
                     <p class="text-muted-foreground">
@@ -358,7 +364,7 @@
             <div class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0">
               <div class="w-full min-w-0">
                 {#if saveState === 'unsaved'}
-                  <p class="regular-composer-content-inset type-caption pb-1 text-warning">
+                  <p class="regular-composer-content-inset type-caption pb-1 text-foreground">
                     {m.newWorkspace_shell_unsaved_label()}
                   </p>
                 {/if}
@@ -431,6 +437,10 @@
   }
 
   @container chat-panel (max-width: 639.98px) {
+    .recovery-notice {
+      flex-direction: column;
+    }
+
     .regular-chat-content-inset {
       --chat-operational-row-inline-padding: 0.125rem;
       --chat-operational-leading-gap: 0.625rem;

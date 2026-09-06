@@ -33,6 +33,8 @@
     onSourceSelected,
   }: Props = $props();
 
+  const fieldId = $props.id();
+
   // i18n-ignore (default filesystem-safe directory name)
   let newFolderName = $state('my-project');
   const newFolderNameError = $derived(getNewFolderNameError(newFolderName));
@@ -124,25 +126,27 @@
 
 <div class="space-y-2" data-source-state={sourceState}>
   <div class="type-caption min-w-0 text-muted-foreground">
-    <span class="font-medium text-foreground">{title}</span>
-    <span class="ml-1 break-all">{summary}</span>
+    <p class="font-medium text-foreground">{title}</p>
+    {#if sourceState !== 'none'}
+      <p class="mt-1 break-all">{summary}</p>
+    {/if}
     {#if sourceState === 'new-folder-invalid' && activeNewFolderError}
       <p class="mt-1 text-danger" role="alert">{errorLabel(activeNewFolderError)}</p>
     {:else if sourceState === 'unresolved-link'}
       <p class="mt-1">{m.newWorkspace_source_unresolved_description()}</p>
     {:else if sourceState === 'non-git'}
       <p class="mt-1">{m.workspace_validation_nonGitInit_warning()}</p>
-    {:else if sourceState === 'none'}
-      <p class="mt-1 flex items-center gap-1.5">
-        <kbd class="rounded border border-border bg-muted px-1.5 py-0.5 font-medium">+</kbd>
-        {m.workspaceCreation_selectRepoHint_label()}
-      </p>
+    {/if}
+    {#if !disabled}
+      <p class="mt-2">{m.newWorkspace_source_composerMenu_description()}</p>
     {/if}
   </div>
 
   {#if source?.kind === 'local' || source?.kind === 'github'}
     <details class="type-caption">
-      <summary class="cursor-pointer font-medium text-muted-foreground">
+      <summary
+        class="min-h-6 cursor-pointer rounded-sm font-medium text-muted-foreground hover:text-foreground active:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      >
         {m.settings_aiBehavior_advanced_label()}
       </summary>
       <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-muted-foreground">
@@ -179,12 +183,16 @@
     </Dialog.Header>
 
     {#if pickerMode === 'new-folder'}
+      <label for={fieldId} class="type-caption font-medium">
+        {m.newWorkspace_source_folderName_label()}
+      </label>
       <div class="flex flex-col gap-2 sm:flex-row">
         <Input
+          id={fieldId}
+          aria-describedby={newFolderNameError ? `${fieldId}-error` : undefined}
           value={newFolderName}
           oninput={(event) => (newFolderName = event.currentTarget.value)}
           placeholder={m.workspaceCreation_newProjectTab_projectName_placeholder()}
-          aria-label={m.workspaceCreation_newProjectTab_projectName_placeholder()}
           aria-invalid={newFolderNameError ? 'true' : undefined}
           {disabled}
         />
@@ -198,7 +206,9 @@
         </Button>
       </div>
       {#if newFolderNameError}
-        <p class="type-caption text-danger" role="alert">{errorLabel(newFolderNameError)}</p>
+        <p id={`${fieldId}-error`} class="type-caption text-danger" role="alert">
+          {errorLabel(newFolderNameError)}
+        </p>
       {/if}
     {:else}
       <RepoSelector
