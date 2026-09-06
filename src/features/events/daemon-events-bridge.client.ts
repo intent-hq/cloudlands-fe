@@ -251,7 +251,7 @@ import {
   workspaceCreateProgressDone,
   workspaceCreateProgressReceived,
 } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
-import type { TokenUsage } from '$features/token-usage/token-usage-types';
+import { safeParseTokenUsage } from '$features/token-usage/token-usage-schema';
 import { hydrateContextItems } from '$store/renderer/slices/context/context-slice';
 import type { ContextItem } from '$features/context/types';
 import {
@@ -1826,9 +1826,10 @@ function handleTokenUsageChangedEvent(event: WorkspaceEvent): void {
     typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
       ? dataWorkspaceId
       : workspaceIdOf(event);
-  const tokenUsage = data.tokenUsage;
-  if (!workspaceId || !tokenUsage || typeof tokenUsage !== 'object') return;
-  appStore.dispatch(tokenUsageReceived(workspaceId, tokenUsage as TokenUsage));
+  if (!workspaceId) return;
+  const tokenUsage = safeParseTokenUsage(data.tokenUsage);
+  if (!tokenUsage) return;
+  appStore.dispatch(tokenUsageReceived(workspaceId, tokenUsage));
 }
 
 /**

@@ -17,6 +17,7 @@ import type {
   WorkspaceDiskUsage,
 } from '$shared/types';
 import type { TokenUsage } from '$features/token-usage/token-usage-types';
+import { parseTokenUsage } from '$features/token-usage/token-usage-schema';
 import type { ContextItem } from '$features/context/types';
 import type {
   MutationResult,
@@ -321,11 +322,11 @@ export class LiveWorkspacesClient implements WorkspacesClient {
    * `workspace:tokenUsage-changed` event handled in `daemon-events-bridge`.
    */
   async getTokenUsage(workspaceId: string): Promise<TokenUsage | null> {
-    const result = await backendRequest<{ tokenUsage?: TokenUsage }>('workspace.getTokenUsage', {
+    const result = await backendRequest<{ tokenUsage?: unknown }>('workspace.getTokenUsage', {
       workspaceId,
     });
     const usage = result?.tokenUsage;
-    return usage && typeof usage === 'object' ? usage : null;
+    return usage && typeof usage === 'object' ? parseTokenUsage(usage) : null;
   }
 
   /**

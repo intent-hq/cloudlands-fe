@@ -596,6 +596,7 @@ const BASELINE = new Set([
   'src/store/renderer/slices/sentry-auth/sentry-auth-types.ts::SentryAuthState.issues::SentryIssueResult[]',
   'src/store/renderer/slices/skills/skills-types.ts::SkillsWorkspaceState.skills::SkillInfo[]',
   'src/store/renderer/slices/specialists/specialists-slice.ts::SpecialistsState.bundledSpecialists::.Specialist[]',
+  'src/store/renderer/slices/token-usage/token-usage-types.ts::WorkspaceTokenUsageState.byAgentModel::TokenUsageCrossFilterRow[]',
   'src/store/renderer/slices/user-preferences/user-preferences-slice.ts::UserPreferencesState.activityLogPresets::ActivityLogPresetPreference[]',
   'src/store/renderer/slices/workspace-events/workspace-events-slice.ts::WorkspaceEventsWorkspaceState.events::WorkspaceEvent[]',
   'src/store/renderer/slices/workspace-navigation/workspace-navigation-slice.ts::WorkspaceNavigationMainPanelState.chatChanges::JsonValue[]',

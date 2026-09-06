@@ -3798,6 +3798,20 @@ describe('daemonEventsBridge (usage wire contract — workspace:tokenUsage-chang
           cacheCreationTokens: 1200,
         },
       },
+      byAgentModel: [
+        {
+          agentId: 'agent-123',
+          model: 'opus-4.8',
+          totals: {
+            inputTokens: 12000,
+            outputTokens: 3400,
+            cacheReadTokens: 8000,
+            cacheCreationTokens: 1200,
+          },
+          humanMessages: 3,
+          agentMessages: 4,
+        },
+      ],
       totals: {
         inputTokens: 12000,
         outputTokens: 3400,
@@ -3827,6 +3841,23 @@ describe('daemonEventsBridge (usage wire contract — workspace:tokenUsage-chang
       tokenUsage: { byWorkspaceId: Record<string, unknown> };
     };
     expect(state.tokenUsage.byWorkspaceId['ws-token-empty']).toBeUndefined();
+  });
+
+  it('ignores a pushed tokenUsage object that fails the wire schema', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    handler!(
+      notification('workspace:tokenUsage-changed', {
+        workspaceId: 'ws-token-invalid',
+        tokenUsage: { byAgentId: {}, totals: {}, byModel: {}, lastScanAt: null },
+      }),
+    );
+
+    const state = appStore.state as {
+      tokenUsage: { byWorkspaceId: Record<string, unknown> };
+    };
+    expect(state.tokenUsage.byWorkspaceId['ws-token-invalid']).toBeUndefined();
   });
 });
 

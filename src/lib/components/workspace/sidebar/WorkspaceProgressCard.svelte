@@ -59,7 +59,6 @@
     selectAcceptChangesStatusLoading,
   } from '$store/renderer/slices/git/git-selectors';
   import FlameGraph from './FlameGraph.svelte';
-  import WorkspaceTokenUsage from './WorkspaceTokenUsage.svelte';
 
   import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import {
@@ -1083,11 +1082,6 @@
           </div>
         {/if} -->
       </div>
-    {/if}
-
-    <!-- Token usage row (renders nothing until data is available) -->
-    {#if workspaceId}
-      <WorkspaceTokenUsage {workspaceId} />
     {/if}
 
     <!-- Status follows identity and progress so it reads as the current update. -->
