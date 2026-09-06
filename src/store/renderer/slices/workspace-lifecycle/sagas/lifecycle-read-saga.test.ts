@@ -80,6 +80,9 @@ import {
   workspaceReducer,
 } from '../../workspace/workspace-slice';
 import { consoleOwnerChanged } from '../../hardware-console/hardware-console-slice';
+import { bulkUpsertSessions } from '../../agent-session/agent-session-slice';
+import { selectAgentSessionsById } from '../../agent-session/agent-session-selectors';
+import { store as appStore } from '../../../store';
 import { workspaceDeleted, workspaceUnmounted } from '../workspace-lifecycle-slice';
 import { gitReadSaga } from '../../git/sagas/git-read-saga';
 import { lifecycleReadSaga } from './lifecycle-read-saga';
@@ -983,6 +986,71 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('forces context hydration after the workspace was initialized', async () => {
+    const run = start();
+    run.channel.put(initContextForWorkspace(WS));
+    await settle();
+    run.channel.put(initContextForWorkspace(WS, true));
+    await settle();
+
+    expect(mocks.workspaces.getContext.mock.calls).toEqual([[WS], [WS]]);
+    expect(run.actions).toEqual([
+      { type: 'context/hydrateContextItems', payload: [WS, []] },
+      { type: 'context/hydrateContextItems', payload: [WS, []] },
+    ]);
+    await stop(run.task);
+  });
+
+  it('replaces an in-flight context read with a fresh hydration generation', async () => {
+    const stale = [{ id: 'stale', type: 'note', title: 'Stale', provider: 'internal' }];
+    const fresh = [{ id: 'fresh', type: 'note', title: 'Fresh', provider: 'internal' }];
+    let resolveStale!: (items: typeof stale) => void;
+    let resolveFresh!: (items: typeof fresh) => void;
+    mocks.workspaces.getContext
+      .mockReturnValueOnce(new Promise((resolve) => (resolveStale = resolve)))
+      .mockReturnValueOnce(new Promise((resolve) => (resolveFresh = resolve)));
+    const run = start();
+
+    run.channel.put(initContextForWorkspace(WS, false, 1));
+    await settle();
+    run.channel.put(initContextForWorkspace(WS, true, 2));
+    await settle();
+
+    expect(mocks.workspaces.getContext.mock.calls).toEqual([[WS], [WS]]);
+    resolveFresh(fresh);
+    await settle();
+    resolveStale(stale);
+    await settle();
+
+    expect(run.actions).toEqual([{ type: 'context/hydrateContextItems', payload: [WS, fresh] }]);
+    await stop(run.task);
+  });
+
+  it('replaces an in-flight context read when forced without a generation', async () => {
+    const stale = [{ id: 'stale', type: 'note', title: 'Stale', provider: 'internal' }];
+    const fresh = [{ id: 'fresh', type: 'note', title: 'Fresh', provider: 'internal' }];
+    let resolveStale!: (items: typeof stale) => void;
+    let resolveFresh!: (items: typeof fresh) => void;
+    mocks.workspaces.getContext
+      .mockReturnValueOnce(new Promise((resolve) => (resolveStale = resolve)))
+      .mockReturnValueOnce(new Promise((resolve) => (resolveFresh = resolve)));
+    const run = start();
+
+    run.channel.put(initContextForWorkspace(WS));
+    await settle();
+    run.channel.put(initContextForWorkspace(WS, true));
+    await settle();
+
+    expect(mocks.workspaces.getContext.mock.calls).toEqual([[WS], [WS]]);
+    resolveFresh(fresh);
+    await settle();
+    resolveStale(stale);
+    await settle();
+
+    expect(run.actions).toEqual([{ type: 'context/hydrateContextItems', payload: [WS, fresh] }]);
+    await stop(run.task);
+  });
+
   it('reports PR refresh success and maps only the branch lookup payload', async () => {
     const current = state();
     current.workspace.workspaces = createCollection('id', [
@@ -1492,8 +1560,6 @@ describe('lifecycleReadSaga', () => {
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setAgents', payload: [WS, [background, kept]] },
       { type: 'agentSessions/bulkUpsertSessions', payload: [[background, kept]] },
-      { type: 'agentSessions/upsertSession', payload: [background] },
-      { type: 'agentSessions/upsertSession', payload: [kept] },
       { type: 'workspaceAgents/setActiveAgentId', payload: [WS, 'agent-keep'] },
     ]);
     await stop(run.task);
@@ -1518,25 +1584,69 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
 
-    // The stale agent is upserted separately with the stale-clear options so
-    // the snapshot's idle flags win over the pair-guard; the rest keep the
-    // default preservation semantics. Pin the exact dispatch set so a
-    // regression that additionally upserts the stale row optionless (order-
-    // dependent re-assertion of the pair-guard) cannot slip through.
+    // One batch carries per-agent stale-clear IDs so the snapshot's idle flags
+    // win for the crash leftover while normal rows retain pair-guard semantics.
     const bulkUpserts = run.actions.filter(
       (action) => action.type === 'agentSessions/bulkUpsertSessions',
     );
     expect(bulkUpserts).toEqual([
-      { type: 'agentSessions/bulkUpsertSessions', payload: [[normalRow]] },
       {
         type: 'agentSessions/bulkUpsertSessions',
-        payload: [
-          [staleRow],
-          { preserveExplicitRuntimeFlags: false, allowActiveTurnRuntimeFlagClear: true },
-        ],
+        payload: [[staleRow, normalRow], { staleRuntimeFlagClearAgentIds: ['agent-stale'] }],
       },
     ]);
     await stop(run.task);
+  });
+
+  it('notifies the real agent-session selector once for a mixed N-agent hydration', async () => {
+    const dispose = appStore.init();
+    const stopSaga = appStore.runSaga(lifecycleReadSaga);
+    appStore.dispatch(
+      bulkUpsertSessions([
+        agent('agent-stale', { isStreaming: true, isProcessing: true }),
+        agent('agent-existing', { messages: [{ id: 'local' }] as never }),
+      ]),
+    );
+    const emissions: Array<Readonly<Record<string, AgentSession>>> = [];
+    let lastSelected: Readonly<Record<string, AgentSession>> | undefined;
+    const unsubscribe = appStore.getReadableState().subscribe((state) => {
+      const selected = selectAgentSessionsById.select(state);
+      if (selected !== lastSelected) {
+        emissions.push(selected);
+        lastSelected = selected;
+      }
+    });
+    mocks.agents.listWithMeta.mockResolvedValue({
+      agents: [
+        agent('agent-stale', { isStreaming: false, isProcessing: false }),
+        agent('agent-existing'),
+        agent('agent-new'),
+      ],
+      retiredCount: 0,
+    });
+
+    try {
+      appStore.dispatch(hydrateAgentsRequested(WS));
+      await settle();
+
+      expect(Object.keys(appStore.state.agentSessions.byAgentId)).toEqual([
+        'agent-stale',
+        'agent-existing',
+        'agent-new',
+      ]);
+      expect(appStore.state.agentSessions.byAgentId['agent-existing'].messages).toEqual([
+        { id: 'local' },
+      ]);
+      expect(appStore.state.agentSessions.byAgentId['agent-stale']).toMatchObject({
+        isStreaming: false,
+        isProcessing: false,
+      });
+      expect(emissions).toHaveLength(2);
+    } finally {
+      unsubscribe();
+      stopSaga();
+      dispose();
+    }
   });
 
   it('does not clear a pair set while the list fetch was in flight, even if the row reports idle', async () => {
@@ -1688,7 +1798,6 @@ describe('lifecycleReadSaga', () => {
     expect(run.actions).toEqual([
       { type: 'workspaceAgents/setIsLoadingRetiredAgents', payload: [WS, true] },
       { type: 'agentSessions/bulkUpsertSessions', payload: [[retired]] },
-      { type: 'agentSessions/upsertSession', payload: [retired] },
       { type: 'workspaceAgents/addAgent', payload: [WS, retired] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 1] },
       { type: 'workspaceAgents/setRetiredAgentsLoaded', payload: [WS, true] },
@@ -1827,8 +1936,8 @@ describe('lifecycleReadSaga', () => {
       payload: [WS, preserved],
     });
     expect(run.actions).toContainEqual({
-      type: 'agentSessions/upsertSession',
-      payload: [preserved],
+      type: 'agentSessions/bulkUpsertSessions',
+      payload: [[preserved]],
     });
     await stop(run.task);
   });
