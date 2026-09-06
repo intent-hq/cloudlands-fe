@@ -526,7 +526,7 @@
               out:stepOut
             >
               {#if question.header}
-                <p class="text-[12px] font-medium leading-snug text-muted-foreground">
+                <p class="type-caption text-muted-foreground">
                   {question.header}
                 </p>
               {/if}
