@@ -52,6 +52,11 @@ describe('new workspace sandbox scenarios', () => {
     expect(byId['setup-suggestions'].fixtures.setup.github.issues).toHaveLength(1);
     expect(byId['setup-suggestions'].fixtures.setup.branches.branches).toContain('main');
     expect(byId['setup-suggestions'].fixtures.setup.providerAvailability.hasAnyProvider).toBe(true);
+    expect(byId['setup-options-open'].fixtures.draft.config.isTeamMode).toBeUndefined();
+    expect(byId['setup-options-modified'].fixtures.draft.config.isTeamMode).toBe(false);
+    expect(byId['setup-branch-fetch-failure'].fixtures.setup.branchError).toBe(
+      'Network branch fixture failure',
+    );
     expect(byId['setup-readiness-missing'].fixtures.setup.providerAvailability.hasAnyProvider).toBe(
       false,
     );

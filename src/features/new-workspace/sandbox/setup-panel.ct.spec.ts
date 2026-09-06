@@ -1,5 +1,28 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
+import type { Page } from '@playwright/test';
 import ScenarioContractHost from './ScenarioContractHost.svelte';
+
+const consoleErrors = new WeakMap<Page, string[]>();
+
+test.beforeEach(({ page }) => {
+  const errors: string[] = [];
+  consoleErrors.set(page, errors);
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+});
+
+test.afterEach(({ page }, testInfo) => {
+  const errors = consoleErrors.get(page) ?? [];
+  const unexpected = errors.filter(
+    (error) =>
+      !(
+        testInfo.title.includes('setup-branch-fetch-failure') &&
+        error.includes('Failed to fetch branches')
+      ),
+  );
+  expect(unexpected, `Unexpected console errors in ${testInfo.title}`).toEqual([]);
+});
 
 const SCENARIOS = [
   'setup-empty',
@@ -11,6 +34,8 @@ const SCENARIOS = [
   'setup-issue-prefill',
   'setup-issue-preserve',
   'setup-options-open',
+  'setup-options-modified',
+  'setup-branch-fetch-failure',
   'setup-readiness-missing',
 ];
 
@@ -49,13 +74,20 @@ for (const testCase of SCENARIOS) {
         ).toBeVisible();
         break;
       case 'setup-collapsed-summary': {
-        const summary = component.getByRole('button', { name: 'Expand project setup' });
+        let summary = component.getByRole('button', { name: 'Expand project setup' });
         await expect(summary).toContainText('intent-hq/intent');
         await expect(summary).toContainText('Ready');
         await summary.click();
         await expect(component.getByTestId('selected-project')).toContainText('intent-hq/intent');
         await component.getByRole('button', { name: 'Set up your project' }).click();
         await expect(summary).toBeVisible();
+        await component.unmount();
+        const restored = await mount(ScenarioContractHost, {
+          props: { scenarioId: 'setup-collapsed-summary' },
+        });
+        summary = restored.getByRole('button', { name: 'Expand project setup' });
+        await expect(summary).toContainText('intent-hq/intent');
+        await expect(restored.getByTestId('selected-project')).toHaveCount(0);
         break;
       }
       case 'setup-card-new-folder':
@@ -87,6 +119,22 @@ for (const testCase of SCENARIOS) {
         break;
       case 'setup-options-open':
         await expect(component.getByTestId('options-section')).toHaveAttribute('open', '');
+        await expect(component.getByTestId('options-section').locator('summary')).toContainText(
+          'Default',
+        );
+        break;
+      case 'setup-options-modified':
+        await expect(component.getByTestId('options-section')).toHaveAttribute('open', '');
+        await expect(component.getByTestId('options-section').locator('summary')).toContainText(
+          'Modified',
+        );
+        break;
+      case 'setup-branch-fetch-failure':
+        await component.getByRole('button', { name: 'Select a branch' }).click();
+        await expect(
+          page.getByText('Network error. Check connection or enter branch manually.'),
+        ).toBeVisible();
+        await expect(page.getByPlaceholder('Search or enter branch name...')).toBeEditable();
         break;
       case 'setup-readiness-missing':
         await expect(component.getByTestId('readiness-section')).toContainText('Needs attention');

@@ -12,9 +12,17 @@ import type { ScenarioFixtures } from './scenarios';
 
 const ISSUE_CHANNEL = 'git-tracking:search-github-issues';
 const PULL_CHANNEL = 'git-tracking:search-pull-requests';
+const WORKSPACE_LIST_CHANNEL = IPC_CHANNELS.WORKSPACE.LIST;
+const RECENT_REPOSITORIES_CHANNEL = IPC_CHANNELS.WORKSPACE.GET_RECENT_REPOSITORIES;
 
 function backendResult(method: string, fixtures: ScenarioFixtures): unknown {
   const branches = fixtures.setup.branches;
+  if (
+    fixtures.setup.branchError &&
+    (method === 'git.getBranches' || method === 'github.branches.list')
+  ) {
+    throw new Error(fixtures.setup.branchError);
+  }
   switch (method) {
     case 'git.getBranches':
       return branches;
@@ -102,6 +110,8 @@ export function installSetupScenarioFixtures(fixtures: ScenarioFixtures): () => 
     success: true,
     data: { paths: {}, secondaryPaths: {}, npxPackages: {} },
   }));
+  registerMockIpcHandler(WORKSPACE_LIST_CHANNEL, () => ({ success: true, data: [] }));
+  registerMockIpcHandler(RECENT_REPOSITORIES_CHANNEL, () => ({ success: true, data: [] }));
   const restoreBackend = installBackend(fixtures);
   return () => {
     restoreBackend();
@@ -110,6 +120,8 @@ export function installSetupScenarioFixtures(fixtures: ScenarioFixtures): () => 
       PULL_CHANNEL,
       PROVIDERS_CHANNELS.GET_AVAILABILITY,
       PROVIDERS_CHANNELS.GET_PATHS,
+      WORKSPACE_LIST_CHANNEL,
+      RECENT_REPOSITORIES_CHANNEL,
     ]) {
       unregisterMockIpcHandler(channel);
     }

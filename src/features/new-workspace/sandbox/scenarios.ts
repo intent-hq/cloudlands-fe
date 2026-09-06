@@ -54,6 +54,7 @@ export interface ScenarioFixtures {
       defaultBranch: string;
       currentBranch: string;
     };
+    branchError: string | null;
     github: {
       connected: boolean;
       issues: Record<string, unknown>[];
@@ -161,6 +162,7 @@ export const DEFAULT_SCENARIO_FIXTURES: ScenarioFixtures = {
       defaultBranch: 'main',
       currentBranch: 'main',
     },
+    branchError: null,
     github: { connected: false, issues: [], pulls: [] },
     providerAvailability: DEFAULT_PROVIDER_AVAILABILITY,
     optionsOpen: false,
@@ -290,6 +292,18 @@ const githubSetupDraft = draft({
   },
   config: { setupPanelExpanded: true },
 });
+const modifiedOptionsDraft = draft({
+  ...githubSetupDraft,
+  config: { setupPanelExpanded: true, isTeamMode: false },
+});
+const collapsedSetupDraft = draft({
+  ...publicRepoDraft,
+  config: { setupPanelExpanded: false },
+});
+const branchFailureDraft = draft({
+  source: { kind: 'local', path: '/sandbox/branch-failure', isolation: 'worktree' },
+  config: { setupPanelExpanded: true },
+});
 const pickedIssueDraft = draft({
   ...githubSetupDraft,
   intentText: '#4321 Make setup suggestions deterministic',
@@ -343,7 +357,9 @@ export const REQUIRED_SCENARIO_IDS = [
   'setup-suggestions-existing-intent',
   'setup-issue-picked',
   'setup-options-open',
+  'setup-options-modified',
   'setup-collapsed-summary',
+  'setup-branch-fetch-failure',
   'setup-readiness-missing',
   'setup-new-folder',
   'capability-checking',
@@ -460,13 +476,37 @@ export const NEW_WORKSPACE_SCENARIOS: readonly Scenario[] = [
     },
   ),
   scenario(
+    'setup-options-modified',
+    'entry',
+    'Setup options modified',
+    modifiedOptionsDraft,
+    restoredState(modifiedOptionsDraft),
+    {
+      fixtures: setupFixtures(modifiedOptionsDraft, { ...connectedSetup, optionsOpen: true }),
+      contract: { control: 'start', width: 1280 },
+    },
+  ),
+  scenario(
     'setup-collapsed-summary',
     'entry',
     'Collapsed setup summary',
-    publicRepoDraft,
-    restoredState(publicRepoDraft),
+    collapsedSetupDraft,
+    restoredState(collapsedSetupDraft),
     {
-      fixtures: setupFixtures(publicRepoDraft, connectedSetup),
+      fixtures: setupFixtures(collapsedSetupDraft, connectedSetup),
+      contract: { control: 'start', width: 1280 },
+    },
+  ),
+  scenario(
+    'setup-branch-fetch-failure',
+    'entry',
+    'Setup branch fetch failure',
+    branchFailureDraft,
+    restoredState(branchFailureDraft),
+    {
+      fixtures: setupFixtures(branchFailureDraft, {
+        branchError: 'Network branch fixture failure',
+      }),
       contract: { control: 'start', width: 1280 },
     },
   ),

@@ -3,6 +3,28 @@ import type { Page } from '@playwright/test';
 import ScenarioContractHost from './ScenarioContractHost.svelte';
 import { NEW_WORKSPACE_SCENARIOS, type Scenario } from './scenarios';
 
+const consoleErrors = new WeakMap<Page, string[]>();
+
+test.beforeEach(({ page }) => {
+  const errors: string[] = [];
+  consoleErrors.set(page, errors);
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+});
+
+test.afterEach(({ page }, testInfo) => {
+  const errors = consoleErrors.get(page) ?? [];
+  const unexpected = errors.filter(
+    (error) =>
+      !(
+        testInfo.title.includes('setup-branch-fetch-failure') &&
+        error.includes('Failed to fetch branches')
+      ),
+  );
+  expect(unexpected, `Unexpected console errors in ${testInfo.title}`).toEqual([]);
+});
+
 async function expectActionableControl(
   component: ReturnType<Parameters<typeof test>[0]>,
   scenario: Scenario,
@@ -82,7 +104,7 @@ test.describe('new-workspace scenario contracts', () => {
   }
 });
 
-test('selected source setup expands with keyboard focus', async ({ mount }) => {
+test('selected source setup expands and opens its Change picker', async ({ mount, page }) => {
   const component = await mount(ScenarioContractHost, {
     props: { scenarioId: 'source-local-repo' },
   });
@@ -94,6 +116,10 @@ test('selected source setup expands with keyboard focus', async ({ mount }) => {
   const change = component.getByRole('button', { name: 'Change' });
   await change.focus();
   await expect(change).toBeFocused();
+  await change.click();
+  await expect(page.getByTestId('draft-source-picker')).toBeVisible();
+  await page.getByRole('button', { name: 'Select a repository' }).click();
+  await expect(page.getByRole('button', { name: 'Select a folder' })).toBeVisible();
 });
 
 test('conflict actions remain readable and reachable in a narrow panel', async ({
