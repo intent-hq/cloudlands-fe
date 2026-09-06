@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { faSearch } from '@fortawesome/free-solid-svg-icons';
+  import Fa from 'svelte-fa';
   import { tick } from 'svelte';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -288,14 +290,17 @@
 >
   {#if filterable}
     <div class="toolbar">
-      <input
-        bind:this={filterElement}
-        bind:value={filter}
-        type="search"
-        aria-label={m.workspace_multiSelectSidebar_searchFiles_placeholder()}
-        placeholder={m.workspace_multiSelectSidebar_searchFiles_placeholder()}
-      />
-      <span>{fileCountLabel}</span>
+      <h2>{fileCountLabel}</h2>
+      <div class="filter">
+        <span class="search-icon"><Fa icon={faSearch} /></span>
+        <input
+          bind:this={filterElement}
+          bind:value={filter}
+          type="search"
+          aria-label={m.workspace_multiSelectSidebar_searchFiles_placeholder()}
+          placeholder={m.workspace_multiSelectSidebar_searchFiles_placeholder()}
+        />
+      </div>
     </div>
   {/if}
 
@@ -351,8 +356,10 @@
       {#if layout.overflow}
         <DiffMapRail
           rows={layoutRows}
+          files={filesById}
           contentHeight={layout.contentHeight}
           viewportHeight={viewport.height}
+          viewportWidth={viewport.width}
           {scrollTop}
           {activePath}
           selected={selection}
@@ -385,27 +392,71 @@
     border-bottom: 1px solid hsl(var(--border));
   }
 
-  .toolbar input {
+  .toolbar h2 {
     min-width: 0;
     flex: 1;
-    height: 24px;
-    padding: 0 7px;
-    border: 1px solid hsl(var(--input));
-    border-radius: var(--radius-small);
-    background: hsl(var(--background));
-    color: inherit;
+    margin: 0;
+    overflow: hidden;
     font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .toolbar input:focus-visible {
+  .filter {
+    position: relative;
+    width: min(148px, 48%);
+    max-width: 220px;
+    flex: none;
+    transition: width var(--motion-fast) var(--ease-standard);
+  }
+
+  .filter:focus-within {
+    width: min(220px, 60%);
+  }
+
+  .search-icon {
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    left: 7px;
+    width: 10px;
+    height: 10px;
+    display: flex;
+    align-items: center;
+    color: hsl(var(--muted-foreground));
+    font-size: 10px;
+    pointer-events: none;
+    transform: translateY(-50%);
+  }
+
+  .filter input {
+    width: 100%;
+    height: 24px;
+    padding: 0 7px 0 23px;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-small);
+    background: hsl(var(--muted) / 0.18);
+    color: hsl(var(--foreground));
+    font-size: 12px;
+    transition:
+      border-color var(--motion-fast) var(--ease-standard),
+      background-color var(--motion-fast) var(--ease-standard);
+  }
+
+  .filter input:focus-visible {
+    border-color: hsl(var(--ring));
+    background: hsl(var(--background));
     outline: 2px solid hsl(var(--ring));
     outline-offset: 1px;
   }
 
-  .toolbar span {
-    color: hsl(var(--muted-foreground));
-    font-size: 10px;
-    white-space: nowrap;
+  @media (prefers-reduced-motion: reduce) {
+    .filter,
+    .filter input {
+      transition: none;
+    }
   }
 
   .viewport {

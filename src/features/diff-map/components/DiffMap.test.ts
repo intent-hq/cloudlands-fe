@@ -3,7 +3,12 @@
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { diffMapFixtures, hugeDiffMapFixture, tinyDiffMapFixture } from '../model/fixtures';
+import {
+  diffMapFixtures,
+  hugeDiffMapFixture,
+  tinyDiffMapFixture,
+  typicalDiffMapFixture,
+} from '../model/fixtures';
 import DiffMap from './DiffMap.svelte';
 
 afterEach(cleanup);
@@ -89,7 +94,7 @@ describe('DiffMap', () => {
 
     await waitFor(() => expect(rows(container)).toHaveLength(3));
     const search = screen.getByRole('searchbox');
-    const countElement = search.parentElement?.querySelector('span');
+    const countElement = screen.getByRole('heading');
     const count = countElement?.textContent;
     rows(container)[0].focus();
     await fireEvent.keyDown(rows(container)[0], { key: '/' });
@@ -104,6 +109,23 @@ describe('DiffMap', () => {
       expect(getComputedStyle(matching!).opacity).toBe('1');
       expect(getComputedStyle(dimmed!).opacity).toBe('0.28');
     });
+  });
+
+  it('omits meaningless zero stats from rename rows', async () => {
+    const { container } = render(DiffMap, {
+      props: {
+        document: typicalDiffMapFixture.document,
+        rungOverride: 1,
+        onOpen: vi.fn(),
+      },
+    });
+
+    await waitFor(() => expect(rows(container)).toHaveLength(24));
+    const renamed = rows(container).find((row) => row.dataset.status === 'renamed');
+    expect(renamed).toBeTruthy();
+    expect(renamed?.textContent).not.toContain('+0');
+    expect(renamed?.textContent).not.toContain('−0');
+    expect(renamed?.getAttribute('aria-label')).not.toContain('+0 −0');
   });
 
   it('renders every fixture at every density rung and exposes an overflow rail', async () => {
@@ -127,6 +149,6 @@ describe('DiffMap', () => {
         filterable: false,
       },
     });
-    expect(await screen.findByRole('button', { name: /overview/i })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /files above.*files below/i })).toBeTruthy();
   });
 });

@@ -45,10 +45,18 @@
   }: Props = $props();
 
   const glyphs = { added: 'A', modified: 'M', deleted: 'D', renamed: 'R→', binary: 'B', mode: 'M' };
+  const suppressZeroStats = $derived(
+    file.statsKnown &&
+      file.additions === 0 &&
+      file.deletions === 0 &&
+      (file.status === 'renamed' || file.status === 'mode' || file.status === 'binary'),
+  );
   const stats = $derived(
-    file.statsKnown
-      ? `+${formatInteger(file.additions)} −${formatInteger(file.deletions)}`
-      : m.diffMap_statsUnavailable_label(),
+    suppressZeroStats
+      ? undefined
+      : file.statsKnown
+        ? `+${formatInteger(file.additions)} −${formatInteger(file.deletions)}`
+        : m.diffMap_statsUnavailable_label(),
   );
   const viewed = $derived(layers?.viewed?.has(file.path) ?? false);
   const changedSinceViewed = $derived(layers?.changedSinceViewed?.has(file.path) ?? false);
@@ -107,7 +115,7 @@
   <span class="status" aria-hidden="true">{glyphs[file.status]}</span>
   <span class="filename">{row.label}</span>
 
-  {#if rung <= 1}
+  {#if rung <= 1 && !suppressZeroStats}
     {#if file.statsKnown}
       <span class="stats" aria-hidden="true">
         <span class="additions">+{formatInteger(file.additions)}</span>
@@ -141,7 +149,7 @@
   .diff-map-row {
     position: absolute;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
     align-items: center;
     gap: 5px;
     overflow: visible;
@@ -164,7 +172,7 @@
   .diff-map-row--active::before {
     position: absolute;
     inset-block: 4px;
-    left: -2px;
+    left: 1px;
     width: 3px;
     border-radius: 9999px;
     background: hsl(var(--primary));
@@ -178,11 +186,12 @@
   }
 
   .status {
-    min-width: 14px;
+    width: 18px;
     font-family: var(--font-mono);
     font-size: 10px;
     font-weight: 700;
     color: hsl(var(--muted-foreground));
+    text-align: center;
   }
 
   [data-status='added'] .status {
@@ -217,8 +226,12 @@
   .stats {
     display: flex;
     gap: 4px;
+    justify-content: flex-end;
+    justify-self: end;
     font-family: var(--font-mono);
     font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
     white-space: nowrap;
   }
 
