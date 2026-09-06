@@ -55,6 +55,7 @@ import {
 } from '$features/voice/effective-voice-engine';
 import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { createLogger } from '$lib/utils/client-logger';
+import { buildNewWorkspaceRoute } from '$features/new-workspace/route/new-workspace-navigation';
 import { isVoiceRecordingSupported } from '../voice/voice-recorder';
 import {
   handleVoiceKeyDown,
@@ -617,7 +618,7 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       return true;
     },
     execute({ navigate }) {
-      void navigate('/workspace/new');
+      void navigate(buildNewWorkspaceRoute());
     },
   },
   {

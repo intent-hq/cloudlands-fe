@@ -17,6 +17,12 @@ export function buildNewWorkspaceRoute(
   return `/workspace/new?instance=${encodeURIComponent(instanceId)}`;
 }
 
+export function requestedDraftIdForRoute(url: URL): string | null | undefined {
+  const draftId = url.searchParams.get('draft');
+  if (draftId) return draftId;
+  return url.searchParams.has('instance') ? null : undefined;
+}
+
 export function consumeNewWorkspaceStartInput(url: URL): ResolveStartInput {
   const instanceId = url.searchParams.get('instance');
   if (!instanceId || typeof sessionStorage === 'undefined') return {};

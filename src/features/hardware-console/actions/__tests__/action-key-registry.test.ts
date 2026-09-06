@@ -1612,7 +1612,7 @@ describe('execute dispatch', () => {
     const { context, navigate } = makeContext(state);
     expect(getActionKeyDefinition('new-workspace').isAvailable(context)).toBe(true);
     getActionKeyDefinition('new-workspace').execute(context);
-    expect(navigate).toHaveBeenCalledWith('/workspace/new');
+    expect(navigate).toHaveBeenCalledWith(expect.stringMatching(/^\/workspace\/new\?instance=/));
   });
 
   it('switch-window-layouts cycles through the content presets per workspace', async () => {

@@ -3,7 +3,10 @@
   import { onDestroy, onMount } from 'svelte';
   import UntitledWorkspaceShell from '../ui/UntitledWorkspaceShell.svelte';
   import { createInitialControllerState, type ControllerState } from '../controller';
-  import { consumeNewWorkspaceStartInput } from './new-workspace-navigation';
+  import {
+    consumeNewWorkspaceStartInput,
+    requestedDraftIdForRoute,
+  } from './new-workspace-navigation';
   import { createNewWorkspaceRouteController } from './new-workspace-route-controller';
   import { setWorkspaceCreationActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -22,7 +25,7 @@
   }
 
   let { url }: Props = $props();
-  const requestedDraftId = url.searchParams.get('draft');
+  const requestedDraftId = requestedDraftIdForRoute(url);
   const routeController = createNewWorkspaceRouteController({
     startInput: consumeNewWorkspaceStartInput(url),
     requestedDraftId,

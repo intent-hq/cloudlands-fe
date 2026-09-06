@@ -45,6 +45,7 @@ vi.mock('../effects', async () => {
 });
 
 import { createNewWorkspaceRouteController } from './new-workspace-route-controller';
+import { requestedDraftIdForRoute } from './new-workspace-navigation';
 
 const draft = (overrides: Partial<WorkspaceDraft> = {}): WorkspaceDraft => ({
   id: 'draft-1',
@@ -118,7 +119,7 @@ describe('new workspace route controller', () => {
     );
     const controller = createNewWorkspaceRouteController({
       startInput: {},
-      requestedDraftId: null,
+      requestedDraftId: undefined,
     });
 
     await controller.start(() => undefined);
@@ -131,6 +132,35 @@ describe('new workspace route controller', () => {
     expect(mocks.runnerOptions).toHaveBeenCalledWith(
       expect.objectContaining({ requestedDraftId: 'migrated-draft' }),
     );
+  });
+
+  it('restores the newest owned draft when the route has no draft selector', async () => {
+    const controller = createNewWorkspaceRouteController({
+      startInput: {},
+      requestedDraftId: requestedDraftIdForRoute(new URL('https://intent.test/workspace/new')),
+    });
+
+    await controller.start(() => undefined);
+
+    expect(mocks.runnerOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ requestedDraftId: undefined }),
+    );
+  });
+
+  it('forces a fresh draft for an explicit new-workspace instance', async () => {
+    const controller = createNewWorkspaceRouteController({
+      startInput: {},
+      requestedDraftId: requestedDraftIdForRoute(
+        new URL('https://intent.test/workspace/new?instance=instance-1'),
+      ),
+    });
+
+    await controller.start(() => undefined);
+
+    expect(mocks.runnerOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ requestedDraftId: null }),
+    );
+    expect(mocks.legacyGet).not.toHaveBeenCalled();
   });
 
   it('keeps two new drafts in one client independently addressed without identity swap', async () => {

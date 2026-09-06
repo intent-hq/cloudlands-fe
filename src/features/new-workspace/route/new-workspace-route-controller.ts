@@ -40,17 +40,17 @@ function initialInput(start: ResolveStartInput): DraftInput {
 
 export function createNewWorkspaceRouteController(options: {
   startInput: ResolveStartInput;
-  requestedDraftId: string | null;
+  requestedDraftId?: string | null;
 }): NewWorkspaceRouteController {
   let runner: DraftTransactionRunner | null = null;
   return {
     async start(listener) {
       let requestedDraftId = options.requestedDraftId;
-      if (!requestedDraftId) {
+      if (requestedDraftId === undefined) {
         try {
-          requestedDraftId = await migrateSentinelDraft();
+          requestedDraftId = (await migrateSentinelDraft()) ?? undefined;
         } catch {
-          requestedDraftId = null;
+          requestedDraftId = undefined;
         }
       }
       runner = createDraftTransactionRunner({ client: appClient, requestedDraftId });
