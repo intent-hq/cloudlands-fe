@@ -42,7 +42,7 @@
   in:activityNodeTransition={{ delay: enterDelay, playbackSpeed }}
   out:activityNodeTransition={{ exit: true, playbackSpeed }}
   type="button"
-  class="task-anchor relative flex h-12 w-44 touch-none items-start gap-2 text-left text-foreground transition-opacity focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-ring"
+  class="task-anchor relative flex h-12 w-44 touch-none items-start text-left text-foreground transition-opacity focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-ring"
   data-graph-node
   data-node-id={node.id}
   data-active={isActive}
@@ -53,13 +53,15 @@
   {tabindex}
   {...events}
 >
-  <span class="mt-0.5 contents" inert>
-    {#key node.state}
-      <TaskStatusIcon status={node.state} size={16} />
-    {/key}
-  </span>
-  <span class="min-w-0 flex-1">
-    <span class="task-title line-clamp-2 text-[16px] font-medium leading-[1.2]">{node.title}</span>
+  <span class="task-label inline-flex max-w-full items-start gap-1.5 rounded-md px-1.5 py-0.5">
+    <span class="mt-px shrink-0" inert>
+      {#key node.state}
+        <TaskStatusIcon status={node.state} size={16} />
+      {/key}
+    </span>
+    <span class="task-title min-w-0 line-clamp-2 text-[16px] font-medium leading-[1.2]"
+      >{node.title}</span
+    >
   </span>
 </button>
 
@@ -75,10 +77,11 @@
   .task-anchor[data-focus-state='dimmed'] {
     filter: opacity(0.28);
   }
-  .task-title {
+  .task-label {
+    background: color-mix(in srgb, var(--color-background) 94%, transparent);
     transition: opacity 120ms ease;
   }
-  .task-anchor[data-zoom-band='far'] .task-title {
+  .task-anchor[data-zoom-band='far'] .task-label {
     opacity: 0;
   }
   .task-anchor[data-motion-enabled='false'] {

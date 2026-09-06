@@ -107,7 +107,7 @@
 
   function opacityFor(pair: MergedEdgePair): number {
     const style = EDGE_STYLES[pair.type] ?? EDGE_STYLES.default;
-    if (!activeFocusNodeId) return style.opacity;
+    if (!activeFocusNodeId) return Math.max(0.52, style.opacity);
     return pair.aId === activeFocusNodeId || pair.bId === activeFocusNodeId
       ? Math.min(1, style.opacity + 0.28)
       : 0.12;
@@ -298,6 +298,7 @@
       )}
       {@const label = labelEdge ? labelFor(labelEdge) : null}
       {@const edgeOpacity = opacityFor(pair)}
+      {@const terminalOpacity = Math.min(1, edgeOpacity + 0.08)}
       {@const highlighted = isHighlighted(pair)}
       {@const dimmed = activeFocusNodeId !== null && !highlighted}
       {@const drawDuration = playbackDuration(350, playbackSpeed)}
@@ -370,7 +371,7 @@
           cy={endpoints.source.y}
           r="2.25"
           fill={stroke}
-          opacity={edgeOpacity}
+          opacity={terminalOpacity}
           data-direction="b-to-a"
           style:animation-delay={`${Math.max(0, drawDuration - 80)}ms`}
         />
@@ -382,7 +383,7 @@
           cy={endpoints.target.y}
           r="2.25"
           fill={stroke}
-          opacity={edgeOpacity}
+          opacity={terminalOpacity}
           data-direction="a-to-b"
           style:animation-delay={`${Math.max(0, drawDuration - 80)}ms`}
         />

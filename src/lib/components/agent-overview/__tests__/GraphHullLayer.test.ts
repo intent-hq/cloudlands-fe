@@ -69,6 +69,11 @@ describe('GraphHullLayer', () => {
     const hulls = container.querySelectorAll('.task-hull');
     expect(hulls).toHaveLength(1);
     expect(hulls[0]?.getAttribute('data-task-id')).toBe('task:one');
+    expect(container.querySelectorAll('.task-hull-softener')).toHaveLength(1);
+    for (const fill of container.querySelectorAll('.task-hull-fill')) {
+      expect(fill.getAttribute('fill')).toBe('var(--color-foreground)');
+      expect(fill.hasAttribute('stroke')).toBe(false);
+    }
   });
 
   it('renders an agent in every task group it is assigned to', () => {

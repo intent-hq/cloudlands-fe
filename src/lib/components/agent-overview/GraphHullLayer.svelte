@@ -70,16 +70,11 @@
     return activeFocusNodeId !== null && group.memberIds.includes(activeFocusNodeId);
   }
 
-  function strokeOpacity(group: HullGroup): number {
-    const working = group.agents.some((agent) => agent.status === 'responding');
-    if (!activeFocusNodeId) return working ? 0.32 : 0.18;
-    if (!containsFocus(group)) return 0.06;
-    return working ? 0.42 : 0.3;
-  }
-
   function fillOpacity(group: HullGroup): number {
-    if (activeFocusNodeId && !containsFocus(group)) return 0.015;
-    return group.agents.some((agent) => agent.status === 'responding') ? 0.065 : 0.04;
+    const working = group.agents.some((agent) => agent.status === 'responding');
+    if (activeFocusNodeId && !containsFocus(group)) return 0.012;
+    if (containsFocus(group)) return working ? 0.1 : 0.075;
+    return working ? 0.08 : 0.055;
   }
 </script>
 
@@ -88,17 +83,23 @@
   aria-hidden="true"
 >
   {#each groups as group (group.task.id)}
-    {@const path = smoothClosedHullPath(paddedHull(memberGeometry(group)))}
+    {@const members = memberGeometry(group)}
+    {@const path = smoothClosedHullPath(paddedHull(members))}
+    {@const softPath = smoothClosedHullPath(paddedHull(members, 25))}
     {#if path}
+      {#if softPath}
+        <path
+          class="task-hull-softener task-hull-fill"
+          d={softPath}
+          fill="var(--color-foreground)"
+          fill-opacity={fillOpacity(group) * 0.34}
+        />
+      {/if}
       <path
-        class="task-hull"
+        class="task-hull task-hull-fill"
         d={path}
         fill="var(--color-foreground)"
         fill-opacity={fillOpacity(group)}
-        stroke="var(--color-foreground)"
-        stroke-width="1"
-        stroke-opacity={strokeOpacity(group)}
-        stroke-linejoin="round"
         data-task-id={group.task.id}
         data-working={group.agents.some((agent) => agent.status === 'responding')}
         data-highlighted={containsFocus(group)}
