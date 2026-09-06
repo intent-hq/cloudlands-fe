@@ -238,6 +238,21 @@ const devHealthProbeSilencer = () => ({
   },
 });
 
+const devIntentdRuntimeConfig = () => ({
+  name: 'dev-intentd-runtime-config',
+  apply: 'serve',
+  configureServer(server) {
+    server.middlewares.use('/runtime-config.js', (_req, res) => {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.end(
+        "globalThis.__INTENT_RUNTIME_CONFIG__ = Object.freeze({ intentdWsUrl: (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/intentd-ws' });\n",
+      );
+    });
+  },
+});
+
 // Custom plugin to exclude Node.js-only files from browser bundle
 const excludeNodeModules = () => ({
   name: 'exclude-node-modules',
@@ -304,7 +319,10 @@ export default defineConfig(({ command, mode }) => {
 
   const webDefines = {};
   const isProductionWebBuild = isWebBuild && mode === 'production';
-  const hasBuildTimeBrowserWsUrl = !isProductionWebBuild && Boolean(env.VITE_INTENTD_WS_URL);
+  const hasDevIntentdWsProxy =
+    command === 'serve' && isWebBuild && Boolean(env.INTENTD_WS_PROXY_TARGET);
+  const hasBuildTimeBrowserWsUrl =
+    !isProductionWebBuild && Boolean(env.VITE_INTENTD_WS_URL || hasDevIntentdWsProxy);
   if (isWebBuild && !hasBuildTimeBrowserWsUrl && env.VITE_ENABLE_BROWSER_MOCK === undefined) {
     // Production web builds are gated out of the browser mock by default
     // (hooks.client.ts only loads it in DEV or under an explicit opt-in).
@@ -372,6 +390,7 @@ export default defineConfig(({ command, mode }) => {
             outputStructure: 'locale-modules',
           }),
       devHealthProbeSilencer(),
+      hasDevIntentdWsProxy && devIntentdRuntimeConfig(),
       preventSvelteKitRegenHMR(),
       sveltekit(),
       handleUnhandledSvelteKitModules(),
@@ -454,6 +473,17 @@ export default defineConfig(({ command, mode }) => {
       host: '127.0.0.1',
 
       cors: true,
+
+      proxy: hasDevIntentdWsProxy
+        ? {
+            '/intentd-ws': {
+              target: env.INTENTD_WS_PROXY_TARGET,
+              ws: true,
+              changeOrigin: false,
+              rewrite: (path) => path.replace(/^\/intentd-ws/, '/ws'),
+            },
+          }
+        : undefined,
 
       // Configure HMR for Electron (will use the same port as the server)
       hmr: {
