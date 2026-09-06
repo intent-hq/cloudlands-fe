@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.138.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.138.0...v2.138.1) (2026-09-06)
+
+
+### 🐛 Bug Fixes
+
+* **daemon-health:** explain degraded status and recover after successful checks ([#2212](https://github.com/intent-hq/cloudlands-fe/issues/2212)) ([62169ac](https://github.com/intent-hq/cloudlands-fe/commit/62169ac5a854718f563c25dd06657a075ba6fdac))
+
 ## [2.138.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.137.2...v2.138.0) (2026-09-05)
 
 
