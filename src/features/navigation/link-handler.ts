@@ -330,7 +330,7 @@ async function openFilePathLink(
 
     const parsedTarget = parseFilePathLineSuffix(decodedTarget);
     let path = parsedTarget.path;
-    const { line } = parsedTarget;
+    const { line, column } = parsedTarget;
 
     const { workspaceId } = options;
     if (!workspaceId) {
@@ -357,7 +357,9 @@ async function openFilePathLink(
         path = path.replace(/^\/+/, '');
       } else {
         logger.debug('Absolute path outside workspace root, opening in external editor', { path });
-        return await openInExternalEditor(`file://${path}`);
+        const location =
+          line === undefined ? '' : `:${line}${column === undefined ? '' : `:${column}`}`;
+        return await openInExternalEditor(`file://${path}${location}`);
       }
     }
 

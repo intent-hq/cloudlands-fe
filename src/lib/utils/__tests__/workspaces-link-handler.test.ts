@@ -88,6 +88,13 @@ describe('workspaces-link-handler', () => {
         });
       });
 
+      it('should ignore non-line fragments on file links', () => {
+        const result = parseIntentLink('intent://local/file/README.md#installation');
+
+        expect(result.resourceId).toBe('README.md');
+        expect(result).not.toHaveProperty('line');
+      });
+
       it('should join nested path segments', () => {
         const result = parseIntentLink('intent://local/file/src/lib/utils/foo.ts');
         expect(result.valid).toBe(true);

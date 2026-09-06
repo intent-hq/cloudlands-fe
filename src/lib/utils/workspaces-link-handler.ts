@@ -180,7 +180,8 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
     }
 
     if (resourceType === 'file') {
-      const parsedFilePath = parseFilePathLineSuffix(resourceId + urlObj.hash);
+      const lineFragment = /^#L\d+(?:-\d+|C\d+)?$/.test(urlObj.hash) ? urlObj.hash : '';
+      const parsedFilePath = parseFilePathLineSuffix(resourceId + lineFragment);
       resourceId = parsedFilePath.path;
       line = parsedFilePath.line;
 

@@ -446,6 +446,20 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(openBrowserPanelMock).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['/other/place/file.rs:17', 'vscode://file//other/place/file.rs:17'],
+    ['/other/place/file.rs:17:4', 'vscode://file//other/place/file.rs:17:4'],
+  ])('preserves locations on outside-worktree paths: %s', async (rawHref, expectedUrl) => {
+    const result = await handleLink(resolvedUrl(rawHref), {
+      workspaceId: TEST_WORKSPACE_ID,
+      rawHref,
+    });
+
+    expect(result).toBe(true);
+    expect(reduxDispatchMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).toHaveBeenCalledWith('shell:openExternal', { url: expectedUrl });
+  });
+
   it('should route self-origin resolved URLs without rawHref to the file viewer, not the browser panel', async () => {
     const result = await handleLink(`${window.location.origin}/src/main.rs`, {
       workspaceId: TEST_WORKSPACE_ID,
