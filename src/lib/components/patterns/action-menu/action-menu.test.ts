@@ -70,4 +70,20 @@ describe('ActionBar', () => {
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
     expect(screen.getByTestId('selected').textContent).toBe('delete');
   });
+
+  it.each([1, 2])(
+    'keeps submenu child commands reachable with visibleCount=%i',
+    async (visibleCount) => {
+      render(ActionMenuHarness, { props: { bar: true, visibleCount } });
+      expect(screen.queryByRole('button', { name: 'Export' })).toBeNull();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+      const exportAction = await screen.findByRole('menuitem', { name: 'Export' });
+      exportAction.focus();
+      await fireEvent.keyDown(exportAction, { key: 'ArrowRight' });
+      await fireEvent.click(await screen.findByRole('menuitem', { name: 'Export as PDF' }));
+
+      expect(screen.getByTestId('selected').textContent).toBe('export-pdf');
+    },
+  );
 });

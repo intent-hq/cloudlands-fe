@@ -21,10 +21,15 @@
   } = $props();
 
   const split = $derived(splitActions(actions, visibleCount));
+  const visibleActions = $derived(split.visible.filter((action) => !action.children?.length));
+  const overflowActions = $derived([
+    ...split.visible.filter((action) => action.children?.length),
+    ...split.overflow,
+  ]);
 </script>
 
 <div data-slot="action-bar" class={cn('flex items-center gap-1', className)}>
-  {#each split.visible as action (action.id)}
+  {#each visibleActions as action (action.id)}
     {#if action.icon}
       <Button
         variant={action.destructive ? 'destructive' : 'ghost-light'}
@@ -59,8 +64,8 @@
     {/if}
   {/each}
 
-  {#if split.overflow.length > 0}
-    <ActionMenu actions={split.overflow} {onAction} ariaLabel={overflowLabel} align="end">
+  {#if overflowActions.length > 0}
+    <ActionMenu actions={overflowActions} {onAction} ariaLabel={overflowLabel} align="end">
       {#snippet trigger({ props })}
         <Button {...props} variant="ghost-light" size="icon-xs" iconOnly aria-label={overflowLabel}>
           <span aria-hidden="true">•••</span>
