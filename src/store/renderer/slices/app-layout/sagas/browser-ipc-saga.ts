@@ -31,6 +31,7 @@ import {
 } from '../../panel-layout/sagas/panel-layout-saga';
 import { dropRevealIfWorkspaceNotDisplayed } from '../../panel-layout/sagas/reveal-suppression';
 import {
+  activateVisibleTab,
   closeTab,
   openHiddenTab,
   openTab,
@@ -415,11 +416,16 @@ function* showBrowser(data: BrowserShowTabPayload | null): SagaGenerator<void> {
     yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, data.tabId);
     return;
   }
-  // Already visible: idempotent — focus: true still activates the tab and
-  // focuses its panel (reusing the focusTab path); focus: false is a no-op.
+  // Already in a panel: focus: true activates the tab and focuses its panel
+  // (reusing the focusTab path); focus: false activates it in place without
+  // moving panel focus, so a visible-but-inactive tab is displayed
+  // (monorepo#3045). Both are idempotent on an already-active tab.
   if (focus) {
     yield* put(focusBrowserTabRequested(workspaceId, data.tabId, undefined, true));
+    return;
   }
+  yield* put(activateVisibleTab(workspaceId, data.tabId));
+  yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, data.tabId);
 }
 
 function* tabNavigated(data: BrowserTabNavigatedPayload | null): SagaGenerator<void> {

@@ -736,8 +736,9 @@ async function executeAction(
       }
 
       case 'showTab': {
-        // Reveal a hidden agent-owned tab (monorepo#3045). Checks run
-        // existence-first against a fresh tab list so an unknown tabId
+        // Reveal a hidden agent-owned tab, or activate one that is already in
+        // the layout but not its panel's active tab (monorepo#3045). Checks
+        // run existence-first against a fresh tab list so an unknown tabId
         // reports "not found" (never a misleading not-owner error), then
         // owner-only enforcement for agent callers.
         const { tabs, stale } = await embeddedBrowserCdp.listAllTabs(workspaceId);
@@ -761,15 +762,9 @@ async function executeAction(
           );
         }
         const focus = action.focus === true;
-        if (target.hidden !== true && !focus) {
-          // Idempotent no-op: the tab is already visible and no activation
-          // was requested.
-          return {
-            action: 'showTab',
-            success: true,
-            result: { tabId: action.tabId, visibility: 'visible', focused: false },
-          };
-        }
+        // Always forwarded: the renderer activates a visible-but-inactive
+        // tab in place (no panel-focus change) and treats an already-active
+        // tab as an idempotent no-op.
         await embeddedBrowserCdp.showTab(action.tabId, workspaceId, focus);
         return {
           action: 'showTab',

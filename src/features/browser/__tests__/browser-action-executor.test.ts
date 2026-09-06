@@ -742,7 +742,7 @@ describe('browser-action-executor', () => {
       });
     });
 
-    it('is an idempotent no-op on an already-visible tab without focus', async () => {
+    it('forwards a no-focus show on an already-visible tab so the renderer can activate it in place', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       await mockTabs([visibleOwnedTab]);
 
@@ -754,12 +754,13 @@ describe('browser-action-executor', () => {
       );
 
       expect(result.success).toBe(true);
-      expect(embeddedBrowserCdp.showTab).not.toHaveBeenCalled();
+      expect(embeddedBrowserCdp.showTab).toHaveBeenCalledWith('tab-visible', 'ws-1', false);
       expect(result.results[0]?.result).toEqual({
         tabId: 'tab-visible',
         visibility: 'visible',
         focused: false,
       });
+      expect(result.results[0]?.warning).toBeUndefined();
     });
 
     it('focus: true on an already-visible tab still activates it', async () => {

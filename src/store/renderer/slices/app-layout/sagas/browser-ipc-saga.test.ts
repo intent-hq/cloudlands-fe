@@ -1138,7 +1138,45 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
-  it('browser:show-tab on an already-visible tab: no-op without focus, focus path with focus: true', async () => {
+  it('browser:show-tab on a visible-but-inactive tab activates it in place without focus', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: {
+              one: {
+                tabs: [
+                  { id: 'note-1', type: 'note' },
+                  { id: 'browser-1', type: 'browser' },
+                ],
+                activeTabId: 'note-1',
+              },
+            },
+            hiddenTabs: createCollection('id'),
+          },
+        },
+      },
+    };
+
+    await emit({ tabId: 'browser-1', workspaceId: 'ws-1' }, 'browser:show-tab');
+
+    // Focus-preserving in-place activation (monorepo#3045), followed by the
+    // workspace-not-displayed drop of its queued reveal (jsdom's route is `/`).
+    expect(actions).toEqual([
+      {
+        type: 'panelLayout/activateVisibleTab',
+        payload: { wsId: 'ws-1', tabId: 'browser-1', timestamp: NOW },
+      },
+      { type: 'panelLayout/consumePanelReveal', payload: ['ws-1', 'browser-1'] },
+      { type: 'panelLayout/consumePendingFocus', payload: ['ws-1', 'browser-1'] },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('browser:show-tab on an already-visible tab with focus: true takes the focus path', async () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));
     state = {
@@ -1151,9 +1189,6 @@ describe('browserIpcSaga', () => {
         },
       },
     };
-
-    await emit({ tabId: 'browser-1', workspaceId: 'ws-1' }, 'browser:show-tab');
-    expect(actions).toEqual([]);
 
     await emit({ tabId: 'browser-1', workspaceId: 'ws-1', focus: true }, 'browser:show-tab');
     expect(actions).toEqual([

@@ -110,7 +110,7 @@ describe('column stack algorithm', () => {
     expect(activated.panels.p2.attentionTabIds ?? []).toEqual([]);
   });
 
-  it('restores an agent pane into a background stack without replacing visible content', () => {
+  it('restores an agent pane into a background stack and activates it without moving focus', () => {
     const initial = state(['p1', 'p2']);
     initial.byWorkspaceId[WS].hiddenTabs = createCollection('id', [
       { id: 'browser', type: 'browser', title: 'Browser', closable: true },
@@ -119,9 +119,15 @@ describe('column stack algorithm', () => {
       .byWorkspaceId[WS];
 
     expect(restored.focusedPanelId).toBe('p1');
-    expect(restored.panels.p2.activeTabId).toBe('tab-p2');
-    expect(restored.panels.p2.attentionTabIds).toEqual(['browser']);
-    expect(restored.pendingPanelReveal).toBeNull();
+    expect(restored.panels.p1.activeTabId).toBe('tab-p1');
+    expect(restored.panels.p2.activeTabId).toBe('browser');
+    expect(restored.panels.p2.attentionTabIds ?? []).toEqual([]);
+    expect(restored.pendingPanelReveal).toEqual({
+      panelId: 'p2',
+      tabId: 'browser',
+      requestId: 'browser',
+      preserveFocus: true,
+    });
   });
 
   it('closes only the active pane while other stack panes remain', () => {
