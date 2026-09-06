@@ -43,6 +43,7 @@ export function createNewWorkspaceRouteController(options: {
   requestedDraftId?: string | null;
 }): NewWorkspaceRouteController {
   let runner: DraftTransactionRunner | null = null;
+  let stopped = false;
   return {
     async start(listener) {
       let requestedDraftId = options.requestedDraftId;
@@ -53,6 +54,7 @@ export function createNewWorkspaceRouteController(options: {
           requestedDraftId = undefined;
         }
       }
+      if (stopped) return;
       runner = createDraftTransactionRunner({ client: appClient, requestedDraftId });
       runner.subscribe((state) => {
         listener(state);
@@ -66,6 +68,7 @@ export function createNewWorkspaceRouteController(options: {
       runner?.dispatch(event);
     },
     stop() {
+      stopped = true;
       runner?.stop();
       runner = null;
     },

@@ -134,6 +134,28 @@ describe('new workspace route controller', () => {
     );
   });
 
+  it('does not start a runner after the route stops during sentinel migration', async () => {
+    let resolveLegacy: (value: null) => void = () => undefined;
+    mocks.legacyGet.mockReturnValue(
+      new Promise<null>((resolve) => {
+        resolveLegacy = resolve;
+      }),
+    );
+    const controller = createNewWorkspaceRouteController({
+      startInput: {},
+      requestedDraftId: undefined,
+    });
+    const listener = vi.fn();
+
+    const starting = controller.start(listener);
+    controller.stop();
+    resolveLegacy(null);
+    await starting;
+
+    expect(mocks.runnerOptions).not.toHaveBeenCalled();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it('restores the newest owned draft when the route has no draft selector', async () => {
     const controller = createNewWorkspaceRouteController({
       startInput: {},
