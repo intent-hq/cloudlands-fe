@@ -804,8 +804,8 @@ class EmbeddedBrowserCdpService {
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    // i18n-ignore (agent-facing protocol error, not user-facing)
     throw new Error(
+      // i18n-ignore (agent-facing protocol error, not user-facing)
       `Tab ${tabId} could not be shown (the UI did not confirm the tab as its panel's active tab).`,
     );
   }
