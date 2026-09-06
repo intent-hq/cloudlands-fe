@@ -91,6 +91,7 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import Header from '$lib/components/ui/Header.svelte';
+  import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
@@ -156,11 +157,10 @@
   let liveUptimeSeconds = $state<number | undefined>(undefined);
   let stopUnslothDialogOpen = $state(false);
 
-  // Color mapping for health states
-  const healthColors: Record<DaemonHealth, string> = {
-    healthy: 'bg-green-500',
-    degraded: 'bg-yellow-500',
-    down: 'bg-red-500',
+  const healthIconColors: Record<DaemonHealth, string> = {
+    healthy: 'text-subtle',
+    degraded: 'text-yellow-500',
+    down: 'text-red-500',
   };
 
   const healthLabels: Record<DaemonHealth, () => string> = {
@@ -198,12 +198,12 @@
       : m.layout_daemonStatus_workspaceDiskFree_label({ free: formatDiskSize(available) });
   });
 
-  // A version mismatch or low workspace disk turns an otherwise-healthy dot
+  // A version mismatch or low workspace disk turns an otherwise-neutral healthy icon
   // yellow; degraded (already yellow) and down (red) are unchanged.
-  const dotColorClass = $derived(
+  const iconColorClass = $derived(
     $health$ === 'healthy' && (versionMismatch || workspaceDiskLow)
-      ? 'bg-yellow-500'
-      : healthColors[$health$],
+      ? 'text-yellow-500'
+      : healthIconColors[$health$],
   );
 
   const triggerLabel = $derived(
@@ -485,7 +485,13 @@
       {#if currentRemoteName}
         <span class="text-xs text-subtle truncate max-w-32">{currentRemoteName}</span>
       {/if}
-      <div class={cn('w-2 h-2 rounded-full shrink-0', dotColorClass)}></div>
+      <span class="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
+        <DeviceIcon
+          record={$currentConnection$ ?? { os: $stats$?.os }}
+          size={16}
+          class={iconColorClass}
+        />
+      </span>
     </button>
   {/snippet}
 
@@ -845,6 +851,7 @@
                   data-connection-accent={accent}
                 ></span>
               {/if}
+              <DeviceIcon record={conn} size={16} class="text-foreground" />
               <span class="min-w-0 flex-1 truncate">
                 {conn.isLocal
                   ? m.layout_daemonStatus_localConnection_label()
