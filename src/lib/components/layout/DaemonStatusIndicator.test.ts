@@ -7,6 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 
@@ -200,6 +201,307 @@ describe('DaemonStatusIndicator', () => {
       );
 
       expect(screen.getByRole('menuitem', { name: label })).toBeTruthy();
+    });
+  });
+
+  describe('degraded explanation (#4439)', () => {
+    type DaemonHealthState =
+      import('$store/renderer/slices/daemon-health/daemon-health-types').DaemonHealthState;
+    type SystemStatusWirePayload =
+      import('$store/renderer/slices/daemon-health/daemon-health-types').SystemStatusWirePayload;
+
+    const transport = { mode: 'sidecar-uds' as const };
+    const payload: SystemStatusWirePayload = {
+      running: true,
+      listenMode: 'uds',
+      transports: ['uds'],
+      port: null,
+      clients: 2,
+      agents: 1,
+      maxAgents: 8,
+      uptimeSeconds: 300,
+      fingerprint: null,
+      protocolVersion: '2.0',
+      host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
+    };
+    const lastSuccessAt = '2026-09-05T14:03:09.000Z';
+    const failedAt = '2026-09-05T14:03:19.000Z';
+
+    // Drive the production reducer so the rendered states are the ones the
+    // saga would actually produce — the component is never fed hand-built
+    // failure context.
+    async function slice() {
+      return import('$store/renderer/slices/daemon-health/daemon-health-slice');
+    }
+
+    async function connectedState(withStats = true): Promise<DaemonHealthState> {
+      const s = await slice();
+      let state = s.daemonHealthReducer(
+        s.initialState,
+        s.connectionStatusChanged('connected', transport),
+      );
+      if (withStats) {
+        state = s.daemonHealthReducer(
+          state,
+          s.systemStatusSuccess(payload, lastSuccessAt, state.connectionGeneration),
+        );
+      }
+      return state;
+    }
+
+    async function failOnce(
+      state: DaemonHealthState,
+      kind: 'timeout' | 'status-check-failed' = 'timeout',
+    ): Promise<DaemonHealthState> {
+      const s = await slice();
+      return s.daemonHealthReducer(
+        state,
+        s.systemStatusFailure({ kind, failedAt }, state.connectionGeneration),
+      );
+    }
+
+    async function openDetails(state: DaemonHealthState) {
+      mockStoreState = { daemonHealth: state };
+      const result = render(DaemonStatusIndicatorPreloaded);
+      const name =
+        state.health === 'down'
+          ? 'intentd: not running'
+          : state.health === 'degraded'
+            ? 'intentd: degraded'
+            : 'intentd: healthy';
+      await fireEvent.click(screen.getByRole('button', { name }));
+      await fireEvent.click(screen.getByText(/^Status - /));
+      return result;
+    }
+
+    const explanation = () => screen.queryByRole('note');
+
+    it('explains a known timeout beneath the Status row with the last successful check time', async () => {
+      const { formatDateTime } = await import('$lib/i18n/format');
+      const state = await failOnce(await connectedState());
+      expect(state.health).toBe('degraded');
+
+      await openDetails(state);
+
+      const note = explanation();
+      expect(note).not.toBeNull();
+      // Rendered inside the details panel, under the Status row.
+      const statusValue = screen.getByText('Degraded');
+      expect(note!.closest('[role="menu"]')).toBe(statusValue.closest('[role="menu"]'));
+      expect(note!.textContent).toMatch(/timed out/i);
+      expect(note!.textContent).toContain(formatDateTime(lastSuccessAt));
+      // Stats are still shown, framed as last-known rather than live.
+      expect(screen.getByText('Agent slots')).toBeTruthy();
+      expect(note!.textContent).toMatch(/last successful check/i);
+    });
+
+    it('distinguishes last successful checks on different dates at the same clock time', async () => {
+      const s = await slice();
+      const connected = await connectedState(false);
+      const twoDaysEarlier = '2026-09-03T14:03:09.000Z';
+      expect(twoDaysEarlier.slice(11)).toBe(lastSuccessAt.slice(11));
+
+      const texts: string[] = [];
+      for (const at of [lastSuccessAt, twoDaysEarlier]) {
+        const state = await failOnce(
+          s.daemonHealthReducer(
+            connected,
+            s.systemStatusSuccess(payload, at, connected.connectionGeneration),
+          ),
+        );
+        const { unmount } = await openDetails(state);
+        texts.push(explanation()!.textContent!);
+        unmount();
+      }
+
+      expect(texts[0]).not.toBe(texts[1]);
+    });
+
+    it('reports the number of consecutive failed checks', async () => {
+      let state = await failOnce(await connectedState());
+      state = await failOnce(state);
+      state = await failOnce(state);
+      expect(state.statusCheckFailure?.consecutiveFailures).toBe(3);
+
+      await openDetails(state);
+
+      expect(explanation()!.textContent).toContain('3');
+    });
+
+    it('attributes a timeout only to the latest check when earlier failures were generic', async () => {
+      let state = await failOnce(await connectedState(), 'status-check-failed');
+      state = await failOnce(state, 'status-check-failed');
+      state = await failOnce(state, 'timeout');
+      expect(state.statusCheckFailure?.kind).toBe('timeout');
+      expect(state.statusCheckFailure?.consecutiveFailures).toBe(3);
+
+      await openDetails(state);
+
+      const text = explanation()!.textContent!;
+      expect(text).toMatch(/timed out/i);
+      expect(text).toContain('3');
+      // Only the latest check timed out; the count covers all failed checks.
+      expect(text).not.toMatch(/\d+ (status )?checks (have )?timed out/i);
+    });
+
+    it('does not claim a timeout for a generic status-check failure', async () => {
+      const state = await failOnce(await connectedState(), 'status-check-failed');
+
+      await openDetails(state);
+
+      const note = explanation();
+      expect(note).not.toBeNull();
+      expect(note!.textContent).not.toMatch(/timed out/i);
+      expect(note!.textContent).toMatch(/failed/i);
+    });
+
+    it('falls back to an honest generic explanation when no failure context exists', async () => {
+      const s = await slice();
+      const state = s.daemonHealthReducer(await connectedState(), s.heartbeatFailed());
+      expect(state.health).toBe('degraded');
+      expect(state.statusCheckFailure).toBeNull();
+
+      await openDetails(state);
+
+      const note = explanation();
+      expect(note).not.toBeNull();
+      expect(note!.textContent).not.toMatch(/timed out/i);
+      expect(note!.textContent).not.toMatch(/\d+ (status )?checks/i);
+    });
+
+    it('says no check has succeeded yet when there are no stats', async () => {
+      const state = await failOnce(await connectedState(false));
+      expect(state.stats).toBeNull();
+      expect(state.lastUpdated).toBeNull();
+
+      await openDetails(state);
+
+      const note = explanation();
+      expect(note).not.toBeNull();
+      expect(note!.textContent).toMatch(/no successful check/i);
+      expect(screen.getByText('No stats available')).toBeTruthy();
+    });
+
+    it('clears the explanation after a successful check', async () => {
+      const s = await slice();
+      const degraded = await failOnce(await connectedState());
+      const { unmount } = await openDetails(degraded);
+      expect(explanation()).not.toBeNull();
+      unmount();
+
+      const recovered = s.daemonHealthReducer(
+        degraded,
+        s.systemStatusSuccess(payload, failedAt, degraded.connectionGeneration),
+      );
+      expect(recovered.health).toBe('healthy');
+
+      await openDetails(recovered);
+      expect(explanation()).toBeNull();
+      expect(screen.getByText('Healthy')).toBeTruthy();
+    });
+
+    it('keeps the explanation across a same-connection metadata notification', async () => {
+      const s = await slice();
+      const degraded = await failOnce(await connectedState());
+      const refreshed = s.daemonHealthReducer(
+        degraded,
+        s.connectionStatusChanged('connected', { ...transport, updateSupported: true }),
+      );
+      expect(refreshed.health).toBe('degraded');
+
+      const { unmount } = await openDetails(degraded);
+      const before = explanation()!.textContent;
+      unmount();
+
+      await openDetails(refreshed);
+      expect(explanation()!.textContent).toBe(before);
+    });
+
+    it('shows no degraded explanation while healthy or down', async () => {
+      const s = await slice();
+      const healthy = await connectedState();
+      const { unmount } = await openDetails(healthy);
+      expect(explanation()).toBeNull();
+      unmount();
+
+      const down = s.daemonHealthReducer(
+        await failOnce(healthy),
+        s.connectionStatusChanged('disconnected'),
+      );
+      expect(down.health).toBe('down');
+      await openDetails(down);
+      expect(explanation()).toBeNull();
+      expect(screen.getByText('Daemon is not connected')).toBeTruthy();
+    });
+
+    describe('uptime row freshness', () => {
+      // Fake only the clock and the component's 1s interval: the menu
+      // primitives close the details submenu from a real setTimeout, which
+      // must not fire while the clock is advanced.
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      const uptimeValue = () => screen.getByText('Uptime').parentElement!.textContent;
+
+      // Advance the faked clock synchronously (no yield to real timers), then
+      // flush Svelte's pending DOM update.
+      async function advanceClock(ms: number) {
+        vi.advanceTimersByTime(ms);
+        await tick();
+      }
+
+      // The uptime shown while healthy at the instant of the last successful
+      // check is, by construction, the value that check reported.
+      async function reportedUptime(state: DaemonHealthState): Promise<string> {
+        vi.setSystemTime(state.lastUpdated!);
+        const { unmount } = await openDetails(state);
+        const value = uptimeValue();
+        unmount();
+        return value;
+      }
+
+      it('keeps the last reported uptime while degraded instead of ticking past the stale check', async () => {
+        const healthy = await connectedState();
+        const reported = await reportedUptime(healthy);
+
+        const degraded = await failOnce(healthy);
+        vi.setSystemTime(failedAt);
+        await openDetails(degraded);
+        // The freshness note says the details below are from that check.
+        expect(explanation()!.textContent).toMatch(/last successful check/i);
+        expect(uptimeValue()).toBe(reported);
+
+        await advanceClock(3000);
+        expect(uptimeValue()).toBe(reported);
+      });
+
+      it('keeps ticking the uptime while healthy and again after a valid recovery', async () => {
+        const s = await slice();
+        const healthy = await connectedState();
+        const reported = await reportedUptime(healthy);
+
+        vi.setSystemTime(failedAt);
+        const { unmount } = await openDetails(healthy);
+        const live = uptimeValue();
+        expect(live).not.toBe(reported);
+        await advanceClock(3000);
+        expect(uptimeValue()).not.toBe(live);
+        unmount();
+
+        const recovered = s.daemonHealthReducer(
+          await failOnce(healthy),
+          s.systemStatusSuccess(payload, failedAt, healthy.connectionGeneration),
+        );
+        expect(recovered.health).toBe('healthy');
+        await openDetails(recovered);
+        const atRecovery = uptimeValue();
+        await advanceClock(3000);
+        expect(uptimeValue()).not.toBe(atRecovery);
+      });
     });
   });
 
