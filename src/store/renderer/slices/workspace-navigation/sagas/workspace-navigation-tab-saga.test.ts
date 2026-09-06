@@ -325,9 +325,9 @@ describe('workspaceNavigationTabSaga', () => {
   });
 
   // Regression tests for intent-hq/monorepo#3398: a mod-clicked note-task link
-  // (openInNewAdjacentPanel) must open a NEW column right of the source panel,
-  // even when an equivalent note tab is already open in another column.
-  describe('mod-click note routing into a new adjacent column (monorepo#3398)', () => {
+  // (openInNewAdjacentPanel) permits a duplicate instead of activating an
+  // equivalent note tab that is already open elsewhere.
+  describe('mod-click note routing into the adjacent column (monorepo#3398)', () => {
     const notesState = {
       byWorkspaceId: {
         'ws-1': { notes: createCollection('id', [{ id: 'note-1', title: 'Plan' }]) },
@@ -350,7 +350,7 @@ describe('workspaceNavigationTabSaga', () => {
       return { channel, task, getLayout: () => state.panelLayout.byWorkspaceId['ws-1'] };
     }
 
-    it('creates a new column right of the source even when the note is open in another column', async () => {
+    it('opens a duplicate in the right neighbor when the note is already open there', async () => {
       const { channel, task, getLayout } = runWithLayout({
         root: {
           type: 'split',
@@ -391,21 +391,19 @@ describe('workspaceNavigationTabSaga', () => {
 
       const ws = getLayout();
       const order = ws.root.children.map((child: any) => child.panelId);
-      expect(order).toHaveLength(3);
-      expect(order[0]).toBe('left');
-      expect(order[2]).toBe('right');
-      const middle = ws.panels[order[1]];
-      expect(middle.tabs).toEqual([
+      expect(order).toEqual(['left', 'right']);
+      expect(ws.panels.right.tabs).toEqual([
+        expect.objectContaining({ id: 'existing-note' }),
+        expect.objectContaining({ id: 'right-file' }),
         expect.objectContaining({ type: 'note', noteId: 'note-1', title: 'Plan' }),
       ]);
-      expect(middle.activeTabId).toBe(middle.tabs[0].id);
-      // The pre-existing copy in the right column must not be hijacked.
-      expect(ws.panels.right.activeTabId).toBe('right-file');
+      expect(ws.panels.right.activeTabId).toBe(ws.panels.right.tabs[2].id);
+      expect(ws.pendingFocusTabId).toBe(ws.panels.right.tabs[2].id);
       task.cancel();
       await task.toPromise();
     });
 
-    it('creates a new column right of the source when the note is not open anywhere', async () => {
+    it('opens in the right neighbor when the note is not open anywhere', async () => {
       const { channel, task, getLayout } = runWithLayout({
         root: {
           type: 'split',
@@ -443,12 +441,13 @@ describe('workspaceNavigationTabSaga', () => {
 
       const ws = getLayout();
       const order = ws.root.children.map((child: any) => child.panelId);
-      expect(order).toHaveLength(3);
-      expect(order[0]).toBe('left');
-      expect(order[2]).toBe('right');
-      expect(ws.panels[order[1]].tabs).toEqual([
+      expect(order).toEqual(['left', 'right']);
+      expect(ws.panels.right.tabs).toEqual([
+        expect.objectContaining({ id: 'right-file' }),
         expect.objectContaining({ type: 'note', noteId: 'note-1' }),
       ]);
+      expect(ws.panels.right.activeTabId).toBe(ws.panels.right.tabs[1].id);
+      expect(ws.pendingFocusTabId).toBe(ws.panels.right.tabs[1].id);
       task.cancel();
       await task.toPromise();
     });

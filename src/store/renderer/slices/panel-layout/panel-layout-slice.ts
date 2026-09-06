@@ -428,7 +428,7 @@ export const closeActiveTab = createAction(
   }),
 );
 
-/** Close focused content, then remove its structural column only when already empty. */
+/** Close focused content and remove its structural column when it becomes empty. */
 export const closeFocusedPanelTab = createAction(
   'panelLayout/closeFocusedPanelTab',
   (wsId: string, timestamp?: number, availableCanvasWidth?: number, columnHistoryId?: string) => ({
@@ -2458,7 +2458,7 @@ panelLayoutReducer.with(closeActiveTab, (state, { payload }) => {
   // Delegate to closeTab reducer by dispatching inline
   return selfDispatch(state, closeTab(wsId, panel.activeTabId, targetPanelId, timestamp));
 });
-// --- Close Focused Panel Content Or Its Already-Empty Column ---
+// --- Close Focused Panel Content And Its Empty Column ---
 panelLayoutReducer.with(closeFocusedPanelTab, (state, { payload }) => {
   const { wsId, timestamp, availableCanvasWidth, columnHistoryId } = payload;
   const ws = getWorkspaceState(state, wsId);
@@ -2466,55 +2466,63 @@ panelLayoutReducer.with(closeFocusedPanelTab, (state, { payload }) => {
   if (!panelId || !ws.panels[panelId]) return state;
 
   const panel = ws.panels[panelId];
-  if (!panel.activeTabId) {
-    if (panel.tabs.length > 0 || ws.columnCount <= 1) return state;
-    const panelIds = getPanelOrder(ws.root).filter((id) => ws.panels[id]);
-    if (
-      panelIds.length !== ws.columnCount ||
-      !isFixedColumnRoot(ws.root, panelIds) ||
-      panelIds.length <= 1
-    ) {
-      return state;
-    }
+  const activeTab = panel.activeTabId
+    ? panel.tabs.find((tab) => tab.id === panel.activeTabId)
+    : undefined;
+  if (activeTab?.closable === false || (!activeTab && panel.tabs.length > 0)) return state;
 
-    const removedIndex = panelIds.indexOf(panelId);
-    if (removedIndex < 0) return state;
-    const remainingPanelIds = panelIds.filter((id) => id !== panelId);
-    const focusedPanelId = remainingPanelIds[Math.min(removedIndex, remainingPanelIds.length - 1)];
-    const columnCount = (ws.columnCount - 1) as PanelColumnCount;
-    const canvasWidth = getEqualFixedColumnCanvasWidth(
-      columnCount,
-      availableCanvasWidth,
-      ws.canvasWidth,
-    );
-    const removed = closePanelHelper(ws, panelId);
-    if (removed === ws) return state;
-
-    const closedWorkspace = {
-      ...removed,
-      root: createFixedColumnRoot(remainingPanelIds),
-      focusedPanelId,
-      columnCount,
-      columnCountInitialized: true,
-      canvasWidth,
-      canvasWidthSource: canvasWidth === null ? null : 'explicit',
-      layoutHistory: removed.layoutHistory.map((snapshot) =>
-        removeFixedColumnFromHistorySnapshot(snapshot, panelId, availableCanvasWidth),
-      ),
-    } satisfies WorkspacePanelLayoutState;
-    return setWorkspaceState(
+  let stateAfterTabClose = state;
+  let closedTabIds: string[] = [];
+  if (activeTab) {
+    stateAfterTabClose = selfDispatch(
       state,
-      wsId,
-      recordClosedPanelColumn(ws, closedWorkspace, columnHistoryId, panelId, timestamp, []),
+      closeTab(wsId, activeTab.id, panelId, timestamp, { preservePanel: true }),
     );
+    if (panel.tabs.length > 1 || ws.columnCount <= 1) return stateAfterTabClose;
+    closedTabIds = [activeTab.id];
+  } else if (ws.columnCount <= 1) {
+    return state;
   }
 
-  const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId);
-  if (!activeTab || activeTab.closable === false) return state;
+  const wsAfterTabClose = getWorkspaceState(stateAfterTabClose, wsId);
+  const panelIds = getPanelOrder(wsAfterTabClose.root).filter((id) => wsAfterTabClose.panels[id]);
+  if (
+    panelIds.length !== wsAfterTabClose.columnCount ||
+    !isFixedColumnRoot(wsAfterTabClose.root, panelIds) ||
+    panelIds.length <= 1
+  ) {
+    return stateAfterTabClose;
+  }
 
-  return selfDispatch(
-    state,
-    closeTab(wsId, activeTab.id, panelId, timestamp, { preservePanel: true }),
+  const removedIndex = panelIds.indexOf(panelId);
+  if (removedIndex < 0) return stateAfterTabClose;
+  const remainingPanelIds = panelIds.filter((id) => id !== panelId);
+  const focusedPanelId = remainingPanelIds[Math.min(removedIndex, remainingPanelIds.length - 1)];
+  const columnCount = (wsAfterTabClose.columnCount - 1) as PanelColumnCount;
+  const canvasWidth = getEqualFixedColumnCanvasWidth(
+    columnCount,
+    availableCanvasWidth,
+    wsAfterTabClose.canvasWidth,
+  );
+  const removed = closePanelHelper(wsAfterTabClose, panelId);
+  if (removed === wsAfterTabClose) return stateAfterTabClose;
+
+  const closedWorkspace = {
+    ...removed,
+    root: createFixedColumnRoot(remainingPanelIds),
+    focusedPanelId,
+    columnCount,
+    columnCountInitialized: true,
+    canvasWidth,
+    canvasWidthSource: canvasWidth === null ? null : 'explicit',
+    layoutHistory: removed.layoutHistory.map((snapshot) =>
+      removeFixedColumnFromHistorySnapshot(snapshot, panelId, availableCanvasWidth),
+    ),
+  } satisfies WorkspacePanelLayoutState;
+  return setWorkspaceState(
+    stateAfterTabClose,
+    wsId,
+    recordClosedPanelColumn(ws, closedWorkspace, columnHistoryId, panelId, timestamp, closedTabIds),
   );
 });
 // --- Close Tabs By Type ---
@@ -4080,7 +4088,13 @@ panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
 
   const panelOrder = getPanelOrder(ws.root).filter((panelId) => ws.panels[panelId]);
   const sourceIndex = effectiveSourcePanelId ? panelOrder.indexOf(effectiveSourcePanelId) : -1;
-  if (sourceIndex >= 0 && panelOrder.length < 4 && effectiveSourcePanelId) {
+  const rightNeighborPanelId = sourceIndex >= 0 ? panelOrder[sourceIndex + 1] : undefined;
+  if (
+    !rightNeighborPanelId &&
+    sourceIndex >= 0 &&
+    panelOrder.length < 4 &&
+    effectiveSourcePanelId
+  ) {
     const saved = saveToHistory(ws, timestamp);
     const inserted = insertFixedColumn(
       saved,
@@ -4109,11 +4123,11 @@ panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
   }
 
   const targetPanelId =
-    sourceIndex >= 0 ? (panelOrder[sourceIndex + 1] ?? panelOrder[0]) : panelOrder.at(-1);
+    rightNeighborPanelId ?? (sourceIndex >= 0 ? panelOrder[0] : panelOrder.at(-1));
   if (!targetPanelId) return state;
 
-  // Reuse the immediate right stack. At the four-column limit, wrap to the
-  // first stack rather than creating an invalid fifth column.
+  // Reuse the immediate right stack. From a capped rightmost stack, wrap to
+  // the first rather than creating an invalid fifth column.
   const result = selfDispatch(
     state,
     openTab(wsId, tab, targetPanelId, newTabId, force, timestamp, allowDuplicate),

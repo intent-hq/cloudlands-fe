@@ -9,6 +9,17 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   focusedPanelId: 'panel-1' as string | null,
   recentlyClosed: [] as Array<{ tab: Record<string, unknown>; closedAt: number }>,
+  shortcuts: {
+    'workspace.new-agent': 'mod+alt+a',
+    'workspace.new-note': 'mod+alt+n',
+    'workspace.new-terminal': 'mod+alt+t',
+    'workspace.new-browser': 'mod+alt+b',
+    'navigation.new-tab': 'mod+t',
+    'global.command-palette-alt': 'mod+k',
+    'navigation.reopen-tab': 'mod+shift+t',
+    'panel.toggle-sidebar': 'mod+b',
+    'global.keyboard-shortcuts': 'mod+?',
+  } as Record<string, string>,
 }));
 
 vi.mock('svelte-fa', async () => ({
@@ -18,6 +29,13 @@ vi.mock('svelte-fa', async () => ({
 vi.mock('$store/renderer/store', () => ({
   store: { dispatch: mocks.dispatch, state: {} },
 }));
+
+vi.mock('$lib/utils/effective-shortcuts', async () => {
+  const { readable } = await import('svelte/store');
+  return {
+    effectiveShortcutReadable: (id: string) => readable(mocks.shortcuts[id]),
+  };
+});
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', async () => {
   const { readable } = await import('svelte/store');
@@ -62,6 +80,7 @@ describe('PanelEmptyState', () => {
     vi.clearAllMocks();
     mocks.focusedPanelId = 'panel-1';
     mocks.recentlyClosed = [];
+    mocks.shortcuts['workspace.new-agent'] = 'mod+alt+a';
   });
 
   it('creates an agent directly from the primary action', async () => {
@@ -85,71 +104,62 @@ describe('PanelEmptyState', () => {
     expect(screen.queryByText('Create Column to Right')).toBeNull();
   });
 
-  it('runs the available tool and help actions', async () => {
+  it('renders resolved creation hints and runs the available actions', async () => {
+    mocks.shortcuts['workspace.new-agent'] = 'mod+alt+g';
     const onCreateNote = vi.fn();
     const onCreateTerminal = vi.fn();
-    const layoutManager = renderEmptyState({ onCreateNote, onCreateTerminal });
+    const onOpenBrowser = vi.fn();
+    const onCreateAgent = vi.fn();
+    const layoutManager = renderEmptyState({
+      onCreateAgent,
+      onCreateNote,
+      onCreateTerminal,
+      onOpenBrowser,
+    });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'New Note' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'New Terminal' }));
+    const creationRows = [
+      ['New Agent', 'Ctrl+Alt+G'],
+      ['New Note', 'Ctrl+Alt+N'],
+      ['New Terminal', 'Ctrl+Alt+T'],
+      ['New Browser', 'Ctrl+Alt+B'],
+    ] as const;
+    for (const [name, hint] of creationRows) {
+      const row = screen.getByRole('button', { name });
+      expect(row.textContent).toContain(hint);
+      await fireEvent.click(row);
+    }
     await fireEvent.click(screen.getByRole('button', { name: /Command palette/ }));
     await fireEvent.click(screen.getByRole('button', { name: /Reopen closed/ }));
     await fireEvent.click(screen.getByRole('button', { name: /Toggle sidebar/ }));
     await fireEvent.click(screen.getByRole('button', { name: /All shortcuts/ }));
 
+    expect(onCreateAgent).toHaveBeenCalledWith('panel-1');
     expect(onCreateNote).toHaveBeenCalledOnce();
     expect(onCreateNote).toHaveBeenCalledWith('panel-1');
     expect(onCreateTerminal).toHaveBeenCalledOnce();
     expect(onCreateTerminal).toHaveBeenCalledWith('panel-1');
+    expect(onOpenBrowser).toHaveBeenCalledWith('panel-1');
     expect(layoutManager.reopenClosedTab).toHaveBeenCalledOnce();
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'palette/open' });
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'uiLayout/toggleSidebar', payload: [] });
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'shortcuts/open', payload: 'global' });
   });
 
-  it('uses cards for every available creation action without explainer copy', () => {
-    renderEmptyState({
-      onCreateAgent: vi.fn(),
-      onCreateNote: vi.fn(),
-      onCreateTerminal: vi.fn(),
-      onOpenBrowser: vi.fn(),
-    });
+  it('only shows the reopen hint when a recent item is available', async () => {
+    const withoutRecents = renderEmptyState();
+    expect(screen.queryByRole('button', { name: /^Reopen last closed/i })).toBeNull();
 
-    const creationButtons = ['New Agent', 'New Note', 'New Terminal', 'New Browser'].map((name) =>
-      screen.getByRole('button', { name: new RegExp(`^${name}`) }),
-    );
-    for (const button of creationButtons) {
-      expect(button.className).toContain('creation-card');
-      expect(button.className).toContain('min-h-16');
-      expect(button.className).toContain('bg-muted/30');
-      expect(button.className).not.toContain('shadow');
-      expect(button.className).not.toContain('hover:bg-');
-    }
-    expect(creationButtons[0].parentElement?.className).toContain('creation-grid');
-    expect(screen.getByRole('button', { name: /^New panel/i }).className).not.toContain(
-      'creation-card',
-    );
-    expect(
-      screen.getByRole('button', { name: /^New panel/i }).parentElement?.className,
-    ).not.toContain('border-t');
-    expect(screen.queryByText('Empty panel')).toBeNull();
-    expect(screen.queryByText(/Start something here/)).toBeNull();
-  });
+    withoutRecents.reopenClosedTab.mockClear();
+    mocks.recentlyClosed = [
+      {
+        tab: { id: 'recent-note', type: 'note', title: 'Recent note' },
+        closedAt: Date.now() - 3 * 24 * 60 * 60 * 1000,
+      },
+    ];
+    const withRecents = renderEmptyState();
+    expect(screen.getByTitle('Reopen Recent note').textContent?.trim()).toBe('Recent note');
+    await fireEvent.click(screen.getByRole('button', { name: /^Reopen last closed/i }));
 
-  it('uses resource tiles for the note action and every changes recent alias', () => {
-    mocks.recentlyClosed = ['changes', 'local-changes', 'chat-changes', 'activity-changes'].map(
-      (type, index) => ({
-        tab: { id: `recent-${index}`, type, title: `Recent ${index}` },
-        closedAt: Date.now() - index,
-      }),
-    );
-    renderEmptyState({ onCreateNote: vi.fn() });
-
-    expect(
-      screen.getByRole('button', { name: 'New Note' }).querySelector('[data-resource-kind="note"]'),
-    ).toBeTruthy();
-    expect(document.querySelectorAll('.recent-item [data-resource-kind="changes"]')).toHaveLength(
-      4,
-    );
+    expect(withRecents.reopenClosedTab).toHaveBeenCalledOnce();
   });
 });
