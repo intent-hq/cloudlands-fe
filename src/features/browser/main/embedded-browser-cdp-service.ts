@@ -752,12 +752,12 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Reveal a hidden agent-owned tab into a panel (monorepo#3045). With
-   * `focus: false` (the default) the tab is mounted into a panel's tab list
-   * WITHOUT becoming active and without moving panel focus; `focus: true`
-   * reveals and activates. The renderer treats an already-visible tab as
-   * idempotent: a no-op for `focus: false`, activate-and-focus for
-   * `focus: true`.
+   * Activate an agent-owned tab in a visible panel (monorepo#3045). A hidden
+   * tab is revealed into a panel; a visible-but-inactive tab is brought to
+   * the front of its panel. With `focus: false` (the default) the tab becomes
+   * its panel's active tab (so it paints) without moving panel/keyboard
+   * focus; `focus: true` activates and focuses the panel. Both are idempotent
+   * on an already-displayed tab (`focus: true` still focuses its panel).
    *
    * The reveal is confirmed against a fresh renderer tab list (the same
    * confirm-by-list discipline closeTab uses): only a fresh reply that lists

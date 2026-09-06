@@ -1059,9 +1059,10 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
-  // showTab (monorepo#3045): reveal a hidden owned tab into a panel.
-  // focus: false (default) mounts without activation; focus: true reveals
-  // and activates; already-visible tabs are idempotent.
+  // showTab (monorepo#3045): activate an owned tab in a visible panel — a
+  // hidden tab is revealed, a visible-but-inactive one is brought to the
+  // front. focus: false (default) activates without moving panel focus;
+  // focus: true activates and focuses; already-displayed tabs are idempotent.
   it('browser:show-tab restores a hidden tab without focus by default', async () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));
