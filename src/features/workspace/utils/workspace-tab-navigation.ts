@@ -83,6 +83,10 @@ interface RegisterWorkspaceTabShortcutsOptions {
   getCurrentPath: () => string;
   navigate: (path: string) => unknown;
   openNewWorkspace: () => void;
+  onCreateAgent?: (workspaceId: string) => void;
+  onCreateNote?: (workspaceId: string) => void;
+  onCreateTerminal?: (workspaceId: string) => void;
+  onCreateBrowser?: (workspaceId: string) => void;
   onWorkspaceTabMoved?: (detail: WorkspaceTabMovedEventDetail) => void;
   resolveBinding?: (id: ShortcutId) => string;
 }
@@ -150,7 +154,7 @@ export function closeActiveWorkspaceTab(
   return closeWorkspaceTabById(store, workspaceId, currentPath, navigate);
 }
 
-/** Close focused content, or remove its already-empty structural column. */
+/** Close focused content, collapsing its structural column when it becomes empty. */
 export function closeActivePanelTab(
   store: WorkspaceTabNavigationStore,
   currentPath: string,
@@ -164,9 +168,11 @@ export function closeActivePanelTab(
 
   const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId);
   const isEmpty = panel.tabs.length === 0 && panel.activeTabId === null;
-  const canRemoveEmptyColumn =
-    isEmpty && selectPanelColumnCount.select(store.state, workspaceId) > 1;
-  if ((!activeTab || activeTab.closable === false) && !canRemoveEmptyColumn) return null;
+  const canRemoveColumn =
+    selectPanelColumnCount.select(store.state, workspaceId) > 1 &&
+    (isEmpty ||
+      (panel.tabs.length === 1 && activeTab !== undefined && activeTab.closable !== false));
+  if ((!activeTab || activeTab.closable === false) && !canRemoveColumn) return null;
 
   const measuredWidth =
     availableCanvasWidth ??
@@ -268,12 +274,20 @@ export function registerWorkspaceTabShortcuts({
   getCurrentPath,
   navigate,
   openNewWorkspace,
+  onCreateAgent,
+  onCreateNote,
+  onCreateTerminal,
+  onCreateBrowser,
   onWorkspaceTabMoved,
   resolveBinding,
 }: RegisterWorkspaceTabShortcutsOptions): void {
   const mod = isMac ? { meta: true } : { ctrl: true };
   const sidebarChord = getShortcutChord('TOGGLE_SIDEBAR', isMac);
   const withRoute = (action: (currentPath: string) => unknown) => () => action(getCurrentPath());
+  const withWorkspace = (action: (workspaceId: string) => void) => () => {
+    const match = getCurrentPath().match(/^\/workspace\/([^/]+)/);
+    if (match?.[1] && match[1] !== 'new') action(match[1]);
+  };
   const effective = (id: ShortcutId) =>
     resolveBinding ? { binding: () => resolveBinding(id) } : {};
 
@@ -300,6 +314,44 @@ export function registerWorkspaceTabShortcuts({
     description: m.workspace_shortcuts_newPanel_description(),
     action: withRoute((path) => openNewPanel(store, path)),
   });
+  for (const [id, key, description, action] of [
+    ['workspace.new-agent', 'a', m.ui_shortcuts_newAgent_label(), onCreateAgent],
+    [
+      'workspace.new-note',
+      'n',
+      m.layout_panelEmptyState_newItem_tooltip({
+        label: m.layout_panelEmptyState_note_label(),
+      }),
+      onCreateNote,
+    ],
+    [
+      'workspace.new-terminal',
+      't',
+      m.layout_panelEmptyState_newItem_tooltip({
+        label: m.layout_panelEmptyState_terminal_label(),
+      }),
+      onCreateTerminal,
+    ],
+    [
+      'workspace.new-browser',
+      'b',
+      m.layout_panelEmptyState_newItem_tooltip({
+        label: m.layout_panelEmptyState_browser_label(),
+      }),
+      onCreateBrowser,
+    ],
+  ] as const) {
+    if (!action) continue;
+    register({
+      ...effective(id),
+      ...mod,
+      key,
+      alt: true,
+      global: true,
+      description,
+      action: withWorkspace(action),
+    });
+  }
   register({
     ...effective('navigation.close-tab'),
     ...mod,

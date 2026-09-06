@@ -108,8 +108,25 @@ describe('shortcut bindings', () => {
     expect(resolveShortcut('global.search', overrides)).toBe('mod+f');
   });
 
+  it('defines one overridable creation chord for every workspace resource', () => {
+    expect({
+      agent: SHORTCUT_DEFAULTS['workspace.new-agent'],
+      note: SHORTCUT_DEFAULTS['workspace.new-note'],
+      terminal: SHORTCUT_DEFAULTS['workspace.new-terminal'],
+      browser: SHORTCUT_DEFAULTS['workspace.new-browser'],
+    }).toEqual({
+      agent: 'mod+alt+a',
+      note: 'mod+alt+n',
+      terminal: 'mod+alt+t',
+      browser: 'mod+alt+b',
+    });
+    expect(resolveShortcut('workspace.new-note', { 'workspace.new-note': 'mod+shift+n' })).toBe(
+      'mod+shift+n',
+    );
+  });
+
   it('does not reject contextual duplicate defaults', () => {
-    expect(SHORTCUTS.NEW_TAB.key).toBe(SHORTCUTS.NEW_AGENT.key);
+    expect(SHORTCUTS.NEW_TAB.key).not.toBe(SHORTCUTS.NEW_AGENT.key);
     expect(SHORTCUTS.SEND.key).toBe(SHORTCUTS.CONFIRM.key);
   });
 
