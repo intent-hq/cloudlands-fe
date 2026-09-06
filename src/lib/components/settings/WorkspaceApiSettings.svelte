@@ -20,6 +20,7 @@
    */
   import { onMount } from 'svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { toast } from '$lib/components/ui/toast';
   import { appClient } from '$lib/client';
@@ -281,16 +282,16 @@
             />
           </div>
           {#if parsed !== persistedMaxOutputChars}
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="xs"
               onclick={handleMaxCharsSave}
               disabled={maxCharsSaving || !isValid}
-              class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {maxCharsSaving
                 ? m.settings_workspaceApi_maxOutputChars_saving()
                 : m.settings_workspaceApi_maxOutputChars_save()}
-            </button>
+            </Button>
           {/if}
         </div>
       </div>
@@ -331,16 +332,16 @@
             />
           </div>
           {#if parsed !== persistedReplayChars}
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="xs"
               onclick={handleReplayCharsSave}
               disabled={replayCharsSaving || !isValid}
-              class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {replayCharsSaving
                 ? m.settings_workspaceApi_maxOutputChars_saving()
                 : m.settings_workspaceApi_maxOutputChars_save()}
-            </button>
+            </Button>
           {/if}
         </div>
       </div>
@@ -381,16 +382,16 @@
             />
           </div>
           {#if parsed !== persistedRetentionDays}
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="xs"
               onclick={handleRetentionDaysSave}
               disabled={retentionDaysSaving || !isValid}
-              class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {retentionDaysSaving
                 ? m.settings_workspaceApi_maxOutputChars_saving()
                 : m.settings_workspaceApi_maxOutputChars_save()}
-            </button>
+            </Button>
           {/if}
         </div>
       </div>
