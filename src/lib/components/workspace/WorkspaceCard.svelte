@@ -22,7 +22,10 @@
     getWorkspaceStatusPresentation,
     resolveWorkspaceStatusState,
   } from './utils/workspace-status-presentation';
-  import { workspaceHoverCardIntentSession } from './utils/workspace-hover-card-intent';
+  import {
+    WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS,
+    workspaceHoverCardIntentSession,
+  } from './utils/workspace-hover-card-intent';
   import TaskProgressBar from './TaskProgressBar.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -194,14 +197,24 @@
   // app), so scrubbing the pointer across the list must not mount one per
   // row — only a pointer that rests on a row opens the card.
   let hoverCardOpenTimer: ReturnType<typeof setTimeout> | null = null;
+  let hoverCardCloseTimer: ReturnType<typeof setTimeout> | null = null;
   let pointerWithinRow = false;
+  let pointerWithinCard = false;
   let focusWithinRow = false;
+  let focusWithinCard = false;
   let hoverCardOpenedFromPointer = false;
 
   function clearHoverCardOpenTimer() {
     if (hoverCardOpenTimer !== null) {
       clearTimeout(hoverCardOpenTimer);
       hoverCardOpenTimer = null;
+    }
+  }
+
+  function clearHoverCardCloseTimer() {
+    if (hoverCardCloseTimer !== null) {
+      clearTimeout(hoverCardCloseTimer);
+      hoverCardCloseTimer = null;
     }
   }
 
@@ -213,10 +226,23 @@
   }
 
   function closeHoverCard() {
+    clearHoverCardCloseTimer();
+    pointerWithinCard = false;
+    focusWithinCard = false;
     hoverCardVisible = false;
     if (!hoverCardOpenedFromPointer) return;
     hoverCardOpenedFromPointer = false;
     workspaceHoverCardIntentSession.notifyClosed();
+  }
+
+  function scheduleHoverCardClose() {
+    clearHoverCardCloseTimer();
+    if (!hoverCardVisible) return;
+    hoverCardCloseTimer = setTimeout(() => {
+      hoverCardCloseTimer = null;
+      if (!pointerWithinRow && !pointerWithinCard && !focusWithinRow && !focusWithinCard)
+        closeHoverCard();
+    }, WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS);
   }
 
   const activePullRequest = $derived.by(() => {
@@ -269,6 +295,7 @@
 
   function handleMouseEnter() {
     pointerWithinRow = true;
+    clearHoverCardCloseTimer();
     onHover?.();
     if (workspace && !suppressHover && !focusWithinRow) {
       clearHoverCardOpenTimer();
@@ -282,24 +309,59 @@
   function handleMouseLeave() {
     pointerWithinRow = false;
     clearHoverCardOpenTimer();
-    if (!focusWithinRow) closeHoverCard();
+    if (!focusWithinRow) scheduleHoverCardClose();
+  }
+
+  function handleHoverCardMouseEnter() {
+    pointerWithinCard = true;
+    clearHoverCardCloseTimer();
+  }
+
+  function handleHoverCardMouseLeave() {
+    pointerWithinCard = false;
+    if (!pointerWithinRow && !focusWithinRow) scheduleHoverCardClose();
   }
 
   function handleFocusIn() {
     focusWithinRow = true;
     clearHoverCardOpenTimer();
+    clearHoverCardCloseTimer();
     if (workspace && !suppressHover) hoverCardVisible = true;
   }
 
   function handleFocusOut(event: FocusEvent) {
     if (event.relatedTarget instanceof Node && rowElement?.contains(event.relatedTarget)) return;
     focusWithinRow = false;
-    if (!pointerWithinRow) closeHoverCard();
+    const cardElement = hoverCardId ? document.getElementById(hoverCardId) : null;
+    if (event.relatedTarget instanceof Node && cardElement?.contains(event.relatedTarget)) {
+      focusWithinCard = true;
+      clearHoverCardCloseTimer();
+      return;
+    }
+    if (!pointerWithinRow && !pointerWithinCard) closeHoverCard();
+  }
+
+  function handleHoverCardFocusIn() {
+    focusWithinCard = true;
+    clearHoverCardCloseTimer();
+  }
+
+  function handleHoverCardFocusOut(event: FocusEvent) {
+    const cardElement = hoverCardId ? document.getElementById(hoverCardId) : null;
+    if (event.relatedTarget instanceof Node && cardElement?.contains(event.relatedTarget)) return;
+    focusWithinCard = false;
+    if (event.relatedTarget instanceof Node && rowElement?.contains(event.relatedTarget)) {
+      focusWithinRow = true;
+      clearHoverCardCloseTimer();
+      return;
+    }
+    if (!pointerWithinRow && !pointerWithinCard && !focusWithinRow) scheduleHoverCardClose();
   }
 
   $effect(() => {
     if (suppressHover) {
       clearHoverCardOpenTimer();
+      clearHoverCardCloseTimer();
       closeHoverCard();
     }
   });
@@ -335,6 +397,7 @@
 
   onDestroy(() => {
     clearHoverCardOpenTimer();
+    clearHoverCardCloseTimer();
     closeHoverCard();
     if (hadContextMenu) appStore.dispatch(decrementContextMenuOpen());
   });
@@ -729,6 +792,10 @@
       position="right"
       anchorElement={rowElement}
       class="w-auto overflow-visible! rounded-lg border-0! bg-background! shadow-none!"
+      onmouseenter={handleHoverCardMouseEnter}
+      onmouseleave={handleHoverCardMouseLeave}
+      onfocusin={handleHoverCardFocusIn}
+      onfocusout={handleHoverCardFocusOut}
     >
       <WorkspaceHoverCard {workspace} activeAgentIds={streamingAgentIds} />
     </HoverCard>

@@ -14,7 +14,12 @@ import {
   createTestWorkspaceId,
   createTestAgentId,
 } from '../../../../test/factories/workspace.factory';
-import { workspaceHoverCardIntentSession } from '../utils/workspace-hover-card-intent';
+import {
+  WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS,
+  WORKSPACE_HOVER_CARD_OPEN_DELAY_MS,
+  WORKSPACE_HOVER_CARD_SESSION_RESET_DELAY_MS,
+  workspaceHoverCardIntentSession,
+} from '../utils/workspace-hover-card-intent';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -385,6 +390,13 @@ describe('WorkspaceCard hover-intent delay', () => {
 
   beforeEach(() => workspaceHoverCardIntentSession.reset());
 
+  async function openHoverCard(row: HTMLElement) {
+    await fireEvent.mouseEnter(row);
+    vi.advanceTimersByTime(WORKSPACE_HOVER_CARD_OPEN_DELAY_MS);
+    await tick();
+    return hoverCard() as HTMLElement;
+  }
+
   it('mounts the hover card only after the pointer rests on the row', async () => {
     vi.useFakeTimers();
     try {
@@ -432,6 +444,64 @@ describe('WorkspaceCard hover-intent delay', () => {
     }
   });
 
+  it('keeps the hover card mounted when the pointer enters it during the close grace period', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+      const card = await openHoverCard(row);
+
+      await fireEvent.mouseLeave(row);
+      vi.advanceTimersByTime(WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS - 1);
+      await fireEvent.mouseEnter(card);
+      vi.advanceTimersByTime(WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS);
+      await tick();
+
+      expect(hoverCard()).toBe(card);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('unmounts the hover card after the close grace period when the pointer leaves the row', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+      await openHoverCard(row);
+
+      await fireEvent.mouseLeave(row);
+      vi.advanceTimersByTime(WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS - 1);
+      await tick();
+      expect(hoverCard()).toBeTruthy();
+
+      vi.advanceTimersByTime(1);
+      await tick();
+      expect(hoverCard()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('unmounts the hover card after the pointer leaves the card', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+      const card = await openHoverCard(row);
+
+      await fireEvent.mouseLeave(row);
+      await fireEvent.mouseEnter(card);
+      await fireEvent.mouseLeave(card);
+      vi.advanceTimersByTime(WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS);
+      await tick();
+
+      expect(hoverCard()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('cancels a pending hover open when hover is suppressed', async () => {
     vi.useFakeTimers();
     try {
@@ -463,7 +533,7 @@ describe('WorkspaceCard hover-intent delay', () => {
       const secondRow = second.container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
 
       await fireEvent.mouseEnter(firstRow);
-      vi.advanceTimersByTime(400);
+      vi.advanceTimersByTime(WORKSPACE_HOVER_CARD_OPEN_DELAY_MS);
       await tick();
       expect(document.querySelectorAll('[role="tooltip"]')).toHaveLength(1);
 
@@ -471,12 +541,17 @@ describe('WorkspaceCard hover-intent delay', () => {
       await fireEvent.mouseEnter(secondRow);
       vi.advanceTimersByTime(0);
       await tick();
+      expect(document.querySelectorAll('[role="tooltip"]')).toHaveLength(2);
+      vi.advanceTimersByTime(WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS);
+      await tick();
       expect(document.querySelectorAll('[role="tooltip"]')).toHaveLength(1);
 
       await fireEvent.mouseLeave(secondRow);
-      vi.advanceTimersByTime(300);
+      vi.advanceTimersByTime(
+        WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS + WORKSPACE_HOVER_CARD_SESSION_RESET_DELAY_MS,
+      );
       await fireEvent.mouseEnter(firstRow);
-      vi.advanceTimersByTime(399);
+      vi.advanceTimersByTime(WORKSPACE_HOVER_CARD_OPEN_DELAY_MS - 1);
       await tick();
       expect(hoverCard()).toBeNull();
       vi.advanceTimersByTime(1);
@@ -484,7 +559,9 @@ describe('WorkspaceCard hover-intent delay', () => {
       expect(hoverCard()).toBeTruthy();
 
       await fireEvent.mouseLeave(firstRow);
-      vi.advanceTimersByTime(300);
+      vi.advanceTimersByTime(
+        WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS + WORKSPACE_HOVER_CARD_SESSION_RESET_DELAY_MS,
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -502,6 +579,36 @@ describe('WorkspaceCard hover-intent delay', () => {
     await fireEvent.focusOut(trigger, { relatedTarget: document.body });
     await tick();
     expect(hoverCard()).toBeNull();
+  });
+
+  it('keeps the portaled card open while keyboard focus moves through a card button', async () => {
+    vi.useFakeTimers();
+    const outsideButton = document.createElement('button');
+    document.body.append(outsideButton);
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const trigger = container.querySelector<HTMLElement>('[data-workspace-card-trigger]')!;
+
+      trigger.focus();
+      await tick();
+      const card = hoverCard() as HTMLElement;
+      const cardButton = document.createElement('button');
+      card.append(cardButton);
+
+      await fireEvent.keyDown(trigger, { key: 'Tab' });
+      cardButton.focus();
+      await tick();
+      expect(document.activeElement).toBe(cardButton);
+      expect(hoverCard()).toBe(card);
+
+      outsideButton.focus();
+      vi.advanceTimersByTime(WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS);
+      await tick();
+      expect(hoverCard()).toBeNull();
+    } finally {
+      outsideButton.remove();
+      vi.useRealTimers();
+    }
   });
 
   it('clears a pending hover open when the row is destroyed', async () => {

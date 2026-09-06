@@ -4,11 +4,14 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { Button } from '$lib/components/ui/button';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import type { AgentSession, PullRequestInfo, Workspace } from '$shared/types';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
+  import { createLogger } from '$lib/utils/client-logger';
+  import { navigateToRoute } from '$lib/utils/navigation.client';
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
@@ -23,6 +26,9 @@
   import { store as appStore } from '$store/renderer/store';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
   import { constructPrUrl } from './sidebar/sidebar-changes-utils';
   import {
@@ -34,6 +40,8 @@
     getWorkspaceStatusPresentation,
     resolveWorkspaceStatusState,
   } from './utils/workspace-status-presentation';
+
+  const logger = createLogger('WorkspaceHoverCard');
 
   interface Props {
     workspace: Workspace | null;
@@ -313,6 +321,26 @@
       : m.workspace_card_prBadge_label({ number: ` #${pr.number}` });
     return [identity, pr.title, pr.details].filter(Boolean).join('\n');
   }
+  function openAgentRow(event: MouseEvent, agentId: string) {
+    event.stopPropagation();
+    if (!workspace || !loadAgentSessions) return;
+    const workspaceId = workspace.id;
+    if (selectCurrentWorkspaceTabId.select(appStore.state) !== workspaceId) {
+      appStore.dispatch(openWorkspaceTab(workspaceId));
+      void navigateToRoute(`/workspace/${workspaceId}`).catch((error) => {
+        logger.warn('Failed to switch workspace for hover-card agent', { agentId, error });
+      });
+    }
+    appStore.dispatch(openAgentTabRequested(workspaceId, { agentId }));
+  }
+  function openPullRequestRow(event: MouseEvent, pr: WorkspacePRPresentationRow) {
+    event.stopPropagation();
+    if (!workspace || !pr.url) return;
+    const workspaceId = workspace.id;
+    void import('$features/navigation/link-handler').then(({ handleLink }) =>
+      handleLink(pr.url, { workspaceId, event }),
+    );
+  }
 </script>
 
 <section
@@ -331,7 +359,7 @@
       </div>
       <div class="my-4 border-t border-border" data-workspace-hover-card-divider></div>
       <div
-        class="body-grid grid min-w-0 grid-cols-1 items-stretch gap-4 px-5 pb-4"
+        class="body-grid grid min-w-0 grid-cols-1 items-stretch gap-2 px-5 pb-4"
         data-workspace-hover-card-columns
       >
         <div class="grid" data-workspace-hover-card-activity>
@@ -360,7 +388,7 @@
           >
         </div>
         <div
-          class="type-caption mt-1 min-w-0 truncate text-muted-foreground"
+          class="type-caption mt-0.5 min-w-0 truncate text-muted-foreground"
           data-workspace-hover-card-repo
         >
           {repo}
@@ -379,7 +407,7 @@
         data-workspace-hover-card-divider
       ></div>
       <div
-        class="body-grid grid min-w-0 grid-cols-1 items-stretch gap-4 px-5 pb-4"
+        class="body-grid grid min-w-0 grid-cols-1 items-stretch gap-2 px-5 pb-4"
         data-workspace-hover-card-columns
       >
         {#if hasAgentRows}<section
@@ -388,45 +416,50 @@
             data-workspace-hover-card-activity
             data-workspace-hover-card-agent-table
           >
-            <div class="grid gap-3" role="list">
-              {#each visibleRows as row (row.id)}<div
-                  class="agent-row grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto] gap-x-2.5"
-                  role="listitem"
-                  aria-label={rowAccessibleLabel(row)}
-                  data-workspace-hover-card-agent-row
-                  data-agent-group-row={row.group}
-                  data-attention-kind={row.attentionKind}
-                >
-                  <span class="row-span-2 grid h-8 w-8 place-items-center" aria-hidden="true"
-                    ><AgentAvatarWithState
-                      agentId={row.id}
-                      variant="emphasized"
-                      state={row.avatarState}
-                      specialist={row.specialist ?? null}
-                    /></span
-                  ><span
-                    class="type-body min-w-0 truncate text-foreground"
-                    data-workspace-hover-card-agent-name>{row.name}</span
-                  ><time
-                    class="type-caption whitespace-nowrap text-muted-foreground"
-                    datetime={row.updated.dateTime}
-                    aria-label={row.updated.accessible}
-                    data-workspace-hover-card-agent-time>{row.updated.compact}</time
+            <div class="-mx-2 grid gap-2" role="list">
+              {#each visibleRows as row (row.id)}<div role="listitem">
+                  <Button
+                    variant="plain"
+                    class="grid h-auto! min-h-8 w-full min-w-0 cursor-pointer grid-cols-[1.5rem_minmax(0,1fr)_auto] items-start justify-normal gap-x-2.5 gap-y-0 whitespace-normal rounded-sm border-0! px-2! py-0.5! text-left font-normal transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    aria-label={rowAccessibleLabel(row)}
+                    data-workspace-hover-card-agent-row
+                    data-agent-group-row={row.group}
+                    data-attention-kind={row.attentionKind}
+                    onclick={(event) => openAgentRow(event, row.id)}
                   >
-                  <span
-                    class="agent-detail type-caption flex min-w-0 items-start gap-1.5 text-muted-foreground"
-                    title={row.context}
-                    data-workspace-hover-card-agent-detail
-                    data-workspace-hover-card-agent-preview={row.contextIsPreview || undefined}
-                    ><span class="min-w-0 truncate" data-workspace-hover-card-agent-context
-                      >{row.context}</span
-                    >{#if row.questionMeta}<span
-                        class="shrink-0 text-muted-foreground"
-                        aria-label={row.questionMeta.accessible}
-                        data-workspace-hover-card-question-meta
-                        ><span aria-hidden="true">{row.questionMeta.compact}</span></span
-                      >{/if}</span
-                  >
+                    <span
+                      class="row-span-2 flex h-8 w-6 items-center justify-start"
+                      aria-hidden="true"
+                      ><AgentAvatarWithState
+                        agentId={row.id}
+                        variant="emphasized"
+                        state={row.avatarState}
+                        specialist={row.specialist ?? null}
+                      /></span
+                    ><span
+                      class="type-body min-w-0 truncate text-foreground"
+                      data-workspace-hover-card-agent-name>{row.name}</span
+                    ><time
+                      class="type-caption whitespace-nowrap text-muted-foreground"
+                      datetime={row.updated.dateTime}
+                      aria-label={row.updated.accessible}
+                      data-workspace-hover-card-agent-time>{row.updated.compact}</time
+                    >
+                    <span
+                      class="agent-detail type-caption flex min-w-0 items-start gap-1.5 text-muted-foreground"
+                      title={row.context}
+                      data-workspace-hover-card-agent-detail
+                      data-workspace-hover-card-agent-preview={row.contextIsPreview || undefined}
+                      ><span class="min-w-0 truncate" data-workspace-hover-card-agent-context
+                        >{row.context}</span
+                      >{#if row.questionMeta}<span
+                          class="shrink-0 text-muted-foreground"
+                          aria-label={row.questionMeta.accessible}
+                          data-workspace-hover-card-question-meta
+                          ><span aria-hidden="true">{row.questionMeta.compact}</span></span
+                        >{/if}</span
+                    >
+                  </Button>
                 </div>{/each}
             </div>
             {#if hiddenCount}<div
@@ -447,41 +480,58 @@
             data-workspace-hover-card-pr-column
           >
             <div
-              class="grid min-w-0 gap-3"
+              class="-mx-2 grid min-w-0 gap-2"
               aria-label={m.workspace_hoverCard_pullRequests_label()}
               role="list"
               data-workspace-hover-card-pr-list
             >
               {#each visiblePrRows as pr (pr.identity)}
-                <div
-                  class="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto_auto] items-center gap-x-2.5"
-                  aria-label={getWorkspacePrLabel(pr)}
-                  role="listitem"
-                  data-workspace-hover-card-pr-row
-                  data-pr-identity={pr.identity}
-                  data-pr-status={pr.status}
-                >
-                  <Fa
-                    icon={pr.statusIcon}
-                    size={18}
-                    class="shrink-0 justify-self-center {pr.foregroundClass}"
-                  />
-                  <span
-                    class="type-body min-w-0 truncate text-foreground"
-                    data-workspace-hover-card-pr-title
-                  >
-                    {pr.title || m.workspace_hoverCard_pullRequest_label()}
-                  </span>
-                  <span
-                    class="type-caption shrink-0 text-muted-foreground"
-                    data-workspace-hover-card-pr-status
-                  >
-                    {pr.accessibleStateLabel}
-                  </span>
-                  <span
-                    class="type-caption shrink-0 text-muted-foreground"
-                    data-workspace-hover-card-pr-number>#{pr.number}</span
-                  >
+                <div role="listitem" aria-label={pr.url ? undefined : getWorkspacePrLabel(pr)}>
+                  {#snippet prRowContent()}
+                    <Fa
+                      icon={pr.statusIcon}
+                      size={18}
+                      class="shrink-0 justify-self-start {pr.foregroundClass}"
+                    />
+                    <span
+                      class="type-body min-w-0 truncate text-foreground"
+                      data-workspace-hover-card-pr-title
+                    >
+                      {pr.title || m.workspace_hoverCard_pullRequest_label()}
+                    </span>
+                    <span
+                      class="type-caption shrink-0 text-muted-foreground"
+                      data-workspace-hover-card-pr-status
+                    >
+                      {pr.accessibleStateLabel}
+                    </span>
+                    <span
+                      class="type-caption shrink-0 text-muted-foreground"
+                      data-workspace-hover-card-pr-number>#{pr.number}</span
+                    >
+                  {/snippet}
+                  {#if pr.url}
+                    <Button
+                      variant="plain"
+                      class="grid h-auto! w-full min-w-0 grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] items-center justify-normal gap-x-2.5 whitespace-normal rounded-sm border-0! px-2! py-1! text-left font-normal transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      aria-label={getWorkspacePrLabel(pr)}
+                      data-workspace-hover-card-pr-row
+                      data-pr-identity={pr.identity}
+                      data-pr-status={pr.status}
+                      onclick={(event: MouseEvent) => openPullRequestRow(event, pr)}
+                    >
+                      {@render prRowContent()}
+                    </Button>
+                  {:else}
+                    <div
+                      class="grid w-full min-w-0 grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] items-center gap-x-2.5 rounded-sm px-2 py-1 text-left"
+                      data-workspace-hover-card-pr-row
+                      data-pr-identity={pr.identity}
+                      data-pr-status={pr.status}
+                    >
+                      {@render prRowContent()}
+                    </div>
+                  {/if}
                 </div>
               {/each}
             </div>
@@ -505,9 +555,6 @@
   .workspace-hover-card {
     width: 35rem;
     max-width: min(100%, calc(100vw - 3.625rem));
-  }
-  .agent-row {
-    min-height: 32px;
   }
   .agent-detail {
     grid-column: 2 / -1;
