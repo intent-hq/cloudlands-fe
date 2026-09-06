@@ -1385,6 +1385,40 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
+  // The active marker is derived per panel: a stale activeTabId on a panel
+  // that no longer holds the tab must not mark the tab as displayed while it
+  // actually sits behind a sibling in another panel.
+  it('does not mark a tab active from a stale activeTabId on another panel', async () => {
+    const task = start();
+    state = {
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            panels: {
+              stale: { tabs: [], activeTabId: 'browser-behind' },
+              holder: {
+                tabs: [
+                  { id: 'note-1', type: 'note', title: 'Note' },
+                  { id: 'browser-behind', type: 'browser', browserUrl: 'http://c/', title: 'C' },
+                ],
+                activeTabId: 'note-1',
+              },
+            },
+          },
+        },
+      },
+    };
+
+    await emit({ workspaceId: 'ws-1', requestId: 'req-stale' }, 'browser:list-tabs-request');
+
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
+      requestId: 'req-stale',
+      tabs: [{ tabId: 'browser-behind', url: 'http://c/', title: 'C', closable: true }],
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
   it("answers a list-tabs request with the requested workspace's browser tabs even when backgrounded", async () => {
     const task = start();
     state = {

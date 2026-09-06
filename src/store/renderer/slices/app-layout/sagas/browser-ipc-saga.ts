@@ -509,12 +509,19 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
   // Panel-mounted tabs that are their panel's active tab carry
   // `active: true`: a mounted-but-inactive tab renders nothing in the
   // tabless UI, so main projects `displayed` from it and agents can tell a
-  // front tab from one that merely sits behind a sibling in its panel.
+  // front tab from one that merely sits behind a sibling in its panel. The
+  // check is per panel — the tab must be the active tab of the panel that
+  // holds it — so a stale activeTabId on another panel can never mark a
+  // tab sitting behind a sibling as displayed.
   const panels = yield* selectPanels.effect(workspaceId);
   const activeTabIds = new Set(
     Object.values(panels)
-      .map((panel) => panel.activeTabId)
-      .filter((tabId): tabId is string => typeof tabId === 'string'),
+      .filter(
+        (panel) =>
+          typeof panel.activeTabId === 'string' &&
+          panel.tabs.some((tab) => tab.id === panel.activeTabId),
+      )
+      .map((panel) => panel.activeTabId as string),
   );
   const toReplyTab = (tab: PanelTab, hidden: boolean) => ({
     tabId: tab.id,
