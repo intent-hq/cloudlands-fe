@@ -605,8 +605,11 @@
     }
   }
 
-  .panel[data-empty-panel-shell='true'] {
+  .panel[data-empty-panel-shell='true']:not([data-focus-border-visible='true']) {
     border-width: 0;
+  }
+
+  .panel[data-empty-panel-shell='true'] {
     box-shadow: none;
   }
 
