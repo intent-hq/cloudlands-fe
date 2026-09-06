@@ -15,6 +15,7 @@
     source: DraftSource | null;
     presentation?: SourcePresentation;
     disabled?: boolean;
+    showSummary?: boolean;
     pickerOpen?: boolean;
     pickerMode?: SourcePickerMode;
     onPickerOpenChange?: (open: boolean) => void;
@@ -26,6 +27,7 @@
     source,
     presentation = {},
     disabled = false,
+    showSummary = true,
     pickerOpen = false,
     pickerMode = 'github',
     onPickerOpenChange,
@@ -124,48 +126,50 @@
   }
 </script>
 
-<div class="space-y-2" data-source-state={sourceState}>
-  <div class="type-caption min-w-0 text-muted-foreground">
-    <p class="font-medium text-foreground">{title}</p>
-    {#if sourceState !== 'none'}
-      <p class="mt-1 break-all">{summary}</p>
-    {/if}
-    {#if sourceState === 'new-folder-invalid' && activeNewFolderError}
-      <p class="mt-1 text-danger" role="alert">{errorLabel(activeNewFolderError)}</p>
-    {:else if sourceState === 'unresolved-link'}
-      <p class="mt-1">{m.newWorkspace_source_unresolved_description()}</p>
-    {:else if sourceState === 'non-git'}
-      <p class="mt-1">{m.workspace_validation_nonGitInit_warning()}</p>
-    {/if}
-    {#if !disabled}
-      <p class="mt-2">{m.newWorkspace_source_composerMenu_description()}</p>
+{#if showSummary}
+  <div class="space-y-2" data-source-state={sourceState}>
+    <div class="type-caption min-w-0 text-muted-foreground">
+      <p class="font-medium text-foreground">{title}</p>
+      {#if sourceState !== 'none'}
+        <p class="mt-1 break-all">{summary}</p>
+      {/if}
+      {#if sourceState === 'new-folder-invalid' && activeNewFolderError}
+        <p class="mt-1 text-danger" role="alert">{errorLabel(activeNewFolderError)}</p>
+      {:else if sourceState === 'unresolved-link'}
+        <p class="mt-1">{m.newWorkspace_source_unresolved_description()}</p>
+      {:else if sourceState === 'non-git'}
+        <p class="mt-1">{m.workspace_validation_nonGitInit_warning()}</p>
+      {/if}
+      {#if !disabled}
+        <p class="mt-2">{m.newWorkspace_source_composerMenu_description()}</p>
+      {/if}
+    </div>
+
+    {#if source?.kind === 'local' || source?.kind === 'github'}
+      <details class="type-caption">
+        <summary
+          class="min-h-6 cursor-pointer rounded-sm font-medium text-muted-foreground hover:text-foreground active:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          {m.settings_aiBehavior_advanced_label()}
+        </summary>
+        <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-muted-foreground">
+          <dt>{m.ui_openCombo_copyBranch_shortLabel()}</dt>
+          <dd class="truncate text-foreground">
+            {source.branch ?? m.chat_modelPicker_providerDefault_label()}
+          </dd>
+          {#if source.kind === 'local'}
+            <dt>{m.newWorkspace_source_isolation_label()}</dt>
+            <dd class="text-foreground">
+              {source.isolation === 'worktree'
+                ? m.workspace_isolationMode_worktree_label()
+                : m.newWorkspace_source_inPlace_label()}
+            </dd>
+          {/if}
+        </dl>
+      </details>
     {/if}
   </div>
-
-  {#if source?.kind === 'local' || source?.kind === 'github'}
-    <details class="type-caption">
-      <summary
-        class="min-h-6 cursor-pointer rounded-sm font-medium text-muted-foreground hover:text-foreground active:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-      >
-        {m.settings_aiBehavior_advanced_label()}
-      </summary>
-      <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-muted-foreground">
-        <dt>{m.ui_openCombo_copyBranch_shortLabel()}</dt>
-        <dd class="truncate text-foreground">
-          {source.branch ?? m.chat_modelPicker_providerDefault_label()}
-        </dd>
-        {#if source.kind === 'local'}
-          <dt>{m.newWorkspace_source_isolation_label()}</dt>
-          <dd class="text-foreground">
-            {source.isolation === 'worktree'
-              ? m.workspace_isolationMode_worktree_label()
-              : m.newWorkspace_source_inPlace_label()}
-          </dd>
-        {/if}
-      </dl>
-    </details>
-  {/if}
-</div>
+{/if}
 
 <Dialog.Root open={pickerOpen} onOpenChange={(open) => onPickerOpenChange?.(open)}>
   <Dialog.Content class="max-w-md" data-testid="draft-source-picker">

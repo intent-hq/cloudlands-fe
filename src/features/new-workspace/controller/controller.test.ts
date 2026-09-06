@@ -352,6 +352,35 @@ describe('new-workspace controller', () => {
     expect(hasUnsavedInput(state)).toBe(false);
   });
 
+  it('persists setup panel expansion in the durable draft config', () => {
+    let state = restore(
+      draft({
+        source: { kind: 'local', path: '/projects/intent', isolation: 'worktree' },
+        config: { setupPanelExpanded: true },
+      }),
+    );
+    expect(state.input.config.setupPanelExpanded).toBe(true);
+
+    state = reduce(state, {
+      type: 'user.edited',
+      patch: { config: { ...state.input.config, setupPanelExpanded: false } },
+    });
+    expect(effectsFor(state)).toEqual([
+      expect.objectContaining({
+        type: 'updateDraft',
+        input: expect.objectContaining({ config: { setupPanelExpanded: false } }),
+      }),
+    ]);
+
+    const restored = restore(
+      draft({
+        source: { kind: 'local', path: '/projects/intent', isolation: 'worktree' },
+        config: { setupPanelExpanded: false },
+      }),
+    );
+    expect(restored.input.config.setupPanelExpanded).toBe(false);
+  });
+
   it('surfaces revision conflicts and can keep local input against the remote revision', () => {
     let state = restore(draft({ intentText: 'base' }));
     state = reduce(state, { type: 'user.edited', patch: { intentText: 'local' } });

@@ -19,6 +19,7 @@
   import CapabilityStrip from './CapabilityStrip.svelte';
   import CoordinatorPanel from './CoordinatorPanel.svelte';
   import SourceCard, { type SourcePickerMode } from './SourceCard.svelte';
+  import ProjectSetupPanel from './setup/ProjectSetupPanel.svelte';
   import { coordinatorStateFor, isProgressPhase, type NewWorkspacePresentation } from './types';
 
   interface Props {
@@ -98,6 +99,11 @@
       ? controllerState.input.config.setupScript
       : presentation.progress?.setup?.error,
   );
+  const setupPanelExpanded = $derived(
+    typeof controllerState.input.config.setupPanelExpanded === 'boolean'
+      ? controllerState.input.config.setupPanelExpanded
+      : source === null,
+  );
   let sourcePickerOpen = $state(false);
   let sourcePickerMode = $state<SourcePickerMode>('github');
   const sourceActionGroups = $derived.by((): StackedMenuGroup[] =>
@@ -134,6 +140,28 @@
   function openSourcePicker(mode: SourcePickerMode): void {
     sourcePickerMode = mode;
     sourcePickerOpen = true;
+  }
+
+  function setSetupPanelExpanded(expanded: boolean): void {
+    onEdit?.({
+      config: { ...controllerState.input.config, setupPanelExpanded: expanded },
+    });
+  }
+
+  function selectSource(selectedSource: NonNullable<DraftInput['source']>): void {
+    if (onEdit) {
+      onEdit?.({
+        source: selectedSource,
+        config: { ...controllerState.input.config, setupPanelExpanded: false },
+      });
+    } else {
+      onSourceSelected?.(selectedSource);
+    }
+  }
+
+  function chooseNewFolder(name: string): void {
+    onChooseNewFolder?.(name);
+    setSetupPanelExpanded(false);
   }
 
   function setupStatus(): 'pending' | 'active' | 'done' | 'error' | undefined {
@@ -273,24 +301,40 @@
                     {onSourceSelected}
                   />
                 {/snippet}
-                {#key progressId}
-                  <WorkspaceSetupCard
-                    {repoName}
-                    {repoPath}
-                    {branch}
-                    baseRef="origin/main"
-                    specialistName={m.notification_specialist_coordinator()}
-                    hasPrompt={Boolean(controllerState.input.intentText.trim())}
-                    repoStatus={workspaceStepStatus()}
-                    branchStatus={workspaceStepStatus()}
-                    agentStatus={workspaceStepStatus()}
-                    setupScriptStatus={setupStatus()}
-                    {setupScriptContent}
-                    skipIsolation={source?.kind === 'local' && source.isolation === 'in-place'}
-                    {progressId}
-                    {repoPendingContent}
+                {#if controllerState.phase === 'pristine' || controllerState.phase === 'editing'}
+                  <ProjectSetupPanel
+                    {source}
+                    presentation={presentation.source}
+                    expanded={setupPanelExpanded}
+                    disabled={composerLocked}
+                    pickerOpen={sourcePickerOpen}
+                    pickerMode={sourcePickerMode}
+                    onExpandedChange={setSetupPanelExpanded}
+                    onPickerOpenChange={(open) => (sourcePickerOpen = open)}
+                    onOpenPicker={openSourcePicker}
+                    onChooseNewFolder={chooseNewFolder}
+                    onSourceSelected={selectSource}
                   />
-                {/key}
+                {:else}
+                  {#key progressId}
+                    <WorkspaceSetupCard
+                      {repoName}
+                      {repoPath}
+                      {branch}
+                      baseRef="origin/main"
+                      specialistName={m.notification_specialist_coordinator()}
+                      hasPrompt={Boolean(controllerState.input.intentText.trim())}
+                      repoStatus={workspaceStepStatus()}
+                      branchStatus={workspaceStepStatus()}
+                      agentStatus={workspaceStepStatus()}
+                      setupScriptStatus={setupStatus()}
+                      {setupScriptContent}
+                      skipIsolation={source?.kind === 'local' && source.isolation === 'in-place'}
+                      {progressId}
+                      {repoPendingContent}
+                    />
+                  {/key}
+                {/if}
               </div>
 
               <CoordinatorPanel presentation={coordinator} {onProviderSelected} />
