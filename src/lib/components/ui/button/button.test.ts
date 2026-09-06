@@ -155,7 +155,7 @@ describe('Button', () => {
     expect(onkeydown).toHaveBeenCalledWith(expect.objectContaining({ key: 'Enter' }));
   });
 
-  it.each(['icon', 'icon-sm', 'icon-xs', 'icon-lg'] as const)(
+  it.each(['icon', 'icon-compact', 'icon-sm', 'icon-xs', 'icon-lg'] as const)(
     'rejects unnamed %s buttons',
     (size) => {
       expect(() => render(Button, { props: { size } })).toThrow(/requires a non-empty/i);
@@ -169,7 +169,7 @@ describe('Button', () => {
 
   it('enforces canonical sizes and accessible names for literal icon Button callers', () => {
     const srcRoot = resolve(process.cwd(), 'src');
-    const canonicalSizes = new Set(['icon', 'icon-sm', 'icon-xs', 'icon-lg']);
+    const canonicalSizes = new Set(['icon', 'icon-compact', 'icon-sm', 'icon-xs', 'icon-lg']);
     const nameAttributes = new Set(['aria-label', 'aria-labelledby', 'title', 'tooltip']);
     const malformed: string[] = [];
     const unnamed: string[] = [];

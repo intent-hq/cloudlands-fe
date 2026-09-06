@@ -4,13 +4,13 @@ import { tv, type VariantProps } from 'tailwind-variants';
 import type { WithElementRef } from '$lib/utils.js';
 
 export const buttonEmphasisLadder = [
-  { value: 'primary', label: 'Primary', guidance: 'One highest-priority action per region.' },
-  { value: 'secondary', label: 'Secondary', guidance: 'Supporting actions that remain visible.' },
-  { value: 'ghost', label: 'Ghost', guidance: 'Low-emphasis or repeated toolbar actions.' },
+  { value: 'primary', label: 'Primary', guidance: 'One highest-priority action per region.' }, // i18n-ignore (design-system catalog metadata)
+  { value: 'secondary', label: 'Secondary', guidance: 'Supporting actions that remain visible.' }, // i18n-ignore (design-system catalog metadata)
+  { value: 'ghost', label: 'Ghost', guidance: 'Low-emphasis or repeated toolbar actions.' }, // i18n-ignore (design-system catalog metadata)
   {
     value: 'destructive',
     label: 'Destructive',
-    guidance: 'Irreversible or damaging actions only.',
+    guidance: 'Irreversible or damaging actions only.', // i18n-ignore (design-system catalog metadata)
   },
 ] as const;
 
