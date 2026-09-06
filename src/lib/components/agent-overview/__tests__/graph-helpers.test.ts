@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { AgentStatus, type AgentSession } from '$shared/types';
+import type { GraphEdge } from '../types';
 import {
   convertToInteractionEvent,
   getNodeStatus,
   getStreamingState,
   isExternalFilePath,
+  mergeEdgesByPair,
 } from '../graph-helpers';
 
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
@@ -30,6 +32,67 @@ const staleStreamingAssistant = {
 };
 
 describe('agent overview graph helpers', () => {
+  describe('mergeEdgesByPair', () => {
+    const edge = (overrides: Partial<GraphEdge> = {}): GraphEdge =>
+      ({
+        id: 'read:a-b',
+        type: 'file-read',
+        sourceId: 'agent:a',
+        targetId: 'file:b',
+        agentId: 'a',
+        filePath: 'src/b.ts',
+        timestamp: '2026-09-06T00:00:00.000Z',
+        isActive: false,
+        count: 1,
+        ...overrides,
+      }) as GraphEdge;
+
+    it('merges opposite directions into one bidirectional connection', () => {
+      const [pair] = mergeEdgesByPair([
+        edge(),
+        edge({ id: 'read:b-a', sourceId: 'file:b', targetId: 'agent:a' }),
+      ]);
+
+      expect(pair.members).toHaveLength(2);
+      expect([...pair.directions]).toEqual(['a-to-b', 'b-to-a']);
+    });
+
+    it('uses writes as the primary type for a read-write pair', () => {
+      const [pair] = mergeEdgesByPair([edge(), edge({ id: 'write:a-b', type: 'file-write' })]);
+
+      expect(pair.type).toBe('file-write');
+    });
+
+    it('keeps unrelated pairs separate', () => {
+      const pairs = mergeEdgesByPair([
+        edge(),
+        edge({ id: 'read:a-c', targetId: 'file:c', filePath: 'src/c.ts' }),
+      ]);
+
+      expect(pairs.map((pair) => pair.key)).toEqual(['agent:a|file:b', 'agent:a|file:c']);
+    });
+
+    it('aggregates activity and uses the latest member timestamp', () => {
+      const [pair] = mergeEdgesByPair(
+        [
+          edge(),
+          edge({
+            id: 'write:a-b',
+            type: 'file-write',
+            timestamp: '2026-09-06T00:01:00.000Z',
+            isActive: true,
+          }),
+        ],
+        Date.parse('2026-09-06T00:01:05.000Z'),
+      );
+
+      expect(pair.isActive).toBe(true);
+      expect(pair.isRecentlyActive).toBe(true);
+      expect(pair.timestamp).toBe('2026-09-06T00:01:00.000Z');
+      expect(pair.latestEdge.id).toBe('write:a-b');
+    });
+  });
+
   describe('isExternalFilePath', () => {
     const roots = ['/repo'];
 

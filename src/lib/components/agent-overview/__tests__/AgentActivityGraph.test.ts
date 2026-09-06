@@ -366,7 +366,7 @@ describe('AgentActivityGraph', () => {
     expect(graphFitTransitionIds(viewport)).toEqual([initialTransitionId]);
   });
 
-  it('draws stable per-edge curves with solid hairlines and target dots', () => {
+  it('draws one stable gentle curve and target terminal per connected pair', () => {
     const target = file(1);
     const edges = [
       { ...edge(target), id: 'edge:curve-a' },
@@ -386,15 +386,56 @@ describe('AgentActivityGraph', () => {
       Array.from(container.querySelectorAll('.edge-path'), (path) => path.getAttribute('d'));
 
     expect(pathsFor(second.container)).toEqual(pathsFor(first.container));
-    expect(new Set(pathsFor(first.container)).size).toBe(2);
+    expect(pathsFor(first.container)).toHaveLength(1);
     expect(pathsFor(first.container).every((path) => path?.includes(' C '))).toBe(true);
     expect(first.container.querySelector('.edge-path')?.getAttribute('stroke-width')).toBe('0.75');
     expect(first.container.querySelector('.edge-path')?.hasAttribute('stroke-dasharray')).toBe(
       false,
     );
-    expect(first.container.querySelectorAll('.edge-terminal')).toHaveLength(2);
+    expect(first.container.querySelector('.edge-path')?.getAttribute('data-edge-count')).toBe('2');
+    expect(first.container.querySelectorAll('.edge-terminal')).toHaveLength(1);
     expect(first.container.querySelector('.edge-terminal')?.getAttribute('r')).toBe('2.25');
     expect(first.container.querySelector('.edge-arrow')).toBeNull();
+  });
+
+  it('uses terminals at both directed ends of a bidirectional pair', () => {
+    const target = agent('two');
+    const forward: GraphEdge = {
+      id: 'message:forward',
+      type: 'message',
+      sourceId: 'agent:one',
+      targetId: target.id,
+      senderAgentId: 'one',
+      receiverAgentId: 'two',
+      timestamp,
+      isActive: false,
+      count: 1,
+    };
+    const reverse: GraphEdge = {
+      ...forward,
+      id: 'message:reverse',
+      sourceId: target.id,
+      targetId: 'agent:one',
+      senderAgentId: 'two',
+      receiverAgentId: 'one',
+    };
+    const { container } = render(GraphEdgeLayer, {
+      props: {
+        edges: [forward, reverse],
+        nodes: [agent(), target],
+        positions: new Map([
+          ['agent:one', { x: 100, y: 100 }],
+          ['agent:two', { x: 300, y: 100 }],
+        ]),
+      },
+    });
+
+    expect(container.querySelectorAll('.edge-path')).toHaveLength(1);
+    expect(
+      Array.from(container.querySelectorAll('.edge-terminal'), (terminal) =>
+        terminal.getAttribute('data-direction'),
+      ),
+    ).toEqual(['b-to-a', 'a-to-b']);
   });
 
   it('adds traveling highlights only to working, recent delegation, and waiting edges', () => {
@@ -414,7 +455,7 @@ describe('AgentActivityGraph', () => {
       {
         id: 'waiting:one',
         type: 'waiting-on',
-        sourceId: 'agent:one',
+        sourceId: 'agent:two',
         targetId: 'task:one',
         agentId: 'one',
         timestamp,
@@ -436,6 +477,12 @@ describe('AgentActivityGraph', () => {
       },
     });
 
+    expect(container.querySelectorAll('.edge-path')).toHaveLength(4);
+    expect(
+      container
+        .querySelector('.edge-path[data-edge-id="waiting:one"]')
+        ?.getAttribute('data-edge-count'),
+    ).toBe('2');
     expect(
       Array.from(container.querySelectorAll<SVGPathElement>('[data-edge-highlight]'), (path) => [
         path.getAttribute('data-edge-id'),
@@ -443,8 +490,8 @@ describe('AgentActivityGraph', () => {
       ]),
     ).toEqual([
       ['assignment:one:one', 'working'],
-      ['delegation:recent', 'delegation'],
       ['waiting:one', 'waiting'],
+      ['delegation:recent', 'delegation'],
     ]);
     const workingHighlight = container.querySelector('[data-edge-highlight="working"]');
     const workingBase = container.querySelector('.edge-path[data-edge-id="assignment:one:one"]');
@@ -572,5 +619,43 @@ describe('AgentActivityGraph', () => {
     } finally {
       timeout.mockRestore();
     }
+  });
+
+  it('keeps only the latest message pill for a connected pair', () => {
+    const first: GraphEdge = {
+      id: 'message:first',
+      type: 'message',
+      sourceId: 'agent:one',
+      targetId: 'agent:two',
+      senderAgentId: 'one',
+      receiverAgentId: 'two',
+      timestamp: new Date().toISOString(),
+      isActive: true,
+      count: 1,
+    };
+    const latest: GraphEdge = {
+      ...first,
+      id: 'message:latest',
+      sourceId: 'agent:two',
+      targetId: 'agent:one',
+      senderAgentId: 'two',
+      receiverAgentId: 'one',
+      timestamp: new Date(Date.parse(first.timestamp) + 1).toISOString(),
+    };
+    const { container } = render(GraphEdgeLayer, {
+      props: {
+        edges: [first, latest],
+        nodes: [agent(), agent('two')],
+        positions: new Map([
+          ['agent:one', { x: 100, y: 100 }],
+          ['agent:two', { x: 300, y: 100 }],
+        ]),
+      },
+    });
+
+    expect(container.querySelectorAll('[data-message-particle]')).toHaveLength(1);
+    expect(container.querySelector('[data-message-particle]')?.getAttribute('data-target-id')).toBe(
+      'agent:one',
+    );
   });
 });

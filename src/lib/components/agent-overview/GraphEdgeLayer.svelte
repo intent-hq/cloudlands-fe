@@ -9,6 +9,7 @@
     playbackDuration,
   } from './activity-motion';
   import type { PlaybackSpeed } from './playback';
+  import { mergeEdgesByPair, type EdgePairDirection, type MergedEdgePair } from './graph-helpers';
 
   export interface GraphPosition {
     x: number;
@@ -38,6 +39,8 @@
 
   const nodeById = $derived(new Map(nodes.map((node) => [node.id, node])));
   const activeFocusNodeId = $derived(focusNodeId ?? spotlightNodeId);
+  const mergedPairs = $derived(mergeEdgesByPair(edges));
+  const pairByKey = $derived(new Map(mergedPairs.map((pair) => [pair.key, pair])));
 
   let travelingEdges = $state<GraphEdge[]>([]);
   let motionEnabled = $state(true);
@@ -63,36 +66,64 @@
     return `${edge.id}:${edge.timestamp}`;
   }
 
+  function pairKeyFor(edge: GraphEdge): string {
+    return [edge.sourceId, edge.targetId].sort().join('|');
+  }
+
+  function directionFor(edge: GraphEdge, pair: MergedEdgePair): EdgePairDirection {
+    return edge.sourceId === pair.aId ? 'a-to-b' : 'b-to-a';
+  }
+
+  function latestMember(
+    pair: MergedEdgePair,
+    predicate: (edge: GraphEdge) => boolean,
+  ): GraphEdge | undefined {
+    return pair.members
+      .filter(predicate)
+      .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))[0];
+  }
+
   $effect(() => {
     const limit = messageParticleLimit(playbackSpeed);
-    const arrivals = edges
-      .filter(
-        (edge) => edge.type === 'message' && (edge.isActive || isRecentlyActive(edge.timestamp)),
+    const arrivals = mergedPairs
+      .map((pair) =>
+        latestMember(
+          pair,
+          (edge) => edge.type === 'message' && (edge.isActive || isRecentlyActive(edge.timestamp)),
+        ),
       )
+      .filter((edge): edge is GraphEdge => edge !== undefined)
+      .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
       .filter((edge) => !seenMessageEvents.has(messageEventKey(edge)))
       .slice(-limit);
     if (arrivals.length === 0) return;
     arrivals.forEach((edge) => seenMessageEvents.add(messageEventKey(edge)));
-    travelingEdges = [...travelingEdges, ...arrivals].slice(-limit);
+    const arrivingPairs = new Set(arrivals.map(pairKeyFor));
+    travelingEdges = [
+      ...travelingEdges.filter((edge) => !arrivingPairs.has(pairKeyFor(edge))),
+      ...arrivals,
+    ].slice(-limit);
   });
 
-  function opacityFor(edge: GraphEdge): number {
-    const style = EDGE_STYLES[edge.type] ?? EDGE_STYLES.default;
+  function opacityFor(pair: MergedEdgePair): number {
+    const style = EDGE_STYLES[pair.type] ?? EDGE_STYLES.default;
     if (!activeFocusNodeId) return style.opacity;
-    return edge.sourceId === activeFocusNodeId || edge.targetId === activeFocusNodeId
+    return pair.aId === activeFocusNodeId || pair.bId === activeFocusNodeId
       ? Math.min(1, style.opacity + 0.28)
       : 0.12;
   }
 
-  function isHighlighted(edge: GraphEdge): boolean {
+  function isHighlighted(pair: MergedEdgePair): boolean {
     return (
       activeFocusNodeId !== null &&
-      (edge.sourceId === activeFocusNodeId || edge.targetId === activeFocusNodeId)
+      (pair.aId === activeFocusNodeId || pair.bId === activeFocusNodeId)
     );
   }
 
-  function isActiveNow(edge: GraphEdge): boolean {
-    return edge.type === 'message' && (edge.isActive || isRecentlyActive(edge.timestamp));
+  function isActiveNow(pair: MergedEdgePair): boolean {
+    return pair.members.some(
+      (edge) => edge.type === 'message' && (edge.isActive || isRecentlyActive(edge.timestamp)),
+    );
   }
 
   function isWorkingEdge(edge: GraphEdge): boolean {
@@ -109,11 +140,25 @@
 
   type EdgeHighlight = 'working' | 'delegation' | 'waiting';
 
-  function highlightFor(edge: GraphEdge, working: boolean): EdgeHighlight | null {
-    if (working) return 'working';
-    if (edge.type === 'delegation' && isRecentlyActive(edge.timestamp)) return 'delegation';
-    if (edge.type === 'waiting-on') return 'waiting';
-    return null;
+  function highlightFor(pair: MergedEdgePair): { kind: EdgeHighlight; edge: GraphEdge } | null {
+    const working = latestMember(pair, isWorkingEdge);
+    const delegation = latestMember(
+      pair,
+      (edge) => edge.type === 'delegation' && isRecentlyActive(edge.timestamp),
+    );
+    const waiting = latestMember(pair, (edge) => edge.type === 'waiting-on');
+    const kind: EdgeHighlight | null = working
+      ? 'working'
+      : delegation
+        ? 'delegation'
+        : waiting
+          ? 'waiting'
+          : null;
+    if (!kind) return null;
+    const edge = [working, delegation, waiting]
+      .filter((candidate): candidate is GraphEdge => candidate !== undefined)
+      .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))[0];
+    return { kind, edge };
   }
 
   function highlightDuration(highlight: EdgeHighlight): string {
@@ -161,33 +206,48 @@
   }
 
   function endpointsFor(
-    edge: GraphEdge,
+    pair: MergedEdgePair,
     source: GraphPosition,
     target: GraphPosition,
   ): { source: GraphPosition; target: GraphPosition } {
     return {
-      source: endpoint(source, target, nodeById.get(edge.sourceId), 3),
-      target: endpoint(target, source, nodeById.get(edge.targetId), 5),
+      source: endpoint(
+        source,
+        target,
+        nodeById.get(pair.aId),
+        pair.directions.has('b-to-a') ? 5 : 3,
+      ),
+      target: endpoint(
+        target,
+        source,
+        nodeById.get(pair.bId),
+        pair.directions.has('a-to-b') ? 5 : 3,
+      ),
     };
   }
 
-  function edgeCurve(edgeId: string): number {
+  function edgeCurve(pairKey: string): number {
     let hash = 2166136261;
-    for (let index = 0; index < edgeId.length; index += 1) {
-      hash ^= edgeId.charCodeAt(index);
+    for (let index = 0; index < pairKey.length; index += 1) {
+      hash ^= pairKey.charCodeAt(index);
       hash = Math.imul(hash, 16777619);
     }
-    const unit = (hash >>> 0) / 4294967296;
-    const direction = unit < 0.5 ? -1 : 1;
-    return direction * (0.15 + (unit % 0.5) * 0.2);
+    return (hash >>> 0) % 2 === 0 ? -0.05 : 0.05;
   }
 
-  function pathFor(edge: GraphEdge, source: GraphPosition, target: GraphPosition): string {
+  function pathsForPair(
+    pairKey: string,
+    source: GraphPosition,
+    target: GraphPosition,
+  ): { forward: string; reverse: string } {
     const dx = target.x - source.x;
     const dy = target.y - source.y;
     const distance = Math.hypot(dx, dy);
-    if (distance === 0) return `M ${source.x} ${source.y}`;
-    const offset = distance * edgeCurve(edge.id);
+    if (distance === 0) {
+      const path = `M ${source.x} ${source.y}`;
+      return { forward: path, reverse: path };
+    }
+    const offset = distance * edgeCurve(pairKey);
     const perpendicularX = (-dy / distance) * offset;
     const perpendicularY = (dx / distance) * offset;
     const first = {
@@ -198,7 +258,10 @@
       x: source.x + (dx * 2) / 3 + perpendicularX,
       y: source.y + (dy * 2) / 3 + perpendicularY,
     };
-    return `M ${source.x} ${source.y} C ${first.x} ${first.y}, ${second.x} ${second.y}, ${target.x} ${target.y}`;
+    return {
+      forward: `M ${source.x} ${source.y} C ${first.x} ${first.y}, ${second.x} ${second.y}, ${target.x} ${target.y}`,
+      reverse: `M ${target.x} ${target.y} C ${second.x} ${second.y}, ${first.x} ${first.y}, ${source.x} ${source.y}`,
+    };
   }
 
   function labelFor(edge: GraphEdge): string | null {
@@ -216,32 +279,40 @@
   class="edge-layer pointer-events-none absolute inset-0 h-full w-full overflow-visible"
   aria-hidden="true"
 >
-  {#each edges as edge, edgeIndex (edge.id)}
-    {@const source = positions.get(edge.sourceId)}
-    {@const target = positions.get(edge.targetId)}
-    {@const style = EDGE_STYLES[edge.type] ?? EDGE_STYLES.default}
-    {@const working = isWorkingEdge(edge)}
-    {@const highlight = highlightFor(edge, working)}
-    {@const prominent = isActiveNow(edge) || working}
+  {#each mergedPairs as pair, edgeIndex (pair.key)}
+    {@const source = positions.get(pair.aId)}
+    {@const target = positions.get(pair.bId)}
+    {@const style = EDGE_STYLES[pair.type] ?? EDGE_STYLES.default}
+    {@const highlight = highlightFor(pair)}
+    {@const prominent = isActiveNow(pair) || highlight?.kind === 'working'}
     {@const stroke = prominent ? 'var(--color-foreground)' : style.stroke}
     {#if source && target}
-      {@const endpoints = endpointsFor(edge, source, target)}
-      {@const path = pathFor(edge, endpoints.source, endpoints.target)}
-      {@const label = labelFor(edge)}
-      {@const edgeOpacity = opacityFor(edge)}
-      {@const highlighted = isHighlighted(edge)}
+      {@const endpoints = endpointsFor(pair, source, target)}
+      {@const paths = pathsForPair(pair.key, endpoints.source, endpoints.target)}
+      {@const representativeEdge =
+        latestMember(pair, (edge) => edge.type === pair.type) ?? pair.latestEdge}
+      {@const labelEdge = latestMember(
+        pair,
+        (edge) =>
+          edge.type === 'message' || edge.type === 'file-write' || edge.type === 'note-write',
+      )}
+      {@const label = labelEdge ? labelFor(labelEdge) : null}
+      {@const edgeOpacity = opacityFor(pair)}
+      {@const highlighted = isHighlighted(pair)}
       {@const dimmed = activeFocusNodeId !== null && !highlighted}
       {@const drawDuration = playbackDuration(350, playbackSpeed)}
       {@const gradientId = `${componentId}-edge-highlight-${edgeIndex}`}
+      {@const highlightDirection = highlight ? directionFor(highlight.edge, pair) : 'a-to-b'}
+      {@const highlightPath = highlightDirection === 'a-to-b' ? paths.forward : paths.reverse}
       {#if highlight && motionEnabled}
         <defs>
           <linearGradient
             id={gradientId}
             gradientUnits="userSpaceOnUse"
-            x1={endpoints.source.x}
-            y1={endpoints.source.y}
-            x2={endpoints.target.x}
-            y2={endpoints.target.y}
+            x1={highlightDirection === 'a-to-b' ? endpoints.source.x : endpoints.target.x}
+            y1={highlightDirection === 'a-to-b' ? endpoints.source.y : endpoints.target.y}
+            x2={highlightDirection === 'a-to-b' ? endpoints.target.x : endpoints.source.x}
+            y2={highlightDirection === 'a-to-b' ? endpoints.target.y : endpoints.source.y}
           >
             <stop offset="0" stop-color="var(--color-foreground)" stop-opacity="0" />
             <stop offset="0.5" stop-color="var(--color-foreground)" stop-opacity="0.9" />
@@ -251,7 +322,7 @@
       {/if}
       <path
         class="edge-path"
-        d={path}
+        d={paths.forward}
         pathLength="1"
         fill="none"
         {stroke}
@@ -259,49 +330,68 @@
         stroke-linecap="round"
         opacity={edgeOpacity}
         style:animation-duration={`${drawDuration}ms`}
-        data-edge-id={edge.id}
-        data-edge-type={edge.type}
-        data-active={edge.isActive}
+        data-edge-id={representativeEdge.id}
+        data-pair-key={pair.key}
+        data-edge-count={pair.members.length}
+        data-edge-type={pair.type}
+        data-active={pair.isActive}
         data-highlighted={highlighted}
         data-dimmed={dimmed}
-        data-last-activity-at={edge.timestamp}
+        data-last-activity-at={pair.timestamp}
       />
       {#if highlight && motionEnabled}
-        {#key `${edge.id}:${edge.timestamp}:${highlight}`}
+        {#key `${pair.key}:${highlight.edge.timestamp}:${highlight.kind}`}
           <path
             class="edge-highlight"
-            class:working-highlight={highlight === 'working'}
-            class:delegation-highlight={highlight === 'delegation'}
-            class:waiting-highlight={highlight === 'waiting'}
-            d={path}
+            class:working-highlight={highlight.kind === 'working'}
+            class:delegation-highlight={highlight.kind === 'delegation'}
+            class:waiting-highlight={highlight.kind === 'waiting'}
+            d={highlightPath}
             pathLength="1"
             fill="none"
             stroke={`url(#${gradientId})`}
             stroke-width={(prominent ? 1.5 : style.strokeWidth) + 0.5}
             stroke-linecap="round"
             opacity={dimmed ? edgeOpacity : 1}
-            style:animation-duration={highlightDuration(highlight)}
+            style:animation-duration={highlightDuration(highlight.kind)}
             style:animation-delay={`${drawDuration}ms`}
-            data-edge-highlight={highlight}
-            data-edge-id={edge.id}
+            data-edge-highlight={highlight.kind}
+            data-edge-id={highlight.edge.id}
+            data-pair-key={pair.key}
+            data-direction={highlightDirection}
             data-dimmed={dimmed}
           />
         {/key}
       {/if}
-      <circle
-        class="edge-terminal"
-        cx={endpoints.target.x}
-        cy={endpoints.target.y}
-        r="2.25"
-        fill={stroke}
-        opacity={edgeOpacity}
-        style:animation-delay={`${Math.max(0, drawDuration - 80)}ms`}
-      />
+      {#if pair.directions.has('b-to-a')}
+        <circle
+          class="edge-terminal"
+          cx={endpoints.source.x}
+          cy={endpoints.source.y}
+          r="2.25"
+          fill={stroke}
+          opacity={edgeOpacity}
+          data-direction="b-to-a"
+          style:animation-delay={`${Math.max(0, drawDuration - 80)}ms`}
+        />
+      {/if}
+      {#if pair.directions.has('a-to-b')}
+        <circle
+          class="edge-terminal"
+          cx={endpoints.target.x}
+          cy={endpoints.target.y}
+          r="2.25"
+          fill={stroke}
+          opacity={edgeOpacity}
+          data-direction="a-to-b"
+          style:animation-delay={`${Math.max(0, drawDuration - 80)}ms`}
+        />
+      {/if}
       {#if label && (activeFocusNodeId === null || highlighted)}
         {@const labelWidth = 12 + label.length * 6}
         <g
           transform={`translate(${(endpoints.source.x + endpoints.target.x) / 2} ${(endpoints.source.y + endpoints.target.y) / 2})`}
-          opacity={Math.min(1, opacityFor(edge) + 0.18)}
+          opacity={Math.min(1, opacityFor(pair) + 0.18)}
         >
           <rect
             x={-labelWidth / 2}
@@ -324,14 +414,18 @@
     {/if}
   {/each}
   {#each travelingEdges as edge (`${edge.id}:${edge.timestamp}`)}
-    {@const source = positions.get(edge.sourceId)}
-    {@const target = positions.get(edge.targetId)}
-    {#if source && target}
-      {@const endpoints = endpointsFor(edge, source, target)}
+    {@const pair = pairByKey.get(pairKeyFor(edge))}
+    {@const source = pair ? positions.get(pair.aId) : undefined}
+    {@const target = pair ? positions.get(pair.bId) : undefined}
+    {#if pair && source && target}
+      {@const endpoints = endpointsFor(pair, source, target)}
+      {@const paths = pathsForPair(pair.key, endpoints.source, endpoints.target)}
+      {@const messagePath = directionFor(edge, pair) === 'a-to-b' ? paths.forward : paths.reverse}
       <g
         class="message-pill"
-        opacity={opacityFor(edge)}
+        opacity={opacityFor(pair)}
         data-message-particle
+        data-pair-key={pair.key}
         data-target-id={edge.targetId}
       >
         <rect
@@ -351,7 +445,7 @@
         >
         <animateMotion
           use:completeMessageTravel={edge}
-          path={pathFor(edge, endpoints.source, endpoints.target)}
+          path={messagePath}
           dur={`${edgeAnimationDuration(endpoints.source, endpoints.target, playbackSpeed)}s`}
           calcMode="spline"
           keyTimes="0;1"

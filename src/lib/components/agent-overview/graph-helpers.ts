@@ -7,7 +7,8 @@
 
 import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
-import type { AgentNode } from './types';
+import type { AgentNode, GraphEdge } from './types';
+import { isRecentlyActive } from './activity-motion';
 import {
   FILE_EDIT_TOOLS,
   FILE_READ_TOOLS,
@@ -18,6 +19,80 @@ import {
   DELEGATION_TOOLS,
 } from './constants';
 import { getLastMeaningfulLine } from '$lib/utils/text-utils';
+
+export type EdgePairDirection = 'a-to-b' | 'b-to-a';
+
+export interface MergedEdgePair {
+  key: string;
+  aId: string;
+  bId: string;
+  members: GraphEdge[];
+  type: GraphEdge['type'];
+  isActive: boolean;
+  isRecentlyActive: boolean;
+  timestamp: string;
+  directions: Set<EdgePairDirection>;
+  latestEdge: GraphEdge;
+}
+
+const EDGE_TYPE_PRIORITY: Record<GraphEdge['type'], number> = {
+  'waiting-on': 7,
+  delegation: 6,
+  'task-assignment': 5,
+  message: 4,
+  'file-write': 3,
+  'note-write': 3,
+  'task-create': 3,
+  'task-update': 3,
+  'file-read': 2,
+  'note-read': 2,
+};
+
+function edgeTimestamp(edge: GraphEdge): number {
+  const timestamp = Date.parse(edge.timestamp);
+  return Number.isFinite(timestamp) ? timestamp : Number.NEGATIVE_INFINITY;
+}
+
+export function mergeEdgesByPair(edges: GraphEdge[], now = Date.now()): MergedEdgePair[] {
+  const pairs = new Map<string, MergedEdgePair>();
+
+  for (const edge of edges) {
+    const [aId, bId] = [edge.sourceId, edge.targetId].sort();
+    const key = `${aId}|${bId}`;
+    const direction: EdgePairDirection = edge.sourceId === aId ? 'a-to-b' : 'b-to-a';
+    const existing = pairs.get(key);
+
+    if (!existing) {
+      pairs.set(key, {
+        key,
+        aId,
+        bId,
+        members: [edge],
+        type: edge.type,
+        isActive: edge.isActive,
+        isRecentlyActive: isRecentlyActive(edge.timestamp, now),
+        timestamp: edge.timestamp,
+        directions: new Set([direction]),
+        latestEdge: edge,
+      });
+      continue;
+    }
+
+    existing.members.push(edge);
+    existing.directions.add(direction);
+    existing.isActive ||= edge.isActive;
+    existing.isRecentlyActive ||= isRecentlyActive(edge.timestamp, now);
+    if (EDGE_TYPE_PRIORITY[edge.type] > EDGE_TYPE_PRIORITY[existing.type]) {
+      existing.type = edge.type;
+    }
+    if (edgeTimestamp(edge) >= edgeTimestamp(existing.latestEdge)) {
+      existing.latestEdge = edge;
+      existing.timestamp = edge.timestamp;
+    }
+  }
+
+  return [...pairs.values()];
+}
 
 // ============================================================================
 // Path Classification
