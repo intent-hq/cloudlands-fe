@@ -90,6 +90,18 @@ function shelfDocument(groupSizes: number[], fileName = 'file.ts'): DiffMapDocum
   return { ...typicalDiffMapFixture.document, files, groups, sections: undefined };
 }
 
+function deepHeaderDocument(): DiffMapDocument {
+  const document = shelfDocument([1]);
+  document.groups[0] = {
+    ...document.groups[0],
+    id: 'packages/domain-01/layer-0/components',
+    path: 'packages/domain-01/layer-0/components',
+    displayPrefix: 'packages/domain-01/layer-0/',
+    displayName: 'components',
+  };
+  return document;
+}
+
 describe('layoutDiffMap', () => {
   for (const fixture of diffMapFixtures) {
     for (const width of widths) {
@@ -231,6 +243,90 @@ describe('layoutDiffMap', () => {
     expect(labels).toEqual(
       expect.arrayContaining([expect.stringContaining('auth'), expect.stringContaining('ui')]),
     );
+  });
+
+  it.each([
+    [280, '…/domain-01/layer-0/components'],
+    [196, '…/layer-0/components'],
+    [100, 'components'],
+  ])('truncates deep headers at segment boundaries at %ipx', (width, expected) => {
+    const block = layoutDiffMap(deepHeaderDocument(), { width, height: 500 }, measure, {
+      rungOverride: 3,
+    }).blocks[0];
+
+    expect(block.label).toBe(expected);
+    expect(block.label).not.toContain('…s/');
+  });
+
+  it('strips a rendered section root from its block headers', () => {
+    const document = shelfDocument([1, 1, 1]);
+    document.groups[0] = {
+      ...document.groups[0],
+      id: 'src/lib/auth',
+      path: 'src/lib/auth',
+      displayPrefix: 'src/lib/',
+      displayName: 'auth',
+    };
+    document.groups[1] = {
+      ...document.groups[1],
+      id: 'src/routes',
+      path: 'src/routes',
+      displayPrefix: 'src/',
+      displayName: 'routes',
+    };
+    document.groups[2] = {
+      ...document.groups[2],
+      id: 'tests/auth',
+      path: 'tests/auth',
+      displayPrefix: 'tests/',
+      displayName: 'auth',
+    };
+    document.sections = [
+      {
+        id: 'src',
+        path: 'src',
+        displayPrefix: '',
+        displayName: 'src',
+        groupIds: ['src/lib/auth', 'src/routes'],
+        changedCount: 2,
+      },
+      {
+        id: 'tests',
+        path: 'tests',
+        displayPrefix: '',
+        displayName: 'tests',
+        groupIds: ['tests/auth'],
+        changedCount: 1,
+      },
+    ];
+
+    const layout = layoutDiffMap(document, { width: 500, height: 500 }, measure, {
+      rungOverride: 0,
+    });
+
+    expect(layout.sectionsPlaced.map((section) => section.label)).toEqual(['src', 'tests']);
+    expect(layout.blocks.map((block) => block.label)).toEqual(['lib/auth', 'routes', 'auth']);
+  });
+
+  it('omits a single root section without stripping it from block headers', () => {
+    const document = deepHeaderDocument();
+    document.sections = [
+      {
+        id: 'packages',
+        path: 'packages',
+        displayPrefix: '',
+        displayName: 'packages',
+        groupIds: ['packages/domain-01/layer-0/components'],
+        changedCount: 1,
+      },
+    ];
+
+    const layout = layoutDiffMap(document, { width: 500, height: 500 }, measure, {
+      rungOverride: 3,
+    });
+
+    expect(layout.sectionsPlaced).toEqual([]);
+    expect(layout.blocks[0].label).toBe('packages/domain-01/layer-0/components');
   });
 
   it.each([0, 1, 2] as const)(

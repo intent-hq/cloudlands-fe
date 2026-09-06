@@ -1,6 +1,6 @@
 import { formatInteger } from '$lib/i18n/format';
 import { m } from '$shared/paraglide/messages.js';
-import type { DiffMapDocument, DiffMapGroup } from '../model/types';
+import type { DiffMapDocument, DiffMapGroup, DiffMapSection } from '../model/types';
 
 export type DiffMapDensityRung = 0 | 1 | 2 | 3;
 
@@ -124,44 +124,38 @@ export function diffMapGroupCountLabel(group: DiffMapGroup): string {
     : m.diffMap_groupChangedTotal_label({ count, total: formatInteger(group.totalCount) });
 }
 
-function leftEllipsis(
-  text: string,
-  maxWidth: number,
-  measure: TextMeasurer,
-  context: TextMeasureContext,
-): string {
-  if (measure(text, context) <= maxWidth) return text;
-  const ellipsis = '…';
-  let low = 0;
-  let high = text.length;
-  while (low < high) {
-    const length = Math.ceil((low + high) / 2);
-    const candidate = `${ellipsis}${text.slice(text.length - length)}`;
-    if (measure(candidate, context) <= maxWidth) low = length;
-    else high = length - 1;
-  }
-  return `${ellipsis}${text.slice(text.length - low)}`;
-}
-
 function truncateGroupLabel(
   group: DiffMapGroup,
   maxWidth: number,
   measure: TextMeasurer,
   context: TextMeasureContext,
-  preserveName = false,
 ): { prefix: string; name: string } {
   const name = group.displayName || '.';
+  const fullLabel = groupLabel(group);
+  if (measure(fullLabel, context) <= maxWidth) {
+    return { prefix: group.displayPrefix, name };
+  }
   const nameWidth = measure(name, context);
   if (nameWidth > maxWidth) {
     return { prefix: '', name: middleEllipsis(name, maxWidth, measure, context) };
   }
-  const prefixWidth = maxWidth - nameWidth;
+  const segments = fullLabel.split('/').filter(Boolean);
+  for (let start = 1; start < segments.length - 1; start += 1) {
+    const visibleSegments = segments.slice(start);
+    const candidate = `…/${visibleSegments.join('/')}`;
+    if (measure(candidate, context) <= maxWidth) {
+      return { prefix: `…/${visibleSegments.slice(0, -1).join('/')}/`, name };
+    }
+  }
+  return { prefix: '', name };
+}
+
+function groupWithinSection(group: DiffMapGroup, section: DiffMapSection): DiffMapGroup {
+  const rootPrefix = `${section.displayPrefix}${section.displayName}/`;
+  if (!group.displayPrefix.startsWith(rootPrefix)) return group;
   return {
-    prefix:
-      preserveName && measure('…', context) > prefixWidth
-        ? ''
-        : leftEllipsis(group.displayPrefix, prefixWidth, measure, context),
-    name,
+    ...group,
+    displayPrefix: group.displayPrefix.slice(rootPrefix.length),
   };
 }
 
@@ -245,7 +239,6 @@ function buildBlock(
     Math.max(0, width - BLOCK_PADDING * 2 - (rung < 3 ? countWidth + HEADER_GAP : 0)),
     measure,
     groupContext,
-    rung < 3,
   );
   return {
     groupId: group.id,
@@ -317,7 +310,6 @@ function resizeBlock(
     Math.max(0, width - BLOCK_PADDING * 2 - (rung < 3 ? countWidth + HEADER_GAP : 0)),
     measure,
     groupContext,
-    rung < 3,
   );
   return {
     ...block,
@@ -374,15 +366,25 @@ function packAtRung(
   measure: TextMeasurer,
 ): DiffMapLayout {
   const fileById = new Map(document.files.map((file) => [file.id, file]));
-  const groupById = new Map(document.groups.map((group) => [group.id, group]));
-  const blocksById = new Map(
-    document.groups.map((group) => [
-      group.id,
-      buildBlock(group, fileById, viewport, rung, measure),
-    ]),
-  );
   const documentSections = document.sections;
-  const preserveSections = documentSections?.some((section) => section.groupIds.length > 1);
+  const preserveSections =
+    (documentSections?.length ?? 0) > 1 &&
+    documentSections?.some((section) => section.groupIds.length > 1);
+  const sectionByGroupId = new Map(
+    preserveSections && documentSections
+      ? documentSections.flatMap((section) =>
+          section.groupIds.map((groupId) => [groupId, section] as const),
+        )
+      : [],
+  );
+  const displayGroups = document.groups.map((group) => {
+    const section = sectionByGroupId.get(group.id);
+    return section ? groupWithinSection(group, section) : group;
+  });
+  const groupById = new Map(displayGroups.map((group) => [group.id, group]));
+  const blocksById = new Map(
+    displayGroups.map((group) => [group.id, buildBlock(group, fileById, viewport, rung, measure)]),
+  );
   const sections =
     preserveSections && documentSections
       ? documentSections.map((section) => ({ section, groupIds: section.groupIds }))
