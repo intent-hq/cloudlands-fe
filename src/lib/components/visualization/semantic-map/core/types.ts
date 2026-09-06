@@ -1,6 +1,6 @@
 export type MapSource = 'curated' | 'structural';
 
-export type RegionAnchor = [x: number, y: number];
+type RegionAnchor = [x: number, y: number];
 
 export interface Region {
   id: string;
@@ -12,7 +12,7 @@ export interface Region {
   color?: string;
 }
 
-export interface Crossing {
+interface Crossing {
   from: string;
   to: string;
   label: string;
@@ -24,7 +24,7 @@ export interface Manifest {
   crossings?: Crossing[];
 }
 
-export type AssignmentConfidence = 'curated' | 'unsorted';
+type AssignmentConfidence = 'curated' | 'unsorted';
 
 export interface Assignment {
   regionId: string;
@@ -55,7 +55,7 @@ export interface Route {
   transitions: RouteTransition[];
 }
 
-export interface MapCoverage {
+interface MapCoverage {
   matched: number;
   total: number;
 }

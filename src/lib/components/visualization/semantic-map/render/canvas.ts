@@ -68,16 +68,6 @@ export class CanvasPathCache {
   }
 }
 
-export function cacheHullPaths(geometry: RegionGeometry[]): Map<string, Path2D> {
-  return new Map(
-    geometry.map((region) => {
-      const path = new Path2D();
-      traceHull(path, region.hull);
-      return [region.id, path];
-    }),
-  );
-}
-
 export function drawQuadraticPath(
   ctx: CanvasRenderingContext2D,
   edge: {
