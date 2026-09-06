@@ -199,7 +199,7 @@
   .status {
     width: 18px;
     font-family: var(--font-code);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     color: hsl(var(--muted-foreground));
     text-align: center;
@@ -240,7 +240,7 @@
     justify-content: flex-end;
     justify-self: end;
     font-family: var(--font-code);
-    font-size: 10px;
+    font-size: 11px;
     font-variant-numeric: tabular-nums;
     text-align: right;
     white-space: nowrap;
@@ -301,7 +301,7 @@
     border-radius: 9999px;
     background: hsl(var(--primary));
     color: hsl(var(--primary-foreground));
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
   }
 

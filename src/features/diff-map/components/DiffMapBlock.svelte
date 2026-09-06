@@ -142,7 +142,7 @@
 
   .count {
     flex: none;
-    font-size: 10px;
+    font-size: 11px;
     white-space: nowrap;
   }
 

@@ -426,7 +426,7 @@
     display: flex;
     align-items: center;
     color: hsl(var(--muted-foreground));
-    font-size: 10px;
+    font-size: 11px;
     pointer-events: none;
     transform: translateY(-50%);
   }
