@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import type { ButtonVariant } from '$lib/components/ui/button';
   import * as Dialog from '$lib/components/ui/dialog';
@@ -11,6 +12,7 @@
     description?: string;
     confirmText?: string;
     variant?: ButtonVariant;
+    body?: Snippet;
     /** Streaming agents across the targeted workspaces that the action would stop. */
     activeAgentCount?: number;
     /** Active background hooks across the targeted workspaces that the action would cancel. */
@@ -25,6 +27,7 @@
     description = '',
     confirmText = m.modals_bulkActionConfirm_confirm_label(),
     variant = 'default',
+    body,
     activeAgentCount = 0,
     activeHookCount = 0,
     onConfirm,
@@ -62,16 +65,16 @@
     closeLabel={m.modals_bulkActionConfirm_close_ariaLabel()}
     onOpenAutoFocus={handleOpenAutoFocus}
   >
-    <div class="space-y-4 p-5 pr-12">
+    <div class="min-w-0 space-y-4 p-5 pr-12">
       <Dialog.Header class="gap-2 pr-0">
         <Dialog.Title>{title}</Dialog.Title>
         <Dialog.Description class="leading-5">{description}</Dialog.Description>
       </Dialog.Header>
 
       {#if hasActiveWork}
-        <div class="space-y-1 rounded-md border border-border bg-muted/40 p-3">
+        <div class="space-y-1">
           {#if activeAgentCount > 0}
-            <p class="text-sm font-medium text-foreground">
+            <p class="text-sm text-muted-foreground">
               {activeAgentCount === 1
                 ? m.modals_deleteWarning_agentsStopped_one({
                     count: formatInteger(activeAgentCount),
@@ -82,7 +85,7 @@
             </p>
           {/if}
           {#if activeHookCount > 0}
-            <p class="text-sm font-medium text-foreground">
+            <p class="text-sm text-muted-foreground">
               {activeHookCount === 1
                 ? m.modals_deleteWarning_hooksCancelled_one({
                     count: formatInteger(activeHookCount),
@@ -94,6 +97,8 @@
           {/if}
         </div>
       {/if}
+
+      {@render body?.()}
     </div>
 
     <Dialog.Footer class="mt-0 flex-row items-center justify-end border-0 px-5 pb-5 pt-0">
