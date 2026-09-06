@@ -139,6 +139,7 @@ function statusFor(change: TrackedChange | ChatFileChange, facts: PatchFacts): D
 
 function toFile(
   change: TrackedChange | ChatFileChange,
+  snapshotId: string,
   patches: ReadonlyMap<string, string> | undefined,
 ): DiffMapFile | undefined {
   const rawPath = isChatChange(change) ? change.filePath : change.relativePath || change.file;
@@ -157,22 +158,26 @@ function toFile(
     : change.content?.isFullFileContent === true;
   const oldTrack = buildTrack(facts.hunks, 'old', fullContents ? lineCount(oldContent) : undefined);
   const newTrack = buildTrack(facts.hunks, 'new', fullContents ? lineCount(newContent) : undefined);
-  const suppliedContentHash = !isChatChange(change)
-    ? (change.content?.newContentSha ?? change.content?.diffSha ?? change.content?.oldContentSha)
-    : undefined;
-  const contentHash =
-    suppliedContentHash ??
-    hashContent(
-      [
-        statusFor(change, facts),
-        newContent ?? '',
-        isChatChange(change) && change.action === 'delete' ? (oldContent ?? '') : '',
-        patch ?? '',
-        String(additions ?? ''),
-        String(deletions ?? ''),
-        isChatChange(change) ? change.toolCallId : change.id,
-      ].join('\u0000'),
-    );
+  const contentIdentity = !isChatChange(change)
+    ? [
+        change.content?.oldContentSha ?? '',
+        change.content?.newContentSha ?? '',
+        change.content?.diffSha ?? '',
+      ]
+    : [];
+  const contentHash = hashContent(
+    [
+      snapshotId,
+      ...contentIdentity,
+      statusFor(change, facts),
+      newContent ?? '',
+      isChatChange(change) && change.action === 'delete' ? (oldContent ?? '') : '',
+      patch ?? '',
+      String(additions ?? ''),
+      String(deletions ?? ''),
+      isChatChange(change) ? change.toolCallId : change.id,
+    ].join('\u0000'),
+  );
   const hunks = hunkRanges(facts.hunks);
   return {
     id: path,
@@ -293,7 +298,7 @@ export function buildDiffMapDocument(
 ): DiffMapDocument {
   const filesById = new Map<string, DiffMapFile>();
   for (const change of changes) {
-    const file = toFile(change, opts.patches);
+    const file = toFile(change, opts.source.snapshotId, opts.patches);
     if (file) filesById.set(file.id, file);
   }
   const files = [...filesById.values()].sort((a, b) => comparePaths(a.path, b.path));

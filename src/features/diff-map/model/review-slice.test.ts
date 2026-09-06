@@ -24,6 +24,7 @@ describe('review slices', () => {
       source,
       patches: new Map([['b.ts', '@@ -4,2 +5,3 @@']]),
     });
+    const hashes = Object.fromEntries(document.files.map((file) => [file.path, file.contentHash]));
 
     expect(
       createReviewSlice(document, new Set(changes.map(({ relativePath }) => relativePath))),
@@ -31,13 +32,13 @@ describe('review slices', () => {
       source: { kind: 'working-tree', workspaceId: 'ws-1' },
       snapshotId: 'snapshot-1',
       entries: [
-        { path: 'a.ts', contentHash: 'hash-a' },
+        { path: 'a.ts', contentHash: hashes['a.ts'] },
         {
           path: 'b.ts',
-          contentHash: 'hash-b',
+          contentHash: hashes['b.ts'],
           hunks: [{ oldRange: { start: 4, end: 5 }, newRange: { start: 5, end: 7 } }],
         },
-        { path: 'c.ts', contentHash: 'hash-c' },
+        { path: 'c.ts', contentHash: hashes['c.ts'] },
       ],
     });
   });
@@ -48,7 +49,7 @@ describe('review slices', () => {
     });
     const slice = createReviewSlice(original, new Set(['a.ts', 'b.ts']));
     const edited = buildDiffMapDocument([change('a.ts', 'hash-a'), change('b.ts', 'hash-new')], {
-      source: { ...source, snapshotId: 'snapshot-2' },
+      source,
     });
 
     expect(getStaleReviewSliceEntries(slice, edited).map(({ path }) => path)).toEqual(['b.ts']);

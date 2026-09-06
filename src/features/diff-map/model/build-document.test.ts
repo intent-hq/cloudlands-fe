@@ -122,6 +122,18 @@ describe('buildDiffMapDocument', () => {
     expect(file).toMatchObject({ additions: 0, deletions: 0, statsKnown: false });
   });
 
+  it('invalidates content hashes across snapshots when numstat is unchanged', () => {
+    const change = tracked('src/revised.ts', 2, 1);
+    const first = buildDiffMapDocument([change], {
+      source: { ...source, snapshotId: 'snapshot-1' },
+    });
+    const second = buildDiffMapDocument([change], {
+      source: { ...source, snapshotId: 'snapshot-2' },
+    });
+
+    expect(second.files[0].contentHash).not.toBe(first.files[0].contentHash);
+  });
+
   it('keeps file and group identities stable in repository order', () => {
     const changes = [tracked('z/b.ts'), tracked('a/c.ts'), tracked('a/a.ts')];
     const first = buildDiffMapDocument(changes, { source });
