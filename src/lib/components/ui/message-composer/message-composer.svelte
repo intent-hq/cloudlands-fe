@@ -626,7 +626,7 @@
             id={suggestionListId}
             role="listbox"
             aria-label={SUGGESTIONS_LABEL}
-            class="relative -mx-2 flex flex-col border-t border-border/60 px-1.5 pt-1.5"
+            class="relative -mx-2 flex flex-col border-t border-border px-1.5 pt-1.5"
           >
             {#if suggestionHover}<ProximityHighlight store={suggestionHover} />{/if}
             {#if suggestionHover}

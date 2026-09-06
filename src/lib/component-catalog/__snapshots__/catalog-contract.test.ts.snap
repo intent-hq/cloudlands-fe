@@ -6400,7 +6400,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                                 <path>
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pt-2">
-                    <div aria-label="Suggested prompts" class="-mx-2 border-border/60 border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
+                    <div aria-label="Suggested prompts" class="-mx-2 border-border border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
                 <span aria-live="polite" class="sr-only" role="status">
           <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
             <summary class="svelte-<scope>">
@@ -6483,7 +6483,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                                 <path>
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pt-2">
-                    <div aria-label="Suggested prompts" class="-mx-2 border-border/60 border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
+                    <div aria-label="Suggested prompts" class="-mx-2 border-border border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
                 <span aria-live="polite" class="sr-only" role="status">
           <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
             <summary class="svelte-<scope>">
@@ -6561,7 +6561,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                                 <path>
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pt-2">
-                    <div aria-label="Suggested prompts" class="-mx-2 border-border/60 border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
+                    <div aria-label="Suggested prompts" class="-mx-2 border-border border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
                 <span aria-live="polite" class="sr-only" role="status">
           <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
             <summary class="svelte-<scope>">
@@ -6647,7 +6647,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                                 <path>
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pt-2">
-                    <div aria-label="Suggested prompts" class="-mx-2 border-border/60 border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
+                    <div aria-label="Suggested prompts" class="-mx-2 border-border border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
                 <span aria-live="polite" class="sr-only" role="status">
           <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
             <summary class="svelte-<scope>">
@@ -6730,7 +6730,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                                 <path>
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pt-2">
-                    <div aria-label="Suggested prompts" class="-mx-2 border-border/60 border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
+                    <div aria-label="Suggested prompts" class="-mx-2 border-border border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
                 <span aria-live="polite" class="sr-only" role="status">
               <div class="flex flex-wrap gap-2">
                 <div>
@@ -6856,7 +6856,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                               <span aria-hidden="true" class="bg-current rounded-[3px] size-3">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pt-2">
-                    <div aria-label="Suggested prompts" class="-mx-2 border-border/60 border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
+                    <div aria-label="Suggested prompts" class="-mx-2 border-border border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
                 <span aria-live="polite" class="sr-only" role="status">
           <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
             <summary class="svelte-<scope>">
@@ -6942,7 +6942,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                                 <path>
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pt-2">
-                    <div aria-label="Suggested prompts" class="-mx-2 border-border/60 border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
+                    <div aria-label="Suggested prompts" class="-mx-2 border-border border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
                 <span aria-live="polite" class="sr-only" role="status">
           <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
             <summary class="svelte-<scope>">
@@ -7021,7 +7021,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                                 <path>
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pt-2">
-                    <div aria-label="Suggested prompts" class="-mx-2 border-border/60 border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
+                    <div aria-label="Suggested prompts" class="-mx-2 border-border border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
                 <span aria-live="polite" class="sr-only" role="status">
               <output aria-live="polite" class="text-muted-foreground text-xs">
                 "No message sent yet"
@@ -7113,7 +7113,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                                 <path>
                 <div data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pt-2">
-                    <div aria-label="Suggested prompts" class="-mx-2 border-border/60 border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
+                    <div aria-label="Suggested prompts" class="-mx-2 border-border border-t flex flex-col pt-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
                       <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                       <div aria-selected="false" class="cursor-pointer duration-spring-fast ease-spring-fast flex gap-2 h-8 items-center motion-reduce:transition-none px-2.5 relative text-muted-foreground text-sm transition-colors z-10" id="c<id>-suggestions-0" role="option" tabindex="-1">
                         <span class="flex-1 min-w-0 truncate">
