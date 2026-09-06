@@ -37,11 +37,13 @@ const settle = async () => {
 
 function createHarness() {
   const channel = stdChannel();
+  const actions: unknown[] = [];
   let semanticMap = initialState;
   const reduce = (action: unknown) => {
     semanticMap = semanticMapReducer(semanticMap, action as never);
   };
   const dispatch = (action: unknown) => {
+    actions.push(action);
     reduce(action);
     channel.put(action as never);
   };
@@ -51,6 +53,7 @@ function createHarness() {
   );
   return {
     dispatch,
+    actions,
     state: () => semanticMap.byWorkspaceId['ws-1'],
     stop: async () => {
       task.cancel();
@@ -79,6 +82,7 @@ describe('semanticMapSaga', () => {
     expect(mocks.get).toHaveBeenCalledWith('ws-1');
     expect(mocks.activity).toHaveBeenCalledWith('ws-1', { minutesAgo: 60 });
     expect(harness.state()).toMatchObject({
+      hydrationStatus: 'loaded',
       manifest: SEMANTIC_MAP_FIXTURE_MANIFEST,
       source: 'curated',
       activities: SEMANTIC_MAP_FIXTURE_ACTIVITIES,
@@ -88,6 +92,21 @@ describe('semanticMapSaga', () => {
     await settle();
     expect(mocks.get).toHaveBeenCalledTimes(2);
     expect(mocks.activity).toHaveBeenCalledTimes(1);
+    await harness.stop();
+  });
+
+  it('exposes a hydration error when the daemon request fails', async () => {
+    mocks.get.mockRejectedValueOnce(new Error('offline'));
+    const harness = createHarness();
+    await settle();
+    harness.dispatch(workspaceMounted('ws-1'));
+    await settle();
+
+    expect(harness.state()?.hydrationStatus).toBe('error');
+    expect(harness.actions.map((action) => (action as { type: string }).type)).toEqual(
+      expect.arrayContaining(['semanticMap/loadStarted', 'semanticMap/loadFailed']),
+    );
+    expect(mocks.activity).not.toHaveBeenCalled();
     await harness.stop();
   });
 
