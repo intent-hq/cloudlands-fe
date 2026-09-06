@@ -203,9 +203,7 @@ export function reopenPanelOrWorkspaceTab(
   const workspaceId = match && match[1] !== 'new' ? match[1] : null;
 
   const lastClosedWorkspace = selectLastClosedWorkspaceTab.select(store.state);
-  const lastPanelClose = workspaceId
-    ? selectLastPanelClose.select(store.state, workspaceId)
-    : null;
+  const lastPanelClose = workspaceId ? selectLastPanelClose.select(store.state, workspaceId) : null;
 
   if (
     workspaceId &&
