@@ -34,12 +34,30 @@
     playbackSpeed = 1,
     onMessageArrival = () => {},
   }: Props = $props();
+  const componentId = $props.id();
 
   const nodeById = $derived(new Map(nodes.map((node) => [node.id, node])));
   const activeFocusNodeId = $derived(focusNodeId ?? spotlightNodeId);
 
   let travelingEdges = $state<GraphEdge[]>([]);
+  let motionEnabled = $state(true);
   const seenMessageEvents = new Set<string>();
+
+  function edgeLayerMotion(element: SVGSVGElement) {
+    const motion = activityMotion(element);
+    const syncMotion = () => {
+      motionEnabled = element.dataset.motionEnabled !== 'false';
+    };
+    const observer = new MutationObserver(syncMotion);
+    observer.observe(element, { attributeFilter: ['data-motion-enabled'] });
+    syncMotion();
+    return {
+      destroy() {
+        observer.disconnect();
+        motion?.destroy?.();
+      },
+    };
+  }
 
   function messageEventKey(edge: GraphEdge): string {
     return `${edge.id}:${edge.timestamp}`;
@@ -87,6 +105,21 @@
       target?.type === 'task' &&
       target.state === 'in_progress'
     );
+  }
+
+  type EdgeHighlight = 'working' | 'delegation' | 'waiting';
+
+  function highlightFor(edge: GraphEdge, working: boolean): EdgeHighlight | null {
+    if (working) return 'working';
+    if (edge.type === 'delegation' && isRecentlyActive(edge.timestamp)) return 'delegation';
+    if (edge.type === 'waiting-on') return 'waiting';
+    return null;
+  }
+
+  function highlightDuration(highlight: EdgeHighlight): string {
+    if (highlight === 'working') return '2.8s';
+    if (highlight === 'waiting') return '4s';
+    return '1.4s';
   }
 
   function completeMessageTravel(element: SVGAnimateMotionElement, initialEdge: GraphEdge) {
@@ -179,15 +212,16 @@
 </script>
 
 <svg
-  use:activityMotion
+  use:edgeLayerMotion
   class="edge-layer pointer-events-none absolute inset-0 h-full w-full overflow-visible"
   aria-hidden="true"
 >
-  {#each edges as edge (edge.id)}
+  {#each edges as edge, edgeIndex (edge.id)}
     {@const source = positions.get(edge.sourceId)}
     {@const target = positions.get(edge.targetId)}
     {@const style = EDGE_STYLES[edge.type] ?? EDGE_STYLES.default}
     {@const working = isWorkingEdge(edge)}
+    {@const highlight = highlightFor(edge, working)}
     {@const prominent = isActiveNow(edge) || working}
     {@const stroke = prominent ? 'var(--color-foreground)' : style.stroke}
     {#if source && target}
@@ -196,29 +230,64 @@
       {@const label = labelFor(edge)}
       {@const edgeOpacity = opacityFor(edge)}
       {@const highlighted = isHighlighted(edge)}
+      {@const dimmed = activeFocusNodeId !== null && !highlighted}
       {@const drawDuration = playbackDuration(350, playbackSpeed)}
+      {@const gradientId = `${componentId}-edge-highlight-${edgeIndex}`}
+      {#if highlight && motionEnabled}
+        <defs>
+          <linearGradient
+            id={gradientId}
+            gradientUnits="userSpaceOnUse"
+            x1={endpoints.source.x}
+            y1={endpoints.source.y}
+            x2={endpoints.target.x}
+            y2={endpoints.target.y}
+          >
+            <stop offset="0" stop-color="var(--color-foreground)" stop-opacity="0" />
+            <stop offset="0.5" stop-color="var(--color-foreground)" stop-opacity="0.9" />
+            <stop offset="1" stop-color="var(--color-foreground)" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+      {/if}
       <path
         class="edge-path"
-        class:delegation-pulse={edge.type === 'delegation' && isRecentlyActive(edge.timestamp)}
-        class:waiting-breathe={edge.type === 'waiting-on'}
-        class:working-drift={working}
         d={path}
         pathLength="1"
         fill="none"
         {stroke}
         stroke-width={prominent ? 1.5 : style.strokeWidth}
-        stroke-dasharray={style.strokeDasharray}
         stroke-linecap="round"
         opacity={edgeOpacity}
-        style:animation-duration={working ? `${drawDuration}ms, 3s` : `${drawDuration}ms`}
-        style:animation-delay={working ? `0ms, ${drawDuration}ms` : '0ms'}
+        style:animation-duration={`${drawDuration}ms`}
         data-edge-id={edge.id}
         data-edge-type={edge.type}
         data-active={edge.isActive}
         data-highlighted={highlighted}
-        data-dimmed={activeFocusNodeId !== null && !highlighted}
+        data-dimmed={dimmed}
         data-last-activity-at={edge.timestamp}
       />
+      {#if highlight && motionEnabled}
+        {#key `${edge.id}:${edge.timestamp}:${highlight}`}
+          <path
+            class="edge-highlight"
+            class:working-highlight={highlight === 'working'}
+            class:delegation-highlight={highlight === 'delegation'}
+            class:waiting-highlight={highlight === 'waiting'}
+            d={path}
+            pathLength="1"
+            fill="none"
+            stroke={`url(#${gradientId})`}
+            stroke-width={(prominent ? 1.5 : style.strokeWidth) + 0.5}
+            stroke-linecap="round"
+            opacity={dimmed ? edgeOpacity : 1}
+            style:animation-duration={highlightDuration(highlight)}
+            style:animation-delay={`${drawDuration}ms`}
+            data-edge-highlight={highlight}
+            data-edge-id={edge.id}
+            data-dimmed={dimmed}
+          />
+        {/key}
+      {/if}
       <circle
         class="edge-terminal"
         cx={endpoints.target.x}
@@ -296,29 +365,30 @@
 </svg>
 
 <style>
-  .delegation-pulse {
-    animation: delegation-pulse 900ms ease-out 1;
-  }
   .edge-path {
     animation: edge-draw 350ms ease-out 1;
   }
-  .edge-path.working-drift {
-    stroke-dasharray: 2 3;
-    animation:
-      edge-draw 350ms ease-out 1,
-      working-drift 3s linear 350ms infinite;
+  .edge-highlight {
+    stroke-dasharray: 0.18 1;
+    stroke-dashoffset: 1;
+    animation-name: edge-highlight-travel;
+    animation-timing-function: linear;
+  }
+  .working-highlight,
+  .waiting-highlight {
+    animation-iteration-count: infinite;
+  }
+  .delegation-highlight {
+    animation-fill-mode: both;
+    animation-iteration-count: 1;
   }
   .edge-terminal {
     animation: edge-terminal-in 120ms ease-out both;
   }
-  .waiting-breathe {
-    animation: waiting-breathe 2.8s ease-in-out infinite;
-  }
-  :global(.edge-layer[data-motion-enabled='false']) .message-pill {
+  :global(.edge-layer[data-motion-enabled='false']) :is(.edge-highlight, .message-pill) {
     display: none;
   }
-  :global(.edge-layer[data-motion-enabled='false'])
-    :is(.edge-path, .edge-terminal, .delegation-pulse, .waiting-breathe, .working-drift) {
+  :global(.edge-layer[data-motion-enabled='false']) :is(.edge-path, .edge-terminal) {
     animation: none;
   }
   @keyframes edge-draw {
@@ -336,31 +406,21 @@
       opacity: 0;
     }
   }
-  @keyframes working-drift {
+  @keyframes edge-highlight-travel {
+    from {
+      stroke-dashoffset: 1;
+    }
     to {
-      stroke-dashoffset: -5;
-    }
-  }
-  @keyframes delegation-pulse {
-    50% {
-      opacity: 1;
-    }
-  }
-  @keyframes waiting-breathe {
-    50% {
-      opacity: 0.35;
-      stroke-dashoffset: 14;
+      stroke-dashoffset: -0.18;
     }
   }
   @media (prefers-reduced-motion: reduce) {
+    .edge-highlight,
     .message-pill {
       display: none;
     }
     .edge-path,
-    .edge-terminal,
-    .delegation-pulse,
-    .waiting-breathe,
-    .working-drift {
+    .edge-terminal {
       animation: none;
     }
   }

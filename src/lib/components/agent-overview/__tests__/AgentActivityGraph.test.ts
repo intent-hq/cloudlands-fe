@@ -366,7 +366,7 @@ describe('AgentActivityGraph', () => {
     expect(graphFitTransitionIds(viewport)).toEqual([initialTransitionId]);
   });
 
-  it('draws stable per-edge curves with hairline dashes and target dots', () => {
+  it('draws stable per-edge curves with solid hairlines and target dots', () => {
     const target = file(1);
     const edges = [
       { ...edge(target), id: 'edge:curve-a' },
@@ -389,12 +389,91 @@ describe('AgentActivityGraph', () => {
     expect(new Set(pathsFor(first.container)).size).toBe(2);
     expect(pathsFor(first.container).every((path) => path?.includes(' C '))).toBe(true);
     expect(first.container.querySelector('.edge-path')?.getAttribute('stroke-width')).toBe('0.75');
-    expect(first.container.querySelector('.edge-path')?.getAttribute('stroke-dasharray')).toBe(
-      '2 3',
+    expect(first.container.querySelector('.edge-path')?.hasAttribute('stroke-dasharray')).toBe(
+      false,
     );
     expect(first.container.querySelectorAll('.edge-terminal')).toHaveLength(2);
     expect(first.container.querySelector('.edge-terminal')?.getAttribute('r')).toBe('2.25');
     expect(first.container.querySelector('.edge-arrow')).toBeNull();
+  });
+
+  it('adds traveling highlights only to working, recent delegation, and waiting edges', () => {
+    const recentTimestamp = new Date().toISOString();
+    const edges: GraphEdge[] = [
+      assignment(),
+      { ...assignment('two'), id: 'assignment:idle' },
+      {
+        id: 'delegation:recent',
+        type: 'delegation',
+        sourceId: 'agent:one',
+        targetId: 'agent:two',
+        agentId: 'one',
+        timestamp: recentTimestamp,
+        isActive: false,
+      },
+      {
+        id: 'waiting:one',
+        type: 'waiting-on',
+        sourceId: 'agent:one',
+        targetId: 'task:one',
+        agentId: 'one',
+        timestamp,
+        isActive: false,
+      },
+      edge(file(1)),
+    ];
+    const { container } = render(GraphEdgeLayer, {
+      props: {
+        edges,
+        nodes: [{ ...agent(), status: 'responding' }, agent('two'), task(), file(1)],
+        positions: new Map([
+          ['agent:one', { x: 100, y: 100 }],
+          ['agent:two', { x: 100, y: 200 }],
+          ['task:one', { x: 300, y: 100 }],
+          ['file:1', { x: 300, y: 200 }],
+        ]),
+        focusNodeId: 'agent:two',
+      },
+    });
+
+    expect(
+      Array.from(container.querySelectorAll<SVGPathElement>('[data-edge-highlight]'), (path) => [
+        path.getAttribute('data-edge-id'),
+        path.getAttribute('data-edge-highlight'),
+      ]),
+    ).toEqual([
+      ['assignment:one:one', 'working'],
+      ['delegation:recent', 'delegation'],
+      ['waiting:one', 'waiting'],
+    ]);
+    const workingHighlight = container.querySelector('[data-edge-highlight="working"]');
+    const workingBase = container.querySelector('.edge-path[data-edge-id="assignment:one:one"]');
+    const gradient = container.querySelector('linearGradient');
+    expect(workingHighlight?.getAttribute('stroke')).toBe(`url(#${gradient?.id})`);
+    expect(gradient?.getAttribute('gradientUnits')).toBe('userSpaceOnUse');
+    expect(workingHighlight?.getAttribute('data-dimmed')).toBe('true');
+    expect(workingHighlight?.getAttribute('opacity')).toBe(workingBase?.getAttribute('opacity'));
+  });
+
+  it('omits traveling highlights when motion is disabled', async () => {
+    useViewport();
+    const { container } = render(GraphEdgeLayer, {
+      props: {
+        edges: [assignment()],
+        nodes: [{ ...agent(), status: 'responding' }, task()],
+        positions: new Map([
+          ['agent:one', { x: 100, y: 100 }],
+          ['task:one', { x: 300, y: 100 }],
+        ]),
+      },
+    });
+    await tick();
+
+    expect(container.querySelector('.edge-layer')?.getAttribute('data-motion-enabled')).toBe(
+      'false',
+    );
+    expect(container.querySelector('[data-edge-highlight]')).toBeNull();
+    expect(container.querySelector('.edge-path')?.hasAttribute('stroke-dasharray')).toBe(false);
   });
 
   it('marks the focused neighbourhood and hides unrelated write labels', () => {
