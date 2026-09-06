@@ -17,6 +17,7 @@ const PANEL_DEFAULT_WIDTH_TIERS = {
   file: 'wide',
   'hook-script': 'medium',
   'local-changes': 'wide',
+  map: 'wide',
   note: 'medium',
   overview: 'narrow',
   settings: 'narrow',

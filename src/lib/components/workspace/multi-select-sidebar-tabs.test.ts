@@ -8,6 +8,7 @@ import {
 describe('multi-select sidebar tabs', () => {
   it('keeps the canonical tab order and launcher grid', () => {
     expect(TAB_DEFINITIONS.map(({ id }) => id)).toEqual([
+      'map',
       'overview',
       'agents',
       'context',
@@ -21,6 +22,7 @@ describe('multi-select sidebar tabs', () => {
       context: { column: 1, row: 0 },
       changes: { column: 0, row: 1 },
       files: { column: 1, row: 1 },
+      map: { column: 0, row: 2 },
     });
   });
 

@@ -49,6 +49,7 @@
     'activity-changes': 'Activity changes',
     'code-review': 'Code review',
     'agent-overview': 'Agent overview',
+    map: 'Map',
     task: 'Assigned task',
   };
 

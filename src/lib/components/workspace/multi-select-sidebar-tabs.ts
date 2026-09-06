@@ -3,6 +3,7 @@ import {
   faAsterisk,
   faFolderTree,
   faGlobe,
+  faLayerGroup,
   faRobot,
   faTerminal,
 } from '@fortawesome/free-solid-svg-icons';
@@ -19,6 +20,16 @@ export interface TabDefinition {
 }
 
 export const TAB_DEFINITIONS: TabDefinition[] = [
+  {
+    id: 'map',
+    get label() {
+      return m.semanticMap_sandbox_title();
+    },
+    icon: faLayerGroup,
+    get description() {
+      return m.semanticMap_canvas_visualization_ariaLabel();
+    },
+  },
   {
     id: 'overview',
     get label() {
@@ -99,6 +110,7 @@ export const LAUNCHER_GRID_POSITIONS: Record<LauncherTabId, { column: number; ro
   context: { column: 1, row: 0 },
   changes: { column: 0, row: 1 },
   files: { column: 1, row: 1 },
+  map: { column: 0, row: 2 },
 };
 
 function isValidTabId(value: string): value is TabId {
