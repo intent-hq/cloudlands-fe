@@ -1,3 +1,4 @@
+/** @vitest-environment jsdom */
 import { describe, expect, it, vi } from 'vitest';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
@@ -16,7 +17,7 @@ import type {
   PanelState,
   RecentlyClosedTab,
 } from '$store/renderer/slices/panel-layout/panel-layout-types';
-import type { KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
+import { KeyboardShortcutManager, type KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
 import { SHORTCUT_DEFAULTS } from '$lib/utils/shortcut-bindings';
 import { SHORTCUTS } from '$lib/utils/shortcuts';
 import {
@@ -852,6 +853,85 @@ describe('global workspace tab navigation', () => {
       expect(callback).toHaveBeenCalledExactlyOnceWith('ws-1');
     }
   });
+
+  it.each(['Win32', 'Linux x86_64'])(
+    'runs all creation shortcuts, but not Mod+T/W, from terminal focus on %s',
+    (platform) => {
+      const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform);
+      const manager = new KeyboardShortcutManager();
+      const registered: KeyboardShortcut[] = [];
+      const callbacks = {
+        agent: vi.fn(),
+        note: vi.fn(),
+        terminal: vi.fn(),
+        browser: vi.fn(),
+      };
+      const terminalTarget = document.createElement('textarea');
+      terminalTarget.classList.add('xterm-helper-textarea');
+      document.body.append(terminalTarget);
+
+      try {
+        registerWorkspaceTabShortcuts({
+          isMac: false,
+          register: (shortcut) => {
+            const registeredShortcut = { ...shortcut, action: vi.fn(shortcut.action) };
+            registered.push(registeredShortcut);
+            manager.register(registeredShortcut);
+          },
+          store: makeStore(),
+          getCurrentPath: () => '/workspace/ws-1',
+          navigate: vi.fn(),
+          openNewWorkspace: vi.fn(),
+          onCreateAgent: callbacks.agent,
+          onCreateNote: callbacks.note,
+          onCreateTerminal: callbacks.terminal,
+          onCreateBrowser: callbacks.browser,
+          resolveBinding: (id) => SHORTCUT_DEFAULTS[id],
+        });
+        manager.attach();
+
+        for (const [code, key] of [
+          ['KeyA', 'å'],
+          ['KeyN', 'ñ'],
+          ['KeyT', '†'],
+          ['KeyB', '∫'],
+        ] as const) {
+          terminalTarget.dispatchEvent(
+            new KeyboardEvent('keydown', {
+              bubbles: true,
+              cancelable: true,
+              code,
+              key,
+              ctrlKey: true,
+              altKey: true,
+            }),
+          );
+        }
+
+        for (const callback of Object.values(callbacks)) {
+          expect(callback).toHaveBeenCalledExactlyOnceWith('ws-1');
+        }
+
+        for (const key of ['t', 'w']) {
+          terminalTarget.dispatchEvent(
+            new KeyboardEvent('keydown', {
+              bubbles: true,
+              cancelable: true,
+              code: `Key${key.toUpperCase()}`,
+              key,
+              ctrlKey: true,
+            }),
+          );
+          const shortcut = registered.find((candidate) => candidate.binding?.() === `mod+${key}`);
+          expect(shortcut?.action).not.toHaveBeenCalled();
+        }
+      } finally {
+        manager.destroy();
+        terminalTarget.remove();
+        platformSpy.mockRestore();
+      }
+    },
+  );
 
   it('retains all nine indexed bindings after the tab range modifier is edited', () => {
     const shortcuts: KeyboardShortcut[] = [];
