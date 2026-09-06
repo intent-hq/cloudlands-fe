@@ -825,8 +825,9 @@ describe('browserIpcSaga', () => {
       visible: true,
     });
 
-    // The rightmost-column saga drops the queued reveal after it resolves the
-    // fixed-column target (monorepo#3045).
+    // The rightmost-column saga activates the tab without moving focus and
+    // drops the queued reveal when the workspace is not displayed
+    // (monorepo#3045); it is not running in this harness.
     expect(actions).toMatchObject([
       {
         type: 'panelLayout/openTabInRightmostColumnRequested',

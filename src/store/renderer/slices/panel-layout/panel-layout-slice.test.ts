@@ -1289,6 +1289,75 @@ describe('panelLayoutReducer', () => {
       expect(activated.panels.right.tabs.map((candidate) => candidate.id)).toEqual(['old-right']);
       expect(duplicated.panels.right.tabs.at(-1)?.id).toBe('duplicate');
     });
+
+    // preserveFocus (agent-driven visible opens, monorepo#3045): the tab is
+    // activated so it paints, but panel focus and focus history stay put.
+    it('preserveFocus activates the new tab in the rightmost column without moving focus', () => {
+      const before = twoColumnState().byWorkspaceId[WS];
+      const result = panelLayoutReducer(
+        twoColumnState(),
+        openTabInRightmostColumn(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          { newTabId: 'new-right', preserveFocus: true },
+          10,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.right.tabs.map((tab) => tab.id)).toEqual(['old-right', 'new-right']);
+      expect(result.panels.right.activeTabId).toBe('new-right');
+      expect(result.panels.right.attentionTabIds ?? []).toEqual([]);
+      expect(result.focusedPanelId).toBe('left');
+      expect(result.focusHistory).toEqual(before.focusHistory);
+      expect(result.pendingFocusTabId).toBeNull();
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'right',
+        tabId: 'new-right',
+        requestId: 'new-right',
+      });
+      expect(result.layoutHistory).toHaveLength(1);
+      expect(result.layoutHistory[0].panels.right).toMatchObject({ activeTabId: 'old-right' });
+    });
+
+    it('preserveFocus activates an equivalent inactive tab in place without moving focus', () => {
+      const state = twoColumnState();
+      state.byWorkspaceId[WS].panels.right = {
+        ...state.byWorkspaceId[WS].panels.right,
+        tabs: [
+          ...state.byWorkspaceId[WS].panels.right.tabs,
+          {
+            id: 'existing-browser',
+            type: 'browser',
+            title: 'Browser',
+            browserUrl: 'https://agent.test',
+            closable: true,
+          },
+        ],
+        attentionTabIds: ['existing-browser'],
+      };
+      const result = panelLayoutReducer(
+        state,
+        openTabInRightmostColumn(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          { newTabId: 'request-1', preserveFocus: true },
+          10,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.right.tabs.map((tab) => tab.id)).toEqual([
+        'old-right',
+        'existing-browser',
+      ]);
+      expect(result.panels.right.activeTabId).toBe('existing-browser');
+      expect(result.panels.right.attentionTabIds).toEqual([]);
+      expect(result.focusedPanelId).toBe('left');
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'right',
+        tabId: 'existing-browser',
+        requestId: 'request-1',
+      });
+    });
   });
 
   describe('openTabInAdjacentOrSplit', () => {

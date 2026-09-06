@@ -12,7 +12,6 @@ import {
   openTabInRightmostColumn,
   panelLayoutReducer,
   restoreHiddenTab,
-  setActiveTab,
 } from './panel-layout-slice';
 import { PANEL_LAYOUT_PERSISTENCE_VERSION, type PanelTab } from './panel-layout-types';
 
@@ -95,23 +94,20 @@ describe('column stack algorithm', () => {
     expect(capped.panels.p1.tabs.at(-1)?.id).toBe('capped');
   });
 
-  it('adds agent-driven panes in the background and clears attention on selection', () => {
-    const background = panelLayoutReducer(
+  it('activates agent-driven panes in the rightmost stack without moving focus', () => {
+    const activated = panelLayoutReducer(
       state(['p1', 'p2']),
       openTabInRightmostColumn(
         WS,
         { type: 'browser', title: 'Browser', browserUrl: 'https://example.test', closable: true },
-        { newTabId: 'browser', background: true },
+        { newTabId: 'browser', preserveFocus: true },
         10,
       ),
-    );
-    const beforeSelection = background.byWorkspaceId[WS];
-    expect(beforeSelection.focusedPanelId).toBe('p1');
-    expect(beforeSelection.panels.p2.activeTabId).toBe('tab-p2');
-    expect(beforeSelection.panels.p2.attentionTabIds).toEqual(['browser']);
-
-    const selected = panelLayoutReducer(background, setActiveTab(WS, 'browser', 'p2', 20));
-    expect(selected.byWorkspaceId[WS].panels.p2.attentionTabIds).toEqual([]);
+    ).byWorkspaceId[WS];
+    expect(activated.focusedPanelId).toBe('p1');
+    expect(activated.panels.p2.activeTabId).toBe('browser');
+    expect(activated.panels.p2.tabs.map((tab) => tab.id)).toEqual(['tab-p2', 'browser']);
+    expect(activated.panels.p2.attentionTabIds ?? []).toEqual([]);
   });
 
   it('restores an agent pane into a background stack without replacing visible content', () => {
