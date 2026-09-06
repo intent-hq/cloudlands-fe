@@ -762,11 +762,14 @@ class EmbeddedBrowserCdpService {
    *
    * The reveal is confirmed against a fresh renderer tab list (the same
    * confirm-by-list discipline closeTab uses): only a fresh reply that lists
-   * the tab as not hidden counts. Existence/ownership validation lives in
-   * the action executor — this method only delivers and confirms.
+   * the tab as not hidden AND as its panel's active tab counts — a
+   * visible-but-inactive listing means the activation has not applied yet
+   * (or was lost), so returning success there would let an immediate
+   * screenshot fail. Existence/ownership validation lives in the action
+   * executor — this method only delivers and confirms.
    *
    * @returns void on success; throws when no window received the request or
-   *          the reveal could not be confirmed
+   *          the activation could not be confirmed
    */
   async showTab(tabId: string, workspaceId?: string, focus?: boolean): Promise<void> {
     if (!tabId) {
@@ -790,18 +793,21 @@ class EmbeddedBrowserCdpService {
     }
     logger.info('Sent show request for browser tab', { tabId, workspaceId, focus });
 
-    // Confirm the renderer revealed the tab: only a fresh (non-stale) reply
-    // listing the tab without the hidden marker counts.
+    // Confirm the renderer activated the tab: only a fresh (non-stale) reply
+    // listing the tab without the hidden marker and with the active marker
+    // counts.
     for (let attempt = 0; attempt < 3; attempt++) {
       const after = await this.requestPanelBrowserTabs(workspaceId);
       if (!after.stale) {
         const tab = after.tabs.find((t) => t.tabId === tabId);
-        if (tab && tab.hidden !== true) return;
+        if (tab && tab.hidden !== true && tab.active === true) return;
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     // i18n-ignore (agent-facing protocol error, not user-facing)
-    throw new Error(`Tab ${tabId} could not be shown (the UI did not confirm the reveal).`);
+    throw new Error(
+      `Tab ${tabId} could not be shown (the UI did not confirm the tab as its panel's active tab).`,
+    );
   }
 
   /**
