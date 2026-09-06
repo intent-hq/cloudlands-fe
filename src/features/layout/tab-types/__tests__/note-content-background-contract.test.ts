@@ -33,7 +33,7 @@ describe('note content background contract', () => {
 
     expect(owner.match(/bg-background/g)).toHaveLength(1);
     expect(owner).toContain('h-full min-h-0 w-full min-w-0 bg-background');
-    expect(emptyPanel).toContain('bg-background');
+    expect(emptyPanel).toContain('bg-sidebar');
     expect(notesSidebar).not.toContain('data-note-content-surface');
     for (const widget of [reference, cli, action]) expect(widget).toContain('bg-card');
   });

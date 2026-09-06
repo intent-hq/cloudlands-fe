@@ -17,6 +17,7 @@ import type {
   RecentlyClosedTab,
 } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import type { KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
+import { SHORTCUT_DEFAULTS } from '$lib/utils/shortcut-bindings';
 import { SHORTCUTS } from '$lib/utils/shortcuts';
 import {
   closeActivePanelTab,
@@ -291,10 +292,9 @@ describe('global workspace tab navigation', () => {
         1,
       );
       expect(store.state.panelLayout.byWorkspaceId['ws-2'].panels['ws2-left'].tabs).toHaveLength(1);
-      expect(store.state.panelLayout.byWorkspaceId['ws-2'].panels['ws2-right']).toMatchObject({
-        tabs: [],
-        activeTabId: null,
-      });
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].panels['ws2-right']).toBeUndefined();
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].focusedPanelId).toBe('ws2-left');
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].columnCount).toBe(1);
       expect(store.state.tabState.currentTabId).toBe('ws-1');
       expect(store.actions.map((action) => action.type)).toEqual([
         'panelLayout/closeFocusedPanelTab',
@@ -302,7 +302,7 @@ describe('global workspace tab navigation', () => {
     });
 
     it.each([1, 2, 3, 4] as const)(
-      'retains every structural invariant when closing the final tab in a %i-column layout',
+      'handles the final tab correctly in a %i-column layout',
       (columnCount) => {
         const panels = Array.from({ length: columnCount }, (_, index) =>
           makePanel(`p${index + 1}`, [`t${index + 1}`]),
@@ -323,16 +323,20 @@ describe('global workspace tab navigation', () => {
 
         expect(closeActivePanelTab(store, '/workspace/ws-2')).toBe(`t${columnCount}`);
         const result = store.state.panelLayout.byWorkspaceId['ws-2'];
-        expect(result.root).toEqual(rootBefore);
-        expect(Object.keys(result.panels)).toEqual(panelsBefore);
-        expect(result.columnCount).toBe(columnCount);
-        expect(result.canvasWidth).toBe(1600);
-        expect(result.canvasWidthSource).toBe('explicit');
-        expect(result.focusedPanelId).toBe(`p${columnCount}`);
-        expect(result.panels[`p${columnCount}`]).toMatchObject({
-          tabs: [],
-          activeTabId: null,
-        });
+        if (columnCount === 1) {
+          expect(result.root).toEqual(rootBefore);
+          expect(Object.keys(result.panels)).toEqual(panelsBefore);
+          expect(result.columnCount).toBe(1);
+          expect(result.canvasWidth).toBe(1600);
+          expect(result.canvasWidthSource).toBe('explicit');
+          expect(result.focusedPanelId).toBe('p1');
+          expect(result.panels.p1).toMatchObject({ tabs: [], activeTabId: null });
+        } else {
+          expect(Object.keys(result.panels)).toEqual(panelsBefore.slice(0, -1));
+          expect(result.columnCount).toBe(columnCount - 1);
+          expect(result.focusedPanelId).toBe(`p${columnCount - 1}`);
+          expect(result.panels[`p${columnCount}`]).toBeUndefined();
+        }
       },
     );
 
@@ -351,14 +355,13 @@ describe('global workspace tab navigation', () => {
       });
     });
 
-    it('uses a second press to remove an already-empty focused column', () => {
+    it('uses one press to remove a focused column with one closable tab', () => {
       const store = makeStore(
         'ws-2',
         layoutWith([makePanel('p1', ['t1']), makePanel('p2', ['t2'])], 'p2'),
       );
 
       expect(closeActivePanelTab(store, '/workspace/ws-2', 1200)).toBe('t2');
-      expect(closeActivePanelTab(store, '/workspace/ws-2', 1200)).toBe('p2');
 
       const workspace = store.state.panelLayout.byWorkspaceId['ws-2'];
       expect(workspace.root).toEqual({ type: 'panel', panelId: 'p1' });
@@ -366,7 +369,6 @@ describe('global workspace tab navigation', () => {
       expect(workspace.focusedPanelId).toBe('p1');
       expect(workspace.canvasWidth).toBe(1200);
       expect(store.actions.map((action) => action.type)).toEqual([
-        'panelLayout/closeFocusedPanelTab',
         'panelLayout/closeFocusedPanelTab',
       ]);
     });
@@ -450,10 +452,8 @@ describe('global workspace tab navigation', () => {
       expect(store.actions.map((action) => action.type)).not.toContain(
         'panelLayout/closeActiveTab',
       );
-      expect(store.state.panelLayout.byWorkspaceId['ws-2'].panels.p2).toMatchObject({
-        tabs: [],
-        activeTabId: null,
-      });
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].panels.p2).toBeUndefined();
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].columnCount).toBe(1);
       expect(navigate).not.toHaveBeenCalled();
     },
   );
@@ -528,10 +528,10 @@ describe('global workspace tab navigation', () => {
       const store = makeStore('ws-2', layout);
       const navigate = vi.fn();
 
-      store.dispatch(closeFocusedPanelTab('ws-2', 1000, 1200));
+      store.dispatch(closeFocusedPanelTab('ws-2', 3000, 1200));
       store.state.tabState.recentlyClosedTabIds.push('ws-4');
       store.state.tabState.recentlyClosedTabAt['ws-4'] = 2000;
-      store.dispatch(closeFocusedPanelTab('ws-2', 3000, 1200));
+      store.dispatch(closeFocusedPanelTab('ws-2', 1000, 1200));
 
       expect(reopenPanelOrWorkspaceTab(store, '/workspace/ws-2', navigate)).toBe('column');
       expect(store.state.panelLayout.byWorkspaceId['ws-2'].root).toEqual({
@@ -807,6 +807,50 @@ describe('global workspace tab navigation', () => {
     expect(onWorkspaceTabMoved).toHaveBeenLastCalledWith({ workspaceId: 'ws-2', position: 1 });
     shortcuts.find((shortcut) => shortcut.key === 'ArrowLeft')!.action();
     expect(onWorkspaceTabMoved).toHaveBeenCalledTimes(1);
+  });
+
+  it('registers overridable workspace creation shortcuts for the routed workspace', () => {
+    const shortcuts: KeyboardShortcut[] = [];
+    const callbacks = {
+      agent: vi.fn(),
+      note: vi.fn(),
+      terminal: vi.fn(),
+      browser: vi.fn(),
+    };
+    registerWorkspaceTabShortcuts({
+      isMac: true,
+      register: (shortcut) => shortcuts.push(shortcut),
+      store: makeStore(),
+      getCurrentPath: () => '/workspace/ws-1',
+      navigate: vi.fn(),
+      openNewWorkspace: vi.fn(),
+      onCreateAgent: callbacks.agent,
+      onCreateNote: callbacks.note,
+      onCreateTerminal: callbacks.terminal,
+      onCreateBrowser: callbacks.browser,
+      resolveBinding: (id) =>
+        id === 'workspace.new-agent' ? 'mod+shift+g' : SHORTCUT_DEFAULTS[id],
+    });
+
+    const creationDescriptions = new Set([
+      SHORTCUTS.NEW_AGENT.label,
+      SHORTCUTS.NEW_NOTE.label,
+      SHORTCUTS.NEW_TERMINAL.label,
+      SHORTCUTS.NEW_BROWSER.label,
+    ]);
+    const creationShortcuts = shortcuts.filter((shortcut) =>
+      creationDescriptions.has(shortcut.description),
+    );
+    expect(creationShortcuts.map((shortcut) => shortcut.binding?.())).toEqual([
+      'mod+shift+g',
+      'mod+alt+n',
+      'mod+alt+t',
+      'mod+alt+b',
+    ]);
+    creationShortcuts.forEach((shortcut) => shortcut.action());
+    for (const callback of Object.values(callbacks)) {
+      expect(callback).toHaveBeenCalledExactlyOnceWith('ws-1');
+    }
   });
 
   it('retains all nine indexed bindings after the tab range modifier is edited', () => {

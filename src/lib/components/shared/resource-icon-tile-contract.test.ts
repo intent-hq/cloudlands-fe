@@ -62,7 +62,7 @@ describe('resource icon tile source contract', () => {
     expect(transitions).toContain('background-color: hsl(var(--sidebar))');
   });
 
-  it('migrates panel tabs, compact headers, and empty or recent items', () => {
+  it('migrates panel tabs and compact headers while empty rows use bare glyphs', () => {
     const tabBar = source('../layout/panel-system/PanelTabBar.svelte');
     const empty = source('../layout/panel-system/PanelEmptyState.svelte');
     const navigator = source('../chat/ChatMessageNavigator.svelte');
@@ -90,8 +90,9 @@ describe('resource icon tile source contract', () => {
     expect(tabBar).toContain(
       '(var(--panel-header-height) - var(--agent-avatar-emphasized-surface-size)) / 2',
     );
-    expect(empty).toContain('<ResourceIconTile kind={action.resourceKind} variant="emphasized" />');
-    expect(empty).toContain('<ResourceIconTile kind={resourceKind} />');
+    expect(empty).not.toContain('ResourceIconTile');
+    expect(empty).toContain('<Fa icon={action.icon} class="size-[1em]" />');
+    expect(empty).toContain('<Fa icon={getTabIcon(item.tab.type)} class="size-[1em]" />');
   });
 
   it('maps the note and every changes alias to one canonical identity', () => {
