@@ -69,9 +69,8 @@
     return Number.isInteger(value) && value >= 240 && value <= maximum ? value : fallback;
   }
 
-  const width = queryDimension('w', 1200, 1600);
+  const canvasWidth = queryDimension('w', 1200, 1600);
   const height = queryDimension('h', 620, 1200);
-  const canvasWidth = Math.max(240, width - 304);
   const script = createSemanticMapScript();
   const baseManifest = manifestJson as Manifest;
   const kinds = ['read', 'edit', 'tool', 'thinking'] as const;
