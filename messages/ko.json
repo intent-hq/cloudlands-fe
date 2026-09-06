@@ -6,6 +6,7 @@
   "diffMap_groupChanged_label": "{count}개 변경",
   "diffMap_groupChangedTotal_label": "{count}개 변경 · {total}",
   "diffMap_changedSinceViewed_label": "확인 후 변경됨",
+  "diffMap_overflowRail_ariaLabel": "위에 파일 {above}개, 아래에 파일 {below}개",
   "diffMap_reviewSelection_agentName": "선택한 변경 사항 검토",
   "diffMap_reviewSelection_askAgent_label": "에이전트에게 요청",
   "diffMap_reviewSelection_initialMessage": "첨부된 변경 사항 선택을 검토하고 문제가 있으면 보고해 주세요.",

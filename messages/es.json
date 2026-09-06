@@ -6,6 +6,7 @@
   "diffMap_groupChanged_label": "{count} cambiados",
   "diffMap_groupChangedTotal_label": "{count} cambiados · {total}",
   "diffMap_changedSinceViewed_label": "Cambió desde que se vio",
+  "diffMap_overflowRail_ariaLabel": "{above} archivos arriba, {below} archivos abajo",
   "diffMap_reviewSelection_agentName": "Revisar cambios seleccionados",
   "diffMap_reviewSelection_askAgent_label": "Preguntar al agente",
   "diffMap_reviewSelection_initialMessage": "Revisa la selección de cambios adjunta e informa de cualquier problema.",
