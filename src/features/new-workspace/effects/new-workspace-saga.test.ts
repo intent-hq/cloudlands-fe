@@ -118,7 +118,6 @@ async function execute(
     },
     adopt: createWorkspaceAdoption({
       dispatch: reduxDispatch,
-      navigate: vi.fn(),
     }),
     identifyClient: async () => ({ clientId: 'client-1' }),
     saveDebounceMs: 0,

@@ -1,5 +1,4 @@
 import type { AppClient } from '$lib/client';
-import { navigateToRoute } from '$lib/utils/navigation.client';
 import { store as appStore } from '$store/renderer/store';
 import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { bootstrapNewWorkspaceLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -25,7 +24,6 @@ export type WorkspaceAdoption = (input: WorkspaceAdoptionInput) => void | Promis
 
 export interface WorkspaceAdoptionDependencies {
   dispatch?: (action: ReduxAction) => void;
-  navigate?: typeof navigateToRoute;
 }
 
 /** Build the real, injectable workspace adoption transaction used by the route host. */
@@ -33,9 +31,8 @@ export function createWorkspaceAdoption(
   dependencies: WorkspaceAdoptionDependencies = {},
 ): WorkspaceAdoption {
   const dispatch = dependencies.dispatch ?? ((action: ReduxAction) => appStore.dispatch(action));
-  const navigate = dependencies.navigate ?? navigateToRoute;
 
-  return async ({ workspace, initialAgent, operationKey }) => {
+  return ({ workspace, initialAgent, operationKey }) => {
     const agentId = initialAgent?.id ?? null;
     const actions: ReduxAction[] = [
       setWorkspaceEntity(workspace),
@@ -60,7 +57,6 @@ export function createWorkspaceAdoption(
       ...(operationKey ? [clearWorkspaceCreateProgress(operationKey)] : []),
     ];
     dispatch(batchRendererActions(actions));
-    await navigate(`/workspace/${workspace.id}`);
   };
 }
 
