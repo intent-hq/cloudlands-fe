@@ -21,7 +21,11 @@ export function buildNewWorkspaceRoute(
   if (input && options.carrier === 'url') {
     params.set('start', JSON.stringify(input));
   } else if (typeof sessionStorage !== 'undefined' && input) {
-    sessionStorage.setItem(`${START_INPUT_PREFIX}${instanceId}`, JSON.stringify(input));
+    try {
+      sessionStorage.setItem(`${START_INPUT_PREFIX}${instanceId}`, JSON.stringify(input));
+    } catch {
+      params.set('start', JSON.stringify(input));
+    }
   }
   return `/workspace/new?${params.toString()}`;
 }
