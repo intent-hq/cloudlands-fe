@@ -30,19 +30,22 @@ test('three-agent 32x replay meets the 1440px frame budget', async ({ mount, pag
   );
   const ordered = [...metrics.deltas].sort((left, right) => left - right);
   const rawP95 = ordered[Math.ceil(ordered.length * 0.95) - 1];
-  const refreshInterval = 1_000 / 60;
-  const displayIntervals = ordered.map((delta) => Math.max(1, Math.round(delta / refreshInterval)));
-  const p95 = displayIntervals[Math.ceil(displayIntervals.length * 0.95) - 1] * refreshInterval;
-  console.info(
-    `semantic-map frame budget: ${ordered.length} samples, raw p95 ${rawP95}ms, display p95 ${p95}ms`,
-  );
+  const frameBudgetMs = 16.7;
+  // Headless Chromium exposes rAF timestamps at 0.1 ms precision, so subtracting two
+  // timestamps can add up to 0.2 ms of quantization error. The 16.9 ms ceiling remains
+  // well below the 25 ms midpoint that would indicate a missed 60 Hz vsync.
+  const timestampQuantizationToleranceMs = 0.2;
+  const rawP95CeilingMs = frameBudgetMs + timestampQuantizationToleranceMs;
+  console.info(`semantic-map frame budget: ${ordered.length} samples, raw p95 ${rawP95}ms`);
   await testInfo.attach('frame-budget.json', {
     body: JSON.stringify(
       {
         durationMs: metrics.durationMs,
         samples: ordered.length,
         rawP95,
-        p95,
+        frameBudgetMs,
+        timestampQuantizationToleranceMs,
+        rawP95CeilingMs,
         deltas: metrics.deltas,
       },
       null,
@@ -51,5 +54,5 @@ test('three-agent 32x replay meets the 1440px frame budget', async ({ mount, pag
     contentType: 'application/json',
   });
   expect(metrics.durationMs).toBeGreaterThanOrEqual(3_000);
-  expect(p95).toBeLessThanOrEqual(16.7);
+  expect(rawP95).toBeLessThanOrEqual(rawP95CeilingMs);
 });
