@@ -3,15 +3,15 @@
  * environment. Resolution is lazy (first use, not module load) and cached for
  * the lifetime of the renderer process.
  */
-import { isElectronPlatform } from "$lib/utils/platform-capabilities";
-import type { BackendTransport } from "./backend-transport-types";
+import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+import type { BackendTransport } from './backend-transport-types';
 import {
   createBrowserWebSocketTransport,
   resolveBrowserWsUrl,
   sanitizeWsUrlForDisplay,
-} from "./browser-websocket-transport";
-import { createElectronIpcBackendTransport } from "./electron-ipc-transport";
-import { registerWebDaemonStatusSource } from "./web-daemon-status";
+} from './browser-websocket-transport';
+import { createElectronIpcBackendTransport } from './electron-ipc-transport';
+import { registerWebDaemonStatusSource } from './web-daemon-status';
 
 let cachedTransport: BackendTransport | null = null;
 

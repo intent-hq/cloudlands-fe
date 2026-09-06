@@ -5,6 +5,8 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import { appClient } from '$lib/client';
+  import { store as appStore } from '$store/renderer/store';
+  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { faTimes, faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
@@ -38,7 +40,7 @@
   /** Resolve the workspace whose repository/worktree matches this repo path. */
   async function resolveWorkspaceId(): Promise<string | null> {
     try {
-      const workspaces = await appClient.workspaces.list();
+      const workspaces = selectWorkspaceItems.select(appStore.state);
       const match = workspaces.find(
         (w) => w.repositoryPath === repoPath || w.path === repoPath || w.worktreePath === repoPath,
       );
@@ -122,7 +124,7 @@
   <!-- Content - contained scroll that won't affect parent -->
   <div class="p-4 max-h-60 overflow-y-auto overscroll-contain">
     {#if error}
-      <div class="text-sm text-error-foreground bg-destructive/10 rounded-md p-3">
+      <div class="text-sm text-danger bg-danger-background/10 rounded-md p-3">
         {error}
       </div>
     {:else if isGenerating}

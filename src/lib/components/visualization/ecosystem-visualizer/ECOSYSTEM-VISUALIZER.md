@@ -20,6 +20,7 @@ A circle-packing visualization for displaying file system hierarchies as nested 
 ### 1. Tree Processing (`tree-processor.ts`)
 
 Converts raw file tree nodes into `ProcessedNode` objects:
+
 - Assigns unique IDs and parent references
 - Calculates file sizes for radius scaling
 - Determines language colors from extensions
@@ -37,6 +38,7 @@ Uses D3's `pack()` layout for deterministic circle packing:
 ### 3. Force Simulation for Spreading
 
 When viewport is landscape (aspect ratio > 1.2):
+
 - Runs a D3 force simulation on top-level folders only
 - `forceX` pulls folders toward evenly-spaced horizontal positions
 - `forceY` keeps folders centered vertically
@@ -47,12 +49,13 @@ When viewport is landscape (aspect ratio > 1.2):
 const simulation = forceSimulation(topLevelNodes)
   .force('x', forceX(targetX).strength(0.8))
   .force('y', forceY(centerY).strength(0.3))
-  .force('collide', forceCollide(d => d.r + 15).strength(1))
+  .force('collide', forceCollide((d) => d.r + 15).strength(1));
 ```
 
 ### 4. Rendering (`EcosystemCanvas.svelte`)
 
 Canvas 2D rendering with:
+
 - Blob shapes for folder boundaries (organic look)
 - Colored circles for files
 - Pan/zoom via mouse drag and wheel
@@ -65,20 +68,20 @@ interface ProcessedNode {
   id: string;
   name: string;
   isFolder: boolean;
-  x: number;           // Position after layout
+  x: number; // Position after layout
   y: number;
-  r: number;           // Radius
-  color?: string;      // Language color for files
+  r: number; // Radius
+  color?: string; // Language color for files
   parent?: ProcessedNode;
   children?: ProcessedNode[];
 }
 
 interface EcosystemSettings {
-  folderPadding: number;      // Space around folder contents
-  minFileRadius: number;      // Minimum file circle size
-  collisionPadding: number;   // Gap between siblings
-  spacingBuffer: number;      // Extra breathing room
-  hullExpansion: number;      // Blob shape expansion
+  folderPadding: number; // Space around folder contents
+  minFileRadius: number; // Minimum file circle size
+  collisionPadding: number; // Gap between siblings
+  spacingBuffer: number; // Extra breathing room
+  hullExpansion: number; // Blob shape expansion
 }
 ```
 
@@ -93,6 +96,7 @@ Note: Sandbox runs in browser context without Electron IPC.
 ## Debug Logging
 
 Force simulation logs to console:
+
 - `[Force] Spread check:` - Shows aspect ratio, landscape detection, folder count
 - `[Force] Running simulation with targets:` - Target X positions
 - `[Force] After simulation:` - Final positions vs original

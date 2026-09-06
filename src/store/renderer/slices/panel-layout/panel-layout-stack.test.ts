@@ -12,7 +12,6 @@ import {
   openTabInRightmostColumn,
   panelLayoutReducer,
   restoreHiddenTab,
-  setActiveTab,
 } from './panel-layout-slice';
 import { PANEL_LAYOUT_PERSISTENCE_VERSION, type PanelTab } from './panel-layout-types';
 
@@ -95,26 +94,23 @@ describe('column stack algorithm', () => {
     expect(capped.panels.p1.tabs.at(-1)?.id).toBe('capped');
   });
 
-  it('adds agent-driven panes in the background and clears attention on selection', () => {
-    const background = panelLayoutReducer(
+  it('activates agent-driven panes in the rightmost stack without moving focus', () => {
+    const activated = panelLayoutReducer(
       state(['p1', 'p2']),
       openTabInRightmostColumn(
         WS,
         { type: 'browser', title: 'Browser', browserUrl: 'https://example.test', closable: true },
-        { newTabId: 'browser', background: true },
+        { newTabId: 'browser', preserveFocus: true },
         10,
       ),
-    );
-    const beforeSelection = background.byWorkspaceId[WS];
-    expect(beforeSelection.focusedPanelId).toBe('p1');
-    expect(beforeSelection.panels.p2.activeTabId).toBe('tab-p2');
-    expect(beforeSelection.panels.p2.attentionTabIds).toEqual(['browser']);
-
-    const selected = panelLayoutReducer(background, setActiveTab(WS, 'browser', 'p2', 20));
-    expect(selected.byWorkspaceId[WS].panels.p2.attentionTabIds).toEqual([]);
+    ).byWorkspaceId[WS];
+    expect(activated.focusedPanelId).toBe('p1');
+    expect(activated.panels.p2.activeTabId).toBe('browser');
+    expect(activated.panels.p2.tabs.map((tab) => tab.id)).toEqual(['tab-p2', 'browser']);
+    expect(activated.panels.p2.attentionTabIds ?? []).toEqual([]);
   });
 
-  it('restores an agent pane into a background stack without replacing visible content', () => {
+  it('restores an agent pane into a background stack and activates it without moving focus', () => {
     const initial = state(['p1', 'p2']);
     initial.byWorkspaceId[WS].hiddenTabs = createCollection('id', [
       { id: 'browser', type: 'browser', title: 'Browser', closable: true },
@@ -123,9 +119,15 @@ describe('column stack algorithm', () => {
       .byWorkspaceId[WS];
 
     expect(restored.focusedPanelId).toBe('p1');
-    expect(restored.panels.p2.activeTabId).toBe('tab-p2');
-    expect(restored.panels.p2.attentionTabIds).toEqual(['browser']);
-    expect(restored.pendingPanelReveal).toBeNull();
+    expect(restored.panels.p1.activeTabId).toBe('tab-p1');
+    expect(restored.panels.p2.activeTabId).toBe('browser');
+    expect(restored.panels.p2.attentionTabIds ?? []).toEqual([]);
+    expect(restored.pendingPanelReveal).toEqual({
+      panelId: 'p2',
+      tabId: 'browser',
+      requestId: 'browser',
+      preserveFocus: true,
+    });
   });
 
   it('closes only the active pane while other stack panes remain', () => {

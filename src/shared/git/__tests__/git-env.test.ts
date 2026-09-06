@@ -124,8 +124,8 @@ describe('git-env exec helpers (host.execStream)', () => {
   it('throws with .killed on timeout (daemon group-reap)', async () => {
     streamState.result = { ok: false, timedOut: true };
 
-    await expect(
-      gitEnv.execFileAsync('git', ['fetch'], { timeout: 10 }),
-    ).rejects.toMatchObject({ killed: true });
+    await expect(gitEnv.execFileAsync('git', ['fetch'], { timeout: 10 })).rejects.toMatchObject({
+      killed: true,
+    });
   });
 });

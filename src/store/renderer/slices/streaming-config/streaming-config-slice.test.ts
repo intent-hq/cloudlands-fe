@@ -1,8 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { streamingConfigReducer, initialState } from './streaming-config-slice';
 import {
   STREAMING_PROFILES,
@@ -48,4 +44,3 @@ describe('calculateBackoff', () => {
     expect(backoff).toBe(config.maxBackoffTime);
   });
 });
-

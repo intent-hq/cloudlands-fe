@@ -78,17 +78,9 @@ export async function copyDebugFile(file: DebugFile, destPath: string): Promise<
     // The file can shrink between the stat above and this read (daily
     // rotation/retention), so trust bytesRead rather than the requested
     // length to avoid padding the bundle entry with NUL bytes.
-    const { bytesRead } = await handle.read(
-      tail,
-      0,
-      file.tailBytes,
-      stats.size - file.tailBytes,
-    );
+    const { bytesRead } = await handle.read(tail, 0, file.tailBytes, stats.size - file.tailBytes);
     // i18n-ignore (marker line inside a diagnostic zip, not UI)
-    const marker = Buffer.from(
-      `[truncated: last ${bytesRead} of ${stats.size} bytes]\n`,
-      'utf8',
-    );
+    const marker = Buffer.from(`[truncated: last ${bytesRead} of ${stats.size} bytes]\n`, 'utf8');
     await fs.writeFile(destPath, Buffer.concat([marker, tail.subarray(0, bytesRead)]));
   } finally {
     await handle.close();
@@ -131,7 +123,7 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
       if (stats.isFile()) {
         files.push({ sourcePath, relativePath });
       }
-    } catch  {
+    } catch {
       logger.debug('File not found or not accessible', { sourcePath });
     }
   }
@@ -164,7 +156,7 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
           files.push({ sourcePath: fullPath, relativePath: relPath });
         }
       }
-    } catch  {
+    } catch {
       logger.debug('Directory not found or not accessible', { sourcePath });
     }
   }
@@ -182,7 +174,7 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
           await addDirectoryRecursive(fullPath, relPath);
         }
       }
-    } catch  {
+    } catch {
       logger.debug('Directory not found or not accessible', { sourcePath });
     }
   }
@@ -264,9 +256,7 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
   } catch {
     logger.debug('intentd data dir not found or not accessible', { intentdDataDir });
     // i18n-ignore (manifest entry inside a diagnostic zip, not UI)
-    omissions.push(
-      `intentd/: skipped — intentd data dir not accessible at "${intentdDataDir}"`,
-    );
+    omissions.push(`intentd/: skipped — intentd data dir not accessible at "${intentdDataDir}"`);
   }
 
   // Last sidecar run record (spawn timing, exit code/signal, stdout+stderr
@@ -403,13 +393,10 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
       const message = error instanceof Error ? error.message : String(error);
       logger.warn('Failed to collect workspace files', { workspaceId, error: message });
       // i18n-ignore (manifest entry inside a diagnostic zip, not UI)
-      omissions.push(
-        `workspace/: collection failed for workspace "${workspaceId}" — ${message}`,
-      );
+      omissions.push(`workspace/: collection failed for workspace "${workspaceId}" — ${message}`);
     }
   }
 
   logger.info('Collected debug files', { count: files.length, workspaceId });
   return { files, omissions, memorySnapshot };
 }
-

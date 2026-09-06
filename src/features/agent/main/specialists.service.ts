@@ -1,7 +1,8 @@
 /**
  * Specialists Service (BACKEND ONLY)
  *
- * Provides access to specialist configurations for the InstructionService.
+ * Provides access to specialist configurations, formatted for the daemon and
+ * the renderer IPC surface.
  * Reads specialists from (in priority order):
  * 1. User file-based specialists (~/.intent/specialists/*.md) - highest priority
  * 2. Bundled specialists (resources/specialists/*.md)

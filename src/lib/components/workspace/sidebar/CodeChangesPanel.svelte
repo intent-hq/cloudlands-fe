@@ -9,11 +9,11 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import Fa from 'svelte-fa';
   import {
-  faCodeCommit,
-  faCodePullRequest,
-  faExternalLink,
-  faArrowRight,
-} from '@fortawesome/free-solid-svg-icons';
+    faCodeCommit,
+    faCodePullRequest,
+    faExternalLink,
+    faArrowRight,
+  } from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -89,7 +89,6 @@
   }
 
   function makeCommitFileClickHandler(commitHash: string) {
-
     return (_filePath: string, _commitHash?: string, _staged?: boolean) => {
       onOpenCommit?.(commitHash);
     };
@@ -126,7 +125,9 @@
     <!-- Staged Changes -->
     {#if stagedChanges.length > 0}
       <div class="mt-2">
-        <p class="text-ui uppercase tracking-wider text-muted-foreground px-2 mb-1">{m.workspace_fileChanges_staged_label()}</p>
+        <p class="text-ui uppercase tracking-wider text-muted-foreground px-2 mb-1">
+          {m.workspace_fileChanges_staged_label()}
+        </p>
         <FileChangesList
           changes={stagedChanges}
           {viewMode}
@@ -158,11 +159,7 @@
                 class="group flex items-center gap-2 w-full text-left py-1.5 px-2 hover:bg-muted/50 transition-colors cursor-pointer"
                 onclick={() => toggleCommitExpanded(commit.hash)}
               >
-                <Fa
-                  icon={faCodeCommit}
-                  size="xs"
-                  class="text-subtle shrink-0 opacity-50"
-                />
+                <Fa icon={faCodeCommit} size="xs" class="text-subtle shrink-0 opacity-50" />
                 <span class="text-xs truncate flex-1">{commit.message}</span>
                 {#if commit.files && commit.files.length > 0}
                   <LineChangesBadge

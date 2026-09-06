@@ -1832,7 +1832,7 @@
                           {#if onboardingTestPromptFailure}
                             <div
                               data-testid="onboarding-test-prompt-failure"
-                              class="mt-2 max-w-xl rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm"
+                              class="mt-2 max-w-xl rounded-md border border-danger/40 bg-danger-background/5 p-3 text-sm"
                             >
                               <p>{onboardingTestPromptFailure.message}</p>
                               {#if onboardingTestPromptFailure.loginCommandHint}

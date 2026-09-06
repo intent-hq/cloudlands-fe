@@ -470,7 +470,10 @@ const DYNAMIC_INVOKE_CALL_SITES: ReadonlyMap<string, string> = new Map([
   // provider-models.client.ts dispatches the uniform `<provider>:get-models`
   // channels through its PROVIDER_MODEL_CHANNELS map; the concrete channel is
   // selected at runtime by providerId, so the scanner cannot see them.
-  ['antigravity:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
+  [
+    'antigravity:get-models',
+    'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)',
+  ],
   ['auggie:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
   [
     'claude-code:get-models',
@@ -698,13 +701,13 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
   } = scanEventChannels();
 
   it('scanner sanity: detects the known listener surface', () => {
-    // Simple literal listenSync call sites (WorkspaceProgressCard).
-    expect(listened.has('git:status-changed')).toBe(true);
-    // Multiline nested-generic call sites (`listenSync<{ workspaceId: string;
-    // … }>(\n 'workspace:updated', …)`) — guards the depth-aware argument
-    // parser; a naive single-line matcher drops these entirely.
-    expect(listened.has('workspace:updated')).toBe(true);
-    expect(listened.has('task:ready-tasks-changed')).toBe(true);
+    // Accept-changes refreshes now ride the daemon event bridge instead of a
+    // duplicate renderer `git:status-changed` listener.
+    expect(listened.has('git:status-changed')).toBe(false);
+    // Remaining literal listener sites continue to exercise both direct and
+    // multiline generic `listenSync` calls.
+    expect(listened.has('line-attribution:updated')).toBe(true);
+    expect(listened.has('terminal:created')).toBe(true);
     // Bare `on()` import call site (active-streams-tracker.ts).
     expect(listened.has('agent:status-changed')).toBe(true);
     // Template-literal dynamic family (CliBlock.svelte).
@@ -718,9 +721,9 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
   it('scanner sanity: recognizes imported saga listenSync wrappers and aliases', () => {
     const source =
       'import { createListenSyncChannel, takeEveryFromListenSync as watch } from "../../../utils/ipc-channel";';
-    expect(
-      collectAliases(source, SAGA_LISTENER_IMPORT_CLAUSE_RE, SAGA_LISTENER_NAME_RE),
-    ).toEqual(new Set(['createListenSyncChannel', 'watch']));
+    expect(collectAliases(source, SAGA_LISTENER_IMPORT_CLAUSE_RE, SAGA_LISTENER_NAME_RE)).toEqual(
+      new Set(['createListenSyncChannel', 'watch']),
+    );
   });
 
   it('resolves every listener channel argument (no unaudited dynamic listeners)', () => {
@@ -732,9 +735,7 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
   });
 
   it('keeps the explicit generic listener-forwarder model exact and non-stale', () => {
-    expect(genericListenerForwarderSites).toEqual(
-      new Set(GENERIC_LISTENER_FORWARDER_SITES.keys()),
-    );
+    expect(genericListenerForwarderSites).toEqual(new Set(GENERIC_LISTENER_FORWARDER_SITES.keys()));
   });
 
   it('every listened channel has a production emitter or a justified allowlist entry', () => {
@@ -985,4 +986,3 @@ describe('Retired file-tracking / line-attribution / file-attribution channels s
     ).toEqual([]);
   });
 });
-

@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceService } from '../main/workspace.service';
 import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
 import type { Workspace, WorkspaceId } from '../../../shared/types';
@@ -94,6 +87,7 @@ const backendMocks = vi.hoisted(() => {
 
 vi.mock('../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: backendMocks.request }),
+  onBackendReconnected: () => () => {},
 }));
 
 describe('workspace activity timestamps', () => {
@@ -169,4 +163,3 @@ describe('workspace activity timestamps', () => {
   // returns without healing.
   it.skip('retired: FE no longer derives lastActivity', () => {});
 });
-

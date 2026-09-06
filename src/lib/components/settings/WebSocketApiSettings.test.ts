@@ -361,11 +361,7 @@ describe('WebSocketApiSettings', () => {
 
       // Assert: info-only panel is rendered
       await waitFor(() => {
-        expect(
-          screen.getByText(
-            'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.',
-          ),
-        ).toBeTruthy();
+        expect(screen.getByText(m.settings_wsApi_remoteInfo_description())).toBeTruthy();
       });
 
       // Assert: no interactive controls (toggle, port input)
@@ -403,11 +399,7 @@ describe('WebSocketApiSettings', () => {
       });
 
       // Assert: no remote info panel, no error toast
-      expect(
-        screen.queryByText(
-          'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.',
-        ),
-      ).toBeNull();
+      expect(screen.queryByText(m.settings_wsApi_remoteInfo_description())).toBeNull();
       expect(mockToast.error).not.toHaveBeenCalled();
     });
 
@@ -422,11 +414,7 @@ describe('WebSocketApiSettings', () => {
       render(WebSocketApiSettings);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(
-            'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.',
-          ),
-        ).toBeTruthy();
+        expect(screen.getByText(m.settings_wsApi_remoteInfo_description())).toBeTruthy();
       });
       expect(mocks.mockSettingsList).not.toHaveBeenCalled();
 
@@ -468,11 +456,7 @@ describe('WebSocketApiSettings', () => {
 
       // Assert: info-only panel rendered; the stale load was dropped
       await waitFor(() => {
-        expect(
-          screen.getByText(
-            'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.',
-          ),
-        ).toBeTruthy();
+        expect(screen.getByText(m.settings_wsApi_remoteInfo_description())).toBeTruthy();
       });
       expect(mocks.mockPairingInfo).not.toHaveBeenCalled();
       expect(mockToast.error).not.toHaveBeenCalled();

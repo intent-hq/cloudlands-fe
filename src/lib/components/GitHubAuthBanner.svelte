@@ -171,7 +171,7 @@
   {:else if hasError}
     <!-- Error state -->
     <div class="py-2 px-2 space-y-2" transition:slide={{ axis: 'y', duration: 200 }}>
-      <p class="text-xs text-error-foreground">{$error$}</p>
+      <p class="text-xs text-danger">{$error$}</p>
       <Button variant="outline" size="xs" onclick={handleRetry}>
         <Fa icon={faRotateRight} size="xs" />
         <span>{m.lib_githubAuth_tryAgain_label()}</span>

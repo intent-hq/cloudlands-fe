@@ -1,4 +1,4 @@
-import { store } from "../../store";
+import { store } from '../../store';
 
 export const selectGlobalModals = store.createSelector((state) => {
   return state.globalModals;
@@ -27,5 +27,5 @@ export const selectHasShownGitCredentialsModalForWorkspace = store.createSelecto
     }
 
     return !!selectGitCredentialsModal.select(state).shownForWorkspaceIds[workspaceId];
-  }
+  },
 );

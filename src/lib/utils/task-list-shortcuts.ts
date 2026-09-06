@@ -4,10 +4,7 @@ import {
   wrappingInputRule,
   type ExtendedRegExpMatchArray,
 } from '@tiptap/core';
-import {
-  Fragment,
-  type Node as ProseMirrorNode,
-} from '@tiptap/pm/model';
+import { Fragment, type Node as ProseMirrorNode } from '@tiptap/pm/model';
 import type { NodeType } from '@tiptap/pm/model';
 import { Selection } from '@tiptap/pm/state';
 
@@ -101,7 +98,9 @@ function createBulletTaskInputRule(find: RegExp, getAttributes: TaskItemAttribut
 
       const taskListInsertionPos =
         mappedBulletListPos + replacementNodes.reduce((pos, node) => pos + node.nodeSize, 0);
-      replacementNodes.push(taskList.create(null, taskItem.create(getAttributes(match), currentItem.content)));
+      replacementNodes.push(
+        taskList.create(null, taskItem.create(getAttributes(match), currentItem.content)),
+      );
 
       if (afterItems.length) {
         replacementNodes.push(bulletList.create(currentBulletList.attrs, afterItems));
@@ -153,7 +152,11 @@ export const TaskListShortcuts = Extension.create({
         this.editor.schema.nodes.taskItem,
       ),
       // Alternative pattern for just [] without space inside.
-      ...createTaskInputRules(emptyTaskInputRegex, getEmptyTaskAttributes, this.editor.schema.nodes.taskItem),
+      ...createTaskInputRules(
+        emptyTaskInputRegex,
+        getEmptyTaskAttributes,
+        this.editor.schema.nodes.taskItem,
+      ),
     ];
   },
 

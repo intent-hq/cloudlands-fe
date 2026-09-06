@@ -71,10 +71,12 @@ describe('UnifiedCommentThread', () => {
       expect(mockProcessMarkdownToHTML).toHaveBeenCalledWith(mockComment.content, {
         allowEmpty: true,
         workspaceId: 'workspace-1',
+        workspaceFileVersion: expect.any(String),
       });
       expect(mockProcessMarkdownToHTML).toHaveBeenCalledWith(mockReplies[0].content, {
         allowEmpty: true,
         workspaceId: 'workspace-1',
+        workspaceFileVersion: expect.any(String),
       });
     });
   });

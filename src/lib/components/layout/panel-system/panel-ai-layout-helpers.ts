@@ -90,16 +90,22 @@ export async function openTabFromConfig(
           tab.title ||
           m.layout_aiLayout_agentNumbered_fallback({ number: panelIndex + 1 });
         try {
-          appStore.dispatch(createAgentFromConfigRequested(workspaceId, {
-            name: agentName,
-            // Every name on this path comes from the AI-generated layout
-            // config (newAgentName/title) or the `Agent N` fallback — none is
-            // user-chosen, so keep the session self-renameable.
-            nameExplicitlySet: false,
-            workspaceId: WorkspaceId(workspaceId),
-            source: 'panel-ai-layout',
-            metadata: { source: 'panel-ai-layout' },
-          }, { openAgent: true, panelId }));
+          appStore.dispatch(
+            createAgentFromConfigRequested(
+              workspaceId,
+              {
+                name: agentName,
+                // Every name on this path comes from the AI-generated layout
+                // config (newAgentName/title) or the `Agent N` fallback — none is
+                // user-chosen, so keep the session self-renameable.
+                nameExplicitlySet: false,
+                workspaceId: WorkspaceId(workspaceId),
+                source: 'panel-ai-layout',
+                metadata: { source: 'panel-ai-layout' },
+              },
+              { openAgent: true, panelId },
+            ),
+          );
           logger.info('Requested new agent for layout', { name: agentName, panelId });
         } catch (error) {
           logger.error('Failed to create agent for layout', { error, agentName });
@@ -189,4 +195,3 @@ export async function openTabFromConfig(
       logger.warn('Unknown content type', { type: tab.type });
   }
 }
-

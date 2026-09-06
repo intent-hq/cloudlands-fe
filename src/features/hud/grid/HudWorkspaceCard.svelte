@@ -232,11 +232,7 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background: repeating-linear-gradient(
-      135deg,
-      hsl(var(--error-foreground)) 0 2px,
-      transparent 2px 14px
-    );
+    background: repeating-linear-gradient(135deg, hsl(var(--danger)) 0 2px, transparent 2px 14px);
     opacity: 0.07;
   }
   .hud-ws-card-corner {

@@ -31,10 +31,7 @@
    */
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import {
-  faRobot,
-  faList,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faRobot, faList } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {

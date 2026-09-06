@@ -120,7 +120,7 @@ describe('agentSubscriptionReadSaga', () => {
         },
       ],
       wokenUpInfo: null,
-      snapshotFetched: true,
+      snapshotStatus: 'ready',
     });
     run.task.cancel();
     await run.task.toPromise();
@@ -218,7 +218,7 @@ describe('agentSubscriptionReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('leaves the prior entry intact when the read fails', async () => {
+  it('retains prior rows and marks the snapshot failed when the read fails', async () => {
     mocks.request.mockRejectedValue(new Error('read failed'));
     const seeded = agentSubscriptionUIReducer(
       initialState,
@@ -233,19 +233,22 @@ describe('agentSubscriptionReadSaga', () => {
     run.channel.put(requestSubscriptionFetch(WS, AGENT));
     await settle();
 
-    expect(run.state()).toEqual(seeded);
+    expect(run.state().entries[makeKey(WS, AGENT)]).toEqual({
+      ...seeded.entries[makeKey(WS, AGENT)],
+      snapshotStatus: 'failed',
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
 
-  it('latches snapshotFetched as ready-with-empty when the first read fails', async () => {
+  it('marks a failed first read while retaining empty state', async () => {
     mocks.request.mockRejectedValue(new Error('read failed'));
     const run = harness();
     run.channel.put(requestSubscriptionFetch(WS, AGENT));
     await settle();
 
     const entry = run.state().entries[makeKey(WS, AGENT)];
-    expect(entry.snapshotFetched).toBe(true);
+    expect(entry.snapshotStatus).toBe('failed');
     expect(entry.subscriptions).toHaveLength(0);
     expect(entry.waitingState).toBe('idle');
     run.task.cancel();
@@ -262,7 +265,7 @@ describe('agentSubscriptionReadSaga', () => {
       workspaceId: WS,
       agentId: AGENT,
     });
-    expect(run.state().entries[makeKey(WS, AGENT)].snapshotFetched).toBe(true);
+    expect(run.state().entries[makeKey(WS, AGENT)].snapshotStatus).toBe('ready');
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -282,7 +285,7 @@ describe('agentSubscriptionReadSaga', () => {
       workspaceId: WS,
       agentId: AGENT,
     });
-    expect(run.state().entries[makeKey(WS, AGENT)].snapshotFetched).toBe(true);
+    expect(run.state().entries[makeKey(WS, AGENT)].snapshotStatus).toBe('ready');
     run.task.cancel();
     await run.task.toPromise();
   });

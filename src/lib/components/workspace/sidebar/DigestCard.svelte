@@ -61,7 +61,11 @@
               })}</span
         >
       {:else if localCommits.length > 0}
-        <span>{m.workspace_digestCard_toPush_label({ count: formatInteger(localCommits.length) })}</span>
+        <span
+          >{m.workspace_digestCard_toPush_label({
+            count: formatInteger(localCommits.length),
+          })}</span
+        >
       {:else}
         <span>{m.workspace_digestCard_noChanges_label()}</span>
       {/if}

@@ -155,4 +155,3 @@ export async function installPiMcpAdapter(): Promise<{ success: boolean; error?:
     };
   }
 }
-

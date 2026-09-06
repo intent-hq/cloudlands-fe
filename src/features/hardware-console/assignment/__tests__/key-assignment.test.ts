@@ -167,14 +167,7 @@ describe('resolveKeySlots', () => {
 
   it('never auto-fills an excluded workspace', () => {
     const workspaces = [ws('a', '2026-07-30T00:00:00Z'), ws('b', '2026-07-29T00:00:00Z')];
-    expect(resolveKeySlots(noPins, workspaces, ['a'])).toEqual([
-      'b',
-      null,
-      null,
-      null,
-      null,
-      null,
-    ]);
+    expect(resolveKeySlots(noPins, workspaces, ['a'])).toEqual(['b', null, null, null, null, null]);
   });
 
   it('an explicit pin still wins over exclusion', () => {

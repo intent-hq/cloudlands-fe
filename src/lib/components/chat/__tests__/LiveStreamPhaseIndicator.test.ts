@@ -42,13 +42,13 @@ describe('live-stream-phase utils', () => {
   });
 
   it('shouldShowLiveStreamPhaseIndicator gates on turn-in-flight AND a pre-live phase', () => {
-    expect(
-      shouldShowLiveStreamPhaseIndicator({ phase: 'connecting', turnInFlight: true }),
-    ).toBe(true);
+    expect(shouldShowLiveStreamPhaseIndicator({ phase: 'connecting', turnInFlight: true })).toBe(
+      true,
+    );
     // Idle agent: never show, whatever the phase.
-    expect(
-      shouldShowLiveStreamPhaseIndicator({ phase: 'connecting', turnInFlight: false }),
-    ).toBe(false);
+    expect(shouldShowLiveStreamPhaseIndicator({ phase: 'connecting', turnInFlight: false })).toBe(
+      false,
+    );
     expect(shouldShowLiveStreamPhaseIndicator({ phase: 'delayed', turnInFlight: false })).toBe(
       false,
     );

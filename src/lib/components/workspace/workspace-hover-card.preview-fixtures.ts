@@ -40,7 +40,6 @@ interface HoverCardScenario {
   expected: string;
   workspace: Workspace | null;
   isLoading?: boolean;
-  lineStats?: { additions: number; deletions: number };
   activeAgentIds?: string[];
   tasks?: WorkspaceTask[];
   taskStats?: WorkspaceTaskStats;
@@ -169,9 +168,9 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
   },
   {
     family: 'Layout',
-    states: 'light; dark; two-column; narrow stack; dense; right flip; bottom clamp; scroll/resize',
+    states: 'light; dark; stacked activity; narrow; dense; right flip; bottom clamp; scroll/resize',
     expected:
-      'Theme follows catalog query; the card uses two columns when space permits, stacks when narrow, stays height-bounded, and clamps to the viewport.',
+      'Theme follows catalog query; activity stays in one stacked flow, remains height-bounded, and clamps to the viewport.',
     coverage: 'dense, narrow, and placement previews; HoverCard tests',
     conflicts: 'The card must not clip beyond collision padding.',
   },
@@ -349,7 +348,7 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
       (() => {
         const ws = workspace('working', {
           displayStatus: 'in_progress',
-          statusMessage: 'Implementing the approved two-column hover-card polish.',
+          statusMessage: 'Implementing the approved stacked hover-card polish.',
           agentSummary: { agentIds: ['working-implementor', 'working-verifier'] },
           activePullRequest: pr(73, {
             title: 'Polish workspace hover cards',
@@ -925,11 +924,8 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
         workspace: workspace('changes-none', { lastActivity: undefined, updatedAt: 'invalid' }),
         gitSummary: { ahead: 0, behind: 0, hasUnpushed: false },
       }),
-      scenario('changes-lines', 'Line stats', 'Local line-stat fallback.', {
-        lineStats: { additions: 8, deletions: 3 },
-      }),
+      scenario('changes-lines', 'Line stats', 'Local line-stat fallback.'),
       scenario('changes-diff', 'Detailed diff wins', 'Detailed diff replaces line stats.', {
-        lineStats: { additions: 8, deletions: 3 },
         diffSummary: {
           schemaVersion: 1,
           updatedAt: PREVIEW_FIXTURE_TIMESTAMPS.updatedAt,

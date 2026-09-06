@@ -236,7 +236,7 @@
                     e.preventDefault();
                     removeSetup(setup.id);
                   }}
-                  class="ml-1 p-0.5 rounded text-muted-foreground hover:text-error-foreground hover:bg-destructive/10"
+                  class="ml-1 p-0.5 rounded text-muted-foreground hover:text-danger hover:bg-danger-background/10"
                   title={m.workspace_remoteSetupSelector_removeSetup_tooltip()}
                 >
                   <Fa icon={faXmark} size="xs" />
@@ -337,7 +337,7 @@
                         removeSetup(setup.id);
                       }
                     }}
-                    class="p-0.5 rounded text-muted-foreground hover:text-error-foreground hover:bg-destructive/10 cursor-pointer"
+                    class="p-0.5 rounded text-muted-foreground hover:text-danger hover:bg-danger-background/10 cursor-pointer"
                     title={m.workspace_remoteSetupSelector_removeSetup_tooltip()}
                   >
                     <Fa icon={faXmark} size="xs" />

@@ -2,11 +2,7 @@
  * Tests for Zod Schemas
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   AgentIdSchema,
   SessionIdSchema,
@@ -293,9 +289,7 @@ describe('Zod Schemas', () => {
     });
 
     it('should accept valid UUID', () => {
-      expect(() =>
-        workspaceIdSchema.parse('550e8400-e29b-41d4-a716-446655440000'),
-      ).not.toThrow();
+      expect(() => workspaceIdSchema.parse('550e8400-e29b-41d4-a716-446655440000')).not.toThrow();
     });
   });
 

@@ -8,14 +8,34 @@ const fs = require('fs');
 const path = require('path');
 
 const EXCLUDE_PATTERNS = [
-  'node_modules', '.git', '.svn', 'dist', 'build', '.next', '__pycache__',
-  '.cache', '.vscode', '.idea', 'coverage', '.nyc_output', 'vendor',
-  'target', '.gradle', 'Pods', '.egg-info', '.tox', 'venv', '.venv',
-  '__MACOSX', '.DS_Store', 'third_party', 'third-party',
+  'node_modules',
+  '.git',
+  '.svn',
+  'dist',
+  'build',
+  '.next',
+  '__pycache__',
+  '.cache',
+  '.vscode',
+  '.idea',
+  'coverage',
+  '.nyc_output',
+  'vendor',
+  'target',
+  '.gradle',
+  'Pods',
+  '.egg-info',
+  '.tox',
+  'venv',
+  '.venv',
+  '__MACOSX',
+  '.DS_Store',
+  'third_party',
+  'third-party',
 ];
 
 function shouldExclude(name) {
-  return EXCLUDE_PATTERNS.some(p => name === p || name.endsWith('.egg-info'));
+  return EXCLUDE_PATTERNS.some((p) => name === p || name.endsWith('.egg-info'));
 }
 
 function buildTree(dirPath, name, maxDepth = 50, currentDepth = 0) {

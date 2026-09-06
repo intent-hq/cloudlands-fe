@@ -54,7 +54,7 @@
     {#if actions}<div class="max-w-full shrink-0">{@render actions()}</div>{/if}
   </header>
   {#if error}
-    <p id={errorId} class="type-body mt-2 text-error-foreground" role="alert">{error}</p>
+    <p id={errorId} class="type-body mt-2 text-danger" role="alert">{error}</p>
   {/if}
   <div
     data-slot="settings-section-content"

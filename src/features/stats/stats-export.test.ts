@@ -4,12 +4,7 @@ const { toPngMock } = vi.hoisted(() => ({ toPngMock: vi.fn() }));
 
 vi.mock('html-to-image', () => ({ toPng: toPngMock }));
 
-import {
-  EXPORT_OPTIONS,
-  exportCardPng,
-  exportFileName,
-  exportPeriodKey,
-} from './stats-export';
+import { EXPORT_OPTIONS, exportCardPng, exportFileName, exportPeriodKey } from './stats-export';
 
 describe('exportPeriodKey', () => {
   it('uses 24h in 24H mode regardless of the stored key (Spec D11 addendum)', () => {
@@ -46,11 +41,11 @@ describe('exportCardPng', () => {
   it('renders at pixelRatio 3 over 360×640 (→ 1080×1920) and downloads', async () => {
     toPngMock.mockResolvedValue('data:image/png;base64,abc');
     const clicks: { download: string; href: string }[] = [];
-    const clickSpy = vi
-      .spyOn(HTMLAnchorElement.prototype, 'click')
-      .mockImplementation(function (this: HTMLAnchorElement) {
-        clicks.push({ download: this.download, href: this.href });
-      });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clicks.push({ download: this.download, href: this.href });
+    });
 
     const node = document.createElement('div');
     await exportCardPng(node, 'intent-passport-2026-07.png');

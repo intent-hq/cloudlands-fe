@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import { formatNumber } from '$lib/i18n/format';
+  import { formatDateTime, formatNumber } from '$lib/i18n/format';
 
   /**
    * Format raw sysinfo CPU percent (may exceed 100% on multi-core hosts)
@@ -100,6 +100,7 @@
     selectDaemonHealth,
     selectDaemonHealthStats,
     selectDaemonHealthLastUpdated,
+    selectDaemonStatusCheckFailure,
     selectDaemonVersionComparison,
     selectUnslothStatus,
     selectUnslothStopping,
@@ -133,11 +134,13 @@
   } from '$lib/utils/connection-accents';
   import { store as appStore } from '$store/renderer/store';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
+  import { toast } from '$lib/components/ui/toast';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
   const health$ = selectDaemonHealth();
   const stats$ = selectDaemonHealthStats();
   const lastUpdated$ = selectDaemonHealthLastUpdated();
+  const statusCheckFailure$ = selectDaemonStatusCheckFailure();
   const versionComparison$ = selectDaemonVersionComparison();
   const unslothStatus$ = selectUnslothStatus();
   const unslothStopping$ = selectUnslothStopping();
@@ -220,6 +223,40 @@
     }),
   );
 
+  // Why the daemon is degraded (#4439): the safe failure category recorded by
+  // the last failed system.status poll. `timeout` is only claimed when the
+  // transport tagged it as one, and only for that latest check —
+  // `consecutiveFailures` counts every failed check regardless of kind, so
+  // the plural copy reports it as failed checks in a row rather than as
+  // timeouts. A degradation without recorded context (e.g. a heartbeat
+  // failure) gets an honest generic line instead of a guess.
+  const degradedReason = $derived.by(() => {
+    if ($health$ !== 'degraded') return null;
+    const failure = $statusCheckFailure$;
+    if (!failure) return m.layout_daemonStatus_degradedUnknown_description();
+    const count = failure.consecutiveFailures;
+    if (failure.kind === 'timeout') {
+      return count > 1
+        ? m.layout_daemonStatus_degradedTimeout_many({ count: formatNumber(count) })
+        : m.layout_daemonStatus_degradedTimeout_one();
+    }
+    return count > 1
+      ? m.layout_daemonStatus_degradedCheckFailed_many({ count: formatNumber(count) })
+      : m.layout_daemonStatus_degradedCheckFailed_one();
+  });
+
+  // Freshness of the stats shown beneath a degraded status: they date from
+  // the last successful check, or there has been none on this connection.
+  // Date + time, since a check from days ago must not read like today's.
+  const degradedFreshness = $derived.by(() => {
+    if ($health$ !== 'degraded') return null;
+    return $stats$ && $lastUpdated$
+      ? m.layout_daemonStatus_lastSuccessfulCheck_description({
+          time: formatDateTime($lastUpdated$),
+        })
+      : m.layout_daemonStatus_noSuccessfulCheck_description();
+  });
+
   const versionMismatchTooltip = $derived.by(() => {
     if (!versionMismatch) return null;
     // The i18n messages prepend "v" — strip any daemon-reported prefix so a
@@ -250,13 +287,18 @@
     }
   }
 
-  // Compute live uptime: base uptime + elapsed time since lastUpdated
+  // Compute live uptime: base uptime + elapsed time since lastUpdated. While
+  // degraded the freshness note promises the details are from the last
+  // successful check, so the uptime stays at that check's value instead of
+  // ticking as if the daemon were still confirmed up; a valid recovery
+  // (health back to healthy) resumes the live count.
   function computeLiveUptime(
     uptimeSeconds: number | undefined,
     lastUpdated: string | null,
+    health: DaemonHealth,
   ): number | undefined {
     if (uptimeSeconds === undefined) return undefined;
-    if (!lastUpdated) return uptimeSeconds;
+    if (!lastUpdated || health === 'degraded') return uptimeSeconds;
 
     const lastUpdateTime = new Date(lastUpdated).getTime();
     if (isNaN(lastUpdateTime)) {
@@ -284,7 +326,7 @@
   $effect(() => {
     if (dropdownOpen) {
       // Initialize live uptime
-      liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$);
+      liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$, $health$);
 
       // Update every second. Skip the stats poll while the daemon is down —
       // the dropdown shows the "Not running" placeholder and each poll would
@@ -294,7 +336,7 @@
           appStore.dispatch(pollSystemStatus());
           appStore.dispatch(pollUnslothStatus());
         }
-        liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$);
+        liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$, $health$);
       }, 1000);
 
       return () => {
@@ -353,16 +395,38 @@
 
   const hasSavedRemoteConnections = $derived($connections$.some((conn) => !conn.isLocal));
 
-  async function handleOpenConnection(id: string) {
-    dropdownOpen = false;
+  function connectionDisplayLabel(id: string): string {
+    const conn = $connections$.find((c) => c.id === id);
+    if (!conn || conn.isLocal) return m.layout_daemonStatus_localConnection_label();
+    return formatConnectionLabel(conn);
+  }
+
+  /**
+   * Dispatch a connection open. A `secret-unavailable` resolution (the stored
+   * access token cannot be read — keychain locked or entry gone) is a failure,
+   * not a success (#3783): surface it and route to Devices settings, where the
+   * token can be re-entered.
+   */
+  async function openConnectionOrRecover(id: string) {
     try {
       const action = openConnectionRequested(id);
       appStore.dispatch(action);
-      await action.promise;
+      const result = await action.promise;
+      if (result.status === 'secret-unavailable') {
+        toast.error(
+          m.layout_daemonStatus_secretUnavailable_error({ label: connectionDisplayLabel(id) }),
+        );
+        void navigateToSettings({ tab: 'devices' });
+      }
     } catch {
-      // The failure is surfaced via the slice's op-status/error; nothing more
-      // to do here (the list/active refresh arrives via connections:changed).
+      // Other failures are surfaced via the slice's op-status/error; nothing
+      // more to do here (the list/active refresh arrives via connections:changed).
     }
+  }
+
+  async function handleOpenConnection(id: string) {
+    dropdownOpen = false;
+    await openConnectionOrRecover(id);
   }
 
   // --- Cert-mismatch modal actions ---------------------------------------
@@ -373,13 +437,7 @@
 
   async function openLocalFromCertMismatch() {
     dismissCertMismatch();
-    try {
-      const action = openConnectionRequested(LOCAL_CONNECTION_ID);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      // no-op; op-status/error surface via the slice.
-    }
+    await openConnectionOrRecover(LOCAL_CONNECTION_ID);
   }
 
   async function forgetMismatchedConnection(id: string) {
@@ -403,13 +461,7 @@
   /** Open the local sidecar's window from the advisory modal. */
   async function openLocalFromProtocolMismatch() {
     continueWithProtocolMismatch();
-    try {
-      const action = openConnectionRequested(LOCAL_CONNECTION_ID);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      // no-op; op-status/error surface via the slice.
-    }
+    await openConnectionOrRecover(LOCAL_CONNECTION_ID);
   }
 </script>
 
@@ -456,7 +508,7 @@
             <div class="px-3 py-2 space-y-1.5">
               <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_status_label()}</span>
-                <span class="text-error-foreground font-medium"
+                <span class="text-danger font-medium"
                   >{m.layout_daemonStatus_notRunning_label()}</span
                 >
               </div>
@@ -483,6 +535,14 @@
                     : m.layout_daemonStatus_degradedState_label()}
                 </span>
               </div>
+
+              {#if degradedReason}
+                <!-- Why degraded, and how fresh the details below are -->
+                <div role="note" class="text-xs text-subtle whitespace-normal space-y-0.5">
+                  <p>{degradedReason}</p>
+                  <p>{degradedFreshness}</p>
+                </div>
+              {/if}
 
               {#if $stats$}
                 <div class="h-px bg-border my-1"></div>
@@ -747,7 +807,7 @@
 
                 <!-- Stop action -->
                 <button
-                  class="w-full text-left text-xs text-error-foreground hover:bg-muted/50 rounded px-1 py-1 mt-0.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                  class="w-full text-left text-xs text-danger hover:bg-muted/50 rounded px-1 py-1 mt-0.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
                   disabled={$unslothStopping$}
                   onclick={() => {
                     dropdownOpen = false;

@@ -14,7 +14,7 @@
  * Dependency-light utility per src/lib AGENTS.md — no stores or services.
  */
 
-export const VOICE_INPUT_DEVICE_STORAGE_KEY = "intent.voice.inputDevice";
+export const VOICE_INPUT_DEVICE_STORAGE_KEY = 'intent.voice.inputDevice';
 
 /**
  * In-session value, recorded by every save (whether or not the localStorage
@@ -33,7 +33,7 @@ export function loadVoiceInputDevicePreference(): string | null {
   if (sessionDeviceId !== undefined) return sessionDeviceId;
   try {
     const stored = localStorage.getItem(VOICE_INPUT_DEVICE_STORAGE_KEY);
-    return typeof stored === "string" && stored !== "" ? stored : null;
+    return typeof stored === 'string' && stored !== '' ? stored : null;
   } catch {
     return null;
   }

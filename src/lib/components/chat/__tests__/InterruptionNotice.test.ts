@@ -10,7 +10,9 @@ describe('InterruptionNotice', () => {
     render(InterruptionNotice);
 
     expect(screen.getByRole('alert')).toBeTruthy();
-    expect(screen.getByText(/This conversation was interrupted because intentd restarted/i)).toBeTruthy();
+    expect(
+      screen.getByText(/This conversation was interrupted because intentd restarted/i),
+    ).toBeTruthy();
   });
 
   it('renders custom message when message prop is provided', () => {

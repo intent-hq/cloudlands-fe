@@ -74,7 +74,7 @@ describe('PerformanceOptimizer', () => {
 
       const slowOperation = vi.fn().mockImplementation(async () => {
         // Simulate a slow operation (>100ms is considered slow)
-        await new Promise(resolve => setTimeout(resolve, 150));
+        await new Promise((resolve) => setTimeout(resolve, 150));
         return 'slow';
       });
 
@@ -169,7 +169,7 @@ describe('PerformanceOptimizer', () => {
       const operation = vi.fn().mockImplementation(async () => {
         callCount++;
         // Add a small delay to simulate async work
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
         return 'coalesced';
       });
 
@@ -201,9 +201,12 @@ describe('PerformanceOptimizer', () => {
 
   describe('Timeout Handling', () => {
     it('should timeout long operations', async () => {
-      const longOperation = vi.fn().mockImplementation(() => new Promise((resolve) => {
-        setTimeout(() => resolve('never'), 10000);
-      }));
+      const longOperation = vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(() => resolve('never'), 10000);
+          }),
+      );
 
       const promise = optimizer.track('timeout-op', longOperation, { timeout: 100 });
 
@@ -273,7 +276,7 @@ describe('PerformanceOptimizer', () => {
       vi.useRealTimers();
 
       const slowOp = vi.fn().mockImplementation(async () => {
-        await new Promise(resolve => setTimeout(resolve, 150));
+        await new Promise((resolve) => setTimeout(resolve, 150));
         return 'slow';
       });
 

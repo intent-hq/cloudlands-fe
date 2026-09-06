@@ -141,6 +141,11 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectAllWorkspaceAgents: mocks.selector(() => []),
 }));
 
+vi.mock('$store/renderer/slices/git/git-selectors', () => ({
+  selectAcceptChangesStatus: mocks.selector(() => null),
+  selectAcceptChangesStatusLoading: mocks.selector(() => false),
+}));
+
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   loadWorkspacesRequested: vi.fn(() => ({ type: 'workspace/loadWorkspacesRequested' })),
   beginWorkspaceTitleMutation: vi.fn(
@@ -314,6 +319,20 @@ describe('WorkspaceProgressCard status message', () => {
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
       configurable: true,
+    });
+  });
+
+  it('leases accept-status freshness only while the card is mounted', async () => {
+    const view = await renderProgressCard();
+
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'git/acceptChangesConsumerMounted',
+      payload: ['ws-1'],
+    });
+    view.unmount();
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'git/acceptChangesConsumerUnmounted',
+      payload: ['ws-1'],
     });
   });
 

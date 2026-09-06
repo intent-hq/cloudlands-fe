@@ -377,7 +377,7 @@ function sinceMs(item: HudAttentionItem): number {
  * exact and `unread` stays excluded). An attention card state
  * (`wait`/`blocked`/`failed` — the BE rollup, §5.1) no other row already
  * covers raises a generic workspace row — the same authoritative-rollup
- * fallback the ATTN counter applies, so a question hold the FE never
+ * fallback the ATTN counter applies, so a pending question set the FE never
  * captured still gets a panel row. Rows for workspaces no longer in the
  * list are dropped.
  */
@@ -501,13 +501,12 @@ export interface HudCardAgent {
    */
   topLevel: boolean;
   /**
-   * Background agent (session `isBackground` / `metadata.isBackground`, §5.5).
-   * KNOWN LIMITATION: background-ness comes only from the tracked session —
-   * the §5.1 summary row carries no `isBackground` field — so a summary-only
-   * failed background agent transiently passes the top-level gating in
-   * `selectHudAttentionItems` / `selectHudAttnCount` (raising an
-   * `agent_failed` row + ATTN count) until session hydration; tracked in
-   * intent-hq/intent#3789 (additive daemon summary field is the fix-site).
+   * Background agent: the §5.1 summary row's additive `isBackground`
+   * (intent-hq/intent#3789 — served before any session hydration, so a
+   * summary-only failed background agent never transiently passes the
+   * top-level gating in `selectHudAttentionItems` / `selectHudAttnCount`),
+   * else the tracked session's `isBackground` / `metadata.isBackground`
+   * (§5.5) for pre-#3789 daemons.
    */
   isBackground: boolean;
   /**
@@ -913,6 +912,21 @@ function isTopLevelAgent(info: WorkspaceAgentInfo, metadata: Record<string, unkn
 }
 
 /**
+ * Background-ness: the §5.1 summary row's additive `isBackground`
+ * (intent-hq/intent#3789; available before session hydration), else the
+ * tracked session's `isBackground` / `metadata.isBackground` (§5.5).
+ */
+function isBackgroundAgent(
+  info: WorkspaceAgentInfo,
+  session: { isBackground?: boolean } | undefined,
+  metadata: Record<string, unknown>,
+): boolean {
+  return (
+    info.isBackground === true || session?.isBackground === true || metadata.isBackground === true
+  );
+}
+
+/**
  * Render the canonical structured preview to the HUD's plain-string line:
  * text kinds carry their text, tool kinds render the classified tool label
  * (verb + subject + path, mirroring AgentPreviewToolLabel; hidden labels
@@ -975,7 +989,7 @@ function cardAgentsOf(workspace: Workspace, state: StoreState): HudCardAgent[] {
       depth,
       treePrefix: '',
       topLevel: isTopLevelAgent(info, metadata),
-      isBackground: session?.isBackground === true || metadata.isBackground === true,
+      isBackground: isBackgroundAgent(info, session, metadata),
       attentionKind,
       hasQuestion,
       isWaitingForAgents:
@@ -1107,7 +1121,7 @@ function isCurrentUserRelevantTabAgent(
     return false;
   const metadata = (session.metadata ?? {}) as Record<string, unknown>;
   if (!isTopLevelAgent(info, metadata)) return false;
-  return session.isBackground !== true && metadata.isBackground !== true;
+  return !isBackgroundAgent(info, session, metadata);
 }
 
 /** Actionable tab axes derived from the same live inputs as the HUD. */

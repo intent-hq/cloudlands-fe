@@ -2484,6 +2484,40 @@ describe('agent-session-slice reducer', () => {
       });
     });
 
+    it('applies stale runtime-flag clears to selected rows in one mixed batch', () => {
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([
+          makeSession('stale', 'ws-1', { isStreaming: true, isProcessing: true }),
+          makeSession('live', 'ws-1', { isStreaming: true, isProcessing: true }),
+          makeSession('new', 'ws-1'),
+        ]),
+      );
+
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions(
+          [
+            makeSession('stale', 'ws-1', { isStreaming: false, isProcessing: false }),
+            makeSession('live', 'ws-1', { isStreaming: false, isProcessing: false }),
+            makeSession('new', 'ws-1', { name: 'Hydrated new' }),
+          ],
+          { staleRuntimeFlagClearAgentIds: ['stale'] },
+        ),
+      );
+
+      expect(state.byAgentId['stale']).toMatchObject({
+        isStreaming: false,
+        isProcessing: false,
+      });
+      expect(state.byAgentId['live']).toMatchObject({
+        isStreaming: true,
+        isProcessing: true,
+      });
+      expect(state.byAgentId['new'].name).toBe('Hydrated new');
+      expect(state.agentIdsByWorkspace['ws-1']).toEqual(['stale', 'live', 'new']);
+    });
+
     it('still clears isProcessing via upsert once isStreaming was cleared first (safety timeout)', () => {
       // Mirrors agent-stream-saga's safety-timeout path: setAgentStreaming(false)
       // flips isStreaming off first, then an upsert clears the remaining

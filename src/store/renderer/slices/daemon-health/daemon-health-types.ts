@@ -11,6 +11,27 @@
 export type DaemonHealth = 'healthy' | 'degraded' | 'down';
 
 /**
+ * Safe category for a failed system.status poll. `timeout` is only reported
+ * when the transport tags the failure as one (`code: 'TIMEOUT'`); everything
+ * else is the generic `status-check-failed` — the category is never guessed
+ * from an error message.
+ */
+export type DaemonStatusCheckFailureKind = 'timeout' | 'status-check-failed';
+
+/**
+ * Serializable context for the most recent failed system.status poll while
+ * connected (#4439). Carries only the category and timing — never the raw
+ * error, its message, or transport details.
+ */
+export interface DaemonStatusCheckFailure {
+  kind: DaemonStatusCheckFailureKind;
+  /** ISO 8601 time the failed check settled. */
+  failedAt: string;
+  /** Failed checks in a row since the last successful check or connect. */
+  consecutiveFailures: number;
+}
+
+/**
  * system.status wire payload shape (intentd control.rs §5.7, §12.3).
  * New fields (maxAgents, version, uptimeSeconds) are optional for graceful
  * degradation when the daemon lacks them.
@@ -211,6 +232,14 @@ export interface DaemonHealthState {
   /** Error string when the last on-demand sidecar spawn failed. */
   sidecarSpawnError: string | null;
   /**
+   * Epoch ms of the first drop main observed for this backend while a
+   * user-requested `system.requestUpdate` was outstanding (received via the
+   * `daemonUpdateDisconnectedAt` backend:status marker), or null. Main
+   * stamps it once per restart so every window shares one "Updating
+   * intentd…" countdown deadline; cleared on the next successful connect.
+   */
+  daemonUpdateDisconnectedAt: number | null;
+  /**
    * Last-run sidecar log fetched on demand (backend:get-sidecar-run-log) for
    * the daemon-loss dialog, or null before a fetch / after it is dropped.
    * Cleared on the next successful connect — it is stale by the next show.
@@ -220,6 +249,22 @@ export interface DaemonHealthState {
   sidecarRunLogPending: boolean;
   /** Error string when the last run-log fetch failed. */
   sidecarRunLogError: string | null;
+  /**
+   * Context for the failed system.status poll that degraded (or keeps
+   * degrading) a connected daemon, or null while checks succeed. Set only
+   * while health is not 'down' (a newer disconnect wins over a late poll);
+   * cleared by the next successful check or connect.
+   */
+  statusCheckFailure: DaemonStatusCheckFailure | null;
+  /**
+   * Connection lifecycle counter, bumped on every backend status change
+   * (connected, connecting, disconnected). A system.status poll captures it
+   * when the request starts and the reducer discards a result whose
+   * generation no longer matches, so a poll that settles after a
+   * disconnect, reconnect, or transport switch can never leak the previous
+   * connection's health, stats, locality, or freshness into the new one.
+   */
+  connectionGeneration: number;
   /**
    * Last unsloth.status result, or null before the first poll. Polled only
    * while the status dropdown is open (no constant background polling), so

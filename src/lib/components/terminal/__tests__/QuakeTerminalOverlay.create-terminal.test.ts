@@ -28,7 +28,7 @@ vi.mock('$store/renderer/store', async () => {
       return {
         tabState: { currentTabId },
         scripts: scriptsState,
-        terminals: { height: 30, workspaces: {} },
+        terminals: { height: 30, workspaceHeights: {}, workspaces: {} },
       };
     },
     dispatch: (action: any) => {

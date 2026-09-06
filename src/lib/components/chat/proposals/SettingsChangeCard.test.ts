@@ -87,13 +87,16 @@ describe('SettingsChangeCard', () => {
 
     expect(screen.getByText('Theme preset: Dracula')).toBeTruthy();
     expect(screen.getByText('Switch the theme preset to Dracula.')).toBeTruthy();
-    expect(container.textContent).toContain('Theme preset: Default → Dracula');
-    expect(screen.getByRole('button', { name: 'Discard' })).toBeTruthy();
+    expect(
+      container.querySelector('[data-proposal-before-after-row="theme.activePresetId"]')
+        ?.textContent,
+    ).toContain('Default → Dracula');
+    expect(screen.getByRole('button', { name: 'Not now' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Apply' })).toBeTruthy();
     expect(container.textContent).not.toContain('app-settings.proposal.json');
-    expect(screen.getByRole('heading', { name: 'Theme preset: Dracula' }).className).toContain(
-      'type-body',
-    );
+    expect(
+      screen.getByRole('heading', { name: 'Apply these settings changes?' }).className,
+    ).toContain('type-title');
     expect(container.innerHTML).not.toContain('text-subtle');
   });
 
@@ -146,7 +149,7 @@ describe('SettingsChangeCard', () => {
     expect(status.textContent).toContain('Applying…');
     expect(status.getAttribute('aria-live')).toBe('polite');
     expect(screen.getByRole('button', { name: 'Applying…' }).hasAttribute('disabled')).toBe(true);
-    expect(screen.getByRole('button', { name: 'Discard' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Not now' }).hasAttribute('disabled')).toBe(true);
   });
 
   it('renders undo progress for applied settings proposals', () => {

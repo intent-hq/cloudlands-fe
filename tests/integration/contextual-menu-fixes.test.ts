@@ -13,7 +13,7 @@ describe('Contextual Menu Agent Launch Fixes', () => {
     it('should handle content-blocks events from backend', () => {
       // Verify that agent-factory handles both 'content_block' and 'content-blocks' events
       const eventTypes = ['content_block', 'content-blocks'];
-      eventTypes.forEach(type => {
+      eventTypes.forEach((type) => {
         expect(['content_block', 'content-blocks']).toContain(type);
       });
     });

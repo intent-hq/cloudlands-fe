@@ -5,13 +5,7 @@
  * and cannot modify the application's source code.
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
 
 describe('Workspace Isolation', () => {

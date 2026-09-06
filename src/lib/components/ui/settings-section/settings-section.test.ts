@@ -13,7 +13,7 @@ describe('SettingsSection', () => {
     expect(section.getAttribute('aria-busy')).toBe('true');
     expect(getByRole('heading', { level: 2, name: 'Notifications' })).toBeTruthy();
     expect(getByRole('alert').textContent).toContain('Unable to save');
-    expect(getByRole('alert').className).toContain('text-error-foreground');
+    expect(getByRole('alert').className).toContain('text-danger');
     expect(getByRole('button', { name: 'Reset section' })).toBeTruthy();
     expect(getByRole('button', { name: 'Reset section' }).dataset.slot).toBe('button');
     expect(getByText('Section fields')).toBeTruthy();

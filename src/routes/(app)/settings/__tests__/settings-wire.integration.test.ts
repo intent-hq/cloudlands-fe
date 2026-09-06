@@ -2,8 +2,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LiveAppClient } from '$lib/client';
+import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { m } from '$shared/paraglide/messages.js';
 import type { ReduxStoreContext } from '$store/renderer/types';
 import { initAppStore, store as appStore } from '$store/renderer/store';
 import {
@@ -30,6 +32,7 @@ describe('Settings deterministic mock-BE contracts', () => {
   let storeContext: ReduxStoreContext | undefined;
 
   beforeEach(() => {
+    __resetSettingsReadCacheForTests();
     storeContext = initAppStore(appStore);
     resetMockIpcRouter();
     window.electronAPI!.invoke = vi.fn((channel: string, payload?: unknown) =>
@@ -116,16 +119,18 @@ describe('Settings deterministic mock-BE contracts', () => {
     );
   });
 
-  it('hydrates all four Agent Backend settings from exact settings.get requests', async () => {
+  it('hydrates all five Agent Backend settings from exact settings.get requests', async () => {
     const maxConcurrent = SETTINGS_PROTOCOL_FIXTURES.maxConcurrent;
     const flushQueuedMessages = SETTINGS_PROTOCOL_FIXTURES.flushQueuedMessages;
     const memoryBudgetMb = SETTINGS_PROTOCOL_FIXTURES.memoryBudgetMb;
     const idleReapMinutes = SETTINGS_PROTOCOL_FIXTURES.idleReapMinutes;
+    const acpNodeMaxOldSpaceMb = SETTINGS_PROTOCOL_FIXTURES.acpNodeMaxOldSpaceMb;
     const assertComplete = mockBackendSequence([
       { request: maxConcurrent.request, response: maxConcurrent.response },
       { request: flushQueuedMessages.request, response: flushQueuedMessages.response },
       { request: memoryBudgetMb.request, response: memoryBudgetMb.response },
       { request: idleReapMinutes.request, response: idleReapMinutes.response },
+      { request: acpNodeMaxOldSpaceMb.request, response: acpNodeMaxOldSpaceMb.response },
     ]);
 
     render(AgentBackendSettings);
@@ -139,6 +144,7 @@ describe('Settings deterministic mock-BE contracts', () => {
       [2, flushQueuedMessages],
       [3, memoryBudgetMb],
       [4, idleReapMinutes],
+      [5, acpNodeMaxOldSpaceMb],
     ] as const) {
       expect(window.electronAPI!.invoke).toHaveBeenNthCalledWith(
         nth,
@@ -149,6 +155,9 @@ describe('Settings deterministic mock-BE contracts', () => {
     // The budget's ceiling is whatever bound the catalog carried on the wire.
     const slider = (await screen.findByRole('slider')) as HTMLInputElement;
     expect(slider.max).toBe(String(memoryBudgetMb.response.definition.max));
+    // A null value means the key is absent; the field shows the catalog default.
+    const heap = (await screen.findByLabelText('ACP Node heap limit (MB)')) as HTMLInputElement;
+    expect(heap.value).toBe(String(acpNodeMaxOldSpaceMb.response.definition.defaultValue));
   });
 
   it.each([
@@ -161,6 +170,7 @@ describe('Settings deterministic mock-BE contracts', () => {
       const getFlush = SETTINGS_PROTOCOL_FIXTURES.flushQueuedMessages;
       const getBudget = SETTINGS_PROTOCOL_FIXTURES.memoryBudgetMb;
       const getIdleReap = SETTINGS_PROTOCOL_FIXTURES.idleReapMinutes;
+      const getAcpHeap = SETTINGS_PROTOCOL_FIXTURES.acpNodeMaxOldSpaceMb;
       const update = {
         request: {
           method: 'settings.update',
@@ -173,6 +183,7 @@ describe('Settings deterministic mock-BE contracts', () => {
         { request: getFlush.request, response: getFlush.response },
         { request: getBudget.request, response: getBudget.response },
         { request: getIdleReap.request, response: getIdleReap.response },
+        { request: getAcpHeap.request, response: getAcpHeap.response },
         update,
       ]);
 
@@ -196,7 +207,7 @@ describe('Settings deterministic mock-BE contracts', () => {
         getFlush.request,
       );
       expect(window.electronAPI!.invoke).toHaveBeenNthCalledWith(
-        5,
+        6,
         IPC_CHANNELS.BACKEND.REQUEST,
         update.request,
       );
@@ -219,7 +230,7 @@ describe('Settings deterministic mock-BE contracts', () => {
 
     render(WebSocketApiSettings);
     const input = (await screen.findByRole('spinbutton', {
-      name: 'WebSocket API port',
+      name: m.settings_wsApi_port_ariaLabel(),
     })) as HTMLInputElement;
     await waitFor(() => expect(input.value).toBe('5181'));
     await fireEvent.input(input, { target: { value: '6123' } });

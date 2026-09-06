@@ -403,6 +403,7 @@ import {
   setupAppProtocolHandler,
   setupWorkspaceAssetProtocolHandler,
   setupWorkspaceFileProtocolHandler,
+  setupWorkspaceMediaBackendHinting,
 } from './protocol-handlers.js';
 
 const logger = new Logger('Main');
@@ -1479,6 +1480,10 @@ app.whenReady().then(async () => {
 
   // workspace-file:// is needed in both dev and production (workspace file images)
   setupWorkspaceFileProtocolHandler();
+
+  // Stamp the requesting window's backend onto workspace media requests so a
+  // workspace id shared across backends is served by the right daemon.
+  setupWorkspaceMediaBackendHinting();
 
   // Patch ipcMain to automatically track all handlers for cleanup
   // In production, ipcMain.handle may be non-writable (as set above). The cleanup manager

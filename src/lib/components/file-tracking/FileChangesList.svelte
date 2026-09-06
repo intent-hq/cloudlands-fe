@@ -3,20 +3,17 @@
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import TreeNode from './TreeNode.svelte';
   import {
-  faFileCode,
-  faPlus,
-  faMinus,
-  faRotateLeft,
-  faFileAlt,
-  faImage,
-  faArchive,
-  faCog,
-  faFile,
-} from '@fortawesome/free-solid-svg-icons';
-  import {
-  ListContainer,
-  ListItem,
-} from '$lib/components/ui/list';
+    faFileCode,
+    faPlus,
+    faMinus,
+    faRotateLeft,
+    faFileAlt,
+    faImage,
+    faArchive,
+    faCog,
+    faFile,
+  } from '@fortawesome/free-solid-svg-icons';
+  import { ListContainer, ListItem } from '$lib/components/ui/list';
   import { createLogger } from '$lib/utils/client-logger';
   import { ChangeStage } from '$features/file-tracking/types';
   import { m } from '$shared/paraglide/messages.js';

@@ -12,20 +12,27 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
 
-const { dispatchMock, monitorsState, workspaceState, handleLinkMock, openInBrowserPanelMock } =
-  vi.hoisted(() => ({
-    dispatchMock: vi.fn(),
-    monitorsState: { monitors: [] as unknown[] },
-    workspaceState: {
-      workspace: {
-        id: 'ws-1',
-        repositoryOwner: 'acme',
-        repositoryName: 'widgets',
-      } as unknown,
-    },
-    handleLinkMock: vi.fn(),
-    openInBrowserPanelMock: vi.fn(),
-  }));
+const {
+  dispatchMock,
+  monitorsState,
+  snapshotState,
+  workspaceState,
+  handleLinkMock,
+  openInBrowserPanelMock,
+} = vi.hoisted(() => ({
+  dispatchMock: vi.fn(),
+  monitorsState: { monitors: [] as unknown[] },
+  snapshotState: { status: 'ready' as 'loading' | 'ready' | 'failed' },
+  workspaceState: {
+    workspace: {
+      id: 'ws-1',
+      repositoryOwner: 'acme',
+      repositoryName: 'widgets',
+    } as unknown,
+  },
+  handleLinkMock: vi.fn(),
+  openInBrowserPanelMock: vi.fn(),
+}));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -40,6 +47,12 @@ vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
   selectAgentPrMonitors: () => ({
     subscribe: (run: (value: unknown[]) => void) => {
       run(monitorsState.monitors);
+      return () => {};
+    },
+  }),
+  selectPrMonitorsSnapshotStatus: () => ({
+    subscribe: (run: (value: 'loading' | 'ready' | 'failed') => void) => {
+      run(snapshotState.status);
       return () => {};
     },
   }),
@@ -99,7 +112,7 @@ function readMenuContentRule() {
   const viewportInset = /max-width:\s*calc\(100vw\s*-\s*([0-9]+)px\)/.exec(rule)?.[1];
   if (!width || !viewportInset) {
     throw new Error(
-      'Expected the .monitored-pr-menu-content rule to set width and a viewport-clamped max-width'
+      'Expected the .monitored-pr-menu-content rule to set width and a viewport-clamped max-width',
     );
   }
   return { preferredWidth: Number(width), viewportInset: Number(viewportInset) };
@@ -179,6 +192,8 @@ describe('MonitoredPrsRow', () => {
     openInBrowserPanelMock.mockClear();
     resetAgentSubscriptionsViewStateForTests();
     workspaceState.workspace = defaultWorkspace;
+    snapshotState.status = 'ready';
+    monitorsState.monitors = [];
   });
 
   it('renders a normalized inline disclosure row per active monitor', () => {
@@ -241,6 +256,19 @@ describe('MonitoredPrsRow', () => {
     monitorsState.monitors = [makeMonitor({ state: 'completed' })];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
     expect(screen.queryByTestId('monitored-prs-row')).toBeNull();
+  });
+
+  it.each([
+    ['loading', 'status'],
+    ['failed', 'alert'],
+  ] as const)('renders its own %s state when the initial list has not settled', (status, role) => {
+    snapshotState.status = status;
+    monitorsState.monitors = [];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const row = screen.getByRole(role);
+    expect(row.getAttribute('data-testid')).toBe('pr-monitors-snapshot-status');
+    expect(row.getAttribute('data-snapshot-status')).toBe(status);
   });
 
   it('renders 4+ digit PR numbers without digit grouping', () => {

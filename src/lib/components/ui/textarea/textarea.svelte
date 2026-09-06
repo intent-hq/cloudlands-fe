@@ -58,7 +58,7 @@
   bind:value
   oninput={doesExpandToFit ? adjustHeight : undefined}
   class={cn(
-    'type-body border-border bg-card text-foreground placeholder:text-muted-foreground/70 flex w-full rounded-(--radius-medium) border px-3 py-2 shadow-(--elevation-raised) outline-none transition-[border-color,background-color,box-shadow] duration-(--motion-fast) hover:border-input read-only:bg-muted/30 read-only:text-muted-foreground read-only:hover:border-border disabled:cursor-not-allowed disabled:bg-muted/40 disabled:opacity-60 disabled:hover:border-border aria-invalid:border-destructive-foreground aria-invalid:ring-1 aria-invalid:ring-destructive-foreground/25 motion-reduce:transition-none',
+    'type-body border-border bg-card text-foreground placeholder:text-muted-foreground/70 flex w-full rounded-(--radius-medium) border px-3 py-2 shadow-(--elevation-raised) outline-none transition-[border-color,background-color,box-shadow] duration-(--motion-fast) hover:border-input read-only:bg-muted/30 read-only:text-muted-foreground read-only:hover:border-border disabled:cursor-not-allowed disabled:bg-muted/40 disabled:opacity-60 disabled:hover:border-border aria-invalid:border-danger aria-invalid:ring-1 aria-invalid:ring-danger/25 motion-reduce:transition-none',
     doesExpandToFit ? 'resize-none overflow-hidden' : 'min-h-20',
     noFocusStyle
       ? 'focus-visible:outline-none focus-visible:ring-0'

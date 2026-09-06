@@ -4,13 +4,7 @@
  * the menu (via onClickOutside — the parent removes the component).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  cleanup,
-} from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import SidebarContextMenu from '../sidebar-context-menu/SidebarContextMenu.svelte';
 
 describe('SidebarContextMenu Escape handling (escape-layer stack)', () => {

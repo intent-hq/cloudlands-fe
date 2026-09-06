@@ -2,17 +2,8 @@
  * Regression test: selecting a workspace should be driven by the URL (route).
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
-import {
-  render,
-  fireEvent,
-} from '@testing-library/svelte';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, fireEvent } from '@testing-library/svelte';
 
 vi.mock('$app/navigation', () => ({
   goto: vi.fn(),

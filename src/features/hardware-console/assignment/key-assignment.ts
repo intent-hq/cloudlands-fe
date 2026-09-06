@@ -204,5 +204,7 @@ export function reconcileKeyPins<T extends KeyAssignableWorkspace>(
 ): KeyPin[] {
   const pins = normalizeKeyPins(keyPins);
   const resolved = resolveKeySlots(keyPins, workspaces, excludedWorkspaceIds);
-  return pins.map((pin, slot) => (pin === UNASSIGNED_KEY_PIN ? UNASSIGNED_KEY_PIN : resolved[slot]));
+  return pins.map((pin, slot) =>
+    pin === UNASSIGNED_KEY_PIN ? UNASSIGNED_KEY_PIN : resolved[slot],
+  );
 }

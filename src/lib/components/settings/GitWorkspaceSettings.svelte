@@ -205,7 +205,7 @@
       {#if settingsError}
         <section class="px-6 py-5">
           <p
-            class="text-xs text-error-foreground bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2"
+            class="text-xs text-danger bg-danger-background/10 border border-danger/20 rounded-md px-3 py-2"
           >
             {settingsError}
           </p>
@@ -253,11 +253,11 @@
               bind:value={branchPrefix}
               onblur={handleBranchPrefixChange}
               class="w-full px-3 py-1.5 bg-background border rounded-md text-sm text-foreground transition-all focus:outline-none focus:ring-2 focus:ring-primary/10 {branchPrefixError
-                ? 'border-destructive focus:border-destructive'
+                ? 'border-danger focus:border-danger'
                 : 'border-border focus:border-primary'}"
               placeholder={m.settings_gitWorkspace_branchPrefix_placeholder()}
             />
-            {#if branchPrefixError}<p class="text-xs text-error-foreground">
+            {#if branchPrefixError}<p class="text-xs text-danger">
                 {branchPrefixError}
               </p>{/if}
           </div>

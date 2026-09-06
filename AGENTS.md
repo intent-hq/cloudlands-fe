@@ -88,9 +88,12 @@ corepack pnpm run build         # Production build
 corepack pnpm run check         # Svelte + TypeScript checks
 corepack pnpm run lint          # ESLint
 corepack pnpm run format        # Prettier write pass
+corepack pnpm run format:check  # Prettier check (enforced in PR CI)
 corepack pnpm run test:unit     # Vitest suite
 corepack pnpm run test:playwright
 ```
+
+`.git-blame-ignore-revs` lists the repo-wide Prettier reformat commit so `git blame` skips it (GitHub honors it automatically; opt in locally with `git config blame.ignoreRevsFile .git-blame-ignore-revs`).
 
 ## Fast UI preview loop
 
@@ -99,9 +102,10 @@ and production application sagas. Use `dev:web` when the full browser renderer o
 client connection is required. Use `dev:cdp` for Electron main, preload, native,
 window, or shell behavior.
 
-From the monorepo root, start a workspace service with `make dev-ui DEV_PORT=5290`.
-The target installs locked dependencies when needed. Keep the port unique because the
-preview uses strict port binding.
+From the monorepo root, run `make ports`, then start `make dev-sandbox-ui` as a
+workspace service script. The target installs locked dependencies when needed and uses
+the worktree's derived `DEV_PORT`, avoiding collisions with concurrent workspaces. An
+explicit `DEV_PORT` override remains available when needed.
 
 Use these exact state names in direct URLs:
 
@@ -118,23 +122,24 @@ On the sandbox page, use `window.__INTENT_PREVIEW__.list()` to find preview IDs,
 
 ### Put a preview screenshot in user chat
 
-Use a fixed preview URL and an owned hidden tab with a fixed viewport. Wait no more
-than 15 seconds for `[data-preview-ready=true]`. Confirm that
+Use an owned hidden embedded-browser tab with a fixed viewport. Call
+`ws.browser.listTabs` first and reuse a matching tab; otherwise call
+`ws.browser.openTab` with the preview URL under
+`http://daemon.localhost:<DEV_PORT>/`. Wait no more than 15 seconds for
+`[data-preview-ready=true]`. Confirm that
 `window.__INTENT_PREVIEW__.current()` has the expected state and `status: 'ready'`.
 Then call the browser `screenshot` action. A successful action returns image content;
 keep that image block in the user response. A local file path alone does not show the
 image in chat.
 
-The workspace browser call has a 30-second execution limit. If `screenshot` reaches
-that limit, do not retry the same stalled call. Use a new, clean `playwright-cli`
-session against the same local URL. Set a fixed viewport, wait up to 15 seconds for the
-ready marker, and write one PNG under `.demo-artifacts/<timestamp>-<flow>/`. Do not
-record video when the user asked only for a screenshot. Check that the PNG is non-empty
-and has the expected dimensions, then inspect it with an image-capable file viewer.
-The viewer must return a native image content block to chat; do not return only the
-artifact path or a `file://` link. Close the clean session, do not commit the media, and
-remove it when it is no longer needed. Do not load saved browser state or inspect
-cookies, credentials, or unrelated tabs.
+The embedded-browser path is the remote-host default. `playwright-cli` is typically
+absent on remote hosts; use it only as a local fallback if the browser screenshot call
+reaches its 30-second limit. Do not retry the same stalled browser call. In a new,
+clean local session, set a fixed viewport, wait up to 15 seconds for the ready marker,
+and write one PNG under `.demo-artifacts/<timestamp>-<flow>/`. Check that the PNG is
+non-empty and has the expected dimensions, inspect it with an image-capable file
+viewer, and close the clean session. Do not commit the media, load saved browser state,
+or inspect cookies, credentials, or unrelated tabs.
 
 Before linking any generated image or video, verify that the actual file exists in the
 message's owning workspace. Use its exact workspace-relative path or its contained
@@ -143,7 +148,7 @@ named file, or read a sibling workspace. If the expected artifact is absent, rep
 as missing instead of emitting a link.
 
 ```bash
-playwright-cli -s=ui-preview-chat open 'http://127.0.0.1:5290/sandbox/button?state=destructive&theme=dark&width=420&motion=reduced'
+playwright-cli -s=ui-preview-chat open 'http://127.0.0.1:<DEV_PORT>/sandbox/button?state=destructive&theme=dark&width=420&motion=reduced'
 playwright-cli -s=ui-preview-chat resize 1100 850
 playwright-cli -s=ui-preview-chat run-code 'async page => { await page.locator("[data-preview-ready=true]").waitFor({ timeout: 15000 }); }'
 playwright-cli -s=ui-preview-chat screenshot --filename=.demo-artifacts/<run>/preview.png --hires
@@ -177,8 +182,8 @@ Call `ws.browser.listTabs` before `ws.browser.openTab` and reuse a matching URL.
 agent tabs are hidden by default and can still be evaluated, inspected, and captured.
 Keep the tab open so Vite HMR updates it after source edits. Use `ws.browser.showTab`
 to reveal it for human review; add `focus: true` only when focus is wanted. Use
-`http://daemon.localhost:5290` in `ws.browser` URLs so local and remote daemon setups
-resolve correctly.
+`http://daemon.localhost:<DEV_PORT>` in `ws.browser` URLs so local and remote daemon
+setups resolve correctly.
 
 For focused browser validation, run:
 
@@ -190,66 +195,73 @@ The CT harness defaults to port 3100 (the `CT_PORT` env var overrides it). Stop 
 process on that port before retrying if it is occupied. The full workflow is in
 `../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow`.
 
-## Dogfooding a dev FE against the production daemon (UDS→WS bridge)
+## Dogfooding a dev FE against a daemon
 
-The monorepo ships a source-only dev shim — `scripts/uds-ws-bridge.mjs`, run as
-`make uds-to-unauthed-wss-bridge` from a monorepo checkout (not shipped in any package) —
-that exposes the installed production intentd's UDS socket as an **UNAUTHENTICATED**
-plain `ws://` endpoint on `127.0.0.1:51337/ws` (`BRIDGE_PORT` / `INTENTD_SOCKET`
-override the defaults). It lets a dev FE debug against the real daemon without touching
-the daemon's auth posture (UDS + authed WSS for iOS stay as-is). Loopback-only is by
-design — the bridge refuses non-loopback binds, and while it runs the full
-unauthenticated daemon API is on that port — never expose it beyond localhost.
+The Vite dev server embeds a same-origin daemon bridge for `dev:web` and the app and
+stack sandboxes. While they run, the renderer reaches the daemon at `/intentd/ws` on
+the Vite origin, using `INTENTD_SOCKET` or the platform default socket. No separate
+bridge process or second tunnel is needed. The bridged daemon API is unauthenticated
+and loopback-only by design; never expose it beyond the Intent client's tunnel.
 
 ### Loop A — web build in an embedded tab (primary; renderer/UI work)
 
-Live-proven flow (zero FE changes needed):
+From the monorepo root, choose the smallest one-command sandbox and run it as a
+workspace service script:
 
-1. From the monorepo root: `make uds-to-unauthed-wss-bridge` → bridge on
-   `ws://127.0.0.1:51337/ws`.
-2. `VITE_INTENTD_WS_URL=ws://127.0.0.1:51337/ws pnpm dev:web` — with no Electron preload
-   the renderer selects the browser WebSocket transport and speaks JSON-RPC directly
-   over the bridge (plain `ws://` is accepted for loopback hosts only; anything else
-   needs `wss://`).
-3. Open the vite dev URL in an embedded tab of the running packaged app via
-   `browser.exec` (`openTab` / `navigate`) using an `http://daemon.localhost:<port>`
-   URL, then drive the tab with `screenshot` / `evaluate` / `getAccessibilityTree`.
-   Humans can eyeball the same tab. REV-1 first-client stickiness is a feature here:
-   the reverse call lands on the packaged app, which hosts the tab.
+- `make dev-sandbox-ui` — component previews, with no daemon.
+- `make dev-sandbox-app` — the complete web renderer against the installed Intent
+  daemon (or `INTENTD_SOCKET`).
+- `make dev-sandbox-stack` — a dev-profile intentd build on isolated `.dev/` state plus
+  the renderer. Use `INTENTD_PROFILE=release` to opt into a release build or
+  `INTENTD_BIN=/path/to/intentd` to skip the build and use a prebuilt binary.
 
-Always give `browser.exec` `http://daemon.localhost:<port>` URLs and let the client
-resolve them: same-machine setups rewrite to `127.0.0.1`; with a **remote daemon** the
-embedded tab renders on the client machine, and an unreachable daemon-loopback port is
-automatically tunneled (`openTab`/`navigate` echo `tunneled: true` plus the client-local
-forward URL). In the remote case the page itself also dials the bridge from the client,
-so mint a forward for the bridge port first — open a tab to
-`http://daemon.localhost:51337/`, read the client-local port from the tunneled echo (the
-tab shows the bridge's HTTP 400 "This is a WebSocket endpoint" body — that error page is
-the success signal, the forward is minted regardless) — and restart dev:web with
-`VITE_INTENTD_WS_URL=ws://127.0.0.1:<client-local-port>/ws`.
-Expect a slow cold load over the tunnel (dev mode serves ~250 module requests).
+Run `make doctor` first for the stack path. It intentionally exits nonzero for missing
+required prerequisites, including `pkg-config` plus OpenSSL development headers
+(`libssl-dev` and `pkg-config` on Debian/Ubuntu). Do not bypass that check.
 
-Tunnel forwards are **persistent** — the minted `localPort` is stable, so baking it into
-`VITE_INTENTD_WS_URL` is safe. Whether minted explicitly (`openTunnel`) or implicitly
-(the `openTab`/`navigate` fallback above), a forward has no idle expiry and survives
-`/tunnel` WebSocket drops: the local listener (and its port) stays open and the next
-accepted connection lazily reconnects the tunnel. A forward closes only on explicit
-`closeTunnel`, a backend switch (forwards target the old daemon's loopback), app quit,
-or — for forwards minted on behalf of a workspace — when every owning workspace has been
-archived or deleted (refcounted; a port shared by several workspaces closes with the
-last owner, and forwards minted with no workspace are app-lifetime). One exception: a
-definitively connection-refused daemon-side port (e.g. the bridge process died) drops
-that forward immediately — re-run `openTunnel` (or the openTab probe) to re-mint it.
+The remote-first Loop A is:
+
+1. Start the chosen `dev-sandbox-*` workspace service and wait for its exact
+   `Sandbox ready:` line. App and stack pre-warm the Vite module graph before printing
+   that line.
+2. Read the service status `detectedUrl`, keep its port, and call
+   `ws.browser.listTabs`. Reuse a matching tab or call `ws.browser.openTab` with
+   `http://daemon.localhost:<port>/` (plus any route/query).
+3. Poll the tab for the expected DOM or accessibility content. A first tunneled open of
+   a fresh pre-warmed app takes roughly one to three minutes to hydrate depending on host
+   load (fastest observed: about 45 seconds). If only the splash is visible, keep polling;
+   do not restart the service. Subsequent loads are fast; before pre-warming, a cold
+   tunneled load took about 10 minutes.
+4. Capture a browser screenshot, set the representative image as the workspace status
+   image, and call `ws.browser.showTab` without focus so the human can inspect the live
+   tab. Keep it open for HMR while editing.
+
+Always use `http://daemon.localhost:<port>` for embedded-browser URLs. Same-machine
+setups resolve to loopback; remote setups automatically create one tunnel for the page
+and its same-origin `/intentd/ws` daemon connection. The app and stack Vite origin
+exposes the full unauthenticated daemon API, so keep it loopback-only and open it only
+through the client tunnel.
+
+Tunneled Chromium treats `daemon.localhost` as a remote origin. Consequently,
+`workspace-file://` media do not load in that embedded tab even though they load in
+Electron; validate such media in an Electron build.
+
+### Show your work after visible changes
+
+Capture one representative embedded-browser screenshot and set it as the workspace
+status image with `ws.workspace.setStatusImage`. Then call `ws.browser.showTab` without
+`focus: true` so the human can click through the live HMR tab without having focus
+stolen.
 
 ### Loop B — dev Electron FE + CDP (Electron shell work)
 
 When the change touches Electron main/preload/native/sidecar, Loop A cannot see it —
-run the dev Electron FE on the daemon machine with `pnpm run dev:cdp` (sets
+run the dev Electron FE on a machine with a display using `pnpm run dev:cdp` (sets
 `ENABLE_CDP_DEBUG=true`; remote-debugging port 9223 by default — the launcher picks the
 first free port from 9223, so read the actual value from its output, e.g.
 `CDP targets: http://127.0.0.1:<port>/json/list` — and every webContents — app window
 and embedded tabs — is a target) and attach CDP locally. See
-`../../docs/fe/CDP_MCP_TOOLS.md`.
+`../../docs/fe/CDP_MCP_TOOLS.md`. This loop is unavailable on a headless remote host.
 
 ### Caveats
 

@@ -123,10 +123,7 @@ export function getCommitsToUndoCount(allCommits: CommitInfo[], commitIndex: num
 }
 
 /** Get the number of unpushed (local) commits from index 0 to commitIndex (inclusive). */
-export function getLocalCommitsToUndoCount(
-  allCommits: CommitInfo[],
-  commitIndex: number,
-): number {
+export function getLocalCommitsToUndoCount(allCommits: CommitInfo[], commitIndex: number): number {
   if (allCommits.length === 0 || commitIndex < 0) return 0;
   const clampedIndex = Math.min(commitIndex, allCommits.length - 1);
   let count = 0;
@@ -179,8 +176,6 @@ export function getUndoTooltip(
       });
 }
 
-
-
 /** Get tooltip text for the undo commit button (local commits). */
 export function getUndoCommitTooltip(allCommits: CommitInfo[], commitIndex: number): string {
   const count = getLocalCommitsToUndoCount(allCommits, commitIndex);
@@ -207,11 +202,7 @@ export function isFileActive(
 }
 
 /** Check if a file is selected in the multi-select set. */
-export function isFileSelected(
-  path: string,
-  staged: boolean,
-  selectedFiles: Set<string>,
-): boolean {
+export function isFileSelected(path: string, staged: boolean, selectedFiles: Set<string>): boolean {
   const key = `${staged ? 'staged' : 'unstaged'}:${path}`;
   return selectedFiles.has(key);
 }
@@ -348,15 +339,17 @@ export function mapWorkspacePRs(
     });
   }
   if (activePR) {
-    return [{
-      number: activePR.number,
-      title: getDisplayTitle(activePR),
-      url: buildPrUrl(activePR.number, activePR.url),
-      htmlUrl: buildPrUrl(activePR.number, activePR.url),
-      status: toPRDisplayStatus(activePR.status),
-      createdAt: activePR.createdAt,
-      updatedAt: activePR.updatedAt,
-    }];
+    return [
+      {
+        number: activePR.number,
+        title: getDisplayTitle(activePR),
+        url: buildPrUrl(activePR.number, activePR.url),
+        htmlUrl: buildPrUrl(activePR.number, activePR.url),
+        status: toPRDisplayStatus(activePR.status),
+        createdAt: activePR.createdAt,
+        updatedAt: activePR.updatedAt,
+      },
+    ];
   }
   return [];
 }
@@ -574,7 +567,8 @@ export function sectionPRs(
       // A root on the workspace repo (e.g. a subtree checkout) needs no repo
       // context; otherwise keep the full identity for row keys, as
       // mergeMonitoredPRs does for cross-repo monitors.
-      const sameRepo = workspaceRepoLower !== undefined && repo.toLowerCase() === workspaceRepoLower;
+      const sameRepo =
+        workspaceRepoLower !== undefined && repo.toLowerCase() === workspaceRepoLower;
       rootRows.push({
         number: pr.number,
         title: getDisplayTitle(pr),
@@ -680,6 +674,15 @@ function compareMissingLast(
 }
 
 /**
+ * Whether an open PR row sits in its host's merge queue. Only an open row can
+ * be queued — a stale `isInMergeQueue` on a draft/merged/closed snapshot is
+ * ignored — and the additive flag is presence-detected (absent = not queued).
+ */
+export function isPRQueued(pr: Pick<PRInfo, 'status' | 'monitorSnapshot'>): boolean {
+  return pr.status === 'open' && pr.monitorSnapshot?.isInMergeQueue === true;
+}
+
+/**
  * Hover tooltip for a sidebar PR row: the PR state, plus the monitor's
  * last-snapshot merge-requirements summary (checks, approvals, unresolved
  * threads, merge-blocked reason) when the row carries one (PROTOCOL §6.9).
@@ -692,7 +695,9 @@ export function getPRStatusTooltip(pr: PRInfo): string {
         ? m.workspace_prSection_closed_label()
         : pr.status === 'draft'
           ? m.workspace_prSection_statusDraft_label()
-          : m.workspace_prSection_statusOpen_label();
+          : isPRQueued(pr)
+            ? m.workspace_prSection_statusQueued_label()
+            : m.workspace_prSection_statusOpen_label();
   const lines: string[] = [stateLine];
   // Merged/closed rows no longer have merge requirements — the snapshot
   // detail lines would just be stale noise on a settled PR.
