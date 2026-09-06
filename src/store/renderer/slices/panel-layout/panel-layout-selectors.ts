@@ -388,7 +388,7 @@ export const selectRecentlyClosed = store.createSelector<[wsId: string], Recentl
 );
 
 /** Select the newest column close that can be applied to the current layout. */
-export const selectLastClosedPanelColumn = store.createSelector<
+const selectLastClosedPanelColumn = store.createSelector<
   [wsId: string],
   RecentlyClosedPanelColumn | null
 >((state, wsId) => {
