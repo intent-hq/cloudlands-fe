@@ -9,6 +9,7 @@ import {
   tinyDiffMapFixture,
   typicalDiffMapFixture,
 } from '../model/fixtures';
+import { fromPullRequest } from '../sources';
 import DiffMap from './DiffMap.svelte';
 
 afterEach(cleanup);
@@ -18,6 +19,22 @@ function rows(container: HTMLElement) {
 }
 
 describe('DiffMap', () => {
+  it('renders an added pull request file with its added status glyph', async () => {
+    const document = fromPullRequest({
+      repository: 'intent-hq/cloudlands-fe',
+      number: 42,
+      headSha: 'pr-head',
+      files: [{ path: 'src/new-file.ts', additions: 4, deletions: 0, status: 'added' }],
+    });
+    const { container } = render(DiffMap, {
+      props: { document, rungOverride: 1, onOpen: vi.fn() },
+    });
+
+    await waitFor(() => expect(rows(container)).toHaveLength(1));
+    expect(rows(container)[0].dataset.status).toBe('added');
+    expect(rows(container)[0].querySelector('.status')?.textContent).toBe('A');
+  });
+
   it('opens a file from click and Enter with its full accessible path and stats', async () => {
     const onOpen = vi.fn();
     const { container } = render(DiffMap, {
