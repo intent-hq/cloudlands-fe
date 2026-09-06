@@ -9,21 +9,10 @@
   import { getContext } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { writable } from 'svelte/store';
-  import {
-    faArrowRotateLeft,
-    faFile,
-    faGlobe,
-    faRobot,
-    faTerminal,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faFile, faGlobe, faRobot, faTerminal } from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import type { PanelLayoutManager, PanelTab } from '$features/layout/panel-layout-adapter';
-  import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
-  import {
-    getResourceIconKind,
-    RESOURCE_ICON_BY_KIND,
-    type ResourceIconKind,
-  } from '$lib/components/shared/resource-icon';
+  import { getResourceIconKind, RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
 
   import { openCheatSheet } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { formatShortcut } from '$lib/utils/shortcuts';
@@ -98,6 +87,9 @@
 
   // Get icon for tab type
   function getTabIcon(type: PanelTab['type']) {
+    const resourceKind = getResourceIconKind(type);
+    if (resourceKind) return RESOURCE_ICON_BY_KIND[resourceKind];
+
     switch (type) {
       case 'agent':
         return faRobot;
@@ -115,20 +107,8 @@
     }
   }
 
-  // Format timestamp
-  function formatTime(timestamp: number): string {
-    const now = Date.now();
-    const diff = now - timestamp;
-    if (diff < 60000) return m.layout_panelEmptyState_justNow_label();
-    if (diff < 3600000)
-      return m.layout_panelEmptyState_minutesAgo_label({ minutes: Math.floor(diff / 60000) });
-    if (diff < 86400000)
-      return m.layout_panelEmptyState_hoursAgo_label({ hours: Math.floor(diff / 3600000) });
-    return m.layout_panelEmptyState_daysAgo_label({ days: Math.floor(diff / 86400000) });
-  }
-
   function handleReopenItem() {
-    layoutManager?.reopenClosedTab();
+    layoutManager?.reopenLastClosed();
   }
 
   function handleCreateAgent() {
@@ -150,9 +130,14 @@
     id: string;
     label: string;
     icon: IconDefinition;
-    resourceKind?: ResourceIconKind;
+    key: string;
     action: () => void;
   };
+
+  const newAgentShortcut$ = effectiveShortcutReadable('workspace.new-agent');
+  const newNoteShortcut$ = effectiveShortcutReadable('workspace.new-note');
+  const newTerminalShortcut$ = effectiveShortcutReadable('workspace.new-terminal');
+  const newBrowserShortcut$ = effectiveShortcutReadable('workspace.new-browser');
 
   // Browser is capability-gated by PanelLayout, so its card only appears when
   // the host provides a working handler.
@@ -161,19 +146,21 @@
       id: 'agent',
       label: m.layout_panelEmptyState_agent_label(),
       icon: faRobot,
+      key: $newAgentShortcut$,
       action: handleCreateAgent,
     },
     {
       id: 'note',
       label: m.layout_panelEmptyState_note_label(),
       icon: RESOURCE_ICON_BY_KIND.note,
-      resourceKind: 'note',
+      key: $newNoteShortcut$,
       action: () => onCreateNote?.(panelId),
     },
     {
       id: 'terminal',
       label: m.layout_panelEmptyState_terminal_label(),
       icon: faTerminal,
+      key: $newTerminalShortcut$,
       action: () => onCreateTerminal?.(panelId),
     },
     ...(onOpenBrowser
@@ -182,19 +169,20 @@
             id: 'browser',
             label: m.layout_panelEmptyState_browser_label(),
             icon: faGlobe,
+            key: $newBrowserShortcut$,
             action: () => onOpenBrowser?.(panelId),
           },
         ]
       : []),
   ]);
-  const newTabShortcut$ = effectiveShortcutReadable('navigation.new-tab');
+  const newPanelShortcut$ = effectiveShortcutReadable('navigation.new-tab');
   const commandPaletteShortcut$ = effectiveShortcutReadable('global.command-palette-alt');
   const reopenTabShortcut$ = effectiveShortcutReadable('navigation.reopen-tab');
   const toggleSidebarShortcut$ = effectiveShortcutReadable('panel.toggle-sidebar');
   const keyboardShortcutsShortcut$ = effectiveShortcutReadable('global.keyboard-shortcuts');
   const utilityActions = $derived([
     {
-      key: $newTabShortcut$,
+      key: $newPanelShortcut$,
       label: m.layout_panelEmptyState_newPanel_label(),
       action: handleCreatePanel,
     },
@@ -222,72 +210,81 @@
 </script>
 
 <div
-  class="empty-state flex h-full items-center justify-center overflow-y-auto bg-sidebar px-6 py-10 text-foreground"
+  class="empty-state flex h-full items-center justify-center overflow-y-auto bg-sidebar px-6 py-8 text-foreground"
   data-panel-empty-state
 >
   <section
-    class="empty-state-content w-full max-w-[36rem]"
+    class="empty-state-content type-caption min-w-0 w-full max-w-[20rem]"
     aria-label={m.layout_panelEmptyState_createInEmptyPanel_ariaLabel()}
   >
-    <div class="creation-grid grid gap-1.5">
+    <div class="creation-list flex flex-col gap-0.5">
       {#each creationActions as action (action.id)}
         <button
-          class="creation-card type-body flex min-h-16 cursor-pointer items-center gap-2.5 rounded-md border border-transparent bg-muted/30 px-3 py-2.5 text-left text-foreground transition-transform duration-150 focus-visible:outline-none motion-reduce:transition-none"
+          class="creation-action empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-medium text-foreground transition-colors hover:text-muted-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
           onclick={action.action}
           title={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
           aria-label={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
         >
-          {#if action.resourceKind}
-            <ResourceIconTile kind={action.resourceKind} variant="emphasized" />
-          {:else}
-            <span
-              class="flex size-6 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground"
-              data-panel-empty-leading-surface
-            >
-              <Fa icon={action.icon} class="size-4" />
+          <span class="flex min-w-0 items-center gap-x-2">
+            <span class="flex shrink-0 items-center" aria-hidden="true">
+              <Fa icon={action.icon} class="size-[1em]" />
             </span>
-          {/if}
-          <span class="min-w-0 truncate font-medium">
-            {m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
+            <span class="min-w-0 truncate font-medium">
+              {m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
+            </span>
           </span>
+          <kbd
+            class="shortcut-key shrink-0 justify-self-end whitespace-nowrap text-right text-muted-foreground"
+          >
+            {formatShortcut(action.key)}
+          </kbd>
         </button>
       {/each}
     </div>
 
     {#if recentItems.length > 0}
-      <div class="mt-4 pt-3">
-        <div class="type-caption mb-1 flex items-center gap-1.5 px-1 text-muted-foreground">
-          <Fa icon={faArrowRotateLeft} class="size-3" />
-          <span>{m.layout_panelEmptyState_recentlyClosed_label()}</span>
-        </div>
+      <div class="recent-list mt-5 flex flex-col gap-0.5">
+        <button
+          class="reopen-hint empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
+          onclick={handleReopenItem}
+          title={m.layout_panelEmptyState_reopenLastClosed_label()}
+        >
+          <span class="min-w-0 truncate">{m.layout_panelEmptyState_reopenLastClosed_label()}</span>
+          <kbd
+            class="shortcut-key shrink-0 justify-self-end whitespace-nowrap text-right text-muted-foreground"
+          >
+            {formatShortcut($reopenTabShortcut$)}
+          </kbd>
+        </button>
         {#each recentItems as item (item.tab.id + '-' + item.closedAt)}
-          {@const resourceKind = getResourceIconKind(item.tab.type)}
           <button
-            class="recent-item type-caption flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none motion-reduce:transition-none"
+            class="recent-item empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center px-2 py-1 text-left font-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
             onclick={handleReopenItem}
             title={m.layout_panelEmptyState_reopen_tooltip({ title: item.tab.title })}
           >
-            {#if resourceKind}
-              <ResourceIconTile kind={resourceKind} />
-            {:else}
-              <Fa icon={getTabIcon(item.tab.type)} class="size-3 shrink-0 opacity-70" />
-            {/if}
-            <span class="flex-1 truncate">{item.tab.title}</span>
-            <span class="shrink-0 opacity-70">{formatTime(item.closedAt)}</span>
+            <span class="flex min-w-0 items-center gap-x-2">
+              <span class="flex shrink-0 items-center opacity-70" aria-hidden="true">
+                <Fa icon={getTabIcon(item.tab.type)} class="size-[1em]" />
+              </span>
+              <span class="min-w-0 truncate">{item.tab.title}</span>
+            </span>
           </button>
         {/each}
       </div>
     {/if}
 
-    <div class="shortcut-grid mt-5 grid gap-x-5 gap-y-0.5 pt-3">
-      {#each utilityActions as action (action.key)}
+    <div class="shortcut-list mt-5 flex flex-col gap-0.5">
+      {#each utilityActions as action (action.label)}
         <button
-          class="shortcut-item type-caption flex cursor-pointer items-center justify-between gap-3 rounded-md px-1 py-1.5 text-left text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none motion-reduce:transition-none"
+          class="shortcut-item empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
           onclick={action.action}
           title={action.label}
+          aria-label={action.label}
         >
-          <span>{action.label}</span>
-          <kbd class="shortcut-key shrink-0 text-muted-foreground">
+          <span class="min-w-0 truncate">{action.label}</span>
+          <kbd
+            class="shortcut-key shrink-0 justify-self-end whitespace-nowrap text-right text-muted-foreground"
+          >
             {formatShortcut(action.key)}
           </kbd>
         </button>
@@ -297,32 +294,21 @@
 </div>
 
 <style>
-  .empty-state-content {
-    container-type: inline-size;
+  .creation-action {
+    color: hsl(var(--foreground));
   }
 
-  .creation-grid,
-  .shortcut-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  @container (min-width: 32rem) {
-    .creation-grid {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
-
-    .shortcut-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
+  .creation-action:hover {
+    color: hsl(var(--muted-foreground));
   }
 
   .shortcut-key {
-    font-size: 0.6875rem;
+    color: hsl(var(--muted-foreground));
     font-weight: 500;
-    line-height: 1rem;
   }
 
-  .creation-card:active,
+  .creation-action:active,
+  .reopen-hint:active,
   .shortcut-item:active {
     transform: scale(0.98);
   }

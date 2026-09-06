@@ -15,15 +15,45 @@ function collectSvelteFiles(directory: string): string[] {
 }
 
 describe('empty panel chrome', () => {
-  it('uses a balanced two-by-two creation grid with explicit pointer affordances', () => {
+  it('uses one narrow typographic grid without icon tiles or filled row states', () => {
     const emptyState = source('../PanelEmptyState.svelte');
 
-    expect(emptyState).toContain('creation-grid grid gap-1.5');
-    expect(emptyState).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
-    expect(emptyState).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))');
-    expect(emptyState).toContain('min-h-16 cursor-pointer');
-    expect(emptyState).toContain('bg-sidebar px-6 py-10 text-foreground');
+    expect(emptyState).toContain('empty-state-content type-caption');
+    expect(emptyState).toContain('max-w-[20rem]');
+    expect(emptyState).toContain('creation-list flex flex-col gap-0.5');
+    expect(emptyState).toContain('creation-action empty-state-row grid min-h-7');
+    expect(emptyState).toContain('grid-cols-[minmax(0,1fr)_auto]');
+    expect(emptyState).not.toContain('ResourceIconTile');
+    expect(emptyState).not.toContain('hover:bg-');
+    expect(emptyState).not.toContain('min-h-16');
+    expect(emptyState).not.toContain('creation-grid');
+    expect(emptyState).toContain('bg-sidebar px-6 py-8 text-foreground');
     expect(emptyState).not.toContain('border-t border-border');
+  });
+
+  it('removes elevation from tabless shells while preserving their focus border', () => {
+    const panel = source('../Panel.svelte');
+
+    expect(panel).toContain(
+      "data-empty-panel-shell={panel.tabs.length === 0 ? 'true' : undefined}",
+    );
+    expect(panel).toMatch(
+      /\.panel\[data-empty-panel-shell='true'\]:not\(\[data-focus-border-visible='true'\]\)\s*\{\s*border-width: 0;/,
+    );
+    expect(panel).toMatch(/\.panel\[data-empty-panel-shell='true'\]\s*\{\s*box-shadow: none;/);
+    expect(panel).toMatch(
+      /\.panel\s*\{[\s\S]*?border: 1px solid transparent;[\s\S]*?box-shadow: var\(--elevation-raised\);/,
+    );
+    expect(panel).toMatch(
+      /\.panel\[data-focus-border-visible='true'\]\s*\{\s*border-color: hsl\(var\(--border\)\);/,
+    );
+  });
+
+  it('keeps a visible inset keyboard outline on every empty-state row', () => {
+    const emptyState = source('../PanelEmptyState.svelte');
+
+    expect(emptyState.match(/focus-visible:outline-ring/g)).toHaveLength(4);
+    expect(emptyState).not.toContain('focus-visible:outline-none');
   });
 
   it('closes tabless panels from their semantic header without making the panel focusable', () => {

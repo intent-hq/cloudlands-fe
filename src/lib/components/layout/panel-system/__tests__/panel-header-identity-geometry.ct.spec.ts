@@ -97,33 +97,48 @@ test('keeps one larger identity geometry across panel types, themes, widths, and
   expect(measuredStates).toBe(48);
 });
 
-test('uses the same larger leading identity geometry in the empty panel actions', async ({
-  mount,
-}) => {
+test('uses aligned Swiss action rows in the empty panel', async ({ mount }) => {
   const component = await mount(PanelHeaderIdentityHost, {
     props: { identityType: 'empty', theme: 'dark', width: 240, height: 320, zoom: 2 },
   });
-  const cards = component.locator('.creation-card');
-  await expect(cards).toHaveCount(4);
+  const actions = component.locator('.creation-action');
+  await expect(actions).toHaveCount(4);
+  for (const name of ['New Agent', 'New Note', 'New Terminal', 'New Browser']) {
+    await expect(component.getByRole('button', { name })).toBeVisible();
+  }
 
-  const geometry = await cards.evaluateAll((elements) =>
-    elements.map((card) => {
-      const leading = card.querySelector<HTMLElement>(
-        '[data-resource-icon-tile], [data-panel-empty-leading-surface]',
-      )!;
-      const glyph = leading.querySelector<HTMLElement>('svg, [data-resource-icon-glyph]')!;
-      const leadingStyle = getComputedStyle(leading);
+  const geometry = await actions.evaluateAll((elements) =>
+    elements.map((action) => {
+      const row = action as HTMLElement;
+      const leftGroup = row.firstElementChild as HTMLElement;
+      const glyph = leftGroup.querySelector<SVGElement>('svg')!;
+      const label = leftGroup.lastElementChild as HTMLElement;
+      const hint = row.querySelector<HTMLElement>('kbd')!;
+      const rowRect = row.getBoundingClientRect();
+      const glyphRect = glyph.getBoundingClientRect();
+      const labelRect = label.getBoundingClientRect();
+      const hintRect = hint.getBoundingClientRect();
+      const scale = rowRect.width / row.offsetWidth;
       return {
-        leadingWidth: leadingStyle.width,
-        leadingHeight: leadingStyle.height,
-        glyphWidth: getComputedStyle(glyph).width,
+        rowHeight: rowRect.height / scale,
+        fontSize: getComputedStyle(label).fontSize,
+        glyphLeft: (glyphRect.left - rowRect.left) / scale,
+        labelLeft: (labelRect.left - rowRect.left) / scale,
+        labelGlyphGap: (labelRect.left - glyphRect.right) / scale,
+        hintRightInset: (rowRect.right - hintRect.right) / scale,
+        hintTextAlign: getComputedStyle(hint).textAlign,
       };
     }),
   );
 
+  const first = geometry[0];
   for (const item of geometry) {
-    expect(item.leadingWidth).toBe('24px');
-    expect(item.leadingHeight).toBe('24px');
-    expect(item.glyphWidth).toBe('16px');
+    expect(item.rowHeight).toBeCloseTo(28, 1);
+    expect(item.fontSize).toBe('13px');
+    expect(item.glyphLeft).toBeCloseTo(first.glyphLeft, 1);
+    expect(item.labelLeft).toBeCloseTo(first.labelLeft, 1);
+    expect(item.labelGlyphGap).toBeCloseTo(8, 1);
+    expect(item.hintRightInset).toBeCloseTo(8, 1);
+    expect(item.hintTextAlign).toBe('right');
   }
 });

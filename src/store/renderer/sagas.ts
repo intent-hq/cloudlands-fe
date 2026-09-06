@@ -83,6 +83,7 @@ import { workspaceTabCleanupSaga } from './slices/workspace-lifecycle/sagas/work
 import { workspaceLoadSaga } from './slices/workspace-lifecycle/sagas/workspace-load-saga';
 import { workspaceReconnectSaga } from './slices/workspace-lifecycle/sagas/workspace-reconnect-saga';
 import { taskAgentAssociationsSaga } from './slices/task-agent-associations/sagas/task-agent-associations-saga';
+import { terminalCreationSaga } from './slices/terminals/sagas/terminal-creation-saga';
 import { terminalPersistenceSaga } from './slices/terminals/sagas/terminal-persistence-saga';
 import { themeSaga } from './slices/theme/sagas/theme-saga';
 import { uiLayoutPersistenceSaga } from './slices/ui-layout/sagas/ui-layout-persistence-saga';
@@ -200,6 +201,7 @@ export const sagas = [
   releaseNotesSaga,
   browserPersistenceSaga,
   fileContentPruneSaga,
+  terminalCreationSaga,
   terminalPersistenceSaga,
   externalEditorsPersistenceSaga,
   workspaceSettingsSaga,

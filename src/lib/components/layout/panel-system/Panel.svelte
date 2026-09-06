@@ -443,13 +443,14 @@
     class={cn(
       'panel group/panel relative flex flex-col h-full overflow-hidden rounded-(--panel-shell-radius) text-foreground',
     )}
-    class:bg-sidebar={panel.pristine === true && panel.tabs.length === 0}
-    class:bg-background={panel.pristine !== true || panel.tabs.length > 0}
+    class:bg-sidebar={panel.tabs.length === 0}
+    class:bg-background={panel.tabs.length > 0}
     class:contained
     data-panel-id={panelId}
     data-layout-id={layoutId}
     data-focused={isFocused}
     data-focus-border-visible={isFocused && showFocusBorder}
+    data-empty-panel-shell={panel.tabs.length === 0 ? 'true' : undefined}
     data-zoomed={isZoomed}
     data-pristine={panel.pristine === true}
     data-empty-panel-surface={panel.pristine === true && panel.tabs.length === 0
@@ -602,6 +603,14 @@
     .panel[data-focus-border-visible='true'] {
       border-color: Highlight;
     }
+  }
+
+  .panel[data-empty-panel-shell='true']:not([data-focus-border-visible='true']) {
+    border-width: 0;
+  }
+
+  .panel[data-empty-panel-shell='true'] {
+    box-shadow: none;
   }
 
   .panel-content {
