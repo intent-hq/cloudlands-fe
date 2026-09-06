@@ -51,6 +51,10 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
     rationale: 'backend layout restore and sidebar reconciliation are independent',
   },
   {
+    pattern: /workspace-notes-slice\.ts#applyNote(?:Created|Updated)$/,
+    rationale: 'panel layout note reconciliation and semantic-map manifest refresh are independent',
+  },
+  {
     pattern: /sidebar-nav-slice\.ts#(?:openPanel|closePanel|togglePanel|closeAll|closeHoverCards)$/,
     rationale: 'sidebar ownership and unread-boundary snapshots are independent',
   },

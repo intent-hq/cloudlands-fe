@@ -147,6 +147,7 @@
   const unsortedActivities = $derived(
     mode === 'unsorted-heavy'
       ? Array.from({ length: 24 }, (_, index) => ({
+          id: `semantic-map-unsorted-${index}`,
           regionId: 'Unsorted',
           agentId: SCRIPT_AGENTS[index % SCRIPT_AGENTS.length].id,
           agentName: SCRIPT_AGENTS[index % SCRIPT_AGENTS.length].name,

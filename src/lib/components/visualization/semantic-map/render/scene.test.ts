@@ -40,10 +40,34 @@ const window = {
 describe('semantic map render scene', () => {
   it('filters the daemon activity stream by time, agent and kind', () => {
     const activities: MapActivity[] = [
-      { agentId: 'a', regionId: 'one', kind: 'read', ts: '2026-09-06T10:01:00.000Z' },
-      { agentId: 'a', regionId: 'one', kind: 'edit', ts: '2026-09-06T10:02:00.000Z' },
-      { agentId: 'b', regionId: 'two', kind: 'edit', ts: '2026-09-06T10:03:00.000Z' },
-      { agentId: 'a', regionId: 'one', kind: 'edit', ts: '2026-09-06T10:11:00.000Z' },
+      {
+        id: 'activity-1',
+        agentId: 'a',
+        regionId: 'one',
+        kind: 'read',
+        ts: '2026-09-06T10:01:00.000Z',
+      },
+      {
+        id: 'activity-2',
+        agentId: 'a',
+        regionId: 'one',
+        kind: 'edit',
+        ts: '2026-09-06T10:02:00.000Z',
+      },
+      {
+        id: 'activity-3',
+        agentId: 'b',
+        regionId: 'two',
+        kind: 'edit',
+        ts: '2026-09-06T10:03:00.000Z',
+      },
+      {
+        id: 'activity-4',
+        agentId: 'a',
+        regionId: 'one',
+        kind: 'edit',
+        ts: '2026-09-06T10:11:00.000Z',
+      },
     ];
 
     expect(filterActivities(activities, { agentIds: ['a'], kinds: ['edit'] }, window)).toEqual([
@@ -53,6 +77,7 @@ describe('semantic map render scene', () => {
 
   it('fans collocated badges and uses at most eight agent hues', () => {
     const activities: MapActivity[] = Array.from({ length: 9 }, (_, index) => ({
+      id: `activity-${index}`,
       agentId: `agent-${index}`,
       agentName: `Agent ${index}`,
       regionId: 'one',
@@ -75,8 +100,20 @@ describe('semantic map render scene', () => {
 
   it('infers move travel from the agent previous region', () => {
     const activities: MapActivity[] = [
-      { agentId: 'a', regionId: 'one', kind: 'edit', ts: '2026-09-06T10:09:59.000Z' },
-      { agentId: 'a', regionId: 'two', kind: 'move', ts: '2026-09-06T10:10:00.000Z' },
+      {
+        id: 'activity-1',
+        agentId: 'a',
+        regionId: 'one',
+        kind: 'edit',
+        ts: '2026-09-06T10:09:59.000Z',
+      },
+      {
+        id: 'activity-2',
+        agentId: 'a',
+        regionId: 'two',
+        kind: 'move',
+        ts: '2026-09-06T10:10:00.000Z',
+      },
     ];
     const scene = buildScene({
       activities,

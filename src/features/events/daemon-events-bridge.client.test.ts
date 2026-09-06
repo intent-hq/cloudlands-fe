@@ -12076,6 +12076,7 @@ describe('daemonEventsBridge (semantic map activity)', () => {
 
   it('routes the exact map:activity payload into the workspace ring buffer', () => {
     const activity = {
+      id: 'activity-1',
       regionId: 'renderer',
       agentId: AGENT,
       agentName: 'Map Agent',
