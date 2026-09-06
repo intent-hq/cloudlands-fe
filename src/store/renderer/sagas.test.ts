@@ -92,6 +92,7 @@ describe('renderer app saga registry', () => {
       'browserPersistenceSaga',
       'browserClientsSaga',
       'fileContentPruneSaga',
+      'terminalCreationSaga',
       'terminalPersistenceSaga',
       'terminalCommandsSaga',
       'externalEditorsPersistenceSaga',
