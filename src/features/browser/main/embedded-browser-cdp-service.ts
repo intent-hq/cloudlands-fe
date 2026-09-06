@@ -1754,7 +1754,7 @@ class EmbeddedBrowserCdpService {
               reject(
                 new Error(
                   // i18n-ignore (agent-facing protocol error, not user-facing)
-                  `capturePage timed out after ${SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS}ms: the tab is not painting (it is not the active (displayed) tab of a visible panel, or its surface is occluded). Use { action: "showTab", tabId } to activate it in its panel without stealing focus (or focusTab to activate and focus), check listTabs "displayed", then capture again.`,
+                  `capturePage timed out after ${SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS}ms: the tab is not painting. A visible tab paints only while it is its panel's active tab (listTabs reports displayed: true); use { action: "showTab", tabId } to activate it without stealing focus (or focusTab to activate and focus), then capture again.`,
                 ),
               ),
             SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS,
@@ -1765,14 +1765,14 @@ class EmbeddedBrowserCdpService {
       if (image.isEmpty?.() || size.width <= 0 || size.height <= 0) {
         throw new Error(
           // i18n-ignore (agent-facing operational diagnostic, not user-facing)
-          `webContents.capturePage returned an empty image (${size.width}x${size.height}): the tab surface has not painted — it is not the active (displayed) tab of a visible panel. Use { action: "showTab", tabId } to activate it in its panel without stealing focus (or focusTab to activate and focus), check listTabs "displayed", then capture again.`,
+          `webContents.capturePage returned an empty image (${size.width}x${size.height}): the tab surface has not painted. A visible tab paints only while it is its panel's active tab (listTabs reports displayed: true); use { action: "showTab", tabId } to activate it without stealing focus (or focusTab to activate and focus), then capture again.`,
         );
       }
       const jpeg = image.toJPEG(80);
       if (jpeg.length === 0) {
         throw new Error(
           // i18n-ignore (agent-facing operational diagnostic, not user-facing)
-          `webContents.capturePage encoded an empty image (${size.width}x${size.height}): the tab surface has not painted — it is not the active (displayed) tab of a visible panel. Use { action: "showTab", tabId } to activate it in its panel without stealing focus (or focusTab to activate and focus), check listTabs "displayed", then capture again.`,
+          `webContents.capturePage encoded an empty image (${size.width}x${size.height}): the tab surface has not painted. A visible tab paints only while it is its panel's active tab (listTabs reports displayed: true); use { action: "showTab", tabId } to activate it without stealing focus (or focusTab to activate and focus), then capture again.`,
         );
       }
       return {
