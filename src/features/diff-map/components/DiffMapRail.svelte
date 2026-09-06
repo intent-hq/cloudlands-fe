@@ -151,19 +151,19 @@
   }
 
   .tick[data-status='added'] {
-    background: rgb(4 120 87);
+    background: hsl(var(--success));
   }
 
   .tick[data-status='deleted'] {
-    background: rgb(220 38 38);
+    background: hsl(var(--danger));
   }
 
   .tick[data-status='renamed'] {
-    background: rgb(37 99 235);
+    background: hsl(var(--info));
   }
 
   .tick[data-status='binary'] {
-    background: rgb(147 51 234);
+    background: hsl(var(--info));
   }
 
   .viewport-window {
@@ -173,15 +173,7 @@
     min-height: 5px;
     border: 1px solid hsl(var(--foreground));
     border-radius: 2px;
-    background: hsl(var(--background) / 0.55);
+    background: transparent;
     pointer-events: none;
-  }
-
-  :global(.dark) .tick[data-status='added'] {
-    background: rgb(16 185 129);
-  }
-
-  :global(.dark) .tick[data-status='deleted'] {
-    background: rgb(239 68 68);
   }
 </style>

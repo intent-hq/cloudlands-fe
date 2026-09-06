@@ -96,6 +96,7 @@
   class="diff-map-row"
   class:diff-map-row--active={active}
   class:diff-map-row--selected={selected}
+  class:diff-map-row--tracks={rung === 0}
   class:diff-map-row--dense={rung >= 2}
   class:diff-map-row--minimal={rung === 3}
   data-diff-map-row
@@ -171,9 +172,15 @@
     background: transparent;
     color: hsl(var(--foreground));
     text-align: left;
+    line-height: 1;
     transition:
       opacity var(--motion-fast) var(--ease-standard),
       background-color var(--motion-fast) var(--ease-standard);
+  }
+
+  /* Reserve the encoding band without increasing the layout engine’s row height. */
+  .diff-map-row--tracks {
+    padding-bottom: 9px;
   }
 
   .diff-map-row:hover,
@@ -207,19 +214,19 @@
   }
 
   [data-status='added'] .status {
-    color: rgb(4 120 87);
+    color: color-mix(in srgb, hsl(var(--success)) 90%, hsl(var(--foreground)));
   }
 
   [data-status='deleted'] .status {
-    color: rgb(220 38 38);
+    color: hsl(var(--danger));
   }
 
   [data-status='renamed'] .status {
-    color: rgb(37 99 235);
+    color: color-mix(in srgb, hsl(var(--info)) 80%, hsl(var(--foreground)));
   }
 
   [data-status='binary'] .status {
-    color: rgb(147 51 234);
+    color: color-mix(in srgb, hsl(var(--info)) 80%, hsl(var(--foreground)));
   }
 
   .filename {
@@ -248,11 +255,11 @@
   }
 
   .additions {
-    color: rgb(4 120 87);
+    color: color-mix(in srgb, hsl(var(--success)) 90%, hsl(var(--foreground)));
   }
 
   .deletions {
-    color: rgb(220 38 38);
+    color: hsl(var(--danger));
   }
 
   .stats--unknown {
@@ -307,8 +314,9 @@
   }
 
   .overlay--changed {
-    background: rgb(217 119 6);
-    color: white;
+    border: 1px solid hsl(var(--warning-foreground));
+    background: hsl(var(--warning));
+    color: hsl(var(--warning-foreground));
   }
 
   .diff-map-row--minimal .overlay {
@@ -342,16 +350,6 @@
   .diff-map-row:hover .tooltip,
   .diff-map-row:focus-visible .tooltip {
     display: block;
-  }
-
-  :global(.dark) [data-status='added'] .status,
-  :global(.dark) .additions {
-    color: rgb(16 185 129);
-  }
-
-  :global(.dark) [data-status='deleted'] .status,
-  :global(.dark) .deletions {
-    color: rgb(239 68 68);
   }
 
   @media (prefers-reduced-motion: reduce) {
