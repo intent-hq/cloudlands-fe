@@ -5,7 +5,8 @@
   import { m } from '$shared/paraglide/messages.js';
   import { lerpGeometry } from './layout/interpolate';
   import type { RegionGeometry } from './layout/place';
-  import { cacheHullPaths, drawQuadraticPath, traceHull } from './render/canvas';
+  import { CanvasPathCache, drawQuadraticPath, traceHull } from './render/canvas';
+  import { layoutSceneLabels, type LabelLayout, type PlacedLabel } from './render/labels';
   import { buildScene, hitRouteEdge } from './render/scene';
   import type { ActivityMark, AgentBadge, RouteEdge, SemanticMapCanvasProps } from './render/types';
 
@@ -35,6 +36,7 @@
   const MINIMAP_WIDTH = 160;
   const MINIMAP_HEIGHT = 100;
   const MINIMAP_MARGIN = 16;
+  const applicationAttributes = { role: 'application', tabindex: 0 } as const;
 
   interface CanvasColors {
     background: string;
@@ -71,7 +73,8 @@
   let tweenFrom: RegionGeometry[] = geometry.rest;
   let tweenStartedAt = 0;
   let tweening = false;
-  let stablePaths = new Map<string, Path2D>();
+  const pathCache = new CanvasPathCache();
+  let labelLayout: LabelLayout = { regions: [], edges: [], counts: [], badges: [], boxes: [] };
   let hatchPattern: CanvasPattern | null = null;
   let animationFrame: number | null = null;
   let sceneStartedAt = 0;
@@ -100,6 +103,24 @@
     hoveredEdgeIndex === null ? undefined : scene.edges[hoveredEdgeIndex],
   );
   const hoveredBadge = $derived(scene.badges.find(({ id }) => id === hoveredBadgeId));
+  const keyboardRegion = $derived(manifest.regions.find(({ id }) => id === keyboardRegionId));
+  const selectionDescription = $derived.by(() => {
+    if (keyboardRegion)
+      return m.semanticMap_canvas_regionFocused_description({ label: keyboardRegion.label });
+    if (selection?.type === 'region') {
+      const label = manifest.regions.find(({ id }) => id === selection.regionIds[0])?.label;
+      return label
+        ? m.semanticMap_canvas_regionSelected_description({ label })
+        : m.semanticMap_canvas_selectionNone_description();
+    }
+    if (selection?.type === 'agent') {
+      const name =
+        scene.badges.find(({ id }) => id === selection.agentId)?.name ?? selection.agentId;
+      return m.semanticMap_canvas_agentSelected_description({ name });
+    }
+    if (selection?.type === 'route') return m.semanticMap_canvas_routeSelected_description();
+    return m.semanticMap_canvas_selectionNone_description();
+  });
 
   function routeFileLabel(count: number): string {
     return count === 1
@@ -158,7 +179,7 @@
 
   function startGeometryTween(next: RegionGeometry[]): void {
     targetGeometry = next;
-    stablePaths = cacheHullPaths(next);
+    refreshRenderCaches(next);
     if (reducedMotion || currentGeometry.length !== next.length) {
       currentGeometry = next;
       tweening = false;
@@ -169,6 +190,19 @@
     tweenStartedAt = performance.now();
     tweening = true;
     ensureAnimationFrame();
+  }
+
+  function refreshRenderCaches(next: RegionGeometry[]): void {
+    pathCache.update(next, scene.edges);
+    labelLayout = layoutSceneLabels({
+      regions: next,
+      regionLabels: new Map(manifest.regions.map(({ id, label }) => [id, label])),
+      edges: scene.edges,
+      badges: scene.badges,
+      width,
+      height,
+      scale: transform.scale,
+    });
   }
 
   function updateTween(now: number): void {
@@ -227,15 +261,12 @@
     ctx.restore();
   }
 
-  function drawRegionLabel(ctx: CanvasRenderingContext2D, region: RegionGeometry): void {
-    const model = manifest.regions.find(({ id }) => id === region.id);
-    if (!model) return;
-    const fontSize = Math.max(11, Math.min(16, region.radius * 0.15));
+  function drawRegionLabel(ctx: CanvasRenderingContext2D, label: PlacedLabel): void {
     ctx.fillStyle = colors.foreground;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `600 ${fontSize}px "Source Serif 4 Variable", Georgia, serif`;
-    ctx.fillText(model.label, region.x, region.y, Math.max(54, region.radius * 1.45));
+    ctx.font = `600 ${label.fontSize}px "Source Serif 4 Variable", Georgia, serif`;
+    ctx.fillText(label.text, label.x, label.y, label.width);
   }
 
   function drawRoute(ctx: CanvasRenderingContext2D, edges: RouteEdge[]): void {
@@ -247,16 +278,26 @@
       ctx.fillStyle = highlighted ? colors.accent : colors.mutedForeground;
       ctx.globalAlpha = highlighted ? 0.9 : 0.62;
       ctx.lineWidth = (1.5 + Math.sqrt(Math.max(1, edge.count))) / transform.scale;
-      drawQuadraticPath(ctx, edge);
-      ctx.stroke();
-      const labelX = (edge.startX + 2 * edge.controlX + edge.endX) / 4;
-      const labelY = (edge.startY + 2 * edge.controlY + edge.endY) / 4;
-      ctx.font = `${11 / transform.scale}px var(--font-ui)`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(edge.label, labelX, labelY - 5 / transform.scale);
+      const path = pathCache.routes[index];
+      if (path) ctx.stroke(path);
+      else {
+        drawQuadraticPath(ctx, edge);
+        ctx.stroke();
+      }
       ctx.restore();
     });
+  }
+
+  function drawRouteLabels(ctx: CanvasRenderingContext2D): void {
+    for (const label of [...labelLayout.edges, ...labelLayout.counts]) {
+      ctx.save();
+      ctx.fillStyle = colors.accent;
+      ctx.font = `${label.fontSize}px var(--font-ui)`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label.text, label.x, label.y, label.width);
+      ctx.restore();
+    }
   }
 
   function drawMark(ctx: CanvasRenderingContext2D, mark: ActivityMark, elapsed: number): void {
@@ -383,11 +424,12 @@
     ctx.save();
     ctx.translate(transform.x, transform.y);
     ctx.scale(transform.scale, transform.scale);
-    currentGeometry.forEach((region) => drawRegion(ctx, region, stablePaths.get(region.id)));
+    currentGeometry.forEach((region) => drawRegion(ctx, region, pathCache.hulls.get(region.id)));
     drawRoute(ctx, scene.edges);
     scene.marks.forEach((mark) => drawMark(ctx, mark, elapsed));
-    currentGeometry.forEach((region) => drawRegionLabel(ctx, region));
-    scene.badges.forEach((badge) => drawBadge(ctx, badge, now, elapsed));
+    labelLayout.regions.forEach((label) => drawRegionLabel(ctx, label));
+    drawRouteLabels(ctx);
+    labelLayout.badges.forEach((badge) => drawBadge(ctx, badge, now, elapsed));
     ctx.restore();
     drawMinimap(ctx);
     ctx.restore();
@@ -425,7 +467,7 @@
   function updateHover(screenX: number, screenY: number): void {
     const world = screenToWorld(screenX, screenY);
     hoveredBadgeId =
-      scene.badges.find(
+      labelLayout.badges.find(
         (badge) =>
           Math.hypot(badge.x - world.x, badge.y - world.y) <= BADGE_RADIUS / transform.scale,
       )?.id ?? null;
@@ -508,20 +550,20 @@
       onClearSelection?.();
       return;
     }
-    if (event.key === 'Tab' && manifest.regions.length > 0) {
+    if (event.key.startsWith('Arrow') && geometry.rest.length > 0) {
       event.preventDefault();
-      const current = manifest.regions.findIndex(({ id }) => id === keyboardRegionId);
+      const current = geometry.rest.findIndex(({ id }) => id === keyboardRegionId);
+      const direction = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
       const index =
         current < 0
-          ? event.shiftKey
-            ? manifest.regions.length - 1
+          ? direction < 0
+            ? geometry.rest.length - 1
             : 0
-          : (current + (event.shiftKey ? -1 : 1) + manifest.regions.length) %
-            manifest.regions.length;
-      keyboardRegionId = manifest.regions[index].id;
+          : (current + direction + geometry.rest.length) % geometry.rest.length;
+      keyboardRegionId = geometry.rest[index].id;
       return;
     }
-    if ((event.key === 'Enter' || event.key === ' ') && keyboardRegionId) {
+    if (event.key === 'Enter' && keyboardRegionId) {
       event.preventDefault();
       onSelectRegion?.([keyboardRegionId]);
     }
@@ -547,6 +589,7 @@
   $effect(() => {
     void scene;
     sceneStartedAt = performance.now();
+    refreshRenderCaches(targetGeometry);
     scheduleDraw();
   });
 
@@ -557,12 +600,14 @@
     void hoveredEdgeIndex;
     void hoveredBadgeId;
     void keyboardRegionId;
+    refreshRenderCaches(targetGeometry);
     scheduleDraw();
   });
 
   onMount(() => {
     resolveReducedMotion();
     resolveColors();
+    container?.addEventListener('keydown', handleKeydown);
     const themeObserver = new MutationObserver(() => {
       resolveColors();
       resolveReducedMotion();
@@ -571,9 +616,10 @@
       attributes: true,
       attributeFilter: ['class', 'data-theme', 'style'],
     });
-    stablePaths = cacheHullPaths(currentGeometry);
+    refreshRenderCaches(currentGeometry);
     scheduleDraw();
     return () => {
+      container?.removeEventListener('keydown', handleKeydown);
       themeObserver.disconnect();
       if (animationFrame !== null) cancelAnimationFrame(animationFrame);
     };
@@ -582,17 +628,22 @@
 
 <div
   bind:this={container}
-  class="relative overflow-hidden rounded-lg border border-border bg-background"
+  class="relative overflow-hidden rounded-lg border border-border bg-background outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
   style="width: {width}px; height: {height}px;"
+  {...applicationAttributes}
+  aria-label={m.semanticMap_canvas_visualization_ariaLabel()}
+  data-semantic-map-canvas
+  data-semantic-map-width={width}
+  data-semantic-map-height={height}
+  data-semantic-map-agent-count={scene.badges.length}
 >
+  <span class="sr-only" aria-live="polite">{selectionDescription}</span>
   <canvas
     bind:this={canvas}
     class:cursor-grabbing={panning}
     class:cursor-grab={!panning}
-    class="block outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
-    tabindex="0"
-    role="application"
-    aria-label={m.semanticMap_canvas_visualization_ariaLabel()}
+    class="block"
+    aria-hidden="true"
     onpointerdown={handlePointerDown}
     onpointermove={handlePointerMove}
     onpointerup={handlePointerUp}
@@ -603,7 +654,6 @@
       hoveredBadgeId = null;
     }}
     onwheel={handleWheel}
-    onkeydown={handleKeydown}
   ></canvas>
 
   {#if hoveredRegion}

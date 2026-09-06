@@ -73,6 +73,7 @@
     "test:playwright:manual:catalog": "pnpm exec playwright test --config=playwright.manual.config.ts test/catalog-manual-review.capture.spec.ts",
     "test:playwright:manual:baseline": "pnpm exec playwright test --config=playwright.manual.config.ts test/current-main-baseline.spec.ts",
     "test:ct": "node scripts/run-ct-tests.mjs",
+    "test:semantic-map-frame-budget": "node scripts/run-ct-tests.mjs src/lib/components/visualization/semantic-map/__tests__/semantic-map-frame-budget.ct.spec.ts --workers=1",
     "test:playwright:ui": "pnpm exec playwright test --ui",
     "test:playwright:headed": "pnpm exec playwright test --headed",
     "test:run": "pnpm run test:unit && pnpm run test:integration && pnpm run test:playwright",
