@@ -1264,6 +1264,26 @@ function computeHierarchicalGroupLayout(
     primaryOffset += maxPrimarySize + GROUP_SPACING;
   });
 
+  if (!isHorizontal) {
+    const columns: Array<{ x: number; groupIds: string[] }> = [];
+    for (const [groupId, position] of groupPositions) {
+      const column = columns.find((candidate) => Math.abs(candidate.x - position.x) < 0.5);
+      if (column) column.groupIds.push(groupId);
+      else columns.push({ x: position.x, groupIds: [groupId] });
+    }
+    for (const column of columns) {
+      const width = Math.max(
+        ...column.groupIds.map((groupId) => groupDimensions.get(groupId)?.width ?? 0),
+      );
+      for (const groupId of column.groupIds) {
+        const position = groupPositions.get(groupId);
+        const groupWidth = groupDimensions.get(groupId)?.width;
+        if (!position || groupWidth === undefined) continue;
+        groupPositions.set(groupId, { ...position, x: position.x + (width - groupWidth) / 2 });
+      }
+    }
+  }
+
   // Step 8: Position nodes within groups using intra-group layers
   const positioned: ComputedNode[] = [];
   allGroupIds.forEach((gid) => {
@@ -3118,14 +3138,14 @@ function computeOrthogonalEdgePaths(
         Math.abs(sourceCenterX - targetCenterX) < 12 &&
         !verticalCorridorIsBlocked(info);
       if (hasClearCentralCorridor && !rightExteriorIsOccupied) {
-        points[0] = {
-          x: (sourceCenterX + targetCenterX) / 2,
-          y: fromNode.y + fromNode.height,
-        };
-        toPos = {
-          x: points[0].x,
-          y: toNode.y,
-        };
+        const source = getPortPosition(fromNode, fromSide);
+        const target = getPortPosition(toNode, toSide);
+        points[0] = source;
+        if (Math.abs(source.x - target.x) >= 0.5) {
+          const corridorY = (source.y + target.y) / 2;
+          points.push({ x: source.x, y: corridorY }, { x: target.x, y: corridorY });
+        }
+        toPos = target;
       } else if (!rightExteriorIsOccupied) {
         const source = {
           x: fromNode.x + fromNode.width,

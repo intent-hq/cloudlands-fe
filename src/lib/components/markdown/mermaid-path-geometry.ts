@@ -3423,11 +3423,12 @@ export function placeStateLabelsOnFinalRoutes(svg: SVGSVGElement, compact = fals
             path.dataset.routeLabel === STATE_LABEL.agentResponds;
           if (placesAgentResponseBetweenStates) midpoint.y += 6;
           const placesLabelInsideLeftLane =
-            compact &&
             Math.abs(candidateSegment.x1 - candidateSegment.x2) < 0.5 &&
-            (path.dataset.routeLabel === STATE_LABEL.agentAsksUser ||
-              path.dataset.routeLabel === STATE_LABEL.requestFails ||
-              path.dataset.routeLabel === STATE_LABEL.streamFails);
+            ((compact &&
+              (path.dataset.routeLabel === STATE_LABEL.agentAsksUser ||
+                path.dataset.routeLabel === STATE_LABEL.requestFails ||
+                path.dataset.routeLabel === STATE_LABEL.streamFails)) ||
+              (!compact && path.dataset.routeLabel === STATE_LABEL.requestFails));
           if (placesLabelInsideLeftLane) {
             const inset =
               path.dataset.routeLabel === STATE_LABEL.agentAsksUser
