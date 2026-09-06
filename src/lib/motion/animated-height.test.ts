@@ -34,6 +34,7 @@ describe('animatedHeight', () => {
           resize = callback;
         }
         observe() {}
+        unobserve() {}
         disconnect() {}
       },
     );
@@ -117,6 +118,32 @@ describe('animatedHeight', () => {
     action?.update?.({ open: true, tier: 'moderate' });
     flushSync();
     expect(wrapper.style.height).toBe('48px');
+    expect(frames).toHaveLength(0);
+    action?.destroy?.();
+  });
+
+  it('measures the newest marked swap target before the outgoing target is removed', async () => {
+    reducedMotion = true;
+    const wrapper = document.createElement('div');
+    const stack = document.createElement('div');
+    const outgoing = document.createElement('div');
+    outgoing.dataset.animatedHeightTarget = '';
+    vi.spyOn(outgoing, 'getBoundingClientRect').mockReturnValue({ height: 80 } as DOMRect);
+    stack.append(outgoing);
+    wrapper.append(stack);
+
+    const action = animatedHeight(wrapper);
+    flushSync();
+    expect(wrapper.style.height).toBe('80px');
+
+    const incoming = document.createElement('div');
+    incoming.dataset.animatedHeightTarget = '';
+    vi.spyOn(incoming, 'getBoundingClientRect').mockReturnValue({ height: 44 } as DOMRect);
+    stack.append(incoming);
+    await Promise.resolve();
+    flushSync();
+
+    expect(wrapper.style.height).toBe('44px');
     expect(frames).toHaveLength(0);
     action?.destroy?.();
   });

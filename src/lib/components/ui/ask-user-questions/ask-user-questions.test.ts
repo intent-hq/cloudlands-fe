@@ -139,6 +139,23 @@ describe('AskUserQuestions', () => {
     expect(onBack).toHaveBeenCalledWith(1);
   });
 
+  it('keeps stable inset metadata while the keyed content and footer swap together', async () => {
+    const view = render(AskUserQuestions, { props: { questions: twoQuestions } });
+    const metadata = view.container.querySelector('[data-slot="ask-user-questions-metadata"]');
+    expect(metadata?.textContent).toContain('Question 1 of 2');
+
+    await fireEvent.click(view.getByRole('radio', { name: /Speed/ }));
+
+    expect(view.container.querySelector('[data-slot="ask-user-questions-metadata"]')).toBe(
+      metadata,
+    );
+    expect(metadata?.textContent).toContain('Question 2 of 2');
+    const targets = view.container.querySelectorAll('[data-animated-height-target]');
+    const incoming = targets.item(targets.length - 1);
+    expect(incoming.textContent).toContain('Choose an audience');
+    expect(incoming.querySelector('button')).toBeTruthy();
+  });
+
   it('honors controlled index and answer state while emitting requested changes', async () => {
     const onCurrentIndexChange = vi.fn();
     const onAnswersChange = vi.fn();

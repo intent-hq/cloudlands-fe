@@ -430,6 +430,18 @@
     if (rowsElement?.contains(event.relatedTarget as Node)) return;
     hover?.setActiveIndex(null);
   }
+
+  function stepOut(node: HTMLElement) {
+    node.inert = true;
+    node.setAttribute('aria-hidden', 'true');
+    return crispOut(node, { tier: 'fast', y: -2 });
+  }
+
+  function stepIn(node: HTMLElement) {
+    node.inert = false;
+    node.removeAttribute('aria-hidden');
+    return springIn(node, { tier: 'slow', y: 4, scale: 1 });
+  }
 </script>
 
 {#snippet arrowLeft()}
@@ -481,6 +493,7 @@
       <p class="p-5 text-[13px] text-muted-foreground">No questions.</p>
     {:else}
       <div
+        data-slot="ask-user-questions-metadata"
         class={cn(
           'flex items-center text-muted-foreground',
           compact
@@ -490,10 +503,7 @@
       >
         {#if showCounter}
           <!-- i18n-ignore (reference primitive progress label) -->
-          <span>Question {safeIndex + 1} of {questions.length}</span>
-        {/if}
-        {#if question.header}
-          <span class="ml-2 min-w-0 flex-1 truncate">{question.header}</span>
+          <span class="shrink-0 tabular-nums">Question {safeIndex + 1} of {questions.length}</span>
         {/if}
         {#if headerActions}
           <span class="ml-auto flex shrink-0 items-center gap-1">
@@ -503,18 +513,23 @@
       </div>
 
       <div use:animatedHeight={true}>
-        <div
-          class={cn(
-            compact ? 'px-3.5 sm:px-4' : 'px-4 sm:px-5',
-            showFooter ? 'pb-1' : compact ? 'pb-2 sm:pb-2.5' : 'pb-2.5 sm:pb-3',
-          )}
-        >
+        <div class="grid">
           {#key questionId}
             <div
-              class="flex flex-col gap-2"
-              in:springIn={{ tier: 'slow', y: 4 }}
-              out:crispOut={{ tier: 'fast', y: -2 }}
+              data-animated-height-target
+              class={cn(
+                'col-start-1 row-start-1 flex flex-col gap-2',
+                compact ? 'px-3.5 sm:px-4' : 'px-4 sm:px-5',
+                showFooter ? 'pb-1' : compact ? 'pb-2 sm:pb-2.5' : 'pb-2.5 sm:pb-3',
+              )}
+              in:stepIn
+              out:stepOut
             >
+              {#if question.header}
+                <p class="text-[12px] font-medium leading-snug text-muted-foreground">
+                  {question.header}
+                </p>
+              {/if}
               <h3 id={titleId} class="text-[16px] font-semibold leading-snug text-foreground">
                 {question.title}
               </h3>
@@ -796,71 +811,79 @@
                   {/if}
                 </div>
               {/if}
+              {#if showFooter}
+                <div class={cn('pt-1', compact ? 'pb-1.5' : 'pb-2')}>
+                  <div class="-mx-2 flex items-center justify-between gap-2 sm:-mx-3">
+                    <div class="relative flex min-w-0 flex-1 items-center gap-2">
+                      {#if showBackAction}
+                        <span
+                          in:scale={{ tier: 'fast' }}
+                          out:crispOut={{ tier: 'fast', scale: 0.85 }}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            leadingIcon={arrowLeft}
+                            class="pl-3 sm:pl-1.5"
+                            {disabled}
+                            onclick={back}>{backLabel}</Button
+                          >
+                        </span>
+                      {/if}
+                      {#if freeTextError}
+                        <p
+                          id={errorId}
+                          role="alert"
+                          class="min-w-0 px-2 text-left text-[12px] leading-snug text-danger sm:px-3"
+                          in:springIn={{ tier: 'fast', y: -2 }}
+                        >
+                          {freeTextError}
+                        </p>
+                      {/if}
+                    </div>
+                    <div class="relative flex items-center gap-2">
+                      {#if showSkip}
+                        <span
+                          in:scale={{ tier: 'fast' }}
+                          out:crispOut={{ tier: 'fast', scale: 0.85 }}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            trailingIcon={arrowRight}
+                            class="pr-3 sm:pr-[6px]"
+                            {disabled}
+                            onclick={skip}>{skipLabel}</Button
+                          >
+                        </span>
+                      {/if}
+                      {#if showSubmit}
+                        <span
+                          in:scale={{ tier: 'fast' }}
+                          out:crispOut={{ tier: 'fast', scale: 0.85 }}
+                        >
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            trailingIcon={shortcut}
+                            class="pr-3 sm:pr-[6px]"
+                            disabled={!canSubmit}
+                            onclick={isFreeText ? submitOther : finishMulti}
+                          >
+                            <!-- i18n-ignore (reference primitive action defaults) -->
+                            {question.nextLabel ??
+                              (safeIndex >= questions.length - 1 ? 'Finish' : 'Continue')}
+                          </Button>
+                        </span>
+                      {/if}
+                    </div>
+                  </div>
+                </div>
+              {/if}
             </div>
           {/key}
         </div>
       </div>
-
-      {#if showFooter}
-        <div class={cn('pt-1', compact ? 'px-3.5 pb-1.5 sm:px-4' : 'px-4 pb-2 sm:px-5')}>
-          <div class="-mx-2 flex items-center justify-between gap-2 sm:-mx-3">
-            <div class="relative flex min-w-0 flex-1 items-center gap-2">
-              {#if showBackAction}
-                <span in:scale={{ tier: 'fast' }} out:crispOut={{ tier: 'fast', scale: 0.85 }}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    leadingIcon={arrowLeft}
-                    class="pl-3 sm:pl-1.5"
-                    {disabled}
-                    onclick={back}>{backLabel}</Button
-                  >
-                </span>
-              {/if}
-              {#if freeTextError}
-                <p
-                  id={errorId}
-                  role="alert"
-                  class="min-w-0 px-2 text-left text-[12px] leading-snug text-danger sm:px-3"
-                  in:springIn={{ tier: 'fast', y: -2 }}
-                >
-                  {freeTextError}
-                </p>
-              {/if}
-            </div>
-            <div class="relative flex items-center gap-2">
-              {#if showSkip}
-                <span in:scale={{ tier: 'fast' }} out:crispOut={{ tier: 'fast', scale: 0.85 }}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    trailingIcon={arrowRight}
-                    class="pr-3 sm:pr-[6px]"
-                    {disabled}
-                    onclick={skip}>{skipLabel}</Button
-                  >
-                </span>
-              {/if}
-              {#if showSubmit}
-                <span in:scale={{ tier: 'fast' }} out:crispOut={{ tier: 'fast', scale: 0.85 }}>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    trailingIcon={shortcut}
-                    class="pr-3 sm:pr-[6px]"
-                    disabled={!canSubmit}
-                    onclick={isFreeText ? submitOther : finishMulti}
-                  >
-                    <!-- i18n-ignore (reference primitive action defaults) -->
-                    {question.nextLabel ??
-                      (safeIndex >= questions.length - 1 ? 'Finish' : 'Continue')}
-                  </Button>
-                </span>
-              {/if}
-            </div>
-          </div>
-        </div>
-      {/if}
     {/if}
   </div>
 {/snippet}

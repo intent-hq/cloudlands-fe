@@ -17,7 +17,9 @@ function resolveOptions(parameter: AnimatedHeightParameter): Required<AnimatedHe
 }
 
 function measuredHeight(node: HTMLElement): number {
-  const content = node.firstElementChild as HTMLElement | null;
+  const targets = node.querySelectorAll<HTMLElement>('[data-animated-height-target]');
+  const content =
+    targets.item(targets.length - 1) || (node.firstElementChild as HTMLElement | null);
   return content?.getBoundingClientRect().height ?? node.scrollHeight;
 }
 
@@ -54,7 +56,24 @@ export const animatedHeight: Action<HTMLElement, AnimatedHeightParameter> = (
     if (media?.matches) void height.set(height.target, { instant: true });
   };
   const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(retarget);
-  observer?.observe(node.firstElementChild ?? node);
+  let observedContent: Element | null = null;
+  const observeContent = () => {
+    const targets = node.querySelectorAll<HTMLElement>('[data-animated-height-target]');
+    const content = targets.item(targets.length - 1) || node.firstElementChild || node;
+    if (content === observedContent) return;
+    if (observedContent) observer?.unobserve(observedContent);
+    observedContent = content;
+    observer?.observe(content);
+  };
+  observeContent();
+  const mutationObserver =
+    typeof MutationObserver === 'undefined'
+      ? undefined
+      : new MutationObserver(() => {
+          observeContent();
+          retarget();
+        });
+  mutationObserver?.observe(node, { childList: true, subtree: true });
   media?.addEventListener('change', handleMotionPreference);
 
   return {
@@ -64,6 +83,7 @@ export const animatedHeight: Action<HTMLElement, AnimatedHeightParameter> = (
     },
     destroy() {
       observer?.disconnect();
+      mutationObserver?.disconnect();
       media?.removeEventListener('change', handleMotionPreference);
       disposeEffect();
       node.style.height = previousHeight;
