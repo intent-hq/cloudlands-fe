@@ -744,7 +744,7 @@
             ? m.workspace_fileChanges_autoCommitOn_tooltip()
             : m.workspace_fileChanges_autoCommitOff_tooltip()}
           side="right"
-          contentClass="w-[12rem]"
+          contentClass="w-48"
           disableHoverableContent={false}
           disableCloseOnTriggerClick={true}
         >
@@ -787,9 +787,9 @@
             <div class="space-y-px">
               <!-- Agent header -->
               <div class="relative group/agent-header flex items-center gap-1.5 py-0.5 -ml-1 px-1">
-                <button
-                  type="button"
-                  class="group/row flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-1 -mx-1"
+                <Button
+                  variant="ghost"
+                  class="group/row -mx-1 h-auto min-w-0 flex-1 cursor-pointer justify-start rounded border-0 bg-transparent px-1 text-left font-normal shadow-none hover:bg-transparent"
                   onclick={() => toggleAgentGroup(group.agentId)}
                 >
                   {#if isLocked}
@@ -818,7 +818,7 @@
                         : ''}"
                     />
                   {/if}
-                </button>
+                </Button>
                 <!-- Action buttons -->
                 <div
                   class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform {commitState !==
@@ -1017,9 +1017,9 @@
             <div class="space-y-px">
               <!-- Agent header -->
               <div class="relative group/agent-header flex items-center gap-1.5 py-0.5 -ml-1 px-1">
-                <button
-                  type="button"
-                  class="group/row flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-1 -mx-1"
+                <Button
+                  variant="ghost"
+                  class="group/row -mx-1 h-auto min-w-0 flex-1 cursor-pointer justify-start rounded border-0 bg-transparent px-1 text-left font-normal shadow-none hover:bg-transparent"
                   onclick={() => toggleAgentGroup(group.agentId)}
                 >
                   <span class="text-ui opacity-50 truncate flex-1">
@@ -1041,7 +1041,7 @@
                         : ''}"
                     />
                   {/if}
-                </button>
+                </Button>
                 <!-- Action buttons -->
                 <div
                   class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform {commitState !==

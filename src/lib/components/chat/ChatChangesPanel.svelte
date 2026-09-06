@@ -2751,15 +2751,14 @@
 
   {#if showCategoryFilter && diffMapDocument.files.length > 0}
     <section
-      class="flex shrink-0 flex-col overflow-hidden border-b border-border bg-background"
-      class:h-[40%]={!diffMapCollapsed}
-      class:min-h-[192px]={!diffMapCollapsed}
-      class:max-h-[360px]={!diffMapCollapsed}
+      class="flex shrink-0 flex-col overflow-hidden border-b border-border bg-background {!diffMapCollapsed
+        ? 'h-2/5 min-h-48 max-h-90'
+        : ''}"
     >
       <div class="flex h-8 shrink-0 items-center pr-2">
-        <button
-          type="button"
-          class="flex min-w-0 flex-1 items-center gap-2 px-4 text-xs font-medium text-subtle hover:text-foreground"
+        <Button
+          variant="ghost"
+          class="h-8 min-w-0 flex-1 justify-start rounded-none border-0 bg-transparent px-4 text-xs font-medium text-subtle shadow-none hover:bg-transparent hover:text-foreground"
           aria-expanded={!diffMapCollapsed}
           aria-label={diffMapCollapsed
             ? m.ui_vscodePanel_expand_ariaLabel()
@@ -2768,7 +2767,7 @@
         >
           <Fa icon={diffMapCollapsed ? faChevronLeft : faChevronDown} class="h-2.5! w-2.5!" />
           <span>{m.workspace_sidebarChanges_rootChangedFiles_label()}</span>
-        </button>
+        </Button>
         <ReviewSliceAction
           workspaceId={routeWorkspaceId}
           document={diffMapDocument}
@@ -3342,7 +3341,7 @@
             {#if isViewed}
               <Fa icon={faCheck} class="w-2! h-2! text-primary-foreground" />
             {:else if changedSinceViewed}
-              <span class="text-[10px] font-bold text-amber-600" aria-hidden="true">!</span>
+              <span class="text-xs font-bold leading-none text-amber-600" aria-hidden="true">!</span>
             {/if}
           </span>
           <span class="text-xs text-subtle">

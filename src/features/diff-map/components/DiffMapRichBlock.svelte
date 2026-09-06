@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import DiffMap from './DiffMap.svelte';
   import type {
     DiffMapClaimAnnotation,
@@ -46,20 +47,20 @@
   {#if claims.length > 0 || groups.length > 0}
     <div class="annotation-chips">
       {#each claims as claim (claim.id)}
-        <button
-          type="button"
-          class:active={enabledClaims.has(claim.id)}
+        <Button
+          variant="outline"
+          class={`annotation-chip h-auto font-normal ${enabledClaims.has(claim.id) ? 'active' : ''}`}
           aria-pressed={enabledClaims.has(claim.id)}
-          onclick={() => toggleClaim(claim.id)}>{claim.label}</button
+          onclick={() => toggleClaim(claim.id)}>{claim.label}</Button
         >
       {/each}
       {#each groups as group (group.id)}
-        <button
-          type="button"
-          class:active={activeGroup === group.id}
+        <Button
+          variant="outline"
+          class={`annotation-chip h-auto font-normal ${activeGroup === group.id ? 'active' : ''}`}
           aria-pressed={activeGroup === group.id}
           onclick={() => (activeGroup = activeGroup === group.id ? undefined : group.id)}
-          >{group.label}</button
+          >{group.label}</Button
         >
       {/each}
     </div>
@@ -90,7 +91,7 @@
     border-bottom: 1px solid hsl(var(--border));
   }
 
-  button {
+  :global(.annotation-chip) {
     padding: 2px 8px;
     border: 1px solid hsl(var(--border));
     border-radius: 999px;
@@ -98,7 +99,7 @@
     font-size: 11px;
   }
 
-  button.active {
+  :global(.annotation-chip.active) {
     border-color: hsl(var(--ring));
     background: hsl(var(--accent));
     color: hsl(var(--foreground));

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { DiffMapLayoutRow } from '../layout/layout-diff-map';
@@ -90,11 +91,11 @@
 </script>
 
 {#if contentHeight > viewportHeight}
-  <button
-    type="button"
-    class="rail"
+  <Button
+    variant="ghost"
+    class="rail h-auto min-h-0 w-auto"
     aria-label={accessibleLabel}
-    style:width={viewportWidth < 320 ? '8px' : '10px'}
+    style={`width: ${viewportWidth < 320 ? '8px' : '10px'}`}
     onclick={jump}
   >
     {#each buckets as bucket (bucket.index)}
@@ -110,11 +111,11 @@
     {/each}
     <span class="viewport-window" style:top={`${windowTop}%`} style:height={`${windowHeight}%`}
     ></span>
-  </button>
+  </Button>
 {/if}
 
 <style>
-  .rail {
+  :global(.rail) {
     position: absolute;
     box-sizing: border-box;
     top: 4px;
@@ -127,9 +128,14 @@
     background: hsl(var(--muted) / 0.35);
   }
 
-  .rail:focus-visible {
+  :global(.rail:focus-visible) {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 1px;
+  }
+
+  :global(.rail:hover) {
+    border-color: hsl(var(--border));
+    background: hsl(var(--muted) / 0.35);
   }
 
   .tick {

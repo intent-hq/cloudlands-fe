@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { DiffMapDensityRung, DiffMapLayoutRow } from '../layout/layout-diff-map';
@@ -91,14 +92,9 @@
   );
 </script>
 
-<button
-  type="button"
-  class="diff-map-row"
-  class:diff-map-row--active={active}
-  class:diff-map-row--selected={selected}
-  class:diff-map-row--tracks={rung === 0}
-  class:diff-map-row--dense={rung >= 2}
-  class:diff-map-row--minimal={rung === 3}
+<Button
+  variant="ghost"
+  class={`diff-map-row h-auto font-normal ${active ? 'diff-map-row--active' : ''} ${selected ? 'diff-map-row--selected' : ''} ${rung === 0 ? 'diff-map-row--tracks' : ''} ${rung >= 2 ? 'diff-map-row--dense' : ''} ${rung === 3 ? 'diff-map-row--minimal' : ''}`}
   data-diff-map-row
   data-file-id={file.id}
   data-status={file.status}
@@ -107,11 +103,7 @@
   aria-describedby={tooltipId}
   aria-pressed={selected}
   tabindex={focused ? 0 : -1}
-  style:left={`${row.x - blockX}px`}
-  style:top={`${row.y - blockY}px`}
-  style:width={`${row.w}px`}
-  style:height={`${row.h}px`}
-  style:opacity={matchesFilter ? 1 : 0.28}
+  style={`left: ${row.x - blockX}px; top: ${row.y - blockY}px; width: ${row.w}px; height: ${row.h}px; opacity: ${matchesFilter ? 1 : 0.28}`}
   onclick={(event) => onActivate(file, event)}
   onkeydown={(event) => onKeydown(file, event)}
   onfocus={() => onFocus(file)}
@@ -156,10 +148,10 @@
   {/if}
 
   <span id={tooltipId} role="tooltip" class="tooltip">{tooltip}</span>
-</button>
+</Button>
 
 <style>
-  .diff-map-row {
+  :global(.diff-map-row) {
     position: absolute;
     display: grid;
     grid-template-columns: 18px minmax(0, 1fr) auto auto;
@@ -179,16 +171,16 @@
   }
 
   /* Reserve the encoding band without increasing the layout engine’s row height. */
-  .diff-map-row--tracks {
+  :global(.diff-map-row--tracks) {
     padding-bottom: 9px;
   }
 
-  .diff-map-row:hover,
-  .diff-map-row--selected {
+  :global(.diff-map-row:hover),
+  :global(.diff-map-row--selected) {
     background: hsl(var(--accent));
   }
 
-  .diff-map-row--active::before {
+  :global(.diff-map-row--active::before) {
     position: absolute;
     inset-block: 4px;
     left: 1px;
@@ -198,7 +190,7 @@
     content: '';
   }
 
-  .diff-map-row:focus-visible {
+  :global(.diff-map-row:focus-visible) {
     z-index: 2;
     outline: 2px solid hsl(var(--ring));
     outline-offset: -1px;
@@ -206,26 +198,26 @@
 
   .status {
     width: 18px;
-    font-family: var(--font-mono);
+    font-family: var(--font-code);
     font-size: 10px;
     font-weight: 700;
     color: hsl(var(--muted-foreground));
     text-align: center;
   }
 
-  [data-status='added'] .status {
+  :global([data-status='added']) .status {
     color: color-mix(in srgb, hsl(var(--success)) 90%, hsl(var(--foreground)));
   }
 
-  [data-status='deleted'] .status {
+  :global([data-status='deleted']) .status {
     color: hsl(var(--danger));
   }
 
-  [data-status='renamed'] .status {
+  :global([data-status='renamed']) .status {
     color: color-mix(in srgb, hsl(var(--info)) 80%, hsl(var(--foreground)));
   }
 
-  [data-status='binary'] .status {
+  :global([data-status='binary']) .status {
     color: color-mix(in srgb, hsl(var(--info)) 80%, hsl(var(--foreground)));
   }
 
@@ -238,7 +230,7 @@
     white-space: nowrap;
   }
 
-  .diff-map-row--dense .filename {
+  :global(.diff-map-row--dense) .filename {
     font-size: 11px;
   }
 
@@ -247,7 +239,7 @@
     gap: 4px;
     justify-content: flex-end;
     justify-self: end;
-    font-family: var(--font-mono);
+    font-family: var(--font-code);
     font-size: 10px;
     font-variant-numeric: tabular-nums;
     text-align: right;
@@ -319,7 +311,7 @@
     color: hsl(var(--warning-foreground));
   }
 
-  .diff-map-row--minimal .overlay {
+  :global(.diff-map-row--minimal) .overlay {
     width: 6px;
     min-width: 6px;
     height: 6px;
@@ -347,13 +339,13 @@
     white-space: pre-line;
   }
 
-  .diff-map-row:hover .tooltip,
-  .diff-map-row:focus-visible .tooltip {
+  :global(.diff-map-row:hover) .tooltip,
+  :global(.diff-map-row:focus-visible) .tooltip {
     display: block;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .diff-map-row {
+    :global(.diff-map-row) {
       transition: none;
     }
   }
