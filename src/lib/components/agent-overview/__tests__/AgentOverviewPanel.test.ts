@@ -142,10 +142,13 @@ const graph: GraphState = {
   maxTime: timestamp,
 };
 
-function renderPanel(inputGraph = graph) {
+function renderPanel(
+  inputGraph = graph,
+  replayGraph: GraphState = { ...inputGraph, isLive: false },
+) {
   mocks.selectGraphState.mockReturnValue(readable(inputGraph));
   mocks.selectGraphHistoryStatus.mockReturnValue(readable('complete'));
-  mocks.selectGraphStateAt.select.mockReturnValue({ ...inputGraph, isLive: false });
+  mocks.selectGraphStateAt.select.mockReturnValue(replayGraph);
   const result = render(AgentOverviewPanel, { props: { workspaceId: 'workspace-one' } });
   result.container.firstElementChild?.setAttribute('data-panel-id', 'source-panel');
   return result;
@@ -161,6 +164,56 @@ afterEach(() => {
 });
 
 describe('AgentOverviewPanel', () => {
+  it('renders the graph empty state', () => {
+    renderPanel({
+      ...graph,
+      nodes: [],
+      edges: [],
+      stats: {
+        agents: { active: 0, total: 0 },
+        tasks: { ...graph.stats.tasks, in_progress: 0 },
+        files: 0,
+        notes: 0,
+      },
+    });
+
+    expect(screen.getByText('No agents yet')).toBeTruthy();
+  });
+
+  it('switches from live data to the historical cursor and back', async () => {
+    const end = '2026-09-04T00:02:00.000Z';
+    const replayGraph: GraphState = {
+      ...graph,
+      nodes: [],
+      edges: [],
+      stats: {
+        agents: { active: 0, total: 0 },
+        tasks: { ...graph.stats.tasks, in_progress: 0 },
+        files: 0,
+        notes: 0,
+      },
+      currentTime: '2026-09-04T00:01:00.000Z',
+      isLive: false,
+      maxTime: end,
+    };
+    renderPanel({ ...graph, maxTime: end, eventTimes: [timestamp, end] }, replayGraph);
+    expect(screen.getByRole('button', { name: /Agent One/ })).toBeTruthy();
+
+    await fireEvent.input(screen.getByRole('slider'), {
+      target: { value: String(Date.parse(timestamp) + 60_000) },
+    });
+    await tick();
+    expect(mocks.selectGraphStateAt.select).toHaveBeenCalledWith(
+      expect.anything(),
+      'workspace-one',
+      '2026-09-04T00:00:00.000Z',
+    );
+    expect(screen.getByText('No agents yet')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Live' }));
+    expect(screen.getByRole('button', { name: /Agent One/ })).toBeTruthy();
+  });
+
   it('renders graph stats and keeps layer toggles in component state', async () => {
     renderPanel();
 

@@ -5,6 +5,10 @@ import {
   convertToInteractionEvent,
   createTaskHullMembershipMemo,
   deriveTaskHullMemberships,
+  extractDelegationBatchMap,
+  extractFileChangesFromMessages,
+  extractNoteChangesFromMessages,
+  extractTaskChangesFromMessages,
   getNodeStatus,
   getStreamingState,
   isExternalFilePath,
@@ -297,6 +301,137 @@ describe('agent overview graph helpers', () => {
 
     it('returns an empty state for undefined sessions', () => {
       expect(getStreamingState(undefined)).toEqual({});
+    });
+  });
+
+  describe('message tool extraction', () => {
+    const fallbackTimestamp = '2026-09-03T12:00:00.000Z';
+
+    it('extracts unique file reads, creates, and deletes from both tool representations', () => {
+      expect(
+        extractFileChangesFromMessages(
+          [
+            {
+              timestamp: '2026-09-03T12:01:00.000Z',
+              toolCalls: [
+                { name: 'save-file', arguments: { path: 'src/new.ts' } },
+                { toolName: 'remove-files', parameters: { filePath: 'src/old.ts' } },
+                { name: 'view', arguments: { path: 'src' } },
+              ],
+              contentBlocks: [
+                { type: 'tool_use', name: 'Read `src/read.ts`', input: {} },
+                { type: 'tool_use', name: 'view', input: { path: 'src/new.ts' } },
+              ],
+            },
+          ],
+          fallbackTimestamp,
+        ),
+      ).toEqual([
+        { path: 'src/new.ts', type: 'create', timestamp: '2026-09-03T12:01:00.000Z' },
+        { path: 'src/old.ts', type: 'delete', timestamp: '2026-09-03T12:01:00.000Z' },
+        { path: 'src/read.ts', type: 'read', timestamp: '2026-09-03T12:01:00.000Z' },
+      ]);
+    });
+
+    it('extracts unique note operations with their title and fallback timestamp', () => {
+      expect(
+        extractNoteChangesFromMessages(
+          [
+            {
+              toolCalls: [
+                { name: 'create_note', arguments: { noteId: 'plan', title: 'Plan' } },
+                { name: 'read_note', parameters: { note_id: 'spec' } },
+              ],
+              contentBlocks: [
+                { type: 'tool_use', name: 'edit_note_workspace-mcp', input: { noteId: 'plan' } },
+                { type: 'tool_use', name: 'add_to_note', input: { title: 'Findings' } },
+              ],
+            },
+          ],
+          fallbackTimestamp,
+        ),
+      ).toEqual([
+        { noteId: 'plan', title: 'Plan', action: 'create', timestamp: fallbackTimestamp },
+        { noteId: 'spec', title: 'spec', action: 'read', timestamp: fallbackTimestamp },
+        { noteId: 'Findings', title: 'Findings', action: 'write', timestamp: fallbackTimestamp },
+      ]);
+    });
+
+    it('normalizes created and updated task state from both tool representations', () => {
+      expect(
+        extractTaskChangesFromMessages(
+          [
+            {
+              toolCalls: [
+                {
+                  name: 'add_tasks',
+                  arguments: {
+                    tasks: [{ name: 'Build Graph', description: 'Render it', state: 'started' }],
+                  },
+                },
+              ],
+              contentBlocks: [
+                {
+                  type: 'tool_use',
+                  name: 'update_tasks_workspace-mcp',
+                  input: { tasks: [{ task_id: 'task-existing', state: 'done' }] },
+                },
+              ],
+            },
+          ],
+          fallbackTimestamp,
+        ),
+      ).toEqual([
+        {
+          taskId: 'task-build-graph',
+          name: 'Build Graph',
+          description: 'Render it',
+          state: 'in_progress',
+          action: 'create',
+          timestamp: fallbackTimestamp,
+        },
+        {
+          taskId: 'task-existing',
+          name: 'task-existing',
+          description: undefined,
+          state: 'complete',
+          action: 'update',
+          timestamp: fallbackTimestamp,
+        },
+      ]);
+    });
+
+    it('associates child agents returned by grouped delegation calls', () => {
+      const batches = extractDelegationBatchMap(
+        [
+          {
+            contentBlocks: [
+              { type: 'tool_use', id: 'call-one', name: 'delegate_task', input: {} },
+              { type: 'tool_use', id: 'call-two', name: 'create_agent_workspace-mcp', input: {} },
+            ],
+          },
+          {
+            contentBlocks: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'call-one',
+                content: 'Agent ID: agent-one',
+              },
+              {
+                type: 'tool_result',
+                tool_use_id: 'call-two',
+                content: [{ type: 'text', text: 'Agent ID: agent-two' }],
+              },
+            ],
+          },
+        ] as any,
+        'agent-parent',
+      );
+
+      expect([...batches]).toEqual([
+        ['agent-one', 'agent-parent-batch-0'],
+        ['agent-two', 'agent-parent-batch-0'],
+      ]);
     });
   });
 
