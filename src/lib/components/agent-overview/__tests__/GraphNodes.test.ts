@@ -47,12 +47,13 @@ describe('TaskAnchorNode', () => {
 describe('AgentOrbNode', () => {
   it('includes the normalized specialist in its accessible name and forwards activation', async () => {
     const onclick = vi.fn();
+    const name = 'Perform comprehensive constellation verification';
     const node: AgentNode = {
       ...physics,
       id: 'agent:builder',
       type: 'agent',
       agentId: 'builder',
-      name: 'Builder',
+      name,
       specialist: 'frontend-engineer',
       isCoordinator: false,
       status: 'waiting',
@@ -60,7 +61,8 @@ describe('AgentOrbNode', () => {
     };
     render(AgentOrbNode, { props: { node, isActive: true, onclick } });
 
-    const button = screen.getByRole('button', { name: 'Builder · frontend engineer' });
+    const button = screen.getByRole('button', { name: `${name} · frontend engineer` });
+    expect(button.title).toBe(`${name} · frontend engineer`);
     expect(button.getAttribute('data-agent-status')).toBe('waiting');
     expect(screen.getByTestId('mock-avatar-with-state').getAttribute('data-agent-id')).toBe(
       'builder',

@@ -67,7 +67,7 @@ export const MAX_VISIBLE_RESOURCES_PER_AGENT = 6;
 
 /** Maximum rendered node dimensions used by layout collision and fit-to-view. */
 export const GRAPH_NODE_DIMENSIONS = {
-  agent: { width: 56, height: 72 },
+  agent: { width: 112, height: 88 },
   task: { width: 176, height: 48 },
   file: { width: 72, height: 88 },
   note: { width: 72, height: 88 },
@@ -75,7 +75,7 @@ export const GRAPH_NODE_DIMENSIONS = {
 
 /** Clear space beyond node bounds for related-node orbits. */
 export const GRAPH_NODE_GAPS = {
-  collision: 12.5,
+  collision: 16,
   taskAgent: 30,
   agentResource: 20,
 } as const;

@@ -337,6 +337,7 @@ describe('constellation layout', () => {
   for (const [name, buildGraph] of [
     ['constellation', buildConstellationGraph],
     ['busy', buildBusyGraph],
+    ['large', buildLargeGraph],
   ] as const) {
     it(`settles the ${name} fixture without overlaps and keeps related nodes apart`, () => {
       const graph = buildGraph(Date.parse('2026-09-04T00:00:00.000Z'));
