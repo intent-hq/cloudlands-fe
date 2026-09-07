@@ -28,7 +28,10 @@
   import ShimmerOverlay from '$lib/components/ui/ShimmerOverlay.svelte';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
-  import { getSpecialistById } from '$lib/constants/specialists';
+  import {
+    DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
+    getSpecialistById,
+  } from '$lib/constants/specialists';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
   import {
@@ -133,6 +136,10 @@
   const specialist = $derived(specialistId ? getSpecialistById(specialistId) : undefined);
   /** Use the specialist's canonical name when available, fall back to the passed-in prop */
   const displaySpecialistName = $derived(specialist?.name || specialistName);
+  /** Both the Coordinator and the Developer write a spec before implementing. */
+  const writesSpecFirst = $derived(
+    specialistId === 'spec-writer' || specialistId === DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
+  );
 
   const steps = $derived.by(() => {
     const all: StepStatus[] = [repoStatus, branchStatus];
@@ -465,7 +472,7 @@
         {m.onboarding_setupCard_agentReadyNamed_after()}
       {:else if !hasPrompt}
         {m.onboarding_setupCard_agentReady_label()}
-      {:else if specialistId === 'spec-writer'}
+      {:else if writesSpecFirst}
         {m.onboarding_setupCard_specStartingUp_before()}
         {@render specialistWithTooltip()}
         {m.onboarding_setupCard_specStartingUp_after()}
@@ -484,7 +491,7 @@
         {m.onboarding_setupCard_agentReadyNamed_after()}
       {:else if !hasPrompt}
         {m.onboarding_setupCard_agentReady_label()}
-      {:else if specialistId === 'spec-writer'}
+      {:else if writesSpecFirst}
         {m.onboarding_setupCard_specDone_before()}
         {@render specialistWithTooltip()}
         {m.onboarding_setupCard_specDone_after()}

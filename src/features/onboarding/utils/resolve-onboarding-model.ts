@@ -4,7 +4,7 @@
  *
  * Resolution is provider-availability aware: the returned provider is always
  * one that is installed AND authenticated on the user's machine, so the
- * initial Coordinator agent can actually start. If the caller-preferred
+ * initial Developer agent can actually start. If the caller-preferred
  * provider (specialist codingAgent, active provider, default) is not
  * available, we fall back to the first usable provider.
  *
@@ -30,6 +30,7 @@ import {
 } from '$store/renderer/slices/specialists/specialists-selectors';
 import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID, getSpecialistById } from '$lib/constants/specialists';
 import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
 import {
   getProviderAvailability,
@@ -41,7 +42,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('resolve-onboarding-model');
-const specialistId = 'spec-writer';
+const specialistId = DEFAULT_NEW_WORKSPACE_SPECIALIST_ID;
 
 export interface ResolvedModelConfig {
   provider: string;
@@ -49,6 +50,8 @@ export interface ResolvedModelConfig {
   model: string | undefined;
   behaviorPrompt: string | undefined;
   specialistId: string;
+  /** Localized display name of the resolved specialist (initial agent name). */
+  specialistName: string;
 }
 
 /** An explicit prompt-step picker pick: bare model id + its provider leg. */
@@ -162,7 +165,7 @@ function resolveUsableProvider(
 
 /**
  * Given the current Redux state, resolve the provider, behavior prompt, and
- * any explicit model override for the initial onboarding "Coordinator" agent.
+ * any explicit model override for the initial onboarding Developer agent.
  * Returns a provider that is guaranteed to be available + authenticated on
  * the user's machine.
  *
@@ -180,6 +183,7 @@ export async function resolveOnboardingModel(
   const activeProvider = selectActiveProviderId.select(state);
   const defaultProviderId = selectEffectiveDefaultProviderId.select(state);
   const specialist = selectSpecialists.select(state).find((s) => s.id === specialistId);
+  const specialistName = specialist?.name ?? getSpecialistById(specialistId)?.name ?? specialistId;
   const behaviorPrompt = selectEffectiveBehaviorPrompt.select(state, specialistId) || undefined;
   const specialistOverride = selectUserOverrides.select(state).modelOverrides[specialistId];
 
@@ -208,6 +212,7 @@ export async function resolveOnboardingModel(
       model: pickedModel,
       behaviorPrompt,
       specialistId,
+      specialistName,
     };
   }
 
@@ -279,5 +284,6 @@ export async function resolveOnboardingModel(
     model: resolvedModel,
     behaviorPrompt,
     specialistId,
+    specialistName,
   };
 }

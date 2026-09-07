@@ -48,7 +48,8 @@ const mocks = vi.hoisted(() => {
       provider: 'auggie',
       model: 'model',
       behaviorPrompt: undefined,
-      specialistId: 'spec-writer',
+      specialistId: 'developer',
+      specialistName: 'Developer',
     })),
     redeemStagedAttachments: vi.fn(async (_workspaceId: string, items: unknown[]) => ({
       items,
@@ -1074,7 +1075,7 @@ describe('onboarding remote-URL probe race (cloudlands-fe#443)', () => {
   });
 });
 
-describe('onboarding model picker (initial Coordinator agent)', () => {
+describe('onboarding model picker (initial Developer agent)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
@@ -1088,7 +1089,8 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
       provider: 'auggie',
       model: 'model',
       behaviorPrompt: undefined,
-      specialistId: 'spec-writer',
+      specialistId: 'developer',
+      specialistName: 'Developer',
     }));
     mocks.initializerHydrated = false;
     mocks.persistedOnboardingFormState = null;
@@ -1202,8 +1204,9 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
       async (_state, userPick?: { model: string; provider?: string }) => ({
         provider: userPick?.provider ?? 'auggie',
         model: userPick?.model ?? 'opus4.7',
-        behaviorPrompt: 'coordinator-prompt',
-        specialistId: 'spec-writer',
+        behaviorPrompt: 'developer-prompt',
+        specialistId: 'developer',
+        specialistName: 'Developer',
       }),
     );
     mocks.workspaceCreate.mockResolvedValue({
@@ -1231,11 +1234,35 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
       provider: 'pi',
     });
     const createRequest = mocks.workspaceCreate.mock.calls[0][0] as {
-      initialAgent: { model: string; provider: string; specialist: string };
+      initialAgent: {
+        name: string;
+        model: string;
+        provider: string;
+        specialist: string;
+        metadata: { specialist: string };
+      };
     };
     expect(createRequest.initialAgent.model).toBe(PICKED);
     expect(createRequest.initialAgent.provider).toBe('pi');
-    expect(createRequest.initialAgent.specialist).toBe('spec-writer');
+    expect(createRequest.initialAgent.specialist).toBe('developer');
+    expect(createRequest.initialAgent.metadata.specialist).toBe('developer');
+    expect(createRequest.initialAgent.name).toBe('Developer');
+
+    // The onboarding choice seeds the New Workspace modal's remembered agent
+    // (single-agent Developer, carrying the explicit pick).
+    const lastSubmitted = dispatchedActions().find(
+      (a) => a.type === 'workspaceInitializer/setLastSubmittedAgent',
+    );
+    expect(lastSubmitted?.payload).toEqual([
+      {
+        selectedSpecialist: 'developer',
+        isTeamMode: false,
+        selectedModel: PICKED,
+        modelWasOverridden: true,
+        selectedReasoningEffort: undefined,
+        selectedProvider: 'pi',
+      },
+    ]);
   });
 
   it('resolves without an override when the user never picked a model', async () => {
@@ -1260,10 +1287,45 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
     await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
     expect(mocks.resolveModel).toHaveBeenCalledWith(expect.anything(), undefined);
     const createRequest = mocks.workspaceCreate.mock.calls[0][0] as {
-      initialAgent: { model: string; provider: string };
+      initialAgent: { model: string; provider: string; specialist: string };
     };
     expect(createRequest.initialAgent.model).toBe('model');
     expect(createRequest.initialAgent.provider).toBe('auggie');
+    expect(createRequest.initialAgent.specialist).toBe('developer');
+
+    const lastSubmitted = dispatchedActions().find(
+      (a) => a.type === 'workspaceInitializer/setLastSubmittedAgent',
+    );
+    expect(lastSubmitted?.payload).toEqual([
+      {
+        selectedSpecialist: 'developer',
+        isTeamMode: false,
+        selectedModel: undefined,
+        modelWasOverridden: false,
+        selectedReasoningEffort: undefined,
+        selectedProvider: undefined,
+      },
+    ]);
+  });
+
+  it('does not record a last-submitted agent when workspace.create fails', async () => {
+    mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'boom' });
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().setInputValue('Build the thing');
+    captured().onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    // The create settles (failure path) once the transient progress entry is dropped.
+    await waitFor(() =>
+      expect(
+        dispatchedActions().find((a) => a.type === 'workspaceCreateProgress/clear'),
+      ).toBeDefined(),
+    );
+    expect(
+      dispatchedActions().find((a) => a.type === 'workspaceInitializer/setLastSubmittedAgent'),
+    ).toBeUndefined();
   });
 
   const okCreateResult = {
@@ -1284,7 +1346,8 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
       provider: 'auggie',
       model: undefined,
       behaviorPrompt: undefined,
-      specialistId: 'spec-writer',
+      specialistId: 'developer',
+      specialistName: 'Developer',
     }));
     mocks.workspaceCreate.mockResolvedValue(okCreateResult);
 
@@ -1314,7 +1377,8 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
       provider: 'auggie',
       model: undefined,
       behaviorPrompt: undefined,
-      specialistId: 'spec-writer',
+      specialistId: 'developer',
+      specialistName: 'Developer',
     }));
     mocks.workspaceCreate.mockResolvedValue(okCreateResult);
 
@@ -1337,7 +1401,8 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
       provider: 'auggie',
       model: undefined,
       behaviorPrompt: undefined,
-      specialistId: 'spec-writer',
+      specialistId: 'developer',
+      specialistName: 'Developer',
     }));
     mocks.workspaceCreate.mockResolvedValue(okCreateResult);
 
@@ -1362,7 +1427,8 @@ describe('onboarding model picker (initial Coordinator agent)', () => {
         provider: userPick?.provider ?? 'auggie',
         model: userPick?.model,
         behaviorPrompt: undefined,
-        specialistId: 'spec-writer',
+        specialistId: 'developer',
+        specialistName: 'Developer',
       }),
     );
     mocks.workspaceCreate.mockResolvedValue(okCreateResult);
@@ -1413,7 +1479,8 @@ describe('onboarding first-message attachments (intent-hq/intent#4050)', () => {
       provider: 'auggie',
       model: 'model',
       behaviorPrompt: undefined,
-      specialistId: 'spec-writer',
+      specialistId: 'developer',
+      specialistName: 'Developer',
     }));
     mocks.redeemStagedAttachments.mockImplementation(async (_workspaceId, items) => ({
       items,

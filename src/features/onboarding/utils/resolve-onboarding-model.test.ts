@@ -38,10 +38,10 @@ const mockState = vi.hoisted(() => ({
   userOverrides: { modelOverrides: {} as Record<string, string> },
   specialists: [
     {
-      id: 'spec-writer',
-      name: 'Coordinator',
-      description: 'Plans work',
-      defaultBehaviorPrompt: 'coordinator-prompt',
+      id: 'developer',
+      name: 'Developer',
+      description: 'Builds features end to end',
+      defaultBehaviorPrompt: 'developer-prompt',
     },
   ] as MockSpecialist[],
 }));
@@ -203,10 +203,10 @@ describe('resolveOnboardingModel', () => {
     mockState.userOverrides = { modelOverrides: {} };
     mockState.specialists = [
       {
-        id: 'spec-writer',
-        name: 'Coordinator',
-        description: 'Plans work',
-        defaultBehaviorPrompt: 'coordinator-prompt',
+        id: 'developer',
+        name: 'Developer',
+        description: 'Builds features end to end',
+        defaultBehaviorPrompt: 'developer-prompt',
       },
     ];
   });
@@ -219,7 +219,18 @@ describe('resolveOnboardingModel', () => {
 
     expect(result.provider).toBe('auggie');
     expect(result.model).toBeUndefined();
-    expect(result.specialistId).toBe('spec-writer');
+    expect(result.specialistId).toBe('developer');
+    expect(result.specialistName).toBe('Developer');
+  });
+
+  it('falls back to the bundled Developer name when the store has no matching specialist', async () => {
+    mockState.specialists = [];
+
+    const result = await resolveOnboardingModel(fakeState);
+
+    expect(result.specialistId).toBe('developer');
+    expect(result.specialistName).toBeTruthy();
+    expect(result.specialistName).not.toBe('developer');
   });
 
   it('returns opencode with no model when only opencode is installed and active', async () => {
@@ -321,22 +332,22 @@ describe('resolveOnboardingModel', () => {
   describe('user-selected Pi provider (provider propagation regression)', () => {
     const PI_MODEL = 'pi:anthropic/claude-opus-4.7';
 
-    // Mirrors the real Coordinator file specialist that pins auggie/fable-5.
-    const pinnedCoordinator = (): void => {
+    // Mirrors a Developer file specialist that pins auggie/fable-5.
+    const pinnedDeveloper = (): void => {
       mockState.specialists = [
         {
-          id: 'spec-writer',
-          name: 'Coordinator',
-          description: 'Plans work',
+          id: 'developer',
+          name: 'Developer',
+          description: 'Builds features end to end',
           codingAgent: 'auggie',
           defaultModel: 'fable-5',
-          defaultBehaviorPrompt: 'coordinator-prompt',
+          defaultBehaviorPrompt: 'developer-prompt',
         },
       ];
     };
 
     it('routes to pi with no model (daemon resolves) when the user explicitly picked pi', async () => {
-      pinnedCoordinator();
+      pinnedDeveloper();
       setAvailability({
         auggie: { available: true, authenticated: true },
         pi: { available: true, authenticated: true },
@@ -353,7 +364,7 @@ describe('resolveOnboardingModel', () => {
     });
 
     it('honors user-explicit pi under the relaxed auth gate (authenticated=undefined)', async () => {
-      pinnedCoordinator();
+      pinnedDeveloper();
       setAvailability({
         auggie: { available: true, authenticated: true },
         pi: { available: true, authenticated: undefined },
@@ -367,7 +378,7 @@ describe('resolveOnboardingModel', () => {
     });
 
     it('routes to auggie with no model when the user made no explicit provider change', async () => {
-      pinnedCoordinator();
+      pinnedDeveloper();
       setAvailability({
         auggie: { available: true, authenticated: true },
         pi: { available: true, authenticated: true },
@@ -385,7 +396,7 @@ describe('resolveOnboardingModel', () => {
     });
 
     it('throws when user-explicit pi is not installed (no silent auggie fallback)', async () => {
-      pinnedCoordinator();
+      pinnedDeveloper();
       setAvailability({ auggie: { available: true, authenticated: true } });
       mockState.activeProviderId = 'pi';
 
@@ -393,7 +404,7 @@ describe('resolveOnboardingModel', () => {
     });
 
     it('throws when user-explicit pi is installed but explicitly not authenticated', async () => {
-      pinnedCoordinator();
+      pinnedDeveloper();
       setAvailability({
         auggie: { available: true, authenticated: true },
         pi: { available: true, authenticated: false },
@@ -408,7 +419,7 @@ describe('resolveOnboardingModel', () => {
     it('submits the override when it belongs to the resolved provider', async () => {
       setAvailability({ auggie: { available: true, authenticated: true } });
       mockState.activeProviderId = 'auggie';
-      mockState.userOverrides = { modelOverrides: { 'spec-writer': 'sonnet4.5' } };
+      mockState.userOverrides = { modelOverrides: { developer: 'sonnet4.5' } };
 
       const result = await resolveOnboardingModel(fakeState);
 
@@ -426,7 +437,7 @@ describe('resolveOnboardingModel', () => {
       // effective default — claude-code here — by design; only an explicit
       // cross-provider prefix is droppable.)
       mockState.activeProviderId = 'claude-code';
-      mockState.userOverrides = { modelOverrides: { 'spec-writer': 'auggie:fable-5' } };
+      mockState.userOverrides = { modelOverrides: { developer: 'auggie:fable-5' } };
 
       const result = await resolveOnboardingModel(fakeState);
 
@@ -450,8 +461,9 @@ describe('resolveOnboardingModel', () => {
 
       expect(result.provider).toBe('pi');
       expect(result.model).toBe('anthropic/claude-opus-4.7');
-      expect(result.specialistId).toBe('spec-writer');
-      expect(result.behaviorPrompt).toBe('coordinator-prompt');
+      expect(result.specialistId).toBe('developer');
+      expect(result.specialistName).toBe('Developer');
+      expect(result.behaviorPrompt).toBe('developer-prompt');
     });
 
     it('splits a legacy compound pick without a provider leg at the boundary', async () => {
@@ -485,7 +497,7 @@ describe('resolveOnboardingModel', () => {
         opencode: { available: true, authenticated: true },
       });
       mockState.activeProviderId = 'auggie';
-      mockState.userOverrides = { modelOverrides: { 'spec-writer': 'opencode:x' } };
+      mockState.userOverrides = { modelOverrides: { developer: 'opencode:x' } };
 
       const result = await resolveOnboardingModel(fakeState, {
         model: 'opus4.7',

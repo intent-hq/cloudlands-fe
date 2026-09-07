@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => {
     description: '',
     role: 'orchestrator',
   };
+  const developer = { id: 'developer', name: 'Developer', description: '' };
   return {
     readable,
     dispatch: vi.fn(),
@@ -58,10 +59,11 @@ const mocks = vi.hoisted(() => {
       isTeamMode?: boolean;
       skipIsolation?: boolean;
     } | null>(null),
-    specialists$: writable([coordinator]),
+    specialists$: writable([coordinator, developer]),
     customSpecialistsLoaded$: writable(true),
     fileSpecialistsLoaded$: writable(true),
     coordinator,
+    developer,
   };
 });
 
@@ -247,7 +249,7 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     sessionStorage.clear();
     mocks.hydrated$.set(false);
     mocks.compactFormState$.set(null);
-    mocks.specialists$.set([mocks.coordinator]);
+    mocks.specialists$.set([mocks.coordinator, mocks.developer]);
     mocks.customSpecialistsLoaded$.set(true);
     mocks.fileSpecialistsLoaded$.set(true);
     mocks.setReasoningEffort.mockResolvedValue({ success: true });
@@ -256,6 +258,29 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
   afterEach(() => {
     cleanup();
     sessionStorage.clear();
+  });
+
+  it('creates a single Developer agent when nothing has been remembered', async () => {
+    mocks.create.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+    seedAutoCreatePrefill();
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
+
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+
+    expect(mocks.create.mock.calls[0][0].initialAgent.specialist).toBe('developer');
+  });
+
+  it('falls back to General when the Developer specialist is absent and nothing is remembered', async () => {
+    mocks.specialists$.set([mocks.coordinator]);
+    mocks.create.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+    seedAutoCreatePrefill();
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
+
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+
+    expect(mocks.create.mock.calls[0][0].initialAgent.specialist).toBeUndefined();
   });
 
   it('requests a fresh specialist roster once when mounted', () => {
@@ -477,6 +502,8 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
   });
 
   it('hydrates the daemon-created agent before opening and navigating to the workspace', async () => {
+    // Remembered orchestration choice — the coordinator layout is bootstrapped.
+    mocks.compactFormState$.set({ selectedSpecialist: 'spec-writer', isTeamMode: true });
     mocks.create.mockResolvedValue({
       ok: true,
       data: {

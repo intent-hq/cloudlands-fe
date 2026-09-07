@@ -143,7 +143,12 @@
   import {
     cancelWorkspaceInitializerOnboardingFormStateDebounce,
     debounceWorkspaceInitializerOnboardingFormState,
+    setWorkspaceInitializerLastSubmittedAgent,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+  import {
+    DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
+    getSpecialistById,
+  } from '$lib/constants/specialists';
   import {
     selectWorkspaceInitializerHydrated,
     selectWorkspaceInitializerOnboardingFormState,
@@ -536,6 +541,12 @@
   // retry create mints a fresh id, which rekeys the card and rebinds its
   // init-bound selector cleanly.
   let onboardingCreateProgressId = $state<string | null>(null);
+  // Initial agent shown on the setup card: the Developer specialist's
+  // localized name, refreshed from the resolved config at create time.
+  let setupSpecialistName = $state<string>(
+    getSpecialistById(DEFAULT_NEW_WORKSPACE_SPECIALIST_ID)?.name ??
+      DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
+  );
 
   // Setup script state — session-local: the default is restored per repo
   // from the repo config / localStorage last-used, never from persisted
@@ -546,7 +557,7 @@
   let setupScriptNameSource = $state<SetupScriptNameSource>('custom');
   let isCustomSetupScript = $state(false);
 
-  // User-picked model (bare id) + its provider for the initial Coordinator
+  // User-picked model (bare id) + its provider for the initial Developer
   // agent (step 3 picker). undefined + false means the auto-resolved default
   // applies (behavior identical to before the picker existed).
   let onboardingSelectedModel = $state<string | undefined>(undefined);
@@ -1248,12 +1259,14 @@
         model: effectiveModel,
         behaviorPrompt,
         specialistId,
+        specialistName,
       } = await resolveOnboardingModel(
         reduxState,
         onboardingModelWasOverridden && onboardingSelectedModel
           ? { model: onboardingSelectedModel, provider: onboardingSelectedProvider }
           : undefined,
       );
+      setupSpecialistName = specialistName;
 
       // The prompt-step picker is the authoritative source of the initial
       // default provider + default model (monorepo#3044): commit the resolved
@@ -1383,7 +1396,7 @@
         linearIssue,
         sentryIssue,
         initialAgent: {
-          name: 'Coordinator',
+          name: specialistName,
           model: effectiveModel,
           prompt: hasStagedFiles ? undefined : prompt,
           agentType,
@@ -1435,12 +1448,27 @@
       if (agentId) {
         appStore.dispatch(setInitialAgentId(workspace.id, agentId));
       }
+      // Seed the New Workspace modal's remembered choice with the onboarding
+      // agent (single-agent Developer); the workspace-initializer saga
+      // persists it.
+      appStore.dispatch(
+        setWorkspaceInitializerLastSubmittedAgent({
+          selectedSpecialist: specialistId,
+          isTeamMode: false,
+          selectedModel: onboardingSelectedModel,
+          modelWasOverridden: onboardingModelWasOverridden,
+          selectedReasoningEffort: undefined,
+          selectedProvider: onboardingSelectedProvider,
+        }),
+      );
       appStore.dispatch(
         bootstrapNewWorkspaceLayout(
           workspace.id,
           agentId ?? null,
-          'Coordinator',
-          specialistId === 'spec-writer',
+          specialistName,
+          // The Developer writes a spec before implementing (like the
+          // Coordinator did), so the spec-first layout is kept.
+          true,
           undefined,
           // Daemon-persisted links are canonical; fall back to the request's
           // links when an older daemon does not echo them (PROTOCOL §5.1).
@@ -1638,7 +1666,8 @@
                 baseRef={projectSelection?.branch
                   ? `origin/${projectSelection.branch}`
                   : 'origin/main'}
-                specialistName="Coordinator"
+                specialistId={DEFAULT_NEW_WORKSPACE_SPECIALIST_ID}
+                specialistName={setupSpecialistName}
                 {setupScriptStatus}
                 repoStatus={setupRepoStatus}
                 branchStatus={setupBranchStatus}

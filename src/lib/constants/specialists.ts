@@ -960,6 +960,14 @@ Be proactive but reversible. Summarize what you found, recommend the safest next
 /** Specialist IDs that require GitHub to be connected */
 export const GITHUB_DEPENDENT_SPECIALIST_IDS = new Set(['pr-reviewer']);
 
+/**
+ * Specialist pre-selected for a new workspace's single agent when nothing has
+ * been remembered yet (fresh install: New Workspace modal and onboarding).
+ * Callers must check the id exists in the resolved specialist list and fall
+ * back to General (`null`) when it does not.
+ */
+export const DEFAULT_NEW_WORKSPACE_SPECIALIST_ID: BuiltinSpecialistId = 'developer';
+
 export function getSpecialistById(id: string): Specialist | undefined {
   return SPECIALISTS.find((s) => s.id === id);
 }

@@ -171,13 +171,22 @@ import { store as mockAppStore } from '$store/renderer/store';
 
 const emitStoreState = () => (mockAppStore as unknown as { emitState: () => void }).emitState();
 
-/** The team-mode card renders first; its picker is index 0. */
+/** The single-agent card renders first (index 0); the team card's picker is index 1. */
+const TEAM_PICKER = 1;
+
 function teamPickerSelected(): string {
-  return screen.getAllByTestId('picker-selected')[0].textContent ?? '';
+  return screen.getAllByTestId('picker-selected')[TEAM_PICKER].textContent ?? '';
 }
 
 function teamPickerDefault(): string {
-  return screen.getAllByTestId('picker-default')[0].textContent ?? '';
+  return screen.getAllByTestId('picker-default')[TEAM_PICKER].textContent ?? '';
+}
+
+function modeCards() {
+  return {
+    single: screen.getByRole('button', { name: /Single agent/i }),
+    team: screen.getByRole('button', { name: /Agent orchestration/i }),
+  };
 }
 
 async function flush() {
@@ -214,8 +223,7 @@ describe('InitialAgentPicker stale model override clearing', () => {
       },
     });
 
-    const teamMode = screen.getByRole('button', { name: /Agent orchestration/i });
-    const singleAgent = screen.getByRole('button', { name: /Single agent/i });
+    const { team: teamMode, single: singleAgent } = modeCards();
 
     expect(teamMode.getAttribute('aria-pressed')).toBe('true');
     expect(singleAgent.getAttribute('aria-pressed')).toBe('false');
@@ -226,23 +234,110 @@ describe('InitialAgentPicker stale model override clearing', () => {
     expect(singleAgent.getAttribute('aria-pressed')).toBe('true');
   });
 
+  it('renders the Single agent card before the Agent orchestration card', () => {
+    render(InitialAgentPicker);
+
+    const { single, team } = modeCards();
+    expect(single.compareDocumentPosition(team) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('defaults to single-agent mode with Developer when nothing is remembered', async () => {
+    mocks.specialists$.set([
+      { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
+      { id: 'developer', name: 'Developer', description: 'Builds things' },
+    ]);
+    const onTeamModeChange = vi.fn();
+    const onSpecialistChange = vi.fn();
+    render(InitialAgentPicker, { props: { onTeamModeChange, onSpecialistChange } });
+
+    const { single, team } = modeCards();
+    expect(single.getAttribute('aria-pressed')).toBe('true');
+    expect(team.getAttribute('aria-pressed')).toBe('false');
+    expect(single.textContent).toContain('Developer');
+    await flush();
+    expect(onTeamModeChange).not.toHaveBeenCalled();
+    expect(onSpecialistChange).not.toHaveBeenCalled();
+  });
+
+  it('defaults to General in single-agent mode when the Developer specialist is absent', async () => {
+    mocks.specialists$.set([
+      { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
+    ]);
+    const onSpecialistChange = vi.fn();
+    render(InitialAgentPicker, { props: { onSpecialistChange } });
+
+    const { single } = modeCards();
+    expect(single.getAttribute('aria-pressed')).toBe('true');
+    expect(single.textContent).toContain('General');
+    expect(single.textContent).not.toContain('Developer');
+    await flush();
+    expect(onSpecialistChange).not.toHaveBeenCalled();
+  });
+
+  it('keeps a remembered orchestration choice over the Developer default', () => {
+    mocks.specialists$.set([
+      { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
+      { id: 'developer', name: 'Developer', description: 'Builds things' },
+    ]);
+    render(InitialAgentPicker, { props: { selectedSpecialist: 'spec-writer', isTeamMode: true } });
+
+    const { single, team } = modeCards();
+    expect(team.getAttribute('aria-pressed')).toBe('true');
+    expect(single.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('keeps a remembered General choice over the Developer default', () => {
+    mocks.specialists$.set([
+      { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
+      { id: 'developer', name: 'Developer', description: 'Builds things' },
+    ]);
+    render(InitialAgentPicker, { props: { selectedSpecialist: null, isTeamMode: false } });
+
+    const { single } = modeCards();
+    expect(single.getAttribute('aria-pressed')).toBe('true');
+    expect(single.textContent).toContain('General');
+    expect(single.textContent).not.toContain('Developer');
+  });
+
+  it('restores the incoming single-agent specialist after a round trip through orchestration', async () => {
+    mocks.specialists$.set([
+      { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
+      { id: 'developer', name: 'Developer', description: 'Builds things' },
+    ]);
+    const onSpecialistChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: { selectedSpecialist: 'developer', isTeamMode: false, onSpecialistChange },
+    });
+
+    const { single, team } = modeCards();
+    await fireEvent.click(team);
+    expect(onSpecialistChange).toHaveBeenLastCalledWith('spec-writer');
+    expect(single.textContent).toContain('Developer');
+
+    await fireEvent.click(single);
+    expect(onSpecialistChange).toHaveBeenLastCalledWith('developer');
+    expect(single.getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('wires both pickers to controlled reasoning', async () => {
     mocks.specialists$.set([
       { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
     ]);
     mocks.effortLevelsByModel = { 'fable-5': ['low', 'high'] };
     const onReasoningEffortChange = vi.fn();
-    render(InitialAgentPicker, { props: { onReasoningEffortChange } });
+    render(InitialAgentPicker, {
+      props: { selectedSpecialist: 'spec-writer', isTeamMode: true, onReasoningEffortChange },
+    });
 
     expect(screen.getAllByTestId('picker-show-reasoning').map((node) => node.textContent)).toEqual([
       'true',
       'true',
     ]);
     await waitFor(() => expect(teamPickerDefault()).toBe('fable-5'));
-    await fireEvent.click(screen.getAllByTestId('pick-reasoning')[0]);
+    await fireEvent.click(screen.getAllByTestId('pick-reasoning')[TEAM_PICKER]);
 
     expect(onReasoningEffortChange).toHaveBeenCalledWith('high');
-    expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe('high');
+    expect(screen.getAllByTestId('picker-reasoning')[TEAM_PICKER].textContent).toBe('high');
   });
 
   it('keeps effort when a cleared override falls back to a default that supports it', async () => {
@@ -256,6 +351,8 @@ describe('InitialAgentPicker stale model override clearing', () => {
     const onReasoningEffortChange = vi.fn();
     render(InitialAgentPicker, {
       props: {
+        selectedSpecialist: 'spec-writer',
+        isTeamMode: true,
         selectedModel: 'user-picked-model',
         modelWasOverridden: true,
         selectedReasoningEffort: 'high',
@@ -263,10 +360,10 @@ describe('InitialAgentPicker stale model override clearing', () => {
       },
     });
 
-    await fireEvent.click(screen.getAllByTestId('pick-default')[0]);
+    await fireEvent.click(screen.getAllByTestId('pick-default')[TEAM_PICKER]);
 
     expect(onReasoningEffortChange).not.toHaveBeenCalled();
-    expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe('high');
+    expect(screen.getAllByTestId('picker-reasoning')[TEAM_PICKER].textContent).toBe('high');
   });
 
   it('clears effort when a cleared override falls back to an unsupported default', async () => {
@@ -280,6 +377,8 @@ describe('InitialAgentPicker stale model override clearing', () => {
     const onReasoningEffortChange = vi.fn();
     render(InitialAgentPicker, {
       props: {
+        selectedSpecialist: 'spec-writer',
+        isTeamMode: true,
         selectedModel: 'user-picked-model',
         modelWasOverridden: true,
         selectedReasoningEffort: 'high',
@@ -287,10 +386,10 @@ describe('InitialAgentPicker stale model override clearing', () => {
       },
     });
 
-    await fireEvent.click(screen.getAllByTestId('pick-default')[0]);
+    await fireEvent.click(screen.getAllByTestId('pick-default')[TEAM_PICKER]);
 
     expect(onReasoningEffortChange).toHaveBeenCalledWith(undefined);
-    expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe('');
+    expect(screen.getAllByTestId('picker-reasoning')[TEAM_PICKER].textContent).toBe('');
   });
 
   it('keeps effort when a cross-provider model is missing from every catalog', async () => {
