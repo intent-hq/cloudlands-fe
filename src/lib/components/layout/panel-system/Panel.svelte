@@ -465,55 +465,53 @@
     role="region"
     aria-label={m.layout_panel_ariaLabel()}
   >
-    {#if panel.tabs.length > 0}
-      <!-- Tab Bar (shows group label and actions when focused) -->
-      <div
-        data-panel-header
-        style={animateTabBar
-          ? 'animation: slideDownTabBar 350ms cubic-bezier(0.33, 1, 0.68, 1) 300ms forwards; opacity: 0; transform: translateY(-100%);'
-          : ''}
-        ondragenter={handleHeaderFileDragEnter}
-        ondragleave={handleHeaderFileDragLeave}
-        ondragover={handleHeaderFileDragOver}
-        ondrop={handleHeaderFileDrop}
-      >
-        <PanelTabBar
-          tabs={panel.tabs}
-          activeTabId={panel.activeTabId}
-          attentionTabIds={panel.attentionTabIds}
-          {panelId}
-          {workspaceId}
-          {layoutId}
-          {availableCanvasWidth}
-          {isRightmostPanel}
-          {isFocused}
-          contentActions={headerActions.current}
-          {onTabClick}
-          {onTabClose}
-          {onTabReorder}
-          {onTabMoveToPanel}
-          {onPaneDragFinish}
-          {onMovePaneLeft}
-          {onMovePaneRight}
-          {onMoveLeft}
-          {onMoveRight}
-          {onCloseOtherTabs}
-          {onCloseTabsToRight}
-          {onCloseAllTabs}
-          {onCloseAllOthersEverywhere}
-          {onClosePanel}
-          {onZoomToggle}
-          {isZoomed}
-          {onTabRename}
-          {onCreateAgent}
-          {onCreateAgentWithSpecialist}
-          {onCreateNote}
-          {onCreateTerminal}
-          {onOpenBrowser}
-          {onSplitHorizontal}
-        />
-      </div>
-    {/if}
+    <!-- Tab Bar (shows group label and actions when focused) -->
+    <div
+      data-panel-header
+      style={animateTabBar
+        ? 'animation: slideDownTabBar 350ms cubic-bezier(0.33, 1, 0.68, 1) 300ms forwards; opacity: 0; transform: translateY(-100%);'
+        : ''}
+      ondragenter={handleHeaderFileDragEnter}
+      ondragleave={handleHeaderFileDragLeave}
+      ondragover={handleHeaderFileDragOver}
+      ondrop={handleHeaderFileDrop}
+    >
+      <PanelTabBar
+        tabs={panel.tabs}
+        activeTabId={panel.activeTabId}
+        attentionTabIds={panel.attentionTabIds}
+        {panelId}
+        {workspaceId}
+        {layoutId}
+        {availableCanvasWidth}
+        {isRightmostPanel}
+        {isFocused}
+        contentActions={headerActions.current}
+        {onTabClick}
+        {onTabClose}
+        {onTabReorder}
+        {onTabMoveToPanel}
+        {onPaneDragFinish}
+        {onMovePaneLeft}
+        {onMovePaneRight}
+        {onMoveLeft}
+        {onMoveRight}
+        {onCloseOtherTabs}
+        {onCloseTabsToRight}
+        {onCloseAllTabs}
+        {onCloseAllOthersEverywhere}
+        {onClosePanel}
+        {onZoomToggle}
+        {isZoomed}
+        {onTabRename}
+        {onCreateAgent}
+        {onCreateAgentWithSpecialist}
+        {onCreateNote}
+        {onCreateTerminal}
+        {onOpenBrowser}
+        {onSplitHorizontal}
+      />
+    </div>
 
     <!-- Content Area -->
     <!--

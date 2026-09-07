@@ -25,20 +25,12 @@
   // svelte-ignore state_referenced_locally - test props define immutable initial state
   const initialPersistedCanvasWidth = $state.snapshot(persistedCanvasWidth);
   const layoutId = `structural-column-fit-${initialViewportWidth}-${initialZoomFactor}`;
-  const initialTab = {
-    id: 'structural-fit-note',
-    type: 'note' as const,
-    title: 'Structural fit',
-    noteId: 'structural-fit-note',
-    workspaceId: layoutId,
-    closable: true,
-  };
   appStore.dispatch(clearPanelLayout(layoutId));
   appStore.dispatch(
     initializeLayout(layoutId, {
       root: { type: 'panel', panelId: 'p1' },
       panels: {
-        p1: { id: 'p1', tabs: [initialTab], activeTabId: initialTab.id },
+        p1: { id: 'p1', tabs: [], activeTabId: null, pristine: true },
       },
       focusedPanelId: 'p1',
       columnCount: 1,
