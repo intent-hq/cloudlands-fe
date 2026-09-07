@@ -56,7 +56,9 @@
   let overlayStyle = $state('position: fixed; visibility: hidden;');
   let hoveredTarget: ScopeTarget | null = $state(null);
   let focusedTarget: ScopeTarget | null = $state(null);
-  let touchTarget: ScopeTarget | null = $state(null);
+  let persistedAgentTarget: ScopeTarget | null = $state(null);
+  let persistedModelTarget: ScopeTarget | null = $state(null);
+  let lastPersistedKind: BreakdownKind | null = $state(null);
   let suppressTouchFocusPreview = false;
 
   const overlayWidth = 452;
@@ -244,40 +246,78 @@
   const agentRows = $derived(crossFilterAvailable ? matrixBreakdownRows('agent') : legacyAgentRows);
   const modelSegmentRows = $derived(modelRows.filter((row) => row.tokens > 0));
   const agentSegmentRows = $derived(agentRows.filter((row) => row.tokens > 0));
+  const messageOnlyModelRows = $derived(modelRows.filter((row) => row.tokens === 0));
+  const messageOnlyAgentRows = $derived(agentRows.filter((row) => row.tokens === 0));
 
   function firstNonzeroRow(rows: BreakdownRow[]): BreakdownRow | undefined {
     return rows.find((row) => row.tokens > 0);
   }
 
+  function defaultRow(rows: BreakdownRow[]): BreakdownRow | undefined {
+    return firstNonzeroRow(rows) ?? rows[0];
+  }
+
+  function persistedTargetForKind(kind: BreakdownKind): ScopeTarget | null {
+    return kind === 'agent' ? persistedAgentTarget : persistedModelTarget;
+  }
+
+  function setPersistedTarget(row: BreakdownRow, toggle = false) {
+    const target = rowTarget(row);
+    const current = persistedTargetForKind(row.kind);
+    const next = toggle && targetKey(current) === targetKey(target) ? null : target;
+    if (row.kind === 'agent') persistedAgentTarget = next;
+    else persistedModelTarget = next;
+    lastPersistedKind = row.kind;
+  }
+
+  function defaultTargetForKind(kind: BreakdownKind): ScopeTarget | null {
+    const row = defaultRow(kind === 'agent' ? agentRows : modelRows);
+    return row ? rowTarget(row) : null;
+  }
+
   const defaultTarget = $derived(
     crossFilterAvailable
-      ? firstNonzeroRow(agentRows)
-        ? rowTarget(firstNonzeroRow(agentRows)!)
-        : firstNonzeroRow(modelRows)
-          ? rowTarget(firstNonzeroRow(modelRows)!)
+      ? defaultRow(agentRows)
+        ? rowTarget(defaultRow(agentRows)!)
+        : defaultRow(modelRows)
+          ? rowTarget(defaultRow(modelRows)!)
           : null
       : null,
   );
-  const activeTarget: ScopeTarget | null = $derived(
-    hoveredTarget ?? focusedTarget ?? touchTarget ?? defaultTarget,
+  const lastPersistedTarget = $derived(
+    lastPersistedKind ? persistedTargetForKind(lastPersistedKind) : null,
   );
-  function targetForKind(kind: BreakdownKind): ScopeTarget | null {
+  const activeTarget: ScopeTarget | null = $derived(
+    hoveredTarget ??
+      focusedTarget ??
+      lastPersistedTarget ??
+      persistedAgentTarget ??
+      persistedModelTarget ??
+      defaultTarget,
+  );
+  function previewTargetForKind(kind: BreakdownKind): ScopeTarget | null {
     return (
-      [hoveredTarget, focusedTarget, touchTarget, defaultTarget].find(
-        (target) => target?.kind === kind,
-      ) ?? null
+      [hoveredTarget, focusedTarget].find((target) => target?.kind === kind) ??
+      persistedTargetForKind(kind) ??
+      defaultTargetForKind(kind)
     );
   }
-  const selectedAgentTarget = $derived(targetForKind('agent'));
-  const selectedModelTarget = $derived(targetForKind('model'));
+  const previewAgentTarget = $derived(previewTargetForKind('agent'));
+  const previewModelTarget = $derived(previewTargetForKind('model'));
   const selectedAgentRow = $derived(
-    agentRows.find((row) => row.id === selectedAgentTarget?.id) ?? firstNonzeroRow(agentRows),
+    agentRows.find((row) => row.id === persistedAgentTarget?.id) ?? defaultRow(agentRows),
   );
   const selectedModelRow = $derived(
-    modelRows.find((row) => row.id === selectedModelTarget?.id) ?? firstNonzeroRow(modelRows),
+    modelRows.find((row) => row.id === persistedModelTarget?.id) ?? defaultRow(modelRows),
+  );
+  const previewAgentRow = $derived(
+    agentRows.find((row) => row.id === previewAgentTarget?.id) ?? selectedAgentRow,
+  );
+  const previewModelRow = $derived(
+    modelRows.find((row) => row.id === previewModelTarget?.id) ?? selectedModelRow,
   );
   const scopedCrossFilterRows = $derived(
-    filterRowsForSelection(crossFilterRows, selectedAgentRow, selectedModelRow),
+    filterRowsForSelection(crossFilterRows, previewAgentRow, previewModelRow),
   );
   const crossFilterSummary = $derived(summarizeCrossFilterRows(scopedCrossFilterRows));
   const legacyPreviewRow = $derived(
@@ -376,8 +416,7 @@
       hoveredTarget = null;
       focusedTarget = null;
       event.preventDefault();
-      const target = rowTarget(row);
-      touchTarget = targetKey(touchTarget) === targetKey(target) ? null : target;
+      setPersistedTarget(row, true);
     }
   }
 
@@ -391,6 +430,14 @@
     );
     if (currentIndex < 0) return;
 
+    if (event.key === ' ') {
+      event.preventDefault();
+      suppressTouchFocusPreview = false;
+      hoveredTarget = null;
+      setPersistedTarget(row);
+      return;
+    }
+
     let nextIndex: number | null = null;
     if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + rows.length) % rows.length;
     if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % rows.length;
@@ -401,8 +448,9 @@
     event.preventDefault();
     suppressTouchFocusPreview = false;
     hoveredTarget = null;
-    touchTarget = null;
-    focusedTarget = rowTarget(rows[nextIndex]);
+    const nextRow = rows[nextIndex];
+    setPersistedTarget(nextRow);
+    focusedTarget = rowTarget(nextRow);
     const group = (event.currentTarget as HTMLElement).closest('[role="radiogroup"]');
     group?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[nextIndex]?.focus();
   }
@@ -470,7 +518,6 @@
 
   function handleDocumentKeydown(event: KeyboardEvent) {
     suppressTouchFocusPreview = false;
-    touchTarget = null;
     if (!expanded || event.key !== 'Escape') return;
     event.preventDefault();
     closeOverlay({ restoreFocus: true });
@@ -499,7 +546,6 @@
       overlayStyle = 'position: fixed; visibility: hidden;';
       hoveredTarget = null;
       focusedTarget = null;
-      touchTarget = null;
       return;
     }
 
@@ -698,67 +744,115 @@
                 <h4 id={`${detailsId}-agents`} class="sr-only">
                   {m.workspace_tokenUsage_byAgent_label()}
                 </h4>
-                {#if selectedAgentRow && agentSegmentRows.length > 0}
-                  <div class="navigator-row flex min-w-0 flex-col gap-3">
+                {#if selectedAgentRow && previewAgentRow}
+                  <div
+                    class="navigator-row flex min-w-0 flex-col gap-3"
+                    role="radiogroup"
+                    aria-labelledby={`${detailsId}-agents`}
+                  >
                     <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
                       <span
                         class="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
-                        title={selectedAgentRow.title}>{selectedAgentRow.label}</span
+                        title={previewAgentRow.title}>{previewAgentRow.label}</span
                       >
                       <span
                         class="shrink-0 text-right text-xs font-normal tabular-nums text-muted-foreground"
                       >
                         <AnimatedNumber
-                          value={share(selectedAgentRow.tokens, agentTokenTotal)}
+                          value={share(previewAgentRow.tokens, agentTokenTotal)}
                           format={shareLabel}
                           pulse={false}
                           class="block w-full text-right"
                         />
                       </span>
                     </div>
-                    <ol
-                      class="breakdown-stack flex h-1.5 w-full min-w-0 overflow-hidden bg-muted/60"
-                      role="radiogroup"
-                      aria-labelledby={`${detailsId}-agents`}
-                    >
-                      {#each agentSegmentRows as row (row.id)}
-                        <li
-                          class="breakdown-stack-item h-full"
-                          role="presentation"
-                          style={`width: ${segmentWidth(share(row.tokens, agentTokenTotal), agentSegmentRows.length)}`}
-                        >
-                          <button
-                            type="button"
-                            role="radio"
-                            class="breakdown-item-control block h-full w-full min-w-0 appearance-none rounded-none border-0 p-0 outline-none transition-colors motion-reduce:transition-none"
-                            data-preview-active={rowKey(rowTarget(row)) ===
-                            rowKey(rowTarget(selectedAgentRow))
-                              ? 'true'
-                              : undefined}
-                            aria-checked={rowKey(rowTarget(row)) ===
-                            rowKey(rowTarget(selectedAgentRow))
-                              ? 'true'
-                              : 'false'}
-                            tabindex={rowKey(rowTarget(row)) === rowKey(rowTarget(selectedAgentRow))
-                              ? 0
-                              : -1}
-                            aria-label={m.workspace_tokenUsage_segment_ariaLabel({
-                              scope: row.kindLabel,
-                              category: row.label,
-                              tokens: compactWholeNumber(row.tokens),
-                              share: shareLabel(share(row.tokens, agentTokenTotal)),
-                            })}
-                            title={row.title}
-                            onpointerenter={(event) => handleRowPointerEnter(row, event)}
-                            onpointerleave={() => handleRowPointerLeave(row)}
-                            onpointerdown={(event) => handleRowPointerDown(row, event)}
-                            onfocus={() => handleRowFocus(row)}
-                            onblur={(event) => handleRowBlur(row, event)}
-                            onkeydown={(event) => handleRowKeydown(row, agentSegmentRows, event)}
-                          ></button>
-                        </li>
-                      {/each}
-                    </ol>
+                    {#if agentSegmentRows.length > 0}
+                      <ol
+                        class="breakdown-stack flex h-1.5 w-full min-w-0 overflow-hidden bg-muted/60"
+                      >
+                        {#each agentSegmentRows as row (row.id)}
+                          <li
+                            class="breakdown-stack-item h-full"
+                            role="presentation"
+                            style={`width: ${segmentWidth(share(row.tokens, agentTokenTotal), agentSegmentRows.length)}`}
+                          >
+                            <button
+                              type="button"
+                              role="radio"
+                              class="breakdown-item-control block h-full w-full min-w-0 appearance-none rounded-none border-0 p-0 outline-none transition-colors motion-reduce:transition-none"
+                              data-preview-active={rowKey(rowTarget(row)) ===
+                              rowKey(rowTarget(previewAgentRow))
+                                ? 'true'
+                                : undefined}
+                              aria-checked={rowKey(rowTarget(row)) ===
+                              rowKey(rowTarget(selectedAgentRow))
+                                ? 'true'
+                                : 'false'}
+                              tabindex={rowKey(rowTarget(row)) ===
+                              rowKey(rowTarget(selectedAgentRow))
+                                ? 0
+                                : -1}
+                              aria-label={m.workspace_tokenUsage_segment_ariaLabel({
+                                scope: row.kindLabel,
+                                category: row.label,
+                                tokens: compactWholeNumber(row.tokens),
+                                share: shareLabel(share(row.tokens, agentTokenTotal)),
+                              })}
+                              title={row.title}
+                              onpointerenter={(event) => handleRowPointerEnter(row, event)}
+                              onpointerleave={() => handleRowPointerLeave(row)}
+                              onpointerdown={(event) => handleRowPointerDown(row, event)}
+                              onfocus={() => handleRowFocus(row)}
+                              onblur={(event) => handleRowBlur(row, event)}
+                              onkeydown={(event) => handleRowKeydown(row, agentRows, event)}
+                            ></button>
+                          </li>
+                        {/each}
+                      </ol>
+                    {/if}
+                    {#if messageOnlyAgentRows.length > 0}
+                      <ul class="message-only-options flex min-w-0 flex-wrap gap-x-2 gap-y-1">
+                        {#each messageOnlyAgentRows as row, index (row.id)}
+                          <li class="min-w-0 max-w-full">
+                            <button
+                              type="button"
+                              role="radio"
+                              class="message-only-control block min-w-0 max-w-full truncate rounded-sm border-0 bg-transparent px-1 py-0.5 text-left text-xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-foreground motion-reduce:transition-none"
+                              data-preview-active={rowKey(rowTarget(row)) ===
+                              rowKey(rowTarget(previewAgentRow))
+                                ? 'true'
+                                : undefined}
+                              aria-checked={rowKey(rowTarget(row)) ===
+                              rowKey(rowTarget(selectedAgentRow))
+                                ? 'true'
+                                : 'false'}
+                              tabindex={rowKey(rowTarget(row)) ===
+                              rowKey(rowTarget(selectedAgentRow))
+                                ? 0
+                                : -1}
+                              aria-label={m.workspace_tokenUsage_segment_ariaLabel({
+                                scope: row.kindLabel,
+                                category: row.label,
+                                tokens: compactWholeNumber(row.tokens),
+                                share: shareLabel(0),
+                              })}
+                              aria-describedby={`${detailsId}-agent-message-only-${index}`}
+                              title={row.title}
+                              onpointerenter={(event) => handleRowPointerEnter(row, event)}
+                              onpointerleave={() => handleRowPointerLeave(row)}
+                              onpointerdown={(event) => handleRowPointerDown(row, event)}
+                              onfocus={() => handleRowFocus(row)}
+                              onblur={(event) => handleRowBlur(row, event)}
+                              onkeydown={(event) => handleRowKeydown(row, agentRows, event)}
+                              >{row.label}</button
+                            >
+                            <span id={`${detailsId}-agent-message-only-${index}`} class="sr-only">
+                              {messageCountsLabel(row.humanMessages, row.agentMessages)}
+                            </span>
+                          </li>
+                        {/each}
+                      </ul>
+                    {/if}
                   </div>
                 {/if}
               </section>
@@ -773,67 +867,115 @@
                 <h4 id={`${detailsId}-models`} class="sr-only">
                   {m.workspace_tokenUsage_byModel_label()}
                 </h4>
-                {#if selectedModelRow && modelSegmentRows.length > 0}
-                  <div class="navigator-row flex min-w-0 flex-col gap-3">
+                {#if selectedModelRow && previewModelRow}
+                  <div
+                    class="navigator-row flex min-w-0 flex-col gap-3"
+                    role="radiogroup"
+                    aria-labelledby={`${detailsId}-models`}
+                  >
                     <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
                       <span
                         class="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
-                        title={selectedModelRow.title}>{selectedModelRow.label}</span
+                        title={previewModelRow.title}>{previewModelRow.label}</span
                       >
                       <span
                         class="shrink-0 text-right text-xs font-normal tabular-nums text-muted-foreground"
                       >
                         <AnimatedNumber
-                          value={share(selectedModelRow.tokens, modelTokenTotal)}
+                          value={share(previewModelRow.tokens, modelTokenTotal)}
                           format={shareLabel}
                           pulse={false}
                           class="block w-full text-right"
                         />
                       </span>
                     </div>
-                    <ol
-                      class="breakdown-stack flex h-1.5 w-full min-w-0 overflow-hidden bg-muted/60"
-                      role="radiogroup"
-                      aria-labelledby={`${detailsId}-models`}
-                    >
-                      {#each modelSegmentRows as row (row.id)}
-                        <li
-                          class="breakdown-stack-item h-full"
-                          role="presentation"
-                          style={`width: ${segmentWidth(share(row.tokens, modelTokenTotal), modelSegmentRows.length)}`}
-                        >
-                          <button
-                            type="button"
-                            role="radio"
-                            class="breakdown-item-control block h-full w-full min-w-0 appearance-none rounded-none border-0 p-0 outline-none transition-colors motion-reduce:transition-none"
-                            data-preview-active={rowKey(rowTarget(row)) ===
-                            rowKey(rowTarget(selectedModelRow))
-                              ? 'true'
-                              : undefined}
-                            aria-checked={rowKey(rowTarget(row)) ===
-                            rowKey(rowTarget(selectedModelRow))
-                              ? 'true'
-                              : 'false'}
-                            tabindex={rowKey(rowTarget(row)) === rowKey(rowTarget(selectedModelRow))
-                              ? 0
-                              : -1}
-                            aria-label={m.workspace_tokenUsage_segment_ariaLabel({
-                              scope: row.kindLabel,
-                              category: row.label,
-                              tokens: compactWholeNumber(row.tokens),
-                              share: shareLabel(share(row.tokens, modelTokenTotal)),
-                            })}
-                            title={row.title}
-                            onpointerenter={(event) => handleRowPointerEnter(row, event)}
-                            onpointerleave={() => handleRowPointerLeave(row)}
-                            onpointerdown={(event) => handleRowPointerDown(row, event)}
-                            onfocus={() => handleRowFocus(row)}
-                            onblur={(event) => handleRowBlur(row, event)}
-                            onkeydown={(event) => handleRowKeydown(row, modelSegmentRows, event)}
-                          ></button>
-                        </li>
-                      {/each}
-                    </ol>
+                    {#if modelSegmentRows.length > 0}
+                      <ol
+                        class="breakdown-stack flex h-1.5 w-full min-w-0 overflow-hidden bg-muted/60"
+                      >
+                        {#each modelSegmentRows as row (row.id)}
+                          <li
+                            class="breakdown-stack-item h-full"
+                            role="presentation"
+                            style={`width: ${segmentWidth(share(row.tokens, modelTokenTotal), modelSegmentRows.length)}`}
+                          >
+                            <button
+                              type="button"
+                              role="radio"
+                              class="breakdown-item-control block h-full w-full min-w-0 appearance-none rounded-none border-0 p-0 outline-none transition-colors motion-reduce:transition-none"
+                              data-preview-active={rowKey(rowTarget(row)) ===
+                              rowKey(rowTarget(previewModelRow))
+                                ? 'true'
+                                : undefined}
+                              aria-checked={rowKey(rowTarget(row)) ===
+                              rowKey(rowTarget(selectedModelRow))
+                                ? 'true'
+                                : 'false'}
+                              tabindex={rowKey(rowTarget(row)) ===
+                              rowKey(rowTarget(selectedModelRow))
+                                ? 0
+                                : -1}
+                              aria-label={m.workspace_tokenUsage_segment_ariaLabel({
+                                scope: row.kindLabel,
+                                category: row.label,
+                                tokens: compactWholeNumber(row.tokens),
+                                share: shareLabel(share(row.tokens, modelTokenTotal)),
+                              })}
+                              title={row.title}
+                              onpointerenter={(event) => handleRowPointerEnter(row, event)}
+                              onpointerleave={() => handleRowPointerLeave(row)}
+                              onpointerdown={(event) => handleRowPointerDown(row, event)}
+                              onfocus={() => handleRowFocus(row)}
+                              onblur={(event) => handleRowBlur(row, event)}
+                              onkeydown={(event) => handleRowKeydown(row, modelRows, event)}
+                            ></button>
+                          </li>
+                        {/each}
+                      </ol>
+                    {/if}
+                    {#if messageOnlyModelRows.length > 0}
+                      <ul class="message-only-options flex min-w-0 flex-wrap gap-x-2 gap-y-1">
+                        {#each messageOnlyModelRows as row, index (row.id)}
+                          <li class="min-w-0 max-w-full">
+                            <button
+                              type="button"
+                              role="radio"
+                              class="message-only-control block min-w-0 max-w-full truncate rounded-sm border-0 bg-transparent px-1 py-0.5 text-left text-xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-foreground motion-reduce:transition-none"
+                              data-preview-active={rowKey(rowTarget(row)) ===
+                              rowKey(rowTarget(previewModelRow))
+                                ? 'true'
+                                : undefined}
+                              aria-checked={rowKey(rowTarget(row)) ===
+                              rowKey(rowTarget(selectedModelRow))
+                                ? 'true'
+                                : 'false'}
+                              tabindex={rowKey(rowTarget(row)) ===
+                              rowKey(rowTarget(selectedModelRow))
+                                ? 0
+                                : -1}
+                              aria-label={m.workspace_tokenUsage_segment_ariaLabel({
+                                scope: row.kindLabel,
+                                category: row.label,
+                                tokens: compactWholeNumber(row.tokens),
+                                share: shareLabel(0),
+                              })}
+                              aria-describedby={`${detailsId}-model-message-only-${index}`}
+                              title={row.title}
+                              onpointerenter={(event) => handleRowPointerEnter(row, event)}
+                              onpointerleave={() => handleRowPointerLeave(row)}
+                              onpointerdown={(event) => handleRowPointerDown(row, event)}
+                              onfocus={() => handleRowFocus(row)}
+                              onblur={(event) => handleRowBlur(row, event)}
+                              onkeydown={(event) => handleRowKeydown(row, modelRows, event)}
+                              >{row.label}</button
+                            >
+                            <span id={`${detailsId}-model-message-only-${index}`} class="sr-only">
+                              {messageCountsLabel(row.humanMessages, row.agentMessages)}
+                            </span>
+                          </li>
+                        {/each}
+                      </ul>
+                    {/if}
                   </div>
                 {/if}
               </section>
@@ -966,6 +1108,10 @@
 
   :global(.breakdown-item-control[data-preview-active='true']) {
     background: hsl(var(--foreground));
+  }
+
+  :global(.message-only-control[data-preview-active='true']) {
+    color: hsl(var(--foreground));
   }
 
   .breakdown-stack:focus-within {
