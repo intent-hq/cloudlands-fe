@@ -3657,8 +3657,7 @@ describe('panelLayoutReducer', () => {
         browserUrl: 'http://daemon.localhost:5173/',
         viewport: { mode: 'fit' },
       });
-      expect(tab.title).not.toBe('Old');
-      expect(tab.title.length).toBeGreaterThan(0);
+      expect(tab.title).toBe('');
       expect(tab).not.toHaveProperty('browserRequestedUrl');
       expect(tab).not.toHaveProperty('ownerAgentId');
       expect(tab).not.toHaveProperty('ownerAgentName');

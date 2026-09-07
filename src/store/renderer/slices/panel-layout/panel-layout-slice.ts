@@ -18,7 +18,6 @@ import {
   updateItem,
   type Collection,
 } from '@augmentcode/themis/utils/collections/collection-utils';
-import { m } from '$shared/paraglide/messages.js';
 import type { BrowserTab } from '$shared/types/browser-clients';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { removeScript } from '../scripts/scripts-slice';
@@ -3280,7 +3279,7 @@ panelLayoutReducer.with(applyBrowserTabRegistryRow, (state, { payload: [wsId, ta
       ...rest,
       hostClientId: row.hostClientId,
       browserUrl: row.url,
-      title: row.title ?? m.layout_panelLayout_browser_fallback(),
+      title: row.title ?? '',
       ...(row.requestedUrl === undefined ? {} : { browserRequestedUrl: row.requestedUrl }),
       ...(row.ownerAgentId === undefined ? {} : { ownerAgentId: row.ownerAgentId }),
       ...(row.ownerAgentName === undefined ? {} : { ownerAgentName: row.ownerAgentName }),

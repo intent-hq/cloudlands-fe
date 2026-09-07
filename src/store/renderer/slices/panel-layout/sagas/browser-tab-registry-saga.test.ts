@@ -801,10 +801,116 @@ describe('browserTabRegistrySaga', () => {
       h.dispatch(browserTabUpserted(WS, row({ title: undefined })));
       await flush();
 
-      expect(h.tabs()[0].title).not.toBe('Stale host title');
+      expect(h.tabs()[0].title).toBe('');
       expect(h.tabs()[0].viewport).toEqual({ mode: 'fit' });
       expect(h.tabs()[0]).not.toHaveProperty('emulatedSize');
       expect(mocks.upsertTab).not.toHaveBeenCalled();
+      await stop(h);
+    });
+
+    it('reports a page title verbatim even when it equals the presentation fallback label', async () => {
+      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down' });
+      h.setHealth('healthy', 1);
+      h.dispatch(
+        openTabInRightmostColumn(WS, browserTab({ browserUrl: 'http://a.test/' }), {
+          newTabId: 'b1',
+        }),
+      );
+      await flush();
+      h.dispatch(updateTabTitle(WS, 'b1', 'Browser'));
+      await flush();
+      expect(mocks.upsertTab.mock.calls.at(-1)?.[1]).toEqual(expectedInput({ title: 'Browser' }));
+
+      h.dispatch(updateTabTitle(WS, 'b1', ''));
+      await flush();
+      expect(mocks.upsertTab.mock.calls.at(-1)?.[1]).toEqual(expectedInput({ title: null }));
+      await stop(h);
+    });
+
+    it('keeps a canonical title equal to the fallback label when a mirror is re-homed here', async () => {
+      const h = start({
+        layouts: {
+          [WS]: settledLayout([browserTab({ hostClientId: OTHER, browserUrl: 'http://a.test/' })]),
+        },
+        health: 'down',
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(browserTabUpserted(WS, row({ title: 'Browser' })));
+      await flush();
+      expect(h.tabs()[0]).toMatchObject({ hostClientId: OWN, title: 'Browser' });
+      expect(mocks.upsertTab).not.toHaveBeenCalled();
+      await stop(h);
+    });
+
+    it('restores a remounted workspace while the first upsertTab of its old layout is still in flight', async () => {
+      const reply = deferred<BrowserTab>();
+      mocks.upsertTab.mockReturnValueOnce(reply.promise);
+      mocks.listTabs.mockResolvedValue([row()]);
+      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down' });
+      h.setHealth('healthy', 1);
+      h.dispatch(
+        openTabInRightmostColumn(WS, browserTab({ browserUrl: 'http://a.test/' }), {
+          newTabId: 'b1',
+        }),
+      );
+      await flush();
+      expect(mocks.upsertTab).toHaveBeenCalledTimes(1);
+
+      h.dispatch(workspaceUnmounted(WS));
+      h.dispatch(clearPanelLayout(WS));
+      h.dispatch(
+        initializeLayout(WS, {
+          root: { type: 'panel', panelId: 'p1' },
+          panels: { p1: { id: 'p1', tabs: [], activeTabId: null } },
+          focusedPanelId: 'p1',
+        }),
+      );
+      h.dispatch(setRestoreStatus(WS, 'restored'));
+      await flush();
+      reply.resolve(row());
+      await flush();
+      expect(h.tabs()).toHaveLength(1);
+      expect(h.tabs()[0]).toMatchObject({ id: 'b1', hostClientId: OWN });
+      expect(mocks.removeTab).not.toHaveBeenCalled();
+      await stop(h);
+    });
+
+    it('re-reads a connect-time listing held past the workspace teardown instead of applying it', async () => {
+      const SLOW = 'ws-slow';
+      const slow = deferred<BrowserTabListing[]>();
+      mocks.listTabs.mockImplementation((wsId: string) =>
+        wsId === WS ? Promise.resolve([row({ hostClientId: OTHER })]) : slow.promise,
+      );
+      const h = start({
+        layouts: { [WS]: settledLayout([]) },
+        workspaceIds: [WS, SLOW],
+        health: 'down',
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(connectionStatusChanged('connected'));
+      await flush(0);
+      expect(mocks.listTabs).toHaveBeenCalledWith(WS);
+
+      h.dispatch(workspaceUnmounted(WS));
+      h.dispatch(clearPanelLayout(WS));
+      mocks.listTabs.mockImplementation((wsId: string) =>
+        wsId === WS ? Promise.resolve([]) : slow.promise,
+      );
+      h.dispatch(
+        initializeLayout(WS, {
+          root: { type: 'panel', panelId: 'p1' },
+          panels: { p1: { id: 'p1', tabs: [], activeTabId: null } },
+          focusedPanelId: 'p1',
+        }),
+      );
+      h.dispatch(setRestoreStatus(WS, 'restored'));
+      await flush();
+      expect(h.tabs()).toEqual([]);
+
+      slow.resolve([]);
+      await flush();
+      expect(h.tabs()).toEqual([]);
+      expect(mocks.syncTabs).toHaveBeenCalledTimes(1);
       await stop(h);
     });
 

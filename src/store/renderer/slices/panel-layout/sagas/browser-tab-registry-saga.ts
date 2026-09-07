@@ -29,17 +29,23 @@
  *   tab (mirror ↔ live) and the row's visibility moves it between its panel
  *   and the hidden set; `tab-closed` destroys the local tab.
  * - **Races**: a listing that raced a `browser:tab-*` event (the
- *   `tabsRevision` moved while it was in flight) is re-read rather than
- *   applied, and one that raced the workspace's teardown is discarded (the
- *   revision restarts at 0 on remount, so it cannot fence that); a tab closed
- *   here — reported earlier and no longer in the layout — stays excluded from
- *   listings, echoes and snapshots until the daemon acknowledges the removal;
- *   an `upsertTab` reply or a `syncTabs` acknowledgement is applied against
- *   the tab's *current* host, so a re-home that landed in the meantime wins.
+ *   `tabsRevision` moved while it was in flight) or the workspace's teardown
+ *   (its layout epoch moved — the revision restarts at 0 on remount, so it
+ *   cannot fence that) is re-read rather than applied; a report run dies with
+ *   its workspace's unmount, so a late `upsertTab` reply cannot bookkeep into
+ *   the remounted layout; a tab closed here — reported earlier and no longer
+ *   in the layout — stays excluded from listings, echoes and snapshots until
+ *   the daemon acknowledges the removal; an `upsertTab` reply or a `syncTabs`
+ *   acknowledgement is applied against the tab's *current* host, so a re-home
+ *   that landed in the meantime wins.
  *
  * Reported inputs, pending removals and echo bookkeeping are transient
  * saga-local state (a module-level Map), never Redux. An unmounted workspace
  * forgets its reported map: its tabs left the layout without being closed.
+ *
+ * A tab's `title` is canonical data: `''` locally / `null` in the registry
+ * means "none" and the UI renders its fallback label; any other string —
+ * including one equal to that label — is reported and restored verbatim.
  */
 import { deepEqual } from 'fast-equals';
 import {
@@ -58,7 +64,6 @@ import { getItems } from '@augmentcode/themis/utils/collections/collection-utils
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
-import { m } from '$shared/paraglide/messages.js';
 import type { BrowserTab, BrowserTabInput } from '$shared/types/browser-clients';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
@@ -115,7 +120,8 @@ export const SYNC_RETRY_MS = 5_000;
 
 type Visibility = BrowserTab['visibility'];
 type HostedTab = { tab: PanelTab; visibility: Visibility };
-type Listing = { rows: BrowserTab[]; revision: number };
+/** Registry rows with the workspace state they were read against (see `isCurrent`). */
+type Listing = { rows: BrowserTab[]; revision: number; epoch: number };
 
 type Registry = {
   backendId: string | null;
@@ -132,6 +138,13 @@ type Registry = {
   awaitingCloseEcho: Set<string>;
   /** Tabs with an `upsertTab` in flight (their `reported` entry lands with the reply). */
   reporting: Set<string>;
+  /**
+   * Per-workspace layout lifetime counter, bumped on unmount / delete /
+   * clear. Unlike `tabsRevision` it never restarts, so a listing read against
+   * a layout that has since been torn down is recognisable after the remount.
+   * Deliberately survives `resetRegistry`.
+   */
+  layoutEpochs: Map<string, number>;
 };
 
 const registry: Registry = {
@@ -141,6 +154,7 @@ const registry: Registry = {
   pendingRemovals: new Set(),
   awaitingCloseEcho: new Set(),
   reporting: new Set(),
+  layoutEpochs: new Map(),
 };
 
 function resetRegistry(backendId: string | null): void {
@@ -161,6 +175,10 @@ function reportedFor(wsId: string): Map<string, BrowserTabInput> {
   return map;
 }
 
+function layoutEpoch(wsId: string): number {
+  return registry.layoutEpochs.get(wsId) ?? 0;
+}
+
 /** A tab this client closed whose removal the daemon has not confirmed yet. */
 function isClosingHere(tabId: string): boolean {
   return registry.pendingRemovals.has(tabId) || registry.awaitingCloseEcho.has(tabId);
@@ -177,13 +195,27 @@ function closedHere(wsId: string, tabId: string): boolean {
   return isClosingHere(tabId) || registry.reporting.has(tabId) || reportedFor(wsId).has(tabId);
 }
 
-function matchesWorkspaceTeardown(wsId: string) {
+function matchesWorkspace(wsId: string, types: readonly string[]) {
   return (action: { type: string; payload?: unknown }) =>
-    (action.type === workspaceUnmounted.type ||
-      action.type === workspaceDeleted.type ||
-      action.type === clearPanelLayout.type) &&
-    Array.isArray(action.payload) &&
-    action.payload[0] === wsId;
+    types.includes(action.type) && Array.isArray(action.payload) && action.payload[0] === wsId;
+}
+
+/** The layout a listing was read against is gone (remount restarts `tabsRevision`). */
+function matchesWorkspaceTeardown(wsId: string) {
+  return matchesWorkspace(wsId, [
+    workspaceUnmounted.type,
+    workspaceDeleted.type,
+    clearPanelLayout.type,
+  ]);
+}
+
+/**
+ * The workspace left. `clearPanelLayout` alone is not this: closing the last
+ * panel clears the layout as a user close, whose in-flight report must finish
+ * so the rerun can send the removals.
+ */
+function matchesWorkspaceGone(wsId: string) {
+  return matchesWorkspace(wsId, [workspaceUnmounted.type, workspaceDeleted.type]);
 }
 
 function isSettled(layout: WorkspacePanelLayoutState): boolean {
@@ -217,19 +249,13 @@ function hasReportableUrl(tab: PanelTab): boolean {
   return typeof tab.browserUrl === 'string';
 }
 
-/** The presentation fallback stands in for a cleared title; it is never reported as one. */
-function reportableTitle(tab: PanelTab): string | null {
-  if (!tab.title || tab.title === m.layout_panelLayout_browser_fallback()) return null;
-  return tab.title;
-}
-
 function toInput(wsId: string, { tab, visibility }: HostedTab): BrowserTabInput {
   return {
     tabId: tab.id,
     workspaceId: wsId,
     url: tab.browserUrl ?? '',
     requestedUrl: tab.browserRequestedUrl ?? null,
-    title: reportableTitle(tab),
+    title: tab.title || null,
     ownerAgentId: tab.ownerAgentId ?? null,
     ownerAgentName: tab.ownerAgentName ?? null,
     visibility,
@@ -254,7 +280,7 @@ function rowToInput(row: BrowserTab): BrowserTabInput {
 function rowToTab(row: BrowserTab): Omit<PanelTab, 'id'> {
   return {
     type: 'browser',
-    title: row.title ?? m.layout_panelLayout_browser_fallback(),
+    title: row.title ?? '',
     closable: true,
     browserUrl: row.url,
     hostClientId: row.hostClientId,
@@ -322,7 +348,8 @@ function* reconcileVisibility(
  * here while we were away, whose URL and visibility are stale — follows the
  * row. Local tabs the registry no longer holds are destroyed unless they can
  * still be (re)reported from local state. A listing that went stale between
- * read and apply is re-read first.
+ * read and apply — a `browser:tab-*` event, or the layout it was read
+ * against torn down and remounted — is re-read first.
  */
 function* applyRegistryRows(
   wsId: string,
@@ -330,7 +357,7 @@ function* applyRegistryRows(
   ownClientId: string,
 ): SagaGenerator<void> {
   let { rows } = listing;
-  if ((yield* selectWorkspaceBrowserTabsRevision.effect(wsId)) !== listing.revision) {
+  if (!(yield* call(isCurrent, wsId, listing))) {
     const fresh = yield* call(listRows, wsId);
     if (!fresh) return;
     rows = fresh.rows;
@@ -380,26 +407,35 @@ function* applyRegistryRows(
   yield* put(browserTabRegistryReportRequested(wsId));
 }
 
+/** The listing still describes the workspace state it was read against. */
+function* isCurrent(wsId: string, listing: Listing): SagaGenerator<boolean> {
+  const revision = yield* selectWorkspaceBrowserTabsRevision.effect(wsId);
+  return revision === listing.revision && layoutEpoch(wsId) === listing.epoch;
+}
+
 /**
  * Read the workspace's registry rows. A `browser:tab-*` event landing while
  * the read is in flight bumps the workspace's `tabsRevision`; such a listing
  * may predate the event (a closed tab still listed) and is re-read. A read
  * the workspace's teardown overtook is discarded: the layout it targeted is
- * gone, and a remount restarts the revision at 0 so it cannot tell.
+ * gone. The listing carries the revision and layout epoch it was read
+ * against so a consumer that holds it for a while can tell it went stale.
  */
 function* listRows(wsId: string): SagaGenerator<Listing | null> {
   try {
     for (let attempt = 0; attempt < MAX_LIST_ATTEMPTS; attempt++) {
-      const revision = yield* selectWorkspaceBrowserTabsRevision.effect(wsId);
+      const listing: Listing = {
+        rows: [],
+        revision: yield* selectWorkspaceBrowserTabsRevision.effect(wsId),
+        epoch: layoutEpoch(wsId),
+      };
       const read = yield* race({
         rows: call([appClient.browser, appClient.browser.listTabs], wsId),
         teardown: take(matchesWorkspaceTeardown(wsId)),
       });
       if (read.teardown) return null;
-      const rows = read.rows as BrowserTab[];
-      if ((yield* selectWorkspaceBrowserTabsRevision.effect(wsId)) === revision) {
-        return { rows, revision };
-      }
+      listing.rows = read.rows as BrowserTab[];
+      if (yield* call(isCurrent, wsId, listing)) return listing;
     }
     logger.warn('browser.listTabs kept racing browser:tab-* events; skipping', { wsId });
     return null;
@@ -440,14 +476,27 @@ function findBrowserTab(layout: WorkspacePanelLayoutState, tabId: string): Panel
 }
 
 /**
+ * Report the workspace's hosted tabs; the run dies with the workspace. Left
+ * running, an `upsertTab` reply landing after the unmount would bookkeep the
+ * tab into the remounted layout's map, and while in flight the tab would
+ * count as closing here and the remount's restore skip its row.
+ */
+function* reportWorkspaceTabs(action: { type: string; payload?: unknown }): SagaGenerator<void> {
+  const wsId = reportContext(action);
+  if (wsId === null) return;
+  yield* race({
+    report: call(reportHostedTabs, wsId),
+    gone: take(matchesWorkspaceGone(wsId)),
+  });
+}
+
+/**
  * Diff the workspace's hosted tabs against what the daemon last acknowledged
  * and report the delta. Single-flight per workspace (see the saga root).
  * Removals are recorded before the health gate so a tab closed while the
  * daemon is unreachable stays closed across the reconnect.
  */
-function* reportWorkspaceTabs(action: { type: string; payload?: unknown }): SagaGenerator<void> {
-  const wsId = reportContext(action);
-  if (wsId === null) return;
+function* reportHostedTabs(wsId: string): SagaGenerator<void> {
   yield* delay(REPORT_DEBOUNCE_MS);
   const ownClientId = yield* selectOwnClientId.effect();
   if (!ownClientId) return;
@@ -691,15 +740,22 @@ function* onConnectionStatus(
 }
 
 /**
- * An unmounted (cleared) or deleted workspace forgets what it reported: its
- * tabs left the layout without being closed, so a later reconcile must not
- * read their absence as a close. Pending removals are kept — those were.
+ * A torn-down layout starts a new epoch, so a listing read against the old
+ * one is stale even though the remount restarts `tabsRevision` at 0. An
+ * unmounted or deleted workspace also forgets what it reported: its tabs left
+ * the layout without being closed, so a later reconcile must not read their
+ * absence as a close. Pending removals are kept — those were. A cleared
+ * layout keeps its map: closing the last panel is a close.
  */
 function* forgetWorkspace(
-  action: ReturnType<typeof workspaceUnmounted> | ReturnType<typeof workspaceDeleted>,
+  action:
+    | ReturnType<typeof workspaceUnmounted>
+    | ReturnType<typeof workspaceDeleted>
+    | ReturnType<typeof clearPanelLayout>,
 ): SagaGenerator<void> {
   const [wsId] = action.payload;
-  registry.reported.delete(wsId);
+  registry.layoutEpochs.set(wsId, layoutEpoch(wsId) + 1);
+  if (action.type !== clearPanelLayout.type) registry.reported.delete(wsId);
 }
 
 export function* browserTabRegistrySaga(): SagaGenerator<void> {
@@ -712,7 +768,7 @@ export function* browserTabRegistrySaga(): SagaGenerator<void> {
   yield* takeEvery(setRestoreStatus, reconcileOnSettle);
   yield* takeEvery(browserTabUpserted, onRegistryRow);
   yield* takeEvery(browserTabClosed, onRegistryClose);
-  yield* takeEvery([workspaceUnmounted, workspaceDeleted], forgetWorkspace);
+  yield* takeEvery([workspaceUnmounted, workspaceDeleted, clearPanelLayout], forgetWorkspace);
   yield* takeEvery(connectionStatusChanged, onConnectionStatus);
   // Attached, not spawned: a root cancellation (HMR, store teardown) must
   // take the startup sync down with it rather than let a half-built snapshot
