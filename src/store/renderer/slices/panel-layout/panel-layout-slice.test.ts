@@ -3655,9 +3655,10 @@ describe('panelLayoutReducer', () => {
       expect(tab).toMatchObject({
         hostClientId: 'cli-laptop',
         browserUrl: 'http://daemon.localhost:5173/',
-        title: 'Old',
-        viewport: { mode: 'custom', width: 1, height: 1 },
+        viewport: { mode: 'fit' },
       });
+      expect(tab.title).not.toBe('Old');
+      expect(tab.title.length).toBeGreaterThan(0);
       expect(tab).not.toHaveProperty('browserRequestedUrl');
       expect(tab).not.toHaveProperty('ownerAgentId');
       expect(tab).not.toHaveProperty('ownerAgentName');

@@ -30,19 +30,23 @@
  *   and the hidden set; `tab-closed` destroys the local tab.
  * - **Races**: a listing that raced a `browser:tab-*` event (the
  *   `tabsRevision` moved while it was in flight) is re-read rather than
- *   applied; a tab closed here stays excluded from listings and snapshots
- *   until the daemon acknowledges the removal; an `upsertTab` reply is
- *   applied against the tab's *current* host, so a re-home that landed in
- *   the meantime wins.
+ *   applied, and one that raced the workspace's teardown is discarded (the
+ *   revision restarts at 0 on remount, so it cannot fence that); a tab closed
+ *   here — reported earlier and no longer in the layout — stays excluded from
+ *   listings, echoes and snapshots until the daemon acknowledges the removal;
+ *   an `upsertTab` reply or a `syncTabs` acknowledgement is applied against
+ *   the tab's *current* host, so a re-home that landed in the meantime wins.
  *
  * Reported inputs, pending removals and echo bookkeeping are transient
- * saga-local state (a module-level Map), never Redux.
+ * saga-local state (a module-level Map), never Redux. An unmounted workspace
+ * forgets its reported map: its tabs left the layout without being closed.
  */
 import { deepEqual } from 'fast-equals';
 import {
   all,
   call,
   delay,
+  fork,
   put,
   race,
   spawn,
@@ -77,12 +81,16 @@ import {
   selectWorkspaceListLoadedForBackend,
 } from '../../workspace/workspace-selectors';
 import { setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
-import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceDeleted,
+  workspaceUnmounted,
+} from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { selectPanelLayoutWorkspace, selectPanelLayoutWorkspaces } from '../panel-layout-selectors';
 import {
   acknowledgeBrowserTabHost,
   applyBrowserTabRegistryRow,
   browserTabRegistryReportRequested,
+  clearPanelLayout,
   closeTab,
   openHiddenTab,
   openTabInRightmostColumnRequested,
@@ -122,6 +130,8 @@ type Registry = {
   pendingRemovals: Set<string>;
   /** `removeTab` calls the daemon acknowledged, until their `tab-closed` echo lands. */
   awaitingCloseEcho: Set<string>;
+  /** Tabs with an `upsertTab` in flight (their `reported` entry lands with the reply). */
+  reporting: Set<string>;
 };
 
 const registry: Registry = {
@@ -130,6 +140,7 @@ const registry: Registry = {
   reported: new Map(),
   pendingRemovals: new Set(),
   awaitingCloseEcho: new Set(),
+  reporting: new Set(),
 };
 
 function resetRegistry(backendId: string | null): void {
@@ -138,6 +149,7 @@ function resetRegistry(backendId: string | null): void {
   registry.reported.clear();
   registry.pendingRemovals.clear();
   registry.awaitingCloseEcho.clear();
+  registry.reporting.clear();
 }
 
 function reportedFor(wsId: string): Map<string, BrowserTabInput> {
@@ -149,9 +161,29 @@ function reportedFor(wsId: string): Map<string, BrowserTabInput> {
   return map;
 }
 
-/** A row for a tab this client closed and the daemon has not confirmed gone yet. */
+/** A tab this client closed whose removal the daemon has not confirmed yet. */
 function isClosingHere(tabId: string): boolean {
   return registry.pendingRemovals.has(tabId) || registry.awaitingCloseEcho.has(tabId);
+}
+
+/**
+ * A row / echo for a tab with no local counterpart that this client is in
+ * the middle of closing: its removal is pending, or it was reported (or is
+ * being reported) from here and has since left the layout — the debounced
+ * reporter has not computed the removal yet. Rematerialising it would undo
+ * the close.
+ */
+function closedHere(wsId: string, tabId: string): boolean {
+  return isClosingHere(tabId) || registry.reporting.has(tabId) || reportedFor(wsId).has(tabId);
+}
+
+function matchesWorkspaceTeardown(wsId: string) {
+  return (action: { type: string; payload?: unknown }) =>
+    (action.type === workspaceUnmounted.type ||
+      action.type === workspaceDeleted.type ||
+      action.type === clearPanelLayout.type) &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === wsId;
 }
 
 function isSettled(layout: WorkspacePanelLayoutState): boolean {
@@ -185,13 +217,19 @@ function hasReportableUrl(tab: PanelTab): boolean {
   return typeof tab.browserUrl === 'string';
 }
 
+/** The presentation fallback stands in for a cleared title; it is never reported as one. */
+function reportableTitle(tab: PanelTab): string | null {
+  if (!tab.title || tab.title === m.layout_panelLayout_browser_fallback()) return null;
+  return tab.title;
+}
+
 function toInput(wsId: string, { tab, visibility }: HostedTab): BrowserTabInput {
   return {
     tabId: tab.id,
     workspaceId: wsId,
     url: tab.browserUrl ?? '',
     requestedUrl: tab.browserRequestedUrl ?? null,
-    title: tab.title || null,
+    title: reportableTitle(tab),
     ownerAgentId: tab.ownerAgentId ?? null,
     ownerAgentName: tab.ownerAgentName ?? null,
     visibility,
@@ -278,11 +316,13 @@ function* reconcileVisibility(
 
 /**
  * Apply the daemon's rows for one settled workspace over the local layout.
- * A tab this client hosts that still carries a URL is local truth (it may
- * have navigated while the daemon was unreachable) and is only acknowledged;
- * everything else follows the row. Local tabs the registry no longer holds
- * are destroyed unless they can still be (re)reported from local state.
- * A listing that went stale between read and apply is re-read first.
+ * A tab this client already hosts that still carries a URL is local truth
+ * (it may have navigated while the daemon was unreachable) and is only
+ * acknowledged; everything else — including a mirror the daemon re-homed
+ * here while we were away, whose URL and visibility are stale — follows the
+ * row. Local tabs the registry no longer holds are destroyed unless they can
+ * still be (re)reported from local state. A listing that went stale between
+ * read and apply is re-read first.
  */
 function* applyRegistryRows(
   wsId: string,
@@ -311,10 +351,10 @@ function* applyRegistryRows(
     const mine = row.hostClientId === ownClientId;
     if (!existing) {
       // Closed here already: the daemon learns it from removeTab / the snapshot.
-      if (isClosingHere(row.tabId)) continue;
+      if (closedHere(wsId, row.tabId)) continue;
       yield* call(materialiseRow, wsId, row);
       if (mine) reported.set(row.tabId, rowToInput(row));
-    } else if (mine && hasReportableUrl(existing.tab)) {
+    } else if (mine && hostedHere(existing.tab, ownClientId) && hasReportableUrl(existing.tab)) {
       reported.set(row.tabId, rowToInput(row));
       if (existing.tab.hostClientId !== ownClientId) {
         yield* put(acknowledgeBrowserTabHost(wsId, row.tabId, ownClientId));
@@ -343,13 +383,20 @@ function* applyRegistryRows(
 /**
  * Read the workspace's registry rows. A `browser:tab-*` event landing while
  * the read is in flight bumps the workspace's `tabsRevision`; such a listing
- * may predate the event (a closed tab still listed) and is re-read.
+ * may predate the event (a closed tab still listed) and is re-read. A read
+ * the workspace's teardown overtook is discarded: the layout it targeted is
+ * gone, and a remount restarts the revision at 0 so it cannot tell.
  */
 function* listRows(wsId: string): SagaGenerator<Listing | null> {
   try {
     for (let attempt = 0; attempt < MAX_LIST_ATTEMPTS; attempt++) {
       const revision = yield* selectWorkspaceBrowserTabsRevision.effect(wsId);
-      const rows = yield* call([appClient.browser, appClient.browser.listTabs], wsId);
+      const read = yield* race({
+        rows: call([appClient.browser, appClient.browser.listTabs], wsId),
+        teardown: take(matchesWorkspaceTeardown(wsId)),
+      });
+      if (read.teardown) return null;
+      const rows = read.rows as BrowserTab[];
       if ((yield* selectWorkspaceBrowserTabsRevision.effect(wsId)) === revision) {
         return { rows, revision };
       }
@@ -425,6 +472,7 @@ function* reportWorkspaceTabs(action: { type: string; payload?: unknown }): Saga
     if (!hasReportableUrl(tab)) continue;
     const input = toInput(wsId, item);
     if (deepEqual(reported.get(tab.id), input)) continue;
+    registry.reporting.add(tab.id);
     try {
       const { workspaceId: _ws, ...report } = input;
       const row = yield* call([appClient.browser, appClient.browser.upsertTab], wsId, report);
@@ -442,6 +490,8 @@ function* reportWorkspaceTabs(action: { type: string; payload?: unknown }): Saga
         tabId: tab.id,
         error: error instanceof Error ? error.message : error,
       });
+    } finally {
+      registry.reporting.delete(tab.id);
     }
   }
 }
@@ -479,7 +529,7 @@ function* onRegistryRow(action: ReturnType<typeof browserTabUpserted>): SagaGene
   const mine = row.hostClientId === ownClientId;
   if (!existing) {
     // An echo for a tab already closed here: the daemon is being told.
-    if (isClosingHere(row.tabId)) return;
+    if (closedHere(wsId, row.tabId)) return;
     yield* call(materialiseRow, wsId, row);
     if (mine) reportedFor(wsId).set(row.tabId, rowToInput(row));
     return;
@@ -588,8 +638,13 @@ function* syncTabsOnce(backendId: string, ownClientId: string): SagaGenerator<bo
         yield* put(closeTab(wsId, tabId, undefined, undefined, { destroy: true }));
       }
     }
+    // The acknowledgement describes the snapshot as sent; a tab re-homed or
+    // closed while the call was in flight is newer and keeps its state.
     for (const [wsId, tabId] of unacknowledged) {
-      if (!dropped.has(tabId)) yield* put(acknowledgeBrowserTabHost(wsId, tabId, ownClientId));
+      if (dropped.has(tabId)) continue;
+      const current = findBrowserTab(yield* selectPanelLayoutWorkspace.effect(wsId), tabId);
+      if (current === undefined || current.hostClientId !== undefined) continue;
+      yield* put(acknowledgeBrowserTabHost(wsId, tabId, ownClientId));
     }
     for (const ws of workspaces) {
       const layout = layouts[ws.id];
@@ -635,10 +690,14 @@ function* onConnectionStatus(
   yield* call(syncOnConnect);
 }
 
-// A cleared (unmounted) layout needs no handling here: reporting is gated on
-// a settled layout, and the reconcile that follows a re-restore drops every
-// acknowledged tab the daemon's listing no longer holds.
-function* forgetWorkspace(action: ReturnType<typeof workspaceDeleted>): SagaGenerator<void> {
+/**
+ * An unmounted (cleared) or deleted workspace forgets what it reported: its
+ * tabs left the layout without being closed, so a later reconcile must not
+ * read their absence as a close. Pending removals are kept — those were.
+ */
+function* forgetWorkspace(
+  action: ReturnType<typeof workspaceUnmounted> | ReturnType<typeof workspaceDeleted>,
+): SagaGenerator<void> {
   const [wsId] = action.payload;
   registry.reported.delete(wsId);
 }
@@ -653,7 +712,10 @@ export function* browserTabRegistrySaga(): SagaGenerator<void> {
   yield* takeEvery(setRestoreStatus, reconcileOnSettle);
   yield* takeEvery(browserTabUpserted, onRegistryRow);
   yield* takeEvery(browserTabClosed, onRegistryClose);
-  yield* takeEvery(workspaceDeleted, forgetWorkspace);
+  yield* takeEvery([workspaceUnmounted, workspaceDeleted], forgetWorkspace);
   yield* takeEvery(connectionStatusChanged, onConnectionStatus);
-  if ((yield* selectDaemonHealth.effect()) !== 'down') yield* spawn(syncOnConnect);
+  // Attached, not spawned: a root cancellation (HMR, store teardown) must
+  // take the startup sync down with it rather than let a half-built snapshot
+  // reach the daemon later and delete this host's rows.
+  if ((yield* selectDaemonHealth.effect()) !== 'down') yield* fork(syncOnConnect);
 }

@@ -18,6 +18,7 @@ import {
   updateItem,
   type Collection,
 } from '@augmentcode/themis/utils/collections/collection-utils';
+import { m } from '$shared/paraglide/messages.js';
 import type { BrowserTab } from '$shared/types/browser-clients';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { removeScript } from '../scripts/scripts-slice';
@@ -1770,7 +1771,9 @@ export const acknowledgeBrowserTabHost = createAction<
  * a tab restored from geometry-only persistence, a mirror following its
  * remote host, or a tab the daemon re-homed (`changes.hostClientId`). The
  * row's host-reported fields replace the local ones; a cleared optional
- * field is dropped. Tabs the registry does not know are left untouched.
+ * field is dropped (a cleared title shows the browser fallback, a cleared
+ * emulation resets the viewport it drove). Tabs the registry does not know
+ * are left untouched.
  */
 export const applyBrowserTabRegistryRow = createAction<
   [wsId: string, tabId: string, row: BrowserTab]
@@ -3266,20 +3269,23 @@ panelLayoutReducer.with(applyBrowserTabRegistryRow, (state, { payload: [wsId, ta
       emulatedSize: _size,
       ...rest
     } = tab;
+    // A viewport derived from a now-cleared emulation is stale too; a local
+    // (geometry) viewport of a never-emulated tab is kept.
+    const viewport = row.emulatedSize
+      ? { mode: 'custom' as const, ...row.emulatedSize }
+      : tab.emulatedSize
+        ? { mode: 'fit' as const }
+        : tab.viewport;
     return {
       ...rest,
       hostClientId: row.hostClientId,
       browserUrl: row.url,
-      title: row.title ?? tab.title,
+      title: row.title ?? m.layout_panelLayout_browser_fallback(),
       ...(row.requestedUrl === undefined ? {} : { browserRequestedUrl: row.requestedUrl }),
       ...(row.ownerAgentId === undefined ? {} : { ownerAgentId: row.ownerAgentId }),
       ...(row.ownerAgentName === undefined ? {} : { ownerAgentName: row.ownerAgentName }),
-      ...(row.emulatedSize === undefined
-        ? {}
-        : {
-            emulatedSize: row.emulatedSize,
-            viewport: { mode: 'custom' as const, ...row.emulatedSize },
-          }),
+      ...(row.emulatedSize === undefined ? {} : { emulatedSize: row.emulatedSize }),
+      ...(viewport === undefined ? {} : { viewport }),
     };
   }),
 );
