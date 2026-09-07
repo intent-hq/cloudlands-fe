@@ -207,15 +207,28 @@ function parseNameArg(args) {
  * Get the current git branch name to use as the default dev instance name.
  */
 function getCurrentGitBranch() {
-  try {
-    const result = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-      cwd: dirname(__dirname),
+  const repoDir = dirname(__dirname);
+  const runGit = (args, cwd = repoDir) => {
+    const result = spawnSync('git', args, {
+      cwd,
       encoding: 'utf-8',
       timeout: 3000,
     });
-    if (result.status === 0 && result.stdout) {
-      return result.stdout.trim();
+    return result.status === 0 && result.stdout ? result.stdout.trim() : '';
+  };
+
+  try {
+    const branch = runGit(['rev-parse', '--abbrev-ref', 'HEAD']);
+    if (branch && branch !== 'HEAD') return branch;
+
+    const superproject = runGit(['rev-parse', '--show-superproject-working-tree']);
+    if (superproject) {
+      const superprojectBranch = runGit(['rev-parse', '--abbrev-ref', 'HEAD'], superproject);
+      if (superprojectBranch && superprojectBranch !== 'HEAD') return superprojectBranch;
     }
+
+    const shortSha = runGit(['rev-parse', '--short', 'HEAD']);
+    return shortSha === 'HEAD' ? '' : shortSha;
   } catch {
     // Not in a git repo or git not available
   }

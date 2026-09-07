@@ -27,7 +27,10 @@ vi.mock('electron', () => ({
 
 vi.mock('../state', () => ({ getMainWindow: vi.fn(), setMainWindow: vi.fn() }));
 vi.mock('../../features/deeplink/deep-link-handler', () => ({ DeepLinkHandler: class {} }));
-vi.mock('../utils/resolve-app-title', () => ({ resolveAppTitle: () => 'Intent' }));
+vi.mock('../utils/resolve-app-title', () => ({
+  resolveAppTitle: () => 'Intent',
+  registerWindowTitleListener: vi.fn(),
+}));
 
 const { forwardRendererConsoleToMainLog } = await import('../window');
 const { LOGGING_CONFIG, LogLevel, getLogLevel } = await import('../../shared/logging-config');
