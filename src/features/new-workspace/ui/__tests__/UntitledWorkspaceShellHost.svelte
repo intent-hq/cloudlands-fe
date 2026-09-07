@@ -13,6 +13,7 @@
   interface Props {
     pendingCapabilities?: boolean;
     providerMissing?: boolean;
+    offline?: boolean;
   }
 
   const draft: WorkspaceDraft = {
@@ -32,7 +33,7 @@
     updatedAt: '2026-01-15T12:00:00.000Z',
   };
 
-  let { pendingCapabilities = false, providerMissing = false }: Props = $props();
+  let { pendingCapabilities = false, providerMissing = false, offline = false }: Props = $props();
   let controllerState = $state(buildState());
   let startCount = $state(0);
   let flushCount = $state(0);
@@ -57,6 +58,7 @@
         generation: 0,
       });
     }
+    if (offline) next = reduce(next, { type: 'daemon.offline' });
     return next;
   }
 
@@ -136,3 +138,4 @@
 <output class="sr-only" data-testid="source-kind">{controllerState.input.source?.kind}</output>
 <output class="sr-only" data-testid="source-name">{selectedSourceName()}</output>
 <output class="sr-only" data-testid="provider-selection-count">{providerSelectionCount}</output>
+<output class="sr-only" data-testid="intent-text">{controllerState.input.intentText}</output>

@@ -17,7 +17,12 @@
   } from '../controller';
   import SourceCard, { type SourcePickerMode } from './SourceCard.svelte';
   import ProjectSetupPanel from './setup/ProjectSetupPanel.svelte';
-  import { coordinatorStateFor, isProgressPhase, type NewWorkspacePresentation } from './types';
+  import {
+    coordinatorStateFor,
+    isEditorEnabled,
+    isProgressPhase,
+    type NewWorkspacePresentation,
+  } from './types';
   import { getSetupStatus } from '../utils/setup-status';
   import { getFailurePresentation, type FailureStage } from '../utils/failure-presentation';
 
@@ -80,9 +85,7 @@
       return 'saving';
     return controllerState.draft ? 'saved' : 'saving';
   });
-  const composerLocked = $derived(
-    controllerState.phase !== 'pristine' && controllerState.phase !== 'editing',
-  );
+  const composerLocked = $derived(!isEditorEnabled(controllerState));
   const progressId = $derived(controllerState.draft?.operationKey);
   const failurePresentation = $derived(
     controllerState.phase === 'failed' ? getFailurePresentation(controllerState) : null,

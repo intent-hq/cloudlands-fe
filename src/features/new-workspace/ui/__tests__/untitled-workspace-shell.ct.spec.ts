@@ -34,6 +34,16 @@ test.describe('new-workspace shell', () => {
     await expect(component.getByTestId('flush-count')).toHaveText('1');
   });
 
+  test('keeps offline draft edits available while Start remains disabled', async ({ mount }) => {
+    const component = await mount(UntitledWorkspaceShellHost, { props: { offline: true } });
+    const editor = component.locator('.tiptap-editor');
+
+    await editor.fill('Typed while offline');
+
+    await expect(component.getByTestId('intent-text')).toHaveText('Typed while offline');
+    await expect(component.getByTestId('draft-start')).toBeDisabled();
+  });
+
   test('selects an inline provider when none is ready', async ({ mount }) => {
     const component = await mount(UntitledWorkspaceShellHost, {
       props: { providerMissing: true },
