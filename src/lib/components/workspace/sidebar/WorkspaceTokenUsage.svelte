@@ -830,10 +830,10 @@
                       <ul class="message-only-options flex min-w-0 flex-wrap gap-x-2 gap-y-1">
                         {#each messageOnlyAgentRows as row, index (row.id)}
                           <li class="min-w-0 max-w-full">
-                            <button
-                              type="button"
+                            <Button
+                              variant="plain"
                               role="radio"
-                              class="message-only-control block min-w-0 max-w-full truncate rounded-sm border-0 bg-transparent px-1 py-0.5 text-left text-xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-foreground motion-reduce:transition-none"
+                              class="message-only-control block h-auto min-w-0 max-w-full truncate rounded-sm border-0 bg-transparent !px-1 !py-0.5 text-left text-xs font-normal text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-foreground motion-reduce:transition-none"
                               data-preview-active={rowKey(rowTarget(row)) ===
                               rowKey(rowTarget(previewAgentRow))
                                 ? 'true'
@@ -860,7 +860,7 @@
                               onfocus={() => handleRowFocus(row)}
                               onblur={(event) => handleRowBlur(row, event)}
                               onkeydown={(event) => handleRowKeydown(row, agentRows, event)}
-                              >{row.label}</button
+                              >{row.label}</Button
                             >
                             <span id={`${detailsId}-agent-message-only-${index}`} class="sr-only">
                               {messageCountsLabel(row.humanMessages, row.agentMessages)}
@@ -953,10 +953,10 @@
                       <ul class="message-only-options flex min-w-0 flex-wrap gap-x-2 gap-y-1">
                         {#each messageOnlyModelRows as row, index (row.id)}
                           <li class="min-w-0 max-w-full">
-                            <button
-                              type="button"
+                            <Button
+                              variant="plain"
                               role="radio"
-                              class="message-only-control block min-w-0 max-w-full truncate rounded-sm border-0 bg-transparent px-1 py-0.5 text-left text-xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-foreground motion-reduce:transition-none"
+                              class="message-only-control block h-auto min-w-0 max-w-full truncate rounded-sm border-0 bg-transparent !px-1 !py-0.5 text-left text-xs font-normal text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-foreground motion-reduce:transition-none"
                               data-preview-active={rowKey(rowTarget(row)) ===
                               rowKey(rowTarget(previewModelRow))
                                 ? 'true'
@@ -983,7 +983,7 @@
                               onfocus={() => handleRowFocus(row)}
                               onblur={(event) => handleRowBlur(row, event)}
                               onkeydown={(event) => handleRowKeydown(row, modelRows, event)}
-                              >{row.label}</button
+                              >{row.label}</Button
                             >
                             <span id={`${detailsId}-model-message-only-${index}`} class="sr-only">
                               {messageCountsLabel(row.humanMessages, row.agentMessages)}
