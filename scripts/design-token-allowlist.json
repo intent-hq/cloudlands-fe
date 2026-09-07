@@ -32,6 +32,7 @@
     "src/lib/components/ui/button/index.ts": { "palette": 0, "arbitrary": 7 },
     "src/lib/components/ui/checkbox/checkbox.svelte": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/CollapsiblePanel.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/copy-input/copy-input.svelte": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/dialog/dialog-content.svelte": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/dropdown/Dropdown.svelte": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/EditableName.svelte": { "palette": 0, "arbitrary": 1 },
