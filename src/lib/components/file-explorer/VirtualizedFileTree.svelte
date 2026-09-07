@@ -1171,7 +1171,7 @@
 
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="flex items-center transition-colors duration-150 {isIgnored
+              class="relative flex items-center transition-colors duration-150 {isIgnored
                 ? 'opacity-50'
                 : ''}"
               class:folder-drop-target={isDropTarget}
@@ -1184,7 +1184,7 @@
               {#if editingPath === node.path}
                 <!-- Inline edit mode - matches ListItem sm size styling exactly -->
                 <div
-                  class="relative min-w-0 flex items-center gap-2.5 py-1 rounded-md border border-border shadow-xs bg-background text-foreground"
+                  class="relative z-10 min-w-0 flex items-center gap-2.5 py-1 rounded-md text-foreground"
                   style="margin-left: 0.5px; padding-left: 9px; padding-right: 0.5px; width: calc(100% - 0.5px);"
                 >
                   <span
@@ -1202,7 +1202,7 @@
                     bind:value={editingValue}
                     onblur={saveEdit}
                     onkeydown={handleEditKeydown}
-                    class="flex-1 text-sm leading-tight bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0"
+                    class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent text-sm leading-tight outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
                     onclick={(e) => e.stopPropagation()}
                   />
                 </div>
@@ -1214,7 +1214,7 @@
                   icon={faChevronDown}
                   iconClass={`opacity-50 [&>svg]:w-2! [&>svg]:mr-1! ${gitColor} transition-transform duration-150 ${flatNode.isExpanded ? '' : 'rotate-90'}`}
                   title={displayName}
-                  titleClass={gitColor}
+                  titleClass={`cursor-text ${gitColor}`}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}
                   size="sm"
                   class="flex-1"
@@ -1240,7 +1240,7 @@
                   tabindex={-1}
                   iconClass={gitColor}
                   title={displayName}
-                  titleClass={gitColor}
+                  titleClass={`cursor-text ${gitColor}`}
                   badge={isModified ? '•' : undefined}
                   badgeClass={isModified ? 'text-blue-500' : undefined}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}
@@ -1279,6 +1279,13 @@
                   {/each}
                 </div>
               {/if}
+              <span
+                aria-hidden="true"
+                class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingPath ===
+                node.path
+                  ? 'inset-px border-ring/60 bg-background'
+                  : 'inset-x-1 inset-y-0.5 border-transparent bg-transparent'}"
+              ></span>
             </div>
           {/if}
         {/each}
@@ -1299,6 +1306,10 @@
 {/if}
 
 <style>
+  input.inline-edit-input::selection {
+    background: hsl(var(--ring) / 0.3);
+  }
+
   /* Visual feedback when dragging files to root level (no specific folder targeted) */
   .file-drop-root {
     outline: 2px dashed hsl(var(--primary));

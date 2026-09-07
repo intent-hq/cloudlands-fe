@@ -1099,20 +1099,34 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                       ></div>
                     </div>
                   {/snippet}
-                  {#if editingScriptId === script.id}
-                    {#snippet children()}
-                      <input
-                        type="text"
-                        data-edit-script={script.id}
-                        bind:value={editingScriptName}
-                        onblur={finishEditingScript}
-                        onkeydown={handleEditScriptKeydown}
-                        onclick={(e) => e.stopPropagation()}
-                        placeholder={m.terminal_quakeOverlay_name_placeholder()}
-                        class="w-full p-0 border-none bg-transparent text-sm outline-none focus:outline-none! focus:ring-0!"
-                      />
-                    {/snippet}
-                  {/if}
+                  {#snippet children()}
+                    <div
+                      class={editingScriptId === script.id
+                        ? 'relative flex w-full min-w-0 items-center'
+                        : 'pointer-events-none absolute'}
+                    >
+                      {#if editingScriptId === script.id}
+                        <input
+                          type="text"
+                          data-edit-script={script.id}
+                          bind:value={editingScriptName}
+                          onblur={finishEditingScript}
+                          onkeydown={handleEditScriptKeydown}
+                          onclick={(e) => e.stopPropagation()}
+                          placeholder={m.terminal_quakeOverlay_name_placeholder()}
+                          class="relative z-10 w-full cursor-text border-none bg-transparent p-0 text-sm outline-none focus:outline-none! focus:ring-0!"
+                        />
+                      {/if}
+                      <span
+                        aria-hidden="true"
+                        data-script-rename-decoration={script.id}
+                        class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingScriptId ===
+                        script.id
+                          ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
+                          : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+                      ></span>
+                    </div>
+                  {/snippet}
                 </ListItem>
               </div>
             {/each}
@@ -1308,3 +1322,11 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     ></div>
   {/if}
 </div>
+
+<style>
+  @media (prefers-reduced-motion: reduce) {
+    [data-script-rename-decoration] {
+      transition-duration: 0s !important;
+    }
+  }
+</style>
