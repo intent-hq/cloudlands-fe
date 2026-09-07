@@ -177,5 +177,4 @@ describe('PanelEmptyState', () => {
     expect(layoutManager.reopenClosedTab).toHaveBeenCalledOnce();
     expect(layoutManager.reopenClosedTab).toHaveBeenCalledWith('older', 'panel-2');
   });
-
 });
