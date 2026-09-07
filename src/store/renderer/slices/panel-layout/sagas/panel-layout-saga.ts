@@ -64,7 +64,9 @@ import {
 import { selectPanelLayoutWorkspace } from '../panel-layout-selectors';
 import { migratePanelLayoutForWorkspace } from '../panel-layout-migration';
 import {
+  acknowledgeBrowserTabHost,
   activateVisibleTab,
+  applyBrowserTabRegistryRow,
   clearPanelLayout,
   bootstrapNewWorkspaceLayout,
   closeActiveTab,
@@ -139,6 +141,8 @@ import {
   PANEL_LAYOUT_STORAGE_KEY_PREFIX,
   PANEL_LAYOUT_PERSISTENCE_VERSION,
   type PanelLayoutNode,
+  type PanelState,
+  type PanelTab,
   type WorkspacePanelLayout,
   type WorkspacePanelLayoutState,
 } from '../panel-layout-types';
@@ -200,6 +204,9 @@ const PERSIST_ACTIONS = [
   consumePendingFocus,
   reconcilePanelColumnCount,
   setPanelColumnCount,
+  // Registry acknowledgement / row application changes which fields persist.
+  acknowledgeBrowserTabHost,
+  applyBrowserTabRegistryRow,
 ];
 
 const HISTORY_ACTIONS = [
@@ -502,7 +509,7 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
  * sits on the exact stored/requested pair the probe started from and is
  * dropped as stale otherwise.
  */
-function* rehydrateTunneledBrowserTabs(
+export function* rehydrateTunneledBrowserTabs(
   wsId: string,
   tabs: RehydratableBrowserTab[],
 ): SagaGenerator<void> {
@@ -660,6 +667,35 @@ export function* hydrateWorkspaceLayout(wsId: string): SagaGenerator<void> {
   yield* call(handleWorkspaceMountedRestore, panelLayoutScopeMounted(wsId));
 }
 
+/**
+ * A browser tab the daemon registry hosts (REV-2 §5.45) persists geometry
+ * only: its URL, owner and emulated size are restored from `browser.listTabs`,
+ * so localStorage must stop carrying them (they would otherwise shadow the
+ * registry after a navigation elsewhere). Tabs the registry has not
+ * acknowledged keep their fields so the next reconcile can migrate them.
+ */
+function stripRegistryHeldFields(tab: PanelTab): PanelTab {
+  if (tab.type !== 'browser' || !tab.hostClientId) return tab;
+  const {
+    browserUrl: _url,
+    browserRequestedUrl: _requested,
+    ownerAgentId: _owner,
+    ownerAgentName: _ownerName,
+    emulatedSize: _size,
+    ...geometry
+  } = tab;
+  return geometry;
+}
+
+function persistablePanels(panels: Record<string, PanelState>): Record<string, PanelState> {
+  return Object.fromEntries(
+    Object.entries(panels).map(([panelId, panel]) => [
+      panelId,
+      { ...panel, tabs: panel.tabs.map(stripRegistryHeldFields) },
+    ]),
+  );
+}
+
 function* persistPanelLayout(action: { payload?: unknown }): SagaGenerator<void> {
   try {
     const wsId = getWsId(action);
@@ -669,7 +705,7 @@ function* persistPanelLayout(action: { payload?: unknown }): SagaGenerator<void>
     const layout: WorkspacePanelLayout = {
       version: PANEL_LAYOUT_PERSISTENCE_VERSION,
       root: getPersistableRoot(workspace),
-      panels: workspace.panels,
+      panels: persistablePanels(workspace.panels),
       focusedPanelId: workspace.focusedPanelId,
       columnCount: workspace.columnCount,
       canvasWidth:
@@ -682,7 +718,7 @@ function* persistPanelLayout(action: { payload?: unknown }): SagaGenerator<void>
           ? workspace.savedCanvasWidthSourceBeforeExpand
           : workspace.canvasWidthSource,
     };
-    const hiddenTabs = getItems(workspace.hiddenTabs);
+    const hiddenTabs = getItems(workspace.hiddenTabs).map(stripRegistryHeldFields);
     if (hiddenTabs.length > 0) layout.hiddenTabs = hiddenTabs;
     if (workspace.deferSpecTab) layout.deferSpecTab = true;
     if (workspace.newWorkspaceLifecycle) {

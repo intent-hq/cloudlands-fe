@@ -17,7 +17,9 @@ import {
   moveTabToSplitLevel,
   createGridLayout,
   closeTab,
+  acknowledgeBrowserTabHost,
   activateVisibleTab,
+  applyBrowserTabRegistryRow,
   closeActiveTab,
   closeFocusedPanelTab,
   closePanel,
@@ -3561,6 +3563,119 @@ describe('panelLayoutReducer', () => {
       const hiddenTab = getItems(result.byWorkspaceId[WS].hiddenTabs)[0];
       expect(hiddenTab.ownerAgentId).toBe('agent-1');
       expect(hiddenTab.emulatedSize).toEqual({ width: 390, height: 844 });
+    });
+  });
+
+  describe('browser tab registry (REV-2 §5.45)', () => {
+    const row = {
+      tabId: 'b1',
+      workspaceId: WS,
+      hostClientId: 'cli-laptop',
+      url: 'http://daemon.localhost:5173/',
+      requestedUrl: 'http://localhost:5173/',
+      title: 'Dev server',
+      ownerAgentId: 'agent-1',
+      ownerAgentName: 'Builder',
+      visibility: 'visible' as const,
+      emulatedSize: { width: 390, height: 844 },
+      createdAt: '2026-09-07T00:00:00.000Z',
+      updatedAt: '2026-09-07T00:00:00.000Z',
+    };
+
+    it('acknowledgeBrowserTabHost records the host and leaves every other field alone', () => {
+      const state = stateWithPanel('p1', [
+        { id: 'b1', type: 'browser', title: 'Browser', browserUrl: 'http://a.test/' },
+      ]);
+      const result = panelLayoutReducer(state, acknowledgeBrowserTabHost(WS, 'b1', 'cli-desk'));
+      expect(result.byWorkspaceId[WS].panels.p1.tabs[0]).toMatchObject({
+        hostClientId: 'cli-desk',
+        browserUrl: 'http://a.test/',
+        title: 'Browser',
+      });
+      expect(panelLayoutReducer(result, acknowledgeBrowserTabHost(WS, 'b1', 'cli-desk'))).toBe(
+        result,
+      );
+    });
+
+    it('acknowledgeBrowserTabHost ignores unknown and non-browser tabs', () => {
+      const state = stateWithPanel('p1', [{ id: 'n1', type: 'note', title: 'Note' }]);
+      expect(panelLayoutReducer(state, acknowledgeBrowserTabHost(WS, 'n1', 'cli-desk'))).toBe(
+        state,
+      );
+      expect(panelLayoutReducer(state, acknowledgeBrowserTabHost(WS, 'zz', 'cli-desk'))).toBe(
+        state,
+      );
+    });
+
+    it('applyBrowserTabRegistryRow fills a geometry-only tab from the canonical row', () => {
+      const state = stateWithPanel('p1', [
+        { id: 'b1', type: 'browser', title: 'Browser', hostClientId: 'cli-laptop' },
+      ]);
+      const result = panelLayoutReducer(state, applyBrowserTabRegistryRow(WS, 'b1', row));
+      expect(result.byWorkspaceId[WS].panels.p1.tabs[0]).toEqual({
+        id: 'b1',
+        type: 'browser',
+        closable: true,
+        hostClientId: 'cli-laptop',
+        browserUrl: 'http://daemon.localhost:5173/',
+        browserRequestedUrl: 'http://localhost:5173/',
+        title: 'Dev server',
+        ownerAgentId: 'agent-1',
+        ownerAgentName: 'Builder',
+        emulatedSize: { width: 390, height: 844 },
+        viewport: { mode: 'custom', width: 390, height: 844 },
+      });
+    });
+
+    it('applyBrowserTabRegistryRow drops fields the row cleared and re-homes the tab', () => {
+      const state = stateWithPanel('p1', [
+        {
+          id: 'b1',
+          type: 'browser',
+          title: 'Old',
+          hostClientId: 'cli-desk',
+          browserUrl: 'http://old.test/',
+          browserRequestedUrl: 'http://localhost:1/',
+          ownerAgentId: 'agent-9',
+          ownerAgentName: 'Nine',
+          emulatedSize: { width: 1, height: 1 },
+          viewport: { mode: 'custom', width: 1, height: 1 },
+        },
+      ]);
+      const unowned = {
+        ...row,
+        requestedUrl: undefined,
+        ownerAgentId: undefined,
+        ownerAgentName: undefined,
+        emulatedSize: undefined,
+        title: undefined,
+      };
+      const result = panelLayoutReducer(state, applyBrowserTabRegistryRow(WS, 'b1', unowned));
+      const tab = result.byWorkspaceId[WS].panels.p1.tabs[0];
+      expect(tab).toMatchObject({
+        hostClientId: 'cli-laptop',
+        browserUrl: 'http://daemon.localhost:5173/',
+        title: 'Old',
+        viewport: { mode: 'custom', width: 1, height: 1 },
+      });
+      expect(tab).not.toHaveProperty('browserRequestedUrl');
+      expect(tab).not.toHaveProperty('ownerAgentId');
+      expect(tab).not.toHaveProperty('ownerAgentName');
+      expect(tab).not.toHaveProperty('emulatedSize');
+    });
+
+    it('applyBrowserTabRegistryRow reaches a hidden owned tab', () => {
+      const state = stateWithPanel('p1', [
+        { id: 'b1', type: 'browser', title: 'B', ownerAgentId: 'agent-1' },
+        { id: 'n1', type: 'note', title: 'Note' },
+      ]);
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'b1', 'p1', 1000));
+      const result = panelLayoutReducer(hidden, applyBrowserTabRegistryRow(WS, 'b1', row));
+      expect(getItems(result.byWorkspaceId[WS].hiddenTabs)[0]).toMatchObject({
+        hostClientId: 'cli-laptop',
+        browserUrl: 'http://daemon.localhost:5173/',
+        title: 'Dev server',
+      });
     });
   });
 

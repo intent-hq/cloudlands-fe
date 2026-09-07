@@ -21,6 +21,7 @@
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { updateContextItem } from '$store/renderer/slices/context/context-slice';
   import { selectPendingPanelReveal } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { selectOwnClientId } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { store as appStore } from '$store/renderer/store';
 
@@ -49,9 +50,19 @@
     tab.ownerAgentId ? resolveOwnerName(tab.ownerAgentId, $agents$, tab.ownerAgentName) : undefined,
   );
   let viewportActionNode: HTMLDivElement | null = $state(null);
+
+  // The live webview mounts only on the tab's host (REV-2 §5.45). A tab the
+  // registry homes on another client is a mirror here: no guest, no
+  // navigation/title reports. Viewer rendering of mirrors is a follow-up.
+  const ownClientId$ = selectOwnClientId();
+  const isHostedHere = $derived(
+    tab.hostClientId === undefined || tab.hostClientId === $ownClientId$,
+  );
 </script>
 
-{#if browserUrl}
+{#if !isHostedHere}
+  <div class="h-full" data-browser-tab-mirror={tab.hostClientId}></div>
+{:else if browserUrl}
   <div
     bind:this={viewportActionNode}
     class="h-full"
