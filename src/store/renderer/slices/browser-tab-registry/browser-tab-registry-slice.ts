@@ -4,7 +4,8 @@
  * Reducer-owned lifecycle bookkeeping for the registry saga (see the types
  * file for the state machine). The saga is the only dispatcher of the
  * `registry*` actions; teardown transitions ride the existing lifecycle and
- * panel-layout actions so no second watcher of those actions is needed.
+ * panel-layout actions. An unmount keeps the report map for the saga, which
+ * diffs it against the layout the unmount leaves in place (`registryUnmounted`).
  */
 
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
@@ -68,6 +69,14 @@ export const registryRemovalsPending = createAction<[wsId: string, tabIds: strin
 /** `browser.removeTab` succeeded; the `browser:tab-closed` echo is still to land. */
 export const registryRemovalAcknowledged = createAction<[tabId: string]>(
   'browserTabRegistry/removalAcknowledged',
+);
+
+/**
+ * The unmounted workspace's report map was diffed against its layout:
+ * `closed` had left it (removal pending), the rest left with the workspace.
+ */
+export const registryUnmounted = createAction<[wsId: string, closed: string[]]>(
+  'browserTabRegistry/unmounted',
 );
 
 /**
@@ -148,6 +157,18 @@ browserTabRegistryReducer.with(registryRemovalAcknowledged, (state, { payload: [
   return { ...state, closing: { ...state.closing, [tabId]: 'acknowledged' } };
 });
 
+browserTabRegistryReducer.with(registryUnmounted, (state, { payload: [wsId, closed] }) => {
+  let next = state;
+  if (closed.length > 0) {
+    const closing = { ...state.closing };
+    for (const tabId of closed) closing[tabId] = 'pending';
+    next = { ...next, closing };
+  }
+  const ws = getWorkspaceState(next, wsId);
+  if (ws.phase !== 'unmounted' || Object.keys(ws.reported).length === 0) return next;
+  return setWorkspaceState(next, wsId, { ...ws, reported: {} });
+});
+
 browserTabRegistryReducer.with(
   registrySnapshotAcknowledged,
   (state, { payload: [omitted, dropped] }) => {
@@ -171,12 +192,14 @@ browserTabRegistryReducer.with(browserTabClosed, (state, { payload: [wsId, tabId
 });
 
 // --- Teardown: a new generation fences every step still in flight ---
-// An unmounted or deleted workspace forgets what it reported: its tabs left
-// the layout without being closed. A cleared layout keeps its map: closing
-// the last panel is a close, reported by the next run. Pending removals
-// survive both — those were closes.
+// A deleted workspace forgets what it reported along with its layout. An
+// unmounted one keeps its layout, so the map stays for the saga to tell the
+// tabs closed before the unmount from those that left with it
+// (`registryUnmounted`). A cleared layout keeps its map too: closing the
+// last panel is a close, reported by the next run. Pending removals survive
+// all three — those were closes.
 browserTabRegistryReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
-  bump(state, wsId, 'unmounted', {}),
+  bump(state, wsId, 'unmounted', getWorkspaceState(state, wsId).reported),
 );
 browserTabRegistryReducer.with(workspaceDeleted, (state, { payload: [wsId] }) =>
   bump(state, wsId, 'unmounted', {}),

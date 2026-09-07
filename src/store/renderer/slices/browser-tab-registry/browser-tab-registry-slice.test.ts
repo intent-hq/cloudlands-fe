@@ -28,6 +28,7 @@ import {
   registrySnapshotAcknowledged,
   registryTabForgotten,
   registryTabReported,
+  registryUnmounted,
 } from './browser-tab-registry-slice';
 import type { BrowserTabRegistryState } from './browser-tab-registry-slice';
 
@@ -132,11 +133,29 @@ describe('browserTabRegistryReducer', () => {
     expect(browserTabRegistryReducer(state, registrySnapshotAcknowledged([], []))).toBe(state);
   });
 
-  it('tears down on unmount and delete, forgetting the reported tabs', () => {
-    for (const action of [workspaceUnmounted(WS), workspaceDeleted(WS)]) {
-      const state = browserTabRegistryReducer(applied(), action);
-      expect(ws(state)).toEqual({ generation: 2, phase: 'unmounted', reported: {} });
-    }
+  it('tears down on delete, forgetting the reported tabs', () => {
+    const state = browserTabRegistryReducer(applied(), workspaceDeleted(WS));
+    expect(ws(state)).toEqual({ generation: 2, phase: 'unmounted', reported: {} });
+  });
+
+  it('tears down on unmount keeping the reported tabs until the saga has diffed them', () => {
+    const unmounted = browserTabRegistryReducer(applied(), workspaceUnmounted(WS));
+    expect(ws(unmounted)).toEqual({
+      generation: 2,
+      phase: 'unmounted',
+      reported: { b1: input('b1') },
+    });
+    const diffed = browserTabRegistryReducer(unmounted, registryUnmounted(WS, ['b1']));
+    expect(ws(diffed)).toEqual({ generation: 2, phase: 'unmounted', reported: {} });
+    expect(diffed.closing).toEqual({ b1: 'pending' });
+    expect(browserTabRegistryReducer(diffed, registryUnmounted(WS, []))).toBe(diffed);
+  });
+
+  it('records the closes of an unmount diff even once the workspace loads again', () => {
+    const reloaded = reduce(registryLoading(WS), registryApplied(WS, 1, { b1: input('b1') }));
+    const state = browserTabRegistryReducer(reloaded, registryUnmounted(WS, ['b2']));
+    expect(state.closing).toEqual({ b2: 'pending' });
+    expect(ws(state).reported).toEqual({ b1: input('b1') });
   });
 
   it('tears down on a cleared layout but keeps the reported tabs and pending removals', () => {

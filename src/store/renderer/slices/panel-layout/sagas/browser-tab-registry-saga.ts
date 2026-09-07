@@ -98,6 +98,7 @@ import {
   registrySnapshotAcknowledged,
   registryTabForgotten,
   registryTabReported,
+  registryUnmounted,
   type BrowserTabClosingState,
   type WorkspaceBrowserTabRegistryState,
 } from '../../browser-tab-registry/browser-tab-registry-slice';
@@ -111,6 +112,7 @@ import {
   selectWorkspaceListLoadedForBackend,
 } from '../../workspace/workspace-selectors';
 import { setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { selectPanelLayoutWorkspace, selectPanelLayoutWorkspaces } from '../panel-layout-selectors';
 import {
   acknowledgeBrowserTabHost,
@@ -144,8 +146,11 @@ const PLACEMENT_WAIT_MS = 5_000;
 type Visibility = BrowserTab['visibility'];
 type HostedTab = { tab: PanelTab; visibility: Visibility };
 type Listing = { rows: BrowserTab[]; revision: number };
-/** One workspace's connect-time load: its rows, and the generation they were applied under (null: layout not settled). */
-type WorkspaceLoad = { rows: BrowserTab[]; applied: number | null };
+/**
+ * One workspace's connect-time load: its rows, the registry generation they
+ * were read under, and whether they were applied to a settled layout.
+ */
+type WorkspaceLoad = { rows: BrowserTab[]; generation: number; applied: boolean };
 type Closing = Record<string, BrowserTabClosingState>;
 
 /** Connect-time sync guards: one sync per connection generation, reset on backend change. */
@@ -343,9 +348,11 @@ function* applyRows(
     const mine = row.hostClientId === ownClientId;
     if (!existing) {
       if (closedHere(registry, closing, row.tabId)) {
-        // Closed here already: kept as reported so the next run removes it.
+        // Closed here already: kept as reported so the next run removes it
+        // (an acknowledged removal only awaits its echo).
         const previous = registry.reported[row.tabId];
         if (previous) reported[row.tabId] = previous;
+        else if (mine && closing[row.tabId] === 'pending') reported[row.tabId] = rowToInput(row);
         continue;
       }
       yield* call(materialiseRow, wsId, row);
@@ -429,10 +436,10 @@ function* loadWorkspace(wsId: string, ownClientId: string): SagaGenerator<Worksp
     if (listing === null) return null;
     if (!(yield* call(isCurrentGeneration, wsId, generation))) return null;
     const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
-    if (!isSettled(layout)) return { rows: listing.rows, applied: null };
+    if (!isSettled(layout)) return { rows: listing.rows, generation, applied: false };
     if (!(yield* call(applyRows, wsId, generation, listing.rows, ownClientId))) return null;
     if ((yield* selectWorkspaceBrowserTabsRevision.effect(wsId)) === listing.revision) {
-      return { rows: listing.rows, applied: generation };
+      return { rows: listing.rows, generation, applied: true };
     }
   }
   logger.warn('registry rows kept changing while being applied; skipping', { wsId });
@@ -446,6 +453,28 @@ function* reconcileOnSettle(action: ReturnType<typeof setRestoreStatus>): SagaGe
   if ((yield* selectDaemonHealth.effect()) === 'down') return;
   const ownClientId = yield* waitForOwnClientId();
   yield* call(loadWorkspace, wsId, ownClientId);
+}
+
+/**
+ * `workspaceUnmounted` leaves the layout in place, so the tabs the workspace
+ * reported but no longer holds were closed before the unmount — closes the
+ * debounced reporter may not have computed yet, and which it will not
+ * compute for an unmounted workspace. They are recorded as pending removals
+ * (and removed now when the daemon is reachable); the rest left with the
+ * workspace and are forgotten. A layout that is not settled cannot be
+ * diffed: nothing is read as closed then.
+ */
+function* onWorkspaceUnmounted(action: ReturnType<typeof workspaceUnmounted>): SagaGenerator<void> {
+  const [wsId] = action.payload;
+  const registry = yield* selectBrowserTabRegistryWorkspace.effect(wsId);
+  const reported = Object.keys(registry.reported);
+  if (reported.length === 0) return;
+  const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
+  const present = new Set(collectBrowserTabs(layout).map((h) => h.tab.id));
+  const closed = isSettled(layout) ? reported.filter((tabId) => !present.has(tabId)) : [];
+  yield* put(registryUnmounted(wsId, closed));
+  if (closed.length === 0 || (yield* selectDaemonHealth.effect()) === 'down') return;
+  for (const tabId of closed) yield* call(removeReportedTab, tabId);
 }
 
 function* removeReportedTab(tabId: string): SagaGenerator<void> {
@@ -472,12 +501,15 @@ function* reportWorkspaceTabs(action: { type: string; payload?: unknown }): Saga
 /**
  * Diff the workspace's hosted tabs against what the daemon last acknowledged
  * and report the delta. Single-flight per workspace (see the saga root);
- * only an applied workspace reports, and a reply whose generation moved is
- * dropped. Removals are recorded before the health gate so a tab closed
- * while the daemon is unreachable stays closed across the reconnect. A tab
- * is recorded as reported when its `upsertTab` goes out — so a row or echo
- * for it arriving before the reply is not rematerialised — and forgotten
- * again if the call fails.
+ * only an applied workspace reports. The run is fenced on the generation it
+ * read before every `upsertTab` — a layout torn down and rebuilt while an
+ * earlier call was in flight has newer tabs than the ones read here — and a
+ * reply whose generation moved is dropped. Removals are recorded before the
+ * health gate so a tab closed while the daemon is unreachable stays closed
+ * across the reconnect, and are sent regardless of the generation: a close
+ * stays a close. A tab is recorded as reported when its `upsertTab` goes out
+ * — so a row or echo for it arriving before the reply is not rematerialised
+ * — and forgotten again if the call fails.
  */
 function* reportHostedTabs(wsId: string): SagaGenerator<void> {
   yield* delay(REPORT_DEBOUNCE_MS);
@@ -495,6 +527,7 @@ function* reportHostedTabs(wsId: string): SagaGenerator<void> {
   if ((yield* selectDaemonHealth.effect()) === 'down') return;
   for (const tabId of removed) yield* call(removeReportedTab, tabId);
   for (const item of hosted) {
+    if (!(yield* call(isCurrentGeneration, wsId, generation))) return;
     const { tab } = item;
     if (!hostedHere(tab, ownClientId)) {
       if (tab.id in registry.reported) yield* put(registryTabForgotten(wsId, tab.id));
@@ -625,10 +658,13 @@ function* waitForWorkspaceList(backendId: string): SagaGenerator<boolean> {
  * only listed), then send one `browser.syncTabs` snapshot of everything this
  * client hosts. A loaded workspace contributes the hosted tabs of its layout
  * — read only while it is still applied under the generation it was loaded
- * in; if it is not (load failed, torn down since) the whole attempt is
- * abandoned, because the daemon deletes any row of this host missing from
- * the snapshot. Rows of unsettled workspaces are passed through verbatim.
- * Returns false when the attempt could not complete (retryable).
+ * in. Rows of unsettled workspaces are passed through verbatim — only while
+ * the workspace is still in the generation they were read under: one that
+ * settled and loaded meanwhile may have reported tabs its old rows lack. In
+ * either case, if the generation moved (load failed, torn down or loaded
+ * since) the whole attempt is abandoned, because the daemon deletes any row
+ * of this host missing from the snapshot. Returns false when the attempt
+ * could not complete (retryable).
  */
 function* syncTabsOnce(backendId: string, ownClientId: string): SagaGenerator<boolean> {
   if (!(yield* call(waitForWorkspaceList, backendId))) {
@@ -659,19 +695,19 @@ function* syncTabsOnce(backendId: string, ownClientId: string): SagaGenerator<bo
   const omitted = Object.keys(closing).filter((tabId) => closing[tabId] === 'pending');
   for (const [index, ws] of workspaces.entries()) {
     const load = loads[index] as WorkspaceLoad;
-    if (load.applied === null) {
+    const registry = yield* selectBrowserTabRegistryWorkspace.effect(ws.id);
+    if (registry.generation !== load.generation || (load.applied && !isActive(registry))) {
+      logger.warn('workspace layout moved before the snapshot; skipping browser.syncTabs', {
+        wsId: ws.id,
+      });
+      return false;
+    }
+    if (!load.applied) {
       for (const row of load.rows) {
         if (row.hostClientId !== ownClientId || row.tabId in closing) continue;
         snapshot.push(rowToInput(row));
       }
       continue;
-    }
-    const registry = yield* selectBrowserTabRegistryWorkspace.effect(ws.id);
-    if (registry.generation !== load.applied || !isActive(registry)) {
-      logger.warn('workspace layout moved before the snapshot; skipping browser.syncTabs', {
-        wsId: ws.id,
-      });
-      return false;
     }
     const layout = yield* selectPanelLayoutWorkspace.effect(ws.id);
     const reported: Record<string, BrowserTabInput> = {};
@@ -683,7 +719,7 @@ function* syncTabsOnce(backendId: string, ownClientId: string): SagaGenerator<bo
       reported[hosted.tab.id] = input;
       if (hosted.tab.hostClientId !== ownClientId) unacknowledged.push([ws.id, hosted.tab.id]);
     }
-    yield* put(registryApplied(ws.id, load.applied, reported));
+    yield* put(registryApplied(ws.id, load.generation, reported));
     applied.push(ws.id);
   }
 
@@ -691,15 +727,17 @@ function* syncTabsOnce(backendId: string, ownClientId: string): SagaGenerator<bo
     const { drop } = yield* call([appClient.browser, appClient.browser.syncTabs], snapshot);
     yield* put(registrySnapshotAcknowledged(omitted, drop));
     const dropped = new Set(drop);
+    // The acknowledgement describes the snapshot as sent; a tab re-homed or
+    // closed while the call was in flight is newer and keeps its state — a
+    // dropped tab that has since become another host's mirror stays.
     const current = yield* selectPanelLayoutWorkspaces.effect();
     for (const tabId of dropped) {
       for (const [wsId, layout] of Object.entries(current)) {
-        if (findBrowserTab(layout, tabId) === undefined) continue;
+        const tab = findBrowserTab(layout, tabId);
+        if (tab === undefined || !hostedHere(tab, ownClientId)) continue;
         yield* put(closeTab(wsId, tabId, undefined, undefined, { destroy: true }));
       }
     }
-    // The acknowledgement describes the snapshot as sent; a tab re-homed or
-    // closed while the call was in flight is newer and keeps its state.
     for (const [wsId, tabId] of unacknowledged) {
       if (dropped.has(tabId)) continue;
       const tab = findBrowserTab(yield* selectPanelLayoutWorkspace.effect(wsId), tabId);
@@ -718,8 +756,9 @@ function* syncTabsOnce(backendId: string, ownClientId: string): SagaGenerator<bo
 
 /** The rows of a workspace whose layout has not settled: nothing to apply them to. */
 function* listUnsettledWorkspace(wsId: string): SagaGenerator<WorkspaceLoad | null> {
+  const { generation } = yield* selectBrowserTabRegistryWorkspace.effect(wsId);
   const listing = yield* call(listRows, wsId);
-  return listing === null ? null : { rows: listing.rows, applied: null };
+  return listing === null ? null : { rows: listing.rows, generation, applied: false };
 }
 
 /**
@@ -766,6 +805,7 @@ export function* browserTabRegistrySaga(): SagaGenerator<void> {
     reportWorkspaceTabs,
   );
   yield* takeEvery(setRestoreStatus, reconcileOnSettle);
+  yield* takeEvery(workspaceUnmounted, onWorkspaceUnmounted);
   yield* takeEvery(browserTabUpserted, onRegistryRow);
   yield* takeEvery(browserTabClosed, onRegistryClose);
   yield* takeEvery(connectionStatusChanged, onConnectionStatus);

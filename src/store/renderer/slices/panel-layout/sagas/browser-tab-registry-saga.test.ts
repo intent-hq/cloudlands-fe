@@ -1159,5 +1159,155 @@ describe('browserTabRegistrySaga', () => {
         await stop(h);
       },
     );
+
+    it('revalidates a passed-through unsettled listing that settled and reported a tab meanwhile', async () => {
+      const slow = deferred<BrowserTabListing[]>();
+      let rows: BrowserTabListing[] = [];
+      mocks.listTabs.mockImplementation((wsId: string) =>
+        wsId === SLOW ? slow.promise : Promise.resolve(rows),
+      );
+      const h = start({
+        layouts: { [WS]: settledLayout([], 'pending' as never), [SLOW]: settledLayout([]) },
+        health: 'down',
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(connectionStatusChanged('connected'));
+      await flush(0);
+      expect(mocks.listTabs).toHaveBeenCalledWith(WS);
+
+      // The workspace settles and reports a new tab while the other listing is held.
+      remount(h);
+      await flush(0);
+      h.dispatch(
+        openTabInRightmostColumn(WS, browserTab({ browserUrl: 'http://a.test/' }), {
+          newTabId: 'b1',
+        }),
+      );
+      await flush();
+      expect(mocks.upsertTab.mock.calls).toEqual([[WS, expectedInput()]]);
+      rows = [row()];
+
+      slow.resolve([]);
+      await flush();
+      expect(mocks.syncTabs).not.toHaveBeenCalled();
+      await flush(SYNC_RETRY_MS);
+      expect(mocks.syncTabs.mock.calls).toEqual([[[expect.objectContaining({ tabId: 'b1' })]]]);
+      expect(h.tabs()).toEqual([expect.objectContaining({ id: 'b1', hostClientId: OWN })]);
+      await stop(h);
+    });
+
+    it('does not report a torn-down layout after a removal reply held past its remount', async () => {
+      const removal = deferred<{ ok: true }>();
+      const h = start({
+        layouts: {
+          [WS]: settledLayout([
+            browserTab({ browserUrl: 'http://a.test/' }),
+            browserTab({ id: 'b2', browserUrl: 'http://b.test/' }),
+          ]),
+        },
+        health: 'down',
+        applied: true,
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(updateTabTitle(WS, 'b1', 'One'));
+      await flush();
+      expect(mocks.upsertTab).toHaveBeenCalledTimes(2);
+
+      mocks.removeTab.mockReturnValueOnce(removal.promise);
+      h.dispatch(updateTabBrowserUrl(WS, 'b2', 'http://b.test/stale'));
+      h.dispatch(closeTab(WS, 'b1', undefined, undefined, { destroy: true }));
+      await flush();
+      expect(mocks.removeTab).toHaveBeenCalledWith('b1');
+
+      mocks.listTabs.mockResolvedValue([row({ tabId: 'b2', url: 'http://b.test/fresh' })]);
+      teardown(h);
+      remount(h);
+      await flush();
+      const fresh = [expect.objectContaining({ id: 'b2', browserUrl: 'http://b.test/fresh' })];
+      expect(h.tabs()).toEqual(fresh);
+
+      removal.resolve({ ok: true });
+      await flush();
+      expect(mocks.upsertTab.mock.calls.map(([, tab]) => tab.url)).not.toContain(
+        'http://b.test/stale',
+      );
+      expect(h.tabs()).toEqual(fresh);
+      await stop(h);
+    });
+
+    it('keeps a mirror restored under a newer generation when a stale snapshot drops its id', async () => {
+      const ack = deferred<{ drop: string[] }>();
+      mocks.listTabs.mockResolvedValue([row()]);
+      mocks.syncTabs.mockReturnValueOnce(ack.promise);
+      const h = start({
+        layouts: {
+          [WS]: settledLayout([browserTab({ browserUrl: 'http://a.test/', hostClientId: OWN })]),
+        },
+        health: 'down',
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(connectionStatusChanged('connected'));
+      await flush(0);
+      expect(mocks.syncTabs.mock.calls).toEqual([[[expect.objectContaining({ tabId: 'b1' })]]]);
+
+      // Re-homed while the snapshot is in flight; the remount restores it as a mirror.
+      mocks.listTabs.mockResolvedValue([row({ hostClientId: OTHER })]);
+      teardown(h);
+      remount(h);
+      await flush();
+      const mirror = [expect.objectContaining({ id: 'b1', hostClientId: OTHER })];
+      expect(h.tabs()).toEqual(mirror);
+
+      ack.resolve({ drop: ['b1'] });
+      await flush();
+      expect(h.tabs()).toEqual(mirror);
+      expect(mocks.removeTab).not.toHaveBeenCalled();
+      await stop(h);
+    });
+
+    it('keeps a tab closed offline right before the unmount closed across the remount', async () => {
+      const h = start({
+        layouts: { [WS]: settledLayout([browserTab({ browserUrl: 'http://a.test/' })]) },
+      });
+      await flush();
+      expect(mocks.syncTabs.mock.calls).toEqual([[[expect.objectContaining({ tabId: 'b1' })]]]);
+
+      h.setHealth('down', 1);
+      h.dispatch(closeTab(WS, 'b1', undefined, undefined, { destroy: true }));
+      teardown(h);
+      await flush();
+      expect(h.closing()).toEqual({ b1: 'pending' });
+      expect(mocks.removeTab).not.toHaveBeenCalled();
+
+      mocks.listTabs.mockResolvedValue([row()]);
+      h.setHealth('healthy', 1);
+      remount(h);
+      await flush();
+      expect(h.tabs()).toEqual([]);
+      expect(mocks.removeTab.mock.calls).toEqual([['b1']]);
+      await stop(h);
+    });
+
+    it('removes the tabs closed right before the unmount when the daemon is reachable', async () => {
+      const h = start({
+        layouts: {
+          [WS]: settledLayout([
+            browserTab({ browserUrl: 'http://a.test/' }),
+            browserTab({ id: 'b2', browserUrl: 'http://b.test/' }),
+          ]),
+        },
+      });
+      await flush();
+      expect(mocks.syncTabs).toHaveBeenCalledTimes(1);
+
+      h.dispatch(closeTab(WS, 'b1', undefined, undefined, { destroy: true }));
+      h.dispatch(workspaceUnmounted(WS));
+      await flush();
+      // b2 merely left with the workspace: not a close.
+      expect(mocks.removeTab.mock.calls).toEqual([['b1']]);
+      expect(h.registry()).toMatchObject({ phase: 'unmounted', reported: {} });
+      expect(h.closing()).toEqual({ b1: 'acknowledged' });
+      await stop(h);
+    });
   });
 });
