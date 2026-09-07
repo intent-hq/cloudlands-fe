@@ -3698,6 +3698,119 @@ describe('panelLayoutReducer', () => {
       expect(result.recentlyClosed.map((entry) => entry.tab.id)).toEqual(['t2']);
     });
 
+    describe('targetPanelId', () => {
+      /** Two columns A and B; tab X lives in A alongside a keeper so closing X keeps A open. */
+      function twoColumnState() {
+        const state = emptyState();
+        state.byWorkspaceId[WS] = {
+          ...emptyWorkspaceState,
+          root: {
+            type: 'split',
+            direction: 'horizontal',
+            children: [
+              { type: 'panel', panelId: 'A' },
+              { type: 'panel', panelId: 'B' },
+            ],
+            sizes: [50, 50],
+          },
+          panels: {
+            A: {
+              id: 'A',
+              tabs: [
+                { id: 'x', type: 'note', title: 'X', noteId: 'note-x', closable: true },
+                { id: 'a-keep', type: 'file', title: 'Keep', closable: true },
+              ] as any,
+              activeTabId: 'x',
+            },
+            B: {
+              id: 'B',
+              tabs: [{ id: 'b1', type: 'note', title: 'B1', closable: true }] as any,
+              activeTabId: 'b1',
+            },
+          },
+          focusedPanelId: 'A',
+          columnCount: 2,
+        };
+        return state;
+      }
+
+      it('reopens the entry into an empty clicked panel and leaves the source panel unchanged (monorepo#4553)', () => {
+        const start = twoColumnState();
+        start.byWorkspaceId[WS].panels.B = { id: 'B', tabs: [], activeTabId: null, pristine: true };
+        const afterClose = panelLayoutReducer(start, closeTab(WS, 'x', 'A', 1000));
+        const panelABeforeReopen = afterClose.byWorkspaceId[WS].panels.A;
+        expect(afterClose.byWorkspaceId[WS].panels.B.tabs).toEqual([]);
+
+        const result = panelLayoutReducer(afterClose, reopenClosedTab(WS, 1001, 'x', 'B'))
+          .byWorkspaceId[WS];
+
+        expect(result.panels.B.tabs).toHaveLength(1);
+        expect(result.panels.B.tabs[0]).toMatchObject({
+          type: 'note',
+          title: 'X',
+          noteId: 'note-x',
+        });
+        expect(result.panels.B.activeTabId).toBe(result.panels.B.tabs[0].id);
+        expect(result.panels.B.pristine).toBe(false);
+        expect(result.focusedPanelId).toBe('B');
+        expect(result.panels.A).toEqual(panelABeforeReopen);
+        expect(result.recentlyClosed).toHaveLength(0);
+      });
+
+      it('reopens the entry into the requested panel when it exists (monorepo#4553)', () => {
+        const afterClose = panelLayoutReducer(twoColumnState(), closeTab(WS, 'x', 'A', 1000));
+        expect(afterClose.byWorkspaceId[WS].recentlyClosed.map((e) => e.tab.id)).toEqual(['x']);
+
+        const result = panelLayoutReducer(afterClose, reopenClosedTab(WS, 1001, 'x', 'B'))
+          .byWorkspaceId[WS];
+
+        expect(result.panels.B.tabs.map((t) => t.title)).toEqual(['B1', 'X']);
+        expect(result.panels.B.activeTabId).toBe(result.panels.B.tabs.at(-1)?.id);
+        expect(result.focusedPanelId).toBe('B');
+        expect(result.panels.A.tabs.map((t) => t.id)).toEqual(['a-keep']);
+        expect(result.recentlyClosed).toHaveLength(0);
+      });
+
+      it("falls back to the entry's original panel when the requested panel is gone", () => {
+        const afterClose = panelLayoutReducer(twoColumnState(), closeTab(WS, 'x', 'A', 1000));
+
+        const result = panelLayoutReducer(afterClose, reopenClosedTab(WS, 1001, 'x', 'missing'))
+          .byWorkspaceId[WS];
+
+        expect(result.panels.A.tabs.map((t) => t.title)).toEqual(['Keep', 'X']);
+        expect(result.panels.B.tabs.map((t) => t.id)).toEqual(['b1']);
+        expect(result.focusedPanelId).toBe('A');
+      });
+
+      it('falls back to the focused panel when both requested and original panels are gone', () => {
+        const afterClose = panelLayoutReducer(twoColumnState(), closeTab(WS, 'x', 'A', 1000));
+        const afterPanelClose = panelLayoutReducer(afterClose, closePanel(WS, 'A', 1001));
+        expect(afterPanelClose.byWorkspaceId[WS].panels.A).toBeUndefined();
+        expect(afterPanelClose.byWorkspaceId[WS].focusedPanelId).toBe('B');
+
+        const result = panelLayoutReducer(
+          afterPanelClose,
+          reopenClosedTab(WS, 1002, 'x', 'missing'),
+        ).byWorkspaceId[WS];
+
+        expect(result.panels.B.tabs.map((t) => t.title)).toContain('X');
+        expect(result.focusedPanelId).toBe('B');
+      });
+
+      it("reopens into the entry's original panel when no target is requested", () => {
+        const afterClose = panelLayoutReducer(twoColumnState(), closeTab(WS, 'x', 'A', 1000));
+        const focusedB = panelLayoutReducer(afterClose, focusPanel(WS, 'B'));
+
+        const result = panelLayoutReducer(focusedB, reopenClosedTab(WS, 1001, 'x')).byWorkspaceId[
+          WS
+        ];
+
+        expect(result.panels.A.tabs.map((t) => t.title)).toEqual(['Keep', 'X']);
+        expect(result.panels.B.tabs.map((t) => t.id)).toEqual(['b1']);
+        expect(result.focusedPanelId).toBe('A');
+      });
+    });
+
     // A reopen is a fresh, unowned tab: a stale ownerAgentId in a
     // recentlyClosed entry would resurrect ownership in main's registry, and
     // the persisted owner name (monorepo#3438) goes with it.

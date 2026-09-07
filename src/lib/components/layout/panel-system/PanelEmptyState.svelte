@@ -127,8 +127,12 @@
     return m.layout_panelEmptyState_daysAgo_label({ days: Math.floor(diff / 86400000) });
   }
 
-  function handleReopenItem() {
+  function handleReopenLatest() {
     layoutManager?.reopenClosedTab();
+  }
+
+  function handleReopenItem(closedTabId: string) {
+    layoutManager?.reopenClosedTab(closedTabId, panelId);
   }
 
   function handleCreateAgent() {
@@ -206,7 +210,7 @@
     {
       key: $reopenTabShortcut$,
       label: m.layout_panelEmptyState_reopenClosed_label(),
-      action: handleReopenItem,
+      action: handleReopenLatest,
     },
     {
       key: $toggleSidebarShortcut$,
@@ -264,7 +268,7 @@
           {@const resourceKind = getResourceIconKind(item.tab.type)}
           <button
             class="recent-item type-caption flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none motion-reduce:transition-none"
-            onclick={handleReopenItem}
+            onclick={() => handleReopenItem(item.tab.id)}
             title={m.layout_panelEmptyState_reopen_tooltip({ title: item.tab.title })}
           >
             {#if resourceKind}
