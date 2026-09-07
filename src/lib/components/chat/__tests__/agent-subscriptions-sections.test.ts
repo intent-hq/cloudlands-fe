@@ -108,7 +108,10 @@ import { store as appStore } from '$store/renderer/store';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { requestSubscriptionFetch } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
-import { chatTranscriptSnapshotApplied } from '$store/renderer/slices/chat-state/chat-state-slice';
+import {
+  chatTranscriptSnapshotApplied,
+  retainedChatTranscriptsSet,
+} from '$store/renderer/slices/chat-state/chat-state-slice';
 import { agentSubscriptionReadSaga } from '$store/renderer/slices/agent-subscription-ui/sagas/agent-subscription-read-saga';
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
 import { appLayoutNavigationSaga } from '$store/renderer/slices/app-layout/sagas/app-layout-navigation-saga';
@@ -294,6 +297,25 @@ function agentRow(agentId: string): HTMLElement {
   return row;
 }
 
+function retainedTranscriptActions(dispatchSpy: ReturnType<typeof vi.spyOn>) {
+  return dispatchSpy.mock.calls.flatMap(([action]) => {
+    const dispatched = action as { type?: string; payload?: unknown };
+    return dispatched.type === retainedChatTranscriptsSet.type
+      ? [dispatched.payload as [ownerId: string, wsId: string, agentIds: string[]]]
+      : [];
+  });
+}
+
+async function expectLastRetainedTranscripts(
+  dispatchSpy: ReturnType<typeof vi.spyOn>,
+  wsId: string,
+  agentIds: string[],
+) {
+  await waitFor(() => {
+    expect(retainedTranscriptActions(dispatchSpy).at(-1)?.slice(1)).toEqual([wsId, agentIds]);
+  });
+}
+
 describe('AgentSubscriptions unified waiting disclosure', () => {
   beforeAll(() => {
     appStore.init();
@@ -352,6 +374,28 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(visibleAgentIds()).toEqual(['agent-a']);
   });
 
+  it('retains direct rendered rows across workspace changes and releases them on destroy', async () => {
+    const firstWsId = 'ws-retained-direct-first';
+    const nextWsId = 'ws-retained-direct-next';
+    const dispatchSpy = vi.spyOn(appStore, 'dispatch');
+    const view = await renderWithSnapshot(
+      firstWsId,
+      snapshot([oneShotSubscription('watch-first', firstWsId, ['agent-a', 'agent-b'])]),
+    );
+    await expectLastRetainedTranscripts(dispatchSpy, firstWsId, ['agent-a', 'agent-b']);
+
+    resetWorkspace(nextWsId);
+    backendRequestSpy.mockResolvedValue(
+      snapshot([oneShotSubscription('watch-next', nextWsId, ['agent-c'])]),
+    );
+    await view.rerender({ workspaceId: nextWsId, agentId: PARENT, compact: false });
+    await expectLastRetainedTranscripts(dispatchSpy, nextWsId, ['agent-c']);
+
+    view.unmount();
+    await expectLastRetainedTranscripts(dispatchSpy, nextWsId, []);
+    dispatchSpy.mockRestore();
+  });
+
   it('renders six agents directly at the disclosure boundary', async () => {
     const wsId = 'ws-waiting-six';
     const agents = Array.from({ length: 6 }, (_, index) => `agent-${index + 1}`);
@@ -393,6 +437,34 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     await fireEvent.click(chevron);
     expect(summary.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByTestId('one-shot-agent-list')).toBeNull();
+  });
+
+  it('retains only rows exposed by the outer and finished disclosures', async () => {
+    const wsId = 'ws-retained-disclosures';
+    const activeAgentIds = ['agent-a', 'agent-b', 'agent-c', 'agent-d', 'agent-e'];
+    const finishedAgentIds = ['agent-finished-a', 'agent-finished-b'];
+    const allAgentIds = [...activeAgentIds, ...finishedAgentIds];
+    const dispatchSpy = vi.spyOn(appStore, 'dispatch');
+    await renderWithSnapshot(
+      wsId,
+      snapshot([oneShotSubscription('watch-retained', wsId, allAgentIds)], [], {
+        'agent-finished-a': 'completed',
+        'agent-finished-b': 'completed',
+      }),
+    );
+
+    await expectLastRetainedTranscripts(dispatchSpy, wsId, []);
+    await fireEvent.click(screen.getByTestId('one-shot-summary-toggle'));
+    await expectLastRetainedTranscripts(dispatchSpy, wsId, activeAgentIds);
+    await fireEvent.click(screen.getByTestId('finished-agent-summary'));
+    await expectLastRetainedTranscripts(dispatchSpy, wsId, allAgentIds);
+    await fireEvent.click(screen.getByTestId('one-shot-summary-toggle'));
+    await expectLastRetainedTranscripts(dispatchSpy, wsId, []);
+
+    expect(new Set(retainedTranscriptActions(dispatchSpy).map(([ownerId]) => ownerId)).size).toBe(
+      1,
+    );
+    dispatchSpy.mockRestore();
   });
 
   it('labels a retained all-finished cohort as finished instead of waiting', async () => {

@@ -261,24 +261,6 @@
     return rows;
   });
 
-  let retainedTranscriptWorkspaceId: string | null = null;
-  let retainedTranscriptKey = '';
-  $effect(() => {
-    if (isolatedPreview || !workspaceId) return;
-    const agentIds = waitingAgentRows.map((row) => row.agentId);
-    const nextKey = `${workspaceId}\u001e${agentIds.join('\u001f')}`;
-    if (nextKey === retainedTranscriptKey) return;
-    retainedTranscriptWorkspaceId = workspaceId;
-    retainedTranscriptKey = nextKey;
-    untrack(() =>
-      appStore.dispatch(retainedChatTranscriptsSet(componentId, workspaceId, agentIds)),
-    );
-  });
-  onDestroy(() => {
-    if (!retainedTranscriptWorkspaceId) return;
-    appStore.dispatch(retainedChatTranscriptsSet(componentId, retainedTranscriptWorkspaceId, []));
-  });
-
   // The participant ID set changes independently from the session map. Bridge
   // immutable Redux snapshots into local rune state so derived avatar items
   // invalidate when Redux replaces a session.
@@ -510,6 +492,36 @@
     if (nextKey === finishedDisclosureKey) return;
     finishedDisclosureKey = nextKey;
     finishedAgentsExpanded = getFinishedAgentsExpanded(workspaceId, agentId);
+  });
+
+  const retainedTranscriptRows = $derived.by(() => {
+    if (shouldGroupWaitingAgents && waitingAgentsCollapsed) return [];
+    if (shouldGroupFinishedAgents && finishedAgentsExpanded) {
+      return [...ungroupedAgentRows, ...finishedAgentRows];
+    }
+    return ungroupedAgentRows;
+  });
+  let retainedTranscriptWorkspaceId: string | null = null;
+  let retainedTranscriptKey = '';
+  $effect(() => {
+    const nextWorkspaceId = isolatedPreview || !workspaceId ? null : workspaceId;
+    const agentIds = nextWorkspaceId ? retainedTranscriptRows.map((row) => row.agentId) : [];
+    const nextKey = nextWorkspaceId ? `${nextWorkspaceId}\u001e${agentIds.join('\u001f')}` : '';
+    if (nextKey === retainedTranscriptKey) return;
+    const previousWorkspaceId = retainedTranscriptWorkspaceId;
+    retainedTranscriptWorkspaceId = nextWorkspaceId;
+    retainedTranscriptKey = nextKey;
+    untrack(() => {
+      if (nextWorkspaceId) {
+        appStore.dispatch(retainedChatTranscriptsSet(componentId, nextWorkspaceId, agentIds));
+      } else if (previousWorkspaceId) {
+        appStore.dispatch(retainedChatTranscriptsSet(componentId, previousWorkspaceId, []));
+      }
+    });
+  });
+  onDestroy(() => {
+    if (!retainedTranscriptWorkspaceId) return;
+    appStore.dispatch(retainedChatTranscriptsSet(componentId, retainedTranscriptWorkspaceId, []));
   });
 
   function toggleWaitingAgentsCollapsed() {
