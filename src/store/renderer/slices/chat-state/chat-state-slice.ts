@@ -759,6 +759,15 @@ export const initializeChatRequested = createAction(
   }),
 );
 
+/**
+ * Declare the exact child transcripts needed by one mounted subscription-list
+ * owner. The chat subscribe saga reference-counts owners, opens only the listed
+ * agent streams, and releases them when the owner updates or unmounts.
+ */
+export const retainedChatTranscriptsSet = createAction<
+  [ownerId: string, wsId: string, agentIds: string[]]
+>('chatState/retainedChatTranscriptsSet');
+
 /** Request transcript reconciliation from a daemon event or reconnect path. */
 export const refreshChatTranscriptRequested = createAction<[wsId: string, agentId: string]>(
   'chatState/refreshChatTranscriptRequested',

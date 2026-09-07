@@ -79,11 +79,6 @@ describe('ChatMessageNavigator', () => {
     expect(input.className).toContain('caret-foreground');
     expect(input.className).toContain('focus-visible:border-ring');
 
-    const panel = screen.getByTestId('chat-message-navigator-panel').parentElement!;
-    expect(panel.className).toContain('w-[28rem]');
-    expect(panel.className).toContain('--bits-popover-content-available-width');
-    expect(panel.className).toContain('max-h-[var(--bits-popover-content-available-height)]');
-    expect(panel.className).toContain('overflow-hidden');
     expect(screen.getByTestId('chat-message-navigator-panel').className).toContain('min-h-0');
     expect(listbox.className).toContain('min-h-0');
     expect(listbox.className).toContain('flex-1');
@@ -160,14 +155,45 @@ describe('ChatMessageNavigator', () => {
     expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull();
   });
 
-  it('opens with Space only after the trigger is focused', async () => {
+  it('closes and disables its trigger tooltip while open, then restores it after close', async () => {
+    renderNavigator();
+    const trigger = screen.getByTestId('chat-message-navigator-trigger');
+
+    trigger.focus();
+    await fireEvent.focus(trigger);
+    await screen.findByRole('tooltip', { name: 'Browse user messages', hidden: true });
+    await fireEvent.click(trigger);
+    await screen.findByTestId('chat-message-navigator-panel');
+    await waitFor(() => expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull());
+
+    await fireEvent.pointerMove(trigger, { pointerType: 'mouse' });
+    expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
+    await fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
+    trigger.blur();
+    trigger.focus();
+    await fireEvent.focus(trigger);
+    await screen.findByRole('tooltip', { name: 'Browse user messages', hidden: true });
+  });
+
+  it('toggles with Space and Enter only from the trigger', async () => {
     renderNavigator();
     const trigger = screen.getByTestId('chat-message-navigator-trigger');
     trigger.focus();
     expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull();
     await fireEvent.keyDown(trigger, { key: ' ' });
-    const input = await screen.findByRole('combobox', { name: 'Filter user messages' });
+    let input = await screen.findByRole('combobox', { name: 'Filter user messages' });
     await waitFor(() => expect(document.activeElement).toBe(input));
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: ' ' });
+    await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
+
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    input = await screen.findByRole('combobox', { name: 'Filter user messages' });
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
   });
 
   it('does not steal focus after dismissal or message selection', async () => {

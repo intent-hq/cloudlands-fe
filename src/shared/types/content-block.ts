@@ -2,6 +2,19 @@ import type { Proposal } from './proposal';
 import { isProposalKind } from './proposal';
 import type { MessageRole } from './agent-message';
 
+export const PLAN_ENTRY_PRIORITIES = ['high', 'medium', 'low'] as const;
+export const PLAN_ENTRY_STATUSES = ['pending', 'in_progress', 'completed'] as const;
+export const PLAN_ENTRIES_MAX = 256;
+
+export type PlanEntryPriority = (typeof PLAN_ENTRY_PRIORITIES)[number];
+export type PlanEntryStatus = (typeof PLAN_ENTRY_STATUSES)[number];
+
+export interface PlanEntry {
+  content: string;
+  priority: PlanEntryPriority;
+  status: PlanEntryStatus;
+}
+
 export type VideoSource =
   | { kind: 'inline'; data: string; mimeType: string }
   | { kind: 'remote'; url: string; mimeType?: string }
@@ -40,7 +53,8 @@ export interface ContentBlock {
     | 'video'
     | 'file'
     | 'nav-link'
-    | 'proposal';
+    | 'proposal'
+    | 'plan';
 
   // Common fields
   /** Unique identifier for this block */
@@ -76,6 +90,10 @@ export interface ContentBlock {
   preview?: Proposal['preview'];
   /** Tool call ID to invoke when applying this proposal */
   applyToolCallId?: string;
+
+  // Execution plan fields
+  /** Complete ordered snapshot of the current provider-owned execution plan. */
+  entries?: PlanEntry[];
 
   // Text content fields
   /** Text content (primary field) */
@@ -144,7 +162,33 @@ export interface ContentBlock {
 /**
  * Type guard to check if a value is a ContentBlock
  */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isPlanEntry(value: unknown): value is PlanEntry {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.content === 'string' &&
+    PLAN_ENTRY_PRIORITIES.includes(value.priority as PlanEntryPriority) &&
+    PLAN_ENTRY_STATUSES.includes(value.status as PlanEntryStatus)
+  );
+}
+
+export function isPlanContentBlock(
+  value: unknown,
+): value is ContentBlock & { type: 'plan'; entries: PlanEntry[] } {
+  return (
+    isRecord(value) &&
+    value.type === 'plan' &&
+    Array.isArray(value.entries) &&
+    value.entries.length <= PLAN_ENTRIES_MAX &&
+    value.entries.every(isPlanEntry)
+  );
+}
+
 export function isContentBlock(value: any): value is ContentBlock {
+  if (value?.type === 'plan') return isPlanContentBlock(value);
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -161,6 +205,7 @@ export function isContentBlock(value: any): value is ContentBlock {
         'file',
         'nav-link',
         'proposal',
+        'plan',
       ].includes(value.type)) ||
       (value.kind === 'nav-link' && typeof value.target === 'string') ||
       (isProposalKind(value.kind) && !!value.preview))
@@ -168,6 +213,7 @@ export function isContentBlock(value: any): value is ContentBlock {
 }
 
 export type VideoContentBlock = ContentBlock & { type: 'video'; source: VideoSource };
+export type PlanContentBlock = ContentBlock & { type: 'plan'; entries: PlanEntry[] };
 
 const VIDEO_EXTENSION_PATTERN = /\.(?:mp4|webm|mov|m4v)$/i;
 const VIDEO_MIME_PATTERN = /^video\/[a-z0-9][a-z0-9.+-]*$/i;
@@ -178,10 +224,6 @@ const REMOTE_VIDEO_MIME_TYPES = new Set([
   'video/x-m4v',
   'video/m4v',
 ]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function getVideoMimeType(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;

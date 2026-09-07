@@ -249,6 +249,15 @@ describe('WorkspaceShellList development script controls', () => {
     });
   });
 
+  it('renders truthful empty shell states', () => {
+    render(WorkspaceShellList, { props: { workspaceId: WS } });
+
+    expect(screen.getByText('No terminals open')).toBeTruthy();
+    expect(
+      screen.getByText('No scripts found. Add one manually or use AI detection.'),
+    ).toBeTruthy();
+  });
+
   it('opens the selected terminal in a panel and closes its bottom overlay', async () => {
     mocks.terminals[WS] = [{ id: 'terminal-1', name: 'Build shell', workspaceId: WS }];
     mocks.terminalStates[WS] = {

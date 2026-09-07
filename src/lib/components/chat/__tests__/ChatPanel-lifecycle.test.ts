@@ -152,6 +152,10 @@ vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
 vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-selectors', () => ({
   selectTasksForAgent: mocks.selector([]),
 }));
+vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
+  selectWorkspaceTasks: mocks.selector([]),
+  selectWorkspaceTasksInitialized: mocks.selector(false),
+}));
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectAwaitingSwitchBackSnapshot: Object.assign(() => mocks.awaitingSwitchBackSnapshot, {
     select: () => false,
@@ -336,7 +340,7 @@ vi.mock('../ChatMessage.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../AgentSubscriptions.svelte', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/MockAgentSubscriptions.svelte')).default,
 }));
 vi.mock('../AttentionRequestBanner.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
@@ -3394,6 +3398,41 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(composer?.getAttribute('data-has-transcript-utility')).toBe('false');
     expect(composer?.classList.contains('pb-3')).toBe(false);
     expect(view.container.querySelector('[data-testid="chat-composer-lane"]')).not.toBeNull();
+  });
+
+  it('renders one visible subscription utility and clears it when the agent changes', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: {
+        workspace: currentWorkspace,
+        agentId: 'agent-with-visible-subscription',
+      },
+    });
+    await tick();
+
+    await tick();
+    await tick();
+    const area = view.container.querySelector('[data-testid="subscription-utility-area"]');
+    const composer = view.container.querySelector('[data-testid="composer-prompt-layer"]');
+    expect(area?.getAttribute('data-has-subscriptions')).toBe('true');
+    expect(area?.classList.contains('hidden')).toBe(false);
+    expect(
+      view.container.querySelectorAll('[data-testid="event-subscriptions-card"]'),
+    ).toHaveLength(1);
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-without-subscriptions' });
+    await tick();
+
+    await tick();
+    await tick();
+    const reboundArea = view.container.querySelector('[data-testid="subscription-utility-area"]');
+    expect(reboundArea?.getAttribute('data-has-subscriptions')).toBe('false');
+    expect(reboundArea?.classList.contains('hidden')).toBe(true);
+    expect(composer?.getAttribute('data-has-transcript-utility')).toBe('false');
   });
 
   it('resets the viewport on a resumed:false discard across the restart sequence (snapshot cleared first)', async () => {

@@ -18,8 +18,8 @@
  * wire-shaped envelopes — and remain.
  */
 
-import type { ContentBlock } from './content-block';
-import { normalizeContentBlock } from './content-block';
+import type { ContentBlock, PlanContentBlock, PlanEntry } from './content-block';
+import { isPlanContentBlock, normalizeContentBlock } from './content-block';
 import { isProposalKind } from './proposal';
 import { getProposalFromResourceBlock } from './proposal-resource';
 
@@ -34,7 +34,25 @@ const CANONICAL_BLOCK_TYPES = new Set<ContentBlock['type']>([
   'file',
   'nav-link',
   'proposal',
+  'plan',
 ]);
+
+function canonicalPlanEntry(entry: PlanEntry): PlanEntry {
+  return { content: entry.content, priority: entry.priority, status: entry.status };
+}
+
+function canonicalPlanBlock(block: Record<string, any>): PlanContentBlock {
+  if (!isPlanContentBlock(block)) {
+    throw new Error(
+      `Invalid plan block: required bounded 'entries' snapshot missing (PROTOCOL §7). Received: ${JSON.stringify(block)}`,
+    );
+  }
+  return {
+    type: 'plan',
+    ...(typeof block.id === 'string' ? { id: block.id } : {}),
+    entries: block.entries.map(canonicalPlanEntry),
+  };
+}
 
 /**
  * Strictly validate a ContentBlock-shaped payload against the canonical PROTOCOL.md §7
@@ -170,6 +188,8 @@ export function convertFromACP(acpBlock: any): ContentBlock {
     );
   }
 
+  if (acpBlock.type === 'plan') return canonicalPlanBlock(acpBlock);
+
   const block: ContentBlock = { type: acpBlock.type };
 
   // Text content
@@ -206,6 +226,8 @@ export function convertFromACP(acpBlock: any): ContentBlock {
  */
 export function convertToACP(block: ContentBlock): any {
   const normalized = normalizeContentBlock(block);
+
+  if (normalized.type === 'plan') return canonicalPlanBlock(normalized);
 
   const acpBlock: any = {
     type: normalized.type,
@@ -315,6 +337,8 @@ function validateCanonicalBlock(block: Record<string, any>): ContentBlock {
     case 'proposal':
       // Handled by dedicated branches above or carries no required text/tool fields.
       break;
+    case 'plan':
+      return canonicalPlanBlock(block);
   }
   return { ...block } as ContentBlock;
 }

@@ -31,13 +31,29 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { selectAgentSessionsById } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import {
+    selectAgentHistoryMessages,
+    selectAgentSessionsById,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import AgentAvatarStack, {
     type AgentAvatarStackItem,
   } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
   import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
-  import type { AgentSession } from '$shared/types';
+  import type { AgentSession, WorkspaceTask } from '$shared/types';
+  import {
+    selectWorkspaceTasks,
+    selectWorkspaceTasksInitialized,
+    selectWorkspaceTasksState,
+  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
+  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+  import type { TaskProgressItem } from './workspace-task-fallback';
+  import {
+    createAgentTaskProgressDeriver,
+    type AgentTaskProgressInput,
+  } from './agent-task-progress-derivation';
+  import { retainedChatTranscriptsSet } from '$store/renderer/slices/chat-state/chat-state-slice';
+  import { selectTranscriptSnapshotMeta } from '$store/renderer/slices/chat-state/chat-state-selectors';
 
   import {
     selectAgentSubscriptions,
@@ -106,7 +122,12 @@
     participantAvatarItems?: AgentAvatarStackItem[];
     /** Static rows for daemon-free catalog and visual-test previews. */
     isolatedPreview?: {
-      agents: Array<{ id: string; name: string; finished?: boolean }>;
+      agents: Array<{
+        id: string;
+        name: string;
+        finished?: boolean;
+        taskProgress?: TaskProgressItem[];
+      }>;
       initiallyExpanded?: boolean;
     };
     /** Promote the cohort disclosure to the sole header in an agent-only parent card. */
@@ -156,6 +177,13 @@
     untrack(() => appStore.dispatch(requestSubscriptionFetch(workspaceId, agentId)));
   });
 
+  let lastTaskWorkspaceId: string | null = null;
+  $effect(() => {
+    if (isolatedPreview || !workspaceId || workspaceId === lastTaskWorkspaceId) return;
+    lastTaskWorkspaceId = workspaceId;
+    untrack(() => appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId)));
+  });
+
   const workspaceById = selectWorkspaceById(workspaceIdStore);
   const resolvedWorkspace = $derived($workspaceById ?? null);
 
@@ -181,6 +209,7 @@
     agentId: string;
     agentName?: string;
     fixtureFinished?: boolean;
+    fixtureTaskProgress?: TaskProgressItem[];
     cancelSubscriptionId?: string;
     cancelGroupId?: string;
   }
@@ -195,6 +224,7 @@
         agentId: agent.id,
         agentName: agent.name,
         fixtureFinished: agent.finished,
+        fixtureTaskProgress: agent.taskProgress,
       }));
     }
     const rows: WaitingAgentRow[] = [];
@@ -229,6 +259,24 @@
       }
     }
     return rows;
+  });
+
+  let retainedTranscriptWorkspaceId: string | null = null;
+  let retainedTranscriptKey = '';
+  $effect(() => {
+    if (isolatedPreview || !workspaceId) return;
+    const agentIds = waitingAgentRows.map((row) => row.agentId);
+    const nextKey = `${workspaceId}\u001e${agentIds.join('\u001f')}`;
+    if (nextKey === retainedTranscriptKey) return;
+    retainedTranscriptWorkspaceId = workspaceId;
+    retainedTranscriptKey = nextKey;
+    untrack(() =>
+      appStore.dispatch(retainedChatTranscriptsSet(componentId, workspaceId, agentIds)),
+    );
+  });
+  onDestroy(() => {
+    if (!retainedTranscriptWorkspaceId) return;
+    appStore.dispatch(retainedChatTranscriptsSet(componentId, retainedTranscriptWorkspaceId, []));
   });
 
   // The participant ID set changes independently from the session map. Bridge
@@ -315,10 +363,8 @@
     // Terminal states
     if (finishedAgentIdSet.has(agentId)) return 4;
 
-    const status = String(session.status).toLowerCase();
-
     // Active work
-    if (status === 'responding' || status === 'active' || status === 'processing') return 2;
+    if (isSessionRunning(session)) return 2;
 
     // Idle/waiting
     return 3;
@@ -352,6 +398,41 @@
         const bTimestamp = timestampMillis(agentSessionsById[b.agentId]?.updatedAt);
         return bTimestamp - aTimestamp || a.agentId.localeCompare(b.agentId);
       });
+  });
+  const deriveTaskProgressByAgentId = createAgentTaskProgressDeriver();
+  let taskStateReference: object | undefined;
+  let stableWorkspaceTasks: readonly WorkspaceTask[] = [];
+  const taskProgressByAgentId = $derived.by(() => {
+    if (isolatedPreview) {
+      deriveTaskProgressByAgentId([]);
+      return Object.fromEntries(
+        waitingAgentRows.map((row) => [row.agentId, row.fixtureTaskProgress ?? []]),
+      );
+    }
+    const state = rendererState;
+    if (!state.workspaceTasks) return deriveTaskProgressByAgentId([]);
+    const sessionsById = selectAgentSessionsById.select(state);
+    const initialized = selectWorkspaceTasksInitialized.select(state, workspaceId);
+    const nextTaskStateReference = selectWorkspaceTasksState.select(state, workspaceId);
+    if (nextTaskStateReference !== taskStateReference) {
+      taskStateReference = nextTaskStateReference;
+      stableWorkspaceTasks = selectWorkspaceTasks.select(state, workspaceId);
+    }
+    const derivationInputs: AgentTaskProgressInput[] = [];
+    for (const row of waitingAgentRows) {
+      const session = sessionsById[row.agentId];
+      if (!session) continue;
+      derivationInputs.push({
+        agentId: row.agentId,
+        initialized,
+        tasks: stableWorkspaceTasks,
+        session,
+        historyMessages: selectAgentHistoryMessages.select(state, row.agentId),
+        liveMessages: session.messages,
+        snapshotMeta: selectTranscriptSnapshotMeta.select(state, row.agentId),
+      });
+    }
+    return deriveTaskProgressByAgentId(derivationInputs);
   });
   const shouldGroupWaitingAgents = $derived(
     forceWaitingHeader || waitingAgentRows.length > WAITING_AGENT_DISCLOSURE_THRESHOLD,
@@ -577,6 +658,7 @@
   <div
     class="group/watch w-full min-w-0 max-w-full overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
     data-agent-id={watchedAgentId}
+    data-agent-task-action-reveal
     data-subscription-motion-row={finished ? 'finished' : 'waiting'}
     transition:safeSubscriptionRowTransition
   >
@@ -621,6 +703,8 @@
       agentName={row.agentName}
       workspace={resolvedWorkspace}
       isCompleted={finished}
+      taskProgress={taskProgressByAgentId[watchedAgentId] ?? []}
+      taskProgressPresentation="checklist"
       headerActions={oneShotActions}
       inline
       inlineRowClass={SUBSCRIPTION_ROW_GEOMETRY_CLASS}
@@ -900,3 +984,17 @@
     {/if}
   </div>
 {/if}
+
+<style>
+  @media (hover: hover) and (pointer: fine) {
+    [data-agent-task-action-reveal] :global([data-row-task-action]) {
+      opacity: 0;
+    }
+
+    [data-agent-task-action-reveal]:hover :global([data-row-task-action]),
+    [data-agent-task-action-reveal]:focus-within :global([data-row-task-action]),
+    [data-agent-task-action-reveal] :global([data-row-task-action][aria-expanded='true']) {
+      opacity: 1;
+    }
+  }
+</style>

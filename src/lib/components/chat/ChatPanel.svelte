@@ -80,6 +80,10 @@
     releaseChatInterestLease,
   } from '$features/agent/utils/chat-interest-leases';
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import {
+    selectWorkspaceTasks,
+    selectWorkspaceTasksInitialized,
+  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectAllTabs as selectPanelLayoutAllTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { clearBrowserElementCapture } from '$store/renderer/slices/browser/browser-slice';
@@ -237,6 +241,7 @@
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
   import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
+  import { deriveTaskProgress, type TaskProgressItem } from './workspace-task-fallback';
   import Button from '../ui/button/button.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
@@ -399,6 +404,7 @@
     /** Whether this panel is focused (has DOM focus within panel wrapper) */
     isPanelFocused?: boolean;
     onNavigationStateChange?: (state: ChatNavigationState) => void;
+    onTaskProgressChange?: (tasks: TaskProgressItem[]) => void;
   }
 
   let {
@@ -419,6 +425,7 @@
     onChatUpdate,
     isPanelFocused = false,
     onNavigationStateChange,
+    onTaskProgressChange,
   }: Props = $props();
 
   // True when this panel is rendering the Chief workspace, which opens directly
@@ -464,6 +471,8 @@
   // statuses across all pending proposals at once.
   const proposalLifecycleMap$ = selectProposalLifecycleMap();
   const agentTasks$ = selectTasksForAgent(workspaceIdStore, agentIdStore);
+  const workspaceTasks$ = selectWorkspaceTasks(workspaceIdStore);
+  const workspaceTasksInitialized$ = selectWorkspaceTasksInitialized(workspaceIdStore);
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
   const chatError$ = selectChatError(agentIdStore);
@@ -628,6 +637,20 @@
   const instanceId = Math.random().toString(36).substring(2, 8);
   // svelte-ignore state_referenced_locally -- this records the identity at instance creation.
   logger.debug('[ChatPanel] INSTANCE CREATED', { instanceId, agentId });
+
+  let panelInterestAgentId: string | null = null;
+
+  function activePanelInterestAgentId(): string | null {
+    return isActive && agentId && !agentId.startsWith('terminal-') ? agentId : null;
+  }
+
+  function transferPanelInterestLease(nextAgentId: string | null): void {
+    if (nextAgentId === panelInterestAgentId) return;
+    if (nextAgentId) acquireChatInterestLease(nextAgentId, instanceId);
+    const previousAgentId = panelInterestAgentId;
+    panelInterestAgentId = nextAgentId;
+    if (previousAgentId) releaseChatInterestLease(previousAgentId, instanceId);
+  }
 
   let scrollContainer = $state<HTMLDivElement>();
   let composerElement = $state<HTMLDivElement>();
@@ -2108,6 +2131,20 @@
       revealDeferred: deferTranscriptReveal,
     }),
   );
+  const taskProgressItems = $derived(
+    showTranscriptUtilityCard
+      ? deriveTaskProgress({
+          initialized: $workspaceTasksInitialized$,
+          tasks: $workspaceTasks$,
+          session: $agentSession$ ?? null,
+          messages: [...$agentHistoryMessages$, ...$agentMessages$],
+        })
+      : [],
+  );
+
+  $effect(() => {
+    onTaskProgressChange?.(taskProgressItems);
+  });
 
   // Provider/model lock — prevents changing provider or model after any message
   let canChangeProvider = $derived(
@@ -3567,6 +3604,10 @@
 
   // Initialize chat on mount
   onMount(() => {
+    // Establish interest before initialization can open a subscription and
+    // before any viewed-agent sweep can decide which registrations to keep.
+    transferPanelInterestLease(activePanelInterestAgentId());
+
     logger.info('ChatPanel mounted', {
       instanceId,
       agentId,
@@ -3671,10 +3712,7 @@
   });
 
   $effect(() => {
-    const interestedAgentId = agentId;
-    if (!isActive || !interestedAgentId || interestedAgentId.startsWith('terminal-')) return;
-    acquireChatInterestLease(interestedAgentId, instanceId);
-    return () => releaseChatInterestLease(interestedAgentId, instanceId);
+    transferPanelInterestLease(activePanelInterestAgentId());
   });
 
   // ── Auto-focus on mount (used by Chief of Staff) ──
@@ -4503,6 +4541,7 @@
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
+    transferPanelInterestLease(null);
     flushPendingDraftWrite();
     flushPendingSelectionWrites();
     cancelAllSendTransitions();
@@ -6393,9 +6432,9 @@
              It collapses naturally when transcript or expanded disclosure content overflows. -->
         <div class="mt-auto" data-testid="transcript-utility-stack">
           <!-- {#key} forces a full remount when workspace or agent changes,
-             preventing stale subscription UI from leaking across switches.
-             Hidden until the transcript hydration settles so the card never
-             pops in ahead of (or during) the transcript skeleton. -->
+             preventing stale utility UI from leaking across switches.
+             Hidden until transcript hydration settles; the workspace-task
+             task progress is routed to the panel header instead. -->
           {#if workspace?.id && showTranscriptUtilityCard}
             {#key `${workspace.id}::${agentId}`}
               <EventSubscriptionsCard

@@ -68,6 +68,54 @@ describe('Zod Schemas', () => {
       expect(() => ContentBlockSchema.parse(block)).not.toThrow();
     });
 
+    it('should validate bounded plan snapshots', () => {
+      const block = {
+        type: 'plan',
+        id: 'msg-1:0',
+        entries: [
+          {
+            content: 'Inspect the code',
+            priority: 'high',
+            status: 'completed',
+            _meta: { provider: 'codex' },
+            providerExtension: true,
+          },
+          { content: 'Run tests', priority: 'medium', status: 'in_progress' },
+        ],
+      };
+      expect(ContentBlockSchema.parse(block)).toEqual({
+        ...block,
+        entries: [
+          { content: 'Inspect the code', priority: 'high', status: 'completed' },
+          { content: 'Run tests', priority: 'medium', status: 'in_progress' },
+        ],
+      });
+      expect(() =>
+        ContentBlockSchema.parse({
+          type: 'plan',
+          entries: [{ content: 'Run tests', priority: 'high', status: 'cancelled' }],
+        }),
+      ).toThrow();
+      expect(() => ContentBlockSchema.parse({ type: 'plan' })).toThrow();
+
+      const entry = { content: 'Run tests', priority: 'high', status: 'pending' };
+      expect(() =>
+        ContentBlockSchema.parse({ type: 'plan', entries: Array(256).fill(entry) }),
+      ).not.toThrow();
+      expect(() =>
+        ContentBlockSchema.parse({ type: 'plan', entries: Array(257).fill(entry) }),
+      ).toThrow();
+    });
+
+    it('should preserve non-plan blocks without requiring entries', () => {
+      expect(ContentBlockSchema.parse({ type: 'text', text: 'hello' })).toEqual({
+        type: 'text',
+        text: 'hello',
+      });
+      expect(() => ContentBlockSchema.parse({ type: 'proposal', preview: {} })).not.toThrow();
+      expect(() => ContentBlockSchema.parse({ type: 'image', data: 'abc' })).not.toThrow();
+    });
+
     it('should reject invalid types', () => {
       expect(() => ContentBlockSchema.parse({ type: 'invalid' })).toThrow();
     });
@@ -146,7 +194,7 @@ describe('Zod Schemas', () => {
     });
 
     it('should accept all valid roles', () => {
-      const roles = ['user', 'assistant', 'system', 'error'];
+      const roles = ['user', 'assistant', 'tool', 'system', 'error'];
       roles.forEach((role) => {
         const message = {
           id: 'msg_123',
@@ -234,6 +282,40 @@ describe('Zod Schemas', () => {
       expect(() => validateAgentSession(session)).not.toThrow();
       const validated = validateAgentSession(session);
       expect(validated.model).toBe(null);
+    });
+
+    it('should enforce the plan contract before session persistence', () => {
+      const session = {
+        id: 'agent-plan',
+        workspaceId: 'workspace-plan',
+        messages: [
+          {
+            id: 'msg_plan',
+            role: 'tool',
+            timestamp: '2026-09-03T00:00:00.000Z',
+            contentBlocks: [
+              {
+                type: 'plan',
+                entries: [{ content: 'Run tests', priority: 'high', status: 'completed' }],
+              },
+            ],
+          },
+        ],
+        status: 'active',
+      };
+
+      expect(validateAgentSession(session)).toEqual(session);
+      expect(() =>
+        validateAgentSession({
+          ...session,
+          messages: [
+            {
+              ...session.messages[0],
+              contentBlocks: [{ type: 'plan' }],
+            },
+          ],
+        }),
+      ).toThrow();
     });
   });
 

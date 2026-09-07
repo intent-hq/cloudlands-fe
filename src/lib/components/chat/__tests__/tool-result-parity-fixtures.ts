@@ -35,6 +35,7 @@ export function rehydrateToolResultMessage(blocks: ContentBlock[]): AgentMessage
       {
         id: messageId,
         role: 'assistant',
+        timestamp: '2026-01-01T00:00:00.000Z',
         contentBlocks: blocks.map((block, index) => ({
           ...block,
           id: block.id ?? `${messageId}:${index}`,
@@ -168,6 +169,7 @@ export const groupedResultBlocks = (): ContentBlock[] => [
   },
   {
     type: 'tool_result',
+    tool_use_id: 'grouped-call-missing-id',
     output: 'Error: grouped-missing-id-orphan-marker',
     is_error: true,
   },
