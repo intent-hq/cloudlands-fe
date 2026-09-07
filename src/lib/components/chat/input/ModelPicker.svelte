@@ -97,6 +97,7 @@
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import {
     faArrowsRotate,
     faCheck,
@@ -1859,9 +1860,7 @@
     {/if}
     {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
       <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
-        <div
-          class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
-        ></div>
+        <IntentMarkLoader size={12} />
         <span>{m.chat_modelPicker_loadingMore_label()}</span>
       </div>
     {/if}
@@ -1936,12 +1935,9 @@
           <Fa icon={faSettings} class="h-4 w-4" />
         {:else if isTriggerLabelResolved}
           {#if showModelLoading}
-            <span
-              class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin shrink-0"
-              role="status"
-              aria-label={modelLoadingTitle}
-              title={modelLoadingTitle}
-            ></span>
+            <span class="size-3 shrink-0" title={modelLoadingTitle}>
+              <IntentMarkLoader size={12} />
+            </span>
           {:else if showModelWarning}
             <Fa icon={faTriangleExclamation} class="h-3 w-3 text-amber-600 shrink-0" />
           {/if}
@@ -2029,10 +2025,7 @@
             <Fa
               icon={faArrowsRotate}
               size={10}
-              class={cn(
-                'text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none',
-                refreshingProviders.has(activeBrowseProviderId) && 'animate-spin',
-              )}
+              class="text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none"
             />
           </Button>
         </div>
@@ -2064,9 +2057,7 @@
       <div class="flex gap-2 w-full min-w-0">
         {#if providerLoading}
           <div class="flex items-center gap-2 text-muted-foreground text-sm">
-            <div
-              class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
-            ></div>
+            <IntentMarkLoader size={12} />
             <span>{option.label}</span>
           </div>
         {:else if providerLoadError}

@@ -12,7 +12,8 @@
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
-  import { faSpinner, faSearch } from '@fortawesome/free-solid-svg-icons';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { faSearch } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
@@ -123,14 +124,14 @@
     <p class="text-sm text-subtle text-center">{m.workspace_linearPicker_connectPrompt_label()}</p>
     <Button onclick={handleConnect} disabled={isConnecting}>
       {#if isConnecting}
-        <Fa icon={faSpinner} class="animate-spin mr-2" />
+        <IntentMarkLoader size={16} class="mr-2" />
       {/if}
       {m.workspace_linearPicker_connect_label()}
     </Button>
   </div>
 {:else if isLoading}
   <div class="p-8 flex justify-center">
-    <Fa icon={faSpinner} class="animate-spin text-subtle" size="lg" />
+    <IntentMarkLoader size={20} class="text-subtle" />
   </div>
 {:else}
   <!-- Search -->

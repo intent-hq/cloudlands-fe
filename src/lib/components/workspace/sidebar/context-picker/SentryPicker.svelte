@@ -21,7 +21,8 @@
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
-  import { faSpinner, faSearch } from '@fortawesome/free-solid-svg-icons';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { faSearch } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -157,7 +158,7 @@
             class="flex-1"
           >
             {#if $storeIsConnecting$}
-              <Fa icon={faSpinner} class="animate-spin mr-2" />
+              <IntentMarkLoader size={16} class="mr-2" />
             {/if}
             {m.workspace_sentryPicker_connect_label()}
           </Button>
@@ -171,7 +172,7 @@
   </div>
 {:else if isLoadingIssues}
   <div class="p-8 flex justify-center">
-    <Fa icon={faSpinner} class="animate-spin text-subtle" size="lg" />
+    <IntentMarkLoader size={20} class="text-subtle" />
   </div>
 {:else}
   <!-- Search -->

@@ -1519,7 +1519,7 @@
               disabled={isLoading}
               aria-label={m.workspace_branchSelector_refreshBranches_ariaLabel()}
             >
-              <Fa icon={faRotate} class={isLoading ? 'animate-spin' : ''} />
+              <Fa icon={faRotate} />
             </Button>
           </div>
         </div>

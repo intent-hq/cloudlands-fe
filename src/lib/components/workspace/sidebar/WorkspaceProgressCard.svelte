@@ -25,6 +25,7 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { withToastCountdown } from '$lib/components/patterns/notify';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -961,9 +962,7 @@
               disabled={isDeleting}
             >
               {#if isDeleting}
-                <div
-                  class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
-                ></div>
+                <IntentMarkLoader size={14} />
               {:else}
                 <KebabIcon class="size-4" />
               {/if}
@@ -1289,7 +1288,7 @@
       class="w-full px-4x pb-3 flex items-center gap-2 text-xs text-subtle"
       transition:slide={{ axis: 'y', tier: 'moderate' }}
     >
-      <Fa icon={faSpinner} spin size="xs" />
+      <IntentMarkLoader size={12} />
       <span>Finding ready tasks...</span>
     </div>
   {:else if displayReadyTasks.length > 0 && currentDisplayReadyTask}

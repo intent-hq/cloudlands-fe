@@ -17,7 +17,6 @@
     faGlobe,
     faFolder,
     faSearch,
-    faSpinner,
     faRobot,
     faQuoteLeft,
     faTerminal,
@@ -26,6 +25,7 @@
   import { cn } from '$lib/utils';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { Checkbox } from '$lib/components/ui/checkbox';
   import { m } from '$shared/paraglide/messages.js';
@@ -416,9 +416,9 @@
             noFocusStyle
           />
           {#if isSearching}
-            <Fa
-              icon={faSpinner}
-              class="absolute right-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-subtle animate-spin"
+            <IntentMarkLoader
+              size={12}
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-subtle"
             />
           {/if}
         </div>

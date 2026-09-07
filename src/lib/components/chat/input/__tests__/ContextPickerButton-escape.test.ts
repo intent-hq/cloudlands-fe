@@ -87,11 +87,11 @@ describe('ContextPickerButton Escape handling (escape-layer stack)', () => {
     await fireEvent.input(input, { target: { value: 'a' } });
     await vi.advanceTimersByTimeAsync(250);
     expect(searchMock).toHaveBeenCalledWith('a', { workspaceId: 'workspace-1' });
-    expect(document.querySelector('.animate-spin')).toBeTruthy();
+    expect(screen.getByRole('status')).toBeTruthy();
 
     await fireEvent.input(input, { target: { value: 'ab' } });
     await vi.advanceTimersByTimeAsync(250);
-    await vi.waitFor(() => expect(document.querySelector('.animate-spin')).toBeNull());
+    await vi.waitFor(() => expect(screen.queryByRole('status')).toBeNull());
     expect(searchMock).toHaveBeenLastCalledWith('ab', { workspaceId: 'workspace-1' });
     expect(document.querySelector('.animate-pulse')).toBeNull();
   });

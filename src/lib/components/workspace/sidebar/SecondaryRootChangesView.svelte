@@ -29,17 +29,13 @@
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import {
-    faArrowsRotate,
-    faChevronDown,
-    faCodeCommit,
-    faSpinner,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowsRotate, faChevronDown, faCodeCommit } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { slide } from '$lib/motion';
   import { notify } from '$lib/components/patterns/notify';
@@ -193,7 +189,7 @@
       disabled={loading}
       title={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
     >
-      <Fa icon={faArrowsRotate} class="text-subtle {loading ? 'animate-spin' : ''}" size={10} />
+      <Fa icon={faArrowsRotate} class="text-subtle" size={10} />
     </Button>
   </div>
 
@@ -311,7 +307,7 @@
             onclick={load}
           >
             {#if loading}
-              <Fa icon={faSpinner} class="animate-spin mr-1" size="xs" />
+              <IntentMarkLoader size={12} class="mr-1" />
             {/if}
             {m.workspace_sidebarChanges_rootShowMoreCommits_label()}
           </Button>

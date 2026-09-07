@@ -26,8 +26,9 @@
 
 <script lang="ts">
   import { shell } from '$lib/electron-bridge';
-  import { faCircleNotch, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
+  import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
 
@@ -75,10 +76,7 @@
   >
     <div class="flex items-start gap-2">
       {#if variant === 'progress'}
-        <Fa
-          icon={faCircleNotch}
-          class="h-3.5 w-3.5 text-warning-foreground mt-0.5 shrink-0 animate-spin"
-        />
+        <IntentMarkLoader size={14} class="text-warning-foreground mt-0.5 shrink-0" />
       {:else}
         <Fa
           icon={faTriangleExclamation}

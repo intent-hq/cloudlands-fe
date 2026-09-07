@@ -5,12 +5,12 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import {
     faExclamationTriangle,
     faChevronDown,
     faPlay,
     faRotateRight,
-    faSpinner,
     faStop,
     faTableColumns,
   } from '$lib/icons/phosphor-icons';
@@ -281,7 +281,7 @@
                 data-script-action="stop"
               >
                 {#if operation?.pending && operation.action === 'stop'}
-                  <Fa icon={faSpinner} class="size-3 animate-spin motion-reduce:animate-none" />
+                  <IntentMarkLoader size={12} />
                 {:else}
                   <Fa icon={faStop} class="size-3" />
                 {/if}
@@ -300,7 +300,7 @@
                 data-script-action="restart"
               >
                 {#if operation?.pending && operation.action === 'restart'}
-                  <Fa icon={faSpinner} class="size-3 animate-spin motion-reduce:animate-none" />
+                  <IntentMarkLoader size={12} />
                 {:else}
                   <Fa icon={faRotateRight} class="size-3" />
                 {/if}
@@ -321,7 +321,7 @@
                 data-script-action="start"
               >
                 {#if operation?.pending}
-                  <Fa icon={faSpinner} class="size-3 animate-spin motion-reduce:animate-none" />
+                  <IntentMarkLoader size={12} />
                 {:else}
                   <Fa icon={faPlay} class="size-3" />
                 {/if}

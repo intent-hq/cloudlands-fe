@@ -84,7 +84,7 @@ describe('RepoAndBranchPicker', () => {
   });
 
   it('keeps selected, suggested, loading, open, focus, and disabled branch states on the pill surface', () => {
-    const { container } = render(RepoAndBranchPicker, {
+    render(RepoAndBranchPicker, {
       props: {
         repoType: 'local',
         repoPath: '/Users/dev/monorepo',
@@ -102,9 +102,7 @@ describe('RepoAndBranchPicker', () => {
     expect(branch.className).toContain('min-w-0');
     expect(branch.className).toContain('overflow-hidden');
     expect(branch.getAttribute('data-suggested-branch')).toBe('feature/contrast');
-    expect(container.querySelector('.animate-spin.text-subtle')?.className).not.toContain(
-      'bg-muted',
-    );
+    expect(screen.getByRole('status')).toBeTruthy();
   });
 
   it('applies the pill only to the interactive metadata value', () => {
@@ -261,7 +259,7 @@ describe('RepoAndBranchPicker', () => {
   });
 
   it('renders a tiny metadata branch loader in place of the chevron', () => {
-    const { container } = render(RepoAndBranchPicker, {
+    render(RepoAndBranchPicker, {
       props: {
         branch: 'main',
         presentation: 'metadata',
@@ -276,6 +274,6 @@ describe('RepoAndBranchPicker', () => {
     expect(
       screen.getByTestId('branch-selector').getAttribute('data-trigger-content-class'),
     ).toContain('pr-5');
-    expect(container.querySelector('.animate-spin.text-subtle')).toBeTruthy();
+    expect(screen.getByRole('status')).toBeTruthy();
   });
 });

@@ -1,11 +1,12 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   /**
    * DividerButton - A button styled to sit on a timeline divider
    * Has a background to "cut through" the divider line
    */
   import Fa from 'svelte-fa';
-  import { faSpinner, faArrowDown, faArrowRight, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowDown, faArrowRight, faXmark } from '@fortawesome/free-solid-svg-icons';
   import type { Snippet } from 'svelte';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import { Tooltip as TooltipPrimitive } from 'bits-ui';
@@ -49,7 +50,7 @@
 
 {#snippet buttonContent()}
   {#if loading}
-    <Fa icon={faSpinner} size="xs" class="animate-spin" />
+    <IntentMarkLoader size={12} />
   {:else}
     {#if arrowUp && showArrow}
       <Fa icon={faArrowDown} size="xs" class="text-ghost rotate-180" />

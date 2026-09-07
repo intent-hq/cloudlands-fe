@@ -34,6 +34,7 @@
   } from '$lib/components/file-tracking/accept-changes/types';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { Switch } from '$lib/components/ui/switch';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { notify } from '$lib/components/patterns/notify';
@@ -41,14 +42,7 @@
   import { faNote } from '$lib/icons/faNote';
   import { logger } from '$lib/utils/client-logger';
   import type { WorkspaceId } from '$shared/types/branded-ids';
-  import {
-    faCodeCommit,
-    faLock,
-    faMinus,
-    faPlus,
-    faSpinner,
-    faUser,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faCodeCommit, faLock, faMinus, faPlus, faUser } from '@fortawesome/free-solid-svg-icons';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
@@ -755,10 +749,7 @@
                     {#if commitState === 'active'}
                       <Tooltip content="Committing..." side="top">
                         <span class="h-5 w-5 flex items-center justify-center">
-                          <Fa
-                            icon={faSpinner}
-                            class="h-2.5! w-2.5! animate-spin text-primary-ink"
-                          />
+                          <IntentMarkLoader size={10} class="text-primary-ink" />
                         </span>
                       </Tooltip>
                     {:else if commitState === 'queued'}
@@ -973,10 +964,7 @@
                     {#if commitState === 'active'}
                       <Tooltip content="Committing..." side="top">
                         <span class="h-5 w-5 flex items-center justify-center">
-                          <Fa
-                            icon={faSpinner}
-                            class="h-2.5! w-2.5! animate-spin text-primary-ink"
-                          />
+                          <IntentMarkLoader size={10} class="text-primary-ink" />
                         </span>
                       </Tooltip>
                     {:else if commitState === 'queued'}

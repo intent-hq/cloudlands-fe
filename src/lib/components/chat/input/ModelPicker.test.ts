@@ -1018,7 +1018,6 @@ describe('ModelPicker combined reasoning mode', () => {
       });
     });
     expect(refreshButton.hasAttribute('disabled')).toBe(true);
-    expect(refreshButton.querySelector('.animate-spin')).toBeTruthy();
 
     resolveRefresh({
       models: [{ value: 'codex:gpt-6-codex', label: 'GPT-6 Codex', description: 'Smarter' }],
@@ -2154,7 +2153,7 @@ describe('ModelPicker selected-model loading state', () => {
     mockModelState.availableModelsProviderId = 'auggie';
   });
 
-  it('shows a spinner instead of the warning while availability has not hydrated yet, then clears once the model arrives', async () => {
+  it('shows a loader instead of the warning while availability has not hydrated yet, then clears once the model arrives', async () => {
     // Regression (transient warning on refresh): with the availability list not
     // hydrated, fetchAllProviderModels([]) marks the catalog "loaded" while
     // empty — the selected model must read as still-loading, not unavailable.

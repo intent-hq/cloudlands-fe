@@ -227,7 +227,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInEditableElement, isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
-  import { faLock, faPaperclip, faSpinner, faSquareCheck } from '@fortawesome/free-solid-svg-icons';
+  import { faLock, faPaperclip, faSquareCheck } from '@fortawesome/free-solid-svg-icons';
   import { crispOut, spring, springIn } from '$lib/motion';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
@@ -239,6 +239,7 @@
   import QueuedMessageList from './QueuedMessageList.svelte';
   import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -5885,7 +5886,7 @@
                   data-testid="chat-older-history-loading"
                   aria-live="polite"
                 >
-                  <Fa icon={faSpinner} class="animate-spin" size="xs" />
+                  <IntentMarkLoader size={12} />
                   <span>{m.chat_chatPanel_loadingOlderMessages_label()}</span>
                 </div>
               {/if}
@@ -5912,7 +5913,7 @@
                         class="flex items-center gap-2 text-xs text-muted-foreground"
                         aria-live="polite"
                       >
-                        <Fa icon={faSpinner} class="animate-spin" size="xs" />
+                        <IntentMarkLoader size={12} />
                         <span>{m.chat_chatPanel_historyGapLoading_label()}</span>
                       </div>
                     {:else}

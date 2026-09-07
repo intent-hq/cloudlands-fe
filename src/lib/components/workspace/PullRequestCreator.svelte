@@ -6,6 +6,7 @@
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { Badge } from '$lib/components/ui/badge';
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -17,7 +18,6 @@
     faCircleCheck,
     faMagic,
     faPaperPlane,
-    faSpinner,
     faCodeBranch,
     faXmark,
   } from '@fortawesome/free-solid-svg-icons';
@@ -269,7 +269,7 @@
           class="gap-1.5"
         >
           {#if generatingContent && !autoCreatePending}
-            <Fa icon={faSpinner} size="sm" class="animate-spin" />
+            <IntentMarkLoader size={14} />
             {m.workspace_prCreator_generating_label()}
           {:else}
             <Fa icon={faMagic} size="sm" />
@@ -283,7 +283,7 @@
           class="gap-1.5"
         >
           {#if autoCreatePending}
-            <Fa icon={faSpinner} size="sm" class="animate-spin" />
+            <IntentMarkLoader size={14} />
             {generatingContent
               ? m.workspace_prCreator_generating_label()
               : m.workspace_prCreator_creating_label()}
@@ -297,7 +297,7 @@
           disabled={generatingContent || creatingPR || !formData.title.value}
         >
           {#if creatingPR && !autoCreatePending}
-            <Fa icon={faSpinner} size="sm" class="animate-spin" />
+            <IntentMarkLoader size={14} />
             {m.workspace_prCreator_creating_label()}
           {:else}
             <Fa icon={faPaperPlane} size="sm" />

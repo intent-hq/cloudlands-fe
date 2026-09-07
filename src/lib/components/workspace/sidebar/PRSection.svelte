@@ -54,6 +54,7 @@
   import type { PRInfo } from '$lib/components/file-tracking/accept-changes/types';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { Textarea } from '$lib/components/ui/textarea';
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
@@ -72,7 +73,6 @@
     faEye,
     faLink,
     faRobot,
-    faSpinner,
     faStop,
   } from '@fortawesome/free-solid-svg-icons';
   import { tick, untrack } from 'svelte';
@@ -838,7 +838,7 @@
               disabled={!prTitle.trim() || isCreatingPR || (isGeneratingPR && $createPRWhenReady$)}
             >
               {#if isCreatingPR || (isGeneratingPR && $createPRWhenReady$)}
-                <Fa icon={faSpinner} size="xs" class="animate-spin" />
+                <IntentMarkLoader size={12} />
                 <span
                   >{isCreatingPR
                     ? m.workspace_prSection_creatingPr_label()
@@ -857,7 +857,7 @@
                   class="rounded-r-none border-r-0"
                   onclick={handleStopGeneratingPR}
                 >
-                  <Fa icon={faSpinner} size="xs" class="animate-spin" />
+                  <IntentMarkLoader size={12} />
                   <span class="mr-1">{m.workspace_prCreator_autoFill_label()}</span>
                   <Fa icon={faStop} size="xs" />
                 </Button>
@@ -994,7 +994,7 @@
         <div class="flex items-center gap-2">
           <Button variant="default" size="xs" onclick={handleForcePush} disabled={isForcePushing}>
             {#if isForcePushing}
-              <Fa icon={faSpinner} size="xs" class="animate-spin" />
+              <IntentMarkLoader size={12} />
               <span>{m.workspace_prSection_pushing_label()}</span>
             {:else}
               <span>{m.workspace_prSection_forcePush_label()}</span>
@@ -1047,10 +1047,7 @@
               ? m.workspace_prSection_refreshPrStatus_tooltip()
               : m.workspace_prSection_connectToGithub_label()}
           >
-            <Fa
-              icon={faArrowsRotate}
-              class="opacity-50 text-ui {isRefreshingPR ? 'animate-spin' : ''}"
-            />
+            <Fa icon={faArrowsRotate} class="opacity-50 text-ui" />
           </Button>
         {/if}
       {/snippet}
@@ -1294,7 +1291,7 @@
           disabled={connectRemote.adding || !connectRemote.url.trim()}
         >
           {#if connectRemote.adding}
-            <Fa icon={faSpinner} size="xs" class="animate-spin" />
+            <IntentMarkLoader size={12} />
             <span>{m.workspace_prSection_adding_label()}</span>
           {:else}
             <Fa icon={faLink} size="xs" class="opacity-50" />

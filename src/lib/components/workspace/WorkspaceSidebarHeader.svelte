@@ -5,6 +5,7 @@
   import { invoke } from '$shared/generated/ipc-client';
 
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import {
     faBars,
@@ -630,9 +631,7 @@
           data-workspace-actions-trigger
         >
           {#if isDeleting}
-            <div
-              class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
-            ></div>
+            <IntentMarkLoader size={14} />
           {:else}
             <Fa icon={faEllipsisV} size="sm" />
           {/if}

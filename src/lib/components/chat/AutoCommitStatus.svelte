@@ -8,13 +8,14 @@
    */
 
   import Fa from 'svelte-fa';
-  import { faCodeCommit, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { faCodeCommit } from '@fortawesome/free-solid-svg-icons';
 
   import { openWorkspaceCommitChangeset } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
 
   export type CommitStatus =
     | { state: 'committing' }
@@ -41,7 +42,7 @@
     <div class="w-full flex items-center gap-2 px-2 py-1.5 text-subtle rounded-lg min-w-0">
       <div class="flex items-center gap-2 flex-1 min-w-0">
         {#if status.state === 'committing'}
-          <Fa icon={faSpinner} class="opacity-30 animate-spin" size="xs" />
+          <IntentMarkLoader size={12} class="opacity-30 text-subtle" />
           <span class="truncate min-w-0 text-left flex-1 text-subtle">
             {m.chat_autoCommitStatus_committing_label()}
           </span>

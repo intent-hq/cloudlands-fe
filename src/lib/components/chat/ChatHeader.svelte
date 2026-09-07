@@ -10,15 +10,10 @@
   import type { AgentSession, PendingAgentSession } from '$shared/types';
   import { isPendingAgentSession } from '$shared/types';
   import Fa from 'svelte-fa';
-  import {
-    faRobot,
-    faTrash,
-    faSearch,
-    faChevronDown,
-    faSpinner,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faRobot, faTrash, faSearch, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import * as Tooltip from '$lib/components/ui/tooltip';
 
   import {
@@ -171,7 +166,7 @@
         {#if session}
           <span class="text-xs flex items-center {getStatusClass()}">
             {#if isPendingAgentSession(session)}
-              <Fa icon={faSpinner} class="animate-spin mr-1" />
+              <IntentMarkLoader size={16} class="mr-1" />
             {/if}
             {getAgentStatus()}
           </span>

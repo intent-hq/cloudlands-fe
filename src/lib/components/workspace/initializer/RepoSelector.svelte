@@ -7,6 +7,7 @@
   import Header from '$lib/components/ui/Header.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import { Select } from '$lib/components/ui/select';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { debugConfig } from '$lib/config/debug';
   import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
@@ -32,13 +33,7 @@
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type { WorkspaceInitializerRemoteSetup } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
-  import {
-    faFolder,
-    faXmark,
-    faPlus,
-    faSpinner,
-    faChevronDown,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faFolder, faXmark, faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
@@ -1591,7 +1586,7 @@
             </div>
           {:else if githubQuery && $githubSearchLoading$}
             <div class="mt-2 flex items-center gap-2 px-1 text-sm text-subtle">
-              <Fa icon={faSpinner} size="xs" class="animate-spin" />
+              <IntentMarkLoader size={12} />
               <span>{m.workspace_repoSelector_searchingGithub_label({ query: githubQuery })}</span>
             </div>
           {/if}
@@ -1662,7 +1657,7 @@
               <!-- Status message and action -->
               {#if isCheckingNewRepoPath}
                 <div class="flex items-center gap-2 text-sm text-subtle">
-                  <Fa icon={faSpinner} class="animate-spin" size="sm" />
+                  <IntentMarkLoader size={14} />
                   <span>{m.workspace_repoSelector_checking_label()}</span>
                 </div>
               {:else if newRepoPathStatus?.exists && newRepoPathStatus?.isGitRepo}

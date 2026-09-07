@@ -78,7 +78,6 @@
     faMagicWandSparkles,
     faMicrophone,
     faPaperclip,
-    faSpinner,
     faStop,
     faExclamationTriangle,
     faCodeBranch,
@@ -110,6 +109,7 @@
   import { notify } from '$lib/components/patterns/notify';
   import { fade, slide } from '$lib/motion';
   import Button from '../ui/button/button.svelte';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import CreateButtonProgress from './initializer/CreateButtonProgress.svelte';
   import InitialAgentPicker from './initializer/InitialAgentPicker.svelte';
   import { shouldPullSourceRepositoryBeforeCreate } from './initializer/workspace-create-pull-policy';
@@ -3062,7 +3062,7 @@
               aria-label={m.chat_richInput_micCancelTranscribing_label()}
               data-testid="initializer-mic-button"
             >
-              <Fa icon={faSpinner} size="xs" class="animate-spin" />
+              <IntentMarkLoader size={12} />
             </Button>
           {:else if micRecording}
             <Button
@@ -3232,7 +3232,7 @@
             class="bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
           >
             {#if isCreating}
-              <Fa icon={faSpinner} class="animate-spin" size="sm" />
+              <IntentMarkLoader size={14} />
               <span class="min-w-[160px] text-left">
                 {#if isPulling}
                   {m.workspace_compactInitializer_pullingLatest_label()}
@@ -3352,7 +3352,7 @@
                 class="rounded-md border border-border bg-background px-2 py-0.5 font-medium text-foreground"
               >
                 {#if isRepoConfigLoading}
-                  <Fa icon={faSpinner} class="animate-spin" size="sm" />
+                  <IntentMarkLoader size={14} />
                   <span class="sr-only"
                     >{m.workspace_compactInitializer_detectingSetupScript_label()}</span
                   >

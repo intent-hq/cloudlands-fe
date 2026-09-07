@@ -58,10 +58,7 @@
         <Fa
           icon={faArrowsRotate}
           size={10}
-          class={cn(
-            'text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none',
-            refreshing && 'animate-spin',
-          )}
+          class="text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none"
         />
       </Button>
       <Fa

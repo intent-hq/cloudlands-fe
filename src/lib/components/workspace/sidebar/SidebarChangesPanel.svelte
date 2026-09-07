@@ -1093,11 +1093,7 @@
               disabled={isRefreshingGitStatus}
               title={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
             >
-              <Fa
-                icon={faArrowsRotate}
-                class="text-subtle {isRefreshingGitStatus ? 'animate-spin' : ''}"
-                size={10}
-              />
+              <Fa icon={faArrowsRotate} class="text-subtle" size={10} />
             </Button>
 
             <!-- View All Changes Button -->

@@ -27,11 +27,12 @@
   } from '$store/renderer/slices/workspace/workspace-slice';
 
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { notify } from '$lib/components/patterns/notify';
   import { isDaemonManagedRepoPath } from '$lib/components/workspace/initializer/recent-repo-display';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import type { PostMergeState } from '$store/renderer/slices/git/git-types';
-  import { faRotateLeft, faRocket, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { faRotateLeft, faRocket } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
@@ -184,7 +185,7 @@
         disabled={isResettingToTrunk}
       >
         {#if isResettingToTrunk}
-          <Fa icon={faSpinner} size="sm" class="animate-spin text-ghost" />
+          <IntentMarkLoader size={14} class="text-ghost" />
           <span>{m.workspace_postMerge_resetting_label()}</span>
         {:else}
           <Fa icon={faRotateLeft} size="sm" class="text-primary-ink" />

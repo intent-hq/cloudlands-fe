@@ -26,20 +26,14 @@
   import { selectSidebarMergeWhenReady } from '$store/renderer/slices/changes/changes-selectors';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Switch from '$lib/components/ui/switch/switch.svelte';
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import type { WorkspaceId } from '$shared/types/branded-ids';
-  import {
-    faCheck,
-    faCodeMerge,
-    faEye,
-    faRobot,
-    faSpinner,
-    faStop,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faCodeMerge, faEye, faRobot, faStop } from '@fortawesome/free-solid-svg-icons';
   import { readable, writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
@@ -404,7 +398,7 @@
         disabled={mergeOptions.mergingPR}
       >
         {#if mergeOptions.mergingPR}
-          <Fa icon={faSpinner} size="xs" class="animate-spin" />
+          <IntentMarkLoader size={12} />
           <span>{m.workspace_mergePanel_mergingOnGithub_label()}</span>
         {:else}
           <Fa icon={faCodeMerge} size="xs" class="opacity-50" />
@@ -551,7 +545,7 @@
         (isGeneratingMerge && $mergeWhenReady$)}
     >
       {#if isMergingToTrunk || (isGeneratingMerge && $mergeWhenReady$)}
-        <Fa icon={faSpinner} size="xs" class="animate-spin" />
+        <IntentMarkLoader size={12} />
         <span
           >{isMergingToTrunk
             ? m.workspace_mergePanel_merging_label()
@@ -576,7 +570,7 @@
             class="rounded-r-none border-r-0"
             onclick={handleStopGeneratingMerge}
           >
-            <Fa icon={faSpinner} size="xs" class="animate-spin" />
+            <IntentMarkLoader size={12} />
             <span class="mr-1">{m.workspace_prCreator_autoFill_label()}</span>
             <Fa icon={faStop} size="xs" />
           </Button>

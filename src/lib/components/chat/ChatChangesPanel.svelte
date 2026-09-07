@@ -211,7 +211,6 @@
     faPlus,
     faMinus,
     faRotateLeft,
-    faSpinner,
     faLock,
   } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
@@ -225,6 +224,7 @@
   import { onDestroy, tick, untrack } from 'svelte';
   import { Virtualizer } from '@pierre/diffs';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import {
     selectFoldUnchanged,
@@ -2979,7 +2979,7 @@
         {/if}
         <!-- Loading indicator when file is being refreshed -->
         {#if refreshingFiles.has(change.filePath)}
-          <Fa icon={faSpinner} class="w-3 h-3 text-ghost animate-spin shrink-0" />
+          <IntentMarkLoader size={12} class="text-ghost shrink-0" />
         {/if}
       </Button>
 
@@ -3157,7 +3157,7 @@
         {:else}
           <!-- Placeholder while waiting for visibility -->
           <div class="flex items-center justify-center h-[300px] text-subtle">
-            <Fa icon={faSpinner} class="animate-spin mr-2" />
+            <IntentMarkLoader size={16} class="mr-2" />
             {m.chat_changesPanel_loadingDiff_label()}
           </div>
         {/if}

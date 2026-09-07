@@ -47,6 +47,7 @@
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { notify } from '$lib/components/patterns/notify';
@@ -64,7 +65,6 @@
     faCodeCommit,
     faFlag,
     faRotateLeft,
-    faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
@@ -850,7 +850,7 @@
                     tooltipSide="top"
                   >
                     {#if isOperatingOnThis && undoState.undoing}
-                      <Fa icon={faSpinner} size="xs" class="animate-spin text-subtle" />
+                      <IntentMarkLoader size={12} class="text-subtle" />
                     {:else}
                       <Fa icon={faRotateLeft} size="xs" class="text-ghost" />
                     {/if}
@@ -869,7 +869,7 @@
                   tooltipSide="top"
                 >
                   {#if isOperatingOnThis && undoState.undoingCommit}
-                    <Fa icon={faSpinner} size="xs" class="animate-spin text-subtle" />
+                    <IntentMarkLoader size={12} class="text-subtle" />
                   {:else}
                     <Fa icon={faRotateLeft} size="xs" class="text-ghost" />
                   {/if}
@@ -887,7 +887,7 @@
                     tooltipSide="top"
                   >
                     {#if isOperatingOnThis && isPushing}
-                      <Fa icon={faSpinner} size="xs" class="animate-spin text-subtle" />
+                      <IntentMarkLoader size={12} class="text-subtle" />
                     {:else}
                       <Fa icon={faArrowUpFromBracket} size="xs" class="text-subtle" />
                     {/if}
@@ -946,7 +946,7 @@
         <span class="flex items-center gap-1.5 text-ui text-subtle bg-sidebar select-none">
           {m.workspace_commitsTimeline_workspaceStart_label()}
           {#if $ftLoadingOlderCommits$}
-            <Fa icon={faSpinner} class="opacity-50 animate-spin" size="xs" />
+            <IntentMarkLoader size={12} class="opacity-50" />
           {:else}
             <Fa
               icon={faChevronDown}
@@ -1051,7 +1051,7 @@
       }}
     >
       {#if $ftLoadingOlderCommits$}
-        <Fa icon={faSpinner} class="animate-spin mr-1" size="xs" />
+        <IntentMarkLoader size={12} class="mr-1" />
       {/if}
       {m.workspace_commitsTimeline_showMorePrevious_label()}
     </Button>

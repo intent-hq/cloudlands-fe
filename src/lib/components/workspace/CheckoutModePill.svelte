@@ -26,6 +26,7 @@
   import { formatBytesBinary, formatInteger } from '$lib/i18n/format';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { runShrinkWorkspaceAction } from './shrink-workspace-action';
   import { pollWorkspaceDiskUsage } from './disk-usage-poll';
   import { resolveEffectiveIsolationMode } from './initializer/isolation-mode';
@@ -251,8 +252,10 @@
           <span
             role="status"
             aria-label={m.workspace_diskUsagePill_refreshing_ariaLabel()}
-            class="ml-1 inline-block size-3 animate-spin rounded-full border border-current border-t-transparent align-middle text-subtle"
-          ></span>
+            class="ml-1 inline-flex size-3 align-middle text-subtle"
+          >
+            <IntentMarkLoader size={12} />
+          </span>
         {/if}
       </div>
       <div class="flex flex-col gap-0.5 text-xs text-subtle text-pretty">

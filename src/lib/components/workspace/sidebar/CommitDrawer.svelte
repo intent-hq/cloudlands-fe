@@ -12,16 +12,10 @@
   import { selectSidebarCommitWhenReady } from '$store/renderer/slices/changes/changes-selectors';
 
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { Textarea } from '$lib/components/ui/textarea';
   import type { TrackedChange } from '$features/file-tracking/types';
-  import {
-    faCheck,
-    faCodeCommit,
-    faEye,
-    faRobot,
-    faSpinner,
-    faStop,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faCodeCommit, faEye, faRobot, faStop } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -154,7 +148,7 @@
         disabled={!commitMessage.trim() || isCommitting || (isGenerating && $commitWhenReady$)}
       >
         {#if isCommitting || (isGenerating && $commitWhenReady$)}
-          <Fa icon={faSpinner} size="xs" class="animate-spin" />
+          <IntentMarkLoader size={12} />
           <span
             >{isCommitting
               ? m.workspace_commitDrawer_committing_label()
@@ -174,7 +168,7 @@
             class="rounded-r-none border-r-0"
             onclick={handleStopGenerating}
           >
-            <Fa icon={faSpinner} size="xs" class="animate-spin" />
+            <IntentMarkLoader size={12} />
             <span class="mr-1">{m.workspace_prCreator_autoFill_label()}</span>
             <Fa icon={faStop} size="xs" />
           </Button>

@@ -222,8 +222,9 @@
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import { slide } from '$lib/motion';
   import Fa from 'svelte-fa';
-  import { faChevronDown, faPlus, faSearch, faSync } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faPlus, faSearch } from '@fortawesome/free-solid-svg-icons';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { Select } from '$lib/components/ui/select';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { linearAuthClient } from '$features/linear-auth/renderer/linear-auth.client';
@@ -1547,7 +1548,7 @@
         />
         <!-- Refreshing indicator -->
         {#if isRefreshing}
-          <Fa icon={faSync} class="w-2.5 h-2.5 mr-1 text-ghost animate-spin" />
+          <IntentMarkLoader size={10} class="mr-1 text-ghost" />
         {/if}
         <!-- Source tabs with issue count (hidden when controlled externally) -->
         {#if !hideSourceTabs}
@@ -2169,7 +2170,7 @@
           <!-- Infinite scroll: loading-more spinner + sentinel -->
           {#if activeIsLoadingMore}
             <div class="flex items-center justify-center gap-2 px-3 py-2 text-xs text-subtle">
-              <Fa icon={faSync} class="w-2.5 h-2.5 animate-spin" />
+              <IntentMarkLoader size={10} />
               <span>{m.workspace_issueSuggestions_loadingMore_label()}</span>
             </div>
           {/if}

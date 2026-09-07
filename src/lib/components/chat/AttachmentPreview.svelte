@@ -16,9 +16,9 @@
     faFileAlt,
     faCircleExclamation,
     faRotateRight,
-    faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
@@ -212,7 +212,7 @@
     {#if placementStatus === 'placing'}
       <!-- Placement in flight: spinner replaces the file icon; chunked
            uploads add the chunk-acknowledged percent next to it -->
-      <Fa icon={faSpinner} size="15" class="opacity-50 shrink-0 animate-spin" />
+      <IntentMarkLoader size={15} class="opacity-50 shrink-0" />
       {#if progressLabel !== undefined}
         <span class="tabular-nums opacity-70 shrink-0" data-testid="attachment-upload-progress"
           >{progressLabel}</span

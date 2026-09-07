@@ -307,7 +307,7 @@ describe('WorkspaceShellList development script controls', () => {
     expect(restart.getAttribute('aria-busy')).toBe('true');
     expect(start.className).toContain('size-7');
     expect(restart.className).toContain('size-7');
-    expect(start.querySelector('.fa-icon')?.getAttribute('data-icon')).toBe('spinner');
-    expect(restart.querySelector('.fa-icon')?.getAttribute('data-icon')).toBe('spinner');
+    expect(within(start).getByRole('status')).toBeTruthy();
+    expect(within(restart).getByRole('status')).toBeTruthy();
   });
 });
