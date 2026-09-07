@@ -41,22 +41,30 @@ const mocks = vi.hoisted(() => {
     getRemoteUrl: vi.fn<(repoPath: string) => Promise<unknown>>(),
     workspaceCreate: vi.fn<(params: Record<string, unknown>) => Promise<unknown>>(),
     toastError: vi.fn(),
-    gitPull: vi.fn(async () => ({ success: true })),
-    // Default implementation survives vi.clearAllMocks(); model-pick tests
-    // override per-call behavior with mockImplementation.
-    resolveModel: vi.fn(async (_state: unknown, _userSelectedModel?: string) => ({
-      provider: 'auggie',
-      model: 'model',
-      behaviorPrompt: undefined,
-      specialistId: 'developer',
-      specialistName: 'Developer',
-    })),
-    redeemStagedAttachments: vi.fn(async (_workspaceId: string, items: unknown[]) => ({
-      items,
-      failedCount: 0,
-      fileBlocks: [],
-    })),
-    sendHeldFirstMessage: vi.fn(async () => ({ sent: true })),
+    gitPull: vi.fn<() => Promise<{ success: boolean; error?: string }>>(),
+    // Default implementations are (re)installed per test by the top-level
+    // beforeEach (installDefaultMockImplementations) after every shared mock
+    // is reset, so a per-test override never leaks under shuffled ordering.
+    resolveModel: vi.fn<
+      (
+        state: unknown,
+        userPick?: { model: string; provider?: string },
+      ) => Promise<{
+        provider: string;
+        model?: string;
+        behaviorPrompt?: string;
+        specialistId: string | null;
+        specialistName?: string;
+      }>
+    >(),
+    redeemStagedAttachments:
+      vi.fn<
+        (
+          workspaceId: string,
+          items: unknown[],
+        ) => Promise<{ items: unknown[]; failedCount: number; fileBlocks: unknown[] }>
+      >(),
+    sendHeldFirstMessage: vi.fn<() => Promise<{ sent: boolean; errorDetail?: string }>>(),
     // Mutable workspace-initializer state for the model-pick tests
     initializerHydrated: false,
     persistedOnboardingFormState: null as Record<string, unknown> | null,
@@ -264,21 +272,68 @@ function selectGitHubRepo(overrides: Record<string, unknown> = {}) {
 const textOf = (result: ReturnType<typeof renderPage>, testId: string) =>
   result.getByTestId(testId).textContent;
 
+const dispatchedActions = () =>
+  mocks.dispatch.mock.calls.map(([action]) => action as { type: string; payload?: unknown[] });
+
+/**
+ * Reset every shared mock (implementation AND call history — clearAllMocks
+ * keeps implementations, so a per-test mockImplementation/mockResolvedValue
+ * would otherwise leak into whichever test runs next under shuffled ordering)
+ * and re-install the happy-path defaults each test starts from.
+ */
+function installDefaultMockImplementations() {
+  for (const value of Object.values(mocks)) {
+    if (vi.isMockFunction(value)) value.mockReset();
+  }
+  mocks.lastUsedSelect.mockReturnValue(undefined);
+  mocks.fetchRepoConfig.mockResolvedValue(null);
+  mocks.fetchGitHubRepoConfig.mockResolvedValue(null);
+  mocks.getRemoteUrl.mockResolvedValue({ success: false });
+  mocks.gitPull.mockResolvedValue({ success: true });
+  mocks.resolveModel.mockResolvedValue({
+    provider: 'auggie',
+    model: 'model',
+    behaviorPrompt: undefined,
+    specialistId: 'developer',
+    specialistName: 'Developer',
+  });
+  mocks.redeemStagedAttachments.mockImplementation(async (_workspaceId, items) => ({
+    items,
+    failedCount: 0,
+    fileBlocks: [],
+  }));
+  mocks.sendHeldFirstMessage.mockResolvedValue({ sent: true });
+  mocks.initializerHydrated = false;
+  mocks.persistedOnboardingFormState = null;
+  mocks.activeProviderId = '';
+}
+
+/**
+ * A submitted create keeps running after the assertion a test stopped at
+ * (post-create dispatches, the 300ms setup-card beat, navigation). Wait for
+ * every create this test started to settle — each `workspaceCreateProgress/begin`
+ * is matched by a `clear` in the flow's finally — so its late dispatches and
+ * mock calls never land in the next test's recorded calls.
+ */
+async function settleInFlightCreates() {
+  const count = (type: string) => dispatchedActions().filter((a) => a.type === type).length;
+  const begun = count('workspaceCreateProgress/begin');
+  if (begun === 0) return;
+  await waitFor(() => expect(count('workspaceCreateProgress/clear')).toBe(begun));
+}
+
+beforeEach(() => {
+  installDefaultMockImplementations();
+  sessionStorage.clear();
+});
+
+afterEach(async () => {
+  await settleInFlightCreates();
+  cleanup();
+  sessionStorage.clear();
+});
+
 describe('onboarding repo-config setup script detection', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    sessionStorage.clear();
-    mocks.lastUsedSelect.mockReturnValue(undefined);
-    mocks.fetchRepoConfig.mockResolvedValue(null);
-    mocks.fetchGitHubRepoConfig.mockResolvedValue(null);
-    mocks.getRemoteUrl.mockResolvedValue({ success: false });
-  });
-
-  afterEach(() => {
-    cleanup();
-    sessionStorage.clear();
-  });
-
   it('defaults to "From repo config" when the repo commits a setupScript', async () => {
     // A last-used script exists too — repo config must win the priority.
     mocks.lastUsedSelect.mockReturnValue({ name: 'My saved script', content: 'echo saved' });
@@ -967,20 +1022,6 @@ describe('onboarding repo-config setup script detection', () => {
 });
 
 describe('onboarding remote-URL probe race (cloudlands-fe#443)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    sessionStorage.clear();
-    mocks.lastUsedSelect.mockReturnValue(undefined);
-    mocks.fetchRepoConfig.mockResolvedValue(null);
-    mocks.fetchGitHubRepoConfig.mockResolvedValue(null);
-    mocks.getRemoteUrl.mockResolvedValue({ success: false });
-  });
-
-  afterEach(() => {
-    cleanup();
-    sessionStorage.clear();
-  });
-
   const remoteUrlResponse = (owner: string, repo: string) => ({
     success: true,
     data: { owner, repo },
@@ -1076,35 +1117,6 @@ describe('onboarding remote-URL probe race (cloudlands-fe#443)', () => {
 });
 
 describe('onboarding model picker (initial Developer agent)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    sessionStorage.clear();
-    mocks.lastUsedSelect.mockReturnValue(undefined);
-    mocks.fetchRepoConfig.mockResolvedValue(null);
-    mocks.fetchGitHubRepoConfig.mockResolvedValue(null);
-    mocks.getRemoteUrl.mockResolvedValue({ success: false });
-    // clearAllMocks keeps implementations — pin the default explicitly so a
-    // per-test mockImplementation never leaks into the next test.
-    mocks.resolveModel.mockImplementation(async () => ({
-      provider: 'auggie',
-      model: 'model',
-      behaviorPrompt: undefined,
-      specialistId: 'developer',
-      specialistName: 'Developer',
-    }));
-    mocks.initializerHydrated = false;
-    mocks.persistedOnboardingFormState = null;
-    mocks.activeProviderId = '';
-  });
-
-  afterEach(() => {
-    cleanup();
-    sessionStorage.clear();
-    mocks.initializerHydrated = false;
-    mocks.persistedOnboardingFormState = null;
-    mocks.activeProviderId = '';
-  });
-
   const captured = () =>
     (
       window as unknown as {
@@ -1120,14 +1132,11 @@ describe('onboarding model picker (initial Developer agent)', () => {
       }
     ).__mockOnboardingPromptStep;
 
-  const dispatchedActions = () =>
-    mocks.dispatch.mock.calls.map(([action]) => action as { type: string; payload?: unknown[] });
-
   /**
    * Post-create actions are dispatched after `workspace.create` resolves, so
-   * wait for the action itself (not just the create call) and take the LAST
-   * match: a late dispatch from a previous test's flow may still land in this
-   * test's recorded calls.
+   * wait for the action itself (not just the create call). Dispatch history
+   * is reset per test and the previous test's create is settled before this
+   * one starts, so every match belongs to this test's flow.
    */
   const awaitLastDispatched = async (type: string) => {
     let match: { type: string; payload?: unknown[] } | undefined;
@@ -1535,33 +1544,6 @@ describe('onboarding model picker (initial Developer agent)', () => {
 });
 
 describe('onboarding first-message attachments (intent-hq/intent#4050)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    sessionStorage.clear();
-    mocks.lastUsedSelect.mockReturnValue(undefined);
-    mocks.fetchRepoConfig.mockResolvedValue(null);
-    mocks.fetchGitHubRepoConfig.mockResolvedValue(null);
-    mocks.getRemoteUrl.mockResolvedValue({ success: false });
-    mocks.resolveModel.mockImplementation(async () => ({
-      provider: 'auggie',
-      model: 'model',
-      behaviorPrompt: undefined,
-      specialistId: 'developer',
-      specialistName: 'Developer',
-    }));
-    mocks.redeemStagedAttachments.mockImplementation(async (_workspaceId, items) => ({
-      items,
-      failedCount: 0,
-      fileBlocks: [],
-    }));
-    mocks.sendHeldFirstMessage.mockImplementation(async () => ({ sent: true }));
-  });
-
-  afterEach(() => {
-    cleanup();
-    sessionStorage.clear();
-  });
-
   const captured = () =>
     (
       window as unknown as {
