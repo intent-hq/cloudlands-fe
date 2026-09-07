@@ -10,15 +10,20 @@ import { svelte as themisFullConfig } from '@augmentcode/themis/eslint-plugins';
 import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-import.js';
 import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-data-fetch.js';
 import { designSystemRules } from './eslint-rules/design-system/index.js';
+import { namedColorAllowlist } from './eslint-rules/design-system/common.js';
 
 const designSystemBaseline = JSON.parse(
   readFileSync(new URL('./eslint-rules/design-system/baseline.json', import.meta.url), 'utf8'),
 );
 const designSystemBaselineOverrides = Object.entries(designSystemBaseline).flatMap(
   ([rule, exceptions]) => {
-    const files = exceptions.flatMap((exception) => exception.files);
+    const files = exceptions.flatMap((exception) => exception.files ?? []);
     return files.length > 0 ? [{ files, rules: { [`intent/${rule}`]: 'off' } }] : [];
   },
+);
+const semanticColorBaseline = Object.assign(
+  {},
+  ...designSystemBaseline['no-arbitrary-motion-or-color'].map((entry) => entry.counts ?? {}),
 );
 
 const intentPlugin = {
@@ -621,7 +626,10 @@ export default [
     },
     rules: {
       'intent/no-adhoc-transitions': 'error',
-      'intent/no-arbitrary-motion-or-color': 'error',
+      'intent/no-arbitrary-motion-or-color': [
+        'error',
+        { allowlist: namedColorAllowlist, baseline: semanticColorBaseline },
+      ],
       'intent/no-button-compatibility-aliases': 'warn',
       'intent/no-dialog-root-outside-patterns': 'error',
       'intent/no-direct-toast': 'error',

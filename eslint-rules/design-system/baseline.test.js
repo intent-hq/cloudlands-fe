@@ -7,9 +7,11 @@ import svelteParser from 'svelte-eslint-parser';
 import { describe, expect, it } from 'vitest';
 import {
   assertBaselineOnlyShrinks,
+  baselineCounts,
   baselineFiles,
   readComparisonBaseline,
 } from './baseline-ratchet.js';
+import { namedColorAllowlist } from './common.js';
 import { designSystemRules } from './index.js';
 
 const root = process.cwd();
@@ -18,6 +20,7 @@ const baseline = JSON.parse(
 );
 const ruleNames = Object.keys(designSystemRules).sort();
 const enabledRules = Object.fromEntries(ruleNames.map((rule) => [`intent/${rule}`, 'error']));
+enabledRules['intent/no-arbitrary-motion-or-color'] = ['error', { allowlist: namedColorAllowlist }];
 const productionIgnores = [
   '**/__tests__/**',
   '**/tests/**',
@@ -34,7 +37,17 @@ describe('design-system ESLint baseline', () => {
       for (const exception of exceptions) {
         expect(exception.owner.trim()).not.toBe('');
         expect(exception.reason.trim()).not.toBe('');
-        expect(exception.files).toEqual([...new Set(exception.files)].sort());
+        if (exception.files) {
+          expect(exception.files).toEqual([...new Set(exception.files)].sort());
+        } else {
+          const countEntries = Object.entries(exception.counts);
+          expect(countEntries.map(([file]) => file)).toEqual(
+            countEntries.map(([file]) => file).sort(),
+          );
+          expect(countEntries.every(([, count]) => Number.isInteger(count) && count > 0)).toBe(
+            true,
+          );
+        }
       }
       const files = baselineFiles(exceptions);
       expect(files).toEqual([...new Set(files)]);
@@ -74,20 +87,30 @@ describe('design-system ESLint baseline', () => {
       cache: false,
     });
     const results = await eslint.lintFiles(['src']);
-    const current = Object.fromEntries(ruleNames.map((rule) => [rule, new Set()]));
+    const current = Object.fromEntries(ruleNames.map((rule) => [rule, new Map()]));
 
     for (const result of results) {
       const file = path.relative(root, result.filePath).split(path.sep).join('/');
       for (const message of result.messages) {
         const rule = message.ruleId?.startsWith('intent/') ? message.ruleId.slice(7) : undefined;
-        if (rule && current[rule]) current[rule].add(file);
+        if (rule && current[rule]) {
+          current[rule].set(file, (current[rule].get(file) ?? 0) + 1);
+        }
       }
     }
 
     const additions = {};
     for (const rule of ruleNames) {
+      const allowedCounts = baselineCounts(baseline[rule]);
+      if (allowedCounts) {
+        const increased = [...current[rule]]
+          .filter(([file, count]) => count > (allowedCounts[file] ?? 0))
+          .map(([file, count]) => ({ file, allowed: allowedCounts[file] ?? 0, current: count }));
+        if (increased.length) additions[rule] = increased;
+        continue;
+      }
       const allowed = new Set(baselineFiles(baseline[rule]));
-      const added = [...current[rule]].filter((file) => !allowed.has(file)).sort();
+      const added = [...current[rule].keys()].filter((file) => !allowed.has(file)).sort();
       if (added.length) additions[rule] = added;
     }
     expect(additions).toEqual({});

@@ -159,15 +159,65 @@ scriptTester.run('no-adhoc-transitions', noAdhocTransitions, {
 svelteTester.run('no-arbitrary-motion-or-color', noArbitraryMotionOrColor, {
   valid: [
     '<div class="duration-spring-fast ease-[var(--spring-fast-ease)] bg-card text-foreground" />',
+    '<div class="border-border ring-ring outline-muted fill-current stroke-foreground divide-border accent-primary caret-foreground" />',
+    '<div class="border-[var(--border)] ring-[var(--ring)] fill-[var(--foreground)]" style="color: hsl(var(--foreground)); border-color: var(--border)" />',
+    '<style>.tokenized { color: hsl(var(--foreground)); background: var(--card); }</style>',
+    '<div style="background-image: url(#abc)" /><style>#abc { color: var(--foreground); }</style>',
+    {
+      code: '<div class="border-red-500" style="color: #abc" />',
+      filename: projectFile('src/features/brand/Mark.svelte'),
+      options: [
+        {
+          allowlist: [
+            {
+              name: 'brand-mark',
+              files: ['src/features/brand/Mark.svelte'],
+              colors: ['#abc'],
+              utilities: ['border-red-500'],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: '<div class="border-red-500 text-blue-500" />',
+      filename: projectFile('src/features/legacy/Panel.svelte'),
+      options: [{ baseline: { 'src/features/legacy/Panel.svelte': 2 } }],
+    },
   ],
   invalid: [
     {
       code: '<div class="duration-[120ms] bg-[#123456]" />',
-      errors: [{ messageId: 'arbitraryToken' }],
+      errors: [{ messageId: 'arbitraryMotion' }, { messageId: 'arbitraryColor' }],
     },
     {
       code: '<script>const classes = `ease-[linear] text-[#fff]`;</script>',
-      errors: [{ messageId: 'arbitraryToken' }],
+      errors: [{ messageId: 'arbitraryMotion' }, { messageId: 'arbitraryColor' }],
+    },
+    {
+      code: '<div class="border-red-500 ring-blue-400 outline-amber-600 fill-green-500 stroke-purple-300 divide-gray-200 accent-pink-500 caret-orange-700" />',
+      errors: Array.from({ length: 8 }, () => ({ messageId: 'physicalPalette' })),
+    },
+    {
+      code: '<div class="border-[#abc] ring-[rgb(1_2_3)] outline-[hsl(1_2%_3%)] fill-[#abcdef] stroke-[rgba(1,2,3,0.5)] divide-[#abcd] accent-[hsl(1,2%,3%)] caret-[#abcdef12]" />',
+      errors: Array.from({ length: 8 }, () => ({ messageId: 'arbitraryColor' })),
+    },
+    {
+      code: '<svg fill="#abc" stroke="rgb(1 2 3)"></svg><div style="color: #abcdef; border-color: hsl(10 20% 30%)" /><style>.sample { fill: #1234; stroke: rgba(1, 2, 3, 0.5); }</style>',
+      errors: [
+        { messageId: 'svgColor' },
+        { messageId: 'svgColor' },
+        { messageId: 'cssColor' },
+        { messageId: 'cssColor' },
+        { messageId: 'cssColor' },
+        { messageId: 'cssColor' },
+      ],
+    },
+    {
+      code: '<div class="border-red-500 text-blue-500 fill-green-500" />',
+      filename: projectFile('src/features/legacy/Panel.svelte'),
+      options: [{ baseline: { 'src/features/legacy/Panel.svelte': 2 } }],
+      errors: [{ messageId: 'physicalPalette' }],
     },
   ],
 });

@@ -4,13 +4,28 @@ export const baselinePath = 'eslint-rules/design-system/baseline.json';
 
 export function baselineFiles(entries = []) {
   if (entries.every((entry) => typeof entry === 'string')) return entries;
-  return entries.flatMap((entry) => entry.files);
+  return entries.flatMap((entry) => entry.files ?? Object.keys(entry.counts ?? {}));
+}
+
+export function baselineCounts(entries = []) {
+  if (!entries.some((entry) => typeof entry === 'object' && entry.counts)) return undefined;
+  return Object.assign({}, ...entries.map((entry) => entry.counts ?? {}));
 }
 
 export function findBaselineGrowth(base, current) {
   const growth = {};
   for (const [rule, entries] of Object.entries(current)) {
     if (!(rule in base)) continue;
+    const currentCounts = baselineCounts(entries);
+    if (currentCounts) {
+      const previousCounts = baselineCounts(base[rule]);
+      if (!previousCounts && rule === 'no-arbitrary-motion-or-color') continue;
+      const increased = Object.entries(currentCounts)
+        .filter(([file, count]) => count > (previousCounts?.[file] ?? 0))
+        .map(([file, count]) => ({ file, previous: previousCounts?.[file] ?? 0, current: count }));
+      if (increased.length) growth[rule] = increased;
+      continue;
+    }
     const previous = new Set(baselineFiles(base[rule]));
     const added = baselineFiles(entries)
       .filter((file) => !previous.has(file))
@@ -24,7 +39,7 @@ export function assertBaselineOnlyShrinks(base, current) {
   const growth = findBaselineGrowth(base, current);
   if (Object.keys(growth).length) {
     throw new Error(
-      `Design-system baseline entries may only be removed:\n${JSON.stringify(growth, null, 2)}`,
+      `Design-system baseline entries and counts may only shrink:\n${JSON.stringify(growth, null, 2)}`,
     );
   }
 }

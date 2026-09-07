@@ -27,7 +27,7 @@ describe('design-system baseline growth guard', () => {
       ],
     };
     expect(() => assertBaselineOnlyShrinks(original, larger)).toThrow(
-      'Design-system baseline entries may only be removed',
+      'Design-system baseline entries and counts may only shrink',
     );
     expect(findBaselineGrowth(original, larger)).toEqual({
       'no-raw-controls': ['src/C.svelte'],
@@ -43,5 +43,54 @@ describe('design-system baseline growth guard', () => {
     };
 
     expect(findBaselineGrowth(original, withNewRule)).toEqual({});
+  });
+
+  it('rejects per-file count growth while accepting count reductions', () => {
+    const counted = {
+      'no-arbitrary-motion-or-color': [
+        { owner: 'ui', reason: 'Legacy colors', counts: { 'src/A.svelte': 3 } },
+      ],
+    };
+    const reduced = {
+      'no-arbitrary-motion-or-color': [
+        { owner: 'ui', reason: 'Legacy colors', counts: { 'src/A.svelte': 2 } },
+      ],
+    };
+    const increased = {
+      'no-arbitrary-motion-or-color': [
+        {
+          owner: 'ui',
+          reason: 'Legacy colors',
+          counts: { 'src/A.svelte': 4, 'src/B.svelte': 1 },
+        },
+      ],
+    };
+
+    expect(findBaselineGrowth(counted, reduced)).toEqual({});
+    expect(findBaselineGrowth(counted, increased)).toEqual({
+      'no-arbitrary-motion-or-color': [
+        { file: 'src/A.svelte', previous: 3, current: 4 },
+        { file: 'src/B.svelte', previous: 0, current: 1 },
+      ],
+    });
+  });
+
+  it('allows the one-time migration from file exemptions to counted violations', () => {
+    const fileExemptions = {
+      'no-arbitrary-motion-or-color': [
+        { owner: 'ui', reason: 'Legacy colors', files: ['src/A.svelte'] },
+      ],
+    };
+    const counted = {
+      'no-arbitrary-motion-or-color': [
+        { owner: 'ui', reason: 'Legacy colors', counts: { 'src/A.svelte': 2 } },
+      ],
+    };
+    expect(findBaselineGrowth(fileExemptions, counted)).toEqual({});
+    expect(
+      findBaselineGrowth(original, { 'no-raw-controls': counted['no-arbitrary-motion-or-color'] }),
+    ).toEqual({
+      'no-raw-controls': [{ file: 'src/A.svelte', previous: 0, current: 2 }],
+    });
   });
 });
