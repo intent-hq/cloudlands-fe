@@ -47,11 +47,14 @@ function expectCollisionFree(result: ReturnType<typeof layout>): void {
       expect(boxesOverlap(result.boxes[left], result.boxes[right])).toBe(false);
     }
   }
-  expect(result.regions).toHaveLength(manifest.regions.length);
+  expect(new Set(result.regions.map(({ id }) => id))).toEqual(
+    new Set(manifest.regions.map(({ id }) => id)),
+  );
   expect(result.badges).toHaveLength(SCRIPT_AGENTS.length);
 }
 
 describe.each([
+  [420, 620],
   [960, 620],
   [1440, 900],
 ])('semantic map label collision pass at %ipx', (width, height) => {
@@ -67,4 +70,18 @@ describe.each([
       }
     },
   );
+});
+
+it('keeps every focus label collision-free at 320px', () => {
+  expectCollisionFree(layout('focus', 320, 620));
+});
+
+it('keeps non-focused region labels above the theme-independent readable opacity floor', () => {
+  const result = layout('focus', 960, 620);
+  const selected = result.regions.find(({ id }) => id === 'renderer-ui')!;
+  const context = result.regions.filter(({ id }) => id !== selected.id);
+
+  expect(selected.opacity).toBe(1);
+  expect(context.every(({ opacity }) => opacity >= 0.82)).toBe(true);
+  expect(context.some(({ opacity }) => opacity < selected.opacity)).toBe(true);
 });

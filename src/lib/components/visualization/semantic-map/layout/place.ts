@@ -12,6 +12,9 @@ const HULL_PADDING_FRACTION = 0.12;
 const HULL_POINT_RADIUS_FRACTION = 0.07;
 const HULL_POINT_SPREAD_FRACTION = 0.9;
 const LABEL_EDGE_INSET = 76;
+// Two 13px label lines with 3px leading and 4px block padding occupy 36px.
+// A 30px radius leaves the requested 12px inset around that label block.
+export const FOCUS_CONTEXT_MIN_RADIUS = 30;
 
 export interface LayoutViewport {
   width: number;
@@ -251,6 +254,7 @@ function createLayoutNodes(
   manifest: Manifest,
   budget: Record<string, number>,
   viewport: LayoutViewport,
+  minimumRadiusIds: ReadonlySet<string> = new Set(),
 ): LayoutNode[] {
   const scale = radiusScale(budget, viewport);
   const nodes = manifest.regions.map((region) => createNode(region, budget, viewport, scale));
@@ -260,6 +264,15 @@ function createLayoutNodes(
     const hull = hullFor(node, manifest.regions[index]);
     node.hull = hull.map(([x, y]) => [x - centerX, y - centerY]);
     node.radius = Math.max(0, ...node.hull.map(([x, y]) => Math.hypot(x, y)));
+    if (
+      minimumRadiusIds.has(node.id) &&
+      node.radius > 0 &&
+      node.radius < FOCUS_CONTEXT_MIN_RADIUS
+    ) {
+      const scale = FOCUS_CONTEXT_MIN_RADIUS / node.radius;
+      node.hull = node.hull.map(([x, y]) => [x * scale, y * scale]);
+      node.radius = FOCUS_CONTEXT_MIN_RADIUS;
+    }
   });
   return nodes;
 }
@@ -269,9 +282,16 @@ export function placeRegions(
   budget: Record<string, number>,
   viewport: LayoutViewport,
 ): RegionGeometry[] {
-  const nodes = createLayoutNodes(manifest, budget, viewport);
   const restBudget = computeBudget(manifest);
   const isFocused = manifest.regions.some((region) => budget[region.id] !== restBudget[region.id]);
+  const contextRegionIds = new Set(
+    isFocused
+      ? manifest.regions
+          .filter((region) => (budget[region.id] ?? 0) < restBudget[region.id])
+          .map((region) => region.id)
+      : [],
+  );
+  const nodes = createLayoutNodes(manifest, budget, viewport, contextRegionIds);
   if (isFocused) {
     const restNodes = createLayoutNodes(manifest, restBudget, viewport);
     settle(restNodes, viewport);

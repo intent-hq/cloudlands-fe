@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Manifest, Route } from '../core/types';
 import { computeBudget, FOCUS_BUDGET_SHARE, LABELED_PEBBLE_BUDGET } from './budget';
 import { lerpGeometry } from './interpolate';
-import { placeRegions } from './place';
+import { FOCUS_CONTEXT_MIN_RADIUS, placeRegions } from './place';
 
 const manifest: Manifest = {
   version: 1,
@@ -93,6 +93,30 @@ describe('semantic map region placement', () => {
         Math.min(viewport.width, viewport.height) * 0.05,
       );
     }
+  });
+
+  it.each([
+    { width: 320, height: 620 },
+    { width: 420, height: 620 },
+    { width: 960, height: 620 },
+    { width: 1_440, height: 900 },
+  ])('keeps focus context scannable at $width px', (focusViewport) => {
+    const focusId = 'two';
+    const focus = placeRegions(
+      manifest,
+      computeBudget(manifest, { regionIds: [focusId] }),
+      focusViewport,
+    );
+    const selected = focus.find(({ id }) => id === focusId)!;
+    const context = focus.filter(({ id }) => id !== focusId);
+
+    for (const geometry of context) {
+      expect(geometry.radius).toBeGreaterThanOrEqual(FOCUS_CONTEXT_MIN_RADIUS);
+      expect(geometry.radius * 2).toBeGreaterThanOrEqual(36 + 2 * 12);
+    }
+
+    const largestContextArea = Math.max(...context.map(({ radius }) => radius ** 2));
+    expect(selected.radius ** 2 / largestContextArea).toBeGreaterThanOrEqual(3.5);
   });
 
   it('interpolates smoothly without mutating either endpoint', () => {

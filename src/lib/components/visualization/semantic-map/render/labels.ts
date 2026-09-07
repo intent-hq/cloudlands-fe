@@ -3,6 +3,9 @@ import type { AgentBadge, RouteEdge } from './types';
 
 const GAP = 4;
 const BADGE_SIZE = 30;
+export const REGION_LABEL_MIN_FONT_SIZE = 13;
+export const REGION_LABEL_MAX_FONT_SIZE = 16;
+export const REGION_LABEL_MIN_OPACITY = 0.82;
 
 export interface LabelBox {
   id: string;
@@ -16,6 +19,7 @@ export interface LabelBox {
 export interface PlacedLabel extends LabelBox {
   text: string;
   fontSize: number;
+  opacity: number;
   lines?: string[];
 }
 
@@ -53,6 +57,11 @@ function wrapLabel(text: string, maxCharacters: number): string[] {
     else lines[last] = candidate;
   }
   return lines;
+}
+
+export function regionLabelOpacity(budget: number, maximumBudget: number): number {
+  if (maximumBudget <= 0) return 1;
+  return Math.max(REGION_LABEL_MIN_OPACITY, Math.min(1, Math.sqrt(budget / maximumBudget)));
 }
 
 function inside(box: LabelBox, width: number, height: number): boolean {
@@ -104,6 +113,22 @@ function edgeCandidates(edge: RouteEdge, distance: number): Array<readonly [numb
   ];
 }
 
+function regionCandidates(
+  region: RegionGeometry,
+  width: number,
+  height: number,
+): Array<readonly [number, number]> {
+  const horizontalStep = width * 0.55;
+  const verticalOffsets = [0, -height, height, -height * 2, height * 2];
+  return [
+    ...verticalOffsets.map((offset) => [region.x, region.y + offset] as const),
+    ...verticalOffsets.flatMap((offset) => [
+      [region.x - horizontalStep, region.y + offset] as const,
+      [region.x + horizontalStep, region.y + offset] as const,
+    ]),
+  ];
+}
+
 function badgeCandidates(badge: AgentBadge, scale: number): Array<readonly [number, number]> {
   const step = 34 / scale;
   const result: Array<readonly [number, number]> = [];
@@ -127,24 +152,34 @@ export function layoutSceneLabels(input: {
   const scale = input.scale ?? 1;
   const viewport = { width: input.width, height: input.height };
   const occupied: LabelBox[] = [];
+  const maximumRegionBudget = Math.max(0, ...input.regions.map(({ budget }) => budget));
   const regions = input.regions.flatMap((region) => {
     const text = input.regionLabels.get(region.id);
     if (!text) return [];
-    const fontSize = Math.max(13, Math.min(16, region.radius * 0.15));
+    const fontSize = Math.max(
+      REGION_LABEL_MIN_FONT_SIZE,
+      Math.min(REGION_LABEL_MAX_FONT_SIZE, region.radius * 0.15),
+    );
     const lines = wrapLabel(text, 22);
     const width = Math.max(...lines.map((line) => estimateWidth(line, fontSize)));
     const height = lines.length * (fontSize + 3) + 4;
     const box = place(
       { id: region.id, kind: 'region', width, height },
-      [
-        [region.x, region.y],
-        [region.x, region.y - height],
-        [region.x, region.y + height],
-      ],
+      regionCandidates(region, width, height),
       occupied,
       viewport,
     );
-    return box ? [{ ...box, text, fontSize, lines }] : [];
+    return box
+      ? [
+          {
+            ...box,
+            text,
+            fontSize,
+            opacity: regionLabelOpacity(region.budget, maximumRegionBudget),
+            lines,
+          },
+        ]
+      : [];
   });
   const edges = input.edges.flatMap((edge, index) => {
     const fontSize = 12 / scale;
@@ -160,7 +195,7 @@ export function layoutSceneLabels(input: {
       occupied,
       viewport,
     );
-    return box ? [{ ...box, text: edge.label, fontSize, lines }] : [];
+    return box ? [{ ...box, text: edge.label, fontSize, opacity: 1, lines }] : [];
   });
   const counts = input.edges.flatMap((edge, index) => {
     const fontSize = 11 / scale;
@@ -176,7 +211,7 @@ export function layoutSceneLabels(input: {
       occupied,
       viewport,
     );
-    return box ? [{ ...box, text, fontSize }] : [];
+    return box ? [{ ...box, text, fontSize, opacity: 1 }] : [];
   });
   const badges = input.badges.flatMap((badge) => {
     const box = place(
