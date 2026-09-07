@@ -223,7 +223,7 @@ describe('resolveOnboardingModel', () => {
     expect(result.specialistName).toBe('Developer');
   });
 
-  it('falls back to the bundled Developer name when the store has no matching specialist', async () => {
+  it('keeps Developer with the bundled name when the specialist list has not loaded yet (empty)', async () => {
     mockState.specialists = [];
 
     const result = await resolveOnboardingModel(fakeState);
@@ -231,6 +231,43 @@ describe('resolveOnboardingModel', () => {
     expect(result.specialistId).toBe('developer');
     expect(result.specialistName).toBeTruthy();
     expect(result.specialistName).not.toBe('developer');
+  });
+
+  it('falls back to General (null specialist) when a loaded specialist list lacks the Developer', async () => {
+    mockState.specialists = [
+      {
+        id: 'spec-writer',
+        name: 'Coordinator',
+        description: 'Plans and delegates',
+        defaultBehaviorPrompt: 'coordinator-prompt',
+      },
+    ];
+    mockState.userOverrides = { modelOverrides: { developer: 'auggie:fable-5' } };
+
+    const result = await resolveOnboardingModel(fakeState);
+
+    expect(result.specialistId).toBeNull();
+    expect(result.specialistName).toBeUndefined();
+    expect(result.behaviorPrompt).toBeUndefined();
+    // A Developer-scoped model override must not leak onto the General agent.
+    expect(result.model).toBeUndefined();
+    expect(result.provider).toBe('auggie');
+  });
+
+  it('uses the resolved catalog name for the Developer (file/project override)', async () => {
+    mockState.specialists = [
+      {
+        id: 'developer',
+        name: 'Team Builder',
+        description: 'Project-overridden developer',
+        defaultBehaviorPrompt: 'custom-developer-prompt',
+      },
+    ];
+
+    const result = await resolveOnboardingModel(fakeState);
+
+    expect(result.specialistId).toBe('developer');
+    expect(result.specialistName).toBe('Team Builder');
   });
 
   it('returns opencode with no model when only opencode is installed and active', async () => {

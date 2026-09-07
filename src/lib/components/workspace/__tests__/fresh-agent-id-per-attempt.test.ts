@@ -59,6 +59,14 @@ const mocks = vi.hoisted(() => {
       isTeamMode?: boolean;
       skipIsolation?: boolean;
     } | null>(null),
+    lastSubmittedAgent$: writable<{
+      selectedSpecialist: string | null;
+      selectedModel?: string;
+      modelWasOverridden?: boolean;
+      selectedReasoningEffort?: string;
+      isTeamMode: boolean;
+      selectedProvider?: string;
+    } | null>(null),
     specialists$: writable([coordinator, developer]),
     customSpecialistsLoaded$: writable(true),
     fileSpecialistsLoaded$: writable(true),
@@ -82,7 +90,7 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
   selectCompactWorkspaceInitializerFormState: () => mocks.compactFormState$,
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
-  selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
+  selectWorkspaceInitializerLastSubmittedAgent: () => mocks.lastSubmittedAgent$,
   selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
@@ -249,6 +257,7 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     sessionStorage.clear();
     mocks.hydrated$.set(false);
     mocks.compactFormState$.set(null);
+    mocks.lastSubmittedAgent$.set(null);
     mocks.specialists$.set([mocks.coordinator, mocks.developer]);
     mocks.customSpecialistsLoaded$.set(true);
     mocks.fileSpecialistsLoaded$.set(true);
@@ -281,6 +290,37 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
 
     expect(mocks.create.mock.calls[0][0].initialAgent.specialist).toBeUndefined();
+  });
+
+  it('keeps a remembered General in the form state over a remembered Developer last-submitted agent', async () => {
+    mocks.compactFormState$.set({ selectedSpecialist: null, isTeamMode: false });
+    mocks.lastSubmittedAgent$.set({ selectedSpecialist: 'developer', isTeamMode: false });
+    mocks.create.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+    seedAutoCreatePrefill();
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
+
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+
+    const { initialAgent } = mocks.create.mock.calls[0][0];
+    expect(initialAgent.specialist).toBeUndefined();
+    expect(initialAgent.metadata.specialist).toBeUndefined();
+    expect(initialAgent.metadata.workMode).toBe('single');
+  });
+
+  it('keeps a remembered General last-submitted agent over the Developer default', async () => {
+    mocks.lastSubmittedAgent$.set({ selectedSpecialist: null, isTeamMode: false });
+    mocks.create.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+    seedAutoCreatePrefill();
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
+
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+
+    const { initialAgent } = mocks.create.mock.calls[0][0];
+    expect(initialAgent.specialist).toBeUndefined();
+    expect(initialAgent.metadata.specialist).toBeUndefined();
+    expect(initialAgent.metadata.workMode).toBe('single');
   });
 
   it('requests a fresh specialist roster once when mounted', () => {

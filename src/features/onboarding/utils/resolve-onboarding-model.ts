@@ -42,16 +42,32 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('resolve-onboarding-model');
-const specialistId = DEFAULT_NEW_WORKSPACE_SPECIALIST_ID;
 
 export interface ResolvedModelConfig {
   provider: string;
   /** Explicit override only; undefined ⇒ the daemon resolves the default. */
   model: string | undefined;
   behaviorPrompt: string | undefined;
-  specialistId: string;
-  /** Localized display name of the resolved specialist (initial agent name). */
-  specialistName: string;
+  /**
+   * Developer when the resolved specialist list carries it (or is not loaded
+   * yet — the daemon bundles the Developer); `null` (General) when a loaded
+   * list does not, since that list is authoritative (daemon replacement mode).
+   */
+  specialistId: string | null;
+  /** Localized display name of the resolved specialist; undefined for General. */
+  specialistName: string | undefined;
+}
+
+/**
+ * Applies the `DEFAULT_NEW_WORKSPACE_SPECIALIST_ID` contract: the Developer
+ * id only when a non-empty resolved list contains it, or when nothing has
+ * loaded yet; otherwise General (`null`).
+ */
+function resolveOnboardingSpecialistId(specialists: readonly { id: string }[]): string | null {
+  if (specialists.length === 0) return DEFAULT_NEW_WORKSPACE_SPECIALIST_ID;
+  return specialists.some((s) => s.id === DEFAULT_NEW_WORKSPACE_SPECIALIST_ID)
+    ? DEFAULT_NEW_WORKSPACE_SPECIALIST_ID
+    : null;
 }
 
 /** An explicit prompt-step picker pick: bare model id + its provider leg. */
@@ -182,10 +198,21 @@ export async function resolveOnboardingModel(
 ): Promise<ResolvedModelConfig> {
   const activeProvider = selectActiveProviderId.select(state);
   const defaultProviderId = selectEffectiveDefaultProviderId.select(state);
-  const specialist = selectSpecialists.select(state).find((s) => s.id === specialistId);
-  const specialistName = specialist?.name ?? getSpecialistById(specialistId)?.name ?? specialistId;
-  const behaviorPrompt = selectEffectiveBehaviorPrompt.select(state, specialistId) || undefined;
-  const specialistOverride = selectUserOverrides.select(state).modelOverrides[specialistId];
+  const specialists = selectSpecialists.select(state);
+  const specialistId = resolveOnboardingSpecialistId(specialists);
+  const specialist = specialistId ? specialists.find((s) => s.id === specialistId) : undefined;
+  const specialistName = specialistId
+    ? (specialist?.name ?? getSpecialistById(specialistId)?.name ?? specialistId)
+    : undefined;
+  const behaviorPrompt = specialistId
+    ? selectEffectiveBehaviorPrompt.select(state, specialistId) || undefined
+    : undefined;
+  const specialistOverride = specialistId
+    ? selectUserOverrides.select(state).modelOverrides[specialistId]
+    : undefined;
+  if (specialistId === null) {
+    logger.info('Developer specialist absent from the resolved list; falling back to General');
+  }
 
   const availability = await getProviderAvailability();
 

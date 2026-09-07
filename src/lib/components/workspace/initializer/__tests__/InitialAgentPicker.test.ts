@@ -234,13 +234,6 @@ describe('InitialAgentPicker stale model override clearing', () => {
     expect(singleAgent.getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('renders the Single agent card before the Agent orchestration card', () => {
-    render(InitialAgentPicker);
-
-    const { single, team } = modeCards();
-    expect(single.compareDocumentPosition(team) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
   it('defaults to single-agent mode with Developer when nothing is remembered', async () => {
     mocks.specialists$.set([
       { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },

@@ -1123,6 +1123,23 @@ describe('onboarding model picker (initial Developer agent)', () => {
   const dispatchedActions = () =>
     mocks.dispatch.mock.calls.map(([action]) => action as { type: string; payload?: unknown[] });
 
+  /**
+   * Post-create actions are dispatched after `workspace.create` resolves, so
+   * wait for the action itself (not just the create call) and take the LAST
+   * match: a late dispatch from a previous test's flow may still land in this
+   * test's recorded calls.
+   */
+  const awaitLastDispatched = async (type: string) => {
+    let match: { type: string; payload?: unknown[] } | undefined;
+    await waitFor(() => {
+      match = dispatchedActions()
+        .filter((a) => a.type === type)
+        .at(-1);
+      expect(match).toBeDefined();
+    });
+    return match;
+  };
+
   it('dispatches the global selectModel trigger when the user picks a model', async () => {
     const result = renderPage();
     selectLocalRepo('/repo/a');
@@ -1250,9 +1267,7 @@ describe('onboarding model picker (initial Developer agent)', () => {
 
     // The onboarding choice seeds the New Workspace modal's remembered agent
     // (single-agent Developer, carrying the explicit pick).
-    const lastSubmitted = dispatchedActions().find(
-      (a) => a.type === 'workspaceInitializer/setLastSubmittedAgent',
-    );
+    const lastSubmitted = await awaitLastDispatched('workspaceInitializer/setLastSubmittedAgent');
     expect(lastSubmitted?.payload).toEqual([
       {
         selectedSpecialist: 'developer',
@@ -1293,9 +1308,7 @@ describe('onboarding model picker (initial Developer agent)', () => {
     expect(createRequest.initialAgent.provider).toBe('auggie');
     expect(createRequest.initialAgent.specialist).toBe('developer');
 
-    const lastSubmitted = dispatchedActions().find(
-      (a) => a.type === 'workspaceInitializer/setLastSubmittedAgent',
-    );
+    const lastSubmitted = await awaitLastDispatched('workspaceInitializer/setLastSubmittedAgent');
     expect(lastSubmitted?.payload).toEqual([
       {
         selectedSpecialist: 'developer',
@@ -1306,6 +1319,60 @@ describe('onboarding model picker (initial Developer agent)', () => {
         selectedProvider: undefined,
       },
     ]);
+  });
+
+  it('creates a General agent (no specialist) when the resolved config falls back from Developer', async () => {
+    mocks.resolveModel.mockImplementation(async () => ({
+      provider: 'auggie',
+      model: undefined,
+      behaviorPrompt: undefined,
+      specialistId: null,
+      specialistName: undefined,
+    }));
+    mocks.workspaceCreate.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-1',
+          path: '/repo/a',
+          repositoryPath: '/repo/a',
+          worktreePath: '/wt/a',
+        },
+        initialAgent: { id: 'agent-1' },
+      },
+    });
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().setInputValue('Build the thing');
+    captured().onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    const createRequest = mocks.workspaceCreate.mock.calls[0][0] as {
+      initialAgent: {
+        name: string;
+        specialist?: string;
+        behaviorPrompt?: string;
+        metadata: { specialist?: string };
+      };
+    };
+    expect(createRequest.initialAgent.specialist).toBeUndefined();
+    expect(createRequest.initialAgent.metadata.specialist).toBeUndefined();
+    expect(createRequest.initialAgent.behaviorPrompt).toBeUndefined();
+    expect(createRequest.initialAgent.name).toBeTruthy();
+    expect(createRequest.initialAgent.name).not.toBe('Developer');
+
+    // The remembered modal choice is single-agent General.
+    const lastSubmitted = await awaitLastDispatched('workspaceInitializer/setLastSubmittedAgent');
+    expect(lastSubmitted?.payload).toEqual([
+      expect.objectContaining({ selectedSpecialist: null, isTeamMode: false }),
+    ]);
+
+    // A General agent does not get the spec-first (coordinator) layout.
+    const bootstrap = await awaitLastDispatched('panelLayout/bootstrapNewWorkspaceLayout');
+    expect(bootstrap?.payload).toEqual(
+      expect.objectContaining({ wsId: 'ws-1', initialAgentId: 'agent-1', coordinator: false }),
+    );
   });
 
   it('does not record a last-submitted agent when workspace.create fails', async () => {

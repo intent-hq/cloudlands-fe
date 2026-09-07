@@ -541,9 +541,11 @@
   // retry create mints a fresh id, which rekeys the card and rebinds its
   // init-bound selector cleanly.
   let onboardingCreateProgressId = $state<string | null>(null);
-  // Initial agent shown on the setup card: the Developer specialist's
-  // localized name, refreshed from the resolved config at create time.
-  let setupSpecialistName = $state<string>(
+  // Initial agent shown on the setup card: the Developer specialist's id and
+  // localized name, refreshed from the resolved config at create time (both
+  // undefined when the resolved list lacks the Developer → General).
+  let setupSpecialistId = $state<string | undefined>(DEFAULT_NEW_WORKSPACE_SPECIALIST_ID);
+  let setupSpecialistName = $state<string | undefined>(
     getSpecialistById(DEFAULT_NEW_WORKSPACE_SPECIALIST_ID)?.name ??
       DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
   );
@@ -1266,7 +1268,10 @@
           ? { model: onboardingSelectedModel, provider: onboardingSelectedProvider }
           : undefined,
       );
+      setupSpecialistId = specialistId ?? undefined;
       setupSpecialistName = specialistName;
+      // General (null specialist) uses the modal's generic agent name.
+      const agentName = specialistName ?? m.workspace_fileChanges_agent_label();
 
       // The prompt-step picker is the authoritative source of the initial
       // default provider + default model (monorepo#3044): commit the resolved
@@ -1396,11 +1401,11 @@
         linearIssue,
         sentryIssue,
         initialAgent: {
-          name: specialistName,
+          name: agentName,
           model: effectiveModel,
           prompt: hasStagedFiles ? undefined : prompt,
           agentType,
-          specialist: specialistId,
+          specialist: specialistId ?? undefined,
           behaviorPrompt,
           provider,
           contextReferences:
@@ -1409,7 +1414,7 @@
           metadata: {
             source: 'onboarding',
             isInitialAgent: true,
-            specialist: specialistId,
+            specialist: specialistId ?? undefined,
           },
         },
         progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
@@ -1449,8 +1454,8 @@
         appStore.dispatch(setInitialAgentId(workspace.id, agentId));
       }
       // Seed the New Workspace modal's remembered choice with the onboarding
-      // agent (single-agent Developer); the workspace-initializer saga
-      // persists it.
+      // agent (single-agent Developer, or General when it was unavailable);
+      // the workspace-initializer saga persists it.
       appStore.dispatch(
         setWorkspaceInitializerLastSubmittedAgent({
           selectedSpecialist: specialistId,
@@ -1465,10 +1470,11 @@
         bootstrapNewWorkspaceLayout(
           workspace.id,
           agentId ?? null,
-          specialistName,
+          agentName,
           // The Developer writes a spec before implementing (like the
-          // Coordinator did), so the spec-first layout is kept.
-          true,
+          // Coordinator did), so the spec-first layout is kept; a General
+          // agent does not.
+          specialistId !== null,
           undefined,
           // Daemon-persisted links are canonical; fall back to the request's
           // links when an older daemon does not echo them (PROTOCOL §5.1).
@@ -1666,7 +1672,7 @@
                 baseRef={projectSelection?.branch
                   ? `origin/${projectSelection.branch}`
                   : 'origin/main'}
-                specialistId={DEFAULT_NEW_WORKSPACE_SPECIALIST_ID}
+                specialistId={setupSpecialistId}
                 specialistName={setupSpecialistName}
                 {setupScriptStatus}
                 repoStatus={setupRepoStatus}

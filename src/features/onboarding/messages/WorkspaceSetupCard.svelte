@@ -134,8 +134,12 @@
   const displayBranch = $derived(baseRef.replace(/^[^/]+\//, ''));
 
   const specialist = $derived(specialistId ? getSpecialistById(specialistId) : undefined);
-  /** Use the specialist's canonical name when available, fall back to the passed-in prop */
-  const displaySpecialistName = $derived(specialist?.name || specialistName);
+  /**
+   * Prefer the passed-in name: callers resolve it from the live catalog (file /
+   * project overrides included), whereas `getSpecialistById` only knows the
+   * bundled constants. The bundled name is the fallback when no name is passed.
+   */
+  const displaySpecialistName = $derived(specialistName || specialist?.name);
   /** Both the Coordinator and the Developer write a spec before implementing. */
   const writesSpecFirst = $derived(
     specialistId === 'spec-writer' || specialistId === DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
