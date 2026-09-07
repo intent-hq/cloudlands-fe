@@ -353,10 +353,10 @@
       bind:this={ref}
       {...restProps}
       type="range"
-      {value}
       {min}
       {max}
       step={stepValues ? 'any' : step}
+      {value}
       {disabled}
       aria-label={ariaLabel}
       aria-invalid={ariaInvalid}

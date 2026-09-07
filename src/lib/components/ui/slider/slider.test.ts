@@ -32,6 +32,16 @@ function mockTrack(container: HTMLElement, width = 200, left = 0): HTMLElement {
 }
 
 describe('Slider', () => {
+  it('applies external bounds before an initial value above the native default maximum', () => {
+    const { getByRole } = render(Slider, {
+      props: { 'aria-label': 'Memory budget', value: 1500, min: 0, max: 32768 },
+    });
+
+    const slider = getByRole('slider', { name: 'Memory budget' }) as HTMLInputElement;
+    expect(slider.max).toBe('32768');
+    expect(slider.valueAsNumber).toBe(1500);
+  });
+
   it('keeps native range semantics and reports each committed input once', async () => {
     const onValueChange = vi.fn();
     const { getByRole } = render(Slider, {
