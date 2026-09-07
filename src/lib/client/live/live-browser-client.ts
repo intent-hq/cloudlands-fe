@@ -15,12 +15,25 @@
  * Persistence is handled by the browser persistence middleware, which observes
  * `addRecentUrl`/`updateUrlMetadata`/`removeRecentUrl`/`clearRecentUrls` reducer
  * updates and writes back to localStorage after the reducer runs.
+ *
+ * The daemon tab registry (REV-2 `browser.listTabs` / `upsertTab` /
+ * `removeTab` / `syncTabs` / `navigateTab` / `closeTab`) is daemon-owned and
+ * goes over the wire: the host-only methods identify the reporting host by
+ * the connection's hello'd `clientId`, so no client id travels as a param.
  */
 import type { AppClient, BrowserClient, SubscriptionHandler, Unsubscribe } from '../app-client';
 import { MAX_RECENT_URLS } from '$store/renderer/slices/browser/browser-types';
 import type { RecentUrl } from '$store/renderer/slices/browser/browser-types';
 import { storageKey, isRecentUrl } from '$store/renderer/slices/browser/browser-storage-utils';
 import { safeLocalStorage } from '$lib/utils/safe-storage';
+import {
+  isBrowserTab,
+  isBrowserTabListing,
+  type BrowserTab,
+  type BrowserTabInput,
+  type BrowserTabListing,
+} from '$shared/types/browser-clients';
+import { backendRequest } from './backend-transport';
 
 /** Load recent URLs from localStorage, capped at MAX_RECENT_URLS. */
 function loadRecentUrls(workspaceId: string): RecentUrl[] {
@@ -41,6 +54,51 @@ export class LiveBrowserClient implements BrowserClient {
     // dispatches `hydrateBrowserState`.
     handler([]);
     return () => {};
+  }
+
+  async listTabs(workspaceId: string): Promise<BrowserTabListing[]> {
+    const result = await backendRequest<{ tabs?: unknown }>('browser.listTabs', { workspaceId });
+    if (!Array.isArray(result?.tabs) || !result.tabs.every(isBrowserTabListing)) {
+      throw new Error('Invalid browser.listTabs response shape');
+    }
+    return result.tabs;
+  }
+
+  async upsertTab(
+    workspaceId: string,
+    tab: Omit<BrowserTabInput, 'workspaceId'>,
+  ): Promise<BrowserTab> {
+    const result = await backendRequest<{ tab?: unknown }>('browser.upsertTab', {
+      workspaceId,
+      tab,
+    });
+    if (!isBrowserTab(result?.tab)) {
+      throw new Error('Invalid browser.upsertTab response shape');
+    }
+    return result.tab;
+  }
+
+  async removeTab(tabId: string): Promise<{ ok: true }> {
+    return await backendRequest<{ ok: true }>('browser.removeTab', { tabId });
+  }
+
+  async syncTabs(tabs: BrowserTabInput[]): Promise<{ drop: string[] }> {
+    const result = await backendRequest<{ drop?: unknown }>('browser.syncTabs', { tabs });
+    if (!Array.isArray(result?.drop) || !result.drop.every((id) => typeof id === 'string')) {
+      throw new Error('Invalid browser.syncTabs response shape');
+    }
+    return { drop: result.drop };
+  }
+
+  async navigateTab(tabId: string, url: string): Promise<unknown> {
+    return await backendRequest('browser.navigateTab', { tabId, url });
+  }
+
+  async closeTab(tabId: string, options?: { force?: boolean }): Promise<{ ok: true }> {
+    return await backendRequest<{ ok: true }>('browser.closeTab', {
+      tabId,
+      ...(options?.force === undefined ? {} : { force: options.force }),
+    });
   }
 }
 

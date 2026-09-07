@@ -4,6 +4,13 @@
  * Covers read/write round-trip, MAX_RECENT_URLS cap, and corrupt/missing data handling.
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
+
+// FAKE transport for the REV-2 tab-registry RPCs — no request reaches a daemon.
+vi.mock('./backend-transport', () => ({
+  backendRequest: vi.fn(),
+}));
+
+import { backendRequest } from './backend-transport';
 import { LiveBrowserClient } from './live-browser-client';
 import { MAX_RECENT_URLS } from '$store/renderer/slices/browser/browser-types';
 import type { RecentUrl } from '$store/renderer/slices/browser/browser-types';
@@ -162,6 +169,92 @@ describe('LiveBrowserClient', () => {
 
       const loaded = await client.recentUrls('ws-test');
       expect(loaded).toEqual(urls);
+    });
+  });
+});
+
+describe('LiveBrowserClient daemon tab registry (REV-2 PROTOCOL §5.17, fake transport)', () => {
+  const mockedRequest = vi.mocked(backendRequest);
+  const client = new LiveBrowserClient();
+
+  /** PROTOCOL-shaped registry row as the daemon returns it. */
+  const TAB = {
+    tabId: 'tab-1',
+    workspaceId: 'ws-1',
+    hostClientId: 'cli-desk',
+    url: 'https://example.com/',
+    title: 'Example',
+    visibility: 'visible',
+    createdAt: '2026-09-07T00:00:00.000Z',
+    updatedAt: '2026-09-07T00:00:01.000Z',
+  };
+
+  afterEach(() => vi.clearAllMocks());
+
+  it('listTabs sends { workspaceId } and unwraps the host-decorated listing', async () => {
+    const listing = { ...TAB, hostConnected: true, hostName: 'Intent Desktop' };
+    mockedRequest.mockResolvedValueOnce({ tabs: [listing] });
+
+    expect(await client.listTabs('ws-1')).toEqual([listing]);
+    expect(mockedRequest).toHaveBeenCalledWith('browser.listTabs', { workspaceId: 'ws-1' });
+  });
+
+  it('listTabs rejects rows missing hostConnected instead of healing them', async () => {
+    mockedRequest.mockResolvedValueOnce({ tabs: [TAB] });
+    await expect(client.listTabs('ws-1')).rejects.toThrow(
+      'Invalid browser.listTabs response shape',
+    );
+  });
+
+  it('upsertTab sends { workspaceId, tab } with the host-reported fields and returns the row', async () => {
+    mockedRequest.mockResolvedValueOnce({ tab: TAB });
+    const input = {
+      tabId: 'tab-1',
+      url: 'https://example.com/',
+      title: 'Example',
+      visibility: 'visible' as const,
+      emulatedSize: { width: 1280, height: 800 },
+    };
+
+    expect(await client.upsertTab('ws-1', input)).toEqual(TAB);
+    expect(mockedRequest).toHaveBeenCalledWith('browser.upsertTab', {
+      workspaceId: 'ws-1',
+      tab: input,
+    });
+  });
+
+  it('removeTab sends { tabId }', async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true });
+    expect(await client.removeTab('tab-1')).toEqual({ ok: true });
+    expect(mockedRequest).toHaveBeenCalledWith('browser.removeTab', { tabId: 'tab-1' });
+  });
+
+  it('syncTabs sends the full host tab set and surfaces the daemon drop list', async () => {
+    mockedRequest.mockResolvedValueOnce({ drop: ['tab-stale'] });
+    const tabs = [{ tabId: 'tab-1', workspaceId: 'ws-1', url: 'https://example.com/' }];
+
+    expect(await client.syncTabs(tabs)).toEqual({ drop: ['tab-stale'] });
+    expect(mockedRequest).toHaveBeenCalledWith('browser.syncTabs', { tabs });
+  });
+
+  it('navigateTab sends { tabId, url }', async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true });
+    await client.navigateTab('tab-1', 'https://example.com/next');
+    expect(mockedRequest).toHaveBeenCalledWith('browser.navigateTab', {
+      tabId: 'tab-1',
+      url: 'https://example.com/next',
+    });
+  });
+
+  it('closeTab sends { tabId } and only adds force when the caller sets it', async () => {
+    mockedRequest.mockResolvedValue({ ok: true });
+    await client.closeTab('tab-1');
+    expect(mockedRequest).toHaveBeenLastCalledWith('browser.closeTab', { tabId: 'tab-1' });
+
+    await client.closeTab('tab-1', { force: true });
+    expect(mockedRequest).toHaveBeenLastCalledWith('browser.closeTab', {
+      tabId: 'tab-1',
+      force: true,
     });
   });
 });

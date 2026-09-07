@@ -45,7 +45,11 @@ import {
   shouldUseTransferConnection,
 } from './transfer-connections';
 import { JsonRpcError } from './json-rpc-errors';
-import { getOrCreateClientId, persistClientId } from './client-identity';
+import {
+  buildMainClientHelloParams,
+  persistClientId,
+  setLocalHostIdentity,
+} from './client-identity';
 import { formatTransportInfo } from './transport-info';
 import { readPinnedVersion } from './intentd-version-pin';
 import {
@@ -852,8 +856,12 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     },
     // §5.17 stable identity: present the persisted clientId on every
     // (re)connect so daemon-side client-scoped state (`drafts.*`, §5.16)
-    // survives app restarts and renderer reloads.
-    helloParams: async () => ({ clientId: await getOrCreateClientId() }),
+    // survives app restarts and renderer reloads. REV-2: this pooled client
+    // is the one that registers the `browser.exec` reverse handler below, so
+    // it alone advertises `capabilities.browserExec` plus the app's name and
+    // host identification (the auxiliary setup/transfer/quit clients stay
+    // clientId-only).
+    helloParams: async () => ({ ...(await buildMainClientHelloParams()) }),
     onHelloResult: (result) => {
       const obj =
         result && typeof result === 'object'
@@ -1337,17 +1345,32 @@ function extractDeviceKind(result: unknown): DetectedDeviceKind | null {
   return isDetectedDeviceKind(value) ? value : null;
 }
 
-/** Capture the synthesized local record's kind from the connected daemon. */
+/**
+ * Capture the synthesized local record's kind from the connected daemon.
+ *
+ * The same `host.status` result is this machine's own identification, so it
+ * also feeds the REV-2 `client.hello` host triple: when `prettyHostname` /
+ * `deviceKind` change from what the connect-time handshake presented, the
+ * local client re-hellos so the daemon's `client.list` row (what OTHER
+ * clients see when picking a browser target) reflects the learned identity.
+ * Remote backends are never re-helloed here — they describe a different host.
+ */
 async function captureLocalDeviceKind(): Promise<void> {
   try {
     const client = backendClients.get(LOCAL_CONNECTION_ID);
     if (!client) return;
     const result = await client.request('host.status');
     if (backendClients.get(LOCAL_CONNECTION_ID) !== client) return;
+    const identityChanged = setLocalHostIdentity(result);
     if (
       await connectionsStore.setDetectedDeviceKind(LOCAL_CONNECTION_ID, extractDeviceKind(result))
     ) {
       await broadcastConnectionsChanged();
+    }
+    if (identityChanged && backendClients.get(LOCAL_CONNECTION_ID) === client) {
+      // The pooled client merges the persisted identity + capabilities into
+      // every caller-issued hello, so this presents the full REV-2 params.
+      await client.request('client.hello', {});
     }
   } catch (error) {
     logger.warn('Failed to capture local device kind', {

@@ -36,7 +36,9 @@ type MigratedDomain =
   // had a mock fixture era, so it is likewise absent here.
   | 'providers'
   // `voice` was born live too (`voice.transcribe`, PROTOCOL §5.41).
-  | 'voice';
+  | 'voice'
+  // `clients` was born live (`client.list` + own-clientId probe, REV-2 §5.17).
+  | 'clients';
 
 /** Emit the snapshot once, then return an idle disposer. */
 function emitOnce<T>(handler: SubscriptionHandler<T>, snapshot: T): Unsubscribe {
@@ -163,6 +165,20 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     recentUrls: async (workspaceId) =>
       workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockRecentUrls : [],
     subscribe: (handler) => emitOnce(handler, fx.mockRecentUrls),
+    // REV-2 tab registry: no fixture era — an empty registry and accepted no-ops.
+    listTabs: async () => [],
+    upsertTab: async (workspaceId, tab) => ({
+      ...tab,
+      workspaceId,
+      hostClientId: 'mock-client',
+      visibility: tab.visibility ?? 'visible',
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    }),
+    removeTab: async () => ({ ok: true }),
+    syncTabs: async () => ({ drop: [] }),
+    navigateTab: async () => ({ ok: true }),
+    closeTab: async () => ({ ok: true }),
   };
 
   readonly integrations: AppClient['integrations'] = {

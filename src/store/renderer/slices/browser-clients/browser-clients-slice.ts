@@ -1,0 +1,145 @@
+/**
+ * Browser Clients Slice (renderer)
+ *
+ * Renderer mirror of the daemon-owned REV-2 browser-client routing state
+ * (PROTOCOL §5.17 `client.list`, `workspace.getBrowserClient` /
+ * `workspace.setBrowserClient`, `browser.*` tab registry). The saga performs
+ * the reads/writes through `appClient`; the daemon-events-bridge dispatches
+ * `refreshLiveClientsRequested` on `client:connected` / `client:disconnected`
+ * and the `browserTab*` patches on `browser:tab-*` events. Pure mirror — no
+ * routing decisions are made here; the daemon owns them.
+ */
+
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import {
+  getItem,
+  removeItem,
+  upsertItem,
+} from '@augmentcode/themis/utils/collections/collection-utils';
+import type {
+  BrowserTab,
+  BrowserTabListing,
+  LiveClient,
+  WorkspaceBrowserClient,
+} from '$shared/types/browser-clients';
+import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
+import type { BrowserClientsState } from './browser-clients-types';
+import {
+  createBrowserTabCollection,
+  createLiveClientCollection,
+  emptyWorkspaceBrowserClientsState,
+  initialState,
+} from './browser-clients-types';
+
+export type { BrowserClientsState } from './browser-clients-types';
+export { initialState } from './browser-clients-types';
+
+// ---------------------------------------------------------------------------
+// Actions — saga triggers
+// ---------------------------------------------------------------------------
+
+/** Learn this connection's own clientId and read the live client list. */
+export const hydrateBrowserClientsRequested = createAction(
+  'browserClients/hydrateBrowserClientsRequested',
+);
+
+/** Re-read `client.list` (bridge: `client:connected` / `client:disconnected`). */
+export const refreshLiveClientsRequested = createAction(
+  'browserClients/refreshLiveClientsRequested',
+);
+
+/** Read `workspace.getBrowserClient` for one workspace. */
+export const fetchWorkspaceBrowserClientRequested = createAction<[wsId: string]>(
+  'browserClients/fetchWorkspaceBrowserClientRequested',
+);
+
+/** Pin (`clientId`) or clear (`null`) the workspace's browser client. */
+export const setWorkspaceBrowserClientRequested = createAction<
+  [wsId: string, clientId: string | null]
+>('browserClients/setWorkspaceBrowserClientRequested');
+
+/** Read `browser.listTabs` for one workspace. */
+export const fetchWorkspaceBrowserTabsRequested = createAction<[wsId: string]>(
+  'browserClients/fetchWorkspaceBrowserTabsRequested',
+);
+
+// ---------------------------------------------------------------------------
+// Actions — state updates
+// ---------------------------------------------------------------------------
+
+export const ownClientIdReceived = createAction<[clientId: string]>(
+  'browserClients/ownClientIdReceived',
+);
+
+export const liveClientsReceived = createAction<[clients: LiveClient[]]>(
+  'browserClients/liveClientsReceived',
+);
+
+export const workspaceBrowserClientReceived = createAction<
+  [wsId: string, browserClient: WorkspaceBrowserClient]
+>('browserClients/workspaceBrowserClientReceived');
+
+export const workspaceBrowserTabsReceived = createAction<[wsId: string, tabs: BrowserTabListing[]]>(
+  'browserClients/workspaceBrowserTabsReceived',
+);
+
+/** `browser:tab-opened` / `browser:tab-updated`: the daemon's row for the tab. */
+export const browserTabUpserted = createAction<[wsId: string, tab: BrowserTab]>(
+  'browserClients/browserTabUpserted',
+);
+
+/** `browser:tab-closed`: the row was removed or tombstoned. */
+export const browserTabClosed = createAction<[wsId: string, tabId: string]>(
+  'browserClients/browserTabClosed',
+);
+
+/** Drop the workspace entry (workspace deleted / unmounted). */
+export const clearWorkspaceBrowserClients = createAction<[wsId: string]>(
+  'browserClients/clearWorkspaceBrowserClients',
+);
+
+// ---------------------------------------------------------------------------
+// Reducer
+// ---------------------------------------------------------------------------
+
+const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
+  emptyWorkspaceBrowserClientsState,
+);
+
+export const browserClientsReducer = createReducer<BrowserClientsState>(initialState);
+browserClientsReducer.with(ownClientIdReceived, (state, { payload: [clientId] }) =>
+  state.ownClientId === clientId ? state : { ...state, ownClientId: clientId },
+);
+browserClientsReducer.with(liveClientsReceived, (state, { payload: [clients] }) => ({
+  ...state,
+  liveClients: createLiveClientCollection(clients),
+  liveClientsLoaded: true,
+}));
+browserClientsReducer.with(
+  workspaceBrowserClientReceived,
+  (state, { payload: [wsId, browserClient] }) =>
+    setWorkspaceState(state, wsId, { ...getWorkspaceState(state, wsId), browserClient }),
+);
+browserClientsReducer.with(workspaceBrowserTabsReceived, (state, { payload: [wsId, tabs] }) =>
+  setWorkspaceState(state, wsId, {
+    ...getWorkspaceState(state, wsId),
+    tabs: createBrowserTabCollection(tabs),
+  }),
+);
+browserClientsReducer.with(browserTabUpserted, (state, { payload: [wsId, tab] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  // Event payloads carry the registry row without the `browser.listTabs`
+  // presence decoration; keep whatever decoration the last list read stored.
+  const existing = getItem(ws.tabs, tab.tabId);
+  const next = existing ? { ...existing, ...tab } : tab;
+  return setWorkspaceState(state, wsId, { ...ws, tabs: upsertItem(ws.tabs, next) });
+});
+browserClientsReducer.with(browserTabClosed, (state, { payload: [wsId, tabId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (!getItem(ws.tabs, tabId)) return state;
+  return setWorkspaceState(state, wsId, { ...ws, tabs: removeItem(ws.tabs, tabId) });
+});
+browserClientsReducer.with(clearWorkspaceBrowserClients, (state, { payload: [wsId] }) =>
+  clearWorkspaceState(state, wsId),
+);
