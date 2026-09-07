@@ -353,6 +353,8 @@ export function buildBusyGraph(now = Date.now()): GraphState {
     ),
   );
   const edges: GraphEdge[] = [
+    assignment('busy-coordinator-a', 'busy-task-1', now),
+    assignment('busy-coordinator-b', 'busy-task-4', now),
     ...workers.map((_, index) =>
       assignment(`busy-worker-${index + 1}`, `busy-task-${index + 1}`, now),
     ),

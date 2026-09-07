@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AgentStatus, type AgentSession } from '$shared/types';
-import type { GraphEdge } from '../types';
+import type { AgentNode, GraphEdge, GraphNode, TaskNode } from '../types';
 import {
   convertToInteractionEvent,
+  createTaskHullMembershipMemo,
+  deriveTaskHullMemberships,
   getNodeStatus,
   getStreamingState,
   isExternalFilePath,
@@ -31,7 +33,96 @@ const staleStreamingAssistant = {
   contentBlocks: [{ type: 'text' as const, text: 'Stale response' }],
 };
 
+const physics = { x: 0, y: 0, vx: 0, vy: 0 } as const;
+
+function hullAgent(id: string, overrides: Partial<AgentNode> = {}): AgentNode {
+  return {
+    ...physics,
+    id: `agent:${id}`,
+    type: 'agent',
+    agentId: id,
+    name: id,
+    isCoordinator: false,
+    parentAgentId: 'agent:hub',
+    status: 'idle',
+    createdAt: '2026-09-07T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function hullTask(id: string): TaskNode {
+  return {
+    ...physics,
+    id: `task:${id}`,
+    type: 'task',
+    taskId: id,
+    title: id,
+    state: 'in_progress',
+    dependsOn: [],
+  };
+}
+
+function hullAssignment(agentId: string, taskId: string): GraphEdge {
+  return {
+    id: `assignment:${agentId}:${taskId}`,
+    type: 'task-assignment',
+    sourceId: `agent:${agentId}`,
+    targetId: `task:${taskId}`,
+    agentId,
+    taskId,
+    timestamp: '2026-09-07T00:00:00.000Z',
+    isActive: false,
+  };
+}
+
 describe('agent overview graph helpers', () => {
+  describe('task hull memberships', () => {
+    it('excludes top-level hub agents from a task pool', () => {
+      const memberships = deriveTaskHullMemberships(
+        [
+          hullTask('one'),
+          hullAgent('hub', { parentAgentId: null }),
+          hullAgent('coordinator', { isCoordinator: true }),
+          hullAgent('worker'),
+        ],
+        [
+          hullAssignment('hub', 'one'),
+          hullAssignment('coordinator', 'one'),
+          hullAssignment('worker', 'one'),
+        ],
+      );
+
+      expect(memberships).toEqual([
+        {
+          taskId: 'task:one',
+          agentIds: ['agent:worker'],
+          memberIds: ['task:one', 'agent:worker'],
+        },
+      ]);
+    });
+
+    it('does not create a hull for a task assigned only to a hub agent', () => {
+      expect(
+        deriveTaskHullMemberships(
+          [hullTask('one'), hullAgent('hub', { parentAgentId: null })],
+          [hullAssignment('hub', 'one')],
+        ),
+      ).toEqual([]);
+    });
+
+    it('reuses memoised membership for position-only node updates', () => {
+      const build = vi.fn(deriveTaskHullMemberships);
+      const memo = createTaskHullMembershipMemo(build);
+      const nodes: GraphNode[] = [hullTask('one'), hullAgent('worker')];
+      const edges = [hullAssignment('worker', 'one')];
+      const initial = memo(nodes, edges);
+      const moved = nodes.map((node) => ({ ...node, x: node.x + 120, y: node.y - 40 }));
+
+      expect(memo(moved, edges)).toBe(initial);
+      expect(build).toHaveBeenCalledOnce();
+    });
+  });
+
   describe('mergeEdgesByPair', () => {
     const edge = (overrides: Partial<GraphEdge> = {}): GraphEdge =>
       ({

@@ -7,6 +7,7 @@ import {
   buildReplayGraph,
   buildSingleAgentGraph,
 } from './agent-activity-graph.fixtures';
+import { deriveTaskHullMemberships } from '../graph-helpers';
 
 const now = Date.parse('2026-09-04T02:00:00.000Z');
 
@@ -52,6 +53,11 @@ describe('agent activity graph preview fixtures', () => {
     expect(countNodes(graph, 'file') + countNodes(graph, 'note')).toBe(25);
     expect(statuses).toEqual(new Set(['responding', 'waiting', 'idle', 'completed', 'failed']));
     expect(graph.edges.filter(({ isActive }) => isActive).length).toBeGreaterThan(5);
+    expect(graph.edges.filter(({ type }) => type === 'task-assignment')).toHaveLength(8);
+    const hulls = deriveTaskHullMemberships(graph.nodes, graph.edges);
+    expect(hulls).toHaveLength(6);
+    expect(hulls.flatMap(({ agentIds }) => agentIds)).not.toContain('agent:busy-coordinator-a');
+    expect(hulls.flatMap(({ agentIds }) => agentIds)).not.toContain('agent:busy-coordinator-b');
   });
 
   it('builds a large workspace state with populated task clusters', () => {

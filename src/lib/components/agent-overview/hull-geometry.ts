@@ -9,6 +9,14 @@ export interface HullMember {
 }
 
 export const HULL_PADDING = 18;
+export const HULL_FILL_OPACITIES = {
+  dimmed: 0.006,
+  focusedWorking: 0.05,
+  focusedIdle: 0.0375,
+  working: 0.04,
+  idle: 0.0275,
+  softenerRatio: 0.34,
+} as const;
 const HULL_SAMPLES = 16;
 const ENCLOSURE_EPSILON = 1;
 

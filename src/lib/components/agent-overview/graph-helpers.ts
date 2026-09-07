@@ -7,7 +7,7 @@
 
 import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
-import type { AgentNode, GraphEdge } from './types';
+import type { AgentNode, GraphEdge, GraphNode, TaskNode } from './types';
 import { isRecentlyActive } from './activity-motion';
 import {
   FILE_EDIT_TOOLS,
@@ -34,6 +34,14 @@ export interface MergedEdgePair {
   directions: Set<EdgePairDirection>;
   latestEdge: GraphEdge;
 }
+
+export interface TaskHullMembership {
+  taskId: string;
+  agentIds: string[];
+  memberIds: string[];
+}
+
+type TaskHullMembershipBuilder = (nodes: GraphNode[], edges: GraphEdge[]) => TaskHullMembership[];
 
 const EDGE_TYPE_PRIORITY: Record<GraphEdge['type'], number> = {
   'waiting-on': 7,
@@ -92,6 +100,67 @@ export function mergeEdgesByPair(edges: GraphEdge[], now = Date.now()): MergedEd
   }
 
   return [...pairs.values()];
+}
+
+function isHubAgent(node: AgentNode): boolean {
+  return node.isCoordinator || !node.parentAgentId;
+}
+
+export function deriveTaskHullMemberships(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+): TaskHullMembership[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const groups: TaskHullMembership[] = [];
+
+  for (const task of nodes.filter((node): node is TaskNode => node.type === 'task')) {
+    const assignments = edges.filter(
+      (edge) =>
+        edge.type === 'task-assignment' && (edge.sourceId === task.id || edge.targetId === task.id),
+    );
+    const agentIds: string[] = [];
+    let allMembersVisible = true;
+    for (const assignment of assignments) {
+      const agentId = assignment.sourceId === task.id ? assignment.targetId : assignment.sourceId;
+      const agent = nodeById.get(agentId);
+      if (agent?.type !== 'agent') {
+        allMembersVisible = false;
+        break;
+      }
+      if (!isHubAgent(agent) && !agentIds.includes(agent.id)) agentIds.push(agent.id);
+    }
+    if (allMembersVisible && agentIds.length > 0) {
+      groups.push({ taskId: task.id, agentIds, memberIds: [task.id, ...agentIds] });
+    }
+  }
+
+  return groups;
+}
+
+function hullMembershipFingerprint(nodes: GraphNode[], edges: GraphEdge[]): string {
+  return JSON.stringify([
+    nodes.map((node) =>
+      node.type === 'agent'
+        ? [node.id, node.type, node.parentAgentId, node.isCoordinator]
+        : [node.id, node.type],
+    ),
+    edges.map((edge) => [edge.id, edge.type, edge.sourceId, edge.targetId]),
+  ]);
+}
+
+export function createTaskHullMembershipMemo(
+  build: TaskHullMembershipBuilder = deriveTaskHullMemberships,
+): TaskHullMembershipBuilder {
+  let fingerprint = '';
+  let memberships: TaskHullMembership[] = [];
+  return (nodes, edges) => {
+    const nextFingerprint = hullMembershipFingerprint(nodes, edges);
+    if (nextFingerprint !== fingerprint) {
+      fingerprint = nextFingerprint;
+      memberships = build(nodes, edges);
+    }
+    return memberships;
+  };
 }
 
 // ============================================================================

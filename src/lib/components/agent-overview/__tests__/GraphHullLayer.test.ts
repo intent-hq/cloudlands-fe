@@ -1,6 +1,7 @@
 import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import GraphHullLayer from '../GraphHullLayer.svelte';
+import { deriveTaskHullMemberships } from '../graph-helpers';
 import type { AgentNode, GraphEdge, GraphNode, TaskNode } from '../types';
 
 const timestamp = '2026-09-04T00:00:00.000Z';
@@ -12,6 +13,7 @@ function agent(id: string, status: AgentNode['status'] = 'idle'): AgentNode {
     agentId: id,
     name: `Agent ${id}`,
     isCoordinator: false,
+    parentAgentId: 'parent',
     status,
     createdAt: timestamp,
     x: 100,
@@ -61,7 +63,10 @@ describe('GraphHullLayer', () => {
     const { container } = render(GraphHullLayer, {
       props: {
         nodes,
-        edges: [assignment('one', 'one'), assignment('two', 'one')],
+        memberships: deriveTaskHullMemberships(nodes, [
+          assignment('one', 'one'),
+          assignment('two', 'one'),
+        ]),
         positions: positions(nodes),
       },
     });
@@ -81,7 +86,10 @@ describe('GraphHullLayer', () => {
     const { container } = render(GraphHullLayer, {
       props: {
         nodes,
-        edges: [assignment('shared', 'one'), assignment('shared', 'two')],
+        memberships: deriveTaskHullMemberships(nodes, [
+          assignment('shared', 'one'),
+          assignment('shared', 'two'),
+        ]),
         positions: positions(nodes),
       },
     });
@@ -94,7 +102,10 @@ describe('GraphHullLayer', () => {
     const { container } = render(GraphHullLayer, {
       props: {
         nodes,
-        edges: [assignment('visible', 'one'), assignment('hidden', 'one')],
+        memberships: deriveTaskHullMemberships(nodes, [
+          assignment('visible', 'one'),
+          assignment('hidden', 'one'),
+        ]),
         positions: positions(nodes),
       },
     });
@@ -107,7 +118,10 @@ describe('GraphHullLayer', () => {
     const { container } = render(GraphHullLayer, {
       props: {
         nodes,
-        edges: [assignment('one', 'one'), assignment('two', 'two')],
+        memberships: deriveTaskHullMemberships(nodes, [
+          assignment('one', 'one'),
+          assignment('two', 'two'),
+        ]),
         positions: positions(nodes),
         focusNodeId: 'task:one',
       },

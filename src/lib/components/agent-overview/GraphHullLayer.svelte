@@ -1,63 +1,43 @@
 <script lang="ts">
   import { GRAPH_NODE_DIMENSIONS } from './constants';
-  import { paddedHull, smoothClosedHullPath, type HullMember } from './hull-geometry';
-  import type { AgentNode, GraphEdge, GraphNode, TaskNode } from './types';
+  import type { TaskHullMembership } from './graph-helpers';
+  import {
+    HULL_FILL_OPACITIES,
+    paddedHull,
+    smoothClosedHullPath,
+    type HullMember,
+  } from './hull-geometry';
+  import type { GraphNode } from './types';
 
   interface Position {
     x: number;
     y: number;
   }
 
-  interface HullGroup {
-    task: TaskNode;
-    agents: AgentNode[];
-    memberIds: string[];
-  }
-
   interface Props {
-    edges: GraphEdge[];
+    memberships: TaskHullMembership[];
     nodes: GraphNode[];
     positions: Map<string, Position>;
     focusNodeId?: string | null;
     spotlightNodeId?: string | null;
   }
 
-  let { edges, nodes, positions, focusNodeId = null, spotlightNodeId = null }: Props = $props();
+  let {
+    memberships,
+    nodes,
+    positions,
+    focusNodeId = null,
+    spotlightNodeId = null,
+  }: Props = $props();
 
   const nodeById = $derived(new Map(nodes.map((node) => [node.id, node])));
   const activeFocusNodeId = $derived(focusNodeId ?? spotlightNodeId);
-  const groups = $derived.by((): HullGroup[] => {
-    const result: HullGroup[] = [];
-    for (const task of nodes.filter((node): node is TaskNode => node.type === 'task')) {
-      const assignments = edges.filter(
-        (edge) =>
-          edge.type === 'task-assignment' &&
-          (edge.sourceId === task.id || edge.targetId === task.id),
-      );
-      if (assignments.length === 0) continue;
 
-      const agents: AgentNode[] = [];
-      let allMembersVisible = true;
-      for (const assignment of assignments) {
-        const agentId = assignment.sourceId === task.id ? assignment.targetId : assignment.sourceId;
-        const agent = nodeById.get(agentId);
-        if (agent?.type !== 'agent') {
-          allMembersVisible = false;
-          break;
-        }
-        if (!agents.some((candidate) => candidate.id === agent.id)) agents.push(agent);
-      }
-      const memberIds = [task.id, ...agents.map((agent) => agent.id)];
-      if (allMembersVisible && memberIds.every((id) => positions.has(id))) {
-        result.push({ task, agents, memberIds });
-      }
-    }
-    return result;
-  });
-
-  function memberGeometry(group: HullGroup): HullMember[] {
-    return [group.task, ...group.agents].map((node) => {
-      const position = positions.get(node.id) ?? node;
+  function memberGeometry(group: TaskHullMembership): HullMember[] | null {
+    if (!group.memberIds.every((id) => positions.has(id) && nodeById.has(id))) return null;
+    return group.memberIds.map((id) => {
+      const node = nodeById.get(id)!;
+      const position = positions.get(id)!;
       const dimensions = GRAPH_NODE_DIMENSIONS[node.type];
       return {
         ...position,
@@ -66,15 +46,24 @@
     });
   }
 
-  function containsFocus(group: HullGroup): boolean {
+  function containsFocus(group: TaskHullMembership): boolean {
     return activeFocusNodeId !== null && group.memberIds.includes(activeFocusNodeId);
   }
 
-  function fillOpacity(group: HullGroup): number {
-    const working = group.agents.some((agent) => agent.status === 'responding');
-    if (activeFocusNodeId && !containsFocus(group)) return 0.012;
-    if (containsFocus(group)) return working ? 0.1 : 0.075;
-    return working ? 0.08 : 0.055;
+  function isWorking(group: TaskHullMembership): boolean {
+    return group.agentIds.some((id) => {
+      const node = nodeById.get(id);
+      return node?.type === 'agent' && node.status === 'responding';
+    });
+  }
+
+  function fillOpacity(group: TaskHullMembership): number {
+    const working = isWorking(group);
+    if (activeFocusNodeId && !containsFocus(group)) return HULL_FILL_OPACITIES.dimmed;
+    if (containsFocus(group)) {
+      return working ? HULL_FILL_OPACITIES.focusedWorking : HULL_FILL_OPACITIES.focusedIdle;
+    }
+    return working ? HULL_FILL_OPACITIES.working : HULL_FILL_OPACITIES.idle;
   }
 </script>
 
@@ -82,29 +71,31 @@
   class="hull-layer pointer-events-none absolute inset-0 h-full w-full overflow-visible"
   aria-hidden="true"
 >
-  {#each groups as group (group.task.id)}
+  {#each memberships as group (group.taskId)}
     {@const members = memberGeometry(group)}
-    {@const path = smoothClosedHullPath(paddedHull(members))}
-    {@const softPath = smoothClosedHullPath(paddedHull(members, 25))}
-    {#if path}
-      {#if softPath}
+    {#if members}
+      {@const path = smoothClosedHullPath(paddedHull(members))}
+      {@const softPath = smoothClosedHullPath(paddedHull(members, 25))}
+      {#if path}
+        {#if softPath}
+          <path
+            class="task-hull-softener task-hull-fill"
+            d={softPath}
+            fill="var(--color-foreground)"
+            fill-opacity={fillOpacity(group) * HULL_FILL_OPACITIES.softenerRatio}
+          />
+        {/if}
         <path
-          class="task-hull-softener task-hull-fill"
-          d={softPath}
+          class="task-hull task-hull-fill"
+          d={path}
           fill="var(--color-foreground)"
-          fill-opacity={fillOpacity(group) * 0.34}
+          fill-opacity={fillOpacity(group)}
+          data-task-id={group.taskId}
+          data-working={isWorking(group)}
+          data-highlighted={containsFocus(group)}
+          data-dimmed={activeFocusNodeId !== null && !containsFocus(group)}
         />
       {/if}
-      <path
-        class="task-hull task-hull-fill"
-        d={path}
-        fill="var(--color-foreground)"
-        fill-opacity={fillOpacity(group)}
-        data-task-id={group.task.id}
-        data-working={group.agents.some((agent) => agent.status === 'responding')}
-        data-highlighted={containsFocus(group)}
-        data-dimmed={activeFocusNodeId !== null && !containsFocus(group)}
-      />
     {/if}
   {/each}
 </svg>

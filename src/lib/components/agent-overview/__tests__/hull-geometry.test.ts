@@ -1,6 +1,12 @@
 import { polygonContains } from 'd3';
 import { describe, expect, it } from 'vitest';
-import { HULL_PADDING, paddedHull, smoothClosedHullPath, type HullMember } from '../hull-geometry';
+import {
+  HULL_FILL_OPACITIES,
+  HULL_PADDING,
+  paddedHull,
+  smoothClosedHullPath,
+  type HullMember,
+} from '../hull-geometry';
 
 function paddedMemberPoints(member: HullMember): [number, number][] {
   const radius = member.radius + HULL_PADDING;
@@ -11,6 +17,17 @@ function paddedMemberPoints(member: HullMember): [number, number][] {
 }
 
 describe('task hull geometry', () => {
+  it('keeps both stacked fills at the quiet half-opacity levels', () => {
+    expect(HULL_FILL_OPACITIES).toEqual({
+      dimmed: 0.006,
+      focusedWorking: 0.05,
+      focusedIdle: 0.0375,
+      working: 0.04,
+      idle: 0.0275,
+      softenerRatio: 0.34,
+    });
+  });
+
   it('encloses the padded extents of every member', () => {
     const members = [
       { x: 40, y: 80, radius: 22 },

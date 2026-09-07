@@ -20,6 +20,7 @@
   import type { AgentNode, FileNode, GraphNode, GraphState, NoteNode } from './types';
   import { nodeEnterDelay } from './activity-motion';
   import type { PlaybackSpeed } from './playback';
+  import { createTaskHullMembershipMemo } from './graph-helpers';
 
   export interface GraphLayers {
     files: boolean;
@@ -135,6 +136,8 @@
     );
     return { nodes, edges, collapsedByAgent };
   });
+  const memoizedHullMemberships = createTaskHullMembershipMemo();
+  const hullMemberships = $derived(memoizedHullMemberships(visibleGraph.nodes, visibleGraph.edges));
 
   const activeHoverNodeId = $derived(hoveredNodeId === dismissedHoverNodeId ? null : hoveredNodeId);
   const focusNodeId = $derived(activeHoverNodeId ?? selectedNodeId ?? keyboardNodeId);
@@ -747,7 +750,7 @@
       data-zoom-band={zoomBand}
     >
       <GraphHullLayer
-        edges={visibleGraph.edges}
+        memberships={hullMemberships}
         nodes={visibleGraph.nodes}
         {positions}
         {focusNodeId}
