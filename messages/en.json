@@ -6137,5 +6137,17 @@
   "antigravity_setup_connection_error": "Setup could not finish. Check the local daemon connection, then retry.",
   "antigravity_setup_customPath_error": "The custom bridge path is invalid. Correct it in the provider menu, then retry.",
   "antigravity_setup_cancelled_description": "Setup cancelled. You can connect again when ready.",
-  "antigravity_setup_cancel_label": "Cancel setup"
+  "antigravity_setup_cancel_label": "Cancel setup",
+  "workspace_drivingClient_here_label": "Driving browser",
+  "workspace_drivingClient_elsewhere_label": "Browser on {host}",
+  "workspace_drivingClient_offline_label": "Browser on {host} (offline)",
+  "workspace_drivingClient_here_description": "Agent browser tabs and tunnels for this workspace run in this app.",
+  "workspace_drivingClient_elsewhere_description": "Agent browser tabs and tunnels for this workspace run on {host}. Setting this app as primary moves the agents' tabs here; tabs you opened yourself stay put, and page state is not preserved.",
+  "workspace_drivingClient_offline_description": "{host} is disconnected. Agent browser tabs and tunnels for this workspace fail until it reconnects or you set this app as primary, which moves the agents' tabs here without preserving page state.",
+  "workspace_drivingClient_setPrimary_label": "Set Current Client as Primary",
+  "workspace_drivingClient_setPrimaryDialog_title": "Set this client as primary?",
+  "workspace_drivingClient_setPrimaryDialog_description": "This workspace's browser is currently driven by {host}. It will be pinned to this client and all of its agent-owned tabs will move here. Page state is not preserved; tabs you opened yourself are unaffected.",
+  "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "Close",
+  "workspace_drivingClient_setPrimaryDialog_cancel_label": "Cancel",
+  "workspace_drivingClient_setPrimaryDialog_confirm_label": "Set as Primary"
 }
