@@ -118,18 +118,35 @@ describe('browserTabRegistryReducer', () => {
     expect(browserTabRegistryReducer(untouched, registryRemovalsPending(WS, []))).toBe(untouched);
   });
 
-  it('drops the omitted pending removals and the dropped tabs once a snapshot is acknowledged', () => {
+  it('settles the omitted pending removals and the dropped closes once a snapshot is acknowledged', () => {
     const before = reduce(
       registryLoading(WS),
       registryApplied(WS, 1, { b1: input('b1'), b2: input('b2') }),
       registryRemovalsPending(WS, ['b1']),
       registryRemovalsPending(WS, ['gone']),
       registryRemovalAcknowledged('gone'),
+      registryRemovalsPending(WS, ['b3']),
+      registryRemovalAcknowledged('b3'),
     );
-    const state = browserTabRegistryReducer(before, registrySnapshotAcknowledged(['b1'], ['b2']));
+    const state = browserTabRegistryReducer(
+      before,
+      registrySnapshotAcknowledged(['b1'], ['b2', 'b3']),
+    );
     expect(state.closing).toEqual({ gone: 'acknowledged' });
-    expect(ws(state).reported).toEqual({});
     expect(browserTabRegistryReducer(state, registrySnapshotAcknowledged([], []))).toBe(state);
+    expect(browserTabRegistryReducer(state, registrySnapshotAcknowledged([], ['b2']))).toBe(state);
+  });
+
+  it('leaves what a workspace reported to its own generation when a snapshot is acknowledged', () => {
+    const before = reduce(
+      registryLoading(WS),
+      registryApplied(WS, 1, { b1: input('b1'), b2: input('b2') }),
+    );
+    const state = browserTabRegistryReducer(before, registrySnapshotAcknowledged([], ['b2']));
+    expect(ws(state).reported).toEqual({ b1: input('b1'), b2: input('b2') });
+    expect(ws(browserTabRegistryReducer(state, registryTabForgotten(WS, 'b2'))).reported).toEqual({
+      b1: input('b1'),
+    });
   });
 
   it('tears down on delete, forgetting the reported tabs', () => {

@@ -22,7 +22,8 @@
  * - **Connect / reconnect**: every settled workspace is loaded, then one
  *   `browser.syncTabs` snapshot of everything this client hosts (across all
  *   known workspaces — the daemon deletes any absent row of this host) is
- *   sent and its `drop` list applied.
+ *   sent and its `drop` list applied per workspace, under the generation
+ *   that workspace contributed from (a stale drop is a no-op there).
  * - **Events**: `browser:tab-*` echoes for own tabs are ignored (the local
  *   state is the truth for a tab this client hosts, so a canonical-URL echo
  *   never triggers a second `upsertTab`); a `hostClientId` change re-homes the
@@ -929,10 +930,13 @@ function* snapshotEntries(
 }
 
 /**
- * Apply the acknowledgement to one workspace: a dropped tab still hosted
- * here is destroyed (the reducer forgot it already, so this is not a close
- * to report); in an applied workspace, an unacknowledged tab the daemon kept
- * is now ours, and the workspace reports whatever the snapshot did not cover.
+ * Apply the acknowledgement to one workspace, under the generation it
+ * contributed from: a dropped tab is forgotten (the daemon deleted its row)
+ * and, when still hosted here, destroyed — forgotten first, so the destroy
+ * is not a close to report; in an applied workspace, an unacknowledged tab
+ * the daemon kept is now ours, and the workspace reports whatever the
+ * snapshot did not cover. A workspace whose generation moved keeps what it
+ * reported since: its rows were read after this snapshot was taken.
  */
 function* reconcileSnapshot(
   fence: WorkspaceFence,
@@ -943,6 +947,8 @@ function* reconcileSnapshot(
 ): SagaGenerator<void> {
   const { wsId } = fence;
   for (const tabId of dropped) {
+    const { reported } = yield* selectBrowserTabRegistryWorkspace.effect(wsId);
+    if (tabId in reported) yield* effect(fence, registryTabForgotten(wsId, tabId));
     const tab = findBrowserTab(yield* selectPanelLayoutWorkspace.effect(wsId), tabId);
     if (tab === undefined || !hostedHere(tab, ownClientId)) continue;
     yield* effect(fence, closeTab(wsId, tabId, undefined, undefined, { destroy: true }));

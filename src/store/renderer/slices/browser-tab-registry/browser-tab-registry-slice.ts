@@ -72,7 +72,9 @@ export const registryRemovalAcknowledged = createAction<[tabId: string]>(
 
 /**
  * `browser.syncTabs` succeeded: the pending removals the snapshot omitted are
- * deleted daemon-side, and so is everything in `drop`.
+ * deleted daemon-side, and so is everything in `drop` — nothing is left to
+ * close for either. This settles `closing` only; what a workspace reported
+ * is forgotten per workspace, under its own generation (`registryTabForgotten`).
  */
 export const registrySnapshotAcknowledged = createAction<[omitted: string[], dropped: string[]]>(
   'browserTabRegistry/snapshotAcknowledged',
@@ -156,15 +158,11 @@ browserTabRegistryReducer.with(registryRemovalAcknowledged, (state, { payload: [
 browserTabRegistryReducer.with(
   registrySnapshotAcknowledged,
   (state, { payload: [omitted, dropped] }) => {
-    let next = state;
     let closing = state.closing;
     for (const tabId of omitted)
       if (closing[tabId] === 'pending') closing = omitKey(closing, tabId);
-    for (const tabId of dropped) {
-      closing = omitKey(closing, tabId);
-      for (const wsId of Object.keys(next.byWorkspaceId)) next = forgetTab(next, wsId, tabId);
-    }
-    return closing === state.closing ? next : { ...next, closing };
+    for (const tabId of dropped) if (tabId in closing) closing = omitKey(closing, tabId);
+    return closing === state.closing ? state : { ...state, closing };
   },
 );
 

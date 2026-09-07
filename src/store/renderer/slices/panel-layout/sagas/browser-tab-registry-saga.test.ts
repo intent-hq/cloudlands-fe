@@ -1273,6 +1273,48 @@ describe('browserTabRegistrySaga', () => {
       await stop(h);
     });
 
+    it('keeps a tab restored under a newer generation reported when a stale snapshot drops its id, so its close is still sent', async () => {
+      const ack = deferred<{ drop: string[] }>();
+      mocks.listTabs.mockResolvedValue([row()]);
+      mocks.syncTabs.mockReturnValueOnce(ack.promise);
+      const h = start({
+        layouts: {
+          [WS]: settledLayout([browserTab({ browserUrl: 'http://a.test/', hostClientId: OWN })]),
+        },
+        health: 'down',
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(connectionStatusChanged('connected'));
+      await flush(0);
+      expect(mocks.syncTabs).toHaveBeenCalledTimes(1);
+
+      // Remounted while the snapshot is in flight; the fresh listing restores
+      // the same own-host row under the new generation, which reports it.
+      teardown(h);
+      remount(h);
+      await flush();
+      expect(h.tabs()).toEqual([expect.objectContaining({ id: 'b1', hostClientId: OWN })]);
+      expect(h.registry().reported).toHaveProperty('b1');
+
+      // The obsolete drop belongs to the old generation: neither the layout
+      // nor what the new generation reported moves.
+      ack.resolve({ drop: ['b1'] });
+      await flush(0);
+      expect(h.tabs()).toEqual([expect.objectContaining({ id: 'b1' })]);
+      expect(h.registry().reported).toHaveProperty('b1');
+      expect(mocks.removeTab).not.toHaveBeenCalled();
+
+      // A close made right after is therefore still a close: the removal is
+      // sent and nothing resurrects the tab on the next remount.
+      h.dispatch(closeTab(WS, 'b1', undefined, undefined, { destroy: true }));
+      teardown(h);
+      remount(h);
+      await flush();
+      expect(mocks.removeTab.mock.calls).toEqual([['b1']]);
+      expect(h.tabs()).toEqual([]);
+      await stop(h);
+    });
+
     it('keeps a tab closed offline right before the unmount closed across the remount', async () => {
       const h = start({
         layouts: { [WS]: settledLayout([browserTab({ browserUrl: 'http://a.test/' })]) },
@@ -1462,3 +1504,4 @@ describe('browserTabRegistrySaga', () => {
     });
   });
 });
+
