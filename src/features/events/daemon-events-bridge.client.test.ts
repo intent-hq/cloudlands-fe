@@ -11745,3 +11745,326 @@ describe('daemonEventsBridge (create-progress wire contract — git:clone:progre
     });
   });
 });
+
+describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browserClientId pin → browserClients slice)', () => {
+  const WS_BC = 'ws-browser-clients-1';
+  let stopSaga: (() => void) | undefined;
+
+  const DESK_ROW = {
+    clientId: 'cli-desk',
+    name: 'Intent Desktop',
+    capabilities: { browserExec: true },
+    hostname: 'dev-box',
+    connections: 1,
+    transports: ['uds'],
+    connectedAt: '2026-09-07T00:00:00.000Z',
+  };
+
+  const TAB = {
+    tabId: 'tab-1',
+    workspaceId: WS_BC,
+    hostClientId: 'cli-desk',
+    url: 'https://example.com/',
+    visibility: 'visible',
+    createdAt: '2026-09-07T00:00:00.000Z',
+    updatedAt: '2026-09-07T00:00:00.000Z',
+  };
+
+  beforeAll(async () => {
+    appStore.init();
+    const { browserClientsSaga } =
+      await import('$store/renderer/slices/browser-clients/sagas/browser-clients-saga');
+    stopSaga = appStore.runSaga(browserClientsSaga);
+  });
+
+  afterAll(() => stopSaga?.());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    const { liveClientsReceived } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+    const { workspaceUnmounted } =
+      await import('$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice');
+    appStore.dispatch(workspaceUnmounted(WS_BC));
+    appStore.dispatch(liveClientsReceived([]));
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  function globalNotification(type: string, data: unknown) {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-${type}-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: '2026-09-07T00:00:01.000Z',
+          type,
+          actor: { type: 'system' },
+          data,
+        },
+      },
+    };
+  }
+
+  function tabNotification(type: string, data: unknown) {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-${type}-${Math.random().toString(36).slice(2, 8)}`,
+          workspaceId: WS_BC,
+          timestamp: '2026-09-07T00:00:01.000Z',
+          type,
+          actor: { type: 'agent', id: 'agent-1' },
+          data,
+        },
+      },
+    };
+  }
+
+  it('subscribes to the REV-2 client and browser-tab event types in the firehose filter', () => {
+    for (const type of [
+      'client:connected',
+      'client:disconnected',
+      'browser:tab-opened',
+      'browser:tab-updated',
+      'browser:tab-closed',
+    ]) {
+      expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain(type);
+    }
+  });
+
+  it('client:connected (global, no workspaceId) re-reads client.list and stores the rows', async () => {
+    backendRequestSpy.mockImplementation((method: string) =>
+      method === 'client.list' ? Promise.resolve({ clients: [DESK_ROW] }) : undefined,
+    );
+    const { selectLiveClients } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      globalNotification('client:connected', {
+        clientId: 'cli-desk',
+        name: 'Intent Desktop',
+        capabilities: { browserExec: true },
+      }),
+    );
+    await flush();
+
+    expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'client.list')).toEqual([
+      ['client.list', undefined],
+    ]);
+    expect(selectLiveClients.select(appStore.state)).toEqual([DESK_ROW]);
+  });
+
+  it('client:disconnected re-reads client.list so the departed client drops out', async () => {
+    const { liveClientsReceived } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+    const { selectLiveClients } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    appStore.dispatch(liveClientsReceived([DESK_ROW as never]));
+    backendRequestSpy.mockImplementation((method: string) =>
+      method === 'client.list' ? Promise.resolve({ clients: [] }) : undefined,
+    );
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(globalNotification('client:disconnected', { clientId: 'cli-desk', capabilities: {} }));
+    await flush();
+
+    expect(selectLiveClients.select(appStore.state)).toEqual([]);
+  });
+
+  it('drops a malformed client:* payload without touching the wire', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(globalNotification('client:connected', { name: 'no clientId' }));
+    await flush();
+
+    expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'client.list')).toEqual([]);
+  });
+
+  it('browser:tab-opened / tab-updated / tab-closed patch the workspace tab mirror in place', async () => {
+    const { selectWorkspaceBrowserTabs } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(tabNotification('browser:tab-opened', { tab: TAB }));
+    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([TAB]);
+
+    const moved = {
+      ...TAB,
+      url: 'https://example.com/next',
+      updatedAt: '2026-09-07T00:00:02.000Z',
+    };
+    handler(tabNotification('browser:tab-updated', { tab: moved, changes: { url: moved.url } }));
+    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([moved]);
+
+    handler(tabNotification('browser:tab-closed', { tab: moved }));
+    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([]);
+
+    // Self-sufficient payloads: no browser.listTabs refetch is issued.
+    expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'browser.listTabs')).toEqual([]);
+  });
+
+  it('browser:tab-updated replaces the listed row: cleared optionals drop, presence decoration stays', async () => {
+    const { workspaceBrowserTabsReceived } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+    const { selectWorkspaceBrowserTabs } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const listed = {
+      ...TAB,
+      title: 'Example',
+      requestedUrl: 'https://example.com/',
+      ownerAgentId: 'agent-1',
+      ownerAgentName: 'Agent',
+      emulatedSize: { width: 1280, height: 800 },
+      hostConnected: true,
+      hostName: 'Intent Desktop',
+    };
+    appStore.dispatch(workspaceBrowserTabsReceived(WS_BC, [listed as never], 0));
+
+    // The daemon released the owner, cleared the title, requestedUrl and
+    // emulation: the event row omits them.
+    const released = {
+      ...TAB,
+      url: 'https://example.com/next',
+      updatedAt: '2026-09-07T00:00:02.000Z',
+    };
+    handler(
+      tabNotification('browser:tab-updated', { tab: released, changes: { url: released.url } }),
+    );
+
+    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([
+      { ...released, hostConnected: true, hostName: 'Intent Desktop' },
+    ]);
+  });
+
+  it('browser:tab-updated moving a tab to another host recomputes hostConnected / hostName from client.list', async () => {
+    const { liveClientsReceived, workspaceBrowserTabsReceived } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+    const { selectWorkspaceBrowserTabs } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const LAPTOP_ROW = { ...DESK_ROW, clientId: 'cli-laptop', name: 'Intent Laptop' };
+    appStore.dispatch(liveClientsReceived([DESK_ROW as never, LAPTOP_ROW as never]));
+    appStore.dispatch(
+      workspaceBrowserTabsReceived(
+        WS_BC,
+        [{ ...TAB, hostConnected: true, hostName: 'Intent Desktop' } as never],
+        0,
+      ),
+    );
+
+    const onLaptop = { ...TAB, hostClientId: 'cli-laptop', updatedAt: '2026-09-07T00:00:02.000Z' };
+    handler(
+      tabNotification('browser:tab-updated', {
+        tab: onLaptop,
+        changes: { hostClientId: onLaptop.hostClientId },
+      }),
+    );
+    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([
+      { ...onLaptop, hostConnected: true, hostName: 'Intent Laptop' },
+    ]);
+
+    const onUnknown = {
+      ...onLaptop,
+      hostClientId: 'cli-gone',
+      updatedAt: '2026-09-07T00:00:03.000Z',
+    };
+    handler(
+      tabNotification('browser:tab-updated', {
+        tab: onUnknown,
+        changes: { hostClientId: onUnknown.hostClientId },
+      }),
+    );
+    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([
+      { ...onUnknown, hostConnected: false },
+    ]);
+  });
+
+  it('ignores a browser:tab-* event whose payload is not a registry row', async () => {
+    const { selectWorkspaceBrowserTabs } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(tabNotification('browser:tab-opened', { tab: { tabId: 'tab-x' } }));
+    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([]);
+  });
+
+  it('workspace:updated browserClientId delta merges the pin and re-reads workspace.getBrowserClient', async () => {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { selectWorkspaceBrowserClient } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_BC,
+        title: 'Pinned ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+    const pinned = {
+      clientId: 'cli-desk',
+      source: 'workspace',
+      resolved: { clientId: 'cli-desk', name: 'Intent Desktop' },
+    };
+    const cleared = { source: 'default', resolved: null };
+    let browserClient: unknown = pinned;
+    backendRequestSpy.mockImplementation((method: string) =>
+      method === 'workspace.getBrowserClient' ? Promise.resolve({ browserClient }) : undefined,
+    );
+    const readWorkspace = () => {
+      const state = appStore.state as { workspace: { workspaces: unknown } };
+      return (getItem(state.workspace.workspaces as never, WS_BC) ?? {}) as {
+        browserClientId?: string;
+      };
+    };
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      tabNotification('workspace:updated', {
+        workspaceId: WS_BC,
+        changes: { browserClientId: 'cli-desk' },
+      }),
+    );
+    await flush();
+    expect(readWorkspace().browserClientId).toBe('cli-desk');
+    expect(
+      backendRequestSpy.mock.calls.filter(([m]) => m === 'workspace.getBrowserClient'),
+    ).toEqual([['workspace.getBrowserClient', { workspaceId: WS_BC }]]);
+    expect(selectWorkspaceBrowserClient.select(appStore.state, WS_BC)).toEqual(pinned);
+
+    // Clearing the pin arrives as an explicit JSON null.
+    browserClient = cleared;
+    handler(
+      tabNotification('workspace:updated', {
+        workspaceId: WS_BC,
+        changes: { browserClientId: null },
+      }),
+    );
+    await flush();
+    expect(readWorkspace().browserClientId).toBeUndefined();
+    expect(selectWorkspaceBrowserClient.select(appStore.state, WS_BC)).toEqual(cleared);
+  });
+});

@@ -24,6 +24,7 @@ import { autoUpdateSaga } from './slices/auto-update/sagas/auto-update-saga';
 import { backgroundAgentSettingsSaga } from './slices/background-agent-settings/sagas/background-agent-settings-saga';
 import { backgroundHooksSaga } from './slices/background-hooks/sagas/background-hooks-saga';
 import { browserPersistenceSaga } from './slices/browser/sagas/browser-persistence-saga';
+import { browserClientsSaga } from './slices/browser-clients/sagas/browser-clients-saga';
 import { chatReadSaga } from './slices/chat-state/sagas/chat-read-saga';
 import { chatScrollbackSaga } from './slices/chat-state/sagas/chat-scrollback-saga';
 import { chatSendSaga } from './slices/chat-state/sagas/chat-send-saga';
@@ -199,6 +200,7 @@ export const sagas = [
   unreadTrackingSaga,
   releaseNotesSaga,
   browserPersistenceSaga,
+  browserClientsSaga,
   fileContentPruneSaga,
   terminalPersistenceSaga,
   externalEditorsPersistenceSaga,
