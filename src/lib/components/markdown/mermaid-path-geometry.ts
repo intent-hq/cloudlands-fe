@@ -1837,14 +1837,133 @@ function attachCardinalPorts(
   return simplifyOrthogonalPoints(points);
 }
 
-function diamondCardinalAttachment(bounds: Bounds, side: CardinalSide): CardinalAttachment {
-  const point = boundsPort(bounds, side);
+export function diamondBoundaryPort(bounds: Bounds, side: CardinalSide, offset = 0): Point {
+  const center = pointAt(bounds, 0.5, 0.5);
+  const halfWidth = bounds.width / 2;
+  const halfHeight = bounds.height / 2;
+  if (side === 'top' || side === 'bottom') {
+    const clamped = Math.max(-halfWidth * 0.7, Math.min(halfWidth * 0.7, offset));
+    const height = halfHeight * (1 - Math.abs(clamped) / halfWidth);
+    return { x: center.x + clamped, y: center.y + (side === 'top' ? -height : height) };
+  }
+  const clamped = Math.max(-halfHeight * 0.7, Math.min(halfHeight * 0.7, offset));
+  const width = halfWidth * (1 - Math.abs(clamped) / halfHeight);
+  return { x: center.x + (side === 'left' ? -width : width), y: center.y + clamped };
+}
+
+function diamondCardinalAttachment(
+  bounds: Bounds,
+  side: CardinalSide,
+  offset = 0,
+): CardinalAttachment {
+  const point = diamondBoundaryPort(bounds, side, offset);
   const lead = { ...point };
   if (side === 'top') lead.y -= 12;
   else if (side === 'right') lead.x += 12;
   else if (side === 'bottom') lead.y += 12;
   else lead.x -= 12;
   return { point, side, lead };
+}
+
+function allocateDiamondAttachments(svg: SVGSVGElement, paths: SVGPathElement[]) {
+  type Use = {
+    path: SVGPathElement;
+    role: 'source' | 'target';
+    nodeId: string;
+    bounds: Bounds;
+    side: CardinalSide;
+    adjacent: Point;
+  };
+  const identities = new Map(paths.map((path) => [path, flowchartEdgeIdentity(path)]));
+  const uses: Use[] = [];
+  for (const path of paths) {
+    const identity = identities.get(path);
+    const points = (path.dataset.manhattanPoints ?? '')
+      .trim()
+      .split(/\s+/)
+      .map((point) => point.split(',').map(Number))
+      .filter((point) => point.length === 2 && point.every(Number.isFinite))
+      .map(([x, y]) => ({ x, y }));
+    if (!identity || points.length < 2) continue;
+    const labelText = flowchartLabelForPath(svg, path)?.textContent?.trim().toLocaleLowerCase();
+    const sourceNode = flowchartNode(svg, identity.source);
+    const sourceShape = sourceNode && shapeForNode(sourceNode);
+    if (sourceShape && isDiamondShape(sourceShape)) {
+      const bounds = boundsInPathSpace(sourceShape, path);
+      if (bounds) {
+        const inferred = cardinalSideFromDirection(pointAt(bounds, 0.5, 0.5), points[1]);
+        const side: CardinalSide =
+          path.dataset.decisionBranch === 'upper' || labelText === 'yes'
+            ? 'top'
+            : path.dataset.decisionBranch === 'lower' || labelText === 'no'
+              ? 'right'
+              : inferred;
+        uses.push({
+          path,
+          role: 'source',
+          nodeId: identity.source,
+          bounds,
+          side,
+          adjacent: points[1],
+        });
+      }
+    }
+    const targetNode = flowchartNode(svg, identity.target);
+    const targetShape = targetNode && shapeForNode(targetNode);
+    if (targetShape && isDiamondShape(targetShape)) {
+      const bounds = boundsInPathSpace(targetShape, path);
+      if (bounds) {
+        const reciprocal = paths.some((candidate) => {
+          const candidateIdentity = identities.get(candidate);
+          return (
+            candidate !== path &&
+            candidateIdentity?.source === identity.target &&
+            candidateIdentity.target === identity.source
+          );
+        });
+        const side: CardinalSide =
+          path.dataset.decisionReturn || reciprocal
+            ? 'bottom'
+            : cardinalSideFromDirection(pointAt(bounds, 0.5, 0.5), points[points.length - 2]);
+        uses.push({
+          path,
+          role: 'target',
+          nodeId: identity.target,
+          bounds,
+          side,
+          adjacent: points[points.length - 2],
+        });
+      }
+    }
+  }
+  const groups = new Map<string, Use[]>();
+  for (const use of uses) {
+    const key = `${use.nodeId}\u0000${use.side}`;
+    groups.set(key, [...(groups.get(key) ?? []), use]);
+  }
+  const assignments = new Map<
+    SVGPathElement,
+    { source?: CardinalAttachment; target?: CardinalAttachment }
+  >();
+  for (const grouped of groups.values()) {
+    const side = grouped[0].side;
+    const horizontal = side === 'top' || side === 'bottom';
+    const sorted = grouped.toSorted(
+      (left, right) =>
+        (horizontal ? left.adjacent.x - right.adjacent.x : left.adjacent.y - right.adjacent.y) ||
+        left.path.id.localeCompare(right.path.id) ||
+        left.role.localeCompare(right.role),
+    );
+    const span = (horizontal ? grouped[0].bounds.width : grouped[0].bounds.height) * 0.5;
+    const gap = Math.min(FLOWCHART_PORT_SLOT_GAP, span / Math.max(1, grouped.length - 1));
+    sorted.forEach((use, index) => {
+      const offset = grouped.length === 1 ? 0 : (index - (grouped.length - 1) / 2) * gap;
+      const assignment = assignments.get(use.path) ?? {};
+      assignment[use.role] = diamondCardinalAttachment(use.bounds, side, offset);
+      assignments.set(use.path, assignment);
+    });
+  }
+  return assignments;
 }
 
 function spreadCrowdedFlowchartPorts(svg: SVGSVGElement) {
@@ -1944,6 +2063,7 @@ export function snapFlowchartDiamondPorts(svg: SVGSVGElement) {
   if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2') return;
   spreadCrowdedFlowchartPorts(svg);
   const paths = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')];
+  const diamondAttachments = allocateDiamondAttachments(svg, paths);
   for (const path of paths) {
     const identity = flowchartEdgeIdentity(path);
     const sourceNode = identity && flowchartNode(svg, identity.source);
@@ -1962,15 +2082,11 @@ export function snapFlowchartDiamondPorts(svg: SVGSVGElement) {
     const labelText = flowchartLabelForPath(svg, path)?.textContent?.trim().toLocaleLowerCase();
     if (sourceShape && isDiamondShape(sourceShape)) {
       const bounds = boundsInPathSpace(sourceShape, path);
-      if (bounds) {
+      const attachment = diamondAttachments.get(path)?.source;
+      if (bounds && attachment) {
         const origin = pointAt(bounds, 0.5, 0.5);
         const inferredSide = cardinalSideFromDirection(origin, points[1]);
-        const side: CardinalSide =
-          path.dataset.decisionBranch === 'upper' || labelText === 'yes'
-            ? 'top'
-            : path.dataset.decisionBranch === 'lower' || labelText === 'no'
-              ? 'right'
-              : inferredSide;
+        const { side } = attachment;
         if (labelText === 'no' && inferredSide !== side && points.length > 2) {
           const lane = points
             .slice(1)
@@ -1987,7 +2103,6 @@ export function snapFlowchartDiamondPorts(svg: SVGSVGElement) {
             path.dataset.decisionLane = String(points[lane.index].y);
           }
         }
-        const attachment = diamondCardinalAttachment(bounds, side);
         const { point } = attachment;
         sourceAttachment = attachment;
         path.dataset.diamondSourcePort = `${point.x},${point.y}`;
@@ -1996,23 +2111,9 @@ export function snapFlowchartDiamondPorts(svg: SVGSVGElement) {
       }
     }
     if (targetShape && isDiamondShape(targetShape)) {
-      const bounds = boundsInPathSpace(targetShape, path);
-      const previous = points[points.length - 2];
-      if (bounds) {
-        const origin = pointAt(bounds, 0.5, 0.5);
-        const reciprocal = paths.some((candidate) => {
-          const candidateIdentity = flowchartEdgeIdentity(candidate);
-          return (
-            candidate !== path &&
-            candidateIdentity?.source === identity?.target &&
-            candidateIdentity.target === identity.source
-          );
-        });
-        const side: CardinalSide =
-          path.dataset.decisionReturn || reciprocal
-            ? 'bottom'
-            : cardinalSideFromDirection(origin, previous);
-        const attachment = diamondCardinalAttachment(bounds, side);
+      const attachment = diamondAttachments.get(path)?.target;
+      if (attachment) {
+        const { side } = attachment;
         const { point } = attachment;
         targetAttachment = attachment;
         if (targetNode) {

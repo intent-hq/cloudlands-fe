@@ -372,6 +372,42 @@ for (const appearance of appearances) {
                 y <= frame.bottom + 1,
             );
           });
+          const ready = [...svg.querySelectorAll<SVGGElement>('g.node')].find(
+            (node) => node.textContent?.trim() === 'Ready?',
+          )!;
+          const readyId = ready.id.match(/-flowchart-(.+)-[0-9]+$/)![1];
+          const readyBounds = ready.getBoundingClientRect();
+          const readyCenter = {
+            x: (readyBounds.left + readyBounds.right) / 2,
+            y: (readyBounds.top + readyBounds.bottom) / 2,
+          };
+          const denseRoutes = routes.filter(({ path }) => path.id.includes(`_${readyId}_`));
+          const densePorts = denseRoutes.map(({ path, points }) => {
+            const outbound = path.id.includes(`-L_${readyId}_`);
+            const matrix = path.getScreenCTM()!;
+            const port = new DOMPoint(
+              ...Object.values(outbound ? points[0] : points.at(-1)!),
+            ).matrixTransform(matrix);
+            const adjacent = new DOMPoint(
+              ...Object.values(outbound ? points[1] : points.at(-2)!),
+            ).matrixTransform(matrix);
+            const side = outbound ? path.dataset.diamondSourceSide : path.dataset.diamondTargetSide;
+            const vertical = side === 'top' || side === 'bottom';
+            return {
+              port: `${port.x.toFixed(2)},${port.y.toFixed(2)}`,
+              boundaryError: Math.abs(
+                Math.abs(port.x - readyCenter.x) / (readyBounds.width / 2) +
+                  Math.abs(port.y - readyCenter.y) / (readyBounds.height / 2) -
+                  1,
+              ),
+              tangentAligned: vertical
+                ? Math.abs(port.x - adjacent.x) < 0.01
+                : Math.abs(port.y - adjacent.y) < 0.01,
+              rounded:
+                points.length < 3 ||
+                (path.dataset.cornerRadius === '6' && path.getAttribute('d')!.includes(' Q ')),
+            };
+          });
           return {
             allAxisAligned: selected.every(({ points }) =>
               points.slice(1).every((point, index) => {
@@ -396,6 +432,7 @@ for (const appearance of appearances) {
             sharedShafts,
             selfLoop: selected.some(({ path }) => path.dataset.selfLoop === 'right'),
             contained,
+            densePorts,
           };
         });
       expect(nestedDecision.allAxisAligned).toBe(true);
@@ -406,6 +443,14 @@ for (const appearance of appearances) {
       expect(nestedDecision.sharedShafts).toEqual([]);
       expect(nestedDecision.selfLoop).toBe(true);
       expect(nestedDecision.contained).toBe(true);
+      expect(nestedDecision.densePorts).toHaveLength(6);
+      expect(new Set(nestedDecision.densePorts.map(({ port }) => port)).size).toBe(6);
+      expect(
+        nestedDecision.densePorts.every(
+          ({ boundaryError, tangentAligned, rounded }) =>
+            boundaryError < 0.03 && tangentAligned && rounded,
+        ),
+      ).toBe(true);
 
       const labelSurfaces = await page
         .locator('#mermaid-flow, #mermaid-state')

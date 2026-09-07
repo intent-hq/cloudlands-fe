@@ -8,6 +8,7 @@ import {
   buildGroupedReturnLanePoints,
   chooseFlowchartFeedbackTargetX,
   chooseLabelSegment,
+  diamondBoundaryPort,
   diamondRayIntersection,
   measuredClusterHeaderHeight,
   replacePathTerminal,
@@ -234,6 +235,24 @@ describe('Mermaid path terminal geometry', () => {
 
     expect(diamondRayIntersection(center, { x: 50, y: 40 }, bounds)).toEqual({ x: 85, y: 80 });
     expect(diamondRayIntersection(center, { x: 0, y: -40 }, bounds)).toEqual({ x: 60, y: 20 });
+  });
+
+  it('fans contested ports out along the diamond boundary', () => {
+    const bounds = { x: 0, y: 0, width: 100, height: 80 };
+    const ports = [
+      diamondBoundaryPort(bounds, 'right', -8),
+      diamondBoundaryPort(bounds, 'right', 8),
+      diamondBoundaryPort(bounds, 'top', -10),
+      diamondBoundaryPort(bounds, 'top', 10),
+    ];
+
+    expect(new Set(ports.map(({ x, y }) => `${x},${y}`)).size).toBe(4);
+    expect(
+      ports.every(
+        ({ x, y }) => Math.abs(Math.abs(x - 50) / 50 + Math.abs(y - 40) / 40 - 1) < 0.001,
+      ),
+    ).toBe(true);
+    expect(diamondBoundaryPort(bounds, 'right')).toEqual({ x: 100, y: 40 });
   });
 
   it('builds top and right decision branch lanes from cardinal apexes', () => {
