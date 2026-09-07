@@ -1,3 +1,4 @@
+// @ui-invariant-exempt: asserts only the hand-maintained menu.meta ledger, which vitest related already runs via the direct menu.meta import
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import MenuTestHarness from './MenuTestHarness.svelte';

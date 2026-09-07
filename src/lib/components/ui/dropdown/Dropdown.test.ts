@@ -1,3 +1,4 @@
+// @ui-invariant
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import Dropdown from './Dropdown.svelte';
