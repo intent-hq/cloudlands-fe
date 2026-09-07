@@ -312,6 +312,11 @@ async function findChangeActions(): Promise<string[]> {
   return screen.getAllByTestId('chat-change').map((el) => el.getAttribute('data-action') ?? '');
 }
 
+async function findChangeStatuses(): Promise<string[]> {
+  await screen.findByTestId('chat-changes-panel');
+  return screen.getAllByTestId('chat-change').map((el) => el.getAttribute('data-status') ?? '');
+}
+
 describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
   beforeEach(() => {
     resetMockReduxState();
@@ -605,6 +610,7 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
         makeTrackedChange('src/untracked.ts', 'unstaged', 'added'),
         makeTrackedChange('src/deleted.ts', 'unstaged', 'deleted'),
         makeTrackedChange('src/staged.ts', 'staged', 'added'),
+        makeTrackedChange('src/renamed.ts', 'staged', 'renamed'),
       ];
       mockReduxState.ftCommits = [
         {
@@ -626,9 +632,11 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       expect(await findChangePaths()).toEqual([
         '/repo/src/deleted.ts',
         '/repo/src/staged.ts',
+        '/repo/src/renamed.ts',
         '/repo/src/committed.ts',
       ]);
-      expect(await findChangeActions()).toEqual(['delete', 'create', 'modify']);
+      expect(await findChangeActions()).toEqual(['delete', 'create', 'modify', 'modify']);
+      expect(await findChangeStatuses()).toEqual(['deleted', 'added', 'renamed', 'modified']);
     });
 
     it('filters raw and normalized secondary-root untracked rows', async () => {
@@ -741,9 +749,11 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       ['added', 'create'],
       ['deleted', 'delete'],
       ['modified', 'modify'],
+      ['renamed', 'modify'],
     ])('maps commit status %s to action %s', async (status, action) => {
       renderChanges('src/x.ts', status);
       expect(await findChangeActions()).toEqual([action]);
+      expect(await findChangeStatuses()).toEqual([status]);
     });
 
     it('passes a UNC in-root path through without double-joining', async () => {

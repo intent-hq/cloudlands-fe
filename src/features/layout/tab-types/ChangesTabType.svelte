@@ -149,6 +149,7 @@
         return {
           filePath: isAbsolutePath(filePath) ? filePath : `${workspacePath}/${filePath}`,
           action: mapStatusToAction(typeof file === 'string' ? undefined : file.status),
+          status: typeof file === 'string' ? undefined : file.status,
           additions,
           deletions,
           toolName: 'local',

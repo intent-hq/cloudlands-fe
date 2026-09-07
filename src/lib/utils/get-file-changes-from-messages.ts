@@ -10,6 +10,8 @@ import type { AgentMessage, ContentBlock } from '$shared/types';
 export interface ChatFileChange {
   filePath: string;
   action: 'create' | 'modify' | 'delete';
+  /** Daemon or porcelain file status when this change originated from git. */
+  status?: string;
   additions: number;
   deletions: number;
   toolName: string;

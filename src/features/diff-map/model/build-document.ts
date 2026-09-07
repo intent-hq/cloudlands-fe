@@ -1,4 +1,5 @@
 import type { TrackedChange } from '$features/file-tracking/types';
+import { isRenamedStatus } from '$features/file-tracking/utils/change-status';
 import type { ChatFileChange } from '$lib/utils/get-file-changes-from-messages';
 import type {
   DiffMapDocument,
@@ -129,7 +130,7 @@ function isChatChange(change: TrackedChange | ChatFileChange): change is ChatFil
 
 function statusFor(change: TrackedChange | ChatFileChange, facts: PatchFacts): DiffMapFileStatus {
   if (facts.binary || (!isChatChange(change) && change.stats?.binary)) return 'binary';
-  if (facts.renamedFrom || (!isChatChange(change) && change.status === 'renamed')) return 'renamed';
+  if (facts.renamedFrom || isRenamedStatus(change.status)) return 'renamed';
   if (facts.modeOnly) return 'mode';
   if (isChatChange(change)) {
     return change.action === 'create'

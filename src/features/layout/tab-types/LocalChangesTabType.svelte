@@ -106,6 +106,7 @@
           .map((file) => ({
             filePath: `${effectiveRootPath}/${file.path}`,
             action: mapStatusToAction(file.status),
+            status: file.status,
             additions: (file as typeof file & { additions?: number }).additions ?? 0,
             deletions: (file as typeof file & { deletions?: number }).deletions ?? 0,
             toolName: 'local',
@@ -117,6 +118,7 @@
           (rootCommitFiles[commit.hash] ?? []).map((file) => ({
             filePath: `${effectiveRootPath}/${file.path}`,
             action: mapStatusToAction(file.status),
+            status: file.status,
             additions: file.additions ?? 0,
             deletions: file.deletions ?? 0,
             toolName: 'local',
@@ -139,6 +141,7 @@
         return {
           filePath,
           action: mapStatusToAction(c.status),
+          status: c.status,
           additions: c.stats?.additions || 0,
           deletions: c.stats?.deletions || 0,
           toolName: 'local',
@@ -157,6 +160,7 @@
         return {
           filePath,
           action: mapStatusToAction(c.status),
+          status: c.status,
           additions: c.stats?.additions || 0,
           deletions: c.stats?.deletions || 0,
           toolName: 'local',
@@ -182,6 +186,7 @@
             return {
               filePath: normalizedPath,
               action: mapStatusToAction(typeof file === 'string' ? undefined : file.status),
+              status: typeof file === 'string' ? undefined : file.status,
               additions,
               deletions,
               toolName: 'local',

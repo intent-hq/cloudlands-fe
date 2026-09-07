@@ -10,6 +10,8 @@ import {
   tinyDiffMapFixture,
   typicalDiffMapFixture,
 } from '../model/fixtures';
+import { buildDiffMapDocument } from '../model/build-document';
+import type { ChatFileChange } from '$lib/utils/get-file-changes-from-messages';
 import { fromPullRequest } from '../sources';
 import DiffMap from './DiffMap.svelte';
 
@@ -20,6 +22,29 @@ function rows(container: HTMLElement) {
 }
 
 describe('DiffMap', () => {
+  it.each([
+    ['renamed', 'daemon'],
+    ['R', 'porcelain'],
+  ])('renders a %s %s chat change with the rename glyph', async (status, sourceKind) => {
+    const change: ChatFileChange = {
+      filePath: `src/${sourceKind}-renamed.ts`,
+      action: 'modify',
+      status,
+      additions: 0,
+      deletions: 0,
+      toolName: 'local',
+      toolCallId: `${sourceKind}-rename`,
+    };
+    const document = buildDiffMapDocument([change], {
+      source: { kind: 'working-tree', workspaceId: 'ws-1', snapshotId: sourceKind },
+    });
+    const { container } = render(DiffMap, { props: { document, rungOverride: 1 } });
+
+    await waitFor(() => expect(rows(container)).toHaveLength(1));
+    expect(rows(container)[0].dataset.status).toBe('renamed');
+    expect(rows(container)[0].textContent).toContain('R→');
+  });
+
   it('renders an added pull request file with its added status glyph', async () => {
     const document = fromPullRequest({
       repository: 'intent-hq/cloudlands-fe',

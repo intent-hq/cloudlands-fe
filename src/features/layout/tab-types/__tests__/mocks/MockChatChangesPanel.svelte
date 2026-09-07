@@ -12,6 +12,7 @@
       filePath: string;
       toolCallId: string;
       action?: string;
+      status?: string;
       additions?: number;
       deletions?: number;
     }>;
@@ -37,6 +38,7 @@
       data-additions={change.additions}
       data-deletions={change.deletions}
       data-action={change.action}
+      data-status={change.status}
     >
       <!-- i18n-ignore (test mock) -->
       <button
