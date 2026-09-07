@@ -21,6 +21,17 @@ const manifest: Manifest = {
 };
 const viewport = { width: 1_000, height: 700 };
 
+function polygonArea(points: [number, number][]): number {
+  return (
+    Math.abs(
+      points.reduce((sum, [x, y], index) => {
+        const [nextX, nextY] = points[(index + 1) % points.length];
+        return sum + x * nextY - nextX * y;
+      }, 0),
+    ) / 2
+  );
+}
+
 describe('semantic map attention budget', () => {
   it('keeps rest weights near uniform despite extreme path counts', () => {
     const budget = computeBudget(manifest);
@@ -48,6 +59,22 @@ describe('semantic map region placement', () => {
     const first = placeRegions(manifest, budget, viewport);
     expect(placeRegions(manifest, budget, viewport)).toEqual(first);
     expect(first.every((geometry) => geometry.hull.length > 3)).toBe(true);
+    for (const geometry of first) {
+      const centroid = geometry.hull.reduce(
+        ([sumX, sumY], [x, y]) => [
+          sumX + x / geometry.hull.length,
+          sumY + y / geometry.hull.length,
+        ],
+        [0, 0],
+      );
+      const distances = geometry.hull.map(([x, y]) => Math.hypot(x - centroid[0], y - centroid[1]));
+      const maximumDistance = Math.max(...distances);
+      expect(maximumDistance / Math.min(...distances)).toBeGreaterThanOrEqual(1.35);
+      expect(polygonArea(geometry.hull)).toBeLessThanOrEqual(Math.PI * maximumDistance ** 2 * 0.85);
+      expect(
+        Math.max(...geometry.hull.map(([x, y]) => Math.hypot(x - geometry.x, y - geometry.y))),
+      ).toBeLessThanOrEqual(geometry.radius + 0.001);
+    }
     for (let left = 0; left < first.length; left += 1) {
       for (let right = left + 1; right < first.length; right += 1) {
         const dx = first[left].x - first[right].x;

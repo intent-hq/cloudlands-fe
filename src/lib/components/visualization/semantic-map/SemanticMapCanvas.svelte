@@ -74,6 +74,7 @@
   let tweenStartedAt = 0;
   let tweening = false;
   const pathCache = new CanvasPathCache();
+  const minimapPathCache = new CanvasPathCache();
   let labelLayout: LabelLayout = { regions: [], edges: [], counts: [], badges: [], boxes: [] };
   let hatchPattern: CanvasPattern | null = null;
   let animationFrame: number | null = null;
@@ -165,21 +166,27 @@
   function createHatchPattern(): void {
     const context = canvas?.getContext('2d');
     if (!context) return;
+    const dpr = window.devicePixelRatio || 1;
+    const period = 10;
     const tile = document.createElement('canvas');
-    tile.width = 8;
-    tile.height = 8;
+    tile.width = Math.round(period * dpr);
+    tile.height = Math.round(period * dpr);
     const tileContext = tile.getContext('2d');
     if (!tileContext) return;
+    tileContext.scale(dpr, dpr);
     tileContext.fillStyle = colors.background;
-    tileContext.fillRect(0, 0, 8, 8);
-    tileContext.strokeStyle = colors.muted;
+    tileContext.fillRect(0, 0, period, period);
+    tileContext.strokeStyle = colors.border;
+    tileContext.lineWidth = 1;
     tileContext.beginPath();
-    tileContext.moveTo(-2, 8);
-    tileContext.lineTo(8, -2);
-    tileContext.moveTo(4, 10);
-    tileContext.lineTo(10, 4);
+    tileContext.moveTo(-1, period - 1);
+    tileContext.lineTo(period - 1, -1);
+    tileContext.moveTo(4, period + 4);
+    tileContext.lineTo(period + 4, 4);
     tileContext.stroke();
-    hatchPattern = context.createPattern(tile, 'repeat');
+    const pattern = context.createPattern(tile, 'repeat');
+    pattern?.setTransform(new DOMMatrix().scale(1 / dpr));
+    hatchPattern = pattern;
   }
 
   function startGeometryTween(next: RegionGeometry[]): void {
@@ -199,6 +206,7 @@
 
   function refreshRenderCaches(next: RegionGeometry[]): void {
     pathCache.update(next, scene.edges);
+    minimapPathCache.update(geometry.rest, []);
     labelLayout = layoutSceneLabels({
       regions: next,
       regionLabels: new Map(manifest.regions.map(({ id, label }) => [id, label])),
@@ -417,13 +425,14 @@
     ctx.fillRect(x, y, MINIMAP_WIDTH, MINIMAP_HEIGHT);
     ctx.strokeRect(x + 0.5, y + 0.5, MINIMAP_WIDTH - 1, MINIMAP_HEIGHT - 1);
     for (const region of geometry.rest) {
-      const dotX = x + (region.x / width) * MINIMAP_WIDTH;
-      const dotY = y + (region.y / height) * MINIMAP_HEIGHT;
       ctx.fillStyle = colors.mutedForeground;
       ctx.globalAlpha = 0.25 + (scene.heatByRegion[region.id] ?? 0) * 0.75;
-      ctx.beginPath();
-      ctx.arc(dotX, dotY, Math.max(2, (region.radius / width) * MINIMAP_WIDTH), 0, Math.PI * 2);
-      ctx.fill();
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(MINIMAP_WIDTH / width, MINIMAP_HEIGHT / height);
+      const hull = minimapPathCache.hulls.get(region.id);
+      if (hull) ctx.fill(hull);
+      ctx.restore();
     }
     ctx.strokeStyle = colors.accent;
     ctx.globalAlpha = 0.8;
