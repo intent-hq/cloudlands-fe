@@ -1,10 +1,12 @@
 import { BROWSER_PROTOCOLS } from '../../../shared/constants';
 
 /**
- * Normalize what a user typed into a browser address bar the way the local
- * browser bars do (EmbeddedBrowser / BrowserPanel): a bare host gets a
- * protocol — `http://` for loopback hosts, `https://` otherwise — and an
- * input that still does not parse as a URL yields null.
+ * Normalize what a user typed into a browser address bar. This is the single
+ * normalization path for every address bar (BrowserPanel, EmbeddedBrowser,
+ * BrowserViewerTabHeader) — `scripts/check-browser-address-normalization.mjs`
+ * rejects inline copies. A bare host gets a protocol — `http://` for loopback
+ * hosts, `https://` otherwise — and an input that still does not parse as a
+ * URL yields null.
  */
 export function normalizeBrowserAddressInput(input: string): string | null {
   let url = input.trim();

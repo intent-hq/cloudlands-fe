@@ -26,14 +26,20 @@ describe('browser address bar input normalization', () => {
     ['example.test/docs', 'https://example.test/docs'],
     ['localhost:5173', 'http://localhost:5173'],
     ['127.0.0.1:8080/x', 'http://127.0.0.1:8080/x'],
+    ['0.0.0.0:3000', 'http://0.0.0.0:3000'],
+    ['app.localhost:5173/x', 'http://app.localhost:5173/x'],
     ['  https://example.test  ', 'https://example.test'],
     ['file:///tmp/example.html', 'file:///tmp/example.html'],
+    ['ws://example.test/socket', 'ws://example.test/socket'],
+    ['HTTP://EXAMPLE.TEST', 'HTTP://EXAMPLE.TEST'],
   ])('normalizes %s to %s', (input, expected) => {
     expect(normalizeBrowserAddressInput(input)).toBe(expected);
   });
 
   it('yields null for empty or unparsable input', () => {
+    expect(normalizeBrowserAddressInput('')).toBeNull();
     expect(normalizeBrowserAddressInput('   ')).toBeNull();
     expect(normalizeBrowserAddressInput('http://')).toBeNull();
+    expect(normalizeBrowserAddressInput('not a url')).toBeNull();
   });
 });

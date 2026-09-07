@@ -346,6 +346,25 @@ describe('EmbeddedBrowser', () => {
       expect(container.querySelector('input')).toBeNull();
     });
 
+    it('reports an unparsable address without navigating or recording it', async () => {
+      const { container, getByRole, getByText } = renderPage();
+      const webview = container.querySelector('webview') as HTMLElement & {
+        loadURL: ReturnType<typeof vi.fn>;
+      };
+      webview.loadURL = vi.fn().mockResolvedValue(undefined);
+      mocks.dispatch.mockClear();
+
+      await fireEvent.click(getByRole('button', { name: 'Edit browser address' }));
+      const input = getByRole('textbox', { name: 'Browser address' });
+      await fireEvent.input(input, { target: { value: 'not a url' } });
+      await fireEvent.submit(input.closest('form')!);
+
+      expect(getByText('Invalid URL format')).toBeTruthy();
+      expect(webview.loadURL).not.toHaveBeenCalled();
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+      expect(container.querySelector('input')).toBeNull();
+    });
+
     it('discards an edited address on Escape or blur', async () => {
       const { getByRole, queryByRole } = renderPage();
       const edit = () => fireEvent.click(getByRole('button', { name: 'Edit browser address' }));
