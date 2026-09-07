@@ -4106,6 +4106,7 @@
   "agentOverview_toolbar_files_one": "ファイル {count} 件",
   "agentOverview_toolbar_files_many": "ファイル {count} 件",
   "agentOverview_resourceNode_external_ariaLabel": "外部ファイル {name}: {path}",
+  "agentOverview_resourceExpander_showMore_ariaLabel": "{agent} のリソースをさらに {count} 件表示",
   "agentOverview_timeScrubber_live_label": "ライブ",
   "agentOverview_timeScrubber_loadingHistory_label": "履歴を読み込み中…",
   "agentOverview_timeScrubber_paused_label": "一時停止中",

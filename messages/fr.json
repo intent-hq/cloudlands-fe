@@ -4106,6 +4106,7 @@
   "agentOverview_toolbar_files_one": "{count} fichier",
   "agentOverview_toolbar_files_many": "{count} fichiers",
   "agentOverview_resourceNode_external_ariaLabel": "Fichier externe {name} : {path}",
+  "agentOverview_resourceExpander_showMore_ariaLabel": "Afficher {count} ressources supplémentaires pour {agent}",
   "agentOverview_timeScrubber_live_label": "En direct",
   "agentOverview_timeScrubber_loadingHistory_label": "Chargement de l’historique…",
   "agentOverview_timeScrubber_paused_label": "En pause",

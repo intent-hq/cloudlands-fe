@@ -304,9 +304,36 @@ describe('AgentActivityGraph', () => {
     expect(screen.queryByRole('button', { name: /file-1\.ts/ })).toBeNull();
     expect(screen.getByRole('button', { name: /file-7\.ts/ })).toBeTruthy();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Expand' }));
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Show 1 more resources for Agent One' }),
+    );
 
     expect(screen.getByRole('button', { name: /file-1\.ts/ })).toBeTruthy();
+  });
+
+  it('cancels scheduled graph frames when unmounted before they flush', async () => {
+    useViewport();
+    let nextFrameId = 1;
+    const pendingFrames = new Map<number, FrameRequestCallback>();
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      const frameId = nextFrameId++;
+      pendingFrames.set(frameId, callback);
+      return frameId;
+    });
+    const cancelFrame = vi
+      .spyOn(window, 'cancelAnimationFrame')
+      .mockImplementation((frameId) => void pendingFrames.delete(frameId));
+
+    const view = renderGraph(graph([agent()]));
+    await tick();
+    const { scene } = graphElements(view.container);
+    expect(pendingFrames.size).toBeGreaterThan(0);
+
+    view.unmount();
+
+    expect(cancelFrame).toHaveBeenCalled();
+    expect(pendingFrames.size).toBe(0);
+    expect(scene.style.transform).toBe('');
   });
 
   it('fits again whenever the visible node set changes', async () => {

@@ -72,6 +72,8 @@
   let autoFitQueued = false;
   let pendingPositions = new Map<string, GraphPosition>();
   let frame: number | null = null;
+  let fitFrame: number | null = null;
+  let deferredFit: (() => void) | null = null;
   let unsubscribeTick: (() => void) | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let dragState = $state<{
@@ -236,6 +238,17 @@
     });
   }
 
+  function scheduleFit(fit: () => void): void {
+    deferredFit = fit;
+    if (fitFrame !== null) return;
+    fitFrame = requestAnimationFrame(() => {
+      fitFrame = null;
+      const pendingFit = deferredFit;
+      deferredFit = null;
+      pendingFit?.();
+    });
+  }
+
   function updateLayout(): void {
     if (!layout) return;
     const nodeIds = visibleGraph.nodes
@@ -248,7 +261,7 @@
     if (nodeSetChanged) {
       autoFitPending = visibleGraph.nodes.length > 0;
       if (autoFitPending) {
-        requestAnimationFrame(() => {
+        scheduleFit(() => {
           if (autoFitPending) fitAutomatically();
         });
       }
@@ -649,7 +662,7 @@
   });
 
   $effect(() => {
-    if (fitRequest > 0 && layout) requestAnimationFrame(fitToView);
+    if (fitRequest > 0 && layout) scheduleFit(fitToView);
   });
 
   $effect(() => {
@@ -708,7 +721,7 @@
       .map((node) => node.id)
       .toSorted()
       .join('\0');
-    requestAnimationFrame(fitAutomatically);
+    scheduleFit(fitAutomatically);
   });
 
   onDestroy(() => {
@@ -723,6 +736,8 @@
     layout?.stop();
     select(container).interrupt('graph-fit');
     if (frame !== null) cancelAnimationFrame(frame);
+    deferredFit = null;
+    if (fitFrame !== null) cancelAnimationFrame(fitFrame);
   });
 </script>
 
@@ -798,8 +813,11 @@
                 type="button"
                 variant="default"
                 size="xs"
-                class="absolute left-1/2 top-full mt-1 h-6 -translate-x-1/2 rounded-full font-mono text-[10px] text-muted-foreground"
-                aria-label={m.ui_groupedCombobox_expandGroup_label()}
+                class="absolute left-1/2 top-full mt-1 h-6 -translate-x-1/2 rounded-full text-[10px] text-muted-foreground"
+                aria-label={m.agentOverview_resourceExpander_showMore_ariaLabel({
+                  count: visibleGraph.collapsedByAgent.get(node.id) ?? 0,
+                  agent: node.name,
+                })}
                 onclick={(event) => expandResources(node.id, event)}
                 data-graph-controls
               >

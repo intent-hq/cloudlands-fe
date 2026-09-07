@@ -4106,6 +4106,7 @@
   "agentOverview_toolbar_files_one": "{count} 個檔案",
   "agentOverview_toolbar_files_many": "{count} 個檔案",
   "agentOverview_resourceNode_external_ariaLabel": "外部檔案 {name}：{path}",
+  "agentOverview_resourceExpander_showMore_ariaLabel": "再顯示 {agent} 的 {count} 個資源",
   "agentOverview_timeScrubber_live_label": "即時",
   "agentOverview_timeScrubber_loadingHistory_label": "正在載入歷史記錄…",
   "agentOverview_timeScrubber_paused_label": "已暫停",
