@@ -30,6 +30,6 @@
   }
 
   .font-mono :global(.markdown-viewer) {
-    font-family: var(--font-mono);
+    font-family: var(--font-code);
   }
 </style>
