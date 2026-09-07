@@ -134,6 +134,56 @@ after`,
     expect(processHTMLToMarkdown(container.innerHTML)).not.toBe('$z$');
   });
 
+  it.each([true, false])(
+    'round-trips genuine inline, display, and parse-error math with preserveAnchors=%s',
+    async (preserveAnchors) => {
+      const markdown = String.raw`Inline $2x$.
+
+$$\frac{1}{2}$$
+
+Invalid $\frac{$ here`;
+      const html = await processMarkdownToHTML(markdown, { renderMath: true });
+
+      expect(processHTMLToMarkdown(html, { preserveAnchors })).toBe(markdown);
+    },
+  );
+
+  it.each(['source', 'annotation', 'both', 'visible', 'error'])(
+    'rejects math with tampered %s output',
+    async (tampering) => {
+      const markdown = tampering === 'error' ? String.raw`$\frac{$` : '$2x$';
+      const container = containerFor(await processMarkdownToHTML(markdown, { renderMath: true }));
+      const wrapper = container.querySelector('.math-inline');
+      const annotation = wrapper?.querySelector('annotation[encoding="application/x-tex"]');
+      const error = wrapper?.querySelector('.katex-error');
+      expect(wrapper).not.toBeNull();
+
+      if (tampering === 'source' || tampering === 'both') {
+        wrapper!.setAttribute('data-math-source', '$z$');
+      }
+      if (tampering === 'annotation' || tampering === 'both') {
+        expect(annotation).not.toBeNull();
+        annotation!.textContent = 'z';
+      }
+      if (tampering === 'visible') wrapper!.append('extra');
+      if (tampering === 'error') {
+        expect(error).not.toBeNull();
+        error!.textContent = 'z';
+      }
+
+      expect(processHTMLToMarkdown(container.innerHTML)).not.toBe(
+        wrapper!.getAttribute('data-math-source'),
+      );
+    },
+  );
+
+  it('rejects oversized forged math source before canonical rendering', () => {
+    const source = `$${'x'.repeat(MAX_MATH_SOURCE_LENGTH + 1)}$`;
+    const html = `<span class="math-inline" data-math-source="${source}"><span class="katex">x</span></span>`;
+
+    expect(processHTMLToMarkdown(html)).not.toBe(source);
+  });
+
   it('keeps trust-requiring TeX inert and sanitizes hostile neighboring HTML', async () => {
     const markdown = String.raw`$\href{javascript:alert(1)}{click}$ <img src=x onerror=alert(2)>`;
     const html = await processMarkdownToHTML(markdown, {

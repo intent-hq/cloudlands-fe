@@ -1154,7 +1154,8 @@ export function processHTMLToMarkdown(
       : (/^\$\$[ \t]*([\s\S]*?)[ \t]*\$\$$/.exec(source) ??
         /^\\\[[ \t]*([\s\S]*?)[ \t]*\\\]$/.exec(source));
     if (!delimited) return undefined;
-    if (delimited[1].length > MAX_MATH_SOURCE_LENGTH || el.children.length !== 1) return undefined;
+    if (delimited[1].length > MAX_MATH_SOURCE_LENGTH || el.childNodes.length !== 1)
+      return undefined;
 
     try {
       const canonicalContainer = document.createElement('div');
