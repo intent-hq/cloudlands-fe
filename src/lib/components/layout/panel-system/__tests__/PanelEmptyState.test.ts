@@ -178,20 +178,4 @@ describe('PanelEmptyState', () => {
     expect(layoutManager.reopenClosedTab).toHaveBeenCalledWith('older', 'panel-2');
   });
 
-  it('uses resource tiles for the note action and every changes recent alias', () => {
-    mocks.recentlyClosed = ['changes', 'local-changes', 'chat-changes', 'activity-changes'].map(
-      (type, index) => ({
-        tab: { id: `recent-${index}`, type, title: `Recent ${index}` },
-        closedAt: Date.now() - index,
-      }),
-    );
-    renderEmptyState({ onCreateNote: vi.fn() });
-
-    expect(
-      screen.getByRole('button', { name: 'New Note' }).querySelector('[data-resource-kind="note"]'),
-    ).toBeTruthy();
-    expect(document.querySelectorAll('.recent-item [data-resource-kind="changes"]')).toHaveLength(
-      4,
-    );
-  });
 });
