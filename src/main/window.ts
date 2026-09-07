@@ -4,7 +4,7 @@ import type { BrowserWindow as BrowserWindowType } from 'electron';
 import fs from 'fs';
 import fsAsync from 'fs/promises';
 import { Logger } from '../shared/logger';
-import { resolveAppTitle } from './utils/resolve-app-title';
+import { registerWindowTitleListener, resolveAppTitle } from './utils/resolve-app-title';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
 import { scrubToken } from '../features/deeplink/utils/scrub-token';
 import { findIntentUrl } from '../features/deeplink/utils/find-intent-url';
@@ -119,6 +119,12 @@ function buildWindowOptions(opts: {
     ...getWindowAppearanceOptions(isDarkMode),
     ...(opts.iconPath && { icon: opts.iconPath }),
   };
+}
+
+function createConfiguredWindow(opts: Parameters<typeof buildWindowOptions>[0]): BrowserWindowType {
+  const window = new BrowserWindow(buildWindowOptions(opts));
+  registerWindowTitleListener(window);
+  return window;
 }
 
 // Bounds for the renderer-console forwarder: per-message size cap and
@@ -603,9 +609,7 @@ export function createWindowForSession(
   const { workArea } = screen.getDisplayMatching(session.bounds);
   const bounds = validateBounds(session.bounds, workArea);
 
-  const window = new BrowserWindow(
-    buildWindowOptions({ bounds, title: resolveAppTitle(), iconPath }),
-  );
+  const window = createConfiguredWindow({ bounds, title: resolveAppTitle(), iconPath });
   // A restored HUD session keeps its saved backend bucket — the HUD is bound
   // to the backend it was opened on, not forced to local. Register it as THE
   // HUD for that backend right away (stamp first — the registry keys off the
@@ -850,9 +854,11 @@ export function createWindow(backendId: string = LOCAL_CONNECTION_ID) {
     logger.warn('Failed to load saved window bounds:', err);
   }
 
-  const window = new BrowserWindow(
-    buildWindowOptions({ bounds: windowBounds, title: resolveAppTitle(), iconPath }),
-  );
+  const window = createConfiguredWindow({
+    bounds: windowBounds,
+    title: resolveAppTitle(),
+    iconPath,
+  });
   stampWindowWithBackend(window, backendId);
   forwardRendererConsoleToMainLog(window);
 
@@ -971,9 +977,7 @@ export async function createWindowForDeepLink(
   const bounds = { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height };
 
   const iconPath = resolveIcon(false);
-  const newWindow = new BrowserWindow(
-    buildWindowOptions({ bounds, title: resolveAppTitle(), iconPath }),
-  );
+  const newWindow = createConfiguredWindow({ bounds, title: resolveAppTitle(), iconPath });
   stampWindowWithBackend(newWindow);
   forwardRendererConsoleToMainLog(newWindow);
 
