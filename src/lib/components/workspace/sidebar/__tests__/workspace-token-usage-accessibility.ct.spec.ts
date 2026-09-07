@@ -213,7 +213,10 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
 
   await agentBeta.focus();
   await expect(previewStatus).toContainText('By agent Agent beta-02 0 processed');
-  await page.keyboard.press('Shift+Tab');
+  await expect(agentBeta).toHaveAttribute('aria-checked', 'false');
+  await expect(agentBeta).toHaveAttribute('data-preview-active', 'true');
+  await agentBeta.blur();
+  await disclosure.focus();
   await expect(disclosure).toBeFocused();
   await expect(previewStatus).toContainText('By agent Agent alpha-01 600 processed');
   await page.keyboard.press('Tab');
@@ -432,8 +435,10 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   await finalModel.focus();
   await expect(finalModel).toBeFocused();
   await expect(previewStatus).toContainText('By agent Agent beta-02 10 processed');
-  await expect(agentBeta).toHaveAttribute('aria-checked', 'true');
-  await expect(finalModel).toHaveAttribute('aria-checked', 'true');
+  await expect(agentBeta).toHaveAttribute('aria-checked', 'false');
+  await expect(agentBeta).toHaveAttribute('data-preview-active', 'true');
+  await expect(finalModel).toHaveAttribute('aria-checked', 'false');
+  await expect(finalModel).toHaveAttribute('data-preview-active', 'true');
   expect(await compositionValues()).toEqual([
     { value: '0', share: '0%' },
     { value: '10', share: '100%' },
@@ -476,6 +481,53 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   await expect(previewStatus).toContainText('By model');
 });
 
+test('retains each selected dimension and reaches message-only scopes', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 1100, height: 720 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+    props: { theme: 'light', width: 304, messageOnly: true },
+  });
+  await component.getByTestId('token-usage-disclosure').click();
+
+  const details = page.getByTestId('token-usage-details');
+  const status = details.locator('.preview-status');
+  const messages = details.locator('.message-composition-label .animated-number-value');
+  const agentGroup = details.getByRole('radiogroup', { name: 'By agent' });
+  const modelGroup = details.getByRole('radiogroup', { name: 'By model' });
+  const agentBeta = agentGroup.getByRole('radio', { name: /Agent beta-02/ });
+  const finalModel = modelGroup.getByRole('radio', { name: /Model Production Final/ });
+  const longModel = modelGroup.getByRole('radio', {
+    name: /Provider\/this Is An Extraordinarily Long Model Name For Truncation/,
+  });
+
+  await agentBeta.focus();
+  await agentBeta.press('Space');
+  await finalModel.focus();
+  await finalModel.press('Space');
+  await expect(agentBeta).toHaveAttribute('aria-checked', 'true');
+  await expect(finalModel).toHaveAttribute('aria-checked', 'true');
+  await expect(status).toContainText('By model Model Production Final 10 processed');
+  await expect(messages).toHaveText('0 human messages and 1 agent message');
+
+  await longModel.focus();
+  await expect(longModel).toHaveAttribute('aria-checked', 'false');
+  await expect(longModel).toHaveAttribute('data-preview-active', 'true');
+  await expect(finalModel).toHaveAttribute('aria-checked', 'true');
+  await expect(agentBeta).toHaveAttribute('aria-checked', 'true');
+
+  const messageAgent = agentGroup.getByRole('radio', { name: /Agent messages/ });
+  const messageModel = modelGroup.getByRole('radio', { name: /Model Message Only/ });
+  await messageAgent.dispatchEvent('pointerdown', { pointerType: 'touch' });
+  await messageModel.dispatchEvent('pointerdown', { pointerType: 'touch' });
+  await expect(messageAgent).toHaveAttribute('aria-checked', 'true');
+  await expect(messageModel).toHaveAttribute('aria-checked', 'true');
+  await expect(status).toContainText('By model Model Message Only 0 processed');
+  await expect(messages).toHaveText('9 human messages and 1 agent message');
+  await expect(details.locator('.composition-strip')).toHaveCount(0);
+  await expect(agentGroup.locator('.breakdown-stack-item')).toHaveCount(4);
+  await expect(modelGroup.locator('.breakdown-stack-item')).toHaveCount(4);
+});
+
 test('uses localized radio group and segment semantics', async ({ mount, page }) => {
   await page.setViewportSize({ width: 1100, height: 720 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -499,7 +551,8 @@ test('uses localized radio group and segment semantics', async ({ mount, page })
     .trim();
   expect(localizedStatus).toBe('Aktiver Bereich Nach Agent Agent beta-02 0 verarbeitet');
   expect(localizedStatus?.match(/Nach Agent/g)).toHaveLength(1);
-  await expect(agentGroup.getByRole('radio').nth(1)).toHaveAttribute('aria-checked', 'true');
+  await expect(agentGroup.getByRole('radio').nth(1)).toHaveAttribute('aria-checked', 'false');
+  await expect(agentGroup.getByRole('radio').nth(1)).toHaveAttribute('data-preview-active', 'true');
 });
 
 for (const localeCase of [
@@ -694,8 +747,10 @@ test('retargets animated values smoothly with final-only accessibility and stabl
   await agentBeta.dispatchEvent('pointerenter', { pointerType: 'mouse' });
   await expect(previewStatus).toHaveAttribute('aria-atomic', 'true');
   await expect(previewStatus).toContainText('By agent Agent beta-02 100 processed');
-  await expect(agentBeta).toHaveAttribute('aria-checked', 'true');
-  await expect(modelBeta).toHaveAttribute('aria-checked', 'true');
+  await expect(agentBeta).toHaveAttribute('aria-checked', 'false');
+  await expect(agentBeta).toHaveAttribute('data-preview-active', 'true');
+  await expect(modelBeta).toHaveAttribute('aria-checked', 'false');
+  await expect(modelBeta).toHaveAttribute('data-preview-active', 'true');
   await expect(finalTargets).toHaveText(['10', '60', '0', '30']);
   await expect(messageTargets).toHaveText('2 human and 4 agent messages');
   expect(
