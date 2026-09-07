@@ -72,7 +72,7 @@
             size="13"
             class={cn(
               'text-muted-foreground/50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none' /* a11y-ignore */,
-              collapsed && 'rotate-90',
+              collapsed && '-rotate-90',
             )}
           />
         </Button>

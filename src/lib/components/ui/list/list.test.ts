@@ -3,6 +3,7 @@ import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseUiComponentMetadata } from '../component-metadata';
 import ListHarness from './ListHarness.svelte';
+import ListItem from './ListItem.svelte';
 import { listFixtures } from './list.fixtures';
 import { listMetadata } from './list.meta';
 
@@ -38,11 +39,27 @@ describe('List', () => {
     expect(selected.className).toContain('focus-visible:border-ring');
     expect(selected.className).toContain('focus-visible:ring-2');
     expect(selected.className).toContain('bg-selected');
+    expect(selected.style.paddingLeft).toBe('8px');
+    expect(selected.style.paddingRight).toBe('8px');
+    expect(selected.style.marginLeft).toBe('');
+    expect(selected.style.width).toBe('');
     expect(selected.querySelector('.type-body')).not.toBeNull();
     expect(selected.querySelector('.type-caption')).not.toBeNull();
     selected.focus();
     await fireEvent.keyDown(selected, { key: 'Enter' });
     expect(document.activeElement).toBe(selected);
+  });
+
+  it('keeps nested row highlights full-width while indenting their content', () => {
+    const { getByRole } = render(ListItem, {
+      props: { title: 'Nested row', selected: true, indent: 2 },
+    });
+    const nested = getByRole('button', { name: 'Nested row' });
+
+    expect(nested.style.paddingLeft).toBe('52px');
+    expect(nested.style.paddingRight).toBe('8px');
+    expect(nested.style.marginLeft).toBe('');
+    expect(nested.style.width).toBe('');
   });
 
   it('previews the nearest enabled row and shares that state with keyboard focus', async () => {
@@ -74,6 +91,7 @@ describe('List', () => {
     expect(toggle.className).toContain('[&_[data-slot=button-content]]:w-full');
     await fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.querySelector('svg')?.classList.contains('-rotate-90')).toBe(true);
     const empty = container.querySelector('[data-slot="list-empty"]');
     expect(empty?.textContent).toContain('No intentionally empty items');
     expect(empty?.className).not.toContain('border');
@@ -82,11 +100,13 @@ describe('List', () => {
     expect(empty?.querySelector('svg')).toBeNull();
   });
 
-  it('uses the shared spinner for a loading row and keeps mixed-size text baseline aligned', () => {
+  it('uses the shared intent mark for a loading row and keeps mixed-size text baseline aligned', () => {
     const { container, getByRole } = render(ListHarness);
     const loading = getByRole('button', { name: /Loading row/ });
     const selected = getByRole('button', { name: /A long list title/ });
-    expect(loading.querySelector('[data-slot="spinner"]')).not.toBeNull();
+    const loader = loading.querySelector('[data-slot="intent-mark-loader"]');
+    expect(loader).not.toBeNull();
+    expect(loader?.getAttribute('width')).toBe('14');
     expect(selected.querySelector('.items-baseline')).not.toBeNull();
     expect(container.querySelector('[data-slot="list-section-content"]')?.className).toContain(
       'text-left',

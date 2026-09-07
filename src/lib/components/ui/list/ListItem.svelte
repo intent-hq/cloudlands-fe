@@ -4,7 +4,7 @@
   import { Fa } from 'svelte-fa';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import { Button, type ButtonProps } from '$lib/components/ui/button';
-  import { Spinner } from '$lib/components/ui/indicators';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { proximityItem } from '$lib/interaction';
   import { getListProximityContext } from './list-context';
   import { untrack } from 'svelte';
@@ -100,7 +100,7 @@
   const sizeConfig = {
     sm: {
       padding: 'min-h-7 px-2 py-0.5',
-      basePaddingX: 0, // px value for inline style
+      basePaddingX: 8, // px value for inline style
       iconSize: '12',
       titleSize: 'type-body',
       subtitleSize: 'type-caption',
@@ -108,7 +108,7 @@
     },
     md: {
       padding: 'min-h-8 px-2 py-1.5',
-      basePaddingX: 0, // px value for inline style
+      basePaddingX: 8, // px value for inline style
       iconSize: '14',
       titleSize: 'type-body',
       subtitleSize: 'type-caption',
@@ -149,9 +149,7 @@
     info: 'bg-info/20 text-info',
   };
 
-  let leftIndent = $derived(
-    indent > 0 ? indent * indentSize + config.basePaddingX : config.basePaddingX,
-  );
+  let leftIndent = $derived(indent * indentSize + config.basePaddingX);
 </script>
 
 <Button
@@ -182,7 +180,7 @@
     // Custom class
     className,
   )}
-  style={`margin-left: ${leftIndent}px; padding-right: ${config.basePaddingX}px; width: calc(100% - ${leftIndent}px);`}
+  style={`padding-left: ${leftIndent}px !important; padding-right: ${config.basePaddingX}px !important;`}
   {disabled}
   {onclick}
   onfocus={(event) => {
@@ -202,7 +200,7 @@
     <!-- Icon Section -->
     {#if loading}
       <div class="flex w-3.5 shrink-0 items-center justify-center">
-        <Spinner seed={title || 'list-loading'} size={3} gap={1} />
+        <IntentMarkLoader size={14} />
       </div>
     {:else if iconSnippet}
       <div class={cn('shrink-0 flex items-center justify-center', iconClass)}>
