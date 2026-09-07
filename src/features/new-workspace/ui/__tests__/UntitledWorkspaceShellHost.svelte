@@ -14,6 +14,7 @@
     pendingCapabilities?: boolean;
     providerMissing?: boolean;
     offline?: boolean;
+    remoteDaemonPathRejection?: string;
   }
 
   const draft: WorkspaceDraft = {
@@ -33,7 +34,12 @@
     updatedAt: '2026-01-15T12:00:00.000Z',
   };
 
-  let { pendingCapabilities = false, providerMissing = false, offline = false }: Props = $props();
+  let {
+    pendingCapabilities = false,
+    providerMissing = false,
+    offline = false,
+    remoteDaemonPathRejection,
+  }: Props = $props();
   let controllerState = $state(buildState());
   let startCount = $state(0);
   let flushCount = $state(0);
@@ -106,6 +112,7 @@
   state={controllerState}
   presentation={{
     requiredCapabilities: ['provider'],
+    remoteDaemonPathRejection,
     coordinator: providerMissing
       ? {
           provider: {

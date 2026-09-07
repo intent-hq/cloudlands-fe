@@ -17,6 +17,7 @@
   } from '../controller';
   import SourceCard, { type SourcePickerMode } from './SourceCard.svelte';
   import ProjectSetupPanel from './setup/ProjectSetupPanel.svelte';
+  import RemoteDaemonPathGuidance from './RemoteDaemonPathGuidance.svelte';
   import {
     coordinatorStateFor,
     isEditorEnabled,
@@ -293,11 +294,15 @@
 </script>
 
 <main
-  class="h-full min-h-0 w-full overflow-hidden text-foreground"
+  class="relative h-full min-h-0 w-full overflow-hidden text-foreground"
   aria-label={m.newWorkspace_shell_ariaLabel()}
   data-controller-phase={controllerState.phase}
   data-save-state={saveState}
 >
+  {#if presentation.remoteDaemonPathRejection}
+    <RemoteDaemonPathGuidance path={presentation.remoteDaemonPathRejection} />
+  {/if}
+
   {#snippet sidebarContent()}
     <SidebarSkeleton />
   {/snippet}

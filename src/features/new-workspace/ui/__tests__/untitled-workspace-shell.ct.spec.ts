@@ -44,6 +44,16 @@ test.describe('new-workspace shell', () => {
     await expect(component.getByTestId('draft-start')).toBeDisabled();
   });
 
+  test('exposes remote-path repair guidance from the shell main region', async ({ mount }) => {
+    const component = await mount(UntitledWorkspaceShellHost, {
+      props: { remoteDaemonPathRejection: '/renderer/only/path' },
+    });
+    const shell = component.getByRole('main', { name: 'Untitled workspace' });
+
+    await expect(shell.getByRole('alert')).toContainText(/daemon host/i);
+    await expect(shell.getByRole('alert')).toContainText('/renderer/only/path');
+  });
+
   test('selects an inline provider when none is ready', async ({ mount }) => {
     const component = await mount(UntitledWorkspaceShellHost, {
       props: { providerMissing: true },

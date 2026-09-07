@@ -51,6 +51,7 @@ interface ProgressPresentation {
 
 export interface NewWorkspacePresentation {
   host?: DaemonHostRepairTarget;
+  remoteDaemonPathRejection?: string;
   coordinator?: CoordinatorPresentation;
   source?: SourcePresentation;
   progress?: ProgressPresentation;
