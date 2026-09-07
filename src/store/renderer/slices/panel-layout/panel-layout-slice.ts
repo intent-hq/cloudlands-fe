@@ -441,10 +441,11 @@ export const closeFocusedPanelTab = createAction(
 
 export const reopenClosedTab = createAction(
   'panelLayout/reopenClosedTab',
-  (wsId: string, timestamp?: number, closedTabId?: string) => ({
+  (wsId: string, timestamp?: number, closedTabId?: string, targetPanelId?: string) => ({
     wsId,
     newTabId: generateTabId(),
     closedTabId,
+    targetPanelId,
     timestamp: timestamp ?? Date.now(),
   }),
 );
@@ -2888,7 +2889,7 @@ panelLayoutReducer.with(reopenClosedPanelColumn, (state, { payload }) => {
 });
 // --- Reopen Closed Tab ---
 panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
-  const { wsId, newTabId, closedTabId, timestamp } = payload;
+  const { wsId, newTabId, closedTabId, targetPanelId: requestedPanelId, timestamp } = payload;
   let ws = getWorkspaceState(state, wsId);
   if (ws.recentlyClosed.length === 0) return state;
 
@@ -2902,7 +2903,12 @@ panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
   ws = saveToHistory(ws, timestamp);
   const closed = ws.recentlyClosed[closedIndex];
   const rest = ws.recentlyClosed.filter((_, index) => index !== closedIndex);
-  const targetPanelId = ws.panels[closed.panelId] ? closed.panelId : ws.focusedPanelId;
+  const targetPanelId =
+    requestedPanelId && ws.panels[requestedPanelId]
+      ? requestedPanelId
+      : ws.panels[closed.panelId]
+        ? closed.panelId
+        : ws.focusedPanelId;
   if (!targetPanelId || !ws.panels[targetPanelId]) return state;
 
   const panel = ws.panels[targetPanelId];
