@@ -77,6 +77,13 @@
       return;
     }
     const settle = (ok: boolean) => dispatch({ type: 'forward-settled', seq: command.seq, ok });
+    // Nothing reaches an offline host: a navigation the guest still makes
+    // (keyboard, in-page script) is treated as rejected, so the mirror
+    // returns to the canonical URL instead of drifting from the host.
+    if (!host.connected) {
+      queueMicrotask(() => settle(false));
+      return;
+    }
     try {
       Promise.resolve(onNavigate?.(command.url)).then(
         () => settle(true),

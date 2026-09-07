@@ -69,6 +69,8 @@ export interface ViewerNavigationState {
   pendingForward: { seq: number; followSeq: number } | null;
   /** The canonical URL as last rendered (valid or not). */
   canonicalUrl: string | null;
+  /** Whether the webview can navigate, as last rendered with the canonical URL. */
+  webviewReady: boolean;
   /** The URL the mirror last committed to — issued as a follow-load or forwarded. */
   targetUrl: string | null;
   /** Where the mirror webview is, as last reported by its main-frame navigations. */
@@ -86,6 +88,7 @@ export function createViewerNavigationState(options: {
     forwardSeq: 0,
     pendingForward: null,
     canonicalUrl: null,
+    webviewReady: false,
     targetUrl: null,
     mirrorUrl: null,
     isValidBrowserUrl: options.isValidBrowserUrl,
@@ -107,10 +110,14 @@ function issueRequest(state: ViewerNavigationState, url: string): ViewerNavigati
   return [issueFollow(state, url), issueForward(state, url)];
 }
 
-function issueForward(state: ViewerNavigationState, url: string): ViewerNavigationCommand {
+function issueForward(
+  state: ViewerNavigationState,
+  url: string,
+  options: { retarget: boolean } = { retarget: true },
+): ViewerNavigationCommand {
   state.forwardSeq += 1;
   state.pendingForward = { seq: state.forwardSeq, followSeq: state.followSeq };
-  state.targetUrl = url;
+  if (options.retarget) state.targetUrl = url;
   return { type: 'forward', seq: state.forwardSeq, url };
 }
 
@@ -121,6 +128,7 @@ export function applyViewerNavigationEvent(
 ): ViewerNavigationCommand[] {
   switch (event.type) {
     case 'canonical': {
+      state.webviewReady = event.webviewReady;
       if (!event.url) return [];
       state.canonicalUrl = event.url;
       // The very first canonical URL is what the webview was created with
@@ -165,6 +173,9 @@ export function applyViewerNavigationEvent(
     }
 
     case 'follow-settled': {
+      // Only an attached guest settles a load; the initial load's settlement
+      // arrives with the readiness events themselves.
+      state.webviewReady = true;
       if (event.seq === state.activeFollowSeq) state.activeFollowSeq = null;
       return [];
     }
@@ -175,11 +186,14 @@ export function applyViewerNavigationEvent(
       state.pendingForward = null;
       if (event.ok) return [];
       // The host stayed where it was: bring the mirror back to the canonical
-      // URL — unless a follow already moved it on, or it is already there.
+      // URL — unless a follow already moved it on, or it is already there and
+      // no follow is carrying it elsewhere (a request's own load may be
+      // rejected before its document commits).
       if (state.followSeq !== pending.followSeq) return [];
       const canonical = state.canonicalUrl;
       if (!canonical || !state.isValidBrowserUrl(canonical)) return [];
-      if (canonical === state.mirrorUrl) {
+      const stayingPut = state.activeFollowSeq === null || state.targetUrl === canonical;
+      if (canonical === state.mirrorUrl && stayingPut) {
         state.targetUrl = canonical;
         return [];
       }
@@ -190,6 +204,9 @@ export function applyViewerNavigationEvent(
       // The host request does not wait for the mirror load: the URL may be
       // reachable only from the host, or redirect differently here.
       if (!event.url || !state.isValidBrowserUrl(event.url)) return [];
+      // Before the webview can navigate only the host is asked; its echo is
+      // then followed once ready, so the target is left as it is.
+      if (!state.webviewReady) return [issueForward(state, event.url, { retarget: false })];
       return issueRequest(state, event.url);
     }
 

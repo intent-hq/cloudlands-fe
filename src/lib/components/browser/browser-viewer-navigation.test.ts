@@ -242,6 +242,42 @@ const scenarios: Array<{ name: string; steps: Step[] }> = [
     ],
   },
   {
+    name: 'a request rejected before the mirror load committed still brings the mirror back',
+    steps: [
+      ...opened('https://a/'),
+      [address('https://b/'), [load(2, 'https://b/'), forward(1, 'https://b/')]],
+      [forwardSettled(1, false), [load(3, 'https://a/')]],
+      [followSettled(2), []],
+      [guest('https://a/'), []],
+      [followSettled(3), []],
+      [canonical('https://a/'), []],
+    ],
+  },
+  {
+    name: 'an address typed before the webview is ready asks the host and follows its echo once ready',
+    steps: [
+      [canonical('https://a/', false), []],
+      [address('https://b/'), [forward(1, 'https://b/')]],
+      [canonical('https://b/', false), []],
+      [guest('https://a/'), []],
+      [followSettled(1), []],
+      [forwardSettled(1, true), []],
+      [canonical('https://b/'), [load(2, 'https://b/')]],
+      [guest('https://b/'), []],
+      [followSettled(2), []],
+    ],
+  },
+  {
+    name: 'a rejected refresh does not reload the canonical URL a second time',
+    steps: [
+      ...opened('https://a/'),
+      [refresh, [load(2, 'https://a/'), forward(1, 'https://a/')]],
+      [forwardSettled(1, false), []],
+      [guest('https://a/'), []],
+      [followSettled(2), []],
+    ],
+  },
+  {
     name: 'an address the mirror may not load is not requested either',
     steps: [...opened('https://a/'), [address('http://b/'), []], [address(''), []]],
   },
