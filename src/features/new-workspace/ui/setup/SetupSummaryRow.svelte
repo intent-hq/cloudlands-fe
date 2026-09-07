@@ -68,5 +68,8 @@
       .filter(Boolean)
       .join(' · ')}
   </span>
+  <span class="type-caption max-w-24 shrink-0 truncate text-muted-foreground sm:hidden">
+    {readinessLabel}
+  </span>
   <Fa icon={faChevronDown} class="size-3.5 shrink-0 text-muted-foreground" />
 </button>

@@ -116,6 +116,7 @@ test('selected source setup expands and opens its Change picker', async ({ mount
   const change = component.getByRole('button', { name: 'Change' });
   await change.focus();
   await expect(change).toBeFocused();
+  expect((await change.boundingBox())?.height).toBeGreaterThanOrEqual(32);
   await change.click();
   await expect(page.getByTestId('draft-source-picker')).toBeVisible();
   await page.getByRole('button', { name: 'Select a repository' }).click();

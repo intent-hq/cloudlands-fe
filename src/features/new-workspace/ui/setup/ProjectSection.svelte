@@ -173,7 +173,10 @@
   }
 
   .change-project {
+    display: inline-flex;
     flex: none;
+    min-height: var(--control-height-medium);
+    align-items: center;
     border-radius: var(--radius-md);
     padding: 0.375rem 0.625rem;
     color: var(--foreground);

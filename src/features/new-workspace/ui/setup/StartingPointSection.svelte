@@ -55,7 +55,8 @@
       <div class="flex gap-1 border-b border-border p-1">
         <button
           type="button"
-          class="type-caption rounded-md px-2 py-1 {issueSource === 'github-issues'
+          class="type-caption min-h-(--control-height-medium) rounded-md px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring {issueSource ===
+          'github-issues'
             ? 'bg-muted text-foreground'
             : 'text-muted-foreground'}"
           aria-pressed={issueSource === 'github-issues'}
@@ -64,7 +65,8 @@
         >
         <button
           type="button"
-          class="type-caption rounded-md px-2 py-1 {issueSource === 'github-prs'
+          class="type-caption min-h-(--control-height-medium) rounded-md px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring {issueSource ===
+          'github-prs'
             ? 'bg-muted text-foreground'
             : 'text-muted-foreground'}"
           aria-pressed={issueSource === 'github-prs'}

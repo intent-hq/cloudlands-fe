@@ -91,6 +91,39 @@ for (const { theme, width } of SURFACE_CONTRACTS) {
   });
 }
 
+test('issue source controls retain compact density with visible keyboard focus', async ({
+  mount,
+}) => {
+  const component = await mount(ScenarioContractHost, {
+    props: { scenarioId: 'setup-issue-picked' },
+  });
+  const issues = component.getByRole('button', { name: 'Issues', exact: true });
+  const pullRequests = component.getByRole('button', { name: 'Pull requests', exact: true });
+
+  await expect(issues).toHaveAttribute('aria-pressed', 'true');
+  for (const control of [issues, pullRequests]) {
+    expect((await control.boundingBox())?.height).toBeGreaterThanOrEqual(32);
+  }
+  await pullRequests.focus();
+  await expect(pullRequests).toBeFocused();
+  await expect(pullRequests).toHaveAttribute('aria-pressed', 'false');
+  expect(await pullRequests.evaluate((node) => getComputedStyle(node).outlineStyle)).not.toBe(
+    'none',
+  );
+});
+
+test('collapsed setup keeps its readiness text visible in a narrow pane', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 900 });
+  const component = await mount(ScenarioContractHost, {
+    props: { scenarioId: 'setup-collapsed-summary' },
+  });
+
+  await expect(component.getByText('Ready', { exact: true })).toBeVisible();
+});
+
 for (const testCase of SCENARIOS) {
   test(`setup panel: ${testCase}`, async ({ mount, page }) => {
     const scenarioId =
