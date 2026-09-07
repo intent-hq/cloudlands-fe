@@ -396,7 +396,9 @@ export function reduceDetailed(
           })
         : ignored(state);
     case 'capability.result':
-      return handled(updateCapability(state, event));
+      return state.capabilities[event.capability] === event.status
+        ? ignored(state)
+        : handled(updateCapability(state, event));
     case 'start.requested': {
       if ((state.phase !== 'pristine' && state.phase !== 'editing') || !state.draft) {
         return ignored(state);

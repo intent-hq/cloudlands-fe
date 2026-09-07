@@ -15,7 +15,11 @@
   import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import { selectIsActiveProviderAvailable } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectWorkspaceCreationDefaultParentPath } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-selectors';
-  import { selectDaemonHostRepairTarget } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import {
+    selectDaemonConnectionGeneration,
+    selectDaemonHealth,
+    selectDaemonHostRepairTarget,
+  } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { stageNewWorkspaceFiles } from './new-workspace-attachments';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
@@ -35,7 +39,14 @@
   const hasCheckedProviders$ = selectHasCheckedOnce();
   const activeProviderAvailable$ = selectIsActiveProviderAvailable();
   const defaultParentPath$ = selectWorkspaceCreationDefaultParentPath();
+  const daemonHealth$ = selectDaemonHealth();
+  const daemonConnectionGeneration$ = selectDaemonConnectionGeneration();
   const daemonHostRepairTarget$ = selectDaemonHostRepairTarget();
+
+  $effect(() => {
+    if ($daemonConnectionGeneration$ === 0 && $daemonHealth$ === 'down') return;
+    routeController.setDaemonConnected($daemonHealth$ !== 'down');
+  });
 
   $effect(() => {
     if (!$hasCheckedProviders$) return;

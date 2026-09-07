@@ -17,6 +17,7 @@ interface NewWorkspaceRouteController {
   start(listener: (state: ControllerState) => void): Promise<void>;
   edit(patch: Partial<DraftInput>): void;
   dispatch: DraftTransactionRunner['dispatch'];
+  setDaemonConnected(connected: boolean): void;
   flush(): void;
   stop(): void;
 }
@@ -50,6 +51,11 @@ export function createNewWorkspaceRouteController(options: {
 }): NewWorkspaceRouteController {
   let runner: DraftTransactionRunner | null = null;
   let stopped = false;
+  let daemonConnected: boolean | undefined;
+  const applyDaemonConnection = () => {
+    if (!runner || daemonConnected === undefined) return;
+    runner.dispatch({ type: daemonConnected ? 'reconnect' : 'daemon.offline' });
+  };
   return {
     async start(listener) {
       let requestedDraftId = options.requestedDraftId;
@@ -66,12 +72,18 @@ export function createNewWorkspaceRouteController(options: {
         listener(state);
       });
       runner.start(createInitialControllerState(1, initialInput(options.startInput)));
+      applyDaemonConnection();
     },
     edit(patch) {
       runner?.dispatch({ type: 'user.edited', patch });
     },
     dispatch(event) {
       runner?.dispatch(event);
+    },
+    setDaemonConnected(connected) {
+      if (daemonConnected === connected) return;
+      daemonConnected = connected;
+      applyDaemonConnection();
     },
     flush() {
       runner?.flush();

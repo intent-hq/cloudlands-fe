@@ -173,6 +173,27 @@ describe('new workspace route controller', () => {
     expect(mocks.runnerStop).toHaveBeenCalledOnce();
   });
 
+  it('moves one mounted draft offline once and restores it after daemon reconnect', async () => {
+    const controller = createNewWorkspaceRouteController({
+      startInput: { text: 'Keep this text' },
+      requestedDraftId: null,
+    });
+    const observed: ControllerState[] = [];
+    await controller.start((state) => observed.push(state));
+    controller.dispatch({ type: 'backend.connected', generation: 1, ownerClientId: 'client-1' });
+    controller.setDaemonConnected(true);
+    controller.setDaemonConnected(false);
+    controller.setDaemonConnected(false);
+    controller.edit({ intentText: 'Typed offline' });
+    controller.setDaemonConnected(true);
+
+    expect(observed.filter(({ phase }) => phase === 'offline')).toHaveLength(2);
+    expect(observed.at(-1)).toMatchObject({
+      phase: 'boot',
+      input: { intentText: 'Typed offline' },
+    });
+  });
+
   it('restores the newest owned draft when the route has no draft selector', async () => {
     const controller = createNewWorkspaceRouteController({
       startInput: {},

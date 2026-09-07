@@ -251,6 +251,19 @@ describe('new-workspace controller', () => {
     expect(state.phase).toBe('promoting');
   });
 
+  it('ignores an unchanged capability result so reactive presenters cannot cycle', () => {
+    const state = restore(draft());
+
+    const transition = reduceDetailed(state, {
+      type: 'capability.result',
+      generation: GENERATION,
+      capability: 'provider',
+      status: state.capabilities.provider,
+    });
+
+    expect(transition).toEqual({ disposition: 'ignored', state });
+  });
+
   it('rechecks host capabilities after PATH changes without touching acknowledged input', () => {
     let state = restore(draft({ intentText: 'Keep this', attachments: [{ id: 'file-1' }] }));
     state = reduce(state, {
