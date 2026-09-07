@@ -11,6 +11,7 @@
     changes?: Array<{
       filePath: string;
       toolCallId: string;
+      action?: string;
       additions?: number;
       deletions?: number;
     }>;
@@ -35,6 +36,7 @@
       data-file-path={change.filePath}
       data-additions={change.additions}
       data-deletions={change.deletions}
+      data-action={change.action}
     >
       <!-- i18n-ignore (test mock) -->
       <button

@@ -1,13 +1,39 @@
 import { describe, expect, it } from 'vitest';
+import { ChangeStage, type TrackedChange } from '../types';
 import {
   DEFAULT_FILE_TRACKING_EXCLUDED_PATH_SEGMENTS,
   hasDefaultFileTrackingExcludedSegment,
+  isUntrackedChange,
+  isUntrackedStatusCode,
   partitionDefaultFileTrackingExcludes,
   shouldExcludeFromDefaultFileTracking,
   summarizeDefaultFileTrackingExcludes,
 } from '../utils/tracking-excludes';
 
 describe('tracking-excludes', () => {
+  it('identifies only unstaged added tracked-change rows as untracked', () => {
+    const change: TrackedChange = {
+      id: 'change-1',
+      file: 'src/new.ts',
+      relativePath: 'src/new.ts',
+      stage: ChangeStage.Unstaged,
+      status: 'added',
+      stats: { additions: 1, deletions: 0 },
+      attribution: { timestamp: 0 },
+    };
+
+    expect(isUntrackedChange(change)).toBe(true);
+    expect(isUntrackedChange({ ...change, stage: ChangeStage.Staged })).toBe(false);
+    expect(isUntrackedChange({ ...change, status: 'modified' })).toBe(false);
+    expect(isUntrackedChange({ ...change, stage: ChangeStage.Committed })).toBe(false);
+  });
+
+  it('recognizes raw and normalized secondary-root untracked status codes', () => {
+    expect(isUntrackedStatusCode('??')).toBe(true);
+    expect(isUntrackedStatusCode('?')).toBe(true);
+    expect(isUntrackedStatusCode('M')).toBe(false);
+  });
+
   it('includes the default generated dependency/cache directory segments', () => {
     expect(DEFAULT_FILE_TRACKING_EXCLUDED_PATH_SEGMENTS).toEqual(
       expect.arrayContaining([

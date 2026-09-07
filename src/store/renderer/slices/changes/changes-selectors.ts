@@ -7,6 +7,7 @@
 import { store } from '../../store';
 import { emptyAgentLineStatsRequestState, emptyWorkspaceState } from './changes-slice';
 import { ChangeStage } from '$features/file-tracking/types';
+import { mapStatusToAction } from '$features/file-tracking/utils/change-status';
 import type { AppSelector, StoreState } from '$store/renderer/types';
 import type {
   AcceptChangesState,
@@ -128,19 +129,6 @@ export const selectWorkspaceFileChanges: AppSelector<FileLineChange[], [wsId: st
       action: mapStatusToAction(c.status),
     }));
   });
-
-function mapStatusToAction(status?: string): 'create' | 'modify' | 'delete' {
-  switch (status) {
-    case 'added':
-      return 'create';
-    case 'deleted':
-      return 'delete';
-    case 'modified':
-    case 'renamed':
-    default:
-      return 'modify';
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Agent stats selectors (absorbed from line-changes)

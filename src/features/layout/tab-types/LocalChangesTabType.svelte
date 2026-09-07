@@ -44,6 +44,11 @@
   } from '$store/renderer/slices/git/git-selectors';
   import { loadSecondaryRootGit } from '$store/renderer/slices/git/git-slice';
   import { selectGitRoots } from '$store/renderer/slices/git-roots/git-roots-selectors';
+  import { mapStatusToAction } from '$features/file-tracking/utils/change-status';
+  import {
+    isUntrackedChange,
+    isUntrackedStatusCode,
+  } from '$features/file-tracking/utils/tracking-excludes';
 
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();
@@ -96,20 +101,22 @@
   const localChangesForPanel = $derived.by(() => {
     if (gitRootId) {
       return [
-        ...(rootStatus?.files ?? []).map((file) => ({
-          filePath: `${effectiveRootPath}/${file.path}`,
-          action: 'modify' as const,
-          additions: (file as typeof file & { additions?: number }).additions ?? 0,
-          deletions: (file as typeof file & { deletions?: number }).deletions ?? 0,
-          toolName: 'local',
-          toolCallId: `root-${gitRootId}-${file.staged}-${file.path}`,
-          staged: file.staged,
-          category: file.staged ? ('staged' as const) : ('unstaged' as const),
-        })),
+        ...(rootStatus?.files ?? [])
+          .filter((file) => !isUntrackedStatusCode(file.status))
+          .map((file) => ({
+            filePath: `${effectiveRootPath}/${file.path}`,
+            action: mapStatusToAction(file.status),
+            additions: (file as typeof file & { additions?: number }).additions ?? 0,
+            deletions: (file as typeof file & { deletions?: number }).deletions ?? 0,
+            toolName: 'local',
+            toolCallId: `root-${gitRootId}-${file.staged}-${file.path}`,
+            staged: file.staged,
+            category: file.staged ? ('staged' as const) : ('unstaged' as const),
+          })),
         ...rootCommits.flatMap((commit) =>
           (rootCommitFiles[commit.hash] ?? []).map((file) => ({
             filePath: `${effectiveRootPath}/${file.path}`,
-            action: 'modify' as const,
+            action: mapStatusToAction(file.status),
             additions: file.additions ?? 0,
             deletions: file.deletions ?? 0,
             toolName: 'local',
@@ -122,7 +129,7 @@
         ),
       ];
     }
-    const unstaged = $ftChanges$.filter((c) => c.stage === 'unstaged');
+    const unstaged = $ftChanges$.filter((c) => c.stage === 'unstaged' && !isUntrackedChange(c));
     const staged = $ftChanges$.filter((c) => c.stage === 'staged');
     return [
       ...unstaged.map((c) => {
@@ -131,7 +138,7 @@
           rawPath && isAbsolutePath(rawPath) ? rawPath : `${workspacePath}/${rawPath}`;
         return {
           filePath,
-          action: 'modify' as const,
+          action: mapStatusToAction(c.status),
           additions: c.stats?.additions || 0,
           deletions: c.stats?.deletions || 0,
           toolName: 'local',
@@ -149,7 +156,7 @@
           rawPath && isAbsolutePath(rawPath) ? rawPath : `${workspacePath}/${rawPath}`;
         return {
           filePath,
-          action: 'modify' as const,
+          action: mapStatusToAction(c.status),
           additions: c.stats?.additions || 0,
           deletions: c.stats?.deletions || 0,
           toolName: 'local',
@@ -163,7 +170,10 @@
       }),
       ...allCommits.flatMap((commit) =>
         (commit.files || []).map(
-          (file: { path?: string; additions?: number; deletions?: number } | string) => {
+          (
+            file:
+              { path?: string; additions?: number; deletions?: number; status?: string } | string,
+          ) => {
             const filePath = typeof file === 'string' ? file : file.path || '';
             const normalizedPath =
               filePath && isAbsolutePath(filePath) ? filePath : `${workspacePath}/${filePath}`;
@@ -171,7 +181,7 @@
             const deletions = typeof file === 'string' ? 0 : file.deletions || 0;
             return {
               filePath: normalizedPath,
-              action: 'modify' as const,
+              action: mapStatusToAction(typeof file === 'string' ? undefined : file.status),
               additions,
               deletions,
               toolName: 'local',

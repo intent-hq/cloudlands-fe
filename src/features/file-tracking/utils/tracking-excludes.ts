@@ -1,3 +1,5 @@
+import { ChangeStage, type TrackedChange } from '../types';
+
 // App-level tracking suppression for untracked generated/dependency paths.
 // Matching is exact by path segment; this does not mutate gitignore or hide
 // tracked changes. Values inlined here from the retiring
@@ -45,7 +47,7 @@ export function hasDefaultFileTrackingExcludedSegment(filePath: string): boolean
 }
 
 function isUntrackedCreateCandidate(candidate: FileTrackingExcludeCandidate): boolean {
-  if (candidate.statusCode === '??') {
+  if (candidate.statusCode === '??' || candidate.statusCode === '?') {
     return true;
   }
 
@@ -55,6 +57,17 @@ function isUntrackedCreateCandidate(candidate: FileTrackingExcludeCandidate): bo
   }
 
   return candidate.stage?.toLowerCase() !== 'staged';
+}
+
+export function isUntrackedChange(change: TrackedChange): boolean {
+  return (
+    change.stage === ChangeStage.Unstaged &&
+    isUntrackedCreateCandidate({ action: change.status, stage: change.stage })
+  );
+}
+
+export function isUntrackedStatusCode(statusCode?: string): boolean {
+  return isUntrackedCreateCandidate({ statusCode });
 }
 
 export function shouldExcludeFromDefaultFileTracking(

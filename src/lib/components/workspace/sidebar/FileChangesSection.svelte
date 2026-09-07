@@ -17,6 +17,7 @@
   } from '$store/renderer/slices/changes/changes-selectors';
   import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
+  import { isUntrackedChange } from '$features/file-tracking/utils/tracking-excludes';
   import {
     discardFiles as discardFilesViaSeam,
     stageFiles as stageFilesViaSeam,
@@ -161,23 +162,27 @@
   // Derived change lists
   const unstagedChanges = $derived($ftUnstagedChanges$ ?? []);
   const stagedChanges = $derived($ftStagedChanges$ ?? []);
+  const unstagedMapChanges = $derived(
+    unstagedChanges.filter((change) => !isUntrackedChange(change)),
+  );
+  const stagedMapChanges = $derived(stagedChanges.filter((change) => !isUntrackedChange(change)));
   const hasUnstaged = $derived(unstagedChanges.length > 0);
   const hasStaged = $derived(stagedChanges.length > 0);
   const unstagedMapDocument = $derived(
-    buildDiffMapDocument(unstagedChanges, {
+    buildDiffMapDocument(unstagedMapChanges, {
       source: {
         kind: 'working-tree',
         workspaceId,
-        snapshotId: `unstaged:${unstagedChanges.map((change) => change.id).join('|')}`,
+        snapshotId: `unstaged:${unstagedMapChanges.map((change) => change.id).join('|')}`,
       },
     }),
   );
   const stagedMapDocument = $derived(
-    buildDiffMapDocument(stagedChanges, {
+    buildDiffMapDocument(stagedMapChanges, {
       source: {
         kind: 'working-tree',
         workspaceId,
-        snapshotId: `staged:${stagedChanges.map((change) => change.id).join('|')}`,
+        snapshotId: `staged:${stagedMapChanges.map((change) => change.id).join('|')}`,
       },
     }),
   );

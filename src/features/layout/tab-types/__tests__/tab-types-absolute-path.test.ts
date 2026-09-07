@@ -289,12 +289,12 @@ function setUncWorkspace() {
   };
 }
 
-function makeTrackedChange(path: string, stage: string) {
+function makeTrackedChange(path: string, stage: string, status = 'modified') {
   return {
     id: `change-${stage}-${path}`,
     file: path,
     relativePath: path,
-    status: 'modified',
+    status,
     stage,
     stats: { additions: 1, deletions: 1 },
     attribution: { timestamp: 0 },
@@ -305,6 +305,11 @@ function makeTrackedChange(path: string, stage: string) {
 async function findChangePaths(): Promise<string[]> {
   await screen.findByTestId('chat-changes-panel');
   return screen.getAllByTestId('chat-change').map((el) => el.getAttribute('data-file-path') ?? '');
+}
+
+async function findChangeActions(): Promise<string[]> {
+  await screen.findByTestId('chat-changes-panel');
+  return screen.getAllByTestId('chat-change').map((el) => el.getAttribute('data-action') ?? '');
 }
 
 describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
@@ -594,6 +599,67 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
         ),
       ).toBe('false');
     });
+
+    it('filters untracked primary changes and preserves real file actions', async () => {
+      mockReduxState.ftChanges = [
+        makeTrackedChange('src/untracked.ts', 'unstaged', 'added'),
+        makeTrackedChange('src/deleted.ts', 'unstaged', 'deleted'),
+        makeTrackedChange('src/staged.ts', 'staged', 'added'),
+      ];
+      mockReduxState.ftCommits = [
+        {
+          hash: 'abc123',
+          message: 'commit message',
+          timestamp: 0,
+          files: [{ path: 'src/committed.ts', additions: 1, deletions: 1, status: 'modified' }],
+        },
+      ];
+
+      render(LocalChangesTabType, {
+        props: {
+          tab: { id: 'tab-local', type: 'local-changes', title: 'Local', closable: true },
+          workspaceId: 'ws-1',
+          isActive: true,
+        },
+      });
+
+      expect(await findChangePaths()).toEqual([
+        '/repo/src/deleted.ts',
+        '/repo/src/staged.ts',
+        '/repo/src/committed.ts',
+      ]);
+      expect(await findChangeActions()).toEqual(['delete', 'create', 'modify']);
+    });
+
+    it('filters raw and normalized secondary-root untracked rows', async () => {
+      mockReduxState.gitRoots = [{ id: 'root-9', path: '/repo/packages/sub' }];
+      mockReduxState.secondaryRootGit.status.files = [
+        { path: 'raw-untracked.ts', status: '??', staged: false },
+        { path: 'normalized-untracked.ts', status: '?', staged: false },
+        { path: 'added.ts', status: 'A', staged: true },
+        { path: 'deleted.ts', status: 'D', staged: false },
+      ] as never;
+
+      render(LocalChangesTabType, {
+        props: {
+          tab: {
+            id: 'tab-local-root',
+            type: 'local-changes',
+            title: 'Local',
+            closable: true,
+            data: { gitRootId: 'root-9' },
+          },
+          workspaceId: 'ws-1',
+          isActive: true,
+        },
+      });
+
+      expect(await findChangePaths()).toEqual([
+        '/repo/packages/sub/added.ts',
+        '/repo/packages/sub/deleted.ts',
+      ]);
+      expect(await findChangeActions()).toEqual(['create', 'delete']);
+    });
   });
 
   describe('ChatChangesTabType', () => {
@@ -635,13 +701,13 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
   });
 
   describe('ChangesTabType', () => {
-    function renderChanges(commitFilePath: string) {
+    function renderChanges(commitFilePath: string, status?: string) {
       mockReduxState.ftCommits = [
         {
           hash: 'abc123',
           message: 'commit message',
           timestamp: 0,
-          files: [{ path: commitFilePath, additions: 1, deletions: 1 }],
+          files: [{ path: commitFilePath, additions: 1, deletions: 1, status }],
         },
       ];
       return render(ChangesTabType, {
@@ -669,6 +735,15 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
     it('still joins relative paths under the workspace root', async () => {
       renderChanges('src/x.ts');
       expect(await findChangePaths()).toEqual(['/repo/src/x.ts']);
+    });
+
+    it.each([
+      ['added', 'create'],
+      ['deleted', 'delete'],
+      ['modified', 'modify'],
+    ])('maps commit status %s to action %s', async (status, action) => {
+      renderChanges('src/x.ts', status);
+      expect(await findChangeActions()).toEqual([action]);
     });
 
     it('passes a UNC in-root path through without double-joining', async () => {

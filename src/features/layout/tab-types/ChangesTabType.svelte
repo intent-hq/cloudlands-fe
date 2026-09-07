@@ -34,6 +34,7 @@
   import { appClient } from '$lib/client';
   import { isAbsolutePath } from '$lib/utils/path-utils';
   import { store as appStore } from '$store/renderer/store';
+  import { mapStatusToAction } from '$features/file-tracking/utils/change-status';
 
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();
@@ -76,9 +77,9 @@
   const storeCommitFiles = $derived(targetCommit?.files || []);
 
   // Fetched commit details for commits not in the store (or with empty files like older commits)
-  let fetchedFileDetails = $state<Array<{ path: string; additions: number; deletions: number }>>(
-    [],
-  );
+  let fetchedFileDetails = $state<
+    Array<{ path: string; additions: number; deletions: number; status?: string }>
+  >([]);
   let fetchedCommitInfo = $state<{ author?: string; authorEmail?: string; date?: string } | null>(
     null,
   );
@@ -138,23 +139,27 @@
 
   // Build changes array for the panel
   const changes = $derived(
-    commitFiles.map((file: { path?: string; additions?: number; deletions?: number } | string) => {
-      const filePath = typeof file === 'string' ? file : file.path || '';
-      const additions = typeof file === 'string' ? 0 : file.additions || 0;
-      const deletions = typeof file === 'string' ? 0 : file.deletions || 0;
-      return {
-        filePath: isAbsolutePath(filePath) ? filePath : `${workspacePath}/${filePath}`,
-        action: 'modify' as const,
-        additions,
-        deletions,
-        toolName: 'local',
-        toolCallId: `commit-${commitHash}-${filePath}`,
-        staged: false,
-        category: 'committed' as const,
-        commitHash,
-        commitMessage,
-      };
-    }),
+    commitFiles.map(
+      (
+        file: { path?: string; additions?: number; deletions?: number; status?: string } | string,
+      ) => {
+        const filePath = typeof file === 'string' ? file : file.path || '';
+        const additions = typeof file === 'string' ? 0 : file.additions || 0;
+        const deletions = typeof file === 'string' ? 0 : file.deletions || 0;
+        return {
+          filePath: isAbsolutePath(filePath) ? filePath : `${workspacePath}/${filePath}`,
+          action: mapStatusToAction(typeof file === 'string' ? undefined : file.status),
+          additions,
+          deletions,
+          toolName: 'local',
+          toolCallId: `commit-${commitHash}-${filePath}`,
+          staged: false,
+          category: 'committed' as const,
+          commitHash,
+          commitMessage,
+        };
+      },
+    ),
   );
 
   // Register header actions
