@@ -43,6 +43,112 @@ describe('PROTOCOL.md §7 ContentBlock wire contract', () => {
     expect(out).toEqual(wire);
   });
 
+  it.each([
+    {
+      label: 'full image',
+      wire: { type: 'image', id: 'img-full', data: 'AAAA', mimeType: 'image/png' },
+    },
+    {
+      label: 'slim thumbnail',
+      wire: {
+        type: 'image',
+        id: 'img-thumbnail',
+        data: 'BBBB',
+        mimeType: 'image/webp',
+        dataTruncated: true,
+        dataIsThumbnail: true,
+        dataBytes: 8192,
+      },
+    },
+    {
+      label: 'zero-byte slim thumbnail',
+      wire: {
+        type: 'image',
+        id: 'img-zero-thumbnail',
+        data: 'BBBB',
+        mimeType: 'image/webp',
+        dataTruncated: true,
+        dataIsThumbnail: true,
+        dataBytes: 0,
+      },
+    },
+    {
+      label: 'legacy slim placeholder',
+      wire: {
+        type: 'image',
+        id: 'img-placeholder',
+        mimeType: 'image/jpeg',
+        dataTruncated: true,
+        dataBytes: 16384,
+      },
+    },
+    {
+      label: 'zero-byte legacy slim placeholder',
+      wire: {
+        type: 'image',
+        id: 'img-zero-placeholder',
+        mimeType: 'image/jpeg',
+        dataTruncated: true,
+        dataBytes: 0,
+      },
+    },
+  ])('passes a protocol-valid $label through unchanged', ({ wire }) => {
+    expect(migrateFromLegacy(wire)).toEqual(wire);
+  });
+
+  it.each([
+    ['data omitted without slim metadata', { type: 'image', mimeType: 'image/png' }],
+    ['missing MIME type', { type: 'image', data: 'AAAA' }],
+    ['empty MIME type', { type: 'image', data: 'AAAA', mimeType: '' }],
+    ['non-image MIME type', { type: 'image', data: 'AAAA', mimeType: 'text/plain' }],
+    [
+      'thumbnail marker without truncation',
+      { type: 'image', data: 'AAAA', mimeType: 'image/png', dataIsThumbnail: true },
+    ],
+    [
+      'truncated data without thumbnail marker',
+      {
+        type: 'image',
+        data: 'AAAA',
+        mimeType: 'image/png',
+        dataTruncated: true,
+        dataBytes: 8192,
+      },
+    ],
+    [
+      'placeholder with thumbnail marker',
+      {
+        type: 'image',
+        mimeType: 'image/png',
+        dataTruncated: true,
+        dataIsThumbnail: true,
+        dataBytes: 8192,
+      },
+    ],
+    [
+      'truncated placeholder without byte count',
+      { type: 'image', mimeType: 'image/png', dataTruncated: true },
+    ],
+    [
+      'truncated placeholder with fractional byte count',
+      { type: 'image', mimeType: 'image/png', dataTruncated: true, dataBytes: 3.5 },
+    ],
+    [
+      'truncated placeholder with negative byte count',
+      { type: 'image', mimeType: 'image/png', dataTruncated: true, dataBytes: -1 },
+    ],
+    [
+      'full image with orphan byte count',
+      { type: 'image', data: 'AAAA', mimeType: 'image/png', dataBytes: 4 },
+    ],
+    [
+      'explicit false truncation flag',
+      { type: 'image', data: 'AAAA', mimeType: 'image/png', dataTruncated: false },
+    ],
+  ])('rejects an image with %s', (_label, wire) => {
+    expect(() => migrateFromLegacy(wire)).toThrow(/image block/);
+  });
+
   it('strips provider metadata from an otherwise valid bounded plan snapshot', () => {
     const wire = {
       type: 'plan',

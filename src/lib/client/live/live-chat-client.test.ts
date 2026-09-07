@@ -364,6 +364,155 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     off();
   });
 
+  it('preserves a legacy slim image placeholder in seq-0 and recovery snapshots', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (transcript) => seen.push(transcript));
+    await flush();
+
+    const placeholder = {
+      type: 'image',
+      id: 'slim-image:0',
+      mimeType: 'image/png',
+      dataTruncated: true,
+      dataBytes: 8192,
+    };
+    const snapshot = {
+      ...SEEDED_SNAPSHOT,
+      messages: [
+        {
+          ...SEEDED_SNAPSHOT.messages[0],
+          id: 'slim-image',
+          role: 'assistant',
+          contentBlocks: [placeholder],
+        },
+      ],
+    };
+    snapshotPush('sub-1', 0, snapshot);
+    expect(seen.at(-1)?.messages[0].contentBlocks).toEqual([placeholder]);
+
+    deltaPush('sub-1', 3, { added: [], updated: [], removedIds: [] });
+    await flush();
+    snapshotPush('sub-2', 0, snapshot);
+    expect(seen.at(-1)?.messages[0].contentBlocks).toEqual([placeholder]);
+    off();
+  });
+
+  it('retains the same legacy slim image placeholder shape from a delta', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ id: string; contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (transcript) => seen.push(transcript));
+    await flush();
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+
+    const placeholder = {
+      type: 'image',
+      id: 'slim-delta:0',
+      mimeType: 'image/png',
+      dataTruncated: true,
+      dataBytes: 8192,
+    };
+    deltaPush('sub-1', 1, {
+      added: [{ messageId: 'slim-delta', role: 'assistant', block: placeholder }],
+      updated: [],
+      removedIds: [],
+    });
+
+    expect(
+      seen.at(-1)?.messages.find((message) => message.id === 'slim-delta')?.contentBlocks,
+    ).toEqual([placeholder]);
+    off();
+  });
+
+  it.each([
+    {
+      label: 'thumbnail',
+      image: {
+        type: 'image',
+        id: 'zero-thumbnail:0',
+        data: 'BBBB',
+        mimeType: 'image/webp',
+        dataTruncated: true,
+        dataIsThumbnail: true,
+        dataBytes: 0,
+      },
+    },
+    {
+      label: 'legacy placeholder',
+      image: {
+        type: 'image',
+        id: 'zero-placeholder:0',
+        mimeType: 'image/png',
+        dataTruncated: true,
+        dataBytes: 0,
+      },
+    },
+  ])('preserves a zero-byte slim image $label from a snapshot', async ({ image }) => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (transcript) => seen.push(transcript));
+    await flush();
+
+    snapshotPush('sub-1', 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [{ ...SEEDED_SNAPSHOT.messages[0], contentBlocks: [image] }],
+    });
+
+    expect(seen[0].messages[0].contentBlocks).toEqual([image]);
+    off();
+  });
+
+  it('isolates malformed slim image near-misses from valid snapshot siblings', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (transcript) => seen.push(transcript));
+    await flush();
+
+    const validText = { type: 'text', id: 'mixed:0', text: 'Keep me' };
+    snapshotPush('sub-1', 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [
+        {
+          ...SEEDED_SNAPSHOT.messages[0],
+          id: 'mixed',
+          contentBlocks: [
+            validText,
+            { type: 'image', id: 'mixed:1', mimeType: 'image/png' },
+            {
+              type: 'image',
+              id: 'mixed:2',
+              data: 'AAAA',
+              mimeType: 'image/png',
+              dataTruncated: true,
+              dataBytes: 8192,
+            },
+            {
+              type: 'image',
+              id: 'mixed:3',
+              mimeType: 'image/png',
+              dataTruncated: true,
+              dataBytes: -1,
+            },
+            {
+              type: 'image',
+              id: 'mixed:4',
+              mimeType: 'application/octet-stream',
+              dataTruncated: true,
+              dataBytes: 8192,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(seen[0].messages[0].contentBlocks).toEqual([validText]);
+    off();
+  });
+
   it('preserves valid empty and non-empty plan snapshots', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();

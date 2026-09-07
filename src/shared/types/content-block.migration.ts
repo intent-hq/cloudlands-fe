@@ -54,6 +54,41 @@ function canonicalPlanBlock(block: Record<string, any>): PlanContentBlock {
   };
 }
 
+const IMAGE_MIME_PATTERN = /^image\/[a-z0-9][a-z0-9.+-]*$/i;
+
+function validateImageBlock(block: Record<string, any>): void {
+  const hasData = typeof block.data === 'string';
+  const hasTruncationFlag = block.dataTruncated !== undefined;
+  const hasThumbnailFlag = block.dataIsThumbnail !== undefined;
+  const hasByteCount = block.dataBytes !== undefined;
+
+  if (typeof block.mimeType !== 'string' || !IMAGE_MIME_PATTERN.test(block.mimeType)) {
+    throw new Error(
+      `Invalid image block: required image 'mimeType'. Received: ${JSON.stringify(block)}`,
+    );
+  }
+
+  if (!hasTruncationFlag) {
+    if (!hasData || hasThumbnailFlag || hasByteCount) {
+      throw new Error(
+        `Invalid image block: full images require 'data' without slim flags. Received: ${JSON.stringify(block)}`,
+      );
+    }
+    return;
+  }
+
+  if (
+    block.dataTruncated !== true ||
+    !Number.isSafeInteger(block.dataBytes) ||
+    block.dataBytes < 0 ||
+    (hasData ? block.dataIsThumbnail !== true : hasThumbnailFlag)
+  ) {
+    throw new Error(
+      `Invalid image block: malformed slim projection metadata. Received: ${JSON.stringify(block)}`,
+    );
+  }
+}
+
 /**
  * Strictly validate a ContentBlock-shaped payload against the canonical PROTOCOL.md §7
  * shape. Returns the block unchanged on success. Throws on any divergence — the FE
@@ -314,6 +349,8 @@ function validateCanonicalBlock(block: Record<string, any>): ContentBlock {
       }
       break;
     case 'image':
+      validateImageBlock(block);
+      break;
     case 'audio':
       if (typeof block.data !== 'string' || typeof block.mimeType !== 'string') {
         throw new Error(

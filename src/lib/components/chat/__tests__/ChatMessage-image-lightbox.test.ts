@@ -453,6 +453,45 @@ describe('ChatMessage image lightbox', () => {
       } as AgentMessage;
     }
 
+    it('keeps a snapshot-ingressed legacy slim placeholder actionable for hydration', async () => {
+      const reconciler = new ChatTranscriptReconciler('agent-1');
+      const placeholder = {
+        type: 'image',
+        id: 'msg-legacy-slim:0',
+        mimeType: mockImageMimeType,
+        dataTruncated: true,
+        dataBytes: 8192,
+      };
+      reconciler.applySnapshot(0, {
+        agentId: 'agent-1',
+        messages: [
+          {
+            id: 'msg-legacy-slim',
+            agentId: 'agent-1',
+            role: 'assistant',
+            timestamp: '2026-09-07T00:00:00.000Z',
+            contentBlocks: [placeholder],
+          },
+        ],
+        truncated: false,
+        totalMessages: 1,
+      });
+      const message = reconciler.transcript().messages[0];
+      mockStoreMessage.value = message;
+      render(ChatMessage, {
+        props: { message, agentId: 'agent-1', messageId: 'msg-legacy-slim' },
+      });
+
+      await fireEvent.click(screen.getByTestId('chat-image-placeholder'));
+
+      expect(dispatchMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'chatState/messageBlockHydrationRequested',
+          payload: ['agent-1', 'msg-legacy-slim', 'msg-legacy-slim:0'],
+        }),
+      );
+    });
+
     it('clicking a truncated attachment dispatches a hydration request instead of opening', async () => {
       const message = createTruncatedMessage();
       mockStoreMessage.value = message;
