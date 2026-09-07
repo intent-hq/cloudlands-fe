@@ -2,6 +2,8 @@
   import { setContext, type Snippet } from 'svelte';
   import { Select as SelectPrimitive } from 'bits-ui';
 
+  const uid = $props.id();
+
   interface SelectItemData {
     value: string;
     label: string;
@@ -37,6 +39,8 @@
   }: Props = $props();
 
   setContext('canonical-select', {
+    triggerId: `${uid}-trigger`,
+    listboxId: `${uid}-listbox`,
     get value() {
       return value;
     },

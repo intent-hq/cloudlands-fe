@@ -20,7 +20,12 @@
     ...restProps
   }: Props = $props();
 
-  const select = getContext<{ invalid: boolean; open: boolean }>('canonical-select');
+  const select = getContext<{
+    invalid: boolean;
+    open: boolean;
+    triggerId: string;
+    listboxId: string;
+  }>('canonical-select');
   const variantClasses = {
     default:
       'border border-border bg-transparent shadow-none hover:border-input hover:bg-hover px-3',
@@ -46,25 +51,37 @@
     if (event.detail === 0 && !select.open) select.open = true;
     onclick?.(event);
   }
+
+  function withoutActiveDescendant(props: Record<string, unknown>) {
+    const { 'aria-activedescendant': _activeDescendant, ...sanitizedProps } = props;
+    return sanitizedProps;
+  }
 </script>
 
 <SelectPrimitive.Trigger
   {...restProps}
+  id={select.triggerId}
+  aria-controls={select.open ? select.listboxId : undefined}
   class={triggerClass}
   aria-invalid={select.invalid || undefined}
   onclick={handleClick}
-  child={child ?? triggerButton}
+  child={sanitizedTrigger}
 ></SelectPrimitive.Trigger>
 
 <!-- i18n-ignore (snippet parameter type annotation, not UI text) -->
-{#snippet triggerButton({ props }: { props: Record<string, unknown> })}
-  <Button {...props} variant={buttonVariant} active={select.open} class={triggerClass}>
-    {@render children?.()}
-    {#if variant === 'default'}
-      <Fa
-        icon={faChevronDown}
-        class="size-3 shrink-0 text-muted-foreground transition-transform duration-spring-fast group-data-[state=open]:rotate-180 motion-reduce:transition-none"
-      />
-    {/if}
-  </Button>
+{#snippet sanitizedTrigger({ props }: { props: Record<string, unknown> })}
+  {@const sanitizedProps = withoutActiveDescendant(props)}
+  {#if child}
+    {@render child({ props: sanitizedProps })}
+  {:else}
+    <Button {...sanitizedProps} variant={buttonVariant} active={select.open} class={triggerClass}>
+      {@render children?.()}
+      {#if variant === 'default'}
+        <Fa
+          icon={faChevronDown}
+          class="size-3 shrink-0 text-muted-foreground transition-transform duration-spring-fast group-data-[state=open]:rotate-180 motion-reduce:transition-none"
+        />
+      {/if}
+    </Button>
+  {/if}
 {/snippet}

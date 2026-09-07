@@ -16,6 +16,8 @@
   import { useSize, type UiSize } from '$lib/components/ui/size-context';
   import { textEntryControlClasses, textEntryHeight } from '../text-entry';
 
+  const uid = $props.id();
+
   interface Props {
     value?: string | string[];
     options?: ComboboxOption[];
@@ -90,6 +92,9 @@
   setSurface(surface);
   const contextSize = useSize();
   const resolvedSize = $derived(size ?? contextSize);
+  const inputId = `${uid}-input`;
+  const labelId = `${uid}-label`;
+  const listboxId = `${uid}-listbox`;
 
   let query = $state('');
   let singleValue = $state('');
@@ -224,9 +229,15 @@
     }
     onopenchange?.(nextOpen);
   }
+
+  function withoutListboxSemantics(props: Record<string, unknown>) {
+    const { role: _role, tabindex: _tabindex, ...contentProps } = props;
+    return contentProps;
+  }
 </script>
 
 <div class={cn('relative w-full', className)}>
+  <span id={labelId} class="sr-only">{ariaLabel}</span>
   {#if multiple}
     <ComboboxPrimitive.Root
       type="multiple"
@@ -258,7 +269,9 @@
 
 {#snippet comboboxContent()}
   <ComboboxPrimitive.Input
-    aria-label={ariaLabel}
+    id={inputId}
+    aria-labelledby={labelId}
+    aria-controls={open ? listboxId : undefined}
     aria-invalid={invalid || undefined}
     placeholder={open ? searchPlaceholder : placeholder}
     onfocus={handleFocus}
@@ -285,80 +298,108 @@
       )}
       style="max-width: calc(100vw - var(--space-4));"
     >
-      {#if header || headerAction}
-        <div class="flex min-w-0 shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-          {#if header}<span class="type-caption min-w-0 truncate font-medium text-muted-foreground"
-              >{header}</span
-            >{/if}
-          {#if headerAction}<div class="ml-auto">{@render headerAction()}</div>{/if}
-        </div>
-      {/if}
-      <ComboboxPrimitive.Viewport class="max-h-72 overscroll-contain overflow-y-auto p-1">
-        <ListHighlight />
-        {#if loading}
-          <div class="type-body px-3 py-2 text-muted-foreground" role="status">
-            {m.ui_combobox_loadingOptions_message()}
-          </div>
-        {:else}
-          {#if searching}
-            <div class="type-body px-3 py-2 text-muted-foreground" role="status">
-              {m.ui_combobox_loadingOptions_message()}
-            </div>
-          {/if}
-          {#if !hasOptions && groups.length === 0 && !searching}
-            <div class="type-body px-3 py-2 text-muted-foreground">{emptyText}</div>
-          {/if}
-          {#each filteredGroups as group (group.key)}
-            <ComboboxPrimitive.Group>
-              {#if group.label}
-                <ComboboxPrimitive.GroupHeading
-                  class="type-caption px-2 py-1.5 font-medium text-muted-foreground"
+      {#snippet child({ props, wrapperProps })}
+        {@const contentProps = withoutListboxSemantics(props)}
+        <div {...wrapperProps}>
+          <div {...contentProps}>
+            {#if header || headerAction}
+              <div
+                class="flex min-w-0 shrink-0 items-center gap-2 border-b border-border px-3 py-2"
+              >
+                {#if header}<span
+                    class="type-caption min-w-0 truncate font-medium text-muted-foreground"
+                    >{header}</span
+                  >{/if}
+                {#if headerAction}<div class="ml-auto">{@render headerAction()}</div>{/if}
+              </div>
+            {/if}
+            <ComboboxPrimitive.Viewport class="max-h-72 overscroll-contain overflow-y-auto p-1">
+              {#snippet child({ props: viewportProps })}
+                <div
+                  {...viewportProps}
+                  id={listboxId}
+                  role="listbox"
+                  aria-labelledby={labelId}
+                  tabindex="0"
                 >
-                  <span>{group.label}</span>
-                  {#if groupDescription}{@render groupDescription(group)}{/if}
-                  {#if groupAction}{@render groupAction(group)}{/if}
-                </ComboboxPrimitive.GroupHeading>
-              {/if}
-              {#each group.options as option (option.value)}
-                <!-- i18n-ignore (snippet parameter type annotation, not UI text) -->
-                {#snippet optionChild({ props }: { props: Record<string, unknown> })}
-                  <div
-                    {...props}
-                    data-slot="combobox-option-motion"
-                    transition:slide={{ tier: 'fast' }}
-                  >
-                    <span class="min-w-0 flex-1 truncate">{option.label}</span>
-                    {#if optionDescription}
-                      {@render optionDescription(option)}
-                    {:else if option.description}
-                      <span class="type-caption max-w-1/2 shrink-0 truncate text-muted-foreground">
-                        {option.description}
-                      </span>
+                  <ListHighlight />
+                  {#if loading}
+                    <div class="type-body px-3 py-2 text-muted-foreground" role="status">
+                      {m.ui_combobox_loadingOptions_message()}
+                    </div>
+                  {:else}
+                    {#if searching}
+                      <div class="type-body px-3 py-2 text-muted-foreground" role="status">
+                        {m.ui_combobox_loadingOptions_message()}
+                      </div>
                     {/if}
-                    <span
-                      data-slot="combobox-item-check"
-                      class="text-primary-ink shrink-0 font-medium opacity-0 group-data-[selected]:opacity-100"
-                      aria-hidden="true">✓</span
-                    >
-                    {#if optionActions}{@render optionActions(option)}{/if}
-                  </div>
-                {/snippet}
-                <ComboboxPrimitive.Item
-                  value={option.value}
-                  label={option.label}
-                  disabled={option.disabled || !optionMatchesQuery(option)}
-                  data-menu-item
-                  class={cn(menuItem(), 'min-h-(--control-height-compact) p-1.5', option.class)}
-                  child={optionChild}
-                />
-              {/each}
-            </ComboboxPrimitive.Group>
-          {/each}
-        {/if}
-      </ComboboxPrimitive.Viewport>
-      {#if footer}
-        <div class="shrink-0 border-t border-border bg-muted/20 px-3 py-2">{@render footer()}</div>
-      {/if}
+                    {#if !hasOptions && groups.length === 0 && !searching}
+                      <div class="type-body px-3 py-2 text-muted-foreground">{emptyText}</div>
+                    {/if}
+                    {#each filteredGroups as group (group.key)}
+                      <ComboboxPrimitive.Group>
+                        {#if group.label}
+                          <ComboboxPrimitive.GroupHeading
+                            class="type-caption px-2 py-1.5 font-medium text-muted-foreground"
+                          >
+                            <span>{group.label}</span>
+                            {#if groupDescription}{@render groupDescription(group)}{/if}
+                            {#if groupAction}{@render groupAction(group)}{/if}
+                          </ComboboxPrimitive.GroupHeading>
+                        {/if}
+                        {#each group.options as option (option.value)}
+                          <!-- i18n-ignore (snippet parameter type annotation, not UI text) -->
+                          {#snippet optionChild({ props }: { props: Record<string, unknown> })}
+                            <div
+                              {...props}
+                              data-slot="combobox-option-motion"
+                              transition:slide={{ tier: 'fast' }}
+                            >
+                              <span class="min-w-0 flex-1 truncate">{option.label}</span>
+                              {#if optionDescription}
+                                {@render optionDescription(option)}
+                              {:else if option.description}
+                                <span
+                                  class="type-caption max-w-1/2 shrink-0 truncate text-muted-foreground"
+                                >
+                                  {option.description}
+                                </span>
+                              {/if}
+                              <span
+                                data-slot="combobox-item-check"
+                                class="text-primary-ink shrink-0 font-medium opacity-0 group-data-[selected]:opacity-100"
+                                aria-hidden="true">✓</span
+                              >
+                              {#if optionActions}{@render optionActions(option)}{/if}
+                            </div>
+                          {/snippet}
+                          <ComboboxPrimitive.Item
+                            value={option.value}
+                            label={option.label}
+                            disabled={option.disabled || !optionMatchesQuery(option)}
+                            data-menu-item
+                            class={cn(
+                              menuItem(),
+                              'min-h-(--control-height-compact) p-1.5',
+                              option.class,
+                            )}
+                            child={optionChild}
+                          />
+                        {/each}
+                      </ComboboxPrimitive.Group>
+                    {/each}
+                  {/if}
+                </div>
+              {/snippet}
+            </ComboboxPrimitive.Viewport>
+            {#if footer}
+              <div class="shrink-0 border-t border-border bg-muted/20 px-3 py-2">
+                {@render footer()}
+              </div>
+            {/if}
+          </div>
+        </div>
+      {/snippet}
     </ComboboxPrimitive.Content>
   </ComboboxPrimitive.Portal>
 {/snippet}

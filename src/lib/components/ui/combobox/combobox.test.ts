@@ -64,6 +64,11 @@ describe('Combobox behavior', () => {
     input.focus();
     await fireEvent.focus(input);
     await fireEvent.input(input, { target: { value: 'Grace' } });
+    const listbox = screen.getByRole('listbox', { name: 'Search people' });
+    expect(input.getAttribute('aria-controls')).toBe(listbox.id);
+    expect(input.getAttribute('aria-labelledby')).toBe(listbox.getAttribute('aria-labelledby'));
+    expect(listbox.getAttribute('data-combobox-viewport')).not.toBeNull();
+    expect(listbox.getAttribute('tabindex')).toBe('0');
     expect(screen.getByRole('option', { name: 'Grace Hopper' })).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole('option', { name: 'Ada Lovelace' })).toBeNull());
 

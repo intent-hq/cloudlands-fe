@@ -373,6 +373,27 @@ describe('DirectoryPickerModal directory mode (default)', () => {
     expect(screen.getAllByRole('option')).toHaveLength(2);
   });
 
+  it('owns its options with a focusable listbox and exposes the active row', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    const listbox = screen.getByRole('listbox', { name: 'Directory contents' });
+    const options = screen.getAllByRole('option');
+    expect(listbox.getAttribute('tabindex')).toBe('0');
+    expect(listbox.getAttribute('aria-activedescendant')).toBe(options[0].id);
+    expect(options.every((option) => option.getAttribute('tabindex') === '-1')).toBe(true);
+    for (const option of options) {
+      const item = option.closest('li');
+      expect(item?.getAttribute('role')).toBe('presentation');
+      expect(item?.closest('ul')?.getAttribute('role')).toBe('presentation');
+      expect(listbox.contains(option)).toBe(true);
+    }
+
+    await fireEvent.keyDown(listbox, { key: 'ArrowDown' });
+    await flush();
+    expect(listbox.getAttribute('aria-activedescendant')).toBe(options[1].id);
+  });
+
   it('the select button is enabled and commits the current directory', async () => {
     const onSelect = vi.fn();
     render(DirectoryPickerModal, { props: { ...baseProps, onSelect } });

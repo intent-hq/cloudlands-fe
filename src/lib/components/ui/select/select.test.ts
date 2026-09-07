@@ -19,7 +19,12 @@ describe('Select', () => {
 
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
-    expect(screen.getByRole('listbox')).toBeTruthy();
+    const listbox = screen.getByRole('listbox', { name: 'Choose fruit' });
+    expect(trigger.getAttribute('aria-controls')).toBe(listbox.id);
+    expect(listbox.getAttribute('aria-labelledby')).toBe(trigger.id);
+    expect(trigger.hasAttribute('aria-activedescendant')).toBe(false);
+    expect(listbox.getAttribute('data-select-viewport')).not.toBeNull();
+    expect(listbox.getAttribute('tabindex')).toBe('0');
     expect(screen.getByRole('option', { name: 'Apple' }).getAttribute('aria-selected')).toBe(
       'true',
     );

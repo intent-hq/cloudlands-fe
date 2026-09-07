@@ -36,6 +36,8 @@
     type DirectoryPickerFavorite,
   } from './directory-picker-view';
 
+  const uid = $props.id();
+
   interface Props {
     open: boolean;
     title?: string;
@@ -133,6 +135,10 @@
     selectTargetName !== null
       ? m.onboarding_dirPicker_selectNamed_label({ name: selectTargetName })
       : selectLabel,
+  );
+  const listboxId = `${uid}-contents`;
+  const activeOptionId = $derived(
+    visibleEntries.length > 0 ? `${uid}-entry-${focusedIndex}` : undefined,
   );
 
   function favoriteIcon(favorite: DirectoryPickerFavorite): IconDefinition {
@@ -496,10 +502,13 @@
         </div>
 
         <div
+          id={listboxId}
           bind:this={listContainerRef}
+          tabindex="0"
           class="min-h-0 flex-1 overflow-y-auto py-1"
           role="listbox"
           aria-label={m.onboarding_dirPicker_contents_ariaLabel()}
+          aria-activedescendant={activeOptionId}
         >
           {#if loading}
             <LoadingState
@@ -530,18 +539,20 @@
               data-state-kind="empty"
             />
           {:else}
-            <ul>
+            <ul role="presentation">
               {#each visibleEntries as entry, index (entry.path)}
                 {@const isFocused = index === focusedIndex}
                 {@const isSelected =
                   mode === 'file'
                     ? entry.path === selectedFilePath
                     : entry.path === selectedFolderEntry?.path}
-                <li>
+                <li role="presentation">
                   <Button
+                    id={`${uid}-entry-${index}`}
                     type="button"
                     variant="ghost"
                     role="option"
+                    tabindex={-1}
                     aria-selected={mode === 'file'
                       ? isSelected
                       : selectedFolderEntry

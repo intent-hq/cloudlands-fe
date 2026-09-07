@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { getContext, type Snippet } from 'svelte';
   import { Select as SelectPrimitive } from 'bits-ui';
   import ListHighlight from '../menu/menu-list-highlight.svelte';
   import { menuOverlay } from '../menu/menu-recipes';
@@ -30,6 +30,12 @@
   const usePortal = $derived(dropUp || portal);
   const surface = clampSurface(useSurface() + 2);
   setSurface(surface);
+  const select = getContext<{ triggerId: string; listboxId: string }>('canonical-select');
+
+  function withoutListboxSemantics(props: Record<string, unknown>) {
+    const { role: _role, tabindex: _tabindex, ...contentProps } = props;
+    return contentProps;
+  }
 </script>
 
 <SelectPrimitive.Portal disabled={!usePortal}>
@@ -47,13 +53,24 @@
     style="max-width: calc(100vw - var(--space-4));"
   >
     {#snippet child({ props, wrapperProps })}
+      {@const contentProps = withoutListboxSemantics(props)}
       <div {...wrapperProps} {...wrapperId ? { id: wrapperId } : {}}>
-        <div {...props}>
+        <div {...contentProps}>
           <SelectPrimitive.Viewport
             class="relative min-h-0 flex-1 overflow-y-auto py-1 {wrapperClass}"
           >
-            <ListHighlight />
-            {@render children?.()}
+            {#snippet child({ props: viewportProps })}
+              <div
+                {...viewportProps}
+                id={select.listboxId}
+                role="listbox"
+                aria-labelledby={select.triggerId}
+                tabindex="0"
+              >
+                <ListHighlight />
+                {@render children?.()}
+              </div>
+            {/snippet}
           </SelectPrimitive.Viewport>
         </div>
       </div>
