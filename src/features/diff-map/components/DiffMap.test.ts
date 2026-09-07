@@ -3,6 +3,7 @@
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
 import {
   diffMapFixtures,
   hugeDiffMapFixture,
@@ -15,10 +16,67 @@ import type { ChatFileChange } from '$lib/utils/get-file-changes-from-messages';
 import { fromPullRequest } from '../sources';
 import DiffMap from './DiffMap.svelte';
 
-afterEach(cleanup);
+const scrollIntoViewDescriptor = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  'scrollIntoView',
+);
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  if (scrollIntoViewDescriptor) {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', scrollIntoViewDescriptor);
+  } else {
+    delete (HTMLElement.prototype as { scrollIntoView?: Element['scrollIntoView'] }).scrollIntoView;
+  }
+});
 
 function rows(container: HTMLElement) {
   return [...container.querySelectorAll<HTMLButtonElement>('[data-diff-map-row]')];
+}
+
+function installScrollIntoViewSpy() {
+  const spy = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: spy,
+  });
+  return spy;
+}
+
+function installResizeObserver() {
+  let callback: ResizeObserverCallback | undefined;
+  const observer = {
+    observe: vi.fn(),
+    unobserve: vi.fn(),
+    disconnect: vi.fn(),
+  };
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(next: ResizeObserverCallback) {
+        callback = next;
+      }
+      observe = observer.observe;
+      unobserve = observer.unobserve;
+      disconnect = observer.disconnect;
+    },
+  );
+  return async (width: number, height: number) => {
+    if (!callback) throw new Error('ResizeObserver was not installed');
+    callback(
+      [{ contentRect: { width, height } } as ResizeObserverEntry],
+      observer as unknown as ResizeObserver,
+    );
+    await tick();
+    await tick();
+  };
+}
+
+async function flushLayout() {
+  await tick();
+  await tick();
 }
 
 describe('DiffMap', () => {
@@ -85,6 +143,20 @@ describe('DiffMap', () => {
     );
   });
 
+  it('names directory groups by full path and exposes section and block headings', async () => {
+    const { container } = render(DiffMap, {
+      props: { document: typicalDiffMapFixture.document, onOpen: vi.fn() },
+    });
+
+    await waitFor(() => expect(rows(container)).toHaveLength(24));
+    const firstGroup = typicalDiffMapFixture.document.groups[0];
+    expect(screen.getByRole('group', { name: firstGroup.path })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: firstGroup.path })).toBeTruthy();
+    for (const section of typicalDiffMapFixture.document.sections ?? []) {
+      expect(screen.getByRole('heading', { name: section.displayName, exact: true })).toBeTruthy();
+    }
+  });
+
   it('moves focus in reading order and extends selection with Shift+Arrow', async () => {
     const onSelectionChange = vi.fn();
     const { container } = render(DiffMap, {
@@ -110,6 +182,50 @@ describe('DiffMap', () => {
     ]);
   });
 
+  it('moves across columns and blocks in an overflowing map with roving focus', async () => {
+    const triggerResize = installResizeObserver();
+    const scrollIntoView = installScrollIntoViewSpy();
+    const { container } = render(DiffMap, {
+      props: {
+        document: typicalDiffMapFixture.document,
+        rungOverride: 3,
+        onOpen: vi.fn(),
+      },
+    });
+
+    await waitFor(() => expect(rows(container)).toHaveLength(24));
+    await triggerResize(900, 120);
+    expect(screen.getByRole('scrollbar')).toBeTruthy();
+    const firstGroup = container.querySelector<HTMLElement>(
+      `[data-group-id="${typicalDiffMapFixture.document.groups[0].id}"]`,
+    );
+    const groupRows = rows(firstGroup!);
+    const columnBoundary = groupRows.findIndex(
+      (row, index) => index > 0 && row.style.left !== groupRows[index - 1].style.left,
+    );
+    expect(columnBoundary).toBeGreaterThan(0);
+
+    groupRows[columnBoundary - 1].focus();
+    await fireEvent.keyDown(groupRows[columnBoundary - 1], { key: 'ArrowRight' });
+    await waitFor(() => expect(document.activeElement).toBe(groupRows[columnBoundary]));
+    expect(rows(container).filter((row) => row.tabIndex === 0)).toEqual([
+      groupRows[columnBoundary],
+    ]);
+    await fireEvent.keyDown(groupRows[columnBoundary], { key: 'ArrowLeft' });
+    await waitFor(() => expect(document.activeElement).toBe(groupRows[columnBoundary - 1]));
+
+    const allRows = rows(container);
+    const lastInFirstGroup = groupRows.at(-1)!;
+    const firstInSecondGroup = allRows[allRows.indexOf(lastInFirstGroup) + 1];
+    lastInFirstGroup.focus();
+    await fireEvent.keyDown(lastInFirstGroup, { key: 'ArrowDown' });
+    await waitFor(() => expect(document.activeElement).toBe(firstInSecondGroup));
+    expect(rows(container).filter((row) => row.tabIndex === 0)).toEqual([firstInSecondGroup]);
+    await fireEvent.keyDown(firstInSecondGroup, { key: 'ArrowUp' });
+    await waitFor(() => expect(document.activeElement).toBe(lastInFirstGroup));
+    expect(scrollIntoView).toHaveBeenCalledTimes(4);
+  });
+
   it('renders distinct viewed and changed-since-viewed row states', async () => {
     const first = tinyDiffMapFixture.document.files[0].path;
     const second = tinyDiffMapFixture.document.files[1].path;
@@ -124,7 +240,7 @@ describe('DiffMap', () => {
     await waitFor(() => expect(rows(container)).toHaveLength(3));
     const viewedRow = rows(container).find((row) => row.dataset.fileId === first);
     expect(viewedRow?.dataset.viewedState).toBe('viewed');
-    expect(viewedRow?.getAttribute('aria-label')).toContain('modified');
+    expect(viewedRow?.getAttribute('aria-label')?.toLocaleLowerCase()).toContain('modified');
     expect(viewedRow?.getAttribute('aria-label')).toContain('Viewed');
     expect(getComputedStyle(viewedRow!.querySelector('.status')!).gridColumn).toBe('1');
     expect(getComputedStyle(viewedRow!.querySelector('.overlay')!).gridColumn).toBe('3');
@@ -140,7 +256,7 @@ describe('DiffMap', () => {
 
     await waitFor(() => expect(rows(container)).toHaveLength(3));
     const search = screen.getByRole('searchbox');
-    const countElement = screen.getByRole('heading');
+    const countElement = screen.getByRole('heading', { name: /files changed/i });
     const count = countElement?.textContent;
     rows(container)[0].focus();
     await fireEvent.keyDown(rows(container)[0], { key: '/' });
@@ -205,6 +321,84 @@ describe('DiffMap', () => {
     expect(screen.getByRole('button', { name: '+15 more' })).toBeTruthy();
   });
 
+  it('returns focus to the restored more row when collapsing hides the focused file', async () => {
+    const { container } = render(DiffMap, {
+      props: { document: overflowDiffMapFixture.document, onOpen: vi.fn() },
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: '+15 more' }));
+    await waitFor(() => expect(rows(container)).toHaveLength(25));
+    rows(container)[10].focus();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Show less' }));
+    await waitFor(() => expect(rows(container)).toHaveLength(10));
+    const more = screen.getByRole('button', { name: '+15 more' });
+    await waitFor(() => expect(document.activeElement).toBe(more));
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    expect(rows(container).filter((row) => row.tabIndex === 0)).toEqual([rows(container)[9]]);
+  });
+
+  it('moves the active marker when activePath changes', async () => {
+    const first = tinyDiffMapFixture.document.files[0].path;
+    const second = tinyDiffMapFixture.document.files[1].path;
+    const view = render(DiffMap, {
+      props: { document: tinyDiffMapFixture.document, activePath: first, onOpen: vi.fn() },
+    });
+    await waitFor(() => expect(rows(view.container)).toHaveLength(3));
+    expect(view.container.querySelectorAll('.diff-map-row--active')).toHaveLength(1);
+    expect(
+      view.container.querySelector('.diff-map-row--active')?.getAttribute('data-file-id'),
+    ).toBe(first);
+
+    await view.rerender({
+      document: tinyDiffMapFixture.document,
+      activePath: second,
+      onOpen: vi.fn(),
+    });
+    expect(view.container.querySelectorAll('.diff-map-row--active')).toHaveLength(1);
+    expect(
+      view.container.querySelector('.diff-map-row--active')?.getAttribute('data-file-id'),
+    ).toBe(second);
+  });
+
+  it('animates the existing block and row targets after expansion', async () => {
+    const animate = vi.spyOn(Element.prototype, 'animate').mockReturnValue({} as Animation);
+    const { container } = render(DiffMap, {
+      props: { document: overflowDiffMapFixture.document, onOpen: vi.fn() },
+    });
+    await waitFor(() => expect(rows(container)).toHaveLength(10));
+    const block = container.querySelector('[data-group-id]');
+    const existingRows = rows(container);
+
+    await fireEvent.click(screen.getByRole('button', { name: '+15 more' }));
+    await waitFor(() => expect(rows(container)).toHaveLength(25));
+    await flushLayout();
+    const targets = new Set(animate.mock.instances);
+    expect(targets.has(block!)).toBe(true);
+    expect(existingRows.every((row) => targets.has(row))).toBe(true);
+    expect(targets.size).toBe(existingRows.length + 1);
+  });
+
+  it('relayouts after cumulative sub-threshold ResizeObserver changes', async () => {
+    const triggerResize = installResizeObserver();
+    const animate = vi.spyOn(Element.prototype, 'animate').mockReturnValue({} as Animation);
+    const { container } = render(DiffMap, {
+      props: {
+        document: typicalDiffMapFixture.document,
+        rungOverride: 3,
+        onOpen: vi.fn(),
+      },
+    });
+    await waitFor(() => expect(rows(container)).toHaveLength(24));
+    await triggerResize(800, 500);
+    animate.mockClear();
+
+    await triggerResize(790, 500);
+    await triggerResize(780, 500);
+    expect(animate).not.toHaveBeenCalled();
+    await triggerResize(770, 500);
+    expect(animate).toHaveBeenCalled();
+  });
+
   it('renders every fixture at every density rung and exposes an overflow rail', async () => {
     for (const fixture of diffMapFixtures) {
       for (const rungOverride of [0, 1, 2, 3] as const) {
@@ -228,6 +422,8 @@ describe('DiffMap', () => {
         filterable: false,
       },
     });
-    expect(await screen.findByRole('button', { name: /files above.*files below/i })).toBeTruthy();
+    expect(
+      await screen.findByRole('scrollbar', { name: /files above.*files below/i }),
+    ).toBeTruthy();
   });
 });

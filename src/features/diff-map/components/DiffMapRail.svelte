@@ -21,6 +21,7 @@
     scrollTop: number;
     activePath?: string;
     selected: ReadonlySet<string>;
+    controlsId: string;
     onJump: (scrollTop: number) => void;
   }
 
@@ -33,11 +34,14 @@
     scrollTop,
     activePath,
     selected,
+    controlsId,
     onJump,
   }: Props = $props();
 
   const safeHeight = $derived(Math.max(1, contentHeight));
-  const windowTop = $derived((scrollTop / safeHeight) * 100);
+  const maxScroll = $derived(Math.max(0, contentHeight - viewportHeight));
+  const scrollValue = $derived(Math.min(maxScroll, Math.max(0, scrollTop)));
+  const windowTop = $derived((scrollValue / safeHeight) * 100);
   const windowHeight = $derived(Math.min(100, (viewportHeight / safeHeight) * 100));
   const filesAbove = $derived(rows.filter((row) => row.y + row.h <= scrollTop).length);
   const filesBelow = $derived(rows.filter((row) => row.y >= scrollTop + viewportHeight).length);
@@ -63,10 +67,11 @@
         active: false,
         selected: false,
       };
-      const status = files.get(row.fileId)?.status ?? 'modified';
+      const file = files.get(row.fileId);
+      const status = file?.status ?? 'modified';
       bucket.statuses.set(status, (bucket.statuses.get(status) ?? 0) + 1);
-      bucket.active ||= row.fileId === activePath;
-      bucket.selected ||= selected.has(row.fileId);
+      bucket.active ||= file?.path === activePath;
+      bucket.selected ||= file ? selected.has(file.path) : false;
       grouped.set(index, bucket);
     }
     return [...grouped.entries()].map(([index, bucket]): RailBucket => ({
@@ -86,7 +91,28 @@
         : null;
     if (!bounds || bounds.height === 0) return;
     const ratio = Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height));
-    onJump(Math.max(0, ratio * contentHeight - viewportHeight / 2));
+    onJump(Math.min(maxScroll, Math.max(0, ratio * contentHeight - viewportHeight / 2)));
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    const bucketStep = safeHeight / Math.max(1, bucketCount);
+    const target =
+      event.key === 'ArrowDown'
+        ? scrollValue + bucketStep
+        : event.key === 'ArrowUp'
+          ? scrollValue - bucketStep
+          : event.key === 'PageDown'
+            ? scrollValue + viewportHeight
+            : event.key === 'PageUp'
+              ? scrollValue - viewportHeight
+              : event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                  ? maxScroll
+                  : undefined;
+    if (target === undefined) return;
+    event.preventDefault();
+    onJump(Math.min(maxScroll, Math.max(0, target)));
   }
 </script>
 
@@ -94,9 +120,16 @@
   <Button
     variant="ghost"
     class="rail h-auto min-h-0 w-auto"
+    role="scrollbar"
     aria-label={accessibleLabel}
+    aria-controls={controlsId}
+    aria-orientation="vertical"
+    aria-valuemin={0}
+    aria-valuemax={maxScroll}
+    aria-valuenow={scrollValue}
     style={`width: ${viewportWidth < 320 ? '8px' : '10px'}`}
     onclick={jump}
+    onkeydown={handleKeydown}
   >
     {#each buckets as bucket (bucket.index)}
       <span

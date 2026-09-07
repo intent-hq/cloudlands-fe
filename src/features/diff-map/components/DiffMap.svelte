@@ -46,6 +46,8 @@
   }: Props = $props();
 
   const RAIL_WIDTH = 20;
+  const componentId = $props.id();
+  const viewportId = `${componentId}-viewport`;
   let rootElement: HTMLDivElement | undefined = $state();
   let viewportElement: HTMLDivElement | undefined = $state();
   let filterElement: HTMLInputElement | undefined = $state();
@@ -57,7 +59,7 @@
   let selectionAnchor = $state<string | undefined>();
   let expandedBlockIds = $state<ReadonlySet<string>>(new Set());
   let renderedLayout: DiffMapLayout | undefined;
-  let previousRequest: DiffMapLayoutRequest | undefined;
+  let laidOutRequest: DiffMapLayoutRequest | undefined;
   let expandedSnapshotId: string | undefined = $state();
   let measured = false;
   let measureContext: CanvasRenderingContext2D | null | undefined;
@@ -120,6 +122,21 @@
         { duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
       );
     };
+    const blockElements = new Map(
+      [...viewportElement.querySelectorAll<HTMLElement>('[data-group-id]')].flatMap((element) =>
+        element.dataset.groupId ? [[element.dataset.groupId, element] as const] : [],
+      ),
+    );
+    const rowElements = new Map(
+      [...viewportElement.querySelectorAll<HTMLElement>('[data-diff-map-row]')].flatMap(
+        (element) => (element.dataset.fileId ? [[element.dataset.fileId, element] as const] : []),
+      ),
+    );
+    const groupByFileId = new Map(
+      document.groups.flatMap((group) =>
+        group.fileIds.map((fileId) => [fileId, group.id] as const),
+      ),
+    );
     const blockOffsets = new Map<string, { x: number; y: number }>();
     for (const entry of delta.blocks) {
       if (!entry.from || !entry.to) continue;
@@ -127,20 +144,18 @@
         x: entry.from.x - entry.to.x,
         y: entry.from.y - entry.to.y,
       });
-      const element = [...viewportElement.querySelectorAll<HTMLElement>('[data-group-id]')].find(
-        (candidate) => candidate.dataset.groupId === entry.groupId,
+      animate(
+        blockElements.get(entry.groupId),
+        entry.from.x - entry.to.x,
+        entry.from.y - entry.to.y,
       );
-      animate(element, entry.from.x - entry.to.x, entry.from.y - entry.to.y);
     }
     for (const entry of delta.rows) {
       if (!entry.from || !entry.to) continue;
-      const element = [
-        ...viewportElement.querySelectorAll<HTMLElement>('[data-diff-map-row]'),
-      ].find((candidate) => candidate.dataset.fileId === entry.fileId);
-      const group = document.groups.find((candidate) => candidate.fileIds.includes(entry.fileId));
-      const blockOffset = group ? blockOffsets.get(group.id) : undefined;
+      const groupId = groupByFileId.get(entry.fileId);
+      const blockOffset = groupId ? blockOffsets.get(groupId) : undefined;
       animate(
-        element,
+        rowElements.get(entry.fileId),
         entry.from.x - entry.to.x - (blockOffset?.x ?? 0),
         entry.from.y - entry.to.y - (blockOffset?.y ?? 0),
       );
@@ -158,15 +173,12 @@
       rungOverride,
       expandedBlockIds,
     };
-    if (previousRequest && !shouldRelayoutDiffMap(previousRequest, request)) {
-      previousRequest = request;
-      return;
-    }
+    if (laidOutRequest && !shouldRelayoutDiffMap(laidOutRequest, request)) return;
     const next = computeLayout(request);
     const delta = renderedLayout ? diffLayouts(renderedLayout, next) : undefined;
     renderedLayout = next;
     layout = next;
-    previousRequest = request;
+    laidOutRequest = request;
     if (delta) void tick().then(() => animateLayout(delta));
   });
 
@@ -176,7 +188,7 @@
       if (width <= 0 || height <= 0) return;
       if (!measured) {
         measured = true;
-        previousRequest = undefined;
+        laidOutRequest = undefined;
       }
       viewport = { width, height };
     };
@@ -214,11 +226,40 @@
     onSelectionChange?.(new Set(next));
   }
 
+  function moreRowElement(groupId: string) {
+    const block = [
+      ...(viewportElement?.querySelectorAll<HTMLElement>('[data-group-id]') ?? []),
+    ].find((element) => element.dataset.groupId === groupId);
+    return block?.querySelector<HTMLElement>('[data-diff-map-more-row]');
+  }
+
   function toggleBlock(groupId: string) {
     const next = new Set(expandedBlockIds);
-    if (next.has(groupId)) next.delete(groupId);
-    else next.add(groupId);
+    const collapsing = next.delete(groupId);
+    if (!collapsing) next.add(groupId);
+
+    const activeElement = globalThis.document?.activeElement;
+    const focusedFileId =
+      activeElement instanceof HTMLElement &&
+      activeElement.closest<HTMLElement>('[data-group-id]')?.dataset.groupId === groupId
+        ? activeElement.dataset.fileId
+        : undefined;
+    const group = groupsById.get(groupId);
+    const currentBlock = layout?.blocks.find((block) => block.groupId === groupId);
+    const visibleCount =
+      group && currentBlock ? group.fileIds.length - currentBlock.hiddenCount : 0;
+    const restoreMoreFocus =
+      collapsing &&
+      focusedFileId !== undefined &&
+      group !== undefined &&
+      group.fileIds.indexOf(focusedFileId) >= visibleCount;
+    if (restoreMoreFocus) {
+      const fallback = filesById.get(group.fileIds[Math.max(0, visibleCount - 1)]);
+      focusedPath = fallback?.path;
+    }
     expandedBlockIds = next;
+    if (restoreMoreFocus)
+      void tick().then(() => moreRowElement(groupId)?.focus({ preventScroll: true }));
   }
 
   function selectRange(anchor: string, target: string, additive = false) {
@@ -327,69 +368,75 @@
     </div>
   {/if}
 
-  <div
-    bind:this={viewportElement}
-    class="viewport"
-    class:viewport--overflow={layout?.overflow}
-    onscroll={(event) => (scrollTop = event.currentTarget.scrollTop)}
-  >
-    {#if layout}
-      <div
-        class="content"
-        style:height={`${Math.max(layout.contentHeight, viewport.height)}px`}
-        style:width={`${layout.overflow ? Math.max(0, viewport.width - RAIL_WIDTH) : viewport.width}px`}
-      >
-        {#each layout.sectionsPlaced as section (section.sectionId)}
-          <div
-            class="section-label"
-            style:left={`${section.x}px`}
-            style:top={`${section.y}px`}
-            style:width={`${section.w}px`}
-          >
-            {section.label}
-          </div>
-        {/each}
+  <div class="viewport-shell">
+    <div
+      bind:this={viewportElement}
+      id={viewportId}
+      class="viewport"
+      class:viewport--overflow={layout?.overflow}
+      onscroll={(event) => (scrollTop = event.currentTarget.scrollTop)}
+    >
+      {#if layout}
+        <div
+          class="content"
+          style:height={`${Math.max(layout.contentHeight, viewport.height)}px`}
+          style:width={`${layout.overflow ? Math.max(0, viewport.width - RAIL_WIDTH) : viewport.width}px`}
+        >
+          {#each layout.sectionsPlaced as section (section.sectionId)}
+            <div
+              class="section-label"
+              role="heading"
+              aria-level="2"
+              style:left={`${section.x}px`}
+              style:top={`${section.y}px`}
+              style:width={`${section.w}px`}
+            >
+              {section.label}
+            </div>
+          {/each}
 
-        {#each layout.blocks as block (block.groupId)}
-          {@const group = groupsById.get(block.groupId)}
-          {#if group}
-            <DiffMapBlock
-              {block}
-              {group}
-              files={filesById}
-              rung={layout.rung}
-              {activePath}
-              {selection}
-              {focusedPath}
-              filter={filter.trim().toLocaleLowerCase()}
-              {pathFilter}
-              {layers}
-              onActivate={activate}
-              onKeydown={navigate}
-              onFocus={(file) => {
-                selectionAnchor ??= focusedPath;
-                focusedPath = file.path;
-              }}
-              onHover={(hovered) => onHoverGroup?.(hovered)}
-              onToggleExpanded={() => toggleBlock(block.groupId)}
-            />
-          {/if}
-        {/each}
-      </div>
-
-      {#if layout.overflow}
-        <DiffMapRail
-          rows={layoutRows}
-          files={filesById}
-          contentHeight={layout.contentHeight}
-          viewportHeight={viewport.height}
-          viewportWidth={viewport.width}
-          {scrollTop}
-          {activePath}
-          selected={selection}
-          onJump={jump}
-        />
+          {#each layout.blocks as block (block.groupId)}
+            {@const group = groupsById.get(block.groupId)}
+            {#if group}
+              <DiffMapBlock
+                {block}
+                {group}
+                files={filesById}
+                rung={layout.rung}
+                {activePath}
+                {selection}
+                {focusedPath}
+                filter={filter.trim().toLocaleLowerCase()}
+                {pathFilter}
+                {layers}
+                onActivate={activate}
+                onKeydown={navigate}
+                onFocus={(file) => {
+                  selectionAnchor ??= focusedPath;
+                  focusedPath = file.path;
+                }}
+                onHover={(hovered) => onHoverGroup?.(hovered)}
+                onToggleExpanded={() => toggleBlock(block.groupId)}
+              />
+            {/if}
+          {/each}
+        </div>
       {/if}
+    </div>
+
+    {#if layout?.overflow}
+      <DiffMapRail
+        rows={layoutRows}
+        files={filesById}
+        contentHeight={layout.contentHeight}
+        viewportHeight={viewport.height}
+        viewportWidth={viewport.width}
+        {scrollTop}
+        {activePath}
+        selected={selection}
+        controlsId={viewportId}
+        onJump={jump}
+      />
     {/if}
   </div>
 </div>
@@ -483,10 +530,16 @@
     }
   }
 
-  .viewport {
+  .viewport-shell {
     position: relative;
     min-height: 0;
     flex: 1;
+  }
+
+  .viewport {
+    position: relative;
+    width: 100%;
+    height: 100%;
     overflow: hidden;
   }
 

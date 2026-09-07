@@ -45,6 +45,8 @@
     onToggleExpanded,
   }: Props = $props();
 
+  const componentId = $props.id();
+  const headerId = `${componentId}-heading`;
   const rows = $derived(block.columns.flatMap((column) => column.rows));
   const countLabel = $derived(diffMapGroupCountLabel(group));
   function matches(row: DiffMapLayoutFileRow) {
@@ -58,6 +60,8 @@
 
 <section
   class="diff-map-block"
+  role="group"
+  aria-labelledby={headerId}
   data-group-id={group.id}
   data-rung={rung}
   style:left={`${block.x}px`}
@@ -65,9 +69,10 @@
   style:width={`${block.w}px`}
   style:height={`${block.h}px`}
 >
-  <header
+  <h3
+    id={headerId}
     class="group-header"
-    role="presentation"
+    aria-label={group.path}
     style:height={`${block.headerHeight}px`}
     title={group.path}
     onmouseenter={() => onHover(group)}
@@ -77,7 +82,7 @@
       <span class="prefix">{block.labelPrefix}</span><strong>{block.labelName}</strong>
     </span>
     <span class="count">{countLabel}</span>
-  </header>
+  </h3>
 
   {#each rows as row (row.kind === 'file' ? row.fileId : `more-${group.id}`)}
     {#if row.kind === 'more'}
@@ -127,6 +132,7 @@
     justify-content: space-between;
     gap: 6px;
     overflow: hidden;
+    margin: 0;
     padding: 0 6px;
     border-bottom: 1px solid hsl(var(--border));
     color: hsl(var(--card-foreground));
