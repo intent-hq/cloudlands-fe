@@ -1122,6 +1122,7 @@
   "workspace_compactInitializer_attachmentPlacementFailed_error": "The workspace was created, but some attachments failed — retry or remove them to send your message",
   "workspace_compactInitializer_checkingDependencies_label": "Checking dependencies...",
   "workspace_compactInitializer_createFailed_error": "Failed to create workspace",
+  "workspace_compactInitializer_specialistUnavailable_error": "That specialist no longer exists. The specialist list has been refreshed; try again.",
   "workspace_compactInitializer_createWorkspace_label": "Create workspace",
   "workspace_compactInitializer_detectingSetupScript_label": "Detecting setup script…",
   "workspace_compactInitializer_downloadGit_label": "Download Git →",
