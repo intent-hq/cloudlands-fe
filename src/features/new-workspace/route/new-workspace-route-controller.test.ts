@@ -194,6 +194,24 @@ describe('new workspace route controller', () => {
     });
   });
 
+  it('replays a provider result dispatched before the route runner starts', async () => {
+    const controller = createNewWorkspaceRouteController({
+      startInput: {},
+      requestedDraftId: null,
+    });
+    const observed: ControllerState[] = [];
+    controller.dispatch({
+      type: 'capability.result',
+      generation: 1,
+      capability: 'provider',
+      status: 'missing',
+    });
+
+    await controller.start((state) => observed.push(state));
+
+    expect(observed.at(-1)?.capabilities.provider).toBe('missing');
+  });
+
   it('restores the newest owned draft when the route has no draft selector', async () => {
     const controller = createNewWorkspaceRouteController({
       startInput: {},

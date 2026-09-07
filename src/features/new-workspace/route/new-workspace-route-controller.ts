@@ -23,6 +23,8 @@ interface NewWorkspaceRouteController {
   stop(): void;
 }
 
+type RunnerEvent = Parameters<DraftTransactionRunner['dispatch']>[0];
+
 async function migrateSentinelDraft(): Promise<string | null> {
   const legacy = await appClient.drafts.get(SENTINEL_WORKSPACE_ID, SENTINEL_AGENT_ID);
   if (!legacy) return null;
@@ -54,6 +56,7 @@ export function createNewWorkspaceRouteController(options: {
     ({ reason }) => reason === 'remote-daemon-path',
   )?.value;
   let runner: DraftTransactionRunner | null = null;
+  const pendingEvents: RunnerEvent[] = [];
   let stopped = false;
   let daemonConnected: boolean | undefined;
   const applyDaemonConnection = () => {
@@ -72,18 +75,21 @@ export function createNewWorkspaceRouteController(options: {
         }
       }
       if (stopped) return;
-      runner = createDraftTransactionRunner({ client: appClient, requestedDraftId });
-      runner.subscribe((state) => {
+      const startedRunner = createDraftTransactionRunner({ client: appClient, requestedDraftId });
+      runner = startedRunner;
+      startedRunner.subscribe((state) => {
         listener(state);
       });
-      runner.start(createInitialControllerState(1, initialInput(resolvedStart)));
+      startedRunner.start(createInitialControllerState(1, initialInput(resolvedStart)));
+      for (const event of pendingEvents.splice(0)) startedRunner.dispatch(event);
       applyDaemonConnection();
     },
     edit(patch) {
       runner?.dispatch({ type: 'user.edited', patch });
     },
     dispatch(event) {
-      runner?.dispatch(event);
+      if (runner) runner.dispatch(event);
+      else if (!stopped) pendingEvents.push(event);
     },
     setDaemonConnected(connected) {
       if (daemonConnected === connected) return;
