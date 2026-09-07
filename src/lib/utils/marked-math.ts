@@ -3,6 +3,18 @@ import type { Marked } from 'marked';
 
 export const MAX_MATH_SOURCE_LENGTH = 4096;
 
+export function renderKatexToString(text: string, displayMode: boolean): string {
+  return renderToString(text, {
+    displayMode,
+    output: 'htmlAndMathml',
+    throwOnError: false,
+    strict: 'error',
+    trust: false,
+    maxExpand: 100,
+    maxSize: 20,
+  });
+}
+
 type MathToken = {
   type: 'mathInline' | 'mathDisplay';
   raw: string;
@@ -27,15 +39,7 @@ function renderMath(token: MathToken, enabled: boolean): string {
   }
 
   try {
-    const rendered = renderToString(token.text, {
-      displayMode: token.displayMode,
-      output: 'htmlAndMathml',
-      throwOnError: false,
-      strict: 'error',
-      trust: false,
-      maxExpand: 100,
-      maxSize: 20,
-    });
+    const rendered = renderKatexToString(token.text, token.displayMode);
     const tag = token.displayMode ? 'div' : 'span';
     const className = token.displayMode ? 'math-display' : 'math-inline';
     const newline = token.displayMode ? '\n' : '';

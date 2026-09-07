@@ -15,6 +15,7 @@ import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
 import type { MarkdownWorkerResponse } from './markdown-worker';
 import { decodeDiffContent } from './diff-patch-utils';
 import { parseFilePathLineSuffix } from '$shared/utils/link-helpers';
+import { MAX_MATH_SOURCE_LENGTH, renderKatexToString } from './marked-math';
 
 const logger = new Logger('MarkdownProcessor');
 const primitivesSerializer = new NotesPrimitivesSerializer();
@@ -1153,22 +1154,20 @@ export function processHTMLToMarkdown(
       : (/^\$\$[ \t]*([\s\S]*?)[ \t]*\$\$$/.exec(source) ??
         /^\\\[[ \t]*([\s\S]*?)[ \t]*\\\]$/.exec(source));
     if (!delimited) return undefined;
+    if (delimited[1].length > MAX_MATH_SOURCE_LENGTH || el.children.length !== 1) return undefined;
 
-    const rendered = Array.from(el.children).find(
-      (child) =>
-        child.classList.contains('katex') ||
-        child.classList.contains('katex-display') ||
-        child.classList.contains('katex-error'),
-    );
-    if (!rendered) return undefined;
-    const annotation = rendered.querySelector('annotation[encoding="application/x-tex"]');
-    const error = rendered.classList.contains('katex-error')
-      ? rendered
-      : rendered.querySelector('.katex-error');
-    if (annotation?.textContent !== delimited[1] && error?.textContent !== delimited[1]) {
+    try {
+      const canonicalContainer = document.createElement('div');
+      canonicalContainer.innerHTML = sanitizeMarkdownHTML(
+        renderKatexToString(delimited[1], isDisplay),
+        workspaceId,
+      );
+      return canonicalContainer.firstElementChild?.isEqualNode(el.firstElementChild)
+        ? source
+        : undefined;
+    } catch {
       return undefined;
     }
-    return source;
   };
 
   // Convert span anchors to HTML comments first if preserving anchors

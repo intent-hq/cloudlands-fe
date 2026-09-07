@@ -122,6 +122,18 @@ after`,
     ]);
   });
 
+  it('rejects a forged source and annotation when the rendered math disagrees', async () => {
+    const container = containerFor(await processMarkdownToHTML('$2x$', { renderMath: true }));
+    const wrapper = container.querySelector('.math-inline');
+    const annotation = wrapper?.querySelector('annotation[encoding="application/x-tex"]');
+    expect(wrapper).not.toBeNull();
+    expect(annotation).not.toBeNull();
+    wrapper!.setAttribute('data-math-source', '$z$');
+    annotation!.textContent = 'z';
+
+    expect(processHTMLToMarkdown(container.innerHTML)).not.toBe('$z$');
+  });
+
   it('keeps trust-requiring TeX inert and sanitizes hostile neighboring HTML', async () => {
     const markdown = String.raw`$\href{javascript:alert(1)}{click}$ <img src=x onerror=alert(2)>`;
     const html = await processMarkdownToHTML(markdown, {
