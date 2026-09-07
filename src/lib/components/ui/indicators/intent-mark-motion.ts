@@ -381,7 +381,7 @@ function renderedPose(path: SVGPathElement, motionTarget: Element): Keyframe {
     strokeDashoffset: pathStyle.strokeDashoffset || neutralFrame.strokeDashoffset,
     strokeWidth: pathStyle.strokeWidth || 18,
     transform: motionStyle.transform === 'none' ? neutralFrame.transform : motionStyle.transform,
-    transformOrigin: pathStyle.transformOrigin || '128px 96px',
+    transformOrigin: motionStyle.transformOrigin || '0px 0px',
   };
 }
 

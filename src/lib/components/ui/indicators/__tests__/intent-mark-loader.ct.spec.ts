@@ -1,7 +1,30 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
+import type { Locator } from '@playwright/test';
 import IntentMarkLoaderHost from './IntentMarkLoaderHost.svelte';
 
 test.setTimeout(120_000);
+
+async function firstPathStartAt(root: Locator, kind: 'loop' | 'transition') {
+  const sample = await root.evaluate((node, animationKind) => {
+    const animations = node
+      .getAnimations({ subtree: true })
+      .filter((animation) =>
+        animationKind === 'loop'
+          ? animation.effect?.getTiming().iterations === Infinity
+          : animation.effect?.getTiming().duration === 160,
+      );
+    animations.forEach((animation) => {
+      animation.pause();
+      animation.currentTime = animationKind === 'loop' ? 160 : 0;
+    });
+    const path = node.querySelector<SVGPathElement>('[data-mark-arm]')!;
+    const point = path.getPointAtLength(0);
+    const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(path.getScreenCTM()!);
+    return { animationCount: animations.length, x: screenPoint.x, y: screenPoint.y };
+  }, kind);
+  expect(sample.animationCount).toBe(5);
+  return sample;
+}
 
 test('keeps one root and five animations through every directed handoff', async ({ mount }) => {
   const component = await mount(IntentMarkLoaderHost, {
@@ -65,6 +88,36 @@ test('keeps one root and five animations through every directed handoff', async 
     ),
   ).toBe(true);
 });
+
+for (const variant of ['twist', 'bloom'] as const) {
+  for (const handoff of ['morph', 'settle'] as const) {
+    test(`keeps the ${variant} screen pose continuous at ${handoff} time zero`, async ({
+      mount,
+    }) => {
+      const component = await mount(IntentMarkLoaderHost, {
+        props: { variant, size: 256, playing: true },
+      });
+      const root = component.getByRole('status', { name: 'Loading' });
+      await expect(root).toHaveAttribute('data-motion-state', 'playing');
+      const before = await firstPathStartAt(root, 'loop');
+
+      await component.update({
+        props: {
+          variant: handoff === 'morph' ? 'pulse' : variant,
+          size: 256,
+          playing: handoff === 'morph',
+        },
+      });
+      await expect(root).toHaveAttribute(
+        'data-motion-state',
+        handoff === 'morph' ? 'morphing' : 'settling',
+      );
+      const after = await firstPathStartAt(root, 'transition');
+
+      expect(Math.hypot(after.x - before.x, after.y - before.y)).toBeLessThanOrEqual(0.5);
+    });
+  }
+}
 
 for (const theme of ['light', 'dark'] as const) {
   for (const zoom of [1, 2] as const) {
