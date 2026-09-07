@@ -4212,6 +4212,7 @@
   "semanticMap_panel_structuralHint_description": "Noch keine semantische Karte. Eine heuristische Karte basierend auf der Repository-Struktur wird angezeigt.",
   "semanticMap_panel_title": "Semantische Codebasis-Karte",
   "semanticMap_panel_filters_label": "Filter",
+  "semanticMap_panel_details_label": "Einzelheiten",
   "semanticMap_panel_filterAgents_label": "Agenten",
   "semanticMap_panel_filterKinds_label": "Aktivität",
   "semanticMap_panel_filterTime_label": "Zeitfenster",

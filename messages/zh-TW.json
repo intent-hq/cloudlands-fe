@@ -4212,6 +4212,7 @@
   "semanticMap_panel_structuralHint_description": "尚無語意地圖。目前顯示以儲存庫結構為基礎的啟發式地圖。",
   "semanticMap_panel_title": "語意程式碼庫地圖",
   "semanticMap_panel_filters_label": "篩選條件",
+  "semanticMap_panel_details_label": "詳細資訊",
   "semanticMap_panel_filterAgents_label": "代理程式",
   "semanticMap_panel_filterKinds_label": "活動",
   "semanticMap_panel_filterTime_label": "時間範圍",

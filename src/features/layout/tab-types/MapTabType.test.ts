@@ -224,6 +224,26 @@ describe('MapTabType hydration states', () => {
     );
   });
 
+  it('exposes keyboard-native compact sidebar disclosures', async () => {
+    mapState.current = {
+      ...mapState.current,
+      hydrationStatus: 'loaded',
+      manifest: SEMANTIC_MAP_FIXTURE_MANIFEST,
+      source: 'curated',
+    };
+    renderMapTab();
+
+    const filters = screen.getByRole('button', { name: m.semanticMap_panel_filters_label() });
+    const details = screen.getByRole('button', { name: m.semanticMap_panel_details_label() });
+    expect(filters.getAttribute('aria-expanded')).toBe('false');
+    expect(details.getAttribute('aria-expanded')).toBe('false');
+
+    await fireEvent.click(filters);
+    await fireEvent.click(details);
+    expect(filters.getAttribute('aria-expanded')).toBe('true');
+    expect(details.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('keeps crossing detail bound to its regions when route order changes', async () => {
     mapState.current = {
       ...mapState.current,

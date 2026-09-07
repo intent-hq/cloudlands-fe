@@ -4212,6 +4212,7 @@
   "semanticMap_panel_structuralHint_description": "아직 시맨틱 맵이 없습니다. 저장소 구조를 기반으로 한 휴리스틱 맵을 표시합니다.",
   "semanticMap_panel_title": "시맨틱 코드베이스 맵",
   "semanticMap_panel_filters_label": "필터",
+  "semanticMap_panel_details_label": "세부 정보",
   "semanticMap_panel_filterAgents_label": "에이전트",
   "semanticMap_panel_filterKinds_label": "활동",
   "semanticMap_panel_filterTime_label": "시간 범위",

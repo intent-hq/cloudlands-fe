@@ -4213,6 +4213,7 @@
   "semanticMap_panel_structuralHint_description": "No semantic map yet. Showing a heuristic map based on repository structure.",
   "semanticMap_panel_title": "Semantic codebase map",
   "semanticMap_panel_filters_label": "Filters",
+  "semanticMap_panel_details_label": "Details",
   "semanticMap_panel_filterAgents_label": "Agents",
   "semanticMap_panel_filterKinds_label": "Activity",
   "semanticMap_panel_filterTime_label": "Time window",

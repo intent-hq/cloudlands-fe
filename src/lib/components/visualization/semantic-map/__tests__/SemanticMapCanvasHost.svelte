@@ -4,7 +4,11 @@
   import type { RegionGeometry } from '../layout/place';
   import type { SemanticMapSelection } from '../render/types';
 
-  let { activityFixture = false }: { activityFixture?: boolean } = $props();
+  let {
+    activityFixture = false,
+    width = 640,
+    height = 360,
+  }: { activityFixture?: boolean; width?: number; height?: number } = $props();
 
   const manifest: Manifest = {
     version: 1,
@@ -110,8 +114,8 @@
   {selection}
   filters={{}}
   {timeWindow}
-  width={640}
-  height={360}
+  {width}
+  {height}
   onSelectRegion={(regionIds) => (selection = { type: 'region', regionIds })}
   onClearSelection={() => (selection = null)}
 />

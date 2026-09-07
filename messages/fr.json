@@ -4212,6 +4212,7 @@
   "semanticMap_panel_structuralHint_description": "Aucune carte sémantique pour le moment. Une carte heuristique basée sur la structure du dépôt est affichée.",
   "semanticMap_panel_title": "Carte sémantique du code",
   "semanticMap_panel_filters_label": "Filtres",
+  "semanticMap_panel_details_label": "Détails",
   "semanticMap_panel_filterAgents_label": "Agents IA",
   "semanticMap_panel_filterKinds_label": "Activité",
   "semanticMap_panel_filterTime_label": "Fenêtre temporelle",

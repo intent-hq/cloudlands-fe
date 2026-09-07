@@ -159,3 +159,13 @@ test('a DPR change resizes the canvas backing store after mount', async ({ mount
   await expect.poll(() => canvas.evaluate((element) => element.width)).toBe(1280);
   await expect.poll(() => canvas.evaluate((element) => element.height)).toBe(720);
 });
+
+for (const width of [320, 420, 640, 960]) {
+  test(`minimap uses the compact visibility contract at ${width}px`, async ({ mount }) => {
+    const component = await mount(SemanticMapCanvasHost, { props: { width } });
+    await expect(component.getByRole('application')).toHaveAttribute(
+      'data-semantic-map-minimap',
+      width < 768 ? 'hidden' : 'visible',
+    );
+  });
+}

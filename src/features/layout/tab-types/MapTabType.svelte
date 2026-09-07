@@ -57,6 +57,8 @@
   let canvasWidth = $state(1);
   let canvasHeight = $state(1);
   let detailOverride = $state<StableDetailSelection>(null);
+  let filtersExpanded = $state(false);
+  let detailsExpanded = $state(false);
 
   const selectedTask = $derived($tasks.find(({ id }) => id === $mapState.selectedTaskNoteId));
   const selectedAgent = $derived($agents.find(({ id }) => id === $mapState.selectedAgentId));
@@ -192,20 +194,24 @@
       to: transition.to,
       agentId: $mapState.selectedAgentId,
     };
+    detailsExpanded = true;
   }
 
   function selectAgent(agentId: string | null): void {
     detailOverride = null;
+    detailsExpanded = agentId !== null;
     appStore.dispatch(semanticMapSelectedAgentChanged(workspaceId, agentId));
   }
 
   function selectRegion(regionId: string | null): void {
     detailOverride = null;
+    detailsExpanded = regionId !== null;
     appStore.dispatch(semanticMapSelectedRegionChanged(workspaceId, regionId));
   }
 
   function selectTask(taskNoteId: string): void {
     detailOverride = null;
+    detailsExpanded = true;
     appStore.dispatch(semanticMapSelectedTaskChanged(workspaceId, taskNoteId));
   }
 
@@ -222,8 +228,26 @@
   }
 </script>
 
-<div class="grid h-full min-h-0 grid-cols-[16rem_minmax(0,1fr)_16rem] bg-background">
-  <aside class="min-h-0 overflow-y-auto border-r border-border p-3">
+<div
+  class="map-layout grid h-full min-h-0 grid-cols-[16rem_minmax(0,1fr)_16rem] bg-background"
+  data-semantic-map-layout
+  data-compact-breakpoint="48rem"
+>
+  <aside
+    class:compact-collapsed={!filtersExpanded}
+    class="filters-sidebar min-h-0 overflow-y-auto border-r border-border p-3"
+    data-semantic-map-sidebar="filters"
+  >
+    <div class="compact-disclosure">
+      <Button
+        variant="plain"
+        class="w-full justify-between px-0"
+        aria-expanded={filtersExpanded}
+        onclick={() => (filtersExpanded = !filtersExpanded)}
+      >
+        {m.semanticMap_panel_filters_label()}
+      </Button>
+    </div>
     <h2 class="mb-2 text-sm font-semibold">{m.semanticMap_panel_filters_label()}</h2>
     {#if filterAgents.length > 0}
       <fieldset class="mb-3 flex flex-wrap gap-1.5">
@@ -306,7 +330,8 @@
   </aside>
 
   <main
-    class="relative min-h-0 min-w-0 p-3"
+    class="map-canvas relative min-h-0 min-w-0 p-3"
+    data-semantic-map-canvas-panel
     bind:clientWidth={canvasWidth}
     bind:clientHeight={canvasHeight}
   >
@@ -359,13 +384,30 @@
         height={Math.max(1, canvasHeight - 24)}
         onSelectRegion={(regionIds) => selectRegion(regionIds[0] ?? null)}
         onSelectAgent={selectAgent}
-        onSelectRoute={() => (detailOverride = { type: 'route' })}
+        onSelectRoute={() => {
+          detailOverride = { type: 'route' };
+          detailsExpanded = true;
+        }}
         onClearSelection={clearSelection}
       />
     {/if}
   </main>
 
-  <aside class="min-h-0 overflow-y-auto border-l border-border p-4">
+  <aside
+    class:compact-collapsed={!detailsExpanded}
+    class="details-sidebar min-h-0 overflow-y-auto border-l border-border p-4"
+    data-semantic-map-sidebar="details"
+  >
+    <div class="compact-disclosure">
+      <Button
+        variant="plain"
+        class="w-full justify-between px-0"
+        aria-expanded={detailsExpanded}
+        onclick={() => (detailsExpanded = !detailsExpanded)}
+      >
+        {m.semanticMap_panel_details_label()}
+      </Button>
+    </div>
     {#if $mapState.manifest}
       <SemanticMapDetail
         manifest={$mapState.manifest}
@@ -383,3 +425,44 @@
     {/if}
   </aside>
 </div>
+
+<style>
+  .compact-disclosure {
+    display: none;
+  }
+
+  @container panel (max-width: 47.99rem) {
+    .map-layout {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(18rem, 1fr) auto;
+    }
+
+    .compact-disclosure {
+      display: flex;
+    }
+
+    .filters-sidebar {
+      border-right: 0;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .details-sidebar {
+      border-top: 1px solid var(--color-border);
+      border-left: 0;
+    }
+
+    .filters-sidebar:not(.compact-collapsed),
+    .details-sidebar:not(.compact-collapsed) {
+      max-height: 16rem;
+    }
+
+    .filters-sidebar.compact-collapsed > :not(.compact-disclosure),
+    .details-sidebar.compact-collapsed > :not(.compact-disclosure) {
+      display: none;
+    }
+
+    .map-canvas {
+      min-height: 18rem;
+    }
+  }
+</style>

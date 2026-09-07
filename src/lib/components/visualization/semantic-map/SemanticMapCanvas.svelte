@@ -38,6 +38,7 @@
   const MINIMAP_HEIGHT = 100;
   const MINIMAP_MARGIN = 16;
   const applicationAttributes = { role: 'application', tabindex: 0 } as const;
+  const showMinimap = $derived(width >= 768 && height >= 240);
 
   interface CanvasColors {
     background: string;
@@ -520,7 +521,7 @@
     drawRouteLabels(ctx);
     labelLayout.badges.forEach((badge) => drawBadge(ctx, badge, now, elapsed));
     ctx.restore();
-    drawMinimap(ctx);
+    if (showMinimap) drawMinimap(ctx);
     ctx.restore();
   }
 
@@ -778,6 +779,7 @@
   data-semantic-map-width={width}
   data-semantic-map-height={height}
   data-semantic-map-agent-count={scene.badges.length}
+  data-semantic-map-minimap={showMinimap ? 'visible' : 'hidden'}
 >
   <span class="sr-only" aria-live="polite">{selectionDescription}</span>
   <ul class="sr-only" aria-label={m.semanticMap_panel_filterKinds_label()}>
