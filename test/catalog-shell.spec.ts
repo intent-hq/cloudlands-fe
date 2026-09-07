@@ -359,7 +359,11 @@ async function exerciseCanonicalPreview(page: Page, slug: (typeof catalogSlugs)[
     await page.keyboard.press('Enter');
     await expect(page.getByLabel('Button click count')).toHaveText('2');
   } else if (slug === 'button-group') {
-    await expect(page.getByRole('button', { name: 'Edit' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Copy' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Share' })).toHaveAttribute(
+      'data-state',
+      'active',
+    );
   } else if (slug === 'checkbox') {
     const checkbox = page.getByRole('checkbox', { name: 'Catalog checkbox' });
     await checkbox.click();

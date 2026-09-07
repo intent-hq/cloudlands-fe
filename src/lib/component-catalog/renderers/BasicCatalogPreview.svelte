@@ -161,12 +161,26 @@
       </div>
     {/if}
   {:else if componentId === 'button-group'}
-    <div data-catalog-rendered-state="horizontal vertical focus disabled compact">
-      <ButtonGroup aria-label="Editor actions">
-        <Button variant="outline">Edit</Button>
-        <Button variant="outline">Preview</Button>
-        <Button variant="outline" disabled>Publish</Button>
-      </ButtonGroup>
+    <div
+      class="grid gap-4"
+      data-catalog-rendered-state="horizontal vertical active keyboard-focus disabled compact dark"
+    >
+      <div class="grid gap-1">
+        <p class="type-caption text-muted-foreground">One-shot actions</p>
+        <ButtonGroup aria-label="Document actions">
+          <Button variant="outline">Copy</Button>
+          <Button variant="outline">Duplicate</Button>
+          <Button variant="outline" disabled>Delete</Button>
+        </ButtonGroup>
+      </div>
+      <div class="grid gap-1">
+        <p class="type-caption text-muted-foreground">Transient active state — Share menu open</p>
+        <ButtonGroup aria-label="Document actions with share menu open">
+          <Button variant="outline">Copy</Button>
+          <Button variant="outline" active aria-expanded={true}>Share</Button>
+          <Button variant="outline" disabled>Delete</Button>
+        </ButtonGroup>
+      </div>
     </div>
   {:else if componentId === 'checkbox'}
     <div

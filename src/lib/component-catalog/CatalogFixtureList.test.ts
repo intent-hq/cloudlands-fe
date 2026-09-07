@@ -74,6 +74,21 @@ describe('CatalogFixtureList real previews', () => {
     );
   });
 
+  it('distinguishes transient ButtonGroup activity from selection', () => {
+    const { container } = renderEntry('button-group');
+
+    const preview = container.querySelector('[data-catalog-preview="button-group"]');
+    expect(preview).not.toBeNull();
+    const groups = within(preview as HTMLElement).getAllByRole('group');
+    expect(groups).toHaveLength(2);
+    const activeButton = groups[1].querySelector('[data-state="active"]');
+    expect(activeButton?.getAttribute('aria-expanded')).toBe('true');
+    expect(activeButton?.hasAttribute('aria-pressed')).toBe(false);
+    expect(
+      (within(groups[0]).getByRole('button', { name: 'Delete' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
   it('keeps machine-readable fixture state out of the visual preview', () => {
     const checkboxRender = renderEntry('checkbox');
     expect(screen.getByText('Selection required').className).toContain('text-danger');
