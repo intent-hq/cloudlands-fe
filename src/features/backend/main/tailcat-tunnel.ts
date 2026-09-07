@@ -37,6 +37,18 @@ const logger = new Logger('TailcatTunnel');
 const KILL_ESCALATION_MS = 2_000;
 
 /**
+ * Default per-candidate bound on a tunneled connect, from facade creation
+ * (forwarder bring-up included) to the inner socket's `connect`. Well under
+ * the race-wide `RACE_TIMEOUT_MS` (10 s): while the remote daemon restarts,
+ * the local forwarder still accepts the loopback connect but the handshake
+ * through the tunnel black-holes, and without this bound that one candidate
+ * holds the whole connect race open for the full 10 s — the client's reconnect
+ * loop then gets a single attempt inside a 10 s outage. Generous enough for a
+ * healthy bring-up (binary spawn + rendezvous + TLS).
+ */
+export const TUNNEL_CONNECT_TIMEOUT_MS = 3_000;
+
+/**
  * Kill a tailcat child with escalation: SIGTERM first, SIGKILL after a short
  * grace period if `exit` has not fired — a child wedged on relay I/O ignoring
  * SIGTERM must not leak until app exit (the connect race can spawn a fresh
@@ -180,6 +192,12 @@ export function createTailcatTunnel(options: CreateTailcatTunnelOptions): Promis
       teardown();
       return;
     }
+    child.stdin.on('error', () => {
+      // A killed child (e.g. a torn-down tunnel candidate) closes its stdin
+      // while socket bytes are still piping in; the resulting EPIPE must not
+      // become an uncaught exception.
+      teardown();
+    });
     socket.pipe(child.stdin);
     child.stdout.pipe(socket);
   });
@@ -212,6 +230,11 @@ export interface CreateTunneledSocketOptions extends CreateTailcatTunnelOptions 
    * (e.g. the pinned wss socket aimed at `127.0.0.1:<localPort>`).
    */
   createInner: (localPort: number) => Duplex;
+  /**
+   * Bound on the whole connect (forwarder bring-up + inner `connect`), in
+   * milliseconds; defaults to {@link TUNNEL_CONNECT_TIMEOUT_MS}.
+   */
+  connectTimeoutMs?: number;
 }
 
 /**
@@ -221,8 +244,16 @@ export interface CreateTunneledSocketOptions extends CreateTailcatTunnelOptions 
  * through it, and forwards `connect`/`data`/`error`/`close`. Destroying the
  * facade (or the inner socket ending) tears the forwarder down, so a lost
  * race cleans up its tailcat children.
+ *
+ * The connect is bounded by `connectTimeoutMs` (default
+ * {@link TUNNEL_CONNECT_TIMEOUT_MS}), counted from facade creation: if the
+ * inner socket has not emitted `connect` by then, the facade is destroyed
+ * with a descriptive error (tearing the forwarder down) so the race counts
+ * the candidate out instead of waiting on the race-wide timeout. The timer is
+ * cleared on connect and on destroy, and never keeps the process alive.
  */
 export function createTunneledSocket(options: CreateTunneledSocketOptions): Duplex {
+  const connectTimeoutMs = options.connectTimeoutMs ?? TUNNEL_CONNECT_TIMEOUT_MS;
   let inner: Duplex | null = null;
   let tunnel: TailcatTunnel | null = null;
   const facade = new Duplex({
@@ -240,6 +271,7 @@ export function createTunneledSocket(options: CreateTunneledSocketOptions): Dupl
       callback(new Error('Socket is not connected'));
     },
     destroy(error, callback) {
+      clearTimeout(connectTimer);
       inner?.removeAllListeners();
       // A destroyed-but-alive inner socket can still emit async 'error'
       // events; keep a sink listener so they cannot become uncaught.
@@ -249,6 +281,19 @@ export function createTunneledSocket(options: CreateTunneledSocketOptions): Dupl
       callback(error);
     },
   });
+  const connectTimer = setTimeout(() => {
+    if (facade.destroyed) return;
+    logger.debug('tailcat tunnel candidate did not connect within the bound', {
+      tcAddress: options.tcAddress,
+      connectTimeoutMs,
+    });
+    facade.destroy(
+      new Error(
+        `tailcat tunnel to ${options.tcAddress} did not connect within ${connectTimeoutMs}ms`,
+      ),
+    );
+  }, connectTimeoutMs);
+  connectTimer.unref?.();
   createTailcatTunnel(options)
     .then((created) => {
       if (facade.destroyed) {
@@ -257,7 +302,10 @@ export function createTunneledSocket(options: CreateTunneledSocketOptions): Dupl
       }
       tunnel = created;
       inner = options.createInner(created.localPort);
-      inner.once('connect', () => facade.emit('connect'));
+      inner.once('connect', () => {
+        clearTimeout(connectTimer);
+        facade.emit('connect');
+      });
       inner.on('data', (chunk: Buffer | string) => facade.push(chunk));
       inner.once('error', (error: Error) => {
         if (!facade.destroyed) facade.destroy(error);
