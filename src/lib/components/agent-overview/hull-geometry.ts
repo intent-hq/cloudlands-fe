@@ -19,13 +19,17 @@ export const HULL_FILL_OPACITIES = {
 } as const;
 const HULL_SAMPLES = 16;
 const ENCLOSURE_EPSILON = 1;
+const HULL_DIRECTIONS = Array.from({ length: HULL_SAMPLES }, (_, index) => {
+  const angle = (index / HULL_SAMPLES) * Math.PI * 2;
+  return { x: Math.cos(angle), y: Math.sin(angle) };
+});
 
 function paddedCircle(member: HullMember, padding: number): HullPoint[] {
   const radius = (member.radius + padding) / Math.cos(Math.PI / HULL_SAMPLES) + ENCLOSURE_EPSILON;
-  return Array.from({ length: HULL_SAMPLES }, (_, index): HullPoint => {
-    const angle = (index / HULL_SAMPLES) * Math.PI * 2;
-    return [member.x + Math.cos(angle) * radius, member.y + Math.sin(angle) * radius];
-  });
+  return HULL_DIRECTIONS.map((direction): HullPoint => [
+    member.x + direction.x * radius,
+    member.y + direction.y * radius,
+  ]);
 }
 
 /** Returns a convex outline around circularly padded graph members. */

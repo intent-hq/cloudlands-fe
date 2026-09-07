@@ -32,18 +32,68 @@
 
   const nodeById = $derived(new Map(nodes.map((node) => [node.id, node])));
   const activeFocusNodeId = $derived(focusNodeId ?? spotlightNodeId);
+  const hullPaths = new Map<string, { main?: SVGPathElement; soft?: SVGPathElement }>();
 
-  function memberGeometry(group: TaskHullMembership): HullMember[] | null {
-    if (!group.memberIds.every((id) => positions.has(id) && nodeById.has(id))) return null;
-    return group.memberIds.map((id) => {
-      const node = nodeById.get(id)!;
-      const position = positions.get(id)!;
+  function memberGeometry(
+    group: TaskHullMembership,
+    currentPositions: Map<string, Position>,
+  ): HullMember[] | null {
+    const members: HullMember[] = [];
+    for (const id of group.memberIds) {
+      const node = nodeById.get(id);
+      if (!node) return null;
+      const position = currentPositions.get(id) ?? node;
       const dimensions = GRAPH_NODE_DIMENSIONS[node.type];
-      return {
+      members.push({
         ...position,
         radius: Math.hypot(dimensions.width, dimensions.height) / 2,
-      };
-    });
+      });
+    }
+    return members;
+  }
+
+  function pathsFor(group: TaskHullMembership, currentPositions: Map<string, Position>) {
+    const members = memberGeometry(group, currentPositions);
+    return {
+      main: members ? smoothClosedHullPath(paddedHull(members)) : null,
+      soft: members ? smoothClosedHullPath(paddedHull(members, 25)) : null,
+    };
+  }
+
+  function registerHullPath(
+    element: SVGPathElement,
+    initial: { taskId: string; kind: 'main' | 'soft' },
+  ) {
+    let value = initial;
+    const register = () => {
+      const entry = hullPaths.get(value.taskId) ?? {};
+      entry[value.kind] = element;
+      hullPaths.set(value.taskId, entry);
+    };
+    const unregister = () => {
+      const entry = hullPaths.get(value.taskId);
+      if (!entry) return;
+      delete entry[value.kind];
+      if (!entry.main && !entry.soft) hullPaths.delete(value.taskId);
+    };
+    register();
+    return {
+      update(next: typeof initial) {
+        unregister();
+        value = next;
+        register();
+      },
+      destroy: unregister,
+    };
+  }
+
+  export function updatePositions(currentPositions: Map<string, Position>): void {
+    for (const group of memberships) {
+      const paths = pathsFor(group, currentPositions);
+      const elements = hullPaths.get(group.taskId);
+      elements?.main?.setAttribute('d', paths.main ?? '');
+      elements?.soft?.setAttribute('d', paths.soft ?? '');
+    }
   }
 
   function containsFocus(group: TaskHullMembership): boolean {
@@ -72,30 +122,24 @@
   aria-hidden="true"
 >
   {#each memberships as group (group.taskId)}
-    {@const members = memberGeometry(group)}
-    {#if members}
-      {@const path = smoothClosedHullPath(paddedHull(members))}
-      {@const softPath = smoothClosedHullPath(paddedHull(members, 25))}
-      {#if path}
-        {#if softPath}
-          <path
-            class="task-hull-softener task-hull-fill"
-            d={softPath}
-            fill="var(--color-foreground)"
-            fill-opacity={fillOpacity(group) * HULL_FILL_OPACITIES.softenerRatio}
-          />
-        {/if}
-        <path
-          class="task-hull task-hull-fill"
-          d={path}
-          fill="var(--color-foreground)"
-          fill-opacity={fillOpacity(group)}
-          data-task-id={group.taskId}
-          data-working={isWorking(group)}
-          data-highlighted={containsFocus(group)}
-          data-dimmed={activeFocusNodeId !== null && !containsFocus(group)}
-        />
-      {/if}
-    {/if}
+    {@const paths = pathsFor(group, positions)}
+    <path
+      use:registerHullPath={{ taskId: group.taskId, kind: 'soft' }}
+      class="task-hull-softener task-hull-fill"
+      d={paths.soft ?? ''}
+      fill="var(--color-foreground)"
+      fill-opacity={fillOpacity(group) * HULL_FILL_OPACITIES.softenerRatio}
+    />
+    <path
+      use:registerHullPath={{ taskId: group.taskId, kind: 'main' }}
+      class="task-hull task-hull-fill"
+      d={paths.main ?? ''}
+      fill="var(--color-foreground)"
+      fill-opacity={fillOpacity(group)}
+      data-task-id={group.taskId}
+      data-working={isWorking(group)}
+      data-highlighted={containsFocus(group)}
+      data-dimmed={activeFocusNodeId !== null && !containsFocus(group)}
+    />
   {/each}
 </svg>

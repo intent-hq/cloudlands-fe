@@ -45,6 +45,52 @@
   let travelingEdges = $state<GraphEdge[]>([]);
   let motionEnabled = $state(true);
   const seenMessageEvents = new Set<string>();
+  type GeometryPart =
+    'main' | 'highlight' | 'gradient' | 'backward-terminal' | 'forward-terminal' | 'label';
+  const pairGeometry = new Map<string, Map<GeometryPart, SVGElement>>();
+  const messageMotions = new Map<string, SVGAnimateMotionElement>();
+  const edgeCurves = new Map<string, number>();
+
+  function registerPairGeometry(
+    element: SVGElement,
+    initial: { pairKey: string; part: GeometryPart },
+  ) {
+    let value = initial;
+    const register = () => {
+      const elements = pairGeometry.get(value.pairKey) ?? new Map();
+      elements.set(value.part, element);
+      pairGeometry.set(value.pairKey, elements);
+    };
+    const unregister = () => {
+      const elements = pairGeometry.get(value.pairKey);
+      elements?.delete(value.part);
+      if (elements?.size === 0) pairGeometry.delete(value.pairKey);
+    };
+    register();
+    return {
+      update(next: typeof initial) {
+        unregister();
+        value = next;
+        register();
+      },
+      destroy: unregister,
+    };
+  }
+
+  function registerMessageMotion(element: SVGAnimateMotionElement, initialEdge: GraphEdge) {
+    let key = messageEventKey(initialEdge);
+    messageMotions.set(key, element);
+    return {
+      update(nextEdge: GraphEdge) {
+        messageMotions.delete(key);
+        key = messageEventKey(nextEdge);
+        messageMotions.set(key, element);
+      },
+      destroy() {
+        messageMotions.delete(key);
+      },
+    };
+  }
 
   function edgeLayerMotion(element: SVGSVGElement) {
     const motion = activityMotion(element);
@@ -227,12 +273,16 @@
   }
 
   function edgeCurve(pairKey: string): number {
+    const cached = edgeCurves.get(pairKey);
+    if (cached !== undefined) return cached;
     let hash = 2166136261;
     for (let index = 0; index < pairKey.length; index += 1) {
       hash ^= pairKey.charCodeAt(index);
       hash = Math.imul(hash, 16777619);
     }
-    return (hash >>> 0) % 2 === 0 ? -0.05 : 0.05;
+    const curve = (hash >>> 0) % 2 === 0 ? -0.05 : 0.05;
+    edgeCurves.set(pairKey, curve);
+    return curve;
   }
 
   function pathsForPair(
@@ -264,6 +314,54 @@
     };
   }
 
+  export function updatePositions(currentPositions: Map<string, GraphPosition>): void {
+    for (const pair of mergedPairs) {
+      const source = currentPositions.get(pair.aId);
+      const target = currentPositions.get(pair.bId);
+      const elements = pairGeometry.get(pair.key);
+      if (!source || !target || !elements) continue;
+      const endpoints = endpointsFor(pair, source, target);
+      const paths = pathsForPair(pair.key, endpoints.source, endpoints.target);
+      elements.get('main')?.setAttribute('d', paths.forward);
+
+      const highlight = highlightFor(pair);
+      const direction = highlight ? directionFor(highlight.edge, pair) : 'a-to-b';
+      const start = direction === 'a-to-b' ? endpoints.source : endpoints.target;
+      const end = direction === 'a-to-b' ? endpoints.target : endpoints.source;
+      elements
+        .get('highlight')
+        ?.setAttribute('d', direction === 'a-to-b' ? paths.forward : paths.reverse);
+      const gradient = elements.get('gradient');
+      gradient?.setAttribute('x1', String(start.x));
+      gradient?.setAttribute('y1', String(start.y));
+      gradient?.setAttribute('x2', String(end.x));
+      gradient?.setAttribute('y2', String(end.y));
+      const backward = elements.get('backward-terminal');
+      backward?.setAttribute('cx', String(endpoints.source.x));
+      backward?.setAttribute('cy', String(endpoints.source.y));
+      const forward = elements.get('forward-terminal');
+      forward?.setAttribute('cx', String(endpoints.target.x));
+      forward?.setAttribute('cy', String(endpoints.target.y));
+      elements
+        .get('label')
+        ?.setAttribute(
+          'transform',
+          `translate(${(endpoints.source.x + endpoints.target.x) / 2} ${(endpoints.source.y + endpoints.target.y) / 2})`,
+        );
+    }
+    for (const edge of travelingEdges) {
+      const pair = pairByKey.get(pairKeyFor(edge));
+      if (!pair) continue;
+      const source = currentPositions.get(pair.aId);
+      const target = currentPositions.get(pair.bId);
+      if (!source || !target) continue;
+      const endpoints = endpointsFor(pair, source, target);
+      const paths = pathsForPair(pair.key, endpoints.source, endpoints.target);
+      const path = directionFor(edge, pair) === 'a-to-b' ? paths.forward : paths.reverse;
+      messageMotions.get(messageEventKey(edge))?.setAttribute('path', path);
+    }
+  }
+
   function labelFor(edge: GraphEdge): string | null {
     if (edge.type === 'file-write' || edge.type === 'note-write') {
       if (!edge.additions && !edge.deletions) return null;
@@ -280,8 +378,8 @@
   aria-hidden="true"
 >
   {#each mergedPairs as pair, edgeIndex (pair.key)}
-    {@const source = positions.get(pair.aId)}
-    {@const target = positions.get(pair.bId)}
+    {@const source = positions.get(pair.aId) ?? nodeById.get(pair.aId)}
+    {@const target = positions.get(pair.bId) ?? nodeById.get(pair.bId)}
     {@const style = EDGE_STYLES[pair.type] ?? EDGE_STYLES.default}
     {@const highlight = highlightFor(pair)}
     {@const prominent = isActiveNow(pair) || highlight?.kind === 'working'}
@@ -308,6 +406,7 @@
       {#if highlight && motionEnabled}
         <defs>
           <linearGradient
+            use:registerPairGeometry={{ pairKey: pair.key, part: 'gradient' }}
             id={gradientId}
             gradientUnits="userSpaceOnUse"
             x1={highlightDirection === 'a-to-b' ? endpoints.source.x : endpoints.target.x}
@@ -322,6 +421,7 @@
         </defs>
       {/if}
       <path
+        use:registerPairGeometry={{ pairKey: pair.key, part: 'main' }}
         class="edge-path"
         d={paths.forward}
         pathLength="1"
@@ -343,6 +443,7 @@
       {#if highlight && motionEnabled}
         {#key `${pair.key}:${highlight.edge.timestamp}:${highlight.kind}`}
           <path
+            use:registerPairGeometry={{ pairKey: pair.key, part: 'highlight' }}
             class="edge-highlight"
             class:working-highlight={highlight.kind === 'working'}
             class:delegation-highlight={highlight.kind === 'delegation'}
@@ -366,6 +467,7 @@
       {/if}
       {#if pair.directions.has('b-to-a')}
         <circle
+          use:registerPairGeometry={{ pairKey: pair.key, part: 'backward-terminal' }}
           class="edge-terminal"
           cx={endpoints.source.x}
           cy={endpoints.source.y}
@@ -378,6 +480,7 @@
       {/if}
       {#if pair.directions.has('a-to-b')}
         <circle
+          use:registerPairGeometry={{ pairKey: pair.key, part: 'forward-terminal' }}
           class="edge-terminal"
           cx={endpoints.target.x}
           cy={endpoints.target.y}
@@ -391,6 +494,7 @@
       {#if label && (activeFocusNodeId === null || highlighted)}
         {@const labelWidth = 12 + label.length * 6}
         <g
+          use:registerPairGeometry={{ pairKey: pair.key, part: 'label' }}
           transform={`translate(${(endpoints.source.x + endpoints.target.x) / 2} ${(endpoints.source.y + endpoints.target.y) / 2})`}
           opacity={Math.min(1, opacityFor(pair) + 0.18)}
         >
@@ -416,8 +520,8 @@
   {/each}
   {#each travelingEdges as edge (`${edge.id}:${edge.timestamp}`)}
     {@const pair = pairByKey.get(pairKeyFor(edge))}
-    {@const source = pair ? positions.get(pair.aId) : undefined}
-    {@const target = pair ? positions.get(pair.bId) : undefined}
+    {@const source = pair ? (positions.get(pair.aId) ?? nodeById.get(pair.aId)) : undefined}
+    {@const target = pair ? (positions.get(pair.bId) ?? nodeById.get(pair.bId)) : undefined}
     {#if pair && source && target}
       {@const endpoints = endpointsFor(pair, source, target)}
       {@const paths = pathsForPair(pair.key, endpoints.source, endpoints.target)}
@@ -445,6 +549,7 @@
           font-size="9"><!-- i18n-ignore (compact graph edge-kind token) -->msg</text
         >
         <animateMotion
+          use:registerMessageMotion={edge}
           use:completeMessageTravel={edge}
           path={messagePath}
           dur={`${edgeAnimationDuration(endpoints.source, endpoints.target, playbackSpeed)}s`}

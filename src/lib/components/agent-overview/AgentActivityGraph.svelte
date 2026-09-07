@@ -21,6 +21,7 @@
   import { nodeEnterDelay } from './activity-motion';
   import type { PlaybackSpeed } from './playback';
   import { createTaskHullMembershipMemo } from './graph-helpers';
+  import { createGraphRenderIndexMemo } from './graph-render-index';
 
   export interface GraphLayers {
     files: boolean;
@@ -64,13 +65,20 @@
   let keyboardNodeId = $state<string | null>(null);
   let spaceHeld = $state(false);
   let canvasPanning = $state(false);
-  let positions = $state<Map<string, GraphPosition>>(new Map());
+  const latestPositions = { current: new Map<string, GraphPosition>() };
+  let edgeLayer = $state<
+    { updatePositions: (positions: Map<string, GraphPosition>) => void } | undefined
+  >();
+  let hullLayer = $state<
+    { updatePositions: (positions: Map<string, GraphPosition>) => void } | undefined
+  >();
   let expandedAgentIds = $state<Set<string>>(new Set());
   let previousNodeIds = '';
   let autoFitPending = false;
   let autoFitTransitionActive = false;
   let autoFitQueued = false;
   let pendingPositions = new Map<string, GraphPosition>();
+  const positionedNodes = new Map<string, HTMLElement>();
   let frame: number | null = null;
   let fitFrame: number | null = null;
   let deferredFit: (() => void) | null = null;
@@ -140,6 +148,9 @@
   });
   const memoizedHullMemberships = createTaskHullMembershipMemo();
   const hullMemberships = $derived(memoizedHullMemberships(visibleGraph.nodes, visibleGraph.edges));
+  const memoizedRenderIndex = createGraphRenderIndexMemo();
+  const renderIndex = $derived(memoizedRenderIndex(visibleGraph.nodes, visibleGraph.edges));
+  const visibleNodeById = $derived(new Map(visibleGraph.nodes.map((node) => [node.id, node])));
 
   const activeHoverNodeId = $derived(hoveredNodeId === dismissedHoverNodeId ? null : hoveredNodeId);
   const focusNodeId = $derived(activeHoverNodeId ?? selectedNodeId ?? keyboardNodeId);
@@ -229,13 +240,37 @@
     pendingPositions = new Map(nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
     if (frame !== null) return;
     frame = requestAnimationFrame(() => {
-      positions = pendingPositions;
+      for (const [id, position] of pendingPositions) {
+        const element = positionedNodes.get(id);
+        if (element) {
+          element.style.transform = `translate(${position.x}px, ${position.y}px) translate(-50%, -50%)`;
+        }
+      }
+      latestPositions.current = pendingPositions;
+      edgeLayer?.updatePositions(pendingPositions);
+      hullLayer?.updatePositions(pendingPositions);
       frame = null;
       if (autoFitPending && alpha < 0.01) {
         autoFitPending = false;
         fitAutomatically();
       }
     });
+  }
+
+  function positionGraphNode(element: HTMLElement, initialId: string) {
+    let id = initialId;
+    positionedNodes.set(id, element);
+    return {
+      update(nextId: string) {
+        if (nextId === id) return;
+        positionedNodes.delete(id);
+        id = nextId;
+        positionedNodes.set(id, element);
+      },
+      destroy() {
+        positionedNodes.delete(id);
+      },
+    };
   }
 
   function scheduleFit(fit: () => void): void {
@@ -366,7 +401,7 @@
   function handlePointerDown(node: GraphNode, event: PointerEvent): void {
     if (event.button !== 0 || !layout) return;
     event.stopPropagation();
-    const position = positions.get(node.id) ?? node;
+    const position = latestPositions.current.get(node.id) ?? node;
     dragState = {
       id: node.id,
       pointerId: event.pointerId,
@@ -439,7 +474,7 @@
     const nodes = visibleGraph.nodes.filter((node) => included.has(node.id));
     const bounds = nodes.reduce(
       (result, node) => {
-        const position = positions.get(node.id) ?? node;
+        const position = latestPositions.current.get(node.id) ?? node;
         const dimensions = GRAPH_NODE_DIMENSIONS[node.type];
         result.minX = Math.min(result.minX, position.x - dimensions.width / 2);
         result.minY = Math.min(result.minY, position.y - dimensions.height / 2);
@@ -464,7 +499,8 @@
 
   function ensureNodeVisible(nodeId: string): void {
     if (!zoomBehavior) return;
-    const position = positions.get(nodeId) ?? visibleGraph.nodes.find((node) => node.id === nodeId);
+    const position =
+      latestPositions.current.get(nodeId) ?? visibleGraph.nodes.find((node) => node.id === nodeId);
     if (!position) return;
     const transform = zoomTransform(container);
     const inset = 48;
@@ -578,21 +614,18 @@
     nudgeX: number;
     nudgeY: number;
   } {
-    const edges = visibleGraph.edges.filter((edge) => edge.targetId === node.id);
-    const writes = edges.filter((edge) => edge.type === 'file-write' || edge.type === 'note-write');
-    const latest = edges.toSorted((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))[0];
-    const latestWrite = writes.toSorted(
-      (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
-    )[0];
-    const source = latestWrite ? positions.get(latestWrite.sourceId) : undefined;
-    const target = positions.get(node.id);
+    const aggregate = renderIndex.resourceAccessById.get(node.id);
+    const source = aggregate?.lastWriteSourceId
+      ? visibleNodeById.get(aggregate.lastWriteSourceId)
+      : undefined;
+    const target = visibleNodeById.get(node.id);
     const distance = source && target ? Math.hypot(source.x - target.x, source.y - target.y) : 0;
     return {
-      access: writes.length > 0 ? 'write' : 'read',
-      additions: writes.reduce((sum, edge) => sum + (edge.additions ?? 0), 0),
-      deletions: writes.reduce((sum, edge) => sum + (edge.deletions ?? 0), 0),
-      isActive: edges.some((edge) => edge.isActive),
-      lastActivityAt: latest?.timestamp,
+      access: aggregate?.access ?? 'read',
+      additions: aggregate?.additions ?? 0,
+      deletions: aggregate?.deletions ?? 0,
+      isActive: aggregate?.isActive ?? false,
+      lastActivityAt: aggregate?.lastActivityAt,
       nudgeX: source && target && distance > 0 ? ((source.x - target.x) / distance) * 2 : 0,
       nudgeY: source && target && distance > 0 ? ((source.y - target.y) / distance) * 2 : 0,
     };
@@ -611,27 +644,7 @@
   }
 
   function nodeActivity(node: GraphNode): { isActive: boolean; lastActivityAt?: string } {
-    const incident = visibleGraph.edges.filter(
-      (edge) => edge.sourceId === node.id || edge.targetId === node.id,
-    );
-    const latest = incident.toSorted(
-      (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
-    )[0];
-    const assignedAgentIsActive =
-      node.type === 'task' &&
-      incident
-        .filter((edge) => edge.type === 'task-assignment' && edge.targetId === node.id)
-        .some((edge) => {
-          const agent = visibleGraph.nodes.find((candidate) => candidate.id === edge.sourceId);
-          return agent?.type === 'agent' && agent.status === 'responding';
-        });
-    return {
-      isActive:
-        node.type === 'agent'
-          ? node.status === 'responding'
-          : assignedAgentIsActive || incident.some((edge) => edge.isActive),
-      lastActivityAt: latest?.timestamp,
-    };
+    return renderIndex.nodeActivityById.get(node.id) ?? { isActive: false };
   }
 
   function nodeEvents(node: GraphNode) {
@@ -765,25 +778,27 @@
       data-zoom-band={zoomBand}
     >
       <GraphHullLayer
+        bind:this={hullLayer}
         memberships={hullMemberships}
         nodes={visibleGraph.nodes}
-        {positions}
+        positions={latestPositions.current}
         {focusNodeId}
       />
       <GraphEdgeLayer
+        bind:this={edgeLayer}
         edges={visibleGraph.edges}
         nodes={visibleGraph.nodes}
-        {positions}
+        positions={latestPositions.current}
         {focusNodeId}
         {playbackSpeed}
         onMessageArrival={handleMessageArrival}
       />
       {#each visibleGraph.nodes as node, index (node.id)}
-        {@const position = positions.get(node.id) ?? node}
         {@const activity = nodeActivity(node)}
         <div
+          use:positionGraphNode={node.id}
           class="absolute"
-          style:transform={`translate(${position.x}px, ${position.y}px) translate(-50%, -50%)`}
+          style:transform={`translate(${node.x}px, ${node.y}px) translate(-50%, -50%)`}
           style:z-index={node.type === 'task' ? 2 : node.type === 'agent' ? 3 : 1}
         >
           {#if node.type === 'task'}
