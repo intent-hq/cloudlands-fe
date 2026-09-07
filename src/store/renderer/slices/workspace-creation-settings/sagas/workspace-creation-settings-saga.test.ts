@@ -44,9 +44,9 @@ describe('workspaceCreationSettingsSaga workers', () => {
     mocks.update.mockResolvedValue([]);
   });
 
-  it('uses the new settings bag without reading the legacy key', async () => {
+  it('uses the daemon-registered settings bag without reading the legacy FE key', async () => {
     mocks.get.mockResolvedValue({
-      definition: { path: 'workspaceCreationSettings.state', type: 'object' },
+      definition: { path: 'workspaceInitializer.state', type: 'object' },
       value: {
         lastSelectedRepo: { path: '/repo', type: 'local' },
         branchByRepo: { '/repo': 'main', bad: 7 },
@@ -57,7 +57,7 @@ describe('workspaceCreationSettingsSaga workers', () => {
       { dispatch: (action) => dispatched.push(action) },
       hydrateWorkspaceCreationSettingsWorker,
     ).toPromise();
-    expect(mocks.get).toHaveBeenCalledWith('workspaceCreationSettings.state');
+    expect(mocks.get).toHaveBeenCalledWith('workspaceInitializer.state');
     expect(mocks.get).toHaveBeenCalledTimes(1);
     expect(mocks.update).not.toHaveBeenCalled();
     expect(dispatched).toEqual([
@@ -69,7 +69,7 @@ describe('workspaceCreationSettingsSaga workers', () => {
 
   it('migrates the tolerant legacy settings bag into the new key', async () => {
     mocks.get.mockImplementation(async (path: string) =>
-      path === 'workspaceCreationSettings.state'
+      path === 'workspaceInitializer.state'
         ? { value: {} }
         : {
             value: {
@@ -94,21 +94,40 @@ describe('workspaceCreationSettingsSaga workers', () => {
       remoteSetups: [{ id: 'remote', name: 'Remote' }],
     };
     expect(mocks.get.mock.calls).toEqual([
-      ['workspaceCreationSettings.state'],
       ['workspaceInitializer.state'],
+      ['workspaceCreationSettings.state'],
     ]);
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ payload: [migrated] }));
     expect(mocks.update).toHaveBeenCalledWith([
-      { path: 'workspaceCreationSettings.state', value: migrated },
+      { path: 'workspaceInitializer.state', value: migrated },
     ]);
     expect(mocks.info).toHaveBeenCalledOnce();
+  });
+
+  it('hydrates defaults when the daemon rejects the unregistered legacy key', async () => {
+    mocks.get.mockImplementation(async (path: string) => {
+      if (path === 'workspaceInitializer.state') return { value: {} };
+      throw new Error('unknown setting');
+    });
+    const dispatch = vi.fn();
+
+    const hydrated = await runSaga(
+      { dispatch },
+      hydrateWorkspaceCreationSettingsWorker,
+    ).toPromise();
+
+    expect(hydrated).toBe(true);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: [expect.objectContaining({ lastSelectedRepo: null })] }),
+    );
+    expect(mocks.error).not.toHaveBeenCalled();
   });
 
   it('persists only shared creation settings', async () => {
     await runSaga({ getState: state }, persistWorkspaceCreationSettingsWorker).toPromise();
     expect(mocks.update).toHaveBeenCalledWith([
       {
-        path: 'workspaceCreationSettings.state',
+        path: 'workspaceInitializer.state',
         value: {
           lastSelectedRepo: { path: '/repo', type: 'local' },
           branchByRepo: { '/repo': 'main' },

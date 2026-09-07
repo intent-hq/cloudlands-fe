@@ -28,8 +28,8 @@ import type {
 } from '../workspace-creation-settings-types';
 
 const logger = createLogger('WorkspaceCreationSettingsSaga');
-const SETTINGS_PATH = 'workspaceCreationSettings.state';
-const LEGACY_SETTINGS_PATH = 'workspaceInitializer.state';
+const SETTINGS_PATH = 'workspaceInitializer.state';
+const LEGACY_SETTINGS_PATH = 'workspaceCreationSettings.state';
 
 type HydrationGate = { settled: boolean; queued: boolean };
 
@@ -124,11 +124,16 @@ export function* hydrateWorkspaceCreationSettingsWorker() {
     const setting = yield* call([appClient.settings, appClient.settings.get], SETTINGS_PATH);
     const daemonBag = isRecord(setting?.value) ? setting.value : {};
     if (Object.keys(daemonBag).length === 0) {
-      const legacySetting = yield* call(
-        [appClient.settings, appClient.settings.get],
-        LEGACY_SETTINGS_PATH,
-      );
-      const legacyBag = isRecord(legacySetting?.value) ? legacySetting.value : null;
+      let legacyBag: Record<string, unknown> | null = null;
+      try {
+        const legacySetting = yield* call(
+          [appClient.settings, appClient.settings.get],
+          LEGACY_SETTINGS_PATH,
+        );
+        legacyBag = isRecord(legacySetting?.value) ? legacySetting.value : null;
+      } catch {
+        // The daemon may reject the historical FE-only key because it was never registered.
+      }
       if (legacyBag && Object.keys(legacyBag).length > 0) {
         const migratedBag = hydrationStateFromBag(legacyBag);
         yield* put(hydrateWorkspaceCreationSettings(migratedBag));
