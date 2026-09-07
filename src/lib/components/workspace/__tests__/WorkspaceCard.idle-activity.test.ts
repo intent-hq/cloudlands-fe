@@ -770,7 +770,7 @@ describe('WorkspaceCard hover-intent delay', () => {
     }
   });
 
-  it('keeps the card open when pointer-down focuses a control inside the row', async () => {
+  it('does not reopen when a captured pointer-down focuses a control inside the row', async () => {
     vi.useFakeTimers();
     try {
       const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
@@ -785,7 +785,8 @@ describe('WorkspaceCard hover-intent delay', () => {
       await fireEvent.pointerDown(trigger);
       await fireEvent.focusIn(trigger);
       await tick();
-      expect(hoverCard()).toBeTruthy();
+      expect(hoverCard()).toBeNull();
+      vi.advanceTimersByTime(0);
     } finally {
       workspaceHoverCardIntentSession.reset();
       vi.useRealTimers();

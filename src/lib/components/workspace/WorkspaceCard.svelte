@@ -307,14 +307,6 @@
       return;
     }
     if (
-      event.type === 'pointerdown' &&
-      hoverCardVisible &&
-      target instanceof Node &&
-      rowElement?.contains(target)
-    ) {
-      return;
-    }
-    if (
       event.type === 'scroll' &&
       rowElement &&
       target instanceof Node &&
