@@ -122,6 +122,18 @@ test('selected source setup expands and opens its Change picker', async ({ mount
   await expect(page.getByRole('button', { name: 'Select a folder' })).toBeVisible();
 });
 
+test('restored invalid source is explained and cannot start', async ({ mount }) => {
+  const component = await mount(ScenarioContractHost, {
+    props: { scenarioId: 'source-new-folder-invalid' },
+  });
+
+  await expect(component.getByRole('alert')).toBeVisible();
+  await expect(component.getByTestId('draft-start')).toBeDisabled();
+  await component.getByRole('button', { name: 'Expand project setup' }).click();
+  await expect(component.getByTestId('selected-project').getByRole('alert')).toBeVisible();
+  await expect(component.getByTestId('draft-start')).toBeDisabled();
+});
+
 test('conflict actions remain readable and reachable in a narrow panel', async ({
   mount,
   page,

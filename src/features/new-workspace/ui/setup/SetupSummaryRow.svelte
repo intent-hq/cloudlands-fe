@@ -4,6 +4,8 @@
   import { m } from '$shared/paraglide/messages.js';
   import type { DraftSource, WorkspaceDraftConfig } from '$shared/types/workspace-draft';
   import type { ControllerState } from '../../controller';
+  import SourceValidationMessage from '../SourceValidationMessage.svelte';
+  import { getSourceValidationError } from '../../utils/source-validation';
   import { selectOrchestratorSpecialist } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -26,6 +28,7 @@
   const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const readiness = $derived(readinessState(capabilities));
+  const sourceError = $derived(getSourceValidationError(source));
   const optionsModified = $derived(
     hasModifiedOptions(source, config, {
       setupScript: source ? defaultSetupScriptForSource(source) : undefined,
@@ -56,6 +59,7 @@
     <span class="type-caption block truncate text-muted-foreground">
       {source ? projectDescription(source) : m.newWorkspace_setup_noProject_description()}
     </span>
+    <SourceValidationMessage error={sourceError} class="mt-1" />
   </span>
   <span class="type-caption hidden min-w-0 truncate text-muted-foreground sm:block">
     {[

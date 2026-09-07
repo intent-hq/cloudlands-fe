@@ -7,7 +7,9 @@
   import * as Dialog from '$lib/components/ui/dialog';
   import { m } from '$shared/paraglide/messages.js';
   import type { DraftSource } from '$shared/types/workspace-draft';
-  import { getNewFolderNameError, type NewFolderNameError, type SourcePresentation } from './types';
+  import { getNewFolderNameError, getSourceValidationError } from '../utils/source-validation';
+  import SourceValidationMessage from './SourceValidationMessage.svelte';
+  import type { SourcePresentation } from './types';
 
   export type SourcePickerMode = 'local' | 'github' | 'new-folder';
 
@@ -40,9 +42,7 @@
   // i18n-ignore (default filesystem-safe directory name)
   let newFolderName = $state('my-project');
   const newFolderNameError = $derived(getNewFolderNameError(newFolderName));
-  const activeNewFolderError = $derived(
-    source?.kind === 'newFolder' ? getNewFolderNameError(source.name) : newFolderNameError,
-  );
+  const activeNewFolderError = $derived(getSourceValidationError(source) ?? newFolderNameError);
 
   const sourceState = $derived.by(() => {
     if (presentation.unresolvedLink) return 'unresolved-link';
@@ -85,23 +85,6 @@
     return `${source.owner}/${source.name}`;
   });
 
-  function errorLabel(error: NewFolderNameError): string {
-    switch (error) {
-      case 'required':
-        return m.workspaceValidation_projectNameRequired_error();
-      case 'path-separator':
-        return m.workspaceCreation_projectPicker_pathSeparators_error();
-      case 'dot-name':
-        return m.workspaceCreation_projectPicker_dotName_error();
-      case 'null-character':
-        return m.workspaceCreation_projectPicker_nullChars_error();
-      case 'invalid-character':
-        return m.workspaceCreation_projectPicker_invalidChars_error();
-      case 'too-long':
-        return m.workspaceCreation_projectPicker_nameTooLong_error();
-    }
-  }
-
   function chooseNewFolder(): void {
     if (!newFolderNameError) {
       onChooseNewFolder?.(newFolderName.trim());
@@ -134,7 +117,7 @@
         <p class="mt-1 break-all">{summary}</p>
       {/if}
       {#if sourceState === 'new-folder-invalid' && activeNewFolderError}
-        <p class="mt-1 text-danger" role="alert">{errorLabel(activeNewFolderError)}</p>
+        <SourceValidationMessage error={activeNewFolderError} class="mt-1" />
       {:else if sourceState === 'unresolved-link'}
         <p class="mt-1">{m.newWorkspace_source_unresolved_description()}</p>
       {:else if sourceState === 'non-git'}
@@ -210,9 +193,9 @@
         </Button>
       </div>
       {#if newFolderNameError}
-        <p id={`${fieldId}-error`} class="type-caption text-danger" role="alert">
-          {errorLabel(newFolderNameError)}
-        </p>
+        <div id={`${fieldId}-error`}>
+          <SourceValidationMessage error={newFolderNameError} />
+        </div>
       {/if}
     {:else}
       <RepoSelector

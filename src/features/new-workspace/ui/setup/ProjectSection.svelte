@@ -10,6 +10,8 @@
     getRecentRepoTooltip,
   } from '$lib/components/workspace/initializer/recent-repo-display';
   import type { SourcePickerMode } from '../SourceCard.svelte';
+  import SourceValidationMessage from '../SourceValidationMessage.svelte';
+  import { getSourceValidationError } from '../../utils/source-validation';
   import {
     getProjectSectionVisibility,
     projectDescription,
@@ -38,6 +40,7 @@
   const changePickerMode = $derived<SourcePickerMode>(
     source?.kind === 'local' ? 'local' : source?.kind === 'newFolder' ? 'new-folder' : 'github',
   );
+  const sourceError = $derived(getSourceValidationError(source));
 </script>
 
 <section class="space-y-3" aria-labelledby="project-section-heading">
@@ -52,6 +55,7 @@
         <small class="type-caption block truncate text-muted-foreground"
           >{projectDescription(source)}</small
         >
+        <SourceValidationMessage error={sourceError} class="mt-1" />
         {#if projectIsolation(source) === 'worktree'}
           <small class="type-caption block text-muted-foreground">
             {m.workspace_checkoutModePill_worktree_label()}

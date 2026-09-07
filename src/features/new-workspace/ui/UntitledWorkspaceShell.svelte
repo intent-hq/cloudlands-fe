@@ -19,6 +19,7 @@
   import SourceCard, { type SourcePickerMode } from './SourceCard.svelte';
   import ProjectSetupPanel from './setup/ProjectSetupPanel.svelte';
   import { coordinatorStateFor, isProgressPhase, type NewWorkspacePresentation } from './types';
+  import { isSourceValid } from '../utils/source-validation';
 
   interface Props {
     state: ControllerState;
@@ -69,7 +70,8 @@
   const canStart = $derived(
     (controllerState.phase === 'pristine' || controllerState.phase === 'editing') &&
       controllerState.draft !== null &&
-      missingCapabilities.length === 0,
+      missingCapabilities.length === 0 &&
+      isSourceValid(controllerState.input.source),
   );
   const saveState = $derived.by(() => {
     if (controllerState.phase === 'offline') return 'unsaved';
