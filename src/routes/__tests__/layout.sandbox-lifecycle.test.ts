@@ -10,7 +10,10 @@ vi.mock('$store/renderer/root-store-lifecycle', () => ({
   startRootStoreLifecycle: mocks.startRootStoreLifecycle,
 }));
 vi.mock('$store/renderer/seeders', () => ({}));
-vi.mock('$features/backend/splash-gate', () => ({ wireSplashGate: () => () => {} }));
+vi.mock('$features/backend/splash-gate', () => ({
+  dismissSplashElement: () => {},
+  wireSplashGate: () => () => {},
+}));
 vi.mock('$lib/utils/history-navigation', () => ({
   attachMouseHistoryNavigation: () => () => {},
   handleHistoryNavigateIpc: () => {},

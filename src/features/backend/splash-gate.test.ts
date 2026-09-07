@@ -4,7 +4,12 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { startSplashGate, wireSplashGate, SPLASH_FALLBACK_TIMEOUT_MS } from './splash-gate';
+import {
+  dismissSplashElement,
+  startSplashGate,
+  wireSplashGate,
+  SPLASH_FALLBACK_TIMEOUT_MS,
+} from './splash-gate';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
 
@@ -128,6 +133,20 @@ describe('startSplashGate', () => {
     vi.advanceTimersByTime(5000);
     expect(dismiss).not.toHaveBeenCalled();
     expect(api.offById).toHaveBeenCalled();
+  });
+});
+
+describe('dismissSplashElement', () => {
+  it('adds the mounted class and removes the splash after its transition ends', () => {
+    const splash = document.createElement('div');
+    document.body.appendChild(splash);
+
+    dismissSplashElement(splash);
+
+    expect(splash.classList.contains('mounted')).toBe(true);
+    expect(splash.isConnected).toBe(true);
+    splash.dispatchEvent(new Event('transitionend'));
+    expect(splash.isConnected).toBe(false);
   });
 });
 
