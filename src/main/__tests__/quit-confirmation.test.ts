@@ -20,6 +20,7 @@ import type {
   QuitBrowserTabSummary,
   QuitConfirmationShowPayload,
 } from '../../shared/ipc/quit-confirmation';
+import type { WorkspaceBrowserClient } from '../../shared/types/browser-clients';
 import {
   confirmQuitWithRunningAgents,
   resetQuitConfirmationStateForTests,
@@ -101,6 +102,13 @@ const LOCAL_AGENTS: RespondingAgent[] = [
   { agentId: 'agent-3', name: 'Local worker', workspaceId: 'ws-3' },
 ];
 
+const OWN_CLIENT_ID = 'client-self';
+
+/** `workspace.getBrowserClient` result resolving to `clientId` (PROTOCOL §5.1). */
+function drivenBy(clientId: string | null): WorkspaceBrowserClient {
+  return { source: 'default', resolved: clientId === null ? null : { clientId } };
+}
+
 function makeDeps(options: {
   agents: RespondingAgent[];
   localAgents?: RespondingAgent[];
@@ -121,6 +129,8 @@ function makeDeps(options: {
     listRespondingAgents: vi.fn(async () => options.agents),
     listLocalRespondingAgents: vi.fn(async () => options.localAgents ?? []),
     listDisruptedBrowserTabs: vi.fn(async () => options.browserTabs ?? []),
+    getOwnClientId: vi.fn(async () => OWN_CLIENT_ID),
+    getWorkspaceBrowserClient: vi.fn(async () => drivenBy(OWN_CLIENT_ID)),
     confirmViaRenderer: vi.fn(async () => options.rendererDecision ?? null),
     buildQuitDialogOptions: vi.fn(() => dialogOptions),
     buildTabsOnlyQuitDialogOptions: vi.fn(() => tabsOnlyDialogOptions),
@@ -614,6 +624,236 @@ describe('confirmQuitWithRunningAgents — renderer round-trip', () => {
     await expect(first).resolves.toBe(true);
     await expect(second).resolves.toBe(true);
     expect(deps.listRespondingAgents).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * REV-2 narrowing: a hosted agent tab counts only when its workspace's
+ * driving client (`workspace.getBrowserClient(...).resolved.clientId`) is this
+ * app. Every lookup failure is fail-open — the tab stays counted.
+ */
+describe('confirmQuitWithRunningAgents — driven-workspace tab narrowing', () => {
+  const HOSTED_TABS: QuitBrowserTabSummary[] = [
+    { tabId: 'tab-a', ownerAgentId: 'agent-a', workspaceId: 'ws-driven' },
+    { tabId: 'tab-b', ownerAgentId: 'agent-b', workspaceId: 'ws-other' },
+    { tabId: 'tab-c', ownerAgentId: 'agent-c', workspaceId: 'ws-other' },
+  ];
+
+  function driving(map: Record<string, WorkspaceBrowserClient | Error>) {
+    return async (_client: RunningAgentsRpc, workspaceId: string) => {
+      const entry = map[workspaceId];
+      if (entry === undefined) throw new Error(`unknown workspace ${workspaceId}`);
+      if (entry instanceof Error) throw entry;
+      return entry;
+    };
+  }
+
+  function shownTabs(deps: ReturnType<typeof makeDeps>['deps']): QuitBrowserTabSummary[] {
+    const payload = deps.confirmViaRenderer.mock.calls[0][1] as QuitConfirmationShowPayload;
+    return payload.disruptedBrowserTabs;
+  }
+
+  it('asks each hosted tab workspace once with the PROTOCOL params, on the pooled client', async () => {
+    const { deps, client } = makeDeps({
+      agents: [],
+      browserTabs: HOSTED_TABS,
+      rendererDecision: true,
+    });
+
+    await confirmQuitWithRunningAgents(deps);
+
+    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledTimes(2);
+    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(client, 'ws-driven');
+    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(client, 'ws-other');
+  });
+
+  it('drops tabs of a workspace another client drives and keeps tabs of driven ones', async () => {
+    const { deps } = makeDeps({ agents: [], browserTabs: HOSTED_TABS, rendererDecision: true });
+    deps.getWorkspaceBrowserClient.mockImplementation(
+      driving({ 'ws-driven': drivenBy(OWN_CLIENT_ID), 'ws-other': drivenBy('client-elsewhere') }),
+    );
+
+    await confirmQuitWithRunningAgents(deps);
+
+    expect(shownTabs(deps)).toEqual([HOSTED_TABS[0]]);
+  });
+
+  it('quits silently when every hosted tab belongs to a workspace another client drives', async () => {
+    const { deps } = makeDeps({
+      agents: [],
+      browserTabs: [HOSTED_TABS[1], HOSTED_TABS[2]],
+      rendererDecision: false,
+    });
+    deps.getWorkspaceBrowserClient.mockResolvedValue(drivenBy('client-elsewhere'));
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
+
+    expect(deps.confirmViaRenderer).not.toHaveBeenCalled();
+    expect(deps.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('still prompts for running agents when the only hosted tabs are driven elsewhere', async () => {
+    const { deps } = makeDeps({
+      agents: AGENTS,
+      mode: 'external',
+      browserTabs: [HOSTED_TABS[1]],
+      rendererDecision: true,
+    });
+    deps.getWorkspaceBrowserClient.mockResolvedValue(drivenBy('client-elsewhere'));
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
+
+    expect(deps.confirmViaRenderer).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        keepRunning: [
+          { agentId: 'agent-1', agentName: 'Implementor', workspaceId: 'ws-1' },
+          { agentId: 'agent-2', agentName: 'Verifier', workspaceId: 'ws-2' },
+        ],
+        disruptedBrowserTabs: [],
+      }),
+    );
+  });
+
+  it('fails open per workspace: a rejected lookup keeps that workspace tabs counted', async () => {
+    const { deps } = makeDeps({ agents: [], browserTabs: HOSTED_TABS, rendererDecision: true });
+    deps.getWorkspaceBrowserClient.mockImplementation(
+      driving({
+        'ws-driven': drivenBy('client-elsewhere'),
+        'ws-other': new Error('Method not found: workspace.getBrowserClient'),
+      }),
+    );
+
+    await confirmQuitWithRunningAgents(deps);
+
+    expect(shownTabs(deps)).toEqual([HOSTED_TABS[1], HOSTED_TABS[2]]);
+  });
+
+  it('keeps a tab counted when no client currently drives its workspace (resolved: null)', async () => {
+    const { deps } = makeDeps({
+      agents: [],
+      browserTabs: [HOSTED_TABS[0]],
+      rendererDecision: true,
+    });
+    deps.getWorkspaceBrowserClient.mockResolvedValue(drivenBy(null));
+
+    await confirmQuitWithRunningAgents(deps);
+
+    expect(shownTabs(deps)).toEqual([HOSTED_TABS[0]]);
+  });
+
+  it('keeps a tab with no workspaceId without asking any backend', async () => {
+    const orphan: QuitBrowserTabSummary = { tabId: 'tab-o', ownerAgentId: 'agent-o' };
+    const { deps } = makeDeps({ agents: [], browserTabs: [orphan], rendererDecision: true });
+
+    await confirmQuitWithRunningAgents(deps);
+
+    expect(deps.getWorkspaceBrowserClient).not.toHaveBeenCalled();
+    expect(shownTabs(deps)).toEqual([orphan]);
+  });
+
+  it('keeps every hosted tab when the own clientId cannot be read', async () => {
+    const { deps } = makeDeps({ agents: [], browserTabs: HOSTED_TABS, rendererDecision: true });
+    deps.getOwnClientId.mockRejectedValue(new Error('prefs unreadable'));
+    deps.getWorkspaceBrowserClient.mockResolvedValue(drivenBy('client-elsewhere'));
+
+    await confirmQuitWithRunningAgents(deps);
+
+    expect(deps.getWorkspaceBrowserClient).not.toHaveBeenCalled();
+    expect(shownTabs(deps)).toEqual(HOSTED_TABS);
+  });
+
+  it('falls through to the next pooled backend when the first does not know the workspace', async () => {
+    const { deps } = makeDeps({
+      agents: [],
+      browserTabs: [HOSTED_TABS[1]],
+      rendererDecision: true,
+    });
+    const localClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
+    const remoteClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
+    deps.getBackendTargets.mockReturnValue([
+      { id: 'local', client: localClient },
+      { id: 'remote-a', client: remoteClient },
+    ]);
+    deps.getWorkspaceBrowserClient.mockImplementation(async (target) => {
+      if (target === localClient) throw new Error('Invalid params: unknown workspace');
+      return drivenBy('client-elsewhere');
+    });
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
+
+    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(localClient, 'ws-other');
+    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(remoteClient, 'ws-other');
+    expect(deps.confirmViaRenderer).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The default `workspace.getBrowserClient` lookup is exercised through the
+ * public entry point: every dep is injected EXCEPT `getWorkspaceBrowserClient`,
+ * so the real RPC wrapper runs against the injected pooled client.
+ */
+describe('confirmQuitWithRunningAgents — default driving-client lookup', () => {
+  const TAB: QuitBrowserTabSummary = {
+    tabId: 'tab-a',
+    ownerAgentId: 'agent-a',
+    workspaceId: 'ws-driven',
+  };
+
+  function makeLookupDeps(status = 'connected') {
+    const { deps } = makeDeps({ agents: [], browserTabs: [TAB], rendererDecision: true });
+    const { getWorkspaceBrowserClient: _omitted, ...rest } = deps;
+    const request = vi.fn();
+    const client = { getStatus: () => status, request } as unknown as RunningAgentsRpc;
+    rest.getBackendTargets.mockReturnValue([{ id: 'local', client }]);
+    return { deps: rest, request };
+  }
+
+  it('sends workspace.getBrowserClient { workspaceId } and honors a foreign driver', async () => {
+    const { deps, request } = makeLookupDeps();
+    request.mockResolvedValue({
+      browserClient: {
+        source: 'workspace',
+        clientId: 'client-elsewhere',
+        resolved: { clientId: 'client-elsewhere', name: 'Other laptop' },
+      },
+    });
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
+
+    expect(request).toHaveBeenCalledWith('workspace.getBrowserClient', {
+      workspaceId: 'ws-driven',
+    });
+    expect(deps.confirmViaRenderer).not.toHaveBeenCalled();
+  });
+
+  it('counts the tab when the daemon resolves this app as the driver', async () => {
+    const { deps, request } = makeLookupDeps();
+    request.mockResolvedValue({
+      browserClient: { source: 'default', resolved: { clientId: OWN_CLIENT_ID } },
+    });
+
+    await confirmQuitWithRunningAgents(deps);
+
+    const payload = deps.confirmViaRenderer.mock.calls[0][1] as QuitConfirmationShowPayload;
+    expect(payload.disruptedBrowserTabs).toEqual([TAB]);
+  });
+
+  it('fails open on a malformed result and on a disconnected backend', async () => {
+    const malformed = makeLookupDeps();
+    malformed.request.mockResolvedValue({ browserClient: { resolved: 'client-elsewhere' } });
+    await confirmQuitWithRunningAgents(malformed.deps);
+    expect(malformed.deps.confirmViaRenderer).toHaveBeenCalledTimes(1);
+
+    resetQuitConfirmationStateForTests();
+
+    const disconnected = makeLookupDeps('reconnecting');
+    disconnected.request.mockResolvedValue({
+      browserClient: { source: 'default', resolved: { clientId: 'client-elsewhere' } },
+    });
+    await confirmQuitWithRunningAgents(disconnected.deps);
+    expect(disconnected.request).not.toHaveBeenCalled();
+    expect(disconnected.deps.confirmViaRenderer).toHaveBeenCalledTimes(1);
   });
 });
 
