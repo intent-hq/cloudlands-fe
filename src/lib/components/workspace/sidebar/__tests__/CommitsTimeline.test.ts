@@ -260,12 +260,31 @@ describe('CommitsTimeline', () => {
     mockInvoke.mockReset();
     mockShowFile.mockReset();
     mockCommitDetails.mockReset().mockResolvedValue(null);
-    mockFromCommit.mockReset().mockImplementation(async (_workspaceId: string, sha: string) => ({
-      source: { kind: 'commit', commitHash: sha, snapshotId: sha },
-      files: [{ id: 'src/a.ts', path: 'src/a.ts' }],
-      groups: [],
-      annotations: [],
-    }));
+    mockFromCommit.mockReset().mockImplementation(
+      async (
+        _workspaceId: string,
+        sha: string,
+        files: Array<{
+          path: string;
+          additions?: number;
+          deletions?: number;
+          status?: string;
+          renamedFrom?: string;
+        }> = [],
+      ) => ({
+        source: { kind: 'commit', commitHash: sha, snapshotId: sha },
+        files: files.map((file) => ({
+          id: file.path,
+          path: file.path,
+          additions: file.additions ?? 0,
+          deletions: file.deletions ?? 0,
+          status: file.status ?? 'unknown',
+          ...(file.renamedFrom ? { renamedFrom: file.renamedFrom } : {}),
+        })),
+        groups: [],
+        annotations: [],
+      }),
+    );
     mocks.ftCommits.splice(0, mocks.ftCommits.length);
     mocks.workspaceEntity.baseCommitSha = '';
     mocks.postMergeState.hasRemote = true;
@@ -437,34 +456,61 @@ describe('CommitsTimeline', () => {
     });
     // Files already present — no lazy details fetch.
     expect(mockCommitDetails).not.toHaveBeenCalled();
-    expect(mockFromCommit).toHaveBeenCalledWith('ws-1', 'abc');
+    expect(mockFromCommit).toHaveBeenCalledWith('ws-1', 'abc', [
+      { path: 'src/a.ts', additions: 1, deletions: 0 },
+    ]);
     await waitFor(() => expect(container.querySelector('[data-testid="diff-map"]')).toBeTruthy());
   });
 
-  it('opens a commit diff from the map with the existing file click handler', async () => {
-    mocks.ftCommits.push(
-      makeCommit('abc', 'feat: one', {
-        files: [{ path: 'src/a.ts', additions: 1, deletions: 0 }],
-      }),
-    );
-    mockShowFile.mockResolvedValue({ ok: true, data: 'content' });
-    const { container } = await renderTimeline();
-    const toggle = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.getAttribute('title') === 'Toggle file list',
-    ) as HTMLButtonElement;
-    await fireEvent.click(toggle);
-    const mapFile = await waitFor(
-      () => container.querySelector('[data-map-file]') as HTMLButtonElement,
-    );
-    await fireEvent.click(mapFile);
-    await waitFor(() =>
-      expect(
-        reduxDispatch.mock.calls.some(
-          ([action]) => action?.type === 'workspaceNavigation/openWorkspaceDiff',
-        ),
-      ).toBe(true),
-    );
-  });
+  it.each([
+    ['A', undefined, 'added'],
+    ['D', undefined, 'deleted'],
+    ['R100', 'src/old.ts', 'renamed'],
+  ] as const)(
+    'opens %s commit rows from the map and list with normalized status',
+    async (status, renamedFrom, expectedStatus) => {
+      mocks.ftCommits.push(
+        makeCommit('abc', 'feat: one', {
+          files: [
+            {
+              path: 'src/a.ts',
+              additions: 1,
+              deletions: 0,
+              status,
+              ...(renamedFrom ? { renamedFrom } : {}),
+            },
+          ],
+        }),
+      );
+      mockShowFile.mockResolvedValue({ ok: true, data: 'content' });
+      const { container } = await renderTimeline();
+      const toggle = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.getAttribute('title') === 'Toggle file list',
+      ) as HTMLButtonElement;
+      await fireEvent.click(toggle);
+      const mapFile = await waitFor(() => {
+        const button = container.querySelector('[data-map-file]') as HTMLButtonElement;
+        expect(button).toBeTruthy();
+        return button;
+      });
+      await fireEvent.click(mapFile);
+      await waitFor(() => {
+        const action = reduxDispatch.mock.calls.find(
+          ([candidate]) => candidate?.type === 'workspaceNavigation/openWorkspaceDiff',
+        )?.[0];
+        expect(action?.payload[1].status).toBe(expectedStatus);
+      });
+
+      reduxDispatch.mockClear();
+      await fireEvent.click(container.querySelector('[data-testid="file-click"]')!);
+      await waitFor(() => {
+        const action = reduxDispatch.mock.calls.find(
+          ([candidate]) => candidate?.type === 'workspaceNavigation/openWorkspaceDiff',
+        )?.[0];
+        expect(action?.payload[1].status).toBe(expectedStatus);
+      });
+    },
+  );
 
   it('expansion lazily fetches git.commitDetails for metadata-only commits', async () => {
     mocks.ftCommits.push(makeCommit('abc', 'feat: one'));

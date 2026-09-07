@@ -55,6 +55,8 @@ export interface TrackedChange {
   stats: FileStats;
   /** File change status: added (new file), modified, deleted, or renamed */
   status?: FileChangeStatus;
+  /** Previous path when status is renamed. */
+  renamedFrom?: string;
   attribution: {
     agent?: AgentAttribution;
     manual?: boolean;

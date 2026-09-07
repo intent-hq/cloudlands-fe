@@ -21,6 +21,13 @@ export interface PullRequestDiffSource {
   files: readonly PullRequestDiffFile[];
 }
 
+export interface PullRequestRangeOptions {
+  workspaceId: string;
+  baseRef?: string;
+  baseCommitSha?: string;
+  targetRef?: string;
+}
+
 export interface ChatTurnDiffIdentity {
   sessionId: string;
   turnId: string;
@@ -36,6 +43,13 @@ interface RangeDiffEntry {
   chunks: DiffChunk['chunks'];
   oldContent?: string;
   newContent?: string;
+}
+
+function statusFromRangeEntry(entry: RangeDiffEntry): DiffMapFileStatus {
+  if (entry.oldContent === '' && entry.newContent === '') return 'unknown';
+  if (entry.oldContent === '' && entry.newContent !== undefined) return 'added';
+  if (entry.newContent === '' && entry.oldContent !== undefined) return 'deleted';
+  return entry.oldContent !== undefined && entry.newContent !== undefined ? 'modified' : 'unknown';
 }
 
 interface NumstatEntry {
@@ -107,7 +121,7 @@ export async function fromCommit(
   commitFiles: readonly CommitFile[] = [],
 ): Promise<DiffMapDocument> {
   const [details, chunks] = await Promise.all([
-    appClient.git.commitDetails(workspaceId, sha),
+    commitFiles.length > 0 ? Promise.resolve(null) : appClient.git.commitDetails(workspaceId, sha),
     appClient.git.diffs(workspaceId, { commitHash: sha }),
   ]);
   const chunksByPath = new Map(chunks.map((chunk) => [chunk.file, chunk]));
@@ -162,17 +176,10 @@ export async function fromRange(
       deletions: stats?.deletions,
       oldContent: entry?.oldContent,
       newContent: entry?.newContent,
-      // The current range wire responses do not carry status or rename source. Full-content
-      // asymmetry identifies ordinary additions/deletions, but empty-on-both-sides is ambiguous;
-      // prefer added for the valid zero-byte-addition case until the daemon exposes status facts.
-      status:
-        entry?.oldContent === '' && entry.newContent === ''
-          ? 'added'
-          : entry?.oldContent === '' && entry.newContent !== undefined
-            ? 'added'
-            : entry?.newContent === '' && entry.oldContent !== undefined
-              ? 'deleted'
-              : 'modified',
+      // Full-content asymmetry authoritatively identifies ordinary additions/deletions.
+      // Empty-on-both-sides and missing branchDiff rows remain neutral until the daemon
+      // exposes delta status and rename source on git.branchDiff.
+      status: entry ? statusFromRangeEntry(entry) : 'unknown',
     };
   });
   const patches = new Map(entries.map((entry) => [entry.file, patchFromChunk(entry)]));
@@ -203,6 +210,38 @@ export function fromPullRequest(pr: PullRequestDiffSource): DiffMapDocument {
     prNumber: pr.number,
     snapshotId,
   });
+}
+
+export async function fromPullRequestRange(
+  pr: PullRequestDiffSource,
+  options: PullRequestRangeOptions,
+): Promise<DiffMapDocument> {
+  const params = {
+    workspaceId: options.workspaceId,
+    ...(options.baseRef ? { baseRef: options.baseRef } : {}),
+    ...(options.baseCommitSha ? { baseCommitSha: options.baseCommitSha } : {}),
+    targetRef: options.targetRef ?? 'HEAD',
+  };
+  const entries =
+    options.baseRef || options.baseCommitSha
+      ? await backendRequest<RangeDiffEntry[]>('git.branchDiff', params)
+      : [];
+  const entriesByPath = new Map(entries.map((entry) => [entry.file, entry]));
+  const statsByPath = new Map(pr.files.map((file) => [file.path, file]));
+  const paths = new Set([...pr.files.map((file) => file.path), ...entriesByPath.keys()]);
+  const files = [...paths].map((path): PullRequestDiffFile => {
+    const stats = statsByPath.get(path);
+    const entry = entriesByPath.get(path);
+    return {
+      path,
+      additions: stats?.additions,
+      deletions: stats?.deletions,
+      oldContent: entry?.oldContent,
+      newContent: entry?.newContent,
+      status: entry ? statusFromRangeEntry(entry) : 'unknown',
+    };
+  });
+  return fromPullRequest({ ...pr, files });
 }
 
 export function fromChatTurn(

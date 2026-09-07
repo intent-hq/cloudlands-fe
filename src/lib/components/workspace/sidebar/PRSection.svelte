@@ -13,11 +13,10 @@
     cancelExecution,
   } from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
   import {
-    ChangeStage,
-    type CommitFile,
-    type CommitInfo,
-    type TrackedChange,
-  } from '$features/file-tracking/types';
+    commitFileToTrackedChange,
+    normalizeCommitFileStatus,
+  } from '$features/file-tracking/commit-file-to-tracked-change';
+  import type { CommitFile, CommitInfo, TrackedChange } from '$features/file-tracking/types';
   import {
     refreshRequested,
     setSidebarCreatePRWhenReady,
@@ -27,7 +26,7 @@
   import { refreshPRStatusRequested } from '$store/renderer/slices/pr-status/pr-status-slice';
   import { gitCache } from '$features/git/git-cache';
   import { gitClient } from '$features/git/git.client';
-  import { DiffMap, fromPullRequest } from '$features/diff-map';
+  import { DiffMap, fromPullRequestRange, type DiffMapDocument } from '$features/diff-map';
   import { loadGitStatus, setGitOperationFlag } from '$store/renderer/slices/git/git-slice';
   import {
     selectGitAhead,
@@ -51,7 +50,7 @@
 
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
-  import type { PRInfo } from '$lib/components/file-tracking/accept-changes/types';
+  import type { PRInfo, UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
@@ -105,9 +104,9 @@
     /** Monitor rows attributable to no known root — the "Other Tracked PRs"
      * sub-section (monorepo#2053). */
     otherTrackedPRs?: PRInfo[];
-    commits: any[];
-    pushedCommits: any[];
-    allCommits: any[];
+    commits: CommitInfo[];
+    pushedCommits: CommitInfo[];
+    allCommits: CommitInfo[];
     stagedChanges: TrackedChange[];
     trunkBranch: string;
     targetBranch: string;
@@ -237,12 +236,14 @@
     if (workspaceId !== prCacheWorkspaceId) {
       prCacheWorkspaceId = workspaceId;
       prCommitFileCache = {};
+      prFilesLoadStates = {};
+      prDiffMapDocuments = {};
       expandedPRs = new Set();
     }
   });
 
   const resolvedPushedCommits = $derived(
-    (pushedCommits as CommitInfo[]).map((c) => {
+    pushedCommits.map((c) => {
       const cached = prCommitFileCache[c.hash];
       return c.files || !cached ? c : { ...c, files: cached };
     }),
@@ -251,58 +252,14 @@
   // Whether any pushed commit's file list is still unknown (unfetched or in
   // flight) — the chevron stays visible until we know the PR has no files.
   const prFilesUnknown = $derived(
-    (pushedCommits as CommitInfo[]).some((c) => !c.files && !prCommitFileCache[c.hash]),
+    pushedCommits.some((c) => !c.files && !prCommitFileCache[c.hash]),
   );
   const prTotalAdditions = $derived(prFiles.reduce((sum, f) => sum + f.additions, 0));
   const prTotalDeletions = $derived(prFiles.reduce((sum, f) => sum + f.deletions, 0));
 
-  function clearPRCommitFileMarker(hash: string) {
-    if (prCommitFileCache[hash] === null) {
-      const { [hash]: _, ...rest } = prCommitFileCache;
-      prCommitFileCache = rest;
-    }
-  }
-
-  function fetchPRCommitFilesIfNeeded() {
-    if (!workspaceId) return;
-    const requestWorkspaceId = workspaceId;
-    for (const commit of pushedCommits as CommitInfo[]) {
-      if (commit.files || prCommitFileCache[commit.hash] !== undefined) continue;
-      prCommitFileCache = { ...prCommitFileCache, [commit.hash]: null };
-      // `commitDetails` folds transport errors to `null` (no rows; a later
-      // expand retries). In-flight results are dropped if the workspace
-      // switched mid-request so they can't repopulate the reset cache.
-      appClient.git
-        .commitDetails(requestWorkspaceId, commit.hash)
-        .then((result) => {
-          if (workspaceId !== requestWorkspaceId) return;
-          if (!result) {
-            clearPRCommitFileMarker(commit.hash);
-            return;
-          }
-          const files: CommitFile[] =
-            result.fileDetails.length > 0
-              ? result.fileDetails
-              : result.files.map((f) => ({ path: f, additions: 0, deletions: 0 }));
-          prCommitFileCache = { ...prCommitFileCache, [commit.hash]: files };
-        })
-        .catch((error) => {
-          logger.error('Failed to fetch commit details for PR files', { hash: commit.hash, error });
-          if (workspaceId !== requestWorkspaceId) return;
-          clearPRCommitFileMarker(commit.hash);
-        });
-    }
-  }
-
-  // Pushed commits arriving while a PR is already expanded (a push landing
-  // mid-view) get their files fetched too. Gated on user interaction; the
-  // cache reads are untracked so cleared failure markers don't auto-refetch —
-  // retries stay tied to an explicit re-expand.
-  $effect(() => {
-    if (expandedPRs.size > 0 && pushedCommits.length > 0) {
-      untrack(() => fetchPRCommitFilesIfNeeded());
-    }
-  });
+  type PRFilesLoadState = 'idle' | 'loading' | 'loaded' | 'error' | 'auth-required';
+  let prFilesLoadStates = $state<Record<string, PRFilesLoadState>>({});
+  let prDiffMapDocuments = $state<Record<string, DiffMapDocument | undefined>>({});
 
   // Local state
   let prDrawerOpen = $state(false);
@@ -312,8 +269,9 @@
   let forcePushDrawerOpen = $state(false);
   let expandedPRs = $state<Set<string>>(new Set());
   let connectRemote = $state({ drawerOpen: false, url: '', adding: false });
-  let pendingActionAfterAuth = $state<'create-pr' | 'refresh-pr' | null>(null);
+  let pendingActionAfterAuth = $state<'create-pr' | 'refresh-pr' | 'load-pr-files' | null>(null);
   let pendingPRWorkspaceId: string | null = null;
+  let pendingPRFileKey: string | null = null;
   let authBannerKey = $state(0);
 
   // Auto-close PR drawer when nothing to show
@@ -463,7 +421,7 @@
         appStore.dispatch(
           executeBackgroundAgent(workspace.id, 'pr', {
             includeStagedFiles: hasStaged,
-            includeCommitHashes: commits.map((c: any) => c.hash),
+            includeCommitHashes: commits.map((commit) => commit.hash),
             targetBranch,
           }),
         );
@@ -634,6 +592,10 @@
         pendingPRWorkspaceId = null;
       } else if (action === 'refresh-pr') {
         handleRefreshPRStatus();
+      } else if (action === 'load-pr-files' && pendingPRFileKey) {
+        const pr = pullRequests.find((candidate) => prKey(candidate) === pendingPRFileKey);
+        pendingPRFileKey = null;
+        if (pr) void loadPRFiles(pr);
       }
     }
   }
@@ -665,62 +627,133 @@
   // section header renders when any of them has rows.
   const hasAnyPRs = $derived(hasPRs || otherRootPRs.length > 0 || otherTrackedPRs.length > 0);
 
-  function togglePRExpanded(key: string) {
+  function repositoryForPR(): string {
+    return $workspace$?.repositoryOwner && $workspace$?.repositoryName
+      ? `${$workspace$.repositoryOwner}/${$workspace$.repositoryName}`
+      : ($workspace$?.repositoryName ?? repoPath);
+  }
+
+  function prFilesForDisplay(document: DiffMapDocument | undefined): UIFileChange[] {
+    if (!document) return [];
+    return document.files.map((file) => {
+      const status = normalizeCommitFileStatus(file);
+      return {
+        path: file.path,
+        additions: file.additions,
+        deletions: file.deletions,
+        staged: false,
+        ...(status ? { status } : {}),
+        ...(file.renamedFrom ? { renamedFrom: file.renamedFrom } : {}),
+      };
+    });
+  }
+
+  async function loadPRFiles(pr: PRInfo) {
+    const key = prKey(pr);
+    if (!$githubAuthIsAuthenticated$) {
+      prFilesLoadStates = { ...prFilesLoadStates, [key]: 'auth-required' };
+      return;
+    }
+    if (!workspaceId || prFilesLoadStates[key] === 'loading') return;
+
+    const requestWorkspaceId = workspaceId;
+    prFilesLoadStates = { ...prFilesLoadStates, [key]: 'loading' };
+    try {
+      const commitsWithFiles = await Promise.all(
+        pushedCommits.map(async (commit): Promise<CommitInfo> => {
+          if (commit.files) return commit;
+          const cached = prCommitFileCache[commit.hash];
+          if (cached) return { ...commit, files: cached };
+
+          prCommitFileCache = { ...prCommitFileCache, [commit.hash]: null };
+          const result = await appClient.git.commitDetails(requestWorkspaceId, commit.hash);
+          if (!result) throw new Error('git.commitDetails returned no result');
+          const files: CommitFile[] =
+            result.fileDetails.length > 0
+              ? result.fileDetails
+              : result.files.map((path) => ({ path, additions: 0, deletions: 0 }));
+          if (workspaceId === requestWorkspaceId) {
+            prCommitFileCache = { ...prCommitFileCache, [commit.hash]: files };
+          }
+          return { ...commit, files };
+        }),
+      );
+      const files = aggregatePRFiles(commitsWithFiles);
+      const document = await fromPullRequestRange(
+        {
+          repository: repositoryForPR(),
+          number: pr.number,
+          updatedAt: pr.updatedAt,
+          files,
+        },
+        {
+          workspaceId: requestWorkspaceId,
+          baseRef: $workspace$?.baseRef,
+          baseCommitSha: $workspace$?.baseCommitSha,
+          targetRef: 'HEAD',
+        },
+      );
+      if (workspaceId !== requestWorkspaceId) return;
+      prDiffMapDocuments = { ...prDiffMapDocuments, [key]: document };
+      prFilesLoadStates = { ...prFilesLoadStates, [key]: 'loaded' };
+    } catch (error) {
+      logger.error('Failed to load PR files', { error, prNumber: pr.number });
+      if (workspaceId !== requestWorkspaceId) return;
+      const cache = { ...prCommitFileCache };
+      for (const commit of pushedCommits) {
+        if (cache[commit.hash] === null) delete cache[commit.hash];
+      }
+      prCommitFileCache = cache;
+      prFilesLoadStates = { ...prFilesLoadStates, [key]: 'error' };
+    }
+  }
+
+  function togglePRExpanded(pr: PRInfo) {
+    const key = prKey(pr);
     const newSet = new Set(expandedPRs);
     if (newSet.has(key)) {
       newSet.delete(key);
     } else {
       newSet.add(key);
-      fetchPRCommitFilesIfNeeded();
+      void loadPRFiles(pr);
     }
     expandedPRs = newSet;
   }
 
-  async function handlePRFileClick(filePath: string) {
-    logger.info('[handlePRFileClick] File clicked in PR', { filePath });
+  async function handlePRFileClick(file: CommitFile, prNumber: number) {
+    logger.info('[handlePRFileClick] File clicked in PR', { filePath: file.path });
     if (!workspaceId || !$workspace$) return;
     try {
-      const baseRef = $workspace$.baseRef || 'main';
+      const baseRef = $workspace$.baseCommitSha || $workspace$.baseRef || 'main';
       // Daemon-backed file-at-ref reads (`git.showFile`, PROTOCOL §5.6);
       // errors fold to { ok: false } inside the git client.
       const [oldContentResult, newContentResult] = await Promise.all([
-        gitClient.showFile(workspaceId as WorkspaceId, filePath, baseRef),
-        gitClient.showFile(workspaceId as WorkspaceId, filePath, 'HEAD'),
+        gitClient.showFile(workspaceId as WorkspaceId, file.renamedFrom ?? file.path, baseRef),
+        gitClient.showFile(workspaceId as WorkspaceId, file.path, 'HEAD'),
       ]);
       const oldContent = oldContentResult.ok ? oldContentResult.data : '';
       const newContent = newContentResult.ok ? newContentResult.data : '';
-      const fileStats = prFiles.find((f) => f.path === filePath);
-      const change: TrackedChange = {
-        id: `pr-file:${filePath}`,
-        file: filePath,
-        relativePath: filePath,
-        stage: ChangeStage.Committed,
-        stats: {
-          additions: fileStats?.additions ?? 0,
-          deletions: fileStats?.deletions ?? 0,
-        },
-        content: { oldContent, newContent, diff: '' },
+      const change = commitFileToTrackedChange(file, {
+        id: `pr-file:${file.path}`,
         commitHash: 'PR',
-        attribution: { timestamp: Date.now() },
-      };
+        prNumber,
+        oldContent,
+        newContent,
+      });
       appStore.dispatch(openWorkspaceDiff(workspaceId, change));
     } catch (error) {
-      logger.error('[handlePRFileClick] Failed to fetch file content', { error, filePath });
+      logger.error('[handlePRFileClick] Failed to fetch file content', {
+        error,
+        filePath: file.path,
+      });
     }
   }
 
-  function buildPRDiffMap(pr: PRInfo) {
-    const repository =
-      $workspace$?.repositoryOwner && $workspace$?.repositoryName
-        ? `${$workspace$.repositoryOwner}/${$workspace$.repositoryName}`
-        : ($workspace$?.repositoryName ?? repoPath);
-    return fromPullRequest({
-      repository,
-      number: pr.number,
-      updatedAt: pr.updatedAt,
-      files: prFiles,
-    });
-  }
+  $effect(() => {
+    void pushedCommits;
+    const expanded = pullRequests.find((pr) => expandedPRs.has(prKey(pr)));
+    if (expanded) untrack(() => void loadPRFiles(expanded));
+  });
 </script>
 
 <!-- Divider with Create PR, Push Commits button, or Synced status (only when
@@ -1091,10 +1124,9 @@
                no local file data to expand. -->
           {@const hasPRFiles =
             localFiles && !pr.monitorOnly && (prFiles.length > 0 || prFilesUnknown)}
-          {@const diffMapDocument =
-            isPRExpanded && localFiles && !pr.monitorOnly && prFiles.length > 0
-              ? buildPRDiffMap(pr)
-              : undefined}
+          {@const fileLoadState = prFilesLoadStates[prKey(pr)] ?? 'idle'}
+          {@const diffMapDocument = prDiffMapDocuments[prKey(pr)]}
+          {@const displayFiles = prFilesForDisplay(diffMapDocument)}
           <div>
             <!-- PR header -->
             <div
@@ -1108,7 +1140,7 @@
                   class="absolute left-0.75 bg-sidebar opacity-0 group-hover:opacity-100 hover:text-foreground! -ml-1"
                   onclick={(e: MouseEvent) => {
                     e.stopPropagation();
-                    togglePRExpanded(prKey(pr));
+                    togglePRExpanded(pr);
                   }}
                   title={m.workspace_prSection_toggleFileList_tooltip()}
                 >
@@ -1187,33 +1219,60 @@
                 class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
                 transition:slide={{ duration: 150 }}
               >
-                {#if diffMapDocument}
+                {#if fileLoadState === 'auth-required'}
+                  <div class="flex items-center gap-2 py-1 text-ui text-subtle">
+                    <span class="flex-1">{m.workspace_prSection_connectToGithub_label()}</span>
+                    <Button
+                      variant="ghost-light"
+                      size="xs"
+                      onclick={() => {
+                        pendingActionAfterAuth = 'load-pr-files';
+                        pendingPRFileKey = prKey(pr);
+                        authBannerKey++;
+                      }}
+                    >
+                      {m.workspace_prSection_connectToGithub_label()}
+                    </Button>
+                  </div>
+                {:else if fileLoadState === 'error'}
+                  <div class="flex items-center gap-2 py-1 text-ui text-subtle">
+                    <span class="flex-1">{m.ui_trackedDiff_loadFailed_error()}</span>
+                    <Button variant="ghost-light" size="xs" onclick={() => loadPRFiles(pr)}>
+                      {m.ui_errorToast_retry_label()}
+                    </Button>
+                  </div>
+                {:else if fileLoadState === 'loading' && !diffMapDocument}
+                  <div class="flex items-center gap-2 py-1 text-ui text-subtle">
+                    <Fa icon={faSpinner} size="xs" class="animate-spin" />
+                    <span>{m.ui_spinner_loading_ariaLabel()}</span>
+                  </div>
+                {:else if diffMapDocument}
                   <div class="h-48 mb-1 overflow-hidden rounded border border-border">
                     <DiffMap
                       document={diffMapDocument}
                       activePath={activeFilePath ?? undefined}
                       filterable={false}
                       onOpen={(file) => {
-                        handlePRFileClick(file.path).catch((error) => {
+                        handlePRFileClick(file, pr.number).catch((error) => {
                           logger.error('Error in handlePRFileClick', { error });
                         });
                       }}
                     />
                   </div>
+                  {#each displayFiles as file (file.path)}
+                    <FileRow
+                      {file}
+                      muted={true}
+                      active={activeFilePath === file.path && activeFileStaged === null}
+                      onFileClick={() => {
+                        handlePRFileClick(file, pr.number).catch((error) => {
+                          logger.error('Error in handlePRFileClick', { error });
+                        });
+                      }}
+                      onOpenFile={handleOpenFile}
+                    />
+                  {/each}
                 {/if}
-                {#each prFiles as file (file.path)}
-                  <FileRow
-                    {file}
-                    muted={true}
-                    active={activeFilePath === file.path && activeFileStaged === null}
-                    onFileClick={(filePath) => {
-                      handlePRFileClick(filePath).catch((error) => {
-                        logger.error('Error in handlePRFileClick', { error });
-                      });
-                    }}
-                    onOpenFile={handleOpenFile}
-                  />
-                {/each}
               </div>
             {/if}
           </div>

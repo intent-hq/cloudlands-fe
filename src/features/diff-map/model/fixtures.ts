@@ -13,7 +13,7 @@ function change(
   path: string,
   additions: number,
   deletions: number,
-  status: Exclude<DiffMapFileStatus, 'binary' | 'mode'> = 'modified',
+  status: Exclude<DiffMapFileStatus, 'binary' | 'mode' | 'unknown'> = 'modified',
 ): TrackedChange {
   return {
     id: `fixture:${path}`,

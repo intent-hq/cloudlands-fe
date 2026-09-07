@@ -8,14 +8,13 @@
   import { gitCache } from '$features/git/git-cache';
   import { gitClient } from '$features/git/git.client';
   import { DiffMap, fromCommit, type DiffMapDocument } from '$features/diff-map';
+  import {
+    commitFileToTrackedChange,
+    normalizeCommitFileStatus,
+  } from '$features/file-tracking/commit-file-to-tracked-change';
   import { handleLink } from '$features/navigation/link-handler';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-  import {
-    ChangeStage,
-    type CommitFile,
-    type CommitInfo,
-    type TrackedChange,
-  } from '$features/file-tracking/types';
+  import type { CommitFile, CommitInfo } from '$features/file-tracking/types';
   import { appClient } from '$lib/client';
   import {
     selectFileTrackingCommits as selectFtCommits,
@@ -165,7 +164,7 @@
     const result = await appClient.git.commitDetails(workspaceId, hash);
     if (!result) {
       clearCommitFileMarker(hash);
-      return [];
+      throw new Error('git.commitDetails returned no result');
     }
     const files: CommitFile[] =
       result.fileDetails.length > 0
@@ -175,12 +174,24 @@
     return files;
   }
 
-  function fetchCommitFilesIfNeeded(commit: CommitInfo) {
-    if (commit.files || commitFileCache[commit.hash] !== undefined || !workspaceId) return;
-    commitFileCache = { ...commitFileCache, [commit.hash]: null };
-    fetchCommitFiles(commit.hash).catch((error) => {
-      logger.error('Failed to fetch commit details', { hash: commit.hash, error });
-      clearCommitFileMarker(commit.hash);
+  function commitFileRows(files: CommitFile[], document: DiffMapDocument | null): UIFileChange[] {
+    const factsByPath = new Map(document?.files.map((file) => [file.path, file]) ?? []);
+    return files.map((file) => {
+      const facts = factsByPath.get(file.path);
+      const renamedFrom = file.renamedFrom ?? facts?.renamedFrom;
+      const status = normalizeCommitFileStatus({
+        ...file,
+        status: file.status ?? facts?.status,
+        ...(renamedFrom ? { renamedFrom } : {}),
+      });
+      return {
+        path: file.path,
+        additions: file.additions ?? facts?.additions ?? 0,
+        deletions: file.deletions ?? facts?.deletions ?? 0,
+        staged: false,
+        ...(status ? { status } : {}),
+        ...(renamedFrom ? { renamedFrom } : {}),
+      };
     });
   }
 
@@ -188,7 +199,11 @@
     if (commitDiffMapCache[commit.hash] !== undefined || !workspaceId) return;
     const requestWorkspaceId = workspaceId;
     commitDiffMapCache = { ...commitDiffMapCache, [commit.hash]: null };
-    fromCommit(requestWorkspaceId, commit.hash)
+    const filesPromise = commit.files
+      ? Promise.resolve(commit.files)
+      : fetchCommitFiles(commit.hash);
+    filesPromise
+      .then((files) => fromCommit(requestWorkspaceId, commit.hash, files))
       .then((document) => {
         if (workspaceId !== requestWorkspaceId) return;
         commitDiffMapCache = { ...commitDiffMapCache, [commit.hash]: document };
@@ -430,69 +445,64 @@
       newSet.delete(commit.hash);
     } else {
       newSet.add(commit.hash);
-      fetchCommitFilesIfNeeded(commit);
       fetchCommitDiffMapIfNeeded(commit);
     }
     expandedCommits = newSet;
   }
 
-  async function handleCommitFileClick(filePath: string, commitHash: string) {
-    logger.info('[handleCommitFileClick] File clicked in commit', { filePath, commitHash });
-    const commit =
-      allCommits.find((c) => c.hash === commitHash) ??
-      olderCommits.find((c) => c.hash === commitHash);
-    if (commit && workspaceId) {
-      const file = getCommitFiles(commit).find((f) => f.path === filePath);
-      if (file) {
-        try {
-          logger.info('[handleCommitFileClick] Fetching content from commit', {
-            filePath,
-            commitHash,
-          });
-          // Daemon-backed file-at-ref reads (`git.showFile`, PROTOCOL §5.6);
-          // errors fold to { ok: false } inside the git client.
-          const [newContentResult, oldContentResult] = await Promise.all([
-            gitClient.showFile(workspaceId as WorkspaceId, filePath, commitHash),
-            gitClient.showFile(workspaceId as WorkspaceId, filePath, `${commitHash}^`),
-          ]);
+  async function handleCommitFileClick(file: CommitFile, commitHash: string) {
+    logger.info('[handleCommitFileClick] File clicked in commit', {
+      filePath: file.path,
+      commitHash,
+    });
+    if (workspaceId) {
+      try {
+        logger.info('[handleCommitFileClick] Fetching content from commit', {
+          filePath: file.path,
+          commitHash,
+        });
+        // Daemon-backed file-at-ref reads (`git.showFile`, PROTOCOL §5.6);
+        // errors fold to { ok: false } inside the git client.
+        const [newContentResult, oldContentResult] = await Promise.all([
+          gitClient.showFile(workspaceId as WorkspaceId, file.path, commitHash),
+          gitClient.showFile(
+            workspaceId as WorkspaceId,
+            file.renamedFrom ?? file.path,
+            `${commitHash}^`,
+          ),
+        ]);
 
-          const newContent = newContentResult.ok ? newContentResult.data : '';
-          const oldContent = oldContentResult.ok ? oldContentResult.data : '';
+        const newContent = newContentResult.ok ? newContentResult.data : '';
+        const oldContent = oldContentResult.ok ? oldContentResult.data : '';
 
-          logger.info('[handleCommitFileClick] Content fetched', {
-            filePath,
-            commitHash,
-            newContentLength: newContent.length,
-            oldContentLength: oldContent.length,
-          });
+        logger.info('[handleCommitFileClick] Content fetched', {
+          filePath: file.path,
+          commitHash,
+          newContentLength: newContent.length,
+          oldContentLength: oldContent.length,
+        });
 
-          const change: TrackedChange = {
-            id: `commit-${commitHash}-${filePath}`,
-            file: filePath,
-            relativePath: filePath,
-            status: 'modified' as const,
-            stage: ChangeStage.Committed,
-            commitHash,
-            stats: { additions: file.additions || 0, deletions: file.deletions || 0 },
-            content: { oldContent, newContent, diff: '' },
-            attribution: { timestamp: Date.now() },
-          };
+        const change = commitFileToTrackedChange(file, {
+          id: `commit-${commitHash}-${file.path}`,
+          commitHash,
+          oldContent,
+          newContent,
+        });
 
-          logger.info('[handleCommitFileClick] Dispatching workspace:open-diff event', {
+        logger.info('[handleCommitFileClick] Dispatching workspace:open-diff event', {
+          changeId: change.id,
+          stage: change.stage,
+          commitHash: change.commitHash,
+        });
+
+        appStore.dispatch(
+          openWorkspaceDiff(workspaceId, change, {
             changeId: change.id,
-            stage: change.stage,
-            commitHash: change.commitHash,
-          });
-
-          appStore.dispatch(
-            openWorkspaceDiff(workspaceId, change, {
-              changeId: change.id,
-              filePath,
-            }),
-          );
-        } catch (error) {
-          logger.error('Failed to load commit diff', { filePath, commitHash, error });
-        }
+            filePath: file.path,
+          }),
+        );
+      } catch (error) {
+        logger.error('Failed to load commit diff', { filePath: file.path, commitHash, error });
       }
     }
   }
@@ -754,12 +764,7 @@
         {@const isExpanded = expandedCommits.has(commit.hash)}
         {@const commitFiles = getCommitFiles(commit)}
         {@const diffMapDocument = commitDiffMapCache[commit.hash]}
-        {@const files = commitFiles.map((f) => ({
-          path: f.path,
-          additions: f.additions,
-          deletions: f.deletions,
-          staged: false,
-        })) as UIFileChange[]}
+        {@const files = commitFileRows(commitFiles, diffMapDocument)}
         <div>
           <!-- Commit header -->
           <div
@@ -928,7 +933,7 @@
                     activePath={activeFilePath ?? undefined}
                     filterable={false}
                     onOpen={(file) => {
-                      handleCommitFileClick(file.path, commit.hash).catch((error) => {
+                      handleCommitFileClick(file, commit.hash).catch((error) => {
                         logger.error('Error in handleCommitFileClick', { error });
                       });
                     }}
@@ -941,8 +946,8 @@
                   {file}
                   muted={true}
                   active={activeFilePath === file.path && activeFileStaged === null}
-                  onFileClick={(filePath) => {
-                    handleCommitFileClick(filePath, commit.hash).catch((error) => {
+                  onFileClick={() => {
+                    handleCommitFileClick(file, commit.hash).catch((error) => {
                       logger.error('Error in handleCommitFileClick', { error });
                     });
                   }}
@@ -999,12 +1004,7 @@
         {@const isExpanded = expandedCommits.has(commit.hash)}
         {@const commitFiles = getCommitFiles(commit)}
         {@const diffMapDocument = commitDiffMapCache[commit.hash]}
-        {@const files = commitFiles.map((f) => ({
-          path: f.path,
-          additions: f.additions,
-          deletions: f.deletions,
-          staged: false,
-        })) as UIFileChange[]}
+        {@const files = commitFileRows(commitFiles, diffMapDocument)}
         <div>
           <div
             class="relative flex items-center gap-2 py-0.5 group w-full rounded px-1 -mx-1"
@@ -1057,7 +1057,7 @@
                     activePath={activeFilePath ?? undefined}
                     filterable={false}
                     onOpen={(file) => {
-                      handleCommitFileClick(file.path, commit.hash).catch((error) => {
+                      handleCommitFileClick(file, commit.hash).catch((error) => {
                         logger.error('Error in handleCommitFileClick', { error });
                       });
                     }}
@@ -1069,8 +1069,8 @@
                   {file}
                   muted={true}
                   active={activeFilePath === file.path && activeFileStaged === null}
-                  onFileClick={(filePath) => {
-                    handleCommitFileClick(filePath, commit.hash).catch((error) => {
+                  onFileClick={() => {
+                    handleCommitFileClick(file, commit.hash).catch((error) => {
                       logger.error('Error in handleCommitFileClick', { error });
                     });
                   }}

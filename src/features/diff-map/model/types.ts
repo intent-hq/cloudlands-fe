@@ -9,7 +9,8 @@ export type DiffMapSourceIdentity =
 
 export type DiffMapSource = DiffMapSourceIdentity & { snapshotId: string };
 
-export type DiffMapFileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'binary' | 'mode';
+export type DiffMapFileStatus =
+  'added' | 'modified' | 'deleted' | 'renamed' | 'binary' | 'mode' | 'unknown';
 
 export interface DiffMapExternalFileFacts {
   path: string;

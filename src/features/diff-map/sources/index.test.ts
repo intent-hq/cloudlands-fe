@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LineType } from '$shared/types';
 import type { ChatFileChange } from '$lib/utils/get-file-changes-from-messages';
-import { fromChatTurn, fromCommit, fromPullRequest, fromRange } from './index';
+import {
+  fromChatTurn,
+  fromCommit,
+  fromPullRequest,
+  fromPullRequestRange,
+  fromRange,
+} from './index';
 
 const mocks = vi.hoisted(() => ({
   commitDetails: vi.fn(),
@@ -217,10 +223,10 @@ describe('diff map source adapters', () => {
         deletions,
       })),
     ).toEqual([
-      { path: 'a-empty.ts', status: 'added', additions: 0, deletions: 0 },
+      { path: 'a-empty.ts', status: 'unknown', additions: 0, deletions: 0 },
       { path: 'd-deleted.ts', status: 'deleted', additions: 0, deletions: 1 },
       { path: 'm-modified.ts', status: 'modified', additions: 1, deletions: 1 },
-      { path: 'n-numstat-only.ts', status: 'modified', additions: 3, deletions: 0 },
+      { path: 'n-numstat-only.ts', status: 'unknown', additions: 3, deletions: 0 },
     ]);
   });
 
@@ -300,6 +306,50 @@ describe('diff map source adapters', () => {
 
     expect(document.files.map((file) => file.status)).toEqual(statuses);
     expect(document.files.every((file) => file.attribution === undefined)).toBe(true);
+  });
+
+  it('builds PR status from an authoritative base-to-head branch diff', async () => {
+    mocks.backendRequest.mockResolvedValue([
+      { file: 'new.ts', oldContent: '', newContent: 'created', chunks: [] },
+    ]);
+
+    const document = await fromPullRequestRange(
+      {
+        repository: 'intent-hq/cloudlands-fe',
+        number: 42,
+        files: [{ path: 'new.ts', additions: 1, deletions: 0 }],
+      },
+      { workspaceId: 'ws-1', baseRef: 'main', targetRef: 'HEAD' },
+    );
+
+    expect(mocks.backendRequest).toHaveBeenCalledWith('git.branchDiff', {
+      workspaceId: 'ws-1',
+      baseRef: 'main',
+      targetRef: 'HEAD',
+    });
+    expect(document.files[0]).toMatchObject({ path: 'new.ts', status: 'added' });
+  });
+
+  it('keeps add-then-modify PR history classified as added from its net range', async () => {
+    mocks.backendRequest.mockResolvedValue([
+      { file: 'new.ts', oldContent: '', newContent: 'modified later', chunks: [] },
+    ]);
+
+    const document = await fromPullRequestRange(
+      {
+        repository: 'intent-hq/cloudlands-fe',
+        number: 42,
+        files: [{ path: 'new.ts', additions: 2, deletions: 1 }],
+      },
+      { workspaceId: 'ws-1', baseCommitSha: 'base-sha' },
+    );
+
+    expect(document.files[0]).toMatchObject({
+      path: 'new.ts',
+      additions: 2,
+      deletions: 1,
+      status: 'added',
+    });
   });
 
   it('builds empty pull-request and chat-turn documents', () => {

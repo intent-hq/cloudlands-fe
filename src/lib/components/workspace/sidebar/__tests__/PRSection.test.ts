@@ -190,10 +190,10 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
-const mockFromPullRequest = vi.hoisted(() => vi.fn());
+const mockFromPullRequestRange = vi.hoisted(() => vi.fn());
 vi.mock('$features/diff-map', async () => ({
   DiffMap: (await import('./mocks/MockDiffMap.svelte')).default,
-  fromPullRequest: mockFromPullRequest,
+  fromPullRequestRange: mockFromPullRequestRange,
 }));
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
@@ -329,12 +329,24 @@ describe('PRSection', () => {
     mockCreatePR.mockResolvedValue({ success: true });
     mockExecute.mockReset().mockResolvedValue({ success: true });
     mockCommitDetails.mockReset();
-    mockFromPullRequest.mockReset().mockImplementation((pr: { files: { path: string }[] }) => ({
-      source: { kind: 'pr', repository: 'octocat/demo', prNumber: 7, snapshotId: '7' },
-      files: pr.files.map((file) => ({ id: file.path, path: file.path })),
-      groups: [],
-      annotations: [],
-    }));
+    mockFromPullRequestRange
+      .mockReset()
+      .mockImplementation(
+        async (pr: {
+          files: { path: string; additions?: number; deletions?: number; status?: string }[];
+        }) => ({
+          source: { kind: 'pr', repository: 'octocat/demo', prNumber: 7, snapshotId: '7' },
+          files: pr.files.map((file) => ({
+            id: file.path,
+            path: file.path,
+            additions: file.additions ?? 0,
+            deletions: file.deletions ?? 0,
+            status: file.status ?? 'modified',
+          })),
+          groups: [],
+          annotations: [],
+        }),
+      );
     mocks.state.githubAuthed = true;
     mocks.state.acceptChanges.prTitle = '';
     mocks.state.acceptChanges.prDescription = '';
@@ -513,23 +525,94 @@ describe('PRSection', () => {
       expect(fileRow?.getAttribute('data-file-path')).toBe('src/a.ts');
     });
     expect(mockCommitDetails).not.toHaveBeenCalled();
-    expect(mockFromPullRequest).toHaveBeenCalledWith({
-      repository: 'octocat/demo',
-      number: 7,
-      updatedAt: undefined,
-      files: [{ path: 'src/a.ts', additions: 2, deletions: 0, staged: false, status: 'added' }],
-    });
+    expect(mockFromPullRequestRange).toHaveBeenCalledWith(
+      {
+        repository: 'octocat/demo',
+        number: 7,
+        updatedAt: undefined,
+        files: [{ path: 'src/a.ts', additions: 2, deletions: 0, staged: false }],
+      },
+      {
+        workspaceId: 'ws-1',
+        baseRef: 'main',
+        baseCommitSha: undefined,
+        targetRef: 'HEAD',
+      },
+    );
     expect(container.querySelector('[data-testid="diff-map"]')).toBeTruthy();
   });
 
-  it('opens a PR diff from the map with the existing file click handler', async () => {
+  it.each([
+    ['added', undefined],
+    ['deleted', undefined],
+    ['renamed', 'src/old.ts'],
+  ] as const)(
+    'opens %s PR rows from the map and list with matching status',
+    async (status, renamedFrom) => {
+      mockFromPullRequestRange.mockResolvedValueOnce({
+        source: { kind: 'pr', repository: 'octocat/demo', prNumber: 7, snapshotId: '7' },
+        files: [
+          {
+            id: 'src/a.ts',
+            path: 'src/a.ts',
+            additions: 2,
+            deletions: 0,
+            status,
+            ...(renamedFrom ? { renamedFrom } : {}),
+          },
+        ],
+        groups: [],
+        annotations: [],
+      });
+      const { container } = await renderPR({
+        hasPRs: true,
+        hasOpenPR: true,
+        pullRequests: [testPR],
+        pushedCommits: [
+          makePushedCommit('abc', {
+            files: [{ path: 'src/a.ts', additions: 2, deletions: 0 }],
+          }),
+        ],
+        hasPushedCommits: true,
+      });
+      const toggle = await waitFor(
+        () =>
+          Array.from(container.querySelectorAll('button')).find(
+            (button) => button.getAttribute('title') === 'Toggle file list',
+          ) as HTMLButtonElement,
+      );
+      await fireEvent.click(toggle);
+      const mapFile = await waitFor(() => {
+        const button = container.querySelector('[data-map-file]') as HTMLButtonElement;
+        expect(button).toBeTruthy();
+        return button;
+      });
+      await fireEvent.click(mapFile);
+      await waitFor(() => {
+        const action = mocks.dispatch.mock.calls.find(
+          ([candidate]) => candidate?.type === 'workspaceNavigation/openWorkspaceDiff',
+        )?.[0];
+        expect(action?.payload[1].status).toBe(status);
+      });
+
+      mocks.dispatch.mockClear();
+      await fireEvent.click(container.querySelector('[data-testid="file-click"]')!);
+      await waitFor(() => {
+        const action = mocks.dispatch.mock.calls.find(
+          ([candidate]) => candidate?.type === 'workspaceNavigation/openWorkspaceDiff',
+        )?.[0];
+        expect(action?.payload[1].status).toBe(status);
+      });
+    },
+  );
+
+  it('shows a connect action inline when PR files require GitHub authentication', async () => {
+    mocks.state.githubAuthed = false;
     const { container } = await renderPR({
       hasPRs: true,
       hasOpenPR: true,
       pullRequests: [testPR],
-      pushedCommits: [
-        makePushedCommit('abc', { files: [{ path: 'src/a.ts', additions: 2, deletions: 0 }] }),
-      ],
+      pushedCommits: [makePushedCommit('abc')],
       hasPushedCommits: true,
     });
     const toggle = await waitFor(
@@ -539,17 +622,14 @@ describe('PRSection', () => {
         ) as HTMLButtonElement,
     );
     await fireEvent.click(toggle);
-    const mapFile = await waitFor(
-      () => container.querySelector('[data-map-file]') as HTMLButtonElement,
-    );
-    await fireEvent.click(mapFile);
-    await waitFor(() =>
+
+    await waitFor(() => {
       expect(
-        mocks.dispatch.mock.calls.some(
-          ([action]) => action?.type === 'workspaceNavigation/openWorkspaceDiff',
+        Array.from(container.querySelectorAll('button')).some(
+          (button) => button.textContent?.trim() === 'Connect to GitHub',
         ),
-      ).toBe(true),
-    );
+      ).toBe(true);
+    });
   });
 
   it('pushed commits arriving while a PR is expanded get their files fetched too', async () => {
@@ -625,9 +705,11 @@ describe('PRSection', () => {
       expect(container.querySelector('[data-testid="file-row"]')).toBeNull();
     });
 
-    // Collapse + re-expand retries and succeeds this time.
-    await fireEvent.click(toggle);
-    await fireEvent.click(toggle);
+    const retry = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Retry',
+    );
+    expect(retry).toBeDefined();
+    await fireEvent.click(retry!);
     expect(mockCommitDetails).toHaveBeenCalledTimes(2);
     await waitFor(() => {
       const fileRow = container.querySelector('[data-testid="file-row"]');
