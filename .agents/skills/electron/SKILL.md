@@ -36,20 +36,25 @@ turn. On this dev box, five cold `dev:ui` launches under concurrent unit-test lo
 `[data-preview-ready=true]` in 41.774, 18.466, 19.303, 22.526, and 20.318 seconds. The
 nearest-rank p95 was 41.774 seconds, so 3× p95 is 125.322 seconds (round to 126 seconds)
 as the expected readiness margin. The daemon defaults delay-hook TTL to 24 hours and caps
-it at 24 hours; this template deliberately uses 615 seconds so its explicit 10-minute
-failure ceiling can run, with one 15-second cadence of TTL margin.
+it at 24 hours; this template deliberately uses 645 seconds so its explicit 10-minute
+failure ceiling can run before expiry. Scheduling performs an immediate validation run,
+which establishes `startedAt` near time zero. The 45-second TTL buffer leaves two probe
+slots after a boundary run just before 10 minutes, plus one cadence of margin.
 
-Replace `TARGET_URL` and `EXPECTED_TITLE`, open or reuse the target tab, then schedule:
+Replace `TARGET_URL`, open or reuse the target tab, then schedule. This preview template
+requires the readiness marker; for another page, replace that DOM condition with an
+equally strong app-specific signal rather than a static document title.
 
 ```javascript
 const TARGET_URL = 'http://daemon.localhost:5190/sandbox/button?state=default';
-const EXPECTED_TITLE = 'Intent';
+const CADENCE_MS = 15_000;
 const CEILING_MS = 600_000;
+const TTL_MS = CEILING_MS + 3 * CADENCE_MS;
 
 return await ws.hook.schedule({
   name: 'Wait for renderer readiness',
-  delayMs: 15_000,
-  ttlMs: 615_000,
+  delayMs: CADENCE_MS,
+  ttlMs: TTL_MS,
   perpetual: false,
   code: `
     const previous = hookState ?? {
@@ -61,19 +66,23 @@ return await ws.hook.schedule({
       return { dispatch: true, message:
         "Renderer was not ready after 10 minutes; treat the launch as broken." };
     }
-    const listed = await ws.browser.exec([
-      { action: "listTabs", scope: "mine" }
-    ]);
-    const tabs = listed?.success ? listed.result : [];
-    const tab = tabs.find(candidate =>
-      [candidate.requestedUrl, candidate.url, candidate.finalUrl]
-        .some(url => url?.startsWith(${JSON.stringify(TARGET_URL)}))
-    );
     let ready = false;
-    if (tab) {
-      const probe = await ws.browser.exec([{ action: "evaluate", tabId: tab.tabId,
-        expression: ${JSON.stringify(`Boolean(document.querySelector("[data-preview-ready=true]")) || document.title === ${JSON.stringify(EXPECTED_TITLE)}`)} }]);
-      ready = probe?.success && probe.result === true;
+    try {
+      const listed = await ws.browser.exec([
+        { action: "listTabs", scope: "mine" }
+      ]);
+      const tabs = listed?.success ? listed.result : [];
+      const tab = tabs.find(candidate =>
+        [candidate.requestedUrl, candidate.url, candidate.finalUrl]
+          .some(url => url?.startsWith(${JSON.stringify(TARGET_URL)}))
+      );
+      if (tab) {
+        const probe = await ws.browser.exec([{ action: "evaluate", tabId: tab.tabId,
+          expression: ${JSON.stringify('Boolean(document.querySelector("[data-preview-ready=true]"))')} }]);
+        ready = probe?.success && probe.result === true;
+      }
+    } catch {
+      ready = false;
     }
     const state = { ...previous, attempts, lastReady: ready };
     if (ready && ready !== previous.lastReady) {
@@ -86,11 +95,12 @@ return await ws.hook.schedule({
 ```
 
 Each run performs the readiness check itself, compares the result with `hookState`, and
-returns without dispatch while readiness is unchanged. The two browser calls stay well
-inside the hook's 60-second per-run budget. The 10-minute ceiling, not the TTL, is the
-failure mechanism because it dispatches the caller-authored diagnostic. Hook expiry also
-wakes the owner, but only with the generic expiry notice; it is a backstop that prompts
-reassessment, not a reason to silently schedule another hook.
+returns without dispatch while readiness is unchanged. A browser client that is not yet
+connected is also treated as not ready. The two browser calls stay well inside the hook's
+60-second per-run budget. The 10-minute ceiling, not the TTL, is the failure mechanism
+because it dispatches the caller-authored diagnostic. Hook expiry also wakes the owner,
+but only with the generic expiry notice; it is a backstop that prompts reassessment, not a
+reason to silently schedule another hook.
 
 Use `perpetual: false` for one readiness transition: the first dispatch retires the hook.
 Use `perpetual: true` only when the caller needs a stream of readiness or health changes;
