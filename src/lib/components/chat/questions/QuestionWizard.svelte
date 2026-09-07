@@ -49,6 +49,9 @@
     type WizardDraft,
   } from './wizard-draft-storage';
 
+  const uid = $props.id();
+  const contentId = `${uid}-content`;
+
   interface Props {
     questions: Question[];
     /**
@@ -306,7 +309,7 @@
           : 'py-2.5'} text-left font-[inherit] cursor-pointer hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-4"
         onclick={(event) => toggleCollapsed(false, event)}
         aria-expanded="false"
-        aria-controls="question-wizard-content"
+        aria-controls={contentId}
       >
         <span class="type-caption font-medium text-foreground">{m.chat_questionWizard_title()}</span
         >
@@ -352,7 +355,7 @@
           title={m.chat_questionWizard_hide_tooltip()}
           onclick={(event) => toggleCollapsed(true, event)}
           aria-expanded="true"
-          aria-controls="question-wizard-content"
+          aria-controls={contentId}
         >
           {m.chat_questionWizard_hide_label()}
         </button>
@@ -373,7 +376,7 @@
     {#key idx}
       <div in:safeFade={{ duration: stepDuration }}>
         <div
-          id="question-wizard-content"
+          id={contentId}
           class="flex flex-col gap-4 overflow-y-auto px-3 pt-3 pb-3 sm:px-4"
           class:gap-3={compactMode}
           class:pt-2={compactMode}

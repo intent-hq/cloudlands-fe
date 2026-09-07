@@ -10,7 +10,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import QuestionWizard, { type QuestionAnswer } from '../QuestionWizard.svelte';
 import { createNullableMessageSource } from './nullable-message-source.svelte';
 import { wizardDraftKey } from '../wizard-draft-storage';
@@ -449,6 +449,53 @@ describe('QuestionWizard', () => {
     expect(wizard?.className).not.toContain('shadow');
     await fireEvent.click(expand);
     expect(onToggleCollapsed).toHaveBeenCalledWith(false);
+  });
+
+  it('keeps disclosure control relationships unique and stable across two instances', async () => {
+    const firstToggle = vi.fn<(collapsed: boolean) => void>();
+    const secondToggle = vi.fn<(collapsed: boolean) => void>();
+    const first = render(QuestionWizard, {
+      props: { questions: [SINGLE, LAST], onToggleCollapsed: firstToggle },
+    });
+    render(QuestionWizard, {
+      props: { questions: [APPROVAL], onToggleCollapsed: secondToggle },
+    });
+
+    const [firstWizard, secondWizard] = screen.getAllByRole('region', {
+      name: 'Agent Has Questions',
+    });
+    const firstHide = within(firstWizard).getByRole('button', { name: 'Hide' });
+    const secondHide = within(secondWizard).getByRole('button', { name: 'Hide' });
+    const firstContentId = firstHide.getAttribute('aria-controls')!;
+    const secondContentId = secondHide.getAttribute('aria-controls')!;
+
+    expect(firstContentId).not.toBe(secondContentId);
+    expect(firstWizard.contains(document.getElementById(firstContentId))).toBe(true);
+    expect(secondWizard.contains(document.getElementById(secondContentId))).toBe(true);
+    expect(secondWizard.contains(document.getElementById(firstContentId))).toBe(false);
+
+    firstHide.focus();
+    await fireEvent.click(firstHide);
+    await first.rerender({ collapsed: true });
+
+    const firstExpand = within(firstWizard).getByRole('button', {
+      name: /Agent Has Questions/i,
+    });
+    await waitFor(() => expect(document.activeElement).toBe(firstExpand));
+    expect(firstExpand.getAttribute('aria-controls')).toBe(firstContentId);
+    expect(document.getElementById(firstContentId)).toBeNull();
+    expect(secondHide.getAttribute('aria-controls')).toBe(secondContentId);
+    expect(secondWizard.contains(document.getElementById(secondContentId))).toBe(true);
+
+    await fireEvent.click(firstExpand);
+    expect(firstToggle).toHaveBeenLastCalledWith(false);
+    expect(secondToggle).not.toHaveBeenCalled();
+    await first.rerender({ collapsed: false });
+
+    const restoredHide = within(firstWizard).getByRole('button', { name: 'Hide' });
+    await waitFor(() => expect(document.activeElement).toBe(restoredHide));
+    expect(restoredHide.getAttribute('aria-controls')).toBe(firstContentId);
+    expect(firstWizard.contains(document.getElementById(firstContentId))).toBe(true);
   });
 
   it('Dismiss from the expanded header opens the confirm dialog; confirming fires onDismiss', async () => {
