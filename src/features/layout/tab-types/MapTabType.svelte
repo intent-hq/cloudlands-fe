@@ -8,13 +8,20 @@
   import { computeBudget } from '$lib/components/visualization/semantic-map/layout/budget';
   import { placeRegions } from '$lib/components/visualization/semantic-map/layout/place';
   import { Button } from '$lib/components/ui/button';
+  import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
-  import { selectSemanticMapState } from '$store/renderer/slices/semantic-map/semantic-map-selectors';
   import {
+    selectFilteredSemanticMapActivities,
+    selectSemanticMapState,
+  } from '$store/renderer/slices/semantic-map/semantic-map-selectors';
+  import {
+    semanticMapAgentFilterChanged,
+    semanticMapKindFilterChanged,
     semanticMapSelectedAgentChanged,
     semanticMapSelectedRegionChanged,
     semanticMapSelectedTaskChanged,
+    semanticMapTimeWindowChanged,
   } from '$store/renderer/slices/semantic-map/semantic-map-slice';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectWorkspaceTaskDisplayList } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
@@ -24,15 +31,32 @@
     openWorkspaceFile,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import type { TabTypeComponentProps } from './registry';
+  import type { MapActivityKind } from '$lib/components/visualization/semantic-map/core/types';
+
+  type StableDetailSelection =
+    | Exclude<SemanticMapDetailSelection, { type: 'crossing' }>
+    | { type: 'crossing'; from: string; to: string; agentId: string | null };
+
+  const activityKinds: MapActivityKind[] = [
+    'read',
+    'edit',
+    'create',
+    'delete',
+    'move',
+    'tool',
+    'thinking',
+  ];
+  const timeWindowMinutes = [5, 15, 60] as const;
 
   let { workspaceId }: TabTypeComponentProps = $props();
   const mapState = selectSemanticMapState(workspaceId);
+  const filteredActivities = selectFilteredSemanticMapActivities(workspaceId);
   const agents = selectAllWorkspaceAgents(workspaceId);
   const tasks = selectWorkspaceTaskDisplayList(workspaceId);
   const trackedChanges = selectFileTrackingChanges(workspaceId);
   let canvasWidth = $state(1);
   let canvasHeight = $state(1);
-  let detailOverride = $state<SemanticMapDetailSelection>(null);
+  let detailOverride = $state<StableDetailSelection>(null);
 
   const selectedTask = $derived($tasks.find(({ id }) => id === $mapState.selectedTaskNoteId));
   const selectedAgent = $derived($agents.find(({ id }) => id === $mapState.selectedAgentId));
@@ -45,16 +69,28 @@
           ? { type: 'route' as const }
           : null,
   );
-  const detailSelection = $derived<SemanticMapDetailSelection>(
-    detailOverride ??
+  const detailSelection = $derived.by<SemanticMapDetailSelection>(() => {
+    if (detailOverride?.type === 'crossing') {
+      const crossing = detailOverride;
+      if (crossing.agentId !== $mapState.selectedAgentId) return null;
+      const transitionIndex = $mapState.route?.transitions.findIndex(
+        ({ from, to }) => from === crossing.from && to === crossing.to,
+      );
+      return transitionIndex === undefined || transitionIndex < 0
+        ? null
+        : { type: 'crossing', transitionIndex };
+    }
+    return (
+      detailOverride ??
       ($mapState.selectedAgentId
         ? { type: 'agent', agentId: $mapState.selectedAgentId }
         : $mapState.selectedRegionId
           ? { type: 'region', regionId: $mapState.selectedRegionId }
           : $mapState.selectedTaskNoteId
             ? { type: 'route' }
-            : null),
-  );
+            : null)
+    );
+  });
   const detailAgents = $derived(
     $agents.map(({ id, name, status }) => ({ id: String(id), name, status: String(status) })),
   );
@@ -85,6 +121,78 @@
     start: $mapState.timeWindow.startTs ?? '1970-01-01T00:00:00.000Z',
     end: $mapState.timeWindow.endTs ?? '9999-12-31T23:59:59.999Z',
   });
+  const filterAgents = $derived.by(() => {
+    const names = new Map($agents.map(({ id, name }) => [String(id), name]));
+    for (const activity of $mapState.activities) {
+      if (activity.agentId && !names.has(activity.agentId)) {
+        names.set(activity.agentId, activity.agentName ?? activity.agentId);
+      }
+    }
+    return [...names].map(([id, name]) => ({ id, name }));
+  });
+
+  function toggleAgentFilter(agentId: string): void {
+    const allAgentIds = filterAgents.map(({ id }) => id);
+    const enabled = $mapState.agentFilter.length > 0 ? $mapState.agentFilter : allAgentIds;
+    const next = enabled.includes(agentId)
+      ? enabled.filter((id) => id !== agentId)
+      : [...enabled, agentId];
+    if (next.length === 0) return;
+    appStore.dispatch(
+      semanticMapAgentFilterChanged(workspaceId, next.length === allAgentIds.length ? [] : next),
+    );
+  }
+
+  function toggleKindFilter(kind: MapActivityKind): void {
+    const enabled = $mapState.kindFilter.length > 0 ? $mapState.kindFilter : activityKinds;
+    const next = enabled.includes(kind)
+      ? enabled.filter((candidate) => candidate !== kind)
+      : [...enabled, kind];
+    if (next.length === 0) return;
+    appStore.dispatch(
+      semanticMapKindFilterChanged(workspaceId, next.length === activityKinds.length ? [] : next),
+    );
+  }
+
+  function setTimeWindow(minutes: number | null): void {
+    appStore.dispatch(
+      semanticMapTimeWindowChanged(workspaceId, {
+        startTs: minutes === null ? null : new Date(Date.now() - minutes * 60_000).toISOString(),
+        endTs: null,
+      }),
+    );
+  }
+
+  function isTimeWindowSelected(minutes: number | null): boolean {
+    if (minutes === null) return $mapState.timeWindow.startTs === null;
+    if (!$mapState.timeWindow.startTs || $mapState.timeWindow.endTs) return false;
+    return (
+      Math.abs(Date.now() - Date.parse($mapState.timeWindow.startTs) - minutes * 60_000) < 30_000
+    );
+  }
+
+  function kindLabel(kind: MapActivityKind): string {
+    return {
+      read: m.semanticMap_sandbox_read_label(),
+      edit: m.semanticMap_sandbox_edit_label(),
+      create: m.semanticMap_detail_create_label(),
+      delete: m.semanticMap_detail_delete_label(),
+      move: m.semanticMap_detail_move_label(),
+      tool: m.semanticMap_sandbox_tool_label(),
+      thinking: m.semanticMap_sandbox_thinking_label(),
+    }[kind];
+  }
+
+  function selectCrossing(transitionIndex: number): void {
+    const transition = $mapState.route?.transitions[transitionIndex];
+    if (!transition) return;
+    detailOverride = {
+      type: 'crossing',
+      from: transition.from,
+      to: transition.to,
+      agentId: $mapState.selectedAgentId,
+    };
+  }
 
   function selectAgent(agentId: string | null): void {
     detailOverride = null;
@@ -116,6 +224,60 @@
 
 <div class="grid h-full min-h-0 grid-cols-[16rem_minmax(0,1fr)_16rem] bg-background">
   <aside class="min-h-0 overflow-y-auto border-r border-border p-3">
+    <h2 class="mb-2 text-sm font-semibold">{m.semanticMap_panel_filters_label()}</h2>
+    {#if filterAgents.length > 0}
+      <fieldset class="mb-3 flex flex-wrap gap-1.5">
+        <legend class="mb-1 text-xs text-muted-foreground">
+          {m.semanticMap_panel_filterAgents_label()}
+        </legend>
+        {#each filterAgents as agent (agent.id)}
+          <Button
+            size="sm"
+            variant={$mapState.agentFilter.length === 0 || $mapState.agentFilter.includes(agent.id)
+              ? 'secondary'
+              : 'outline'}
+            aria-pressed={$mapState.agentFilter.length === 0 ||
+              $mapState.agentFilter.includes(agent.id)}
+            onclick={() => toggleAgentFilter(agent.id)}>{agent.name}</Button
+          >
+        {/each}
+      </fieldset>
+    {/if}
+    <fieldset class="mb-3 flex flex-wrap gap-1.5">
+      <legend class="mb-1 text-xs text-muted-foreground">
+        {m.semanticMap_panel_filterKinds_label()}
+      </legend>
+      {#each activityKinds as kind (kind)}
+        <Button
+          size="sm"
+          variant={$mapState.kindFilter.length === 0 || $mapState.kindFilter.includes(kind)
+            ? 'secondary'
+            : 'outline'}
+          aria-pressed={$mapState.kindFilter.length === 0 || $mapState.kindFilter.includes(kind)}
+          onclick={() => toggleKindFilter(kind)}>{kindLabel(kind)}</Button
+        >
+      {/each}
+    </fieldset>
+    <fieldset class="mb-4 flex flex-wrap gap-1.5">
+      <legend class="mb-1 text-xs text-muted-foreground">
+        {m.semanticMap_panel_filterTime_label()}
+      </legend>
+      <Button
+        size="sm"
+        variant={isTimeWindowSelected(null) ? 'secondary' : 'outline'}
+        aria-pressed={isTimeWindowSelected(null)}
+        onclick={() => setTimeWindow(null)}>{m.semanticMap_panel_allTime_label()}</Button
+      >
+      {#each timeWindowMinutes as minutes (minutes)}
+        <Button
+          size="sm"
+          variant={isTimeWindowSelected(minutes) ? 'secondary' : 'outline'}
+          aria-pressed={isTimeWindowSelected(minutes)}
+          onclick={() => setTimeWindow(minutes)}
+          >{m.semanticMap_sandbox_minutes_label({ count: formatInteger(minutes) })}</Button
+        >
+      {/each}
+    </fieldset>
     <h2 class="mb-2 text-sm font-semibold">{m.semanticMap_sandbox_agents_label()}</h2>
     <WorkspaceAgentsList
       agents={$agents}
@@ -173,6 +335,17 @@
         {m.semanticMap_panel_structuralHint_description()}
       </p>
     {/if}
+    {#if $mapState.hydrationStatus === 'loaded' && $mapState.manifest && $filteredActivities.length === 0}
+      <p
+        class="pointer-events-none absolute inset-x-5 top-1/2 z-10 -translate-y-1/2 rounded bg-background/90 px-3 py-2 text-center text-sm text-muted-foreground"
+        role="status"
+        data-testid="semantic-map-empty-state"
+      >
+        {$mapState.activities.length === 0
+          ? m.semanticMap_panel_noActivity_description()
+          : m.semanticMap_panel_noMatchingActivity_description()}
+      </p>
+    {/if}
     {#if $mapState.manifest && geometry}
       <SemanticMapCanvas
         manifest={$mapState.manifest}
@@ -196,14 +369,13 @@
     {#if $mapState.manifest}
       <SemanticMapDetail
         manifest={$mapState.manifest}
-        activities={$mapState.activities}
+        activities={$filteredActivities}
         route={$mapState.route ?? undefined}
         selection={detailSelection}
         agents={detailAgents}
         fileChanges={detailFileChanges}
         {routeSubjectLabel}
-        onSelectCrossing={(transitionIndex) =>
-          (detailOverride = { type: 'crossing', transitionIndex })}
+        onSelectCrossing={selectCrossing}
         onSelectFile={(path) => (detailOverride = { type: 'file', path })}
         onOpenFile={(path) => appStore.dispatch(openWorkspaceFile(workspaceId, path))}
         onOpenDiff={openDiff}

@@ -39,7 +39,7 @@ export function registerAllTabTypes(): void {
     defaultWidthTier: 'wide',
     icon: faLayerGroup,
     get defaultTitle() {
-      return m.semanticMap_sandbox_title();
+      return m.semanticMap_panel_title();
     },
     get categoryLabel() {
       return m.layout_tabTypes_panel_category();

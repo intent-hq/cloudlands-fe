@@ -27,8 +27,8 @@ export function filterActivities(
 ): MapActivity[] {
   const start = timestamp(timeWindow.start);
   const end = timestamp(timeWindow.end);
-  const agents = filters.agentIds ? new Set(filters.agentIds) : null;
-  const kinds = filters.kinds ? new Set(filters.kinds) : null;
+  const agents = filters.agentIds?.length ? new Set(filters.agentIds) : null;
+  const kinds = filters.kinds?.length ? new Set(filters.kinds) : null;
   return activities
     .filter((activity) => {
       const at = timestamp(activity.ts);
@@ -209,12 +209,13 @@ export function buildScene(input: {
   fileLabel: (count: number) => string;
 }): SemanticMapScene {
   const activities = filterActivities(input.activities, input.filters, input.timeWindow);
-  const end = timestamp(input.timeWindow.end);
-  const duration = Math.max(1, end - timestamp(input.timeWindow.start));
+  const windowEnd = timestamp(input.timeWindow.end);
+  const referenceTime = input.timeWindow.end.startsWith('9999-') ? Date.now() : windowEnd;
+  const duration = Math.max(1, referenceTime - timestamp(input.timeWindow.start));
   const geometry = geometryIndex(input.geometry);
   const colors = agentColors(activities, input.neutral);
-  const { marks, heatByRegion } = buildMarks(activities, geometry, end, duration, colors);
-  const badges = buildBadges(activities, geometry, end, colors);
+  const { marks, heatByRegion } = buildMarks(activities, geometry, referenceTime, duration, colors);
+  const badges = buildBadges(activities, geometry, referenceTime, colors);
   return {
     activities,
     marks,

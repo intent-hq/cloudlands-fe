@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MapActivity } from '../core/types';
 import type { RegionGeometry } from '../layout/place';
 import { buildRouteEdges, buildScene, filterActivities, hitRouteEdge } from './scene';
@@ -37,42 +37,84 @@ const window = {
   end: '2026-09-06T10:10:00.000Z',
 };
 
-describe('semantic map render scene', () => {
-  it('filters the daemon activity stream by time, agent and kind', () => {
-    const activities: MapActivity[] = [
-      {
-        id: 'activity-1',
-        agentId: 'a',
-        regionId: 'one',
-        kind: 'read',
-        ts: '2026-09-06T10:01:00.000Z',
-      },
-      {
-        id: 'activity-2',
-        agentId: 'a',
-        regionId: 'one',
-        kind: 'edit',
-        ts: '2026-09-06T10:02:00.000Z',
-      },
-      {
-        id: 'activity-3',
-        agentId: 'b',
-        regionId: 'two',
-        kind: 'edit',
-        ts: '2026-09-06T10:03:00.000Z',
-      },
-      {
-        id: 'activity-4',
-        agentId: 'a',
-        regionId: 'one',
-        kind: 'edit',
-        ts: '2026-09-06T10:11:00.000Z',
-      },
-    ];
+afterEach(() => vi.useRealTimers());
 
+describe('semantic map render scene', () => {
+  const activities: MapActivity[] = [
+    {
+      id: 'activity-1',
+      agentId: 'a',
+      regionId: 'one',
+      kind: 'read',
+      ts: '2026-09-06T10:01:00.000Z',
+    },
+    {
+      id: 'activity-2',
+      agentId: 'a',
+      regionId: 'one',
+      kind: 'edit',
+      ts: '2026-09-06T10:02:00.000Z',
+    },
+    {
+      id: 'activity-3',
+      agentId: 'b',
+      regionId: 'two',
+      kind: 'edit',
+      ts: '2026-09-06T10:03:00.000Z',
+    },
+    {
+      id: 'activity-4',
+      agentId: 'a',
+      regionId: 'one',
+      kind: 'edit',
+      ts: '2026-09-06T10:11:00.000Z',
+    },
+  ];
+
+  it('treats absent and empty filters as showing every activity in the window', () => {
+    expect(filterActivities(activities, {}, window)).toEqual(activities.slice(0, 3));
+    expect(filterActivities(activities, { agentIds: [], kinds: [] }, window)).toEqual(
+      activities.slice(0, 3),
+    );
+  });
+
+  it('supports single and multi-value agent and kind filters', () => {
     expect(filterActivities(activities, { agentIds: ['a'], kinds: ['edit'] }, window)).toEqual([
       activities[1],
     ]);
+    expect(
+      filterActivities(activities, { agentIds: ['a', 'b'], kinds: ['read', 'edit'] }, window),
+    ).toEqual(activities.slice(0, 3));
+  });
+
+  it('ages current live activity against now instead of the unbounded window end', () => {
+    const now = new Date('2026-09-07T05:00:00.000Z');
+    const currentActivities: MapActivity[] = ['read', 'edit', 'tool'].map((kind, index) => ({
+      id: `current-${kind}`,
+      agentId: 'a',
+      regionId: 'one',
+      kind: kind as MapActivity['kind'],
+      ts: new Date(now.getTime() - (2 - index) * 100).toISOString(),
+    }));
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    const scene = buildScene({
+      activities: currentActivities,
+      filters: {},
+      timeWindow: {
+        start: '1970-01-01T00:00:00.000Z',
+        end: '9999-12-31T23:59:59.999Z',
+      },
+      geometry,
+      neutral: '#neutral',
+      fileLabel: (count) => `${count}`,
+    });
+
+    expect(scene.marks.map(({ kind }) => kind)).toEqual(['read', 'edit']);
+    expect(scene.badges).toHaveLength(1);
+    expect(scene.badges[0].toolAgeMs).toBe(0);
+    expect(scene.hasMotion).toBe(true);
   });
 
   it('fans collocated badges and uses at most eight agent hues', () => {
