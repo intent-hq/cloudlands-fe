@@ -6149,5 +6149,17 @@
   "antigravity_setup_connection_error": "无法完成设置。请检查本地守护进程连接后重试。",
   "antigravity_setup_customPath_error": "自定义桥接程序路径无效。请在提供商菜单中修正后重试。",
   "antigravity_setup_cancelled_description": "设置已取消。准备好后可再次连接。",
-  "antigravity_setup_cancel_label": "取消设置"
+  "antigravity_setup_cancel_label": "取消设置",
+  "workspace_drivingClient_here_label": "正在驱动浏览器",
+  "workspace_drivingClient_elsewhere_label": "浏览器位于 {host}",
+  "workspace_drivingClient_offline_label": "浏览器位于 {host}（离线）",
+  "workspace_drivingClient_here_description": "此工作区的智能体浏览器标签页和隧道在本应用中运行。",
+  "workspace_drivingClient_elsewhere_description": "此工作区的智能体浏览器标签页和隧道在 {host} 上运行。将本应用设为主客户端后，智能体的标签页会移到这里；您自己打开的标签页保持不变，页面状态不会保留。",
+  "workspace_drivingClient_offline_description": "{host} 已断开连接。在其重新连接或您将本应用设为主客户端之前，此工作区的智能体浏览器标签页和隧道将失败。设为主客户端后，智能体的标签页会移到这里，页面状态不会保留。",
+  "workspace_drivingClient_setPrimary_label": "将当前客户端设为主客户端",
+  "workspace_drivingClient_setPrimaryDialog_title": "将此客户端设为主客户端？",
+  "workspace_drivingClient_setPrimaryDialog_description": "此工作区的浏览器当前由 {host} 控制。它将固定到此客户端，智能体的所有标签页都会移到这里。页面状态不会保留；您自己打开的标签页不受影响。",
+  "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "关闭",
+  "workspace_drivingClient_setPrimaryDialog_cancel_label": "取消",
+  "workspace_drivingClient_setPrimaryDialog_confirm_label": "设为主客户端"
 }

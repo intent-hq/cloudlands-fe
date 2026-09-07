@@ -276,6 +276,13 @@ import {
 import { mapDaemonMcpState } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
 import {
+  browserTabClosed,
+  browserTabUpserted,
+  fetchWorkspaceBrowserClientRequested,
+  refreshLiveClientsRequested,
+} from '$store/renderer/slices/browser-clients/browser-clients-slice';
+import { isBrowserTab, isLiveClientTransition } from '$shared/types/browser-clients';
+import {
   hydrateAgentQueue,
   noteAgentQueueEventSnapshotApplied,
 } from '$features/agent/agent-queue-read-service';
@@ -2684,6 +2691,15 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   } else if (raw.archivedAt === null) {
     changes.archivedAt = undefined;
   }
+  // `browserClientId` (REV-2 pin, §5.17) is nullable on the wire the same way:
+  // `workspace.setBrowserClient { clientId }` sends the pinned id, clearing
+  // sends an explicit JSON null. The pin change also moves the daemon's
+  // `resolved` driving client, so re-read `workspace.getBrowserClient` for
+  // this one workspace (targeted, never a per-workspace fan-out).
+  if (typeof raw.browserClientId === 'string' || raw.browserClientId === null) {
+    changes.browserClientId = raw.browserClientId ?? undefined;
+    appStore.dispatch(fetchWorkspaceBrowserClientRequested(workspaceId));
+  }
   if (Object.keys(changes).length === 0) return;
   // Same reducer path as `handlePrEvent` — `updateWorkspaceEntity` has no
   // standalone case; the slice folds it through `bulkUpdateWorkspaceEntities`.
@@ -3276,6 +3292,49 @@ function handleGitHubAuthChangedEvent(event: WorkspaceEvent): void {
   }
 }
 
+/**
+ * `client:connected` / `client:disconnected` (REV-2, §5.17) are global — the
+ * daemon publishes `data = { clientId, name?, capabilities }` when a logical
+ * client gains its first / loses its last live connection. The payload is a
+ * transition, not a `client.list` row (no host triple, connection count or
+ * `connectedAt`), so the bridge asks the browser-clients saga to re-read
+ * `client.list`; the saga is single-flight with trailing coalesce, so a
+ * reconnect burst costs at most one in-flight read plus one trailing read.
+ */
+function handleClientTransitionEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: unknown }).data;
+  if (!isLiveClientTransition(data)) {
+    logger.warn('client:* event with malformed payload', { type: event.type, data });
+    return;
+  }
+  appStore.dispatch(refreshLiveClientsRequested());
+}
+
+/**
+ * `browser:tab-opened` / `browser:tab-updated` / `browser:tab-closed` (REV-2)
+ * are workspace-scoped and self-sufficient: `data = { tab, changes? }` carries
+ * the daemon registry row for the tab, so the mirror is patched in place —
+ * upsert the row on opened/updated, drop it on closed — without a
+ * `browser.listTabs` refetch.
+ */
+function handleBrowserTabEvent(
+  event: WorkspaceEvent,
+  workspaceId: string,
+  type: 'browser:tab-opened' | 'browser:tab-updated' | 'browser:tab-closed',
+): void {
+  const data = (event as { data?: { tab?: unknown } }).data;
+  const tab = data?.tab;
+  if (!isBrowserTab(tab)) {
+    logger.warn(`${type} with malformed payload`, { workspaceId, data });
+    return;
+  }
+  if (type === 'browser:tab-closed') {
+    appStore.dispatch(browserTabClosed(workspaceId, tab.tabId));
+    return;
+  }
+  appStore.dispatch(browserTabUpserted(workspaceId, tab));
+}
+
 function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
@@ -3571,6 +3630,13 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  // `client:connected` / `client:disconnected` (REV-2, §5.17) are global — no
+  // `workspaceId` envelope — so they must also run before the gate below.
+  if (type === 'client:connected' || type === 'client:disconnected') {
+    handleClientTransitionEvent(event);
+    return;
+  }
+
   // `git:clone:progress` / `git:clone:done` frames carrying a `data.progressId`
   // correlate to an in-flight `workspace.create` by progressId, not by
   // workspaceId (server-minted mid-create, unknown to the FE), so they route
@@ -3657,6 +3723,17 @@ export function routeDaemonEventsNotification(
   // without a refetch. Side effect, never an early return.
   if (type === 'workspace:waiting-changed') {
     handleWaitingChangedEvent(event, workspaceId);
+  }
+  // `browser:tab-*` (REV-2) — patch the daemon tab-registry mirror for this
+  // workspace from the self-sufficient `{ tab, changes? }` payload. Side
+  // effect, never an early return: the timeline dispatch below still records
+  // the tab activity.
+  if (
+    type === 'browser:tab-opened' ||
+    type === 'browser:tab-updated' ||
+    type === 'browser:tab-closed'
+  ) {
+    handleBrowserTabEvent(event, workspaceId, type);
   }
 
   // Legacy mock-IPC re-emit (side effect, never an early return) — components
@@ -4150,6 +4227,16 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // `github:auth-changed` (§6.5) — device-flow terminal transitions and
   // `github.revoke`; global, so the connect UX converges without polling.
   'github:auth-changed',
+  // REV-2 browser-client routing (§5.17): global logical-client transitions
+  // (re-read `client.list`) and the workspace-scoped daemon tab-registry
+  // change events (`{ tab, changes? }`, patched into the browser-clients
+  // mirror). The `workspace:updated` subscription above already carries the
+  // `browserClientId` pin delta.
+  'client:connected',
+  'client:disconnected',
+  'browser:tab-opened',
+  'browser:tab-updated',
+  'browser:tab-closed',
   // Chief-workspace app-UI control events (§6.5 daemon emission) — the daemon
   // emits these when Chief agents call ws.app.ui.navigate/highlight or
   // ws.app.workspaces.open, bridged here into the FE's routing + highlight

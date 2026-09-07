@@ -41,6 +41,8 @@ import { legacyImportReducer } from './slices/legacy-import/legacy-import-slice'
 import { linearAuthReducer } from './slices/linear-auth/linear-auth-slice';
 import { voiceSettingsReducer } from './slices/voice-settings/voice-settings-slice';
 import { browserReducer } from './slices/browser/browser-slice';
+import { browserClientsReducer } from './slices/browser-clients/browser-clients-slice';
+import { browserTabRegistryReducer } from './slices/browser-tab-registry/browser-tab-registry-slice';
 import { sentryAuthReducer } from './slices/sentry-auth/sentry-auth-slice';
 import { contextReducer } from './slices/context/context-slice';
 import { setupScriptsReducer } from './slices/setup-scripts/setup-scripts-slice';
@@ -139,6 +141,8 @@ export const reducers = {
   voiceSettings: voiceSettingsReducer,
   sentryAuth: sentryAuthReducer,
   browser: browserReducer,
+  browserClients: browserClientsReducer,
+  browserTabRegistry: browserTabRegistryReducer,
   context: contextReducer,
   setupScripts: setupScriptsReducer,
   mcpSettings: mcpSettingsReducer,

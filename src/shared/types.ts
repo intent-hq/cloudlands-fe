@@ -353,6 +353,11 @@ export interface Workspace {
    *  a daemon restart (the workspace survives). Rows carrying it are hidden
    *  from the FE workspace list. */
   pendingDeleteAt?: string;
+  /** Persisted REV-2 browser-client pin (PROTOCOL §5.1 / §5.17): the logical
+   *  `clientId` whose embedded browser serves agent `browser.exec` in this
+   *  workspace. Omitted when unpinned (default routing); cleared via
+   *  `workspace.setBrowserClient { clientId: null }`. */
+  browserClientId?: string;
   defaultModel?: string; // Default model for new agents in this workspace
   /** IDs-only agent membership summary; derive counts from `agentIds.length` and fetch agent details from agent/session sources. */
   agentSummary?: WorkspaceAgentIdSummary;

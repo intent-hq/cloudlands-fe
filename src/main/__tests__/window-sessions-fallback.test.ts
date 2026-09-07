@@ -46,6 +46,7 @@ vi.mock('../../features/deeplink/deep-link-handler', () => ({
 
 vi.mock('../utils/resolve-app-title', () => ({
   resolveAppTitle: () => 'Intent',
+  registerWindowTitleListener: vi.fn(),
 }));
 
 import {

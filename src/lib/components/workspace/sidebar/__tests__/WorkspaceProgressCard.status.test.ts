@@ -6,7 +6,14 @@ import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
 import type { WorkspaceProgressAction } from '$store/renderer/slices/workspace/workspace-types';
+import type { BrowserClientsState } from '$store/renderer/slices/browser-clients/browser-clients-types';
+import {
+  createLiveClientCollection,
+  emptyWorkspaceBrowserClientsState,
+  initialState as browserClientsInitialState,
+} from '$store/renderer/slices/browser-clients/browser-clients-types';
 import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
@@ -19,6 +26,7 @@ const mocks = vi.hoisted(() => {
     workspace: {
       pendingTitleMutations: {} as Record<string, { token: number }>,
     },
+    browserClients: undefined as unknown,
   };
   const dispatch = vi.fn((action: { type: string; payload?: unknown[] }) => {
     if (
@@ -148,6 +156,10 @@ vi.mock('$store/renderer/slices/git/git-selectors', () => ({
 
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   loadWorkspacesRequested: vi.fn(() => ({ type: 'workspace/loadWorkspacesRequested' })),
+  removeWorkspaceEntity: Object.assign(
+    vi.fn((id: string) => ({ type: 'workspace/removeWorkspaceEntity', payload: [id] })),
+    { type: 'workspace/removeWorkspaceEntity' },
+  ),
   beginWorkspaceTitleMutation: vi.fn(
     (id: string, token: number, optimisticTitle: string, previousTitle: string) => ({
       type: 'workspace/beginWorkspaceTitleMutation',
@@ -316,6 +328,7 @@ describe('WorkspaceProgressCard status message', () => {
     mocks.handleLink.mockReset();
     mocks.progressActions.length = 0;
     mocks.storeState.workspace.pendingTitleMutations = {};
+    mocks.storeState.browserClients = browserClientsInitialState;
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
       configurable: true,
@@ -796,5 +809,172 @@ describe('WorkspaceProgressCard status screenshot (intent-hq/monorepo#997)', () 
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: /image preview/i })).toBeTruthy();
     });
+  });
+});
+
+describe('WorkspaceProgressCard driving browser client', () => {
+  const OWN = 'client-own';
+  const OTHER = 'client-other';
+  const SET_PRIMARY = { name: 'Set Current Client as Primary' };
+
+  function liveClient(clientId: string, name: string): LiveClient {
+    return {
+      clientId,
+      name,
+      hostname: name,
+      capabilities: { browserExec: true },
+      connections: 1,
+      transports: ['ws'],
+      connectedAt: '2026-05-05T00:00:00.000Z',
+    } as LiveClient;
+  }
+
+  function seedBrowserClients(
+    clients: LiveClient[],
+    browserClient: WorkspaceBrowserClient | null,
+  ): void {
+    mocks.storeState.browserClients = {
+      ownClientId: OWN,
+      liveClients: createLiveClientCollection(clients),
+      liveClientsLoaded: true,
+      byWorkspaceId: { 'ws-1': { ...emptyWorkspaceBrowserClientsState, browserClient } },
+    } satisfies BrowserClientsState;
+  }
+
+  const drivingIndicator = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('[data-sidebar-driving-client]');
+
+  // The card publishes its workspace id to the selector argument store from
+  // an effect after mount; the store mock reads readable args once, so
+  // re-emit to let the driving-client selector observe the mounted id.
+  async function renderDrivingCard() {
+    const view = await renderProgressCard();
+    await tick();
+    const { store } = await import('$store/renderer/store');
+    (store as unknown as { emitState: () => void }).emitState();
+    await tick();
+    return view;
+  }
+
+  beforeEach(() => {
+    mocks.dispatch.mockClear();
+    mocks.storeState.browserClients = browserClientsInitialState;
+  });
+
+  it('shows nothing and offers no switch when this app is the only eligible client', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop')], {
+      source: 'default',
+      resolved: { clientId: OWN, name: 'laptop' },
+    });
+    const { container } = await renderDrivingCard();
+
+    expect(drivingIndicator(container)).toBeNull();
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    expect(screen.queryByRole('button', SET_PRIMARY)).toBeNull();
+  });
+
+  it('marks this app as driving and hides the switch when it already drives', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OWN, name: 'laptop' },
+    });
+    const { container } = await renderDrivingCard();
+
+    expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('here');
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    expect(screen.queryByRole('button', SET_PRIMARY)).toBeNull();
+  });
+
+  const SET_PRIMARY_DIALOG = { name: /set this client as primary/i };
+  const CONFIRM_SET_PRIMARY = { name: 'Set as Primary' };
+
+  async function openSetPrimaryDialog(container: HTMLElement): Promise<HTMLElement> {
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    await fireEvent.click(screen.getByRole('button', SET_PRIMARY));
+    return await waitFor(() => screen.getByRole('dialog', SET_PRIMARY_DIALOG));
+  }
+
+  it('names the other driving client and asks for confirmation before switching', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OTHER, name: 'desktop' },
+    });
+    const { container } = await renderDrivingCard();
+
+    const indicator = drivingIndicator(container);
+    expect(indicator?.dataset.sidebarDrivingClient).toBe('elsewhere');
+    expect(indicator?.getAttribute('aria-label')).toContain('desktop');
+
+    const dialog = await openSetPrimaryDialog(container);
+
+    expect(dialog.textContent).toContain('desktop');
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'browserClients/setWorkspaceBrowserClientRequested' }),
+    );
+  });
+
+  it('pins this app only once the confirmation is accepted', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OTHER, name: 'desktop' },
+    });
+    const { container } = await renderDrivingCard();
+
+    await openSetPrimaryDialog(container);
+    await fireEvent.click(screen.getByRole('button', CONFIRM_SET_PRIMARY));
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'browserClients/setWorkspaceBrowserClientRequested',
+        payload: ['ws-1', OWN],
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', SET_PRIMARY_DIALOG)).toBeNull();
+    });
+  });
+
+  it('sends nothing when the confirmation is cancelled', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OTHER, name: 'desktop' },
+    });
+    const { container } = await renderDrivingCard();
+
+    await openSetPrimaryDialog(container);
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', SET_PRIMARY_DIALOG)).toBeNull();
+    });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'browserClients/setWorkspaceBrowserClientRequested' }),
+    );
+  });
+
+  it('surfaces an offline pinned client and still offers the switch', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop')], {
+      source: 'workspace',
+      clientId: OTHER,
+      resolved: null,
+    });
+    const { container } = await renderDrivingCard();
+
+    expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('offline');
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    expect(screen.getByRole('button', SET_PRIMARY)).toBeTruthy();
+  });
+
+  it('hides the switch while this app does not yet know its own client id', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OTHER, name: 'desktop' },
+    });
+    (mocks.storeState.browserClients as BrowserClientsState).ownClientId = null;
+    const { container } = await renderDrivingCard();
+
+    expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('elsewhere');
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    expect(screen.queryByRole('button', SET_PRIMARY)).toBeNull();
   });
 });
