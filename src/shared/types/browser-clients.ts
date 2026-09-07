@@ -7,7 +7,7 @@
  */
 
 /** Capabilities a client advertised on `client.hello` (opaque JSON object). */
-export type ClientCapabilities = Record<string, unknown> & { browserExec?: boolean };
+type ClientCapabilities = Record<string, unknown> & { browserExec?: boolean };
 
 /**
  * One connected logical client (`client.list` row). `hostname` /
@@ -36,26 +36,25 @@ export interface LiveClientTransition {
 }
 
 /** The client an agent `browser.exec` would reach right now. */
-export interface ResolvedBrowserClient {
+interface ResolvedBrowserClient {
   clientId: string;
   name?: string;
 }
 
 /**
  * `workspace.getBrowserClient` / `workspace.setBrowserClient` result.
- * `clientId` is the persisted pin (omitted when unpinned → `source:
- * "default"`); `resolved` is `null` when the pin is offline or, unpinned,
- * no eligible client is connected.
+ * `clientId` is the persisted pin, present exactly when `source:
+ * "workspace"` and absent when unpinned (`source: "default"`); `resolved`
+ * is `null` when the pin is offline or, unpinned, no eligible client is
+ * connected.
  */
-export interface WorkspaceBrowserClient {
-  clientId?: string;
-  source: 'workspace' | 'default';
-  resolved: ResolvedBrowserClient | null;
-}
+export type WorkspaceBrowserClient =
+  | { source: 'workspace'; clientId: string; resolved: ResolvedBrowserClient | null }
+  | { source: 'default'; clientId?: undefined; resolved: ResolvedBrowserClient | null };
 
-export type BrowserTabVisibility = 'visible' | 'hidden';
+type BrowserTabVisibility = 'visible' | 'hidden';
 
-export interface BrowserTabSize {
+interface BrowserTabSize {
   width: number;
   height: number;
 }
@@ -90,14 +89,33 @@ export interface BrowserTabListing extends BrowserTab {
   hostName?: string;
 }
 
-/** `browser:tab-*` event payload: `{ tab, changes? }` (workspace-scoped). */
-export interface BrowserTabEventData {
-  tab: BrowserTab;
-  changes?: Record<string, unknown>;
+/**
+ * The routed `browser.exec` action envelope — `browser.navigateTab` returns
+ * the `navigate` action's envelope verbatim (`result` is `{ url }` on success).
+ */
+export interface BrowserActionEnvelope {
+  action: string;
+  success: boolean;
+  result?: unknown;
+  error?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** The `{ ok: true }` acknowledgement (`browser.removeTab`, `browser.closeTab`). */
+export function isOkResult(value: unknown): value is { ok: true } {
+  return isRecord(value) && value.ok === true;
+}
+
+export function isBrowserActionEnvelope(value: unknown): value is BrowserActionEnvelope {
+  return (
+    isRecord(value) &&
+    typeof value.action === 'string' &&
+    typeof value.success === 'boolean' &&
+    (value.error === undefined || typeof value.error === 'string')
+  );
 }
 
 export function isLiveClient(value: unknown): value is LiveClient {
@@ -117,8 +135,13 @@ export function isLiveClientTransition(value: unknown): value is LiveClientTrans
 
 export function isWorkspaceBrowserClient(value: unknown): value is WorkspaceBrowserClient {
   if (!isRecord(value)) return false;
-  if (value.source !== 'workspace' && value.source !== 'default') return false;
-  if (value.clientId !== undefined && typeof value.clientId !== 'string') return false;
+  if (value.source === 'workspace') {
+    if (typeof value.clientId !== 'string') return false;
+  } else if (value.source === 'default') {
+    if (value.clientId !== undefined) return false;
+  } else {
+    return false;
+  }
   const resolved = value.resolved;
   return resolved === null || (isRecord(resolved) && typeof resolved.clientId === 'string');
 }

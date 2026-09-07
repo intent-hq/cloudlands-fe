@@ -11784,9 +11784,11 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
     backendRequestSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
-    const { clearWorkspaceBrowserClients, liveClientsReceived } =
+    const { liveClientsReceived } =
       await import('$store/renderer/slices/browser-clients/browser-clients-slice');
-    appStore.dispatch(clearWorkspaceBrowserClients(WS_BC));
+    const { workspaceUnmounted } =
+      await import('$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice');
+    appStore.dispatch(workspaceUnmounted(WS_BC));
     appStore.dispatch(liveClientsReceived([]));
   });
 

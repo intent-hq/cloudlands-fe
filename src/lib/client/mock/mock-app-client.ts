@@ -177,7 +177,7 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     }),
     removeTab: async () => ({ ok: true }),
     syncTabs: async () => ({ drop: [] }),
-    navigateTab: async () => ({ ok: true }),
+    navigateTab: async (_tabId, url) => ({ action: 'navigate', success: true, result: { url } }),
     closeTab: async () => ({ ok: true }),
   };
 

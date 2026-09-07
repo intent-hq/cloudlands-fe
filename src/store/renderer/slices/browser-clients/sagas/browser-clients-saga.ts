@@ -7,16 +7,18 @@
  * every `client:connected` / `client:disconnected`, so a reconnect burst
  * collapses into one in-flight read plus at most one trailing read), and the
  * per-workspace `workspace.getBrowserClient` / `setBrowserClient` /
- * `browser.listTabs` reads keyed by workspace.
+ * `browser.listTabs` reads keyed by workspace (latest wins per workspace, so
+ * a slow earlier pin write cannot overwrite a later daemon echo).
  */
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
-import { call, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   takeLatestByWorkspace,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
+import { selectWorkspaceBrowserTabsRevision } from '../browser-clients-selectors';
 import {
   fetchWorkspaceBrowserClientRequested,
   fetchWorkspaceBrowserTabsRequested,
@@ -31,6 +33,8 @@ import {
 
 const logger = createLogger('BrowserClientsSaga');
 const LIVE_CLIENTS_CONTEXT = 'live-clients';
+/** Re-reads allowed when `browser:tab-*` patches keep landing mid-`browser.listTabs`. */
+const MAX_TABS_READ_ATTEMPTS = 3;
 
 function* readLiveClients(): SagaGenerator<void> {
   try {
@@ -100,8 +104,15 @@ function* readWorkspaceBrowserTabs(
 ): SagaGenerator<void> {
   const [wsId] = action.payload;
   try {
-    const tabs = yield* call([appClient.browser, appClient.browser.listTabs], wsId);
-    yield* put(workspaceBrowserTabsReceived(wsId, tabs));
+    for (let attempt = 0; attempt < MAX_TABS_READ_ATTEMPTS; attempt++) {
+      const revision = yield* selectWorkspaceBrowserTabsRevision.effect(wsId);
+      const tabs = yield* call([appClient.browser, appClient.browser.listTabs], wsId);
+      yield* put(workspaceBrowserTabsReceived(wsId, tabs, revision));
+      if ((yield* selectWorkspaceBrowserTabsRevision.effect(wsId)) === revision) return;
+    }
+    logger.warn('browser.listTabs snapshot kept racing browser:tab-* events; keeping patches', {
+      wsId,
+    });
   } catch (error) {
     logger.warn('browser.listTabs failed', {
       wsId,
@@ -118,6 +129,6 @@ export function* browserClientsSaga(): SagaGenerator<void> {
     readLiveClients,
   );
   yield* takeLatestByWorkspace(fetchWorkspaceBrowserClientRequested, readWorkspaceBrowserClient);
-  yield* takeEvery(setWorkspaceBrowserClientRequested, writeWorkspaceBrowserClient);
+  yield* takeLatestByWorkspace(setWorkspaceBrowserClientRequested, writeWorkspaceBrowserClient);
   yield* takeLatestByWorkspace(fetchWorkspaceBrowserTabsRequested, readWorkspaceBrowserTabs);
 }

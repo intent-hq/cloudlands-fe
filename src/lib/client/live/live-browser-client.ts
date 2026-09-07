@@ -27,8 +27,11 @@ import type { RecentUrl } from '$store/renderer/slices/browser/browser-types';
 import { storageKey, isRecentUrl } from '$store/renderer/slices/browser/browser-storage-utils';
 import { safeLocalStorage } from '$lib/utils/safe-storage';
 import {
+  isBrowserActionEnvelope,
   isBrowserTab,
   isBrowserTabListing,
+  isOkResult,
+  type BrowserActionEnvelope,
   type BrowserTab,
   type BrowserTabInput,
   type BrowserTabListing,
@@ -79,7 +82,11 @@ export class LiveBrowserClient implements BrowserClient {
   }
 
   async removeTab(tabId: string): Promise<{ ok: true }> {
-    return await backendRequest<{ ok: true }>('browser.removeTab', { tabId });
+    const result = await backendRequest<unknown>('browser.removeTab', { tabId });
+    if (!isOkResult(result)) {
+      throw new Error('Invalid browser.removeTab response shape');
+    }
+    return result;
   }
 
   async syncTabs(tabs: BrowserTabInput[]): Promise<{ drop: string[] }> {
@@ -90,15 +97,23 @@ export class LiveBrowserClient implements BrowserClient {
     return { drop: result.drop };
   }
 
-  async navigateTab(tabId: string, url: string): Promise<unknown> {
-    return await backendRequest('browser.navigateTab', { tabId, url });
+  async navigateTab(tabId: string, url: string): Promise<BrowserActionEnvelope> {
+    const result = await backendRequest<unknown>('browser.navigateTab', { tabId, url });
+    if (!isBrowserActionEnvelope(result)) {
+      throw new Error('Invalid browser.navigateTab response shape');
+    }
+    return result;
   }
 
   async closeTab(tabId: string, options?: { force?: boolean }): Promise<{ ok: true }> {
-    return await backendRequest<{ ok: true }>('browser.closeTab', {
+    const result = await backendRequest<unknown>('browser.closeTab', {
       tabId,
       ...(options?.force === undefined ? {} : { force: options.force }),
     });
+    if (!isOkResult(result)) {
+      throw new Error('Invalid browser.closeTab response shape');
+    }
+    return result;
   }
 }
 

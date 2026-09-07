@@ -28,6 +28,7 @@ import {
   refreshLiveClientsRequested,
   setWorkspaceBrowserClientRequested,
 } from '../browser-clients-slice';
+import { emptyWorkspaceBrowserClientsState } from '../browser-clients-types';
 import { browserClientsSaga } from './browser-clients-saga';
 
 const settle = async () => {
@@ -52,12 +53,22 @@ const desk: LiveClient = {
 function start() {
   const channel = stdChannel();
   const dispatch = vi.fn((action) => channel.put(action));
-  const task = runSaga(
-    { channel, dispatch, getState: () => ({ browserClients: initialState }) },
-    browserClientsSaga,
-  );
+  const state = { browserClients: initialState };
+  const task = runSaga({ channel, dispatch, getState: () => state }, browserClientsSaga);
   const dispatched = () => dispatch.mock.calls.map(([action]) => action);
-  return { channel, task, dispatched };
+  const setTabsRevision = (wsId: string, tabsRevision: number) => {
+    state.browserClients = {
+      ...state.browserClients,
+      byWorkspaceId: {
+        ...state.browserClients.byWorkspaceId,
+        [wsId]: {
+          ...(state.browserClients.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserClientsState),
+          tabsRevision,
+        },
+      },
+    };
+  };
+  return { channel, task, dispatched, setTabsRevision };
 }
 
 describe('browserClientsSaga', () => {
@@ -149,6 +160,75 @@ describe('browserClientsSaga', () => {
     });
   });
 
+  it('keeps only the latest pin write per workspace so a slow earlier echo cannot win', async () => {
+    const slowPin = deferred<unknown>();
+    const pinned = {
+      clientId: 'cli-desk',
+      source: 'workspace',
+      resolved: { clientId: 'cli-desk' },
+    };
+    const cleared = { source: 'default', resolved: null };
+    const otherPinned = {
+      clientId: 'cli-laptop',
+      source: 'workspace',
+      resolved: { clientId: 'cli-laptop' },
+    };
+    mocks.setBrowserClient.mockImplementation((wsId: string, clientId: string | null) => {
+      if (wsId === 'ws-2') return Promise.resolve(otherPinned);
+      return clientId === null ? Promise.resolve(cleared) : slowPin.promise;
+    });
+    const { channel, task, dispatched } = start();
+
+    channel.put(setWorkspaceBrowserClientRequested('ws-1', 'cli-desk'));
+    channel.put(setWorkspaceBrowserClientRequested('ws-1', null));
+    channel.put(setWorkspaceBrowserClientRequested('ws-2', 'cli-laptop'));
+    await settle();
+    slowPin.resolve(pinned);
+    await settle();
+    task.cancel();
+
+    // Every write still reaches the daemon (it applies them in order) …
+    expect(mocks.setBrowserClient.mock.calls).toEqual([
+      ['ws-1', 'cli-desk'],
+      ['ws-1', null],
+      ['ws-2', 'cli-laptop'],
+    ]);
+    // … but only the latest write per workspace updates the mirror.
+    expect(
+      dispatched().filter((a) => a.type === 'browserClients/workspaceBrowserClientReceived'),
+    ).toEqual([
+      { type: 'browserClients/workspaceBrowserClientReceived', payload: ['ws-1', cleared] },
+      { type: 'browserClients/workspaceBrowserClientReceived', payload: ['ws-2', otherPinned] },
+    ]);
+  });
+
+  it('re-reads browser.listTabs when a browser:tab-* patch landed while the read was in flight', async () => {
+    const firstRead = deferred<unknown[]>();
+    const stale = [{ tabId: 'tab-stale' }];
+    const fresh = [{ tabId: 'tab-fresh' }];
+    mocks.listTabs.mockReturnValueOnce(firstRead.promise).mockResolvedValueOnce(fresh);
+    const { channel, task, dispatched, setTabsRevision } = start();
+
+    channel.put(fetchWorkspaceBrowserTabsRequested('ws-1'));
+    await settle();
+    expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+
+    // A tab event patches the mirror (revision 0 → 1) before the snapshot lands.
+    setTabsRevision('ws-1', 1);
+    firstRead.resolve(stale);
+    await settle();
+    task.cancel();
+
+    expect(mocks.listTabs.mock.calls).toEqual([['ws-1'], ['ws-1']]);
+    expect(
+      dispatched().filter((a) => a.type === 'browserClients/workspaceBrowserTabsReceived'),
+    ).toEqual([
+      // Stamped with the stale revision: the reducer discards it.
+      { type: 'browserClients/workspaceBrowserTabsReceived', payload: ['ws-1', stale, 0] },
+      { type: 'browserClients/workspaceBrowserTabsReceived', payload: ['ws-1', fresh, 1] },
+    ]);
+  });
+
   it('reads browser.listTabs per workspace and stores the listing', async () => {
     const tabs = [
       {
@@ -171,7 +251,7 @@ describe('browserClientsSaga', () => {
     expect(mocks.listTabs.mock.calls).toEqual([['ws-1']]);
     expect(dispatched()).toContainEqual({
       type: 'browserClients/workspaceBrowserTabsReceived',
-      payload: ['ws-1', tabs],
+      payload: ['ws-1', tabs, 0],
     });
   });
 });

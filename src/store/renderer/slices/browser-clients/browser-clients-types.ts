@@ -28,6 +28,12 @@ export type WorkspaceBrowserClientsState = {
   browserClient: WorkspaceBrowserClient | null;
   /** Daemon tab-registry rows for this workspace. */
   tabs: BrowserTabCollection;
+  /**
+   * Bumped by every `browser:tab-*` patch. A `browser.listTabs` snapshot is
+   * applied only when it was requested at the current revision, so an older
+   * snapshot never erases an event patch that landed while it was in flight.
+   */
+  tabsRevision: number;
 };
 
 export type BrowserClientsState = {
@@ -49,6 +55,7 @@ export const createBrowserTabCollection = (items?: BrowserTab[]): BrowserTabColl
 export const emptyWorkspaceBrowserClientsState: WorkspaceBrowserClientsState = {
   browserClient: null,
   tabs: createBrowserTabCollection(),
+  tabsRevision: 0,
 };
 
 export const initialState: BrowserClientsState = {

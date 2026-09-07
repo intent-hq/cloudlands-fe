@@ -223,10 +223,17 @@ describe('LiveBrowserClient daemon tab registry (REV-2 PROTOCOL §5.17, fake tra
     });
   });
 
-  it('removeTab sends { tabId }', async () => {
+  it('removeTab sends { tabId } and requires the { ok: true } acknowledgement', async () => {
     mockedRequest.mockResolvedValueOnce({ ok: true });
     expect(await client.removeTab('tab-1')).toEqual({ ok: true });
     expect(mockedRequest).toHaveBeenCalledWith('browser.removeTab', { tabId: 'tab-1' });
+
+    for (const malformed of [{}, { ok: false }, null]) {
+      mockedRequest.mockResolvedValueOnce(malformed);
+      await expect(client.removeTab('tab-1')).rejects.toThrow(
+        'Invalid browser.removeTab response shape',
+      );
+    }
   });
 
   it('syncTabs sends the full host tab set and surfaces the daemon drop list', async () => {
@@ -237,18 +244,35 @@ describe('LiveBrowserClient daemon tab registry (REV-2 PROTOCOL §5.17, fake tra
     expect(mockedRequest).toHaveBeenCalledWith('browser.syncTabs', { tabs });
   });
 
-  it('navigateTab sends { tabId, url }', async () => {
-    mockedRequest.mockResolvedValueOnce({ ok: true });
-    await client.navigateTab('tab-1', 'https://example.com/next');
+  it('navigateTab sends { tabId, url } and returns the routed navigate action envelope', async () => {
+    // PROTOCOL §5.45: the daemon relays the `navigate` action's envelope verbatim.
+    const envelope = {
+      action: 'navigate',
+      success: true,
+      result: { url: 'https://example.com/next' },
+    };
+    mockedRequest.mockResolvedValueOnce(envelope);
+    expect(await client.navigateTab('tab-1', 'https://example.com/next')).toEqual(envelope);
     expect(mockedRequest).toHaveBeenCalledWith('browser.navigateTab', {
       tabId: 'tab-1',
       url: 'https://example.com/next',
     });
+
+    const failed = { action: 'navigate', success: false, error: 'tab not found' };
+    mockedRequest.mockResolvedValueOnce(failed);
+    expect(await client.navigateTab('tab-1', 'https://example.com/next')).toEqual(failed);
+
+    for (const malformed of [{ ok: true }, { action: 'navigate' }, null]) {
+      mockedRequest.mockResolvedValueOnce(malformed);
+      await expect(client.navigateTab('tab-1', 'https://example.com/next')).rejects.toThrow(
+        'Invalid browser.navigateTab response shape',
+      );
+    }
   });
 
   it('closeTab sends { tabId } and only adds force when the caller sets it', async () => {
     mockedRequest.mockResolvedValue({ ok: true });
-    await client.closeTab('tab-1');
+    expect(await client.closeTab('tab-1')).toEqual({ ok: true });
     expect(mockedRequest).toHaveBeenLastCalledWith('browser.closeTab', { tabId: 'tab-1' });
 
     await client.closeTab('tab-1', { force: true });
@@ -256,5 +280,14 @@ describe('LiveBrowserClient daemon tab registry (REV-2 PROTOCOL §5.17, fake tra
       tabId: 'tab-1',
       force: true,
     });
+  });
+
+  it('closeTab requires the { ok: true } acknowledgement', async () => {
+    for (const malformed of [{}, { ok: false }, null]) {
+      mockedRequest.mockResolvedValueOnce(malformed);
+      await expect(client.closeTab('tab-1')).rejects.toThrow(
+        'Invalid browser.closeTab response shape',
+      );
+    }
   });
 });

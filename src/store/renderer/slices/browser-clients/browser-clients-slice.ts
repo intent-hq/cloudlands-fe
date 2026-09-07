@@ -24,6 +24,11 @@ import type {
   WorkspaceBrowserClient,
 } from '$shared/types/browser-clients';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
+import { removeWorkspaceEntity } from '../workspace/workspace-slice';
+import {
+  workspaceDeleted,
+  workspaceUnmounted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type { BrowserClientsState } from './browser-clients-types';
 import {
   createBrowserTabCollection,
@@ -80,9 +85,14 @@ export const workspaceBrowserClientReceived = createAction<
   [wsId: string, browserClient: WorkspaceBrowserClient]
 >('browserClients/workspaceBrowserClientReceived');
 
-export const workspaceBrowserTabsReceived = createAction<[wsId: string, tabs: BrowserTabListing[]]>(
-  'browserClients/workspaceBrowserTabsReceived',
-);
+/**
+ * `browser.listTabs` snapshot. `revision` is the workspace's `tabsRevision`
+ * when the read was issued; the reducer drops the snapshot if a `browser:tab-*`
+ * patch advanced it in the meantime (the saga then re-reads).
+ */
+export const workspaceBrowserTabsReceived = createAction<
+  [wsId: string, tabs: BrowserTabListing[], revision: number]
+>('browserClients/workspaceBrowserTabsReceived');
 
 /** `browser:tab-opened` / `browser:tab-updated`: the daemon's row for the tab. */
 export const browserTabUpserted = createAction<[wsId: string, tab: BrowserTab]>(
@@ -92,11 +102,6 @@ export const browserTabUpserted = createAction<[wsId: string, tab: BrowserTab]>(
 /** `browser:tab-closed`: the row was removed or tombstoned. */
 export const browserTabClosed = createAction<[wsId: string, tabId: string]>(
   'browserClients/browserTabClosed',
-);
-
-/** Drop the workspace entry (workspace deleted / unmounted). */
-export const clearWorkspaceBrowserClients = createAction<[wsId: string]>(
-  'browserClients/clearWorkspaceBrowserClients',
 );
 
 // ---------------------------------------------------------------------------
@@ -121,11 +126,13 @@ browserClientsReducer.with(
   (state, { payload: [wsId, browserClient] }) =>
     setWorkspaceState(state, wsId, { ...getWorkspaceState(state, wsId), browserClient }),
 );
-browserClientsReducer.with(workspaceBrowserTabsReceived, (state, { payload: [wsId, tabs] }) =>
-  setWorkspaceState(state, wsId, {
-    ...getWorkspaceState(state, wsId),
-    tabs: createBrowserTabCollection(tabs),
-  }),
+browserClientsReducer.with(
+  workspaceBrowserTabsReceived,
+  (state, { payload: [wsId, tabs, revision] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    if (ws.tabsRevision !== revision) return state;
+    return setWorkspaceState(state, wsId, { ...ws, tabs: createBrowserTabCollection(tabs) });
+  },
 );
 browserClientsReducer.with(browserTabUpserted, (state, { payload: [wsId, tab] }) => {
   const ws = getWorkspaceState(state, wsId);
@@ -133,13 +140,28 @@ browserClientsReducer.with(browserTabUpserted, (state, { payload: [wsId, tab] })
   // presence decoration; keep whatever decoration the last list read stored.
   const existing = getItem(ws.tabs, tab.tabId);
   const next = existing ? { ...existing, ...tab } : tab;
-  return setWorkspaceState(state, wsId, { ...ws, tabs: upsertItem(ws.tabs, next) });
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    tabs: upsertItem(ws.tabs, next),
+    tabsRevision: ws.tabsRevision + 1,
+  });
 });
 browserClientsReducer.with(browserTabClosed, (state, { payload: [wsId, tabId] }) => {
   const ws = getWorkspaceState(state, wsId);
-  if (!getItem(ws.tabs, tabId)) return state;
-  return setWorkspaceState(state, wsId, { ...ws, tabs: removeItem(ws.tabs, tabId) });
+  // Bump the revision even for an unknown tabId: the row may be in a
+  // `browser.listTabs` snapshot still in flight, which must not resurrect it.
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    tabs: getItem(ws.tabs, tabId) ? removeItem(ws.tabs, tabId) : ws.tabs,
+    tabsRevision: ws.tabsRevision + 1,
+  });
 });
-browserClientsReducer.with(clearWorkspaceBrowserClients, (state, { payload: [wsId] }) =>
+browserClientsReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
+  clearWorkspaceState(state, wsId),
+);
+browserClientsReducer.with(workspaceDeleted, (state, { payload: [wsId] }) =>
+  clearWorkspaceState(state, wsId),
+);
+browserClientsReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) =>
   clearWorkspaceState(state, wsId),
 );

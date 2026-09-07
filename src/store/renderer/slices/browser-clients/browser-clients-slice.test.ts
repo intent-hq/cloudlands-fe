@@ -7,11 +7,15 @@ vi.mock('svelte', async (importOriginal) => ({
 
 import type { BrowserTab, BrowserTabListing, LiveClient } from '$shared/types/browser-clients';
 import type { StoreState } from '../../types';
+import { removeWorkspaceEntity } from '../workspace/workspace-slice';
+import {
+  workspaceDeleted,
+  workspaceUnmounted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   browserClientsReducer,
   browserTabClosed,
   browserTabUpserted,
-  clearWorkspaceBrowserClients,
   initialState,
   liveClientsReceived,
   ownClientIdReceived,
@@ -25,6 +29,7 @@ import {
   selectOwnClientId,
   selectWorkspaceBrowserClient,
   selectWorkspaceBrowserTabs,
+  selectWorkspaceBrowserTabsRevision,
 } from './browser-clients-selectors';
 
 /** PROTOCOL §5.17 `client.list` rows. */
@@ -102,7 +107,10 @@ describe('browserClientsReducer', () => {
       hostConnected: true,
       hostName: 'Intent Desktop',
     };
-    let state = browserClientsReducer(initialState, workspaceBrowserTabsReceived('ws-1', [listed]));
+    let state = browserClientsReducer(
+      initialState,
+      workspaceBrowserTabsReceived('ws-1', [listed], 0),
+    );
     expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual([listed]);
 
     // tab-updated: the event row (no presence decoration) merges over the listing.
@@ -122,25 +130,79 @@ describe('browserClientsReducer', () => {
       'tab-b',
     ]);
 
-    // tab-closed: the row is removed; an unknown tabId is a no-op.
-    const before = state;
+    // tab-closed: the row is removed; an unknown tabId leaves the rows alone.
+    const rowsBefore = selectWorkspaceBrowserTabs.select(asState(state), 'ws-1');
     state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-nope'));
-    expect(state).toBe(before);
+    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual(rowsBefore);
     state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-a'));
     expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1').map((t) => t.tabId)).toEqual([
       'tab-b',
     ]);
   });
 
-  it('keeps workspaces independent and clears one on request', () => {
+  it('drops a browser.listTabs snapshot issued before a browser:tab-* patch landed', () => {
+    const listed = (tabId: string): BrowserTabListing => ({ ...tab(tabId), hostConnected: true });
+    let state = browserClientsReducer(
+      initialState,
+      workspaceBrowserTabsReceived('ws-1', [listed('tab-a'), listed('tab-b')], 0),
+    );
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(0);
+
+    // A closed event (even for a row not yet mirrored) and an opened event
+    // each advance the revision the next read must be stamped with.
+    const staleRead = selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1');
+    state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-a'));
+    state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-not-mirrored'));
+    state = browserClientsReducer(state, browserTabUpserted('ws-1', tab('tab-c')));
+    const current = selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1');
+    expect(current).toBe(staleRead + 3);
+
+    // The snapshot from the stale read would resurrect tab-a and lose tab-c.
+    const patched = state;
+    state = browserClientsReducer(
+      state,
+      workspaceBrowserTabsReceived('ws-1', [listed('tab-a'), listed('tab-b')], staleRead),
+    );
+    expect(state).toBe(patched);
+    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1').map((t) => t.tabId)).toEqual([
+      'tab-b',
+      'tab-c',
+    ]);
+
+    // A snapshot stamped with the current revision applies; it does not bump it.
+    state = browserClientsReducer(
+      state,
+      workspaceBrowserTabsReceived('ws-1', [listed('tab-b'), listed('tab-c')], current),
+    );
+    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1').map((t) => t.tabId)).toEqual([
+      'tab-b',
+      'tab-c',
+    ]);
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(current);
+  });
+
+  it.each([
+    ['workspaceUnmounted', workspaceUnmounted('ws-1')],
+    ['workspaceDeleted', workspaceDeleted('ws-1', [])],
+    ['removeWorkspaceEntity', removeWorkspaceEntity('ws-1')],
+  ])('clears only the affected workspace on %s', (_name, lifecycleAction) => {
     let state = browserClientsReducer(initialState, browserTabUpserted('ws-1', tab('tab-a')));
+    state = browserClientsReducer(
+      state,
+      workspaceBrowserClientReceived('ws-1', {
+        clientId: 'cli-desk',
+        source: 'workspace',
+        resolved: { clientId: 'cli-desk' },
+      }),
+    );
     state = browserClientsReducer(
       state,
       browserTabUpserted('ws-2', tab('tab-z', { workspaceId: 'ws-2' })),
     );
-    state = browserClientsReducer(state, clearWorkspaceBrowserClients('ws-1'));
+    state = browserClientsReducer(state, lifecycleAction);
 
     expect(state.byWorkspaceId['ws-1']).toBeUndefined();
+    expect(selectWorkspaceBrowserClient.select(asState(state), 'ws-1')).toBeNull();
     expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual([]);
     expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-2').map((t) => t.tabId)).toEqual([
       'tab-z',

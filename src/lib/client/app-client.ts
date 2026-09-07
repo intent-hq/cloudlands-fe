@@ -52,6 +52,7 @@ import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
 import type { RecentUrl } from '$store/renderer/slices/browser/browser-types';
 import type {
+  BrowserActionEnvelope,
   BrowserTab,
   BrowserTabInput,
   BrowserTabListing,
@@ -2036,8 +2037,11 @@ export interface BrowserClient {
    * the host must close locally.
    */
   syncTabs(tabs: BrowserTabInput[]): Promise<{ drop: string[] }>;
-  /** `browser.navigateTab { tabId, url }` (any client): routed to the tab's host. */
-  navigateTab(tabId: string, url: string): Promise<unknown>;
+  /**
+   * `browser.navigateTab { tabId, url }` (any client): routed to the tab's
+   * host → the `navigate` action's `{ action, success, result?, error? }` envelope.
+   */
+  navigateTab(tabId: string, url: string): Promise<BrowserActionEnvelope>;
   /**
    * `browser.closeTab { tabId, force? }` (any client). Without `force` the
    * host must be connected (typed error otherwise, no mutation); `force`

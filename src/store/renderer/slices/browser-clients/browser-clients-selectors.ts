@@ -40,3 +40,9 @@ export const selectWorkspaceBrowserTabs = store.createSelector(
       (state?.browserClients?.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserClientsState).tabs,
     ),
 );
+
+/** `browser:tab-*` patch counter the saga stamps on a `browser.listTabs` read. */
+export const selectWorkspaceBrowserTabsRevision = store.createSelector(
+  (state, wsId: string): number =>
+    (state?.browserClients?.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserClientsState).tabsRevision,
+);

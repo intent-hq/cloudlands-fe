@@ -976,12 +976,27 @@ describe('LiveWorkspacesClient browser client pin (REV-2 PROTOCOL §5.17, fake t
     });
   });
 
-  it('rejects a malformed browserClient envelope instead of healing it', async () => {
-    mockedRequest.mockResolvedValueOnce({ browserClient: { source: 'bogus', resolved: null } });
-    const client = new LiveWorkspacesClient();
+  it.each([
+    ['an unknown source', { source: 'bogus', resolved: null }],
+    // `clientId` is the pin: present exactly when `source: "workspace"`.
+    ['source "workspace" without the pinned clientId', { source: 'workspace', resolved: null }],
+    [
+      'source "default" carrying a clientId',
+      { source: 'default', clientId: 'cli-desk', resolved: null },
+    ],
+    [
+      'a resolved entry without clientId',
+      { source: 'workspace', clientId: 'cli-desk', resolved: { name: 'Intent Desktop' } },
+    ],
+  ])(
+    'rejects a malformed browserClient envelope (%s) instead of healing it',
+    async (_case, bad) => {
+      mockedRequest.mockResolvedValueOnce({ browserClient: bad });
+      const client = new LiveWorkspacesClient();
 
-    await expect(client.getBrowserClient('ws-abc')).rejects.toThrow(
-      'Invalid workspace.getBrowserClient response shape',
-    );
-  });
+      await expect(client.getBrowserClient('ws-abc')).rejects.toThrow(
+        'Invalid workspace.getBrowserClient response shape',
+      );
+    },
+  );
 });
