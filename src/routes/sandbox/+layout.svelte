@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte';
   import { page } from '$app/state';
   import CatalogShell from '$lib/component-catalog/CatalogShell.svelte';
+  import { Toast } from '$lib/components/ui/toast';
 
   interface Props {
     children?: Snippet;
@@ -18,3 +19,4 @@
 </svelte:head>
 
 <CatalogShell {activeSlug} {activePath}>{@render children?.()}</CatalogShell>
+<Toast />

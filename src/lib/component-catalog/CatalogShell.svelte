@@ -111,7 +111,13 @@
   {#key density}
     <SizeProvider size={density}>
       <Sidebar.Provider open persist={false} width="256px" class="catalog-layout">
-        <Sidebar.Root collapsible="none" rail={false} class="catalog-sidebar">
+        <Sidebar.Root
+          collapsible="none"
+          rail={false}
+          class="catalog-sidebar"
+          role="navigation"
+          aria-label="Component catalog"
+        >
           <Sidebar.Header class="catalog-sidebar-header">
             <a class="catalog-brand" href="/sandbox" aria-label="Component catalog home">
               <span class="brand-mark" aria-hidden="true">I</span>

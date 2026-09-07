@@ -1,6 +1,6 @@
 <script lang="ts">
   import { confirm, ConfirmHost } from '$lib/components/patterns/confirm';
-  import { ListRow, ListView, RowActions } from '$lib/components/patterns/collection';
+  import { ListRow, ListView } from '$lib/components/patterns/collection';
   import { Form, FormActions, FormField } from '$lib/components/patterns/form';
   import {
     EmptyState,
@@ -13,6 +13,7 @@
   import { Button } from '$lib/components/ui/button';
   import * as Card from '$lib/components/ui/card';
   import { Input } from '$lib/components/ui/input';
+  import { ListItem } from '$lib/components/ui/list';
   import { faArrowUpRightFromSquare, faTrash } from '@fortawesome/free-solid-svg-icons';
   import RecipeSection from './RecipeSection.svelte';
 
@@ -68,7 +69,7 @@
   const sources = {
     settings: `<script lang="ts">\n  import { defineSettings, SettingsForm } from '$lib/components/patterns/settings';\n  const schema = defineSettings({ sections: [{ id: 'display', title: 'Display', entries }] });\n<\/script>\n<SettingsForm {schema} />`,
     confirm: `<script lang="ts">\n  import { confirm, ConfirmHost } from '$lib/components/patterns/confirm';\n  const remove = () => confirm({ title: 'Remove item?', destructive: true });\n<\/script>\n<Button onclick={remove}>Remove</Button>\n<ConfirmHost />`,
-    collection: `<ListView {items} getKey={(item) => item.id} selectable="multi" bind:selectedKeys>\n  {#snippet row({ item })}\n    <ListRow>{#snippet title()}{item.name}{/snippet}{#snippet trailing()}<RowActions {actions} visibleCount={1} {overflowLabel} {onAction} />{/snippet}</ListRow>\n  {/snippet}\n</ListView>`,
+    collection: `<ListView {items} getKey={(item) => item.id}>\n  {#snippet row({ item })}\n    <ListItem title={item.name} selected={selectedKeys.includes(item.id)} onclick={() => toggle(item.id)} actions={actions(item)} />\n  {/snippet}\n</ListView>`,
     cardInset: `<script lang="ts">\n  import { ListRow, ListView } from '$lib/components/patterns/collection';\n  import { EmptyState } from '$lib/components/patterns/screen';\n  import * as Card from '$lib/components/ui/card';\n<\/script>\n<Card.Root>\n  <Card.Header><Card.Title>Workspace activity</Card.Title></Card.Header>\n  <Card.Content flush>\n    <ListView {items} getKey={(item) => item.id}>\n      {#snippet row({ item })}<ListRow inset>{#snippet title()}{item.name}{/snippet}</ListRow>{/snippet}\n    </ListView>\n    <EmptyState inset density="compact" {description} contentClass="max-w-none text-left" />\n  </Card.Content>\n</Card.Root>`,
     takeover: `<TakeoverScreen {title} {description} {primary}>\n  <p>Step content can change height without rebuilding the shell.</p>\n</TakeoverScreen>`,
     form: `<Form onSubmit={validate}>\n  <FormField label="Project name" error={nameError}>{#snippet control(props)}<Input {...props} bind:value={name} />{/snippet}</FormField>\n  <FormActions {primary} />\n</Form>`,
@@ -87,6 +88,16 @@
     formAttempted = true;
     if (projectName.trim().length < 3) return;
     formResult = `Created ${projectName.trim()}`;
+  }
+
+  function toggleResource(id: string) {
+    selectedKeys = selectedKeys.includes(id)
+      ? selectedKeys.filter((key) => key !== id)
+      : [...selectedKeys, id];
+  }
+
+  function recordRowAction(action: 'open' | 'remove', name: string) {
+    rowAction = `${action === 'open' ? 'Opened' : 'Removed'} ${name}`;
   }
 </script>
 
@@ -138,45 +149,35 @@
 
   <RecipeSection
     title="List with row actions"
-    description="ListView owns selection and keyboard behavior; RowActions owns reveal and overflow."
+    description="ListView owns collection structure; ListItem keeps primary and secondary controls as siblings."
     source={sources.collection}
   >
     <ListView
       items={rows}
       getKey={(item) => item.id}
       getText={(item) => item.name}
-      selectable="multi"
-      bind:selectedKeys
       ariaLabel="Design resources"
     >
       {#snippet row({ item })}
-        <ListRow>
-          {#snippet title()}{item.name}{/snippet}
-          {#snippet description()}{item.detail}{/snippet}
-          {#snippet trailing()}
-            <RowActions
-              alwaysVisible
-              actions={[
-                {
-                  id: 'open',
-                  label: `Open ${item.name}`,
-                  icon: faArrowUpRightFromSquare,
-                },
-                {
-                  id: 'remove',
-                  label: `Remove ${item.name}`,
-                  icon: faTrash,
-                  destructive: true,
-                },
-              ]}
-              visibleCount={1}
-              overflowLabel={`More actions for ${item.name}`}
-              onAction={(id) => {
-                rowAction = `${id === 'open' ? 'Opened' : 'Removed'} ${item.name}`;
-              }}
-            />
-          {/snippet}
-        </ListRow>
+        <ListItem
+          title={item.name}
+          subtitle={item.detail}
+          selected={selectedKeys.includes(item.id)}
+          onclick={() => toggleResource(item.id)}
+          actionsVisible="always"
+          actions={[
+            {
+              label: `Open ${item.name}`,
+              icon: faArrowUpRightFromSquare,
+              onClick: () => recordRowAction('open', item.name),
+            },
+            {
+              label: `Remove ${item.name}`,
+              icon: faTrash,
+              onClick: () => recordRowAction('remove', item.name),
+            },
+          ]}
+        />
       {/snippet}
     </ListView>
     <output class="mt-3 block text-sm text-muted-foreground">{rowAction}</output>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { notify } from '$lib/components/patterns/notify';
   import { Button } from '$lib/components/ui/button';
 
   let {
@@ -11,8 +12,13 @@
   let copied = $state(false);
 
   async function copySource() {
-    await navigator.clipboard.writeText(source);
-    copied = true;
+    try {
+      await navigator.clipboard.writeText(source);
+      copied = true;
+    } catch {
+      copied = false;
+      notify.error('Could not copy source.');
+    }
   }
 </script>
 

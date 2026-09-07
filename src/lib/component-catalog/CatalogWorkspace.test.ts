@@ -2,6 +2,8 @@
  * @vitest-environment jsdom
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import axe from 'axe-core';
+import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CatalogFoundations from './CatalogFoundations.svelte';
 import CatalogGallery from './CatalogGallery.svelte';
@@ -32,6 +34,29 @@ afterEach(() => {
 });
 
 describe('catalog workspace', () => {
+  it('contains navigation, customization, preview, and documentation inside landmarks', async () => {
+    const children = createRawSnippet(() => ({
+      render: () => '<p>Catalog documentation</p>',
+    }));
+    const { container } = render(CatalogShell, { props: { children } });
+
+    const navigation = screen.getByRole('navigation', { name: 'Component catalog' });
+    const customization = screen.getByRole('complementary', { name: 'Catalog customization' });
+    const main = screen.getByRole('main');
+    expect(navigation.contains(screen.getByRole('link', { name: 'Component catalog home' }))).toBe(
+      true,
+    );
+    expect(customization.contains(screen.getByRole('button', { name: 'Customize preview' }))).toBe(
+      true,
+    );
+    expect(main.textContent).toContain('Catalog documentation');
+
+    const result = await axe.run(container, {
+      runOnly: { type: 'rule', values: ['region'] },
+    });
+    expect(result.violations).toEqual([]);
+  });
+
   it('preserves display preferences when customization is collapsed and reopened', async () => {
     render(CatalogShell);
     const disclosure = screen.getByRole('button', { name: 'Customize preview' });

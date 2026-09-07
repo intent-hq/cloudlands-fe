@@ -1573,7 +1573,6 @@
     if (!editorElement) return;
 
     editorElement.setAttribute('aria-haspopup', 'listbox');
-    editorElement.setAttribute('aria-expanded', String(slashMenuOpen));
     if (slashMenuOpen && slashActiveOptionId) {
       editorElement.setAttribute('aria-controls', slashListboxId);
       editorElement.setAttribute('aria-activedescendant', slashActiveOptionId);

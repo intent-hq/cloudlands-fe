@@ -58,20 +58,6 @@ const intentionalAxeAllowlist: Record<string, ReadonlyArray<{ rule: string; reas
         'The state matrix intentionally renders repeated copies of the same settings navigation landmark.',
     },
   ],
-  'primitive:select:select-content': [
-    {
-      rule: 'aria-allowed-attr',
-      reason:
-        'The invalid-state fixture intentionally exercises the select trigger aria-invalid contract.',
-    },
-  ],
-  'primitive:select:select-state-matrix': [
-    {
-      rule: 'aria-allowed-attr',
-      reason:
-        'The invalid-state fixture intentionally exercises the select trigger aria-invalid contract.',
-    },
-  ],
   'primitive:skeleton:skeleton-state-matrix': [
     {
       rule: 'aria-prohibited-attr',
@@ -81,9 +67,8 @@ const intentionalAxeAllowlist: Record<string, ReadonlyArray<{ rule: string; reas
   ],
 };
 const axeRules = {
-  // jsdom cannot calculate visual contrast or page-level landmark coverage for isolated fixtures.
+  // jsdom cannot calculate visual contrast for isolated fixtures.
   'color-contrast': { enabled: false },
-  region: { enabled: false },
 };
 const stableAttributes =
   /^(?:aria-|data-)|^(?:class|disabled|for|href|id|open|role|tabindex|type)$/;
@@ -172,7 +157,7 @@ afterEach(() => {
 
 describe.sequential('catalog DOM, token, and accessibility contracts', () => {
   it.each(cases)('$key', async (testCase) => {
-    renderCase(testCase);
+    const rendered = renderCase(testCase);
     await tick();
     await waitForCaptureStability(document.body, { timeoutMs: 2_000 });
 
@@ -181,6 +166,7 @@ describe.sequential('catalog DOM, token, and accessibility contracts', () => {
       dom: stableDom(document.body),
     }).toMatchSnapshot();
 
+    rendered.container.setAttribute('role', 'main');
     const result = await axe.run(document.body, { rules: axeRules });
     const allowed = intentionalAxeAllowlist[testCase.key] ?? [];
     expect(allowed.every(({ reason }) => reason.trim().length > 0)).toBe(true);
