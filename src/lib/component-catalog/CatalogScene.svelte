@@ -4,6 +4,7 @@
   import { loadPreview, setActivePreview } from './preview-discovery';
   import { resolvePreviewState, type PreviewState } from './preview-definition';
   import { waitForCaptureStability } from './capture-stability';
+  import type { CatalogPreviewFit } from './catalog-preferences';
 
   interface RenderedScene {
     name: string;
@@ -14,7 +15,13 @@
     slug,
     requestedState,
     requestedWidth = 720,
-  }: { slug: string; requestedState?: string; requestedWidth?: number } = $props();
+    requestedFit,
+  }: {
+    slug: string;
+    requestedState?: string;
+    requestedWidth?: number;
+    requestedFit?: CatalogPreviewFit;
+  } = $props();
 
   let status = $state<'loading' | 'ready' | 'error'>('loading');
   let error = $state('');
@@ -45,6 +52,7 @@
     const nextSlug = slug;
     const nextState = requestedState;
     const nextWidth = width;
+    const nextFit = requestedFit;
     let cancelled = false;
     const disposeSetups: Array<() => void> = [];
     let setupDisposed = false;
@@ -154,7 +162,13 @@
         captureMotion = stability.reducedMotion ? 'reduced' : 'full';
         stabilityStatus = 'stable';
         status = 'ready';
-        setActivePreview({ slug: nextSlug, state: stateName, width: nextWidth, status: 'ready' });
+        setActivePreview({
+          slug: nextSlug,
+          state: stateName,
+          width: nextWidth,
+          status: 'ready',
+          ...(nextFit ? { fit: nextFit } : {}),
+        });
       } catch (preparationError) {
         if (cancelled || stabilityController.signal.aborted) return;
         const cleanupError = cleanupSetup();
@@ -174,6 +188,7 @@
 </script>
 
 <section
+  class:component-fit={requestedFit === 'component'}
   class="catalog-scene mx-auto grid max-w-full gap-4 p-4 sm:p-6 lg:p-10"
   data-testid="catalog-scene"
   data-preview-slug={slug}
@@ -184,37 +199,40 @@
   data-preview-stability={stabilityStatus}
   data-preview-stable={stabilityStatus === 'stable' ? 'true' : 'false'}
   data-preview-capture-motion={captureMotion}
+  data-preview-fit={requestedFit}
   bind:this={sceneElement}
 >
-  <header class="rounded-lg border border-border bg-card p-4">
-    <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Named preview</p>
-    <h1 class="mt-1 text-2xl font-medium tracking-tight">{title || slug}</h1>
-    {#if availableStates.length > 0}
-      <nav class="mt-3 flex flex-wrap gap-2" aria-label="Preview states">
-        <a
-          class="rounded-md border border-border px-2 py-1 text-xs font-medium text-primary hover:bg-muted"
-          aria-current={stateName === 'all' ? 'page' : undefined}
-          href={previewUrl('all')}>{m.sandbox_catalogScene_allStates_label()}</a
-        >
-        {#each availableStates as name (name)}
+  {#if requestedFit !== 'component'}
+    <header class="rounded-lg border border-border bg-card p-4">
+      <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Named preview</p>
+      <h1 class="mt-1 text-2xl font-medium tracking-tight">{title || slug}</h1>
+      {#if availableStates.length > 0}
+        <nav class="mt-3 flex flex-wrap gap-2" aria-label="Preview states">
           <a
             class="rounded-md border border-border px-2 py-1 text-xs font-medium text-primary hover:bg-muted"
-            aria-current={name === stateName ? 'page' : undefined}
-            href={previewUrl(name)}>{name}</a
+            aria-current={stateName === 'all' ? 'page' : undefined}
+            href={previewUrl('all')}>{m.sandbox_catalogScene_allStates_label()}</a
           >
-        {/each}
-      </nav>
-      <nav class="mt-2 flex flex-wrap gap-2" aria-label="Preview widths">
-        {#each [320, 420, 960] as preset (preset)}
-          <a
-            class="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-            aria-current={preset === width ? 'page' : undefined}
-            href={previewUrl(stateName, preset)}>{preset}px</a
-          >
-        {/each}
-      </nav>
-    {/if}
-  </header>
+          {#each availableStates as name (name)}
+            <a
+              class="rounded-md border border-border px-2 py-1 text-xs font-medium text-primary hover:bg-muted"
+              aria-current={name === stateName ? 'page' : undefined}
+              href={previewUrl(name)}>{name}</a
+            >
+          {/each}
+        </nav>
+        <nav class="mt-2 flex flex-wrap gap-2" aria-label="Preview widths">
+          {#each [320, 420, 960] as preset (preset)}
+            <a
+              class="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+              aria-current={preset === width ? 'page' : undefined}
+              href={previewUrl(stateName, preset)}>{preset}px</a
+            >
+          {/each}
+        </nav>
+      {/if}
+    </header>
+  {/if}
 
   {#if status === 'error'}
     <div class="rounded-lg border border-danger bg-card p-4" role="alert">
@@ -232,10 +250,13 @@
       </div>
     {/if}
     {#if Preview && scenes.length > 0}
-      <div class="grid gap-8" data-preview-scene-list={stateName === 'all' ? 'all' : undefined}>
+      <div
+        class="preview-scene-list grid gap-8"
+        data-preview-scene-list={stateName === 'all' ? 'all' : undefined}
+      >
         {#each scenes as rendered (rendered.name)}
-          <article class="grid gap-3" data-preview-rendered-state={rendered.name}>
-            {#if stateName === 'all'}
+          <article class="preview-article grid gap-3" data-preview-rendered-state={rendered.name}>
+            {#if stateName === 'all' && requestedFit !== 'component'}
               <h2 class="text-lg font-medium">
                 {m.sandbox_catalogScene_stateHeading_title({ state: rendered.name })}
               </h2>
@@ -261,5 +282,18 @@
 <style>
   .catalog-scene {
     width: min(100%, 100rem);
+  }
+
+  .catalog-scene.component-fit {
+    width: max-content;
+    max-width: none;
+    gap: 0;
+    padding: 0;
+  }
+
+  .component-fit .preview-scene-list,
+  .component-fit .preview-article,
+  .component-fit .preview-frame {
+    display: contents;
   }
 </style>

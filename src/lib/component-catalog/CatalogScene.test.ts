@@ -78,6 +78,32 @@ describe('CatalogScene', () => {
     expect(screen.getByRole('button', { name: 'Unavailable' })).not.toBeNull();
   });
 
+  it('renders only the component frame and publishes fit mode when requested', async () => {
+    render(CatalogScene, {
+      props: {
+        slug: 'button',
+        requestedState: 'loading',
+        requestedWidth: 420,
+        requestedFit: 'component',
+      },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('true'),
+    );
+    expect(screen.getByTestId('catalog-scene').dataset.previewFit).toBe('component');
+    expect(screen.queryByRole('heading')).toBeNull();
+    expect(screen.queryByRole('navigation')).toBeNull();
+    expect(screen.getAllByTestId('catalog-scene-focus')).toHaveLength(1);
+    expect(mocks.setActivePreview).toHaveBeenLastCalledWith({
+      slug: 'button',
+      state: 'loading',
+      width: 420,
+      status: 'ready',
+      fit: 'component',
+    });
+  });
+
   it('renders every state in declaration order and publishes all-states readiness', async () => {
     const setupDefault = vi.fn();
     const setupLoading = vi.fn();

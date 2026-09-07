@@ -20,6 +20,13 @@ describe('catalog preferences', () => {
     ).toEqual({ state: undefined, theme: undefined, width: undefined, reducedMotion: false });
   });
 
+  it('accepts only the exact component fit mode', () => {
+    expect(parseCatalogUrlSettings(new URLSearchParams('fit=component')).fit).toBe('component');
+    expect(parseCatalogUrlSettings(new URLSearchParams('fit=Component')).fit).toBeUndefined();
+    expect(parseCatalogUrlSettings(new URLSearchParams('fit=component%20')).fit).toBeUndefined();
+    expect(parseCatalogUrlSettings(new URLSearchParams('fit=viewport')).fit).toBeUndefined();
+  });
+
   it('validates partial and corrupt stored preferences', () => {
     const storage = {
       getItem: vi.fn(() =>

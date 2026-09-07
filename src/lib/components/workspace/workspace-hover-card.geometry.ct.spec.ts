@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
+import { fileURLToPath } from 'node:url';
+import { defineGeometrySnapshotSuite } from '$lib/component-catalog/geometry-snapshot';
 import WorkspaceHoverCardPreview from './workspace-hover-card.preview.svelte';
 import {
   workspaceHoverCardPreview,
@@ -478,4 +480,21 @@ test('keeps sections accessible without visible headings or internal row divider
     .locator('[data-workspace-hover-card-agent-row]')
     .evaluateAll((rows) => rows.map((row) => getComputedStyle(row).borderBottomWidth));
   expect(rowBorders.every((width) => width === '0px')).toBe(true);
+});
+
+defineGeometrySnapshotSuite({
+  scene: 'workspace-hover-card',
+  component: WorkspaceHoverCardPreview,
+  states: [
+    'working',
+    'attention',
+    'dense',
+    'landscape-wide',
+    'landscape-narrow',
+    'landscape-loading',
+  ],
+  widths: [720],
+  snapshotPath: fileURLToPath(
+    new URL('./__geometry__/workspace-hover-card.geometry.json', import.meta.url),
+  ),
 });
