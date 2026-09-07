@@ -43,16 +43,17 @@ for (const scenario of [
       const composition = element.querySelector<HTMLElement>(
         'section[aria-labelledby$="-composition"]',
       )!;
-      const lastRow = composition
-        .querySelector('.composition-row:last-child')!
-        .getBoundingClientRect();
+      const lastSummaryItem = (
+        composition.querySelector('.token-usage-cost') ??
+        composition.querySelector('.composition-row:last-child')!
+      ).getBoundingClientRect();
       const navigator = element.querySelector('.breakdown-grid')?.getBoundingClientRect();
       const detailsBox = element.getBoundingClientRect();
       const detailsStyle = getComputedStyle(element);
       const innerBottom = detailsBox.bottom - Number.parseFloat(detailsStyle.borderBottomWidth);
       return {
         paddingBottom: getComputedStyle(composition).paddingBottom,
-        gap: (navigator?.top ?? innerBottom) - lastRow.bottom,
+        gap: (navigator?.top ?? innerBottom) - lastSummaryItem.bottom,
       };
     });
 
@@ -60,6 +61,62 @@ for (const scenario of [
     expect(geometry.gap).toBeCloseTo(12, 2);
   });
 }
+
+for (const localeTheme of [
+  { locale: 'en', theme: 'light', initial: 'Cost $0.12', selected: 'Cost $0.34' },
+  { locale: 'de', theme: 'dark', initial: 'Kosten 0,12 $', selected: 'Kosten 0,34 $' },
+] as const) {
+  test(`localizes scoped cost without shifting layout in ${localeTheme.theme} theme`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1100, height: 720 });
+    const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+      props: { locale: localeTheme.locale, theme: localeTheme.theme, width: 304 },
+    });
+    const sidebar = component.getByTestId('workspace-sidebar');
+    const content = component.getByTestId('workspace-content');
+    const disclosure = component.getByTestId('token-usage-disclosure');
+    const before = await Promise.all([sidebar.boundingBox(), content.boundingBox()]);
+
+    await disclosure.click();
+    const details = page.getByTestId('token-usage-details');
+    const cost = details.getByTestId('token-usage-total-cost');
+    await expect(cost).toHaveText(localeTheme.initial);
+    const initialDetailsBox = await details.boundingBox();
+    const initialCostBox = await cost.boundingBox();
+
+    const agentGroup = details.getByRole('radiogroup', {
+      name: localeTheme.locale === 'de' ? 'Nach Agent' : 'By agent',
+    });
+    const modelGroup = details.getByRole('radiogroup', {
+      name: localeTheme.locale === 'de' ? 'Nach Modell' : 'By model',
+    });
+    const beta = agentGroup.getByRole('radio').nth(1);
+    const modelBeta = modelGroup.getByRole('radio').nth(1);
+    await beta.focus();
+    await beta.press('Space');
+    await modelBeta.focus();
+    await modelBeta.press('Space');
+    await expect(cost).toHaveText(localeTheme.selected);
+
+    const after = await Promise.all([sidebar.boundingBox(), content.boundingBox()]);
+    const selectedDetailsBox = await details.boundingBox();
+    const selectedCostBox = await cost.boundingBox();
+    expect(after).toEqual(before);
+    expect(selectedDetailsBox?.height).toBeCloseTo(initialDetailsBox!.height, 2);
+    expect(selectedCostBox?.height).toBeCloseTo(initialCostBox!.height, 2);
+    expect(await cost.evaluate((element) => getComputedStyle(element).borderWidth)).toBe('0px');
+  });
+}
+
+test('omits the scoped cost line when the provider reports no cost', async ({ mount, page }) => {
+  const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+    props: { scopedCosts: false },
+  });
+  await component.getByTestId('token-usage-disclosure').click();
+  await expect(page.getByTestId('token-usage-total-cost')).toHaveCount(0);
+});
 
 test('keeps the disclosure background transparent across pointer and keyboard states', async ({
   mount,
@@ -924,17 +981,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(tokenCompositionRows.locator('.composition-key[aria-hidden="true"]')).toHaveCount(4);
   await expect(messageCompositionRows.locator('.composition-key')).toHaveCount(0);
   await expect(composition.locator('.composition-description')).toHaveCount(0);
-  await expect(details).not.toContainText(/cost|\$/i);
-  await expect(details.locator('[data-testid="token-usage-total-cost"]')).toHaveCount(0);
-  expect(
-    await details
-      .locator('[aria-label], [aria-description], [title]')
-      .evaluateAll((elements) =>
-        elements.every((element) =>
-          Array.from(element.attributes).every((attribute) => !/cost|\$/i.test(attribute.value)),
-        ),
-      ),
-  ).toBe(true);
+  await expect(details.getByTestId('token-usage-total-cost')).toHaveText('Cost $0.12');
   await expect(agentSection).toBeVisible();
   await expect(modelSection).toBeVisible();
   await expect(agentRows).toHaveCount(4);
@@ -1061,6 +1108,7 @@ test('renders the full reference table as a wide overlay from the real workspace
         'section[aria-labelledby$="-composition"]',
       )!;
       const rows = Array.from(grid.parentElement!.querySelectorAll('.composition-row'));
+      const lastSummaryItem = composition.querySelector('.token-usage-cost') ?? rows.at(-1)!;
       const neutralProbe = document.createElement('span');
       neutralProbe.style.color = 'hsl(var(--border))';
       document.body.append(neutralProbe);
@@ -1077,7 +1125,7 @@ test('renders the full reference table as a wide overlay from the real workspace
         secondSectionBorderLeftColor: getComputedStyle(secondSection).borderLeftColor,
         rowBorderTopWidths: rows.map((row) => getComputedStyle(row).borderTopWidth),
         lastRowBorderBottomWidth: getComputedStyle(rows.at(-1)!).borderBottomWidth,
-        lastRowBottom: rows.at(-1)!.getBoundingClientRect().bottom,
+        lastSummaryBottom: lastSummaryItem.getBoundingClientRect().bottom,
         compositionPaddingBottom: getComputedStyle(composition).paddingBottom,
         compositionBottom: composition.getBoundingClientRect().bottom,
         gridTop: grid.getBoundingClientRect().top,
@@ -1238,7 +1286,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(
     Math.abs(breakdownDivider.compositionBottom - breakdownDivider.gridTop),
   ).toBeLessThanOrEqual(0.01);
-  expect(breakdownDivider.gridTop - breakdownDivider.lastRowBottom).toBeCloseTo(12, 2);
+  expect(breakdownDivider.gridTop - breakdownDivider.lastSummaryBottom).toBeCloseTo(12, 2);
   expect(
     Math.abs(breakdownDivider.gridBottom - breakdownDivider.detailsBottom),
   ).toBeLessThanOrEqual(1);

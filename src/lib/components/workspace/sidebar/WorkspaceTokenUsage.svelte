@@ -16,7 +16,12 @@
   import { Button } from '$lib/components/ui/button';
   import AnimatedNumber from '$lib/components/ui/AnimatedNumber.svelte';
   import { portal } from '$lib/actions/portal';
-  import { formatCompactNumber, formatInteger, formatNumber } from '$lib/i18n/format';
+  import {
+    formatCompactNumber,
+    formatCurrency,
+    formatInteger,
+    formatNumber,
+  } from '$lib/i18n/format';
   import { formatModelLabel } from '$features/token-usage/utils/format-model-label';
   import type {
     TokenUsageCrossFilterRow,
@@ -731,6 +736,17 @@
               </div>
             {/if}
           </dl>
+          {#if previewTotals.cost}
+            <dl
+              class="token-usage-cost mt-2 flex items-baseline justify-between gap-3 pl-3.5 text-xs font-normal text-muted-foreground"
+              data-testid="token-usage-total-cost"
+            >
+              <dt>{m.workspace_tokenUsage_cost_label()}</dt>
+              <dd class="shrink-0 tabular-nums">
+                {formatCurrency(previewTotals.cost.amount, previewTotals.cost.currency)}
+              </dd>
+            </dl>
+          {/if}
         </section>
 
         {#if agentRows.length > 0 || modelRows.length > 0}

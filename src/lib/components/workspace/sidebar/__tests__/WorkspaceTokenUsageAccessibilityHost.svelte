@@ -15,6 +15,7 @@
     crossFilter?: boolean;
     navigators?: boolean;
     messageOnly?: boolean;
+    scopedCosts?: boolean;
   }
 
   let {
@@ -26,11 +27,14 @@
     crossFilter = true,
     navigators = true,
     messageOnly = false,
+    scopedCosts = true,
   }: Props = $props();
   // svelte-ignore state_referenced_locally -- a mounted test host keeps one locale
   applyLanguagePreference(locale);
   const workspaceId = 'token-usage-accessibility-ct';
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  const reportedCost = (amount: number) =>
+    scopedCosts ? { cost: { amount, currency: 'USD' } } : {};
 
   // svelte-ignore state_referenced_locally -- scenario flags seed one mounted fixture
   store.dispatch(
@@ -103,7 +107,7 @@
             outputTokens: 0,
             cacheReadTokens: 140,
             cacheCreationTokens: 10,
-            cost: { amount: 0.1, currency: 'USD' },
+            ...reportedCost(0.21),
           },
           humanMessages: 1,
           agentMessages: 3,
@@ -116,7 +120,7 @@
             outputTokens: 150,
             cacheReadTokens: 360,
             cacheCreationTokens: 40,
-            cost: { amount: 0.1, currency: 'USD' },
+            ...reportedCost(0.12),
           },
           humanMessages: 3,
           agentMessages: 5,
@@ -129,7 +133,7 @@
             outputTokens: 60,
             cacheReadTokens: 0,
             cacheCreationTokens: 10,
-            cost: { amount: 0.1, currency: 'USD' },
+            ...reportedCost(0.34),
           },
           humanMessages: 2,
           agentMessages: 4,
@@ -142,7 +146,7 @@
             outputTokens: 0,
             cacheReadTokens: 40,
             cacheCreationTokens: 0,
-            cost: { amount: 0.1, currency: 'USD' },
+            ...reportedCost(0.45),
           },
           humanMessages: 2,
           agentMessages: 1,
@@ -155,7 +159,7 @@
             outputTokens: 10,
             cacheReadTokens: 0,
             cacheCreationTokens: 0,
-            cost: { amount: 0.1, currency: 'USD' },
+            ...reportedCost(0.56),
           },
           humanMessages: 0,
           agentMessages: 1,
@@ -168,7 +172,7 @@
             outputTokens: 35,
             cacheReadTokens: 5,
             cacheCreationTokens: 5,
-            cost: { amount: 0.1, currency: 'USD' },
+            ...reportedCost(0.67),
           },
           humanMessages: 1,
           agentMessages: 0,
@@ -181,7 +185,7 @@
             outputTokens: 0,
             cacheReadTokens: 15,
             cacheCreationTokens: 0,
-            cost: { amount: 0.1, currency: 'USD' },
+            ...reportedCost(0.78),
           },
           humanMessages: 0,
           agentMessages: 1,
@@ -194,7 +198,7 @@
             outputTokens: 5,
             cacheReadTokens: 10,
             cacheCreationTokens: 5,
-            cost: { amount: 0.1, currency: 'USD' },
+            ...reportedCost(0.89),
           },
           humanMessages: 1,
           agentMessages: 1,
@@ -209,7 +213,7 @@
                   outputTokens: 0,
                   cacheReadTokens: 0,
                   cacheCreationTokens: 0,
-                  cost: { amount: 0, currency: 'USD' },
+                  ...reportedCost(0),
                 },
                 humanMessages: 9,
                 agentMessages: 1,

@@ -882,6 +882,7 @@ describe('WorkspaceTokenUsage', () => {
       .closest('section')!;
     const messageCounts = () =>
       visibleText(details.querySelector('.message-composition-label') as Element);
+    const cost = () => screen.queryByTestId('token-usage-total-cost');
     const values = () =>
       Array.from(details.querySelectorAll('.token-composition-row')).map((row) => ({
         value: visibleText(row.querySelector('.composition-value')!),
@@ -894,6 +895,7 @@ describe('WorkspaceTokenUsage', () => {
     });
 
     expect(messageCounts()).toBe('2 human and 5 agent messages');
+    expect(visibleText(cost()!)).toBe('Cost $1.50');
     expect(composition.classList).toContain('pb-3');
     const messageRows = Array.from(details.querySelectorAll('.message-composition-row'));
     expect(messageRows).toHaveLength(1);
@@ -963,7 +965,7 @@ describe('WorkspaceTokenUsage', () => {
     ]);
     expect(agentSection.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
     expect(modelSection.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
-    expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
+    expect(cost()).toBeNull();
     expect(visibleText(details)).not.toMatch(/cost|\$/i);
 
     const modelA = within(modelSection).getByRole('radio', {
@@ -972,6 +974,7 @@ describe('WorkspaceTokenUsage', () => {
     await fireEvent.focus(modelA);
     expect(visibleText(status)).toBe('Active scope By agent Alpha 150 processed');
     expect(messageCounts()).toBe('2 human and 3 agent messages');
+    expect(visibleText(cost()!)).toBe('Cost $1.00');
     expect(alphaControl.getAttribute('aria-checked')).toBe('false');
     expect(alphaControl.getAttribute('data-preview-active')).toBe('true');
     expect(modelA.getAttribute('aria-checked')).toBe('false');
@@ -982,10 +985,12 @@ describe('WorkspaceTokenUsage', () => {
 
     await fireEvent.pointerLeave(alphaControl, { pointerType: 'mouse' });
     expect(visibleText(status)).toBe('Active scope By agent Beta 800 processed');
+    expect(visibleText(cost()!)).toBe('Cost $1.50');
 
     await fireEvent.focus(modelA);
     expect(visibleText(status)).toBe('Active scope By model Model A 200 processed');
     expect(messageCounts()).toBe('2 human and 2 agent messages');
+    expect(visibleText(cost()!)).toBe('Cost $0.50');
     await fireEvent.blur(modelA);
 
     await fireEvent.pointerDown(alphaControl, { pointerType: 'touch' });
@@ -1258,7 +1263,7 @@ describe('WorkspaceTokenUsage', () => {
     expect(screen.getByTestId('token-usage-by-agent').textContent).toContain('Alpha');
   });
 
-  it('does not expose provider-reported cost in visible or accessible output', async () => {
+  it('shows provider-reported cost only in expanded details', async () => {
     mocks.state.usage = makeUsage({
       byAgentId: {
         'agent-a': {
@@ -1295,25 +1300,22 @@ describe('WorkspaceTokenUsage', () => {
     });
     mocks.state.agents = [{ id: 'agent-a', name: 'Alpha' }];
 
-    await renderExpandedTokenUsage();
+    await renderTokenUsage();
+
+    expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Expand token usage details' }));
 
     const modelSection = screen.getByTestId('token-usage-by-model');
     const agentSection = screen.getByTestId('token-usage-by-agent');
     expect(visibleText(modelSection)).toBe('By model Model Big 100%');
     expect(visibleText(agentSection)).toBe('By agent Alpha 100%');
     const details = screen.getByTestId('token-usage-details');
-    expect(visibleText(details)).not.toMatch(/cost|\$/i);
+    expect(visibleText(details)).toContain('Cost $1.50');
     expect(screen.queryByText(/total cost/i)).toBeNull();
-    expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
-    expect(
-      Array.from(details.querySelectorAll('[aria-label], [aria-description], [title]')).every(
-        (element) =>
-          !Array.from(element.attributes).some((attribute) => /cost|\$/i.test(attribute.value)),
-      ),
-    ).toBe(true);
+    expect(visibleText(screen.getByTestId('token-usage-total-cost'))).toBe('Cost $1.50');
   });
 
-  it('does not expose model cost when no workspace total cost is reported', async () => {
+  it('shows a scoped model cost when no workspace total cost is reported', async () => {
     mocks.state.usage = makeUsage({
       totals: {
         inputTokens: 1000,
@@ -1345,6 +1347,9 @@ describe('WorkspaceTokenUsage', () => {
     const details = screen.getByTestId('token-usage-details');
     expect(visibleText(details)).not.toMatch(/cost|\$|—/i);
     expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
+
+    await fireEvent.focus(screen.getByRole('radio', { name: /Model Priced/ }));
+    expect(visibleText(screen.getByTestId('token-usage-total-cost'))).toBe('Cost $2.00');
   });
 
   it('does not add cost output when no provider cost is reported', async () => {
