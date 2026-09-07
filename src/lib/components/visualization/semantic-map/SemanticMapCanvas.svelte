@@ -79,6 +79,8 @@
   let hatchPattern: CanvasPattern | null = null;
   let animationFrame: number | null = null;
   let sceneStartedAt = 0;
+  let pauseStartedAt: number | null = null;
+  let pixelRatio = 1;
   let drawScheduled = false;
   let dragPointerId: number | null = null;
   let lastPointerX = 0;
@@ -161,19 +163,19 @@
       currentGeometry = targetGeometry;
       tweening = false;
     }
+    scheduleDraw();
   }
 
   function createHatchPattern(): void {
     const context = canvas?.getContext('2d');
     if (!context) return;
-    const dpr = window.devicePixelRatio || 1;
     const period = 10;
     const tile = document.createElement('canvas');
-    tile.width = Math.round(period * dpr);
-    tile.height = Math.round(period * dpr);
+    tile.width = Math.round(period * pixelRatio);
+    tile.height = Math.round(period * pixelRatio);
     const tileContext = tile.getContext('2d');
     if (!tileContext) return;
-    tileContext.scale(dpr, dpr);
+    tileContext.scale(pixelRatio, pixelRatio);
     tileContext.fillStyle = colors.background;
     tileContext.fillRect(0, 0, period, period);
     tileContext.strokeStyle = colors.border;
@@ -185,8 +187,19 @@
     tileContext.lineTo(period + 4, 4);
     tileContext.stroke();
     const pattern = context.createPattern(tile, 'repeat');
-    pattern?.setTransform(new DOMMatrix().scale(1 / dpr));
+    pattern?.setTransform(new DOMMatrix().scale(1 / pixelRatio));
     hatchPattern = pattern;
+  }
+
+  function syncCanvasBackingStore(): void {
+    if (!canvas) return;
+    pixelRatio = window.devicePixelRatio || 1;
+    canvas.width = Math.round(width * pixelRatio);
+    canvas.height = Math.round(height * pixelRatio);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    createHatchPattern();
+    scheduleDraw();
   }
 
   function startGeometryTween(next: RegionGeometry[]): void {
@@ -199,7 +212,7 @@
       return;
     }
     tweenFrom = currentGeometry;
-    tweenStartedAt = performance.now();
+    tweenStartedAt = pauseStartedAt ?? performance.now();
     tweening = true;
     ensureAnimationFrame();
   }
@@ -451,11 +464,10 @@
     updateTween(now);
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
     const elapsed = Math.max(0, now - sceneStartedAt);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
-    ctx.scale(dpr, dpr);
+    ctx.scale(pixelRatio, pixelRatio);
     ctx.fillStyle = colors.background;
     ctx.fillRect(0, 0, width, height);
     ctx.save();
@@ -486,7 +498,7 @@
   }
 
   function ensureAnimationFrame(): void {
-    if (animationFrame !== null) return;
+    if (animationFrame !== null || document.hidden) return;
     animationFrame = requestAnimationFrame((now) => {
       animationFrame = null;
       drawScheduled = false;
@@ -496,9 +508,32 @@
   }
 
   function scheduleDraw(): void {
-    if (drawScheduled) return;
+    if (drawScheduled || document.hidden) return;
     drawScheduled = true;
     ensureAnimationFrame();
+  }
+
+  function hullContainsPoint(hull: [number, number][], x: number, y: number): boolean {
+    let inside = false;
+    for (let index = 0, previous = hull.length - 1; index < hull.length; previous = index++) {
+      const currentPoint = hull[index];
+      const previousPoint = hull[previous];
+      const crossesRay =
+        currentPoint[1] > y !== previousPoint[1] > y &&
+        x <
+          ((previousPoint[0] - currentPoint[0]) * (y - currentPoint[1])) /
+            (previousPoint[1] - currentPoint[1]) +
+            currentPoint[0];
+      if (crossesRay) inside = !inside;
+    }
+    return inside;
+  }
+
+  function regionAtPoint(x: number, y: number): RegionGeometry | undefined {
+    for (let index = currentGeometry.length - 1; index >= 0; index -= 1) {
+      const region = currentGeometry[index];
+      if (hullContainsPoint(region.hull, x, y)) return region;
+    }
   }
 
   function updateHover(screenX: number, screenY: number): void {
@@ -515,10 +550,25 @@
     hoveredRegionId =
       hoveredBadgeId || hoveredEdgeIndex !== null
         ? null
-        : ([...currentGeometry]
-            .reverse()
-            .find((region) => Math.hypot(region.x - world.x, region.y - world.y) <= region.radius)
-            ?.id ?? null);
+        : (regionAtPoint(world.x, world.y)?.id ?? null);
+  }
+
+  function handleVisibilityChange(): void {
+    const now = performance.now();
+    if (document.hidden) {
+      pauseStartedAt ??= now;
+      if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+      animationFrame = null;
+      drawScheduled = false;
+      return;
+    }
+    if (pauseStartedAt !== null) {
+      const pausedFor = now - pauseStartedAt;
+      sceneStartedAt += pausedFor;
+      if (tweening) tweenStartedAt += pausedFor;
+      pauseStartedAt = null;
+    }
+    scheduleDraw();
   }
 
   function handlePointerDown(event: PointerEvent): void {
@@ -608,13 +658,7 @@
 
   $effect(() => {
     if (!canvas) return;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.round(width * dpr);
-    canvas.height = Math.round(height * dpr);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-    createHatchPattern();
-    scheduleDraw();
+    syncCanvasBackingStore();
   });
 
   $effect(() => {
@@ -625,7 +669,7 @@
 
   $effect(() => {
     void scene;
-    sceneStartedAt = performance.now();
+    sceneStartedAt = pauseStartedAt ?? performance.now();
     refreshRenderCaches(targetGeometry);
     scheduleDraw();
   });
@@ -642,9 +686,26 @@
   });
 
   onMount(() => {
+    pauseStartedAt = document.hidden ? performance.now() : null;
     resolveReducedMotion();
     resolveColors();
     container?.addEventListener('keydown', handleKeydown);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const handleMotionChange = () => resolveReducedMotion();
+    motionQuery.addEventListener('change', handleMotionChange);
+    let dprCleanup: (() => void) | undefined;
+    const setupDprListener = () => {
+      dprCleanup?.();
+      const query = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+      const handleDprChange = () => {
+        syncCanvasBackingStore();
+        setupDprListener();
+      };
+      query.addEventListener('change', handleDprChange);
+      dprCleanup = () => query.removeEventListener('change', handleDprChange);
+    };
+    setupDprListener();
     const themeObserver = new MutationObserver(() => {
       resolveColors();
       resolveReducedMotion();
@@ -657,6 +718,9 @@
     scheduleDraw();
     return () => {
       container?.removeEventListener('keydown', handleKeydown);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      motionQuery.removeEventListener('change', handleMotionChange);
+      dprCleanup?.();
       themeObserver.disconnect();
       if (animationFrame !== null) cancelAnimationFrame(animationFrame);
     };

@@ -1,8 +1,7 @@
 <script lang="ts">
   import SemanticMapCanvas from '../SemanticMapCanvas.svelte';
   import type { Manifest, MapActivity } from '../core/types';
-  import { computeBudget } from '../layout/budget';
-  import { placeRegions } from '../layout/place';
+  import type { RegionGeometry } from '../layout/place';
   import type { SemanticMapSelection } from '../render/types';
 
   const manifest: Manifest = {
@@ -26,8 +25,43 @@
   };
   const activities: MapActivity[] = [];
   let selection = $state<SemanticMapSelection>(null);
-  const rest = placeRegions(manifest, computeBudget(manifest), { width: 640, height: 360 });
-  const geometry = { rest, focus: rest };
+  const firstHull: [number, number][] = [
+    [180, 130],
+    [205, 160],
+    [280, 180],
+    [205, 200],
+    [180, 230],
+    [160, 200],
+    [125, 215],
+    [145, 180],
+    [125, 145],
+    [160, 160],
+  ];
+  const rest: RegionGeometry[] = [
+    { id: 'first', x: 180, y: 180, radius: 70, budget: 1, hull: firstHull },
+    {
+      id: 'second',
+      x: 470,
+      y: 180,
+      radius: 60,
+      budget: 1,
+      hull: [
+        [410, 140],
+        [530, 140],
+        [530, 220],
+        [410, 220],
+      ],
+    },
+  ];
+  const focus: RegionGeometry[] = rest.map((region) =>
+    region.id === 'first'
+      ? {
+          ...region,
+          hull: firstHull.map(([x, y]): [number, number] => [x + Math.max(0, x - 180) * 0.5, y]),
+        }
+      : region,
+  );
+  const geometry = { rest, focus };
   const timeWindow = { start: '2026-09-06T10:00:00.000Z', end: '2026-09-06T10:20:00.000Z' };
 </script>
 
