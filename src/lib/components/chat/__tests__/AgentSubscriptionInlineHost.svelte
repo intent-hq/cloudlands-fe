@@ -7,6 +7,9 @@
     bulkUpsertSessions,
     removeSession,
   } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import { subscriptionSnapshotFetchFailed } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+  import { backgroundHooksUpdated } from '$store/renderer/slices/background-hooks/background-hooks-slice';
+  import { prMonitorsUpdated } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
   import type { AgentMessage, AgentSession, ToolUseBlock } from '$shared/types';
   import { AgentStatus } from '$shared/types';
   import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
@@ -35,6 +38,7 @@
     initiallyExpanded?: boolean;
     parentBackground?: ParentBackground;
     agentStateScenario?: AgentStateScenario;
+    snapshotStatus?: 'loading' | 'failed';
   }
 
   let {
@@ -50,10 +54,19 @@
     initiallyExpanded = true,
     parentBackground = 'background',
     agentStateScenario = 'responding',
+    snapshotStatus,
   }: Props = $props();
   const agentId = 'agent-subscription-inline-geometry';
   const workspaceId = 'workspace-subscription-inline-geometry';
+  const parentAgentId = 'parent-subscription-inline-geometry';
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  store.dispatch(backgroundHooksUpdated(workspaceId, []));
+  store.dispatch(prMonitorsUpdated(workspaceId, []));
+  $effect(() => {
+    if (snapshotStatus === 'failed') {
+      store.dispatch(subscriptionSnapshotFetchFailed(workspaceId, parentAgentId));
+    }
+  });
 
   function makeToolUseBlock(
     id: string,
@@ -213,16 +226,20 @@
         : 'bg-background'}"
     data-parent-background={parentBackground}
   >
-    <EventSubscriptionsCard
-      {workspaceId}
-      agentId="parent-subscription-inline-geometry"
-      isolatedPreview={{
-        count: mode === 'mixed' ? agents.length + 1 : agents.length,
-        agents,
-        mode,
-        initiallyExpanded,
-      }}
-      previewContent={mixedPreview}
-    />
+    {#if snapshotStatus}
+      <EventSubscriptionsCard {workspaceId} agentId={parentAgentId} />
+    {:else}
+      <EventSubscriptionsCard
+        {workspaceId}
+        agentId={parentAgentId}
+        isolatedPreview={{
+          count: mode === 'mixed' ? agents.length + 1 : agents.length,
+          agents,
+          mode,
+          initiallyExpanded,
+        }}
+        previewContent={mixedPreview}
+      />
+    {/if}
   </div>
 </section>

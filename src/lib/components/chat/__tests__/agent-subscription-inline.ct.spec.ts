@@ -748,6 +748,25 @@ test('renders exactly one promoted Waiting disclosure in agent-only mode', async
   await expect(component.getByText('Waiting for 7 agents', { exact: true })).toHaveCount(1);
 });
 
+for (const snapshotStatus of ['loading', 'failed'] as const) {
+  test(`keeps the agent lane visible while its snapshot is ${snapshotStatus}`, async ({
+    mount,
+  }) => {
+    const component = await mount(AgentSubscriptionInlineHost, { props: { snapshotStatus } });
+
+    await expect(component.getByTestId('subscription-utility-area')).toBeVisible();
+    await expect(component.getByTestId('event-subscriptions-agents')).toBeVisible();
+    await expect(component.getByTestId('event-subscriptions-outer-header')).toHaveCount(0);
+    await expect(component.getByTestId('background-hooks-snapshot-status')).toHaveCount(0);
+    await expect(component.getByTestId('pr-monitors-snapshot-status')).toHaveCount(0);
+    await expect(component.getByTestId('agent-subscriptions-snapshot-status')).toBeVisible();
+    await expect(component.getByTestId('agent-subscriptions-snapshot-status')).toHaveAttribute(
+      'data-snapshot-status',
+      snapshotStatus,
+    );
+  });
+}
+
 test('keeps the outer Subscribed header and a distinct cohort header in mixed mode', async ({
   mount,
 }) => {

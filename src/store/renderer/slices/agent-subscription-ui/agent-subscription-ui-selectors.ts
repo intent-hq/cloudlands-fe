@@ -151,7 +151,10 @@ export const selectAgentSubscriptionLane = store.createSelector<
 
   return {
     visible:
-      entry.waitingState === 'completed' || participantIds.length > 0 || entry.wokenUpInfo !== null,
+      entry.snapshotStatus !== 'ready' ||
+      entry.waitingState === 'completed' ||
+      participantIds.length > 0 ||
+      entry.wokenUpInfo !== null,
     count: activeIds.length,
     participantAgentIds: activeIds,
   };
