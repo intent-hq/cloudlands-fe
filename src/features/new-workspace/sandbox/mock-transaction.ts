@@ -26,7 +26,7 @@ export const MOCK_TRANSACTION_CHANNELS = {
   send: 'agent.sendMessage',
 } as const;
 
-export type MockCallStatus = 'pending' | 'resolved' | 'rejected' | 'ack-lost' | 'replayed';
+type MockCallStatus = 'pending' | 'resolved' | 'rejected' | 'ack-lost' | 'replayed';
 
 export interface MockCallLogEntry {
   id: number;

@@ -1,3 +1,8 @@
+/**
+ * Owns the route-scoped draft controller and transaction runner.
+ *
+ * Startup restores or creates one daemon draft; stopping releases all route-owned effects.
+ */
 import { appClient } from '$lib/client';
 import { deserializeDraftAttachments } from '$lib/components/chat/chat-draft-attachments';
 import type { ControllerState, DraftInput } from '../controller';
@@ -8,7 +13,7 @@ import { resolveStart, type ResolveStartInput } from '../resolver';
 const SENTINEL_WORKSPACE_ID = '__new-workspace__';
 const SENTINEL_AGENT_ID = '__initializer__';
 
-export interface NewWorkspaceRouteController {
+interface NewWorkspaceRouteController {
   start(listener: (state: ControllerState) => void): Promise<void>;
   edit(patch: Partial<DraftInput>): void;
   dispatch: DraftTransactionRunner['dispatch'];

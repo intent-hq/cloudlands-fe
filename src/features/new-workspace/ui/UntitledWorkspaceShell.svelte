@@ -284,7 +284,6 @@
             >
               <div
                 class="workspace-setup-card-alignment pt-16 pb-6"
-                data-testid="draft-progress"
                 data-setup-state={presentation.progress?.setup?.state}
               >
                 {#snippet repoPendingContent()}
@@ -345,10 +344,7 @@
               </div>
 
               {#if presentation.specContent?.trim()}
-                <p
-                  class="type-caption whitespace-pre-wrap py-2 text-muted-foreground"
-                  data-testid="draft-spec-pane"
-                >
+                <p class="type-caption whitespace-pre-wrap py-2 text-muted-foreground">
                   {presentation.specContent}
                 </p>
               {/if}

@@ -63,10 +63,7 @@
   const readiness = $derived(readinessState(capabilities));
 </script>
 
-<section
-  class="rounded-xl border border-border bg-background shadow-sm"
-  data-testid="project-setup-panel"
->
+<section class="rounded-xl border border-border bg-background shadow-sm">
   {#if expanded}
     <button
       type="button"

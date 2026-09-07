@@ -12,9 +12,9 @@ interface IssueSelection {
   url?: string;
 }
 
-export type ReadinessState = 'checking' | 'ready' | 'attention';
+type ReadinessState = 'checking' | 'ready' | 'attention';
 
-export interface WorkspaceOptionDefaults {
+interface WorkspaceOptionDefaults {
   setupScript?: string;
   specialist?: string | null;
   provider?: string;

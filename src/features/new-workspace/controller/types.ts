@@ -52,7 +52,7 @@ export interface ControllerData {
   setupResult: SetupResult | null;
 }
 
-export interface BootState extends ControllerData {
+interface BootState extends ControllerData {
   phase: 'boot';
 }
 interface RestoringState extends ControllerData {

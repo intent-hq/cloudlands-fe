@@ -224,10 +224,7 @@
         </div>
       </article>
 
-      <aside
-        class="grid gap-4 rounded-xl border border-border bg-card p-4"
-        data-testid="developer-frame"
-      >
+      <aside class="grid gap-4 rounded-xl border border-border bg-card p-4">
         <section class="space-y-2">
           <h2 class="text-sm font-semibold">{m.sandbox_newWorkspace_callLog_title()}</h2>
           {#if callLog.length === 0}
@@ -291,7 +288,6 @@
       </table>
       <output
         class="block border-t border-border p-3 text-right text-sm font-semibold"
-        data-testid="controller-phase-coverage"
         aria-label={m.sandbox_newWorkspace_description()}>{controllerCoverage}%</output
       >
     </div>

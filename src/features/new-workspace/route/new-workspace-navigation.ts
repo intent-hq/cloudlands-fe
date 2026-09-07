@@ -1,3 +1,8 @@
+/**
+ * Canonical navigation boundary for opening a distinct Untitled workspace route.
+ *
+ * Prefill data uses per-navigation session storage, with a URL fallback when storage is unavailable.
+ */
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import type { ResolveStartInput } from '../resolver';
 

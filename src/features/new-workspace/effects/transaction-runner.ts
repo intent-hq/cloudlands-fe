@@ -20,7 +20,7 @@ type EffectExecutor = (
   settled: () => void,
 ) => () => void;
 
-export interface DraftTransactionRunnerOptions {
+interface DraftTransactionRunnerOptions {
   client?: AppClient;
   /** Draft to restore. Pass `null` to force a distinct new draft. */
   requestedDraftId?: string | null;

@@ -1,7 +1,7 @@
 import type { DraftSource } from '$shared/types/workspace-draft';
 import type { WorkspaceCreationRecentRepo } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-types';
 
-export interface ProjectSectionVisibility {
+interface ProjectSectionVisibility {
   recent: boolean;
   githubRepos: boolean;
 }

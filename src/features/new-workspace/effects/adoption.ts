@@ -22,7 +22,7 @@ interface WorkspaceAdoptionInput {
 
 export type WorkspaceAdoption = (input: WorkspaceAdoptionInput) => void | Promise<void>;
 
-export interface WorkspaceAdoptionDependencies {
+interface WorkspaceAdoptionDependencies {
   dispatch?: (action: ReduxAction) => void;
 }
 

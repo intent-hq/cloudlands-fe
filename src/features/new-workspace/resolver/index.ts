@@ -1,3 +1,8 @@
+/**
+ * Normalizes every new-workspace entry payload into draft input.
+ *
+ * Ambiguous links and paths remain explicit unresolved context for the setup UI.
+ */
 import type { ContextLink } from '$shared/types';
 import type { DraftSource } from '$shared/types/workspace-draft';
 import { parseGitHubUrl } from '$shared/utils/link-helpers';
@@ -40,7 +45,7 @@ interface UnresolvedRef {
   rejectedForRemoteDaemon?: true;
 }
 
-export interface ResolvedStart {
+interface ResolvedStart {
   title?: string;
   intentText: string;
   source?: DraftSource;
