@@ -14,9 +14,9 @@
  * `generation` grows on every transition out of `unmounted` and back into
  * it; a saga step that started under generation N and observes N+1 discards
  * its result. Only `applied` / `reporting` workspaces report tabs or take
- * part in a `browser.syncTabs` snapshot. The `reported` map outlives an
- * unmount until the saga has diffed it against the layout the unmount left
- * in place, turning the tabs closed before it into pending removals.
+ * part in a `browser.syncTabs` snapshot. A reported tab that leaves the
+ * layout is recorded in `closing` at the mutation that removed it, so the
+ * close survives an unmount or an unreachable daemon.
  */
 
 import type { BrowserTabInput } from '$shared/types/browser-clients';

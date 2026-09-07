@@ -399,6 +399,7 @@ describe('browserTabRegistrySaga', () => {
 
       // The layout is torn down and rebuilt (unmount → remount) while the
       // daemon, in the meantime, dropped the tab.
+      h.dispatch(workspaceUnmounted(WS));
       h.dispatch(clearPanelLayout(WS));
       h.dispatch(
         initializeLayout(WS, {
@@ -1314,6 +1315,38 @@ describe('browserTabRegistrySaga', () => {
       expect(mocks.removeTab.mock.calls).toEqual([['b1']]);
       expect(h.registry()).toMatchObject({ phase: 'unmounted', reported: {} });
       expect(h.closing()).toEqual({ b1: 'acknowledged' });
+      await stop(h);
+    });
+
+    it('records a close as a pending removal in the same dispatch, before the report debounce', async () => {
+      const h = start({
+        layouts: { [WS]: settledLayout([browserTab({ browserUrl: 'http://a.test/' })]) },
+      });
+      await flush();
+      expect(mocks.syncTabs).toHaveBeenCalledTimes(1);
+
+      h.dispatch(closeTab(WS, 'b1', undefined, undefined, { destroy: true }));
+      expect(h.closing()).toEqual({ b1: 'pending' });
+      expect(h.registry().reported).toEqual({});
+      expect(mocks.removeTab).not.toHaveBeenCalled();
+      await flush();
+      expect(mocks.removeTab.mock.calls).toEqual([['b1']]);
+      expect(h.closing()).toEqual({ b1: 'acknowledged' });
+      await stop(h);
+    });
+
+    it('treats closing the last panel of a mounted workspace as a close of its tabs', async () => {
+      const h = start({
+        layouts: { [WS]: settledLayout([browserTab({ browserUrl: 'http://a.test/' })]) },
+      });
+      await flush();
+      expect(mocks.syncTabs).toHaveBeenCalledTimes(1);
+
+      h.dispatch(clearPanelLayout(WS));
+      expect(h.closing()).toEqual({ b1: 'pending' });
+      await flush();
+      expect(mocks.removeTab.mock.calls).toEqual([['b1']]);
+      expect(h.registry()).toMatchObject({ phase: 'unmounted', reported: {} });
       await stop(h);
     });
 
