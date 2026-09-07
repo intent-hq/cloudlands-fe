@@ -165,9 +165,16 @@ describe('browserTabRegistryReducer', () => {
     expect(state.closing).toEqual({ b2: 'pending' });
   });
 
-  it('resets everything for a new backend', () => {
-    const state = browserTabRegistryReducer(applied(), registryReset());
-    expect(state).toEqual(initialState);
+  it('tears every workspace down into a new generation for a new backend', () => {
+    const before = browserTabRegistryReducer(applied(), registryRemovalsPending(WS, ['b2']));
+    const state = browserTabRegistryReducer(before, registryReset());
+    expect(ws(state)).toEqual({ generation: 2, phase: 'unmounted', reported: {} });
+    expect(state.closing).toEqual({});
+    // The counter never restarts: the next load cannot reuse a generation
+    // a step started under the old backend still holds.
+    expect(ws(browserTabRegistryReducer(state, registryLoading(WS)))).toMatchObject({
+      generation: 3,
+    });
   });
 });
 

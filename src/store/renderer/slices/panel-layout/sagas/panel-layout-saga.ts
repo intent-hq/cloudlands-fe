@@ -507,11 +507,15 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
  * later — after the user navigated the tab, or after a backend switch
  * replaced the layout. Each retarget therefore re-checks that the tab still
  * sits on the exact stored/requested pair the probe started from and is
- * dropped as stale otherwise.
+ * dropped as stale otherwise. That pair check cannot tell a tab restored
+ * again under a new lifecycle from the original; a caller that owns one
+ * passes `stillCurrent`, consulted after each resolution, to drop results
+ * that outlived it.
  */
 export function* rehydrateTunneledBrowserTabs(
   wsId: string,
   tabs: RehydratableBrowserTab[],
+  stillCurrent?: () => SagaGenerator<boolean>,
 ): SagaGenerator<void> {
   for (const tab of tabs) {
     try {
@@ -520,6 +524,9 @@ export function* rehydrateTunneledBrowserTabs(
         tab.requestedUrl,
         typeof window !== 'undefined' ? window.electronAPI?.invoke : undefined,
       );
+      // The resolution went over IPC: the caller's lifecycle may have moved on
+      // (layout torn down and rebuilt) and the tab found below be a new one.
+      if (stillCurrent && !(yield* call(stillCurrent))) return;
       if (resolved.url === tab.storedUrl) continue;
       const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
       const current = Object.values(workspace.panels)

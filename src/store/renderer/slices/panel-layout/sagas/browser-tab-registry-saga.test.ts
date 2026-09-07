@@ -49,6 +49,7 @@ import {
   emptyWorkspaceState,
   initializeLayout,
   openTabInRightmostColumn,
+  openTabInRightmostColumnRequested,
   panelLayoutReducer,
   setRestoreStatus,
   updateTabBrowserUrl,
@@ -158,6 +159,7 @@ function start(
     },
   };
   const dispatched: StoreAction<unknown>[] = [];
+  let afterDispatch: ((action: StoreAction<unknown>) => void) | null = null;
   const dispatch = (action: StoreAction<unknown>) => {
     state = {
       ...state,
@@ -167,6 +169,7 @@ function start(
     };
     dispatched.push(action);
     channel.put(action);
+    afterDispatch?.(action);
   };
   // The rightmost-column router lives in panelLayoutSaga; materialised rows
   // go through it exactly as agent opens do.
@@ -188,6 +191,10 @@ function start(
     closing: () => state.browserTabRegistry.closing as Record<string, string>,
     setHealth: (health: 'healthy' | 'down', connectionGeneration: number) => {
       state = { ...state, daemonHealth: { health, connectionGeneration } };
+    },
+    /** Run `fn` right after each dispatch reached the reducers and the sagas. */
+    onDispatched: (fn: ((action: StoreAction<unknown>) => void) | null) => {
+      afterDispatch = fn;
     },
   };
 }
@@ -1307,6 +1314,117 @@ describe('browserTabRegistrySaga', () => {
       expect(mocks.removeTab.mock.calls).toEqual([['b1']]);
       expect(h.registry()).toMatchObject({ phase: 'unmounted', reported: {} });
       expect(h.closing()).toEqual({ b1: 'acknowledged' });
+      await stop(h);
+    });
+
+    it('stops materialising the remaining rows when the workspace is torn down mid-apply', async () => {
+      mocks.listTabs.mockResolvedValueOnce([
+        row({ tabId: 'old-first' }),
+        row({ tabId: 'old-second', url: 'http://b.test/' }),
+      ]);
+      const h = start({
+        layouts: { [WS]: settledLayout([], 'pending' as never) },
+        health: 'down',
+      });
+      // The teardown lands while the first row is being placed.
+      h.onDispatched((action) => {
+        if (action.type !== openTabInRightmostColumnRequested.type) return;
+        h.onDispatched(null);
+        teardown(h);
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(setRestoreStatus(WS, 'restored'));
+      await flush();
+
+      expect(h.tabs()).toEqual([]);
+      expect(h.ofType(openTabInRightmostColumnRequested.type)).toHaveLength(1);
+      expect(h.registry()).toMatchObject({ phase: 'unmounted' });
+      expect(mocks.syncTabs).not.toHaveBeenCalled();
+      await stop(h);
+    });
+
+    it('stops materialising the remaining rows when the workspace reloads mid-apply', async () => {
+      mocks.listTabs
+        .mockResolvedValueOnce([
+          row({ tabId: 'old-first' }),
+          row({ tabId: 'old-second', url: 'http://b.test/' }),
+        ])
+        .mockResolvedValue([row({ tabId: 'fresh' })]);
+      const h = start({
+        layouts: { [WS]: settledLayout([], 'pending' as never) },
+        health: 'down',
+      });
+      // A reconnect re-reads the workspace while the first row is being placed.
+      h.onDispatched((action) => {
+        if (action.type !== openTabInRightmostColumnRequested.type) return;
+        h.onDispatched(null);
+        h.setHealth('healthy', 2);
+        h.dispatch(connectionStatusChanged('connected'));
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(setRestoreStatus(WS, 'restored'));
+      await flush();
+
+      expect(h.tabs().map((t) => t.id)).toEqual(['old-first', 'fresh']);
+      expect(mocks.syncTabs.mock.calls).toEqual([
+        [
+          [
+            expect.objectContaining({ tabId: 'old-first' }),
+            expect.objectContaining({ tabId: 'fresh' }),
+          ],
+        ],
+      ]);
+      await stop(h);
+    });
+
+    it('does not navigate a remounted tab from a tunnel resolution of its torn-down generation', async () => {
+      const stored = { url: 'http://a.test/old', requestedUrl: 'http://localhost:1/' };
+      mocks.listTabs.mockResolvedValue([row(stored)]);
+      const obsolete = deferred<{ url: string }>();
+      mocks.resolveBrowserLinkUrl
+        .mockReturnValueOnce(obsolete.promise)
+        .mockResolvedValue({ url: stored.url });
+      const h = start({
+        layouts: { [WS]: settledLayout([], 'pending' as never) },
+        health: 'down',
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(setRestoreStatus(WS, 'restored'));
+      await flush(0);
+      expect(h.tabs()).toEqual([expect.objectContaining({ id: 'b1', browserUrl: stored.url })]);
+
+      teardown(h);
+      remount(h);
+      await flush(0);
+      expect(h.tabs()).toEqual([expect.objectContaining({ id: 'b1', browserUrl: stored.url })]);
+      expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalledTimes(2);
+
+      obsolete.resolve({ url: 'https://obsolete-tunnel.test/' });
+      await flush();
+      expect(h.tabs()).toEqual([expect.objectContaining({ id: 'b1', browserUrl: stored.url })]);
+      expect(h.ofType(updateTabBrowserUrl.type)).toEqual([]);
+      await stop(h);
+    });
+
+    it('does not send the snapshot of a superseded connection after a reconnect', async () => {
+      const slow = deferred<BrowserTabListing[]>();
+      mocks.listTabs.mockReturnValueOnce(slow.promise).mockResolvedValue([row()]);
+      // Unsettled: its rows are passed through, so only the connection fence
+      // stands between the old listing and the daemon.
+      const h = start({ layouts: { [WS]: settledLayout([], 'pending' as never) } });
+      await flush(0);
+      expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+      expect(mocks.syncTabs).not.toHaveBeenCalled();
+
+      h.setHealth('healthy', 2);
+      h.dispatch(connectionStatusChanged('connected'));
+      await flush(0);
+      expect(mocks.syncTabs.mock.calls).toEqual([[[expect.objectContaining({ tabId: 'b1' })]]]);
+
+      // The old connection's listing (taken before b1 existed) lands now.
+      slow.resolve([]);
+      await flush(SYNC_RETRY_MS + REPORT_DEBOUNCE_MS);
+      expect(mocks.syncTabs).toHaveBeenCalledTimes(1);
       await stop(h);
     });
   });

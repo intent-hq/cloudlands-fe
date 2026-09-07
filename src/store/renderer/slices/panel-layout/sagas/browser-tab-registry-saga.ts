@@ -300,6 +300,17 @@ function* materialiseRow(wsId: string, row: BrowserTab): SagaGenerator<void> {
 }
 
 /**
+ * Take a row placed under a generation that moved meanwhile back out of the
+ * layout. The row was never recorded as reported, so the reporter has no
+ * removal to send for it; a cleared layout has nothing to remove.
+ */
+function* unplaceRow(wsId: string, tabId: string): SagaGenerator<void> {
+  const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
+  if (!collectBrowserTabs(layout).some((h) => h.tab.id === tabId)) return;
+  yield* put(closeTab(wsId, tabId, undefined, undefined, { destroy: true }));
+}
+
+/**
  * Move an existing tab between its panel and the hidden set to match the
  * row. Only owned tabs are ever hidden (the FE hides owned tabs only, and
  * `closeTab` destroys anything else), and a reveal never steals focus.
@@ -323,9 +334,14 @@ function* reconcileVisibility(
  * mirror the daemon re-homed here while we were away, whose URL and
  * visibility are stale — follows the row. Local tabs the registry no longer
  * holds are destroyed unless they can still be (re)reported from local
- * state. The workspace becomes `applied` only if the generation held
- * throughout and every materialised row is in the layout; otherwise nothing
- * is recorded and false is returned.
+ * state. Every layout mutation is fenced on `generation` and the loop stops
+ * at the first one whose generation moved. A placement is checked again once
+ * it landed: the saga scheduler queues a `put` behind the actions other
+ * sagas put in the same flush, so a generation move can slip between the
+ * check and the placement — such a row is taken back out before anything
+ * else observes the layout. The workspace becomes `applied` only if the
+ * generation held throughout and every materialised row is in the layout;
+ * otherwise nothing is recorded and false is returned.
  */
 function* applyRows(
   wsId: string,
@@ -355,15 +371,22 @@ function* applyRows(
         else if (mine && closing[row.tabId] === 'pending') reported[row.tabId] = rowToInput(row);
         continue;
       }
+      if (!(yield* call(isCurrentGeneration, wsId, generation))) return false;
       yield* call(materialiseRow, wsId, row);
+      if (!(yield* call(isCurrentGeneration, wsId, generation))) {
+        yield* call(unplaceRow, wsId, row.tabId);
+        return false;
+      }
       materialised.push(row.tabId);
       if (mine) reported[row.tabId] = rowToInput(row);
     } else if (mine && hostedHere(existing.tab, ownClientId) && hasReportableUrl(existing.tab)) {
       reported[row.tabId] = rowToInput(row);
       if (existing.tab.hostClientId !== ownClientId) {
+        if (!(yield* call(isCurrentGeneration, wsId, generation))) return false;
         yield* put(acknowledgeBrowserTabHost(wsId, row.tabId, ownClientId));
       }
     } else {
+      if (!(yield* call(isCurrentGeneration, wsId, generation))) return false;
       yield* put(applyBrowserTabRegistryRow(wsId, row.tabId, row));
       yield* call(reconcileVisibility, wsId, existing, row);
       if (mine) reported[row.tabId] = rowToInput(row);
@@ -376,6 +399,7 @@ function* applyRows(
   for (const [tabId, { tab }] of local) {
     if (known.has(tabId) || tab.hostClientId === undefined) continue;
     if (tab.hostClientId === ownClientId && hasReportableUrl(tab)) continue;
+    if (!(yield* call(isCurrentGeneration, wsId, generation))) return false;
     yield* put(closeTab(wsId, tabId, undefined, undefined, { destroy: true }));
   }
   if (!(yield* call(isCurrentGeneration, wsId, generation))) return false;
@@ -388,9 +412,25 @@ function* applyRows(
     return false;
   }
   yield* put(registryApplied(wsId, generation, reported));
-  if (toRehydrate.length > 0) yield* spawn(rehydrateTunneledBrowserTabs, wsId, toRehydrate);
+  if (toRehydrate.length > 0) yield* call(rehydrateUnderGeneration, wsId, generation, toRehydrate);
   yield* put(browserTabRegistryReportRequested(wsId));
   return true;
+}
+
+/**
+ * Re-resolve tunneled URLs detached from the caller (the resolution goes
+ * over IPC and must not hold up the load), fenced on `generation`: a
+ * resolution that lands after the layout was torn down and rebuilt must not
+ * navigate the tab the rebuild restored.
+ */
+function* rehydrateUnderGeneration(
+  wsId: string,
+  generation: number,
+  tabs: RehydratableBrowserTab[],
+): SagaGenerator<void> {
+  yield* spawn(rehydrateTunneledBrowserTabs, wsId, tabs, () =>
+    isCurrentGeneration(wsId, generation),
+  );
 }
 
 /**
@@ -620,7 +660,7 @@ function* onRegistryRow(action: ReturnType<typeof browserTabUpserted>): SagaGene
   if (mine) {
     yield* put(registryTabReported(wsId, generation, row.tabId, rowToInput(row)));
     const item = rehydratable(row);
-    if (item) yield* spawn(rehydrateTunneledBrowserTabs, wsId, [item]);
+    if (item) yield* call(rehydrateUnderGeneration, wsId, generation, [item]);
   } else if (row.tabId in registry.reported) {
     yield* put(registryTabForgotten(wsId, row.tabId));
   }
@@ -663,14 +703,25 @@ function* waitForWorkspaceList(backendId: string): SagaGenerator<boolean> {
  * settled and loaded meanwhile may have reported tabs its old rows lack. In
  * either case, if the generation moved (load failed, torn down or loaded
  * since) the whole attempt is abandoned, because the daemon deletes any row
- * of this host missing from the snapshot. Returns false when the attempt
- * could not complete (retryable).
+ * of this host missing from the snapshot. The attempt is also fenced on the
+ * connection it was started for: a newer connect (reconnect, backend switch)
+ * owns the sync from then on, and this one must not send its snapshot —
+ * built against the old connection's rows — over the newer one's. Returns
+ * false when the attempt could not complete (retryable), true when it
+ * completed or was superseded.
  */
-function* syncTabsOnce(backendId: string, ownClientId: string): SagaGenerator<boolean> {
+function* syncTabsOnce(
+  backendId: string,
+  connectionGeneration: number,
+  ownClientId: string,
+): SagaGenerator<boolean> {
+  const superseded = (): boolean =>
+    syncedBackendId !== backendId || syncedConnectionGeneration !== connectionGeneration;
   if (!(yield* call(waitForWorkspaceList, backendId))) {
     logger.warn('workspace list did not load; skipping browser.syncTabs');
     return false;
   }
+  if (superseded()) return true;
   const workspaces = yield* selectWorkspaceItems.effect();
   const layouts = yield* selectPanelLayoutWorkspaces.effect();
   const loads = yield* all(
@@ -685,6 +736,7 @@ function* syncTabsOnce(backendId: string, ownClientId: string): SagaGenerator<bo
     logger.warn('a workspace could not be loaded; skipping browser.syncTabs');
     return false;
   }
+  if (superseded()) return true;
 
   const snapshot: BrowserTabInput[] = [];
   const unacknowledged: Array<[wsId: string, tabId: string]> = [];
@@ -725,6 +777,7 @@ function* syncTabsOnce(backendId: string, ownClientId: string): SagaGenerator<bo
 
   try {
     const { drop } = yield* call([appClient.browser, appClient.browser.syncTabs], snapshot);
+    if (superseded()) return true;
     yield* put(registrySnapshotAcknowledged(omitted, drop));
     const dropped = new Set(drop);
     // The acknowledgement describes the snapshot as sent; a tab re-homed or
@@ -781,10 +834,10 @@ function* syncOnConnect(): SagaGenerator<void> {
   for (let attempt = 0; attempt < MAX_SYNC_ATTEMPTS; attempt++) {
     if (attempt > 0) {
       yield* delay(SYNC_RETRY_MS);
-      if (syncedConnectionGeneration !== generation) return;
       if ((yield* selectDaemonHealth.effect()) === 'down') break;
     }
-    if (yield* call(syncTabsOnce, backendId, ownClientId)) return;
+    if (syncedBackendId !== backendId || syncedConnectionGeneration !== generation) return;
+    if (yield* call(syncTabsOnce, backendId, generation, ownClientId)) return;
   }
   if (syncedConnectionGeneration === generation) syncedConnectionGeneration = null;
 }

@@ -87,7 +87,12 @@ export const registrySnapshotAcknowledged = createAction<[omitted: string[], dro
   'browserTabRegistry/snapshotAcknowledged',
 );
 
-/** The active backend changed: nothing recorded applies any more. */
+/**
+ * The active backend changed: nothing recorded applies any more. Every
+ * workspace is torn down into a new generation (the counter never restarts,
+ * so a step started under the old backend cannot match a generation the new
+ * one reaches).
+ */
 export const registryReset = createAction('browserTabRegistry/reset');
 
 // ---------------------------------------------------------------------------
@@ -208,4 +213,12 @@ browserTabRegistryReducer.with(clearPanelLayout, (state, { payload: [wsId] }) =>
   bump(state, wsId, 'unmounted', getWorkspaceState(state, wsId).reported),
 );
 
-browserTabRegistryReducer.with(registryReset, () => initialState);
+browserTabRegistryReducer.with(registryReset, (state) => ({
+  ...initialState,
+  byWorkspaceId: Object.fromEntries(
+    Object.entries(state.byWorkspaceId).map(([wsId, ws]) => [
+      wsId,
+      { ...emptyWorkspaceBrowserTabRegistryState, generation: ws.generation + 1 },
+    ]),
+  ),
+}));
