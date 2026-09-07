@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.140.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.140.0...v2.140.1) (2026-09-07)
+
+
+### 🐛 Bug Fixes
+
+* **ui:** unclip and standardize inline edit boxes across the app ([#2186](https://github.com/intent-hq/cloudlands-fe/issues/2186)) ([ab7308d](https://github.com/intent-hq/cloudlands-fe/commit/ab7308d1741103ea5ad25110a574956ddb296a11))
+
 ## [2.140.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.139.2...v2.140.0) (2026-09-07)
 
 
