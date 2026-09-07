@@ -1992,6 +1992,7 @@ function spreadCrowdedFlowchartPorts(svg: SVGSVGElement) {
       .map(([x, y]) => ({ x, y }));
     if (!identity || points.length < 2) continue;
     for (const role of ['source', 'target'] as const) {
+      if (role === 'source' && path.dataset.fanoutSource) continue;
       const nodeId = identity[role];
       const node = flowchartNode(svg, nodeId);
       const shape = node && shapeForNode(node);
