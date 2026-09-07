@@ -1,9 +1,9 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
-  import { formatInteger } from '$lib/i18n/format';
+  import { formatInteger, formatNumber } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { DiffMapDensityRung, DiffMapLayoutFileRow } from '../layout/layout-diff-map';
-  import type { DiffMapAttribution, DiffMapFile } from '../model/types';
+  import type { DiffMapAttribution, DiffMapFile, DiffMapFileStatus } from '../model/types';
   import HunkTracks from './HunkTracks.svelte';
 
   export interface DiffMapLayers {
@@ -44,20 +44,24 @@
     onKeydown,
     onFocus,
   }: Props = $props();
+  const componentId = $props.id();
 
-  const glyphs = { added: 'A', modified: 'M', deleted: 'D', renamed: 'R→', binary: 'B', mode: 'M' };
-  const suppressZeroStats = $derived(
-    file.statsKnown &&
-      file.additions === 0 &&
-      file.deletions === 0 &&
-      (file.status === 'renamed' || file.status === 'mode' || file.status === 'binary'),
+  const glyphs: Record<DiffMapFileStatus, string> = {
+    added: 'A',
+    modified: 'M',
+    deleted: 'D',
+    renamed: 'R→',
+    binary: 'B',
+    mode: 'M',
+  };
+  const additions = $derived(
+    file.statsKnown && file.additions > 0 ? `+${formatInteger(file.additions)}` : undefined,
+  );
+  const deletions = $derived(
+    file.statsKnown && file.deletions > 0 ? `−${formatInteger(file.deletions)}` : undefined,
   );
   const stats = $derived(
-    suppressZeroStats
-      ? undefined
-      : file.statsKnown
-        ? `+${formatInteger(file.additions)} −${formatInteger(file.deletions)}`
-        : m.diffMap_statsUnavailable_label(),
+    file.statsKnown ? [additions, deletions].filter(Boolean).join(' ') || undefined : undefined,
   );
   const viewed = $derived(layers?.viewed?.has(file.path) ?? false);
   const changedSinceViewed = $derived(layers?.changedSinceViewed?.has(file.path) ?? false);
@@ -68,15 +72,69 @@
         ? m.chat_changesPanel_viewed_label()
         : undefined,
   );
+  const statusLabel = $derived.by(() => {
+    switch (file.status) {
+      case 'added':
+        return m.diffMap_status_added_label();
+      case 'modified':
+        return m.diffMap_status_modified_label();
+      case 'deleted':
+        return m.diffMap_status_deleted_label();
+      case 'renamed':
+        return m.diffMap_status_renamed_label();
+      case 'binary':
+        return m.diffMap_status_binary_label();
+      case 'mode':
+        return m.diffMap_status_mode_label();
+    }
+  });
   const accessibleName = $derived(
-    [file.path, file.status, stats, freshnessLabel]
+    [file.path, statusLabel, stats, freshnessLabel]
       .filter((value) => value !== undefined)
       .join(', '),
   );
-  const tooltip = $derived(
-    file.renamedFrom ? `${accessibleName}\n${file.renamedFrom} → ${file.path}` : accessibleName,
+  const renameDescription = $derived(
+    file.renamedFrom ? m.diffMap_renamedFrom_description({ path: file.renamedFrom }) : undefined,
   );
-  const tooltipId = $derived(`diff-map-tip-${file.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`);
+  const statsDescription = $derived(
+    file.statsKnown ? undefined : m.diffMap_statsUnavailable_description(),
+  );
+
+  function trackPositions(track: number[] | undefined) {
+    const positions: string[] = [];
+    if (!track) return undefined;
+    for (let index = 0; index + 1 < track.length; index += 2) {
+      const position = Math.min(1, Math.max(0, track[index]));
+      positions.push(formatNumber(position, { style: 'percent', maximumFractionDigits: 0 }));
+    }
+    return positions.length > 0 ? positions.join(', ') : undefined;
+  }
+
+  const trackDescription = $derived.by(() => {
+    const oldPositions = trackPositions(file.oldTrack);
+    const newPositions = trackPositions(file.newTrack);
+    if (oldPositions && newPositions) {
+      return m.diffMap_hunkTracks_both_description({ oldPositions, newPositions });
+    }
+    if (oldPositions) return m.diffMap_hunkTracks_old_description({ positions: oldPositions });
+    if (newPositions) return m.diffMap_hunkTracks_new_description({ positions: newPositions });
+    return undefined;
+  });
+  const descriptionBaseId = `${componentId}-description`;
+  const descriptionIds = $derived(
+    [
+      renameDescription ? `${descriptionBaseId}-rename` : undefined,
+      statsDescription ? `${descriptionBaseId}-stats` : undefined,
+      trackDescription ? `${descriptionBaseId}-tracks` : undefined,
+    ]
+      .filter(Boolean)
+      .join(' ') || undefined,
+  );
+  const tooltip = $derived(
+    [accessibleName, renameDescription, statsDescription, trackDescription]
+      .filter(Boolean)
+      .join('\n'),
+  );
   const comments = $derived(layers?.comments?.get(file.path));
   const attribution = $derived(
     layers?.attribution instanceof Map
@@ -100,7 +158,7 @@
   data-status={file.status}
   data-viewed-state={changedSinceViewed ? 'changed' : viewed ? 'viewed' : undefined}
   aria-label={accessibleName}
-  aria-describedby={tooltipId}
+  aria-describedby={descriptionIds}
   aria-pressed={selected}
   tabindex={focused ? 0 : -1}
   style={`left: ${row.x - blockX}px; top: ${row.y - blockY}px; width: ${row.w}px; height: ${row.h}px; opacity: ${matchesFilter ? 1 : 0.28}`}
@@ -108,7 +166,9 @@
   onkeydown={(event) => onKeydown(file, event)}
   onfocus={() => onFocus(file)}
 >
-  <span class="status" aria-hidden="true" style:grid-column="1">{glyphs[file.status]}</span>
+  <span class="status" data-status-glyph aria-hidden="true" style:grid-column="1"
+    >{glyphs[file.status]}</span
+  >
   <span class="filename" style:grid-column="2">{row.label}</span>
 
   {#if comments !== undefined && comments > 0}
@@ -123,14 +183,18 @@
     <span class="overlay" aria-hidden="true" style:grid-column="3">✓</span>
   {/if}
 
-  {#if rung <= 1 && !suppressZeroStats}
+  {#if rung <= 1}
     {#if file.statsKnown}
-      <span class="stats" aria-hidden="true" style:grid-column="4">
-        <span class="additions">+{formatInteger(file.additions)}</span>
-        <span class="deletions">−{formatInteger(file.deletions)}</span>
-      </span>
+      {#if additions || deletions}
+        <span class="stats" aria-hidden="true" style:grid-column="4">
+          {#if additions}<span class="additions" data-stat-side="additions">{additions}</span>{/if}
+          {#if deletions}<span class="deletions" data-stat-side="deletions">{deletions}</span>{/if}
+        </span>
+      {/if}
     {:else}
-      <span class="stats stats--unknown" aria-hidden="true" style:grid-column="4">{stats}</span>
+      <span class="stats stats--unknown" aria-hidden="true" style:grid-column="4"
+        >{m.diffMap_statsUnavailable_label()}</span
+      >
     {/if}
   {/if}
 
@@ -147,7 +211,16 @@
     <span class="churn-track"><span class="churn" style:width={`${churn}%`}></span></span>
   {/if}
 
-  <span id={tooltipId} role="tooltip" class="tooltip">{tooltip}</span>
+  {#if renameDescription}
+    <span id={`${descriptionBaseId}-rename`} class="sr-only">{renameDescription}</span>
+  {/if}
+  {#if statsDescription}
+    <span id={`${descriptionBaseId}-stats`} class="sr-only">{statsDescription}</span>
+  {/if}
+  {#if trackDescription}
+    <span id={`${descriptionBaseId}-tracks`} class="sr-only">{trackDescription}</span>
+  {/if}
+  <span aria-hidden="true" class="tooltip">{tooltip}</span>
 </Button>
 
 <style>
@@ -323,24 +396,25 @@
   .tooltip {
     position: absolute;
     z-index: var(--layer-tooltip);
-    top: calc(100% + 4px);
-    left: 4px;
+    inset: 1px 3px;
     display: none;
-    max-width: min(360px, 80vw);
-    padding: 5px 7px;
+    box-sizing: border-box;
+    min-width: 0;
+    padding: 2px 4px;
+    overflow: hidden;
     border: 1px solid hsl(var(--border));
     border-radius: var(--radius-small);
     background: hsl(var(--popover));
     box-shadow: var(--elevation-overlay);
     color: hsl(var(--popover-foreground));
     font-size: 11px;
-    line-height: 1.35;
+    line-height: 1;
     pointer-events: none;
-    white-space: pre-line;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  :global(.diff-map-row:hover) .tooltip,
-  :global(.diff-map-row:focus-visible) .tooltip {
+  :global(.diff-map-row:hover) .tooltip {
     display: block;
   }
 

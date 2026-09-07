@@ -26,6 +26,7 @@
     {#each segments(oldTrack) as segment, index (index)}
       <span
         class="segment segment--old"
+        data-track-side="old"
         style:background={hunkTrackColor('old')}
         style:left={`${segment.position * 100}%`}
         style:width={`${segment.size * 100}%`}
@@ -34,6 +35,7 @@
     {#each segments(newTrack) as segment, index (index)}
       <span
         class="segment segment--new"
+        data-track-side="new"
         style:background={hunkTrackColor('new')}
         style:left={`${segment.position * 100}%`}
         style:width={`${segment.size * 100}%`}
