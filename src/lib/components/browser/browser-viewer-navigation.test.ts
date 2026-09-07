@@ -43,10 +43,15 @@ const forward = (seq: number, url: string): ViewerNavigationCommand => ({
   url,
 });
 
-/** Mirror opened at canonical `url`, initial load (follow #1) settled. */
+/**
+ * Mirror opened at canonical `url`: the initial load (follow #1) commits, the
+ * webview becomes ready (the component re-renders the canonical URL), and the
+ * load settles.
+ */
 const opened = (url: string): Step[] => [
   [canonical(url, false), []],
   [guest(url), []],
+  [canonical(url, true), []],
   [followSettled(1), []],
 ];
 
@@ -265,6 +270,31 @@ const scenarios: Array<{ name: string; steps: Step[] }> = [
       [canonical('https://b/'), [load(2, 'https://b/')]],
       [guest('https://b/'), []],
       [followSettled(2), []],
+    ],
+  },
+  {
+    name: 'a rejection before the webview is ready issues no load and keeps the initial follow',
+    steps: [
+      [canonical('https://a/', false), []],
+      [address('https://b/'), [forward(1, 'https://b/')]],
+      [forwardSettled(1, false), []],
+      [guest('https://a/'), []],
+      [guest('https://a/login'), []],
+      [canonical('https://a/', true), []],
+      [followSettled(1), []],
+      [guest('https://a/account'), [forward(2, 'https://a/account')]],
+    ],
+  },
+  {
+    name: 'a load settling before the webview is ready does not make it ready',
+    steps: [
+      [canonical('https://a/', false), []],
+      [followSettled(1), []],
+      [address('https://b/'), [forward(1, 'https://b/')]],
+      [forwardSettled(1, false), []],
+      [refresh, []],
+      [canonical('https://a/', true), []],
+      [refresh, [load(2, 'https://a/'), forward(2, 'https://a/')]],
     ],
   },
   {

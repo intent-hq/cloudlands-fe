@@ -173,9 +173,8 @@ export function applyViewerNavigationEvent(
     }
 
     case 'follow-settled': {
-      // Only an attached guest settles a load; the initial load's settlement
-      // arrives with the readiness events themselves.
-      state.webviewReady = true;
+      // Readiness is not inferred here: a load issued to an unattached guest
+      // settles without having run. Only `canonical` events report it.
       if (event.seq === state.activeFollowSeq) state.activeFollowSeq = null;
       return [];
     }
@@ -192,6 +191,9 @@ export function applyViewerNavigationEvent(
       if (state.followSeq !== pending.followSeq) return [];
       const canonical = state.canonicalUrl;
       if (!canonical || !state.isValidBrowserUrl(canonical)) return [];
+      // Before the webview can navigate nothing was retargeted: the initial
+      // load, or the canonical URL re-rendered on readiness, reaches it.
+      if (!state.webviewReady) return [];
       const stayingPut = state.activeFollowSeq === null || state.targetUrl === canonical;
       if (canonical === state.mirrorUrl && stayingPut) {
         state.targetUrl = canonical;
@@ -212,7 +214,7 @@ export function applyViewerNavigationEvent(
 
     case 'refresh': {
       const canonical = state.canonicalUrl;
-      if (!canonical || !state.isValidBrowserUrl(canonical)) return [];
+      if (!canonical || !state.isValidBrowserUrl(canonical) || !state.webviewReady) return [];
       // The mirror reloads as a follow so the resulting navigation is not
       // forwarded again; the host reloads by navigating to its own URL.
       return issueRequest(state, canonical);
