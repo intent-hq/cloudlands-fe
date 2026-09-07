@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+// @ui-invariant
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';

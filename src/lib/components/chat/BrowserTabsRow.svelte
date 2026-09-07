@@ -200,6 +200,7 @@
         transition:safeSubscriptionSlide
       >
         {#each entries as entry (entry.tab.id)}
+          {@const tabTitle = entry.tab.title || m.layout_panelLayout_browser_fallback()}
           <div
             class="overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
             data-subscription-motion-row="browser-tab"
@@ -224,7 +225,7 @@
                 aria-hidden="true"
               ></span>
               <span class="min-w-0 flex-1 {entry.hidden ? 'opacity-60' : ''}">
-                <span class="block truncate" title={entry.tab.title}>{entry.tab.title}</span>
+                <span class="block truncate" title={tabTitle}>{tabTitle}</span>
                 <span class="block truncate text-xs text-subtle" title={entry.tab.browserUrl ?? ''}>
                   {entry.tab.browserUrl || m.browser_embedded_noUrl_label()}
                 </span>

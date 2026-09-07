@@ -18,6 +18,7 @@ import {
   updateItem,
   type Collection,
 } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { BrowserTab } from '$shared/types/browser-clients';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { removeScript } from '../scripts/scripts-slice';
 import { removeTerminal } from '../terminals/terminals-slice';
@@ -441,10 +442,11 @@ export const closeFocusedPanelTab = createAction(
 
 export const reopenClosedTab = createAction(
   'panelLayout/reopenClosedTab',
-  (wsId: string, timestamp?: number, closedTabId?: string) => ({
+  (wsId: string, timestamp?: number, closedTabId?: string, targetPanelId?: string) => ({
     wsId,
     newTabId: generateTabId(),
     closedTabId,
+    targetPanelId,
     timestamp: timestamp ?? Date.now(),
   }),
 );
@@ -1756,6 +1758,37 @@ export const setTabOwnerAgent = createAction<
 >('panelLayout/setTabOwnerAgent');
 
 /**
+ * The daemon tab registry acknowledged this client as the tab's host
+ * (REV-2 §5.45): record `hostClientId` so the tab persists geometry only from
+ * now on. Every other field stays as the host reported it.
+ */
+export const acknowledgeBrowserTabHost = createAction<
+  [wsId: string, tabId: string, hostClientId: string]
+>('panelLayout/acknowledgeBrowserTabHost');
+
+/**
+ * Apply a canonical registry row to an existing browser tab (REV-2 §5.45):
+ * a tab restored from geometry-only persistence, a mirror following its
+ * remote host, or a tab the daemon re-homed (`changes.hostClientId`). The
+ * row's host-reported fields replace the local ones; a cleared optional
+ * field is dropped (a cleared title shows the browser fallback, a cleared
+ * emulation resets the viewport it drove). Tabs the registry does not know
+ * are left untouched.
+ */
+export const applyBrowserTabRegistryRow = createAction<
+  [wsId: string, tabId: string, row: BrowserTab]
+>('panelLayout/applyBrowserTabRegistryRow');
+
+/**
+ * Ask the registry saga to diff the workspace's hosted browser tabs against
+ * the daemon now (REV-2 §5.45). No reducer: the saga's single-flight reporter
+ * is the only consumer.
+ */
+export const browserTabRegistryReportRequested = createAction<[wsId: string]>(
+  'panelLayout/browserTabRegistryReportRequested',
+);
+
+/**
  * Destroy ALL browser tabs owned by an agent — visible and hidden alike
  * (monorepo#2857). Dispatched when the agent's deletion commits
  * (`agent:deleted`): owned tabs never outlive their owner, and there is no
@@ -2888,7 +2921,7 @@ panelLayoutReducer.with(reopenClosedPanelColumn, (state, { payload }) => {
 });
 // --- Reopen Closed Tab ---
 panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
-  const { wsId, newTabId, closedTabId, timestamp } = payload;
+  const { wsId, newTabId, closedTabId, targetPanelId: requestedPanelId, timestamp } = payload;
   let ws = getWorkspaceState(state, wsId);
   if (ws.recentlyClosed.length === 0) return state;
 
@@ -2902,7 +2935,12 @@ panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
   ws = saveToHistory(ws, timestamp);
   const closed = ws.recentlyClosed[closedIndex];
   const rest = ws.recentlyClosed.filter((_, index) => index !== closedIndex);
-  const targetPanelId = ws.panels[closed.panelId] ? closed.panelId : ws.focusedPanelId;
+  const targetPanelId =
+    requestedPanelId && ws.panels[requestedPanelId]
+      ? requestedPanelId
+      : ws.panels[closed.panelId]
+        ? closed.panelId
+        : ws.focusedPanelId;
   if (!targetPanelId || !ws.panels[targetPanelId]) return state;
 
   const panel = ws.panels[targetPanelId];
@@ -2923,6 +2961,7 @@ panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
         ...panel,
         tabs: [...panel.tabs, newTab],
         activeTabId: newTabId,
+        pristine: false,
       },
     },
     focusedPanelId: targetPanelId,
@@ -3183,6 +3222,78 @@ panelLayoutReducer.with(
     }
     return state;
   },
+);
+/**
+ * Replace one browser tab wherever it lives (a panel or hiddenTabs) with
+ * `patch(tab)`; the state is returned unchanged when the tab is absent or the
+ * patch yields the same object.
+ */
+function patchBrowserTab(
+  state: PanelLayoutSliceState,
+  wsId: string,
+  tabId: string,
+  patch: (tab: PanelTab) => PanelTab,
+): PanelLayoutSliceState {
+  const ws = getWorkspaceState(state, wsId);
+  for (const [pId, panel] of Object.entries(ws.panels)) {
+    const tabIdx = panel.tabs.findIndex((t) => t.id === tabId && t.type === 'browser');
+    if (tabIdx < 0) continue;
+    const next = patch(panel.tabs[tabIdx]);
+    if (next === panel.tabs[tabIdx]) return state;
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      panels: {
+        ...ws.panels,
+        [pId]: { ...panel, tabs: panel.tabs.map((t, i) => (i === tabIdx ? next : t)) },
+      },
+    });
+  }
+  const hiddenTab = getItem(ws.hiddenTabs, tabId);
+  if (!hiddenTab || hiddenTab.type !== 'browser') return state;
+  const next = patch(hiddenTab);
+  if (next === hiddenTab) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    hiddenTabs: replaceItem(ws.hiddenTabs, tabId, next),
+  });
+}
+
+// --- Browser tab registry (REV-2 §5.45) ---
+panelLayoutReducer.with(
+  acknowledgeBrowserTabHost,
+  (state, { payload: [wsId, tabId, hostClientId] }) =>
+    patchBrowserTab(state, wsId, tabId, (tab) =>
+      tab.hostClientId === hostClientId ? tab : { ...tab, hostClientId },
+    ),
+);
+panelLayoutReducer.with(applyBrowserTabRegistryRow, (state, { payload: [wsId, tabId, row] }) =>
+  patchBrowserTab(state, wsId, tabId, (tab) => {
+    const {
+      browserRequestedUrl: _requested,
+      ownerAgentId: _owner,
+      ownerAgentName: _ownerName,
+      emulatedSize: _size,
+      ...rest
+    } = tab;
+    // A viewport derived from a now-cleared emulation is stale too; a local
+    // (geometry) viewport of a never-emulated tab is kept.
+    const viewport = row.emulatedSize
+      ? { mode: 'custom' as const, ...row.emulatedSize }
+      : tab.emulatedSize
+        ? { mode: 'fit' as const }
+        : tab.viewport;
+    return {
+      ...rest,
+      hostClientId: row.hostClientId,
+      browserUrl: row.url,
+      title: row.title ?? '',
+      ...(row.requestedUrl === undefined ? {} : { browserRequestedUrl: row.requestedUrl }),
+      ...(row.ownerAgentId === undefined ? {} : { ownerAgentId: row.ownerAgentId }),
+      ...(row.ownerAgentName === undefined ? {} : { ownerAgentName: row.ownerAgentName }),
+      ...(row.emulatedSize === undefined ? {} : { emulatedSize: row.emulatedSize }),
+      ...(viewport === undefined ? {} : { viewport }),
+    };
+  }),
 );
 // --- Update Browser Tab Viewport ---
 panelLayoutReducer.with(updateTabViewport, (state, { payload: [wsId, tabId, viewport] }) => {

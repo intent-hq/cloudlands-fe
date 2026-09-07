@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '@fontsource-variable/inter';
   import type { Snippet } from 'svelte';
   import { page } from '$app/state';
   import CatalogShell from '$lib/component-catalog/CatalogShell.svelte';
@@ -17,3 +18,10 @@
 </svelte:head>
 
 <CatalogShell {activeSlug}>{@render children?.()}</CatalogShell>
+
+<style>
+  :global(:root) {
+    --font-ui:
+      'Inter Variable', Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+</style>
