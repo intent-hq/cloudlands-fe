@@ -34,6 +34,13 @@ import {
   initialState as browserClientsInitialState,
   ownClientIdReceived,
 } from '../../browser-clients/browser-clients-slice';
+import {
+  browserTabRegistryReducer,
+  initialState as browserTabRegistryInitialState,
+  registryApplied,
+  registryLoading,
+} from '../../browser-tab-registry/browser-tab-registry-slice';
+import type { BrowserTabRegistryState } from '../../browser-tab-registry/browser-tab-registry-slice';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -103,17 +110,38 @@ function deferred<T>() {
 
 type Harness = ReturnType<typeof start>;
 
+/**
+ * The registry state after the workspaces were loaded once (generation 1,
+ * `applied`, nothing reported) — what a completed load leaves behind, built
+ * through the production reducer.
+ */
+function appliedRegistry(wsIds: string[]): BrowserTabRegistryState {
+  return wsIds.reduce(
+    (state, wsId) =>
+      browserTabRegistryReducer(
+        browserTabRegistryReducer(state, registryLoading(wsId)),
+        registryApplied(wsId, 1, {}),
+      ),
+    browserTabRegistryInitialState,
+  );
+}
+
 function start(
   opts: {
     layouts?: Record<string, ReturnType<typeof settledLayout>>;
     ownClientId?: string | null;
     health?: 'healthy' | 'down';
     workspaceIds?: string[];
+    /** Start with every layout already loaded from the registry (see `appliedRegistry`). */
+    applied?: boolean;
   } = {},
 ) {
   const channel = stdChannel();
   let state: any = {
     panelLayout: { byWorkspaceId: opts.layouts ?? {} },
+    browserTabRegistry: opts.applied
+      ? appliedRegistry(Object.keys(opts.layouts ?? {}))
+      : browserTabRegistryInitialState,
     browserClients: {
       ...browserClientsInitialState,
       ownClientId: opts.ownClientId === undefined ? OWN : opts.ownClientId,
@@ -134,6 +162,7 @@ function start(
     state = {
       ...state,
       panelLayout: panelLayoutReducer(state.panelLayout, action),
+      browserTabRegistry: browserTabRegistryReducer(state.browserTabRegistry, action),
       browserClients: browserClientsReducer(state.browserClients, action),
     };
     dispatched.push(action);
@@ -155,6 +184,8 @@ function start(
         (panel: any) => panel.tabs as PanelTab[],
       ),
     hidden: (wsId = WS) => getItems(state.panelLayout.byWorkspaceId[wsId].hiddenTabs) as PanelTab[],
+    registry: (wsId = WS) => state.browserTabRegistry.byWorkspaceId[wsId],
+    closing: () => state.browserTabRegistry.closing as Record<string, string>,
     setHealth: (health: 'healthy' | 'down', connectionGeneration: number) => {
       state = { ...state, daemonHealth: { health, connectionGeneration } };
     },
@@ -201,7 +232,7 @@ describe('browserTabRegistrySaga', () => {
 
   describe('host reporting', () => {
     it('reports a newly opened hosted tab with browser.upsertTab and records the host', async () => {
-      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down' });
+      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down', applied: true });
       h.setHealth('healthy', 1);
       h.dispatch(
         openTabInRightmostColumn(WS, browserTab({ browserUrl: 'http://a.test/' }), {
@@ -219,6 +250,7 @@ describe('browserTabRegistrySaga', () => {
       const h = start({
         layouts: { [WS]: settledLayout([browserTab({ browserUrl: 'http://a.test/' })]) },
         health: 'down',
+        applied: true,
       });
       h.setHealth('healthy', 1);
       h.dispatch(updateTabBrowserUrl(WS, 'b1', 'http://a.test/one'));
@@ -245,6 +277,7 @@ describe('browserTabRegistrySaga', () => {
           ]),
         },
         health: 'down',
+        applied: true,
       });
       h.setHealth('healthy', 1);
       h.dispatch(closeTab(WS, 'b1', 'p1', 1000));
@@ -269,6 +302,7 @@ describe('browserTabRegistrySaga', () => {
           ]),
         },
         health: 'down',
+        applied: true,
       });
       h.setHealth('healthy', 1);
       h.dispatch(updateTabTitle(WS, 'mirror', 'Renamed'));
@@ -346,7 +380,7 @@ describe('browserTabRegistrySaga', () => {
     });
 
     it('forgets acknowledged tabs the listing no longer holds instead of removing them later', async () => {
-      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down' });
+      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down', applied: true });
       h.setHealth('healthy', 1);
       h.dispatch(
         openTabInRightmostColumn(WS, browserTab({ browserUrl: 'http://a.test/' }), {
@@ -452,6 +486,7 @@ describe('browserTabRegistrySaga', () => {
           [WS]: settledLayout([browserTab({ hostClientId: OWN, browserUrl: 'http://a.test/' })]),
         },
         health: 'down',
+        applied: true,
       });
       h.setHealth('healthy', 1);
       h.dispatch(
@@ -477,7 +512,7 @@ describe('browserTabRegistrySaga', () => {
     });
 
     it('materialises a remote row as a mirror and destroys the local tab on tab-closed', async () => {
-      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down' });
+      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down', applied: true });
       h.setHealth('healthy', 1);
       h.dispatch(
         browserTabUpserted(WS, row({ tabId: 'b2', hostClientId: OTHER, url: 'http://m.test/' })),
@@ -495,7 +530,7 @@ describe('browserTabRegistrySaga', () => {
     });
 
     it('ignores an own-host echo for a tab closed here until the daemon confirms the close', async () => {
-      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down' });
+      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down', applied: true });
       h.setHealth('healthy', 1);
       h.dispatch(
         openTabInRightmostColumn(WS, browserTab({ browserUrl: 'http://a.test/' }), {
@@ -515,7 +550,7 @@ describe('browserTabRegistrySaga', () => {
     });
 
     it('materialises an own-host row for a tab it does not hold (a locally closed mirror re-homed here)', async () => {
-      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down' });
+      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down', applied: true });
       h.setHealth('healthy', 1);
       h.dispatch(
         browserTabUpserted(WS, row({ tabId: 'b2', hostClientId: OWN, title: 'Example page' })),
@@ -536,6 +571,7 @@ describe('browserTabRegistrySaga', () => {
       const h = start({
         layouts: { [WS]: settledLayout([], 'restored', [hiddenMirror]) },
         health: 'down',
+        applied: true,
       });
       h.setHealth('healthy', 1);
 
@@ -614,7 +650,7 @@ describe('browserTabRegistrySaga', () => {
     it('lets a re-home that landed during the first upsertTab win over its reply', async () => {
       const reply = deferred<BrowserTab>();
       mocks.upsertTab.mockReturnValueOnce(reply.promise);
-      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down' });
+      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down', applied: true });
       h.setHealth('healthy', 1);
       h.dispatch(
         openTabInRightmostColumn(WS, browserTab({ browserUrl: 'http://a.test/' }), {
@@ -692,7 +728,7 @@ describe('browserTabRegistrySaga', () => {
     });
 
     it('does not resurrect a tab closed here when its echo lands inside the report debounce', async () => {
-      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down' });
+      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down', applied: true });
       h.setHealth('healthy', 1);
       h.dispatch(
         openTabInRightmostColumn(WS, browserTab({ browserUrl: 'http://a.test/' }), {
@@ -713,7 +749,7 @@ describe('browserTabRegistrySaga', () => {
     it('does not resurrect a tab closed here while its first upsertTab is still in flight', async () => {
       const reply = deferred<BrowserTab>();
       mocks.upsertTab.mockReturnValueOnce(reply.promise);
-      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down' });
+      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down', applied: true });
       h.setHealth('healthy', 1);
       h.dispatch(
         openTabInRightmostColumn(WS, browserTab({ browserUrl: 'http://a.test/' }), {
@@ -797,7 +833,10 @@ describe('browserTabRegistrySaga', () => {
             }),
           ]),
         },
+        health: 'down',
+        applied: true,
       });
+      h.setHealth('healthy', 1);
       h.dispatch(browserTabUpserted(WS, row({ title: undefined })));
       await flush();
 
@@ -809,7 +848,7 @@ describe('browserTabRegistrySaga', () => {
     });
 
     it('reports a page title verbatim even when it equals the presentation fallback label', async () => {
-      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down' });
+      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down', applied: true });
       h.setHealth('healthy', 1);
       h.dispatch(
         openTabInRightmostColumn(WS, browserTab({ browserUrl: 'http://a.test/' }), {
@@ -833,6 +872,7 @@ describe('browserTabRegistrySaga', () => {
           [WS]: settledLayout([browserTab({ hostClientId: OTHER, browserUrl: 'http://a.test/' })]),
         },
         health: 'down',
+        applied: true,
       });
       h.setHealth('healthy', 1);
       h.dispatch(browserTabUpserted(WS, row({ title: 'Browser' })));
@@ -846,7 +886,7 @@ describe('browserTabRegistrySaga', () => {
       const reply = deferred<BrowserTab>();
       mocks.upsertTab.mockReturnValueOnce(reply.promise);
       mocks.listTabs.mockResolvedValue([row()]);
-      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down' });
+      const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down', applied: true });
       h.setHealth('healthy', 1);
       h.dispatch(
         openTabInRightmostColumn(WS, browserTab({ browserUrl: 'http://a.test/' }), {
@@ -906,11 +946,18 @@ describe('browserTabRegistrySaga', () => {
       h.dispatch(setRestoreStatus(WS, 'restored'));
       await flush();
       expect(h.tabs()).toEqual([]);
+      expect(mocks.listTabs).toHaveBeenCalledTimes(3);
 
+      // The held listing predates the teardown: the attempt is abandoned and
+      // the retry re-reads the workspace instead of applying the stale rows.
       slow.resolve([]);
       await flush();
       expect(h.tabs()).toEqual([]);
-      expect(mocks.syncTabs).toHaveBeenCalledTimes(1);
+      expect(mocks.syncTabs).not.toHaveBeenCalled();
+      await flush(SYNC_RETRY_MS);
+      expect(mocks.listTabs).toHaveBeenCalledTimes(5);
+      expect(h.tabs()).toEqual([]);
+      expect(mocks.syncTabs.mock.calls).toEqual([[[]]]);
       await stop(h);
     });
 
@@ -926,5 +973,191 @@ describe('browserTabRegistrySaga', () => {
       await flush();
       expect(mocks.syncTabs).not.toHaveBeenCalled();
     });
+  });
+
+  describe('generation fencing and snapshot safety', () => {
+    const SLOW = 'ws-slow';
+    const remount = (h: Harness) => {
+      h.dispatch(
+        initializeLayout(WS, {
+          root: { type: 'panel', panelId: 'p1' },
+          panels: { p1: { id: 'p1', tabs: [], activeTabId: null } },
+          focusedPanelId: 'p1',
+        }),
+      );
+      h.dispatch(setRestoreStatus(WS, 'restored'));
+    };
+    const teardown = (h: Harness) => {
+      h.dispatch(workspaceUnmounted(WS));
+      h.dispatch(clearPanelLayout(WS));
+    };
+
+    it('includes a daemon-restored own tab in the very first connect snapshot', async () => {
+      mocks.listTabs.mockResolvedValue([row()]);
+      const h = start({ layouts: { [WS]: settledLayout([]) } });
+      await flush();
+      expect(h.tabs()).toEqual([expect.objectContaining({ id: 'b1', hostClientId: OWN })]);
+      expect(mocks.syncTabs.mock.calls).toEqual([
+        [[expect.objectContaining({ tabId: 'b1', url: 'http://a.test/' })]],
+      ]);
+      expect(mocks.upsertTab).not.toHaveBeenCalled();
+      await stop(h);
+    });
+
+    it('preserves a close made while the daemon was down through a failed sync and its retry', async () => {
+      mocks.listTabs.mockResolvedValue([row()]);
+      const h = start({
+        layouts: {
+          [WS]: settledLayout([browserTab({ hostClientId: OWN, browserUrl: 'http://a.test/' })]),
+        },
+      });
+      await flush();
+      expect(mocks.syncTabs).toHaveBeenCalledTimes(1);
+
+      h.setHealth('down', 1);
+      h.dispatch(closeTab(WS, 'b1', undefined, undefined, { destroy: true }));
+      await flush();
+      mocks.syncTabs
+        .mockRejectedValueOnce(new Error('network outage'))
+        .mockResolvedValue({ drop: [] });
+      h.setHealth('healthy', 2);
+      h.dispatch(connectionStatusChanged('connected'));
+      await flush(SYNC_RETRY_MS + REPORT_DEBOUNCE_MS);
+
+      expect(mocks.syncTabs.mock.calls.slice(1)).toEqual([[[]], [[]]]);
+      expect(h.tabs()).toEqual([]);
+      await stop(h);
+    });
+
+    it('does not acknowledge a tab closed before the syncTabs reply lands', async () => {
+      const ack = deferred<{ drop: string[] }>();
+      mocks.syncTabs.mockReturnValueOnce(ack.promise);
+      const h = start({
+        layouts: { [WS]: settledLayout([browserTab({ browserUrl: 'http://a.test/' })]) },
+      });
+      await flush(0);
+      expect(mocks.syncTabs).toHaveBeenCalledTimes(1);
+
+      h.dispatch(closeTab(WS, 'b1', undefined, undefined, { destroy: true }));
+      ack.resolve({ drop: [] });
+      await flush();
+      expect(h.tabs()).toEqual([]);
+      expect(mocks.removeTab).toHaveBeenCalledWith('b1');
+      await stop(h);
+    });
+
+    it('discards both obsolete reads after a rapid unmount, remount, unmount, remount', async () => {
+      const first = deferred<BrowserTabListing[]>();
+      const second = deferred<BrowserTabListing[]>();
+      mocks.listTabs
+        .mockReturnValueOnce(first.promise)
+        .mockReturnValueOnce(second.promise)
+        .mockResolvedValue([]);
+      const h = start({
+        layouts: { [WS]: settledLayout([], 'pending' as never) },
+        health: 'down',
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(setRestoreStatus(WS, 'restored'));
+      await flush(0);
+      teardown(h);
+      remount(h);
+      await flush(0);
+      teardown(h);
+      remount(h);
+      await flush(0);
+      expect(mocks.listTabs).toHaveBeenCalledTimes(3);
+
+      second.resolve([row({ tabId: 'second-old', hostClientId: OTHER })]);
+      first.resolve([row({ tabId: 'first-old', hostClientId: OTHER })]);
+      await flush();
+      expect(h.tabs()).toEqual([]);
+      expect(mocks.upsertTab).not.toHaveBeenCalled();
+      expect(mocks.syncTabs).not.toHaveBeenCalled();
+      await stop(h);
+    });
+
+    it('applies the fresh row, not the stale one, when a torn-down connect listing is re-read', async () => {
+      const slow = deferred<BrowserTabListing[]>();
+      mocks.listTabs.mockImplementation((wsId: string) =>
+        wsId === WS ? Promise.resolve([row({ url: 'http://a.test/old' })]) : slow.promise,
+      );
+      const h = start({
+        layouts: { [WS]: settledLayout([]) },
+        workspaceIds: [WS, SLOW],
+        health: 'down',
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(connectionStatusChanged('connected'));
+      await flush(0);
+      expect(h.tabs()[0]).toMatchObject({ id: 'b1', browserUrl: 'http://a.test/old' });
+
+      h.setHealth('down', 1);
+      teardown(h);
+      remount(h);
+      mocks.listTabs.mockImplementation((wsId: string) =>
+        wsId === WS ? Promise.resolve([row({ url: 'http://a.test/fresh' })]) : slow.promise,
+      );
+      h.setHealth('healthy', 1);
+      slow.resolve([]);
+      await flush(SYNC_RETRY_MS);
+
+      expect(h.tabs()).toEqual([expect.objectContaining({ browserUrl: 'http://a.test/fresh' })]);
+      expect(mocks.syncTabs.mock.calls).toEqual([
+        [[expect.objectContaining({ tabId: 'b1', url: 'http://a.test/fresh' })]],
+      ]);
+      await stop(h);
+    });
+
+    it.each(['teardown', 'failure'] as const)(
+      'never sends a destructive empty snapshot when a re-read ends in %s',
+      async (outcome) => {
+        const slow = deferred<BrowserTabListing[]>();
+        const reread = deferred<BrowserTabListing[]>();
+        let reads = 0;
+        mocks.listTabs.mockImplementation((wsId: string) => {
+          if (wsId !== WS) return slow.promise;
+          reads++;
+          if (reads === 1) return Promise.resolve([row()]);
+          if (outcome === 'failure') return Promise.reject(new Error('listing unavailable'));
+          return reread.promise;
+        });
+        const h = start({
+          layouts: { [WS]: settledLayout([]) },
+          workspaceIds: [WS, SLOW],
+          health: 'down',
+        });
+        h.setHealth('healthy', 1);
+        h.dispatch(connectionStatusChanged('connected'));
+        await flush(0);
+        expect(h.tabs()).toHaveLength(1);
+
+        h.setHealth('down', 1);
+        teardown(h);
+        remount(h);
+        h.setHealth('healthy', 1);
+        slow.resolve([]);
+        await flush(SYNC_RETRY_MS);
+        expect(reads).toBe(2);
+        if (outcome === 'teardown') {
+          teardown(h);
+          reread.resolve([row()]);
+        }
+        await flush(SYNC_RETRY_MS);
+        await flush(SYNC_RETRY_MS);
+
+        expect(mocks.removeTab).not.toHaveBeenCalled();
+        expect(mocks.syncTabs.mock.calls).not.toContainEqual([[]]);
+        if (outcome === 'teardown') {
+          // The torn-down workspace's rows pass through verbatim once it is unsettled.
+          expect(mocks.syncTabs.mock.calls).toEqual([
+            [[expect.objectContaining({ tabId: 'b1', url: 'http://a.test/' })]],
+          ]);
+        } else {
+          expect(mocks.syncTabs).not.toHaveBeenCalled();
+        }
+        await stop(h);
+      },
+    );
   });
 });
