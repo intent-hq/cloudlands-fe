@@ -131,6 +131,8 @@ function updateSnapshotCell(
  * Defines one retryable CT test per preview state/width. The calling spec must statically import
  * the preview component so Playwright registers it in the browser. The shared CT hook resolves the
  * matching preview definition lazily in the browser; no per-scene bootstrap registration is needed.
+ * The CT harness loads the repo-bundled `Inter Variable` font and capture stability waits for
+ * `document.fonts.ready`, keeping text geometry independent of fonts installed on the host.
  *
  * @example
  * import Preview from './example.preview.svelte';

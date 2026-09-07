@@ -135,6 +135,8 @@ Both commands require the scene as the first argument and `--state <name>`. They
 an in-process Vite server with `INTENT_UI_PREVIEW=1` and `INTENT_BUILD_TARGET=web`, use
 `fit=component`, and wait for both the ready and stable markers. To reuse a running
 `dev:ui` server, pass its root URL with `--base-url http://127.0.0.1:<DEV_PORT>`.
+The sandbox route and Playwright CT harness use the repo-bundled `Inter Variable` font, and
+capture stability waits for `document.fonts.ready`, so geometry does not depend on host fonts.
 Shared options are `--theme light|dark|system` (default `light`), `--width 240..1600`
 (default `720`), `--motion reduced|full` (default `reduced`), `--scale 1|2` (default
 `1`), `--timeout <milliseconds>` (default `30000`), `--out <path>`, and

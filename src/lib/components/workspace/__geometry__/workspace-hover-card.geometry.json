@@ -56,7 +56,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 834
+          "y": 852
         },
         "data-workspace-hover-card-activity#4": {
           "fontSize": 15,
@@ -70,7 +70,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1108
+          "y": 1126
         },
         "data-workspace-hover-card-activity#5": {
           "fontSize": 15,
@@ -84,7 +84,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1473
+          "y": 1491
         },
         "data-workspace-hover-card-agent-context": {
           "fontSize": 13,
@@ -96,7 +96,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 327.59,
+          "width": 333.98,
           "x": 142,
           "y": 308
         },
@@ -110,7 +110,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 361.05,
+          "width": 365.34,
           "x": 142,
           "y": 582
         },
@@ -124,9 +124,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 54.66,
+          "width": 54.97,
           "x": 142,
-          "y": 856
+          "y": 874
         },
         "data-workspace-hover-card-agent-context#4": {
           "fontSize": 13,
@@ -138,9 +138,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 286.92,
+          "width": 288.77,
           "x": 142,
-          "y": 1130
+          "y": 1148
         },
         "data-workspace-hover-card-agent-context#5": {
           "fontSize": 13,
@@ -152,9 +152,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 327.59,
+          "width": 333.98,
           "x": 142,
-          "y": 1182
+          "y": 1200
         },
         "data-workspace-hover-card-agent-context#6": {
           "fontSize": 13,
@@ -166,9 +166,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 244.86,
+          "width": 250.28,
           "x": 142,
-          "y": 1234
+          "y": 1252
         },
         "data-workspace-hover-card-agent-context#7": {
           "fontSize": 13,
@@ -180,9 +180,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 394.27,
+          "width": 398.81,
           "x": 142,
-          "y": 1495
+          "y": 1513
         },
         "data-workspace-hover-card-agent-context#8": {
           "fontSize": 13,
@@ -194,9 +194,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 275.64,
+          "width": 288.42,
           "x": 142,
-          "y": 1547
+          "y": 1565
         },
         "data-workspace-hover-card-agent-detail": {
           "fontSize": 13,
@@ -238,7 +238,7 @@
           "paddingRight": 0,
           "width": 478,
           "x": 142,
-          "y": 856
+          "y": 874
         },
         "data-workspace-hover-card-agent-detail#4": {
           "fontSize": 13,
@@ -252,7 +252,7 @@
           "paddingRight": 0,
           "width": 478,
           "x": 142,
-          "y": 1130
+          "y": 1148
         },
         "data-workspace-hover-card-agent-detail#5": {
           "fontSize": 13,
@@ -266,7 +266,7 @@
           "paddingRight": 0,
           "width": 478,
           "x": 142,
-          "y": 1182
+          "y": 1200
         },
         "data-workspace-hover-card-agent-detail#6": {
           "fontSize": 13,
@@ -280,7 +280,7 @@
           "paddingRight": 0,
           "width": 478,
           "x": 142,
-          "y": 1234
+          "y": 1252
         },
         "data-workspace-hover-card-agent-detail#7": {
           "fontSize": 13,
@@ -294,7 +294,7 @@
           "paddingRight": 0,
           "width": 478,
           "x": 142,
-          "y": 1495
+          "y": 1513
         },
         "data-workspace-hover-card-agent-detail#8": {
           "fontSize": 13,
@@ -308,7 +308,7 @@
           "paddingRight": 0,
           "width": 478,
           "x": 142,
-          "y": 1547
+          "y": 1565
         },
         "data-workspace-hover-card-agent-name": {
           "fontSize": 15,
@@ -320,7 +320,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 440.92,
+          "width": 440.38,
           "x": 142,
           "y": 286
         },
@@ -334,7 +334,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 440.92,
+          "width": 440.38,
           "x": 142,
           "y": 560
         },
@@ -348,9 +348,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 440.92,
+          "width": 440.38,
           "x": 142,
-          "y": 834
+          "y": 852
         },
         "data-workspace-hover-card-agent-name#4": {
           "fontSize": 15,
@@ -362,9 +362,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 445.52,
+          "width": 446.38,
           "x": 142,
-          "y": 1108
+          "y": 1126
         },
         "data-workspace-hover-card-agent-name#5": {
           "fontSize": 15,
@@ -376,9 +376,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 445.52,
+          "width": 446.38,
           "x": 142,
-          "y": 1160
+          "y": 1178
         },
         "data-workspace-hover-card-agent-name#6": {
           "fontSize": 15,
@@ -390,9 +390,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 445.52,
+          "width": 446.38,
           "x": 142,
-          "y": 1212
+          "y": 1230
         },
         "data-workspace-hover-card-agent-name#7": {
           "fontSize": 15,
@@ -404,9 +404,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 445.52,
+          "width": 446.38,
           "x": 142,
-          "y": 1473
+          "y": 1491
         },
         "data-workspace-hover-card-agent-name#8": {
           "fontSize": 15,
@@ -418,9 +418,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 445.52,
+          "width": 446.38,
           "x": 142,
-          "y": 1525
+          "y": 1543
         },
         "data-workspace-hover-card-agent-row": {
           "fontSize": 15,
@@ -462,7 +462,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 834
+          "y": 852
         },
         "data-workspace-hover-card-agent-row#4": {
           "fontSize": 15,
@@ -476,7 +476,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1108
+          "y": 1126
         },
         "data-workspace-hover-card-agent-row#5": {
           "fontSize": 15,
@@ -490,7 +490,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1160
+          "y": 1178
         },
         "data-workspace-hover-card-agent-row#6": {
           "fontSize": 15,
@@ -504,7 +504,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1212
+          "y": 1230
         },
         "data-workspace-hover-card-agent-row#7": {
           "fontSize": 15,
@@ -518,7 +518,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1473
+          "y": 1491
         },
         "data-workspace-hover-card-agent-row#8": {
           "fontSize": 15,
@@ -532,7 +532,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1525
+          "y": 1543
         },
         "data-workspace-hover-card-agent-time": {
           "fontSize": 13,
@@ -544,8 +544,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 27.08,
-          "x": 592.92,
+          "width": 27.63,
+          "x": 592.38,
           "y": 286
         },
         "data-workspace-hover-card-agent-time#2": {
@@ -558,8 +558,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 27.08,
-          "x": 592.92,
+          "width": 27.63,
+          "x": 592.38,
           "y": 560
         },
         "data-workspace-hover-card-agent-time#3": {
@@ -572,9 +572,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 27.08,
-          "x": 592.92,
-          "y": 834
+          "width": 27.63,
+          "x": 592.38,
+          "y": 852
         },
         "data-workspace-hover-card-agent-time#4": {
           "fontSize": 13,
@@ -586,9 +586,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 22.48,
-          "x": 597.52,
-          "y": 1108
+          "width": 21.63,
+          "x": 598.38,
+          "y": 1126
         },
         "data-workspace-hover-card-agent-time#5": {
           "fontSize": 13,
@@ -600,9 +600,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 22.48,
-          "x": 597.52,
-          "y": 1160
+          "width": 21.63,
+          "x": 598.38,
+          "y": 1178
         },
         "data-workspace-hover-card-agent-time#6": {
           "fontSize": 13,
@@ -614,9 +614,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 22.48,
-          "x": 597.52,
-          "y": 1212
+          "width": 21.63,
+          "x": 598.38,
+          "y": 1230
         },
         "data-workspace-hover-card-agent-time#7": {
           "fontSize": 13,
@@ -628,9 +628,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 22.48,
-          "x": 597.52,
-          "y": 1473
+          "width": 21.63,
+          "x": 598.38,
+          "y": 1491
         },
         "data-workspace-hover-card-agent-time#8": {
           "fontSize": 13,
@@ -642,9 +642,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 22.48,
-          "x": 597.52,
-          "y": 1525
+          "width": 21.63,
+          "x": 598.38,
+          "y": 1543
         },
         "data-workspace-hover-card-columns": {
           "fontSize": 15,
@@ -686,7 +686,7 @@
           "paddingRight": 20,
           "width": 560,
           "x": 80,
-          "y": 834
+          "y": 852
         },
         "data-workspace-hover-card-columns#4": {
           "fontSize": 15,
@@ -700,7 +700,7 @@
           "paddingRight": 20,
           "width": 560,
           "x": 80,
-          "y": 1108
+          "y": 1126
         },
         "data-workspace-hover-card-columns#5": {
           "fontSize": 15,
@@ -714,7 +714,7 @@
           "paddingRight": 20,
           "width": 560,
           "x": 80,
-          "y": 1473
+          "y": 1491
         },
         "data-workspace-hover-card-divider": {
           "fontSize": 15,
@@ -756,7 +756,7 @@
           "paddingRight": 0,
           "width": 560,
           "x": 80,
-          "y": 817
+          "y": 835
         },
         "data-workspace-hover-card-divider#4": {
           "fontSize": 15,
@@ -770,7 +770,7 @@
           "paddingRight": 0,
           "width": 560,
           "x": 80,
-          "y": 1091
+          "y": 1109
         },
         "data-workspace-hover-card-divider#5": {
           "fontSize": 15,
@@ -784,7 +784,7 @@
           "paddingRight": 0,
           "width": 560,
           "x": 80,
-          "y": 1456
+          "y": 1474
         },
         "data-workspace-hover-card-header": {
           "fontSize": 15,
@@ -826,7 +826,7 @@
           "paddingRight": 20,
           "width": 560,
           "x": 80,
-          "y": 719
+          "y": 737
         },
         "data-workspace-hover-card-header#4": {
           "fontSize": 15,
@@ -840,7 +840,7 @@
           "paddingRight": 20,
           "width": 560,
           "x": 80,
-          "y": 993
+          "y": 1011
         },
         "data-workspace-hover-card-header#5": {
           "fontSize": 15,
@@ -854,7 +854,7 @@
           "paddingRight": 20,
           "width": 560,
           "x": 80,
-          "y": 1358
+          "y": 1376
         },
         "data-workspace-hover-card-identity": {
           "fontSize": 15,
@@ -896,7 +896,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 735
+          "y": 753
         },
         "data-workspace-hover-card-identity#4": {
           "fontSize": 15,
@@ -910,7 +910,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1009
+          "y": 1027
         },
         "data-workspace-hover-card-identity#5": {
           "fontSize": 15,
@@ -924,13 +924,13 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1374
+          "y": 1392
         },
         "data-workspace-hover-card-preview": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 16,
-          "height": 1568,
+          "height": 1586,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -950,8 +950,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 19.33,
-          "x": 509.05,
+          "width": 18.63,
+          "x": 513.34,
           "y": 582
         },
         "data-workspace-hover-card-repo": {
@@ -994,7 +994,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 761
+          "y": 779
         },
         "data-workspace-hover-card-repo#4": {
           "fontSize": 13,
@@ -1008,7 +1008,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1035
+          "y": 1053
         },
         "data-workspace-hover-card-repo#5": {
           "fontSize": 13,
@@ -1022,7 +1022,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1400
+          "y": 1418
         },
         "data-workspace-hover-card-status": {
           "fontSize": 13,
@@ -1034,8 +1034,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 118.19,
-          "x": 501.81,
+          "width": 118.06,
+          "x": 501.94,
           "y": 189
         },
         "data-workspace-hover-card-status-label": {
@@ -1048,8 +1048,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 96.19,
-          "x": 501.81,
+          "width": 96.06,
+          "x": 501.94,
           "y": 189
         },
         "data-workspace-hover-card-status-label#2": {
@@ -1062,8 +1062,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 96.19,
-          "x": 501.81,
+          "width": 96.06,
+          "x": 501.94,
           "y": 463
         },
         "data-workspace-hover-card-status-label#3": {
@@ -1076,9 +1076,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 96.19,
-          "x": 501.81,
-          "y": 737
+          "width": 96.06,
+          "x": 501.94,
+          "y": 755
         },
         "data-workspace-hover-card-status-label#4": {
           "fontSize": 13,
@@ -1090,9 +1090,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 96.19,
-          "x": 501.81,
-          "y": 1011
+          "width": 96.06,
+          "x": 501.94,
+          "y": 1029
         },
         "data-workspace-hover-card-status-label#5": {
           "fontSize": 13,
@@ -1104,9 +1104,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 96.19,
-          "x": 501.81,
-          "y": 1376
+          "width": 96.06,
+          "x": 501.94,
+          "y": 1394
         },
         "data-workspace-hover-card-status#2": {
           "fontSize": 13,
@@ -1118,8 +1118,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 118.19,
-          "x": 501.81,
+          "width": 118.06,
+          "x": 501.94,
           "y": 463
         },
         "data-workspace-hover-card-status#3": {
@@ -1132,9 +1132,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 118.19,
-          "x": 501.81,
-          "y": 737
+          "width": 118.06,
+          "x": 501.94,
+          "y": 755
         },
         "data-workspace-hover-card-status#4": {
           "fontSize": 13,
@@ -1146,9 +1146,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 118.19,
-          "x": 501.81,
-          "y": 1011
+          "width": 118.06,
+          "x": 501.94,
+          "y": 1029
         },
         "data-workspace-hover-card-status#5": {
           "fontSize": 13,
@@ -1160,9 +1160,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 118.19,
-          "x": 501.81,
-          "y": 1376
+          "width": 118.06,
+          "x": 501.94,
+          "y": 1394
         },
         "data-workspace-hover-card-summary": {
           "fontSize": 13,
@@ -1204,7 +1204,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 783
+          "y": 801
         },
         "data-workspace-hover-card-summary#4": {
           "fontSize": 13,
@@ -1218,7 +1218,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1057
+          "y": 1075
         },
         "data-workspace-hover-card-summary#5": {
           "fontSize": 13,
@@ -1232,7 +1232,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1422
+          "y": 1440
         },
         "data-workspace-hover-card-title": {
           "fontSize": 15,
@@ -1244,7 +1244,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 201.13,
+          "width": 211.28,
           "x": 100,
           "y": 187
         },
@@ -1258,7 +1258,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 201.13,
+          "width": 211.28,
           "x": 100,
           "y": 461
         },
@@ -1272,9 +1272,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 201.13,
+          "width": 211.28,
           "x": 100,
-          "y": 735
+          "y": 753
         },
         "data-workspace-hover-card-title#4": {
           "fontSize": 15,
@@ -1286,9 +1286,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 201.13,
+          "width": 211.28,
           "x": 100,
-          "y": 1009
+          "y": 1027
         },
         "data-workspace-hover-card-title#5": {
           "fontSize": 15,
@@ -1300,9 +1300,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 201.13,
+          "width": 211.28,
           "x": 100,
-          "y": 1374
+          "y": 1392
         },
         "data-workspace-hover-card#2": {
           "fontSize": 15,
@@ -1330,7 +1330,7 @@
           "paddingRight": 0,
           "width": 560,
           "x": 80,
-          "y": 719
+          "y": 737
         },
         "data-workspace-hover-card#4": {
           "fontSize": 15,
@@ -1344,7 +1344,7 @@
           "paddingRight": 0,
           "width": 560,
           "x": 80,
-          "y": 993
+          "y": 1011
         },
         "data-workspace-hover-card#5": {
           "fontSize": 15,
@@ -1358,11 +1358,11 @@
           "paddingRight": 0,
           "width": 560,
           "x": 80,
-          "y": 1358
+          "y": 1376
         }
       },
       "root": {
-        "height": 1618,
+        "height": 1636,
         "width": 720
       }
     }
@@ -1408,7 +1408,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 50.67,
+          "width": 50.09,
           "x": 142,
           "y": 306
         },
@@ -1422,7 +1422,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 50.67,
+          "width": 50.09,
           "x": 142,
           "y": 358
         },
@@ -1436,7 +1436,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 50.67,
+          "width": 50.09,
           "x": 142,
           "y": 410
         },
@@ -1450,7 +1450,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 50.67,
+          "width": 50.09,
           "x": 142,
           "y": 462
         },
@@ -1464,7 +1464,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 50.67,
+          "width": 50.09,
           "x": 142,
           "y": 514
         },
@@ -1548,7 +1548,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 441.36,
+          "width": 442.38,
           "x": 142,
           "y": 284
         },
@@ -1562,7 +1562,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 448.66,
+          "width": 447.25,
           "x": 142,
           "y": 336
         },
@@ -1576,7 +1576,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 452.78,
+          "width": 452.25,
           "x": 142,
           "y": 388
         },
@@ -1590,7 +1590,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 452.83,
+          "width": 455.25,
           "x": 142,
           "y": 440
         },
@@ -1604,7 +1604,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 440.92,
+          "width": 440.38,
           "x": 142,
           "y": 492
         },
@@ -1688,8 +1688,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 26.64,
-          "x": 593.36,
+          "width": 25.63,
+          "x": 594.38,
           "y": 284
         },
         "data-workspace-hover-card-agent-time#2": {
@@ -1702,8 +1702,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 19.34,
-          "x": 600.66,
+          "width": 20.75,
+          "x": 599.25,
           "y": 336
         },
         "data-workspace-hover-card-agent-time#3": {
@@ -1716,8 +1716,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 15.22,
-          "x": 604.78,
+          "width": 15.75,
+          "x": 604.25,
           "y": 388
         },
         "data-workspace-hover-card-agent-time#4": {
@@ -1730,8 +1730,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 15.17,
-          "x": 604.83,
+          "width": 12.75,
+          "x": 607.25,
           "y": 440
         },
         "data-workspace-hover-card-agent-time#5": {
@@ -1744,8 +1744,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 27.08,
-          "x": 592.92,
+          "width": 27.63,
+          "x": 592.38,
           "y": 492
         },
         "data-workspace-hover-card-columns": {
@@ -1842,8 +1842,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 22.89,
-          "x": 597.11,
+          "width": 22.63,
+          "x": 597.38,
           "y": 550
         },
         "data-workspace-hover-card-pr-row": {
@@ -1870,8 +1870,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 33,
-          "x": 554.11,
+          "width": 33.48,
+          "x": 553.89,
           "y": 550
         },
         "data-workspace-hover-card-pr-title": {
@@ -1884,7 +1884,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 402.11,
+          "width": 401.89,
           "x": 142,
           "y": 548
         },
@@ -1926,8 +1926,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 118.19,
-          "x": 501.81,
+          "width": 118.06,
+          "x": 501.94,
           "y": 169
         },
         "data-workspace-hover-card-status-label": {
@@ -1940,8 +1940,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 96.19,
-          "x": 501.81,
+          "width": 96.06,
+          "x": 501.94,
           "y": 169
         },
         "data-workspace-hover-card-summary": {
@@ -1968,7 +1968,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 389.81,
+          "width": 389.94,
           "x": 100,
           "y": 167
         }
@@ -2114,7 +2114,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 50.67,
+          "width": 50.09,
           "x": 99,
           "y": 324
         },
@@ -2142,7 +2142,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 168.83,
+          "width": 171.25,
           "x": 99,
           "y": 302
         },
@@ -2170,8 +2170,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 15.17,
-          "x": 277.83,
+          "width": 12.75,
+          "x": 280.25,
           "y": 302
         },
         "data-workspace-hover-card-columns": {
@@ -2268,8 +2268,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 22.89,
-          "x": 270.11,
+          "width": 22.63,
+          "x": 270.38,
           "y": 360
         },
         "data-workspace-hover-card-pr-row": {
@@ -2296,8 +2296,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 33,
-          "x": 227.11,
+          "width": 33.48,
+          "x": 226.89,
           "y": 360
         },
         "data-workspace-hover-card-pr-title": {
@@ -2310,7 +2310,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 118.11,
+          "width": 117.89,
           "x": 99,
           "y": 358
         },
@@ -2352,8 +2352,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 90.27,
-          "x": 202.73,
+          "width": 91.58,
+          "x": 201.42,
           "y": 169
         },
         "data-workspace-hover-card-status-label": {
@@ -2366,8 +2366,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 68.27,
-          "x": 202.73,
+          "width": 69.58,
+          "x": 201.42,
           "y": 169
         },
         "data-workspace-hover-card-summary": {
@@ -2394,7 +2394,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 133.73,
+          "width": 132.42,
           "x": 57,
           "y": 167
         }
@@ -2446,7 +2446,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 50.67,
+          "width": 50.09,
           "x": 142,
           "y": 288
         },
@@ -2460,7 +2460,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 50.67,
+          "width": 50.09,
           "x": 142,
           "y": 340
         },
@@ -2502,7 +2502,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 448.66,
+          "width": 447.25,
           "x": 142,
           "y": 266
         },
@@ -2516,7 +2516,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 452.78,
+          "width": 452.25,
           "x": 142,
           "y": 318
         },
@@ -2558,8 +2558,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 19.34,
-          "x": 600.66,
+          "width": 20.75,
+          "x": 599.25,
           "y": 266
         },
         "data-workspace-hover-card-agent-time#2": {
@@ -2572,8 +2572,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 15.22,
-          "x": 604.78,
+          "width": 15.75,
+          "x": 604.25,
           "y": 318
         },
         "data-workspace-hover-card-columns": {
@@ -2670,8 +2670,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 22.89,
-          "x": 597.11,
+          "width": 22.63,
+          "x": 597.38,
           "y": 376
         },
         "data-workspace-hover-card-pr-row": {
@@ -2698,8 +2698,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 33,
-          "x": 554.11,
+          "width": 33.48,
+          "x": 553.89,
           "y": 376
         },
         "data-workspace-hover-card-pr-title": {
@@ -2712,7 +2712,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 402.11,
+          "width": 401.89,
           "x": 142,
           "y": 374
         },
@@ -2754,8 +2754,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 90.27,
-          "x": 529.73,
+          "width": 91.58,
+          "x": 528.42,
           "y": 169
         },
         "data-workspace-hover-card-status-label": {
@@ -2768,8 +2768,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 68.27,
-          "x": 529.73,
+          "width": 69.58,
+          "x": 528.42,
           "y": 169
         },
         "data-workspace-hover-card-summary": {
@@ -2796,7 +2796,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 201.13,
+          "width": 211.28,
           "x": 100,
           "y": 167
         }
@@ -2848,7 +2848,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 50.67,
+          "width": 50.09,
           "x": 142,
           "y": 288
         },
@@ -2862,7 +2862,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 50.67,
+          "width": 50.09,
           "x": 142,
           "y": 340
         },
@@ -2904,7 +2904,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 448.66,
+          "width": 447.25,
           "x": 142,
           "y": 266
         },
@@ -2918,7 +2918,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 452.78,
+          "width": 452.25,
           "x": 142,
           "y": 318
         },
@@ -2960,8 +2960,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 19.34,
-          "x": 600.66,
+          "width": 20.75,
+          "x": 599.25,
           "y": 266
         },
         "data-workspace-hover-card-agent-time#2": {
@@ -2974,8 +2974,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 15.22,
-          "x": 604.78,
+          "width": 15.75,
+          "x": 604.25,
           "y": 318
         },
         "data-workspace-hover-card-columns": {
@@ -3072,8 +3072,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 22.89,
-          "x": 597.11,
+          "width": 22.63,
+          "x": 597.38,
           "y": 376
         },
         "data-workspace-hover-card-pr-row": {
@@ -3100,8 +3100,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 33,
-          "x": 554.11,
+          "width": 33.48,
+          "x": 553.89,
           "y": 376
         },
         "data-workspace-hover-card-pr-title": {
@@ -3114,7 +3114,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 402.11,
+          "width": 401.89,
           "x": 142,
           "y": 374
         },
@@ -3156,8 +3156,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 90.27,
-          "x": 529.73,
+          "width": 91.58,
+          "x": 528.42,
           "y": 169
         },
         "data-workspace-hover-card-status-label": {
@@ -3170,8 +3170,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 68.27,
-          "x": 529.73,
+          "width": 69.58,
+          "x": 528.42,
           "y": 169
         },
         "data-workspace-hover-card-summary": {
@@ -3198,7 +3198,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 201.13,
+          "width": 211.28,
           "x": 100,
           "y": 167
         }

@@ -1,5 +1,6 @@
 // Import global styles
 import '../src/app.css';
+import '@fontsource-variable/inter';
 
 import { beforeMount } from '@playwright/experimental-ct-svelte/hooks';
 import type { SvelteComponent } from 'svelte';
@@ -13,6 +14,11 @@ import { store } from '../src/store/renderer/configured-store';
 
 // Apply any global setup needed for component testing
 // This runs before each component is mounted
+
+document.documentElement.style.setProperty(
+  '--font-ui',
+  "'Inter Variable', Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+);
 
 // CT-safe store bootstrap (intent-hq/monorepo#2224): components read Redux
 // selectors at mount, which throws before Store.init(). Initialize the real
