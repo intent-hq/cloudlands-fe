@@ -11,7 +11,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { Snippet } from 'svelte';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
@@ -240,6 +240,7 @@
   let focusWithinRow = false;
   let focusWithinCard = false;
   let hoverCardOpenedFromPointer = false;
+  let preventFocusOpenUntilRowExit = false;
 
   function clearHoverCardOpenTimer() {
     if (hoverCardOpenTimer !== null) {
@@ -330,6 +331,69 @@
     if (e.key === 'Enter') onClick?.(e);
   }
 
+  function getHoverCardElement() {
+    return hoverCardId ? document.getElementById(hoverCardId) : null;
+  }
+
+  function getHoverCardControls() {
+    return Array.from(
+      getHoverCardElement()?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href]') ?? [],
+    );
+  }
+
+  function getNextControlAfterTrigger() {
+    const trigger = rowElement?.querySelector<HTMLElement>('[data-workspace-card-trigger]');
+    const cardElement = getHoverCardElement();
+    if (!trigger || !cardElement) return null;
+    const controls = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((control) => control.tabIndex >= 0 && !cardElement.contains(control));
+    const triggerIndex = controls.indexOf(trigger);
+    return triggerIndex >= 0 ? controls[triggerIndex + 1] : null;
+  }
+
+  function closeAndFocus(target: HTMLElement) {
+    preventFocusOpenUntilRowExit = Boolean(rowElement?.contains(target));
+    closeHoverCard();
+    target.focus({ preventScroll: true });
+  }
+
+  function restoreFocusToTrigger() {
+    const trigger = rowElement?.querySelector<HTMLElement>('[data-workspace-card-trigger]');
+    if (trigger) closeAndFocus(trigger);
+  }
+
+  async function handleTriggerKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape' && hoverCardVisible) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeHoverCard();
+      return;
+    }
+    if (event.key !== 'ArrowDown' || suppressHover || !workspace) return;
+    event.preventDefault();
+    event.stopPropagation();
+    hoverCardVisible = true;
+    await tick();
+    getHoverCardControls()[0]?.focus({ preventScroll: true });
+  }
+
+  function handleHoverCardKeydown(event: KeyboardEvent) {
+    const controls = getHoverCardControls();
+    const returningFromFirstControl =
+      event.key === 'Tab' && event.shiftKey && event.currentTarget === controls[0];
+    const leavingFromLastControl =
+      event.key === 'Tab' && !event.shiftKey && event.currentTarget === controls.at(-1);
+    const nextControl = leavingFromLastControl ? getNextControlAfterTrigger() : null;
+    if (event.key !== 'Escape' && !returningFromFirstControl && !nextControl) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (nextControl) closeAndFocus(nextControl);
+    else restoreFocusToTrigger();
+  }
+
   function handleMouseEnter() {
     pointerWithinRow = true;
     clearHoverCardCloseTimer();
@@ -364,11 +428,13 @@
     focusWithinRow = true;
     clearHoverCardOpenTimer();
     clearHoverCardCloseTimer();
+    if (preventFocusOpenUntilRowExit) return;
     if (workspace && !suppressHover) hoverCardVisible = true;
   }
 
   function handleFocusOut(event: FocusEvent) {
     if (event.relatedTarget instanceof Node && rowElement?.contains(event.relatedTarget)) return;
+    preventFocusOpenUntilRowExit = false;
     focusWithinRow = false;
     const cardElement = hoverCardId ? document.getElementById(hoverCardId) : null;
     if (event.relatedTarget instanceof Node && cardElement?.contains(event.relatedTarget)) {
@@ -635,6 +701,7 @@
       aria-describedby={`workspace-status-state-${workspace.id}${isPinned ? ` workspace-pinned-state-${workspace.id}` : ''}${hoverCardVisible ? ` ${hoverCardId}` : ''}`}
       aria-current={isCurrent ? 'page' : undefined}
       data-workspace-card-trigger
+      onkeydown={handleTriggerKeydown}
       onclick={(event) => {
         event.stopPropagation();
         onClick?.(event);
@@ -847,7 +914,11 @@
       onfocusin={handleHoverCardFocusIn}
       onfocusout={handleHoverCardFocusOut}
     >
-      <WorkspaceHoverCard {workspace} activeAgentIds={streamingAgentIds} />
+      <WorkspaceHoverCard
+        {workspace}
+        activeAgentIds={streamingAgentIds}
+        onkeydown={handleHoverCardKeydown}
+      />
     </HoverCard>
   {/if}
 

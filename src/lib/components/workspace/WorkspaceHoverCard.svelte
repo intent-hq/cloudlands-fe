@@ -49,6 +49,7 @@
     activeAgentIds?: string[];
     loadAgentSessions?: boolean;
     loadWorkspaceData?: boolean;
+    onkeydown?: (event: KeyboardEvent) => void;
   }
   let {
     workspace,
@@ -56,6 +57,7 @@
     activeAgentIds = [],
     loadAgentSessions = true,
     loadWorkspaceData = true,
+    onkeydown,
   }: Props = $props();
   const workspaceIdStore = writable('');
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
@@ -425,6 +427,7 @@
                     data-workspace-hover-card-agent-row
                     data-agent-group-row={row.group}
                     data-attention-kind={row.attentionKind}
+                    {onkeydown}
                     onclick={(event) => openAgentRow(event, row.id)}
                   >
                     <span
@@ -518,6 +521,7 @@
                       data-workspace-hover-card-pr-row
                       data-pr-identity={pr.identity}
                       data-pr-status={pr.status}
+                      {onkeydown}
                       onclick={(event: MouseEvent) => openPullRequestRow(event, pr)}
                     >
                       {@render prRowContent()}
