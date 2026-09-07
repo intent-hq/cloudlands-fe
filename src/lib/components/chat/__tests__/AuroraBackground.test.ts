@@ -85,15 +85,17 @@ describe('AuroraBackground cleanup', () => {
   let mockGL: ReturnType<typeof createMockGL>;
   let getContextSpy: ReturnType<typeof vi.spyOn>;
   let getComputedStyleSpy: ReturnType<typeof vi.spyOn>;
-  let hasFocusSpy: ReturnType<typeof vi.spyOn>;
   let rafCallbacks: FrameRequestCallback[];
   let computedAuroraColor: string;
   let originalRootClass: string;
   let originalRootStyle: string;
+  let originalWindowBlurred: boolean;
 
   beforeEach(() => {
     originalRootClass = document.documentElement.className;
     originalRootStyle = document.documentElement.style.cssText;
+    originalWindowBlurred = document.documentElement.hasAttribute('data-window-blurred');
+    document.documentElement.removeAttribute('data-window-blurred');
     computedAuroraColor = 'rgb(202, 213, 91)';
     mockGL = createMockGL();
     getContextSpy = vi
@@ -106,7 +108,6 @@ describe('AuroraBackground cleanup', () => {
       }
       return getComputedStyle(element);
     });
-    hasFocusSpy = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
     rafCallbacks = [];
     vi.stubGlobal(
       'requestAnimationFrame',
@@ -124,9 +125,9 @@ describe('AuroraBackground cleanup', () => {
     cleanup();
     document.documentElement.className = originalRootClass;
     document.documentElement.style.cssText = originalRootStyle;
+    document.documentElement.toggleAttribute('data-window-blurred', originalWindowBlurred);
     getContextSpy.mockRestore();
     getComputedStyleSpy.mockRestore();
-    hasFocusSpy.mockRestore();
     vi.unstubAllGlobals();
   });
 
@@ -303,9 +304,7 @@ describe('AuroraBackground cleanup', () => {
     now.mockRestore();
   });
 
-  it('stops drawing after window blur, including focus while the page is hidden', () => {
-    let hidden = false;
-    const hiddenSpy = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+  it('stops drawing when the shared window-blurred attribute is added', async () => {
     const now = vi.spyOn(performance, 'now').mockReturnValue(0);
     render(AuroraBackground);
 
@@ -313,23 +312,35 @@ describe('AuroraBackground cleanup', () => {
     flushRafCallbacks();
     expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
 
-    window.dispatchEvent(new Event('blur'));
+    document.documentElement.setAttribute('data-window-blurred', '');
+    await vi.waitFor(() => expect(cancelAnimationFrame).toHaveBeenCalledTimes(1));
     flushRafCallbacks();
     expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
     expect(rafCallbacks).toHaveLength(0);
 
-    hidden = true;
-    document.dispatchEvent(new Event('visibilitychange'));
-    window.dispatchEvent(new Event('focus'));
-    flushRafCallbacks();
-    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
-    expect(rafCallbacks).toHaveLength(0);
-
-    hiddenSpy.mockRestore();
     now.mockRestore();
   });
 
-  it('resumes drawing when the window regains focus', () => {
+  it('resumes drawing when the shared window-blurred attribute is removed', async () => {
+    document.documentElement.setAttribute('data-window-blurred', '');
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+    render(AuroraBackground);
+
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).not.toHaveBeenCalled();
+    expect(rafCallbacks).toHaveLength(0);
+
+    now.mockReturnValue(34);
+    document.documentElement.removeAttribute('data-window-blurred');
+    await vi.waitFor(() => expect(rafCallbacks).toHaveLength(1));
+    flushRafCallbacks();
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
+    expect(rafCallbacks).toHaveLength(1);
+
+    now.mockRestore();
+  });
+
+  it('keeps drawing after DOM window blur while the shared signal stays focused', () => {
     const now = vi.spyOn(performance, 'now').mockReturnValue(0);
     render(AuroraBackground);
 
@@ -337,12 +348,8 @@ describe('AuroraBackground cleanup', () => {
     flushRafCallbacks();
     expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
 
-    window.dispatchEvent(new Event('blur'));
-    flushRafCallbacks();
-    expect(rafCallbacks).toHaveLength(0);
-
     now.mockReturnValue(68);
-    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('blur'));
     flushRafCallbacks();
     expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(2);
     expect(rafCallbacks).toHaveLength(1);

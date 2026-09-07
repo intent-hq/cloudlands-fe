@@ -527,14 +527,10 @@
     else cancelScheduledRender();
   }
 
-  function handleWindowBlur() {
-    isWindowFocused = false;
-    cancelScheduledRender();
-  }
-
-  function handleWindowFocus() {
-    isWindowFocused = true;
-    scheduleRender();
+  function handleWindowFocusChange() {
+    isWindowFocused = !document.documentElement.hasAttribute('data-window-blurred');
+    if (isWindowFocused) scheduleRender();
+    else cancelScheduledRender();
   }
 
   // Handle reduced motion preference changes
@@ -567,14 +563,17 @@
   onMount(() => {
     // Check initial states
     isPageVisible = !document.hidden;
-    isWindowFocused = document.hasFocus();
+    isWindowFocused = !document.documentElement.hasAttribute('data-window-blurred');
     prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     cachedDpr = Math.min(window.devicePixelRatio || 1, MAX_RENDER_DPR);
 
     // Listen for visibility changes
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('blur', handleWindowBlur);
-    window.addEventListener('focus', handleWindowFocus);
+    const windowFocusObserver = new MutationObserver(handleWindowFocusChange);
+    windowFocusObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-window-blurred'],
+    });
 
     // Listen for motion preference changes
     const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -596,8 +595,7 @@
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('blur', handleWindowBlur);
-      window.removeEventListener('focus', handleWindowFocus);
+      windowFocusObserver.disconnect();
       motionQuery.removeEventListener('change', handleMotionPreference);
       window.removeEventListener('theme-changed', handleSemanticColorChange);
       themeObserver.disconnect();
