@@ -397,6 +397,7 @@ export function createIntentMarkMotion(
   let options = initial;
   let inViewport = true;
   let visible = !document.hidden;
+  let windowFocused = !document.documentElement.hasAttribute('data-window-blurred');
   let destroyed = false;
   let sequence = 0;
   let animations: Animation[] = [];
@@ -424,7 +425,8 @@ export function createIntentMarkMotion(
     root.dataset.motionState = 'neutral';
   };
 
-  const canPlay = () => options.playing && inViewport && visible && !media.matches && !destroyed;
+  const mustRest = () => media.matches || !inViewport || !visible || !windowFocused || destroyed;
+  const canPlay = () => options.playing && !mustRest();
 
   const hasRunningLoop = () =>
     activeVariant === options.variant &&
@@ -501,7 +503,7 @@ export function createIntentMarkMotion(
 
   const settle = () => {
     const run = ++sequence;
-    if (media.matches || !inViewport || !visible || destroyed) {
+    if (mustRest()) {
       setNeutral();
       return;
     }
@@ -528,7 +530,7 @@ export function createIntentMarkMotion(
 
   const reconcile = (variantChanged = false) => {
     if (!canPlay()) {
-      if (media.matches || !inViewport || !visible || destroyed) {
+      if (mustRest()) {
         setNeutral();
         return;
       }
@@ -560,6 +562,12 @@ export function createIntentMarkMotion(
     visible = !document.hidden;
     reconcile();
   };
+  const handleWindowFocusChange = () => {
+    const focused = !document.documentElement.hasAttribute('data-window-blurred');
+    if (focused === windowFocused) return;
+    windowFocused = focused;
+    reconcile();
+  };
   const handleMotionPreference = () => reconcile();
   const observer =
     typeof IntersectionObserver === 'undefined'
@@ -568,8 +576,13 @@ export function createIntentMarkMotion(
           inViewport = entry?.isIntersecting ?? true;
           reconcile();
         });
+  const windowFocusObserver = new MutationObserver(handleWindowFocusChange);
 
   observer?.observe(root);
+  windowFocusObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-window-blurred'],
+  });
   document.addEventListener('visibilitychange', handleVisibility);
   media.addEventListener('change', handleMotionPreference);
   reconcile();
@@ -585,6 +598,7 @@ export function createIntentMarkMotion(
       sequence += 1;
       cancelAnimations();
       observer?.disconnect();
+      windowFocusObserver.disconnect();
       document.removeEventListener('visibilitychange', handleVisibility);
       media.removeEventListener('change', handleMotionPreference);
       root.dataset.motionState = 'destroyed';

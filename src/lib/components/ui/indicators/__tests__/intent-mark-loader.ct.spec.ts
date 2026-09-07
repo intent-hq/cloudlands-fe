@@ -150,6 +150,31 @@ for (const theme of ['light', 'dark'] as const) {
   }
 }
 
+test('does no continuous work while the window is blurred', async ({ mount, page }) => {
+  await page.evaluate(() => document.documentElement.setAttribute('data-window-blurred', ''));
+  const component = await mount(IntentMarkLoaderHost, {
+    props: { variant: 'bloom', size: 128, playing: true },
+  });
+  const root = component.getByRole('status', { name: 'Loading' });
+  await expect(root).toHaveAttribute('data-motion-state', 'neutral');
+  expect(await root.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
+
+  await page.evaluate(() => document.documentElement.removeAttribute('data-window-blurred'));
+  await expect(root).toHaveAttribute('data-motion-state', 'playing');
+  expect(
+    await root.evaluate(
+      (node) =>
+        node
+          .getAnimations({ subtree: true })
+          .filter((animation) => animation.playState === 'running').length,
+    ),
+  ).toBe(5);
+
+  await page.evaluate(() => document.documentElement.setAttribute('data-window-blurred', ''));
+  await expect(root).toHaveAttribute('data-motion-state', 'neutral');
+  expect(await root.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
+});
+
 test('does no continuous work for reduced motion or a hidden document', async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(IntentMarkLoaderHost, {

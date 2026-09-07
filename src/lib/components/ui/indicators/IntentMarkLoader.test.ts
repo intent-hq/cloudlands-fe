@@ -88,6 +88,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  document.documentElement.removeAttribute('data-window-blurred');
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -232,6 +233,52 @@ describe('IntentMarkLoader', () => {
     view.unmount();
     expect(root.dataset.motionState).toBe('destroyed');
     expect(records.every(({ cancel }) => cancel.mock.calls.length > 0)).toBe(true);
+  });
+
+  it('rests while the window is blurred and resumes through the canonical handoff', async () => {
+    const view = render(IntentMarkLoader, { props: { variant: 'bloom', playing: true } });
+    const root = view.container.querySelector<HTMLElement>('[data-slot="intent-mark-loader"]')!;
+    completeTransition();
+    expect(root.dataset.motionState).toBe('playing');
+
+    document.documentElement.setAttribute('data-window-blurred', '');
+    await vi.waitFor(() => expect(root.dataset.motionState).toBe('neutral'));
+    expect(liveLoops(root)).toHaveLength(0);
+    expect(records.every(({ cancel }) => cancel.mock.calls.length > 0)).toBe(true);
+
+    await view.rerender({ variant: 'pulse', playing: true });
+    expect(root.dataset.motionState).toBe('neutral');
+    expect(liveLoops(root)).toHaveLength(0);
+
+    document.documentElement.removeAttribute('data-window-blurred');
+    await vi.waitFor(() => expect(root.dataset.motionState).toBe('morphing'));
+    expect(root.dataset.handoffVariant).toBe('pulse');
+    completeTransition();
+    expect(root.dataset.motionState).toBe('playing');
+    expect(root.dataset.loopPhase).toBe('0.5');
+    expect(liveLoops(root)).toHaveLength(5);
+
+    const observedRecords = records.length;
+    view.unmount();
+    document.documentElement.setAttribute('data-window-blurred', '');
+    document.documentElement.removeAttribute('data-window-blurred');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(root.dataset.motionState).toBe('destroyed');
+    expect(records).toHaveLength(observedRecords);
+  });
+
+  it('stays neutral when mounted into an already blurred window', async () => {
+    document.documentElement.setAttribute('data-window-blurred', '');
+    const view = render(IntentMarkLoader, { props: { variant: 'twist', playing: true } });
+    const root = view.container.querySelector<HTMLElement>('[data-slot="intent-mark-loader"]')!;
+    expect(root.dataset.motionState).toBe('neutral');
+    expect(records).toHaveLength(0);
+
+    document.documentElement.removeAttribute('data-window-blurred');
+    await vi.waitFor(() => expect(root.dataset.motionState).toBe('morphing'));
+    completeTransition();
+    expect(root.dataset.motionState).toBe('playing');
+    expect(liveLoops(root)).toHaveLength(5);
   });
 
   it('keeps concurrent indicators independent when one loop becomes idle', () => {
