@@ -273,6 +273,14 @@
   }
 
   function dismissHoverCardFromInteraction(event: Event) {
+    if (
+      event.type === 'scroll' &&
+      rowElement &&
+      event.target instanceof Node &&
+      !event.target.contains(rowElement)
+    ) {
+      return;
+    }
     if (event.type === 'pointerdown') suppressHoverCardFocusOpenForPointerSequence();
     clearHoverCardOpenTimer();
     closeHoverCard();

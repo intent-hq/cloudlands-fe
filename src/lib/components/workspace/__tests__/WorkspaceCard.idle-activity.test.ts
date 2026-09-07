@@ -556,6 +556,71 @@ describe('WorkspaceCard hover-intent delay', () => {
     }
   });
 
+  it('keeps an open hover card visible when an unrelated container scrolls', async () => {
+    vi.useFakeTimers();
+    const unrelatedScroller = document.createElement('div');
+    document.body.appendChild(unrelatedScroller);
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+
+      await fireEvent.mouseEnter(row);
+      vi.advanceTimersByTime(400);
+      await tick();
+      expect(hoverCard()).toBeTruthy();
+
+      await fireEvent.scroll(unrelatedScroller);
+      await tick();
+      expect(hoverCard()).toBeTruthy();
+    } finally {
+      unrelatedScroller.remove();
+      workspaceHoverCardIntentSession.reset();
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a pending hover open scheduled when an unrelated container scrolls', async () => {
+    vi.useFakeTimers();
+    const unrelatedScroller = document.createElement('div');
+    document.body.appendChild(unrelatedScroller);
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+
+      await fireEvent.mouseEnter(row);
+      vi.advanceTimersByTime(100);
+      await fireEvent.scroll(unrelatedScroller);
+      vi.advanceTimersByTime(300);
+      await tick();
+
+      expect(hoverCard()).toBeTruthy();
+    } finally {
+      unrelatedScroller.remove();
+      workspaceHoverCardIntentSession.reset();
+      vi.useRealTimers();
+    }
+  });
+
+  it('dismisses an open hover card when an ancestor of the row scrolls', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+
+      await fireEvent.mouseEnter(row);
+      vi.advanceTimersByTime(400);
+      await tick();
+      expect(hoverCard()).toBeTruthy();
+
+      await fireEvent.scroll(container);
+      await tick();
+      expect(hoverCard()).toBeNull();
+    } finally {
+      workspaceHoverCardIntentSession.reset();
+      vi.useRealTimers();
+    }
+  });
+
   it('dismisses on captured pointer-down without blocking the target handler', async () => {
     vi.useFakeTimers();
     try {
