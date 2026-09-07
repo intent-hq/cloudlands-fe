@@ -303,14 +303,17 @@ select a conservative suite instead of silently skipping coverage.
 
 Any renderer source change also runs `pnpm run test:ui-invariants` (chained into
 `validate:architecture` too): the repo-wide UI ratchets and the component-catalog
-`*.meta.ts` caller ledgers. These suites do not import the changed component, so
-`vitest related` and targeted runs miss them — cloudlands-fe#2256 hit CI red twice this
-way. Membership is derived, not listed: `scripts/ui-invariant-suites.mjs` runs every test
-file whose leading comment carries `// @ui-invariant`, and it fails when a test that
-calls `buildUiComponentInventory()` or asserts a `*.meta.ts` `callers` ledger has neither
-that marker nor `// @ui-invariant-exempt: <reason>`. Add the marker to any new
-inventory or ledger suite; `node scripts/ui-invariant-suites.mjs --list` shows the
-current set.
+`*.meta.ts` caller ledgers. These suites read the tree from the filesystem rather than
+importing every component they audit, so `vitest related` and targeted runs miss them —
+cloudlands-fe#2256 hit CI red twice this way. Membership is derived, not listed:
+`scripts/ui-invariant-suites.mjs` scans the vitest test files under `scripts/` and `src/`
+(`*.{test,spec}.*`, minus the Playwright `*.ct.spec.*` / `*.visual.spec.*` suites), runs
+every one whose leading comments carry `// @ui-invariant`, and fails when a test whose
+code (comments ignored) calls or imports `buildUiComponentInventory` or imports a `*.meta`
+module and reads a `.callers` ledger has neither that marker nor
+`// @ui-invariant-exempt: <reason>`. Add the marker to any new inventory or ledger suite;
+`node scripts/ui-invariant-suites.mjs --list` shows the current set and `--check`
+validates markers without running anything.
 
 Only checks that genuinely conflict use host-wide locks, held for one check at a time:
 Playwright CT uses `ct-<CT_PORT>` (default `ct-3100`) and the full Vitest fallback uses
