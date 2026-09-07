@@ -79,7 +79,11 @@
   import {
     toggleTerminalOverlay,
     openTerminalOverlay,
+    createTerminalRequested,
   } from '$store/renderer/slices/terminals/terminals-slice';
+  import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
+  import { createAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { openTabInRightmostColumnRequested } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { resolveTerminalShortcutWorkspaceId } from '$features/terminal/terminal-shortcut-context';
   import {
     selectWorkspaceHasLoaded,
@@ -513,6 +517,22 @@
       getCurrentPath: () => window.location.pathname,
       navigate: (path) => goto(path),
       openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
+      onCreateAgent: (workspaceId) => appStore.dispatch(createAgentRequested(workspaceId)),
+      onCreateNote: (workspaceId) => appStore.dispatch(createNoteRequested(workspaceId)),
+      onCreateTerminal: (workspaceId) => appStore.dispatch(createTerminalRequested(workspaceId)),
+      ...(hasCapability('browserPanel')
+        ? {
+            onCreateBrowser: (workspaceId: string) =>
+              appStore.dispatch(
+                openTabInRightmostColumnRequested(workspaceId, {
+                  type: 'browser',
+                  title: m.layout_tabTypes_browser_title(),
+                  browserUrl: 'about:blank',
+                  closable: true,
+                }),
+              ),
+          }
+        : {}),
       onWorkspaceTabMoved: (detail) => dispatchWindowEvent(WORKSPACE_TAB_MOVED_EVENT, detail),
       resolveBinding: getEffectiveShortcut,
     });

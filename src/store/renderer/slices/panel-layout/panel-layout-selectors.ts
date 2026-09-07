@@ -388,7 +388,7 @@ export const selectRecentlyClosed = store.createSelector<[wsId: string], Recentl
 );
 
 /** Select the newest column close that can be applied to the current layout. */
-export const selectLastClosedPanelColumn = store.createSelector<
+const selectLastClosedPanelColumn = store.createSelector<
   [wsId: string],
   RecentlyClosedPanelColumn | null
 >((state, wsId) => {
@@ -399,4 +399,19 @@ export const selectLastClosedPanelColumn = store.createSelector<
         createCollection<RecentlyClosedPanelColumn, 'historyId'>('historyId'),
     ).find((closed) => isRecentlyClosedPanelColumnRestorable(workspace, closed)) ?? null
   );
+});
+
+/** Select whether the newest restorable panel close was a column or a tab. */
+export const selectLastPanelClose = store.createSelector<
+  [wsId: string],
+  { kind: 'column' | 'tab'; closedAt: number } | null
+>((state, wsId) => {
+  const lastClosedPanelTab = selectRecentlyClosed.select(state, wsId)[0] ?? null;
+  const lastClosedPanelColumn = selectLastClosedPanelColumn.select(state, wsId);
+  return lastClosedPanelColumn &&
+    (!lastClosedPanelTab || lastClosedPanelColumn.closedAt >= lastClosedPanelTab.closedAt)
+    ? { kind: 'column', closedAt: lastClosedPanelColumn.closedAt }
+    : lastClosedPanelTab
+      ? { kind: 'tab', closedAt: lastClosedPanelTab.closedAt }
+      : null;
 });

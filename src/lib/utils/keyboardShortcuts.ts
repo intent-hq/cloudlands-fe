@@ -156,6 +156,11 @@ export interface KeyboardShortcut {
   /** Checked before preventing the event, so route-scoped shortcuts remain native elsewhere. */
   enabled?: () => boolean;
   /**
+   * Fires even when focus is inside an xterm terminal. The terminal adapter handles its own
+   * Mod+T/W/J/F/K, so only set this on shortcuts xterm does not consume.
+   */
+  allowInTerminal?: boolean;
+  /**
    * If true, this shortcut will always fire even when focus is in an input/textarea/contenteditable.
    * Use this for shortcuts like Ctrl+` (toggle terminal) that should work regardless of focus,
    * bypassing the platform-specific Emacs shortcut protection on macOS.
@@ -260,11 +265,7 @@ export class KeyboardShortcutManager {
 
     if (target.closest?.('[data-shortcut-input], [data-shortcut-entry]')) return;
 
-    // Don't intercept shortcuts when focus is in a terminal (xterm)
-    // Terminals need to receive shortcuts like Cmd+K (clear screen) directly
-    if (isFocusInTerminal(target)) {
-      return;
-    }
+    const inTerminal = isFocusInTerminal(target);
 
     // Don't handle shortcuts when typing in inputs (unless it's a global shortcut)
     const isInput =
@@ -299,6 +300,7 @@ export class KeyboardShortcutManager {
       this.shortcuts.get(key);
 
     if (shortcut) {
+      if (inTerminal && !shortcut.allowInTerminal) return;
       if (shortcut.ignoreRepeat && e.repeat) return;
       if (shortcut.enabled && !shortcut.enabled()) return;
 

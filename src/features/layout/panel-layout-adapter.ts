@@ -18,6 +18,7 @@ import {
   closeActiveTab,
   closeTabsByType,
   closeTabsByAgentId,
+  reopenClosedPanelColumn,
   reopenClosedTab,
   setActiveTab,
   selectNextTab,
@@ -62,6 +63,7 @@ import {
   selectAllTabs,
   selectPanelIds,
   selectPanel,
+  selectLastPanelClose,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import type {
   PanelTab,
@@ -171,6 +173,14 @@ export class PanelLayoutAdapter {
   }
   reopenClosedTab() {
     this.dispatch(reopenClosedTab(this.workspaceId));
+  }
+  reopenLastClosed() {
+    const lastPanelClose = selectLastPanelClose.select(this.state, this.workspaceId);
+    if (lastPanelClose?.kind === 'column') {
+      this.dispatch(reopenClosedPanelColumn(this.workspaceId));
+    } else if (lastPanelClose?.kind === 'tab') {
+      this.dispatch(reopenClosedTab(this.workspaceId));
+    }
   }
   setActiveTab(tabId: string, panelId?: string) {
     this.dispatch(setActiveTab(this.workspaceId, tabId, panelId));

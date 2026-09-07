@@ -804,10 +804,9 @@ app.whenReady().then(async () => {
       { type: 'separator' },
       {
         label: m.menu_new_agent(),
-        accelerator: 'CmdOrCtrl+T',
+        accelerator: 'CmdOrCtrl+Alt+A',
         enabled: inWorkspace,
-        // Don't register accelerator - let renderer handle Cmd+T first
-        // so the terminal can intercept it when focused
+        // Let the renderer own the configurable shortcut and terminal focus handling.
         registerAccelerator: false,
         click: () => {
           sendWorkspaceCommand('menu:new-agent');
@@ -817,6 +816,7 @@ app.whenReady().then(async () => {
         label: m.menu_new_note(),
         accelerator: 'CmdOrCtrl+Alt+N',
         enabled: inWorkspace,
+        registerAccelerator: false,
         click: () => {
           sendWorkspaceCommand('menu:new-note');
         },
@@ -825,6 +825,7 @@ app.whenReady().then(async () => {
         label: m.menu_new_terminal(),
         accelerator: 'CmdOrCtrl+Alt+T',
         enabled: inWorkspace,
+        registerAccelerator: false,
         click: () => {
           sendWorkspaceCommand('menu:new-terminal');
         },
@@ -833,6 +834,7 @@ app.whenReady().then(async () => {
         label: m.menu_new_browser(),
         accelerator: 'CmdOrCtrl+Alt+B',
         enabled: inWorkspace,
+        registerAccelerator: false,
         click: () => {
           sendWorkspaceCommand('menu:new-browser');
         },
