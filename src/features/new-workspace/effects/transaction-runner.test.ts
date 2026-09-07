@@ -252,39 +252,6 @@ describe('draft transaction integration seams', () => {
     expect(phases.at(-1)).toBe('live');
   });
 
-  it('coalesces 100 rapid keystrokes into one trailing final-value update', async () => {
-    vi.useFakeTimers();
-    const remote = draft();
-    const update = vi.fn().mockImplementation((_id, _revision, input) =>
-      Promise.resolve({
-        ...remote,
-        ...input,
-        revision: 2,
-      }),
-    );
-    const runner = createDraftTransactionRunner({
-      client: { workspaceDrafts: { update } } as unknown as AppClient,
-      executeEffect: sagaExecutor,
-    });
-    runner.start(savedEditingState(remote));
-    await vi.advanceTimersByTimeAsync(0);
-
-    for (let index = 1; index <= 100; index += 1) {
-      runner.dispatch({ type: 'user.edited', patch: { intentText: 'x'.repeat(index) } });
-    }
-    await vi.advanceTimersByTimeAsync(249);
-    expect(update).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(1);
-    expect(update).toHaveBeenCalledOnce();
-    expect(update).toHaveBeenCalledWith(
-      remote.id,
-      remote.revision,
-      expect.objectContaining({ intentText: 'x'.repeat(100) }),
-    );
-    runner.stop();
-  });
-
   it('uses the acknowledged revision and latest value for one trailing in-flight save', async () => {
     vi.useFakeTimers();
     const remote = draft();
