@@ -79,7 +79,7 @@
   in:activityNodeTransition={{ delay: enterDelay, playbackSpeed }}
   out:activityNodeTransition={{ exit: true, playbackSpeed }}
   type="button"
-  class="resource-node flex h-[88px] w-[72px] touch-none flex-col items-center gap-1.5 text-center text-muted-foreground transition-opacity hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-ring"
+  class="resource-node flex h-22 w-18 touch-none flex-col items-center gap-1.5 text-center text-muted-foreground transition-opacity hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-ring"
   data-graph-node
   data-node-id={node.id}
   data-external={node.type === 'file' && node.isExternal}
@@ -91,12 +91,12 @@
   {tabindex}
   title={tooltip}
   aria-label={ariaLabel}
-  style:--resource-brightness={brightness}
-  style:--resource-cooldown={`${cooldownRemaining}ms`}
+  style:opacity={brightness}
+  style:animation-duration={`${cooldownRemaining}ms`}
   {...events}
 >
   <span
-    class="resource-card relative flex h-[58px] w-11 shrink-0 items-center justify-center rounded-md border border-border bg-background text-subtle"
+    class="resource-card relative flex h-14 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-background text-subtle"
     class:border-dashed={node.type === 'file' && node.isExternal}
     aria-hidden="true"
   >
@@ -105,13 +105,12 @@
       <span class="absolute right-1 top-1"><Fa icon={faArrowUpRightFromSquare} size="xs" /></span>
     {/if}
   </span>
-  <span class="resource-label line-clamp-2 w-full text-[11px] leading-[1.15]">{label}</span>
+  <span class="resource-label line-clamp-2 w-full text-xs leading-[1.15]">{label}</span>
 </button>
 
 <style>
   .resource-node {
-    opacity: var(--resource-brightness);
-    animation: resource-cooldown var(--resource-cooldown) linear forwards;
+    animation: resource-cooldown linear forwards;
     transition:
       opacity 600ms linear,
       border-color 180ms ease,
@@ -157,9 +156,6 @@
     }
   }
   @keyframes resource-cooldown {
-    from {
-      opacity: var(--resource-brightness);
-    }
     to {
       opacity: 0.35;
     }

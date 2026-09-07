@@ -828,7 +828,7 @@
                 type="button"
                 variant="default"
                 size="xs"
-                class="absolute left-1/2 top-full mt-1 h-6 -translate-x-1/2 rounded-full text-[10px] text-muted-foreground"
+                class="absolute left-1/2 top-full mt-1 h-6 -translate-x-1/2 rounded-full text-xs text-muted-foreground"
                 aria-label={m.agentOverview_resourceExpander_showMore_ariaLabel({
                   count: visibleGraph.collapsedByAgent.get(node.id) ?? 0,
                   agent: node.name,

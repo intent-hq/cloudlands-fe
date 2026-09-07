@@ -7,7 +7,7 @@ import { sanitizeWorkspaceEventsList } from '../workspace-events/workspace-event
 
 export const GRAPH_HISTORY_MAX_EVENTS = 5_000;
 
-export type GraphHistoryStatus = 'idle' | 'loading' | 'complete' | 'error';
+type GraphHistoryStatus = 'idle' | 'loading' | 'complete' | 'error';
 
 export type GraphHistoryWorkspaceState = {
   events: WorkspaceEvent[];

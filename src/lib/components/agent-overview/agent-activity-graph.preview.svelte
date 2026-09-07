@@ -107,9 +107,9 @@
   });
 </script>
 
-<div class="relative h-[720px] min-h-[600px] w-full overflow-hidden rounded-md" data-graph-preview>
+<div class="relative h-180 min-h-150 w-full overflow-hidden rounded-md" data-graph-preview>
   <span
-    class="pointer-events-none absolute right-4 top-4 z-10 flex items-center gap-2 text-[11px] font-medium text-muted-foreground"
+    class="pointer-events-none absolute right-4 top-4 z-10 flex items-center gap-2 text-xs font-medium text-muted-foreground"
     data-external-file-legend
   >
     <i class="h-5 w-4 rounded-sm border border-dashed border-muted-foreground"></i>

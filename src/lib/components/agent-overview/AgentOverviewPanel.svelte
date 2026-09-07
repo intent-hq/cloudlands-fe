@@ -51,7 +51,8 @@
   );
   const graphCursor = $derived.by(() => {
     const cursorMs = Date.parse(cursor || $graphState$.minTime);
-    const graphCursorMs = mode === 'playing' ? cursorMs : snapPlaybackCursor(eventTimesMs, cursorMs);
+    const graphCursorMs =
+      mode === 'playing' ? cursorMs : snapPlaybackCursor(eventTimesMs, cursorMs);
     return new Date(graphCursorMs).toISOString();
   });
   const displayedGraph = $derived(
@@ -170,7 +171,7 @@
 
   {#if $graphHistoryStatus$ === 'loading'}
     <span
-      class="pointer-events-none absolute bottom-14 left-4 z-10 text-[10px] text-muted-foreground"
+      class="pointer-events-none absolute bottom-14 left-4 z-10 text-xs text-muted-foreground"
       aria-live="polite">{m.agentOverview_timeScrubber_loadingHistory_label()}</span
     >
   {/if}
@@ -226,11 +227,11 @@
 
       <details class="relative">
         <summary
-          class="cursor-pointer list-none rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          class="cursor-pointer list-none rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           >{m.agentOverview_toolbar_legend_label()}</summary
         >
         <div
-          class="absolute left-0 top-full mt-2 grid min-w-56 grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-border bg-card/95 p-3 text-[11px] font-medium text-muted-foreground shadow-lg backdrop-blur"
+          class="absolute left-0 top-full mt-2 grid min-w-56 grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-border bg-card/95 p-3 text-xs font-medium text-muted-foreground shadow-lg backdrop-blur"
         >
           <span class="flex items-center gap-2"
             ><i class="flex h-4 w-5 items-center gap-1" aria-hidden="true"
@@ -241,7 +242,7 @@
           >
           <span class="flex items-center gap-2"
             ><i class="flex h-5 w-5 flex-col items-center gap-0.5" aria-hidden="true"
-              ><i class="size-3 rounded-[3px] bg-muted-foreground"></i><i class="h-px w-4 bg-border"
+              ><i class="size-3 rounded-sm bg-muted-foreground"></i><i class="h-px w-4 bg-border"
               ></i></i
             >{m.agentOverview_toolbar_agents_label()}</span
           >
@@ -271,7 +272,7 @@
     </div>
 
     <div
-      class="pointer-events-auto rounded-full border border-border bg-card/95 px-3 py-1.5 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur"
+      class="pointer-events-auto rounded-full border border-border bg-card/95 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur"
       data-graph-controls
     >
       {displayedGraph.stats.agents.active === 1

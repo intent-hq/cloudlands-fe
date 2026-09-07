@@ -171,7 +171,9 @@ export type GraphEdge =
 // ============================================================================
 
 export interface GraphState {
+  // eslint-disable-next-line themis/collection-state-shape -- Render input snapshot, not Redux state.
   nodes: GraphNode[];
+  // eslint-disable-next-line themis/collection-state-shape -- Render input snapshot, not Redux state.
   edges: GraphEdge[];
   stats: {
     agents: { active: number; total: number };

@@ -14,7 +14,7 @@ import {
   sanitizeGraphHistoryEvents,
 } from '../agent-overview-history-slice';
 
-export function* loadGraphHistoryWorker(
+function* loadGraphHistoryWorker(
   action: ReturnType<typeof loadGraphHistoryRequested>,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;

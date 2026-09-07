@@ -1,11 +1,11 @@
 import type { GraphEdge, GraphNode } from './types';
 
-export interface NodeActivity {
+interface NodeActivity {
   isActive: boolean;
   lastActivityAt?: string;
 }
 
-export interface ResourceAccess {
+interface ResourceAccess {
   access: 'read' | 'write';
   additions: number;
   deletions: number;
@@ -33,7 +33,7 @@ function timestampValue(timestamp: string): number {
   return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
 }
 
-export function createGraphRenderIndex(nodes: GraphNode[], edges: GraphEdge[]): GraphRenderIndex {
+function createGraphRenderIndex(nodes: GraphNode[], edges: GraphEdge[]): GraphRenderIndex {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const activities = new Map<string, TimedNodeActivity>();
   const resources = new Map<string, TimedResourceAccess>();

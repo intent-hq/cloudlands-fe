@@ -59,9 +59,7 @@
         <TaskStatusIcon status={node.state} size={16} />
       {/key}
     </span>
-    <span class="task-title min-w-0 line-clamp-2 text-[16px] font-medium leading-[1.2]"
-      >{node.title}</span
-    >
+    <span class="task-title min-w-0 line-clamp-2 type-title leading-[1.2]">{node.title}</span>
   </span>
 </button>
 

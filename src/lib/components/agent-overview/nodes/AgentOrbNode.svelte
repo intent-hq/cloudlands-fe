@@ -57,7 +57,7 @@
   in:activityNodeTransition={{ delay: enterDelay, playbackSpeed }}
   out:activityNodeTransition={{ exit: true, playbackSpeed }}
   type="button"
-  class="agent-orb flex h-[88px] w-28 touch-none flex-col items-center gap-1 text-center text-foreground transition-opacity focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-ring"
+  class="agent-orb flex h-22 w-28 touch-none flex-col items-center gap-1 text-center text-foreground transition-opacity focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-ring"
   data-graph-node
   data-node-id={node.id}
   data-active={isActive}
@@ -77,7 +77,7 @@
     state={avatarState}
   />
   <span
-    class="agent-name line-clamp-2 w-full break-words text-[12px] leading-tight"
+    class="agent-name line-clamp-2 w-full break-words text-xs leading-tight"
     class:font-semibold={isActive}>{node.name}</span
   >
 </button>
