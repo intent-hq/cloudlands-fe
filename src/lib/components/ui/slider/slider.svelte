@@ -1,25 +1,5 @@
 <script module lang="ts">
-  import type { HTMLInputAttributes } from 'svelte/elements';
-  import type { WithElementRef } from '$lib/utils';
-
-  export type SliderValue = number | [number, number];
-  export type SliderValuePosition = 'left' | 'right' | 'top' | 'bottom' | 'tooltip';
-
-  export interface SliderProps extends WithElementRef<
-    Omit<HTMLInputAttributes, 'type' | 'value' | 'oninput' | 'onkeydown' | 'onfocus' | 'onblur'>
-  > {
-    value?: number;
-    onValueChange?: (value: number) => void;
-    oninput?: HTMLInputAttributes['oninput'];
-    onkeydown?: HTMLInputAttributes['onkeydown'];
-    onfocus?: HTMLInputAttributes['onfocus'];
-    onblur?: HTMLInputAttributes['onblur'];
-    formatValue?: (value: number) => string;
-    steps?: number[];
-    showSteps?: boolean;
-    showValue?: boolean;
-    valuePosition?: SliderValuePosition;
-  }
+  import type { SliderProps } from './slider.types';
 </script>
 
 <script lang="ts">
