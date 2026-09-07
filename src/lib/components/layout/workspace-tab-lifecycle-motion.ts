@@ -37,12 +37,54 @@ type RetainedTabOutro = Pick<
   'basePaddingRight' | 'originalPaddingRight' | 'reserve'
 >;
 
+type InterruptedTabOutro = {
+  originalMarginRight: string;
+  reopening: boolean;
+  strip: HTMLElement | null;
+};
+
 const preparedTabOutros = new WeakMap<HTMLElement, PreparedTabOutro>();
 const preparedTabOutroRegistrations = new WeakMap<HTMLElement, PreparedTabOutroRegistration>();
 const retainedTabOutros = new WeakMap<HTMLElement, RetainedTabOutro>();
+const interruptedTabOutros = new WeakMap<HTMLElement, InterruptedTabOutro>();
+const interruptedTabIntroCleanupNodes = new WeakSet<HTMLElement>();
 const WORKSPACE_TAB_MAX_RESERVE_STEP_PX = 5.5;
 const WORKSPACE_TAB_MAX_LAUNCHER_STEP_PX = 2.5;
 export const WORKSPACE_TAB_MAX_SCROLL_STEP_PX = 7.5;
+
+function restoreInterruptedTabOutro(node: HTMLElement, interruptedOutro: InterruptedTabOutro) {
+  node.style.marginRight = interruptedOutro.originalMarginRight;
+  node.style.removeProperty('translate');
+  node.style.removeProperty('overflow');
+  const retainedOutro = interruptedOutro.strip
+    ? retainedTabOutros.get(interruptedOutro.strip)
+    : undefined;
+  if (interruptedOutro.strip && retainedOutro) {
+    interruptedOutro.strip.style.paddingRight = retainedOutro.originalPaddingRight;
+    retainedTabOutros.delete(interruptedOutro.strip);
+  }
+}
+
+function beginInterruptedTabIntro(node: HTMLElement): void {
+  const interruptedOutro = interruptedTabOutros.get(node);
+  if (!interruptedOutro) return;
+  interruptedOutro.reopening = true;
+  restoreInterruptedTabOutro(node, interruptedOutro);
+}
+
+function finishInterruptedTabIntro(node: HTMLElement): void {
+  const interruptedOutro = interruptedTabOutros.get(node);
+  if (!interruptedOutro) return;
+  restoreInterruptedTabOutro(node, interruptedOutro);
+  interruptedTabOutros.delete(node);
+}
+
+function registerInterruptedTabIntroCleanup(node: HTMLElement): void {
+  if (interruptedTabIntroCleanupNodes.has(node)) return;
+  interruptedTabIntroCleanupNodes.add(node);
+  node.addEventListener('introstart', () => beginInterruptedTabIntro(node));
+  node.addEventListener('introend', () => finishInterruptedTabIntro(node));
+}
 
 export function prepareTabOutros(strip: HTMLElement | null, workspaceIds: string[]) {
   if (!strip) return;
@@ -132,8 +174,10 @@ export function workspaceTabLifecycleMotion(
   node: HTMLElement,
   { duration, easing, phase, onFrame }: WorkspaceTabLifecycleMotionOptions,
 ) {
-  const naturalWidth = node.getBoundingClientRect().width;
   const strip = node.parentElement;
+  registerInterruptedTabIntroCleanup(node);
+  if (phase === 'intro') beginInterruptedTabIntro(node);
+  const naturalWidth = node.getBoundingClientRect().width;
   const controls = strip?.parentElement;
   const direction = phase;
   const preparedOutro = preparedTabOutros.get(node);
@@ -247,6 +291,11 @@ export function workspaceTabLifecycleMotion(
           ? 1 - easing(1 - progress / 0.85)
           : 1
         : 1;
+      const interruptedOutro = interruptedTabOutros.get(node);
+      if (direction === 'outro' && interruptedOutro?.reopening) {
+        restoreInterruptedTabOutro(node, interruptedOutro);
+        return;
+      }
       if (strip && pinnedScrollLeft !== null) {
         if (preparedOutro?.managesGroup && preparedGroup) {
           const desiredReserve = releaseProgress * preparedGroup.reserve;
@@ -282,6 +331,15 @@ export function workspaceTabLifecycleMotion(
         }
       }
       if (direction === 'outro' && preparedOutro) {
+        if (progress > 0) {
+          interruptedTabOutros.set(node, {
+            originalMarginRight: preparedOutro.originalMarginRight,
+            reopening: false,
+            strip,
+          });
+        } else {
+          interruptedTabOutros.delete(node);
+        }
         node.style.marginRight = `${-slotProgress * preparedOutro.slotReserve}px`;
       }
       if (strip && retainedIntro) {

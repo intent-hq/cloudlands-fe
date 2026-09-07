@@ -638,8 +638,13 @@ test('grows and removes a tab while the active mask follows the shared motion', 
   await expectMaskAttachedToActiveTab(component);
 });
 
-for (const controlsWidth of [650, 490, 360]) {
-  test(`reopens a tab during its outro at ${controlsWidth}px without losing the tab`, async ({
+for (const { controlsWidth, startsRightScrolled } of [
+  { controlsWidth: 650, startsRightScrolled: false },
+  { controlsWidth: 490, startsRightScrolled: false },
+  { controlsWidth: 360, startsRightScrolled: false },
+  { controlsWidth: 490, startsRightScrolled: true },
+]) {
+  test(`reopens a tab during its outro at ${controlsWidth}px${startsRightScrolled ? ' from a right-scrolled start' : ''} without losing the tab`, async ({
     mount,
     page,
   }) => {
@@ -659,6 +664,22 @@ for (const controlsWidth of [650, 490, 360]) {
       element.style.flex = 'none';
     }, controlsWidth);
     await page.waitForTimeout(WORKSPACE_TAB_MOTION_DURATION_MS + 50);
+    const before = await component.locator('[data-workspace-tab-strip]').evaluate((strip) => {
+      const element = strip as HTMLElement;
+      const styles = getComputedStyle(element);
+      return {
+        gap: Number.parseFloat(styles.columnGap),
+        paddingRight: Number.parseFloat(styles.paddingRight),
+        shouldOverflow: element.scrollWidth > element.clientWidth,
+      };
+    });
+    if (startsRightScrolled) {
+      await component.locator('[data-workspace-tab-strip]').evaluate((strip) => {
+        strip.scrollLeft = strip.scrollWidth;
+        strip.dispatchEvent(new Event('scroll'));
+      });
+      await page.waitForTimeout(50);
+    }
 
     const interruptedWidth = await component
       .locator('[data-close-tab]')
@@ -694,17 +715,46 @@ for (const controlsWidth of [650, 490, 360]) {
             .flatMap((slot) => slot.getAnimations())
             .filter((animation) => animation.playState !== 'finished').length,
       );
+    const settledGeometry = await component
+      .locator('[data-workspace-tab-motion="geometry-gamma"]')
+      .evaluate((slot) => {
+        const element = slot as HTMLElement;
+        const previous = element.previousElementSibling as HTMLElement | null;
+        const strip = element.parentElement as HTMLElement;
+        const styles = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        const previousRect = previous?.getBoundingClientRect();
+        return {
+          translate: styles.translate,
+          marginRight: Number.parseFloat(styles.marginRight),
+          gap: previousRect ? rect.left - previousRect.right : null,
+          paddingRight: Number.parseFloat(getComputedStyle(strip).paddingRight),
+          scrollWidth: strip.scrollWidth,
+          clientWidth: strip.clientWidth,
+        };
+      });
     const evidence = JSON.stringify({
+      controlsWidth,
+      startsRightScrolled,
+      before,
       interruptedWidth,
       pageErrors,
       tabOrder,
       settledWidths,
       activeAnimationCount,
+      settledGeometry,
     });
     expect(pageErrors, evidence).toEqual([]);
     expect(tabOrder, evidence).toEqual(['geometry-alpha', 'geometry-beta', 'geometry-gamma']);
     expect(settledWidths, evidence).toEqual([160, 160, 160]);
     expect(activeAnimationCount, evidence).toBe(0);
+    expect(settledGeometry.translate, evidence).toBe('none');
+    expect(settledGeometry.marginRight, evidence).toBeGreaterThanOrEqual(0);
+    expect(settledGeometry.gap, evidence).toBeCloseTo(before.gap, 0);
+    expect(settledGeometry.paddingRight, evidence).toBeCloseTo(before.paddingRight, 0);
+    if (!before.shouldOverflow) {
+      expect(settledGeometry.scrollWidth, evidence).toBe(settledGeometry.clientWidth);
+    }
   });
 }
 
