@@ -3717,7 +3717,7 @@ describe('panelLayoutReducer', () => {
             A: {
               id: 'A',
               tabs: [
-                { id: 'x', type: 'note', title: 'X', closable: true },
+                { id: 'x', type: 'note', title: 'X', noteId: 'note-x', closable: true },
                 { id: 'a-keep', type: 'file', title: 'Keep', closable: true },
               ] as any,
               activeTabId: 'x',
@@ -3733,6 +3733,28 @@ describe('panelLayoutReducer', () => {
         };
         return state;
       }
+
+      it('reopens the entry into an empty clicked panel and leaves the source panel unchanged (monorepo#4553)', () => {
+        const start = twoColumnState();
+        start.byWorkspaceId[WS].panels.B = { id: 'B', tabs: [], activeTabId: null };
+        const afterClose = panelLayoutReducer(start, closeTab(WS, 'x', 'A', 1000));
+        const panelABeforeReopen = afterClose.byWorkspaceId[WS].panels.A;
+        expect(afterClose.byWorkspaceId[WS].panels.B.tabs).toEqual([]);
+
+        const result = panelLayoutReducer(afterClose, reopenClosedTab(WS, 1001, 'x', 'B'))
+          .byWorkspaceId[WS];
+
+        expect(result.panels.B.tabs).toHaveLength(1);
+        expect(result.panels.B.tabs[0]).toMatchObject({
+          type: 'note',
+          title: 'X',
+          noteId: 'note-x',
+        });
+        expect(result.panels.B.activeTabId).toBe(result.panels.B.tabs[0].id);
+        expect(result.focusedPanelId).toBe('B');
+        expect(result.panels.A).toEqual(panelABeforeReopen);
+        expect(result.recentlyClosed).toHaveLength(0);
+      });
 
       it('reopens the entry into the requested panel when it exists (monorepo#4553)', () => {
         const afterClose = panelLayoutReducer(twoColumnState(), closeTab(WS, 'x', 'A', 1000));
