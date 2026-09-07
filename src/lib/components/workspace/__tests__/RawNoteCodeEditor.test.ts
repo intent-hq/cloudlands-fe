@@ -138,14 +138,20 @@ describe('RawNoteCodeEditor', () => {
     });
 
     await fireEvent.input(screen.getByTestId('code-editor'), {
-      target: { value: '# Updated Before Toggle' },
+      target: {
+        value: String.raw`# Updated Before Toggle
+
+$x^2$ and \[\frac{1}{2}\]`,
+      },
     });
     unmount();
 
     expect(mockState.updateNoteContent).toHaveBeenCalledWith(
       'ws-1',
       'note-1',
-      '# Updated Before Toggle',
+      String.raw`# Updated Before Toggle
+
+$x^2$ and \[\frac{1}{2}\]`,
       { immediate: true },
     );
   });

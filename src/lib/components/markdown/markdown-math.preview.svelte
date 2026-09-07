@@ -21,7 +21,7 @@
 <script lang="ts">
   import type { ContentBlock } from '$shared/types';
   import MessageContent from '$lib/components/chat/MessageContent.svelte';
-  import MarkdownViewer from './MarkdownViewer.svelte';
+  import RenderedNotePreview from '$features/layout/tab-types/RenderedNotePreview.svelte';
 
   let { isStreaming = false, dense = false }: MarkdownMathPreviewProps = $props();
 
@@ -52,8 +52,8 @@ $$\sum_{n=1}^{\infty}\frac{1}{n^2}=\frac{\pi^2}{6}\qquad(x_1+y_1+z_1)(x_2+y_2+z_
     <MessageContent content={chatContent} {isStreaming} role="assistant" />
   </article>
   <article class="surface" data-testid="read-only-markdown-math">
-    <h2>Read-only Markdown file</h2>
-    <MarkdownViewer content={noteContent} renderRichFencesAsCode />
+    <h2>Workspace note rendered preview</h2>
+    <RenderedNotePreview content={noteContent} workspaceId="preview-workspace" />
   </article>
 </section>
 

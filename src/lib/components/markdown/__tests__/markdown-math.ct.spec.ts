@@ -35,7 +35,8 @@ for (const { theme, width } of [
       (element as HTMLElement).style.width = `${nextWidth}px`;
     }, width);
 
-    const note = component.getByTestId('read-only-markdown-math');
+    const note = component.getByTestId('rendered-note-preview');
+    await expect(note).toHaveRole('document');
     await expect(note.locator('math')).toHaveCount(6);
     await expect(note.locator('code')).toContainText('$not-math$');
     await expect(note).toContainText('Costs $5 and $10');
@@ -43,6 +44,7 @@ for (const { theme, width } of [
     const measurements = await note.evaluate((element) => {
       const visual = element.querySelector<HTMLElement>('.katex-html')!;
       const display = element.querySelector<HTMLElement>('.math-display')!;
+      const surface = element.closest<HTMLElement>('.surface')!;
       const color = (value: string) =>
         value
           .match(/[0-9.]+/g)!
@@ -50,7 +52,7 @@ for (const { theme, width } of [
           .map(Number);
       return {
         foreground: color(getComputedStyle(visual).color),
-        background: color(getComputedStyle(element).backgroundColor),
+        background: color(getComputedStyle(surface).backgroundColor),
         contained: element.scrollWidth <= element.clientWidth,
         displayHeightRatio:
           display.getBoundingClientRect().height / parseFloat(getComputedStyle(display).fontSize),
