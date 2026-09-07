@@ -1,7 +1,7 @@
 import type { NpxStatus } from '$shared/types/provider-availability';
 import type { SetupResult } from '$shared/types/workspace-draft';
 import type { DaemonHostRepairTarget } from '$store/renderer/slices/daemon-health/daemon-health-types';
-import type { Capability, ControllerState } from '../controller';
+import type { Capability, CapabilityStatus, ControllerState } from '../controller';
 
 export type CoordinatorState =
   | 'checking'
@@ -56,6 +56,18 @@ export interface NewWorkspacePresentation {
   progress?: ProgressPresentation;
   specContent?: string;
   requiredCapabilities?: Capability[];
+}
+
+export function providerCapabilityStatus(input: {
+  catalogLoaded: boolean;
+  hasEnabledProvider: boolean;
+  hasCheckedOnce: boolean;
+  hasAvailableProvider: boolean;
+}): CapabilityStatus | null {
+  if (!input.catalogLoaded) return null;
+  if (!input.hasEnabledProvider) return 'missing';
+  if (!input.hasCheckedOnce) return null;
+  return input.hasAvailableProvider ? 'ready' : 'missing';
 }
 
 export function coordinatorStateFor(controller: ControllerState): CoordinatorState {

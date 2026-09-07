@@ -13,7 +13,11 @@
   import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import { checkSingleProviderRequested } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
-  import { selectIsActiveProviderAvailable } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import {
+    selectAvailableEnabledProviderIds,
+    selectHasEnabledCatalogProvider,
+  } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { selectProviderCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectWorkspaceCreationDefaultParentPath } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-selectors';
   import {
     selectDaemonConnectionGeneration,
@@ -24,6 +28,7 @@
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import RemoteDaemonPathGuidance from './RemoteDaemonPathGuidance.svelte';
+  import { providerCapabilityStatus } from '../ui/types';
 
   interface Props {
     url: URL;
@@ -39,7 +44,9 @@
   let controllerState = $state<ControllerState>(createInitialControllerState(1));
   let fileInput: HTMLInputElement | undefined = $state();
   const hasCheckedProviders$ = selectHasCheckedOnce();
-  const activeProviderAvailable$ = selectIsActiveProviderAvailable();
+  const providerCatalogLoaded$ = selectProviderCatalogLoaded();
+  const hasEnabledProvider$ = selectHasEnabledCatalogProvider();
+  const availableProviderIds$ = selectAvailableEnabledProviderIds();
   const defaultParentPath$ = selectWorkspaceCreationDefaultParentPath();
   const daemonHealth$ = selectDaemonHealth();
   const daemonConnectionGeneration$ = selectDaemonConnectionGeneration();
@@ -51,12 +58,18 @@
   });
 
   $effect(() => {
-    if (!$hasCheckedProviders$) return;
+    const status = providerCapabilityStatus({
+      catalogLoaded: $providerCatalogLoaded$,
+      hasEnabledProvider: $hasEnabledProvider$,
+      hasCheckedOnce: $hasCheckedProviders$,
+      hasAvailableProvider: $availableProviderIds$.length > 0,
+    });
+    if (status === null) return;
     routeController.dispatch({
       type: 'capability.result',
       generation: controllerState.generation,
       capability: 'provider',
-      status: $activeProviderAvailable$ ? 'ready' : 'missing',
+      status,
     });
   });
 

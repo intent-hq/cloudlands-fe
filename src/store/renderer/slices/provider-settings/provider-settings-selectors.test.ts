@@ -32,6 +32,7 @@ import {
   selectAvailableEnabledProviderIds,
   selectEnabledProviderIds,
   selectEnabledProviders,
+  selectHasEnabledCatalogProvider,
   selectIsActiveProviderAvailable,
   selectIsProviderActive,
   selectIsProviderEnabled,
@@ -153,6 +154,16 @@ describe('provider-settings selectors', () => {
     it('should include the active provider even when explicitly disabled', () => {
       const state = mockState({ 'claude-code': false }, 'claude-code');
       expect(selectEnabledProviderIds.select(state)).toContain('claude-code');
+    });
+
+    it('reports no configured provider when every catalog provider is disabled', () => {
+      const disabled = Object.fromEntries(
+        MOCK_PROVIDER_CATALOG.providers.map(({ id }) => [id, false]),
+      );
+      const state = mockState(disabled, 'auggie');
+
+      expect(selectEnabledProviderIds.select(state)).toContain('auggie');
+      expect(selectHasEnabledCatalogProvider.select(state)).toBe(false);
     });
   });
 

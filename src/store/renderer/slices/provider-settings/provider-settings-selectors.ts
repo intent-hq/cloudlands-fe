@@ -52,6 +52,12 @@ export const selectEnabledProviderIds = store.createSelector((state): string[] =
   return [...enabled];
 });
 
+/** Whether daemon-backed configuration enables any catalog provider. */
+export const selectHasEnabledCatalogProvider = store.createSelector((state): boolean => {
+  const catalogEntries = state.providerCatalog ? getItems(state.providerCatalog.providers) : [];
+  return catalogEntries.some((provider) => selectIsProviderEnabled.select(state, provider.id));
+});
+
 /**
  * A provider is hidden when it's gated behind an env var / feature code the
  * renderer cannot verify — mirrors the default-deny gating in
