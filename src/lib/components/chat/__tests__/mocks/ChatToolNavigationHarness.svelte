@@ -31,14 +31,17 @@
     workspaceKey,
     variant,
     existingIdentity,
+    sourceRightmost = false,
   }: {
     workspaceKey: string;
     variant: 'tool-file' | 'tool-note' | 'details-file' | 'details-note';
     existingIdentity?: 'file' | 'note';
+    sourceRightmost?: boolean;
   } = $props();
 
   const initialWorkspaceKey = $state.snapshot(workspaceKey);
   const initialExistingIdentity = $state.snapshot(existingIdentity);
+  const initialSourceRightmost = $state.snapshot(sourceRightmost);
   const workspaceId = WorkspaceId(`chat-tool-navigation-${initialWorkspaceKey}`);
   const sourcePanelId = `source-${initialWorkspaceKey}`;
   const rightPanelId = `right-${initialWorkspaceKey}`;
@@ -116,11 +119,18 @@
     type: 'split',
     direction: 'horizontal',
     sizes: initialExistingIdentity ? [34, 33, 33] : [50, 50],
-    children: [
-      { type: 'panel', panelId: sourcePanelId },
-      ...(initialExistingIdentity ? [{ type: 'panel' as const, panelId: existingPanelId }] : []),
-      { type: 'panel', panelId: rightPanelId },
-    ],
+    children: initialSourceRightmost
+      ? [
+          { type: 'panel', panelId: rightPanelId },
+          { type: 'panel', panelId: sourcePanelId },
+        ]
+      : [
+          { type: 'panel', panelId: sourcePanelId },
+          ...(initialExistingIdentity
+            ? [{ type: 'panel' as const, panelId: existingPanelId }]
+            : []),
+          { type: 'panel', panelId: rightPanelId },
+        ],
   };
   appStore.dispatch(
     initializeLayout(workspaceId, {
