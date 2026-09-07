@@ -131,8 +131,9 @@ function updateSnapshotCell(
  * Defines one retryable CT test per preview state/width. The calling spec must statically import
  * the preview component so Playwright registers it in the browser. The shared CT hook resolves the
  * matching preview definition lazily in the browser; no per-scene bootstrap registration is needed.
- * The CT harness loads the repo-bundled `Inter Variable` font and capture stability waits for
- * `document.fonts.ready`, keeping text geometry independent of fonts installed on the host.
+ * The CT harness loads the repo-bundled `Inter Variable` font, each geometry frame selects it,
+ * and capture stability waits for `document.fonts.ready`, keeping text geometry independent of
+ * fonts installed on the host without changing unrelated CT rendering.
  *
  * @example
  * import Preview from './example.preview.svelte';
@@ -157,6 +158,11 @@ export function defineGeometrySnapshotSuite<Props extends Record<string, unknown
             'class',
             'preview-focus mx-auto max-w-full rounded-md border border-border bg-card p-6',
           );
+          element.style.setProperty(
+            '--font-ui',
+            "'Inter Variable', Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+          );
+          element.style.fontFamily = 'var(--font-ui)';
           element.style.width = `${requestedWidth}px`;
         }, width);
         const component = await mount(options.component, {
