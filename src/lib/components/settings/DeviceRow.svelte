@@ -1,6 +1,8 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
+  import DeviceIcon from '$lib/components/DeviceIcon.svelte';
+  import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
   import * as Menu from '$lib/components/ui/menu';
@@ -18,6 +20,7 @@
   import {
     DEFAULT_CONNECTION_ACCENT,
     type ConnectionAccent,
+    type DeviceIconChoice,
     type ConnectionOpenStatus,
     type ConnectionRecord,
     type ConnectionValidationBlockedResult,
@@ -65,6 +68,8 @@
   let host = $state('');
   let port = $state('');
   let accent = $state<ConnectionAccent>(DEFAULT_CONNECTION_ACCENT);
+  let deviceIcon = $state<DeviceIconChoice>('auto');
+  let localDeviceIcon = $state<DeviceIconChoice>('auto');
   let secret = $state('');
   let detectHosts = $state(true);
   let pushToCloud = $state(true);
@@ -93,6 +98,7 @@
   const savedAccent = $derived(
     device.accent === undefined ? DEFAULT_CONNECTION_ACCENT : device.accent,
   );
+  const savedDeviceIcon = $derived(device.deviceIcon ?? 'auto');
   const accentOptions = $derived(connectionAccentOptions(savedAccent));
   // Shared with the daemon-status menu: the local entry gets the fixed
   // "This machine (local)" label; for remotes the Name wins outright, with
@@ -127,6 +133,7 @@
       trimmedHost !== device.host ||
       portNumber !== device.port ||
       accent !== savedAccent ||
+      deviceIcon !== savedDeviceIcon ||
       detectHosts !== savedDetectHosts ||
       pushToCloud !== savedPushToCloud,
   );
@@ -149,6 +156,7 @@
     host = device.host ?? '';
     port = device.port == null ? '' : String(device.port);
     accent = savedAccent;
+    deviceIcon = savedDeviceIcon;
     secret = '';
     detectHosts = savedDetectHosts;
     pushToCloud = savedPushToCloud;
@@ -159,6 +167,10 @@
     feedback = null;
     pendingFingerprint = null;
   }
+
+  $effect(() => {
+    localDeviceIcon = savedDeviceIcon;
+  });
 
   $effect(() => {
     const panelKey = panelMode ? `${device.id}:${panelMode}` : null;
@@ -273,12 +285,34 @@
       id: device.id,
       label: trimmedName,
       accent,
+      ...(deviceIcon !== savedDeviceIcon ? { deviceIcon } : {}),
       host: trimmedHost,
       port: portNumber,
       ...(confirmedFingerprint ? { confirmedFingerprint } : {}),
       ...(detectHosts !== savedDetectHosts ? { detectHosts } : {}),
       ...(pushToCloud !== savedPushToCloud ? { syncExcluded: !pushToCloud } : {}),
     };
+  }
+
+  async function updateLocalDeviceIcon(nextDeviceIcon: DeviceIconChoice) {
+    if (!device.isLocal || busy) return;
+    busy = 'update';
+    try {
+      const action = updateConnectionRequested({
+        id: device.id,
+        label: device.label,
+        accent: null,
+        deviceIcon: nextDeviceIcon,
+      });
+      appStore.dispatch(action);
+      await action.promise;
+    } catch {
+      localDeviceIcon = savedDeviceIcon;
+      const { toast } = await import('$lib/components/ui/toast');
+      toast.error(m.settings_devices_update_error());
+    } finally {
+      busy = null;
+    }
   }
 
   // Any change of the switch invalidates the removal prompt and an earlier
@@ -440,6 +474,7 @@
       role="status"
       aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
     ></span>
+    <DeviceIcon record={device} size={20} class="text-foreground" />
     <div class="min-w-0 flex-1">
       <div class="flex min-w-0 items-baseline gap-2">
         <p
@@ -466,6 +501,16 @@
         {/if}
       </div>
     </div>
+    {#if device.isLocal}
+      <DeviceIconPicker
+        record={device}
+        bind:value={localDeviceIcon}
+        disabled={busy !== null}
+        portal={true}
+        class="w-48 shrink-0"
+        onchange={(value) => void updateLocalDeviceIcon(value)}
+      />
+    {/if}
     <!-- The local row has no remote-only actions (Connect/Edit/Remove), so its
          menu only exists while the Update action is offered. -->
     {#if !device.isLocal || canUpdateDaemon}
@@ -607,49 +652,58 @@
             />
           </div>
         </div>
-        <fieldset class="space-y-1" disabled={busy !== null}>
-          <legend class="text-sm font-medium text-foreground"
-            >{m.settings_devices_accent_label()}</legend
-          >
-          <div class="flex flex-wrap gap-1">
-            {#each accentOptions as option}
-              <Button
-                type="button"
-                variant="plain"
-                class={cn(
-                  'flex size-7 cursor-pointer items-center justify-center rounded-full border border-transparent bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                  option === accent
-                    ? option === null
-                      ? 'bg-muted/50'
-                      : undefined
-                    : 'hover:bg-muted/30',
-                )}
-                aria-label={option === null
-                  ? m.settings_devices_accentBlank_ariaLabel()
-                  : m.settings_devices_accentOption_ariaLabel({ color: accentLabel(option) })}
-                aria-pressed={option === accent}
-                onclick={() => (accent = option)}
-              >
-                {#if option === null}
-                  <span
-                    class="relative size-3.5 rounded-full border border-muted-foreground/60"
-                    aria-hidden="true"
-                  >
+        <div class="space-y-4">
+          <fieldset class="space-y-1" disabled={busy !== null}>
+            <legend class="text-sm font-medium text-foreground"
+              >{m.settings_devices_accent_label()}</legend
+            >
+            <div class="flex flex-wrap gap-1">
+              {#each accentOptions as option}
+                <Button
+                  type="button"
+                  variant="plain"
+                  class={cn(
+                    'flex size-7 cursor-pointer items-center justify-center rounded-full border border-transparent bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                    option === accent
+                      ? option === null
+                        ? 'bg-muted/50'
+                        : undefined
+                      : 'hover:bg-muted/30',
+                  )}
+                  aria-label={option === null
+                    ? m.settings_devices_accentBlank_ariaLabel()
+                    : m.settings_devices_accentOption_ariaLabel({ color: accentLabel(option) })}
+                  aria-pressed={option === accent}
+                  onclick={() => (accent = option)}
+                >
+                  {#if option === null}
                     <span
-                      class="absolute left-0.5 top-1/2 h-px w-2.5 -translate-y-1/2 rotate-45 bg-muted-foreground/60"
+                      class="relative size-3.5 rounded-full border border-muted-foreground/60"
+                      aria-hidden="true"
+                    >
+                      <span
+                        class="absolute left-0.5 top-1/2 h-px w-2.5 -translate-y-1/2 rotate-45 bg-muted-foreground/60"
+                      ></span>
+                    </span>
+                  {:else}
+                    <span
+                      class={cn('size-2.5 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
+                      style={option === accent ? selectedAccentStyle(option) : undefined}
+                      aria-hidden="true"
                     ></span>
-                  </span>
-                {:else}
-                  <span
-                    class={cn('size-2.5 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
-                    style={option === accent ? selectedAccentStyle(option) : undefined}
-                    aria-hidden="true"
-                  ></span>
-                {/if}
-              </Button>
-            {/each}
-          </div>
-        </fieldset>
+                  {/if}
+                </Button>
+              {/each}
+            </div>
+          </fieldset>
+          <DeviceIconPicker
+            record={device}
+            bind:value={deviceIcon}
+            disabled={busy !== null}
+            portal={true}
+            class="w-full"
+          />
+        </div>
       </div>
 
       <div class="grid gap-4 border-t border-border pt-4 sm:grid-cols-2">

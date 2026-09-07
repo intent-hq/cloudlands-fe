@@ -461,6 +461,20 @@ export default defineConfig(({ command, mode, isPreview }) => {
 
       cors: true,
 
+      // Pre-transform the primary SvelteKit entry paths before announcing sandbox readiness.
+      // This avoids sending the first tunneled browser through a cold transform waterfall.
+      ...(isWebBuild
+        ? {
+            warmup: {
+              clientFiles: [
+                'src/routes/+layout.svelte',
+                'src/routes/[(]app[)]/+page.svelte',
+                'src/routes/sandbox/[[]slug]/+page.svelte',
+              ],
+            },
+          }
+        : {}),
+
       // Electron connects directly to this host. Web clients derive HMR host
       // and port from the page URL so a daemon-side tunnel also carries HMR.
       ...(isWebBuild

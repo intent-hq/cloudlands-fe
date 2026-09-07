@@ -23,6 +23,7 @@ import {
   type LinkHandlerOptions,
   isAuthUrl,
   isCmdClickModifier,
+  parseFilePathLineSuffix,
   parseGitHubIssueOrPrUrl,
 } from '$shared/utils/link-helpers';
 import { navigateToNewWorkspace } from '$features/new-workspace/route/new-workspace-navigation';
@@ -304,7 +305,7 @@ function extractFilePathTarget(
 /**
  * Open a path-like link target in the workspace file viewer.
  *
- * - A trailing `#L<n>` fragment maps to the `line` option.
+ * - A trailing line suffix maps to the `line` option.
  * - Relative paths are dispatched as-is (worktree-relative).
  * - Absolute paths under the workspace's worktree root are relativized;
  *   absolute paths outside it fall back to the external editor. Leading-slash
@@ -320,13 +321,9 @@ async function openFilePathLink(
     const decodedTarget = decodePathTarget(target);
     if (!decodedTarget || decodedTarget.includes('\0')) return false;
 
-    let path = decodedTarget;
-    let line: number | undefined;
-    const lineMatch = path.match(/#L(\d+)$/);
-    if (lineMatch) {
-      line = Number.parseInt(lineMatch[1], 10);
-      path = path.slice(0, -lineMatch[0].length);
-    }
+    const parsedTarget = parseFilePathLineSuffix(decodedTarget);
+    let path = parsedTarget.path;
+    const { line, column } = parsedTarget;
 
     const { workspaceId } = options;
     if (!workspaceId) {
@@ -353,7 +350,9 @@ async function openFilePathLink(
         path = path.replace(/^\/+/, '');
       } else {
         logger.debug('Absolute path outside workspace root, opening in external editor', { path });
-        return await openInExternalEditor(`file://${path}`);
+        const location =
+          line === undefined ? '' : `:${line}${column === undefined ? '' : `:${column}`}`;
+        return await openInExternalEditor(`file://${path}${location}`);
       }
     }
 

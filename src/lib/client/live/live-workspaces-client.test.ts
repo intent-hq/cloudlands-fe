@@ -910,3 +910,93 @@ describe('LiveWorkspacesClient context (PROTOCOL §5.1, fake transport)', () => 
     expect(await client.updateContext('ws-abc', [good] as never)).toEqual([good]);
   });
 });
+
+describe('LiveWorkspacesClient browser client pin (REV-2 PROTOCOL §5.17, fake transport)', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it('getBrowserClient sends { workspaceId } and unwraps the browserClient envelope', async () => {
+    const browserClient = {
+      clientId: 'cli-desk',
+      source: 'workspace',
+      resolved: { clientId: 'cli-desk', name: 'Intent Desktop' },
+    };
+    mockedRequest.mockResolvedValueOnce({ browserClient });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.getBrowserClient('ws-abc')).toEqual(browserClient);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.getBrowserClient', {
+      workspaceId: 'ws-abc',
+    });
+  });
+
+  it('getBrowserClient surfaces the unpinned default shape (no clientId, resolved may be null)', async () => {
+    mockedRequest.mockResolvedValueOnce({ browserClient: { source: 'default', resolved: null } });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.getBrowserClient('ws-abc')).toEqual({ source: 'default', resolved: null });
+  });
+
+  it('setBrowserClient sends the pinned clientId and returns the new pin state', async () => {
+    const browserClient = {
+      clientId: 'cli-laptop',
+      source: 'workspace',
+      resolved: { clientId: 'cli-laptop', name: 'Intent Desktop' },
+    };
+    mockedRequest.mockResolvedValueOnce({ browserClient });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.setBrowserClient('ws-abc', 'cli-laptop')).toEqual(browserClient);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.setBrowserClient', {
+      workspaceId: 'ws-abc',
+      clientId: 'cli-laptop',
+    });
+  });
+
+  it('setBrowserClient sends an explicit JSON null to clear the pin', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      browserClient: { source: 'default', resolved: { clientId: 'cli-desk' } },
+    });
+    const client = new LiveWorkspacesClient();
+
+    await client.setBrowserClient('ws-abc', null);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.setBrowserClient', {
+      workspaceId: 'ws-abc',
+      clientId: null,
+    });
+  });
+
+  it('setBrowserClient propagates the daemon -32602 for an unknown clientId', async () => {
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({ code: 'INVALID_PARAMS', message: 'unknown clientId', rpcCode: -32602 }),
+    );
+    const client = new LiveWorkspacesClient();
+
+    await expect(client.setBrowserClient('ws-abc', 'cli-nope')).rejects.toMatchObject({
+      rpcCode: -32602,
+    });
+  });
+
+  it.each([
+    ['an unknown source', { source: 'bogus', resolved: null }],
+    // `clientId` is the pin: present exactly when `source: "workspace"`.
+    ['source "workspace" without the pinned clientId', { source: 'workspace', resolved: null }],
+    [
+      'source "default" carrying a clientId',
+      { source: 'default', clientId: 'cli-desk', resolved: null },
+    ],
+    [
+      'a resolved entry without clientId',
+      { source: 'workspace', clientId: 'cli-desk', resolved: { name: 'Intent Desktop' } },
+    ],
+  ])(
+    'rejects a malformed browserClient envelope (%s) instead of healing it',
+    async (_case, bad) => {
+      mockedRequest.mockResolvedValueOnce({ browserClient: bad });
+      const client = new LiveWorkspacesClient();
+
+      await expect(client.getBrowserClient('ws-abc')).rejects.toThrow(
+        'Invalid workspace.getBrowserClient response shape',
+      );
+    },
+  );
+});

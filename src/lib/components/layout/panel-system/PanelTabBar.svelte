@@ -1894,7 +1894,7 @@
       {#if activeTab.type === 'agent'}
         <!-- Agent headers keep the current avatar and editable name. -->
         <div
-          class="flex min-w-0 shrink items-center gap-2 overflow-hidden bg-card pl-1"
+          class="flex min-w-0 shrink items-center gap-2 bg-card pl-1"
           aria-label={m.layout_panelTabBar_activePane_ariaLabel({
             title: activeTabTitle,
             position: panePosition(activeTab.id),

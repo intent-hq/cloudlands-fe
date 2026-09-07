@@ -141,14 +141,26 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
   selectActiveProviderId: () => mocks.readable('auggie'),
 }));
 
-vi.mock('$store/renderer/slices/provider-settings/provider-settings-slice', () => ({
-  setActiveProvider: (id: string) => ({
-    type: 'providerSettings/setActiveProvider',
-    payload: [id],
+vi.mock(
+  '$store/renderer/slices/provider-settings/provider-settings-slice',
+  async (importOriginal) => ({
+    // Keep the real action creators/reducer (e.g. `setAtomicDefaultModel`,
+    // `activeProviderPersistRejected`) so the model-slice reducer this file
+    // exercises directly in the monorepo#4102 reproduction test below stays
+    // wired to its actual dependencies; only `setActiveProvider` is
+    // overridden for the dispatch-shape assertions elsewhere in this file.
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/provider-settings/provider-settings-slice')
+    >()),
+    setActiveProvider: (id: string) => ({
+      type: 'providerSettings/setActiveProvider',
+      payload: [id],
+    }),
   }),
-}));
+);
 
-vi.mock('$store/renderer/slices/model/model-slice', () => ({
+vi.mock('$store/renderer/slices/model/model-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/model/model-slice')>()),
   reloadModelsForProvider: () => ({ type: 'model/reloadModelsForProvider', payload: [] }),
   setDefaultReasoningEffort: (effort: string) => ({
     type: 'model/setDefaultReasoningEffort',
@@ -222,6 +234,11 @@ vi.mock('svelte-fa', async () => ({
   default: (await import('../workspace/initializer/__tests__/mocks/MockComponent.svelte')).default,
 }));
 
+import {
+  initialState as modelInitialState,
+  modelReducer,
+} from '$store/renderer/slices/model/model-slice';
+import { setAtomicDefaultModel } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import AIBehaviorEditor from './AIBehaviorEditor.svelte';
 import DefaultAgentModelSettings from './DefaultAgentModelSettings.svelte';
 
@@ -364,6 +381,48 @@ describe('DefaultAgentModelSettings Default model picker', () => {
     render(DefaultAgentModelSettings);
 
     expect(screen.getByTestId('picker-selected').textContent).toBe('claude-code:sonnet4.5');
+  });
+
+  it('persists a cross-provider default pick through the atomic write and a Providers page remount (monorepo#4102 recurrence)', async () => {
+    // v2.139.1 regression: picking Codex/Astra as the default model, then
+    // leaving and returning to Providers, showed Auggie/Opus4.8 again.
+    selectedModel$.set('auggie:opus4.8');
+    render(DefaultAgentModelSettings);
+
+    await fireEvent.click(screen.getByTestId('pick-cross-provider-model'));
+
+    // ModelPicker's own `updateGlobalDefault` dispatch (`selectModel`, mocked
+    // away here) is the SOLE owner of persisting the provider+model default
+    // via the atomic `model.defaultProvider` + `model.providerDefaults`
+    // write. A redundant `setActiveProvider` dispatch here raced a second,
+    // non-atomic `model.defaultProvider` write from provider-settings-saga
+    // against that atomic write and corrupted the persisted default.
+    expect(mocks.dispatched.some((a) => a.type === 'providerSettings/setActiveProvider')).toBe(
+      false,
+    );
+    expect(mocks.dispatched.some((a) => a.type === 'model/reloadModelsForProvider')).toBe(false);
+
+    // Drive the REAL (unmocked) production reducer through the exact action
+    // the picker's `updateGlobalDefault` dispatch resolves to
+    // (`model-selection-saga` persists a cross-provider pick as one
+    // `setAtomicDefaultModel` action — see model-selection-saga.test.ts's
+    // "persists a cross-provider default as one revision-bearing atomic
+    // batch"), so this assertion exercises the actual persistence contract
+    // rather than a value poked directly into the mocked selector.
+    const modelState = modelReducer(
+      modelInitialState,
+      setAtomicDefaultModel({ providerId: 'codex', model: 'cross-provider-model' }),
+    );
+    expect(modelState.defaultProviderId).toBe('codex');
+    expect(modelState.providerModels.codex).toBe('cross-provider-model');
+
+    // Leave and return to Providers with that persisted state hydrated
+    // (`selectSelectedModel` reading `providerModels`/`defaultProviderId`).
+    selectedModel$.set('codex:cross-provider-model');
+    cleanup();
+    render(DefaultAgentModelSettings);
+
+    expect(screen.getByTestId('picker-selected').textContent).toBe('codex:cross-provider-model');
   });
 });
 
