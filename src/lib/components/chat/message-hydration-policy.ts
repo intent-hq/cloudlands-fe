@@ -33,7 +33,15 @@ interface MessageHydrationPolicyOptions {
    * transition costs one rebuild, not one per row.
    */
   onHydrationChange?: () => void;
+  frameBudgetMs?: number;
+  maxRowsPerFrame?: number;
+  scheduleFrame?: (callback: FrameRequestCallback) => number;
+  cancelFrame?: (handle: number) => void;
+  now?: () => number;
 }
+
+export const CHAT_HYDRATION_FRAME_BUDGET_MS = 6;
+export const CHAT_HYDRATION_MAX_ROWS_PER_FRAME = 4;
 
 export interface MessageHydrationPolicy {
   /**
@@ -46,6 +54,7 @@ export interface MessageHydrationPolicy {
    */
   observe(id: string, element: Element, root: HTMLElement | null): () => void;
   setActive(active: boolean): void;
+  setScope(scope: string): void;
   setForced(id: string, forced: boolean): void;
   updateMessages(messages: readonly HydrationMessage[]): void;
   getHydratedIds(): string[];
@@ -57,6 +66,7 @@ interface MessageRecord extends HydrationMessage {
   isUser: boolean;
   forced: boolean;
   isIntersecting: boolean;
+  isVisible: boolean;
   hydrated: boolean;
 }
 
@@ -78,12 +88,23 @@ export function createMessageHydrationPolicy(
     root: HTMLElement | null;
     release: (() => void) | null;
     /** Last visibility report seen before a matching record existed. */
-    pendingReport: boolean | null;
+    pendingReport: { isIntersecting: boolean; isVisible: boolean } | null;
   }
   const registrations = new Map<string, Registration>();
   let frontierId: string | undefined;
   let disposed = false;
   let active = true;
+  let scope: string | undefined;
+  let generation = 0;
+  const pendingHydrations = new Set<string>();
+  let scheduledFrame: number | null = null;
+  const staged = options.frameBudgetMs !== undefined;
+  const frameBudgetMs = options.frameBudgetMs ?? CHAT_HYDRATION_FRAME_BUDGET_MS;
+  const maxRowsPerFrame = options.maxRowsPerFrame ?? CHAT_HYDRATION_MAX_ROWS_PER_FRAME;
+  const now = options.now ?? (() => performance.now());
+  const scheduleFrame =
+    options.scheduleFrame ?? ((callback: FrameRequestCallback) => requestAnimationFrame(callback));
+  const cancelFrame = options.cancelFrame ?? ((handle: number) => cancelAnimationFrame(handle));
 
   /**
    * At most this many appended rows hydrate eagerly per update. A single send
@@ -102,6 +123,7 @@ export function createMessageHydrationPolicy(
       isUser: isUserHydrationMessage(message),
       forced: false,
       isIntersecting: false,
+      isVisible: false,
       hydrated: false,
     };
   }
@@ -144,6 +166,72 @@ export function createMessageHydrationPolicy(
     options.onDehydrate?.(record.id);
   }
 
+  function cancelScheduledHydration(): void {
+    generation += 1;
+    pendingHydrations.clear();
+    if (scheduledFrame === null) return;
+    if (scheduledFrame >= 0) cancelFrame(scheduledFrame);
+    scheduledFrame = null;
+  }
+
+  function prunePendingHydrations(liveIds: ReadonlySet<string>): void {
+    for (const id of pendingHydrations) {
+      if (!liveIds.has(id)) pendingHydrations.delete(id);
+    }
+    if (pendingHydrations.size === 0 && scheduledFrame !== null) cancelScheduledHydration();
+  }
+
+  function hydrationPriority(record: MessageRecord): number {
+    if (record.forced) return 0;
+    return record.isVisible ? 1 : 2;
+  }
+
+  function hasPendingPromotedHydration(): boolean {
+    return [...pendingHydrations].some((id) => {
+      const record = records.get(id);
+      return record?.forced === true || record?.isVisible === true;
+    });
+  }
+
+  function dehydrateEligibleRows(): void {
+    if (staged && hasPendingPromotedHydration()) return;
+    for (const record of sortByIndex(records.values())) {
+      if (record.hydrated && canDehydrate(record)) dehydrateRecord(record);
+    }
+  }
+
+  function schedulePendingHydration(): void {
+    if (!staged || disposed || !active || scheduledFrame !== null || pendingHydrations.size === 0)
+      return;
+    const scheduledGeneration = generation;
+    scheduledFrame = -1;
+    const handle = scheduleFrame(() => {
+      scheduledFrame = null;
+      if (disposed || !active || generation !== scheduledGeneration) return;
+      const startedAt = now();
+      let hydratedCount = 0;
+      const candidates = sortByIndex(records.values())
+        .filter((record) => pendingHydrations.has(record.id))
+        .sort((a, b) => hydrationPriority(a) - hydrationPriority(b) || a.index - b.index);
+      for (const record of candidates) {
+        if (
+          hydratedCount >= maxRowsPerFrame ||
+          (hydratedCount > 0 && now() - startedAt >= frameBudgetMs)
+        )
+          break;
+        pendingHydrations.delete(record.id);
+        if (!record.hydrated && (record.forced || record.isIntersecting)) {
+          hydrateRecord(record);
+          hydratedCount += 1;
+        }
+      }
+      dehydrateEligibleRows();
+      flushBatch();
+      schedulePendingHydration();
+    });
+    if (scheduledFrame !== null) scheduledFrame = handle;
+  }
+
   /** Coalesces a call's transitions into one onHydrationChange notification. */
   function flushBatch(): void {
     if (disposed || !batchChanged) return;
@@ -159,14 +247,23 @@ export function createMessageHydrationPolicy(
       // than it — so hydrated rows newer than the frontier are retained.
       const shouldHydrate = record.forced || record.isIntersecting;
       if (shouldHydrate && !record.hydrated) {
-        hydrateRecord(record);
-      } else if (record.hydrated && canDehydrate(record)) {
-        dehydrateRecord(record);
+        if (!staged || record.forced) hydrateRecord(record);
+        else pendingHydrations.add(record.id);
+      } else if (!shouldHydrate) {
+        pendingHydrations.delete(record.id);
       }
     }
+    dehydrateEligibleRows();
+    schedulePendingHydration();
   }
 
-  function reportVisibility(id: string, isIntersecting: boolean): void {
+  function finishVisibilityDelivery(): void {
+    recomputeFrontier();
+    reconcile();
+    flushBatch();
+  }
+
+  function reportVisibility(id: string, isIntersecting: boolean, isVisible: boolean): void {
     if (disposed) return;
     const record = records.get(id);
     if (!record) {
@@ -174,16 +271,15 @@ export function createMessageHydrationPolicy(
       // IntersectionObserver only re-fires on boundary crossings — retain the
       // report so updateMessages() can replay it instead of dropping it.
       const registration = registrations.get(id);
-      if (registration) registration.pendingReport = isIntersecting;
+      if (registration) registration.pendingReport = { isIntersecting, isVisible };
       return;
     }
     record.isIntersecting = isIntersecting;
-    recomputeFrontier();
-    reconcile();
-    // One observer delivery invokes this once per entry; defer the flush to
-    // delivery end so k per-entry reports coalesce into ONE onHydrationChange
-    // (still synchronous, before paint) instead of k consumer rebuilds.
-    if (!scheduleLazyTurnDeliveryFlush(flushBatch)) flushBatch();
+    record.isVisible = isVisible;
+    // One observer delivery invokes this once per entry. Reconcile only after
+    // all reports land so an initial k-row delivery performs one transcript
+    // pass, and entering rows are queued before older rows may dehydrate.
+    if (!scheduleLazyTurnDeliveryFlush(finishVisibilityDelivery)) finishVisibilityDelivery();
   }
 
   function attachRegistration(id: string, registration: Registration) {
@@ -191,7 +287,7 @@ export function createMessageHydrationPolicy(
     registration.release = observeLazyTurnVisibility(
       registration.element,
       registration.root,
-      (isIntersecting) => reportVisibility(id, isIntersecting),
+      (isIntersecting, isVisible) => reportVisibility(id, isIntersecting, isVisible),
     );
   }
 
@@ -217,6 +313,7 @@ export function createMessageHydrationPolicy(
       if (active) {
         for (const [id, registration] of registrations) attachRegistration(id, registration);
       } else {
+        cancelScheduledHydration();
         for (const registration of registrations.values()) {
           registration.release?.();
           registration.release = null;
@@ -224,6 +321,30 @@ export function createMessageHydrationPolicy(
           // re-attached observer reports fresh visibility on activation.
           registration.pendingReport = null;
         }
+      }
+    },
+    setScope(nextScope) {
+      if (disposed || scope === nextScope) return;
+      if (scope === undefined) {
+        scope = nextScope;
+        return;
+      }
+      scope = nextScope;
+      const hadHydratedRows = [...records.values()].some((record) => record.hydrated);
+      cancelScheduledHydration();
+      records.clear();
+      frontierId = undefined;
+      for (const registration of registrations.values()) {
+        registration.release?.();
+        registration.release = null;
+        registration.pendingReport = null;
+      }
+      if (active) {
+        for (const [id, registration] of registrations) attachRegistration(id, registration);
+      }
+      if (hadHydratedRows) {
+        batchChanged = true;
+        flushBatch();
       }
     },
     setForced(id, forced) {
@@ -238,6 +359,7 @@ export function createMessageHydrationPolicy(
       if (disposed) return;
       const previous = new Map(records);
       const nextIds = new Set(nextMessages.map((message) => message.id));
+      prunePendingHydrations(nextIds);
       // Appended rows (newer than every previously known row) hydrate eagerly:
       // a just-sent user message or a fresh streaming row must not paint as a
       // placeholder while waiting for an intersection report. Interior
@@ -265,7 +387,12 @@ export function createMessageHydrationPolicy(
         // placeholder. Retain the dropped record's last visibility so the
         // replay below restores it when the message returns.
         const dropped = previous.get(id);
-        if (dropped) registration.pendingReport = dropped.isIntersecting;
+        if (dropped) {
+          registration.pendingReport = {
+            isIntersecting: dropped.isIntersecting,
+            isVisible: dropped.isVisible,
+          };
+        }
       }
       records.clear();
       nextMessages.forEach((message, index) => {
@@ -289,7 +416,8 @@ export function createMessageHydrationPolicy(
         if (registration.pendingReport === null) continue;
         const record = records.get(id);
         if (!record) continue;
-        record.isIntersecting = registration.pendingReport;
+        record.isIntersecting = registration.pendingReport.isIntersecting;
+        record.isVisible = registration.pendingReport.isVisible;
         registration.pendingReport = null;
       }
       recomputeFrontier();
@@ -303,6 +431,7 @@ export function createMessageHydrationPolicy(
     },
     dispose() {
       disposed = true;
+      cancelScheduledHydration();
       for (const registration of registrations.values()) registration.release?.();
       registrations.clear();
       records.clear();

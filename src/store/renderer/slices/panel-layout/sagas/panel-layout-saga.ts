@@ -64,6 +64,7 @@ import {
 import { selectPanelLayoutWorkspace } from '../panel-layout-selectors';
 import { migratePanelLayoutForWorkspace } from '../panel-layout-migration';
 import {
+  activateVisibleTab,
   clearPanelLayout,
   bootstrapNewWorkspaceLayout,
   closeActiveTab,
@@ -143,6 +144,7 @@ import {
 } from '../panel-layout-types';
 import { countHorizontalPanelColumns } from '../panel-layout-tabless';
 import { selectPanelColumnCount } from '../panel-layout-selectors';
+import { dropRevealIfWorkspaceNotDisplayed } from './reveal-suppression';
 
 const PERSIST_ACTIONS = [
   initializeLayout,
@@ -157,6 +159,7 @@ const PERSIST_ACTIONS = [
   destroyTabsByOwnerAgent,
   destroyOwnedTabsForWorkspace,
   restoreHiddenTab,
+  activateVisibleTab,
   reopenClosedTab,
   setActiveTab,
   selectNextTab,
@@ -217,6 +220,7 @@ const HISTORY_ACTIONS = [
   moveTabToSplit,
   moveTabToSplitLevel,
   setActiveTab,
+  activateVisibleTab,
   goBack,
   goForward,
   resetLayout,
@@ -297,10 +301,16 @@ function* routeTabToRightmostColumn(
     openTabInRightmostColumn(
       wsId,
       tab,
-      { force, allowDuplicate, newTabId, background: agentDriven === true },
+      { force, allowDuplicate, newTabId, preserveFocus: agentDriven === true },
       timestamp,
     ),
   );
+  // An agent-driven open activates the tab without moving focus; the queued
+  // reveal only scrolls the panel into view and must not fire later if the
+  // workspace is not the one this window displays (monorepo#3045).
+  if (agentDriven === true) {
+    yield* dropRevealIfWorkspaceNotDisplayed(wsId, newTabId);
+  }
 }
 
 export function* watchRightmostColumnRequests(): SagaGenerator<void> {

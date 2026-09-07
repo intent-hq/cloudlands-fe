@@ -9,11 +9,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   BRIDGE_PATH,
+  SANDBOX_HEALTH_PATH,
   intentdBridgePlugin,
   isLoopbackHostname,
   isSameLoopbackOrigin,
+  resolveGitInfo,
   resolveIntentdSocketPath,
 } from './vite-plugin-intentd-bridge.mjs';
+
+const TEST_GIT_INFO = { sha: '0123456789abcdef', branch: 'feat/health-test' };
 
 const resources = [];
 const nonLoopbackIpv4 = Object.values(os.networkInterfaces())
@@ -100,11 +104,21 @@ function middlewareServer() {
   return { server, middlewares: { use: (handler) => handlers.push(handler) } };
 }
 
-async function setup({ maxMessageBytes = 40 * 1024 * 1024, listenHost = '127.0.0.1' } = {}) {
+async function setup({
+  maxMessageBytes = 40 * 1024 * 1024,
+  listenHost = '127.0.0.1',
+  startDaemon = true,
+  warmupEntries = ['src/routes/+page.svelte'],
+  warmModules = ['src/routes/+page.svelte', 'src/hooks.client.ts'],
+  waitForRequestsIdle = async () => {},
+  healthWaitMs,
+  gitInfoResolver = () => TEST_GIT_INFO,
+} = {}) {
   const socketPath = path.join(
     os.tmpdir(),
     `intentd-vite-${crypto.randomBytes(6).toString('hex')}.sock`,
   );
+  const root = path.join(os.tmpdir(), `intentd-vite-root-${crypto.randomBytes(6).toString('hex')}`);
   let received = Buffer.alloc(0);
   let udsConnections = 0;
   const udsSockets = new Set();
@@ -117,7 +131,7 @@ async function setup({ maxMessageBytes = 40 * 1024 * 1024, listenHost = '127.0.0
       socket.write(chunk);
     });
   });
-  await new Promise((resolve) => udsServer.listen(socketPath, resolve));
+  if (startDaemon) await new Promise((resolve) => udsServer.listen(socketPath, resolve));
 
   const { server, middlewares } = middlewareServer();
   const tcpSockets = new Set();
@@ -127,10 +141,23 @@ async function setup({ maxMessageBytes = 40 * 1024 * 1024, listenHost = '127.0.0
   });
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
-  intentdBridgePlugin({ socketPath, maxMessageBytes }).configureServer({
+  const viteServer = {
     httpServer: server,
     middlewares,
-  });
+    config: { root, server: { warmup: { clientFiles: warmupEntries } } },
+    waitForRequestsIdle,
+    moduleGraph: {
+      idToModuleMap: new Map(
+        warmModules.map((file, index) => [file, { file: path.resolve(root, file), index }]),
+      ),
+    },
+  };
+  intentdBridgePlugin({
+    socketPath,
+    maxMessageBytes,
+    healthWaitMs,
+    gitInfoResolver,
+  }).configureServer(viteServer);
   server.on('upgrade', (request, socket) => {
     if (request.headers['sec-websocket-protocol'] === 'vite-hmr') {
       socket.end('HTTP/1.1 200 HMR Pass Through\r\nConnection: close\r\n\r\n');
@@ -144,16 +171,40 @@ async function setup({ maxMessageBytes = 40 * 1024 * 1024, listenHost = '127.0.0
   resources.push(async () => {
     for (const socket of tcpSockets) socket.destroy();
     for (const socket of udsSockets) socket.destroy();
-    await Promise.all([
-      new Promise((resolve) => server.close(resolve)),
-      new Promise((resolve) => udsServer.close(resolve)),
-    ]);
+    const closures = [new Promise((resolve) => server.close(resolve))];
+    if (startDaemon) closures.push(new Promise((resolve) => udsServer.close(resolve)));
+    await Promise.all(closures);
   });
   return {
     port,
+    socketPath,
     received: () => received,
     udsConnections: () => udsConnections,
   };
+}
+
+async function requestHttp(port, { url = SANDBOX_HEALTH_PATH, method = 'GET', origin, host } = {}) {
+  const headers = {};
+  if (origin !== undefined)
+    headers.Origin = origin === 'same' ? `http://127.0.0.1:${port}` : origin;
+  if (host !== undefined) headers.Host = host;
+  return new Promise((resolve, reject) => {
+    const request = http.request(
+      { host: '127.0.0.1', port, path: url, method, headers },
+      async (response) => {
+        const chunks = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        await once(response, 'end');
+        resolve({
+          status: response.statusCode,
+          headers: response.headers,
+          body: Buffer.concat(chunks).toString(),
+        });
+      },
+    );
+    request.on('error', reject);
+    request.end();
+  });
 }
 
 async function connect(
@@ -198,6 +249,7 @@ describe('intentd Vite bridge', () => {
       true,
     );
     expect(development.server.hmr).toBeUndefined();
+    expect(development.server.warmup.clientFiles).toHaveLength(3);
     expect(JSON.parse(development.define['process.env.VITE_INTENTD_WS_URL'])).toBe(BRIDGE_PATH);
 
     const preview = configure({ command: 'serve', mode: 'development', isPreview: true });
@@ -217,6 +269,10 @@ describe('intentd Vite bridge', () => {
     expect(build.plugins.some((plugin) => plugin.name === 'intentd-same-origin-bridge')).toBe(
       false,
     );
+
+    vi.stubEnv('INTENT_BUILD_TARGET', '');
+    const electron = configure({ command: 'serve', mode: 'development', isPreview: false });
+    expect(electron.server.warmup).toBeUndefined();
   });
 
   it('resolves trimmed socket overrides before platform defaults', () => {
@@ -250,6 +306,11 @@ describe('intentd Vite bridge', () => {
     expect(resolveIntentdSocketPath({ HOME: '/home/dev' }, 'linux')).toBe(
       '/home/dev/.local/share/intentd/intentd.sock',
     );
+  });
+
+  it('maps a detached Git checkout to a null branch', () => {
+    const run = vi.fn().mockReturnValueOnce('0123456789abcdef').mockReturnValueOnce('HEAD');
+    expect(resolveGitInfo('/repo', run)).toEqual({ sha: '0123456789abcdef', branch: null });
   });
 
   it.each([
@@ -349,6 +410,147 @@ describe('intentd Vite bridge', () => {
     expect(response.end).toHaveBeenCalledOnce();
     expect(next).not.toHaveBeenCalled();
     httpServer.emit('close');
+  });
+
+  it('reports a healthy warm Vite server connected to intentd', async () => {
+    const bridge = await setup();
+    const response = await requestHttp(bridge.port, { origin: 'same' });
+    expect(response.status).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(JSON.parse(response.body)).toEqual({
+      ok: true,
+      vite: { ready: true },
+      daemon: { socket: bridge.socketPath, reachable: true },
+      warm: { moduleGraph: 2, entriesWarm: true },
+      git: TEST_GIT_INFO,
+    });
+  });
+
+  it('resolves Git identity for every health request', async () => {
+    const gitInfoResolver = vi
+      .fn()
+      .mockReturnValueOnce({ sha: 'first', branch: 'feat/first' })
+      .mockReturnValueOnce({ sha: 'second', branch: null });
+    const bridge = await setup({ gitInfoResolver });
+    const first = await requestHttp(bridge.port);
+    const second = await requestHttp(bridge.port);
+    expect(JSON.parse(first.body).git).toEqual({ sha: 'first', branch: 'feat/first' });
+    expect(JSON.parse(second.body).git).toEqual({ sha: 'second', branch: null });
+    expect(gitInfoResolver).toHaveBeenCalledTimes(2);
+  });
+
+  it('accepts health requests with query parameters', async () => {
+    const bridge = await setup();
+    const response = await requestHttp(bridge.port, { url: `${SANDBOX_HEALTH_PATH}?x=1` });
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body).ok).toBe(true);
+  });
+
+  it('accepts a matching daemon.localhost health origin', async () => {
+    const bridge = await setup();
+    const host = `daemon.localhost:${bridge.port}`;
+    const response = await requestHttp(bridge.port, { host, origin: `http://${host}` });
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body).ok).toBe(true);
+  });
+
+  it('waits for the configured warm-up import crawl before reporting health', async () => {
+    let finishWarmup;
+    const warmupFinished = new Promise((resolve) => {
+      finishWarmup = resolve;
+    });
+    const bridge = await setup({ waitForRequestsIdle: () => warmupFinished });
+    let responseReceived = false;
+    const responsePromise = requestHttp(bridge.port).then((response) => {
+      responseReceived = true;
+      return response;
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(responseReceived).toBe(false);
+    finishWarmup();
+    expect((await responsePromise).status).toBe(200);
+  });
+
+  it('returns a fast 503 while the warm-up import crawl remains pending', async () => {
+    vi.stubEnv('SANDBOX_HEALTH_WAIT_MS', '10');
+    const bridge = await setup({
+      waitForRequestsIdle: () => new Promise(() => {}),
+    });
+    const startedAt = Date.now();
+    const response = await requestHttp(bridge.port);
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(response.status).toBe(503);
+    expect(JSON.parse(response.body)).toEqual({
+      ok: false,
+      warmup: 'pending',
+      git: TEST_GIT_INFO,
+    });
+  });
+
+  it('returns a JSON 500 and logs once when health handling throws', async () => {
+    const bridge = await setup({
+      waitForRequestsIdle: () => {
+        throw new Error('warm-up failure');
+      },
+    });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const response = await requestHttp(bridge.port);
+    expect(response.status).toBe(500);
+    expect(JSON.parse(response.body)).toEqual({ ok: false, error: 'health handler failed' });
+    expect(error).toHaveBeenCalledOnce();
+  });
+
+  it('reports an unhealthy sandbox when the daemon socket is missing', async () => {
+    const bridge = await setup({ startDaemon: false });
+    const response = await requestHttp(bridge.port);
+    expect(response.status).toBe(503);
+    expect(JSON.parse(response.body)).toEqual({
+      ok: false,
+      vite: { ready: true },
+      daemon: { socket: bridge.socketPath, reachable: false, error: expect.any(String) },
+      warm: { moduleGraph: 2, entriesWarm: true },
+      git: TEST_GIT_INFO,
+    });
+  });
+
+  it('stays unhealthy until every configured warm-up entry is in the module graph', async () => {
+    const bridge = await setup({ warmupEntries: ['src/routes/+page.svelte', 'src/app.html'] });
+    const response = await requestHttp(bridge.port);
+    expect(response.status).toBe(503);
+    expect(JSON.parse(response.body).warm).toEqual({ moduleGraph: 2, entriesWarm: false });
+  });
+
+  it('has no pending warm-up work when no entries are configured', async () => {
+    const bridge = await setup({ warmupEntries: [] });
+    const response = await requestHttp(bridge.port);
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body).warm).toEqual({ moduleGraph: 2, entriesWarm: true });
+  });
+
+  it('matches the escaped warm-up globs used by the Vite config', async () => {
+    const bridge = await setup({
+      warmupEntries: [
+        'src/routes/[(]app[)]/+page.svelte',
+        'src/routes/sandbox/[[]slug]/+page.svelte',
+      ],
+      warmModules: ['src/routes/(app)/+page.svelte', 'src/routes/sandbox/[slug]/+page.svelte'],
+    });
+    const response = await requestHttp(bridge.port);
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body).warm.entriesWarm).toBe(true);
+  });
+
+  it.each([
+    ['non-GET health requests', { method: 'POST' }, 405],
+    ['other paths', { url: '/other' }, 404],
+    ['cross-origin requests', { origin: 'https://hostile.example' }, 403],
+    ['non-loopback hosts', { host: 'example.com' }, 403],
+  ])('rejects %s', async (_label, request, status) => {
+    const bridge = await setup();
+    const response = await requestHttp(bridge.port, request);
+    expect(response.status).toBe(status);
+    expect(bridge.udsConnections()).toBe(0);
   });
 
   it('leaves Vite HMR upgrades untouched', async () => {

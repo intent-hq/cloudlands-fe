@@ -62,6 +62,8 @@ const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
 };
 
 function session(overrides: Partial<AgentSession> = {}): AgentSession {

@@ -1291,6 +1291,13 @@ export type BulkUpsertSessionsOptions = {
    * in-flight pair.
    */
   allowActiveTurnRuntimeFlagClear?: boolean;
+  /**
+   * Mixed list snapshots may contain both crash-leftover idle rows and live
+   * rows. IDs listed here receive the authoritative stale-clear semantics
+   * (`preserveExplicitRuntimeFlags: false` plus active-turn clear) without
+   * splitting one hydration into multiple reducer commits.
+   */
+  staleRuntimeFlagClearAgentIds?: string[];
 };
 
 /** Bulk upsert sessions (initial load / snapshot reconciliation / batched upsert storage) */
@@ -1470,11 +1477,18 @@ agentSessionReducer.with(renameSession, (state, { payload: [agentId, name] }) =>
 });
 agentSessionReducer.with(bulkUpsertSessions, (state, { payload: [sessions, options] }) => {
   let next = state;
-  const storageOptions: SessionUpsertStorageOptions = {
+  const defaultStorageOptions: SessionUpsertStorageOptions = {
     preserveExplicitRuntimeFlags: options?.preserveExplicitRuntimeFlags ?? true,
     allowActiveTurnRuntimeFlagClear: options?.allowActiveTurnRuntimeFlagClear ?? false,
   };
+  const staleClearIds = new Set(options?.staleRuntimeFlagClearAgentIds ?? []);
   for (const session of sessions) {
+    const storageOptions = staleClearIds.has(String(session.id))
+      ? {
+          preserveExplicitRuntimeFlags: false,
+          allowActiveTurnRuntimeFlagClear: true,
+        }
+      : defaultStorageOptions;
     next = applySessionUpsert(next, session, storageOptions);
   }
   return next;

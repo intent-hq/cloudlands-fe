@@ -27,13 +27,9 @@
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import {
     type AvatarState,
-    getAvatarState,
+    getAvatarStateForSession,
   } from '$features/agent/components/agent-avatar/avatar-state';
-  import {
-    selectAgentIsResponding,
-    selectAgentIsWaiting,
-    selectAgentSessionsByIds,
-  } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectAgentSessionsByIds } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
   import { writable } from 'svelte/store';
   import {
@@ -372,26 +368,14 @@
       specialist?: 'spec-writer' | 'implementor' | 'verifier' | null;
     }> = [];
 
-    const reduxState = appStore.state;
-
     for (const agentId of assignedAgentIds) {
       const agent = agentSessionsById.get(agentId);
       if (!agent) continue;
 
-      const isWaiting = selectAgentIsWaiting.select(reduxState, agentId);
-      const isResponding = selectAgentIsResponding.select(reduxState, agentId);
-      const activelyWorking = isResponding && !isWaiting;
-
-      if (!activelyWorking) continue;
-
-      // Use centralized getAvatarState for consistent state calculation
-      const state = getAvatarState(
-        {
-          isStreaming: activelyWorking,
-          status: isWaiting ? 'waiting' : agent.status,
-        },
-        {},
-      );
+      // Shared precedence: a live turn with an unresolved tool is still running,
+      // so tool-executing agents stay visible here instead of dropping out.
+      const state = getAvatarStateForSession(agent);
+      if (state !== 'running') continue;
 
       // Get specialist from agent metadata
       const specialistId = agent.metadata?.specialist || agent.agentMetadata?.specialist;

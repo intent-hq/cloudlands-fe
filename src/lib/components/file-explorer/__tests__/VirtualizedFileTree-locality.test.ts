@@ -17,6 +17,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import VirtualizedFileTree from '../VirtualizedFileTree.svelte';
 import { store as appStore } from '$store/renderer/store';
 import { systemStatusSuccess } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import { selectDaemonConnectionGeneration } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 import {
   removeWorkspaceEntity,
   setWorkspaceEntity,
@@ -52,6 +53,7 @@ function seedLocality(locality: 'local' | 'remote') {
         host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality },
       },
       '2026-07-30T20:00:00.000Z',
+      selectDaemonConnectionGeneration.select(appStore.state),
     ),
   );
 }

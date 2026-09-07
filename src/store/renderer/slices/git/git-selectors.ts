@@ -12,6 +12,7 @@ import type { GitStatus } from '$shared/types';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { CommitFile } from '$features/file-tracking/types';
 import type { CommitInfo } from '$shared/types';
+import type { WorkspaceGitStatus } from '$features/accept-changes/types';
 
 const defaultPostMergeState: PostMergeState = {
   aheadOfTrunk: null,
@@ -85,6 +86,16 @@ export const selectPostMergeState: AppSelector<PostMergeState, [wsId: string]> =
   store.createSelector(
     (state, wsId: string): PostMergeState =>
       getGitWorkspaceState(state.git, wsId).postMergeState ?? defaultPostMergeState,
+  );
+
+export const selectAcceptChangesStatus: AppSelector<WorkspaceGitStatus | null, [wsId: string]> =
+  store.createSelector(
+    (state, wsId: string) => getGitWorkspaceState(state.git, wsId).acceptChangesStatus,
+  );
+
+export const selectAcceptChangesStatusLoading: AppSelector<boolean, [wsId: string]> =
+  store.createSelector(
+    (state, wsId: string) => getGitWorkspaceState(state.git, wsId).acceptChangesStatusLoading,
   );
 
 export const selectGitOperationFlags: AppSelector<GitOperationFlags, [wsId: string]> =

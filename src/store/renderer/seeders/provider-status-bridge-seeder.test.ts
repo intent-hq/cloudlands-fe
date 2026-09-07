@@ -11,9 +11,23 @@
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+const providerLifecycle = vi.hoisted(() => ({
+  notification: undefined as
+    ((notification: { method: string; params?: unknown }) => void) | undefined,
+  reconnected: undefined as (() => void) | undefined,
+}));
+
 // FAKE transport only: the daemon bridge is mocked so no IPC ever fires.
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
+  onBackendNotification: vi.fn((handler) => {
+    providerLifecycle.notification = handler;
+    return () => {};
+  }),
+  onBackendReconnected: vi.fn((handler) => {
+    providerLifecycle.reconnected = handler;
+    return () => {};
+  }),
 }));
 
 // The seeder reads known provider ids / gating metadata from the
@@ -33,6 +47,10 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 import { backendRequest } from '$lib/client/live/backend-transport';
+import {
+  __resetProviderAuthStatusForTests,
+  getProviderAuthVerdicts,
+} from '$features/providers/provider-auth-status.client';
 import { mockInvoke } from '$shared/ipc-mock-router';
 import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
@@ -40,6 +58,12 @@ import { CODEX_ADAPTER_MISSING_WARNING } from '$shared/constants/codex';
 import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
 
 const mockedRequest = vi.mocked(backendRequest);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => (resolve = done));
+  return { promise, resolve };
+}
 
 /** Route daemon methods to canned PROTOCOL-shaped responses. */
 type MethodResponses = Record<string, unknown | ((params: unknown) => unknown)>;
@@ -132,7 +156,113 @@ describe('provider-status-bridge-seeder', () => {
   });
 
   afterEach(() => {
+    __resetProviderAuthStatusForTests();
+    vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it('single-flights auth reads and refetches after auth events and reconnects', async () => {
+    mockedRequest.mockResolvedValue(authSweep({ codex: true }));
+
+    const [first, second] = await Promise.all([
+      getProviderAuthVerdicts(),
+      getProviderAuthVerdicts(),
+    ]);
+    expect(first.codex?.authenticated).toBe(true);
+    expect(second).toEqual(first);
+    await getProviderAuthVerdicts();
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+
+    providerLifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'provider:auth-changed' } },
+    });
+    await getProviderAuthVerdicts();
+    providerLifecycle.reconnected?.();
+    await getProviderAuthVerdicts();
+
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+    expect(mockedRequest).toHaveBeenLastCalledWith('host.providerAuthStatus', {});
+  });
+
+  it('refreshes cached auth verdicts after the daemon-aligned TTL expires', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-05T12:00:00Z'));
+    mockedRequest
+      .mockResolvedValueOnce(authOne('codex', false))
+      .mockResolvedValueOnce(authOne('codex', true));
+
+    await expect(getProviderAuthVerdicts({ providerId: 'codex' })).resolves.toEqual({
+      codex: { authenticated: false },
+    });
+    vi.advanceTimersByTime(59_999);
+    await expect(getProviderAuthVerdicts({ providerId: 'codex' })).resolves.toEqual({
+      codex: { authenticated: false },
+    });
+    vi.advanceTimersByTime(1);
+    await expect(getProviderAuthVerdicts({ providerId: 'codex' })).resolves.toEqual({
+      codex: { authenticated: true },
+    });
+
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves force on a refresh queued behind a passive auth read', async () => {
+    let resolveCached!: (value: unknown) => void;
+    mockedRequest
+      .mockReturnValueOnce(new Promise((resolve) => (resolveCached = resolve)))
+      .mockResolvedValueOnce(authOne('codex', true));
+
+    const cachedRead = getProviderAuthVerdicts({ providerId: 'codex' });
+    const freshRead = getProviderAuthVerdicts({ providerId: 'codex', force: true });
+    resolveCached(authOne('codex', false));
+
+    await expect(cachedRead).resolves.toEqual({ codex: { authenticated: false } });
+    await expect(freshRead).resolves.toEqual({ codex: { authenticated: true } });
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'host.providerAuthStatus', {
+      providerId: 'codex',
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'host.providerAuthStatus', {
+      providerId: 'codex',
+      force: true,
+    });
+  });
+
+  it('serves the newest verdict after two invalidations without concurrent reads', async () => {
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    let activeReads = 0;
+    let maxActiveReads = 0;
+    const track = (promise: Promise<unknown>) => {
+      activeReads += 1;
+      maxActiveReads = Math.max(maxActiveReads, activeReads);
+      return promise.finally(() => (activeReads -= 1));
+    };
+    mockedRequest
+      .mockImplementationOnce(() => track(first.promise))
+      .mockImplementationOnce(() => track(second.promise))
+      .mockImplementationOnce(() => track(Promise.resolve(authOne('codex', true))));
+
+    const initialRead = getProviderAuthVerdicts({ providerId: 'codex' });
+    providerLifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'provider:auth-changed' } },
+    });
+    const middleRead = getProviderAuthVerdicts({ providerId: 'codex' });
+    first.resolve(authOne('codex', false));
+    await vi.waitFor(() => expect(mockedRequest).toHaveBeenCalledTimes(2));
+    providerLifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'provider:auth-changed' } },
+    });
+    const newestRead = getProviderAuthVerdicts({ providerId: 'codex' });
+    second.resolve(authOne('codex', false));
+
+    await initialRead;
+    await middleRead;
+    await expect(newestRead).resolves.toEqual({ codex: { authenticated: true } });
+    expect(maxActiveReads).toBe(1);
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
   });
 
   describe('providers:get-availability → host.checkAuggie + host.toolAvailability + host.providerAuthStatus', () => {

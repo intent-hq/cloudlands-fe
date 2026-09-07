@@ -38,6 +38,7 @@ const backendMocks = vi.hoisted(() => {
 
 vi.mock('../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: backendMocks.request }),
+  onBackendReconnected: () => () => {},
 }));
 
 vi.mock('../../terminal/main/terminal.ipc', () => ({

@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import { invoke } from '$lib/electron-bridge';
 import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
 
 const mocks = vi.hoisted(() => {
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => {
   const subscribers = new Set<(value: number) => void>();
   return {
     dispatch: vi.fn(),
+    workspaceHostLocal: true,
     panelColumnCount: {
       subscribe(run: (value: number) => void) {
         subscribers.add(run);
@@ -75,7 +77,7 @@ vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: { select: () => null },
-  selectIsWorkspaceHostLocal: () => readable(true),
+  selectIsWorkspaceHostLocal: () => readable(mocks.workspaceHostLocal),
 }));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: () => readable([]),
@@ -177,6 +179,7 @@ function dragEvent(target: Element) {
 
 beforeEach(() => {
   mocks.dispatch.mockClear();
+  mocks.workspaceHostLocal = true;
   mocks.setPanelColumnCount(2);
   setDraggedPane(null);
   Element.prototype.scrollIntoView = vi.fn();
@@ -387,6 +390,51 @@ describe('mounted panel header actions menu', () => {
     expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeTruthy();
     expect(screen.getByTestId('content-display-action')).toBeTruthy();
     expect(screen.getByTestId('content-command-action')).toBeTruthy();
+  });
+
+  it.each(panelTypes.filter((type) => type !== 'browser'))(
+    'omits the Open In section on a remote workspace host for the %s panel',
+    async (type) => {
+      mocks.workspaceHostLocal = false;
+      const { container } = renderHeader(type);
+
+      await fireEvent.click(panelTrigger(container));
+
+      const menu = await screen.findByRole('menu');
+      expect(menu.querySelector('[data-panel-actions-section="display"]')).toBeTruthy();
+      expect(menu.querySelector('[data-panel-actions-section="actions"]')).toBeTruthy();
+      expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeNull();
+      const actionsSection = menu.querySelector('[data-panel-actions-section="actions"]')!;
+      const separators = Array.from(menu.querySelectorAll('[data-slot="menu-separator"]'));
+      expect(separators).toHaveLength(1);
+      expect(separators[0].compareDocumentPosition(actionsSection)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    },
+  );
+
+  it('keeps Open in browser on a remote workspace host for the browser panel', async () => {
+    mocks.workspaceHostLocal = false;
+    const browserTab = { ...tab('browser'), browserUrl: 'https://example.com/pr/1' };
+    const { container } = renderHeader('browser', {
+      tabs: [browserTab],
+      activeTabId: browserTab.id,
+    });
+
+    await fireEvent.click(panelTrigger(container));
+
+    const menu = await screen.findByRole('menu');
+    expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeTruthy();
+    const openInBrowser = within(menu).getByRole('menuitem', { name: /open in browser/i });
+    expect(openInBrowser.getAttribute('aria-disabled')).not.toBe('true');
+
+    await fireEvent.click(openInBrowser);
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith('shell:openExternal', {
+        url: 'https://example.com/pr/1',
+      }),
+    );
   });
 
   it.each(

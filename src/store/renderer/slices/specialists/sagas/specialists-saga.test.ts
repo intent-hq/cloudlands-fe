@@ -67,6 +67,7 @@ const fileDef = (id: string) => ({
   codingAgent: 'codex',
   model: 'gpt',
   modelOptions: [{ model: 'opencode:kimi-k3', hint: 'Use for broad review' }],
+  reasoningEffort: 'high',
   behaviorPrompt: 'Review.',
   roleReminder: 'Verify.',
   path: `/tmp/${id}.md`,
@@ -88,6 +89,7 @@ const mappedFileDef = (id: string) => ({
   codingAgent: 'codex',
   model: 'gpt',
   modelOptions: [{ model: 'opencode:kimi-k3', hint: 'Use for broad review' }],
+  reasoningEffort: 'high',
   behaviorPrompt: 'Review.',
   roleReminder: 'Verify.',
   filePath: `/tmp/${id}.md`,
@@ -168,6 +170,7 @@ describe('specialistsSaga', () => {
           codingAgent: 'codex',
           model: 'gpt',
           modelOptions: [{ model: 'opencode:kimi-k3', hint: 'Use for broad review' }],
+          reasoningEffort: 'high',
           behaviorPrompt: 'Review.',
           roleReminder: 'Verify.',
           filePath: '/tmp/reviewer.md',
@@ -364,6 +367,71 @@ describe('specialistsSaga', () => {
       ...expectedListActions(['edited']),
     ]);
     await expect(action.promise).resolves.toBeUndefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('round-trips reasoningEffort through the post-mutation refetch so a follow-up save keeps it', async () => {
+    // Regression: picking an effort level in the specialist Model row briefly
+    // showed the level, then reverted to Auto with no error. The daemon
+    // persisted it (the edit request carried it), but the refetched
+    // `specialist.list` def was mapped into state without `reasoningEffort`,
+    // so the picker re-read `undefined` — and any follow-up save built from
+    // that state silently wrote the level away on the daemon too.
+    const files: Record<string, ReturnType<typeof mappedFileDef>> = {
+      edited: { ...mappedFileDef('edited'), reasoningEffort: undefined },
+    };
+    mocks.list.mockResolvedValue([{ ...fileDef('edited'), reasoningEffort: 'high' }]);
+    const channel = stdChannel();
+    const dispatch = vi.fn((dispatched: { type: string; payload?: unknown[] }) => {
+      if (dispatched.type === setFileSpecialists.type) {
+        for (const spec of dispatched.payload![0] as ReturnType<typeof mappedFileDef>[]) {
+          files[spec.id] = spec;
+        }
+      }
+    });
+    const task = runSaga({ channel, dispatch, getState: () => sagaState(files) }, specialistsSaga);
+
+    const pickLevel = saveFileSpecialist({
+      id: 'edited',
+      name: 'Reviewer',
+      description: 'Reviews',
+      codingAgent: 'auggie',
+      model: 'opus',
+      modelOptions: [{ model: 'opencode:kimi-k3', hint: 'Use for broad review' }],
+      roleReminder: 'Verify.',
+      reasoningEffort: 'high',
+      behaviorPrompt: 'Review.',
+      scope: 'user',
+    });
+    channel.put(pickLevel);
+    await settle();
+    await expect(pickLevel.promise).resolves.toBeUndefined();
+
+    // The refetched state must carry the persisted level.
+    const refetched = files.edited;
+    expect(refetched.reasoningEffort).toBe('high');
+
+    // A follow-up save built from state — as the editor does for a rename or
+    // prompt edit — must not drop the level.
+    const rename = saveFileSpecialist({
+      id: refetched.id,
+      name: 'Renamed',
+      description: refetched.description,
+      codingAgent: refetched.codingAgent,
+      model: refetched.model || undefined,
+      modelOptions: refetched.modelOptions,
+      roleReminder: refetched.roleReminder,
+      reasoningEffort: refetched.reasoningEffort,
+      behaviorPrompt: refetched.behaviorPrompt,
+      scope: refetched.source,
+    });
+    channel.put(rename);
+    await settle();
+    await expect(rename.promise).resolves.toBeUndefined();
+
+    // Every edit request — not just the last — carries the level.
+    expect(mocks.edit.mock.calls.map(([, spec]) => spec.reasoningEffort)).toEqual(['high', 'high']);
     task.cancel();
     await task.toPromise();
   });
