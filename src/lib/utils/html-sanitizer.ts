@@ -15,6 +15,56 @@ const isWorkspaceFileUrl = (value: string): boolean =>
 
 let sanitizedWorkspaceId: string | undefined;
 let enforceWorkspaceFileScope = false;
+let preserveKatexLayoutStyles = false;
+
+const KATEX_DIMENSION = /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:em|px|%)$/;
+const KATEX_DIMENSION_PROPERTIES = new Set([
+  'border-bottom-width',
+  'border-right-width',
+  'border-top-width',
+  'border-width',
+  'bottom',
+  'height',
+  'left',
+  'margin-left',
+  'margin-right',
+  'margin-top',
+  'min-width',
+  'padding-left',
+  'top',
+  'vertical-align',
+  'width',
+]);
+
+function sanitizeKatexStyle(value: string): string {
+  const declarations: string[] = [];
+  for (const declaration of value.split(';')) {
+    const separator = declaration.indexOf(':');
+    if (separator < 0) continue;
+    const property = declaration.slice(0, separator).trim().toLowerCase();
+    const propertyValue = declaration
+      .slice(separator + 1)
+      .trim()
+      .toLowerCase();
+    const dimensions = propertyValue.split(/\s+/);
+    const allowed =
+      (KATEX_DIMENSION_PROPERTIES.has(property) && KATEX_DIMENSION.test(propertyValue)) ||
+      (property === 'margin' &&
+        dimensions.length <= 4 &&
+        dimensions.every((part) => part === '0' || KATEX_DIMENSION.test(part))) ||
+      (property === 'position' && propertyValue === 'relative') ||
+      ((property === 'border-style' || property === 'border-right-style') &&
+        (propertyValue === 'solid' || propertyValue === 'dashed'));
+    if (allowed) declarations.push(`${property}:${propertyValue}`);
+  }
+  return declarations.length ? `${declarations.join(';')};` : '';
+}
+
+function isKatexLayoutElement(node: Element): boolean {
+  const wrapper = node.closest('.math-inline[data-math-source], .math-display[data-math-source]');
+  const katex = node.closest('.katex');
+  return wrapper !== null && katex !== null && wrapper.contains(katex);
+}
 
 function isAllowedWorkspaceFileUrl(value: string): boolean {
   if (!isWorkspaceFileUrl(value)) return false;
@@ -45,6 +95,15 @@ DOMPurify.addHook('uponSanitizeElement', (node) => {
 // anchor hrefs; keeping it media-only avoids relying on the main-process
 // shell.openExternal allowlist to keep such links inert.
 DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
+  if (data.attrName === 'style') {
+    if (!preserveKatexLayoutStyles || !(node instanceof Element) || !isKatexLayoutElement(node)) {
+      data.keepAttr = false;
+      return;
+    }
+    data.attrValue = sanitizeKatexStyle(data.attrValue);
+    data.keepAttr = data.attrValue.length > 0;
+    return;
+  }
   if (
     enforceWorkspaceFileScope &&
     isWorkspaceFileUrl(data.attrValue) &&
@@ -263,11 +322,17 @@ function sanitizeHTML(html: string, options: Partial<typeof purifyConfig> = {}):
 /**
  * Sanitize HTML for display in markdown preview
  */
-export function sanitizeMarkdownHTML(html: string, workspaceId?: string): string {
+export function sanitizeMarkdownHTML(
+  html: string,
+  workspaceId?: string,
+  options: { preserveKatexLayoutStyles?: boolean } = {},
+): string {
   const previousWorkspaceId = sanitizedWorkspaceId;
   const previousEnforcement = enforceWorkspaceFileScope;
+  const previousKatexLayoutStyles = preserveKatexLayoutStyles;
   sanitizedWorkspaceId = workspaceId;
   enforceWorkspaceFileScope = true;
+  preserveKatexLayoutStyles = options.preserveKatexLayoutStyles ?? false;
   try {
     return sanitizeHTML(html, {
       // Allow more tags for markdown
@@ -331,6 +396,7 @@ export function sanitizeMarkdownHTML(html: string, workspaceId?: string): string
         'data-metadata', // Context mention attributes (Linear, GitHub, Sentry issues)
         'data-math-source', // Original delimited TeX for lossless HTML-to-Markdown conversion
         'aria-hidden',
+        ...(preserveKatexLayoutStyles ? ['style'] : []),
         'display',
         'encoding',
         'xmlns',
@@ -364,5 +430,6 @@ export function sanitizeMarkdownHTML(html: string, workspaceId?: string): string
   } finally {
     sanitizedWorkspaceId = previousWorkspaceId;
     enforceWorkspaceFileScope = previousEnforcement;
+    preserveKatexLayoutStyles = previousKatexLayoutStyles;
   }
 }

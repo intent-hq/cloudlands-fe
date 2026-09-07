@@ -256,7 +256,9 @@ $$\frac{1}{2}$$`;
     const fallback = await processMarkdownToHTML(large, { renderMath: true });
 
     expect(worker.error).toBeNull();
-    expect(sanitizeMarkdownHTML(worker.html ?? '')).toBe(main);
+    expect(
+      sanitizeMarkdownHTML(worker.html ?? '', undefined, { preserveKatexLayoutStyles: true }),
+    ).toBe(main);
     expect(containerFor(fallback).querySelectorAll('.katex')).toHaveLength(2);
   });
 });

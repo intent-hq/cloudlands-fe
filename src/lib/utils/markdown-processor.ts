@@ -618,7 +618,9 @@ export async function processMarkdownToHTML(
     if (isLargeContent) await yieldToEventLoop();
 
     // Sanitize the HTML to prevent XSS
-    htmlOut = sanitizeMarkdownHTML(htmlOut, workspaceId);
+    htmlOut = sanitizeMarkdownHTML(htmlOut, workspaceId, {
+      preserveKatexLayoutStyles: renderMath,
+    });
     const t6 = isLargeContent ? performance.now() : 0;
 
     // Debug: Check if primitive divs survived sanitization
@@ -1159,11 +1161,16 @@ export function processHTMLToMarkdown(
 
     try {
       const canonicalContainer = document.createElement('div');
-      canonicalContainer.innerHTML = sanitizeMarkdownHTML(
-        renderKatexToString(delimited[1], isDisplay),
-        workspaceId,
-      );
-      return canonicalContainer.firstElementChild?.isEqualNode(el.firstElementChild)
+      const canonicalWrapper = document.createElement(isInline ? 'span' : 'div');
+      canonicalWrapper.className = isInline ? 'math-inline' : 'math-display';
+      canonicalWrapper.setAttribute('data-math-source', source);
+      canonicalWrapper.innerHTML = renderKatexToString(delimited[1], isDisplay);
+      canonicalContainer.innerHTML = sanitizeMarkdownHTML(canonicalWrapper.outerHTML, workspaceId, {
+        preserveKatexLayoutStyles: true,
+      });
+      return canonicalContainer.firstElementChild?.firstElementChild?.isEqualNode(
+        el.firstElementChild,
+      )
         ? source
         : undefined;
     } catch {
@@ -1183,7 +1190,9 @@ export function processHTMLToMarkdown(
     div.innerHTML = htmlToProcess;
   } else {
     // Sanitize normally when not preserving anchors
-    const sanitized = sanitizeMarkdownHTML(htmlToProcess, workspaceId);
+    const sanitized = sanitizeMarkdownHTML(htmlToProcess, workspaceId, {
+      preserveKatexLayoutStyles: true,
+    });
     div.innerHTML = sanitized;
   }
 

@@ -89,4 +89,32 @@ describe('html-sanitizer', () => {
     expect(sanitized).not.toContain('javascript:');
     expect(sanitized).toContain('<math>');
   });
+
+  it('preserves only constrained KaTeX layout declarations when explicitly enabled', () => {
+    const html =
+      '<span class="math-inline" data-math-source="$x$"><span class="katex"><span style="height:1.2em; top:-0.3em; border-width:0.04em; position:relative; color:red; background:url(javascript:alert(1))">x</span></span></span>';
+
+    const sanitized = sanitizeMarkdownHTML(html, undefined, {
+      preserveKatexLayoutStyles: true,
+    });
+
+    expect(sanitized).toContain(
+      'style="height:1.2em;top:-0.3em;border-width:0.04em;position:relative;"',
+    );
+    expect(sanitized).not.toContain('color:');
+    expect(sanitized).not.toContain('background:');
+    expect(sanitized).not.toContain('javascript:');
+  });
+
+  it('strips styles outside generated KaTeX descendants and without explicit opt-in', () => {
+    const katex =
+      '<span class="math-inline" data-math-source="$x$"><span class="katex"><span style="height:1em">x</span></span></span>';
+    const forged =
+      '<span class="math-inline" data-math-source="$x$"><span style="height:1em">x</span></span>';
+
+    expect(sanitizeMarkdownHTML(katex)).not.toContain('style=');
+    expect(
+      sanitizeMarkdownHTML(forged, undefined, { preserveKatexLayoutStyles: true }),
+    ).not.toContain('style=');
+  });
 });
