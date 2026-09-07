@@ -65,7 +65,10 @@
   const setupStatus = $derived(getSetupStatus({ source, capabilities, requiredCapabilities }));
 </script>
 
-<section class="rounded-xl border border-border bg-background shadow-sm">
+<section
+  class="rounded-xl border border-border bg-background shadow-sm"
+  data-testid="project-setup-panel"
+>
   {#if expanded}
     <button
       type="button"

@@ -39,6 +39,58 @@ const SCENARIOS = [
   'setup-readiness-missing',
 ];
 
+const SURFACE_CONTRACTS = [
+  { theme: 'light', width: 900 },
+  { theme: 'light', width: 1280 },
+  { theme: 'dark', width: 900 },
+  { theme: 'dark', width: 1280 },
+] as const;
+
+for (const { theme, width } of SURFACE_CONTRACTS) {
+  test(`setup panel keeps its copy on an opaque readable surface in ${theme} at ${width}px`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.evaluate(
+      (dark) => document.documentElement.classList.toggle('dark', dark),
+      theme === 'dark',
+    );
+    const component = await mount(ScenarioContractHost, {
+      props: { scenarioId: 'setup-suggestions' },
+    });
+    const panel = component.getByTestId('project-setup-panel');
+
+    const surface = await panel.evaluate((node) => {
+      const parseColor = (color: string) => {
+        const channels = color.match(/[0-9.]+/g)?.map(Number);
+        if (!channels || channels.length < 3) throw new Error(`Unsupported color: ${color}`);
+        return channels;
+      };
+      const luminance = ([red, green, blue]: number[]) =>
+        0.2126 * red + 0.7152 * green + 0.0722 * blue;
+      const normalize = (channel: number) => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      };
+      const style = getComputedStyle(node);
+      const background = parseColor(style.backgroundColor);
+      const foreground = parseColor(style.color);
+      const backgroundLuminance = luminance(background.slice(0, 3).map(normalize));
+      const foregroundLuminance = luminance(foreground.slice(0, 3).map(normalize));
+      return {
+        alpha: background[3] ?? 1,
+        contrast:
+          (Math.max(backgroundLuminance, foregroundLuminance) + 0.05) /
+          (Math.min(backgroundLuminance, foregroundLuminance) + 0.05),
+      };
+    });
+
+    expect(surface.alpha).toBe(1);
+    expect(surface.contrast).toBeGreaterThanOrEqual(4.5);
+  });
+}
+
 for (const testCase of SCENARIOS) {
   test(`setup panel: ${testCase}`, async ({ mount, page }) => {
     const scenarioId =
