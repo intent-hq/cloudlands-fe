@@ -1,24 +1,17 @@
-import {
-  ChangeStage,
-  type FileChangeStatus,
-  type TrackedChange,
-} from '$features/file-tracking/types';
+import type { CommitFile } from '$features/file-tracking/types';
 import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import type { ChatFileChange } from '$lib/utils/get-file-changes-from-messages';
 import { LineType, type DiffChunk } from '$shared/types';
-import { buildDiffMapDocument } from '../model/build-document';
-import type { DiffMapDocument, DiffMapFileStatus, DiffMapSource } from '../model/types';
+import { buildDiffMapDocument, serializeDiffMapHunkHeader } from '../model/build-document';
+import type {
+  DiffMapDocument,
+  DiffMapExternalFileFacts,
+  DiffMapFileStatus,
+  DiffMapSource,
+} from '../model/types';
 
-interface PullRequestDiffFile {
-  path: string;
-  additions?: number;
-  deletions?: number;
-  status?: DiffMapFileStatus;
-  renamedFrom?: string;
-  oldContent?: string;
-  newContent?: string;
-}
+type PullRequestDiffFile = DiffMapExternalFileFacts;
 
 export interface PullRequestDiffSource {
   repository: string;
@@ -51,56 +44,15 @@ interface NumstatEntry {
   deletions: number;
 }
 
-function trackedChange(file: PullRequestDiffFile): TrackedChange {
-  const status: FileChangeStatus =
-    file.status === 'added' ||
-    file.status === 'modified' ||
-    file.status === 'deleted' ||
-    file.status === 'renamed'
-      ? file.status
-      : 'modified';
-  return {
-    id: `diff-map:${file.path}`,
-    file: file.path,
-    relativePath: file.path,
-    stage: ChangeStage.Committed,
-    status,
-    stats: {
-      additions: file.additions ?? Number.NaN,
-      deletions: file.deletions ?? Number.NaN,
-      ...(file.status === 'binary' ? { binary: true } : {}),
-    },
-    attribution: { timestamp: 0 },
-    content:
-      file.oldContent !== undefined || file.newContent !== undefined
-        ? {
-            oldContent: file.oldContent,
-            newContent: file.newContent,
-            isFullFileContent: true,
-          }
-        : undefined,
-  };
-}
-
 function buildSourceDocument(
   files: readonly PullRequestDiffFile[],
   source: DiffMapSource,
   patches?: ReadonlyMap<string, string>,
 ): DiffMapDocument {
-  const sourceByPath = new Map(files.map((file) => [file.path, file]));
-  const document = buildDiffMapDocument(files.map(trackedChange), { source, patches });
-  return {
-    ...document,
-    files: document.files.map((file) => {
-      const input = sourceByPath.get(file.path);
-      const { attribution: _, ...withoutAttribution } = file;
-      return {
-        ...withoutAttribution,
-        ...(input?.status ? { status: input.status } : {}),
-        ...(input?.renamedFrom ? { renamedFrom: input.renamedFrom } : {}),
-      };
-    }),
-  };
+  return buildDiffMapDocument(
+    files.map((file) => ({ ...file, isFullFileContent: true })),
+    { source, patches },
+  );
 }
 
 function statusFromChunk(chunk: DiffChunk): DiffMapFileStatus {
@@ -124,30 +76,61 @@ function statsFromChunk(chunk: DiffChunk): Pick<PullRequestDiffFile, 'additions'
 }
 
 function patchFromChunk(chunk: Pick<DiffChunk, 'chunks'>): string {
-  return chunk.chunks
-    .map((hunk) => `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`)
-    .join('\n');
+  return chunk.chunks.map(serializeDiffMapHunkHeader).join('\n');
 }
 
-export async function fromCommit(workspaceId: string, sha: string): Promise<DiffMapDocument> {
+function commitStatus(status: string | undefined): DiffMapFileStatus | undefined {
+  switch (status) {
+    case 'A':
+    case 'added':
+      return 'added';
+    case 'D':
+    case 'deleted':
+      return 'deleted';
+    case 'R':
+    case 'renamed':
+      return 'renamed';
+    case 'M':
+    case 'modified':
+      return 'modified';
+    case 'binary':
+    case 'mode':
+      return status;
+    default:
+      return undefined;
+  }
+}
+
+export async function fromCommit(
+  workspaceId: string,
+  sha: string,
+  commitFiles: readonly CommitFile[] = [],
+): Promise<DiffMapDocument> {
   const [details, chunks] = await Promise.all([
     appClient.git.commitDetails(workspaceId, sha),
     appClient.git.diffs(workspaceId, { commitHash: sha }),
   ]);
   const chunksByPath = new Map(chunks.map((chunk) => [chunk.file, chunk]));
   const detailsByPath = new Map(details?.fileDetails.map((file) => [file.path, file]) ?? []);
+  const commitFilesByPath = new Map(commitFiles.map((file) => [file.path, file]));
   const paths = new Set([
+    ...commitFiles.map((file) => file.path),
     ...(details?.files ?? []),
     ...(details?.fileDetails.map((file) => file.path) ?? []),
     ...chunks.map((chunk) => chunk.file),
   ]);
   const files = [...paths].map((path): PullRequestDiffFile => {
+    const commitFile = commitFilesByPath.get(path);
     const detail = detailsByPath.get(path);
     const chunk = chunksByPath.get(path);
     return {
       path,
-      ...(detail ?? (chunk ? statsFromChunk(chunk) : {})),
-      status: chunk ? statusFromChunk(chunk) : 'modified',
+      ...(detail ?? commitFile ?? (chunk ? statsFromChunk(chunk) : {})),
+      status:
+        commitStatus(commitFile?.status) ??
+        (commitFile?.renamedFrom ? 'renamed' : chunk ? statusFromChunk(chunk) : 'modified'),
+      ...(commitFile?.renamedFrom ? { renamedFrom: commitFile.renamedFrom } : {}),
+      ...(chunk?.isBinary ? { binary: true } : {}),
     };
   });
   const patches = new Map(chunks.map((chunk) => [chunk.file, patchFromChunk(chunk)]));
@@ -179,12 +162,17 @@ export async function fromRange(
       deletions: stats?.deletions,
       oldContent: entry?.oldContent,
       newContent: entry?.newContent,
+      // The current range wire responses do not carry status or rename source. Full-content
+      // asymmetry identifies ordinary additions/deletions, but empty-on-both-sides is ambiguous;
+      // prefer added for the valid zero-byte-addition case until the daemon exposes status facts.
       status:
-        entry?.oldContent === '' && entry.newContent !== ''
+        entry?.oldContent === '' && entry.newContent === ''
           ? 'added'
-          : entry?.newContent === '' && entry.oldContent !== ''
-            ? 'deleted'
-            : 'modified',
+          : entry?.oldContent === '' && entry.newContent !== undefined
+            ? 'added'
+            : entry?.newContent === '' && entry.oldContent !== undefined
+              ? 'deleted'
+              : 'modified',
     };
   });
   const patches = new Map(entries.map((entry) => [entry.file, patchFromChunk(entry)]));

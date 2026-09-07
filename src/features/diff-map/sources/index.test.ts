@@ -81,6 +81,88 @@ describe('diff map source adapters', () => {
     expect(document.files[0].oldTrack).toBeDefined();
   });
 
+  it('uses commit file status and rename facts when the caller has them', async () => {
+    mocks.commitDetails.mockResolvedValue({ files: [], fileDetails: [] });
+    mocks.diffs.mockResolvedValue([]);
+
+    const document = await fromCommit('ws-1', 'abc123', [
+      { path: 'src/added.ts', status: 'A', additions: 1, deletions: 0 },
+      { path: 'src/deleted.ts', status: 'D', additions: 0, deletions: 1 },
+      { path: 'src/modified.ts', status: 'M', additions: 1, deletions: 1 },
+      {
+        path: 'src/renamed.ts',
+        status: 'R',
+        renamedFrom: 'src/old.ts',
+        additions: 0,
+        deletions: 0,
+      },
+      { path: 'src/binary.dat', status: 'binary' },
+      { path: 'src/mode.sh', status: 'mode', additions: 0, deletions: 0 },
+    ]);
+
+    expect(document.files.map((file) => file.status)).toEqual([
+      'added',
+      'binary',
+      'deleted',
+      'mode',
+      'modified',
+      'renamed',
+    ]);
+    expect(document.files.find((file) => file.status === 'renamed')).toMatchObject({
+      path: 'src/renamed.ts',
+      renamedFrom: 'src/old.ts',
+    });
+    expect(document.files.every((file) => file.attribution === undefined)).toBe(true);
+  });
+
+  it('keeps binary and deleted chunk-only commit files', async () => {
+    mocks.commitDetails.mockResolvedValue(null);
+    mocks.diffs.mockResolvedValue([
+      { file: 'binary.dat', chunks: [], isBinary: true },
+      {
+        file: 'deleted.ts',
+        chunks: [
+          {
+            oldStart: 1,
+            oldLines: 1,
+            newStart: 0,
+            newLines: 0,
+            lines: [{ type: LineType.Deletion, content: 'gone' }],
+          },
+        ],
+      },
+    ]);
+
+    const document = await fromCommit('ws-1', 'abc123');
+
+    expect(document.files).toEqual([
+      expect.objectContaining({ path: 'binary.dat', status: 'binary' }),
+      expect.objectContaining({ path: 'deleted.ts', status: 'deleted', deletions: 1 }),
+    ]);
+  });
+
+  it('preserves path-only commit details and empty commit responses', async () => {
+    mocks.commitDetails.mockResolvedValue({ files: ['path-only.ts'], fileDetails: [] });
+    mocks.diffs.mockResolvedValue([]);
+
+    const partial = await fromCommit('ws-1', 'partial');
+    expect(partial.files[0]).toMatchObject({
+      path: 'path-only.ts',
+      status: 'modified',
+      statsKnown: false,
+    });
+
+    mocks.commitDetails.mockResolvedValue({ files: [], fileDetails: [] });
+    expect((await fromCommit('ws-1', 'empty')).files).toEqual([]);
+  });
+
+  it('rejects when a commit backend call rejects', async () => {
+    mocks.commitDetails.mockRejectedValue(new Error('commit details failed'));
+    mocks.diffs.mockResolvedValue([]);
+
+    await expect(fromCommit('ws-1', 'abc123')).rejects.toThrow('commit details failed');
+  });
+
   it('builds a range document from branchDiff and numstat responses', async () => {
     mocks.backendRequest.mockImplementation((method: string) =>
       method === 'git.branchDiff'
@@ -107,6 +189,71 @@ describe('diff map source adapters', () => {
     });
     expect(document.files[0].oldTrack).toBeDefined();
     expect(document.files[0].newTrack).toBeDefined();
+  });
+
+  it('classifies content-backed range additions/deletions and keeps numstat-only files', async () => {
+    mocks.backendRequest.mockImplementation((method: string) =>
+      method === 'git.branchDiff'
+        ? Promise.resolve([
+            { file: 'a-empty.ts', oldContent: '', newContent: '', chunks: [] },
+            { file: 'd-deleted.ts', oldContent: 'gone', newContent: '', chunks: [] },
+            { file: 'm-modified.ts', oldContent: 'old', newContent: 'new', chunks: [] },
+          ])
+        : Promise.resolve([
+            { filePath: 'a-empty.ts', additions: 0, deletions: 0 },
+            { filePath: 'd-deleted.ts', additions: 0, deletions: 1 },
+            { filePath: 'm-modified.ts', additions: 1, deletions: 1 },
+            { filePath: 'n-numstat-only.ts', additions: 3, deletions: 0 },
+          ]),
+    );
+
+    const document = await fromRange('base', 'head', { workspaceId: 'ws-1' });
+
+    expect(
+      document.files.map(({ path, status, additions, deletions }) => ({
+        path,
+        status,
+        additions,
+        deletions,
+      })),
+    ).toEqual([
+      { path: 'a-empty.ts', status: 'added', additions: 0, deletions: 0 },
+      { path: 'd-deleted.ts', status: 'deleted', additions: 0, deletions: 1 },
+      { path: 'm-modified.ts', status: 'modified', additions: 1, deletions: 1 },
+      { path: 'n-numstat-only.ts', status: 'modified', additions: 3, deletions: 0 },
+    ]);
+  });
+
+  it('keeps branchDiff-only files with unknown statistics', async () => {
+    mocks.backendRequest.mockImplementation((method: string) =>
+      method === 'git.branchDiff'
+        ? Promise.resolve([{ file: 'only.ts', oldContent: '', newContent: 'new', chunks: [] }])
+        : Promise.resolve([]),
+    );
+
+    expect((await fromRange('base', 'head', { workspaceId: 'ws-1' })).files[0]).toMatchObject({
+      path: 'only.ts',
+      status: 'added',
+      statsKnown: false,
+    });
+  });
+
+  it('returns an empty range document for empty backend responses', async () => {
+    mocks.backendRequest.mockResolvedValue([]);
+
+    expect((await fromRange('base', 'head', { workspaceId: 'ws-1' })).files).toEqual([]);
+  });
+
+  it('rejects when either range backend call rejects', async () => {
+    mocks.backendRequest.mockImplementation((method: string) =>
+      method === 'git.branchDiff'
+        ? Promise.reject(new Error('branch diff failed'))
+        : Promise.resolve([]),
+    );
+
+    await expect(fromRange('base', 'head', { workspaceId: 'ws-1' })).rejects.toThrow(
+      'branch diff failed',
+    );
   });
 
   it('builds a pull request document from the existing PR file list', () => {
@@ -139,6 +286,29 @@ describe('diff map source adapters', () => {
     expect(document.files[0].attribution).toBeUndefined();
   });
 
+  it('preserves every pull request status without a post-build override', () => {
+    const statuses = ['added', 'modified', 'deleted', 'renamed', 'binary', 'mode'] as const;
+    const document = fromPullRequest({
+      repository: 'intent-hq/cloudlands-fe',
+      number: 42,
+      files: statuses.map((status, index) => ({
+        path: `src/${index}.ts`,
+        status,
+        ...(status === 'renamed' ? { renamedFrom: 'src/old.ts' } : {}),
+      })),
+    });
+
+    expect(document.files.map((file) => file.status)).toEqual(statuses);
+    expect(document.files.every((file) => file.attribution === undefined)).toBe(true);
+  });
+
+  it('builds empty pull-request and chat-turn documents', () => {
+    expect(
+      fromPullRequest({ repository: 'intent-hq/cloudlands-fe', number: 42, files: [] }).files,
+    ).toEqual([]);
+    expect(fromChatTurn([], { sessionId: 'agent-1', turnId: 'turn-empty' }).files).toEqual([]);
+  });
+
   it('builds a chat-turn document without backend reads', () => {
     const changes: ChatFileChange[] = [
       {
@@ -161,5 +331,40 @@ describe('diff map source adapters', () => {
     });
     expect(document.files[0]).toMatchObject({ path: 'src/chat.ts', status: 'modified' });
     expect(mocks.backendRequest).not.toHaveBeenCalled();
+  });
+
+  it('maps every chat action through the builder', () => {
+    const changes: ChatFileChange[] = [
+      {
+        filePath: 'a.ts',
+        action: 'create',
+        additions: 1,
+        deletions: 0,
+        toolName: 'save-file',
+        toolCallId: '1',
+      },
+      {
+        filePath: 'd.ts',
+        action: 'delete',
+        additions: 0,
+        deletions: 1,
+        toolName: 'remove-files',
+        toolCallId: '2',
+      },
+      {
+        filePath: 'm.ts',
+        action: 'modify',
+        additions: 1,
+        deletions: 1,
+        toolName: 'apply_patch',
+        toolCallId: '3',
+      },
+    ];
+
+    expect(
+      fromChatTurn(changes, { sessionId: 'agent-1', turnId: 'turn-8' }).files.map(
+        (file) => file.status,
+      ),
+    ).toEqual(['added', 'deleted', 'modified']);
   });
 });

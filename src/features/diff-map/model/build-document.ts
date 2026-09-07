@@ -3,6 +3,7 @@ import { isRenamedStatus } from '$features/file-tracking/utils/change-status';
 import type { ChatFileChange } from '$lib/utils/get-file-changes-from-messages';
 import type {
   DiffMapDocument,
+  DiffMapExternalFileFacts,
   DiffMapFile,
   DiffMapFileStatus,
   DiffMapGroup,
@@ -30,6 +31,15 @@ interface PatchFacts {
   binary: boolean;
   modeOnly: boolean;
   renamedFrom?: string;
+}
+
+export function serializeDiffMapHunkHeader(hunk: {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+}): string {
+  return `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`;
 }
 
 function comparePaths(a: string, b: string): number {
@@ -124,12 +134,30 @@ function buildTrack(
   ]);
 }
 
-function isChatChange(change: TrackedChange | ChatFileChange): change is ChatFileChange {
+function isChatChange(
+  change: TrackedChange | ChatFileChange | DiffMapExternalFileFacts,
+): change is ChatFileChange {
   return 'filePath' in change;
 }
 
-function statusFor(change: TrackedChange | ChatFileChange, facts: PatchFacts): DiffMapFileStatus {
-  if (facts.binary || (!isChatChange(change) && change.stats?.binary)) return 'binary';
+function isExternalFileFacts(
+  change: TrackedChange | ChatFileChange | DiffMapExternalFileFacts,
+): change is DiffMapExternalFileFacts {
+  return 'path' in change;
+}
+
+function statusFor(
+  change: TrackedChange | ChatFileChange | DiffMapExternalFileFacts,
+  facts: PatchFacts,
+): DiffMapFileStatus {
+  if (isExternalFileFacts(change) && change.binary) return 'binary';
+  if (isExternalFileFacts(change) && change.status) return change.status;
+  if (isExternalFileFacts(change) && change.renamedFrom) return 'renamed';
+  if (
+    facts.binary ||
+    (!isChatChange(change) && !isExternalFileFacts(change) && change.stats?.binary)
+  )
+    return 'binary';
   if (facts.renamedFrom || isRenamedStatus(change.status)) return 'renamed';
   if (facts.modeOnly) return 'mode';
   if (isChatChange(change)) {
@@ -139,48 +167,72 @@ function statusFor(change: TrackedChange | ChatFileChange, facts: PatchFacts): D
         ? 'deleted'
         : 'modified';
   }
+  if (isExternalFileFacts(change)) return 'modified';
   return change.status ?? 'modified';
 }
 
 function toFile(
-  change: TrackedChange | ChatFileChange,
+  change: TrackedChange | ChatFileChange | DiffMapExternalFileFacts,
   snapshotId: string,
   patches: ReadonlyMap<string, string> | undefined,
 ): DiffMapFile | undefined {
-  const rawPath = isChatChange(change) ? change.filePath : change.relativePath || change.file;
+  const rawPath = isChatChange(change)
+    ? change.filePath
+    : isExternalFileFacts(change)
+      ? change.path
+      : change.relativePath || change.file;
   const path = normalizePath(rawPath);
   if (!path) return undefined;
   const { name, dir } = splitPath(path);
-  const additions = isChatChange(change) ? change.additions : change.stats?.additions;
-  const deletions = isChatChange(change) ? change.deletions : change.stats?.deletions;
+  const additions = isChatChange(change)
+    ? change.additions
+    : isExternalFileFacts(change)
+      ? change.additions
+      : change.stats?.additions;
+  const deletions = isChatChange(change)
+    ? change.deletions
+    : isExternalFileFacts(change)
+      ? change.deletions
+      : change.stats?.deletions;
   const statsKnown = Number.isFinite(additions) && Number.isFinite(deletions);
   const patch = patches?.get(path) ?? patches?.get(rawPath);
   const facts = parsePatchFacts(patch);
-  const oldContent = isChatChange(change) ? change.oldContent : change.content?.oldContent;
-  const newContent = isChatChange(change) ? change.newContent : change.content?.newContent;
+  const oldContent = isExternalFileFacts(change)
+    ? change.oldContent
+    : isChatChange(change)
+      ? change.oldContent
+      : change.content?.oldContent;
+  const newContent = isExternalFileFacts(change)
+    ? change.newContent
+    : isChatChange(change)
+      ? change.newContent
+      : change.content?.newContent;
   const fullContents = isChatChange(change)
     ? change.isFullFileContent === true
-    : change.content?.isFullFileContent === true;
+    : isExternalFileFacts(change)
+      ? change.isFullFileContent === true
+      : change.content?.isFullFileContent === true;
   const oldTrack = buildTrack(facts.hunks, 'old', fullContents ? lineCount(oldContent) : undefined);
   const newTrack = buildTrack(facts.hunks, 'new', fullContents ? lineCount(newContent) : undefined);
-  const contentIdentity = !isChatChange(change)
-    ? [
-        change.content?.oldContentSha ?? '',
-        change.content?.newContentSha ?? '',
-        change.content?.diffSha ?? '',
-      ]
-    : [];
+  const blobIdentity = isExternalFileFacts(change)
+    ? [change.contentIdentity]
+    : !isChatChange(change)
+      ? [change.content?.oldContentSha, change.content?.newContentSha, change.content?.diffSha]
+      : [];
+  const perFileIdentity = [...blobIdentity, oldContent, newContent, patch].filter(
+    (identity): identity is string => identity !== undefined,
+  );
   const contentHash = hashContent(
     [
-      snapshotId,
-      ...contentIdentity,
+      ...(perFileIdentity.length > 0 ? perFileIdentity : [snapshotId]),
       statusFor(change, facts),
-      newContent ?? '',
-      isChatChange(change) && change.action === 'delete' ? (oldContent ?? '') : '',
-      patch ?? '',
       String(additions ?? ''),
       String(deletions ?? ''),
-      isChatChange(change) ? change.toolCallId : change.id,
+      isChatChange(change)
+        ? change.toolCallId
+        : isExternalFileFacts(change)
+          ? (change.contentIdentity ?? change.path)
+          : change.id,
     ].join('\u0000'),
   );
   const hunks = hunkRanges(facts.hunks);
@@ -190,14 +242,20 @@ function toFile(
     name,
     dir,
     status: statusFor(change, facts),
-    additions: statsKnown ? additions : 0,
-    deletions: statsKnown ? deletions : 0,
+    additions: statsKnown ? (additions ?? 0) : 0,
+    deletions: statsKnown ? (deletions ?? 0) : 0,
     statsKnown,
-    ...(facts.renamedFrom ? { renamedFrom: facts.renamedFrom } : {}),
+    ...(isExternalFileFacts(change) && change.renamedFrom
+      ? { renamedFrom: normalizePath(change.renamedFrom) }
+      : facts.renamedFrom
+        ? { renamedFrom: facts.renamedFrom }
+        : {}),
     ...(oldTrack ? { oldTrack } : {}),
     ...(newTrack ? { newTrack } : {}),
     ...(hunks ? { hunks } : {}),
-    ...(!isChatChange(change) && change.attribution ? { attribution: change.attribution } : {}),
+    ...(!isChatChange(change) && !isExternalFileFacts(change) && change.attribution
+      ? { attribution: change.attribution }
+      : {}),
     contentHash,
   };
 }
@@ -298,7 +356,7 @@ function buildSections(
 }
 
 export function buildDiffMapDocument(
-  changes: TrackedChange[] | ChatFileChange[],
+  changes: TrackedChange[] | ChatFileChange[] | DiffMapExternalFileFacts[],
   opts: BuildDiffMapDocumentOptions,
 ): DiffMapDocument {
   const filesById = new Map<string, DiffMapFile>();

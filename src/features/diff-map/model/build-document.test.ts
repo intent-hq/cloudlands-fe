@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
 import type { ChatFileChange } from '$lib/utils/get-file-changes-from-messages';
-import { buildDiffMapDocument } from './build-document';
+import { buildDiffMapDocument, serializeDiffMapHunkHeader } from './build-document';
 import { diffMapFixtures, edgeDiffMapFixture, monorepoDiffMapFixture } from './fixtures';
+import { getViewedFreshness } from './review-slice';
+import type { DiffMapExternalFileFacts, DiffMapFileStatus } from './types';
 
 function tracked(path: string, additions = 1, deletions = 1): TrackedChange {
   return {
@@ -130,6 +132,52 @@ describe('buildDiffMapDocument', () => {
     expect(file.attribution).toBeUndefined();
   });
 
+  it('preserves every authoritative external status without manufacturing attribution', () => {
+    const statuses: DiffMapFileStatus[] = [
+      'added',
+      'modified',
+      'deleted',
+      'renamed',
+      'binary',
+      'mode',
+    ];
+    const changes: DiffMapExternalFileFacts[] = statuses.map((status, index) => ({
+      path: `external/${index}.ts`,
+      additions: index,
+      deletions: index + 1,
+      status,
+      ...(status === 'renamed' ? { renamedFrom: 'external/old.ts' } : {}),
+    }));
+
+    const files = buildDiffMapDocument(changes, { source }).files;
+
+    expect(files.map((file) => file.status)).toEqual(statuses);
+    expect(files.find((file) => file.status === 'renamed')?.renamedFrom).toBe('external/old.ts');
+    expect(files.every((file) => file.attribution === undefined)).toBe(true);
+  });
+
+  it('uses explicit status and binary facts instead of patch-derived status', () => {
+    const document = buildDiffMapDocument(
+      [
+        { path: 'src/explicit.ts', status: 'added', additions: 0, deletions: 0 },
+        { path: 'src/binary.dat', binary: true },
+      ],
+      {
+        source,
+        patches: new Map([['src/explicit.ts', 'rename from src/old-explicit.ts']]),
+      },
+    );
+
+    expect(document.files.map((file) => file.status)).toEqual(['binary', 'added']);
+    expect(document.files[1].renamedFrom).toBe('src/old-explicit.ts');
+  });
+
+  it('serializes the canonical diff hunk header grammar', () => {
+    expect(serializeDiffMapHunkHeader({ oldStart: 4, oldLines: 0, newStart: 9, newLines: 3 })).toBe(
+      '@@ -4,0 +9,3 @@',
+    );
+  });
+
   it('only includes repository totals when a matching tree is supplied', () => {
     const withoutTree = buildDiffMapDocument([tracked('src/lib/format.ts')], { source });
     const withTree = diffMapFixtures[0].document;
@@ -158,6 +206,56 @@ describe('buildDiffMapDocument', () => {
     });
 
     expect(second.files[0].contentHash).not.toBe(first.files[0].contentHash);
+  });
+
+  it('keeps per-file hashes stable when an unrelated file changes the snapshot', () => {
+    const first = buildDiffMapDocument(
+      [
+        {
+          path: 'src/a.ts',
+          additions: 1,
+          deletions: 0,
+          contentIdentity: 'blob-a',
+          newContent: 'a',
+        },
+        {
+          path: 'src/b.ts',
+          additions: 1,
+          deletions: 0,
+          contentIdentity: 'blob-b',
+          newContent: 'b',
+        },
+      ],
+      { source: { ...source, snapshotId: 'snapshot-1' } },
+    );
+    const second = buildDiffMapDocument(
+      [
+        {
+          path: 'src/a.ts',
+          additions: 1,
+          deletions: 0,
+          contentIdentity: 'blob-a',
+          newContent: 'a',
+        },
+        {
+          path: 'src/b.ts',
+          additions: 2,
+          deletions: 0,
+          contentIdentity: 'blob-b',
+          newContent: 'b',
+        },
+      ],
+      { source: { ...source, snapshotId: 'snapshot-2' } },
+    );
+
+    expect(
+      getViewedFreshness(
+        { 'src/a.ts': first.files[0].contentHash ?? '' },
+        'src/a.ts',
+        second.files[0].contentHash ?? '',
+      ),
+    ).toBe('viewed');
+    expect(second.files[1].contentHash).not.toBe(first.files[1].contentHash);
   });
 
   it('keeps file and group identities stable in repository order', () => {

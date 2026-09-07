@@ -9,7 +9,14 @@
 
   let { node, extension }: NodeViewProps = $props();
   const primitive = $derived(node?.attrs?.data as DiffMapPrimitive | undefined);
-  const document = $derived(parseDiffMapDocument(primitive?.document));
+  const document = $derived.by(() => {
+    try {
+      return parseDiffMapDocument(primitive?.document);
+    } catch {
+      return null;
+    }
+  });
+  const fallback = $derived(JSON.stringify(primitive?.document ?? {}, null, 2));
   const workspaceId = $derived(extension?.options?.workspaceId as string | undefined);
 </script>
 
@@ -28,5 +35,7 @@
         );
       }}
     />
+  {:else}
+    <pre>{fallback}</pre>
   {/if}
 </NodeViewWrapper>
