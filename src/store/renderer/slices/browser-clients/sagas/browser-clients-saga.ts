@@ -6,14 +6,18 @@
  * re-reads on `refreshLiveClientsRequested` (the bridge dispatches it for
  * every `client:connected` / `client:disconnected`, so a reconnect burst
  * collapses into one in-flight read plus at most one trailing read; each
- * such presence refresh also re-reads the mounted workspaces' daemon
+ * such presence refresh also requests the mounted workspaces' daemon
  * browser-client resolution, since the pin or default may now resolve
- * differently), and the
- * per-workspace `workspace.getBrowserClient` / `setBrowserClient` /
- * `browser.listTabs` reads keyed by workspace (latest wins per workspace, so
- * a slow earlier pin write cannot overwrite a later daemon echo). A workspace
- * mount reads its browser client (the sidebar indicator's input) and, until
- * the own clientId and `client.list` are known, hydrates them once. Every
+ * differently), and the per-workspace `workspace.getBrowserClient` /
+ * `setBrowserClient` / `browser.listTabs` calls keyed by workspace. Every
+ * resolution read — mount, `workspace:updated`, presence — goes through one
+ * single-flight lane per workspace (one in flight, at most one trailing), and
+ * a read that started before a pin write discards its reply and re-queues
+ * itself, so an older read can never overwrite the write's echo or a newer
+ * read. Pin writes and tab reads are latest-wins per workspace, so a slow
+ * earlier pin write cannot overwrite a later daemon echo. A workspace mount
+ * reads its browser client (the sidebar indicator's input) and, until the own
+ * clientId and `client.list` are known, hydrates them once. Every
  * per-workspace call races the workspace's teardown (`workspaceUnmounted` /
  * `workspaceDeleted` / `removeWorkspaceEntity`): a reply that lands after the
  * reducer cleared the entry is dropped, so it can neither resurrect a deleted
@@ -21,16 +25,7 @@
  */
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
-import {
-  all,
-  call,
-  put,
-  race,
-  take,
-  takeEvery,
-  takeLatest,
-  type SagaGenerator,
-} from 'typed-redux-saga';
+import { call, put, race, take, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   takeLatestByWorkspace,
@@ -66,15 +61,23 @@ const LIVE_CLIENTS_CONTEXT = 'live-clients';
 const MAX_TABS_READ_ATTEMPTS = 3;
 
 /**
+ * Saga-local, per-workspace count of pin writes started. A resolution read
+ * captures it before its RPC; a different value afterwards means a write
+ * started while the read was in flight, so the reply is older than the
+ * write's echo and must not be stored.
+ */
+type PinWriteEpochs = Record<string, number>;
+
+/**
  * Re-reads `client.list`. A presence change (any read after the initial
  * load) can also change what the daemon resolves for a workspace — a pinned
  * client going offline, or the default falling through to another client —
- * so the mounted workspaces' `workspace.getBrowserClient` is re-read too.
+ * so the mounted workspaces' `workspace.getBrowserClient` is requested too.
  * Only the mounted workspaces (the lifecycle slice's session set, not every
  * workspace the global `browser:tab-*` / `workspace:updated` events touched)
- * are re-read, and the re-reads run inside this single-flight worker, so a
- * presence burst cannot start overlapping resolution calls: one pass is in
- * flight and at most one trailing pass follows it.
+ * are requested, and each request joins that workspace's single-flight
+ * resolution lane, so a presence burst cannot start overlapping resolution
+ * calls: one read is in flight and at most one trailing read follows it.
  */
 function* readLiveClients(): SagaGenerator<void> {
   try {
@@ -83,7 +86,7 @@ function* readLiveClients(): SagaGenerator<void> {
     yield* put(liveClientsReceived(clients));
     if (!presenceChange) return;
     const mounted = yield* selectMountedWorkspaceIds.effect();
-    yield* all(mounted.map((wsId) => call(readWorkspaceBrowserClientOf, wsId)));
+    for (const wsId of mounted) yield* put(fetchWorkspaceBrowserClientRequested(wsId));
   } catch (error) {
     logger.warn('client.list failed', { error: error instanceof Error ? error.message : error });
   }
@@ -127,19 +130,28 @@ function* untilWorkspaceCleanup<T>(
   return outcome.cleanup ? { cleanup: true } : { result: outcome.result as T };
 }
 
+/**
+ * One resolution read. Runs inside the workspace's single-flight lane, so it
+ * never overlaps another read of the same workspace. A pin write that started
+ * mid-read makes the reply stale: it is dropped and the read re-queued as the
+ * lane's trailing run, which then observes the daemon state after the write.
+ */
 function* readWorkspaceBrowserClient(
+  epochs: PinWriteEpochs,
   action: ReturnType<typeof fetchWorkspaceBrowserClientRequested>,
 ): SagaGenerator<void> {
-  yield* call(readWorkspaceBrowserClientOf, action.payload[0]);
-}
-
-function* readWorkspaceBrowserClientOf(wsId: string): SagaGenerator<void> {
+  const [wsId] = action.payload;
   try {
+    const epoch = epochs[wsId] ?? 0;
     const read = yield* untilWorkspaceCleanup(
       wsId,
       call([appClient.workspaces, appClient.workspaces.getBrowserClient], wsId),
     );
     if (read.cleanup) return;
+    if ((epochs[wsId] ?? 0) !== epoch) {
+      yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+      return;
+    }
     yield* put(workspaceBrowserClientReceived(wsId, read.result));
   } catch (error) {
     logger.warn('workspace.getBrowserClient failed', {
@@ -150,9 +162,11 @@ function* readWorkspaceBrowserClientOf(wsId: string): SagaGenerator<void> {
 }
 
 function* writeWorkspaceBrowserClient(
+  epochs: PinWriteEpochs,
   action: ReturnType<typeof setWorkspaceBrowserClientRequested>,
 ): SagaGenerator<void> {
   const [wsId, clientId] = action.payload;
+  epochs[wsId] = (epochs[wsId] ?? 0) + 1;
   try {
     const write = yield* untilWorkspaceCleanup(
       wsId,
@@ -205,6 +219,7 @@ function* onWorkspaceMounted(action: ReturnType<typeof workspaceMounted>): SagaG
 }
 
 export function* browserClientsSaga(): SagaGenerator<void> {
+  const pinWriteEpochs: PinWriteEpochs = {};
   yield* takeEvery(workspaceMounted, onWorkspaceMounted);
   yield* takeLatest(hydrateBrowserClientsRequested, hydrate);
   yield* takeSingleFlightInContext(
@@ -212,7 +227,16 @@ export function* browserClientsSaga(): SagaGenerator<void> {
     () => LIVE_CLIENTS_CONTEXT,
     readLiveClients,
   );
-  yield* takeLatestByWorkspace(fetchWorkspaceBrowserClientRequested, readWorkspaceBrowserClient);
-  yield* takeLatestByWorkspace(setWorkspaceBrowserClientRequested, writeWorkspaceBrowserClient);
+  yield* takeSingleFlightInContext(
+    fetchWorkspaceBrowserClientRequested,
+    (action) => action.payload[0],
+    readWorkspaceBrowserClient,
+    pinWriteEpochs,
+  );
+  yield* takeLatestByWorkspace(
+    setWorkspaceBrowserClientRequested,
+    writeWorkspaceBrowserClient,
+    pinWriteEpochs,
+  );
   yield* takeLatestByWorkspace(fetchWorkspaceBrowserTabsRequested, readWorkspaceBrowserTabs);
 }

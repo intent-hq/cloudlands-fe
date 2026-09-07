@@ -234,7 +234,7 @@ describe('browserClientsSaga', () => {
       expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1']]);
     });
 
-    it('a presence burst during an in-flight re-read coalesces into one trailing pass, never overlapping reads', async () => {
+    it('a presence burst during an in-flight re-read coalesces into one trailing read, never overlapping reads', async () => {
       mocks.list.mockResolvedValue([desk, laptop]);
       mocks.getBrowserClient.mockResolvedValue(pinnedLaptop);
       const { dispatch, task } = startWithReducer();
@@ -251,15 +251,64 @@ describe('browserClientsSaga', () => {
       dispatch(refreshLiveClientsRequested());
       dispatch(refreshLiveClientsRequested());
       await settle();
-      expect(mocks.list).toHaveBeenCalledTimes(2);
+      // The list reads coalesce on their own lane (one in flight + one
+      // trailing); none of them starts a second resolution read.
+      expect(mocks.list).toHaveBeenCalledTimes(4);
       expect(mocks.getBrowserClient).toHaveBeenCalledTimes(1);
 
       slow.resolve(pinnedLaptop);
       await settle();
       task.cancel();
 
-      expect(mocks.list).toHaveBeenCalledTimes(3);
+      expect(mocks.list).toHaveBeenCalledTimes(4);
       expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1'], ['ws-1']]);
+    });
+
+    it('a presence read that started before a confirmed switch cannot revert the new pin', async () => {
+      const pinnedDesk = { source: 'workspace', clientId: 'cli-desk', resolved: desk };
+      mocks.list.mockResolvedValue([desk, laptop]);
+      mocks.getBrowserClient.mockResolvedValue(pinnedLaptop);
+      const { dispatch, task, sidebar, entry } = startWithReducer();
+
+      dispatch(workspaceMounted('ws-1'));
+      await settle();
+      expect(sidebar('ws-1')).toMatchObject({ mode: 'elsewhere' });
+
+      // A presence change starts a resolution read that the daemon answers
+      // slowly, with the pin as it was (laptop).
+      const held = deferred<typeof pinnedLaptop>();
+      const trailing = deferred<typeof pinnedDesk>();
+      mocks.getBrowserClient.mockClear();
+      mocks.getBrowserClient
+        .mockReturnValueOnce(held.promise)
+        .mockReturnValueOnce(trailing.promise);
+      dispatch(refreshLiveClientsRequested());
+      await settle();
+      expect(mocks.getBrowserClient).toHaveBeenCalledTimes(1);
+
+      // Meanwhile the user switches the driver here: the write echo lands,
+      // then the daemon's `workspace:updated` requests a re-read.
+      mocks.setBrowserClient.mockResolvedValue(pinnedDesk);
+      dispatch(setWorkspaceBrowserClientRequested('ws-1', 'cli-desk'));
+      await settle();
+      expect(sidebar('ws-1')).toMatchObject({ mode: 'here' });
+      dispatch(fetchWorkspaceBrowserClientRequested('ws-1'));
+      await settle();
+      expect(mocks.getBrowserClient).toHaveBeenCalledTimes(1);
+
+      // The older reply lands: it is dropped, not stored, and the lane's
+      // trailing read (still in flight) is the only other resolution call.
+      held.resolve(pinnedLaptop);
+      await settle();
+      expect(entry('ws-1').browserClient).toEqual(pinnedDesk);
+      expect(sidebar('ws-1')).toMatchObject({ mode: 'here' });
+      expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1'], ['ws-1']]);
+
+      trailing.resolve(pinnedDesk);
+      await settle();
+      task.cancel();
+      expect(entry('ws-1').browserClient).toEqual(pinnedDesk);
+      expect(sidebar('ws-1')).toMatchObject({ mode: 'here' });
     });
 
     it('a pinned client disconnecting and reconnecting moves the sidebar offline and back without a remount', async () => {
