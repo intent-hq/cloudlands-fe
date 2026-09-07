@@ -12,16 +12,19 @@
  * `setBrowserClient` / `browser.listTabs` calls keyed by workspace. Every
  * resolution read — mount, `workspace:updated`, presence — goes through one
  * single-flight lane per workspace (one in flight, at most one trailing), and
- * a read that started before a pin write discards its reply and re-queues
- * itself, so an older read can never overwrite the write's echo or a newer
- * read. Pin writes and tab reads are latest-wins per workspace, so a slow
- * earlier pin write cannot overwrite a later daemon echo. A workspace mount
- * reads its browser client (the sidebar indicator's input) and, until the own
- * clientId and `client.list` are known, hydrates them once. Every
- * per-workspace call races the workspace's teardown (`workspaceUnmounted` /
- * `workspaceDeleted` / `removeWorkspaceEntity`): a reply that lands after the
- * reducer cleared the entry is dropped, so it can neither resurrect a deleted
- * workspace nor leak into a later remount.
+ * a read that overlapped a pin write in any way (started before it, or
+ * during it and settled after) discards its reply and re-queues itself, so an
+ * older read can never overwrite the write's echo or a newer read. Pin writes
+ * and tab reads are latest-wins per workspace, so a slow earlier pin write
+ * cannot overwrite a later daemon echo. A workspace mount reads its browser
+ * client (the sidebar indicator's input) and, until the own clientId and
+ * `client.list` are known, hydrates them once. Workspace teardown
+ * (`workspaceUnmounted` / `workspaceDeleted` / `removeWorkspaceEntity`)
+ * cancels the workspace's resolution lane — the in-flight read and its
+ * trailing trigger — and every other per-workspace call races the teardown:
+ * a reply that lands after the reducer cleared the entry is dropped, so it
+ * can neither resurrect a deleted workspace nor leak into a later remount,
+ * which starts a fresh lane.
  */
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -61,12 +64,32 @@ const LIVE_CLIENTS_CONTEXT = 'live-clients';
 const MAX_TABS_READ_ATTEMPTS = 3;
 
 /**
- * Saga-local, per-workspace count of pin writes started. A resolution read
- * captures it before its RPC; a different value afterwards means a write
- * started while the read was in flight, so the reply is older than the
- * write's echo and must not be stored.
+ * Saga-local, per-workspace pin-write epoch, bumped when a pin write starts
+ * and again when it settles. A resolution read captures it before its RPC; a
+ * different value afterwards means a write started or settled while the read
+ * was in flight, so the reply may predate the write's commit and must not be
+ * stored. A read that started mid-write is invalidated by the settlement
+ * bump, not only a read that predates the write.
  */
 type PinWriteEpochs = Record<string, number>;
+
+type BrowserClientReadAction =
+  | ReturnType<typeof fetchWorkspaceBrowserClientRequested>
+  | ReturnType<typeof workspaceUnmounted>
+  | ReturnType<typeof workspaceDeleted>
+  | ReturnType<typeof removeWorkspaceEntity>;
+
+/**
+ * Teardown cancels the workspace's resolution lane outright — the in-flight
+ * read and any trailing trigger — instead of letting the trailing read start
+ * against a cleared entry. A later remount opens a fresh lane.
+ */
+function browserClientReadContext(action: BrowserClientReadAction) {
+  const wsId = action.payload[0];
+  return action.type === fetchWorkspaceBrowserClientRequested.type
+    ? wsId
+    : { context: wsId, cancel: true as const };
+}
 
 /**
  * Re-reads `client.list`. A presence change (any read after the initial
@@ -132,27 +155,25 @@ function* untilWorkspaceCleanup<T>(
 
 /**
  * One resolution read. Runs inside the workspace's single-flight lane, so it
- * never overlaps another read of the same workspace. A pin write that started
- * mid-read makes the reply stale: it is dropped and the read re-queued as the
- * lane's trailing run, which then observes the daemon state after the write.
+ * never overlaps another read of the same workspace, and the lane's teardown
+ * cancel abandons it mid-RPC. A pin write that started or settled mid-read
+ * makes the reply stale: it is dropped and the read re-queued as the lane's
+ * trailing run, which then observes the daemon state after the write.
  */
 function* readWorkspaceBrowserClient(
   epochs: PinWriteEpochs,
-  action: ReturnType<typeof fetchWorkspaceBrowserClientRequested>,
+  action: BrowserClientReadAction,
 ): SagaGenerator<void> {
+  if (action.type !== fetchWorkspaceBrowserClientRequested.type) return;
   const [wsId] = action.payload;
   try {
     const epoch = epochs[wsId] ?? 0;
-    const read = yield* untilWorkspaceCleanup(
-      wsId,
-      call([appClient.workspaces, appClient.workspaces.getBrowserClient], wsId),
-    );
-    if (read.cleanup) return;
+    const result = yield* call([appClient.workspaces, appClient.workspaces.getBrowserClient], wsId);
     if ((epochs[wsId] ?? 0) !== epoch) {
       yield* put(fetchWorkspaceBrowserClientRequested(wsId));
       return;
     }
-    yield* put(workspaceBrowserClientReceived(wsId, read.result));
+    yield* put(workspaceBrowserClientReceived(wsId, result));
   } catch (error) {
     logger.warn('workspace.getBrowserClient failed', {
       wsId,
@@ -180,6 +201,8 @@ function* writeWorkspaceBrowserClient(
       clientId,
       error: error instanceof Error ? error.message : error,
     });
+  } finally {
+    epochs[wsId] = (epochs[wsId] ?? 0) + 1;
   }
 }
 
@@ -228,8 +251,13 @@ export function* browserClientsSaga(): SagaGenerator<void> {
     readLiveClients,
   );
   yield* takeSingleFlightInContext(
-    fetchWorkspaceBrowserClientRequested,
-    (action) => action.payload[0],
+    [
+      fetchWorkspaceBrowserClientRequested,
+      workspaceUnmounted,
+      workspaceDeleted,
+      removeWorkspaceEntity,
+    ],
+    browserClientReadContext,
     readWorkspaceBrowserClient,
     pinWriteEpochs,
   );

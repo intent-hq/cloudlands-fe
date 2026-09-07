@@ -311,6 +311,55 @@ describe('browserClientsSaga', () => {
       expect(sidebar('ws-1')).toMatchObject({ mode: 'here' });
     });
 
+    it('a presence read that started during a pending switch cannot revert the confirmed pin', async () => {
+      const pinnedDesk = { source: 'workspace', clientId: 'cli-desk', resolved: desk };
+      mocks.list.mockResolvedValue([desk, laptop]);
+      mocks.getBrowserClient.mockResolvedValue(pinnedLaptop);
+      const { dispatch, task, sidebar, entry } = startWithReducer();
+
+      dispatch(workspaceMounted('ws-1'));
+      await settle();
+      expect(sidebar('ws-1')).toMatchObject({ mode: 'elsewhere' });
+
+      // The user switches the driver here; the daemon has not answered yet.
+      const write = deferred<typeof pinnedDesk>();
+      mocks.setBrowserClient.mockReturnValueOnce(write.promise);
+      dispatch(setWorkspaceBrowserClientRequested('ws-1', 'cli-desk'));
+      await settle();
+      expect(mocks.setBrowserClient).toHaveBeenCalledTimes(1);
+
+      // While the write is pending, a presence change starts a resolution
+      // read that the daemon answers slowly — with the pre-commit pin.
+      const held = deferred<typeof pinnedLaptop>();
+      const trailing = deferred<typeof pinnedDesk>();
+      mocks.getBrowserClient.mockClear();
+      mocks.getBrowserClient
+        .mockReturnValueOnce(held.promise)
+        .mockReturnValueOnce(trailing.promise);
+      dispatch(refreshLiveClientsRequested());
+      await settle();
+      expect(mocks.getBrowserClient).toHaveBeenCalledTimes(1);
+
+      // The write commits and its echo lands first.
+      write.resolve(pinnedDesk);
+      await settle();
+      expect(sidebar('ws-1')).toMatchObject({ mode: 'here' });
+
+      // The read that overlapped the write settles after it: dropped, and
+      // re-read once as the lane's trailing run.
+      held.resolve(pinnedLaptop);
+      await settle();
+      expect(entry('ws-1').browserClient).toEqual(pinnedDesk);
+      expect(sidebar('ws-1')).toMatchObject({ mode: 'here' });
+      expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1'], ['ws-1']]);
+
+      trailing.resolve(pinnedDesk);
+      await settle();
+      task.cancel();
+      expect(entry('ws-1').browserClient).toEqual(pinnedDesk);
+      expect(sidebar('ws-1')).toMatchObject({ mode: 'here' });
+    });
+
     it('a pinned client disconnecting and reconnecting moves the sidebar offline and back without a remount', async () => {
       mocks.list.mockResolvedValue([desk, laptop]);
       mocks.getBrowserClient.mockResolvedValue(pinnedLaptop);
@@ -596,6 +645,68 @@ describe('browserClientsSaga', () => {
       await settle();
       task.cancel();
       expect(entry(WS)?.browserClient).toEqual(unpinned);
+    });
+
+    it.each(Object.keys(teardowns) as (keyof typeof teardowns)[])(
+      'a trailing resolution read queued behind an in-flight one does not start after %s',
+      async (teardown) => {
+        const held = deferred<unknown>();
+        mocks.getBrowserClient.mockReturnValueOnce(held.promise).mockResolvedValue(pinned);
+        const { dispatch, task, entry } = startWithReducer();
+        dispatch(workspaceBrowserClientReceived(WS, unpinned));
+
+        dispatch(fetchWorkspaceBrowserClientRequested(WS));
+        await settle();
+        // A `workspace:updated` re-read arrives while the first is in flight
+        // and is queued as the lane's trailing run.
+        dispatch(fetchWorkspaceBrowserClientRequested(WS));
+        await settle();
+        expect(mocks.getBrowserClient).toHaveBeenCalledTimes(1);
+
+        dispatch(teardowns[teardown]());
+        expect(entry(WS)).toBeUndefined();
+        held.resolve(pinned);
+        await settle();
+        task.cancel();
+
+        // Neither the held reply nor the queued trailing read touches the
+        // cleared entry, and the trailing read never reaches the daemon.
+        expect(entry(WS)).toBeUndefined();
+        expect(mocks.getBrowserClient).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('a remount after an unmount with a queued trailing read starts a fresh lane', async () => {
+      const held = deferred<unknown>();
+      const fresh = deferred<unknown>();
+      mocks.getBrowserClient.mockReturnValueOnce(held.promise).mockReturnValueOnce(fresh.promise);
+      const { dispatch, task, entry } = startWithReducer();
+
+      dispatch(workspaceMounted(WS));
+      await settle();
+      dispatch(fetchWorkspaceBrowserClientRequested(WS));
+      await settle();
+      expect(mocks.getBrowserClient).toHaveBeenCalledTimes(1);
+      dispatch(workspaceUnmounted(WS));
+      expect(entry(WS)).toBeUndefined();
+
+      // The remount's own read is the lane's only call; the pre-unmount
+      // trailing trigger was discarded with the lane rather than carried over.
+      dispatch(workspaceMounted(WS));
+      await settle();
+      expect(mocks.getBrowserClient).toHaveBeenCalledTimes(2);
+
+      // The pre-unmount reply was abandoned with the old lane: it does not
+      // land on the remounted workspace.
+      held.resolve(pinned);
+      await settle();
+      expect(entry(WS)?.browserClient).not.toEqual(pinned);
+
+      fresh.resolve(unpinned);
+      await settle();
+      task.cancel();
+      expect(entry(WS)?.browserClient).toEqual(unpinned);
+      expect(mocks.getBrowserClient).toHaveBeenCalledTimes(2);
     });
   });
 });
