@@ -3,9 +3,9 @@ import type { AgentBadge, RouteEdge } from './types';
 
 const GAP = 4;
 const BADGE_SIZE = 30;
-export const REGION_LABEL_MIN_FONT_SIZE = 13;
-export const REGION_LABEL_MAX_FONT_SIZE = 16;
-export const REGION_LABEL_MIN_OPACITY = 0.82;
+const REGION_LABEL_MIN_FONT_SIZE = 13;
+const REGION_LABEL_MAX_FONT_SIZE = 16;
+const REGION_LABEL_MIN_OPACITY = 0.82;
 
 export interface LabelBox {
   id: string;
