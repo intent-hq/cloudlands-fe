@@ -57,7 +57,8 @@ function canonicalPlanBlock(block: Record<string, any>): PlanContentBlock {
 const IMAGE_MIME_PATTERN = /^image\/[a-z0-9][a-z0-9.+-]*$/i;
 
 function validateImageBlock(block: Record<string, any>): void {
-  const hasData = typeof block.data === 'string';
+  const hasData = Object.prototype.hasOwnProperty.call(block, 'data');
+  const hasStringData = typeof block.data === 'string';
   const hasTruncationFlag = block.dataTruncated !== undefined;
   const hasThumbnailFlag = block.dataIsThumbnail !== undefined;
   const hasByteCount = block.dataBytes !== undefined;
@@ -68,8 +69,14 @@ function validateImageBlock(block: Record<string, any>): void {
     );
   }
 
+  if (hasData && !hasStringData) {
+    throw new Error(
+      `Invalid image block: present 'data' must be a string. Received: ${JSON.stringify(block)}`,
+    );
+  }
+
   if (!hasTruncationFlag) {
-    if (!hasData || hasThumbnailFlag || hasByteCount) {
+    if (!hasStringData || hasThumbnailFlag || hasByteCount) {
       throw new Error(
         `Invalid image block: full images require 'data' without slim flags. Received: ${JSON.stringify(block)}`,
       );
@@ -81,7 +88,7 @@ function validateImageBlock(block: Record<string, any>): void {
     block.dataTruncated !== true ||
     !Number.isSafeInteger(block.dataBytes) ||
     block.dataBytes < 0 ||
-    (hasData ? block.dataIsThumbnail !== true : hasThumbnailFlag)
+    (hasStringData ? block.dataIsThumbnail !== true : hasThumbnailFlag)
   ) {
     throw new Error(
       `Invalid image block: malformed slim projection metadata. Received: ${JSON.stringify(block)}`,

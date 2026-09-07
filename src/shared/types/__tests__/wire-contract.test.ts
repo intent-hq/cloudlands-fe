@@ -97,6 +97,25 @@ describe('PROTOCOL.md §7 ContentBlock wire contract', () => {
   });
 
   it.each([
+    ['undefined', undefined],
+    ['null', null],
+    ['number', 42],
+    ['boolean', false],
+    ['object', { base64: 'AAAA' }],
+    ['array', ['AAAA']],
+  ])('rejects a slim image with present %s data', (_label, data) => {
+    expect(() =>
+      migrateFromLegacy({
+        type: 'image',
+        data,
+        mimeType: 'image/png',
+        dataTruncated: true,
+        dataBytes: 8192,
+      }),
+    ).toThrow(/image block/);
+  });
+
+  it.each([
     ['data omitted without slim metadata', { type: 'image', mimeType: 'image/png' }],
     ['missing MIME type', { type: 'image', data: 'AAAA' }],
     ['empty MIME type', { type: 'image', data: 'AAAA', mimeType: '' }],
@@ -147,6 +166,13 @@ describe('PROTOCOL.md §7 ContentBlock wire contract', () => {
     ],
   ])('rejects an image with %s', (_label, wire) => {
     expect(() => migrateFromLegacy(wire)).toThrow(/image block/);
+  });
+
+  it.each([
+    { type: 'audio', data: null, mimeType: 'audio/mpeg' },
+    { type: 'file', data: false, mimeType: 'text/plain', fileName: 'notes.txt' },
+  ])('keeps non-image media data validation strict for $type blocks', (wire) => {
+    expect(() => migrateFromLegacy(wire)).toThrow(/required/);
   });
 
   it('strips provider metadata from an otherwise valid bounded plan snapshot', () => {

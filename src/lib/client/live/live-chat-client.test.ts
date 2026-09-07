@@ -473,6 +473,14 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     await flush();
 
     const validText = { type: 'text', id: 'mixed:0', text: 'Keep me' };
+    const invalidDataBlocks = [null, 7, true, { base64: 'AAAA' }, ['AAAA']].map((data, index) => ({
+      type: 'image',
+      id: `mixed-data:${index}`,
+      data,
+      mimeType: 'image/png',
+      dataTruncated: true,
+      dataBytes: 8192,
+    }));
     snapshotPush('sub-1', 0, {
       ...SEEDED_SNAPSHOT,
       messages: [
@@ -481,6 +489,7 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
           id: 'mixed',
           contentBlocks: [
             validText,
+            ...invalidDataBlocks,
             { type: 'image', id: 'mixed:1', mimeType: 'image/png' },
             {
               type: 'image',
