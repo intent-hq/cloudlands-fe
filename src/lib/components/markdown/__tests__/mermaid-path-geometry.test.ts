@@ -236,7 +236,7 @@ describe('Mermaid path terminal geometry', () => {
     expect(diamondRayIntersection(center, { x: 0, y: -40 }, bounds)).toEqual({ x: 60, y: 20 });
   });
 
-  it('builds independent upper and lower decision branch lanes', () => {
+  it('builds top and right decision branch lanes from cardinal apexes', () => {
     const source = { x: 0, y: 0, width: 100, height: 100 };
     const occupied = [source, { x: 200, y: 0, width: 80, height: 160 }];
 
@@ -248,8 +248,10 @@ describe('Mermaid path terminal geometry', () => {
         occupied,
       ),
     ).toEqual([
-      { x: 75, y: 25 },
-      { x: 200, y: 25 },
+      { x: 50, y: 0 },
+      { x: 50, y: -32 },
+      { x: 240, y: -32 },
+      { x: 240, y: 0 },
     ]);
     expect(
       buildFlowchartDecisionBranchPoints(
@@ -259,9 +261,10 @@ describe('Mermaid path terminal geometry', () => {
         occupied,
       ),
     ).toEqual([
-      { x: 75, y: 75 },
-      { x: 212, y: 75 },
-      { x: 212, y: 120 },
+      { x: 100, y: 50 },
+      { x: 150, y: 50 },
+      { x: 150, y: 140 },
+      { x: 200, y: 140 },
     ]);
   });
 
@@ -292,28 +295,26 @@ describe('Mermaid path terminal geometry', () => {
       ),
     ).toEqual([
       { x: 50, y: 240 },
-      { x: 50, y: 258 },
-      { x: -54, y: 258 },
-      { x: -54, y: 20 },
-      { x: 10, y: 20 },
+      { x: 50, y: 40 },
     ]);
   });
 
-  it('separates compact decision branches onto opposite outer lanes', () => {
+  it('keeps compact decision branches outside a vertically stacked diamond', () => {
     const source = { x: 0, y: 0, width: 100, height: 100 };
     const target = { x: 10, y: 200, width: 80, height: 40 };
     const occupied = [source, target];
 
-    expect(buildFlowchartDecisionBranchPoints(source, target, 'upper', occupied)).toEqual([
-      { x: 60, y: 100 },
-      { x: 60, y: 150 },
-      { x: 58, y: 150 },
-      { x: 58, y: 200 },
+    expect(buildFlowchartDecisionBranchPoints(source, target, 'upper', occupied, true)).toEqual([
+      { x: 50, y: 0 },
+      { x: 50, y: -12 },
+      { x: 116, y: -12 },
+      { x: 116, y: 220 },
+      { x: 90, y: 220 },
     ]);
     expect(buildFlowchartDecisionBranchPoints(source, target, 'lower', occupied, true)).toEqual([
-      { x: 75, y: 75 },
-      { x: 116, y: 75 },
-      { x: 116, y: 220 },
+      { x: 100, y: 50 },
+      { x: 132, y: 50 },
+      { x: 132, y: 220 },
       { x: 90, y: 220 },
     ]);
   });

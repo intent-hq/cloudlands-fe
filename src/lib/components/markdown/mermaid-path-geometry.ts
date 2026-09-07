@@ -9,6 +9,14 @@ const STATE_NODE_CLEARANCE_CSS = 8;
 type Point = { x: number; y: number };
 type Bounds = Point & { width: number; height: number };
 type Segment = { start: Point; end: Point };
+type CardinalSide = 'top' | 'right' | 'bottom' | 'left';
+
+function boundsPort(bounds: Bounds, side: CardinalSide): Point {
+  if (side === 'top') return pointAt(bounds, 0.5, 0);
+  if (side === 'right') return pointAt(bounds, 1, 0.5);
+  if (side === 'bottom') return pointAt(bounds, 0.5, 1);
+  return pointAt(bounds, 0, 0.5);
+}
 
 export function chooseFlowchartFeedbackTargetX(target: Bounds, sameSidePorts: number[]) {
   const center = target.x + target.width / 2;
@@ -40,37 +48,77 @@ export function buildFlowchartDecisionBranchPoints(
   occupied: Bounds[],
   compact = false,
 ): Point[] {
-  const upper = branch === 'upper';
-  const sourcePort = pointAt(source, 0.75, upper ? 0.25 : 0.75);
-  const targetToRight = target.x >= source.x + source.width;
-  if (targetToRight) {
-    if (sourcePort.y >= target.y && sourcePort.y <= target.y + target.height) {
-      return [sourcePort, { x: target.x, y: sourcePort.y }];
+  const sourceSide = branch === 'upper' ? 'top' : 'right';
+  const stackedTarget = branch === 'upper' && target.y >= source.y + source.height;
+  const targetSide: CardinalSide = stackedTarget
+    ? 'right'
+    : branch === 'upper'
+      ? 'top'
+      : target.x >= source.x + source.width
+        ? 'left'
+        : 'right';
+  const sourcePort = boundsPort(source, sourceSide);
+  const targetPort = boundsPort(target, targetSide);
+  const clearance = compact ? 16 : 32;
+  if (sourceSide === 'top') {
+    if (stackedTarget) {
+      const laneX =
+        Math.max(
+          source.x + source.width,
+          target.x + target.width,
+          ...occupied.map((bounds) => bounds.x + bounds.width),
+        ) + clearance;
+      const leadY = sourcePort.y - 12;
+      return simplifyOrthogonalPoints([
+        sourcePort,
+        { x: sourcePort.x, y: leadY },
+        { x: laneX, y: leadY },
+        { x: laneX, y: targetPort.y },
+        targetPort,
+      ]);
     }
-    const targetAbove = target.y + target.height < sourcePort.y;
-    const targetPort = pointAt(target, 0.15, targetAbove ? 1 : 0);
-    return [sourcePort, { x: targetPort.x, y: sourcePort.y }, targetPort];
-  }
-  if (upper && target.y >= source.y + source.height) {
-    const directSource = pointAt(source, 0.6, 1);
-    const targetPort = pointAt(target, 0.6, 0);
-    const laneY = (directSource.y + targetPort.y) / 2;
-    return [
-      directSource,
-      { x: directSource.x, y: laneY },
+    const laneY = Math.min(...occupied.map((bounds) => bounds.y), target.y, source.y) - clearance;
+    if (Math.abs(sourcePort.x - targetPort.x) < 0.001) {
+      const laneX =
+        Math.max(
+          source.x + source.width,
+          target.x + target.width,
+          ...occupied.map((bounds) => bounds.x + bounds.width),
+        ) + clearance;
+      return simplifyOrthogonalPoints([
+        sourcePort,
+        { x: sourcePort.x, y: laneY },
+        { x: laneX, y: laneY },
+        { x: laneX, y: targetPort.y },
+        targetPort,
+      ]);
+    }
+    return simplifyOrthogonalPoints([
+      sourcePort,
+      { x: sourcePort.x, y: laneY },
       { x: targetPort.x, y: laneY },
       targetPort,
-    ];
+    ]);
   }
-  if (!upper) {
-    const laneX =
-      Math.max(...occupied.map((bounds) => bounds.x + bounds.width)) + (compact ? 16 : 32);
-    const targetPort = pointAt(target, 1, 0.5);
+  if (
+    targetSide === 'left' &&
+    sourcePort.y >= target.y &&
+    sourcePort.y <= target.y + target.height
+  ) {
+    return [sourcePort, { x: target.x, y: sourcePort.y }];
+  }
+  if (targetSide === 'left') {
+    if (Math.abs(sourcePort.y - targetPort.y) < 0.001) return [sourcePort, targetPort];
+    const laneX = (sourcePort.x + targetPort.x) / 2;
     return [sourcePort, { x: laneX, y: sourcePort.y }, { x: laneX, y: targetPort.y }, targetPort];
   }
-  const laneX = Math.max(...occupied.map((bounds) => bounds.x + bounds.width)) + 32;
-  const targetPort = pointAt(target, 1, 0.5);
-  return [sourcePort, { x: laneX, y: sourcePort.y }, { x: laneX, y: targetPort.y }, targetPort];
+  const laneX = Math.max(...occupied.map((bounds) => bounds.x + bounds.width)) + clearance * 2;
+  return simplifyOrthogonalPoints([
+    sourcePort,
+    { x: laneX, y: sourcePort.y },
+    { x: laneX, y: targetPort.y },
+    targetPort,
+  ]);
 }
 
 export function buildFlowchartDecisionReturnPoints(
@@ -79,29 +127,31 @@ export function buildFlowchartDecisionReturnPoints(
   occupied: Bounds[],
   compact = false,
 ): Point[] {
-  const sourcePort = pointAt(source, 0.5, 1);
-  const outerBottom = Math.max(...occupied.map((bounds) => bounds.y + bounds.height)) + 32;
-  const targetBottom = pointAt(target, 0.5, 1);
-  const horizontalOverlap =
-    Math.min(source.x + source.width, target.x + target.width) - Math.max(source.x, target.x);
-  if (horizontalOverlap <= 0) {
-    return [
+  const sourcePort = boundsPort(source, 'bottom');
+  const targetPort = boundsPort(target, 'bottom');
+  const clearance = compact ? 16 : 32;
+  const laneY = Math.max(...occupied.map((bounds) => bounds.y + bounds.height)) + clearance;
+  if (compact) {
+    const laneX =
+      Math.min(source.x, target.x, ...occupied.map((bounds) => bounds.x)) - clearance - 12;
+    const leadY = sourcePort.y + 12;
+    const approachY = targetPort.y + 12;
+    return simplifyOrthogonalPoints([
       sourcePort,
-      { x: sourcePort.x, y: outerBottom },
-      { x: targetBottom.x, y: outerBottom },
-      targetBottom,
-    ];
+      { x: sourcePort.x, y: leadY },
+      { x: laneX, y: leadY },
+      { x: laneX, y: laneY },
+      { x: laneX, y: approachY },
+      { x: targetPort.x, y: approachY },
+      targetPort,
+    ]);
   }
-  const outerLeft = Math.min(...occupied.map((bounds) => bounds.x)) - (compact ? 26 : 64);
-  const bridgeY = source.y + source.height + 18;
-  const targetPort = pointAt(target, 0, 0.5);
-  return [
+  return simplifyOrthogonalPoints([
     sourcePort,
-    { x: sourcePort.x, y: bridgeY },
-    { x: outerLeft, y: bridgeY },
-    { x: outerLeft, y: targetPort.y },
+    { x: sourcePort.x, y: laneY },
+    { x: targetPort.x, y: laneY },
     targetPort,
-  ];
+  ]);
 }
 
 export function buildFlowchartFeedbackLanePoints(
@@ -1731,39 +1781,170 @@ export function snapFlowchartPorts(svg: SVGSVGElement) {
   }
 }
 
-export function snapFlowchartDiamondPorts(svg: SVGSVGElement) {
-  if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2') return;
-  const portsByNode = new Map<string, Point[]>();
-  const distinctPort = (node: SVGGElement, origin: Point, direction: Point, bounds: Bounds) => {
-    const occupied = portsByNode.get(node.id) ?? [];
-    const directionLength = Math.hypot(direction.x, direction.y);
-    const separation = Math.min(bounds.width, bounds.height) * 0.12;
-    const candidates = [direction];
-    if (directionLength > 0.001) {
-      const perpendicular = {
-        x: -direction.y / directionLength,
-        y: direction.x / directionLength,
-      };
-      for (const multiplier of [1, -1, 2, -2]) {
-        candidates.push({
-          x: direction.x + perpendicular.x * separation * multiplier,
-          y: direction.y + perpendicular.y * separation * multiplier,
-        });
+type CardinalAttachment = { point: Point; side: CardinalSide; lead?: Point };
+
+function cardinalSideFromDirection(origin: Point, adjacent: Point): CardinalSide {
+  const dx = adjacent.x - origin.x;
+  const dy = adjacent.y - origin.y;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 'right' : 'left';
+  return dy >= 0 ? 'bottom' : 'top';
+}
+
+function attachCardinalPorts(
+  route: Point[],
+  source?: CardinalAttachment,
+  target?: CardinalAttachment,
+) {
+  const points = route.map((point) => ({ ...point }));
+  if (source) {
+    const next = points[1];
+    points[0] = source.point;
+    const vertical = source.side === 'top' || source.side === 'bottom';
+    const aligned = vertical
+      ? Math.abs(next.x - source.point.x) < 0.001
+      : Math.abs(next.y - source.point.y) < 0.001;
+    if (!aligned) {
+      if (source.lead) {
+        const bend = vertical ? { x: next.x, y: source.lead.y } : { x: source.lead.x, y: next.y };
+        points.splice(1, 0, source.lead, bend);
+      } else {
+        const bend = vertical ? { x: source.point.x, y: next.y } : { x: next.x, y: source.point.y };
+        points.splice(1, 0, bend);
       }
     }
-    const port = candidates
-      .map((candidate) => diamondRayIntersection(origin, candidate, bounds))
-      .find(
-        (candidate): candidate is Point =>
-          Boolean(candidate) &&
-          occupied.every(
-            (current) => Math.hypot(candidate.x - current.x, candidate.y - current.y) >= 4,
-          ),
-      );
-    if (port) portsByNode.set(node.id, [...occupied, port]);
-    return port;
+  }
+  if (target) {
+    const previous = points[points.length - 2];
+    points[points.length - 1] = target.point;
+    const vertical = target.side === 'top' || target.side === 'bottom';
+    const aligned = vertical
+      ? Math.abs(previous.x - target.point.x) < 0.001
+      : Math.abs(previous.y - target.point.y) < 0.001;
+    if (!aligned) {
+      if (target.lead) {
+        const bend = vertical
+          ? { x: previous.x, y: target.lead.y }
+          : { x: target.lead.x, y: previous.y };
+        points.splice(points.length - 1, 0, bend, target.lead);
+      } else {
+        const bend = vertical
+          ? { x: target.point.x, y: previous.y }
+          : { x: previous.x, y: target.point.y };
+        points.splice(points.length - 1, 0, bend);
+      }
+    }
+  }
+  return simplifyOrthogonalPoints(points);
+}
+
+function diamondCardinalAttachment(bounds: Bounds, side: CardinalSide): CardinalAttachment {
+  const point = boundsPort(bounds, side);
+  const lead = { ...point };
+  if (side === 'top') lead.y -= 12;
+  else if (side === 'right') lead.x += 12;
+  else if (side === 'bottom') lead.y += 12;
+  else lead.x -= 12;
+  return { point, side, lead };
+}
+
+function spreadCrowdedFlowchartPorts(svg: SVGSVGElement) {
+  type Use = {
+    path: SVGPathElement;
+    role: 'source' | 'target';
+    side: CardinalSide;
+    bounds: Bounds;
+    endpoint: Point;
   };
+  const groups = new Map<string, Use[]>();
   for (const path of svg.querySelectorAll<SVGPathElement>('.edgePaths path')) {
+    if (
+      path.dataset.feedbackLane ||
+      path.dataset.groupedReturnLane ||
+      path.dataset.clientRequestLane ||
+      path.dataset.compactGroupedRoute
+    )
+      continue;
+    const identity = flowchartEdgeIdentity(path);
+    const points = (path.dataset.manhattanPoints ?? '')
+      .trim()
+      .split(/\s+/)
+      .map((point) => point.split(',').map(Number))
+      .filter((point) => point.length === 2 && point.every(Number.isFinite))
+      .map(([x, y]) => ({ x, y }));
+    if (!identity || points.length < 2) continue;
+    for (const role of ['source', 'target'] as const) {
+      const nodeId = identity[role];
+      const node = flowchartNode(svg, nodeId);
+      const shape = node && shapeForNode(node);
+      const bounds = shape && boundsInPathSpace(shape, path);
+      if (!shape || !bounds || isDiamondShape(shape)) continue;
+      const endpoint = role === 'source' ? points[0] : points[points.length - 1];
+      const distances: [CardinalSide, number][] = [
+        ['top', Math.abs(endpoint.y - bounds.y)],
+        ['right', Math.abs(endpoint.x - bounds.x - bounds.width)],
+        ['bottom', Math.abs(endpoint.y - bounds.y - bounds.height)],
+        ['left', Math.abs(endpoint.x - bounds.x)],
+      ];
+      const side = distances.toSorted((left, right) => left[1] - right[1])[0][0];
+      const key = `${nodeId}\u0000${side}`;
+      groups.set(key, [...(groups.get(key) ?? []), { path, role, side, bounds, endpoint }]);
+    }
+  }
+  const assignments = new Map<
+    SVGPathElement,
+    { source?: CardinalAttachment; target?: CardinalAttachment }
+  >();
+  for (const uses of groups.values()) {
+    if (uses.length < 2) continue;
+    const side = uses[0].side;
+    const horizontal = side === 'top' || side === 'bottom';
+    const sorted = uses.toSorted(
+      (left, right) =>
+        (horizontal ? left.endpoint.x - right.endpoint.x : left.endpoint.y - right.endpoint.y) ||
+        left.path.id.localeCompare(right.path.id) ||
+        left.role.localeCompare(right.role),
+    );
+    const span = (horizontal ? uses[0].bounds.width : uses[0].bounds.height) * 0.6;
+    const gap = Math.min(FLOWCHART_PORT_SLOT_GAP, span / Math.max(1, uses.length - 1));
+    sorted.forEach((use, index) => {
+      const offset = (index - (uses.length - 1) / 2) * gap;
+      const center = boundsPort(use.bounds, side);
+      const point = horizontal
+        ? { x: center.x + offset, y: center.y }
+        : { x: center.x, y: center.y + offset };
+      const assignment = assignments.get(use.path) ?? {};
+      assignment[use.role] = { point, side };
+      assignments.set(use.path, assignment);
+    });
+  }
+  for (const [path, assignment] of assignments) {
+    const points = (path.dataset.manhattanPoints ?? '')
+      .trim()
+      .split(/\s+/)
+      .map((point) => point.split(',').map(Number))
+      .filter((point) => point.length === 2 && point.every(Number.isFinite))
+      .map(([x, y]) => ({ x, y }));
+    if (points.length < 2) continue;
+    const routed = attachCardinalPorts(points, assignment.source, assignment.target);
+    path.dataset.manhattanPoints = routed.map(({ x, y }) => `${x},${y}`).join(' ');
+    if (assignment.source) {
+      path.dataset.crowdedSourcePort = `${assignment.source.point.x},${assignment.source.point.y}`;
+    }
+    if (assignment.target) {
+      path.dataset.crowdedTargetPort = `${assignment.target.point.x},${assignment.target.point.y}`;
+    }
+    path.setAttribute(
+      'd',
+      routed.map(({ x, y }, index) => `${index === 0 ? 'M' : 'L'}${x},${y}`).join(''),
+    );
+  }
+}
+
+export function snapFlowchartDiamondPorts(svg: SVGSVGElement) {
+  if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2') return;
+  spreadCrowdedFlowchartPorts(svg);
+  const paths = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')];
+  for (const path of paths) {
     const identity = flowchartEdgeIdentity(path);
     const sourceNode = identity && flowchartNode(svg, identity.source);
     const targetNode = identity && flowchartNode(svg, identity.target);
@@ -1776,16 +1957,42 @@ export function snapFlowchartDiamondPorts(svg: SVGSVGElement) {
       .filter((point) => point.length === 2 && point.every(Number.isFinite))
       .map(([x, y]) => ({ x, y }));
     if (points.length < 2) continue;
+    let sourceAttachment: CardinalAttachment | undefined;
+    let targetAttachment: CardinalAttachment | undefined;
+    const labelText = flowchartLabelForPath(svg, path)?.textContent?.trim().toLocaleLowerCase();
     if (sourceShape && isDiamondShape(sourceShape)) {
       const bounds = boundsInPathSpace(sourceShape, path);
       if (bounds) {
         const origin = pointAt(bounds, 0.5, 0.5);
-        const direction = { x: points[1].x - origin.x, y: points[1].y - origin.y };
-        const port = distinctPort(sourceNode, origin, direction, bounds);
-        if (port) {
-          points[0] = port;
-          path.dataset.diamondSourcePort = `${port.x},${port.y}`;
+        const inferredSide = cardinalSideFromDirection(origin, points[1]);
+        const side: CardinalSide =
+          path.dataset.decisionBranch === 'upper' || labelText === 'yes'
+            ? 'top'
+            : path.dataset.decisionBranch === 'lower' || labelText === 'no'
+              ? 'right'
+              : inferredSide;
+        if (labelText === 'no' && inferredSide !== side && points.length > 2) {
+          const lane = points
+            .slice(1)
+            .map((end, index) => ({
+              index,
+              length:
+                Math.abs(points[index].y - end.y) < 0.001 ? Math.abs(points[index].x - end.x) : 0,
+            }))
+            .toSorted((left, right) => right.length - left.length)[0];
+          if (lane?.length) {
+            const offset = (points[lane.index].y >= origin.y ? 1 : -1) * FLOWCHART_PORT_SLOT_GAP;
+            points[lane.index].y += offset;
+            points[lane.index + 1].y += offset;
+            path.dataset.decisionLane = String(points[lane.index].y);
+          }
         }
+        const attachment = diamondCardinalAttachment(bounds, side);
+        const { point } = attachment;
+        sourceAttachment = attachment;
+        path.dataset.diamondSourcePort = `${point.x},${point.y}`;
+        path.dataset.diamondSourceSide = side;
+        if (path.dataset.decisionBranch) path.dataset.decisionPort = `${point.x},${point.y}`;
       }
     }
     if (targetShape && isDiamondShape(targetShape)) {
@@ -1793,21 +2000,43 @@ export function snapFlowchartDiamondPorts(svg: SVGSVGElement) {
       const previous = points[points.length - 2];
       if (bounds) {
         const origin = pointAt(bounds, 0.5, 0.5);
-        const direction = { x: previous.x - origin.x, y: previous.y - origin.y };
-        const port = targetNode && distinctPort(targetNode, origin, direction, bounds);
-        if (port && targetNode) {
-          points[points.length - 1] = port;
-          path.dataset.diamondTargetPort = `${port.x},${port.y}`;
+        const reciprocal = paths.some((candidate) => {
+          const candidateIdentity = flowchartEdgeIdentity(candidate);
+          return (
+            candidate !== path &&
+            candidateIdentity?.source === identity?.target &&
+            candidateIdentity.target === identity.source
+          );
+        });
+        const side: CardinalSide =
+          path.dataset.decisionReturn || reciprocal
+            ? 'bottom'
+            : cardinalSideFromDirection(origin, previous);
+        const attachment = diamondCardinalAttachment(bounds, side);
+        const { point } = attachment;
+        targetAttachment = attachment;
+        if (targetNode) {
+          path.dataset.diamondTargetPort = `${point.x},${point.y}`;
+          path.dataset.diamondTargetSide = side;
           path.dataset.terminalTarget = targetNode.id;
-          path.dataset.terminalDirection = `${port.x - previous.x},${port.y - previous.y}`;
         }
       }
     }
-    path.dataset.manhattanPoints = points.map(({ x, y }) => `${x},${y}`).join(' ');
+    const routed = attachCardinalPorts(points, sourceAttachment, targetAttachment);
+    const previous = routed[routed.length - 2];
+    const endpoint = routed[routed.length - 1];
+    if (targetAttachment) {
+      path.dataset.terminalDirection = `${endpoint.x - previous.x},${endpoint.y - previous.y}`;
+    }
+    path.dataset.manhattanPoints = routed.map(({ x, y }) => `${x},${y}`).join(' ');
+    path.dataset.manhattanSegments = String(routed.length - 1);
     path.setAttribute(
       'd',
-      points.map(({ x, y }, index) => `${index === 0 ? 'M' : 'L'}${x},${y}`).join(''),
+      routed.map(({ x, y }, index) => `${index === 0 ? 'M' : 'L'}${x},${y}`).join(''),
     );
+    if (!path.dataset.compactFlowchart) {
+      placeFlowchartLabelOnRoute(flowchartLabelForPath(svg, path), path, routed);
+    }
   }
 }
 
@@ -2001,7 +2230,15 @@ export function routeFlowchartDecisionBranches(svg: SVGSVGElement) {
       edge.path.dataset.decisionPort = `${points[0].x},${points[0].y}`;
       edge.path.dataset.decisionLane = String(points[1].x);
       edge.path.dataset.manhattanPoints = points.map((point) => `${point.x},${point.y}`).join(' ');
-      if (edge.label) placeDecisionLabel(edge.label, edge.path, points[0], points[1]);
+      if (edge.label) {
+        const shortLead = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y) <= 12;
+        placeDecisionLabel(
+          edge.label,
+          edge.path,
+          shortLead && points[2] ? points[1] : points[0],
+          shortLead && points[2] ? points[2] : points[1],
+        );
+      }
     });
     const branchTargets = new Set(labeledBranches.map(({ target }) => target));
     const returnEdge = edges.find(
@@ -2409,8 +2646,31 @@ function routeCompactGroupedEdges(svg: SVGSVGElement) {
       ];
       path.dataset.selfLoop = 'right';
     } else if (!side) {
-      const downward = target.y >= source.y;
-      points = [pointAt(source, 0.5, downward ? 1 : 0), pointAt(target, 0.5, downward ? 0 : 1)];
+      const horizontallySeparated =
+        target.x >= source.x + source.width || source.x >= target.x + target.width;
+      if (horizontallySeparated) {
+        const rightward = target.x >= source.x;
+        const sourcePort = pointAt(source, rightward ? 1 : 0, 0.5);
+        const targetPort = pointAt(target, rightward ? 0 : 1, 0.5);
+        const laneX = (sourcePort.x + targetPort.x) / 2;
+        points = simplifyOrthogonalPoints([
+          sourcePort,
+          { x: laneX, y: sourcePort.y },
+          { x: laneX, y: targetPort.y },
+          targetPort,
+        ]);
+      } else {
+        const downward = target.y >= source.y;
+        const sourcePort = pointAt(source, 0.5, downward ? 1 : 0);
+        const targetPort = pointAt(target, 0.5, downward ? 0 : 1);
+        const laneY = (sourcePort.y + targetPort.y) / 2;
+        points = simplifyOrthogonalPoints([
+          sourcePort,
+          { x: sourcePort.x, y: laneY },
+          { x: targetPort.x, y: laneY },
+          targetPort,
+        ]);
+      }
     } else {
       const sourcePort = pointAt(source, side === 'left' ? 0 : 1, terminalRatio(sourceId, side));
       const targetPort = pointAt(target, side === 'left' ? 0 : 1, terminalRatio(targetId, side));

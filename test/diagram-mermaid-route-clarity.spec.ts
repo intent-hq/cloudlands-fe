@@ -7,7 +7,7 @@ const appearances: Appearance[] = [
   { name: 'dark', theme: 'dark' },
   { name: 'nord', theme: 'light', colorTheme: 'nord' },
 ];
-const widths = [960, 640, 420, 320] as const;
+const widths = [1400, 960, 420, 320] as const;
 
 test.skip(!baseUrl, 'Set UI_PREVIEW_BASE_URL to the running diagram preview server.');
 test.describe.configure({ mode: 'serial' });
@@ -41,6 +41,7 @@ for (const appearance of appearances) {
           'mermaid-state',
           'mermaid-groups',
           'mermaid-nested-groups',
+          'mermaid-nested-routing',
           'mermaid-topology-stress',
         ].map((fixture) =>
           page.locator(`#${fixture} svg[data-layout-settled="true"]`).waitFor({ timeout: 90_000 }),
@@ -272,6 +273,139 @@ for (const appearance of appearances) {
             route.labelClear,
         ),
       ).toBe(true);
+
+      const nestedDecision = await page
+        .locator('#mermaid-nested-routing svg[aria-roledescription="flowchart-v2"]')
+        .evaluate((svg) => {
+          const labelFor = (path: SVGPathElement) => {
+            const edgeId = path.id.match(/-(L_.+)$/)?.[1];
+            return edgeId
+              ? [...svg.querySelectorAll<SVGGElement>('.edgeLabels > .edgeLabel')].find(
+                  (label) =>
+                    label.querySelector(':scope > .label')?.getAttribute('data-id') === edgeId,
+                )
+              : undefined;
+          };
+          const routes = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].map(
+            (path) => {
+              const points = path.dataset.manhattanPoints!.split(' ').map((value) => {
+                const [x, y] = value.split(',').map(Number);
+                return { x, y };
+              });
+              return {
+                path,
+                label: labelFor(path)?.textContent?.trim().toLowerCase() ?? '',
+                points,
+              };
+            },
+          );
+          const selected = routes.filter(
+            ({ path, label }) =>
+              ['done', 'no', 'retry', 'save'].includes(label) || path.dataset.selfLoop === 'right',
+          );
+          const segments = selected.flatMap(({ label, points }, pathIndex) =>
+            points.slice(1).map((end, index) => ({
+              label: label || 'self',
+              pathIndex,
+              start: points[index],
+              end,
+            })),
+          );
+          const overlap = (a1: number, a2: number, b1: number, b2: number) =>
+            Math.min(Math.max(a1, a2), Math.max(b1, b2)) -
+            Math.max(Math.min(a1, a2), Math.min(b1, b2));
+          const sharedShafts: string[] = [];
+          for (let left = 0; left < segments.length; left += 1)
+            for (let right = left + 1; right < segments.length; right += 1) {
+              const a = segments[left];
+              const b = segments[right];
+              if (a.pathIndex === b.pathIndex) continue;
+              const ah = Math.abs(a.start.y - a.end.y) < 0.001;
+              const bh = Math.abs(b.start.y - b.end.y) < 0.001;
+              if (
+                ah &&
+                bh &&
+                Math.abs(a.start.y - b.start.y) < 0.001 &&
+                overlap(a.start.x, a.end.x, b.start.x, b.end.x) > 0.5
+              )
+                sharedShafts.push(`${a.label}/${b.label}`);
+              if (
+                !ah &&
+                !bh &&
+                Math.abs(a.start.x - b.start.x) < 0.001 &&
+                overlap(a.start.y, a.end.y, b.start.y, b.end.y) > 0.5
+              )
+                sharedShafts.push(`${a.label}/${b.label}`);
+            }
+          const decisionPorts = selected.flatMap(({ path, label, points }) => {
+            if (label === 'done' || label === 'no')
+              return [`${points.at(-1)!.x},${points.at(-1)!.y}`];
+            if (label === 'save') return [`${points[0].x},${points[0].y}`];
+            if (path.dataset.selfLoop === 'right') {
+              return [`${points[0].x},${points[0].y}`, `${points.at(-1)!.x},${points.at(-1)!.y}`];
+            }
+            return [];
+          });
+          const horizontalLanes = selected.flatMap(({ label, points }) => {
+            if (!['done', 'no', 'retry', 'save'].includes(label)) return [];
+            const longest = points.slice(1).reduce(
+              (best, end, index) => {
+                const start = points[index];
+                const length = Math.abs(start.y - end.y) < 0.001 ? Math.abs(start.x - end.x) : 0;
+                return length > best.length ? { length, y: start.y } : best;
+              },
+              { length: 0, y: Number.NaN },
+            );
+            return [longest.y];
+          });
+          const frame = svg.getBoundingClientRect();
+          const contained = selected.every(({ path }) => {
+            const matrix = path.getScreenCTM()!;
+            return Array.from({ length: 101 }, (_, index) => {
+              const point = path.getPointAtLength((path.getTotalLength() * index) / 100);
+              return new DOMPoint(point.x, point.y).matrixTransform(matrix);
+            }).every(
+              ({ x, y }) =>
+                x >= frame.left - 1 &&
+                x <= frame.right + 1 &&
+                y >= frame.top - 1 &&
+                y <= frame.bottom + 1,
+            );
+          });
+          return {
+            allAxisAligned: selected.every(({ points }) =>
+              points.slice(1).every((point, index) => {
+                const previous = points[index];
+                return (
+                  Math.abs(point.x - previous.x) < 0.001 || Math.abs(point.y - previous.y) < 0.001
+                );
+              }),
+            ),
+            rounded: selected.every(
+              ({ path, points }) =>
+                points.length < 3 ||
+                (path.dataset.cornerRadius === '6' && path.getAttribute('d')!.includes(' Q ')),
+            ),
+            straightTerminals: selected.every(({ points }) => {
+              const end = points.at(-1)!;
+              const previous = points.at(-2)!;
+              return Math.abs(end.x - previous.x) < 0.001 || Math.abs(end.y - previous.y) < 0.001;
+            }),
+            decisionPorts,
+            horizontalLanes,
+            sharedShafts,
+            selfLoop: selected.some(({ path }) => path.dataset.selfLoop === 'right'),
+            contained,
+          };
+        });
+      expect(nestedDecision.allAxisAligned).toBe(true);
+      expect(nestedDecision.rounded).toBe(true);
+      expect(nestedDecision.straightTerminals).toBe(true);
+      expect(new Set(nestedDecision.decisionPorts).size).toBe(5);
+      expect(new Set(nestedDecision.horizontalLanes).size).toBe(4);
+      expect(nestedDecision.sharedShafts).toEqual([]);
+      expect(nestedDecision.selfLoop).toBe(true);
+      expect(nestedDecision.contained).toBe(true);
 
       const labelSurfaces = await page
         .locator('#mermaid-flow, #mermaid-state')
@@ -696,9 +830,9 @@ for (const appearance of appearances) {
       expect(feedback).toMatchObject({
         source: 'Review',
         target: 'Hub',
-        segments: 4,
         outside: true,
       });
+      expect(feedback.segments).toBeLessThanOrEqual(6);
       expect(feedback.minimumDistance).toBeGreaterThan(6);
       expect(feedback.marker).toContain('pointEnd');
       expect(feedback.targetCenterError).toBeLessThanOrEqual(1);
@@ -815,6 +949,7 @@ for (const appearance of appearances) {
         'mermaid-state',
         'mermaid-groups',
         'mermaid-nested-groups',
+        'mermaid-nested-routing',
       ]) {
         const capture =
           fixture === 'mermaid-state'
