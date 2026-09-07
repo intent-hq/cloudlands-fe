@@ -49,7 +49,6 @@ describe('StreamingStatus rendered UI', () => {
     const { container } = render(StreamingStatus, {
       props: {
         isProcessing: true,
-        seed: 'agent-1',
         statusEvents: [
           { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1000 },
         ],
@@ -353,7 +352,6 @@ describe('StreamingStatus rendered UI', () => {
       props: {
         isStreaming: false,
         isProcessing: false,
-        seed: 'agent-1',
       },
     });
 
@@ -373,7 +371,6 @@ describe('StreamingStatus rendered UI', () => {
     await rerender({
       error: null,
       isProcessing: true,
-      seed: 'agent-1',
     });
 
     await waitFor(() => expect(screen.queryByTestId('error-title')).toBeNull());

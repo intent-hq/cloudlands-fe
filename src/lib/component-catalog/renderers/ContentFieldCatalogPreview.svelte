@@ -4,7 +4,7 @@
   import * as Card from '$lib/components/ui/card';
   import { Button } from '$lib/components/ui/button';
   import { CopyInput } from '$lib/components/ui/copy-input';
-  import { IntentMarkLoader, Spinner } from '$lib/components/ui/indicators';
+  import { IntentMarkLoader, intentMarkVariants } from '$lib/components/ui/indicators';
   import { Input } from '$lib/components/ui/input';
   import { InputGroup } from '$lib/components/ui/input-group';
   import { InputMessage } from '$lib/components/ui/input-message';
@@ -25,7 +25,7 @@
     | 'list'
     | 'separator'
     | 'skeleton'
-    | 'spinner'
+    | 'loading-indicator'
     | 'table'
     | 'textarea';
 
@@ -302,16 +302,50 @@
       <Skeleton class="h-20 w-full" />
     </div>
     <div data-catalog-rendered-state="avatar"><Skeleton class="size-8 rounded-full" /></div>
-  {:else if componentId === 'spinner'}
+  {:else if componentId === 'loading-indicator'}
     <div
-      class="flex flex-wrap items-center gap-4"
-      data-catalog-rendered-state="default intent-mark bloom pulse seeded-colors compact zoom-200 light dark reduced-motion"
+      class="grid gap-2"
+      data-catalog-rendered-state="bloom pulse twist light dark reduced-motion"
     >
-      <IntentMarkLoader variant="bloom" size={16} />
-      <Spinner seed="catalog-pulse" />
+      {#each intentMarkVariants as variant (variant)}
+        <div class="flex items-center gap-3" data-loader-variant={variant}>
+          <span class="type-caption w-14 capitalize text-muted-foreground">{variant}</span>
+          <IntentMarkLoader {variant} size={24} />
+        </div>
+      {/each}
     </div>
-    <div data-catalog-rendered-state="custom-size-gap">
-      <Spinner seed="catalog-large" size={10} gap={4} />
+    <div class="grid gap-2" data-catalog-rendered-state="size-16 size-24 size-32">
+      <span class="type-caption text-muted-foreground">Bloom sizes</span>
+      <div class="flex items-center gap-4">
+        {#each [16, 24, 32] as loaderSize (loaderSize)}
+          <div class="flex items-center gap-1.5" data-loader-size={loaderSize}>
+            <IntentMarkLoader variant="bloom" size={loaderSize} />
+            <span class="type-caption text-muted-foreground">{loaderSize}</span>
+          </div>
+        {/each}
+      </div>
+    </div>
+    <div
+      class="flex items-center gap-3"
+      data-catalog-rendered-state="paused"
+      data-loader-paused
+    >
+      <IntentMarkLoader variant="bloom" size={16} playing={false} />
+      <span class="type-caption text-muted-foreground"
+        >Paused and reduced-motion frames keep the full mark at 16 px.</span
+      >
+    </div>
+    <div class="grid gap-3" data-catalog-rendered-state="in-button in-list-row">
+      <div class="grid gap-1.5" data-loader-context="button">
+        <span class="type-caption text-muted-foreground">Button loading</span>
+        <Button loading>Button loading</Button>
+      </div>
+      <div class="grid gap-1.5" data-loader-context="list-row">
+        <span class="type-caption text-muted-foreground">ListItem loading</span>
+        <ListContainer>
+          <ListItem title="Loading workspace" loading />
+        </ListContainer>
+      </div>
     </div>
   {/if}
 </div>

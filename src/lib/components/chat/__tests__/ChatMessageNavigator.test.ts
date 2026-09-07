@@ -367,7 +367,7 @@ describe('ChatMessageNavigator', () => {
     const view = renderNavigator(false, messages, true);
     await fireEvent.click(screen.getByTestId('chat-message-navigator-trigger'));
     const loading = screen.getByTestId('chat-message-navigator-loading');
-    expect(loading.querySelector('[data-slot="spinner"]')).toBeTruthy();
+    expect(loading.querySelector('[data-slot="intent-mark-loader"]')).toBeTruthy();
     expect(screen.getAllByRole('option')).toHaveLength(messages.length);
 
     await view.rerender({ isLoadingIndex: false });

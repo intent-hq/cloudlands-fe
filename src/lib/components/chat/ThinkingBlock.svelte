@@ -14,7 +14,7 @@
     OPERATIONAL_EXPANDED_CONTENT_CLASS,
   } from './operational-disclosure-row';
   import ChatOperationalRow from './ChatOperationalRow.svelte';
-  import { Spinner } from '$lib/components/ui/indicators';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import ShimmerOverlay from '$lib/components/ui/ShimmerOverlay.svelte';
 
   interface Props {
@@ -72,7 +72,7 @@
 
 {#snippet leading()}
   {#if isStreaming}
-    <Spinner seed={workspaceId ?? 'thinking'} size={4} gap={1} class="shrink-0" />
+    <IntentMarkLoader size={14} class="shrink-0" />
   {:else}
     <Fa icon={faBrain} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
   {/if}

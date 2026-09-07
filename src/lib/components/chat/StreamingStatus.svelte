@@ -2,7 +2,7 @@
   StreamingStatus.svelte
 
   Streaming status indicator:
-  - Normal: Spinner with "Thinking"
+  - Normal: Intent mark with "Thinking"
   - Error/Timeout: clear failed state with Try Again button
 -->
 <script lang="ts">
@@ -83,8 +83,6 @@
     onStop?: () => void;
     /** Callback to cancel the stalled turn and re-send the last input (monorepo#3402) */
     onStalledRetry?: () => void;
-    /** Seed for spinner colors (typically agent ID) */
-    seed?: string;
     /** Additional class names */
     class?: string;
   }
@@ -110,7 +108,6 @@
     onRetryWithModel,
     onStop,
     onStalledRetry,
-    seed,
     class: className = '',
   }: Props = $props();
 
@@ -215,7 +212,6 @@
   lifecycleMessage={latestStatusEvent?.message}
   elapsed={elapsedTime}
   variant={markVariant}
-  {seed}
   class="mt-2 {className}"
 />
 

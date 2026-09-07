@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PREVIEW_FIXTURE_IDS } from '$lib/component-catalog/preview-fixtures';
 import StreamingStatus from './StreamingStatus.svelte';
 import { preview } from './streaming-status.preview';
 import { STREAMING_STATUS_PREVIEW_FIXTURES } from './streaming-status.preview-fixtures';
@@ -19,7 +18,7 @@ describe('streaming status preview', () => {
       'model-unavailable',
       'long-content',
     ]);
-    expect(STREAMING_STATUS_PREVIEW_FIXTURES.streaming.seed).toBe(PREVIEW_FIXTURE_IDS.agent);
+    expect(STREAMING_STATUS_PREVIEW_FIXTURES.streaming.seed).toBeUndefined();
     expect(STREAMING_STATUS_PREVIEW_FIXTURES.streaming.statusEvents?.[0]?.timestamp).toBe(
       Date.parse('2026-08-23T12:05:00.000Z'),
     );

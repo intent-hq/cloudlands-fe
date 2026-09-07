@@ -237,7 +237,7 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     expect(onchange).not.toHaveBeenCalled();
   });
 
-  it('trigger shows an inline spinner with an sr-only label while branches load', async () => {
+  it('trigger shows an inline intent mark with an sr-only label while branches load', async () => {
     let resolveBranches!: (value: unknown) => void;
     mockGetBranches.mockReturnValue(new Promise((resolve) => (resolveBranches = resolve)));
     const { container } = render(BranchSelector, {
@@ -246,17 +246,19 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
 
     const trigger = container.querySelector('button');
     expect(trigger).toBeTruthy();
-    // Spinner appears as soon as the (debounced) fetch is scheduled — it must
+    // The loader appears as soon as the (debounced) fetch is scheduled — it must
     // cover the debounce delay before git.getBranches is actually called.
-    await waitFor(() => expect(trigger!.querySelector('.animate-spin')).toBeTruthy());
+    await waitFor(() =>
+      expect(trigger!.querySelector('[data-slot="intent-mark-loader"]')).toBeTruthy(),
+    );
     if (mockGetBranches.mock.calls.length === 0) {
-      // Still inside the debounce window: the spinner is already visible.
-      expect(trigger!.querySelector('.animate-spin')).toBeTruthy();
+      // Still inside the debounce window: the loader is already visible.
+      expect(trigger!.querySelector('[data-slot="intent-mark-loader"]')).toBeTruthy();
     }
 
-    // Spinner replaces the old pulse skeleton and persists while the fetch is in flight.
+    // The intent mark replaces the old pulse skeleton and persists while the fetch is in flight.
     await waitFor(() => expect(mockGetBranches).toHaveBeenCalled());
-    expect(trigger!.querySelector('.animate-spin')).toBeTruthy();
+    expect(trigger!.querySelector('[data-slot="intent-mark-loader"]')).toBeTruthy();
     expect(trigger!.querySelector('.animate-pulse')).toBeNull();
     // Accessible loading label.
     expect(screen.getByText('Waiting for branch selection...')).toBeTruthy();
@@ -307,11 +309,11 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached �
     const { container } = render(BranchSelector, { props: { ...githubProps, onchange } });
 
     await waitFor(() => expect(mockGithubBranchesCached).toHaveBeenCalledWith('octo', 'intent'));
-    // Cached hit paints instantly: default branch selected, trigger spinner gone —
+    // Cached hit paints instantly: default branch selected, trigger loader gone —
     // all while the authoritative GitHub API request is still in flight.
     await waitFor(() => expect(onchange).toHaveBeenCalled());
     expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'dev' });
-    expect(container.querySelector('.animate-spin')).toBeNull();
+    expect(container.querySelector('[data-slot="intent-mark-loader"]')).toBeNull();
 
     // Fresh list arrives with an extra branch: the list reconciles and the
     // still-existing selection is kept (no second onchange).
@@ -337,11 +339,11 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached �
 
     await waitFor(() => expect(mockGithubBranchesCached).toHaveBeenCalledWith('octo', 'intent'));
     // Fallback paints like a warm cache: default branch selected, trigger
-    // spinner gone — all while the authoritative GitHub API request is still
+    // loader gone — all while the authoritative GitHub API request is still
     // in flight.
     await waitFor(() => expect(onchange).toHaveBeenCalled());
     expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'dev' });
-    expect(container.querySelector('.animate-spin')).toBeNull();
+    expect(container.querySelector('[data-slot="intent-mark-loader"]')).toBeNull();
 
     // The authoritative list still wins when it settles: the extra branch
     // appears and the still-existing selection is kept (no second onchange).
@@ -359,14 +361,18 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached �
     const { container } = render(BranchSelector, { props: { ...githubProps, onchange } });
 
     await waitFor(() => expect(mockGithubBranchesCached).toHaveBeenCalledWith('octo', 'intent'));
-    // Cold cache: still loading (inline trigger spinner), nothing selected.
-    await waitFor(() => expect(container.querySelector('.animate-spin')).toBeTruthy());
+    // Cold cache: still loading (inline trigger loader), nothing selected.
+    await waitFor(() =>
+      expect(container.querySelector('[data-slot="intent-mark-loader"]')).toBeTruthy(),
+    );
     expect(onchange).not.toHaveBeenCalled();
 
     fresh.resolve({ branches: ['dev', 'feat/x'], defaultBranch: 'dev' });
     await waitFor(() => expect(onchange).toHaveBeenCalled());
     expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'dev' });
-    await waitFor(() => expect(container.querySelector('.animate-spin')).toBeNull());
+    await waitFor(() =>
+      expect(container.querySelector('[data-slot="intent-mark-loader"]')).toBeNull(),
+    );
   });
 
   it('vanished branch: a cached selection missing from the fresh list switches to the default branch', async () => {

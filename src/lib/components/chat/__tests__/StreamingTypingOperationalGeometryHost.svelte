@@ -57,7 +57,6 @@
         isStreaming={mode === 'streaming'}
         hasPendingPermission={mode === 'permission'}
         error={mode === 'error' ? 'Provider stopped the response' : null}
-        seed="geometry-agent"
         {statusEvents}
       />
     </div>

@@ -20,7 +20,6 @@ vi.mock('svelte-fa', async () => ({
 vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faRobot: { iconName: 'robot' },
   faPlay: { iconName: 'play' },
-  faSpinner: { iconName: 'spinner' },
   faArrowUpRightFromSquare: { iconName: 'arrow-up-right' },
   faCheck: { iconName: 'check' },
 }));
@@ -94,6 +93,11 @@ describe('AgentActionBlock creation confirmation', () => {
     expect(dispatchMock).toHaveBeenCalledTimes(1);
     expect(updateAttributes).not.toHaveBeenCalled();
     expect(toastSuccessMock).not.toHaveBeenCalled();
+    expect(
+      screen
+        .getByRole('button', { name: /running/i })
+        .querySelector('[data-slot="intent-mark-loader"]'),
+    ).not.toBeNull();
 
     const action = dispatchMock.mock.calls[0][0];
     // The agent name is derived from the primitive goal — the session must

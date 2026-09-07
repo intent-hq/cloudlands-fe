@@ -17,10 +17,8 @@ describe('generated design-system cheatsheet', () => {
 
   it('points loading feedback to the shared indeterminate indicator', async () => {
     const cheatsheet = await generateDesignCheatsheet();
-    expect(cheatsheet).toContain(
-      '`IntentMarkLoader` and `Spinner` from `$lib/components/ui/indicators`',
-    );
-    expect(cheatsheet).toContain('single indeterminate indicator');
+    expect(cheatsheet).toContain('`IntentMarkLoader` from `$lib/components/ui/indicators`');
+    expect(cheatsheet).toContain('only indeterminate indicator');
   });
 
   it('documents the Button emphasis order, sizes, and compatibility aliases', async () => {

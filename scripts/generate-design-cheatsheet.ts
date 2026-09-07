@@ -84,8 +84,8 @@ Pattern-first routing for product UI. Open the catalog URL in \`pnpm run dev:ui\
 
 ## Loading indicator
 
-- **Import:** \`IntentMarkLoader\` and \`Spinner\` from \`$lib/components/ui/indicators\`
-- **Use:** IntentMarkLoader is the single indeterminate indicator shared by thinking rows and loading buttons. Spinner remains the inline pulse-row indicator. Use the Screen pattern's \`LoadingState\` for structured loading shells.
+- **Import:** \`IntentMarkLoader\` from \`$lib/components/ui/indicators\`
+- **Use:** IntentMarkLoader is the only indeterminate indicator. It inherits \`currentColor\`; use bloom by default, and pulse or twist only for an explicit status-derived variant. Use the Screen pattern's \`LoadingState\` for structured loading shells.
 
 ## Button
 

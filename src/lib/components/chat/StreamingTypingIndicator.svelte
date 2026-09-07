@@ -22,10 +22,8 @@
     elapsed?: string | null;
     variant?: IntentMarkVariant;
     class?: string;
-    /** Compact mode - shows only spinner without message */
+    /** Compact mode - shows only the loading mark without message */
     compact?: boolean;
-    /** Seed for spinner colors (e.g., agent ID) */
-    seed?: string;
   }
 
   let {
@@ -36,7 +34,6 @@
     variant = 'bloom',
     class: className = '',
     compact = false,
-    seed: _seed = 'default',
   }: Props = $props();
 
   let rendered = $state(false);

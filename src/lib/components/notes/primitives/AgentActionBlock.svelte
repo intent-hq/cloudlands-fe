@@ -7,10 +7,10 @@
   import {
     faRobot,
     faPlay,
-    faSpinner,
     faArrowUpRightFromSquare,
     faCheck,
   } from '@fortawesome/free-solid-svg-icons';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { notify } from '$lib/components/patterns/notify';
   import { parseAgentTypeId } from '$shared/types/agent.types';
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
@@ -47,19 +47,18 @@
   // Get button state
   let buttonState = $derived.by(() => {
     if (running) {
-      return { label: m.notes_agentActionBlock_running_label(), icon: faSpinner, spin: true };
+      return { label: m.notes_agentActionBlock_running_label(), icon: null };
     }
     if (agentId) {
       return {
         label: m.notes_agentActionBlock_view_label(),
         icon: faArrowUpRightFromSquare,
-        spin: false,
       };
     }
     if (primitive?.lastRun?.status === 'success') {
-      return { label: m.notes_agentActionBlock_done_label(), icon: faCheck, spin: false };
+      return { label: m.notes_agentActionBlock_done_label(), icon: faCheck };
     }
-    return { label: m.notes_agentActionBlock_run_label(), icon: faPlay, spin: false };
+    return { label: m.notes_agentActionBlock_run_label(), icon: faPlay };
   });
 
   // Run the agent action
@@ -209,7 +208,11 @@
         onclick={handleButtonClick}
         disabled={running}
       >
-        <Fa icon={buttonState.icon} size="xs" class={buttonState.spin ? 'animate-spin' : ''} />
+        {#if running}
+          <IntentMarkLoader size={12} />
+        {:else if buttonState.icon}
+          <Fa icon={buttonState.icon} size="xs" />
+        {/if}
         {buttonState.label}
       </Button>
     </div>

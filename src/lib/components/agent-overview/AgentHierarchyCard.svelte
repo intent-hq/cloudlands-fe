@@ -18,7 +18,7 @@
     getAvatarState,
     getAvatarStateForSession,
   } from '$features/agent/components/agent-avatar/avatar-state';
-  import { Spinner } from '$lib/components/ui/indicators';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { classifyTool } from '$lib/utils/tool-classifier';
   import {
     selectAgentAttentionRequest,
@@ -172,14 +172,14 @@
           >
         </div>
       {:else if $agentIsResponding$ || $agentIsThinking$}
-        <!-- Active: always show spinner + descriptive label -->
+        <!-- Active: always show the loading mark + descriptive label -->
         {@const classified = agent.activeToolName
           ? classifyTool(agent.activeToolName, agent.activeToolInput || {})
           : null}
         {@const toolDisplay = classified && !classified.hidden ? classified : null}
         <div class="flex flex-col items-center gap-1">
           <div class="flex items-center justify-center gap-1.5">
-            <Spinner seed={agent.agentId} size={4} />
+            <IntentMarkLoader size={14} />
             {#if $agentIsThinking$}
               <span class="text-xs text-subtle"
                 >{m.agentOverview_hierarchyCard_thinking_label()}</span

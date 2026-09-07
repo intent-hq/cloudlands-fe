@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { parseUiComponentMetadata } from '../component-metadata';
 import * as indicatorsApi from './index';
 import IntentMarkLoader from './IntentMarkLoader.svelte';
 import { intentMarkMotionTiming, intentMarkVariants } from './intent-mark-motion';
+import { spinnerFixtures } from './spinner.fixtures';
 import { spinnerMetadata } from './spinner.meta';
 
 interface AnimationRecord {
@@ -126,6 +128,44 @@ describe('IntentMarkLoader', () => {
     expect(new Set(spinnerMetadata.exports.filter((name) => name !== 'IntentMarkVariant'))).toEqual(
       new Set(Object.keys(indicatorsApi)),
     );
+  });
+
+  it('publishes the loading-indicator catalog contract with the canonical import first', () => {
+    expect(() => parseUiComponentMetadata(spinnerMetadata)).not.toThrow();
+    expect(spinnerMetadata).toMatchObject({
+      id: 'loading-indicator',
+      source: 'src/lib/components/ui/indicators/IntentMarkLoader.svelte',
+      publicImport: '$lib/components/ui/indicators',
+      characterizationTest: 'src/lib/components/ui/indicators/IntentMarkLoader.test.ts',
+      replacement: null,
+    });
+    expect(spinnerMetadata.exports[0]).toBe('IntentMarkLoader');
+    expect(spinnerFixtures[0].states).toEqual([
+      'bloom',
+      'pulse',
+      'twist',
+      'size-16',
+      'size-24',
+      'size-32',
+      'in-button',
+      'in-list-row',
+      'paused',
+      'light',
+      'dark',
+      'reduced-motion',
+    ]);
+  });
+
+  it('renders the full five-arm mark at 16px when paused', () => {
+    const { container, getByRole } = render(IntentMarkLoader, {
+      props: { variant: 'bloom', size: 16, playing: false },
+    });
+    const root = getByRole('status', { name: 'Loading' });
+    const arms = Array.from(container.querySelectorAll<SVGPathElement>('[data-mark-arm]'));
+    expect(root.getAttribute('width')).toBe('16');
+    expect(root.getAttribute('data-motion-state')).toBe('neutral');
+    expect(arms).toHaveLength(5);
+    expect(arms.every((arm) => /^M.+L.+/.test(arm.getAttribute('d') ?? ''))).toBe(true);
   });
 
   it.each([

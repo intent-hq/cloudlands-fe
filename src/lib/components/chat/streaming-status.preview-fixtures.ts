@@ -1,6 +1,5 @@
 import type { ComponentProps } from 'svelte';
 import {
-  PREVIEW_FIXTURE_IDS,
   PREVIEW_FIXTURE_TIMESTAMPS,
   definePreviewFixture,
 } from '$lib/component-catalog/preview-fixtures';
@@ -18,7 +17,6 @@ const statusEvent = definePreviewFixture({
 const statusProps = definePreviewFixture<StreamingStatusProps>({
   isStreaming: false,
   isProcessing: false,
-  seed: PREVIEW_FIXTURE_IDS.agent,
   statusEvents: [],
 });
 

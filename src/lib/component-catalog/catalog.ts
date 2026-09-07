@@ -98,6 +98,7 @@ const componentProps: Record<string, CatalogProp[]> = {
 };
 
 function displayName(id: string): string {
+  if (id === 'loading-indicator') return 'Loading indicator';
   return id
     .split('-')
     .map((word) => `${word[0].toUpperCase()}${word.slice(1)}`)

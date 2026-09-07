@@ -26,6 +26,16 @@ describe('static component catalog', () => {
     expect(getCatalogEntry('not-a-catalog-entry')).toBeUndefined();
   });
 
+  it('publishes the loading indicator under its canonical name and import', () => {
+    const entry = getCatalogEntry('loading-indicator');
+    expect(entry).toMatchObject({
+      name: 'Loading indicator',
+      source: 'src/lib/components/ui/indicators/IntentMarkLoader.svelte',
+      publicImport: '$lib/components/ui/indicators',
+    });
+    expect(entry?.exports?.[0]).toBe('IntentMarkLoader');
+  });
+
   it('registers exactly one real preview renderer for every canonical fixture', () => {
     const manifestIds = canonicalComponentManifest.map(({ id }) => id).sort();
     expect(Object.keys(catalogRenderers).sort()).toEqual(manifestIds);

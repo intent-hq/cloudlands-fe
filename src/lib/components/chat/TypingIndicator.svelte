@@ -2,40 +2,37 @@
   import Fa from 'svelte-fa';
   import { faRobot } from '@fortawesome/free-solid-svg-icons';
   import { fade, scale } from '$lib/motion';
-  import { Spinner } from '$lib/components/ui/indicators';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     size?: 'sm' | 'md' | 'lg';
     message?: string;
     showAvatar?: boolean;
-    /** Seed for spinner colors (e.g., agent ID) */
-    seed?: string;
   }
 
   let {
     size = 'md',
     message = m.chat_typingIndicator_typing_label(),
     showAvatar = true,
-    seed = 'default',
   }: Props = $props();
 
   const sizes = {
     sm: {
       container: 'px-3 py-2',
-      spinner: 5,
+      loader: 16,
       avatar: 'w-5 h-5',
       text: 'text-xs',
     },
     md: {
       container: 'px-4 py-3',
-      spinner: 6,
+      loader: 18,
       avatar: 'w-6 h-6',
       text: 'text-sm',
     },
     lg: {
       container: 'px-5 py-4',
-      spinner: 7,
+      loader: 20,
       avatar: 'w-7 h-7',
       text: 'text-base',
     },
@@ -61,7 +58,7 @@
     </div>
   {/if}
 
-  <Spinner {seed} size={sizeConfig.spinner} />
+  <IntentMarkLoader size={sizeConfig.loader} />
 
   {#if message}
     <span class="{sizeConfig.text} text-subtle pr-1">{message}</span>

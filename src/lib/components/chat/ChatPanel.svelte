@@ -5642,7 +5642,6 @@
                           onRetryWithModel={gatedRetryWithModel}
                           onStop={handleStop}
                           onStalledRetry={gatedStalledRetry}
-                          seed={agentId}
                           statusEvents={$chatStatusEvents$}
                           streamingStartTime={$chatStreamingStartTime$}
                         />
@@ -5669,7 +5668,6 @@
                         onRetryWithModel={gatedRetryWithModel}
                         onStop={handleStop}
                         onStalledRetry={gatedStalledRetry}
-                        seed={agentId}
                         statusEvents={$chatStatusEvents$}
                         streamingStartTime={$chatStreamingStartTime$}
                       />
@@ -5754,7 +5752,6 @@
                           onRetryWithModel={gatedRetryWithModel}
                           onStop={handleStop}
                           onStalledRetry={gatedStalledRetry}
-                          seed={agentId}
                           statusEvents={$chatStatusEvents$}
                           streamingStartTime={$chatStreamingStartTime$}
                         />
@@ -5781,7 +5778,6 @@
                         onRetryWithModel={gatedRetryWithModel}
                         onStop={handleStop}
                         onStalledRetry={gatedStalledRetry}
-                        seed={agentId}
                         statusEvents={$chatStatusEvents$}
                         streamingStartTime={$chatStreamingStartTime$}
                       />
@@ -5813,7 +5809,6 @@
                   onRetryWithModel={gatedRetryWithModel}
                   onStop={handleStop}
                   onStalledRetry={gatedStalledRetry}
-                  seed={agentId}
                   statusEvents={$chatStatusEvents$}
                   streamingStartTime={$chatStreamingStartTime$}
                   class={effectiveError ? 'mt-0' : undefined}
@@ -6146,7 +6141,6 @@
                           onRetryWithModel={gatedRetryWithModel}
                           onStop={handleStop}
                           onStalledRetry={gatedStalledRetry}
-                          seed={agentId}
                           statusEvents={$chatStatusEvents$}
                           streamingStartTime={$chatStreamingStartTime$}
                         />
@@ -6231,7 +6225,6 @@
                                 onRetryWithModel={gatedRetryWithModel}
                                 onStop={handleStop}
                                 onStalledRetry={gatedStalledRetry}
-                                seed={agentId}
                                 statusEvents={$chatStatusEvents$}
                                 streamingStartTime={$chatStreamingStartTime$}
                               />
@@ -6310,7 +6303,6 @@
                     onRetryWithModel={gatedRetryWithModel}
                     onStop={handleStop}
                     onStalledRetry={gatedStalledRetry}
-                    seed={agentId}
                     statusEvents={$chatStatusEvents$}
                     streamingStartTime={$chatStreamingStartTime$}
                   />

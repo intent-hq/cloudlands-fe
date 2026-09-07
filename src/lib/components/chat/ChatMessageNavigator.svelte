@@ -5,7 +5,7 @@
   import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon';
   import { Button } from '$lib/components/ui/button';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { Spinner } from '$lib/components/ui/indicators';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
   import ScrollToBottomButton from './ScrollToBottomButton.svelte';
@@ -268,7 +268,7 @@
                 class="type-caption flex items-center gap-[var(--space-2)] px-[var(--space-2)] py-[var(--space-1)] text-muted-foreground"
                 data-testid="chat-message-navigator-loading"
               >
-                <Spinner />
+                <IntentMarkLoader size={16} />
                 <span>{m.chat_messageNavigator_loading_label()}</span>
               </div>
             {/if}

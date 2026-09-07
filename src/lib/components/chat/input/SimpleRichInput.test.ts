@@ -1931,10 +1931,10 @@ describe('SimpleRichInput mic-button visibility (effective voice engine)', () =>
 });
 
 describe('SimpleRichInput mic-button cancel-while-transcribing', () => {
-  // The transcribing spinner button (located via the Fa mock's data-icon).
+  // The transcribing button is identified by the canonical loading indicator.
   function transcribingButton(): HTMLButtonElement | null {
-    const icon = document.body.querySelector('[data-icon="spinner"]');
-    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+    const loader = document.body.querySelector('[data-slot="intent-mark-loader"]');
+    return (loader?.closest('button') as HTMLButtonElement | null) ?? null;
   }
 
   beforeEach(() => {
@@ -1955,7 +1955,7 @@ describe('SimpleRichInput mic-button cancel-while-transcribing', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders an enabled cancel control (not a disabled spinner) while transcribing', async () => {
+  it('renders an enabled cancel control with the shared loader while transcribing', async () => {
     const { m } = await import('$shared/paraglide/messages.js');
     render(SimpleRichInput, {
       props: {
@@ -1973,6 +1973,7 @@ describe('SimpleRichInput mic-button cancel-while-transcribing', () => {
     });
     const button = transcribingButton();
     expect(button).not.toBeNull();
+    expect(button!.querySelector('[data-slot="intent-mark-loader"]')).not.toBeNull();
     expect(button!.disabled).toBe(false);
     expect(button!.getAttribute('aria-label')).toBe(m.chat_richInput_micCancelTranscribing_label());
   });
@@ -2088,7 +2089,8 @@ describe('SimpleRichInput mic-button focus retention', () => {
     const editor = screen.getByTestId('tiptap-editor');
     editor.focus();
 
-    await clickLikeABrowser(buttonByIcon('spinner')!);
+    const loader = document.body.querySelector('[data-slot="intent-mark-loader"]');
+    await clickLikeABrowser(loader?.closest('button') as HTMLButtonElement);
 
     expect(document.activeElement).toBe(editor);
   });

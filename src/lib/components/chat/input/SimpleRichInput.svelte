@@ -36,13 +36,13 @@
   import {
     faMicrophone,
     faPaperclip,
-    faSpinner,
     faXmark,
     faPlus,
     faWandMagicSparkles,
     faRotateLeft,
     faAt,
   } from '$lib/icons/phosphor-icons';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import {
     selectPttRecording,
     selectVoiceTranscribing,
@@ -1796,7 +1796,7 @@
             aria-label={m.chat_richInput_micCancelTranscribing_label()}
             data-testid="composer-mic-button"
           >
-            <Fa icon={faSpinner} size="sm" class="animate-spin" />
+            <IntentMarkLoader size={14} />
           </Button>
         </TooltipShortcut>
       {:else if micRecording}

@@ -31,7 +31,7 @@ const catalogSlugs = [
   'sidebar',
   'skeleton',
   'slider',
-  'spinner',
+  'loading-indicator',
   'switch',
   'textarea',
   'toggle',

@@ -345,7 +345,7 @@ describe('shared operational disclosure-row contract', () => {
     render(ThinkingBlock, { props: { content: 'Thinking', isStreaming: true } });
     const reasoning = screen.getByTestId('reasoning-tool-call');
     const spinner = within(reasoning).getByRole('status', { name: 'Loading' });
-    expect(spinner.getAttribute('data-variant')).toBe('pulse');
+    expect(spinner.getAttribute('data-variant')).toBe('bloom');
     expect(reasoning.querySelector('[data-icon="brain"]')).toBeNull();
     cleanup();
 

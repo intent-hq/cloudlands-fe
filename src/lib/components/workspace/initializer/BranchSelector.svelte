@@ -30,9 +30,9 @@
     faCloud,
     faExclamationTriangle,
     faRotate,
-    faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { onDestroy } from 'svelte';
   import { slide } from '$lib/motion';
   import { store as appStore } from '$store/renderer/store';
@@ -1440,7 +1440,7 @@
             {:else if !repoPath}
               <span>{m.workspace_branchSelector_selectRepoFirst_label()}</span>
             {:else if isLoading}
-              <Fa icon={faSpinner} class="text-ghost animate-spin" size="sm" />
+              <IntentMarkLoader size={14} class="text-ghost" />
               <span class="sr-only"
                 >{m.workspace_compactInitializer_waitingBranchSelection_label()}</span
               >
@@ -1568,7 +1568,7 @@
           {:else if isConnectingGitHub}
             <!-- Connecting to GitHub -->
             <div class="px-3 py-3 flex items-center gap-3 border-l-2 border-primary bg-primary/5">
-              <Fa icon={faSpinner} class="w-5 h-5 text-ghost animate-spin" />
+              <IntentMarkLoader size={20} class="text-ghost" />
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-foreground">
                   {m.workspace_branchSelector_connectingGithub_label()}
