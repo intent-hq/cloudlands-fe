@@ -68,6 +68,7 @@
     "src/lib/components/ui/sidebar/sidebar-menu-button.svelte": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/sidebar/sidebar-rail.svelte": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/sidebar/sidebar.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/slider/slider.svelte": { "palette": 0, "arbitrary": 10 },
     "src/lib/components/ui/text-entry.ts": { "palette": 0, "arbitrary": 3 },
     "src/lib/components/ui/textarea/textarea.test.ts": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/toast/ErrorToast.svelte": { "palette": 0, "arbitrary": 2 },
