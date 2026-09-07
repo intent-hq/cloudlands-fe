@@ -338,7 +338,7 @@ export function workspaceTabLifecycleMotion(
           preparedOutro?.managesGroup &&
           preparedGroup &&
           !preparedGroup.willOverflow
-          ? (appliedScrollLeft ?? 0) > 0.5
+          ? true
           : undefined,
       );
     },

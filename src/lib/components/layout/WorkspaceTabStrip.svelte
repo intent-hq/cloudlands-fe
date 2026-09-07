@@ -898,7 +898,7 @@
 
   function handleTabOutroEnd(workspaceId: string) {
     pendingOutroWorkspaceIds.delete(workspaceId);
-    pendingOutroOverflow = null;
+    scheduleOverflowRefresh(null);
     activeTabBoundsPollers.forEach((poll) => poll());
     requestAnimationFrame(() => activeTabBoundsPollers.forEach((poll) => poll()));
   }
