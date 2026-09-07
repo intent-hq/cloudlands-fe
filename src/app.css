@@ -629,6 +629,12 @@ body.panel-resizing webview {
 
 /* ===== Reduced motion support ===== */
 /* Respects user's motion preferences for accessibility */
+html[data-window-blurred] *,
+html[data-window-blurred] *::before,
+html[data-window-blurred] *::after {
+  animation-play-state: paused !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* Disable infinite animations */
   .animate-tool-pulse,

@@ -2618,9 +2618,7 @@
       {:else}
         <!-- Sticky summary bar: "N files changed" -->
         <div class="sticky top-0 z-20 -mx-5 px-5">
-          <div
-            class="flex items-center justify-between py-2 bg-background/95 backdrop-blur-sm border-b border-border"
-          >
+          <div class="flex items-center justify-between py-2 bg-background border-b border-border">
             <div
               class="flex items-center gap-1.5 text-xs font-medium text-subtle whitespace-nowrap"
             >
@@ -2690,9 +2688,7 @@
               {#if group.hash}
                 <!-- Commit group with sticky collapsible header -->
                 <div class="mb-2">
-                  <div
-                    class="sticky top-[31.5px] z-[11] bg-background/95 backdrop-blur-sm rounded-md"
-                  >
+                  <div class="sticky top-[31.5px] z-[11] bg-background rounded-md">
                     <div class="flex items-center gap-2 w-full px-3 py-2 rounded-md bg-muted/30">
                       <button
                         type="button"
