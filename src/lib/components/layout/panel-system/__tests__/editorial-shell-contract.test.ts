@@ -216,7 +216,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).not.toContain('mx-0.5 h-4 w-px shrink-0 bg-border/70');
     expect(tabs).toContain('w-fit min-w-0 max-w-[100%]');
     expect(tabs).toContain('use:reportActiveTabBounds={isCurrent}');
-    expect(tabs).toContain('flushSync(() => onActiveTabBoundsChange?.(bounds))');
+    expect(tabs).toContain('onActiveTabBoundsChange?.(bounds)');
     expect(titlebar).toContain('data-active-tab-border-mask');
     expect(titlebar).toContain('absolute -bottom-px z-[60] h-px bg-sidebar');
     expect(nav).not.toContain('faBell');
