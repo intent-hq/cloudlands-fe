@@ -59,7 +59,7 @@
         <Button
           variant="plain"
           type="button"
-          class="flex min-h-7 min-w-0 flex-1 cursor-pointer items-center justify-start gap-1.5 rounded-md border border-transparent px-2 py-1 text-left outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none [&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_[data-slot=button-content]]:justify-start"
+          class="flex min-h-7 min-w-0 flex-1 cursor-pointer items-center justify-start gap-1.5 rounded-md border border-transparent px-2 py-1 text-left focus-visible:-outline-offset-1 motion-reduce:transition-none [&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_[data-slot=button-content]]:justify-start"
           onclick={handleToggle}
           aria-expanded={!collapsed}
         >

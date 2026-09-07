@@ -14,7 +14,7 @@
 {:else}
   <a
     class={cn(
-      'block min-w-0 truncate rounded-sm outline-none transition-[background-color,color,box-shadow] duration-spring-fast ease-spring-fast hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none',
+      'block min-w-0 truncate rounded-sm transition-[background-color,color] duration-spring-fast ease-spring-fast hover:bg-hover hover:text-foreground focus-visible:-outline-offset-1 motion-reduce:transition-none',
       className,
     )}
     {...restProps}

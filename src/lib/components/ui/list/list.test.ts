@@ -36,8 +36,8 @@ describe('List', () => {
     expect(selected.className).toContain('[&_[data-slot=button-content]]:w-full');
     expect(active.className).not.toContain('border-input');
     expect(active.className).not.toContain('shadow-');
-    expect(selected.className).toContain('focus-visible:border-ring');
-    expect(selected.className).toContain('focus-visible:ring-2');
+    expect(selected.className).toContain('focus-visible:-outline-offset-1');
+    expect(selected.className).not.toContain('focus-visible:ring-');
     expect(selected.className).toContain('bg-selected');
     expect(selected.style.paddingLeft).toBe('8px');
     expect(selected.style.paddingRight).toBe('8px');

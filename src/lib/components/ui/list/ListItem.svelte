@@ -162,9 +162,9 @@
   aria-current={active ? 'true' : undefined}
   class={cn(
     // Base styles
-    'relative flex w-full min-w-0 cursor-pointer items-center justify-start rounded-md border border-transparent bg-transparent text-left font-inherit text-foreground outline-none transition-colors duration-spring-fast ease-spring-fast',
+    'relative flex w-full min-w-0 cursor-pointer items-center justify-start rounded-md border border-transparent bg-transparent text-left font-inherit text-foreground transition-colors duration-spring-fast ease-spring-fast',
     '[&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_[data-slot=button-content]]:justify-start',
-    'focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40',
+    'focus-visible:-outline-offset-1',
     'motion-reduce:transition-none',
     'group',
 
@@ -269,7 +269,7 @@
               role="button"
               tabindex={0}
               class={cn(
-                'cursor-pointer rounded-sm border border-transparent p-1 text-muted-foreground transition-colors duration-spring-fast ease-spring-fast hover:bg-hover hover:text-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none',
+                'cursor-pointer rounded-sm border border-transparent p-1 text-muted-foreground transition-colors duration-spring-fast ease-spring-fast hover:bg-hover hover:text-foreground motion-reduce:transition-none',
                 action.className,
               )}
               onclick={(e: MouseEvent) => {

@@ -133,7 +133,7 @@
   <Menu.Trigger
     class={cn(
       'flex h-7 w-7 items-center justify-center rounded-md bg-black/60 text-white',
-      'hover:bg-black/75 focus-visible:ring-2 focus-visible:ring-ring',
+      'hover:bg-black/75',
       triggerClass,
     )}
     aria-label={m.ui_videoActionsMenu_trigger_ariaLabel()}

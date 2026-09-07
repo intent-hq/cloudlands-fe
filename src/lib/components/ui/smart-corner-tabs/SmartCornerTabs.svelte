@@ -307,7 +307,7 @@
           tabindex={tab.id === activeId ? 0 : -1}
           disabled={tab.disabled}
           class={cn(
-            'relative z-10 min-w-max rounded-lg px-4 py-2.5 text-sm font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50',
+            'relative z-10 min-w-max rounded-lg px-4 py-2.5 text-sm font-medium transition-colors duration-200 focus-visible:-outline-offset-1 disabled:cursor-not-allowed disabled:opacity-50',
             tab.id === visualActiveId ? 'text-card-foreground' : 'text-muted-foreground',
           )}
           data-smart-corner-tab={tab.id}

@@ -14,9 +14,7 @@
 
   const menu = getContext<{ readonly open: boolean }>('canonical-menu');
 
-  const triggerClass = $derived(
-    cn('outline-none focus-visible:ring-2 focus-visible:ring-ring', className),
-  );
+  const triggerClass = $derived(cn(className));
 </script>
 
 <!-- i18n-ignore (snippet parameter type annotation, not UI text) -->
