@@ -236,6 +236,17 @@ function isKnownNonCode(file) {
   );
 }
 
+function isRendererSource(file) {
+  return (
+    file.startsWith('src/') &&
+    !file.startsWith('src/main/') &&
+    !file.startsWith('src/preload/') &&
+    !/^src\/features\/[^/]+\/main\//.test(file) &&
+    CODE_EXTENSIONS.has(extname(file)) &&
+    !UNIT_TEST_RE.test(file)
+  );
+}
+
 function addBoundary(boundaries, file) {
   if (!file.startsWith('src/')) return;
   if (file.startsWith('src/shared/')) {
@@ -278,6 +289,7 @@ export function createVerificationPlan(files, options = {}) {
       CODE_EXTENSIONS.has(extname(file)) &&
       !UNIT_TEST_RE.test(file),
   );
+  const uiInvariants = files.some(isRendererSource);
   const boundaries = new Set();
   let svelteCheck = false;
   let fullUnit = false;
@@ -367,6 +379,14 @@ export function createVerificationPlan(files, options = {}) {
           '--config',
           'vitest.config.ts',
           ...relatedSources,
+        ]),
+      );
+    }
+    if (uiInvariants) {
+      checks.push(
+        command('vitest-ui-invariants', 'Vitest UI invariants (repo-wide ratchets)', [
+          'run',
+          'test:ui-invariants',
         ]),
       );
     }
