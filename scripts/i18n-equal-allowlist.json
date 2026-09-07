@@ -237,7 +237,6 @@
   "settings_section_hardware": ["de", "es"],
   "settings_section_notifications": ["fr"],
   "settings_section_updates": ["de"],
-  "settings_section_websocketApi": ["zh-CN", "zh-TW", "ja", "ko"],
   "settings_theme_label": ["de"],
   "settings_theme_system": ["de"],
   "settings_updateChannel_alpha_label": ["de", "fr", "zh-CN", "zh-TW"],

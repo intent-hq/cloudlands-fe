@@ -375,6 +375,11 @@ export interface Workspace {
    *  a daemon restart (the workspace survives). Rows carrying it are hidden
    *  from the FE workspace list. */
   pendingDeleteAt?: string;
+  /** Persisted REV-2 browser-client pin (PROTOCOL §5.1 / §5.17): the logical
+   *  `clientId` whose embedded browser serves agent `browser.exec` in this
+   *  workspace. Omitted when unpinned (default routing); cleared via
+   *  `workspace.setBrowserClient { clientId: null }`. */
+  browserClientId?: string;
   defaultModel?: string; // Default model for new agents in this workspace
   /** IDs-only agent membership summary; derive counts from `agentIds.length` and fetch agent details from agent/session sources. */
   agentSummary?: WorkspaceAgentIdSummary;
@@ -645,6 +650,13 @@ export interface WorkspaceAgentInfo {
    * for root agents, so clients can rebuild the delegation tree.
    */
   parentAgentId?: string;
+  /**
+   * The session's persisted background flag (PROTOCOL §5.1, additive —
+   * intent-hq/intent#3789): the same value as `metadata.isBackground` on
+   * §5.5 loads, omitted when false, so the HUD can gate background agents
+   * from the summary alone before session hydration.
+   */
+  isBackground?: boolean;
 }
 
 /**

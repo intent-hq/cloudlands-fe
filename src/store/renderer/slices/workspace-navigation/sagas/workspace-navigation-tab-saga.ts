@@ -9,6 +9,7 @@ import {
 import { createLogger } from '$lib/utils/client-logger';
 import { isBinaryExtension } from '$shared/binary-file-extensions';
 import { m } from '$shared/paraglide/messages.js';
+import { parseFilePathLineSuffix } from '$shared/utils/link-helpers';
 import {
   openTab,
   openTabInAdjacentOrSplit,
@@ -90,15 +91,17 @@ function* openCommit(action: ReturnType<typeof openWorkspaceCommitChangeset>): S
 function* openFile(action: ReturnType<typeof openWorkspaceFile>): SagaGenerator<void> {
   const [workspaceId, filePath, options] = action.payload;
   if (!workspaceId || !filePath) return;
+  const parsed = parseFilePathLineSuffix(filePath);
+  const line = options?.line !== undefined ? options.line : parsed.line;
   yield* openWorkspaceTab(
     workspaceId,
     {
       type: 'file',
-      title: filePath.split('/').pop() || m.layout_tabTypes_file_title(),
-      filePath,
+      title: parsed.path.split('/').pop() || m.layout_tabTypes_file_title(),
+      filePath: parsed.path,
       workspaceId,
       closable: true,
-      ...(options?.line ? { data: { line: options.line, jumpTimestamp: Date.now() } } : {}),
+      ...(line !== undefined ? { data: { line, jumpTimestamp: Date.now() } } : {}),
     },
     options?.openInAdjacentPanel ?? false,
     options?.sourcePanelId,

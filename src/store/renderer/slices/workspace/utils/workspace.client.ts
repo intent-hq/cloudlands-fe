@@ -94,6 +94,14 @@ export class WorkspaceClient {
     }
   }
 
+  private shouldCacheResponse(channel: string): boolean {
+    // workspace:list freshness is owned by WorkspaceService. Keeping a second
+    // resolved cache here would outlive main-process reconnect invalidation.
+    return (
+      channel !== WORKSPACE_CHANNELS.LIST && (channel.includes(':get') || channel.includes(':list'))
+    );
+  }
+
   /**
    * Invoke an IPC call with caching and deduplication.
    *
@@ -114,7 +122,7 @@ export class WorkspaceClient {
       }
 
       // Check cache for GET operations
-      if (channel.includes(':get') || channel.includes(':list')) {
+      if (this.shouldCacheResponse(channel)) {
         const cached = this.cache.get(cacheKey);
         if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
           logger.debug(`[WorkspaceClient] Using cached response for ${channel}`);
@@ -165,7 +173,7 @@ export class WorkspaceClient {
           const result = this.normalizeResponse<T>(response);
 
           // Cache successful GET operations only if no mutation occurred during this request
-          if (result.ok && (channel.includes(':get') || channel.includes(':list'))) {
+          if (result.ok && this.shouldCacheResponse(channel)) {
             if (requestMutationCounter === this.mutationCounter) {
               this.setCacheEntry(cacheKey, result.data);
             }

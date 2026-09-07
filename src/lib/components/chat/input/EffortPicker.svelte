@@ -30,6 +30,8 @@
     agentId?: string;
     workspaceId?: string;
     disabled?: boolean;
+    /** A commit is in flight; announced on the trigger without disabling it, so focus is kept. */
+    busy?: boolean;
     class?: string;
     mode?: 'popover' | 'embedded';
     effortLevels?: readonly string[];
@@ -42,6 +44,7 @@
     agentId,
     workspaceId,
     disabled = false,
+    busy = false,
     class: className = '',
     mode = 'popover',
     effortLevels = [],
@@ -197,6 +200,7 @@
           class="h-7 gap-1 px-2 text-xs"
           aria-label={m.chat_effortPicker_trigger_ariaLabel({ level: selectedLabel })}
           aria-controls={selectOpen ? contentId : undefined}
+          aria-busy={busy || undefined}
           data-testid="effort-picker-trigger"
         >
           <span class="min-w-0 flex-1 truncate text-left">

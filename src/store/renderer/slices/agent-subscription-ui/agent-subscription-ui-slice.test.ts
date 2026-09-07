@@ -18,7 +18,7 @@ import {
   selectWaitingState,
   selectWokenUpInfo,
   selectCompletionStatus,
-  selectSubscriptionSnapshotFetched,
+  selectSubscriptionSnapshotStatus,
 } from './agent-subscription-ui-selectors';
 import type {
   AgentSubscriptionUIState,
@@ -102,7 +102,7 @@ describe('agentSubscriptionUIReducer', () => {
       expect(second.entries[key].waitingState).toBe('waiting');
     });
 
-    it('latches snapshotFetched on success', () => {
+    it('marks the snapshot ready on success', () => {
       const state = agentSubscriptionUIReducer(
         initialState,
         setSubscriptionSnapshot(WS, AGENT, {
@@ -112,23 +112,23 @@ describe('agentSubscriptionUIReducer', () => {
           waitingState: 'idle',
         }),
       );
-      expect(state.entries[makeKey(WS, AGENT)].snapshotFetched).toBe(true);
+      expect(state.entries[makeKey(WS, AGENT)].snapshotStatus).toBe('ready');
     });
   });
 
   describe('subscriptionSnapshotFetchFailed', () => {
-    it('latches snapshotFetched for a new key (ready-with-empty)', () => {
+    it('marks a new key failed while retaining empty cached data', () => {
       const state = agentSubscriptionUIReducer(
         initialState,
         subscriptionSnapshotFetchFailed(WS, AGENT),
       );
       const key = makeKey(WS, AGENT);
-      expect(state.entries[key].snapshotFetched).toBe(true);
+      expect(state.entries[key].snapshotStatus).toBe('failed');
       expect(state.entries[key].subscriptions).toHaveLength(0);
       expect(state.entries[key].waitingState).toBe('idle');
     });
 
-    it('returns same reference when already latched', () => {
+    it('returns the same reference when already failed', () => {
       const first = agentSubscriptionUIReducer(
         initialState,
         subscriptionSnapshotFetchFailed(WS, AGENT),
@@ -139,7 +139,7 @@ describe('agentSubscriptionUIReducer', () => {
   });
 
   describe('markAgentAsViewed', () => {
-    it('drops the snapshotFetched latch so the reveal gate waits for the fresh view-time read', () => {
+    it('marks the cached entry loading for its independent view-time refresh', () => {
       let state = agentSubscriptionUIReducer(
         initialState,
         setSubscriptionSnapshot(WS, AGENT, {
@@ -151,19 +151,19 @@ describe('agentSubscriptionUIReducer', () => {
       );
       state = agentSubscriptionUIReducer(state, markAgentAsViewed(AGENT));
       const entry = state.entries[makeKey(WS, AGENT)];
-      expect(entry.snapshotFetched).toBe(false);
-      // Cached data is retained for the card render — only readiness drops.
+      expect(entry.snapshotStatus).toBe('loading');
+      // Cached data is retained while the row reports loading.
       expect(entry.subscriptions).toEqual([sub]);
       expect(entry.waitingState).toBe('waiting');
     });
 
-    it('re-latches when the fresh read lands after a view switch', () => {
+    it('marks the entry ready when the fresh read lands after a view switch', () => {
       let state = agentSubscriptionUIReducer(
         initialState,
         subscriptionSnapshotFetchFailed(WS, AGENT),
       );
       state = agentSubscriptionUIReducer(state, markAgentAsViewed(AGENT));
-      expect(state.entries[makeKey(WS, AGENT)].snapshotFetched).toBe(false);
+      expect(state.entries[makeKey(WS, AGENT)].snapshotStatus).toBe('loading');
       state = agentSubscriptionUIReducer(
         state,
         setSubscriptionSnapshot(WS, AGENT, {
@@ -173,17 +173,17 @@ describe('agentSubscriptionUIReducer', () => {
           waitingState: 'idle',
         }),
       );
-      expect(state.entries[makeKey(WS, AGENT)].snapshotFetched).toBe(true);
+      expect(state.entries[makeKey(WS, AGENT)].snapshotStatus).toBe('ready');
     });
 
-    it('leaves other agents untouched and no-ops without a latched entry', () => {
+    it('leaves other agents untouched and no-ops without a matching entry', () => {
       const latched = agentSubscriptionUIReducer(
         initialState,
         subscriptionSnapshotFetchFailed(WS, 'agent-other'),
       );
       const afterView = agentSubscriptionUIReducer(latched, markAgentAsViewed(AGENT));
       expect(afterView).toBe(latched);
-      expect(afterView.entries[makeKey(WS, 'agent-other')].snapshotFetched).toBe(true);
+      expect(afterView.entries[makeKey(WS, 'agent-other')].snapshotStatus).toBe('failed');
     });
   });
 
@@ -463,7 +463,7 @@ describe('agentSubscriptionUIReducer', () => {
       expect(state).toBe(initialState);
     });
 
-    it('preserves the snapshotFetched readiness latch', () => {
+    it('preserves the snapshot status', () => {
       let state = agentSubscriptionUIReducer(
         initialState,
         setSubscriptionSnapshot(WS, AGENT, {
@@ -474,7 +474,7 @@ describe('agentSubscriptionUIReducer', () => {
         }),
       );
       state = agentSubscriptionUIReducer(state, resetSubscriptionUI(WS, AGENT));
-      expect(state.entries[makeKey(WS, AGENT)].snapshotFetched).toBe(true);
+      expect(state.entries[makeKey(WS, AGENT)].snapshotStatus).toBe('ready');
     });
   });
 });
@@ -504,15 +504,25 @@ describe('agentSubscriptionUI selectors', () => {
     expect(selectWokenUpInfo.select(stateWith(initialState), WS, AGENT)).toBeNull();
   });
 
-  it('selectSubscriptionSnapshotFetched returns false for missing entries and true once latched', () => {
-    expect(selectSubscriptionSnapshotFetched.select(stateWith(initialState), WS, AGENT)).toBe(
-      false,
+  it('selectSubscriptionSnapshotStatus reports loading, failed, and ready', () => {
+    expect(selectSubscriptionSnapshotStatus.select(stateWith(initialState), WS, AGENT)).toBe(
+      'loading',
     );
-    const latched = agentSubscriptionUIReducer(
+    const failed = agentSubscriptionUIReducer(
       initialState,
       subscriptionSnapshotFetchFailed(WS, AGENT),
     );
-    expect(selectSubscriptionSnapshotFetched.select(stateWith(latched), WS, AGENT)).toBe(true);
+    expect(selectSubscriptionSnapshotStatus.select(stateWith(failed), WS, AGENT)).toBe('failed');
+    const ready = agentSubscriptionUIReducer(
+      failed,
+      setSubscriptionSnapshot(WS, AGENT, {
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'idle',
+      }),
+    );
+    expect(selectSubscriptionSnapshotStatus.select(stateWith(ready), WS, AGENT)).toBe('ready');
   });
 
   it('selectWaitingState returns completed when set', () => {

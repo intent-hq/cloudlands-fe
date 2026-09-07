@@ -9,12 +9,10 @@
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
-  import { getAvatarState } from '$features/agent/components/agent-avatar/avatar-state';
+  import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
   import type { AgentMessageAttribution } from '$lib/utils/agent-message-attribution';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
   import {
-    selectAgentIsResponding,
-    selectAgentIsWaiting,
     selectAgentProvider,
     selectAgentSession,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -63,10 +61,6 @@
   // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by sender id.
   const senderSession$ = selectAgentSession(attribution.fromAgentId);
   // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by sender id.
-  const senderIsResponding$ = selectAgentIsResponding(attribution.fromAgentId);
-  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by sender id.
-  const senderIsWaiting$ = selectAgentIsWaiting(attribution.fromAgentId);
-  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by sender id.
   const senderPermissionCount$ = selectPendingCount(attribution.fromAgentId);
   // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by sender id.
   const senderProvider$ = selectAgentProvider(attribution.fromAgentId);
@@ -78,16 +72,10 @@
   );
   const senderAttentionRequest = $derived(getAgentAttentionRequest($senderSession$));
   const senderAvatarState = $derived(
-    getAvatarState(
-      {
-        isStreaming: $senderIsResponding$ && !$senderIsWaiting$,
-        status: $senderIsWaiting$ ? 'waiting' : $senderSession$?.status,
-      },
-      {
-        hasPermissionRequest: $senderPermissionCount$ > 0,
-        attentionKind: senderAttentionRequest?.kind ?? null,
-      },
-    ),
+    getAvatarStateForSession($senderSession$, {
+      hasPermissionRequest: $senderPermissionCount$ > 0,
+      attentionKind: senderAttentionRequest?.kind ?? null,
+    }),
   );
 
   function handleClick(e: MouseEvent) {

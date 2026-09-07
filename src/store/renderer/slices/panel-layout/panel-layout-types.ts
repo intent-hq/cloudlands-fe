@@ -179,6 +179,12 @@ export interface PanelRevealRequest {
   panelId: string;
   tabId: string | null;
   requestId: string;
+  /**
+   * Scroll-only reveal: the tab was activated without a focus intent, so the
+   * layout must not synthesize panel-content focus and the tab must not
+   * autofocus on mount, even when its panel is already the focused panel.
+   */
+  preserveFocus?: boolean;
 }
 
 export type PanelLayoutRestoreStatus = 'idle' | 'pending' | 'restored' | 'empty' | 'invalid';

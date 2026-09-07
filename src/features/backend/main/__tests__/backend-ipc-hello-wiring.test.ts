@@ -90,10 +90,22 @@ vi.mock('../json-rpc-client', () => ({
   },
 }));
 
-vi.mock('../client-identity', () => ({
-  getOrCreateClientId: mockGetOrCreateClientId,
-  persistClientId: mockPersistClientId,
-}));
+vi.mock('../client-identity', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../client-identity')>();
+  return {
+    ...actual,
+    getOrCreateClientId: mockGetOrCreateClientId,
+    persistClientId: mockPersistClientId,
+    // Real REV-2 builder over the mocked clientId: the wiring under test is
+    // that the MAIN client presents the full params, not just the id.
+    buildMainClientHelloParams: async () => ({
+      clientId: await mockGetOrCreateClientId(),
+      name: actual.DESKTOP_CLIENT_NAME,
+      capabilities: { browserExec: true },
+      ...actual.getClientHostIdentity(),
+    }),
+  };
+});
 
 vi.mock('../intentd-sidecar', () => ({
   onSidecarGaveUp: vi.fn(),
@@ -136,14 +148,20 @@ vi.mock('../connections-store', async (importOriginal) => ({
 }));
 
 describe('backend.ipc client identity wiring (§5.17)', () => {
-  it('constructs the shared JsonRpcClient with helloParams presenting the persisted clientId', async () => {
+  it('constructs the shared JsonRpcClient with helloParams presenting the persisted clientId + REV-2 browserExec identity', async () => {
     const { getBackendClient } = await import('../backend.ipc');
     getBackendClient();
 
     expect(ctorOptions).toHaveLength(1);
-    const helloParams = ctorOptions[0].helloParams as () => Promise<unknown>;
+    const helloParams = ctorOptions[0].helloParams as () => Promise<Record<string, unknown>>;
     expect(typeof helloParams).toBe('function');
-    await expect(helloParams()).resolves.toEqual({ clientId: 'cli-persisted' });
+    const params = await helloParams();
+    expect(params).toMatchObject({
+      clientId: 'cli-persisted',
+      name: 'Intent Desktop',
+      capabilities: { browserExec: true },
+    });
+    expect(typeof params.hostname).toBe('string');
     expect(mockGetOrCreateClientId).toHaveBeenCalled();
   });
 

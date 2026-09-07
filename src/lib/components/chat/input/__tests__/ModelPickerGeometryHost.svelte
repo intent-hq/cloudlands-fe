@@ -21,15 +21,28 @@
     placement = 'settings',
     longList = false,
     disabled = false,
+    reasoningOutcome = 'accept',
+    settleDelayMs = 0,
   }: {
     placement?: 'settings' | 'composer' | 'modal';
     longList?: boolean;
     disabled?: boolean;
+    reasoningOutcome?: 'accept' | 'reject';
+    settleDelayMs?: number;
   } = $props();
   let model = $state('reasoning-model');
   let effort = $state<string | null>(null);
   let changes = $state(0);
+  let settled = $state(0);
   let modalOpen = $state(true);
+
+  function commitReasoning(value: string | null): boolean {
+    settled += 1;
+    if (reasoningOutcome === 'reject') return false;
+    effort = value;
+    changes += 1;
+    return true;
+  }
   const levels = untrack(() =>
     longList
       ? [...Array.from({ length: 20 }, (_, i) => `level-${i + 1}`), 'last-effort']
@@ -64,11 +77,12 @@
       showReasoning
       reasoningEffort={effort}
       reasoningDisabled={disabled}
-      onReasoningChange={(value) => {
-        effort = value;
-        changes += 1;
-        return true;
-      }}
+      onReasoningChange={(value) =>
+        settleDelayMs > 0
+          ? new Promise<boolean>((resolve) =>
+              setTimeout(() => resolve(commitReasoning(value)), settleDelayMs),
+            )
+          : commitReasoning(value)}
       onModelChange={(value) => {
         model = value;
       }}
@@ -80,6 +94,7 @@
   <output class="sr-only" data-testid="selection"
     >{JSON.stringify({ model, effort, changes })}</output
   >
+  <output class="sr-only" data-testid="reasoning-settled">{settled}</output>
 {/snippet}
 
 {#if placement === 'modal'}

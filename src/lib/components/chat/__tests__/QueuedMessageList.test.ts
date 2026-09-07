@@ -3,8 +3,12 @@
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { QueuedMessage } from '$shared/types';
+import { WorkspaceId } from '$shared/types/branded-ids';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';
+import { WORKSPACE_ROUTE_CONTEXT } from '$lib/utils/workspace-route-context';
 
 vi.mock('../../ui/button/button.svelte', async () => ({
   default: (await import('./mocks/Button.svelte')).default,
@@ -12,6 +16,7 @@ vi.mock('../../ui/button/button.svelte', async () => ({
 
 import QueuedMessageList from '../QueuedMessageList.svelte';
 import QueuedMessageEditMotionHost from './QueuedMessageEditMotionHost.svelte';
+import { resolveAttachmentImageUrl } from '../attachment-image-url';
 
 function queued(overrides: Partial<QueuedMessage>): QueuedMessage {
   return {
@@ -529,6 +534,83 @@ describe('QueuedMessageList', () => {
           /^View attached image \d+ of \d+ full size$/,
         );
       }
+    });
+  });
+
+  describe('attachment-reference thumbnails', () => {
+    const originalInvoke = window.electronAPI!.invoke;
+    const routeContext = new Map([
+      [WORKSPACE_ROUTE_CONTEXT, { workspaceId: WorkspaceId('ws-queued') }],
+    ]);
+
+    // PROTOCOL §5.9 `file.getAttachmentInfo` result for the referenced row.
+    const attachmentInfo = {
+      attachmentId: 'att-q-1',
+      fileName: 'shot.png',
+      mimeType: 'image/png',
+      size: 1234,
+      uploadedAt: '2026-01-01T12:00:00Z',
+      path: '.intent/attachments/att-q-1/shot.png',
+      exists: true,
+    };
+
+    beforeEach(() => {
+      resetMockIpcRouter();
+      window.electronAPI!.invoke = vi.fn((channel: string, payload?: unknown) =>
+        mockInvoke(channel, payload),
+      );
+    });
+    afterEach(() => {
+      window.electronAPI!.invoke = originalInvoke;
+      resetMockIpcRouter();
+      vi.restoreAllMocks();
+    });
+
+    it('falls back to the placeholder tile and evicts the cached URL when the thumbnail fails to load', async () => {
+      const getAttachmentInfo = vi.fn(() => ({ ok: true, result: attachmentInfo }));
+      registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, (payload) => {
+        expect(payload).toEqual({
+          method: 'file.getAttachmentInfo',
+          params: { attachmentId: 'att-q-1' },
+        });
+        return getAttachmentInfo();
+      });
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({
+              content: 'see attached',
+              imageBlocks: [{ type: 'image', attachmentId: 'att-q-1', mimeType: 'image/png' }],
+            }),
+          ],
+        },
+        context: routeContext,
+      });
+
+      // The reference resolves to a workspace-file:// URL and renders as <img>.
+      const img = await screen.findByRole('img', { name: /attached image/i });
+      const url = 'workspace-file://ws-queued/.intent/attachments/att-q-1/shot.png';
+      expect(img.getAttribute('src')).toBe(url);
+      expect(getAttachmentInfo).toHaveBeenCalledTimes(1);
+
+      // The protocol handler refused the bytes (e.g. 404): the <img> errors.
+      await fireEvent.error(img);
+
+      await waitFor(() => expect(screen.getByTestId('queued-image-placeholder')).toBeTruthy());
+      expect(screen.queryByRole('img', { name: /attached image/i })).toBeNull();
+      const thumbnailWarnings = warn.mock.calls.filter(([message]) =>
+        String(message).includes('Attachment thumbnail failed to load'),
+      );
+      expect(thumbnailWarnings).toHaveLength(1);
+      expect(thumbnailWarnings[0][1]).toEqual({ attachmentId: 'att-q-1', url });
+      // Evicted: the next resolve re-issues file.getAttachmentInfo instead of
+      // replaying the URL that just failed — and this instance does not loop.
+      await expect(resolveAttachmentImageUrl('ws-queued', 'att-q-1')).resolves.toBe(url);
+      expect(getAttachmentInfo).toHaveBeenCalledTimes(2);
+      expect(screen.getByTestId('queued-image-placeholder')).toBeTruthy();
+      expect(screen.queryByRole('img', { name: /attached image/i })).toBeNull();
     });
   });
 });

@@ -124,4 +124,34 @@ describe('LazyTurn shared observer ownership', () => {
     releaseFirst();
     releaseSecond();
   });
+
+  it('distinguishes rows in the visible viewport from rows in the preload margin', () => {
+    const root = document.createElement('div');
+    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
+      top: 100,
+      bottom: 300,
+    } as DOMRect);
+    const preload = document.createElement('div');
+    const visible = document.createElement('div');
+    const calls: string[] = [];
+    const releasePreload = observeLazyTurnVisibility(preload, root, (nearby, onScreen) =>
+      calls.push(`preload:${nearby}:${onScreen}`),
+    );
+    const releaseVisible = observeLazyTurnVisibility(visible, root, (nearby, onScreen) =>
+      calls.push(`visible:${nearby}:${onScreen}`),
+    );
+    const observer = MockIntersectionObserver.instances[0];
+
+    observer.callback(
+      [
+        { target: preload, isIntersecting: true, boundingClientRect: { top: 20, bottom: 80 } },
+        { target: visible, isIntersecting: true, boundingClientRect: { top: 150, bottom: 220 } },
+      ] as IntersectionObserverEntry[],
+      observer as unknown as IntersectionObserver,
+    );
+
+    expect(calls).toEqual(['preload:true:false', 'visible:true:true']);
+    releasePreload();
+    releaseVisible();
+  });
 });

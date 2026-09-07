@@ -292,15 +292,14 @@ describe('backgroundHooksSaga', () => {
     await stop(task);
   });
 
-  it('writes an empty workspace entry when the initial hook.list seed fails (ready-with-empty)', async () => {
-    // Persistent failure: the seed and the unconditional post-ack re-list
-    // both fail — the entry still latches as ready-with-empty.
+  it('surfaces failure when the initial hook.list seed fails', async () => {
     mocks.request.mockRejectedValue(new Error('list failed'));
     const { dispatch, task, getState } = createHarness();
     dispatch(backgroundHooksSubscribeRequested('ws-1'));
 
     await vi.waitFor(() => expect(getState().byWorkspaceId['ws-1']).toBeDefined());
     expect(Object.keys(getState().byWorkspaceId['ws-1'].hooks.map)).toHaveLength(0);
+    expect(getState().byWorkspaceId['ws-1'].snapshotStatus).toBe('failed');
     await stop(task);
   });
 

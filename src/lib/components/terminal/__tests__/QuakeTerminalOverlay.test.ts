@@ -177,6 +177,7 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 });
 vi.mock('svelte/transition', () => ({ slide: () => ({}) }));
 
+import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 import QuakeTerminalOverlay from '../QuakeTerminalOverlay.svelte';
 import RootQuakeTerminalOverlay from '../RootQuakeTerminalOverlay.svelte';
 
@@ -348,40 +349,54 @@ describe('QuakeTerminalOverlay lifecycle', () => {
   });
 
   it.each([
-    ['workspace', () => render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } })],
-    ['root', () => render(RootQuakeTerminalOverlay)],
-  ])('flushes %s resize and releases global state when destroyed', async (_, renderOverlay) => {
-    const removeListener = vi.spyOn(document, 'removeEventListener');
-    document.body.style.cursor = 'crosshair';
-    document.body.style.userSelect = 'text';
-    const { container, unmount } = renderOverlay();
-    const resizeHandle = container.querySelector<HTMLElement>('[data-resize-axis="y"]');
-    expect(resizeHandle).toBeTruthy();
+    [
+      'workspace',
+      () => render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } }),
+      'ws-1',
+    ],
+    ['root', () => render(RootQuakeTerminalOverlay), ROOT_WORKSPACE_ID],
+  ])(
+    'flushes %s resize and releases global state when destroyed',
+    async (_, renderOverlay, wsId) => {
+      const removeListener = vi.spyOn(document, 'removeEventListener');
+      document.body.style.cursor = 'crosshair';
+      document.body.style.userSelect = 'text';
+      const { container, unmount } = renderOverlay();
+      const resizeHandle = container.querySelector<HTMLElement>('[data-resize-axis="y"]');
+      expect(resizeHandle).toBeTruthy();
 
-    await fireEvent.mouseDown(resizeHandle!);
-    await fireEvent.mouseMove(document, { clientY: 0 });
-    expect(document.body.style.cursor).toBe('ns-resize');
-    expect(document.body.style.userSelect).toBe('none');
+      await fireEvent.mouseDown(resizeHandle!);
+      await fireEvent.mouseMove(document, { clientY: 0 });
+      expect(document.body.style.cursor).toBe('ns-resize');
+      expect(document.body.style.userSelect).toBe('none');
 
-    unmount();
+      unmount();
 
-    expect(mockDispatch).toHaveBeenCalledWith({ type: 'terminals/setHeight', payload: [90] });
-    expect(document.body.style.cursor).toBe('crosshair');
-    expect(document.body.style.userSelect).toBe('text');
-    expect(removeListener).toHaveBeenCalledWith('mousemove', expect.any(Function));
-    expect(removeListener).toHaveBeenCalledWith('mouseup', expect.any(Function));
-    mockDispatch.mockClear();
-    await fireEvent.mouseMove(document, { clientY: 100 });
-    expect(mockDispatch).not.toHaveBeenCalled();
-    removeListener.mockRestore();
-  });
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'terminals/setHeight',
+        payload: [wsId, 90],
+      });
+      expect(document.body.style.cursor).toBe('crosshair');
+      expect(document.body.style.userSelect).toBe('text');
+      expect(removeListener).toHaveBeenCalledWith('mousemove', expect.any(Function));
+      expect(removeListener).toHaveBeenCalledWith('mouseup', expect.any(Function));
+      mockDispatch.mockClear();
+      await fireEvent.mouseMove(document, { clientY: 100 });
+      expect(mockDispatch).not.toHaveBeenCalled();
+      removeListener.mockRestore();
+    },
+  );
 
   it.each([
-    ['workspace', () => render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } })],
-    ['root', () => render(RootQuakeTerminalOverlay)],
+    [
+      'workspace',
+      () => render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } }),
+      'ws-1',
+    ],
+    ['root', () => render(RootQuakeTerminalOverlay), ROOT_WORKSPACE_ID],
   ])(
     'previews %s resize locally and commits one clamped height on release',
-    async (_, renderOverlay) => {
+    async (_, renderOverlay, wsId) => {
       const { container } = renderOverlay();
       const panel = container.querySelector<HTMLElement>('.terminal-panel');
       const resizeHandle = container.querySelector<HTMLElement>('[data-resize-axis="y"]');
@@ -402,7 +417,7 @@ describe('QuakeTerminalOverlay lifecycle', () => {
 
       expect(
         mockDispatch.mock.calls.filter(([action]) => action.type === 'terminals/setHeight'),
-      ).toEqual([[{ type: 'terminals/setHeight', payload: [90] }]]);
+      ).toEqual([[{ type: 'terminals/setHeight', payload: [wsId, 90] }]]);
     },
   );
 });

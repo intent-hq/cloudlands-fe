@@ -32,6 +32,7 @@ describe('TaskNotePreview', () => {
           allowEmpty: true,
           processPrimitives: false,
           workspaceId: 'workspace-1',
+          workspaceFileVersion: expect.any(String),
         },
       ),
     );

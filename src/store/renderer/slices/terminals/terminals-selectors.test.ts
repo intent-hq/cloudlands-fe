@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
-import type { TerminalOverlayState, TerminalTab } from './terminals-slice';
+import type { TerminalOverlayState, TerminalPlacement, TerminalTab } from './terminals-slice';
 import {
   selectSelectedScriptId,
   selectTerminalDisplayName,
+  selectTerminalOverlayHeight,
+  selectTerminalPlacement,
   selectWorkspaceSetupTerminal,
 } from './terminals-selectors';
 import { m } from '$shared/paraglide/messages.js';
@@ -14,9 +16,12 @@ const WS = 'ws-1';
 function terminalState(
   terminals: TerminalTab[],
   selectedScriptId: string | null = null,
+  placements: Record<string, TerminalPlacement> = {},
 ): TerminalOverlayState {
   return {
     height: 50,
+    workspaceHeights: {},
+    workspacePlacements: {},
     workspaces: {
       [WS]: {
         isOpen: false,
@@ -24,8 +29,10 @@ function terminalState(
         terminals: createCollection<TerminalTab, 'id'>('id', terminals),
         terminalsLoaded: true,
         isLoadingTerminals: false,
+        recentlyCreatedTerminals: [],
         daemonBootId: null,
         selectedScriptId,
+        placements,
       },
     },
   };
@@ -162,6 +169,74 @@ describe('terminals selectors', () => {
       });
 
       expect(selectSelectedScriptId.select(state, 'ws-1')).toBe('script-1');
+    });
+  });
+
+  describe('selectTerminalOverlayHeight', () => {
+    it('reads the fallback for a workspace without its own height', () => {
+      const state = stateWith([]);
+
+      expect(selectTerminalOverlayHeight.select(state, WS)).toBe(50);
+      expect(selectTerminalOverlayHeight.select(state, 'ws-unknown')).toBe(50);
+    });
+
+    it('prefers the workspace height over the fallback', () => {
+      const terminals = terminalState([]);
+      terminals.workspaceHeights = { [WS]: 15, 'ws-unloaded': 80 };
+      const state = { terminals } as unknown as StoreState;
+
+      expect(selectTerminalOverlayHeight.select(state, WS)).toBe(15);
+      expect(selectTerminalOverlayHeight.select(state, 'ws-unloaded')).toBe(80);
+      expect(selectTerminalOverlayHeight.select(state, 'ws-unknown')).toBe(50);
+    });
+  });
+
+  describe('selectTerminalPlacement', () => {
+    it('defaults an unknown terminal or script to the overlay', () => {
+      const state = stateWith([{ id: 'term-1', name: 'Terminal' }]);
+
+      expect(selectTerminalPlacement.select(state, WS, 'term-1')).toBe('overlay');
+      expect(selectTerminalPlacement.select(state, WS, 'script-1')).toBe('overlay');
+    });
+
+    it('defaults to the overlay for a workspace with no terminal state', () => {
+      const state = stateWith([]);
+
+      expect(selectTerminalPlacement.select(state, 'ws-other', 'term-1')).toBe('overlay');
+    });
+
+    it('returns the recorded placement per id', () => {
+      const state = {
+        terminals: terminalState([], null, { 'term-1': 'panel', 'script-1': 'overlay' }),
+      } as unknown as StoreState;
+
+      expect(selectTerminalPlacement.select(state, WS, 'term-1')).toBe('panel');
+      expect(selectTerminalPlacement.select(state, WS, 'script-1')).toBe('overlay');
+    });
+
+    it('falls back to the boot-hydrated placement before the first terminal load', () => {
+      const terminals = terminalState([], null, { 'term-1': 'overlay' });
+      const state = {
+        terminals: {
+          ...terminals,
+          workspacePlacements: { [WS]: { 'term-1': 'panel', 'script-1': 'panel' } },
+        },
+      } as unknown as StoreState;
+
+      expect(selectTerminalPlacement.select(state, WS, 'term-1')).toBe('overlay');
+      expect(selectTerminalPlacement.select(state, WS, 'script-1')).toBe('panel');
+      expect(selectTerminalPlacement.select(state, WS, 'script-2')).toBe('overlay');
+    });
+
+    it('reads the boot-hydrated placement for a workspace with no terminal state', () => {
+      const state = {
+        terminals: {
+          ...terminalState([]),
+          workspacePlacements: { 'ws-other': { 'script-1': 'panel' } },
+        },
+      } as unknown as StoreState;
+
+      expect(selectTerminalPlacement.select(state, 'ws-other', 'script-1')).toBe('panel');
     });
   });
 });

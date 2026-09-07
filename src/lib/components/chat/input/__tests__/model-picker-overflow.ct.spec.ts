@@ -194,6 +194,61 @@ for (const placement of ['settings', 'composer', 'modal'] as const) {
   }
 }
 
+// intent#4159: committing a changed effort must not drop focus to <body> while
+// the outer picker stays open. Focus is asserted via document.activeElement,
+// and the trigger is never focused or pressed through a locator.
+for (const input of ['keyboard', 'pointer'] as const) {
+  for (const outcome of ['accept', 'reject'] as const) {
+    test(`${input} effort commit keeps focus on the effort trigger when the change is ${outcome}ed`, async ({
+      mount,
+      page,
+    }) => {
+      await page.setViewportSize({ width: 900, height: 800 });
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await mount(ModelPickerGeometryHost, {
+        props: { reasoningOutcome: outcome, settleDelayMs: 150 },
+      });
+      await modelTrigger(page).click();
+      const outer = outerMenu(page);
+      await expect(outer).toBeVisible();
+      const effortTrigger = page.getByTestId('effort-picker-trigger');
+      await effortTrigger.click();
+      const inner = innerMenu(page);
+      await expect(inner).toBeVisible();
+      const target = inner.getByRole('option', { name: 'Off', exact: true });
+      await expectHitTarget(target);
+      if (input === 'keyboard') {
+        await page.keyboard.press('ArrowDown');
+        await expect(target).toHaveAttribute('data-highlighted');
+        await page.keyboard.press('Enter');
+      } else {
+        const box = (await target.boundingBox())!;
+        await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      }
+      await expect(inner).toHaveCount(0);
+      await expect(page.getByTestId('reasoning-settled')).toHaveText('1');
+      await expect(page.getByTestId('selection')).toHaveText(
+        JSON.stringify(
+          outcome === 'accept'
+            ? { model: 'reasoning-model', effort: 'none', changes: 1 }
+            : { model: 'reasoning-model', effort: null, changes: 0 },
+        ),
+      );
+      await expect(outer).toBeVisible();
+      expect(
+        await page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? null),
+      ).toBe('effort-picker-trigger');
+      await expect(effortTrigger).toBeFocused();
+      await expect(effortTrigger).not.toHaveAttribute('aria-busy');
+
+      // Focus is genuinely live: the outer Escape layer still closes the picker.
+      await page.keyboard.press('Escape');
+      await expect(outer).toHaveCount(0);
+      await expect(modelTrigger(page)).toBeFocused();
+    });
+  }
+}
+
 test('disabled reasoning cannot open or change while model selection remains usable', async ({
   mount,
   page,

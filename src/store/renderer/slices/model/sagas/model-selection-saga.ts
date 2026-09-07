@@ -37,6 +37,7 @@ export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
   const { providerId: legacyPrefix, modelId: model } = splitLegacyCompoundId(rawModel);
   const providerId = explicitProviderId || legacyPrefix || activeProviderId;
 
+  let shouldReload = false;
   if (providerId && providerId !== activeProviderId) {
     const provider = yield* selectProviderCatalogEntry.effect(providerId);
     const catalogLoaded = yield* selectProviderCatalogLoaded.effect();
@@ -47,14 +48,22 @@ export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
     // and the mirrored id is re-validated at `providerCatalogLoaded`. Once
     // the catalog is loaded, unknown providers are still rejected.
     if (provider || !catalogLoaded) {
-      yield* put(reloadModelsForProvider());
+      shouldReload = true;
     } else {
       logger.warn('Ignoring model selection for unknown provider', { model, providerId });
       return;
     }
   }
 
+  // Land the provider/model switch BEFORE requesting a reload:
+  // `reloadModelsWorker` reads `selectActiveProviderId` at the start of its
+  // run, so if the reload were requested first it would fetch the PREVIOUS
+  // provider's catalog and leave the newly picked provider without models
+  // until another reload happened to fire.
   yield* put(setAtomicDefaultModel({ providerId, model }));
+  if (shouldReload) {
+    yield* put(reloadModelsForProvider());
+  }
 }
 
 /**

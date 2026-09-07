@@ -13,12 +13,14 @@
  * `sentry.*`, PROTOCOL §5.27–5.29); `scripts` (`script.*`, PROTOCOL §5.8);
  * `setupScripts` (`workspace.*SetupScript` / `detectProjectType`, PROTOCOL §5.25);
  * `events` (`event.query`, PROTOCOL §5.10); `models` (`models.list`, PROTOCOL §5.30);
- * `skills` (`skill.list`, PROTOCOL §5.34); `system`, `browser`, `chat` (INT-14).
+ * `skills` (`skill.list`, PROTOCOL §5.34); `system`, `browser`, `chat` (INT-14);
+ * `clients` (`client.list` + own-clientId hello probe, PROTOCOL §5.17 / REV-2).
  */
 import type { AppClient } from '../app-client';
 import { LiveAgentsClient } from './live-agents-client';
 import { LiveBrowserClient } from './live-browser-client';
 import { LiveChatClient } from './live-chat-client';
+import { LiveClientsClient } from './live-clients-client';
 import { LiveCommentsClient } from './live-comments-client';
 import { LiveDraftsClient } from './live-drafts-client';
 import { LiveEventsClient } from './live-events-client';
@@ -68,4 +70,5 @@ export class LiveAppClient implements AppClient {
   readonly system = new LiveSystemClient();
   readonly server = new LiveServerClient();
   readonly drafts = new LiveDraftsClient();
+  readonly clients = new LiveClientsClient();
 }

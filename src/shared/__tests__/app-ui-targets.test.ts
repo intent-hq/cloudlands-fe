@@ -49,6 +49,7 @@ describe('app UI targets registry', () => {
       'code-font': 'display',
       general: 'advanced',
       devices: 'devices',
+      'websocket-api': 'devices',
     } as const;
 
     const targets = getAppUiTargets();
@@ -137,6 +138,14 @@ describe('app UI targets registry', () => {
   it('resolves the legacy machines hash to the canonical Devices target', () => {
     expect(resolveHashToTarget('machines')).toMatchObject({ id: 'devices', tab: 'devices' });
     expect(isResolvableNavTarget('/settings?tab=machines#machines')).toBe(true);
+  });
+
+  it('resolves the remote-access alias to the websocket-api target on the Devices tab', () => {
+    const canonical = resolveHashToTarget('websocket-api');
+    expect(canonical).toMatchObject({ id: 'websocket-api', tab: 'devices' });
+    expect(resolveHashToTarget('remote-access')).toEqual(canonical);
+    expect(isResolvableNavTarget('/settings?tab=advanced#websocket-api')).toBe(true);
+    expect(isResolvableNavTarget('/settings#remote-access')).toBe(true);
   });
 
   it('returns undefined for an unknown hash', () => {

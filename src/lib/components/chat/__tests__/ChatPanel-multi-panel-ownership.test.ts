@@ -122,7 +122,6 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectAwaitingSwitchBackSnapshot: testState.selector(false),
-  selectAwaitingUtilityFooter: testState.selector(false),
   selectChatError: testState.selector(null),
   selectChatFailureCorrelation: testState.selector(undefined),
   selectChatLastChunkTime: testState.selector(null),
@@ -259,6 +258,8 @@ vi.mock('../ModelChangeNotice.svelte', async () => ({
 vi.mock('$features/onboarding/messages/WorkspaceSetupCard.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
+
+import ChatPanel from '../ChatPanel.svelte';
 
 const workspace = { id: 'ws-1', title: 'Workspace' };
 

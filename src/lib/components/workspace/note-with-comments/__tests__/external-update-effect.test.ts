@@ -185,6 +185,7 @@ describe('external-update-effect', () => {
       processHTMLToMarkdown: () => 'new-md',
       createTextSelection: vi.fn(() => ({ selection: true })),
       logger,
+      workspaceFileVersion: 'editor-1',
     });
 
     expect(result).toBeInstanceOf(Promise);
@@ -194,11 +195,12 @@ describe('external-update-effect', () => {
 
     await result;
 
-    // Update happens
+    // Update happens, reusing the editor's stable image cache-bust token.
     expect(getSetContentHtml()).toBe('<p>new</p>');
     expect(processMarkdownToHTML).toHaveBeenCalledWith('new-md', {
       preserveAnchors: true,
       workspaceId: 'workspace-1',
+      workspaceFileVersion: 'editor-1',
     });
     expect(lastKnownContent).toBe('new-md');
     expect(hasUserEditedSinceLastSave).toBe(false);

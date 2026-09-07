@@ -241,6 +241,8 @@ export const IPC_CHANNELS = {
   // Google Antigravity Integration
   ANTIGRAVITY: {
     GET_MODELS: 'antigravity:get-models',
+    SETUP: 'antigravity:setup',
+    CLOSE_SETUP: 'antigravity:close-setup',
   },
 
   // Provider Availability (aggregates all ACP providers)

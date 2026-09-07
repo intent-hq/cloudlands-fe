@@ -1390,10 +1390,12 @@
   const lockedButtonTitle = $derived(
     lockedTitle?.trim() || m.chat_modelPicker_modelLocked_title({ model: triggerAccessibleLabel }),
   );
+  // The in-flight commit window is announced with `aria-busy` and re-entry is
+  // ignored in `handleReasoningSelect`; it must not feed the HTML `disabled`
+  // attribute, which would drop focus from the effort trigger (intent#4159).
   let updatingReasoningEffort = $state(false);
   const reasoningControlDisabled = $derived(
     reasoningDisabled ||
-      updatingReasoningEffort ||
       (!onReasoningChange && (!agentId || !workspaceId)) ||
       reasoningLevels.length === 0,
   );
@@ -1430,7 +1432,7 @@
   }
 
   async function handleReasoningSelect(value: string | null): Promise<boolean> {
-    if (reasoningControlDisabled) return false;
+    if (reasoningControlDisabled || updatingReasoningEffort) return false;
     const previous = persistedReasoningEffort;
     if (value === previous) return true;
 
@@ -1849,6 +1851,7 @@
           effortLevels={reasoningLevels}
           effort={persistedReasoningEffort}
           disabled={reasoningControlDisabled}
+          busy={updatingReasoningEffort}
           {modalAware}
           onEffortChange={handleReasoningSelect}
         />

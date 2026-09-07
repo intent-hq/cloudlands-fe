@@ -48,6 +48,7 @@ import {
   heartbeatFailed,
   systemStatusSuccess,
 } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import { selectDaemonConnectionGeneration } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
 import {
   removeWorkspaceEntity,
@@ -220,6 +221,7 @@ describe('HUD subscription (mock backend, real store)', () => {
           host: { os: 'macos', arch: 'arm64', hasDisplay: true, locality: 'local' },
         },
         '2026-08-03T00:00:10.000Z',
+        selectDaemonConnectionGeneration.select(appStore.state),
       ),
     );
     const system = selectHudSystem.select(appStore.state);

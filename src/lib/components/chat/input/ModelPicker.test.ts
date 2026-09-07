@@ -786,6 +786,45 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(applyReasoningEffortMock).not.toHaveBeenCalled();
   });
 
+  it('ignores a second effort commit while the first is in flight without disabling the trigger', async () => {
+    let resolveChange!: (applied: boolean) => void;
+    const onReasoningChange = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveChange = resolve;
+        }),
+    );
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        showReasoning: true,
+        reasoningEffort: 'medium',
+        onReasoningChange,
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    const selectTrigger = (await screen.findByTestId('effort-picker-trigger')) as HTMLButtonElement;
+    await waitFor(() => expect(selectTrigger.disabled).toBe(false));
+    await selectEffort(await openEffortSelect(), 'High');
+    await waitFor(() => expect(onReasoningChange).toHaveBeenCalledWith('high'));
+
+    // The in-flight window is announced, not enforced through the HTML
+    // `disabled` attribute, so the focused trigger keeps focus (intent#4159).
+    await waitFor(() => expect(selectTrigger.getAttribute('aria-busy')).toBe('true'));
+    expect(selectTrigger.disabled).toBe(false);
+
+    await selectEffort(await openEffortSelect(), 'Max');
+    await waitFor(() => expect(selectTrigger.textContent?.trim()).toBe('Medium'));
+    expect(onReasoningChange).toHaveBeenCalledTimes(1);
+
+    resolveChange(true);
+    await waitFor(() => expect(selectTrigger.hasAttribute('aria-busy')).toBe(false));
+    expect(onReasoningChange).toHaveBeenCalledTimes(1);
+  });
+
   it('displays an unsupported controlled effort as Auto without mutating it', async () => {
     const onReasoningChange = vi.fn();
     render(ModelPicker, {

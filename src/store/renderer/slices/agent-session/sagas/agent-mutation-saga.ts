@@ -16,6 +16,7 @@ import {
   setPendingAgentDeletion,
   type PendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
+import { readAgentSession } from '$features/agent/agent-read-service';
 import { appClient } from '$lib/client';
 import { withToastCountdown } from '$lib/components/ui/toast';
 import { createLogger } from '$lib/utils/client-logger';
@@ -174,7 +175,7 @@ function* restoreAgent(
     if (hasUsableSession(existing)) {
       yield* put(action.success(existing));
     } else {
-      const fetched = yield* call([appClient.agents, appClient.agents.get], agentId);
+      const fetched = yield* call(readAgentSession, agentId);
       if (!fetched) {
         yield* put(action.success(existing ?? null));
       } else {
@@ -216,7 +217,7 @@ function* activateAgent(action: ReturnType<typeof activateAgentRequested>): Saga
         activationAttempts,
       });
     }
-    const fetched = yield* call([appClient.agents, appClient.agents.get], agentId);
+    const fetched = yield* call(readAgentSession, agentId);
     const source = fetched ? preserveMessages(fetched, existing) : existing;
     if (!source) {
       yield* put(action.success(null));

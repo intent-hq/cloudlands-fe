@@ -1281,52 +1281,54 @@
         />
       </div>
 
-      <Menu.Separator />
+      {#if $isWorkspaceHostLocal$ || activeTab?.type === 'browser'}
+        <Menu.Separator />
 
-      <div class="type-caption px-2 pb-0.5 pt-1.5 font-medium text-muted-foreground">
-        {m.settings_section_openIn()}
-      </div>
-      <div data-panel-actions-section="open-in">
-        {#if activeTab}
-          {@const externalTarget = getPanelExternalOpenTarget(
-            activeTab,
-            workspaceId,
-            $isWorkspaceHostLocal$,
-          )}
-          {#if externalTarget.kind === 'browser'}
-            <Menu.CommandItem
-              icon={faArrowUpRightFromSquare}
-              label={m.layout_panelTabBar_openInBrowser_label()}
-              onclick={() => {
-                openInExternalBrowser(activeTab);
-                close();
-              }}
-            />
-          {:else if externalTarget.kind === 'path'}
-            {#await import('$features/workspace/components/WorkspaceActionsMenu.svelte') then module}
-              {@const WorkspaceActionsMenu = module.default}
-              <WorkspaceActionsMenu
-                filePath={externalTarget.filePath}
-                workspaceId={externalTarget.workspaceId}
-                isDirectory={externalTarget.isDirectory}
-                isDiff={externalTarget.isDiff ?? false}
-                isWorkspaceRoot={externalTarget.isWorkspaceRoot ?? false}
-                workspaceFolderPath={externalTarget.workspaceFolderPath ?? ''}
-                showDeleteOption={false}
-                showArchiveOption={false}
-                showFileNameCopy={false}
-                onClose={close}
+        <div class="type-caption px-2 pb-0.5 pt-1.5 font-medium text-muted-foreground">
+          {m.settings_section_openIn()}
+        </div>
+        <div data-panel-actions-section="open-in">
+          {#if activeTab}
+            {@const externalTarget = getPanelExternalOpenTarget(
+              activeTab,
+              workspaceId,
+              $isWorkspaceHostLocal$,
+            )}
+            {#if externalTarget.kind === 'browser'}
+              <Menu.CommandItem
+                icon={faArrowUpRightFromSquare}
+                label={m.layout_panelTabBar_openInBrowser_label()}
+                onclick={() => {
+                  openInExternalBrowser(activeTab);
+                  close();
+                }}
               />
-            {/await}
-          {:else}
-            <Menu.CommandItem
-              icon={faArrowUpRightFromSquare}
-              label={m.ui_fileActions_noRepoPath_tooltip()}
-              disabled
-            />
+            {:else if externalTarget.kind === 'path'}
+              {#await import('$features/workspace/components/WorkspaceActionsMenu.svelte') then module}
+                {@const WorkspaceActionsMenu = module.default}
+                <WorkspaceActionsMenu
+                  filePath={externalTarget.filePath}
+                  workspaceId={externalTarget.workspaceId}
+                  isDirectory={externalTarget.isDirectory}
+                  isDiff={externalTarget.isDiff ?? false}
+                  isWorkspaceRoot={externalTarget.isWorkspaceRoot ?? false}
+                  workspaceFolderPath={externalTarget.workspaceFolderPath ?? ''}
+                  showDeleteOption={false}
+                  showArchiveOption={false}
+                  showFileNameCopy={false}
+                  onClose={close}
+                />
+              {/await}
+            {:else}
+              <Menu.CommandItem
+                icon={faArrowUpRightFromSquare}
+                label={m.ui_fileActions_noRepoPath_tooltip()}
+                disabled
+              />
+            {/if}
           {/if}
-        {/if}
-      </div>
+        </div>
+      {/if}
     {/snippet}
   </DropdownMenu>
 {/snippet}
@@ -1892,7 +1894,7 @@
       {#if activeTab.type === 'agent'}
         <!-- Agent headers keep the current avatar and editable name. -->
         <div
-          class="flex min-w-0 shrink items-center gap-2 overflow-hidden bg-card pl-1"
+          class="flex min-w-0 shrink items-center gap-2 bg-card pl-1"
           aria-label={m.layout_panelTabBar_activePane_ariaLabel({
             title: activeTabTitle,
             position: panePosition(activeTab.id),

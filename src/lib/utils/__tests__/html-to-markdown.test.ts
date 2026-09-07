@@ -82,7 +82,7 @@ describe('HTML to Markdown Conversion', () => {
     const markdown = 'Before ![d](intent://local/file/docs/d.png) after';
     const html = await processMarkdownToHTML(markdown, { workspaceId: 'workspace-1' });
 
-    expect(html).toContain('src="workspace-file://workspace-1/docs/d.png"');
+    expect(html).toMatch(/src="workspace-file:\/\/workspace-1\/docs\/d\.png\?v=[A-Za-z0-9._-]+"/);
     expect(processHTMLToMarkdown(html, { workspaceId: 'workspace-1' })).toBe(markdown);
   });
 

@@ -20,7 +20,7 @@ vi.mock('../HookScriptTabType.svelte', mockTabType);
 vi.mock('../SettingsTabType.svelte', mockTabType);
 vi.mock('../OverviewTabType.svelte', mockTabType);
 
-import { registerAllTabTypes } from '../register-all';
+import { preloadRestoredTabTypes, registerAllTabTypes } from '../register-all';
 import { tabTypeRegistry } from '../registry';
 import { RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
 
@@ -66,5 +66,25 @@ describe('registered panel default width tiers', () => {
     for (const type of ['changes', 'local-changes', 'chat-changes', 'activity-changes']) {
       expect(tabTypeRegistry.getIcon(type)).toBe(RESOURCE_ICON_BY_KIND.changes);
     }
+  });
+
+  it('preloads only active tabs from a restored layout', async () => {
+    registerAllTabTypes();
+    await preloadRestoredTabTypes({
+      restoreStatus: 'restored',
+      panels: {
+        first: {
+          id: 'first',
+          activeTabId: 'terminal-tab',
+          tabs: [
+            { id: 'terminal-tab', type: 'terminal', title: 'Terminal', closable: true },
+            { id: 'file-tab', type: 'file', title: 'File', closable: true },
+          ],
+        },
+      },
+    });
+
+    expect(tabTypeRegistry.getLoadedComponent('terminal')).toBeDefined();
+    expect(tabTypeRegistry.getLoadedComponent('file')).toBeUndefined();
   });
 });

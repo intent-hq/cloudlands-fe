@@ -138,6 +138,10 @@ vi.mock('$features/terminal/terminal-manager.svelte', () => ({
 vi.mock('$features/terminal/terminal-history-tracker', () => ({
   terminalHistoryTracker: { getLastCommand: () => null },
 }));
+const openUserTab = vi.fn();
+vi.mock('$features/layout/panel-layout-adapter', () => ({
+  getPanelLayoutManager: () => ({ openUserTab }),
+}));
 
 import QuakeTerminalOverlay from '../QuakeTerminalOverlay.svelte';
 import { fireEvent, screen } from '@testing-library/svelte';
@@ -147,7 +151,11 @@ import {
   setScriptsData,
   setScriptsInitialized,
 } from '$store/renderer/slices/scripts/scripts-slice';
-import { selectScript } from '$store/renderer/slices/terminals/terminals-slice';
+import {
+  addTerminal,
+  openTerminalOverlay,
+  selectScript,
+} from '$store/renderer/slices/terminals/terminals-slice';
 import { warmImport } from '../../../../test/warm-import';
 
 const WS_A = 'ws-a' as WorkspaceId;
@@ -250,5 +258,51 @@ describe('QuakeTerminalOverlay script selection (intent-hq/monorepo#2236 regress
 
     expect(dispatchedTypes()).toContain('terminals/selectScript');
     expect(rawSelectedScriptId(WS_A)).toBe('script-1');
+  });
+});
+
+describe('QuakeTerminalOverlay move to panel (intent-hq/intent#4436)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (appStore as any).__reset();
+  });
+
+  function workspaceState(wsId: string) {
+    return (appStore as any).state.terminals.workspaces[wsId];
+  }
+
+  it('records panel placement for the active terminal and closes the overlay', async () => {
+    (appStore as any).__setCurrentTab(WS_A);
+    appStore.dispatch(setScriptsData(WS_A, []));
+    appStore.dispatch(setScriptsInitialized(WS_A, true));
+    appStore.dispatch(addTerminal(WS_A, 'term-1'));
+    appStore.dispatch(openTerminalOverlay(WS_A, 'term-1'));
+    expect(workspaceState(WS_A).placements).toEqual({ 'term-1': 'overlay' });
+
+    const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
+    await fireEvent.click(container.querySelector('[data-move-to-panel]')!);
+
+    expect(openUserTab).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'terminal', terminalId: 'term-1', workspaceId: WS_A }),
+    );
+    expect(workspaceState(WS_A).placements).toEqual({ 'term-1': 'panel' });
+    expect(workspaceState(WS_A).isOpen).toBe(false);
+  });
+
+  it('records panel placement for the selected script and closes the overlay', async () => {
+    (appStore as any).__setCurrentTab(WS_A);
+    appStore.dispatch(addTerminal(WS_A, 'term-1'));
+    seedWorkspace(WS_A, ['script-1'], 'script-1');
+    appStore.dispatch(openTerminalOverlay(WS_A));
+    expect(workspaceState(WS_A).placements).toEqual({ 'script-1': 'overlay' });
+
+    const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
+    await fireEvent.click(container.querySelector('[data-move-to-panel]')!);
+
+    expect(openUserTab).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'terminal', scriptId: 'script-1', workspaceId: WS_A }),
+    );
+    expect(workspaceState(WS_A).placements).toEqual({ 'script-1': 'panel' });
+    expect(workspaceState(WS_A).isOpen).toBe(false);
   });
 });

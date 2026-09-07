@@ -148,6 +148,46 @@ describe('HudBackendMenu', () => {
     expect(screen.queryByText('Connections')).toBeNull();
   });
 
+  it('surfaces a secret-unavailable open inline instead of reading as success (#3783)', async () => {
+    // Settle the open the way the saga would: a RESOLVED secret-unavailable
+    // status (the stored token cannot be read), not a rejection.
+    mockDispatch.mockImplementation((action: { type: string; success?: (r: unknown) => void }) => {
+      if (action.type === 'connections/openRequested') {
+        action.success?.({ status: 'secret-unavailable' });
+      }
+      return action;
+    });
+    await renderAndOpen();
+
+    await fireEvent.click(screen.getByText('desk:4180').closest('[role="menuitem"]')!);
+
+    // The HUD window has no toaster/settings route, so the menu carries the
+    // failure line, naming the backend whose token is unavailable.
+    const alert = await screen.findByTestId('hud-backend-menu-open-error');
+    expect(alert.getAttribute('role')).toBe('alert');
+    expect(alert.textContent).toContain('desk:4180');
+  });
+
+  it('shows no failure line when the open resolves opened', async () => {
+    mockDispatch.mockImplementation((action: { type: string; success?: (r: unknown) => void }) => {
+      if (action.type === 'connections/openRequested') {
+        action.success?.({ status: 'opened', id: 'r1' });
+      }
+      return action;
+    });
+    await renderAndOpen();
+
+    await fireEvent.click(screen.getByText('desk:4180').closest('[role="menuitem"]')!);
+
+    await vi.waitFor(() =>
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'connections/openRequested' }),
+      ),
+    );
+    expect(screen.queryByTestId('hud-backend-menu-open-error')).toBeNull();
+    expect(screen.queryByText('Connections')).toBeNull();
+  });
+
   it('opens the add-backend modal from the add entry', async () => {
     await renderAndOpen();
 
