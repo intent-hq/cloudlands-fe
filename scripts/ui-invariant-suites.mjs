@@ -3,13 +3,14 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import ts from 'typescript';
 
 // Single source of truth for `pnpm run test:ui-invariants` membership. A suite
 // joins the gate by carrying `// @ui-invariant` in its leading comments; a
-// suite that calls the UI component inventory builder or imports a `*.meta`
-// module and reads a `.callers` ledger must carry either that marker or
-// `// @ui-invariant-exempt: <reason>`. cloudlands-fe#2260 shipped the gate as
-// a hand-listed package.json script and missed qualifying suites until review.
+// suite whose code references the UI component inventory builder, or imports a
+// `*.meta` module and reads a `.callers` ledger, must carry either that marker
+// or `// @ui-invariant-exempt: <reason>`. cloudlands-fe#2260 shipped the gate
+// as a hand-listed package.json script and missed qualifying suites until review.
 export const UI_INVARIANT_MARKER = '@ui-invariant';
 export const UI_INVARIANT_EXEMPT_MARKER = '@ui-invariant-exempt:';
 export const UI_INVARIANT_SCAN_ROOTS = ['scripts', 'src'];
@@ -20,11 +21,10 @@ const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 const PLAYWRIGHT_FILE = /\.(?:ct|visual)\.spec\.[cm]?[jt]sx?$/;
 const SKIP_DIRECTORIES = new Set(['node_modules', 'dist', 'build']);
 const GATE_MARKER = new RegExp(`${UI_INVARIANT_MARKER}(?![\\w-])`);
-const INVENTORY_CALL = /\bbuildUiComponentInventory\s*\(/;
-const INVENTORY_IMPORT = /\bimport\s*\{[^}]*\bbuildUiComponentInventory\b[^}]*\}/;
-const META_SPECIFIER = String.raw`(['"])[^'"\n]*\.meta(?:\.[cm]?[jt]s)?\1`;
-const META_IMPORT = new RegExp(String.raw`\b(?:from\s*|import\s*\(\s*)${META_SPECIFIER}`);
-const CALLERS_LEDGER = /\??\.callers\b/;
+const INVENTORY_BUILDER = 'buildUiComponentInventory';
+const CALLERS_LEDGER = 'callers';
+const META_SPECIFIER = /\.meta(?:\.[cm]?[jt]s)?$/;
+const SCRIPT_KINDS = { '.tsx': ts.ScriptKind.TSX, '.jsx': ts.ScriptKind.JSX };
 
 const normalize = (value) => value.split(path.sep).join('/');
 
@@ -79,46 +79,49 @@ export function readHeaderMarker(content) {
   return { kind: null };
 }
 
-// Blanks line and block comments while leaving string and template literal
-// bodies intact, so imports keep their specifiers and comments cannot register
-// as consumers.
-export function stripComments(content) {
-  const source = stripBom(content);
-  let output = '';
-  let index = 0;
-  while (index < source.length) {
-    const char = source[index];
-    if (char === '/' && source[index + 1] === '/') {
-      index = readLineEnd(source, index);
-    } else if (char === '/' && source[index + 1] === '*') {
-      const close = source.indexOf('*/', index + 2);
-      const end = close === -1 ? source.length : close + 2;
-      output += source.slice(index, end).replace(/[^\n]/g, ' ');
-      index = end;
-    } else if (char === '"' || char === "'" || char === '`') {
-      let end = index + 1;
-      while (end < source.length && source[end] !== char) {
-        if (source[end] === '\\') end += 1;
-        else if (char !== '`' && source[end] === '\n') break;
-        end += 1;
-      }
-      output += source.slice(index, end + 1);
-      index = end + 1;
-    } else {
-      output += char;
-      index += 1;
-    }
-  }
-  return output;
+function isMetaSpecifier(node) {
+  return (
+    node !== undefined &&
+    (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
+    META_SPECIFIER.test(node.text)
+  );
 }
 
-export function requiresUiInvariantMarker(content) {
-  const code = stripComments(content);
-  return (
-    INVENTORY_CALL.test(code) ||
-    INVENTORY_IMPORT.test(code) ||
-    (META_IMPORT.test(code) && CALLERS_LEDGER.test(code))
+function isMetaImport(node) {
+  if (ts.isImportDeclaration(node)) return isMetaSpecifier(node.moduleSpecifier);
+  if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+    return isMetaSpecifier(node.arguments[0]);
+  }
+  return false;
+}
+
+// Parses the suite with the TypeScript compiler so comments, string and
+// template bodies, and regex literals never register as consumers, and so
+// whitespace or comments between member tokens do not hide one.
+export function requiresUiInvariantMarker(content, filePath = 'suite.ts') {
+  const source = stripBom(content);
+  if (!source.includes(INVENTORY_BUILDER) && !source.includes(CALLERS_LEDGER)) return false;
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    source,
+    ts.ScriptTarget.Latest,
+    false,
+    SCRIPT_KINDS[path.extname(filePath)] ?? ts.ScriptKind.TS,
   );
+  let referencesBuilder = false;
+  let importsMeta = false;
+  let readsCallers = false;
+  const visit = (node) => {
+    if (ts.isIdentifier(node) && node.text === INVENTORY_BUILDER) referencesBuilder = true;
+    else if (isMetaImport(node)) importsMeta = true;
+    else if (ts.isPropertyAccessExpression(node) && node.name.text === CALLERS_LEDGER) {
+      readsCallers = true;
+    }
+    if (referencesBuilder) return;
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return referencesBuilder || (importsMeta && readsCallers);
 }
 
 export function inspectUiInvariantSuites(files) {
@@ -133,7 +136,7 @@ export function inspectUiInvariantSuites(files) {
     } else if (marker.kind === 'exempt') {
       if (marker.reason) exempt.push({ path: filePath, reason: marker.reason });
       else violations.push(`${filePath}: \`${UI_INVARIANT_EXEMPT_MARKER}\` requires a reason`);
-    } else if (requiresUiInvariantMarker(content)) {
+    } else if (requiresUiInvariantMarker(content, filePath)) {
       violations.push(
         `${filePath}: consumes the UI component inventory or a *.meta caller ledger without a header marker; add \`// ${UI_INVARIANT_MARKER}\` to run it in test:ui-invariants or \`// ${UI_INVARIANT_EXEMPT_MARKER} <reason>\` to opt out`,
       );

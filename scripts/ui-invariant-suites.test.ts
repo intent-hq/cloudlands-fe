@@ -103,9 +103,40 @@ describe('ui invariant suite markers', () => {
         "import { fooMetadata } from './foo.meta.ts';\nexpect(fooMetadata?.callers).toEqual([]);",
       ),
     ).toBe(true);
+    expect(
+      requiresUiInvariantMarker(
+        'const punctuation = /[/*]/;\nimport { probe } from "./probe.meta";\nexpect(probe.callers).toEqual([]);',
+      ),
+    ).toBe(true);
+    expect(
+      requiresUiInvariantMarker(
+        'import { probe } from "./probe.meta";\nexpect(probe./* ledger */callers).toEqual([]);',
+      ),
+    ).toBe(true);
+    expect(
+      requiresUiInvariantMarker(
+        "import { fooMetadata } from './foo.meta';\nexpect(<div>{fooMetadata.callers.length}</div>);",
+        'src/foo.test.tsx',
+      ),
+    ).toBe(true);
   });
 
-  it('does not treat comments, strings, or unrelated locals as consumers', () => {
+  it('does not treat comments, strings, regexes, or unrelated locals as consumers', () => {
+    expect(
+      requiresUiInvariantMarker(
+        'it("buildUiComponentInventory() is only documentation", () => expect(1).toBe(1));',
+      ),
+    ).toBe(false);
+    expect(
+      requiresUiInvariantMarker(
+        'const re = /buildUiComponentInventory\\(/;\nexpect(re).toBeTruthy();',
+      ),
+    ).toBe(false);
+    expect(
+      requiresUiInvariantMarker(
+        'import { probe } from "./probe.meta";\nconst s = `${/* probe.callers */ 1}`;\nexpect(s).toBe("1");',
+      ),
+    ).toBe(false);
     expect(
       requiresUiInvariantMarker(
         '// buildUiComponentInventory() is covered elsewhere\nconst a = 1;',

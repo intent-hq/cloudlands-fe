@@ -309,8 +309,9 @@ cloudlands-fe#2256 hit CI red twice this way. Membership is derived, not listed:
 `scripts/ui-invariant-suites.mjs` scans the vitest test files under `scripts/` and `src/`
 (`*.{test,spec}.*`, minus the Playwright `*.ct.spec.*` / `*.visual.spec.*` suites), runs
 every one whose leading comments carry `// @ui-invariant`, and fails when a test whose
-code (comments ignored) calls or imports `buildUiComponentInventory` or imports a `*.meta`
-module and reads a `.callers` ledger has neither that marker nor
+parsed code (comments, string bodies, and regex literals never count) references
+`buildUiComponentInventory` or imports a `*.meta` module and reads a `.callers` ledger has
+neither that marker nor
 `// @ui-invariant-exempt: <reason>`. Add the marker to any new inventory or ledger suite;
 `node scripts/ui-invariant-suites.mjs --list` shows the current set and `--check`
 validates markers without running anything.
