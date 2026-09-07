@@ -57,6 +57,7 @@ $$\sum_{n=1}^{\infty}\frac{1}{n^2}=\frac{\pi^2}{6}\qquad(x_1+y_1+z_1)(x_2+y_2+z_
       content={noteContent}
       workspaceId="preview-workspace"
       noteId="preview-note"
+      scrollKey="preview-note-tab"
     />
   </article>
 </section>

@@ -40,7 +40,7 @@
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import NoteViewSettingsDropdown from './NoteViewSettingsDropdown.svelte';
   import RenderedNotePreview from './RenderedNotePreview.svelte';
-  import { selectScrollPosition } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import { selectAllScrollPositions } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { saveScrollPosition } from '$store/renderer/slices/tab-state/tab-state-slice';
 
   import Fa from 'svelte-fa';
@@ -58,8 +58,8 @@
 
   // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
-  // svelte-ignore state_referenced_locally
-  const scrollPosition = selectScrollPosition(tab.id);
+  const scrollPositions = selectAllScrollPositions();
+  const scrollPosition = $derived($scrollPositions[tab.id]);
 
   // svelte-ignore state_referenced_locally
   const note = selectNoteById(workspaceId, tab.noteId);
@@ -184,6 +184,10 @@
     if (!$note.content?.trim()) return 'empty';
     return 'editor';
   });
+
+  function handlePreviewScrollPositionSave(scrollKey: string, scrollTop: number) {
+    appStore.dispatch(saveScrollPosition(scrollKey, scrollTop));
+  }
 
   async function handleCopyNote() {
     if (!$note) return;
@@ -324,9 +328,9 @@
         content={$note.content || ''}
         {workspaceId}
         noteId={tab.noteId}
-        initialScrollPosition={$scrollPosition}
-        onScrollPositionSave={(scrollTop: number) =>
-          appStore.dispatch(saveScrollPosition(tab.id, scrollTop))}
+        scrollKey={tab.id}
+        initialScrollPosition={scrollPosition}
+        onScrollPositionSave={handlePreviewScrollPositionSave}
       />
     {:else if $workspace}
       <NoteWithComments
@@ -334,7 +338,7 @@
         noteId={tab.noteId}
         editable={noteEditable}
         {isPanelFocused}
-        initialScrollPosition={$scrollPosition}
+        initialScrollPosition={scrollPosition}
         onScrollPositionSave={(scrollTop: number) =>
           appStore.dispatch(saveScrollPosition(tab.id, scrollTop))}
       />

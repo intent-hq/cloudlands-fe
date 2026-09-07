@@ -2,24 +2,33 @@
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { selectNoteFontStyle } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
 
   interface Props {
     content: string;
     workspaceId: string;
     noteId: string;
+    scrollKey: string;
     initialScrollPosition?: number;
-    onScrollPositionSave?: (scrollTop: number) => void;
+    onScrollPositionSave?: (scrollKey: string, scrollTop: number) => void;
   }
 
-  let { content, workspaceId, noteId, initialScrollPosition, onScrollPositionSave }: Props =
-    $props();
+  let {
+    content,
+    workspaceId,
+    noteId,
+    scrollKey,
+    initialScrollPosition,
+    onScrollPositionSave,
+  }: Props = $props();
   const noteFontStyle = selectNoteFontStyle();
 
   let scrollContainer: HTMLElement | null = null;
   let renderedContent: HTMLElement | null = null;
   let pendingScrollPosition: number | null = null;
   let restoreFrame: number | null = null;
+  let acceptsInitialScrollPosition = true;
+  let programmaticScrollPosition: number | null = null;
 
   function currentScrollPosition(): number {
     return pendingScrollPosition ?? scrollContainer?.scrollTop ?? 0;
@@ -35,10 +44,17 @@
     );
     if (maximumScrollPosition < pendingScrollPosition) return;
 
+    programmaticScrollPosition = pendingScrollPosition;
     scrollContainer.scrollTop = pendingScrollPosition;
     if (Math.abs(scrollContainer.scrollTop - pendingScrollPosition) < 1) {
       pendingScrollPosition = null;
+      acceptsInitialScrollPosition = false;
     }
+  }
+
+  function cancelScrollRestoration() {
+    if (restoreFrame !== null) cancelAnimationFrame(restoreFrame);
+    restoreFrame = null;
   }
 
   function scheduleScrollRestoration(scrollPosition?: number) {
@@ -50,8 +66,45 @@
   }
 
   function handleScroll() {
+    if (
+      scrollContainer &&
+      programmaticScrollPosition !== null &&
+      Math.abs(scrollContainer.scrollTop - programmaticScrollPosition) < 1
+    ) {
+      programmaticScrollPosition = null;
+      return;
+    }
+    programmaticScrollPosition = null;
+    acceptsInitialScrollPosition = false;
     pendingScrollPosition = null;
   }
+
+  $effect(() => {
+    const activeIdentity = { workspaceId, noteId, scrollKey };
+    const saveScrollPosition = untrack(() => onScrollPositionSave);
+
+    untrack(() => {
+      cancelScrollRestoration();
+      pendingScrollPosition = null;
+      acceptsInitialScrollPosition = true;
+      if (scrollContainer) {
+        programmaticScrollPosition = 0;
+        scrollContainer.scrollTop = 0;
+      }
+    });
+
+    return () => {
+      cancelScrollRestoration();
+      saveScrollPosition?.(activeIdentity.scrollKey, currentScrollPosition());
+    };
+  });
+
+  $effect(() => {
+    const scrollPosition = initialScrollPosition;
+    if (!scrollKey || !acceptsInitialScrollPosition) return;
+    if (typeof scrollPosition !== 'number' || scrollPosition <= 0) return;
+    scheduleScrollRestoration(scrollPosition);
+  });
 
   onMount(() => {
     const handleSaveScrollPosition = (
@@ -61,6 +114,16 @@
       event: CustomEvent<{ scrollPosition: number; noteId?: string }>,
     ) => {
       if (event.detail.noteId && event.detail.noteId !== noteId) return;
+      acceptsInitialScrollPosition = false;
+      if (event.detail.scrollPosition <= 0) {
+        cancelScrollRestoration();
+        pendingScrollPosition = null;
+        if (scrollContainer) {
+          programmaticScrollPosition = 0;
+          scrollContainer.scrollTop = 0;
+        }
+        return;
+      }
       scheduleScrollRestoration(event.detail.scrollPosition);
     };
 
@@ -75,7 +138,6 @@
         ? null
         : new ResizeObserver(() => scheduleScrollRestoration());
     if (renderedContent) resizeObserver?.observe(renderedContent);
-    scheduleScrollRestoration(initialScrollPosition);
 
     return () => {
       window.removeEventListener(
@@ -87,9 +149,7 @@
         handleRestoreScrollPosition as EventListener,
       );
       resizeObserver?.disconnect();
-      if (restoreFrame !== null) cancelAnimationFrame(restoreFrame);
-      restoreFrame = null;
-      onScrollPositionSave?.(currentScrollPosition());
+      cancelScrollRestoration();
     };
   });
 </script>

@@ -39,7 +39,7 @@ const mockState = vi.hoisted(() => {
     noteViewMode: store<'editor' | 'raw' | 'preview'>('editor'),
     spellcheckEnabled: store(true),
     noteFontStyle: store('sans'),
-    scrollPosition: store(0),
+    scrollPositions: store<Record<string, number>>({}),
     initialSpecWriteInProgress: store(false),
     notesState: store({ loading: false, initialized: true }),
     workspace: store({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' }),
@@ -123,7 +123,7 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-slice', () => 
   toggleSpellcheck: () => ({ type: 'userPreferences/toggleSpellcheck' }),
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
-  selectScrollPosition: () => mockState.scrollPosition,
+  selectAllScrollPositions: () => mockState.scrollPositions,
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
   saveScrollPosition: (tabId: string, scrollTop: number) => ({
@@ -152,7 +152,7 @@ describe('NoteTabType note view modes', () => {
     mockState.noteViewMode.set('editor');
     mockState.spellcheckEnabled.set(true);
     mockState.noteFontStyle.set('sans');
-    mockState.scrollPosition.set(0);
+    mockState.scrollPositions.set({});
     mockState.notesState.set({ loading: false, initialized: true });
     mockState.note.set({ ...mockState.defaultNote });
     mockState.initialSpecWriteInProgress.set(false);
@@ -258,7 +258,7 @@ $$\frac{1}{2}$$
 
   it('keeps a pending restore through delayed preview layout and isolates note navigation', async () => {
     mockState.noteViewMode.set('preview');
-    mockState.scrollPosition.set(310);
+    mockState.scrollPositions.set({ 'tab-1': 310 });
     render(NoteTabTypeHeaderHarness, {
       props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
     });
@@ -304,6 +304,58 @@ $$\frac{1}{2}$$
     const callback = vi.fn();
     window.dispatchEvent(new CustomEvent('note:save-scroll-position', { detail: { callback } }));
     expect(callback).not.toHaveBeenCalled();
+  });
+
+  it('saves and restores independently when a mounted preview retargets across tabs', async () => {
+    mockState.noteViewMode.set('preview');
+    mockState.scrollPositions.set({ 'tab-a': 0, 'tab-b': 320 });
+    const view = render(NoteTabTypeHeaderHarness, {
+      props: { tab: { id: 'tab-a', type: 'note', title: 'Note A', noteId: 'note-a' } },
+    });
+
+    const previewA = await screen.findByTestId('rendered-note-preview');
+    previewA.scrollTop = 145;
+    await fireEvent.scroll(previewA);
+    await view.rerender({
+      tab: { id: 'tab-b', type: 'note', title: 'Note B', noteId: 'note-b' },
+    });
+
+    await waitFor(() =>
+      expect(mockState.dispatch).toHaveBeenCalledWith({
+        type: 'tabState/saveScrollPosition',
+        payload: ['tab-a', 145],
+      }),
+    );
+    const pendingBSave = vi.fn();
+    window.dispatchEvent(
+      new CustomEvent('note:save-scroll-position', { detail: { callback: pendingBSave } }),
+    );
+    await waitFor(() => expect(pendingBSave).toHaveBeenCalledWith(320));
+
+    const previewB = screen.getByTestId('rendered-note-preview');
+    previewB.scrollTop = 80;
+    await fireEvent.scroll(previewB);
+    mockState.scrollPositions.set({ 'tab-a': 145, 'tab-b': 500 });
+    mockState.note.set({ ...mockState.defaultNote, id: 'note-short', content: 'Short note' });
+    await view.rerender({
+      tab: { id: 'tab-short', type: 'note', title: 'Short', noteId: 'note-short' },
+    });
+
+    await waitFor(() =>
+      expect(mockState.dispatch).toHaveBeenCalledWith({
+        type: 'tabState/saveScrollPosition',
+        payload: ['tab-b', 80],
+      }),
+    );
+    expect(mockState.dispatch).not.toHaveBeenCalledWith({
+      type: 'tabState/saveScrollPosition',
+      payload: ['tab-b', 500],
+    });
+    const shortSave = vi.fn();
+    window.dispatchEvent(
+      new CustomEvent('note:save-scroll-position', { detail: { callback: shortSave } }),
+    );
+    expect(shortSave).toHaveBeenCalledWith(0);
   });
 
   it.each([
