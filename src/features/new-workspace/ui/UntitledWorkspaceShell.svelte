@@ -3,7 +3,6 @@
   import type { ContextItem } from '$lib/components/chat/input/context-api';
   import type { StackedMenuGroup } from '$lib/components/ui/menu';
   import { faFolderOpen, faFolderPlus, faGithub } from '$lib/icons/phosphor-icons';
-  import StreamingStatus from '$lib/components/chat/StreamingStatus.svelte';
   import { CHAT_TRANSCRIPT_OVERFLOW_CLASS } from '$lib/components/chat/chat-queue-edge-layout';
   import { Button } from '$lib/components/ui/button';
   import SidebarSkeleton from '$lib/components/workspace/SidebarSkeleton.svelte';
@@ -20,6 +19,7 @@
   import ProjectSetupPanel from './setup/ProjectSetupPanel.svelte';
   import { coordinatorStateFor, isProgressPhase, type NewWorkspacePresentation } from './types';
   import { getSetupStatus } from '../utils/setup-status';
+  import { getFailurePresentation, type FailureStage } from '../utils/failure-presentation';
 
   interface Props {
     state: ControllerState;
@@ -84,6 +84,12 @@
     controllerState.phase !== 'pristine' && controllerState.phase !== 'editing',
   );
   const progressId = $derived(controllerState.draft?.operationKey);
+  const failurePresentation = $derived(
+    controllerState.phase === 'failed' ? getFailurePresentation(controllerState) : null,
+  );
+  const failureError = $derived(
+    controllerState.phase === 'failed' ? controllerState.error : undefined,
+  );
   const source = $derived(controllerState.input.source);
   const repoName = $derived.by(() => {
     if (!source) return m.chat_chatPanel_yourProject_fallback();
@@ -184,11 +190,26 @@
     }
   }
 
-  function workspaceStepStatus(): 'pending' | 'active' | 'done' | 'error' {
-    if (controllerState.phase === 'failed') return 'error';
+  function workspaceStepStatus(
+    step: 'repo' | 'branch' | 'agent',
+  ): 'pending' | 'active' | 'done' | 'error' {
+    if (failurePresentation) return failurePresentation[`${step}Status`];
     if (controllerState.phase === 'live') return 'done';
     if (isProgressPhase(controllerState)) return 'active';
     return 'pending';
+  }
+
+  function failureTitle(stage: FailureStage): string {
+    switch (stage) {
+      case 'restore':
+        return m.newWorkspace_recovery_restore_title();
+      case 'create':
+        return m.newWorkspace_recovery_create_title();
+      case 'setup':
+        return m.newWorkspace_recovery_setup_title();
+      case 'send':
+        return m.newWorkspace_recovery_send_title();
+    }
   }
 
   function contextLinkId(link: DraftInput['contextLinks'][number]): string {
@@ -343,14 +364,29 @@
                       baseRef="origin/main"
                       specialistName={m.notification_specialist_coordinator()}
                       hasPrompt={Boolean(controllerState.input.intentText.trim())}
-                      repoStatus={workspaceStepStatus()}
-                      branchStatus={workspaceStepStatus()}
-                      agentStatus={workspaceStepStatus()}
+                      repoStatus={workspaceStepStatus('repo')}
+                      branchStatus={workspaceStepStatus('branch')}
+                      agentStatus={workspaceStepStatus('agent')}
                       setupScriptStatus={setupStepStatus()}
                       {setupScriptContent}
                       skipIsolation={source?.kind === 'local' && source.isolation === 'in-place'}
                       {progressId}
                       {repoPendingContent}
+                      failureTitle={failurePresentation
+                        ? failureTitle(failurePresentation.stage)
+                        : undefined}
+                      repoErrorText={failurePresentation?.repoStatus === 'error'
+                        ? failureError
+                        : undefined}
+                      setupScriptErrorText={setupStepStatus() === 'error'
+                        ? (presentation.progress?.setup?.error ?? failureError)
+                        : undefined}
+                      agentErrorText={failurePresentation?.agentStatus === 'error'
+                        ? failureError
+                        : undefined}
+                      onRetry={controllerState.phase === 'failed' && controllerState.retryState
+                        ? onRetry
+                        : undefined}
                     />
                   {/key}
                 {/if}
@@ -362,13 +398,7 @@
                 </p>
               {/if}
 
-              {#if controllerState.phase === 'failed'}
-                <StreamingStatus
-                  error={controllerState.error}
-                  onRetry={controllerState.retryState ? onRetry : undefined}
-                  class="mb-2"
-                />
-              {:else if controllerState.phase === 'offline'}
+              {#if controllerState.phase === 'offline'}
                 <div
                   class="recovery-notice type-caption flex items-start gap-2 py-2 pr-1"
                   role="alert"

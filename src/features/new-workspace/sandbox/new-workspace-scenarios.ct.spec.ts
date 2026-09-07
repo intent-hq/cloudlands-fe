@@ -149,6 +149,33 @@ test('readiness label and Start share the required-capability model', async ({ m
   await expect(requiredPending.getByTestId('draft-start')).toBeDisabled();
 });
 
+test('restore failure renders one stage-specific recovery alert', async ({ mount }) => {
+  const component = await mount(ScenarioContractHost, {
+    props: { scenarioId: 'entry-restore-failed' },
+  });
+
+  await expect(component.getByRole('alert')).toHaveCount(1);
+  await expect(component.getByRole('alert')).toContainText("Couldn't restore this draft");
+  await expect(component.locator('[data-step-status="error"]')).toHaveCount(1);
+  await expect(component.locator('[data-step-status="done"]')).toHaveCount(0);
+  await expect(component.getByRole('alert').getByRole('button')).toBeEnabled();
+});
+
+test('send failure preserves completed steps and marks message delivery failed', async ({
+  mount,
+}) => {
+  const component = await mount(ScenarioContractHost, {
+    props: { scenarioId: 'transaction-send-failed' },
+  });
+
+  await expect(component.getByRole('alert')).toHaveCount(1);
+  await expect(component.getByRole('alert')).toContainText(
+    "Workspace created, but the first message wasn't sent",
+  );
+  await expect(component.locator('[data-step-status="done"]')).toHaveCount(2);
+  await expect(component.locator('[data-step-status="error"]')).toHaveCount(1);
+});
+
 test('conflict actions remain readable and reachable in a narrow panel', async ({
   mount,
   page,

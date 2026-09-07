@@ -29,6 +29,7 @@
   import ShimmerOverlay from '$lib/components/ui/ShimmerOverlay.svelte';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
+  import { Button } from '$lib/components/ui/button';
   import { getSpecialistById } from '$lib/constants/specialists';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
@@ -89,6 +90,12 @@
      * binds at init only (STATE_MANAGEMENT.md).
      */
     progressId?: string;
+    failureTitle?: string;
+    repoErrorText?: string;
+    branchErrorText?: string;
+    setupScriptErrorText?: string;
+    agentErrorText?: string;
+    onRetry?: () => void;
   }
 
   let {
@@ -111,6 +118,12 @@
     repoPendingContent,
     skipIsolation = false,
     progressId,
+    failureTitle,
+    repoErrorText,
+    branchErrorText,
+    setupScriptErrorText,
+    agentErrorText,
+    onRetry,
   }: Props = $props();
 
   // Selector readables bind at component init only (STATE_MANAGEMENT.md); the
@@ -152,10 +165,10 @@
   const awaitingInput = $derived(
     Boolean(repoPendingContent) && steps.every((s) => s === 'pending'),
   );
-  const draftFailed = $derived(Boolean(repoPendingContent) && steps.some((s) => s === 'error'));
+  const draftFailed = $derived(steps.some((s) => s === 'error'));
   const title = $derived(
     draftFailed
-      ? m.newWorkspace_recovery_failed_title()
+      ? (failureTitle ?? m.newWorkspace_recovery_failed_title())
       : awaitingInput
         ? m.newWorkspace_setup_title()
         : allDone
@@ -179,7 +192,10 @@
   }
 </script>
 
-<div class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} w-full overflow-hidden">
+<div
+  class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} w-full overflow-hidden"
+  role={draftFailed ? 'alert' : undefined}
+>
   <!-- Header -->
   <div
     class="flex items-baseline gap-2.5 pt-3 pb-2"
@@ -215,6 +231,10 @@
           {/key}
         </span>/{totalSteps}
       </span>
+    {:else if draftFailed && onRetry}
+      <Button size="sm" variant="ghost-light" onclick={onRetry}>
+        {m.chat_streamingStatus_tryAgain_label()}
+      </Button>
     {/if}
   </div>
 
@@ -226,6 +246,7 @@
       iconClass: string,
       activeContent: import('svelte').Snippet,
       doneContent: import('svelte').Snippet,
+      errorText?: string,
     )}
       <div
         class="relative flex items-start overflow-hidden rounded-md py-0.75 text-base leading-relaxed"
@@ -254,6 +275,8 @@
             >
               {@render activeContent()}
             </div>
+          {:else if status === 'error' && errorText}
+            <div>{errorText}</div>
           {:else}
             <div
               in:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
@@ -275,13 +298,14 @@
       >
         {@render repoPendingContent()}
       </div>
-    {:else if repoStatus !== 'pending' && !(draftFailed && repoStatus === 'error')}
+    {:else if repoStatus !== 'pending'}
       {@render stepRow(
         repoStatus,
         faFolderOpen,
         '-ml-px transform scale-[0.98]',
         repoActive,
         repoDone,
+        repoErrorText,
       )}
     {/if}
     {#snippet repoNameCopyable()}
@@ -364,8 +388,8 @@
     {/snippet}
 
     <!-- Step 2: Branch -->
-    {#if branchStatus !== 'pending' && !skipIsolation && !(draftFailed && branchStatus === 'error')}
-      {@render stepRow(branchStatus, faCodeBranch, '', branchActive, branchDone)}
+    {#if branchStatus !== 'pending' && !skipIsolation}
+      {@render stepRow(branchStatus, faCodeBranch, '', branchActive, branchDone, branchErrorText)}
     {/if}
     {#snippet branchActive()}
       {#if skipIsolation}
@@ -426,8 +450,15 @@
     {/snippet}
 
     <!-- Step 3: Setup Script (optional) -->
-    {#if setupScriptStatus && setupScriptStatus !== 'pending' && !(draftFailed && setupScriptStatus === 'error')}
-      {@render stepRow(setupScriptStatus, faTerminal, 'ml-[0.5px]', setupActive, setupDone)}
+    {#if setupScriptStatus && setupScriptStatus !== 'pending'}
+      {@render stepRow(
+        setupScriptStatus,
+        faTerminal,
+        'ml-[0.5px]',
+        setupActive,
+        setupDone,
+        setupScriptErrorText,
+      )}
     {/if}
     {#snippet setupActive()}
       {m.workspaceCreation_setupCard_runningSetup_before()}
@@ -463,8 +494,8 @@
     {/snippet}
 
     <!-- Step 4: Agent -->
-    {#if agentStatus !== 'pending' && !(draftFailed && agentStatus === 'error')}
-      {@render stepRow(agentStatus, faRobot, 'ml-[-0.5px]', agentActive, agentDone)}
+    {#if agentStatus !== 'pending'}
+      {@render stepRow(agentStatus, faRobot, 'ml-[-0.5px]', agentActive, agentDone, agentErrorText)}
     {/if}
     {#snippet specialistWithTooltip()}
       <TooltipRich side="bottom" align="start" interactive maxWidth="22rem" delayDuration={300}>
