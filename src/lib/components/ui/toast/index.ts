@@ -1,4 +1,11 @@
 export { toast } from 'svelte-sonner';
+export type { ExternalToast } from 'svelte-sonner';
+export { default as AgentAttentionToast } from './AgentAttentionToast.svelte';
+export { default as AgentFailureToast } from './AgentFailureToast.svelte';
+export { default as ErrorToast } from './ErrorToast.svelte';
+export { default as Toast } from './Toast.svelte';
+export { default as ToastCloseButton } from './ToastCloseButton.svelte';
+export { default as UpdateToast } from './UpdateToast.svelte';
 export {
   withToastCountdown,
   TOAST_COUNTDOWN_CLASS,
@@ -20,3 +27,4 @@ export const loadErrorToast = () => import('./ErrorToast.svelte').then((module) 
 export const loadToast = () => import('./Toast.svelte').then((module) => module.default);
 export const loadUpdateToast = () =>
   import('./UpdateToast.svelte').then((module) => module.default);
+export { toastMetadata } from './toast.meta';

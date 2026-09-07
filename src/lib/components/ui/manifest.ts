@@ -40,6 +40,7 @@ import { switchMetadata } from './switch/switch.meta';
 import { tableMetadata } from './table/table.meta';
 import { tabsMetadata } from './tabs/tabs.meta';
 import { textareaMetadata } from './textarea/textarea.meta';
+import { toastMetadata } from './toast/toast.meta';
 import { toggleMetadata } from './toggle/toggle.meta';
 import { toggleGroupMetadata } from './toggle-group/toggle-group.meta';
 import { tooltipMetadata } from './tooltip/tooltip.meta';
@@ -86,6 +87,7 @@ const sourceMetadata = [
   tableMetadata,
   tabsMetadata,
   textareaMetadata,
+  toastMetadata,
   toggleMetadata,
   toggleGroupMetadata,
   tooltipMetadata,

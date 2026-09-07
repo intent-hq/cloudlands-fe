@@ -11,6 +11,7 @@ import NavigationPrimitivesCatalogPreview from './renderers/NavigationPrimitives
 import OverlayCatalogPreview from './renderers/OverlayCatalogPreview.svelte';
 import ProximityHighlightCatalogPreview from './renderers/ProximityHighlightCatalogPreview.svelte';
 import SettingsCatalogPreview from './renderers/SettingsCatalogPreview.svelte';
+import ToastCatalogPreview from './renderers/ToastCatalogPreview.svelte';
 
 export const catalogRendererIds = [
   'accordion',
@@ -54,6 +55,7 @@ export const catalogRendererIds = [
   'table',
   'tabs',
   'textarea',
+  'toast',
   'toggle',
   'toggle-group',
   'tooltip',
@@ -117,6 +119,7 @@ export const catalogRenderers = {
   table: ContentFieldCatalogPreview,
   tabs: NavigationPrimitivesCatalogPreview,
   textarea: ContentFieldCatalogPreview,
+  toast: ToastCatalogPreview,
   toggle: BasicCatalogPreview,
   'toggle-group': BasicCatalogPreview,
   tooltip: NavigationHelpCatalogPreview,

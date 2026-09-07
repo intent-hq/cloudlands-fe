@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { Toaster as Sonner, toast } from 'svelte-sonner';
+  import { onMount, untrack } from 'svelte';
+  import { writable } from 'svelte/store';
+  import { Toaster as Sonner, toast, type ToasterProps } from 'svelte-sonner';
   import { Button } from '$lib/components/ui/button';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { m } from '$shared/paraglide/messages.js';
@@ -13,18 +14,53 @@
     useSurface,
   } from '$lib/components/ui/surface-context';
 
-  const isDarkTheme = selectIsDarkTheme();
+  interface Props {
+    regionId?: string;
+    toasterId?: string;
+    position?: ToasterProps['position'];
+    staticPosition?: boolean;
+    staticToastCount?: number;
+    onClearAll?: () => void;
+    containerAriaLabel?: string;
+  }
+
+  let {
+    regionId = 'app-toast-region',
+    toasterId,
+    position = 'bottom-left',
+    staticPosition = false,
+    staticToastCount,
+    onClearAll,
+    containerAriaLabel = m.ui_toast_notifications_ariaLabel(),
+  }: Props = $props();
+
+  const initialStaticPosition = untrack(() => staticPosition);
+  const staticTheme = writable(
+    typeof document !== 'undefined' && document.documentElement.classList.contains('dark'),
+  );
+  const isDarkTheme = initialStaticPosition ? staticTheme : selectIsDarkTheme();
   const surface = clampSurface(useSurface() + 2);
   setSurface(surface);
   let visibleToastCount = $state(0);
-  let showClearAll = $derived(visibleToastCount >= 2);
+  let toastCount = $derived(staticToastCount ?? visibleToastCount);
+  let showClearAll = $derived(toastCount >= 2);
   let offset = $derived({ bottom: showClearAll ? 68 : 32, left: 32 });
   let mobileOffset = $derived({ bottom: showClearAll ? 52 : 16, left: 16 });
+  let regionElement: HTMLDivElement;
 
   onMount(() => {
+    const themeObserver = initialStaticPosition
+      ? new MutationObserver(() =>
+          staticTheme.set(document.documentElement.classList.contains('dark')),
+        )
+      : undefined;
+    themeObserver?.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
     const updateVisibleToastCount = () => {
-      visibleToastCount = document.querySelectorAll(
-        '#app-toast-region [data-sonner-toast][data-visible="true"]:not([data-removed="true"])',
+      visibleToastCount = regionElement.querySelectorAll(
+        '[data-sonner-toast][data-visible="true"]:not([data-removed="true"])',
       ).length;
     };
     const observer = new MutationObserver(updateVisibleToastCount);
@@ -35,11 +71,15 @@
       attributeFilter: ['data-visible', 'data-removed'],
     });
     updateVisibleToastCount();
-    return () => observer.disconnect();
+    return () => {
+      themeObserver?.disconnect();
+      observer.disconnect();
+    };
   });
 
   function clearVisibleToasts() {
-    toast.dismiss();
+    if (onClearAll) onClearAll();
+    else toast.dismiss();
     visibleToastCount = 0;
   }
 </script>
@@ -55,17 +95,20 @@
      a UX decision kept through the 1.2.1 upgrade (which fixed heights ordering
      so --front-toast-height now tracks the front toast). -->
 <div
-  id="app-toast-region"
+  bind:this={regionElement}
+  id={regionId}
+  class:toast-static={staticPosition}
   data-surface-level={surface}
   style="--toast-surface: {SURFACE_VALUE[surface]}; --toast-shadow: {SURFACE_SHADOW_VALUE[surface]}"
 >
   <Sonner
+    id={toasterId}
     theme={$isDarkTheme ? 'dark' : 'light'}
     class="toaster group"
     style="--app-toast-width: min(26rem, calc(100vw - clamp(2rem, 8vw, 4rem)))"
     {offset}
     {mobileOffset}
-    containerAriaLabel={m.ui_toast_notifications_ariaLabel()}
+    {containerAriaLabel}
     closeButtonAriaLabel={m.ui_toast_close_ariaLabel()}
     toastOptions={{
       classes: {
@@ -77,7 +120,7 @@
         action: 'text-sm font-semibold',
       },
     }}
-    position="bottom-left"
+    {position}
     closeButton
     duration={10000}
     gap={8}
@@ -89,10 +132,10 @@
   <Button
     variant="outline"
     size="sm"
-    class="toast-clear-all"
+    class={staticPosition ? 'toast-clear-all toast-clear-all-static' : 'toast-clear-all'}
     onclick={clearVisibleToasts}
-    aria-controls="app-toast-region"
-    aria-label={m.ui_toast_clearAll_ariaLabel({ count: visibleToastCount })}
+    aria-controls={regionId}
+    aria-label={m.ui_toast_clearAll_ariaLabel({ count: toastCount })}
   >
     {m.ui_toast_clearAll_label()}
   </Button>
@@ -102,6 +145,26 @@
   :global([data-sonner-toaster]) {
     --width: var(--app-toast-width) !important;
     width: var(--app-toast-width) !important;
+  }
+
+  .toast-static {
+    width: 100%;
+  }
+
+  .toast-static :global([data-sonner-toaster]) {
+    position: relative !important;
+    inset: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  .toast-static :global([data-sonner-toast]) {
+    position: relative !important;
+    inset: auto !important;
+    transform: none !important;
+    opacity: 1 !important;
+    height: auto !important;
   }
 
   :global([data-sonner-toast]) {
@@ -236,6 +299,12 @@
     bottom: 2rem;
     z-index: 1000000000;
     box-shadow: var(--elevation-raised);
+  }
+
+  :global(.toast-clear-all.toast-clear-all-static) {
+    position: relative;
+    inset: auto;
+    margin-top: 0.5rem;
   }
 
   @media (max-width: 600px) {

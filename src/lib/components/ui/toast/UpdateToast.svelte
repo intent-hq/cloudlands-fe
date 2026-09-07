@@ -9,6 +9,7 @@
    * - Up to date: Success message (brief)
    */
 
+  import { untrack } from 'svelte';
   import { crispOut, springIn } from '$lib/motion';
   import {
     faArrowsRotate,
@@ -18,6 +19,7 @@
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { readable } from 'svelte/store';
 
   import {
     selectAutoUpdateStatus,
@@ -35,6 +37,15 @@
   import { formatNumber, formatInteger } from '$lib/i18n/format';
   import ToastCloseButton from './ToastCloseButton.svelte';
   import { Button } from '$lib/components/ui/button';
+  import type { UpdateInfo, UpdateProgress, UpdateStatus } from '$features/auto-update/types';
+
+  interface PreviewState {
+    status: UpdateStatus;
+    updateInfo?: UpdateInfo | null;
+    progress?: UpdateProgress | null;
+    currentVersion?: string;
+    error?: string | null;
+  }
 
   interface Props {
     /** Callback when toast should be dismissed */
@@ -43,23 +54,40 @@
     onAutoDismiss?: () => void;
     /** Provided automatically by Sonner for custom toast components */
     closeToast?: () => void;
+    /** Deterministic presentational state for catalogs and tests. */
+    previewState?: PreviewState;
   }
 
-  let { onDismiss, onAutoDismiss, closeToast }: Props = $props();
+  let { onDismiss, onAutoDismiss, closeToast, previewState }: Props = $props();
 
   function handleClose() {
     onDismiss?.();
     closeToast?.();
   }
 
-  const status$ = selectAutoUpdateStatus();
-  const progress$ = selectAutoUpdateProgress();
-  const updateInfo$ = selectAutoUpdateInfo();
-  const currentVersion$ = selectAutoUpdateCurrentVersion();
-  const error$ = selectAutoUpdateError();
+  const initialPreviewState = untrack(() => previewState);
+  const status$ = initialPreviewState
+    ? readable(initialPreviewState.status)
+    : selectAutoUpdateStatus();
+  const progress$ = initialPreviewState
+    ? readable(initialPreviewState.progress ?? null)
+    : selectAutoUpdateProgress();
+  const updateInfo$ = initialPreviewState
+    ? readable(initialPreviewState.updateInfo ?? null)
+    : selectAutoUpdateInfo();
+  const currentVersion$ = initialPreviewState
+    ? readable(initialPreviewState.currentVersion ?? '')
+    : selectAutoUpdateCurrentVersion();
+  const error$ = initialPreviewState
+    ? readable(initialPreviewState.error ?? null)
+    : selectAutoUpdateError();
 
-  // Derived state from selectors
-  let progressPercent = $derived($progress$ ? Math.round($progress$.percent) : 0);
+  let status = $derived(previewState?.status ?? $status$);
+  let progress = $derived(previewState?.progress ?? $progress$);
+  let updateInfo = $derived(previewState?.updateInfo ?? $updateInfo$);
+  let currentVersion = $derived(previewState?.currentVersion ?? $currentVersion$);
+  let updateError = $derived(previewState?.error ?? $error$);
+  let progressPercent = $derived(progress ? Math.round(progress.percent) : 0);
 
   // Format bytes per second
   function formatSpeed(bytesPerSecond: number): string {
@@ -88,8 +116,8 @@
   // Auto-dismiss when up-to-date or error after a delay
   $effect(() => {
     const autoDismiss = onAutoDismiss ?? onDismiss;
-    if (($status$ === 'not-available' || $status$ === 'error') && autoDismiss) {
-      const delay = $status$ === 'error' ? 5000 : 3000; // Longer for errors so user can read
+    if ((status === 'not-available' || status === 'error') && autoDismiss) {
+      const delay = status === 'error' ? 5000 : 3000; // Longer for errors so user can read
       const timeout = setTimeout(() => {
         autoDismiss();
       }, delay);
@@ -99,10 +127,10 @@
 </script>
 
 <div class="update-toast">
-  {#if $status$ === 'downloaded' || $status$ === 'downloading' || $status$ === 'error'}
+  {#if status === 'downloaded' || status === 'downloading' || status === 'error'}
     <ToastCloseButton onclick={handleClose} ariaLabel={m.ui_updateToast_close_ariaLabel()} />
   {/if}
-  {#if $status$ === 'checking'}
+  {#if status === 'checking'}
     <div class="flex items-center gap-3">
       <div class="icon checking">
         <Fa icon={faArrowsRotate} class="animate-spin" />
@@ -111,14 +139,14 @@
         <div class="title">{m.ui_updateToast_checking_label()}</div>
       </div>
     </div>
-  {:else if $status$ === 'available'}
+  {:else if status === 'available'}
     <div class="flex items-center gap-3">
       <div class="icon downloading">
         <Fa icon={faDownload} class="animate-pulse" />
       </div>
       <div class="text flex-1">
         <div class="title">
-          {m.ui_updateToast_available_label({ version: $updateInfo$?.version || '' })}
+          {m.ui_updateToast_available_label({ version: updateInfo?.version || '' })}
         </div>
         <div class="description">{m.ui_updateToast_readyToDownload_description()}</div>
       </div>
@@ -127,7 +155,7 @@
         {m.ui_updateToast_download_label()}
       </Button>
     </div>
-  {:else if $status$ === 'downloading'}
+  {:else if status === 'downloading'}
     <div class="flex flex-col gap-2">
       <div class="flex items-center gap-3">
         <div class="icon downloading">
@@ -135,10 +163,10 @@
         </div>
         <div class="text flex-1">
           <div class="title">
-            {m.ui_updateToast_downloading_label({ version: $updateInfo$?.version || '' })}
+            {m.ui_updateToast_downloading_label({ version: updateInfo?.version || '' })}
           </div>
           <div class="description">
-            {progressPercent}%{$progress$ ? ` · ${formatSpeed($progress$.bytesPerSecond)}` : ''}
+            {progressPercent}%{progress ? ` · ${formatSpeed(progress.bytesPerSecond)}` : ''}
           </div>
         </div>
       </div>
@@ -146,7 +174,7 @@
         <div class="progress-fill" style="width: {progressPercent}%"></div>
       </div>
     </div>
-  {:else if $status$ === 'downloaded'}
+  {:else if status === 'downloaded'}
     <div class="flex items-center gap-3">
       <div
         class="icon-celebrate"
@@ -158,7 +186,7 @@
       <div class="text flex-1">
         <div class="title">{m.ui_updateToast_updateReady_label()}</div>
         <div class="description">
-          {m.ui_updateToast_readyToInstall_description({ version: $updateInfo$?.version ?? '' })}
+          {m.ui_updateToast_readyToInstall_description({ version: updateInfo?.version ?? '' })}
         </div>
       </div>
       <Button variant="primary" size="sm" onclick={handleInstall}>
@@ -166,7 +194,7 @@
         {m.ui_updateToast_install_label()}
       </Button>
     </div>
-  {:else if $status$ === 'not-available'}
+  {:else if status === 'not-available'}
     <div class="flex items-center gap-3">
       <div class="icon-celebrate">
         <Fa icon={faCakeCandles} size="2x" />
@@ -174,11 +202,11 @@
       <div class="text">
         <div class="title">{m.ui_updateToast_upToDate_label()}</div>
         <div class="description">
-          {m.ui_updateToast_runningVersion_description({ version: $currentVersion$ ?? '' })}
+          {m.ui_updateToast_runningVersion_description({ version: currentVersion ?? '' })}
         </div>
       </div>
     </div>
-  {:else if $status$ === 'error'}
+  {:else if status === 'error'}
     <div class="flex items-center gap-3">
       <div class="icon error">
         <Fa icon={faTriangleExclamation} />
@@ -186,7 +214,7 @@
       <div class="text flex-1">
         <div class="title">{m.ui_updateToast_checkFailed_label()}</div>
         <div class="description">
-          {$error$ || m.ui_updateToast_unknown_error()}
+          {updateError || m.ui_updateToast_unknown_error()}
         </div>
       </div>
     </div>
