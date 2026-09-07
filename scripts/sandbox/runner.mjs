@@ -119,7 +119,7 @@ export function buildSandboxUrl(baseUrl, options) {
   return url.href;
 }
 
-async function startSandboxServer() {
+export async function startSandboxServer() {
   const previousEnvironment = {
     INTENT_UI_PREVIEW: process.env.INTENT_UI_PREVIEW,
     INTENT_BUILD_TARGET: process.env.INTENT_BUILD_TARGET,
