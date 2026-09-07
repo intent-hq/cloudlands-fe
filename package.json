@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.141.0",
+  "version": "2.142.0",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -208,7 +208,7 @@
     "@redux-saga/types": "1.4.1",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.70.3",
-    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/typography": "^0.5.20",
     "@testing-library/svelte": "^5.4.2",
@@ -297,7 +297,7 @@
     "typescript": "~6.0.3",
     "vite": "^6.4.3",
     "vitest": "^4.1.11",
-    "wait-on": "^8.0.1"
+    "wait-on": "^9.1.0"
   },
   "dependencies": {
     "@augmentcode/themis": "0.2.5",

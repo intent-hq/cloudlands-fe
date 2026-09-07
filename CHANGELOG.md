@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.142.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.141.0...v2.142.0) (2026-09-07)
+
+
+### 🚀 Features
+
+* **workspace:** sidebar driving-client indicator and Set Current Client as Primary action ([#2243](https://github.com/intent-hq/cloudlands-fe/issues/2243)) ([350f5e9](https://github.com/intent-hq/cloudlands-fe/commit/350f5e9141740e153b44cb6fe7a1ebdd067df679))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.36 ([#2246](https://github.com/intent-hq/cloudlands-fe/issues/2246)) ([cb4f97f](https://github.com/intent-hq/cloudlands-fe/commit/cb4f97fc17e93fbc1cb6a3f77472e8d8bdfb402a))
+* only warn on quit about hosted tabs of workspaces this app drives ([#2241](https://github.com/intent-hq/cloudlands-fe/issues/2241)) ([24c7e82](https://github.com/intent-hq/cloudlands-fe/commit/24c7e82ef2fad0c227a707e1a2138f04e2d1da5a))
+
 ## [2.141.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.140.1...v2.141.0) (2026-09-07)
 
 

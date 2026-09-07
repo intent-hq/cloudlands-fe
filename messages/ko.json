@@ -6137,5 +6137,17 @@
   "antigravity_setup_connection_error": "설정을 완료하지 못했습니다. 로컬 데몬 연결을 확인한 후 다시 시도하세요.",
   "antigravity_setup_customPath_error": "사용자 지정 브리지 경로가 잘못되었습니다. 제공업체 메뉴에서 수정한 후 다시 시도하세요.",
   "antigravity_setup_cancelled_description": "설정이 취소되었습니다. 준비되면 다시 연결할 수 있습니다.",
-  "antigravity_setup_cancel_label": "설정 취소"
+  "antigravity_setup_cancel_label": "설정 취소",
+  "workspace_drivingClient_here_label": "브라우저 구동 중",
+  "workspace_drivingClient_elsewhere_label": "{host}의 브라우저",
+  "workspace_drivingClient_offline_label": "{host}의 브라우저(오프라인)",
+  "workspace_drivingClient_here_description": "이 워크스페이스의 에이전트 브라우저 탭과 터널은 이 앱에서 실행됩니다.",
+  "workspace_drivingClient_elsewhere_description": "이 워크스페이스의 에이전트 브라우저 탭과 터널은 {host}에서 실행됩니다. 이 앱을 기본으로 설정하면 에이전트의 탭이 여기로 이동합니다. 직접 연 탭은 그대로 유지되며 페이지 상태는 보존되지 않습니다.",
+  "workspace_drivingClient_offline_description": "{host}의 연결이 끊어졌습니다. 다시 연결되거나 이 앱을 기본으로 설정할 때까지 이 워크스페이스의 에이전트 브라우저 탭과 터널은 실패합니다. 기본으로 설정하면 에이전트의 탭이 페이지 상태를 보존하지 않고 여기로 이동합니다.",
+  "workspace_drivingClient_setPrimary_label": "현재 클라이언트를 기본으로 설정",
+  "workspace_drivingClient_setPrimaryDialog_title": "이 클라이언트를 기본으로 설정할까요?",
+  "workspace_drivingClient_setPrimaryDialog_description": "이 워크스페이스의 브라우저는 현재 {host}이(가) 제어하고 있습니다. 이 클라이언트에 고정되며 에이전트의 모든 탭이 여기로 이동합니다. 페이지 상태는 보존되지 않으며, 직접 연 탭은 영향을 받지 않습니다.",
+  "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "닫기",
+  "workspace_drivingClient_setPrimaryDialog_cancel_label": "취소",
+  "workspace_drivingClient_setPrimaryDialog_confirm_label": "기본으로 설정"
 }

@@ -199,12 +199,12 @@
     ];
   });
 
-  function reportActiveTabTracking() {
-    const tracking = layoutTracking || dragTracking || scrollTracking;
-    flushSync(() => onActiveTabTrackingChange?.(tracking));
-  }
-  const emitActiveTabBounds = (bounds: WorkspaceTabBorderMaskBounds | null) =>
-    flushSync(() => onActiveTabBoundsChange?.(bounds));
+  // Teardown paths pass sync=false: flushSync there throws effect_in_teardown.
+  const run = (sync: boolean, fn: () => void) => (sync ? flushSync(fn) : fn());
+  const reportActiveTabTracking = ({ sync = true } = {}) =>
+    run(sync, () => onActiveTabTrackingChange?.(layoutTracking || dragTracking || scrollTracking));
+  const emitActiveTabBounds = (bounds: WorkspaceTabBorderMaskBounds | null, { sync = true } = {}) =>
+    run(sync, () => onActiveTabBoundsChange?.(bounds));
 
   function scheduleOverflowRefresh(overflow?: boolean | null) {
     if (overflow !== undefined) queuedOutroOverflow = overflow;
@@ -348,7 +348,7 @@
       cancelled = true;
       if (frame !== null) cancelAnimationFrame(frame);
       layoutTracking = false;
-      reportActiveTabTracking();
+      reportActiveTabTracking({ sync: false });
     };
   });
 
@@ -357,7 +357,7 @@
     reportActiveTabTracking();
     return () => {
       dragTracking = false;
-      reportActiveTabTracking();
+      reportActiveTabTracking({ sync: false });
     };
   });
 
@@ -526,7 +526,7 @@
         if (scrollTrackingTimeout !== null) clearTimeout(scrollTrackingTimeout);
         if (active && scrollTracking) {
           scrollTracking = false;
-          reportActiveTabTracking();
+          reportActiveTabTracking({ sync: false });
         }
         cancelRead?.();
         cancelWrite?.();
@@ -538,7 +538,7 @@
         if (workspaceId && activeTabBoundsControllers.get(workspaceId) === setActive) {
           activeTabBoundsControllers.delete(workspaceId);
         }
-        if (active) emitActiveTabBounds(null);
+        if (active) emitActiveTabBounds(null, { sync: false });
       },
     };
   }
