@@ -390,6 +390,37 @@ describe('selectGraphState', () => {
     expect(graph.nodes).not.toContainEqual(expect.objectContaining({ path: 'src/shared.ts' }));
   });
 
+  it('excludes malformed graph events without disturbing valid history order', () => {
+    const validLater = makeWorkspaceEvent({
+      id: 'valid-later',
+      timestamp: '2026-03-20T13:40:00.000Z',
+      data: { path: 'src/later.ts', relativePath: 'src/later.ts', action: 'modify' },
+    });
+    const validEarlier = makeWorkspaceEvent({
+      id: 'valid-earlier',
+      timestamp: '2026-03-20T13:20:00.000Z',
+      data: { path: 'src/earlier.ts', relativePath: 'src/earlier.ts', action: 'modify' },
+    });
+    const graph = selectGraphState.select(
+      makeOverviewState(makeSession('a1'), [], [], {}, [
+        validLater,
+        { ...makeWorkspaceEvent({ id: 'bad-time' }), timestamp: 'not-a-date' },
+        { ...makeWorkspaceEvent({ id: 'missing-agent' }), actor: { type: 'agent' } },
+        validEarlier,
+      ]),
+      WS,
+    );
+
+    expect(graph.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'src/earlier.ts' }),
+        expect.objectContaining({ path: 'src/later.ts' }),
+      ]),
+    );
+    expect(graph.edges).toHaveLength(2);
+    expect(graph.eventTimes).toEqual(['2026-03-20T13:20:00.000Z', '2026-03-20T13:40:00.000Z']);
+  });
+
   it('marks event-derived files outside workspace roots as external', () => {
     const graph = selectGraphState.select(
       makeOverviewState(makeSession('a1'), [

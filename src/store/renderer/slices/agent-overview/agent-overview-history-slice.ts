@@ -29,6 +29,19 @@ export const emptyGraphHistoryState: GraphHistoryWorkspaceState = {
 
 export const initialState: AgentOverviewHistoryState = { byWorkspaceId: {} };
 
+const RFC3339_TIMESTAMP =
+  /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$/;
+
+export function isValidGraphHistoryTimestamp(timestamp: string): boolean {
+  return RFC3339_TIMESTAMP.test(timestamp) && Number.isFinite(Date.parse(timestamp));
+}
+
+export function sanitizeGraphHistoryEvents(value: unknown, workspaceId: string): WorkspaceEvent[] {
+  return sanitizeWorkspaceEventsList(value, workspaceId).filter((event) =>
+    isValidGraphHistoryTimestamp(event.timestamp),
+  );
+}
+
 const { getWorkspaceState, setWorkspaceState } =
   createWorkspaceScopedHelpers(emptyGraphHistoryState);
 
@@ -53,8 +66,12 @@ function mergeEvents(
   incoming: WorkspaceEvent[],
   workspaceId: string,
 ): WorkspaceEvent[] {
-  const byId = new Map(current.map((event) => [event.id, event]));
-  for (const event of sanitizeWorkspaceEventsList(incoming, workspaceId)) byId.set(event.id, event);
+  const byId = new Map(
+    current
+      .filter((event) => isValidGraphHistoryTimestamp(event.timestamp))
+      .map((event) => [event.id, event]),
+  );
+  for (const event of sanitizeGraphHistoryEvents(incoming, workspaceId)) byId.set(event.id, event);
   return [...byId.values()]
     .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp) || a.id.localeCompare(b.id))
     .slice(-GRAPH_HISTORY_MAX_EVENTS);

@@ -45,6 +45,7 @@ import { selectWorkspaceTasks } from '$store/renderer/slices/workspace-tasks/wor
 import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import type { WorkspaceEvent } from '$features/events/types';
+import { isValidGraphHistoryTimestamp } from './agent-overview-history-slice';
 
 const TIMELINE_CREATION_LEAD_RATIO = 0.02;
 const MIN_TIMELINE_CREATION_LEAD_MS = 1_000;
@@ -54,8 +55,12 @@ const MIN_TIMELINE_CREATION_LEAD_MS = 1_000;
 // ============================================================================
 
 function selectSourceEvents(state: StoreState, workspaceId: string): WorkspaceEvent[] {
-  const workspaceEvents = state.workspaceEvents.byWorkspaceId[workspaceId]?.events ?? [];
-  const historyEvents = state.agentOverviewHistory.byWorkspaceId[workspaceId]?.events ?? [];
+  const workspaceEvents = (state.workspaceEvents.byWorkspaceId[workspaceId]?.events ?? []).filter(
+    (event) => isValidGraphHistoryTimestamp(event.timestamp),
+  );
+  const historyEvents = (
+    state.agentOverviewHistory.byWorkspaceId[workspaceId]?.events ?? []
+  ).filter((event) => isValidGraphHistoryTimestamp(event.timestamp));
   return historyEvents.length > 0 ? historyEvents : workspaceEvents;
 }
 

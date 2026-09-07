@@ -45,7 +45,11 @@ describe('agentOverviewHistoryReducer', () => {
     cyclic.data.self = cyclic.data;
     const state = agentOverviewHistoryReducer(
       initialState,
-      graphHistoryPageReceived(WS, [event('newest', 3), cyclic, event('oldest', 1), cyclic], 'next'),
+      graphHistoryPageReceived(
+        WS,
+        [event('newest', 3), cyclic, event('oldest', 1), cyclic],
+        'next',
+      ),
     );
 
     expect(state.byWorkspaceId[WS].events.map((item) => item.id)).toEqual([
@@ -61,15 +65,33 @@ describe('agentOverviewHistoryReducer', () => {
     const page = Array.from({ length: GRAPH_HISTORY_MAX_EVENTS }, (_, index) =>
       event(`event-${index}`, index),
     );
-    let state = agentOverviewHistoryReducer(
-      initialState,
-      graphHistoryPageReceived(WS, page, null),
-    );
+    let state = agentOverviewHistoryReducer(initialState, graphHistoryPageReceived(WS, page, null));
     state = agentOverviewHistoryReducer(state, eventReceived(WS, event('event-4999', 6000)));
     state = agentOverviewHistoryReducer(state, eventReceived(WS, event('live', 6001)));
 
     expect(state.byWorkspaceId[WS].events).toHaveLength(GRAPH_HISTORY_MAX_EVENTS);
     expect(state.byWorkspaceId[WS].events[0].id).toBe('event-1');
     expect(state.byWorkspaceId[WS].events.at(-1)?.id).toBe('live');
+  });
+
+  it('drops malformed timestamps while preserving valid chronological neighbours', () => {
+    let state = agentOverviewHistoryReducer(
+      initialState,
+      graphHistoryPageReceived(
+        WS,
+        [
+          event('later', 3),
+          { ...event('invalid', 2), timestamp: 'not-a-date' },
+          event('earlier', 1),
+        ],
+        null,
+      ),
+    );
+    state = agentOverviewHistoryReducer(
+      state,
+      eventReceived(WS, { ...event('invalid-live', 4), timestamp: '2026-01-01' }),
+    );
+
+    expect(state.byWorkspaceId[WS].events.map((item) => item.id)).toEqual(['earlier', 'later']);
   });
 });

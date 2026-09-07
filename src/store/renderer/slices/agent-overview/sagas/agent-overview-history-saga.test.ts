@@ -107,4 +107,23 @@ describe('agentOverviewHistorySaga', () => {
     run.task.cancel();
     await run.task.toPromise();
   });
+
+  it('stops with an error when paging does not advance', async () => {
+    const queryPage = vi
+      .spyOn(appClient.events, 'queryPage')
+      .mockResolvedValue({ items: [], nextToken: 'repeat' });
+    const run = harness();
+
+    run.channel.put(loadGraphHistoryRequested(WS));
+    await settle();
+
+    expect(queryPage).toHaveBeenCalledOnce();
+    expect(run.getState().byWorkspaceId[WS]).toMatchObject({
+      status: 'error',
+      nextToken: 'repeat',
+      events: [],
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
 });

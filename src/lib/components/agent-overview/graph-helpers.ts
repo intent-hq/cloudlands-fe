@@ -1067,6 +1067,18 @@ function interactionId(eventId: string, suffix: string): string {
   return `${eventId}:${suffix}`;
 }
 
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function hasValidGraphTimestamp(timestamp: string): boolean {
+  return (
+    /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$/.test(
+      timestamp,
+    ) && Number.isFinite(Date.parse(timestamp))
+  );
+}
+
 /**
  * Convert a WorkspaceEvent to an InteractionEvent for the agent overview graph.
  * Returns an empty array if the event is not relevant to the graph.
@@ -1081,6 +1093,8 @@ export function convertToInteractionEvent(
   },
   seenQueueMessageIds: Set<string> = new Set(),
 ): InteractionEvent[] {
+  if (!hasValidGraphTimestamp(event.timestamp)) return [];
+  const actorAgentId = event.actor?.type === 'agent' ? nonEmptyString(event.actor.id) : null;
   const base = {
     id: event.id,
     timestamp: event.timestamp,
@@ -1090,11 +1104,13 @@ export function convertToInteractionEvent(
 
   if (event.type === 'agent:created') {
     const data = event.data as any;
+    const agentId = nonEmptyString(data?.agentId) ?? actorAgentId;
+    if (!agentId) return [];
     return [
       {
         ...base,
         type: 'agent-created',
-        agentId: data?.agentId || base.agentId,
+        agentId,
         agentName: data?.agentName || base.agentName,
         parentAgentId: data?.createdByAgentId,
       },
@@ -1103,37 +1119,45 @@ export function convertToInteractionEvent(
 
   if (event.type === 'agent:idle') {
     const data = event.data as any;
+    const agentId = nonEmptyString(data?.agentId) ?? actorAgentId;
+    if (!agentId) return [];
     return [
       {
         ...base,
         type: 'agent-idle',
-        agentId: data?.agentId || base.agentId,
+        agentId,
         parentAgentId: data?.parentAgentId,
       },
     ];
   }
 
-  if (event.type === 'file:changed' && event.actor?.type === 'agent') {
+  if (event.type === 'file:changed' && actorAgentId) {
     const data = event.data as Record<string, unknown>;
-    const relativePath = data?.relativePath as string | undefined;
+    const relativePath = nonEmptyString(data?.relativePath);
+    const path = nonEmptyString(data?.path) ?? relativePath;
+    if (!path) return [];
     return [
       {
         ...base,
         type: 'file-write',
-        targetId: (data?.path || relativePath) as string | undefined,
+        agentId: actorAgentId,
+        targetId: path,
         targetName: relativePath?.split('/').pop(),
       },
     ];
   }
 
-  if (event.type?.startsWith('note:') && event.actor?.type === 'agent') {
+  if (event.type?.startsWith('note:') && actorAgentId) {
     const data = event.data as Record<string, unknown>;
+    const noteId = nonEmptyString(data?.noteId);
+    if (!noteId) return [];
     const isRead = event.type === 'note:read';
     return [
       {
         ...base,
         type: isRead ? 'note-read' : 'note-write',
-        targetId: data?.noteId as string | undefined,
+        agentId: actorAgentId,
+        targetId: noteId,
         targetName: data?.title as string | undefined,
       },
     ];
@@ -1164,9 +1188,10 @@ export function convertToInteractionEvent(
 
   if (event.type === 'agent:subscriptions-changed') {
     const data = event.data as Record<string, unknown>;
-    const agentId = typeof data?.agentId === 'string' ? data.agentId : base.agentId;
+    const agentId = nonEmptyString(data?.agentId) ?? actorAgentId;
+    if (!agentId) return [];
     const waitingForAgentIds = Array.isArray(data?.waitingForAgentIds)
-      ? data.waitingForAgentIds.filter((id): id is string => typeof id === 'string')
+      ? data.waitingForAgentIds.map(nonEmptyString).filter((id): id is string => id !== null)
       : [];
     return waitingForAgentIds.map((targetId, index) => ({
       ...base,
@@ -1195,6 +1220,7 @@ export function convertToInteractionEvent(
   }
 
   if (event.type === 'agent:tool:call') {
+    if (!actorAgentId) return [];
     const data = event.data as Record<string, unknown>;
     const toolName = typeof data?.toolName === 'string' ? data.toolName.toLowerCase() : '';
     const input =
@@ -1211,6 +1237,7 @@ export function convertToInteractionEvent(
       seen.add(key);
       interactions.push({
         ...base,
+        agentId: actorAgentId,
         id: interactionId(event.id, `${interactions.length}`),
         type,
         targetId,

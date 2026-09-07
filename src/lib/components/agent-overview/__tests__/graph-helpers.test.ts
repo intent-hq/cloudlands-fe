@@ -516,5 +516,28 @@ describe('agent overview graph helpers', () => {
         )[0],
       ).toMatchObject({ type: 'note-write', targetId: 'spec' });
     });
+
+    it('ignores malformed timestamps and events missing required graph identities', () => {
+      expect(
+        convertToInteractionEvent({
+          ...event('file:changed', { path: 'src/file.ts' }),
+          timestamp: 'bad',
+        }),
+      ).toEqual([]);
+      expect(
+        convertToInteractionEvent({
+          ...event('file:changed', { path: 'src/file.ts' }),
+          actor: { type: 'agent' },
+        }),
+      ).toEqual([]);
+      expect(convertToInteractionEvent(event('file:changed', {}))).toEqual([]);
+      expect(convertToInteractionEvent(event('note:updated', {}))).toEqual([]);
+      expect(
+        convertToInteractionEvent({
+          ...event('agent:tool:call', { toolName: 'view', toolKind: 'file', input: { path: 'x' } }),
+          actor: { type: 'system' },
+        }),
+      ).toEqual([]);
+    });
   });
 });
