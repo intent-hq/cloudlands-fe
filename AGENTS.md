@@ -118,7 +118,9 @@ Use these exact state names in direct URLs:
 On the sandbox page, use `window.__INTENT_PREVIEW__.list()` to find preview IDs,
 `await window.__INTENT_PREVIEW__.states('button')` to find states, and
 `window.__INTENT_PREVIEW__.current()` to inspect the active ready state. Wait for
-`[data-preview-ready=true]` before capture.
+`[data-preview-ready=true]` before capture. For a cold renderer launch, use the
+[self-checking readiness hook](.agents/skills/electron/SKILL.md#wait-for-renderer-readiness)
+instead of polling or rescheduling an expired hook.
 
 ### Put a preview screenshot in user chat
 

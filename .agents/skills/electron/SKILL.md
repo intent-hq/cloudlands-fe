@@ -3,6 +3,7 @@ name: electron
 description: Automate Electron desktop apps (VS Code, Slack, Discord, Figma, Notion, Spotify, etc.) using agent-browser via Chrome DevTools Protocol. Use when the user needs to interact with an Electron app, automate a desktop app, connect to a running app, control a native app, or test an Electron application. Triggers include "automate Slack app", "control VS Code", "interact with Discord app", "test this Electron app", "connect to desktop app", or any task requiring automation of a native Electron application.
 allowed-tools: Bash(agent-browser:*), Bash(npx agent-browser:*)
 ---
+
 # Electron App Automation
 
 Automate any Electron desktop app using agent-browser. Electron apps are built on Chromium and expose a Chrome DevTools Protocol (CDP) port that agent-browser can connect to, enabling the same snapshot-interact workflow used for web pages.
@@ -27,6 +28,74 @@ agent-browser snapshot -i
 agent-browser click @e5
 agent-browser screenshot slack-desktop.png
 ```
+
+## Wait for renderer readiness
+
+Use one self-checking workspace hook when a cold renderer launch may outlive the current
+turn. On this dev box, five cold `dev:ui` launches under concurrent unit-test load reached
+`[data-preview-ready=true]` in 41.774, 18.466, 19.303, 22.526, and 20.318 seconds. The
+nearest-rank p95 was 41.774 seconds, so 3× p95 is 125.322 seconds (round to 126 seconds)
+as the expected readiness margin. The daemon defaults delay-hook TTL to 24 hours and caps
+it at 24 hours; this template deliberately uses 615 seconds so its explicit 10-minute
+failure ceiling can run, with one 15-second cadence of TTL margin.
+
+Replace `TARGET_URL` and `EXPECTED_TITLE`, open or reuse the target tab, then schedule:
+
+```javascript
+const TARGET_URL = 'http://daemon.localhost:5190/sandbox/button?state=default';
+const EXPECTED_TITLE = 'Intent';
+const CEILING_MS = 600_000;
+
+return await ws.hook.schedule({
+  name: 'Wait for renderer readiness',
+  delayMs: 15_000,
+  ttlMs: 615_000,
+  perpetual: false,
+  code: `
+    const previous = hookState ?? {
+      startedAt: Date.now(), attempts: 0, lastReady: null
+    };
+    const attempts = previous.attempts + 1;
+    const elapsedMs = Date.now() - previous.startedAt;
+    if (elapsedMs >= ${CEILING_MS}) {
+      return { dispatch: true, message:
+        "Renderer was not ready after 10 minutes; treat the launch as broken." };
+    }
+    const listed = await ws.browser.exec([
+      { action: "listTabs", scope: "mine" }
+    ]);
+    const tabs = listed?.success ? listed.result : [];
+    const tab = tabs.find(candidate =>
+      [candidate.requestedUrl, candidate.url, candidate.finalUrl]
+        .some(url => url?.startsWith(${JSON.stringify(TARGET_URL)}))
+    );
+    let ready = false;
+    if (tab) {
+      const probe = await ws.browser.exec([{ action: "evaluate", tabId: tab.tabId,
+        expression: ${JSON.stringify(`Boolean(document.querySelector("[data-preview-ready=true]")) || document.title === ${JSON.stringify(EXPECTED_TITLE)}`)} }]);
+      ready = probe?.success && probe.result === true;
+    }
+    const state = { ...previous, attempts, lastReady: ready };
+    if (ready && ready !== previous.lastReady) {
+      return { dispatch: true, message:
+        "Renderer readiness signal appeared after " + elapsedMs + " ms." };
+    }
+    return { dispatch: false, state };
+  `,
+});
+```
+
+Each run performs the readiness check itself, compares the result with `hookState`, and
+returns without dispatch while readiness is unchanged. The two browser calls stay well
+inside the hook's 60-second per-run budget. The 10-minute ceiling, not the TTL, is the
+failure mechanism because it dispatches the caller-authored diagnostic. Hook expiry also
+wakes the owner, but only with the generic expiry notice; it is a backstop that prompts
+reassessment, not a reason to silently schedule another hook.
+
+Use `perpetual: false` for one readiness transition: the first dispatch retires the hook.
+Use `perpetual: true` only when the caller needs a stream of readiness or health changes;
+in that case persist the last observed health in `hookState` and dispatch only when it
+changes.
 
 ## Launching Electron Apps with CDP
 
