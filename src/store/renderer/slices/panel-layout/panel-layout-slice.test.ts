@@ -3736,7 +3736,7 @@ describe('panelLayoutReducer', () => {
 
       it('reopens the entry into an empty clicked panel and leaves the source panel unchanged (monorepo#4553)', () => {
         const start = twoColumnState();
-        start.byWorkspaceId[WS].panels.B = { id: 'B', tabs: [], activeTabId: null };
+        start.byWorkspaceId[WS].panels.B = { id: 'B', tabs: [], activeTabId: null, pristine: true };
         const afterClose = panelLayoutReducer(start, closeTab(WS, 'x', 'A', 1000));
         const panelABeforeReopen = afterClose.byWorkspaceId[WS].panels.A;
         expect(afterClose.byWorkspaceId[WS].panels.B.tabs).toEqual([]);
@@ -3751,6 +3751,7 @@ describe('panelLayoutReducer', () => {
           noteId: 'note-x',
         });
         expect(result.panels.B.activeTabId).toBe(result.panels.B.tabs[0].id);
+        expect(result.panels.B.pristine).toBe(false);
         expect(result.focusedPanelId).toBe('B');
         expect(result.panels.A).toEqual(panelABeforeReopen);
         expect(result.recentlyClosed).toHaveLength(0);

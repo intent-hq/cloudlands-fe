@@ -2929,6 +2929,7 @@ panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
         ...panel,
         tabs: [...panel.tabs, newTab],
         activeTabId: newTabId,
+        pristine: false,
       },
     },
     focusedPanelId: targetPanelId,
