@@ -242,7 +242,7 @@ function isRendererSource(file) {
     !file.startsWith('src/main/') &&
     !file.startsWith('src/preload/') &&
     !/^src\/features\/[^/]+\/main\//.test(file) &&
-    CODE_EXTENSIONS.has(extname(file)) &&
+    (CODE_EXTENSIONS.has(extname(file)) || extname(file) === '.css') &&
     !UNIT_TEST_RE.test(file)
   );
 }

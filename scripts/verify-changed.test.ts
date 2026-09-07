@@ -139,6 +139,23 @@ describe('verification planning', () => {
     expect(mainPlan.checks.map((check) => check.id)).not.toContain('vitest-ui-invariants');
   });
 
+  it('runs the repo-wide UI invariant suites for renderer stylesheet changes', () => {
+    const root = fixtureRoot({
+      'src/lib/styles/tokens.css': ':root { --color: red; }',
+    });
+    const existingPlan = createVerificationPlan(['src/lib/styles/tokens.css'], {
+      root,
+      ctTests: [],
+    });
+    expect(existingPlan.checks.map((check) => check.id)).toContain('vitest-ui-invariants');
+
+    const deletedPlan = createVerificationPlan(['src/lib/styles/removed.css'], {
+      root,
+      ctTests: [],
+    });
+    expect(deletedPlan.checks.map((check) => check.id)).toContain('vitest-ui-invariants');
+  });
+
   it('selects a component test that directly imports a changed Svelte component', () => {
     const root = fixtureRoot({
       'src/lib/Button.svelte': '<button />',
