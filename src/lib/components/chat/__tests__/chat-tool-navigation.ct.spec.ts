@@ -9,9 +9,10 @@ async function mountHarness(
   workspaceKey: string,
   variant: Variant,
   existingIdentity?: 'file' | 'note',
+  sourceRightmost = false,
 ) {
   const component = await mount(ChatToolNavigationHarness, {
-    props: { workspaceKey, variant, existingIdentity },
+    props: { workspaceKey, variant, existingIdentity, sourceRightmost },
   });
   await expect(component).toHaveAttribute('data-chat-tool-navigation-ready', 'true');
   return { component, state: component.locator('[data-navigation-state]') };
@@ -39,7 +40,32 @@ async function expectSourceStack(
   await expect(state).toHaveAttribute('data-right-active-path', 'src/existing.ts');
 }
 
-async function expectAdjacentColumn(
+async function expectRightNeighbor(
+  state: Locator,
+  workspaceKey: string,
+  type: 'file' | 'note',
+  value: string,
+) {
+  await expect(state).toHaveAttribute('data-panel-count', '2');
+  await expect(state).toHaveAttribute(
+    'data-panel-order',
+    `source-${workspaceKey},right-${workspaceKey}`,
+  );
+  await expect(state).toHaveAttribute('data-source-active-type', 'agent');
+  await expect(state).toHaveAttribute('data-focused-panel-id', `right-${workspaceKey}`);
+  await expect(state).toHaveAttribute('data-focused-active-type', type);
+  await expect(state).toHaveAttribute(
+    type === 'file' ? 'data-focused-active-path' : 'data-focused-active-note',
+    value,
+  );
+  await expect(state).toHaveAttribute('data-right-active-type', type);
+  await expect(state).toHaveAttribute(
+    type === 'file' ? 'data-right-active-path' : 'data-right-active-note',
+    value,
+  );
+}
+
+async function expectNewRightmostColumn(
   state: Locator,
   workspaceKey: string,
   type: 'file' | 'note',
@@ -56,10 +82,13 @@ async function expectAdjacentColumn(
   expect(focusedPanelId).toBeTruthy();
   await expect(state).toHaveAttribute(
     'data-panel-order',
-    `source-${workspaceKey},${focusedPanelId},right-${workspaceKey}`,
+    `right-${workspaceKey},source-${workspaceKey},${focusedPanelId}`,
   );
-  await expect(state).toHaveAttribute('data-right-active-type', 'file');
-  await expect(state).toHaveAttribute('data-right-active-path', 'src/existing.ts');
+  await expect(state).toHaveAttribute('data-right-active-type', type);
+  await expect(state).toHaveAttribute(
+    type === 'file' ? 'data-right-active-path' : 'data-right-active-note',
+    value,
+  );
 }
 
 async function expectExistingIdentity(
@@ -100,11 +129,26 @@ test('tool-call file keyboard activation opens in and focuses its source stack',
   await expectSourceStack(state, workspaceKey, 'file', 'src/tool.ts');
 });
 
-test('tool-call file Command click opens in a new adjacent column', async ({ mount }) => {
+test('tool-call file Command click reuses the right-hand neighbor column', async ({ mount }) => {
   const workspaceKey = 'file-command';
   const { component, state } = await mountHarness(mount, workspaceKey, 'tool-file');
   await component.getByTestId('tool-call-file-link').click({ modifiers: ['Meta'] });
-  await expectAdjacentColumn(state, workspaceKey, 'file', 'src/tool.ts');
+  await expectRightNeighbor(state, workspaceKey, 'file', 'src/tool.ts');
+});
+
+test('tool-call file Command click from the rightmost column creates a new column', async ({
+  mount,
+}) => {
+  const workspaceKey = 'file-command-rightmost';
+  const { component, state } = await mountHarness(
+    mount,
+    workspaceKey,
+    'tool-file',
+    undefined,
+    true,
+  );
+  await component.getByTestId('tool-call-file-link').click({ modifiers: ['Meta'] });
+  await expectNewRightmostColumn(state, workspaceKey, 'file', 'src/tool.ts');
 });
 
 test('tool-call note mouse click opens in and focuses its source stack', async ({ mount }) => {
@@ -123,11 +167,11 @@ test('tool-call note keyboard activation opens in and focuses its source stack',
   await expectSourceStack(state, workspaceKey, 'note', 'note-1');
 });
 
-test('tool-call note Control click opens in a new adjacent column', async ({ mount }) => {
+test('tool-call note Control click reuses the right-hand neighbor column', async ({ mount }) => {
   const workspaceKey = 'note-control';
   const { component, state } = await mountHarness(mount, workspaceKey, 'tool-note');
   await component.getByTestId('tool-call-note-link').dispatchEvent('click', { ctrlKey: true });
-  await expectAdjacentColumn(state, workspaceKey, 'note', 'note-1');
+  await expectRightNeighbor(state, workspaceKey, 'note', 'note-1');
 });
 
 test('ordinary file open activates its existing identity without moving or duplicating it', async ({
