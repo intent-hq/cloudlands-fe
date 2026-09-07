@@ -242,6 +242,8 @@ export const mockUserPreferences: UserPreferencesState = {
   groupByRepo: true,
   hasCompletedProviderSetup: true,
   showReasoningBlocks: false,
+  allChangesDiffMapCollapsed: false,
+  sidebarChangesMapVisible: false,
   chatAuroraEnabled: true,
   shellTransparencyEnabled: true,
   agentFontStyle: 'sans',

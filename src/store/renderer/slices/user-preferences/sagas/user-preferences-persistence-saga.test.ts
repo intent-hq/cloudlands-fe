@@ -4,7 +4,9 @@ import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
 
 const mocks = vi.hoisted(() => ({
   getJSON: vi.fn(),
+  getItem: vi.fn(),
   setJSON: vi.fn(),
+  setItem: vi.fn(),
   applyLanguagePreference: vi.fn(),
   isElectron: vi.fn(() => true),
 }));
@@ -13,8 +15,8 @@ vi.mock('$lib/utils/safe-storage', () => ({
     getJSON: mocks.getJSON,
     getItemWithStatus: vi.fn(() => ({ value: null, hadError: false })),
     setJSON: mocks.setJSON,
-    getItem: vi.fn(),
-    setItem: vi.fn(),
+    getItem: mocks.getItem,
+    setItem: mocks.setItem,
     removeItem: vi.fn(),
     keysWithPrefix: vi.fn(),
   },
@@ -33,6 +35,7 @@ import {
   initialState,
   saveActivityLogPreset,
   setAgentFontStyle,
+  setAllChangesDiffMapCollapsed,
   setChatAuroraEnabled,
   setCodeFontFamily,
   setGroupByRepo,
@@ -42,15 +45,18 @@ import {
   setNoteFontStyle,
   setShowArchived,
   setShowReasoningBlocks,
+  setSidebarChangesMapVisible,
   setShellTransparencyEnabled,
   setShortcutOverride,
   setSpellcheckEnabled,
   setSystemFonts,
   toggleGroupByRepo,
+  toggleAllChangesDiffMapCollapsed,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
   toggleShowArchived,
   toggleShowReasoningBlocks,
+  toggleSidebarChangesMapVisible,
   toggleShellTransparency,
   toggleSpellcheck,
   userPreferencesReducer,
@@ -109,7 +115,9 @@ describe('userPreferencesPersistenceSaga', () => {
     vi.clearAllMocks();
     mocks.isElectron.mockReturnValue(true);
     mocks.getJSON.mockReturnValue(undefined);
+    mocks.getItem.mockReturnValue(null);
     mocks.setJSON.mockReturnValue(undefined);
+    mocks.setItem.mockReturnValue(undefined);
     vi.mocked(window.electronAPI.invoke).mockReset();
     vi.mocked(window.electronAPI.invoke).mockResolvedValue({
       success: false,
@@ -223,6 +231,77 @@ describe('userPreferencesPersistenceSaga', () => {
     await settle();
     expect(fresh.getUserPreferences().agentFontStyle).toBe('monospace');
     await fresh.stop();
+  });
+
+  it('hydrates legacy map preference strings into the preference slice', async () => {
+    const stored: Record<string, string> = {
+      'chat-changes-panel.diff-map-collapsed': 'true',
+      'workspace:fileChangesView': 'map',
+    };
+    mocks.getItem.mockImplementation((key: string) => stored[key] ?? null);
+    const dispatch = vi.fn();
+
+    await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
+
+    expect(dispatch.mock.calls).toContainEqual([setAllChangesDiffMapCollapsed(true)]);
+    expect(dispatch.mock.calls).toContainEqual([setSidebarChangesMapVisible(true)]);
+  });
+
+  it('persists map preference set and toggle actions through saga storage helpers', async () => {
+    const state = {
+      userPreferences: {
+        ...initialState,
+        allChangesDiffMapCollapsed: true,
+        sidebarChangesMapVisible: true,
+      },
+    };
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => state },
+      userPreferencesPersistenceSaga,
+    );
+    await settle();
+    mocks.setItem.mockClear();
+
+    for (const action of [
+      setAllChangesDiffMapCollapsed(true),
+      toggleAllChangesDiffMapCollapsed(),
+      setSidebarChangesMapVisible(true),
+      toggleSidebarChangesMapVisible(),
+    ]) {
+      channel.put(action);
+      await settle();
+    }
+
+    expect(mocks.setItem.mock.calls).toEqual([
+      ['chat-changes-panel.diff-map-collapsed', 'true'],
+      ['chat-changes-panel.diff-map-collapsed', 'true'],
+      ['workspace:fileChangesView', 'map'],
+      ['workspace:fileChangesView', 'map'],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps map preference persistence failures non-fatal', async () => {
+    mocks.setItem.mockImplementation(() => {
+      throw new Error('quota');
+    });
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => ({ userPreferences: initialState }) },
+      userPreferencesPersistenceSaga,
+    );
+    await settle();
+
+    channel.put(toggleAllChangesDiffMapCollapsed());
+    channel.put(toggleSidebarChangesMapVisible());
+    await settle();
+
+    expect(task.isRunning()).toBe(true);
+    expect(mocks.setItem).toHaveBeenCalledTimes(2);
+    task.cancel();
+    await task.toPromise();
   });
 
   it('persists a note font cycle and restores serif in a fresh store', async () => {

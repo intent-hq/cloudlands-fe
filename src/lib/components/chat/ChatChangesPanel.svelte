@@ -253,10 +253,8 @@
 
   import {
     openWorkspaceCommitChangeset,
-    openWorkspaceDiff,
     openWorkspaceFile,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import type { TrackedChange } from '$features/file-tracking/types';
 
   import { selectViewedFiles } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -270,6 +268,7 @@
   const workspace$ = selectWorkspaceById(routeWorkspaceId);
   const agentFileRefreshes = selectAgentFileRefreshes(routeWorkspaceId);
   const lockedFilePaths$ = selectLockedFilePaths(routeWorkspaceId);
+  const allChangesDiffMapCollapsed$ = selectAllChangesDiffMapCollapsed();
 
   // Re-export types from types.ts for backward compatibility
   export type { ChangeCategory, LocalFileChange, DiffHunk } from './types';
@@ -285,15 +284,26 @@
   import { selectAgentFileRefreshes } from '$store/renderer/slices/chat-changes/chat-changes-selectors';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { store as appStore } from '$store/renderer/store';
-  import { safeLocalStorage } from '$lib/utils/safe-storage';
-  import { buildDiffMapDocument } from '$features/diff-map/model/build-document';
+  import {
+    buildDiffMapDocument,
+    serializeDiffMapHunkHeader,
+  } from '$features/diff-map/model/build-document';
   import {
     diffMapFileContentHash,
     getViewedFreshness,
   } from '$features/diff-map/model/review-slice';
-  import type { DiffMapFile, DiffMapGroup } from '$features/diff-map/model/types';
+  import type { DiffMapFile } from '$features/diff-map/model/types';
   import DiffMap from '$features/diff-map/components/DiffMap.svelte';
   import ReviewSliceAction from '$features/diff-map/components/ReviewSliceAction.svelte';
+  import { selectAllChangesDiffMapCollapsed } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { toggleAllChangesDiffMapCollapsed } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import {
+    activeDiffMapPathForScroll,
+    createDiffMapOpenAction,
+    filterDiffMapChanges,
+    isDiffMapOpenModifier,
+    scrollDiffMapHeaderIntoView,
+  } from './chat-changes-diff-map';
 
   /**
    * Get the expand/collapse key for a change entry.
@@ -1283,29 +1293,16 @@
     mergedChanges = sorted;
   });
 
-  const DIFF_MAP_COLLAPSE_STORAGE_KEY = 'chat-changes-panel.diff-map-collapsed';
-  let diffMapCollapsed = $state(safeLocalStorage.getItem(DIFF_MAP_COLLAPSE_STORAGE_KEY) === 'true');
   let activeDiffMapPath = $state<string | undefined>();
-  let hoveredDiffMapGroupPath = $state<string | undefined>();
-
-  function patchHeaders(change: LocalFileChange): string | undefined {
-    if (!change.chunks?.length) return undefined;
-    return change.chunks
-      .map(
-        (chunk) =>
-          `@@ -${chunk.oldStart},${chunk.oldLines} +${chunk.newStart},${chunk.newLines} @@`,
-      )
-      .join('\n');
-  }
 
   let diffMapDocument = $derived.by(() => {
-    const normalizedChanges = mergedChanges.map((change) => ({
+    const normalizedChanges = filterDiffMapChanges(mergedChanges).map((change) => ({
       ...change,
       filePath: getDisplayPath(change.filePath),
     }));
     const patches = new Map<string, string>();
     for (const change of reactiveChanges) {
-      const patch = patchHeaders(change);
+      const patch = change.chunks?.map(serializeDiffMapHunkHeader).join('\n');
       if (!patch) continue;
       const path = getDisplayPath(change.filePath);
       const current = patches.get(path);
@@ -1339,8 +1336,7 @@
   });
 
   function toggleDiffMap() {
-    diffMapCollapsed = !diffMapCollapsed;
-    safeLocalStorage.setItem(DIFF_MAP_COLLAPSE_STORAGE_KEY, String(diffMapCollapsed));
+    appStore.dispatch(toggleAllChangesDiffMapCollapsed());
   }
 
   // For aggregate views, we need to fetch git:diff to get correct content
@@ -1700,53 +1696,13 @@
     };
   }
 
-  function openCurrentDiff(filePath: string, event?: MouseEvent) {
+  function openCurrentDiff(filePath: string, event?: MouseEvent | KeyboardEvent) {
     // Find the change object for this file to get full context
     const change = changes.find((c) => c.filePath === filePath);
-
-    // NOTE: We intentionally do NOT pass content here.
-    // The oldContent/newContent from tool calls are snippets (just the changed portion),
-    // not the full file content. If we pass them, DiffViewer would show a diff between
-    // two small snippets, making it look like the entire old content was deleted.
-    // By not passing content, DiffViewer will fetch the actual git diff.
-    const openInAdjacentPanel = event?.metaKey || event?.ctrlKey || false;
-    const panelElement = event?.target
-      ? (event.target as HTMLElement)?.closest('[data-panel-id]')
-      : null;
-    const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
     const wsId = routeWorkspaceId;
-    if (!wsId) return;
-    const category = change ? getChangeCategory(change) : undefined;
-    const diffChange = change
-      ? {
-          id: `chat-change-${filePath}`,
-          file: filePath,
-          relativePath: filePath,
-          type: 'modified' as const,
-          // Use the staged property from the change object if available
-          stage:
-            category === 'committed'
-              ? ('committed' as const)
-              : change.staged
-                ? ('staged' as const)
-                : ('unstaged' as const),
-          stats: change
-            ? { additions: change.additions, deletions: change.deletions }
-            : { additions: 0, deletions: 0 },
-          attribution: {
-            manual: true,
-            timestamp: Date.now(),
-          },
-          // Don't pass content - let DiffViewer fetch git diff for accurate display
-        }
-      : undefined;
-    if (!diffChange) return;
+    if (!wsId || !change) return;
     appStore.dispatch(
-      openWorkspaceDiff(wsId, diffChange as unknown as TrackedChange, {
-        changeId: `chat-change-${filePath}`,
-        filePath,
-        openInAdjacentPanel,
-        sourcePanelId,
+      createDiffMapOpenAction(wsId as WorkspaceId, change, event, {
         branchBaseRef: branchBaseRef ?? undefined,
         branchBaseCommitSha: branchBaseCommitSha ?? undefined,
         gitRootId,
@@ -2028,40 +1984,25 @@
     return currentIndex >= 0 ? (renderedKeys[currentIndex + 1] ?? expandKey) : expandKey;
   }
 
-  function findFileHeader(expandKey: string): HTMLElement | null {
-    const content = virtualizerContentRef;
-    if (!content) return null;
-
-    for (const header of content.querySelectorAll<HTMLElement>('[data-change-header-key]')) {
-      if (header.dataset.changeHeaderKey === expandKey) return header;
-    }
-    return null;
-  }
-
   function scrollFileHeaderIntoView(expandKey: string) {
     const container = scrollContainerRef;
-    const header = findFileHeader(expandKey);
-    if (!container || !header) return;
-
-    const containerRect = container.getBoundingClientRect();
-    const headerRect = header.getBoundingClientRect();
-    const stickyTop = Number.parseFloat(header.dataset.changeStickyTop ?? '0') || 0;
-    const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
-    const nextScrollTop = container.scrollTop + headerRect.top - containerRect.top - stickyTop;
-
-    container.scrollTo({
-      top: Math.min(maxScrollTop, Math.max(0, nextScrollTop)),
-      behavior: 'auto',
-    });
+    const content = virtualizerContentRef;
+    if (!container || !content) return;
+    scrollDiffMapHeaderIntoView(container, content, expandKey);
   }
 
   function findChangeForDiffMapPath(path: string): LocalFileChange | undefined {
     return mergedChanges.find((change) => getDisplayPath(change.filePath) === path);
   }
 
-  function handleDiffMapOpen(file: DiffMapFile) {
+  function handleDiffMapOpen(file: DiffMapFile, event: MouseEvent | KeyboardEvent) {
     const change = findChangeForDiffMapPath(file.path);
     if (!change) return;
+
+    if (isDiffMapOpenModifier(event)) {
+      openCurrentDiff(change.filePath, event);
+      return;
+    }
 
     if (groupByCommit && change.commitHash && !expandedCommits.has(change.commitHash)) {
       expandedCommits = new Set([...expandedCommits, change.commitHash]);
@@ -2072,10 +2013,6 @@
     }
     activeDiffMapPath = file.path;
     void tick().then(() => requestAnimationFrame(() => scrollFileHeaderIntoView(expandKey)));
-  }
-
-  function handleDiffMapHover(group: DiffMapGroup | null) {
-    hoveredDiffMapGroupPath = group?.path;
   }
 
   function scheduleViewedCollapseScroll(expandKey: string) {
@@ -2179,26 +2116,7 @@
     const content = virtualizerContentRef;
     if (!container || !content) return;
 
-    const headers = [...content.querySelectorAll<HTMLElement>('[data-change-map-path]')];
-    if (headers.length === 0) return;
-    const activationTop = container.getBoundingClientRect().top + 32;
-    let activeHeader = headers[0];
-    let closestPastTop = Number.NEGATIVE_INFINITY;
-    let closestFutureTop = Number.POSITIVE_INFINITY;
-
-    for (const header of headers) {
-      const card = header.closest<HTMLElement>('[data-change-card-key]');
-      const top = (card ?? header).getBoundingClientRect().top;
-      if (top <= activationTop && top > closestPastTop) {
-        closestPastTop = top;
-        activeHeader = header;
-      } else if (closestPastTop === Number.NEGATIVE_INFINITY && top < closestFutureTop) {
-        closestFutureTop = top;
-        activeHeader = header;
-      }
-    }
-
-    activeDiffMapPath = activeHeader.dataset.changeMapPath;
+    activeDiffMapPath = activeDiffMapPathForScroll(container, content);
   }
 
   function scheduleActiveDiffMapPathUpdate() {
@@ -2751,7 +2669,7 @@
 
   {#if showCategoryFilter && diffMapDocument.files.length > 0}
     <section
-      class="flex shrink-0 flex-col overflow-hidden border-b border-border bg-background {!diffMapCollapsed
+      class="flex shrink-0 flex-col overflow-hidden border-b border-border bg-background {!$allChangesDiffMapCollapsed$
         ? 'h-2/5 min-h-48 max-h-90'
         : ''}"
     >
@@ -2759,13 +2677,16 @@
         <Button
           variant="ghost"
           class="h-8 min-w-0 flex-1 justify-start rounded-none border-0 bg-transparent px-4 text-xs font-medium text-subtle shadow-none hover:bg-transparent hover:text-foreground"
-          aria-expanded={!diffMapCollapsed}
-          aria-label={diffMapCollapsed
+          aria-expanded={!$allChangesDiffMapCollapsed$}
+          aria-label={$allChangesDiffMapCollapsed$
             ? m.ui_vscodePanel_expand_ariaLabel()
             : m.ui_vscodePanel_collapse_ariaLabel()}
           onclick={toggleDiffMap}
         >
-          <Fa icon={diffMapCollapsed ? faChevronLeft : faChevronDown} class="h-2.5! w-2.5!" />
+          <Fa
+            icon={$allChangesDiffMapCollapsed$ ? faChevronLeft : faChevronDown}
+            class="h-2.5! w-2.5!"
+          />
           <span>{m.workspace_sidebarChanges_rootChangedFiles_label()}</span>
         </Button>
         <ReviewSliceAction
@@ -2774,7 +2695,7 @@
           selection={diffMapSelection}
         />
       </div>
-      {#if !diffMapCollapsed}
+      {#if !$allChangesDiffMapCollapsed$}
         <div class="min-h-0 flex-1 overflow-hidden px-3 pb-3">
           <DiffMap
             document={diffMapDocument}
@@ -2783,7 +2704,6 @@
             activePath={activeDiffMapPath}
             filterable={false}
             onOpen={handleDiffMapOpen}
-            onHoverGroup={handleDiffMapHover}
           />
         </div>
       {/if}
@@ -3155,9 +3075,6 @@
         ? 'ring-1 ring-yellow-400/60 bg-yellow-400/10'
         : ''} {allChangesSearchCurrentHeaderKey === expandKey
         ? 'ring-2 ring-blue-400/70 bg-blue-500/10'
-        : ''} {hoveredDiffMapGroupPath !== undefined &&
-      getDirectoryPath(displayPath) === hoveredDiffMapGroupPath
-        ? 'ring-2 ring-primary/60 bg-primary/10'
         : ''}"
       style="top: {stickyTop}; border-bottom: 1px solid {expandedFiles.has(expandKey)
         ? 'var(--border)'
@@ -3341,8 +3258,7 @@
             {#if isViewed}
               <Fa icon={faCheck} class="w-2! h-2! text-primary-foreground" />
             {:else if changedSinceViewed}
-              <span class="text-xs font-bold leading-none text-amber-600" aria-hidden="true">!</span
-              >
+              <span class="text-xs font-bold leading-none text-warning" aria-hidden="true">!</span>
             {/if}
           </span>
           <span class="text-xs text-subtle">

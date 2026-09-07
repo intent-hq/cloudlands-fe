@@ -26,7 +26,7 @@
       {document}
       onOpen={(file, event) => {
         if (!workspaceId) return;
-        const panel = (event.target as HTMLElement)?.closest('[data-panel-id]');
+        const panel = (event.currentTarget as HTMLElement)?.closest('[data-panel-id]');
         appStore.dispatch(
           openWorkspaceFile(workspaceId, file.path, {
             openInAdjacentPanel: event.metaKey || event.ctrlKey,

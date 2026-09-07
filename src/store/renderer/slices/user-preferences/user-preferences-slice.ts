@@ -53,6 +53,8 @@ export type UserPreferencesState = {
   hasCompletedProviderSetup: boolean;
   /** Whether reasoning (thinking) dropdowns are shown in chat transcripts. */
   showReasoningBlocks: boolean;
+  allChangesDiffMapCollapsed: boolean;
+  sidebarChangesMapVisible: boolean;
   chatAuroraEnabled: boolean;
   shellTransparencyEnabled: boolean;
   agentFontStyle: AgentFontStyle;
@@ -102,6 +104,8 @@ export const initialState: UserPreferencesState = {
   groupByRepo: true,
   hasCompletedProviderSetup: false,
   showReasoningBlocks: false,
+  allChangesDiffMapCollapsed: false,
+  sidebarChangesMapVisible: false,
   chatAuroraEnabled: true,
   shellTransparencyEnabled: true,
   ...fontSettingsInitialState,
@@ -241,6 +245,26 @@ export const setShowReasoningBlocks = showReasoningBlocksPreference.setAction;
 
 export const toggleShowReasoningBlocks = showReasoningBlocksPreference.toggleAction;
 
+const allChangesDiffMapCollapsedPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: 'userPreferences',
+  field: 'allChangesDiffMapCollapsed',
+  setActionName: 'setAllChangesDiffMapCollapsed',
+  toggleActionName: 'toggleAllChangesDiffMapCollapsed',
+});
+
+export const setAllChangesDiffMapCollapsed = allChangesDiffMapCollapsedPreference.setAction;
+export const toggleAllChangesDiffMapCollapsed = allChangesDiffMapCollapsedPreference.toggleAction;
+
+const sidebarChangesMapVisiblePreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: 'userPreferences',
+  field: 'sidebarChangesMapVisible',
+  setActionName: 'setSidebarChangesMapVisible',
+  toggleActionName: 'toggleSidebarChangesMapVisible',
+});
+
+export const setSidebarChangesMapVisible = sidebarChangesMapVisiblePreference.setAction;
+export const toggleSidebarChangesMapVisible = sidebarChangesMapVisiblePreference.toggleAction;
+
 const chatAuroraPreference = createBooleanPreference<UserPreferencesState>({
   sliceName: 'userPreferences',
   field: 'chatAuroraEnabled',
@@ -269,6 +293,8 @@ showArchivedPreference.register(userPreferencesReducer);
 groupByRepoPreference.register(userPreferencesReducer);
 hasCompletedProviderSetupPreference.register(userPreferencesReducer);
 showReasoningBlocksPreference.register(userPreferencesReducer);
+allChangesDiffMapCollapsedPreference.register(userPreferencesReducer);
+sidebarChangesMapVisiblePreference.register(userPreferencesReducer);
 chatAuroraPreference.register(userPreferencesReducer);
 shellTransparencyPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({

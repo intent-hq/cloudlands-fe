@@ -35,6 +35,7 @@
   import { isAbsolutePath } from '$lib/utils/path-utils';
   import { store as appStore } from '$store/renderer/store';
   import { mapStatusToAction } from '$features/file-tracking/utils/change-status';
+  import { isUntrackedStatusCode } from '$features/file-tracking/utils/tracking-excludes';
 
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();
@@ -139,28 +140,30 @@
 
   // Build changes array for the panel
   const changes = $derived(
-    commitFiles.map(
-      (
-        file: { path?: string; additions?: number; deletions?: number; status?: string } | string,
-      ) => {
-        const filePath = typeof file === 'string' ? file : file.path || '';
-        const additions = typeof file === 'string' ? 0 : file.additions || 0;
-        const deletions = typeof file === 'string' ? 0 : file.deletions || 0;
-        return {
-          filePath: isAbsolutePath(filePath) ? filePath : `${workspacePath}/${filePath}`,
-          action: mapStatusToAction(typeof file === 'string' ? undefined : file.status),
-          status: typeof file === 'string' ? undefined : file.status,
-          additions,
-          deletions,
-          toolName: 'local',
-          toolCallId: `commit-${commitHash}-${filePath}`,
-          staged: false,
-          category: 'committed' as const,
-          commitHash,
-          commitMessage,
-        };
-      },
-    ),
+    commitFiles
+      .filter((file) => (typeof file === 'string' ? true : !isUntrackedStatusCode(file.status)))
+      .map(
+        (
+          file: { path?: string; additions?: number; deletions?: number; status?: string } | string,
+        ) => {
+          const filePath = typeof file === 'string' ? file : file.path || '';
+          const additions = typeof file === 'string' ? 0 : file.additions || 0;
+          const deletions = typeof file === 'string' ? 0 : file.deletions || 0;
+          return {
+            filePath: isAbsolutePath(filePath) ? filePath : `${workspacePath}/${filePath}`,
+            action: mapStatusToAction(typeof file === 'string' ? undefined : file.status),
+            status: typeof file === 'string' ? undefined : file.status,
+            additions,
+            deletions,
+            toolName: 'local',
+            toolCallId: `commit-${commitHash}-${filePath}`,
+            staged: false,
+            category: 'committed' as const,
+            commitHash,
+            commitMessage,
+          };
+        },
+      ),
   );
 
   // Register header actions

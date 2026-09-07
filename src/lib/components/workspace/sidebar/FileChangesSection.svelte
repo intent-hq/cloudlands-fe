@@ -17,7 +17,10 @@
   } from '$store/renderer/slices/changes/changes-selectors';
   import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
-  import { isUntrackedChange } from '$features/file-tracking/utils/tracking-excludes';
+  import {
+    isUntrackedChange,
+    isUntrackedStatusCode,
+  } from '$features/file-tracking/utils/tracking-excludes';
   import {
     discardFiles as discardFilesViaSeam,
     stageFiles as stageFilesViaSeam,
@@ -31,7 +34,6 @@
     buildDiffMapDocument,
     diffMapFileContentHash,
     getViewedFreshness,
-    ReviewSliceMap,
     type DiffMapDocument,
     type DiffMapFile,
   } from '$features/diff-map';
@@ -48,7 +50,6 @@
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { toast } from '$lib/components/ui/toast';
-  import { safeLocalStorage } from '$lib/utils/safe-storage';
   import { m } from '$shared/paraglide/messages.js';
   import { faNote } from '$lib/icons/faNote';
   import { logger } from '$lib/utils/client-logger';
@@ -61,7 +62,7 @@
     faSpinner,
     faUser,
   } from '@fortawesome/free-solid-svg-icons';
-  import { onMount, tick } from 'svelte';
+  import { tick } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { flip } from 'svelte/animate';
@@ -82,6 +83,9 @@
   import { store as appStore } from '$store/renderer/store';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { selectSidebarChangesMapVisible } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { setSidebarChangesMapVisible } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import FileChangesDiffMap from './FileChangesDiffMap.svelte';
 
   interface Props {
     workspaceId: string;
@@ -112,18 +116,12 @@
   }: Props = $props();
 
   type ChangesView = 'list' | 'map';
-  const CHANGES_VIEW_STORAGE_KEY = 'workspace:fileChangesView';
-  let changesView: ChangesView = $state('list');
-
-  onMount(() => {
-    const stored = safeLocalStorage.getItem(CHANGES_VIEW_STORAGE_KEY);
-    if (stored === 'list' || stored === 'map') changesView = stored;
-  });
+  const sidebarChangesMapVisible$ = selectSidebarChangesMapVisible();
+  const changesView = $derived<ChangesView>($sidebarChangesMapVisible$ ? 'map' : 'list');
 
   function setChangesView(value: string) {
     if (value !== 'list' && value !== 'map') return;
-    changesView = value;
-    safeLocalStorage.setItem(CHANGES_VIEW_STORAGE_KEY, value);
+    appStore.dispatch(setSidebarChangesMapVisible(value === 'map'));
   }
 
   // Transition functions matching parent's animation coordination
@@ -163,9 +161,17 @@
   const unstagedChanges = $derived($ftUnstagedChanges$ ?? []);
   const stagedChanges = $derived($ftStagedChanges$ ?? []);
   const unstagedMapChanges = $derived(
-    unstagedChanges.filter((change) => !isUntrackedChange(change)),
+    unstagedChanges.filter(
+      (change) => !isUntrackedChange(change) && !isUntrackedStatusCode(change.status),
+    ),
   );
-  const stagedMapChanges = $derived(stagedChanges.filter((change) => !isUntrackedChange(change)));
+  const stagedMapChanges = $derived(
+    stagedChanges.filter(
+      (change) => !isUntrackedChange(change) && !isUntrackedStatusCode(change.status),
+    ),
+  );
+  const unstagedUntrackedCount = $derived(unstagedChanges.length - unstagedMapChanges.length);
+  const stagedUntrackedCount = $derived(stagedChanges.length - stagedMapChanges.length);
   const hasUnstaged = $derived(unstagedChanges.length > 0);
   const hasStaged = $derived(stagedChanges.length > 0);
   const unstagedMapDocument = $derived(
@@ -202,6 +208,8 @@
   }
   const unstagedMapLayers = $derived(viewedLayers(unstagedMapDocument));
   const stagedMapLayers = $derived(viewedLayers(stagedMapDocument));
+  let unstagedMapSelection = $state(new Set<string>());
+  let stagedMapSelection = $state(new Set<string>());
 
   // Get panel layout manager for opening file tabs
   const panelLayoutManager = $derived(getPanelLayoutManager(workspaceId));
@@ -772,15 +780,16 @@
 
     {#if hasUnstaged}
       {#if changesView === 'map'}
-        <div class="h-48 min-w-0">
-          <ReviewSliceMap
-            {workspaceId}
-            document={unstagedMapDocument}
-            layers={unstagedMapLayers}
-            activePath={activeFileStaged === false ? (activeFilePath ?? undefined) : undefined}
-            onOpen={(file, event) => handleMapFileClick(file, false, event)}
-          />
-        </div>
+        <FileChangesDiffMap
+          {workspaceId}
+          document={unstagedMapDocument}
+          layers={unstagedMapLayers}
+          bind:selection={unstagedMapSelection}
+          activePath={activeFileStaged === false ? (activeFilePath ?? undefined) : undefined}
+          untrackedCount={unstagedUntrackedCount}
+          testId="unstaged-diff-map-panel"
+          onOpen={(file, event) => handleMapFileClick(file, false, event)}
+        />
       {:else if hasAnyAgentAttribution}
         <!-- Grouped view with agent headers -->
         <div class="space-y-1">
@@ -1002,15 +1011,15 @@
   >
     {#if hasStaged}
       {#if changesView === 'map'}
-        <div class="h-48 min-w-0">
-          <ReviewSliceMap
-            {workspaceId}
-            document={stagedMapDocument}
-            layers={stagedMapLayers}
-            activePath={activeFileStaged === true ? (activeFilePath ?? undefined) : undefined}
-            onOpen={(file, event) => handleMapFileClick(file, true, event)}
-          />
-        </div>
+        <FileChangesDiffMap
+          {workspaceId}
+          document={stagedMapDocument}
+          layers={stagedMapLayers}
+          bind:selection={stagedMapSelection}
+          activePath={activeFileStaged === true ? (activeFilePath ?? undefined) : undefined}
+          untrackedCount={stagedUntrackedCount}
+          onOpen={(file, event) => handleMapFileClick(file, true, event)}
+        />
       {:else if hasAnyAgentAttribution}
         <!-- Grouped view with agent headers -->
         <div class="space-y-1">

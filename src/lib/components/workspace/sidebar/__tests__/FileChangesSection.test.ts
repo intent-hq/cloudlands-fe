@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => {
   let autoCommit = false;
   let lockedAgentIds: Record<string, true> = {};
   let workspaceAgents: Array<{ id: string; name: string }> = [];
-  let storedChangesView: string | null = null;
+  let sidebarChangesMapVisible = false;
   const openTab = vi.fn();
   const stageFiles = vi.fn();
   const unstageFiles = vi.fn();
@@ -46,9 +46,9 @@ const mocks = vi.hoisted(() => {
     setAgents: (v: Array<{ id: string; name: string }>) => {
       workspaceAgents = v;
     },
-    getStoredChangesView: () => storedChangesView,
-    setStoredChangesView: (value: string | null) => {
-      storedChangesView = value;
+    getSidebarChangesMapVisible: () => sidebarChangesMapVisible,
+    setSidebarChangesMapVisible: (value: boolean) => {
+      sidebarChangesMapVisible = value;
     },
   };
 });
@@ -57,6 +57,10 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   const dispatch = (...args: any[]) => {
+    const action = args[0];
+    if (action?.type === 'userPreferences/setSidebarChangesMapVisible') {
+      mocks.setSidebarChangesMapVisible(action.payload[0]);
+    }
     mocks.dispatch(...args);
     return mocks.reduxDispatch(...args);
   };
@@ -74,6 +78,10 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
 
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
   selectViewedFiles: mocks.selector(() => ({})),
+}));
+
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectSidebarChangesMapVisible: mocks.selector(() => mocks.getSidebarChangesMapVisible()),
 }));
 
 vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
@@ -156,13 +164,6 @@ vi.mock('$features/git/git-write-service', () => ({
   commit: vi.fn(),
 }));
 
-vi.mock('$lib/utils/safe-storage', () => ({
-  safeLocalStorage: {
-    getItem: () => mocks.getStoredChangesView(),
-    setItem: (_key: string, value: string) => mocks.setStoredChangesView(value),
-  },
-}));
-
 vi.mock('$lib/components/ui/toast', () => ({
   toast: {
     error: vi.fn(),
@@ -182,6 +183,10 @@ vi.mock('$features/diff-map', async (importOriginal) => {
   const { default: MockDiffMap } = await import('./mocks/MockDiffMap.svelte');
   return { ...actual, DiffMap: MockDiffMap, ReviewSliceMap: MockDiffMap };
 });
+
+vi.mock('$features/diff-map/components/ReviewSliceAction.svelte', async () => ({
+  default: (await import('./mocks/MockSimple.svelte')).default,
+}));
 
 vi.mock('$lib/components/ui/Header.svelte', async () => {
   const { default: MockComponent } = await import('./mocks/MockSimple.svelte');
@@ -252,7 +257,7 @@ describe('FileChangesSection', () => {
     mocks.setAutoCommit(false);
     mocks.setLockedAgentIds({});
     mocks.setAgents([]);
-    mocks.setStoredChangesView(null);
+    mocks.setSidebarChangesMapVisible(false);
   });
 
   it('renders unstaged and staged file rows from selectors', async () => {
@@ -284,9 +289,9 @@ describe('FileChangesSection', () => {
     const onFileClicked = vi.fn();
     mocks.unstaged.push(unstaged);
     mocks.staged.push(staged);
+    mocks.setSidebarChangesMapVisible(true);
 
-    const { getByRole, getAllByTestId } = await renderSection({ onOpenChange, onFileClicked });
-    await fireEvent.click(getByRole('radio', { name: 'Map view' }));
+    const { getAllByTestId } = await renderSection({ onOpenChange, onFileClicked });
 
     const maps = getAllByTestId('diff-map');
     expect(maps).toHaveLength(2);
@@ -302,12 +307,62 @@ describe('FileChangesSection', () => {
     mocks.unstaged.push(makeChange('src/a.ts'));
     const first = await renderSection();
     await fireEvent.click(first.getByRole('radio', { name: 'Map view' }));
-    expect(mocks.getStoredChangesView()).toBe('map');
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'userPreferences/setSidebarChangesMapVisible',
+      payload: [true],
+    });
+    expect(mocks.getSidebarChangesMapVisible()).toBe(true);
     first.unmount();
 
     const second = await renderSection();
     await waitFor(() => expect(second.getAllByTestId('diff-map')).toHaveLength(1));
     expect(second.queryAllByTestId('file-row')).toHaveLength(0);
+  });
+
+  it('keeps untracked rows in the list while omitting both untracked forms from the map', async () => {
+    mocks.unstaged.push(
+      makeChange('src/tracked.ts', { status: 'modified' }),
+      makeChange('src/added.ts', { status: 'added' }),
+      makeChange('src/porcelain.ts', { status: '??' }),
+    );
+
+    const list = await renderSection();
+    expect(list.getAllByTestId('file-row')).toHaveLength(3);
+    list.unmount();
+
+    mocks.setSidebarChangesMapVisible(true);
+    const map = await renderSection();
+    expect(map.getByTestId('diff-map').querySelectorAll('[data-map-file]')).toHaveLength(1);
+    expect(map.getByTestId('diff-map').querySelector('[data-map-file]')?.textContent).toContain(
+      'src/tracked.ts',
+    );
+  });
+
+  it('shows an honest empty map when every unstaged file is untracked', async () => {
+    mocks.unstaged.push(
+      makeChange('src/added.ts', { status: 'added' }),
+      makeChange('src/porcelain.ts', { status: '??' }),
+    );
+    mocks.setSidebarChangesMapVisible(true);
+
+    const view = await renderSection();
+    expect(view.getByText('No tracked changes to map')).toBeTruthy();
+    expect(view.getByText('2 untracked files not shown')).toBeTruthy();
+    expect(view.queryByTestId('diff-map')).toBeNull();
+  });
+
+  it('reports tracked and omitted counts above a partial map', async () => {
+    mocks.unstaged.push(
+      makeChange('src/tracked.ts', { status: 'modified' }),
+      makeChange('src/added.ts', { status: 'added' }),
+      makeChange('src/porcelain.ts', { status: '??' }),
+    );
+    mocks.setSidebarChangesMapVisible(true);
+
+    const view = await renderSection();
+    expect(view.getByText('1 tracked change')).toBeTruthy();
+    expect(view.getByText('2 untracked files not shown')).toBeTruthy();
+    expect(view.getByTestId('diff-map')).toBeTruthy();
   });
 
   it('handleStageAll stages all unstaged paths through the git-write-service seam', async () => {

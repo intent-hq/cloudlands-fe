@@ -23,7 +23,6 @@
     onActivate: (file: DiffMapFile, event: MouseEvent) => void;
     onKeydown: (file: DiffMapFile, event: KeyboardEvent) => void;
     onFocus: (file: DiffMapFile) => void;
-    onHover: (group: DiffMapGroup | null) => void;
     onToggleExpanded: () => void;
   }
 
@@ -41,7 +40,6 @@
     onActivate,
     onKeydown,
     onFocus,
-    onHover,
     onToggleExpanded,
   }: Props = $props();
 
@@ -75,8 +73,6 @@
     aria-label={group.path}
     style:height={`${block.headerHeight}px`}
     title={group.path}
-    onmouseenter={() => onHover(group)}
-    onmouseleave={() => onHover(null)}
   >
     <span class="group-path">
       <span class="prefix">{block.labelPrefix}</span><strong>{block.labelName}</strong>

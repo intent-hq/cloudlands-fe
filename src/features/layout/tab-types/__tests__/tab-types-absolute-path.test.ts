@@ -608,9 +608,11 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
     it('filters untracked primary changes and preserves real file actions', async () => {
       mockReduxState.ftChanges = [
         makeTrackedChange('src/untracked.ts', 'unstaged', 'added'),
+        makeTrackedChange('src/raw-untracked.ts', 'unstaged', '??'),
         makeTrackedChange('src/deleted.ts', 'unstaged', 'deleted'),
         makeTrackedChange('src/staged.ts', 'staged', 'added'),
         makeTrackedChange('src/renamed.ts', 'staged', 'renamed'),
+        makeTrackedChange('src/raw-staged-untracked.ts', 'staged', '??'),
       ];
       mockReduxState.ftCommits = [
         {
@@ -754,6 +756,12 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       renderChanges('src/x.ts', status);
       expect(await findChangeActions()).toEqual([action]);
       expect(await findChangeStatuses()).toEqual([status]);
+    });
+
+    it.each(['??', '?'])('omits commit rows with untracked status %s', async (status) => {
+      renderChanges('src/untracked.ts', status);
+      await screen.findByTestId('chat-changes-panel');
+      expect(screen.queryAllByTestId('chat-change')).toEqual([]);
     });
 
     it('passes a UNC in-root path through without double-joining', async () => {

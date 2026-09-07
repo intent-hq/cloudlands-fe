@@ -9,13 +9,16 @@ import {
   selectActiveBackendId,
 } from '$store/renderer/utils/backend-storage-namespace';
 import {
+  getLocalStorageItem,
   getLocalStorageJSON,
+  setLocalStorageItem,
   setLocalStorageJSON,
 } from '$store/renderer/utils/safe-local-storage-saga';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import {
   selectActivityLogPresets,
   selectAgentFontStyle,
+  selectAllChangesDiffMapCollapsed,
   selectChatAuroraEnabled,
   selectCodeFontFamily,
   selectGroupByRepo,
@@ -25,6 +28,7 @@ import {
   selectNoteFontStyle,
   selectShowArchived,
   selectShowReasoningBlocks,
+  selectSidebarChangesMapVisible,
   selectShellTransparencyEnabled,
   selectShortcutOverrides,
   selectSpellcheckEnabled,
@@ -39,6 +43,7 @@ import {
   resetShortcutOverride,
   saveActivityLogPreset,
   setAgentFontStyle,
+  setAllChangesDiffMapCollapsed,
   setChatAuroraEnabled,
   setCodeFontFamily,
   setGroupByRepo,
@@ -48,15 +53,18 @@ import {
   setNoteFontStyle,
   setShowArchived,
   setShowReasoningBlocks,
+  setSidebarChangesMapVisible,
   setShellTransparencyEnabled,
   setShortcutOverride,
   setSpellcheckEnabled,
   setSystemFonts,
   toggleGroupByRepo,
+  toggleAllChangesDiffMapCollapsed,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
   toggleShowArchived,
   toggleShowReasoningBlocks,
+  toggleSidebarChangesMapVisible,
   toggleShellTransparency,
   toggleSpellcheck,
   type ActivityLogPresetPreference,
@@ -69,6 +77,8 @@ const SHOW_ARCHIVED_STORAGE_KEY = 'workspace-list:showArchived';
 const GROUP_BY_REPO_STORAGE_KEY = 'workspace-list:groupByRepo';
 const COMPLETED_PROVIDER_SETUP_STORAGE_KEY = 'workspace-list:completedProviderSetup';
 const SHOW_REASONING_BLOCKS_STORAGE_KEY = 'chat:showReasoningBlocks';
+const ALL_CHANGES_DIFF_MAP_COLLAPSED_STORAGE_KEY = 'chat-changes-panel.diff-map-collapsed';
+const SIDEBAR_CHANGES_VIEW_STORAGE_KEY = 'workspace:fileChangesView';
 const CHAT_AURORA_STORAGE_KEY = 'chat:auroraEnabled';
 const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
@@ -156,6 +166,18 @@ export function* hydrateUserPreferencesWorker() {
   );
   if (typeof showReasoningBlocks === 'boolean') {
     yield* put(setShowReasoningBlocks(showReasoningBlocks));
+  }
+
+  const allChangesDiffMapCollapsed = yield* getLocalStorageItem(
+    ALL_CHANGES_DIFF_MAP_COLLAPSED_STORAGE_KEY,
+  );
+  if (allChangesDiffMapCollapsed === 'true' || allChangesDiffMapCollapsed === 'false') {
+    yield* put(setAllChangesDiffMapCollapsed(allChangesDiffMapCollapsed === 'true'));
+  }
+
+  const sidebarChangesView = yield* getLocalStorageItem(SIDEBAR_CHANGES_VIEW_STORAGE_KEY);
+  if (sidebarChangesView === 'map' || sidebarChangesView === 'list') {
+    yield* put(setSidebarChangesMapVisible(sidebarChangesView === 'map'));
   }
 
   const chatAuroraEnabled = yield* getLocalStorageJSON<boolean>(CHAT_AURORA_STORAGE_KEY);
@@ -259,6 +281,20 @@ function* persistShowReasoningBlocksWorker() {
   );
 }
 
+function* persistAllChangesDiffMapCollapsedWorker() {
+  yield* setLocalStorageItem(
+    ALL_CHANGES_DIFF_MAP_COLLAPSED_STORAGE_KEY,
+    String(yield* selectAllChangesDiffMapCollapsed.effect()),
+  );
+}
+
+function* persistSidebarChangesMapVisibleWorker() {
+  yield* setLocalStorageItem(
+    SIDEBAR_CHANGES_VIEW_STORAGE_KEY,
+    (yield* selectSidebarChangesMapVisible.effect()) ? 'map' : 'list',
+  );
+}
+
 function* persistChatAuroraWorker() {
   yield* setLocalStorageJSON(CHAT_AURORA_STORAGE_KEY, yield* selectChatAuroraEnabled.effect());
 }
@@ -337,6 +373,14 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setShowReasoningBlocks, toggleShowReasoningBlocks],
     persistShowReasoningBlocksWorker,
+  );
+  yield* takeEvery(
+    [setAllChangesDiffMapCollapsed, toggleAllChangesDiffMapCollapsed],
+    persistAllChangesDiffMapCollapsedWorker,
+  );
+  yield* takeEvery(
+    [setSidebarChangesMapVisible, toggleSidebarChangesMapVisible],
+    persistSidebarChangesMapVisibleWorker,
   );
   yield* takeEvery([setChatAuroraEnabled, toggleChatAurora], persistChatAuroraWorker);
   yield* takeEvery(

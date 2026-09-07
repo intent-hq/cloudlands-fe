@@ -50,6 +50,14 @@ export const selectShowReasoningBlocks = store.createSelector((state) => {
   return state.userPreferences?.showReasoningBlocks ?? false;
 });
 
+export const selectAllChangesDiffMapCollapsed = store.createSelector((state) => {
+  return state.userPreferences?.allChangesDiffMapCollapsed ?? false;
+});
+
+export const selectSidebarChangesMapVisible = store.createSelector((state) => {
+  return state.userPreferences?.sidebarChangesMapVisible ?? false;
+});
+
 export const selectChatAuroraEnabled = store.createSelector((state) => {
   return state.userPreferences?.chatAuroraEnabled ?? true;
 });

@@ -131,8 +131,12 @@
         ),
       ];
     }
-    const unstaged = $ftChanges$.filter((c) => c.stage === 'unstaged' && !isUntrackedChange(c));
-    const staged = $ftChanges$.filter((c) => c.stage === 'staged');
+    const unstaged = $ftChanges$.filter(
+      (c) => c.stage === 'unstaged' && !isUntrackedChange(c) && !isUntrackedStatusCode(c.status),
+    );
+    const staged = $ftChanges$.filter(
+      (c) => c.stage === 'staged' && !isUntrackedStatusCode(c.status),
+    );
     return [
       ...unstaged.map((c) => {
         const rawPath = c.file || c.relativePath;

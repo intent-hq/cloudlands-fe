@@ -10,6 +10,7 @@ import {
   resetShortcutOverride,
   saveActivityLogPreset,
   setChatAuroraEnabled,
+  setAllChangesDiffMapCollapsed,
   setCodeFontFamily,
   setGroupByRepo,
   setGithubLinkDefaultAction,
@@ -20,6 +21,7 @@ import {
   setShowArchived,
   setSpellcheckEnabled,
   setShowReasoningBlocks,
+  setSidebarChangesMapVisible,
   setShellTransparencyEnabled,
   setShortcutOverride,
   setSoundEnabled,
@@ -31,8 +33,10 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleAllChangesDiffMapCollapsed,
   toggleShowArchived,
   toggleShowReasoningBlocks,
+  toggleSidebarChangesMapVisible,
   toggleShellTransparency,
   setUpdateChannel,
   toggleSpellcheck,
@@ -43,6 +47,7 @@ import {
   selectAgentFontStyle,
   selectAgentFontStyleLabel,
   selectActivityLogPresets,
+  selectAllChangesDiffMapCollapsed,
   selectChatAuroraEnabled,
   selectCodeFontFamily,
   selectCodeFontFamilyCSS,
@@ -60,6 +65,7 @@ import {
   selectNotificationVolume,
   selectShowArchived,
   selectShowReasoningBlocks,
+  selectSidebarChangesMapVisible,
   selectShellTransparencyEnabled,
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
@@ -341,6 +347,37 @@ describe('userPreferencesReducer', () => {
       const off = userPreferencesReducer(on, toggleShowReasoningBlocks());
       expect(on.showReasoningBlocks).toBe(true);
       expect(off.showReasoningBlocks).toBe(false);
+    });
+  });
+
+  describe('diff map preferences', () => {
+    it('defaults to an expanded All changes map and sidebar list view', () => {
+      expect(initialState.allChangesDiffMapCollapsed).toBe(false);
+      expect(initialState.sidebarChangesMapVisible).toBe(false);
+    });
+
+    it('sets and toggles both preferences', () => {
+      const collapsed = userPreferencesReducer(initialState, setAllChangesDiffMapCollapsed(true));
+      const expanded = userPreferencesReducer(collapsed, toggleAllChangesDiffMapCollapsed());
+      const mapVisible = userPreferencesReducer(expanded, setSidebarChangesMapVisible(true));
+      const listVisible = userPreferencesReducer(mapVisible, toggleSidebarChangesMapVisible());
+
+      expect(collapsed.allChangesDiffMapCollapsed).toBe(true);
+      expect(expanded.allChangesDiffMapCollapsed).toBe(false);
+      expect(mapVisible.sidebarChangesMapVisible).toBe(true);
+      expect(listVisible.sidebarChangesMapVisible).toBe(false);
+    });
+
+    it('selects both preferences', () => {
+      const state = {
+        userPreferences: {
+          ...initialState,
+          allChangesDiffMapCollapsed: true,
+          sidebarChangesMapVisible: true,
+        },
+      } as never;
+      expect(selectAllChangesDiffMapCollapsed.select(state)).toBe(true);
+      expect(selectSidebarChangesMapVisible.select(state)).toBe(true);
     });
   });
 

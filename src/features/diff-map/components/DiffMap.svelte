@@ -14,7 +14,7 @@
     type DiffMapLayoutRequest,
     type TextMeasureContext,
   } from '../layout/layout-diff-map';
-  import type { DiffMapDocument, DiffMapFile, DiffMapGroup } from '../model/types';
+  import type { DiffMapDocument, DiffMapFile } from '../model/types';
   import DiffMapBlock from './DiffMapBlock.svelte';
   import DiffMapRail from './DiffMapRail.svelte';
   import type { DiffMapLayers } from './DiffMapRow.svelte';
@@ -28,7 +28,6 @@
     rungOverride?: DiffMapDensityRung;
     filterable?: boolean;
     onOpen: (file: DiffMapFile, event: MouseEvent | KeyboardEvent) => void;
-    onHoverGroup?: (group: DiffMapGroup | null) => void;
     onSelectionChange?: (selection: Set<string>) => void;
   }
 
@@ -41,7 +40,6 @@
     rungOverride,
     filterable = true,
     onOpen,
-    onHoverGroup,
     onSelectionChange,
   }: Props = $props();
 
@@ -415,7 +413,6 @@
                   selectionAnchor ??= focusedPath;
                   focusedPath = file.path;
                 }}
-                onHover={(hovered) => onHoverGroup?.(hovered)}
                 onToggleExpanded={() => toggleBlock(block.groupId)}
               />
             {/if}
