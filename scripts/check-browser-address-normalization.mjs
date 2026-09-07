@@ -13,27 +13,39 @@ export const NORMALIZATION_HELPER = `${BROWSER_COMPONENTS_DIR}/embedded-browser-
 const SOURCE_EXTENSIONS = new Set(['.ts', '.svelte']);
 const QUOTE = `['"\`]`;
 const SCHEME_LITERAL = `${QUOTE}https?:\\/\\/${QUOTE}`;
+// Whitespace between tokens is matched with \s* so a Prettier line break inside
+// the expression (`? 'http://'\n : 'https://'`) cannot hide a copy.
 const PATTERNS = [
   {
-    // (isLocalhost ? 'http://' : 'https://')
-    regex: new RegExp(`${QUOTE}http:\\/\\/${QUOTE}\\s*:\\s*${QUOTE}https:\\/\\/${QUOTE}`),
+    // (isLocalhost ? 'http://' : 'https://') or (isRemote ? 'https://' : 'http://')
+    regex: new RegExp(`${SCHEME_LITERAL}\\s*:\\s*${SCHEME_LITERAL}`, 'g'),
     reason: 'loopback scheme selection',
   },
   {
     // 'https://' + input
-    regex: new RegExp(`${SCHEME_LITERAL}\\s*\\+`),
+    regex: new RegExp(`${SCHEME_LITERAL}\\s*\\+`, 'g'),
     reason: 'scheme prefixing',
   },
   {
     // `https://${input}`
-    regex: /`https?:\/\/\$\{/,
+    regex: /`https?:\/\/\$\{/g,
     reason: 'scheme prefixing',
   },
 ];
 
+// Line comments, block comments, and Svelte HTML comments are blanked (newlines
+// kept) so an example in a comment cannot trigger the gate and line numbers stay
+// accurate.
+const COMMENT_PATTERN = /\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(?<=^|[^:'"`])\/\/[^\n]*/gm;
+
 const normalize = (value) => value.split(path.sep).join('/').replace(/^\.\//, '');
 
 const isTestFile = (filePath) => /\.(?:test|spec|ct\.spec)\.ts$/.test(filePath);
+
+const stripComments = (content) =>
+  content.replace(COMMENT_PATTERN, (comment) => comment.replace(/[^\n]/g, ' '));
+
+const lineNumberAt = (content, index) => content.slice(0, index).split('\n').length;
 
 export function findBrowserAddressNormalizationViolations(files) {
   const violations = [];
@@ -42,14 +54,19 @@ export function findBrowserAddressNormalizationViolations(files) {
     if (!filePath.startsWith(`${BROWSER_COMPONENTS_DIR}/`)) continue;
     if (!SOURCE_EXTENSIONS.has(path.extname(filePath))) continue;
     if (filePath === NORMALIZATION_HELPER || isTestFile(filePath)) continue;
-    const lines = file.content.split('\n');
-    lines.forEach((line, index) => {
-      const match = PATTERNS.find(({ regex }) => regex.test(line));
-      if (!match) return;
+    const content = stripComments(file.content);
+    const hits = [];
+    for (const { regex, reason } of PATTERNS) {
+      for (const match of content.matchAll(regex)) {
+        hits.push({ line: lineNumberAt(content, match.index), reason });
+      }
+    }
+    hits.sort((a, b) => a.line - b.line);
+    for (const { line, reason } of hits) {
       violations.push(
-        `${filePath}:${index + 1}: inline address-bar ${match.reason}; use normalizeBrowserAddressInput() from ${NORMALIZATION_HELPER}`,
+        `${filePath}:${line}: inline address-bar ${reason}; use normalizeBrowserAddressInput() from ${NORMALIZATION_HELPER}`,
       );
-    });
+    }
   }
   return violations;
 }

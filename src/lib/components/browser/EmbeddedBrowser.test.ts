@@ -55,6 +55,7 @@ vi.mock('$lib/utils/workspace-navigation', () => ({
 }));
 
 import EmbeddedBrowser from './EmbeddedBrowser.svelte';
+import { m } from '$shared/paraglide/messages.js';
 import { navigateToAgent } from '$lib/utils/workspace-navigation';
 import { toast } from '$lib/components/ui/toast';
 import { elementPickerScript } from './element-picker-script';
@@ -347,19 +348,21 @@ describe('EmbeddedBrowser', () => {
     });
 
     it('reports an unparsable address without navigating or recording it', async () => {
-      const { container, getByRole, getByText } = renderPage();
+      const { container, getByRole, queryByText } = renderPage();
       const webview = container.querySelector('webview') as HTMLElement & {
         loadURL: ReturnType<typeof vi.fn>;
       };
       webview.loadURL = vi.fn().mockResolvedValue(undefined);
       mocks.dispatch.mockClear();
+      const invalidFormatMessage = m.browser_embedded_invalidUrlFormat_error();
+      expect(queryByText(invalidFormatMessage)).toBeNull();
 
       await fireEvent.click(getByRole('button', { name: 'Edit browser address' }));
       const input = getByRole('textbox', { name: 'Browser address' });
       await fireEvent.input(input, { target: { value: 'not a url' } });
       await fireEvent.submit(input.closest('form')!);
 
-      expect(getByText('Invalid URL format')).toBeTruthy();
+      expect(queryByText(invalidFormatMessage)).not.toBeNull();
       expect(webview.loadURL).not.toHaveBeenCalled();
       expect(mocks.dispatch).not.toHaveBeenCalled();
       expect(container.querySelector('input')).toBeNull();

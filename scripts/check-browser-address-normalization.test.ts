@@ -67,6 +67,61 @@ describe('browser address normalization guard', () => {
     expect(violations[0]).toContain('normalizeBrowserAddressInput');
   });
 
+  it('rejects a copy that Prettier has split across lines', () => {
+    const body = [
+      'function normalizeUrl(input: string) {',
+      '  let url = input.trim();',
+      '  if (!/^[a-z][a-z0-9+.-]*:\\/\\//i.test(url)) {',
+      "    url = (url.includes('localhost') || url.includes('127.0.0.1') || url.includes('0.0.0.0')",
+      "      ? 'http://'",
+      "      : 'https://') + url;",
+      '  }',
+      '  return url;',
+      '}',
+    ].join('\n');
+    const violations = findBrowserAddressNormalizationViolations([
+      helper,
+      component('BrowserPanel.svelte', body),
+    ]);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain(`${BROWSER_COMPONENTS_DIR}/BrowserPanel.svelte:5`);
+  });
+
+  it('rejects a scheme ternary written in the reversed order', () => {
+    const body = "const url = (isRemote ? 'https://' : 'http://') + input;";
+    const violations = findBrowserAddressNormalizationViolations([
+      helper,
+      component('BrowserPanel.svelte', body),
+    ]);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain('BrowserPanel.svelte:1');
+  });
+
+  it('rejects a scheme literal concatenated on the following line', () => {
+    const body = ["const target =\n  'https://' +\n  draft;"].join('\n');
+    const violations = findBrowserAddressNormalizationViolations([
+      helper,
+      component('EmbeddedBrowser.svelte', body),
+    ]);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain('EmbeddedBrowser.svelte:2');
+  });
+
+  it('ignores examples inside line, block, and HTML comments', () => {
+    const body = [
+      "// e.g. (isLocalhost ? 'http://' : 'https://') + host",
+      '/*',
+      " * const url = 'https://' + host;",
+      ' */',
+      '<!-- `https://${host}` is built by the helper -->',
+      "const docs = 'https://example.test/docs'; // not 'https://' + host",
+      'const normalized = normalizeBrowserAddressInput(urlInput);',
+    ].join('\n');
+    expect(
+      findBrowserAddressNormalizationViolations([helper, component('BrowserPanel.svelte', body)]),
+    ).toEqual([]);
+  });
+
   it('reports every offending line across files', () => {
     const files = [
       helper,
