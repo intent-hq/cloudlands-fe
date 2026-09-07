@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   legacyClear: vi.fn(),
   createDraft: vi.fn(),
   runnerOptions: vi.fn(),
+  runnerFlush: vi.fn(),
+  runnerStop: vi.fn(),
 }));
 
 vi.mock('$lib/client', () => ({
@@ -38,7 +40,8 @@ vi.mock('../effects', async () => {
           listener = next;
           return () => undefined;
         },
-        stop: vi.fn(),
+        flush: mocks.runnerFlush,
+        stop: mocks.runnerStop,
       };
     },
   };
@@ -154,6 +157,20 @@ describe('new workspace route controller', () => {
 
     expect(mocks.runnerOptions).not.toHaveBeenCalled();
     expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('forwards blur flushes and stops the route-owned runner on teardown', async () => {
+    const controller = createNewWorkspaceRouteController({
+      startInput: {},
+      requestedDraftId: null,
+    });
+    await controller.start(() => undefined);
+
+    controller.flush();
+    controller.stop();
+
+    expect(mocks.runnerFlush).toHaveBeenCalledOnce();
+    expect(mocks.runnerStop).toHaveBeenCalledOnce();
   });
 
   it('restores the newest owned draft when the route has no draft selector', async () => {

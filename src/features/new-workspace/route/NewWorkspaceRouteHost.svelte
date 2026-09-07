@@ -86,8 +86,11 @@
     state={controllerState}
     presentation={{ host: $daemonHostRepairTarget$ }}
     onEdit={(patch) => routeController.edit(patch)}
-    onStart={(requiredCapabilities) =>
-      routeController.dispatch({ type: 'start.requested', requiredCapabilities })}
+    onFlush={() => routeController.flush()}
+    onStart={(requiredCapabilities) => {
+      routeController.flush();
+      routeController.dispatch({ type: 'start.requested', requiredCapabilities });
+    }}
     onRetry={() => routeController.dispatch({ type: 'retry' })}
     onReconnect={() => routeController.dispatch({ type: 'reconnect' })}
     onAcceptRemote={() => routeController.dispatch({ type: 'conflict.acceptRemote' })}

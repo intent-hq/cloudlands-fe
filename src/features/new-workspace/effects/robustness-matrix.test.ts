@@ -254,6 +254,32 @@ describe('new-workspace host × provider × network robustness matrix', () => {
     expect(hasUnsavedInput(state)).toBe(false);
   });
 
+  it('issues each pending shell capability probe once per effect batch', async () => {
+    const requests: string[] = [];
+    registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, (payload) => {
+      requests.push((payload as { method: string }).method);
+      return { ok: true, result: { available: true } };
+    });
+    const state = restoredState(
+      draft(),
+      { provider: 'pending', git: 'pending', node: 'pending', github: 'pending' },
+      GENERATION,
+    );
+
+    const result = await execute(
+      state,
+      providerReduxState({ auggie: { available: true, authenticated: true } }, true),
+    );
+
+    expect(requests).toEqual(['host.checkGit', 'host.checkNode', 'host.checkGh']);
+    expect(result.capabilities).toEqual({
+      provider: 'ready',
+      git: 'ready',
+      node: 'ready',
+      github: 'ready',
+    });
+  });
+
   it.each([
     ['no providers', {}, true, 'missing'],
     [

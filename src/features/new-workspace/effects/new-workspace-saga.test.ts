@@ -225,7 +225,8 @@ describe('newWorkspaceEffectSaga', () => {
       inputVersion: 1,
     } as ControllerState;
 
-    const result = await execute(state, client({ workspaceDrafts: { update } }));
+    const appClient = client({ workspaceDrafts: { update } });
+    const result = await execute(state, appClient);
 
     expect(update).toHaveBeenCalledWith(FIXED_IDS.draft, 1, {
       intentText: 'local',
@@ -235,6 +236,7 @@ describe('newWorkspaceEffectSaga', () => {
       config: {},
     });
     expect(result.state).toMatchObject({ phase: 'conflict', remote });
+    expect(appClient.workspaceDrafts.get).not.toHaveBeenCalled();
   });
 
   it('round-trips setup controls through the exact workspaceDraft.update payload', async () => {

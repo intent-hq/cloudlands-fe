@@ -1,5 +1,5 @@
 import { runSaga } from 'redux-saga';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AppClient } from '$lib/client';
 import type { WorkspaceDraft } from '$shared/types';
@@ -20,6 +20,63 @@ vi.mock('$lib/components/workspace/initializer/staged-attachments', () => ({
 vi.mock('$lib/client/live/live-support', () => ({
   newIdempotencyKey: () => 'message-1',
 }));
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+function savedEditingState(remote: WorkspaceDraft): ControllerState {
+  const input = {
+    intentText: remote.intentText,
+    source: remote.source,
+    contextLinks: remote.contextLinks,
+    attachments: remote.attachments,
+    config: remote.config,
+  };
+  return {
+    ...createInitialControllerState(7, input),
+    phase: 'editing',
+    draftId: remote.id,
+    draft: remote,
+    acknowledgedInput: input,
+    acknowledgedRevision: remote.revision,
+    creationIssued: true,
+  } as ControllerState;
+}
+
+function sagaExecutor(
+  snapshot: ControllerState,
+  dependencies: Parameters<typeof newWorkspaceEffectSaga>[1],
+  settled: () => void,
+): () => void {
+  const task = runSaga({}, function* () {
+    try {
+      yield* newWorkspaceEffectSaga(snapshot, dependencies);
+    } finally {
+      queueMicrotask(settled);
+    }
+  });
+  return () => task.cancel();
+}
+
+function draft(overrides: Partial<WorkspaceDraft> = {}): WorkspaceDraft {
+  return {
+    id: 'draft-1',
+    ownerClientId: 'client-1',
+    revision: 1,
+    phase: 'editing',
+    intentText: '',
+    source: null,
+    contextLinks: [],
+    attachments: [],
+    config: {},
+    operationKey: 'operation-1',
+    delivery: { state: 'none' },
+    createdAt: '2026-09-04T20:00:00.000Z',
+    updatedAt: '2026-09-04T20:00:00.000Z',
+    ...overrides,
+  };
+}
 
 describe('draft transaction integration seams', () => {
   it('owns controller transitions, subscriptions, and cancellation', () => {
@@ -42,6 +99,32 @@ describe('draft transaction integration seams', () => {
     expect(executeEffect).toHaveBeenCalledTimes(1);
     runner.stop();
     expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it('retains no listeners across 100 open-close cycles', () => {
+    const lateDispatches: Array<
+      (event: { type: 'backend.connected'; generation: number }) => void
+    > = [];
+    const cancel = vi.fn();
+    const listener = vi.fn();
+
+    for (let index = 0; index < 100; index += 1) {
+      const runner = createDraftTransactionRunner({
+        executeEffect: (_state, dependencies) => {
+          lateDispatches.push(dependencies.dispatch);
+          return cancel;
+        },
+      });
+      runner.subscribe(listener);
+      runner.start(createInitialControllerState(index));
+      runner.stop();
+    }
+    for (const [generation, dispatch] of lateDispatches.entries()) {
+      dispatch({ type: 'backend.connected', generation });
+    }
+
+    expect(listener).toHaveBeenCalledTimes(100);
+    expect(cancel).toHaveBeenCalledTimes(100);
   });
 
   it('hands the complete adoption action set to one synchronous batch', async () => {
@@ -167,5 +250,111 @@ describe('draft transaction integration seams', () => {
     await vi.waitFor(() => expect(attachmentMocks.send).toHaveBeenCalledOnce());
     expect(phases).toContain('sending');
     expect(phases.at(-1)).toBe('live');
+  });
+
+  it('coalesces 100 rapid keystrokes into one trailing draft update', async () => {
+    vi.useFakeTimers();
+    const remote = draft();
+    const update = vi.fn().mockImplementation((_id, _revision, input) =>
+      Promise.resolve({
+        ...remote,
+        ...input,
+        revision: 2,
+      }),
+    );
+    const runner = createDraftTransactionRunner({
+      client: { workspaceDrafts: { update } } as unknown as AppClient,
+      executeEffect: sagaExecutor,
+    });
+    runner.start(savedEditingState(remote));
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (let index = 1; index <= 100; index += 1) {
+      runner.dispatch({ type: 'user.edited', patch: { intentText: 'x'.repeat(index) } });
+    }
+    await vi.advanceTimersByTimeAsync(249);
+    expect(update).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(update).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith(
+      'draft-1',
+      1,
+      expect.objectContaining({ intentText: 'x'.repeat(100) }),
+    );
+  });
+
+  it('flushes pending input immediately when Start is requested', async () => {
+    vi.useFakeTimers();
+    const remote = draft({
+      id: 'draft-start',
+      revision: 2,
+      operationKey: 'operation-start',
+    });
+    const update = vi
+      .fn()
+      .mockImplementation((_id, _revision, input) =>
+        Promise.resolve({ ...remote, ...input, revision: 3 }),
+      );
+    const runner = createDraftTransactionRunner({
+      client: { workspaceDrafts: { update } } as unknown as AppClient,
+      executeEffect: sagaExecutor,
+    });
+    const state = {
+      ...savedEditingState(remote),
+      capabilities: {
+        ...savedEditingState(remote).capabilities,
+        provider: 'missing' as const,
+      },
+    } as ControllerState;
+    runner.start(state);
+    await vi.advanceTimersByTimeAsync(0);
+    runner.dispatch({ type: 'user.edited', patch: { intentText: 'start now' } });
+    runner.dispatch({ type: 'start.requested', requiredCapabilities: ['provider'] });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(update).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith(
+      'draft-start',
+      2,
+      expect.objectContaining({ intentText: 'start now' }),
+    );
+  });
+
+  it('flushes the latest edit immediately and releases listeners on close', async () => {
+    vi.useFakeTimers();
+    const remote = draft({
+      id: 'draft-close',
+      revision: 4,
+      intentText: 'saved',
+      operationKey: 'operation-close',
+    });
+    const update = vi
+      .fn()
+      .mockImplementation((_id, _revision, input) =>
+        Promise.resolve({ ...remote, ...input, revision: 5 }),
+      );
+    const listener = vi.fn();
+    const runner = createDraftTransactionRunner({
+      client: { workspaceDrafts: { update } } as unknown as AppClient,
+      executeEffect: sagaExecutor,
+    });
+    runner.subscribe(listener);
+    runner.start(savedEditingState(remote));
+    await vi.advanceTimersByTimeAsync(0);
+    runner.dispatch({ type: 'user.edited', patch: { intentText: 'last keystroke' } });
+    const callsBeforeClose = listener.mock.calls.length;
+
+    runner.stop();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(update).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith(
+      'draft-close',
+      4,
+      expect.objectContaining({ intentText: 'last keystroke' }),
+    );
+    expect(listener).toHaveBeenCalledTimes(callsBeforeClose);
   });
 });

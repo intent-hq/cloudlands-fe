@@ -35,6 +35,7 @@
   let { pendingCapabilities = false, providerMissing = false }: Props = $props();
   let controllerState = $state(buildState());
   let startCount = $state(0);
+  let flushCount = $state(0);
   let providerSelectionCount = $state(0);
 
   function buildState(): ControllerState {
@@ -125,11 +126,13 @@
       : undefined,
   }}
   onEdit={edit}
+  onFlush={() => (flushCount += 1)}
   onStart={() => (startCount += 1)}
   onChooseNewFolder={chooseNewFolder}
   onProviderSelected={chooseProvider}
 />
 <output class="sr-only" data-testid="start-count">{startCount}</output>
+<output class="sr-only" data-testid="flush-count">{flushCount}</output>
 <output class="sr-only" data-testid="source-kind">{controllerState.input.source?.kind}</output>
 <output class="sr-only" data-testid="source-name">{selectedSourceName()}</output>
 <output class="sr-only" data-testid="provider-selection-count">{providerSelectionCount}</output>

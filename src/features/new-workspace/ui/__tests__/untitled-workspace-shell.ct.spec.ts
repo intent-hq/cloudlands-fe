@@ -24,6 +24,16 @@ test.describe('new-workspace shell', () => {
     await expect(component.getByTestId('start-count')).toHaveText('1');
   });
 
+  test('flushes the draft when focus leaves the composer', async ({ mount, page }) => {
+    const component = await mount(UntitledWorkspaceShellHost);
+    const editor = component.locator('.tiptap-editor');
+    await editor.focus();
+
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+    await expect(component.getByTestId('flush-count')).toHaveText('1');
+  });
+
   test('selects an inline provider when none is ready', async ({ mount }) => {
     const component = await mount(UntitledWorkspaceShellHost, {
       props: { providerMissing: true },

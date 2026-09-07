@@ -17,6 +17,7 @@ interface NewWorkspaceRouteController {
   start(listener: (state: ControllerState) => void): Promise<void>;
   edit(patch: Partial<DraftInput>): void;
   dispatch: DraftTransactionRunner['dispatch'];
+  flush(): void;
   stop(): void;
 }
 
@@ -71,6 +72,9 @@ export function createNewWorkspaceRouteController(options: {
     },
     dispatch(event) {
       runner?.dispatch(event);
+    },
+    flush() {
+      runner?.flush();
     },
     stop() {
       stopped = true;

@@ -24,6 +24,7 @@
     state: ControllerState;
     presentation?: NewWorkspacePresentation;
     onEdit?: (patch: Partial<DraftInput>) => void;
+    onFlush?: () => void;
     onStart?: (requiredCapabilities: Capability[]) => void;
     onRetry?: () => void;
     onReconnect?: () => void;
@@ -40,6 +41,7 @@
     state: controllerState,
     presentation = {},
     onEdit,
+    onFlush,
     onStart,
     onRetry,
     onReconnect,
@@ -232,6 +234,13 @@
     if (canStart) onStart?.(requiredCapabilities);
   }
 
+  function flushWhenLeavingComposer(event: FocusEvent): void {
+    const current = event.currentTarget;
+    const next = event.relatedTarget;
+    if (!(current instanceof Node) || !(next instanceof Node) || !current.contains(next))
+      onFlush?.();
+  }
+
   function addContextItem(item: ContextItem): void {
     if (
       controllerState.input.attachments.some(
@@ -399,7 +408,11 @@
           </div>
         </div>
 
-        <div class="conversation-composer relative z-10 w-full" data-testid="draft-composer">
+        <div
+          class="conversation-composer relative z-10 w-full"
+          data-testid="draft-composer"
+          onfocusout={flushWhenLeavingComposer}
+        >
           <div class="composer-prompt-layer relative z-10 w-full">
             <div class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0">
               <div class="w-full min-w-0">
