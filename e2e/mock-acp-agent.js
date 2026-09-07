@@ -16,6 +16,8 @@
  *     When chunks is set, it takes precedence over response.
  *   MOCK_AGENT_DELAY_MS - milliseconds to wait before streaming the response in session/prompt.
  *     Gives the app time to finish chat initialization. Default: 3000. Set to 0 for no delay.
+ *   MOCK_AGENT_FILES_VIA_ACP - set to 1 to write behavior.files through fs/write_text_file so
+ *     daemon activity is attributed to this agent. Defaults to direct fixture writes.
  */
 import readline from 'node:readline';
 import fs from 'node:fs';
@@ -23,6 +25,8 @@ import path from 'node:path';
 
 let workspacePath = null;
 const sessionId = 'mock-session-1';
+let nextClientCallId = 1;
+const pendingClientCalls = new Map();
 
 // --- JSON-RPC helpers ---
 
@@ -36,6 +40,39 @@ function jsonrpcError(id, code, message) {
 
 function jsonrpcNotification(method, params) {
   return JSON.stringify({ jsonrpc: '2.0', method, params });
+}
+
+function callClientService(method, params, timeoutMs = 30_000) {
+  return new Promise((resolve, reject) => {
+    const id = nextClientCallId++;
+    const timeout = setTimeout(() => {
+      pendingClientCalls.delete(id);
+      reject(new Error(`client call timeout after ${timeoutMs}ms: ${method}`));
+    }, timeoutMs);
+    pendingClientCalls.set(id, {
+      resolve: (result) => {
+        clearTimeout(timeout);
+        resolve(result);
+      },
+      reject: (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    });
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+  });
+}
+
+function promptBehavior(params) {
+  if (process.env.MOCK_AGENT_BEHAVIOR_FROM_PROMPT !== '1') return null;
+  const text = (params?.prompt ?? [])
+    .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('\n');
+  const marker = 'SEMANTIC_MAP_BEHAVIOR:';
+  const index = text.indexOf(marker);
+  if (index < 0) return null;
+  return text.slice(index + marker.length).trim();
 }
 
 // --- Method handlers ---
@@ -69,8 +106,8 @@ function handleSessionLoad(id) {
   return jsonrpcError(id, -32601, 'Method not found: session/load');
 }
 
-async function handleSessionPrompt(id) {
-  const behaviorRaw = process.env.MOCK_AGENT_BEHAVIOR || '{}';
+async function handleSessionPrompt(id, params) {
+  const behaviorRaw = promptBehavior(params) ?? process.env.MOCK_AGENT_BEHAVIOR ?? '{}';
   let behavior;
   try {
     behavior = JSON.parse(behaviorRaw);
@@ -87,8 +124,13 @@ async function handleSessionPrompt(id) {
     for (const [relPath, content] of Object.entries(behavior.files)) {
       const fullPath = path.resolve(workspacePath, relPath);
       fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-      fs.writeFileSync(fullPath, content, 'utf8');
-      process.stderr.write(`[mock-agent] wrote file: ${fullPath}\n`);
+      if (process.env.MOCK_AGENT_FILES_VIA_ACP === '1') {
+        await callClientService('fs/write_text_file', { path: fullPath, content });
+        process.stderr.write(`[mock-agent] wrote file through ACP: ${fullPath}\n`);
+      } else {
+        fs.writeFileSync(fullPath, content, 'utf8');
+        process.stderr.write(`[mock-agent] wrote file: ${fullPath}\n`);
+      }
     }
   } else if (behavior.files && !workspacePath) {
     process.stderr.write(
@@ -164,7 +206,7 @@ function handleMessage(msg) {
     case 'session/load':
       return handleSessionLoad(id);
     case 'session/prompt':
-      return handleSessionPrompt(id);
+      return handleSessionPrompt(id, params);
     case 'session/cancel':
       // Acknowledge silently — no response needed for notifications
       return null;
@@ -192,6 +234,19 @@ rl.on('line', async (line) => {
   pendingHandlers++;
   try {
     const msg = JSON.parse(trimmed);
+    if (
+      msg.id !== undefined &&
+      msg.method === undefined &&
+      (msg.result !== undefined || msg.error !== undefined)
+    ) {
+      const pending = pendingClientCalls.get(msg.id);
+      if (pending) {
+        pendingClientCalls.delete(msg.id);
+        if (msg.error) pending.reject(new Error(`JSON-RPC error: ${msg.error.message}`));
+        else pending.resolve(msg.result);
+      }
+      return;
+    }
     const response = await handleMessage(msg);
     if (response) {
       process.stdout.write(response + '\n');
