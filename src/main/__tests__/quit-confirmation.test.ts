@@ -21,6 +21,7 @@ import type {
   QuitConfirmationShowPayload,
 } from '../../shared/ipc/quit-confirmation';
 import type { WorkspaceBrowserClient } from '../../shared/types/browser-clients';
+import { stampWindowWithBackend } from '../window-backend';
 import {
   confirmQuitWithRunningAgents,
   resetQuitConfirmationStateForTests,
@@ -93,6 +94,11 @@ vi.mock('../../features/backend/main/backend-connection', () => ({
   resolveBackendConfig: vi.fn(() => ({ transport: 'uds', socketPath: '/tmp/intentd.sock' })),
 }));
 
+const { getWindowIdsForWorkspace } = vi.hoisted(() => ({
+  getWindowIdsForWorkspace: vi.fn<(workspaceId: string) => number[]>(() => []),
+}));
+vi.mock('../../features/system/main/system.ipc', () => ({ getWindowIdsForWorkspace }));
+
 const AGENTS: RespondingAgent[] = [
   { agentId: 'agent-1', name: 'Implementor', workspaceId: 'ws-1' },
   { agentId: 'agent-2', name: 'Verifier', workspaceId: 'ws-2' },
@@ -123,13 +129,15 @@ function makeDeps(options: {
   const parentWindow = { id: 42 } as unknown as BrowserWindow;
   const dialogOptions = { message: 'agents working' } as MessageBoxOptions;
   const tabsOnlyDialogOptions = { message: 'tabs connected' } as MessageBoxOptions;
+  const backendId = options.remoteActive ? 'remote-1' : 'local';
   const deps = {
-    getBackendTargets: vi.fn(() => [{ id: options.remoteActive ? 'remote-1' : 'local', client }]),
+    getBackendTargets: vi.fn(() => [{ id: backendId, client }]),
     getConnectionMode: vi.fn(() => options.mode ?? ('sidecar' as ConnectionMode)),
     listRespondingAgents: vi.fn(async () => options.agents),
     listLocalRespondingAgents: vi.fn(async () => options.localAgents ?? []),
     listDisruptedBrowserTabs: vi.fn(async () => options.browserTabs ?? []),
     getOwnClientId: vi.fn(async () => OWN_CLIENT_ID),
+    getHostingBackendIds: vi.fn(async () => [backendId]),
     getWorkspaceBrowserClient: vi.fn(async () => drivenBy(OWN_CLIENT_ID)),
     confirmViaRenderer: vi.fn(async () => options.rendererDecision ?? null),
     buildQuitDialogOptions: vi.fn(() => dialogOptions),
@@ -763,28 +771,112 @@ describe('confirmQuitWithRunningAgents — driven-workspace tab narrowing', () =
     expect(shownTabs(deps)).toEqual(HOSTED_TABS);
   });
 
-  it('falls through to the next pooled backend when the first does not know the workspace', async () => {
-    const { deps } = makeDeps({
-      agents: [],
-      browserTabs: [HOSTED_TABS[1]],
-      rendererDecision: true,
-    });
+  /**
+   * Workspace ids are daemon-local (`workspace.import` keeps the source id),
+   * so two pooled daemons can both answer for the same id. Only the backend
+   * whose window hosts the tab's workspace is authoritative.
+   */
+  describe('same workspace id on two pooled backends', () => {
     const localClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
     const remoteClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
-    deps.getBackendTargets.mockReturnValue([
-      { id: 'local', client: localClient },
-      { id: 'remote-a', client: remoteClient },
-    ]);
-    deps.getWorkspaceBrowserClient.mockImplementation(async (target) => {
-      if (target === localClient) throw new Error('Invalid params: unknown workspace');
-      return drivenBy('client-elsewhere');
+
+    function makeTwoBackendDeps(hostingBackendIds: string[], targetsFirst: 'local' | 'remote') {
+      const { deps } = makeDeps({
+        agents: [],
+        browserTabs: [HOSTED_TABS[1]],
+        rendererDecision: true,
+      });
+      const targets = [
+        { id: 'local', client: localClient },
+        { id: 'remote-a', client: remoteClient },
+      ];
+      deps.getBackendTargets.mockReturnValue(
+        targetsFirst === 'local' ? targets : targets.reverse(),
+      );
+      deps.getHostingBackendIds.mockResolvedValue(hostingBackendIds);
+      return deps;
+    }
+
+    it('keeps the tab when a foreign backend listed first says elsewhere but the hosting one says own', async () => {
+      const deps = makeTwoBackendDeps(['remote-a'], 'local');
+      deps.getWorkspaceBrowserClient.mockImplementation(async (target) =>
+        target === localClient ? drivenBy('client-elsewhere') : drivenBy(OWN_CLIENT_ID),
+      );
+
+      await confirmQuitWithRunningAgents(deps);
+
+      expect(deps.getHostingBackendIds).toHaveBeenCalledWith('ws-other');
+      expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledTimes(1);
+      expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(remoteClient, 'ws-other');
+      expect(shownTabs(deps)).toEqual([HOSTED_TABS[1]]);
     });
 
-    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
+    it('keeps the tab when a foreign backend says elsewhere but the hosting one fails', async () => {
+      const deps = makeTwoBackendDeps(['remote-a'], 'local');
+      deps.getWorkspaceBrowserClient.mockImplementation(async (target) => {
+        if (target === remoteClient) throw new Error('backend not connected');
+        return drivenBy('client-elsewhere');
+      });
 
-    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(localClient, 'ws-other');
-    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(remoteClient, 'ws-other');
-    expect(deps.confirmViaRenderer).not.toHaveBeenCalled();
+      await confirmQuitWithRunningAgents(deps);
+
+      expect(deps.getWorkspaceBrowserClient).not.toHaveBeenCalledWith(localClient, 'ws-other');
+      expect(shownTabs(deps)).toEqual([HOSTED_TABS[1]]);
+    });
+
+    it('drops the tab only on the hosting backend answer, whatever the target order', async () => {
+      const deps = makeTwoBackendDeps(['local'], 'remote');
+      deps.getWorkspaceBrowserClient.mockImplementation(async (target) =>
+        target === localClient ? drivenBy('client-elsewhere') : drivenBy(OWN_CLIENT_ID),
+      );
+
+      await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
+
+      expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledTimes(1);
+      expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(localClient, 'ws-other');
+      expect(deps.confirmViaRenderer).not.toHaveBeenCalled();
+    });
+
+    it('keeps the tab without asking anyone when windows on two backends host the id', async () => {
+      const deps = makeTwoBackendDeps(['local', 'remote-a'], 'local');
+      deps.getWorkspaceBrowserClient.mockResolvedValue(drivenBy('client-elsewhere'));
+
+      await confirmQuitWithRunningAgents(deps);
+
+      expect(deps.getWorkspaceBrowserClient).not.toHaveBeenCalled();
+      expect(shownTabs(deps)).toEqual([HOSTED_TABS[1]]);
+    });
+
+    it('keeps the tab without asking anyone when no live window hosts its workspace', async () => {
+      const deps = makeTwoBackendDeps([], 'local');
+      deps.getWorkspaceBrowserClient.mockResolvedValue(drivenBy('client-elsewhere'));
+
+      await confirmQuitWithRunningAgents(deps);
+
+      expect(deps.getWorkspaceBrowserClient).not.toHaveBeenCalled();
+      expect(shownTabs(deps)).toEqual([HOSTED_TABS[1]]);
+    });
+
+    it('keeps the tab when the hosting backend has no live pooled client', async () => {
+      const deps = makeTwoBackendDeps(['remote-b'], 'local');
+      deps.getWorkspaceBrowserClient.mockResolvedValue(drivenBy('client-elsewhere'));
+
+      await confirmQuitWithRunningAgents(deps);
+
+      expect(deps.getWorkspaceBrowserClient).not.toHaveBeenCalled();
+      expect(shownTabs(deps)).toEqual([HOSTED_TABS[1]]);
+    });
+
+    it('keeps the tab when the hosting lookup itself throws', async () => {
+      const deps = makeTwoBackendDeps([], 'local');
+      deps.getHostingBackendIds.mockRejectedValue(new Error('window map unavailable'));
+      deps.getWorkspaceBrowserClient.mockResolvedValue(drivenBy('client-elsewhere'));
+
+      await confirmQuitWithRunningAgents(deps);
+
+      expect(deps.getWorkspaceBrowserClient).not.toHaveBeenCalled();
+      expect(shownTabs(deps)).toEqual([HOSTED_TABS[1]]);
+    });
   });
 });
 
@@ -854,6 +946,90 @@ describe('confirmQuitWithRunningAgents — default driving-client lookup', () =>
     await confirmQuitWithRunningAgents(disconnected.deps);
     expect(disconnected.request).not.toHaveBeenCalled();
     expect(disconnected.deps.confirmViaRenderer).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The default hosting-backend lookup is exercised through the public entry
+ * point: every dep is injected EXCEPT `getHostingBackendIds`, so the real
+ * window-map → stamped-backend resolution runs against the mocked
+ * `getWindowIdsForWorkspace` and `BrowserWindow.fromId`.
+ */
+describe('confirmQuitWithRunningAgents — default hosting-backend lookup', () => {
+  const TAB: QuitBrowserTabSummary = {
+    tabId: 'tab-b',
+    ownerAgentId: 'agent-b',
+    workspaceId: 'ws-other',
+  };
+
+  function fakeWindow(backendId: string | null, destroyed = false): BrowserWindow {
+    const window = { isDestroyed: () => destroyed } as unknown as BrowserWindow;
+    if (backendId !== null) stampWindowWithBackend(window, backendId);
+    return window;
+  }
+
+  async function installWindows(windows: Record<number, BrowserWindow>) {
+    const { BrowserWindow: MockedBrowserWindow } = await import('electron');
+    (MockedBrowserWindow as unknown as { fromId: (id: number) => BrowserWindow | null }).fromId = (
+      id,
+    ) => windows[id] ?? null;
+  }
+
+  function makeHostingDeps() {
+    const { deps } = makeDeps({ agents: [], browserTabs: [TAB], rendererDecision: true });
+    const { getHostingBackendIds: _omitted, ...rest } = deps;
+    const localClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
+    const remoteClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
+    rest.getBackendTargets.mockReturnValue([
+      { id: 'local', client: localClient },
+      { id: 'remote-a', client: remoteClient },
+    ]);
+    rest.getWorkspaceBrowserClient.mockResolvedValue(drivenBy('client-elsewhere'));
+    return { deps: rest, localClient, remoteClient };
+  }
+
+  beforeEach(() => {
+    getWindowIdsForWorkspace.mockReset();
+    getWindowIdsForWorkspace.mockReturnValue([]);
+  });
+
+  it('asks the backend stamped on the live windows hosting the workspace, deduplicated', async () => {
+    const { deps, remoteClient } = makeHostingDeps();
+    getWindowIdsForWorkspace.mockReturnValue([1, 2, 3, 4]);
+    await installWindows({
+      1: fakeWindow('remote-a'),
+      2: fakeWindow('remote-a'),
+      3: fakeWindow('local', true),
+    });
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
+
+    expect(getWindowIdsForWorkspace).toHaveBeenCalledWith('ws-other');
+    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledTimes(1);
+    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(remoteClient, 'ws-other');
+    expect(deps.confirmViaRenderer).not.toHaveBeenCalled();
+  });
+
+  it('treats an unstamped window as the local backend', async () => {
+    const { deps, localClient } = makeHostingDeps();
+    getWindowIdsForWorkspace.mockReturnValue([7]);
+    await installWindows({ 7: fakeWindow(null) });
+
+    await confirmQuitWithRunningAgents(deps);
+
+    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(localClient, 'ws-other');
+  });
+
+  it('keeps the tab without asking when windows on two backends host the workspace', async () => {
+    const { deps } = makeHostingDeps();
+    getWindowIdsForWorkspace.mockReturnValue([1, 2]);
+    await installWindows({ 1: fakeWindow('local'), 2: fakeWindow('remote-a') });
+
+    await confirmQuitWithRunningAgents(deps);
+
+    expect(deps.getWorkspaceBrowserClient).not.toHaveBeenCalled();
+    const payload = deps.confirmViaRenderer.mock.calls[0][1] as QuitConfirmationShowPayload;
+    expect(payload.disruptedBrowserTabs).toEqual([TAB]);
   });
 });
 

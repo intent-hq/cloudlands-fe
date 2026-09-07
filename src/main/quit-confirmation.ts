@@ -86,6 +86,7 @@ import {
   type RunningAgentsRpc,
 } from './running-agents';
 import { getMainWindow } from './state';
+import { getBackendIdForWindow } from './window-backend';
 
 const logger = new Logger('QuitConfirmation');
 
@@ -123,6 +124,12 @@ export interface QuitConfirmationDeps {
   listDisruptedBrowserTabs(): Promise<QuitBrowserTabSummary[]>;
   /** This app's stable §5.17 clientId, as presented on `client.hello`. */
   getOwnClientId(): Promise<string>;
+  /**
+   * Distinct backend ids of the live windows hosting `workspaceId` (active
+   * view or tab bar). Workspace ids are daemon-local, so this is the only
+   * evidence binding a hosted tab's workspace to the daemon it lives on.
+   */
+  getHostingBackendIds(workspaceId: string): Promise<string[]>;
   /**
    * `workspace.getBrowserClient { workspaceId }` on one pooled backend —
    * which client drives the workspace's agent browser tabs right now. Throws
@@ -232,6 +239,17 @@ async function defaultListDisruptedBrowserTabs(): Promise<QuitBrowserTabSummary[
 async function defaultGetOwnClientId(): Promise<string> {
   const { getOrCreateClientId } = await import('../features/backend/main/client-identity');
   return getOrCreateClientId();
+}
+
+async function defaultGetHostingBackendIds(workspaceId: string): Promise<string[]> {
+  // Lazy: system.ipc pulls in the backend IPC chain (see confirmQuitInner).
+  const { getWindowIdsForWorkspace } = await import('../features/system/main/system.ipc');
+  const ids = new Set<string>();
+  for (const windowId of getWindowIdsForWorkspace(workspaceId)) {
+    const window = BrowserWindow.fromId(windowId);
+    if (window && !window.isDestroyed()) ids.add(getBackendIdForWindow(window));
+  }
+  return [...ids];
 }
 
 async function defaultGetWorkspaceBrowserClient(
@@ -519,29 +537,49 @@ async function filterTabsOfDrivenWorkspaces(
 }
 
 /**
- * The driving clientId of `workspaceId`, asked of every pooled backend in
- * turn (a workspace lives on exactly one daemon). `null` means unknown —
- * every backend failed — or that no client currently drives it (`resolved:
- * null`); both keep the tab counted.
+ * The driving clientId of `workspaceId`, asked only of the backend whose
+ * window hosts that workspace. Workspace ids are daemon-local (an import
+ * keeps the source id), so another pooled daemon answering for the same id
+ * is never authoritative. `null` means unknown — no or ambiguous hosting
+ * backend, no live pooled client for it, or the lookup failed — or that no
+ * client currently drives it (`resolved: null`); all keep the tab counted.
  */
 async function resolveDrivingClientId(
   deps: QuitConfirmationDeps,
   targets: QuitBackendTarget[],
   workspaceId: string,
 ): Promise<string | null> {
-  for (const target of targets) {
-    try {
-      const browserClient = await deps.getWorkspaceBrowserClient(target.client, workspaceId);
-      return browserClient.resolved?.clientId ?? null;
-    } catch (error) {
-      logger.debug('workspace.getBrowserClient failed during quit check', {
-        backendId: target.id,
-        workspaceId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+  let hostingBackendIds: string[];
+  try {
+    hostingBackendIds = await deps.getHostingBackendIds(workspaceId);
+  } catch (error) {
+    logger.debug('Hosting backend lookup failed during quit check', {
+      workspaceId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
   }
-  return null;
+  if (hostingBackendIds.length !== 1) {
+    logger.debug('No single hosting backend for workspace during quit check', {
+      workspaceId,
+      hostingBackendIds,
+    });
+    return null;
+  }
+  const [backendId] = hostingBackendIds;
+  const target = targets.find((candidate) => candidate.id === backendId);
+  if (!target) return null;
+  try {
+    const browserClient = await deps.getWorkspaceBrowserClient(target.client, workspaceId);
+    return browserClient.resolved?.clientId ?? null;
+  } catch (error) {
+    logger.debug('workspace.getBrowserClient failed during quit check', {
+      backendId,
+      workspaceId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 /** Project RespondingAgent rows into the wire summaries the renderer shows. */
@@ -618,6 +656,7 @@ async function confirmQuitInner(overrides: Partial<QuitConfirmationDeps>): Promi
     listLocalRespondingAgents: defaultListLocalRespondingAgents,
     listDisruptedBrowserTabs: defaultListDisruptedBrowserTabs,
     getOwnClientId: defaultGetOwnClientId,
+    getHostingBackendIds: defaultGetHostingBackendIds,
     getWorkspaceBrowserClient: defaultGetWorkspaceBrowserClient,
     confirmViaRenderer: defaultConfirmViaRenderer,
     buildQuitDialogOptions,
