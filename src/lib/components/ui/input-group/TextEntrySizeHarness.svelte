@@ -14,5 +14,5 @@
   <Textarea aria-label="Compact textarea" />
   <FileInput id="compact-file" label="Choose compact file" />
   <InputGroup><Input aria-label="Compact group" /></InputGroup>
-  <CopyInput value="compact" aria-label="Compact copy value" />
+  <CopyInput value="compact" />
 </SizeProvider>

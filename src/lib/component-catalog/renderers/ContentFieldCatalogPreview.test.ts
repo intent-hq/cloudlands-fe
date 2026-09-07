@@ -30,7 +30,7 @@ const cases = [
   ['label', labelFixtures[0]],
   ['separator', separatorFixtures[0]],
   ['skeleton', skeletonFixtures[0]],
-  ['spinner', spinnerFixtures[0]],
+  ['loading-indicator', spinnerFixtures[0]],
 ] as const;
 const metadata = [
   cardMetadata,
@@ -87,10 +87,35 @@ describe('ContentFieldCatalogPreview', () => {
     expect(separator.getByRole('separator').getAttribute('data-orientation')).toBe('vertical');
     cleanup();
 
-    const spinner = render(ContentFieldCatalogPreview, {
-      props: { componentId: 'spinner', fixture: spinnerFixtures[0] },
+    const loadingIndicator = render(ContentFieldCatalogPreview, {
+      props: { componentId: 'loading-indicator', fixture: spinnerFixtures[0] },
     });
-    expect(spinner.getAllByRole('status', { name: 'Loading' })).toHaveLength(3);
+    expect(
+      Array.from(loadingIndicator.container.querySelectorAll('[data-loader-variant]')).map(
+        (row) => row.getAttribute('data-loader-variant'),
+      ),
+    ).toEqual(['bloom', 'pulse', 'twist']);
+    expect(
+      Array.from(loadingIndicator.container.querySelectorAll('[data-loader-size]')).map((row) =>
+        Number(row.getAttribute('data-loader-size')),
+      ),
+    ).toEqual([16, 24, 32]);
+    const paused = loadingIndicator.container.querySelector('[data-loader-paused]');
+    const pausedMark = paused?.querySelector('[data-slot="intent-mark-loader"]');
+    expect(pausedMark?.getAttribute('data-playing')).toBe('false');
+    expect(pausedMark?.getAttribute('width')).toBe('16');
+    expect(pausedMark?.querySelectorAll('[data-mark-arm]')).toHaveLength(5);
+    expect(
+      loadingIndicator.container
+        .querySelector('[data-loader-context="button"]')
+        ?.querySelector('[data-slot="intent-mark-loader"]'),
+    ).not.toBeNull();
+    expect(
+      loadingIndicator.container
+        .querySelector('[data-loader-context="list-row"]')
+        ?.querySelector('[data-slot="intent-mark-loader"]')
+        ?.getAttribute('width'),
+    ).toBe('14');
   });
 
   it('contains no raw controls or physical palette utilities', () => {
@@ -114,7 +139,14 @@ describe('ContentFieldCatalogPreview', () => {
         ({ publicImport }) => publicImport === record.publicImport,
       );
       expect(discovered, record.publicImport).toBeTruthy();
-      expect(record.exports, record.publicImport).toEqual(discovered?.exports);
+      const expectedExports =
+        record === spinnerMetadata
+          ? [
+              'IntentMarkLoader',
+              ...(discovered?.exports.filter((name) => name !== 'IntentMarkLoader') ?? []),
+            ]
+          : discovered?.exports;
+      expect(record.exports, record.publicImport).toEqual(expectedExports);
       expect(record.legacyImports, record.publicImport).toEqual(discovered?.legacyImports);
       expect(record.callers, record.publicImport).toEqual(discovered?.callers);
       expect(record.dynamicImports, record.publicImport).toEqual(discovered?.dynamicImports);

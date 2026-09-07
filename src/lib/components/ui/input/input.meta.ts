@@ -54,7 +54,6 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/components/terminal/TerminalSidebar.svelte',
     'src/lib/components/tiptap/BubbleMenu.svelte',
     'src/lib/components/ui/EditableName.svelte',
-    'src/lib/components/ui/copy-input/copy-input.svelte',
     'src/lib/components/ui/dropdown/Dropdown.svelte',
     'src/lib/components/ui/message-composer/message-composer.svelte',
     'src/lib/components/ui/panel-find-bar/PanelFindBar.svelte',

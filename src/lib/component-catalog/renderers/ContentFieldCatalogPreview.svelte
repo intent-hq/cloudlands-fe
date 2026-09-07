@@ -209,19 +209,25 @@
       <CopyInput value="intent://workspace/system-design" label="Workspace link" />
     </div>
     <div data-catalog-rendered-state="hover">
-      <CopyInput value="Hover value" aria-label="Hover copy value" data-state="hover" />
+      <CopyInput value="Hover value" />
     </div>
     <div data-catalog-rendered-state="focus">
-      <CopyInput value="Focus value" aria-label="Focus copy value" data-state="focus" />
+      <CopyInput value="Focus value" />
     </div>
-    <div data-catalog-rendered-state="error">
-      <CopyInput value="Invalid value" aria-label="Invalid copy value" error="Value unavailable" />
+    <div data-catalog-rendered-state="error-feedback">
+      <CopyInput value="Clipboard failure feedback" />
     </div>
     <div data-catalog-rendered-state="disabled">
-      <CopyInput value="Disabled value" aria-label="Disabled copy value" disabled />
+      <CopyInput value="Disabled value" disabled />
+    </div>
+    <div data-catalog-rendered-state="button-variant">
+      <CopyInput value="Button variant" variant="button" />
+    </div>
+    <div data-catalog-rendered-state="left-aligned">
+      <CopyInput value="Left aligned action" align="left" />
     </div>
     <div data-catalog-rendered-state="compact">
-      <CopyInput value="Compact value" aria-label="Compact copy value" size="compact" />
+      <CopyInput value="Compact value" size="compact" />
     </div>
   {:else if componentId === 'input-message'}
     <div data-catalog-rendered-state="helper light dark reduced-motion">

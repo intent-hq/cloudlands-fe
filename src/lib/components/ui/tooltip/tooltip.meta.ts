@@ -67,6 +67,7 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'src/lib/components/tiptap/PasteChipNodeView.svelte',
     'src/lib/components/tiptap/TaskItemNodeView.svelte',
     'src/lib/components/ui/CopyButton.svelte',
+    'src/lib/components/ui/copy-input/copy-input.svelte',
     'src/lib/components/ui/NavigationButtons.svelte',
     'src/lib/components/ui/SaveIndicator.svelte',
     'src/lib/components/ui/button/button.svelte',

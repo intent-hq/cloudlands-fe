@@ -18,7 +18,6 @@ export const labelMetadata = parseUiComponentMetadata({
     'src/lib/components/patterns/form/FormField.svelte',
     'src/lib/components/patterns/settings/SettingsFieldRow.svelte',
     'src/lib/components/patterns/settings/custom-controls.ts',
-    'src/lib/components/ui/copy-input/copy-input.svelte',
     'src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte',
   ],
   replacement: null,
