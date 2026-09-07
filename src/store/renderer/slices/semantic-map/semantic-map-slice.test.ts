@@ -203,6 +203,25 @@ describe('semanticMapReducer', () => {
     expect(getItems(state.byWorkspaceId[WORKSPACE_ID].activities)).toEqual([replayed, live]);
   });
 
+  it('appends live activity for mounted and unmounted workspace state', () => {
+    const live = activity(4);
+    const unmountedState = semanticMapReducer(
+      initialState,
+      semanticMapActivityReceived(WORKSPACE_ID, live),
+    );
+    let mountedState = semanticMapReducer(
+      initialState,
+      semanticMapLoadStarted(WORKSPACE_ID, GENERATION),
+    );
+    mountedState = semanticMapReducer(
+      mountedState,
+      semanticMapActivityReceived(WORKSPACE_ID, live),
+    );
+
+    expect(getItems(unmountedState.byWorkspaceId[WORKSPACE_ID].activities)).toEqual([live]);
+    expect(getItems(mountedState.byWorkspaceId[WORKSPACE_ID].activities)).toEqual([live]);
+  });
+
   it('atomically reconciles removed regions and activity when the manifest changes', () => {
     const oldActivity = { ...activity(1), regionId: 'removed' };
     const reclassifiedActivity = { ...oldActivity, regionId: 'renderer-state' };
@@ -277,7 +296,6 @@ describe('semanticMapReducer', () => {
         [],
       ),
     );
-    state = semanticMapReducer(state, semanticMapActivityReceived(WORKSPACE_ID, activity(3)));
     expect(state.byWorkspaceId[WORKSPACE_ID]).toBeUndefined();
   });
 

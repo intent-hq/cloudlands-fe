@@ -189,8 +189,7 @@ semanticMapReducer.with(semanticMapLoadFailed, (state, { payload: [workspaceId, 
 semanticMapReducer.with(
   semanticMapActivityReceived,
   (state, { payload: [workspaceId, activity] }) => {
-    const workspaceState = state.byWorkspaceId[workspaceId];
-    if (!workspaceState) return state;
+    const workspaceState = getWorkspaceState(state, workspaceId);
     let activities = addItem(workspaceState.activities, activity);
     if (activities.ids.length > SEMANTIC_MAP_ACTIVITY_LIMIT) {
       activities = removeItem(activities, activities.ids[0]);
