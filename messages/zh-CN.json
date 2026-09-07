@@ -1121,6 +1121,7 @@
   "workspace_compactInitializer_attachmentPlacementFailed_error": "工作区已创建，但部分附件失败 — 重试或移除后再发送消息",
   "workspace_compactInitializer_checkingDependencies_label": "正在检查依赖…",
   "workspace_compactInitializer_createFailed_error": "创建工作区失败",
+  "workspace_compactInitializer_specialistUnavailable_error": "该专员已不存在。专员列表已刷新，请重试。",
   "workspace_compactInitializer_firstMessageSendFailed_error": "工作区已创建，但消息发送失败 — 再次点击创建以重试",
   "workspace_compactInitializer_firstMessageSendFailedDetail_error": "工作区已创建，但消息发送失败：{detail} — 再次点击创建以重试",
   "workspace_compactInitializer_createWorkspace_label": "创建工作区",

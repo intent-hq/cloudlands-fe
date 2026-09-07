@@ -197,13 +197,13 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain('data-titlebar-workspace-controls');
     expect(titlebar).toContain('--titlebar-control-shift: 0px');
     expect(titlebar).toContain('--titlebar-control-shift: 8px');
-    // Native-control clearance is measured against WindowTitleBar in
-    // test/titlebar-workspace-controls.spec.ts, not inferred from CSS spelling.
+    expect(titlebar).toContain('padding-left: 80px');
     expect(titlebar).toContain('width: calc(16px - var(--titlebar-control-shift))');
     expect(titlebar).toContain('padding-right: var(--titlebar-control-shift)');
     expect(titlebar.indexOf('<SidebarNav />')).toBeLessThan(titlebar.indexOf('<WorkspaceTabStrip'));
     expect(titlebar).toContain('style:margin-left={`${panelOffset}px`}');
-    expect(titlebar).toContain('activeTabBounds.left - 6');
+    expect(titlebar).toContain('style:left={`${activeTabBounds.left}px`}');
+    expect(titlebar).toContain('style:width={`${activeTabBounds.width}px`}');
     expect(titlebar).toContain('.titlebar-drag-handle');
     expect(titlebar).toContain('.titlebar-left-drag-surface');
     expect(titlebar).toContain('.titlebar-left-drag-handle');
@@ -216,7 +216,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).not.toContain('mx-0.5 h-4 w-px shrink-0 bg-border/70');
     expect(tabs).toContain('w-fit min-w-0 max-w-[100%]');
     expect(tabs).toContain('use:reportActiveTabBounds={isCurrent}');
-    expect(tabs).toContain('onActiveTabBoundsChange?.({');
+    expect(tabs).toContain('flushSync(() => onActiveTabBoundsChange?.(bounds))');
     expect(titlebar).toContain('data-active-tab-border-mask');
     expect(titlebar).toContain('absolute -bottom-px z-[60] h-px bg-sidebar');
     expect(nav).not.toContain('faBell');

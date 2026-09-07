@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines -- merging hover-card keyboard and interaction behavior exceeds the limit */
   import { page } from '$app/state';
   import {
     faArrowUpRightFromSquare,
@@ -241,6 +242,9 @@
   let focusWithinCard = false;
   let hoverCardOpenedFromPointer = false;
   let preventFocusOpenUntilRowExit = false;
+  let hoverCardDismissalActive = $state(false);
+  let hoverCardFocusOpenSuppressed = false;
+  let hoverCardFocusSuppressionTimer: ReturnType<typeof setTimeout> | null = null;
 
   function clearHoverCardOpenTimer() {
     if (hoverCardOpenTimer !== null) {
@@ -257,6 +261,7 @@
   }
 
   function openHoverCardFromPointer() {
+    hoverCardDismissalActive = true;
     hoverCardVisible = true;
     if (hoverCardOpenedFromPointer) return;
     hoverCardOpenedFromPointer = true;
@@ -267,6 +272,7 @@
     clearHoverCardCloseTimer();
     pointerWithinCard = false;
     focusWithinCard = false;
+    hoverCardDismissalActive = false;
     hoverCardVisible = false;
     if (!hoverCardOpenedFromPointer) return;
     hoverCardOpenedFromPointer = false;
@@ -282,6 +288,54 @@
         closeHoverCard();
     }, WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS);
   }
+
+  function suppressHoverCardFocusOpenForPointerSequence() {
+    if (hoverCardFocusSuppressionTimer !== null) {
+      clearTimeout(hoverCardFocusSuppressionTimer);
+    }
+    hoverCardFocusOpenSuppressed = true;
+    hoverCardFocusSuppressionTimer = setTimeout(() => {
+      hoverCardFocusOpenSuppressed = false;
+      hoverCardFocusSuppressionTimer = null;
+    }, 0);
+  }
+
+  function dismissHoverCardFromInteraction(event: Event) {
+    const target = event.target;
+    const cardElement = getHoverCardElement();
+    if (target instanceof Node && cardElement?.contains(target)) {
+      return;
+    }
+    if (
+      event.type === 'pointerdown' &&
+      hoverCardVisible &&
+      target instanceof Node &&
+      rowElement?.contains(target)
+    ) {
+      return;
+    }
+    if (
+      event.type === 'scroll' &&
+      rowElement &&
+      target instanceof Node &&
+      !target.contains(rowElement)
+    ) {
+      return;
+    }
+    if (event.type === 'pointerdown') suppressHoverCardFocusOpenForPointerSequence();
+    clearHoverCardOpenTimer();
+    closeHoverCard();
+  }
+
+  $effect(() => {
+    if (!hoverCardDismissalActive) return;
+    window.addEventListener('pointerdown', dismissHoverCardFromInteraction, true);
+    window.addEventListener('scroll', dismissHoverCardFromInteraction, true);
+    return () => {
+      window.removeEventListener('pointerdown', dismissHoverCardFromInteraction, true);
+      window.removeEventListener('scroll', dismissHoverCardFromInteraction, true);
+    };
+  });
 
   const activePullRequest = $derived.by(() => {
     if (!workspace) return null;
@@ -375,6 +429,7 @@
     if (event.key !== 'ArrowDown' || suppressHover || !workspace) return;
     event.preventDefault();
     event.stopPropagation();
+    hoverCardDismissalActive = true;
     hoverCardVisible = true;
     await tick();
     getHoverCardControls()[0]?.focus({ preventScroll: true });
@@ -401,6 +456,7 @@
     onHover?.();
     if (workspace && !suppressHover && !focusWithinRow) {
       clearHoverCardOpenTimer();
+      hoverCardDismissalActive = true;
       hoverCardOpenTimer = setTimeout(() => {
         hoverCardOpenTimer = null;
         openHoverCardFromPointer();
@@ -429,7 +485,11 @@
     clearHoverCardOpenTimer();
     clearHoverCardCloseTimer();
     if (preventFocusOpenUntilRowExit) return;
-    if (workspace && !suppressHover) hoverCardVisible = true;
+    if (hoverCardFocusOpenSuppressed) return;
+    if (workspace && !suppressHover) {
+      hoverCardDismissalActive = true;
+      hoverCardVisible = true;
+    }
   }
 
   function handleFocusOut(event: FocusEvent) {
@@ -502,6 +562,10 @@
   onDestroy(() => {
     clearHoverCardOpenTimer();
     clearHoverCardCloseTimer();
+    if (hoverCardFocusSuppressionTimer !== null) {
+      clearTimeout(hoverCardFocusSuppressionTimer);
+      hoverCardFocusSuppressionTimer = null;
+    }
     closeHoverCard();
     if (hadContextMenu) appStore.dispatch(decrementContextMenuOpen());
   });
