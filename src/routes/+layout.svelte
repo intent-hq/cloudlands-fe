@@ -21,6 +21,7 @@
     attachMouseHistoryNavigation,
     handleHistoryNavigateIpc,
   } from '$lib/utils/history-navigation';
+  import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 
   let { children }: { children?: Snippet } = $props();
 
@@ -45,11 +46,14 @@
 
     setWindowBlurred(!document.hasFocus());
     const electronApi = window.electronAPI;
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- root native window lifecycle bridge
-    const windowFocusListenerId = electronApi?.on?.('window:focus', (focused: boolean) => {
-      setWindowBlurred(!focused);
-    });
-    if (!windowFocusListenerId) {
+    const usesNativeWindowFocus = isElectronPlatform();
+    let windowFocusListenerId: string | undefined;
+    if (usesNativeWindowFocus) {
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- root native window lifecycle bridge
+      windowFocusListenerId = electronApi?.on?.('window:focus', (focused: boolean) => {
+        setWindowBlurred(!focused);
+      });
+    } else {
       window.addEventListener('blur', handleWindowBlur);
       window.addEventListener('focus', handleWindowFocus);
     }
@@ -70,7 +74,7 @@
       if (windowFocusListenerId) {
         // eslint-disable-next-line intent/no-component-async-data-fetch -- paired native window listener cleanup
         electronApi.offById('window:focus', windowFocusListenerId);
-      } else {
+      } else if (!usesNativeWindowFocus) {
         window.removeEventListener('blur', handleWindowBlur);
         window.removeEventListener('focus', handleWindowFocus);
       }

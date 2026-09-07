@@ -44,6 +44,20 @@ describe('root +layout.svelte window focus lifecycle', () => {
     expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
   });
 
+  it('uses DOM focus events when the production browser mock is installed', async () => {
+    vi.stubEnv('VITE_ENABLE_BROWSER_MOCK', 'true');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { installBrowserMock } = await import('$lib/browser-mock');
+    installBrowserMock();
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+
+    render(RootLayout);
+
+    expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(true);
+    window.dispatchEvent(new FocusEvent('focus'));
+    expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
+  });
+
   it('uses native window focus events when the Electron bridge is present', () => {
     const listeners: Record<string, (...args: any[]) => void> = {};
     const on = vi.fn((channel: string, callback: (...args: any[]) => void) => {
