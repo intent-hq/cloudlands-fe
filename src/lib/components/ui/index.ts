@@ -51,6 +51,7 @@ export * as Switch from './switch';
 export * as Table from './table';
 export * as Tabs from './tabs';
 export * as Textarea from './textarea';
+export * as Toast from './toast';
 export * as Toggle from './toggle';
 export * as ToggleGroup from './toggle-group';
 export * as Tooltip from './tooltip';

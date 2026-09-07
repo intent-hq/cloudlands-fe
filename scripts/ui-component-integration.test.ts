@@ -57,6 +57,7 @@ const canonicalImports = [
   'table',
   'tabs',
   'textarea',
+  'toast',
   'toggle',
   'toggle-group',
   'tooltip',
