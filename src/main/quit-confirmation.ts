@@ -492,9 +492,9 @@ async function listDisruptedTabsFailOpen(
 /**
  * Keep only tabs whose workspace this app drives (PROTOCOL §5.9 resolution as
  * reported by `workspace.getBrowserClient`). Fail-open per workspace: a tab
- * with no workspaceId, a lookup that fails on every backend, or an
- * unavailable own clientId keeps the tab counted. Only a workspace that
- * positively resolves to a *different* client drops its tabs.
+ * with no workspaceId, no single hosting backend, a lookup that fails on the
+ * hosting backend, or an unavailable own clientId keeps the tab counted. Only
+ * a workspace that positively resolves to a *different* client drops its tabs.
  */
 async function filterTabsOfDrivenWorkspaces(
   deps: QuitConfirmationDeps,
