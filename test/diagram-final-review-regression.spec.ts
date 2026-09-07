@@ -438,7 +438,7 @@ test('reserves final measured nested Mermaid group header bands', async ({ page 
 test('terminates compact cycle feedback on real centered cardinal ports', async ({ page }) => {
   test.setTimeout(240_000);
   for (const theme of themes) {
-    for (const width of [320, 420, 640]) {
+    for (const width of widths) {
       await openState(page, 'mermaid-cycle-fanout', width, theme);
       const result = await page
         .locator('#mermaid-cycle-fanout svg[data-layout-settled="true"]')

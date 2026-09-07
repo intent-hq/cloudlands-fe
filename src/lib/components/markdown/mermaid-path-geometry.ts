@@ -1273,9 +1273,6 @@ export function snapFlowchartFeedbackPorts(svg: SVGSVGElement) {
   const sourceBounds = source.getBoundingClientRect();
   const targetBounds = target.getBoundingClientRect();
   const targetId = path.dataset.feedbackTarget;
-  const targetOutDegree = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].filter(
-    (candidate) => flowchartEdgeIdentity(candidate)?.source === targetId,
-  ).length;
   const sameSidePorts = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].flatMap(
     (candidate) => {
       if (candidate === path) return [];
@@ -1318,11 +1315,12 @@ export function snapFlowchartFeedbackPorts(svg: SVGSVGElement) {
     },
     sameSidePorts,
   );
+  const targetCenterX = (targetLeft + targetRight) / 2;
   const sourcePort = new DOMPoint(
     sourceBounds.right,
     sourceBounds.top + sourceBounds.height / 2,
   ).matrixTransform(inverse);
-  if (targetOutDegree >= 3 && points.length >= 7) {
+  if (Math.abs(targetX - targetCenterX) > 1 && points.length >= 7) {
     const targetPort = new DOMPoint(
       targetBounds.left + targetBounds.width / 2,
       targetBounds.top - 0.25,
@@ -1354,6 +1352,7 @@ export function snapFlowchartFeedbackPorts(svg: SVGSVGElement) {
   points[1].y = sourcePort.y;
   points[points.length - 2].x = targetPort.x;
   points[points.length - 1] = { x: targetPort.x, y: targetPort.y };
+  path.dataset.feedbackTargetSide = 'bottom';
   path.dataset.manhattanPoints = points.map(({ x, y }) => `${x},${y}`).join(' ');
   path.setAttribute(
     'd',
