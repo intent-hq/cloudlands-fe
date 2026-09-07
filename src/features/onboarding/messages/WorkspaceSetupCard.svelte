@@ -33,6 +33,7 @@
     getSpecialistById,
   } from '$lib/constants/specialists';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
+  import { selectSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
   import {
     createProgressLabel,
@@ -68,9 +69,12 @@
     setupScriptContent?: string;
     /** Callback to focus the setup terminal */
     onFocusSetupTerminal?: () => void;
-    /** Name of the specialist/agent (e.g. "Coordinator") */
+    /**
+     * Fallback display name when `specialistId` resolves to nothing (neither
+     * the live catalog nor the bundled constants know the id).
+     */
     specialistName?: string;
-    /** The specialist ID for tooltip/settings linking */
+    /** The specialist ID for name resolution, tooltip and settings linking */
     specialistId?: string;
     /** Whether the user provided an initial prompt */
     hasPrompt?: boolean;
@@ -117,6 +121,7 @@
   // one it ever renders. An absent id binds a never-matching key (null entry).
   // svelte-ignore state_referenced_locally
   const progressEntry$ = selectWorkspaceCreateProgress(progressId ?? '');
+  const specialists$ = selectSpecialists();
 
   // Monotonic floor: track the highest percent seen so the label and bar
   // never move backwards even if frames arrive out of order. Clamped to 100
@@ -135,11 +140,18 @@
 
   const specialist = $derived(specialistId ? getSpecialistById(specialistId) : undefined);
   /**
-   * Prefer the passed-in name: callers resolve it from the live catalog (file /
-   * project overrides included), whereas `getSpecialistById` only knows the
-   * bundled constants. The bundled name is the fallback when no name is passed.
+   * Resolve the name by id: the live catalog first (file / project overrides
+   * of a bundled specialist carry their configured name), then the bundled
+   * constants, then the passed-in `specialistName`. Callers such as ChatPanel
+   * pass the agent *session* name, which must not shadow the specialist name
+   * once the id resolves (a renamed agent still shows its specialist here).
    */
-  const displaySpecialistName = $derived(specialistName || specialist?.name);
+  const catalogSpecialist = $derived(
+    specialistId ? $specialists$.find((s) => s.id === specialistId) : undefined,
+  );
+  const displaySpecialistName = $derived(
+    catalogSpecialist?.name || specialist?.name || specialistName,
+  );
   /** Both the Coordinator and the Developer write a spec before implementing. */
   const writesSpecFirst = $derived(
     specialistId === 'spec-writer' || specialistId === DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
