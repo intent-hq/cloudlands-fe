@@ -7,6 +7,9 @@ const mocks = vi.hoisted(() => ({
   getBrowserClient: vi.fn(),
   setBrowserClient: vi.fn(),
   listTabs: vi.fn(),
+  navigateTab: vi.fn(),
+  closeTab: vi.fn(),
+  toastError: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -15,9 +18,14 @@ vi.mock('$lib/client', () => ({
       getBrowserClient: mocks.getBrowserClient,
       setBrowserClient: mocks.setBrowserClient,
     },
-    browser: { listTabs: mocks.listTabs },
+    browser: {
+      listTabs: mocks.listTabs,
+      navigateTab: mocks.navigateTab,
+      closeTab: mocks.closeTab,
+    },
   },
 }));
+vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
 
 import type { LiveClient } from '$shared/types/browser-clients';
 import { resolveDrivingClientView } from '$lib/components/workspace/driving-indicator';
@@ -36,10 +44,12 @@ import {
 import {
   browserClientsReducer,
   browserTabClosed,
+  closeBrowserTabRequested,
   fetchWorkspaceBrowserClientRequested,
   fetchWorkspaceBrowserTabsRequested,
   hydrateBrowserClientsRequested,
   initialState,
+  navigateBrowserTabRequested,
   refreshLiveClientsRequested,
   setWorkspaceBrowserClientRequested,
   workspaceBrowserClientReceived,
@@ -530,6 +540,73 @@ describe('browserClientsSaga', () => {
     expect(dispatched()).toContainEqual({
       type: 'browserClients/workspaceBrowserTabsReceived',
       payload: ['ws-1', tabs, 0],
+    });
+  });
+
+  describe('viewer commands to a remote host (REV-2 Model 3)', () => {
+    it('forwards a navigation as browser.navigateTab { tabId, url } and stores nothing from the envelope', async () => {
+      mocks.navigateTab.mockResolvedValue({
+        action: 'navigate',
+        success: true,
+        result: { url: 'https://b/' },
+      });
+      const { channel, task, dispatched } = start();
+      channel.put(navigateBrowserTabRequested('tab-1', 'https://b/'));
+      await settle();
+      task.cancel();
+
+      expect(mocks.navigateTab.mock.calls).toEqual([['tab-1', 'https://b/']]);
+      expect(dispatched()).toEqual([]);
+      expect(mocks.toastError).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a host-rejected navigation (success: false) as an error toast', async () => {
+      mocks.navigateTab.mockResolvedValue({
+        action: 'navigate',
+        success: false,
+        error: 'blocked url',
+      });
+      const { channel, task } = start();
+      channel.put(navigateBrowserTabRequested('tab-1', 'javascript:x'));
+      await vi.waitFor(() => expect(mocks.toastError).toHaveBeenCalledTimes(1));
+      task.cancel();
+
+      expect(mocks.toastError.mock.calls[0]?.[1]).toEqual({ description: 'blocked url' });
+    });
+
+    it('surfaces a transport failure (host offline) as an error toast', async () => {
+      mocks.navigateTab.mockRejectedValue(new Error('host client is not connected'));
+      const { channel, task } = start();
+      channel.put(navigateBrowserTabRequested('tab-1', 'https://b/'));
+      await vi.waitFor(() => expect(mocks.toastError).toHaveBeenCalledTimes(1));
+      task.cancel();
+
+      expect(mocks.toastError.mock.calls[0]?.[1]).toEqual({
+        description: 'host client is not connected',
+      });
+    });
+
+    it('closes through browser.closeTab { tabId } and only sends force when asked', async () => {
+      mocks.closeTab.mockResolvedValue({ ok: true });
+      const { channel, task, dispatched } = start();
+      channel.put(closeBrowserTabRequested('tab-1', false));
+      channel.put(closeBrowserTabRequested('tab-2', true));
+      await settle();
+      task.cancel();
+
+      expect(mocks.closeTab.mock.calls).toEqual([
+        ['tab-1', undefined],
+        ['tab-2', { force: true }],
+      ]);
+      expect(dispatched()).toEqual([]);
+    });
+
+    it('surfaces a failed close as an error toast', async () => {
+      mocks.closeTab.mockRejectedValue(new Error('host client is not connected'));
+      const { channel, task } = start();
+      channel.put(closeBrowserTabRequested('tab-1', false));
+      await vi.waitFor(() => expect(mocks.toastError).toHaveBeenCalledTimes(1));
+      task.cancel();
     });
   });
 

@@ -16,7 +16,11 @@
  * during it and settled after) discards its reply and re-queues itself, so an
  * older read can never overwrite the write's echo or a newer read. Pin writes
  * and tab reads are latest-wins per workspace, so a slow earlier pin write
- * cannot overwrite a later daemon echo. A workspace mount reads its browser
+ * cannot overwrite a later daemon echo. A viewer's `browser.navigateTab` /
+ * `browser.closeTab` requests (REV-2 Model 3) are fire-and-forget commands to
+ * the tab's host: nothing is stored from the reply — the mirror follows the
+ * `browser:tab-updated` / `browser:tab-closed` echo — and a failure is
+ * surfaced as a toast. A workspace mount reads its browser
  * client (the sidebar indicator's input) and, until the own clientId and
  * `client.list` are known, hydrates them once. Workspace teardown
  * (`workspaceUnmounted` / `workspaceDeleted` / `removeWorkspaceEntity`)
@@ -28,6 +32,7 @@
  */
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 import { call, put, race, take, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
 import {
@@ -47,10 +52,12 @@ import {
   selectWorkspaceBrowserTabsRevision,
 } from '../browser-clients-selectors';
 import {
+  closeBrowserTabRequested,
   fetchWorkspaceBrowserClientRequested,
   fetchWorkspaceBrowserTabsRequested,
   hydrateBrowserClientsRequested,
   liveClientsReceived,
+  navigateBrowserTabRequested,
   ownClientIdReceived,
   refreshLiveClientsRequested,
   setWorkspaceBrowserClientRequested,
@@ -232,6 +239,54 @@ function* readWorkspaceBrowserTabs(
   }
 }
 
+async function toastError(message: string, description?: string): Promise<void> {
+  try {
+    const { toast } = await import('svelte-sonner');
+    toast.error(message, description ? { description } : undefined);
+  } catch {
+    // Toasts are best-effort.
+  }
+}
+
+/**
+ * Forward a viewer navigation to the tab's host. The routed action envelope
+ * reports a host-side failure as `success: false`; a transport error (host
+ * offline, unknown tab) throws. Either way nothing local changes — the
+ * mirror keeps the last canonical URL — and the user is told.
+ */
+function* forwardBrowserTabNavigation(
+  action: ReturnType<typeof navigateBrowserTabRequested>,
+): SagaGenerator<void> {
+  const [tabId, url] = action.payload;
+  try {
+    const envelope = yield* call([appClient.browser, appClient.browser.navigateTab], tabId, url);
+    if (envelope.success) return;
+    logger.warn('browser.navigateTab was rejected by the host', { tabId, url, envelope });
+    yield* call(toastError, m.browser_viewer_navigateFailed_error(), envelope.error);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('browser.navigateTab failed', { tabId, url, error: message });
+    yield* call(toastError, m.browser_viewer_navigateFailed_error(), message);
+  }
+}
+
+function* closeRemoteBrowserTab(
+  action: ReturnType<typeof closeBrowserTabRequested>,
+): SagaGenerator<void> {
+  const [tabId, force] = action.payload;
+  try {
+    yield* call(
+      [appClient.browser, appClient.browser.closeTab],
+      tabId,
+      force ? { force } : undefined,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('browser.closeTab failed', { tabId, force, error: message });
+    yield* call(toastError, m.browser_viewer_closeFailed_error(), message);
+  }
+}
+
 function* onWorkspaceMounted(action: ReturnType<typeof workspaceMounted>): SagaGenerator<void> {
   const [wsId] = action.payload;
   if (!wsId) return;
@@ -267,4 +322,6 @@ export function* browserClientsSaga(): SagaGenerator<void> {
     pinWriteEpochs,
   );
   yield* takeLatestByWorkspace(fetchWorkspaceBrowserTabsRequested, readWorkspaceBrowserTabs);
+  yield* takeEvery(navigateBrowserTabRequested, forwardBrowserTabNavigation);
+  yield* takeEvery(closeBrowserTabRequested, closeRemoteBrowserTab);
 }

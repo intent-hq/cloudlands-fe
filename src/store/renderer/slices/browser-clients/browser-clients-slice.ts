@@ -70,6 +70,24 @@ export const fetchWorkspaceBrowserTabsRequested = createAction<[wsId: string]>(
   'browserClients/fetchWorkspaceBrowserTabsRequested',
 );
 
+/**
+ * Forward a viewer's navigation to the tab's host (`browser.navigateTab`,
+ * REV-2 Model 3). The mirror does not move on its own: it follows the URL
+ * the host reports back through `browser:tab-updated`.
+ */
+export const navigateBrowserTabRequested = createAction<[tabId: string, url: string]>(
+  'browserClients/navigateBrowserTabRequested',
+);
+
+/**
+ * Close a tab hosted elsewhere (`browser.closeTab`). `force` tombstones the
+ * row while the host is offline; the local mirror goes with the
+ * `browser:tab-closed` echo, not with this request.
+ */
+export const closeBrowserTabRequested = createAction<[tabId: string, force: boolean]>(
+  'browserClients/closeBrowserTabRequested',
+);
+
 // ---------------------------------------------------------------------------
 // Actions — state updates
 // ---------------------------------------------------------------------------
