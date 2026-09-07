@@ -360,6 +360,14 @@ app.on('browser-window-created', (_event, window) => {
   window.on('leave-full-screen', () => {
     if (!window.isDestroyed()) window.webContents.send('window:fullscreen', false);
   });
+  // Renderer DOM blur also fires when focus enters an embedded webview. Use
+  // BrowserWindow focus instead so the renderer tracks the native app window.
+  window.on('focus', () => {
+    if (!window.isDestroyed()) window.webContents.send('window:focus', true);
+  });
+  window.on('blur', () => {
+    if (!window.isDestroyed()) window.webContents.send('window:focus', false);
+  });
 });
 
 // ============================================================================
