@@ -7,6 +7,7 @@ import Title from './card-title.svelte';
 import Action from './card-action.svelte';
 
 export { cardMetadata } from './card.meta';
+export { CARD_CONTENT_INSET_CLASS } from './card-inset';
 
 export {
   Root,

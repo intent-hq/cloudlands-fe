@@ -69,6 +69,22 @@ describe('collection pattern', () => {
     expect(first.getAttribute('aria-selected')).toBe('false');
   });
 
+  it('dispatches overflow actions by stable id without changing row selection', async () => {
+    const { container } = render(CollectionHarness);
+    const list = within(container).getByRole('listbox', { name: 'Test collection' });
+    const first = within(list).getAllByRole('option')[0];
+
+    await fireEvent.click(within(first).getByRole('button', { name: 'More actions for Alpha' }));
+    const details = within(document.body).getByRole('menuitem', { name: 'More about Alpha' });
+    expect(details.querySelector('kbd')?.textContent).toBe('⌘I');
+    await fireEvent.click(details);
+
+    expect(within(container).getByRole('status', { name: 'Last action' }).textContent).toBe(
+      'details',
+    );
+    expect(first.getAttribute('aria-selected')).toBe('false');
+  });
+
   it('leaves arrow keys owned by a nested input', async () => {
     const { container } = render(CollectionHarness);
     const list = within(container).getByRole('listbox', { name: 'Test collection' });
@@ -83,7 +99,15 @@ describe('collection pattern', () => {
   it('covers the required state fixtures', () => {
     expect(() => parsePatternMetadata(collectionMetadata)).not.toThrow();
     expect(collectionFixtures.flatMap(({ states }) => states)).toEqual(
-      expect.arrayContaining(['empty', 'loading', 'error', 'virtualized', 'reduced-motion']),
+      expect.arrayContaining([
+        'overflow-open',
+        'card-inset',
+        'empty',
+        'loading',
+        'error',
+        'virtualized',
+        'reduced-motion',
+      ]),
     );
   });
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CARD_CONTENT_INSET_CLASS } from '$lib/components/ui/card';
   import { useSize } from '$lib/components/ui/size-context';
   import { cn } from '$lib/utils';
   import type { Snippet } from 'svelte';
@@ -10,6 +11,7 @@
     description?: Snippet;
     meta?: Snippet;
     trailing?: Snippet;
+    inset?: boolean;
     class?: string;
   }
 
@@ -19,6 +21,7 @@
     description,
     meta,
     trailing,
+    inset = false,
     class: className,
     ...restProps
   }: Props = $props();
@@ -28,8 +31,10 @@
 <div
   data-slot="list-row"
   data-density={density}
+  data-inset={inset ? 'card' : undefined}
   class={cn(
-    'flex min-w-0 items-center gap-3 px-3',
+    'flex min-w-0 items-center gap-3',
+    inset ? CARD_CONTENT_INSET_CLASS : 'px-3',
     density === 'compact' ? 'min-h-9 py-1.5' : 'min-h-12 py-2.5',
     className,
   )}

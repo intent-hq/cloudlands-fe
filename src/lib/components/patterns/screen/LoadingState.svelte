@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CARD_CONTENT_INSET_CLASS } from '$lib/components/ui/card';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { cn } from '$lib/utils';
   import { LIST_STATE_GEOMETRY, type StateDensity } from '../state-geometry';
@@ -9,6 +10,7 @@
     label,
     density = 'default',
     rowHeight,
+    inset = false,
     class: className,
   }: {
     recipe?: 'list' | 'card-grid' | 'form';
@@ -16,6 +18,7 @@
     label: string;
     density?: StateDensity;
     rowHeight?: number;
+    inset?: boolean;
     class?: string;
   } = $props();
 
@@ -30,6 +33,7 @@
   data-slot="loading-state"
   data-recipe={recipe}
   data-density={density}
+  data-inset={inset ? 'card' : undefined}
   role="status"
   aria-label={label}
   style={recipe === 'list' ? listGeometryStyle : undefined}
@@ -38,7 +42,11 @@
       ? 'grid grid-cols-2 gap-3'
       : recipe === 'form'
         ? 'space-y-3'
-        : 'flex flex-col gap-(--state-list-row-gap) px-(--state-list-inline-inset)',
+        : cn(
+            'flex flex-col gap-(--state-list-row-gap)',
+            inset ? CARD_CONTENT_INSET_CLASS : 'px-(--state-list-inline-inset)',
+          ),
+    inset && recipe !== 'list' && CARD_CONTENT_INSET_CLASS,
     className,
   )}
 >

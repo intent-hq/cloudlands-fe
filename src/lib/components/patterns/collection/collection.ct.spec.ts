@@ -26,3 +26,26 @@ test('arrow keys in a nested input do not move row focus', async ({ mount }) => 
 
   await expect(input).toBeFocused();
 });
+
+test('keyboard row focus reveals its actions', async ({ mount }) => {
+  const component = await mount(CollectionHarness);
+  const first = component.getByRole('option').first();
+  const actions = first.locator('[data-slot="row-actions"]');
+
+  await first.focus();
+
+  await expect(actions).toHaveCSS('opacity', '1');
+});
+
+test('an open overflow menu keeps row actions revealed', async ({ mount, page }) => {
+  const component = await mount(CollectionHarness);
+  const first = component.getByRole('option').first();
+  const actions = first.locator('[data-slot="row-actions"]');
+
+  const overflow = first.getByRole('button', { name: 'More actions for Alpha' });
+  await overflow.focus();
+  await overflow.press('Enter');
+
+  await expect(page.getByRole('menu', { name: 'More actions for Alpha' })).toBeVisible();
+  await expect(actions).toHaveCSS('opacity', '1');
+});

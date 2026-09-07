@@ -4,11 +4,15 @@
     Button,
     Input,
     Label,
-    Menu,
     Switch,
     Tooltip,
   } from '$lib/components/patterns/settings/custom-controls';
-  import { ListRow, ListView, RowActions } from '$lib/components/patterns/collection';
+  import {
+    ListRow,
+    ListView,
+    RowActions,
+    type ActionDefinition,
+  } from '$lib/components/patterns/collection';
   import { cn } from '$lib/utils';
   import {
     CONNECTION_ACCENT_CLASSES,
@@ -43,7 +47,6 @@
   import {
     faArrowsRotate,
     faCopy,
-    faEllipsisVertical,
     faPen,
     faPlug,
     faTrash,
@@ -88,7 +91,6 @@
   } | null>(null);
   let initializedPanel = $state<string | null>(null);
   let actionsButton: HTMLButtonElement | null = $state(null);
-  let actionsMenuOpen = $state(false);
   let firstEditInput: HTMLInputElement | null = $state(null);
   let secretInput: HTMLInputElement | null = $state(null);
   let focusSecretOnEdit = $state(false);
@@ -146,6 +148,25 @@
     });
   });
   const canUpdateDaemon = $derived(canRequestDeviceUpdate(device, $connectedIds$, $pinnedVersion$));
+  const rowActions = $derived.by((): ActionDefinition[] => [
+    ...(!device.isLocal
+      ? [{ id: 'connect', label: m.settings_devices_connect_label(), icon: faPlug }]
+      : []),
+    ...(canUpdateDaemon
+      ? [{ id: 'update', label: m.layout_daemonStatus_update_action(), icon: faArrowsRotate }]
+      : []),
+    ...(!device.isLocal
+      ? [
+          { id: 'edit', label: m.settings_devices_edit_label(), icon: faPen },
+          {
+            id: 'remove',
+            label: m.settings_devices_remove_label(),
+            icon: faTrash,
+            destructive: true,
+          },
+        ]
+      : []),
+  ]);
 
   function resetPanel() {
     name = device.label;
@@ -216,6 +237,23 @@
     } catch {
       // Outcomes (success and every failure mode) surface as saga-owned
       // toasts; nothing more to do here.
+    }
+  }
+
+  function handleRowAction(id: string) {
+    switch (id) {
+      case 'connect':
+        void connectDevice();
+        break;
+      case 'update':
+        void requestDaemonUpdate();
+        break;
+      case 'edit':
+        onOpenPanel('edit');
+        break;
+      case 'remove':
+        onRequestRemove(device);
+        break;
     }
   }
 
@@ -467,72 +505,13 @@
     {/snippet}
     {#snippet trailing()}
       {#if !device.isLocal || canUpdateDaemon}
-        <RowActions>
-          {#snippet overflow()}
-            <Menu.Root bind:open={actionsMenuOpen}>
-              <Menu.Trigger>
-                {#snippet child({ props })}
-                  <Button
-                    {...props}
-                    bind:ref={actionsButton}
-                    variant="ghost-light"
-                    size="icon-xs"
-                    iconOnly
-                    aria-label={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
-                    ><Fa icon={faEllipsisVertical} /></Button
-                  >
-                {/snippet}
-              </Menu.Trigger>
-              <Menu.Content align="end" class="p-0!">
-                <div class="w-44 py-1">
-                  {#if !device.isLocal}
-                    <Menu.Item
-                      onclick={() => {
-                        actionsMenuOpen = false;
-                        void connectDevice();
-                      }}
-                    >
-                      <Fa icon={faPlug} class="size-3.5 text-muted-foreground" />
-                      {m.settings_devices_connect_label()}
-                    </Menu.Item>
-                  {/if}
-                  {#if canUpdateDaemon}
-                    <Menu.Item
-                      onclick={() => {
-                        actionsMenuOpen = false;
-                        void requestDaemonUpdate();
-                      }}
-                    >
-                      <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
-                      {m.layout_daemonStatus_update_action()}
-                    </Menu.Item>
-                  {/if}
-                  {#if !device.isLocal}
-                    <Menu.Item
-                      onclick={() => {
-                        actionsMenuOpen = false;
-                        onOpenPanel('edit');
-                      }}
-                    >
-                      <Fa icon={faPen} class="size-3.5 text-muted-foreground" />
-                      {m.settings_devices_edit_label()}
-                    </Menu.Item>
-                    <Menu.Item
-                      destructive
-                      onclick={() => {
-                        actionsMenuOpen = false;
-                        onRequestRemove(device);
-                      }}
-                    >
-                      <Fa icon={faTrash} class="size-3.5 text-muted-foreground" />
-                      {m.settings_devices_remove_label()}
-                    </Menu.Item>
-                  {/if}
-                </div>
-              </Menu.Content>
-            </Menu.Root>
-          {/snippet}
-        </RowActions>
+        <RowActions
+          actions={rowActions}
+          onAction={handleRowAction}
+          visibleCount={0}
+          overflowLabel={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
+          bind:overflowTriggerRef={actionsButton}
+        />
       {/if}
     {/snippet}
   </ListRow>

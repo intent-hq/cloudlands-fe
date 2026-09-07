@@ -7,6 +7,7 @@ export const cardFixtures = [
     states: [
       'default',
       'header',
+      'flush-content',
       'interactive',
       'pressed',
       'empty',

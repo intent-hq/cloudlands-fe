@@ -64,6 +64,14 @@ describe('screen pattern', () => {
     );
   });
 
+  it.each(['empty', 'error', 'loading'] as const)(
+    'applies the shared card inset to the %s state on request',
+    (state) => {
+      const { container } = render(ScreenHarness, { state, inset: true });
+      expect(container.querySelector('[data-inset="card"]')).toBeTruthy();
+    },
+  );
+
   it('publishes complete metadata and its public API', () => {
     expect(Object.keys(screenApi).sort()).toEqual([...screenMetadata.exports].sort());
     expect(screenMetadata.replaces).not.toHaveLength(0);

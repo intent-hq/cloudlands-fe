@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { faEllipsis, faPlus, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { Input } from '$lib/components/ui/input';
   import ListRow from './ListRow.svelte';
   import ListView from './ListView.svelte';
@@ -11,6 +12,7 @@
   ];
   let selectedKeys = $state<(string | number)[]>(['beta', 'bravo']);
   let actionCount = $state(0);
+  let lastAction = $state('none');
 </script>
 
 <ListView
@@ -30,16 +32,35 @@
         <RowActions
           actions={[
             {
+              id: 'act',
               label: `Act on ${item.name}`,
-              icon: actionIcon,
-              onSelect: () => (actionCount += 1),
+              icon: faPlus,
+            },
+            {
+              id: 'details',
+              label: `More about ${item.name}`,
+              icon: faEllipsis,
+              shortcut: '⌘I',
+              checked: true,
+            },
+            {
+              id: 'delete',
+              label: `Delete ${item.name}`,
+              icon: faTrash,
+              destructive: true,
             },
           ]}
+          visibleCount={1}
+          overflowLabel={`More actions for ${item.name}`}
+          onAction={(id) => {
+            lastAction = id;
+            if (id === 'act') actionCount += 1;
+          }}
         />
       {/snippet}
     </ListRow>
   {/snippet}
 </ListView>
 
-{#snippet actionIcon()}<span aria-hidden="true">+</span>{/snippet}
 <output aria-label="Action count">{actionCount}</output>
+<output aria-label="Last action">{lastAction}</output>

@@ -12,6 +12,8 @@ export const collectionFixtures = [
       'keyboard-focus',
       'typeahead',
       'hover-actions',
+      'overflow-open',
+      'card-inset',
       'empty',
       'loading',
       'error',

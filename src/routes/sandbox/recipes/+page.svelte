@@ -3,6 +3,7 @@
   import { ListRow, ListView, RowActions } from '$lib/components/patterns/collection';
   import { Form, FormActions, FormField } from '$lib/components/patterns/form';
   import {
+    EmptyState,
     Screen,
     ScreenBody,
     ScreenHeader,
@@ -10,7 +11,9 @@
   } from '$lib/components/patterns/screen';
   import { defineSettings, SettingsForm } from '$lib/components/patterns/settings';
   import { Button } from '$lib/components/ui/button';
+  import * as Card from '$lib/components/ui/card';
   import { Input } from '$lib/components/ui/input';
+  import { faArrowUpRightFromSquare, faTrash } from '@fortawesome/free-solid-svg-icons';
   import RecipeSection from './RecipeSection.svelte';
 
   let compactRows = $state(true);
@@ -65,7 +68,8 @@
   const sources = {
     settings: `<script lang="ts">\n  import { defineSettings, SettingsForm } from '$lib/components/patterns/settings';\n  const schema = defineSettings({ sections: [{ id: 'display', title: 'Display', entries }] });\n<\/script>\n<SettingsForm {schema} />`,
     confirm: `<script lang="ts">\n  import { confirm, ConfirmHost } from '$lib/components/patterns/confirm';\n  const remove = () => confirm({ title: 'Remove item?', destructive: true });\n<\/script>\n<Button onclick={remove}>Remove</Button>\n<ConfirmHost />`,
-    collection: `<ListView {items} getKey={(item) => item.id} selectable="multi" bind:selectedKeys>\n  {#snippet row({ item })}\n    <ListRow>{#snippet title()}{item.name}{/snippet}{#snippet trailing()}<RowActions {actions} />{/snippet}</ListRow>\n  {/snippet}\n</ListView>`,
+    collection: `<ListView {items} getKey={(item) => item.id} selectable="multi" bind:selectedKeys>\n  {#snippet row({ item })}\n    <ListRow>{#snippet title()}{item.name}{/snippet}{#snippet trailing()}<RowActions {actions} visibleCount={1} {overflowLabel} {onAction} />{/snippet}</ListRow>\n  {/snippet}\n</ListView>`,
+    cardInset: `<script lang="ts">\n  import { ListRow, ListView } from '$lib/components/patterns/collection';\n  import { EmptyState } from '$lib/components/patterns/screen';\n  import * as Card from '$lib/components/ui/card';\n<\/script>\n<Card.Root>\n  <Card.Header><Card.Title>Workspace activity</Card.Title></Card.Header>\n  <Card.Content flush>\n    <ListView {items} getKey={(item) => item.id}>\n      {#snippet row({ item })}<ListRow inset>{#snippet title()}{item.name}{/snippet}</ListRow>{/snippet}\n    </ListView>\n    <EmptyState inset density="compact" {description} contentClass="max-w-none text-left" />\n  </Card.Content>\n</Card.Root>`,
     takeover: `<TakeoverScreen {title} {description} {primary}>\n  <p>Step content can change height without rebuilding the shell.</p>\n</TakeoverScreen>`,
     form: `<Form onSubmit={validate}>\n  <FormField label="Project name" error={nameError}>{#snippet control(props)}<Input {...props} bind:value={name} />{/snippet}</FormField>\n  <FormActions {primary} />\n</Form>`,
   };
@@ -96,8 +100,8 @@
     onclick={() => (takeoverStep = takeoverStep === 1 ? 2 : 1)}>Continue</Button
   >{/snippet}
 {#snippet formPrimary()}<Button variant="primary" type="submit">Create project</Button>{/snippet}
-{#snippet actionIcon()}<span aria-hidden="true">•••</span>{/snippet}
-
+{#snippet nestedEmptyMessage()}<span data-inset-edge="empty-state">No archived workspaces</span
+  >{/snippet}
 <svelte:head><title>Design system recipes</title></svelte:head>
 
 <div class="mx-auto max-w-5xl space-y-8 px-4 py-8 sm:px-6 lg:py-12">
@@ -154,26 +158,62 @@
               alwaysVisible
               actions={[
                 {
+                  id: 'open',
                   label: `Open ${item.name}`,
-                  icon: actionIcon,
-                  onSelect: () => (rowAction = `Opened ${item.name}`),
+                  icon: faArrowUpRightFromSquare,
                 },
-              ]}
-              overflowActions={[
                 {
+                  id: 'remove',
                   label: `Remove ${item.name}`,
-                  icon: actionIcon,
+                  icon: faTrash,
                   destructive: true,
-                  onSelect: () => (rowAction = `Removed ${item.name}`),
                 },
               ]}
+              visibleCount={1}
               overflowLabel={`More actions for ${item.name}`}
+              onAction={(id) => {
+                rowAction = `${id === 'open' ? 'Opened' : 'Removed'} ${item.name}`;
+              }}
             />
           {/snippet}
         </ListRow>
       {/snippet}
     </ListView>
     <output class="mt-3 block text-sm text-muted-foreground">{rowAction}</output>
+  </RecipeSection>
+
+  <RecipeSection
+    title="Card with nested list and empty state"
+    description="Flush the card content, then apply the shared inset to each nested row and state."
+    source={sources.cardInset}
+  >
+    <Card.Root data-inset-recipe class="max-w-xl">
+      <Card.Header>
+        <Card.Title><span data-inset-edge="card-title">Workspace activity</span></Card.Title>
+      </Card.Header>
+      <Card.Content flush>
+        <ListView
+          items={rows.slice(0, 2)}
+          getKey={(item) => item.id}
+          getText={(item) => item.name}
+          ariaLabel="Active workspace resources"
+        >
+          {#snippet row({ item })}
+            <ListRow inset>
+              {#snippet title()}<span data-inset-edge="list-row">{item.name}</span>{/snippet}
+              {#snippet description()}{item.detail}{/snippet}
+            </ListRow>
+          {/snippet}
+        </ListView>
+        <EmptyState
+          inset
+          density="compact"
+          description={nestedEmptyMessage}
+          class="min-h-32 justify-start border-t border-border"
+          contentClass="max-w-none text-left"
+        />
+      </Card.Content>
+    </Card.Root>
   </RecipeSection>
 
   <RecipeSection

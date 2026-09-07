@@ -12,6 +12,7 @@
   let {
     state = 'screen',
     onRetry = () => {},
+    inset = false,
   }: {
     state?:
       | 'screen'
@@ -24,6 +25,7 @@
       | 'loading-card-grid'
       | 'loading-form';
     onRetry?: () => void;
+    inset?: boolean;
   } = $props();
 
   const loadingRecipe = $derived(
@@ -46,7 +48,12 @@
     {@render body()}
   </TakeoverScreen>
 {:else if state === 'empty'}
-  <EmptyState description={emptyMessage} actionLabel="Continue" onAction={() => undefined} />
+  <EmptyState
+    description={emptyMessage}
+    actionLabel="Continue"
+    onAction={() => undefined}
+    {inset}
+  />
 {:else if state === 'error' || state === 'error-danger'}
   <ErrorState
     message={errorMessage}
@@ -55,9 +62,10 @@
     {details}
     detailsLabel="Details"
     severity={state === 'error-danger' ? 'danger' : 'routine'}
+    {inset}
   />
 {:else if state.startsWith('loading')}
-  <LoadingState recipe={loadingRecipe} count={2} label="Loading screen" />
+  <LoadingState recipe={loadingRecipe} count={2} label="Loading screen" {inset} />
 {:else}
   <Screen>
     <ScreenHeader {title} {description} />

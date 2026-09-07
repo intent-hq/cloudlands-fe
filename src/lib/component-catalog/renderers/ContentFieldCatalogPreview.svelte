@@ -58,6 +58,15 @@
     <div data-catalog-rendered-state="long-content">
       <Card.Root><Card.Content>{longText}</Card.Content></Card.Root>
     </div>
+    <div data-catalog-rendered-state="flush-content">
+      <Card.Root>
+        <Card.Content flush>
+          <div class={Card.CARD_CONTENT_INSET_CLASS}>
+            Flush nested content keeps the card inset.
+          </div>
+        </Card.Content>
+      </Card.Root>
+    </div>
     <div data-catalog-rendered-state="empty inert">
       <Card.Root aria-label="Empty inert card" inert><Card.Content></Card.Content></Card.Root>
     </div>

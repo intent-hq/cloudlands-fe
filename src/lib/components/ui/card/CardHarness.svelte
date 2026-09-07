@@ -26,3 +26,9 @@
 <Card.Root aria-label="Inert card" inert>
   <Card.Content>No configuration is available for this intentionally inert surface.</Card.Content>
 </Card.Root>
+
+<Card.Root aria-label="Flush content card">
+  <Card.Header><Card.Title>Flush nested content</Card.Title></Card.Header>
+  <Card.Content flush><div class={Card.CARD_CONTENT_INSET_CLASS}>Aligned content</div></Card.Content
+  >
+</Card.Root>

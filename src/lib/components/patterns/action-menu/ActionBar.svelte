@@ -11,12 +11,14 @@
     onAction,
     visibleCount = Number.POSITIVE_INFINITY,
     overflowLabel,
+    destructiveInline = true,
     class: className,
   }: {
     actions: readonly ActionDefinition[];
     onAction?: ActionHandler;
     visibleCount?: number;
     overflowLabel: string;
+    destructiveInline?: boolean;
     class?: string;
   } = $props();
 
@@ -32,7 +34,7 @@
   {#each visibleActions as action (action.id)}
     {#if action.icon}
       <Button
-        variant={action.destructive ? 'destructive' : 'ghost-light'}
+        variant={action.destructive && destructiveInline ? 'destructive' : 'ghost-light'}
         size="icon-xs"
         iconOnly
         aria-label={action.label}
@@ -48,7 +50,7 @@
       </Button>
     {:else}
       <Button
-        variant={action.destructive ? 'destructive' : 'ghost-light'}
+        variant={action.destructive && destructiveInline ? 'destructive' : 'ghost-light'}
         size="xs"
         aria-label={action.label}
         aria-pressed={action.checked === undefined ? undefined : action.checked}

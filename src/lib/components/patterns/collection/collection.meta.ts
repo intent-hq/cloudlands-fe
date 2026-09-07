@@ -5,12 +5,21 @@ export const collectionMetadata = parsePatternMetadata({
   id: 'collection',
   source: 'src/lib/components/patterns/collection/index.ts',
   publicImport: '$lib/components/patterns/collection',
-  exports: ['DataList', 'ListRow', 'ListView', 'RowActions', 'SectionedList'],
+  exports: [
+    'ActionDefinition',
+    'ActionHandler',
+    'DataList',
+    'ListRow',
+    'ListView',
+    'RowActions',
+    'SectionedList',
+  ],
   owner: 'design-system',
   fixtures: collectionFixtures,
   useWhen: [
     'Rendering repeated rows with consistent pointer and keyboard highlighting.',
     'Rendering selectable, sectioned, virtualized, or key/value collections.',
+    'Rendering row commands from the same declarative action definitions as ActionBar.',
   ],
   dontUseWhen: [
     'Rendering a data table whose columns need sorting and resizing.',

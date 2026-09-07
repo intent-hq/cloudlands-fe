@@ -5,6 +5,7 @@ import { parseUiComponentMetadata } from '../component-metadata';
 import CardHarness from './CardHarness.svelte';
 import { cardFixtures } from './card.fixtures';
 import { cardMetadata } from './card.meta';
+import * as cardApi from './index';
 
 describe('Card', () => {
   it('renders structured editorial slots with a quiet canonical surface', () => {
@@ -38,11 +39,21 @@ describe('Card', () => {
     expect(inert.getAttribute('inert')).not.toBeNull();
   });
 
+  it('lets nested content opt out of wrapper padding and apply the canonical inset', () => {
+    const { getByRole } = render(CardHarness);
+    const card = getByRole('generic', { name: 'Flush content card' });
+    const content = card.querySelector('[data-slot="card-content"]');
+
+    expect(content?.getAttribute('data-flush')).toBe('true');
+  });
+
   it('publishes complete host-independent metadata and responsive fixtures', () => {
     expect(() => parseUiComponentMetadata(cardMetadata)).not.toThrow();
+    expect(Object.keys(cardApi).sort()).toEqual([...cardMetadata.exports].sort());
     expect(cardFixtures.flatMap(({ states }) => states)).toEqual(
       expect.arrayContaining([
         'interactive',
+        'flush-content',
         'pressed',
         'long-content',
         'compact',

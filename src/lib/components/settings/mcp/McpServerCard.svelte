@@ -4,10 +4,9 @@
   import { serverToJson } from './types';
   import { findMatchingPreset } from './mcp-options';
   import McpIcon from './McpIcon.svelte';
-  import { Button, Dropdown, Switch } from '$lib/components/patterns/settings/custom-controls';
-  import { ListRow, RowActions } from '$lib/components/patterns/collection';
+  import { Button, Switch } from '$lib/components/patterns/settings/custom-controls';
+  import { ListRow, RowActions, type ActionDefinition } from '$lib/components/patterns/collection';
   import {
-    faEllipsisV,
     faChevronDown,
     faPen,
     faCopy,
@@ -82,46 +81,50 @@
     return server.url || '';
   });
 
-  // Dropdown options - use type: 'action' to prevent checkmarks
-  const dropdownOptions = $derived([
-    { type: 'action' as const, value: 'edit', label: m.settings_mcp_action_edit(), icon: faPen },
-    {
-      type: 'action' as const,
-      value: 'copy',
-      label: m.settings_mcp_action_copyJson(),
-      icon: faCopy,
-    },
+  const quickActionCount = $derived(
+    server.status === 'auth_required' || (isRetryable && !server.disabled) ? 1 : 0,
+  );
+  const rowActions = $derived.by((): ActionDefinition[] => [
+    ...(server.status === 'auth_required'
+      ? [{ id: 'authenticate', label: m.settings_mcp_authenticateButton(), icon: faKey }]
+      : isRetryable && !server.disabled
+        ? [{ id: 'restart', label: m.settings_mcp_restartButton(), icon: faRotateRight }]
+        : []),
+    { id: 'edit', label: m.settings_mcp_action_edit(), icon: faPen, group: 'manage' },
+    { id: 'copy', label: m.settings_mcp_action_copyJson(), icon: faCopy, group: 'manage' },
     ...(server.authType && server.authType !== 'none'
       ? [
           {
-            type: 'action' as const,
-            value: 'reauth',
+            id: 'reauthenticate',
             label: m.settings_mcp_action_reauthenticate(),
             icon: faKey,
+            group: 'manage',
           },
         ]
       : []),
-    { type: 'separator' as const, value: 'sep', label: '' },
     {
-      type: 'action' as const,
-      value: 'delete',
+      id: 'delete',
       label: m.settings_mcp_action_delete(),
       icon: faTrash,
-      class: 'text-danger',
+      destructive: true,
+      group: 'danger',
     },
   ]);
 
-  function handleDropdownAction(value: string | string[]) {
-    const action = Array.isArray(value) ? value[0] : value;
+  function handleRowAction(action: string) {
     switch (action) {
+      case 'authenticate':
+      case 'reauthenticate':
+        onReauthenticate(server.name);
+        break;
+      case 'restart':
+        onRestart(server.name);
+        break;
       case 'edit':
         onEdit(server);
         break;
       case 'copy':
         handleCopyJson();
-        break;
-      case 'reauth':
-        onReauthenticate(server.name);
         break;
       case 'delete':
         onDelete(server.name);
@@ -240,46 +243,19 @@
       </div>
     {/snippet}
     {#snippet trailing()}
-      <RowActions>
-        {#snippet overflow()}
-          <div class="flex items-center gap-2">
-            {#if server.status === 'auth_required'}
-              <Button variant="outline" size="xs" onclick={() => onReauthenticate(server.name)}>
-                {m.settings_mcp_authenticateButton()}
-              </Button>
-            {:else if isRetryable && !server.disabled}
-              <Button variant="outline" size="xs" onclick={() => onRestart(server.name)}>
-                <Fa icon={faRotateRight} size="xs" />
-                {m.settings_mcp_restartButton()}
-              </Button>
-            {/if}
+      <RowActions
+        actions={rowActions}
+        onAction={handleRowAction}
+        visibleCount={quickActionCount}
+        overflowLabel={m.settings_devices_actionsFor_ariaLabel({ name: server.name })}
+      >
+        {#snippet controls()}
+          <div class="flex items-center">
             <Switch
               checked={!server.disabled}
               onCheckedChange={() => onToggle(server.name)}
               size="sm"
             />
-            <Dropdown
-              options={dropdownOptions}
-              onchange={handleDropdownAction}
-              variant="ghost"
-              size="sm"
-              searchable={false}
-              portal={true}
-              triggerClass="w-8 h-8 p-0! flex items-center justify-center"
-            >
-              {#snippet trigger()}<Fa icon={faEllipsisV} class="text-ghost" />{/snippet}
-              {#snippet item({ option })}
-                <div class="flex items-center gap-2 w-full {option.class || ''}">
-                  {#if option.icon}
-                    <Fa
-                      icon={option.icon}
-                      class="h-3.5 w-3.5 shrink-0 {option.class ? '' : 'opacity-50'}"
-                    />
-                  {/if}
-                  <span class="font-medium">{option.label}</span>
-                </div>
-              {/snippet}
-            </Dropdown>
           </div>
         {/snippet}
       </RowActions>

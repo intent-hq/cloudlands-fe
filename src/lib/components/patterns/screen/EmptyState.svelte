@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
+  import { CARD_CONTENT_INSET_CLASS } from '$lib/components/ui/card';
   import { cn } from '$lib/utils';
   import type { Snippet } from 'svelte';
   import type { HTMLAttributes } from 'svelte/elements';
@@ -16,6 +17,7 @@
     density?: StateDensity;
     emphasis?: 'routine' | 'prominent';
     severity?: 'routine' | 'danger';
+    inset?: boolean;
     class?: string;
     contentClass?: string;
   }
@@ -31,6 +33,7 @@
     density = 'default',
     emphasis = 'routine',
     severity = 'routine',
+    inset = false,
     class: className,
     contentClass,
     ...restProps
@@ -42,9 +45,11 @@
   data-density={density}
   data-emphasis={emphasis}
   data-severity={severity}
+  data-inset={inset ? 'card' : undefined}
   class={cn(
     'flex items-center justify-center text-center',
-    density === 'compact' ? 'min-h-28 px-4 py-6' : 'min-h-48 px-6 py-10',
+    density === 'compact' ? 'min-h-28 py-6' : 'min-h-48 py-10',
+    inset ? CARD_CONTENT_INSET_CLASS : density === 'compact' ? 'px-4' : 'px-6',
     className,
   )}
   {...restProps}

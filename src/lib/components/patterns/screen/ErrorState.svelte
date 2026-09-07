@@ -13,6 +13,7 @@
     icon?: Snippet;
     density?: StateDensity;
     severity?: 'routine' | 'danger';
+    inset?: boolean;
     class?: string;
   }
 
@@ -25,6 +26,7 @@
     icon,
     density = 'default',
     severity = 'routine',
+    inset = false,
     class: className,
     ...restProps
   }: Props = $props();
@@ -37,6 +39,7 @@
   onAction={onRetry}
   {density}
   {severity}
+  {inset}
   class={className}
   role="alert"
   data-state-kind="error"

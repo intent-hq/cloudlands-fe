@@ -2,6 +2,7 @@
   import ActionMenuHarness from '$lib/components/patterns/action-menu/ActionMenuHarness.svelte';
   import CollectionHarness from '$lib/components/patterns/collection/CollectionHarness.svelte';
   import CollectionStateHarness from '$lib/components/patterns/collection/CollectionStateHarness.svelte';
+  import CardInsetContractHarness from '$lib/components/patterns/collection/CardInsetContractHarness.svelte';
   import DestructiveConfirm from '$lib/components/patterns/confirm/DestructiveConfirm.svelte';
   import FormDialog from '$lib/components/patterns/confirm/FormDialog.svelte';
   import FormHarness from '$lib/components/patterns/form/FormHarness.svelte';
@@ -43,7 +44,9 @@
           context={state === 'context-menu'}
         />
       {:else if patternId === 'collection'}
-        {#if state === 'empty' || state === 'loading' || state === 'error'}
+        {#if state === 'card-inset'}
+          <CardInsetContractHarness />
+        {:else if state === 'empty' || state === 'loading' || state === 'error'}
           <CollectionStateHarness status={state === 'empty' ? 'ready' : state} />
         {:else}
           <CollectionHarness />
