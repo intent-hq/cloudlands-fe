@@ -1,4 +1,5 @@
 // @vitest-environment node
+// @ui-invariant
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

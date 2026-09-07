@@ -72,7 +72,7 @@
     "validate:architecture": "pnpm run lint:agent-architecture && pnpm run lint:selector-active-workspace && pnpm run lint:redux-collections && pnpm run lint:renderer-side-effect-boundaries && pnpm run lint:saga-watcher-ownership && pnpm run lint:browser-address-normalization && pnpm run test:ui-invariants",
     "test": "pnpm run test:unit && pnpm run test:integration && pnpm run test:playwright",
     "test:unit": "vitest run --config vitest.config.ts",
-    "test:ui-invariants": "vitest run --config vitest.config.ts scripts/design-token-audit.test.ts scripts/ui-component-audit.test.ts scripts/ui-component-integration.test.ts scripts/neutral-border-audit.test.ts src/lib/component-catalog/renderers/ContentFieldCatalogPreview.test.ts src/lib/components/__tests__/disclosure-chevron-inventory.test.ts src/lib/components/ui/__tests__/ProductCompatibilityInventory.test.ts src/lib/components/ui/toggle/toggle-caller-regression.test.ts src/lib/components/ui/dropdown/Dropdown.test.ts",
+    "test:ui-invariants": "node scripts/ui-invariant-suites.mjs",
     "test:unit:watch": "vitest",
     "test:playwright": "pnpm exec playwright test",
     "test:playwright:manual:catalog": "pnpm exec playwright test --config=playwright.manual.config.ts test/catalog-manual-review.capture.spec.ts",
