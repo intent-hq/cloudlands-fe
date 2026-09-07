@@ -544,43 +544,48 @@ describe('browserClientsSaga', () => {
   });
 
   describe('viewer commands to a remote host (REV-2 Model 3)', () => {
-    it('forwards a navigation as browser.navigateTab { tabId, url } and stores nothing from the envelope', async () => {
+    it('forwards a navigation as browser.navigateTab { tabId, url }, stores nothing from the envelope and resolves', async () => {
       mocks.navigateTab.mockResolvedValue({
         action: 'navigate',
         success: true,
         result: { url: 'https://b/' },
       });
       const { channel, task, dispatched } = start();
-      channel.put(navigateBrowserTabRequested('tab-1', 'https://b/'));
-      await settle();
+      const action = navigateBrowserTabRequested('tab-1', 'https://b/');
+      channel.put(action);
+      await expect(action.promise).resolves.toBeUndefined();
       task.cancel();
 
       expect(mocks.navigateTab.mock.calls).toEqual([['tab-1', 'https://b/']]);
-      expect(dispatched()).toEqual([]);
+      expect(dispatched().map((a) => a.type)).toEqual([navigateBrowserTabRequested.success.type]);
       expect(mocks.toastError).not.toHaveBeenCalled();
     });
 
-    it('surfaces a host-rejected navigation (success: false) as an error toast', async () => {
+    it('surfaces a host-rejected navigation (success: false) as an error toast and rejects', async () => {
       mocks.navigateTab.mockResolvedValue({
         action: 'navigate',
         success: false,
         error: 'blocked url',
       });
       const { channel, task } = start();
-      channel.put(navigateBrowserTabRequested('tab-1', 'javascript:x'));
-      await vi.waitFor(() => expect(mocks.toastError).toHaveBeenCalledTimes(1));
+      const action = navigateBrowserTabRequested('tab-1', 'javascript:x');
+      channel.put(action);
+      await expect(action.promise).rejects.toThrow('blocked url');
       task.cancel();
 
+      expect(mocks.toastError).toHaveBeenCalledTimes(1);
       expect(mocks.toastError.mock.calls[0]?.[1]).toEqual({ description: 'blocked url' });
     });
 
-    it('surfaces a transport failure (host offline) as an error toast', async () => {
+    it('surfaces a transport failure (host offline) as an error toast and rejects', async () => {
       mocks.navigateTab.mockRejectedValue(new Error('host client is not connected'));
       const { channel, task } = start();
-      channel.put(navigateBrowserTabRequested('tab-1', 'https://b/'));
-      await vi.waitFor(() => expect(mocks.toastError).toHaveBeenCalledTimes(1));
+      const action = navigateBrowserTabRequested('tab-1', 'https://b/');
+      channel.put(action);
+      await expect(action.promise).rejects.toThrow('host client is not connected');
       task.cancel();
 
+      expect(mocks.toastError).toHaveBeenCalledTimes(1);
       expect(mocks.toastError.mock.calls[0]?.[1]).toEqual({
         description: 'host client is not connected',
       });

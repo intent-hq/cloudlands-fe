@@ -10,7 +10,7 @@
  * routing decisions are made here; the daemon owns them.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   addItem,
@@ -72,10 +72,12 @@ export const fetchWorkspaceBrowserTabsRequested = createAction<[wsId: string]>(
 
 /**
  * Forward a viewer's navigation to the tab's host (`browser.navigateTab`,
- * REV-2 Model 3). The mirror does not move on its own: it follows the URL
- * the host reports back through `browser:tab-updated`.
+ * REV-2 Model 3). The canonical URL follows the host's `browser:tab-updated`
+ * echo, not this request; the action's promise settles with the host's
+ * answer so the mirror can reload the canonical URL when the host rejected.
  */
-export const navigateBrowserTabRequested = createAction<[tabId: string, url: string]>(
+export const navigateBrowserTabRequested = createAsyncAction<[tabId: string, url: string], void>(
+  'browserClients/navigateBrowserTab',
   'browserClients/navigateBrowserTabRequested',
 );
 

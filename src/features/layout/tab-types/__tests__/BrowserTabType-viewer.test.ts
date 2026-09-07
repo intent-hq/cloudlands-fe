@@ -147,8 +147,13 @@ describe('BrowserTabType viewer (mirror) rendering — REV-2 Model 3', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Close anyway' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Change favicon' }));
 
-    expect(dispatch.mock.calls.map(([a]) => a)).toEqual([
-      navigateBrowserTabRequested('browser-tab', 'https://next.example/'),
+    const [navigate, ...rest] = dispatch.mock.calls.map(([a]) => a);
+    expect(navigate).toMatchObject({
+      type: navigateBrowserTabRequested.type,
+      payload: ['browser-tab', 'https://next.example/'],
+    });
+    expect(navigate.promise).toBeInstanceOf(Promise);
+    expect(rest).toEqual([
       closeBrowserTabRequested('browser-tab', false),
       closeBrowserTabRequested('browser-tab', true),
       updateTabFavicon('workspace-1', 'browser-tab', 'https://next.example/favicon.ico'),

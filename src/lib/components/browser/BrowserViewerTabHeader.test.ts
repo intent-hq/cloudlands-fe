@@ -35,6 +35,46 @@ describe('BrowserViewerTabHeader', () => {
     expect(onNavigate).toHaveBeenCalledWith('https://intentapp.dev/changelog');
   });
 
+  it('normalizes a bare hostname like the local address bars before forwarding it', async () => {
+    const onNavigate = vi.fn();
+    render(BrowserViewerTabHeader, {
+      props: { url: 'https://intentapp.dev/docs', host: online, onNavigate },
+    });
+
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.browser_embedded_editAddress_ariaLabel() }),
+    );
+    const input = screen.getByRole('textbox', {
+      name: m.browser_embedded_addressInput_ariaLabel(),
+    });
+    await fireEvent.input(input, { target: { value: 'localhost:5173/app' } });
+    await fireEvent.submit(input.closest('form')!);
+
+    expect(onNavigate).toHaveBeenCalledWith('http://localhost:5173/app');
+  });
+
+  it('keeps editing and flags the address instead of forwarding an input the local bars reject', async () => {
+    const onNavigate = vi.fn();
+    render(BrowserViewerTabHeader, {
+      props: { url: 'https://intentapp.dev/docs', host: online, onNavigate },
+    });
+
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.browser_embedded_editAddress_ariaLabel() }),
+    );
+    const input = screen.getByRole('textbox', {
+      name: m.browser_embedded_addressInput_ariaLabel(),
+    });
+    await fireEvent.input(input, { target: { value: 'javascript:alert(1)' } });
+    await fireEvent.submit(input.closest('form')!);
+
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByRole('textbox', { name: m.browser_embedded_addressInput_ariaLabel() })).toBe(
+      input,
+    );
+  });
+
   it('does not request navigation when the address is submitted unchanged', async () => {
     const onNavigate = vi.fn();
     render(BrowserViewerTabHeader, {

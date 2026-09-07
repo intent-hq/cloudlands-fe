@@ -251,8 +251,9 @@ async function toastError(message: string, description?: string): Promise<void> 
 /**
  * Forward a viewer navigation to the tab's host. The routed action envelope
  * reports a host-side failure as `success: false`; a transport error (host
- * offline, unknown tab) throws. Either way nothing local changes — the
- * mirror keeps the last canonical URL — and the user is told.
+ * offline, unknown tab) throws. Either way nothing is stored — the canonical
+ * URL follows the host's echo — the user is told, and the action's promise
+ * rejects so the mirror can reload the canonical URL the host stayed on.
  */
 function* forwardBrowserTabNavigation(
   action: ReturnType<typeof navigateBrowserTabRequested>,
@@ -260,13 +261,18 @@ function* forwardBrowserTabNavigation(
   const [tabId, url] = action.payload;
   try {
     const envelope = yield* call([appClient.browser, appClient.browser.navigateTab], tabId, url);
-    if (envelope.success) return;
+    if (envelope.success) {
+      yield* put(action.success(undefined as never));
+      return;
+    }
     logger.warn('browser.navigateTab was rejected by the host', { tabId, url, envelope });
     yield* call(toastError, m.browser_viewer_navigateFailed_error(), envelope.error);
+    yield* put(action.failure(new Error(envelope.error ?? 'browser.navigateTab rejected')));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('browser.navigateTab failed', { tabId, url, error: message });
     yield* call(toastError, m.browser_viewer_navigateFailed_error(), message);
+    yield* put(action.failure(error instanceof Error ? error : new Error(message)));
   }
 }
 

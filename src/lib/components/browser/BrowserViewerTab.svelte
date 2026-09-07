@@ -4,9 +4,10 @@
    * client — REV-2 Model 3. Renders its own webview at the canonical URL the
    * host last reported and forwards navigations the user makes here to the
    * host (`onNavigate`); the host's echo comes back as a new canonical `url`.
-   * The follow/forward loop is guarded by `browser-viewer-navigation.ts`.
-   * The mirror never registers for CDP or reports bounds — those belong to
-   * the host's live webview.
+   * The follow/forward loop is decided by the fenced reconciler in
+   * `browser-viewer-navigation.ts`: this component only feeds it events and
+   * executes its commands. The mirror never registers for CDP or reports
+   * bounds — those belong to the host's live webview.
    */
   import { onDestroy } from 'svelte';
   import { BROWSER_PANEL_PARTITION } from '$shared/constants';
@@ -15,10 +16,10 @@
   import type { EmbeddedBrowserWebview } from './embedded-browser-webview';
   import { isValidBrowserUrl } from './embedded-browser-url-validation';
   import {
-    completeViewerFollow,
+    applyViewerNavigationEvent,
     createViewerNavigationState,
-    reconcileViewerCanonicalUrl,
-    recordViewerNavigation,
+    type ViewerNavigationCommand,
+    type ViewerNavigationEvent,
   } from './browser-viewer-navigation';
 
   interface Props {
@@ -27,8 +28,12 @@
     title?: string;
     host: BrowserTabHost;
     isActive?: boolean;
-    /** Forward a navigation to the host (`browser.navigateTab`). */
-    onNavigate?: (url: string) => void;
+    /**
+     * Forward a navigation to the host (`browser.navigateTab`). A returned
+     * promise that rejects means the host stayed put; the mirror then
+     * reloads the canonical URL.
+     */
+    onNavigate?: (url: string) => Promise<unknown> | void;
     /** Close on the host, or force-close the daemon row while it is offline. */
     onClose?: (options: { force: boolean }) => void;
     /** The mirror's favicon; the title stays canonical (registry row). */
@@ -49,13 +54,42 @@
 
   // svelte-ignore state_referenced_locally - the webview is created once at the initial canonical URL
   const initialUrl = isValidBrowserUrl(url) ? url : 'about:blank';
-  const navigation = createViewerNavigationState();
+  const navigation = createViewerNavigationState({ isValidBrowserUrl });
+  /** The initial `src` load is follow #1 (see the reconciler). */
+  const INITIAL_FOLLOW_SEQ = 1;
 
   let webviewRef: EmbeddedBrowserWebview | null = $state(null);
   let webviewReady = $state(false);
   let canGoBack = $state(false);
   let canGoForward = $state(false);
   let listeners: Array<{ event: string; handler: (e: any) => void }> = [];
+
+  function runCommand(command: ViewerNavigationCommand) {
+    if (command.type === 'load') {
+      const target = webviewRef;
+      const settle = () => dispatch({ type: 'follow-settled', seq: command.seq });
+      if (!target) return settle();
+      try {
+        target.loadURL(command.url).then(settle, settle);
+      } catch {
+        settle();
+      }
+      return;
+    }
+    const settle = (ok: boolean) => dispatch({ type: 'forward-settled', seq: command.seq, ok });
+    try {
+      Promise.resolve(onNavigate?.(command.url)).then(
+        () => settle(true),
+        () => settle(false),
+      );
+    } catch {
+      settle(false);
+    }
+  }
+
+  function dispatch(event: ViewerNavigationEvent) {
+    for (const command of applyViewerNavigationEvent(navigation, event)) runCommand(command);
+  }
 
   function addListener(target: EmbeddedBrowserWebview, event: string, handler: (e: any) => void) {
     target.addEventListener(event, handler);
@@ -84,11 +118,27 @@
     }
   }
 
-  function handleNavigated(target: EmbeddedBrowserWebview, navigatedUrl: string) {
-    if (!navigatedUrl) return;
-    const { forward } = recordViewerNavigation(navigation, navigatedUrl);
-    if (forward) onNavigate?.(navigatedUrl);
+  /** `did-navigate` is main-frame only; `did-navigate-in-page` carries `isMainFrame`. */
+  function handleNavigated(
+    target: EmbeddedBrowserWebview,
+    e: { url?: string; isMainFrame?: boolean },
+  ) {
+    dispatch({ type: 'guest-navigated', url: e.url ?? '', isMainFrame: e.isMainFrame !== false });
     updateHistoryState(target);
+  }
+
+  /**
+   * The address bar loads locally like any browser; the resulting
+   * `did-navigate` is a guest navigation and is forwarded to the host.
+   */
+  function loadFromAddressBar(nextUrl: string) {
+    const target = webviewRef;
+    if (!target || !webviewReady) return;
+    try {
+      target.loadURL(nextUrl).catch(() => {});
+    } catch {
+      // The guest may have been detached.
+    }
   }
 
   $effect(() => {
@@ -102,14 +152,19 @@
       webviewReady = true;
       updateHistoryState(target);
     });
+    // Follow #1 (the `src` load) has no `loadURL` promise: it settles here.
+    // Later follows settle through their promise; for them these are stale.
     addListener(target, 'did-stop-loading', () => {
       webviewReady = true;
-      completeViewerFollow(navigation);
+      dispatch({ type: 'follow-settled', seq: INITIAL_FOLLOW_SEQ });
       updateHistoryState(target);
     });
-    addListener(target, 'did-fail-load', () => completeViewerFollow(navigation));
-    addListener(target, 'did-navigate', (e) => handleNavigated(target, e.url));
-    addListener(target, 'did-navigate-in-page', (e) => handleNavigated(target, e.url));
+    addListener(target, 'did-fail-load', (e) => {
+      if (e.isMainFrame === false) return;
+      dispatch({ type: 'follow-settled', seq: INITIAL_FOLLOW_SEQ });
+    });
+    addListener(target, 'did-navigate', (e) => handleNavigated(target, e));
+    addListener(target, 'did-navigate-in-page', (e) => handleNavigated(target, e));
     addListener(target, 'page-favicon-updated', (e) => {
       if (e.favicons?.length > 0) onFaviconChange?.(e.favicons[0]);
     });
@@ -118,21 +173,22 @@
     return () => removeListeners(target);
   });
 
-  // Follow the host: a canonical URL change the mirror is not already showing
-  // is loaded here. Re-runs on readiness so a change during the initial load
-  // is picked up once the webview can navigate.
+  // Follow the host: the reconciler decides whether the canonical URL must be
+  // loaded. Re-runs on readiness so a change during the initial load is
+  // picked up once the webview can navigate.
   $effect(() => {
-    const target = webviewRef;
-    const decision = reconcileViewerCanonicalUrl(navigation, url, {
-      webviewReady,
-      isValidBrowserUrl,
-    });
-    if (!decision.shouldLoad || !decision.targetUrl || !target) return;
-    target.loadURL(decision.targetUrl).catch(() => completeViewerFollow(navigation));
+    dispatch({ type: 'canonical', url, webviewReady });
   });
 
+  // Guest methods need an attached guest (dom-ready); re-applied on readiness.
   $effect(() => {
-    webviewRef?.setAudioMuted?.(!isActive);
+    const target = webviewRef;
+    if (!target || !webviewReady) return;
+    try {
+      target.setAudioMuted?.(!isActive);
+    } catch {
+      // The guest may have been detached between the reactive update and call.
+    }
   });
 
   onDestroy(() => removeListeners(webviewRef));
@@ -145,10 +201,10 @@
     {host}
     {canGoBack}
     {canGoForward}
-    onNavigate={(next) => onNavigate?.(next)}
-    onGoBack={() => webviewRef?.goBack()}
-    onGoForward={() => webviewRef?.goForward()}
-    onRefresh={() => webviewRef?.reload()}
+    onNavigate={loadFromAddressBar}
+    onGoBack={() => webviewReady && webviewRef?.goBack()}
+    onGoForward={() => webviewReady && webviewRef?.goForward()}
+    onRefresh={() => webviewReady && dispatch({ type: 'refresh' })}
     {onClose}
   />
   <div class="relative min-h-0 flex-1" class:pointer-events-none={!host.connected}>

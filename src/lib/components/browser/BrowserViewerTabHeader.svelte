@@ -18,9 +18,13 @@
   import Fa from 'svelte-fa';
   import { tick } from 'svelte';
   import { Button } from '$lib/components/ui/button';
-  import Input from '$lib/components/ui/input/input.svelte';
+  import { Input } from '$lib/components/ui/input';
   import { m } from '$shared/paraglide/messages.js';
   import type { BrowserTabHost } from './browser-tab-host';
+  import {
+    isValidBrowserUrl,
+    normalizeBrowserAddressInput,
+  } from './embedded-browser-url-validation';
 
   interface Props {
     /** Canonical URL as last reported by the host. */
@@ -54,6 +58,7 @@
 
   let isEditingUrl = $state(false);
   let urlDraft = $state('');
+  let urlDraftInvalid = $state(false);
   let urlInputRef: { focus: () => void; select: () => void } | null = $state(null);
 
   const offline = $derived(!host.connected);
@@ -70,17 +75,28 @@
   async function startEditingUrl() {
     if (offline) return;
     urlDraft = url;
+    urlDraftInvalid = false;
     isEditingUrl = true;
     await tick();
     urlInputRef?.focus();
     urlInputRef?.select();
   }
 
+  // Same normalization and validation as the local address bars, so a bare
+  // hostname is accepted here exactly as it is on a locally hosted tab.
   function submitUrl(event: SubmitEvent) {
     event.preventDefault();
-    const next = urlDraft.trim();
+    if (!urlDraft.trim()) {
+      isEditingUrl = false;
+      return;
+    }
+    const next = normalizeBrowserAddressInput(urlDraft);
+    if (!next || !isValidBrowserUrl(next)) {
+      urlDraftInvalid = true;
+      return;
+    }
     isEditingUrl = false;
-    if (next && next !== url) onNavigate?.(next);
+    if (next !== url) onNavigate?.(next);
   }
 
   function handleUrlKeydown(event: KeyboardEvent) {
@@ -143,14 +159,19 @@
             bind:this={urlInputRef}
             type="text"
             bind:value={urlDraft}
+            oninput={() => (urlDraftInvalid = false)}
             onkeydown={handleUrlKeydown}
             onblur={() => (isEditingUrl = false)}
             noFocusStyle
             class="h-full flex-1 rounded-none border-0 bg-transparent px-0 hover:border-transparent"
             placeholder={m.browser_embedded_url_placeholder()}
             aria-label={m.browser_embedded_addressInput_ariaLabel()}
+            aria-invalid={urlDraftInvalid || undefined}
+            title={urlDraftInvalid ? m.browser_panel_invalidUrl_error() : undefined}
           />
-          <button type="submit" class="sr-only">{m.browser_embedded_go_label()}</button>
+          <Button type="submit" variant="ghost" size="xs" class="sr-only">
+            {m.browser_embedded_go_label()}
+          </Button>
         </form>
       {:else}
         <button
@@ -170,7 +191,9 @@
             >{identityTitle}</span
           >
           {#if title && pageHostname && pageHostname !== title}
-            <span class="max-w-[40%] truncate text-xs text-muted-foreground">{pageHostname}</span>
+            <span class="browser-viewer-hostname truncate text-xs text-muted-foreground"
+              >{pageHostname}</span
+            >
           {/if}
         </button>
       {/if}
@@ -205,3 +228,9 @@
     </div>
   {/if}
 </div>
+
+<style>
+  .browser-viewer-hostname {
+    max-width: 40%;
+  }
+</style>

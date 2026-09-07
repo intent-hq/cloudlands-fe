@@ -14,7 +14,7 @@
     title?: string;
     host: BrowserTabHost;
     isActive?: boolean;
-    onNavigate?: (url: string) => void;
+    onNavigate?: (url: string) => Promise<unknown> | void;
     onClose?: (options: { force: boolean }) => void;
     onFaviconChange?: (url: string) => void;
     onFocus?: () => void;
