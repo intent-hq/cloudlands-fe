@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.143.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.142.0...v2.143.0) (2026-09-07)
+
+
+### 🚀 Features
+
+* **browser:** daemon-backed tab persistence with a generation-fenced registry lifecycle ([#2250](https://github.com/intent-hq/cloudlands-fe/issues/2250)) ([4d7de48](https://github.com/intent-hq/cloudlands-fe/commit/4d7de4878924357e51695dc7833eed8a1471bc68))
+* default new workspaces to a single Developer agent ([#2254](https://github.com/intent-hq/cloudlands-fe/issues/2254)) ([114ef20](https://github.com/intent-hq/cloudlands-fe/commit/114ef207182a50f098841e40883b647738167fdc))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.37 ([#2255](https://github.com/intent-hq/cloudlands-fe/issues/2255)) ([26302ed](https://github.com/intent-hq/cloudlands-fe/commit/26302ed67cc57b0d4618aaf94d9dae56feed7e3d))
+* bump intentd sidecar to v0.9.38 ([#2257](https://github.com/intent-hq/cloudlands-fe/issues/2257)) ([60b7a57](https://github.com/intent-hq/cloudlands-fe/commit/60b7a578d806ab6588eb8eebbd9e24a26afb6471))
+* **panel:** reopen the clicked recently-closed tab into the clicked panel ([#2251](https://github.com/intent-hq/cloudlands-fe/issues/2251)) ([cbb52b0](https://github.com/intent-hq/cloudlands-fe/commit/cbb52b03af0aa970c62c77fa96dbc4667a215c33))
+* **titlebar:** avoid flushSync inside workspace tab effect teardown ([#2248](https://github.com/intent-hq/cloudlands-fe/issues/2248)) ([0055751](https://github.com/intent-hq/cloudlands-fe/commit/005575147fffae13e7568a154f82256fc91f78a6))
+
 ## [2.142.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.141.0...v2.142.0) (2026-09-07)
 
 
