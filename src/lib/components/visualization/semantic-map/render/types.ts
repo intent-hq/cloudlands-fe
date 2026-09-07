@@ -52,6 +52,7 @@ export interface ActivityMark {
 export interface AgentBadge {
   id: string;
   name: string;
+  kind: MapActivityKind;
   x: number;
   y: number;
   color: string;

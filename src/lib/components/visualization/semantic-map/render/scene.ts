@@ -154,6 +154,7 @@ function buildBadges(
     const badge: AgentBadge = {
       id,
       name: nameByAgent.get(id) ?? id,
+      kind: latest.kind,
       x: region?.x ?? 28 + unplaced++ * 34,
       y: region?.y ?? 28,
       color: colors.get(id) ?? agentColorPalette[AGENT_HUE_LIMIT],

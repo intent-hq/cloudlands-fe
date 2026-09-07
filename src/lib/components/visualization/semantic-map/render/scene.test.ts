@@ -117,6 +117,37 @@ describe('semantic map render scene', () => {
     expect(scene.hasMotion).toBe(true);
   });
 
+  it('keeps only each agent latest tool or thinking badge state inside the time window', () => {
+    const cueActivities: MapActivity[] = [
+      { id: 'old-tool', agentId: 'outside', kind: 'tool', ts: '2026-09-06T09:59:59.000Z' },
+      { id: 'thinking', agentId: 'thinking', kind: 'thinking', ts: '2026-09-06T10:09:58.000Z' },
+      { id: 'tool', agentId: 'tool', kind: 'tool', ts: '2026-09-06T10:09:59.000Z' },
+      { id: 'superseded-tool', agentId: 'editing', kind: 'tool', ts: '2026-09-06T10:09:58.000Z' },
+      {
+        id: 'latest-edit',
+        agentId: 'editing',
+        regionId: 'one',
+        kind: 'edit',
+        ts: '2026-09-06T10:09:59.000Z',
+      },
+    ];
+    const scene = buildScene({
+      activities: cueActivities,
+      filters: {},
+      timeWindow: window,
+      geometry,
+      neutral: '#neutral',
+      fileLabel: (count) => `${count}`,
+    });
+
+    expect(scene.badges.find(({ id }) => id === 'thinking')).toMatchObject({ thinking: true });
+    expect(scene.badges.find(({ id }) => id === 'tool')?.toolAgeMs).toBe(1_000);
+    const editingBadge = scene.badges.find(({ id }) => id === 'editing');
+    expect(editingBadge).toMatchObject({ thinking: false });
+    expect(editingBadge).not.toHaveProperty('toolAgeMs');
+    expect(scene.badges.some(({ id }) => id === 'outside')).toBe(false);
+  });
+
   it('fans collocated badges and uses at most eight agent hues', () => {
     const activities: MapActivity[] = Array.from({ length: 9 }, (_, index) => ({
       id: `activity-${index}`,

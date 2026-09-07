@@ -4,6 +4,8 @@
   import type { RegionGeometry } from '../layout/place';
   import type { SemanticMapSelection } from '../render/types';
 
+  let { activityFixture = false }: { activityFixture?: boolean } = $props();
+
   const manifest: Manifest = {
     version: 1,
     regions: [
@@ -23,7 +25,42 @@
       },
     ],
   };
-  const activities: MapActivity[] = [];
+  const activities: MapActivity[] = activityFixture
+    ? [
+        {
+          id: 'read',
+          agentId: 'reading',
+          agentName: 'Reading',
+          regionId: 'first',
+          kind: 'read',
+          ts: '2026-09-06T10:19:59.800Z',
+        },
+        {
+          id: 'edit',
+          agentId: 'thinking',
+          agentName: 'Thinking',
+          regionId: 'second',
+          kind: 'edit',
+          ts: '2026-09-06T10:19:59.700Z',
+        },
+        {
+          id: 'tool',
+          agentId: 'tooling',
+          agentName: 'Tooling',
+          regionId: 'first',
+          kind: 'tool',
+          ts: '2026-09-06T10:19:59.900Z',
+        },
+        {
+          id: 'thinking',
+          agentId: 'thinking',
+          agentName: 'Thinking',
+          regionId: 'second',
+          kind: 'thinking',
+          ts: '2026-09-06T10:19:59.900Z',
+        },
+      ]
+    : [];
   let selection = $state<SemanticMapSelection>(null);
   const firstHull: [number, number][] = [
     [180, 130],

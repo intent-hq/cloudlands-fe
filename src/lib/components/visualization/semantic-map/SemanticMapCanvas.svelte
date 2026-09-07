@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
+  import type { MapActivityKind } from './core/types';
   import { lerpGeometry } from './layout/interpolate';
   import type { RegionGeometry } from './layout/place';
   import { CanvasPathCache, drawQuadraticPath, traceHull } from './render/canvas';
@@ -129,6 +130,18 @@
     return count === 1
       ? m.semanticMap_canvas_routeFiles_one()
       : m.semanticMap_canvas_routeFiles_many({ count: formatInteger(count) });
+  }
+
+  function activityKindLabel(kind: MapActivityKind): string {
+    return {
+      read: m.semanticMap_sandbox_read_label(),
+      edit: m.semanticMap_sandbox_edit_label(),
+      tool: m.semanticMap_sandbox_tool_label(),
+      thinking: m.semanticMap_sandbox_thinking_label(),
+      create: m.semanticMap_detail_create_label(),
+      delete: m.semanticMap_detail_delete_label(),
+      move: m.semanticMap_detail_move_label(),
+    }[kind];
   }
 
   function cssValue(style: CSSStyleDeclaration, name: string, fallback: string): string {
@@ -288,6 +301,8 @@
   }
 
   function drawRegionLabel(ctx: CanvasRenderingContext2D, label: PlacedLabel): void {
+    ctx.save();
+    ctx.globalAlpha = label.opacity;
     ctx.fillStyle = colors.foreground;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -301,6 +316,7 @@
         label.width,
       );
     }
+    ctx.restore();
   }
 
   function drawRoute(ctx: CanvasRenderingContext2D, edges: RouteEdge[]): void {
@@ -403,6 +419,29 @@
     ctx.restore();
   }
 
+  function drawBadgeActivityCue(ctx: CanvasRenderingContext2D, badge: AgentBadge): void {
+    ctx.save();
+    ctx.strokeStyle = badge.color;
+    ctx.fillStyle = colors.surface;
+    ctx.lineWidth = 2 / transform.scale;
+    if (badge.thinking) {
+      ctx.setLineDash([3 / transform.scale, 2 / transform.scale]);
+      ctx.beginPath();
+      ctx.arc(badge.x, badge.y, (BADGE_RADIUS + 4) / transform.scale, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (badge.toolAgeMs !== undefined) {
+      ctx.translate(
+        badge.x + BADGE_RADIUS / transform.scale,
+        badge.y - BADGE_RADIUS / transform.scale,
+      );
+      ctx.rotate(Math.PI / 4);
+      const size = 7 / transform.scale;
+      ctx.fillRect(-size / 2, -size / 2, size, size);
+      ctx.strokeRect(-size / 2, -size / 2, size, size);
+    }
+    ctx.restore();
+  }
+
   function drawBadge(
     ctx: CanvasRenderingContext2D,
     badge: AgentBadge,
@@ -425,7 +464,8 @@
     ctx.textBaseline = 'middle';
     ctx.fillText(badge.name.slice(0, 1).toUpperCase(), badge.x, badge.y);
     ctx.restore();
-    drawToolPulse(ctx, badge, elapsed);
+    drawBadgeActivityCue(ctx, badge);
+    if (!reducedMotion) drawToolPulse(ctx, badge, elapsed);
   }
 
   function drawMinimap(ctx: CanvasRenderingContext2D): void {
@@ -493,7 +533,8 @@
           ? mark.ageMs + elapsed < READ_DURATION_MS
           : mark.kind === 'move' && mark.ageMs + elapsed < MOVE_DURATION_MS,
       ) ||
-      scene.badges.some((badge) => (badge.toolAgeMs ?? Infinity) + elapsed < TOOL_DURATION_MS)
+      (!reducedMotion &&
+        scene.badges.some((badge) => (badge.toolAgeMs ?? Infinity) + elapsed < TOOL_DURATION_MS))
     );
   }
 
@@ -739,6 +780,14 @@
   data-semantic-map-agent-count={scene.badges.length}
 >
   <span class="sr-only" aria-live="polite">{selectionDescription}</span>
+  <ul class="sr-only" aria-label={m.semanticMap_panel_filterKinds_label()}>
+    {#each scene.marks as mark, index (index)}
+      <li>{activityKindLabel(mark.kind)}</li>
+    {/each}
+    {#each scene.badges as badge (badge.id)}
+      <li>{badge.name}: {activityKindLabel(badge.kind)}</li>
+    {/each}
+  </ul>
   <canvas
     bind:this={canvas}
     class:cursor-grabbing={panning}
