@@ -31,6 +31,10 @@ export interface LabelLayout {
   boxes: LabelBox[];
 }
 
+export interface LabelFocusState {
+  maximumBudget: number;
+}
+
 function overlaps(left: LabelBox, right: LabelBox): boolean {
   return !(
     left.x + left.width / 2 + GAP <= right.x - right.width / 2 ||
@@ -59,9 +63,13 @@ function wrapLabel(text: string, maxCharacters: number): string[] {
   return lines;
 }
 
-export function regionLabelOpacity(budget: number, maximumBudget: number): number {
-  if (maximumBudget <= 0) return 1;
-  return Math.max(REGION_LABEL_MIN_OPACITY, Math.min(1, Math.sqrt(budget / maximumBudget)));
+export function labelEmphasis(
+  region: Pick<RegionGeometry, 'budget'>,
+  focusState: LabelFocusState,
+): number {
+  if (focusState.maximumBudget <= 0) return 1;
+  const ratio = Math.sqrt(Math.max(0, region.budget) / focusState.maximumBudget);
+  return Math.max(REGION_LABEL_MIN_OPACITY, Math.min(1, ratio));
 }
 
 function inside(box: LabelBox, width: number, height: number): boolean {
@@ -152,7 +160,9 @@ export function layoutSceneLabels(input: {
   const scale = input.scale ?? 1;
   const viewport = { width: input.width, height: input.height };
   const occupied: LabelBox[] = [];
-  const maximumRegionBudget = Math.max(0, ...input.regions.map(({ budget }) => budget));
+  const focusState = {
+    maximumBudget: Math.max(0, ...input.regions.map(({ budget }) => budget)),
+  };
   const regions = input.regions.flatMap((region) => {
     const text = input.regionLabels.get(region.id);
     if (!text) return [];
@@ -175,7 +185,7 @@ export function layoutSceneLabels(input: {
             ...box,
             text,
             fontSize,
-            opacity: regionLabelOpacity(region.budget, maximumRegionBudget),
+            opacity: labelEmphasis(region, focusState),
             lines,
           },
         ]

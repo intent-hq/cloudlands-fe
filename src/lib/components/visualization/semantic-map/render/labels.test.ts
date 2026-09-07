@@ -5,7 +5,7 @@ import { computeBudget } from '../layout/budget';
 import { placeRegions } from '../layout/place';
 import { createSemanticMapScript, SCRIPT_AGENTS, SCRIPT_START } from '../semantic-map-script';
 import { buildScene } from './scene';
-import { boxesOverlap, layoutSceneLabels } from './labels';
+import { boxesOverlap, labelEmphasis, layoutSceneLabels } from './labels';
 
 const manifest = manifestJson as Manifest;
 const script = createSemanticMapScript();
@@ -84,4 +84,12 @@ it('keeps non-focused region labels above the theme-independent readable opacity
   expect(selected.opacity).toBe(1);
   expect(context.every(({ opacity }) => opacity >= 0.82)).toBe(true);
   expect(context.some(({ opacity }) => opacity < selected.opacity)).toBe(true);
+});
+
+it('bounds label emphasis while preserving the context floor', () => {
+  const focusState = { maximumBudget: 0.7 };
+  expect(labelEmphasis({ budget: 0.7 }, focusState)).toBe(1);
+  expect(labelEmphasis({ budget: 0.02 }, focusState)).toBe(0.82);
+  expect(labelEmphasis({ budget: -1 }, focusState)).toBe(0.82);
+  expect(labelEmphasis({ budget: 2 }, focusState)).toBe(1);
 });
