@@ -656,20 +656,29 @@ describe('aggregatePRFiles', () => {
     expect(aggregatePRFiles(commits)).toEqual([]);
   });
 
-  it.each([
-    ['added', undefined],
-    ['deleted', undefined],
-    ['renamed', 'src/old.ts'],
-  ] as const)('preserves %s file status and rename source', (status, renamedFrom) => {
+  it('does not infer net PR status from per-commit statuses', () => {
     const commits = [
       makeCommit({
+        hash: 'add',
+        timestamp: 100,
         files: [
           {
             path: 'src/current.ts',
             additions: 2,
+            deletions: 0,
+            status: 'added',
+          },
+        ],
+      }),
+      makeCommit({
+        hash: 'modify',
+        timestamp: 200,
+        files: [
+          {
+            path: 'src/current.ts',
+            additions: 1,
             deletions: 1,
-            status,
-            ...(renamedFrom ? { renamedFrom } : {}),
+            status: 'modified',
           },
         ],
       }),
@@ -678,11 +687,9 @@ describe('aggregatePRFiles', () => {
     expect(aggregatePRFiles(commits)).toEqual([
       {
         path: 'src/current.ts',
-        additions: 2,
+        additions: 3,
         deletions: 1,
         staged: false,
-        status,
-        ...(renamedFrom ? { renamedFrom } : {}),
       },
     ]);
   });

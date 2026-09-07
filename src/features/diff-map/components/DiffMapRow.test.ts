@@ -60,6 +60,7 @@ describe('DiffMapRow', () => {
     ['renamed', 'R→', 'Renamed'],
     ['binary', 'B', 'Binary'],
     ['mode', 'M', 'Mode changed'],
+    ['unknown', '–', 'Unavailable'],
   ] as const)(
     'renders the %s status encoding and localized accessible status',
     (status, glyph, label) => {

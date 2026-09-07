@@ -53,6 +53,7 @@
     renamed: 'R→',
     binary: 'B',
     mode: 'M',
+    unknown: '–',
   };
   const additions = $derived(
     file.statsKnown && file.additions > 0 ? `+${formatInteger(file.additions)}` : undefined,
@@ -86,6 +87,8 @@
         return m.diffMap_status_binary_label();
       case 'mode':
         return m.diffMap_status_mode_label();
+      case 'unknown':
+        return m.diffMap_statsUnavailable_label();
     }
   });
   const accessibleName = $derived(

@@ -224,25 +224,15 @@ export function isFileFocused(
 export function aggregatePRFiles(pushedCommits: CommitInfo[]): UIFileChange[] {
   if (pushedCommits.length === 0) return [];
 
-  const fileMap = new Map<
-    string,
-    Pick<UIFileChange, 'additions' | 'deletions' | 'status' | 'renamedFrom'>
-  >();
+  const fileMap = new Map<string, Pick<UIFileChange, 'additions' | 'deletions'>>();
   const sortedCommits = [...pushedCommits].sort((a, b) => a.timestamp - b.timestamp);
 
   for (const commit of sortedCommits) {
     for (const file of commit.files ?? []) {
       const existing = fileMap.get(file.path);
-      const status = ['added', 'modified', 'deleted', 'renamed'].includes(file.status ?? '')
-        ? (file.status as UIFileChange['status'])
-        : existing?.status;
       fileMap.set(file.path, {
         additions: (existing?.additions ?? 0) + (file.additions || 0),
         deletions: (existing?.deletions ?? 0) + (file.deletions || 0),
-        ...(status ? { status } : {}),
-        ...(file.renamedFrom || existing?.renamedFrom
-          ? { renamedFrom: file.renamedFrom ?? existing?.renamedFrom }
-          : {}),
       });
     }
   }
@@ -252,8 +242,6 @@ export function aggregatePRFiles(pushedCommits: CommitInfo[]): UIFileChange[] {
     additions: stats.additions,
     deletions: stats.deletions,
     staged: false,
-    ...(stats.status ? { status: stats.status } : {}),
-    ...(stats.renamedFrom ? { renamedFrom: stats.renamedFrom } : {}),
   }));
 }
 
