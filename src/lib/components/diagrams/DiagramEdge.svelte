@@ -15,6 +15,8 @@
     markerScope?: string;
     /** Diagram-space inset that keeps the painted arrow tip away from its target. */
     terminalGap?: number;
+    /** Delay retained-route morphing until the current scene stage begins. */
+    motionDelay?: number;
     onmotionchange?: (edgeId: string, moving: boolean) => void;
   }
 
@@ -24,6 +26,7 @@
     highlighted = false,
     markerScope = '',
     terminalGap = 0,
+    motionDelay = 0,
     onmotionchange,
   }: Props = $props();
   let displayedPath = $state('');
@@ -127,10 +130,12 @@
     previousTargetPath = targetPath;
     previousEdgeReference = edge;
     previousEdgeId = edge.id;
-    const startedAt = performance.now();
     let frame = 0;
+    let delayTimer: number | undefined;
+    motionProgress = 0;
     reportMotion(true);
     const tick = (now: number) => {
+      const startedAt = motionStartedAt!;
       const elapsed = Math.max(0, Math.min(1, (now - startedAt) / 220));
       const progress = calmEaseOut(elapsed);
       const points = from.map((point, index) => ({
@@ -152,8 +157,15 @@
         reportMotion(false);
       }
     };
-    frame = requestAnimationFrame(tick);
+    let motionStartedAt: number | undefined;
+    const startMotion = () => {
+      motionStartedAt = performance.now();
+      frame = requestAnimationFrame(tick);
+    };
+    if (motionDelay > 0) delayTimer = window.setTimeout(startMotion, motionDelay);
+    else startMotion();
     return () => {
+      if (delayTimer !== undefined) window.clearTimeout(delayTimer);
       cancelAnimationFrame(frame);
       reportMotion(false);
     };

@@ -464,9 +464,14 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  html:not(.catalog-full-motion),
+  html:not(.catalog-full-motion) *,
+  html:not(.catalog-full-motion) *::before,
+  html:not(.catalog-full-motion) *::after,
+  html.catalog-reduced-motion,
+  html.catalog-reduced-motion *,
+  html.catalog-reduced-motion *::before,
+  html.catalog-reduced-motion *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;

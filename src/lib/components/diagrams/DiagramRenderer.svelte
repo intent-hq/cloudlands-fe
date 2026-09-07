@@ -22,6 +22,7 @@
   import { flushSync, onDestroy, onMount, tick } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { shouldReduceMotion } from '$lib/utils/motion-preference';
+  import { cameraMotionKeyframes } from './diagram-motion';
 
   interface Props {
     diagram: DiagramPrimitive;
@@ -125,6 +126,7 @@
   let settlementFrame: number | undefined;
   let transitionRevision = 0;
   let motionPhase = $state<'settled' | 'camera' | 'scene'>('settled');
+  let cameraAnimation: Animation | undefined;
 
   const CAMERA_MOTION_MS = 320;
   const CAMERA_MOTION_EASING = 'cubic-bezier(0.65, 0, 0.35, 1)';
@@ -145,12 +147,11 @@
     if (!camera) return;
     for (const animation of camera.getAnimations({ subtree: false })) animation.cancel();
     const nextTransform = getComputedStyle(camera).transform;
-    camera
-      .animate([{ transform: previousTransform }, { transform: nextTransform }], {
-        duration: CAMERA_MOTION_MS,
-        easing: CAMERA_MOTION_EASING,
-      })
-      .finished.catch(() => undefined);
+    cameraAnimation = camera.animate(cameraMotionKeyframes(previousTransform, nextTransform), {
+      duration: CAMERA_MOTION_MS,
+      easing: CAMERA_MOTION_EASING,
+    });
+    cameraAnimation.finished.catch(() => undefined);
   }
   function activeFiniteAnimations() {
     if (!rendererEl?.getAnimations) return [];
@@ -259,8 +260,11 @@
   }
 
   onDestroy(() => {
+    transitionRevision += 1;
     settlementRevision += 1;
     if (settlementFrame !== undefined) cancelAnimationFrame(settlementFrame);
+    cameraAnimation?.cancel();
+    cameraAnimation = undefined;
   });
 
   // Hover state for highlighting connected nodes/edges
@@ -1223,6 +1227,7 @@
                   highlighted={isEdgeHighlighted}
                   markerScope={diagram.id}
                   terminalGap={arrowTerminalGap}
+                  motionDelay={stateJustChanged ? motionDuration(ROUTE_ENTRY_DELAY_MS) : 0}
                   onmotionchange={handleEdgeMotion}
                 />
               </g>
@@ -1325,6 +1330,11 @@
 
 <style>
   .diagram-renderer {
+    --diagram-camera-duration: 320ms;
+    --diagram-camera-easing: cubic-bezier(0.65, 0, 0.35, 1);
+    --diagram-scene-entry-delay: 320ms;
+    --diagram-route-entry-delay: 500ms;
+    --diagram-label-entry-delay: 680ms;
     display: flex;
     flex-direction: column;
     width: 100%;

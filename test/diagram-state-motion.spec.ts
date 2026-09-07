@@ -105,6 +105,15 @@ async function recordControlMotion(page: Page, rootId: string, direction: 'forwa
                 .map((animation) => Number(animation.effect?.getTiming().delay)),
             ),
           );
+        const maximumDuration = (elements: Element[]) =>
+          Math.max(
+            0,
+            ...elements.flatMap((node) =>
+              node
+                .getAnimations({ subtree: true })
+                .map((animation) => Number(animation.effect?.getTiming().duration)),
+            ),
+          );
         const nodes = entered('[data-node-id]', before.nodeIds, 'nodeId');
         const groups = entered('[data-group-id]', before.groupIds, 'groupId').map(
           (group) => group.parentElement!,
@@ -135,6 +144,10 @@ async function recordControlMotion(page: Page, rootId: string, direction: 'forwa
           enteredCounts: [nodes.length, groups.length, routes.length, labels.length],
           entryOpacities: [nodes, groups, routes, labels].map(maximumOpacity),
           entryDelays: [nodes, groups, routes, labels].map(maximumDelay),
+          entryDurations: [nodes, groups, routes, labels].map(maximumDuration),
+          routeProgress: [...element.querySelectorAll<SVGGElement>('.diagram-edge')].map((edge) =>
+            Number(edge.dataset.edgeMotionProgress),
+          ),
         };
       }, baseline),
     );
@@ -567,6 +580,34 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
       }
     }
   }
+});
+
+test('shows continuous Redux walkthrough motion when the system requests reduced motion', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(
+    `${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&theme=light&width=960&motion=full`,
+  );
+  await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
+    timeout: 30_000,
+  });
+
+  const transition = await recordControlMotion(page, 'custom-walkthrough', 'forward');
+  expect(new Set(transition.frames.map((frame) => frame.camera)).size).toBeGreaterThan(1);
+  expect(
+    transition.frames.some((frame) => frame.entryOpacities[0] > 0 && frame.entryOpacities[0] < 1),
+  ).toBe(true);
+  expect(
+    transition.frames.some((frame) => frame.routeProgress.some((value) => value > 0 && value < 1)),
+  ).toBe(true);
+  expect(Math.max(...transition.frames.map((frame) => frame.entryDurations[2]))).toBeGreaterThan(
+    100,
+  );
+  expect(Math.max(...transition.frames.map((frame) => frame.entryDurations[3]))).toBeGreaterThan(
+    100,
+  );
+  expect(transition.frames.at(-1)).toMatchObject({ phase: 'settled', settled: true });
 });
 
 test('coordinates architecture and ownership state motion through settled frames', async ({
