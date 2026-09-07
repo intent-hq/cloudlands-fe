@@ -667,7 +667,7 @@
                               compact ? 'size-[18px]' : 'size-5',
                               isMulti && 'rounded-(--radius-small) border',
                               isMulti && selected
-                                ? 'border-primary bg-primary font-semibold text-primary-ink'
+                                ? 'border-primary bg-primary font-semibold text-primary-foreground'
                                 : isMulti
                                   ? 'border-border text-muted-foreground'
                                   : selected
@@ -681,7 +681,7 @@
                           {#if chipPosition === 'right' && !isMulti}
                             <span
                               aria-hidden="true"
-                              class="absolute inset-0 inline-flex scale-75 items-center justify-center rounded-(--radius-small) bg-primary text-primary-ink opacity-0 transition-[opacity,transform] duration-spring-fast ease-spring-fast group-hover/question-row:scale-100 group-hover/question-row:opacity-100 group-focus/question-row:scale-100 group-focus/question-row:opacity-100 motion-reduce:transition-none"
+                              class="absolute inset-0 inline-flex scale-75 items-center justify-center rounded-(--radius-small) bg-primary text-primary-foreground opacity-0 transition-[opacity,transform] duration-spring-fast ease-spring-fast group-hover/question-row:scale-100 group-hover/question-row:opacity-100 group-focus/question-row:scale-100 group-focus/question-row:opacity-100 motion-reduce:transition-none"
                             >
                               <svg class="size-3.5" viewBox="0 0 16 16" fill="none"
                                 ><path
@@ -733,7 +733,7 @@
                         >
                           <span
                             aria-hidden="true"
-                            class="absolute inset-0 inline-flex scale-75 items-center justify-center rounded-(--radius-small) bg-primary text-primary-ink opacity-0 transition-[opacity,transform] duration-spring-fast ease-spring-fast group-hover/question-row:scale-100 group-hover/question-row:opacity-100 group-focus/question-row:scale-100 group-focus/question-row:opacity-100 motion-reduce:transition-none"
+                            class="absolute inset-0 inline-flex scale-75 items-center justify-center rounded-(--radius-small) bg-primary text-primary-foreground opacity-0 transition-[opacity,transform] duration-spring-fast ease-spring-fast group-hover/question-row:scale-100 group-hover/question-row:opacity-100 group-focus/question-row:scale-100 group-focus/question-row:opacity-100 motion-reduce:transition-none"
                           >
                             <svg class="size-3.5" viewBox="0 0 16 16" fill="none"
                               ><path

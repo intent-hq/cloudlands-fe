@@ -264,6 +264,19 @@ describe('theme color contract', () => {
   );
 
   it.each(['light', 'dark'] as const)(
+    'keeps %s primary foreground readable on the primary fill',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      const values = tokenValues(css, mode);
+
+      expect(
+        contrast(values['primary-foreground'], values.primary),
+        'primary-foreground on primary',
+      ).toBeGreaterThanOrEqual(4.5);
+    },
+  );
+
+  it.each(['light', 'dark'] as const)(
     'keeps %s muted text distinct and readable on normal surfaces',
     (mode) => {
       const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
