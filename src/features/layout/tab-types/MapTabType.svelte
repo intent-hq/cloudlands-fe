@@ -248,84 +248,87 @@
         {m.semanticMap_panel_filters_label()}
       </Button>
     </div>
-    <h2 class="mb-2 text-sm font-semibold">{m.semanticMap_panel_filters_label()}</h2>
-    {#if filterAgents.length > 0}
+    <div class="compact-panel-content">
+      <h2 class="mb-2 text-sm font-semibold">{m.semanticMap_panel_filters_label()}</h2>
+      {#if filterAgents.length > 0}
+        <fieldset class="mb-3 flex flex-wrap gap-1.5">
+          <legend class="mb-1 text-xs text-muted-foreground">
+            {m.semanticMap_panel_filterAgents_label()}
+          </legend>
+          {#each filterAgents as agent (agent.id)}
+            <Button
+              size="sm"
+              variant={$mapState.agentFilter.length === 0 ||
+              $mapState.agentFilter.includes(agent.id)
+                ? 'secondary'
+                : 'outline'}
+              aria-pressed={$mapState.agentFilter.length === 0 ||
+                $mapState.agentFilter.includes(agent.id)}
+              onclick={() => toggleAgentFilter(agent.id)}>{agent.name}</Button
+            >
+          {/each}
+        </fieldset>
+      {/if}
       <fieldset class="mb-3 flex flex-wrap gap-1.5">
         <legend class="mb-1 text-xs text-muted-foreground">
-          {m.semanticMap_panel_filterAgents_label()}
+          {m.semanticMap_panel_filterKinds_label()}
         </legend>
-        {#each filterAgents as agent (agent.id)}
+        {#each activityKinds as kind (kind)}
           <Button
             size="sm"
-            variant={$mapState.agentFilter.length === 0 || $mapState.agentFilter.includes(agent.id)
+            variant={$mapState.kindFilter.length === 0 || $mapState.kindFilter.includes(kind)
               ? 'secondary'
               : 'outline'}
-            aria-pressed={$mapState.agentFilter.length === 0 ||
-              $mapState.agentFilter.includes(agent.id)}
-            onclick={() => toggleAgentFilter(agent.id)}>{agent.name}</Button
+            aria-pressed={$mapState.kindFilter.length === 0 || $mapState.kindFilter.includes(kind)}
+            onclick={() => toggleKindFilter(kind)}>{kindLabel(kind)}</Button
           >
         {/each}
       </fieldset>
-    {/if}
-    <fieldset class="mb-3 flex flex-wrap gap-1.5">
-      <legend class="mb-1 text-xs text-muted-foreground">
-        {m.semanticMap_panel_filterKinds_label()}
-      </legend>
-      {#each activityKinds as kind (kind)}
+      <fieldset class="mb-4 flex flex-wrap gap-1.5">
+        <legend class="mb-1 text-xs text-muted-foreground">
+          {m.semanticMap_panel_filterTime_label()}
+        </legend>
         <Button
           size="sm"
-          variant={$mapState.kindFilter.length === 0 || $mapState.kindFilter.includes(kind)
-            ? 'secondary'
-            : 'outline'}
-          aria-pressed={$mapState.kindFilter.length === 0 || $mapState.kindFilter.includes(kind)}
-          onclick={() => toggleKindFilter(kind)}>{kindLabel(kind)}</Button
+          variant={isTimeWindowSelected(null) ? 'secondary' : 'outline'}
+          aria-pressed={isTimeWindowSelected(null)}
+          onclick={() => setTimeWindow(null)}>{m.semanticMap_panel_allTime_label()}</Button
         >
-      {/each}
-    </fieldset>
-    <fieldset class="mb-4 flex flex-wrap gap-1.5">
-      <legend class="mb-1 text-xs text-muted-foreground">
-        {m.semanticMap_panel_filterTime_label()}
-      </legend>
-      <Button
-        size="sm"
-        variant={isTimeWindowSelected(null) ? 'secondary' : 'outline'}
-        aria-pressed={isTimeWindowSelected(null)}
-        onclick={() => setTimeWindow(null)}>{m.semanticMap_panel_allTime_label()}</Button
-      >
-      {#each timeWindowMinutes as minutes (minutes)}
-        <Button
-          size="sm"
-          variant={isTimeWindowSelected(minutes) ? 'secondary' : 'outline'}
-          aria-pressed={isTimeWindowSelected(minutes)}
-          onclick={() => setTimeWindow(minutes)}
-          >{m.semanticMap_sandbox_minutes_label({ count: formatInteger(minutes) })}</Button
-        >
-      {/each}
-    </fieldset>
-    <h2 class="mb-2 text-sm font-semibold">{m.semanticMap_sandbox_agents_label()}</h2>
-    <WorkspaceAgentsList
-      agents={$agents}
-      selectedAgentId={$mapState.selectedAgentId}
-      onSelect={({ agentId }) => selectAgent(agentId)}
-    />
-    <h2 class="mb-2 mt-4 text-sm font-semibold">
-      {m.workspace_flameGraph_tasksComplete_label({ completed: 0, total: $tasks.length })}
-    </h2>
-    <div class="flex flex-col gap-1">
-      {#each $tasks as task (task.id)}
-        <Button
-          variant="plain"
-          class="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted/60 {$mapState.selectedTaskNoteId ===
-          task.id
-            ? 'bg-muted'
-            : ''}"
-          aria-pressed={$mapState.selectedTaskNoteId === task.id}
-          onclick={() => selectTask(task.id)}
-        >
-          <span class="min-w-0 flex-1 truncate">{task.title}</span>
-          <TaskStatusIndicator status={task.status} readonly compact />
-        </Button>
-      {/each}
+        {#each timeWindowMinutes as minutes (minutes)}
+          <Button
+            size="sm"
+            variant={isTimeWindowSelected(minutes) ? 'secondary' : 'outline'}
+            aria-pressed={isTimeWindowSelected(minutes)}
+            onclick={() => setTimeWindow(minutes)}
+            >{m.semanticMap_sandbox_minutes_label({ count: formatInteger(minutes) })}</Button
+          >
+        {/each}
+      </fieldset>
+      <h2 class="mb-2 text-sm font-semibold">{m.semanticMap_sandbox_agents_label()}</h2>
+      <WorkspaceAgentsList
+        agents={$agents}
+        selectedAgentId={$mapState.selectedAgentId}
+        onSelect={({ agentId }) => selectAgent(agentId)}
+      />
+      <h2 class="mb-2 mt-4 text-sm font-semibold">
+        {m.workspace_flameGraph_tasksComplete_label({ completed: 0, total: $tasks.length })}
+      </h2>
+      <div class="flex flex-col gap-1">
+        {#each $tasks as task (task.id)}
+          <Button
+            variant="plain"
+            class="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted/60 {$mapState.selectedTaskNoteId ===
+            task.id
+              ? 'bg-muted'
+              : ''}"
+            aria-pressed={$mapState.selectedTaskNoteId === task.id}
+            onclick={() => selectTask(task.id)}
+          >
+            <span class="min-w-0 flex-1 truncate">{task.title}</span>
+            <TaskStatusIndicator status={task.status} readonly compact />
+          </Button>
+        {/each}
+      </div>
     </div>
   </aside>
 
@@ -408,27 +411,33 @@
         {m.semanticMap_panel_details_label()}
       </Button>
     </div>
-    {#if $mapState.manifest}
-      <SemanticMapDetail
-        manifest={$mapState.manifest}
-        activities={$filteredActivities}
-        route={$mapState.route ?? undefined}
-        selection={detailSelection}
-        agents={detailAgents}
-        fileChanges={detailFileChanges}
-        {routeSubjectLabel}
-        onSelectCrossing={selectCrossing}
-        onSelectFile={(path) => (detailOverride = { type: 'file', path })}
-        onOpenFile={(path) => appStore.dispatch(openWorkspaceFile(workspaceId, path))}
-        onOpenDiff={openDiff}
-      />
-    {/if}
+    <div class="compact-panel-content">
+      {#if $mapState.manifest}
+        <SemanticMapDetail
+          manifest={$mapState.manifest}
+          activities={$filteredActivities}
+          route={$mapState.route ?? undefined}
+          selection={detailSelection}
+          agents={detailAgents}
+          fileChanges={detailFileChanges}
+          {routeSubjectLabel}
+          onSelectCrossing={selectCrossing}
+          onSelectFile={(path) => (detailOverride = { type: 'file', path })}
+          onOpenFile={(path) => appStore.dispatch(openWorkspaceFile(workspaceId, path))}
+          onOpenDiff={openDiff}
+        />
+      {/if}
+    </div>
   </aside>
 </div>
 
 <style>
   .compact-disclosure {
     display: none;
+  }
+
+  .compact-panel-content {
+    display: contents;
   }
 
   @container panel (max-width: 47.99rem) {
@@ -456,8 +465,7 @@
       max-height: 16rem;
     }
 
-    .filters-sidebar.compact-collapsed > :not(.compact-disclosure),
-    .details-sidebar.compact-collapsed > :not(.compact-disclosure) {
+    .compact-collapsed > .compact-panel-content {
       display: none;
     }
 
