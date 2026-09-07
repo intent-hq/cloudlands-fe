@@ -18,6 +18,7 @@
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
@@ -530,11 +531,7 @@
         </p>
       </div>
       <div class="flex items-center gap-3">
-        <div class="relative flex items-center justify-center w-4 h-4 shrink-0">
-          <div
-            class="absolute inset-0 rounded-full border-2 border-transparent border-t-primary animate-spin"
-          ></div>
-        </div>
+        <IntentMarkLoader size={16} class="shrink-0 text-primary-ink" />
         <span class="text-sm text-muted-foreground"
           >{m.onboarding_promptStep_settingUpWorkspace_label()}</span
         >
@@ -698,9 +695,7 @@
                 tooltip={m.onboarding_promptStep_enhancePrompt_tooltip()}
               >
                 {#if isOnboardingEnhancing}
-                  <div class="animate-spin">
-                    <Fa icon={faArrowsRotate} size="xs" />
-                  </div>
+                  <IntentMarkLoader size={12} />
                 {:else}
                   <Fa icon={faMagicWandSparkles} size="xs" />
                 {/if}

@@ -8,8 +8,9 @@
    */
   import type { FilePatch, PatchLastApply } from '$shared/types/notes-primitives';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
-  import { faCheck, faRotateLeft, faSpinner, faPlusMinus } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faRotateLeft, faPlusMinus } from '@fortawesome/free-solid-svg-icons';
   import { slide } from '$lib/motion';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DiffViewer from './DiffViewer.svelte';
@@ -69,10 +70,9 @@
   );
 
   let buttonState = $derived.by(() => {
-    if (applying) return { label: m.ui_patchBlock_applying_label(), icon: faSpinner, spin: true };
-    if (isApplied)
-      return { label: m.ui_patchBlock_revert_label(), icon: faRotateLeft, spin: false };
-    return { label: m.ui_patchBlock_apply_label(), icon: faCheck, spin: false };
+    if (applying) return { label: m.ui_patchBlock_applying_label(), icon: null };
+    if (isApplied) return { label: m.ui_patchBlock_revert_label(), icon: faRotateLeft };
+    return { label: m.ui_patchBlock_apply_label(), icon: faCheck };
   });
 
   let showActionButton = $derived(!!(onApply || onRevert));
@@ -138,7 +138,11 @@
           onclick={handleAction}
           disabled={applying}
         >
-          <Fa icon={buttonState.icon} size="xs" class={buttonState.spin ? 'animate-spin' : ''} />
+          {#if applying}
+            <IntentMarkLoader size={12} />
+          {:else if buttonState.icon}
+            <Fa icon={buttonState.icon} size="xs" />
+          {/if}
           {buttonState.label}
         </Button>
       {/if}

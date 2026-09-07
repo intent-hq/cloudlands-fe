@@ -28,6 +28,7 @@
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
 
   interface Props {
     /** Advance to the next onboarding step (Continue when connected). */
@@ -106,9 +107,7 @@
         verificationUri={$deviceFlow$.verificationUri}
       />
       <div class="flex items-center gap-2 text-subtle text-sm">
-        <div
-          class="w-4 h-4 border-[2px] border-border border-t-blue-600 rounded-full animate-spin"
-        ></div>
+        <IntentMarkLoader size={16} class="shrink-0" />
         <span>{m.onboarding_githubStep_waitingForAuthorization_label()}</span>
         <Button
           type="button"
@@ -121,9 +120,7 @@
     </div>
   {:else if $isAuthenticating$}
     <div class="flex items-center gap-2 text-subtle text-sm">
-      <div
-        class="w-4 h-4 border-[2px] border-border border-t-blue-600 rounded-full animate-spin"
-      ></div>
+      <IntentMarkLoader size={16} class="shrink-0" />
       <span>{m.onboarding_githubStep_startingAuthentication_label()}</span>
     </div>
   {:else if $requiresDaemonAuth$}

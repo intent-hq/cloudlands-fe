@@ -22,7 +22,6 @@
     faArrowRotateRight,
     faCheck,
     faCircleInfo,
-    faCircleNotch,
     faExternalLinkAlt,
     faPaste,
     faTriangleExclamation,
@@ -30,6 +29,7 @@
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { store as appStore } from '$store/renderer/store';
   import {
     checkHostRequirementsRequested,
@@ -165,7 +165,7 @@
     data-testid="requirements-step-checking"
     role="status"
   >
-    <Fa icon={faCircleNotch} class="animate-spin" />
+    <IntentMarkLoader size={16} />
     <span>{m.onboarding_requirementsStep_checking_label()}</span>
   </div>
 {:else}
@@ -310,7 +310,7 @@
     <div class="flex flex-col items-start gap-2 mt-2">
       <Button variant="outline" size="lg" disabled={$checking$} onclick={checkAgain}>
         {#if $checking$}
-          <Fa icon={faCircleNotch} class="animate-spin mr-1" size="sm" />
+          <IntentMarkLoader size={14} class="mr-1" />
         {:else}
           <Fa icon={faArrowRotateRight} class="mr-1" size="sm" />
         {/if}

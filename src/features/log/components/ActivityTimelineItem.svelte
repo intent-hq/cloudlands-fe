@@ -13,9 +13,10 @@
   import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
-  import { faCheckCircle, faXmarkCircle, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { faCheckCircle, faXmarkCircle } from '@fortawesome/free-solid-svg-icons';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { slide } from '$lib/motion';
   import type { Snippet } from 'svelte';
@@ -59,14 +60,14 @@
   const statusIcons: Record<Status, IconDefinition | null> = {
     success: faCheckCircle,
     error: faXmarkCircle,
-    pending: faSpinner,
+    pending: null,
     neutral: null,
   };
 
   const statusColors: Record<Status, string> = {
     success: 'text-green-500',
     error: 'text-danger',
-    pending: 'text-amber-500 animate-spin',
+    pending: 'text-amber-500',
     neutral: '',
   };
 
@@ -81,7 +82,9 @@
 
   <!-- Icon container -->
   <div class="relative z-10 flex items-center justify-center w-5 h-5 mt-0.5 shrink-0">
-    {#if statusIcon}
+    {#if status === 'pending'}
+      <IntentMarkLoader size={14} class={statusColors.pending} />
+    {:else if statusIcon}
       <Fa icon={statusIcon} class={cn('text-sm', statusColors[status])} />
     {:else}
       <Fa {icon} class="text-sm text-ghost" />

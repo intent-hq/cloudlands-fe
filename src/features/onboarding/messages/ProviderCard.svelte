@@ -19,6 +19,7 @@
   import ProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { shell } from '$lib/electron-bridge';
   import { m } from '$shared/paraglide/messages.js';
@@ -282,13 +283,11 @@
               title={m.onboarding_providerCard_refreshStatus_tooltip({ name: provider.name })}
               aria-label={m.onboarding_providerCard_refreshStatus_tooltip({ name: provider.name })}
             >
-              <span
-                class={cn('inline-block', {
-                  'animate-spin': $providerLoadingMap$[provider.id] || userRefreshing,
-                })}
-              >
+              {#if $providerLoadingMap$[provider.id] || userRefreshing}
+                <IntentMarkLoader size={14} />
+              {:else}
                 <Fa icon={faArrowsRotate} size={14} />
-              </span>
+              {/if}
             </Button>
           {/if}
         </div>

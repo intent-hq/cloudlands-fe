@@ -44,7 +44,6 @@
     faChevronDown,
     faChevronLeft,
     faFile,
-    faSpinner,
     faTrash,
     faUpRightFromSquare,
   } from '@fortawesome/free-solid-svg-icons';
@@ -54,6 +53,7 @@
   import { notify } from '$lib/components/patterns/notify';
   import { withToastCountdown } from '$lib/components/patterns/notify';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { formatShortcut } from '$lib/utils/shortcuts';
   import { store as appStore } from '$store/renderer/store';
 
@@ -835,7 +835,7 @@
     >
       <span class={iconSlotClass}>
         {#if isDeletingFile}
-          <Fa icon={faSpinner} size="12" class="opacity-50 animate-spin" />
+          <IntentMarkLoader size={12} class="opacity-50" />
         {:else}
           <Fa icon={faTrash} size="12" class="opacity-50" />
         {/if}

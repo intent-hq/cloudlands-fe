@@ -1,7 +1,7 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faSpinner } from '@fortawesome/free-solid-svg-icons';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { m } from '$shared/paraglide/messages.js';
 </script>
 
@@ -10,11 +10,7 @@
     <div class="flex justify-center">
       <div class="relative">
         <Fa icon={faGithub} size="2x" class="text-primary-ink" />
-        <Fa
-          icon={faSpinner}
-          size="lg"
-          class="absolute -bottom-2 -right-2 text-primary-ink animate-spin"
-        />
+        <IntentMarkLoader size={18} class="absolute -bottom-2 -right-2 text-primary-ink" />
       </div>
     </div>
 

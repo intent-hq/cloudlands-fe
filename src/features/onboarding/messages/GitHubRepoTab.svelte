@@ -24,6 +24,7 @@
   import { shell } from '$lib/electron-bridge';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
 
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
@@ -45,7 +46,7 @@
     selectGithubRepoSearchResults,
   } from '$store/renderer/slices/github-repo-search/github-repo-search-selectors';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
-  import { faArrowUpRightFromSquare, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowRotateRight, faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
 
@@ -320,7 +321,7 @@
         class="inline-flex items-center gap-1.5 text-xs underline underline-offset-2 cursor-pointer hover:no-underline"
         onclick={refreshRepos}
       >
-        <Fa icon={faSpinner} size="xs" />
+        <Fa icon={faArrowRotateRight} size="xs" />
         <span>{m.onboarding_githubRepoTab_tryAgain_label()}</span>
       </Button>
     </div>
@@ -400,12 +401,12 @@
         </div>
       {:else if $reposLoading$ && !$reposLoaded$}
         <div class="py-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Fa icon={faSpinner} size="xs" class="animate-spin" />
+          <IntentMarkLoader size={12} />
           <span>{m.onboarding_githubRepoTab_loadingRepos_label()}</span>
         </div>
       {:else if githubInput.trim() && $searchLoading$}
         <div class="py-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Fa icon={faSpinner} size="xs" class="animate-spin" />
+          <IntentMarkLoader size={12} />
           <span>{m.onboarding_githubRepoTab_searching_label({ query: githubInput.trim() })}</span>
         </div>
       {:else if githubInput.trim()}
