@@ -33,15 +33,17 @@ function writeFixture(root: string, files: Record<string, string>) {
   }
 }
 
-// The nested vitest colorizes its summary on a TTY-like parent; disable color
-// and strip any escapes that still arrive so the assertions see plain text.
+// The nested vitest colorizes its summary whenever FORCE_COLOR is present in
+// the environment (any value); NO_COLOR wins over it. Disable color and strip
+// any escapes that still arrive so the assertions see plain text.
 const ANSI_ESCAPE = /\u001b\[[0-9;]*m/g;
 
 function runCli(cwd: string, args: string[]) {
+  const { FORCE_COLOR: _forceColor, ...env } = process.env;
   const result = spawnSync(process.execPath, [CLI, ...args], {
     cwd,
     encoding: 'utf8',
-    env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
+    env: { ...env, NO_COLOR: '1' },
   });
   return {
     status: result.status,
