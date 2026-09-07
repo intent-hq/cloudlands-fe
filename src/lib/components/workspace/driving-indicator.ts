@@ -1,8 +1,9 @@
 /**
  * View model for the workspace "driving client" indicator (REV-2,
  * intent-hq/intent#461). The driving client is the browser-capable client
- * that hosts new agent browser tabs and tunnels for a workspace — the
- * workspace pin when set, else the first eligible connection.
+ * that hosts a workspace's agent browser tabs and tunnels — the workspace
+ * pin when set, else the first eligible connection; re-pinning migrates the
+ * workspace's claimed tabs to the new pin.
  *
  * Presentational only: callers pass the eligible clients and the resolved
  * driving client; nothing here talks to the daemon.

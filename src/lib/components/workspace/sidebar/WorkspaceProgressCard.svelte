@@ -82,6 +82,7 @@
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
+  import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
   import { resolveDrivingClientView } from '$lib/components/workspace/driving-indicator';
 
   const readyLogger = createLogger('ReadyTasks');
@@ -451,21 +452,32 @@
   const drivingClientView = $derived(resolveDrivingClientView($drivingClient$));
 
   // "Set Current Client as Primary": pin this workspace's browser to this
-  // app. Offered only while another client drives (or the pin is offline);
-  // hidden when this app already drives or its own clientId is unknown.
+  // app; the daemon also migrates the workspace's claimed (agent-owned) tabs
+  // here (PROTOCOL §5.1 workspace.setBrowserClient). Offered only while
+  // another client drives (or the pin is offline); hidden when this app
+  // already drives or its own clientId is unknown. The menu action only opens
+  // the confirmation; the RPC is dispatched on confirm.
+  let confirmingSetPrimaryClient = $state(false);
+
   const setPrimaryClientAction: MenuAction | null = $derived.by(() => {
-    const targetWorkspaceId = workspaceId ?? '';
     const ownClientId = $drivingClient$.ownClientId;
-    if (!drivingClientView?.canSwitchHere || !ownClientId || !targetWorkspaceId) return null;
+    if (!drivingClientView?.canSwitchHere || !ownClientId || !workspaceId) return null;
     return {
       label: m.workspace_drivingClient_setPrimary_label(),
       icon: faGlobe,
       dividerBefore: true,
       onClick: () => {
-        appStore.dispatch(setWorkspaceBrowserClientRequested(targetWorkspaceId, ownClientId));
+        confirmingSetPrimaryClient = true;
       },
     };
   });
+
+  function handleConfirmSetPrimaryClient() {
+    confirmingSetPrimaryClient = false;
+    const ownClientId = $drivingClient$.ownClientId;
+    if (!workspaceId || !ownClientId) return;
+    appStore.dispatch(setWorkspaceBrowserClientRequested(workspaceId, ownClientId));
+  }
 
   const additionalActions: MenuAction[] = $derived([
     sidebarToggleAction,
@@ -1261,6 +1273,15 @@
   {/if} -->
   </div>
 </div>
+
+{#if drivingClientView}
+  <SetPrimaryClientConfirmDialog
+    open={confirmingSetPrimaryClient}
+    currentHost={drivingClientView.hostName}
+    onConfirm={handleConfirmSetPrimaryClient}
+    onCancel={() => (confirmingSetPrimaryClient = false)}
+  />
+{/if}
 
 <style>
   .edit-input::selection {

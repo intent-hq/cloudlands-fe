@@ -6141,8 +6141,13 @@
   "workspace_drivingClient_here_label": "Pilote le navigateur",
   "workspace_drivingClient_elsewhere_label": "Navigateur sur {host}",
   "workspace_drivingClient_offline_label": "Navigateur sur {host} (hors ligne)",
-  "workspace_drivingClient_here_description": "Les nouveaux onglets de navigateur et tunnels des agents de cet espace de travail s’ouvrent dans cette application.",
-  "workspace_drivingClient_elsewhere_description": "Les nouveaux onglets de navigateur et tunnels des agents de cet espace de travail s’ouvrent sur {host}. Les onglets existants restent où ils sont.",
-  "workspace_drivingClient_offline_description": "{host} est déconnecté. Les nouveaux onglets de navigateur et tunnels des agents de cet espace de travail échouent jusqu’à sa reconnexion ou jusqu’à ce que vous basculiez le navigateur vers cette application.",
-  "workspace_drivingClient_setPrimary_label": "Définir le client actuel comme principal"
+  "workspace_drivingClient_here_description": "Les onglets de navigateur et tunnels des agents de cet espace de travail s’exécutent dans cette application.",
+  "workspace_drivingClient_elsewhere_description": "Les onglets de navigateur et tunnels des agents de cet espace de travail s’exécutent sur {host}. Définir cette application comme principale déplace ici les onglets des agents ; les onglets que vous avez ouverts vous-même restent en place et l’état des pages n’est pas conservé.",
+  "workspace_drivingClient_offline_description": "{host} est déconnecté. Les onglets de navigateur et tunnels des agents de cet espace de travail échouent jusqu’à sa reconnexion ou jusqu’à ce que vous définissiez cette application comme principale, ce qui déplace ici les onglets des agents sans conserver l’état des pages.",
+  "workspace_drivingClient_setPrimary_label": "Définir le client actuel comme principal",
+  "workspace_drivingClient_setPrimaryDialog_title": "Définir ce client comme principal ?",
+  "workspace_drivingClient_setPrimaryDialog_description": "Le navigateur de cet espace de travail est actuellement piloté par {host}. Il sera épinglé à ce client et tous les onglets des agents seront déplacés ici. L’état des pages n’est pas conservé ; les onglets que vous avez ouverts vous-même ne sont pas concernés.",
+  "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "Fermer",
+  "workspace_drivingClient_setPrimaryDialog_cancel_label": "Annuler",
+  "workspace_drivingClient_setPrimaryDialog_confirm_label": "Définir comme principal"
 }

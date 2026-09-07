@@ -6141,8 +6141,13 @@
   "workspace_drivingClient_here_label": "ブラウザを操作中",
   "workspace_drivingClient_elsewhere_label": "{host} のブラウザ",
   "workspace_drivingClient_offline_label": "{host} のブラウザ（オフライン）",
-  "workspace_drivingClient_here_description": "このワークスペースの新しいエージェントのブラウザタブとトンネルは、このアプリで開きます。",
-  "workspace_drivingClient_elsewhere_description": "このワークスペースの新しいエージェントのブラウザタブとトンネルは {host} で開きます。既存のタブはそのまま残ります。",
-  "workspace_drivingClient_offline_description": "{host} は切断されています。再接続するか、ブラウザをこのアプリに切り替えるまで、このワークスペースの新しいエージェントのブラウザタブとトンネルは失敗します。",
-  "workspace_drivingClient_setPrimary_label": "現在のクライアントをプライマリに設定"
+  "workspace_drivingClient_here_description": "このワークスペースのエージェントのブラウザタブとトンネルは、このアプリで実行されます。",
+  "workspace_drivingClient_elsewhere_description": "このワークスペースのエージェントのブラウザタブとトンネルは {host} で実行されます。このアプリをプライマリに設定すると、エージェントのタブがここに移動します。自分で開いたタブはそのまま残り、ページの状態は保持されません。",
+  "workspace_drivingClient_offline_description": "{host} は切断されています。再接続するか、このアプリをプライマリに設定するまで、このワークスペースのエージェントのブラウザタブとトンネルは失敗します。プライマリに設定すると、エージェントのタブはページの状態を保持せずにここに移動します。",
+  "workspace_drivingClient_setPrimary_label": "現在のクライアントをプライマリに設定",
+  "workspace_drivingClient_setPrimaryDialog_title": "このクライアントをプライマリに設定しますか？",
+  "workspace_drivingClient_setPrimaryDialog_description": "このワークスペースのブラウザは現在 {host} が制御しています。このクライアントに固定され、エージェントのタブはすべてここに移動します。ページの状態は保持されません。自分で開いたタブは影響を受けません。",
+  "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "閉じる",
+  "workspace_drivingClient_setPrimaryDialog_cancel_label": "キャンセル",
+  "workspace_drivingClient_setPrimaryDialog_confirm_label": "プライマリに設定"
 }

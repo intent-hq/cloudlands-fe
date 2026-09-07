@@ -885,7 +885,16 @@ describe('WorkspaceProgressCard driving browser client', () => {
     expect(screen.queryByRole('button', SET_PRIMARY)).toBeNull();
   });
 
-  it('names the other driving client and pins this app when the switch is chosen', async () => {
+  const SET_PRIMARY_DIALOG = { name: /set this client as primary/i };
+  const CONFIRM_SET_PRIMARY = { name: 'Set as Primary' };
+
+  async function openSetPrimaryDialog(container: HTMLElement): Promise<HTMLElement> {
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    await fireEvent.click(screen.getByRole('button', SET_PRIMARY));
+    return await waitFor(() => screen.getByRole('dialog', SET_PRIMARY_DIALOG));
+  }
+
+  it('names the other driving client and asks for confirmation before switching', async () => {
     seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
       source: 'default',
       resolved: { clientId: OTHER, name: 'desktop' },
@@ -896,14 +905,50 @@ describe('WorkspaceProgressCard driving browser client', () => {
     expect(indicator?.dataset.sidebarDrivingClient).toBe('elsewhere');
     expect(indicator?.getAttribute('aria-label')).toContain('desktop');
 
-    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
-    await fireEvent.click(screen.getByRole('button', SET_PRIMARY));
+    const dialog = await openSetPrimaryDialog(container);
+
+    expect(dialog.textContent).toContain('desktop');
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'browserClients/setWorkspaceBrowserClientRequested' }),
+    );
+  });
+
+  it('pins this app only once the confirmation is accepted', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OTHER, name: 'desktop' },
+    });
+    const { container } = await renderDrivingCard();
+
+    await openSetPrimaryDialog(container);
+    await fireEvent.click(screen.getByRole('button', CONFIRM_SET_PRIMARY));
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'browserClients/setWorkspaceBrowserClientRequested',
         payload: ['ws-1', OWN],
       }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', SET_PRIMARY_DIALOG)).toBeNull();
+    });
+  });
+
+  it('sends nothing when the confirmation is cancelled', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OTHER, name: 'desktop' },
+    });
+    const { container } = await renderDrivingCard();
+
+    await openSetPrimaryDialog(container);
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', SET_PRIMARY_DIALOG)).toBeNull();
+    });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'browserClients/setWorkspaceBrowserClientRequested' }),
     );
   });
 

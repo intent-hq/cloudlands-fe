@@ -6141,8 +6141,13 @@
   "workspace_drivingClient_here_label": "Steuert den Browser",
   "workspace_drivingClient_elsewhere_label": "Browser auf {host}",
   "workspace_drivingClient_offline_label": "Browser auf {host} (offline)",
-  "workspace_drivingClient_here_description": "Neue Agent-Browser-Tabs und Tunnel für diesen Workspace öffnen sich in dieser App.",
-  "workspace_drivingClient_elsewhere_description": "Neue Agent-Browser-Tabs und Tunnel für diesen Workspace öffnen sich auf {host}. Bestehende Tabs bleiben, wo sie sind.",
-  "workspace_drivingClient_offline_description": "{host} ist getrennt. Neue Agent-Browser-Tabs und Tunnel für diesen Workspace schlagen fehl, bis die Verbindung wiederhergestellt ist oder Sie den Browser auf diese App umstellen.",
-  "workspace_drivingClient_setPrimary_label": "Aktuellen Client als primär festlegen"
+  "workspace_drivingClient_here_description": "Agent-Browser-Tabs und Tunnel für diesen Workspace laufen in dieser App.",
+  "workspace_drivingClient_elsewhere_description": "Agent-Browser-Tabs und Tunnel für diesen Workspace laufen auf {host}. Wenn Sie diese App als primär festlegen, werden die Tabs der Agents hierher verschoben; selbst geöffnete Tabs bleiben, wo sie sind, und der Seitenzustand bleibt nicht erhalten.",
+  "workspace_drivingClient_offline_description": "{host} ist getrennt. Agent-Browser-Tabs und Tunnel für diesen Workspace schlagen fehl, bis die Verbindung wiederhergestellt ist oder Sie diese App als primär festlegen, wodurch die Tabs der Agents ohne Erhalt des Seitenzustands hierher verschoben werden.",
+  "workspace_drivingClient_setPrimary_label": "Aktuellen Client als primär festlegen",
+  "workspace_drivingClient_setPrimaryDialog_title": "Diesen Client als primär festlegen?",
+  "workspace_drivingClient_setPrimaryDialog_description": "Der Browser dieses Workspace wird derzeit von {host} gesteuert. Er wird an diesen Client gebunden, und alle Tabs der Agents werden hierher verschoben. Der Seitenzustand bleibt nicht erhalten; selbst geöffnete Tabs sind nicht betroffen.",
+  "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "Schließen",
+  "workspace_drivingClient_setPrimaryDialog_cancel_label": "Abbrechen",
+  "workspace_drivingClient_setPrimaryDialog_confirm_label": "Als primär festlegen"
 }
