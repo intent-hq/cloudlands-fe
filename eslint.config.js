@@ -633,7 +633,7 @@ export default [
       'intent/no-button-compatibility-aliases': 'warn',
       'intent/no-dialog-root-outside-patterns': 'error',
       'intent/no-direct-toast': 'error',
-      'intent/no-legacy-spinner': 'warn',
+      'intent/no-legacy-spinner': 'error',
       'intent/no-native-dialogs': 'error',
       'intent/no-raw-controls': 'error',
       'intent/settings-use-schema': 'error',
