@@ -6137,5 +6137,12 @@
   "antigravity_setup_connection_error": "無法完成設定。請檢查本機常駐程式連線後重試。",
   "antigravity_setup_customPath_error": "自訂橋接程式路徑無效。請在提供者選單中修正後重試。",
   "antigravity_setup_cancelled_description": "設定已取消。準備好後可再次連線。",
-  "antigravity_setup_cancel_label": "取消設定"
+  "antigravity_setup_cancel_label": "取消設定",
+  "workspace_drivingClient_here_label": "正在驅動瀏覽器",
+  "workspace_drivingClient_elsewhere_label": "瀏覽器位於 {host}",
+  "workspace_drivingClient_offline_label": "瀏覽器位於 {host}（離線）",
+  "workspace_drivingClient_here_description": "此工作區的新代理程式瀏覽器分頁和通道會在本應用程式中開啟。",
+  "workspace_drivingClient_elsewhere_description": "此工作區的新代理程式瀏覽器分頁和通道會在 {host} 上開啟。現有分頁維持不變。",
+  "workspace_drivingClient_offline_description": "{host} 已中斷連線。在其重新連線或您將瀏覽器切換到本應用程式之前，此工作區的新代理程式瀏覽器分頁和通道都會失敗。",
+  "workspace_drivingClient_setPrimary_label": "將目前用戶端設為主要用戶端"
 }

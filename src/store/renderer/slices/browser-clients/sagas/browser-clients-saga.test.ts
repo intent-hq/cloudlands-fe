@@ -25,6 +25,7 @@ import type { StoreAction } from '@augmentcode/themis/utils/store/create-action'
 import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
 import {
   workspaceDeleted,
+  workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -145,6 +146,28 @@ describe('browserClientsSaga', () => {
     task.cancel();
 
     expect(dispatched().filter((a) => a.type === 'browserClients/liveClientsReceived')).toEqual([]);
+  });
+
+  it('hydrates once on the first workspace mount, then only reads that workspace browser client', async () => {
+    const browserClient = { source: 'default', resolved: { clientId: 'cli-desk' } };
+    mocks.getBrowserClient.mockResolvedValue(browserClient);
+    const { dispatch, task, entry } = startWithReducer();
+
+    dispatch(workspaceMounted('ws-1'));
+    await settle();
+    expect(mocks.ownClientId).toHaveBeenCalledTimes(1);
+    expect(mocks.list).toHaveBeenCalledTimes(1);
+    expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1']]);
+    expect(entry('ws-1').browserClient).toEqual(browserClient);
+
+    dispatch(workspaceMounted('ws-2'));
+    await settle();
+    task.cancel();
+
+    expect(mocks.ownClientId).toHaveBeenCalledTimes(1);
+    expect(mocks.list).toHaveBeenCalledTimes(1);
+    expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1'], ['ws-2']]);
+    expect(entry('ws-2').browserClient).toEqual(browserClient);
   });
 
   it('reads workspace.getBrowserClient per workspace and stores the result', async () => {

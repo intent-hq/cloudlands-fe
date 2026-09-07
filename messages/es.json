@@ -6137,5 +6137,12 @@
   "antigravity_setup_connection_error": "No se pudo completar la configuración. Comprueba la conexión con el daemon local e inténtalo de nuevo.",
   "antigravity_setup_customPath_error": "La ruta personalizada al puente no es válida. Corrígela en el menú del proveedor e inténtalo de nuevo.",
   "antigravity_setup_cancelled_description": "Configuración cancelada. Puedes volver a conectar cuando quieras.",
-  "antigravity_setup_cancel_label": "Cancelar configuración"
+  "antigravity_setup_cancel_label": "Cancelar configuración",
+  "workspace_drivingClient_here_label": "Controla el navegador",
+  "workspace_drivingClient_elsewhere_label": "Navegador en {host}",
+  "workspace_drivingClient_offline_label": "Navegador en {host} (sin conexión)",
+  "workspace_drivingClient_here_description": "Las nuevas pestañas de navegador y túneles de agentes de este espacio de trabajo se abren en esta aplicación.",
+  "workspace_drivingClient_elsewhere_description": "Las nuevas pestañas de navegador y túneles de agentes de este espacio de trabajo se abren en {host}. Las pestañas existentes permanecen donde están.",
+  "workspace_drivingClient_offline_description": "{host} está desconectado. Las nuevas pestañas de navegador y túneles de agentes de este espacio de trabajo fallarán hasta que se reconecte o cambie el navegador a esta aplicación.",
+  "workspace_drivingClient_setPrimary_label": "Establecer el cliente actual como principal"
 }

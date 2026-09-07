@@ -8,7 +8,9 @@
  * collapses into one in-flight read plus at most one trailing read), and the
  * per-workspace `workspace.getBrowserClient` / `setBrowserClient` /
  * `browser.listTabs` reads keyed by workspace (latest wins per workspace, so
- * a slow earlier pin write cannot overwrite a later daemon echo). Every
+ * a slow earlier pin write cannot overwrite a later daemon echo). A workspace
+ * mount reads its browser client (the sidebar indicator's input) and, until
+ * the own clientId and `client.list` are known, hydrates them once. Every
  * per-workspace call races the workspace's teardown (`workspaceUnmounted` /
  * `workspaceDeleted` / `removeWorkspaceEntity`): a reply that lands after the
  * reducer cleared the entry is dropped, so it can neither resurrect a deleted
@@ -16,7 +18,7 @@
  */
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
-import { call, put, race, take, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, race, take, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   takeLatestByWorkspace,
@@ -25,9 +27,14 @@ import {
 import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
 import {
   workspaceDeleted,
+  workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { selectWorkspaceBrowserTabsRevision } from '../browser-clients-selectors';
+import {
+  selectLiveClientsLoaded,
+  selectOwnClientId,
+  selectWorkspaceBrowserTabsRevision,
+} from '../browser-clients-selectors';
 import {
   fetchWorkspaceBrowserClientRequested,
   fetchWorkspaceBrowserTabsRequested,
@@ -157,7 +164,17 @@ function* readWorkspaceBrowserTabs(
   }
 }
 
+function* onWorkspaceMounted(action: ReturnType<typeof workspaceMounted>): SagaGenerator<void> {
+  const [wsId] = action.payload;
+  if (!wsId) return;
+  const ownClientId = yield* selectOwnClientId.effect();
+  const liveClientsLoaded = yield* selectLiveClientsLoaded.effect();
+  if (ownClientId === null || !liveClientsLoaded) yield* put(hydrateBrowserClientsRequested());
+  yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+}
+
 export function* browserClientsSaga(): SagaGenerator<void> {
+  yield* takeEvery(workspaceMounted, onWorkspaceMounted);
   yield* takeLatest(hydrateBrowserClientsRequested, hydrate);
   yield* takeSingleFlightInContext(
     refreshLiveClientsRequested,

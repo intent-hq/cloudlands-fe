@@ -30,6 +30,7 @@ import {
   selectWorkspaceBrowserClient,
   selectWorkspaceBrowserTabs,
   selectWorkspaceBrowserTabsRevision,
+  selectWorkspaceDrivingClient,
 } from './browser-clients-selectors';
 
 /** PROTOCOL §5.17 `client.list` rows. */
@@ -99,6 +100,62 @@ describe('browserClientsReducer', () => {
     const cleared = { source: 'default' as const, resolved: null };
     state = browserClientsReducer(state, workspaceBrowserClientReceived('ws-1', cleared));
     expect(selectWorkspaceBrowserClient.select(asState(state), 'ws-1')).toEqual(cleared);
+  });
+
+  it('derives the driving-client indicator input from the live list and the workspace pin', () => {
+    expect(selectWorkspaceDrivingClient.select(asState(initialState), 'ws-1')).toEqual({
+      eligibleClients: [],
+      ownClientId: '',
+      driving: null,
+    });
+
+    const viewer: LiveClient = {
+      clientId: 'cli-ios',
+      name: 'Intent iOS',
+      capabilities: {},
+      connections: 1,
+      transports: ['ws'],
+      connectedAt: '2026-09-07T00:00:03.000Z',
+    };
+    let state = browserClientsReducer(initialState, ownClientIdReceived('cli-desk'));
+    state = browserClientsReducer(state, liveClientsReceived([desk, laptop, viewer]));
+    state = browserClientsReducer(
+      state,
+      workspaceBrowserClientReceived('ws-1', {
+        source: 'default',
+        resolved: { clientId: 'cli-laptop', name: 'Intent Desktop' },
+      }),
+    );
+    // Only browserExec clients are eligible; the host triple wins as the name.
+    expect(selectWorkspaceDrivingClient.select(asState(state), 'ws-1')).toEqual({
+      eligibleClients: [
+        { clientId: 'cli-desk', name: 'dev-box', connected: true },
+        { clientId: 'cli-laptop', name: 'Intent Desktop', connected: true },
+      ],
+      ownClientId: 'cli-desk',
+      driving: { clientId: 'cli-laptop', name: 'Intent Desktop', connected: true },
+    });
+
+    // Pinned but offline: the pin is surfaced as a disconnected driver.
+    state = browserClientsReducer(
+      state,
+      workspaceBrowserClientReceived('ws-1', {
+        source: 'workspace',
+        clientId: 'cli-travel',
+        resolved: null,
+      }),
+    );
+    expect(selectWorkspaceDrivingClient.select(asState(state), 'ws-1').driving).toEqual({
+      clientId: 'cli-travel',
+      connected: false,
+    });
+
+    // Unpinned with nothing eligible resolves to no driver.
+    state = browserClientsReducer(
+      state,
+      workspaceBrowserClientReceived('ws-1', { source: 'default', resolved: null }),
+    );
+    expect(selectWorkspaceDrivingClient.select(asState(state), 'ws-1').driving).toBeNull();
   });
 
   it('mirrors browser.listTabs rows and patches them from browser:tab-* events', () => {

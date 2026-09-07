@@ -6137,5 +6137,12 @@
   "antigravity_setup_connection_error": "Setup could not finish. Check the local daemon connection, then retry.",
   "antigravity_setup_customPath_error": "The custom bridge path is invalid. Correct it in the provider menu, then retry.",
   "antigravity_setup_cancelled_description": "Setup cancelled. You can connect again when ready.",
-  "antigravity_setup_cancel_label": "Cancel setup"
+  "antigravity_setup_cancel_label": "Cancel setup",
+  "workspace_drivingClient_here_label": "Driving browser",
+  "workspace_drivingClient_elsewhere_label": "Browser on {host}",
+  "workspace_drivingClient_offline_label": "Browser on {host} (offline)",
+  "workspace_drivingClient_here_description": "New agent browser tabs and tunnels for this workspace open in this app.",
+  "workspace_drivingClient_elsewhere_description": "New agent browser tabs and tunnels for this workspace open on {host}. Existing tabs stay where they are.",
+  "workspace_drivingClient_offline_description": "{host} is disconnected. New agent browser tabs and tunnels for this workspace fail until it reconnects or you switch the browser to this app.",
+  "workspace_drivingClient_setPrimary_label": "Set Current Client as Primary"
 }

@@ -6137,5 +6137,12 @@
   "antigravity_setup_connection_error": "无法完成设置。请检查本地守护进程连接后重试。",
   "antigravity_setup_customPath_error": "自定义桥接程序路径无效。请在提供商菜单中修正后重试。",
   "antigravity_setup_cancelled_description": "设置已取消。准备好后可再次连接。",
-  "antigravity_setup_cancel_label": "取消设置"
+  "antigravity_setup_cancel_label": "取消设置",
+  "workspace_drivingClient_here_label": "正在驱动浏览器",
+  "workspace_drivingClient_elsewhere_label": "浏览器位于 {host}",
+  "workspace_drivingClient_offline_label": "浏览器位于 {host}（离线）",
+  "workspace_drivingClient_here_description": "此工作区的新智能体浏览器标签页和隧道将在本应用中打开。",
+  "workspace_drivingClient_elsewhere_description": "此工作区的新智能体浏览器标签页和隧道将在 {host} 上打开。现有标签页保持不变。",
+  "workspace_drivingClient_offline_description": "{host} 已断开连接。在其重新连接或您将浏览器切换到本应用之前，此工作区的新智能体浏览器标签页和隧道将失败。",
+  "workspace_drivingClient_setPrimary_label": "将当前客户端设为主客户端"
 }
