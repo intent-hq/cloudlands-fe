@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import { onDestroy, onMount } from 'svelte';
@@ -139,17 +140,13 @@
               verificationUri={$deviceFlow$.verificationUri}
             />
             <div class="flex items-center justify-center gap-2 mt-4 text-subtle text-sm">
-              <div
-                class="w-4 h-4 border-[2px] border-border border-t-blue-600 rounded-full animate-spin"
-              ></div>
+              <IntentMarkLoader size={16} />
               <span>{m.lib_githubAuth_waitingForAuthorization_label()}</span>
             </div>
           </div>
         {:else if $isAuthenticating$}
           <div class="loading">
-            <div
-              class="w-6 h-6 border-[3px] border-border border-t-blue-600 rounded-full animate-spin mx-auto"
-            ></div>
+            <IntentMarkLoader size={24} class="mx-auto" />
             <p class="text-foreground">{m.lib_githubAuth_startingAuthentication_label()}</p>
           </div>
         {:else}

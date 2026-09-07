@@ -5,6 +5,7 @@
   import { invoke, shell } from '$lib/electron-bridge';
   import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
   import AuggieInstructionsPanel from '$lib/components/AuggieInstructionsPanel.svelte';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
 
   import { createLogger } from '$lib/utils/client-logger';
   import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
@@ -323,7 +324,7 @@
     {#if loading}
       <section class="providers-section">
         <div class="loading-spinner">
-          <Fa icon={faCircleNotch} size="2x" class="animate-spin text-subtle" />
+          <IntentMarkLoader size={32} class="text-subtle" />
         </div>
         <p class="text-subtle text-center">{m.lib_auggieSetup_checkingProviders_label()}</p>
       </section>
@@ -378,7 +379,7 @@
                 {#if provider.id === 'auggie'}
                   <Button onclick={installAuggie} disabled={actionInProgress} size="sm">
                     {#if actionInProgress}
-                      <Fa icon={faCircleNotch} class="animate-spin mr-2" />
+                      <IntentMarkLoader size={16} class="mr-2" />
                       {m.lib_auggieSetup_loading_label()}
                     {:else}
                       <Fa icon={faDownload} class="mr-2" /> {m.lib_auggieSetup_install_label()}
@@ -448,7 +449,7 @@
           <div class="actions">
             <Button onclick={() => startAuthentication()} disabled={actionInProgress}>
               {#if actionInProgress}
-                <Fa icon={faCircleNotch} class="animate-spin mr-2" />
+                <IntentMarkLoader size={16} class="mr-2" />
                 {m.lib_auggieSetup_loading_label()}
               {:else}
                 <Fa icon={faCircleCheck} class="mr-2" />

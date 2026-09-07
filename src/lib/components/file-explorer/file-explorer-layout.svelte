@@ -9,13 +9,9 @@
   import { Separator } from '$lib/components/ui/separator';
   import * as Sidebar from '$lib/components/ui/sidebar';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
-  import {
-    faXmark,
-    faFileAlt,
-    faExclamationCircle,
-    faSpinner,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faXmark, faFileAlt, faExclamationCircle } from '@fortawesome/free-solid-svg-icons';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -287,7 +283,7 @@
         </div>
       {:else if isLoading}
         <div class="flex items-center justify-center h-full">
-          <Fa icon={faSpinner} size="lg" class="w-8 h-8 animate-spin text-subtle" />
+          <IntentMarkLoader size={32} class="text-subtle" />
         </div>
       {:else if selectedFile}
         <CodeEditor

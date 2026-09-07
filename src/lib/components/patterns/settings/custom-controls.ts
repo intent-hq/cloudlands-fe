@@ -11,6 +11,7 @@ export { FileInput } from '$lib/components/ui/file-input';
 export { default as GrokLogo } from '$lib/components/ui/GrokLogo.svelte';
 export { default as Header } from '$lib/components/ui/Header.svelte';
 export { Input } from '$lib/components/ui/input';
+export { IntentMarkLoader } from '$lib/components/ui/indicators';
 export { Label } from '$lib/components/ui/label';
 export * as Menu from '$lib/components/ui/menu';
 export { Select } from '$lib/components/ui/select';

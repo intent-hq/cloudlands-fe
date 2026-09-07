@@ -18,7 +18,6 @@
   import Fa from 'svelte-fa';
   import {
     faWandMagicSparkles,
-    faSpinner,
     faStop,
     faRotateRight,
     faCheck,
@@ -26,6 +25,7 @@
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { fly } from '$lib/motion';
   import { store as appStore } from '$store/renderer/store';
@@ -183,7 +183,7 @@
       <div class="space-y-4">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <Fa icon={faSpinner} class="h-4 w-4 animate-spin text-primary-ink" />
+            <IntentMarkLoader size={16} class="text-primary-ink" />
             <span class="text-sm font-medium">{m.codeReview_tabContent_reviewing_label()}</span>
           </div>
           <Button variant="ghost" size="xs" onclick={handleStop}>

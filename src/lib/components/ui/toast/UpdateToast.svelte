@@ -11,8 +11,8 @@
 
   import { untrack } from 'svelte';
   import { crispOut, springIn } from '$lib/motion';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import {
-    faArrowsRotate,
     faCakeCandles,
     faDownload,
     faRotateRight,
@@ -133,7 +133,7 @@
   {#if status === 'checking'}
     <div class="flex items-center gap-3">
       <div class="icon checking">
-        <Fa icon={faArrowsRotate} class="animate-spin" />
+        <IntentMarkLoader size={16} />
       </div>
       <div class="text">
         <div class="title">{m.ui_updateToast_checking_label()}</div>

@@ -12,10 +12,11 @@
    */
   import { formatTime as formatClockTime } from '$lib/i18n/format';
   import { fly, slide } from '$lib/motion';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import {
     faPaperPlane,
-    faSpinner,
+    faRobot,
     faComment,
     faUser,
     faChevronDown,
@@ -208,7 +209,7 @@
                   : 'bg-purple-100 dark:bg-purple-900/50'}"
               >
                 <Fa
-                  icon={msg.type === 'user' ? faUser : faSpinner}
+                  icon={msg.type === 'user' ? faUser : faRobot}
                   class="h-2.5 w-2.5 {msg.type === 'user'
                     ? 'text-blue-600 dark:text-blue-400'
                     : 'text-purple-600 dark:text-purple-400'}"
@@ -234,7 +235,7 @@
     <div
       class="flex items-center gap-2 px-4 py-2 text-xs text-slate-500 dark:text-slate-400 border-t border-border"
     >
-      <Fa icon={faSpinner} class="h-3 w-3 animate-spin" />
+      <IntentMarkLoader size={12} />
       <span>{m.codeReview_commentThread_agentResponding_label()}</span>
     </div>
   {/if}
@@ -258,7 +259,7 @@
           class="h-8 w-8 flex items-center justify-center rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {#if isSending}
-            <Fa icon={faSpinner} class="h-3.5 w-3.5 animate-spin" />
+            <IntentMarkLoader size={14} />
           {:else}
             <Fa icon={faPaperPlane} class="h-3 w-3" />
           {/if}

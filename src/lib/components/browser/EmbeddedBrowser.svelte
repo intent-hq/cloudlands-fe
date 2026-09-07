@@ -47,6 +47,7 @@
     faTimes,
   } from '@fortawesome/free-solid-svg-icons';
   import Input from '../ui/input/input.svelte';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { matchesShortcut } from '$lib/utils/shortcut-bindings';
@@ -1098,7 +1099,11 @@
         tooltipSide="bottom"
         aria-label={m.browser_embedded_refresh_ariaLabel()}
       >
-        <Fa icon={faRefresh} size="xs" class={isLoading ? 'animate-spin' : ''} />
+        {#if isLoading}
+          <IntentMarkLoader size={12} />
+        {:else}
+          <Fa icon={faRefresh} size="xs" />
+        {/if}
       </Button>
     </div>
 

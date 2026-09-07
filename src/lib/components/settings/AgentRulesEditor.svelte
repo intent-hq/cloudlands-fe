@@ -4,11 +4,14 @@
   import {
     faRotateLeft,
     faCheck,
-    faCircleNotch,
     faCircleExclamation,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
-  import { Button, Textarea } from '$lib/components/patterns/settings/custom-controls';
+  import {
+    Button,
+    IntentMarkLoader,
+    Textarea,
+  } from '$lib/components/patterns/settings/custom-controls';
   import { Logger } from '$lib/utils/logger';
   import { appClient } from '$lib/client';
   import { m } from '$shared/paraglide/messages.js';
@@ -289,7 +292,7 @@
     <div
       class="flex items-center justify-center py-16 text-subtle border border-border rounded-lg bg-muted/20 grow"
     >
-      <Fa icon={faCircleNotch} class="w-4 h-4 animate-spin mr-2" />
+      <IntentMarkLoader size={16} class="mr-2" />
       {m.settings_agentRules_loading()}
     </div>
   {:else}

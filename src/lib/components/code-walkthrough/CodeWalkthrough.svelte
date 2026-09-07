@@ -6,7 +6,8 @@
    * Shows a summary, sections with grouped files, and inline annotations.
    */
   import Fa from 'svelte-fa';
-  import { faBook, faSpinner, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+  import { faBook, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import type { WalkthroughData, WalkthroughAnnotation } from './types';
   import WalkthroughSection from './WalkthroughSection.svelte';
   import { splitDiffByFile } from './patch-utils';
@@ -49,7 +50,7 @@
   {#if loading}
     <!-- Loading state -->
     <div class="flex items-center justify-center py-12 text-subtle">
-      <Fa icon={faSpinner} class="h-5 w-5 animate-spin mr-2" />
+      <IntentMarkLoader size={20} class="mr-2" />
       <span>{m.codeWalkthrough_main_generating_label()}</span>
     </div>
   {:else if error}

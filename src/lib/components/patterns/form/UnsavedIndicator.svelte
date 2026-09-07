@@ -1,5 +1,6 @@
 <script lang="ts">
   import { cn } from '$lib/utils.js';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import type { SaveStatus } from './types';
 
   let {
@@ -24,8 +25,7 @@
     )}
   >
     {#if status === 'saving'}
-      <span class="size-2.5 animate-spin rounded-full border border-current border-t-transparent"
-      ></span>
+      <IntentMarkLoader size={10} />
     {:else if status === 'saved'}
       <svg viewBox="0 0 16 16" fill="none" class="size-4" aria-hidden="true">
         <path d="m3 8 3 3 7-7" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" />

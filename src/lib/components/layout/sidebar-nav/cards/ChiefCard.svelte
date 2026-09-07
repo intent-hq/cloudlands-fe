@@ -8,8 +8,9 @@
 
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { faChevronDown, faPlus, faSpinner, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faPlus, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { m } from '$shared/paraglide/messages.js';
   import { notify } from '$lib/components/patterns/notify';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
@@ -404,11 +405,11 @@
           aria-label={m.layout_chiefCard_newThread_tooltip()}
           title={m.layout_chiefCard_newThread_tooltip()}
         >
-          <Fa
-            icon={isCreatingThread ? faSpinner : faPlus}
-            size="xs"
-            class={isCreatingThread ? 'animate-spin' : ''}
-          />
+          {#if isCreatingThread}
+            <IntentMarkLoader size={12} />
+          {:else}
+            <Fa icon={faPlus} size="xs" />
+          {/if}
         </Button>
       </div>
       {#if ontoggle}

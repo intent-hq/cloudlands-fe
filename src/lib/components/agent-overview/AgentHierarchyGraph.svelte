@@ -16,10 +16,9 @@
   import AgentHierarchyCard, { CARD_WIDTH, CARD_HEIGHT } from './AgentHierarchyCard.svelte';
   import BackgroundAgentCard, { BG_CARD_SIZE } from './BackgroundAgentCard.svelte';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { formatRelativeTime } from '$lib/utils/timeFormatting';
-  import Fa from 'svelte-fa';
-  import { faGear } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -664,7 +663,7 @@
             <!-- Active tool -->
             {#if hoveredAgent.activeToolName}
               <div class="text-xs text-subtle flex items-center gap-1">
-                <Fa icon={faGear} size="xs" class="animate-spin" />
+                <IntentMarkLoader size={12} />
                 <span
                   >{m.agentOverview_hierarchyGraph_usingTool_label({
                     tool: hoveredAgent.activeToolName,

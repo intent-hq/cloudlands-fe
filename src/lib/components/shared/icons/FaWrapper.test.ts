@@ -4,16 +4,16 @@ import { faCheck, faFont, faSettings, faXmark } from '$lib/icons/phosphor-icons'
 import FaWrapper from './FaWrapper.svelte';
 
 describe('Phosphor icon compatibility renderer', () => {
-  it('renders a Phosphor component with the existing size and animation API', async () => {
+  it('renders a Phosphor component with the existing size and pulse API', async () => {
     const result = render(FaWrapper, {
-      props: { icon: faCheck, size: 20, spin: true, title: 'Complete' },
+      props: { icon: faCheck, size: 20, pulse: true, title: 'Complete' },
     });
 
     const icon = result.container.querySelector('svg');
     expect(icon?.getAttribute('data-icon')).toBe('check');
     expect(icon?.getAttribute('width')).toBe('20px');
     expect(icon?.getAttribute('height')).toBe('20px');
-    expect(icon?.getAttribute('class')).toContain('animate-spin');
+    expect(icon?.getAttribute('class')).toContain('animate-pulse');
     expect(icon?.getAttribute('aria-label')).toBe('Complete');
     expect(icon?.getAttribute('data-weight')).toBe('bold');
 

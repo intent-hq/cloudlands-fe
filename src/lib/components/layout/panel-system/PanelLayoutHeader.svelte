@@ -59,7 +59,6 @@
     faGripLines,
     faWandMagicSparkles,
     faChevronDown,
-    faSpinner,
     faMagic,
     faGlobe,
   } from '@fortawesome/free-solid-svg-icons';
@@ -67,6 +66,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import {
     generateLayout,
     EnhancePromptUnavailableError,
@@ -649,7 +649,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         aria-label={m.layout_layoutHeader_generate_ariaLabel()}
       >
         {#if isGenerating}
-          <Fa icon={faSpinner} size="sm" class="animate-spin" />
+          <IntentMarkLoader size={14} />
         {:else}
           <Fa icon={faMagic} size="sm" />
         {/if}

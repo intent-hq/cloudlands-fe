@@ -46,6 +46,7 @@
   import SetupScriptBanner from './SetupScriptBanner.svelte';
   import ScriptOutputViewer from './ScriptOutputViewer.svelte';
   import TerminalSidebar from './TerminalSidebar.svelte';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import {
     faPlus,
@@ -57,7 +58,6 @@
     faPlay,
     faStop,
     faRotateRight,
-    faSpinner,
     faTableColumns,
     faArrowUpRightFromSquare,
     faCircle,
@@ -1458,7 +1458,7 @@
               disabled={isDetectingScripts}
             >
               {#if isDetectingScripts}
-                <Fa icon={faSpinner} spin size="sm" class="mr-1.5" />
+                <IntentMarkLoader size={14} class="mr-1.5" />
                 {m.terminal_quakeOverlay_detecting_label()}
               {:else}
                 {m.terminal_quakeOverlay_detectScripts_label()}

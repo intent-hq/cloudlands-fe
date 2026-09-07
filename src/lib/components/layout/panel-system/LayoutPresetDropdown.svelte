@@ -17,13 +17,13 @@
     faGripLines,
     faCheck,
     faWandMagicSparkles,
-    faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import type { LayoutPresetId } from './PanelLayoutControls.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
@@ -253,7 +253,7 @@
               tooltipSide="bottom"
             >
               {#if isGenerating}
-                <Fa icon={faSpinner} size="xs" class="animate-spin" />
+                <IntentMarkLoader size={12} />
               {:else}
                 <Fa icon={faWandMagicSparkles} size="xs" />
               {/if}

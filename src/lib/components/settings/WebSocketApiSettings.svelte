@@ -26,7 +26,12 @@
    */
   import { onDestroy, tick } from 'svelte';
   import { slide } from '$lib/motion';
-  import { Button, Input, Switch } from '$lib/components/patterns/settings/custom-controls';
+  import {
+    Button,
+    Input,
+    IntentMarkLoader,
+    Switch,
+  } from '$lib/components/patterns/settings/custom-controls';
   import Fa from 'svelte-fa';
   import {
     faCopy,
@@ -922,7 +927,11 @@
                 class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
                 title={m.settings_wsApi_regenerateToken()}
               >
-                <Fa icon={faRotateRight} size="sm" class={regenerating ? 'animate-spin' : ''} />
+                {#if regenerating}
+                  <IntentMarkLoader size={14} />
+                {:else}
+                  <Fa icon={faRotateRight} size="sm" />
+                {/if}
               </Button>
             </div>
           </div>

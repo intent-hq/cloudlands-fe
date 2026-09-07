@@ -21,7 +21,6 @@
     translateY?: string | number;
     rotate?: number | string;
     flip?: FlipDir;
-    spin?: boolean;
     pulse?: boolean;
     primaryColor?: string;
     secondaryColor?: string;
@@ -46,7 +45,6 @@
     translateY,
     rotate,
     flip,
-    spin,
     pulse,
     primaryColor,
     secondaryColor,
@@ -96,7 +94,7 @@
       .join('; '),
   );
   const computedClass = $derived(
-    [className, spin ? 'animate-spin' : '', pulse ? 'animate-pulse' : ''].filter(Boolean).join(' '),
+    [className, pulse ? 'animate-pulse' : ''].filter(Boolean).join(' '),
   );
 </script>
 

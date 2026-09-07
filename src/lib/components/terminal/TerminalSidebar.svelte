@@ -21,6 +21,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import { ListContainer, ListItem, ListSection } from '$lib/components/ui/list';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { notify, withToastCountdown } from '$lib/components/patterns/notify';
   import { useBackgroundAgent } from '$lib/hooks/use-background-agent.svelte';
   import {
@@ -46,7 +47,6 @@
     faPlus,
     faRotateRight,
     faSearch,
-    faSpinner,
     faStop,
     faTerminal,
     faTrash,
@@ -977,13 +977,13 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
           {:else if isAgentDetecting}
             <div class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 text-muted-foreground">
               <!-- a11y-ignore -->
-              <Fa icon={faSpinner} size="xs" class="animate-spin" />
+              <IntentMarkLoader size={12} />
               <span class="text-ui">{m.terminal_sidebar_askingAgent_label()}</span>
             </div>
           {:else if isLocalDetecting}
             <div class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 text-muted-foreground">
               <!-- a11y-ignore -->
-              <Fa icon={faSpinner} size="xs" class="animate-spin" />
+              <IntentMarkLoader size={12} />
               <span class="text-ui">{m.terminal_sidebar_scanningFiles_label()}</span>
             </div>
           {:else if hasScripts}

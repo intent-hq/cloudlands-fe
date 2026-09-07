@@ -22,12 +22,9 @@
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
-  import {
-    faArrowRight,
-    faSpinner,
-    faExclamationTriangle,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowRight, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { store as appStore } from '$store/renderer/store';
@@ -146,7 +143,7 @@
       aria-label={m.tiptap_agentPeek_launching_ariaLabel()}
     >
       <div class="icon-wrapper">
-        <Fa icon={faSpinner} class="animate-spin" size="sm" />
+        <IntentMarkLoader size={14} />
       </div>
     </Button>
   {:else}
@@ -276,7 +273,7 @@
         {#if isRecentComment}
           <!-- Waiting for agent to register (comment is recent) -->
           <div class="flex items-center gap-2">
-            <Fa icon={faSpinner} class="h-4 w-4 animate-spin text-ghost" />
+            <IntentMarkLoader size={16} class="text-ghost" />
             <div class="flex-1">
               <div class="text-sm font-medium">{m.tiptap_agentPeek_waitingLaunch_label()}</div>
               <div class="text-xs text-subtle mt-0.5">

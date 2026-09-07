@@ -2,7 +2,8 @@
   import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { faCheck, faRotateRight, faSpinner, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { faCheck, faRotateRight, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { onDestroy, onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { slide } from '$lib/motion';
@@ -209,10 +210,10 @@
       />
       <div class="flex items-center gap-1.5 text-xs text-subtle">
         {#if isCheckingAuth}
-          <Fa icon={faSpinner} size="xs" class="animate-spin" />
+          <IntentMarkLoader size={12} />
           <span>{m.lib_githubAuth_checking_label()}</span>
         {:else}
-          <Fa icon={faSpinner} size="xs" class="animate-spin" />
+          <IntentMarkLoader size={12} />
           <span>{m.lib_githubAuth_waitingForAuthorization_label()}</span>
           <Button
             type="button"
@@ -230,7 +231,7 @@
       class="py-2 px-2 flex items-center gap-2 text-xs text-subtle"
       transition:slide={{ axis: 'y', tier: 'moderate' }}
     >
-      <Fa icon={faSpinner} size="xs" class="animate-spin" />
+      <IntentMarkLoader size={12} />
       <span>{m.lib_githubAuth_startingAuthentication_label()}</span>
     </div>
   {:else}

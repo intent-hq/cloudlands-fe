@@ -2,9 +2,9 @@
   import { Button } from './button';
   import { ScrollArea } from './scroll-area';
   import CollapsiblePanel from './CollapsiblePanel.svelte';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import type { Snippet } from 'svelte';
   import Fa from 'svelte-fa';
-  import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 
   interface Props {
     title?: string;
@@ -14,7 +14,6 @@
     actionLabel?: string;
     actionDisabled?: boolean;
     loading?: boolean;
-    loadingIcon?: any; // FontAwesome icon object
     className?: string;
     contentClass?: string;
     headerSize?: 1 | 2 | 3 | 4 | 5 | 6;
@@ -34,7 +33,6 @@
     actionLabel = '',
     actionDisabled = false,
     loading = false,
-    loadingIcon = faSpinner,
     className = '',
     contentClass = '',
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -66,8 +64,8 @@
             disabled={actionDisabled || loading}
             title={actionLabel}
           >
-            {#if loading && loadingIcon}
-              <Fa icon={loadingIcon} size="sm" class="animate-spin" />
+            {#if loading}
+              <IntentMarkLoader size={14} />
             {:else if actionIcon}
               <Fa icon={actionIcon} size="sm" />
             {/if}
@@ -107,8 +105,8 @@
               disabled={actionDisabled || loading}
               title={actionLabel}
             >
-              {#if loading && loadingIcon}
-                <Fa icon={loadingIcon} size="sm" class="animate-spin" />
+              {#if loading}
+                <IntentMarkLoader size={14} />
               {:else if actionIcon}
                 <Fa icon={actionIcon} size="sm" />
               {/if}

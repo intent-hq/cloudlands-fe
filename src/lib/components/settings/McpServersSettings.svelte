@@ -3,6 +3,7 @@
     Button,
     Header,
     Input,
+    IntentMarkLoader,
     Skeleton,
     Textarea,
     Switch,
@@ -669,9 +670,7 @@
 
                       <div class="shrink-0 flex items-center gap-2">
                         {#if installing}
-                          <div
-                            class="w-4 h-4 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
-                          ></div>
+                          <IntentMarkLoader size={16} class="text-muted-foreground" />
                         {:else if needsAuth}
                           <Button
                             type="button"

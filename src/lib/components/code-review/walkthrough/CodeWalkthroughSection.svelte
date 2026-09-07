@@ -1,9 +1,9 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import {
     faWandMagicSparkles,
-    faSpinner,
     faRotateRight,
     faChevronDown,
     faChevronLeft,
@@ -241,7 +241,7 @@
     <Fa icon={faWandMagicSparkles} class="h-4 w-4 text-purple-500" />
     <span class="text-sm font-medium">{m.codeReview_walkthroughSection_title()}</span>
     {#if isRunning}
-      <Fa icon={faSpinner} class="h-3 w-3 animate-spin text-ghost ml-auto" />
+      <IntentMarkLoader size={12} class="text-ghost ml-auto" />
     {/if}
   </Button>
 
@@ -250,7 +250,7 @@
       <!-- Running state: Show loading -->
       {#if isRunning}
         <div class="flex items-center gap-2 text-sm text-subtle py-2">
-          <Fa icon={faSpinner} class="h-3 w-3 animate-spin" />
+          <IntentMarkLoader size={12} />
           <span>{m.codeReview_walkthroughSection_generating_label()}</span>
         </div>
       {/if}

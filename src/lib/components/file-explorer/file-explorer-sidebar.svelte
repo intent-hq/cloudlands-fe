@@ -5,6 +5,7 @@
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
   import { ScrollArea } from '$lib/components/ui/scroll-area';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import {
     faArrowsRotate,
     faFolder,
@@ -16,7 +17,6 @@
     faCog,
     faChevronLeft,
     faChevronDown,
-    faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
   import type { FileExplorerTreeNode } from '$store/renderer/slices/file-explorer/file-explorer-types';
   import { filterFileExplorerChildPaths } from './file-explorer-sidebar-utils';
@@ -154,7 +154,7 @@
           <Sidebar.Menu>
             {#if $feIsLoading$}
               <div class="flex items-center justify-center py-8">
-                <Fa icon={faSpinner} size="lg" class="w-6 h-6 animate-spin text-subtle" />
+                <IntentMarkLoader size={24} class="text-subtle" />
               </div>
             {:else if $feError$}
               <div class="px-4 py-2 text-sm text-danger">
@@ -182,7 +182,7 @@
                     {#if node.type === 'directory'}
                       <span class="w-4 h-4 flex items-center justify-center mr-1">
                         {#if selectIsPathLoading.select(appStore.state, wsId, node.path)}
-                          <Fa icon={faSpinner} size="xs" class="w-3 h-3 animate-spin" />
+                          <IntentMarkLoader size={12} />
                         {:else if node.children.length > 0}
                           <Fa
                             icon={nodeExpanded ? faChevronDown : faChevronLeft}

@@ -2,13 +2,13 @@
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import PanelWrapper from '$lib/components/ui/PanelWrapper.svelte';
   import Fa from 'svelte-fa';
   import {
     faRotateRight,
     faStop,
     faCheck,
-    faSpinner,
     faRobot,
     faCodeCompare,
     faChevronLeft,
@@ -401,7 +401,7 @@
       <!-- Status badges -->
       {#if isRunning}
         <Badge variant="secondary" class="text-xs gap-1">
-          <Fa icon={faSpinner} class="h-3 w-3 animate-spin" />
+          <IntentMarkLoader size={12} />
           {m.codeReview_panel_reviewing_label()}
         </Badge>
       {:else if isComplete && totalCount === 0}

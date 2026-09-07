@@ -1,13 +1,14 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   /**
    * WalkthroughInlineComment
    *
    * A minimal inline comment input for asking questions about code.
    */
   import Fa from 'svelte-fa';
-  import { faArrowRight, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowRight } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -76,7 +77,7 @@
     class="h-8 w-8 flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
   >
     {#if isSending}
-      <Fa icon={faSpinner} class="h-3.5 w-3.5 animate-spin" />
+      <IntentMarkLoader size={14} />
     {:else}
       <Fa icon={faArrowRight} class="h-3.5 w-3.5" />
     {/if}

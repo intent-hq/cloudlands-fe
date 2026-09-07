@@ -44,7 +44,6 @@
     faArrowsRotate,
     faBan,
     faCheck,
-    faCircleNotch,
     faDownload,
     faEllipsisVertical,
     faFolder,
@@ -60,6 +59,7 @@
     CopyButton,
     DropdownMenu,
     GrokLogo,
+    IntentMarkLoader,
   } from '$lib/components/patterns/settings/custom-controls';
   import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
@@ -658,10 +658,7 @@
                                   onclick={() => void handleInstallPiMcpAdapter()}
                                 >
                                   {#if setupInProgress.pi}
-                                    <Fa
-                                      icon={faCircleNotch}
-                                      class="size-3.5 animate-spin text-muted-foreground"
-                                    />
+                                    <IntentMarkLoader size={14} class="text-muted-foreground" />
                                     {m.settings_providers_installing()}
                                   {:else}
                                     <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
@@ -809,12 +806,15 @@
                                 close();
                               }}
                             >
-                              <span
-                                class="inline-block {$providerLoadingMap$[provider.id]
-                                  ? 'animate-spin'
-                                  : ''}"
-                              >
-                                <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
+                              <span class="inline-block">
+                                {#if $providerLoadingMap$[provider.id]}
+                                  <IntentMarkLoader size={14} class="text-muted-foreground" />
+                                {:else}
+                                  <Fa
+                                    icon={faArrowsRotate}
+                                    class="size-3.5 text-muted-foreground"
+                                  />
+                                {/if}
                               </span>
                               {m.settings_providers_recheck_label()}
                             </Button>

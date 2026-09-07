@@ -3,8 +3,7 @@
   Shows first ~5 lines of content with markdown formatting preserved
 -->
 <script lang="ts">
-  import Fa from 'svelte-fa';
-  import { faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
   import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
   import type { NoteId } from '$shared/types';
@@ -71,7 +70,7 @@
   <div class="pt-3.5 px-5">
     {#if !note}
       <div class="flex items-center gap-2 text-subtle text-sm">
-        <Fa icon={faSpinner} class="animate-spin" />
+        <IntentMarkLoader size={16} />
         <span>{m.tiptap_taskNotePreview_loading_label()}</span>
       </div>
     {:else}
