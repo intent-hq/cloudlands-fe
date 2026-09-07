@@ -14,6 +14,9 @@
  * background ones behind it.
  */
 
+import type { PanelTabType } from '../../panel-layout/panel-layout-types';
+import type { WorkspaceHydrationBranch } from '../workspace-lifecycle-slice';
+
 /** Reads allowed on the wire at once. Sized to stay well under the daemon's overload threshold. */
 export const MAX_CONCURRENT_WORKSPACE_READS = 6;
 
@@ -116,5 +119,209 @@ export function createWorkspaceReadScheduler(
     acquire,
     activeCount: () => active,
     pendingCount: () => queue.length,
+  };
+}
+
+export const WORKSPACE_HYDRATION_BRANCHES = [
+  'tasks',
+  'events',
+  'scripts',
+  'skills',
+  'prStatus',
+  'changes',
+  'agents',
+  'terminals',
+  'fileExplorer',
+  'context',
+  'taskAgentLinks',
+  'notes',
+] as const;
+
+type WorkspaceHydrationOutcome = 'success' | 'failure' | 'cancelled';
+
+export const WORKSPACE_HYDRATION_IDLE_FALLBACK_MS = 1_500;
+
+export interface WorkspaceHydrationConsumers {
+  activePanelTypes: readonly PanelTabType[];
+  visibleSidebarTabs: readonly string[];
+}
+
+const alwaysVisibleBranches: readonly WorkspaceHydrationBranch[] = [
+  'tasks',
+  'agents',
+  'terminals',
+  'taskAgentLinks',
+  'notes',
+];
+
+const panelBranches: Partial<Record<PanelTabType, readonly WorkspaceHydrationBranch[]>> = {
+  activity: ['events'],
+  agent: ['agents', 'tasks', 'taskAgentLinks'],
+  'agent-overview': ['agents', 'tasks', 'taskAgentLinks'],
+  'activity-changes': ['changes'],
+  'chat-changes': ['changes'],
+  changes: ['changes', 'prStatus'],
+  'code-review': ['changes', 'prStatus'],
+  diff: ['changes'],
+  'hook-script': ['scripts'],
+  note: ['notes'],
+  overview: ['agents', 'tasks', 'notes', 'prStatus'],
+  settings: ['skills', 'scripts', 'context'],
+  terminal: ['terminals'],
+};
+
+const sidebarBranches: Record<string, readonly WorkspaceHydrationBranch[]> = {
+  overview: ['agents', 'notes', 'terminals'],
+  agents: ['agents', 'tasks', 'taskAgentLinks'],
+  context: ['notes', 'context'],
+  changes: ['changes', 'prStatus'],
+  files: ['fileExplorer'],
+  shell: ['terminals', 'scripts'],
+};
+
+export function deriveCriticalHydrationBranches(
+  consumers: WorkspaceHydrationConsumers,
+): Set<WorkspaceHydrationBranch> {
+  const critical = new Set(alwaysVisibleBranches);
+  for (const type of consumers.activePanelTypes) {
+    for (const branch of panelBranches[type] ?? []) critical.add(branch);
+  }
+  for (const tab of consumers.visibleSidebarTabs) {
+    for (const branch of sidebarBranches[tab] ?? []) critical.add(branch);
+  }
+  return critical;
+}
+
+interface HydrationGeneration {
+  id: number;
+  force: boolean;
+  pending: Set<WorkspaceHydrationBranch>;
+  dispatched: Set<WorkspaceHydrationBranch>;
+  inFlight: Set<WorkspaceHydrationBranch>;
+}
+
+export interface WorkspaceHydrationTierScheduler {
+  start(
+    workspaceId: string,
+    consumers: WorkspaceHydrationConsumers,
+    force?: boolean,
+  ): { generation: number; branches: WorkspaceHydrationBranch[] };
+  promote(
+    workspaceId: string,
+    consumers: WorkspaceHydrationConsumers,
+  ): { generation: number; force: boolean; branches: WorkspaceHydrationBranch[] } | null;
+  flush(
+    workspaceId: string,
+    generation: number,
+  ): { generation: number; force: boolean; branches: WorkspaceHydrationBranch[] } | null;
+  settle(
+    workspaceId: string,
+    branch: WorkspaceHydrationBranch,
+    outcome: WorkspaceHydrationOutcome,
+  ): void;
+  hasPending(workspaceId: string): boolean;
+  cancel(workspaceId: string): void;
+  reset(): void;
+}
+
+function markDispatched(workspaceId: string, generation: number, branch: WorkspaceHydrationBranch) {
+  if (typeof performance === 'undefined') return;
+  performance.mark(`intent:workspace-hydration:${workspaceId}:${generation}:${branch}:dispatch`);
+}
+
+function markSettled(
+  workspaceId: string,
+  generation: number,
+  branch: WorkspaceHydrationBranch,
+  outcome: WorkspaceHydrationOutcome,
+) {
+  if (typeof performance === 'undefined') return;
+  const start = `intent:workspace-hydration:${workspaceId}:${generation}:${branch}:dispatch`;
+  const end = `intent:workspace-hydration:${workspaceId}:${generation}:${branch}:settle`;
+  const measure = `intent:workspace-hydration:${branch}:dispatch-to-settle`;
+  if (performance.getEntriesByName(start).length === 0) return;
+  performance.mark(end, { detail: { outcome } });
+  performance.measure(measure, start, end);
+  performance.clearMarks(start);
+  performance.clearMarks(end);
+}
+
+export function createWorkspaceHydrationTierScheduler(): WorkspaceHydrationTierScheduler {
+  let nextGeneration = 0;
+  const generations = new Map<string, HydrationGeneration>();
+
+  function dispatch(
+    workspaceId: string,
+    generation: HydrationGeneration,
+    branches: Iterable<WorkspaceHydrationBranch>,
+  ) {
+    const newlyDispatched: WorkspaceHydrationBranch[] = [];
+    for (const branch of branches) {
+      if (generation.dispatched.has(branch)) continue;
+      generation.pending.delete(branch);
+      generation.dispatched.add(branch);
+      generation.inFlight.add(branch);
+      newlyDispatched.push(branch);
+      markDispatched(workspaceId, generation.id, branch);
+    }
+    return newlyDispatched;
+  }
+
+  function cancel(workspaceId: string) {
+    const generation = generations.get(workspaceId);
+    if (!generation) return;
+    for (const branch of generation.inFlight) {
+      markSettled(workspaceId, generation.id, branch, 'cancelled');
+    }
+    generations.delete(workspaceId);
+  }
+
+  return {
+    start(workspaceId, consumers, force = false) {
+      cancel(workspaceId);
+      const critical = deriveCriticalHydrationBranches(consumers);
+      const generation: HydrationGeneration = {
+        id: ++nextGeneration,
+        force,
+        pending: new Set(WORKSPACE_HYDRATION_BRANCHES),
+        dispatched: new Set(),
+        inFlight: new Set(),
+      };
+      generations.set(workspaceId, generation);
+      return {
+        generation: generation.id,
+        branches: dispatch(workspaceId, generation, critical),
+      };
+    },
+    promote(workspaceId, consumers) {
+      const generation = generations.get(workspaceId);
+      if (!generation) return null;
+      return {
+        generation: generation.id,
+        force: generation.force,
+        branches: dispatch(workspaceId, generation, deriveCriticalHydrationBranches(consumers)),
+      };
+    },
+    flush(workspaceId, generationId) {
+      const generation = generations.get(workspaceId);
+      if (!generation || generation.id !== generationId) return null;
+      return {
+        generation: generation.id,
+        force: generation.force,
+        branches: dispatch(workspaceId, generation, [...generation.pending]),
+      };
+    },
+    settle(workspaceId, branch, outcome) {
+      const generation = generations.get(workspaceId);
+      if (!generation || !generation.inFlight.delete(branch)) return;
+      markSettled(workspaceId, generation.id, branch, outcome);
+    },
+    hasPending(workspaceId) {
+      return (generations.get(workspaceId)?.pending.size ?? 0) > 0;
+    },
+    cancel,
+    reset() {
+      for (const workspaceId of [...generations.keys()]) cancel(workspaceId);
+    },
   };
 }

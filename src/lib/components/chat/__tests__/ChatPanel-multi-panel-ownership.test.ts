@@ -248,10 +248,11 @@ vi.mock('$features/onboarding/messages/WorkspaceSetupCard.svelte', async () => (
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 
+import ChatPanel from '../ChatPanel.svelte';
+
 const workspace = { id: 'ws-1', title: 'Workspace' };
 
 async function renderChatPanel(isActive: boolean, targetWorkspace = workspace) {
-  const ChatPanel = (await import('../ChatPanel.svelte')).default;
   render(ChatPanel, { props: { workspace: targetWorkspace, agentId: 'agent-1', isActive } });
   await Promise.resolve();
 }

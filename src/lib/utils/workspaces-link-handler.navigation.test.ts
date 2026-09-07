@@ -69,14 +69,15 @@ describe('handleIntentLink panel navigation', () => {
     );
   });
 
-  it('opens a short file link in the owning chat workspace', async () => {
-    await handleIntentLink('intent://local/file/src/lib/utils/foo.ts', {
+  it('opens a short file link at its line fragment in the owning chat workspace', async () => {
+    await handleIntentLink('intent://local/file/src/lib/utils/foo.ts#L10', {
       workspaceId: 'owning-workspace',
       sourcePanelId: 'panel-chat',
     });
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       openWorkspaceFile('owning-workspace', 'src/lib/utils/foo.ts', {
+        line: 10,
         openInAdjacentPanel: false,
         sourcePanelId: 'panel-chat',
       }),
@@ -85,8 +86,8 @@ describe('handleIntentLink panel navigation', () => {
     expect(mocks.navigateToRoute).not.toHaveBeenCalled();
   });
 
-  it('opens a same-workspace long file link without route navigation', async () => {
-    await handleIntentLink('intent://local/owning-workspace/file/README.md', {
+  it('opens a same-workspace long file link at the start of its line range', async () => {
+    await handleIntentLink('intent://local/owning-workspace/file/README.md#L10-20', {
       workspaceId: 'owning-workspace',
       sourcePanelId: 'panel-chat',
       openInAdjacentPanel: true,
@@ -94,6 +95,7 @@ describe('handleIntentLink panel navigation', () => {
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       openWorkspaceFile('owning-workspace', 'README.md', {
+        line: 10,
         openInAdjacentPanel: true,
         sourcePanelId: 'panel-chat',
       }),

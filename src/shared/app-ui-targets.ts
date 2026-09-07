@@ -113,7 +113,12 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     ['shell', 'Shell', 'Shell and CLI optimization settings.', 'setup'],
     ['workspace', 'Workspace', 'Workspace defaults.', 'setup'],
     ['cli-optimization', 'CLI Optimization', 'RTK/CLI optimization settings.', 'setup'],
-    ['workspace-api', 'Workspace API', 'Workspace API output settings.', 'advanced'],
+    [
+      'workspace-api',
+      'Tool Output & Retention',
+      'Tool output size and retention settings.',
+      'advanced',
+    ],
     ['notifications', 'Notifications', 'Notification preferences.', 'app-behavior'],
     ['updates', 'Updates', 'Application update preferences.', 'app-behavior'],
     ['open-in', 'Open In', 'External editor/app launch preferences.', 'app-behavior'],

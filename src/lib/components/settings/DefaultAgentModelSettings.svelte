@@ -7,13 +7,8 @@
     selectModelEffortLevels,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
-  import {
-    reloadModelsForProvider,
-    setDefaultReasoningEffort,
-  } from '$store/renderer/slices/model/model-slice';
+  import { setDefaultReasoningEffort } from '$store/renderer/slices/model/model-slice';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
     selectBundledSpecialists,
     selectFileSpecialists,
@@ -42,7 +37,6 @@
 
   const selectedModel$ = selectSelectedModel();
   const defaultReasoningEffort$ = selectDefaultReasoningEffort();
-  const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const fileSpecialists$ = selectFileSpecialists();
   const routeWorkspaceContext = getWorkspaceRouteContext();
@@ -94,10 +88,16 @@
     if (currentEffort && isKnownModel && !supportedEfforts?.includes(currentEffort)) {
       appStore.dispatch(setDefaultReasoningEffort(''));
     }
-    if (providerId && providerId !== $activeProviderId$) {
-      appStore.dispatch(setActiveProvider(providerId));
-      appStore.dispatch(reloadModelsForProvider());
-    }
+    // Do NOT dispatch setActiveProvider/reloadModelsForProvider here: the
+    // ModelPicker below has `updateGlobalDefault` set, so it already
+    // dispatches `selectModel(modelId, providerId)` right after this
+    // callback returns. That action's saga (model-selection-saga) is the
+    // sole owner of persisting the provider+model default — it performs the
+    // provider switch (including reload) AND the atomic
+    // `model.defaultProvider` + `model.providerDefaults` write. Dispatching
+    // setActiveProvider here too raced a second, non-atomic
+    // `model.defaultProvider` write from provider-settings-saga against that
+    // atomic write, corrupting the persisted default (monorepo#4102-recurrence).
   }
 </script>
 

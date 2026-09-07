@@ -97,6 +97,13 @@ interface PanelBrowserTab {
    * agent-owned tabs can be hidden; absent = visible.
    */
   hidden?: boolean;
+  /**
+   * The tab is its panel's active tab, i.e. the only one the panel can paint
+   * (a mounted-but-inactive tab renders nothing in the tabless UI). A layout
+   * fact, not a paint guarantee. Never set on hidden tabs; absent = not the
+   * active tab.
+   */
+  active?: boolean;
 }
 
 /**
@@ -581,6 +588,7 @@ class EmbeddedBrowserCdpService {
       emulatedSize?: { width: number; height: number };
       viewport: BrowserTabViewport;
       hidden?: boolean;
+      active?: boolean;
     })[];
     stale: boolean;
   }> {
@@ -601,18 +609,20 @@ class EmbeddedBrowserCdpService {
     // Panel tabs only, marking whether each is backed by a live webview.
     // Each tab is annotated with its owner from the ownership registry
     // (rehydrated from the panel reply above) so agents can see which tabs
-    // they may manipulate (monorepo#2857), and with `hidden` when the tab
-    // sits in the workspace's hidden set (monorepo#3045).
+    // they may manipulate (monorepo#2857), with `hidden` when the tab sits
+    // in the workspace's hidden set (monorepo#3045), and with `active` when
+    // it is its panel's active tab.
     const tabs = panelTabs.map((panelTab) => {
       const ownership = this.tabOwnership.get(panelTab.tabId);
       const owner = ownership
         ? { ownerAgentId: ownership.ownerAgentId, emulatedSize: ownership.emulatedSize }
         : {};
       const hidden = panelTab.hidden === true ? { hidden: true } : {};
+      const active = panelTab.active === true ? { active: true } : {};
       const viewport = this.tabViewports.get(panelTab.tabId) ?? { mode: 'fit' as const };
       const mounted = mountedTabs.find((t) => t.tabId === panelTab.tabId);
       if (mounted) {
-        return { ...mounted, mounted: true, ...owner, viewport, ...hidden };
+        return { ...mounted, mounted: true, ...owner, viewport, ...hidden, ...active };
       }
       return {
         tabId: panelTab.tabId,
@@ -623,6 +633,7 @@ class EmbeddedBrowserCdpService {
         viewport,
         ...owner,
         ...hidden,
+        ...active,
       };
     });
     return { tabs, stale };
@@ -742,20 +753,23 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Reveal a hidden agent-owned tab into a panel (monorepo#3045). With
-   * `focus: false` (the default) the tab is mounted into a panel's tab list
-   * WITHOUT becoming active and without moving panel focus; `focus: true`
-   * reveals and activates. The renderer treats an already-visible tab as
-   * idempotent: a no-op for `focus: false`, activate-and-focus for
-   * `focus: true`.
+   * Activate an agent-owned tab in a visible panel (monorepo#3045). A hidden
+   * tab is revealed into a panel; a visible-but-inactive tab is brought to
+   * the front of its panel. With `focus: false` (the default) the tab becomes
+   * its panel's active tab (`displayed`) without moving panel/keyboard
+   * focus; `focus: true` activates and focuses the panel. Both are idempotent
+   * on an already-displayed tab (`focus: true` still focuses its panel).
    *
    * The reveal is confirmed against a fresh renderer tab list (the same
    * confirm-by-list discipline closeTab uses): only a fresh reply that lists
-   * the tab as not hidden counts. Existence/ownership validation lives in
-   * the action executor — this method only delivers and confirms.
+   * the tab as not hidden AND as its panel's active tab counts — a
+   * visible-but-inactive listing means the activation has not applied yet
+   * (or was lost), so returning success there would let an immediate
+   * screenshot fail. Existence/ownership validation lives in the action
+   * executor — this method only delivers and confirms.
    *
    * @returns void on success; throws when no window received the request or
-   *          the reveal could not be confirmed
+   *          the activation could not be confirmed
    */
   async showTab(tabId: string, workspaceId?: string, focus?: boolean): Promise<void> {
     if (!tabId) {
@@ -779,18 +793,21 @@ class EmbeddedBrowserCdpService {
     }
     logger.info('Sent show request for browser tab', { tabId, workspaceId, focus });
 
-    // Confirm the renderer revealed the tab: only a fresh (non-stale) reply
-    // listing the tab without the hidden marker counts.
+    // Confirm the renderer activated the tab: only a fresh (non-stale) reply
+    // listing the tab without the hidden marker and with the active marker
+    // counts.
     for (let attempt = 0; attempt < 3; attempt++) {
       const after = await this.requestPanelBrowserTabs(workspaceId);
       if (!after.stale) {
         const tab = after.tabs.find((t) => t.tabId === tabId);
-        if (tab && tab.hidden !== true) return;
+        if (tab && tab.hidden !== true && tab.active === true) return;
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    // i18n-ignore (agent-facing protocol error, not user-facing)
-    throw new Error(`Tab ${tabId} could not be shown (the UI did not confirm the reveal).`);
+    throw new Error(
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      `Tab ${tabId} could not be shown (the UI did not confirm the tab as its panel's active tab).`,
+    );
   }
 
   /**
@@ -1744,7 +1761,7 @@ class EmbeddedBrowserCdpService {
               reject(
                 new Error(
                   // i18n-ignore (agent-facing protocol error, not user-facing)
-                  `capturePage timed out after ${SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS}ms: the tab is not painting (its surface may be hidden or occluded).`,
+                  `capturePage timed out after ${SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS}ms: the tab is not painting. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
                 ),
               ),
             SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS,
@@ -1755,14 +1772,14 @@ class EmbeddedBrowserCdpService {
       if (image.isEmpty?.() || size.width <= 0 || size.height <= 0) {
         throw new Error(
           // i18n-ignore (agent-facing operational diagnostic, not user-facing)
-          `webContents.capturePage returned an empty image (${size.width}x${size.height}): the tab surface has not painted. Try focusTab/showTab or resizing the tab before capturing again.`,
+          `webContents.capturePage returned an empty image (${size.width}x${size.height}): the tab surface has not painted. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
         );
       }
       const jpeg = image.toJPEG(80);
       if (jpeg.length === 0) {
         throw new Error(
           // i18n-ignore (agent-facing operational diagnostic, not user-facing)
-          `webContents.capturePage encoded an empty image (${size.width}x${size.height}): the tab surface has not painted. Try focusTab/showTab or resizing the tab before capturing again.`,
+          `webContents.capturePage encoded an empty image (${size.width}x${size.height}): the tab surface has not painted. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
         );
       }
       return {

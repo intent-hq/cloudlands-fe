@@ -1020,7 +1020,7 @@
             </div>
           </div>
 
-          <!-- Workspace API Output -->
+          <!-- Tool Output & Retention (anchor id kept as workspace-api for deep links) -->
           <div
             id="workspace-api"
             data-highlight-id="workspace-api"

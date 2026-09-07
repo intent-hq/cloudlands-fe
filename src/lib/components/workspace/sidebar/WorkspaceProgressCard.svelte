@@ -788,7 +788,7 @@
   <!-- Workspace Header -->
   <div class="flex w-full flex-col pb-1">
     <div class="flex items-center justify-between group">
-      <div class="flex-1 flex flex-col min-w-0">
+      <div class="relative flex-1 flex flex-col min-w-0">
         {#if isEditingTitle}
           <input
             bind:this={titleInputRef}
@@ -796,7 +796,7 @@
             bind:value={editedTitle}
             onblur={saveTitle}
             onkeydown={handleTitleKeydown}
-            class="text-xl font-semibold text-foreground bg-none
+            class="edit-input relative z-10 text-xl font-semibold text-foreground bg-transparent
                py-0.5 rounded
                outline-none w-full leading-normal
                focus:ring-none! focus:outline-none!
@@ -805,8 +805,8 @@
           />
         {:else}
           <button
-            class="text-xl font-semibold text-foreground bg-transparent
-               border-none py-0.5 pr-1 rounded cursor-pointer text-left
+            class="relative z-10 text-xl font-semibold text-foreground bg-transparent
+               border-none py-0.5 pr-1 rounded cursor-text text-left
                max-w-full overflow-hidden text-ellipsis whitespace-nowrap
                transition-all duration-150 leading-normal
                focus-visible:outline-1 focus-visible:outline-primary/50 focus-visible:-outline-offset-1
@@ -821,6 +821,13 @@
             {/if}
           </button>
         {/if}
+        <span
+          aria-hidden="true"
+          data-workspace-title-edit-decoration
+          class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
+            ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
+            : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+        ></span>
       </div>
 
       <div class="flex shrink-0 -mt-0.5 -mr-2 items-center gap-0.5" data-workspace-header-actions>
@@ -1093,38 +1100,47 @@
     <!-- Status follows identity and progress so it reads as the current update. -->
     {#if isEditingStatusMessage || currentStatusMessage}
       <div class="pt-1">
-        {#if isEditingStatusMessage}
-          <textarea
-            bind:this={statusInputRef}
-            bind:value={editedStatusMessage}
-            onblur={saveStatusMessage}
-            onkeydown={handleStatusMessageKeydown}
-            disabled={isSavingStatusMessage}
-            maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
-            rows={1}
-            aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
-            class="type-body min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-none py-0.5 text-foreground outline-none leading-snug
-                   focus:ring-none! focus:outline-none! transition-all duration-150 disabled:opacity-50"
-            style="field-sizing: content;"
-            placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}></textarea>
-        {:else if $workspace && currentStatusMessage}
-          <button
-            class="type-body w-full cursor-pointer whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
-                   transition-all duration-150 leading-snug hover:text-foreground
-                   focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
-                   disabled:cursor-default disabled:opacity-50"
-            onclick={startEditingStatusMessage}
-            title={currentStatusMessage
-              ? m.workspace_sidebarHeader_editStatus_tooltip()
-              : m.workspace_sidebarHeader_addStatus_tooltip()}
-            aria-label={currentStatusMessage
-              ? m.workspace_sidebarHeader_editStatus_ariaLabel()
-              : m.workspace_sidebarHeader_addStatus_ariaLabel()}
-            disabled={!$workspace}
-          >
-            {currentStatusMessage}
-          </button>
-        {/if}
+        <div class="relative flex">
+          {#if isEditingStatusMessage}
+            <textarea
+              bind:this={statusInputRef}
+              bind:value={editedStatusMessage}
+              onblur={saveStatusMessage}
+              onkeydown={handleStatusMessageKeydown}
+              disabled={isSavingStatusMessage}
+              maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
+              rows={1}
+              aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
+              class="edit-input type-body relative z-10 min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-foreground outline-none leading-snug
+                     focus:ring-none! focus:outline-none! transition-all duration-150 disabled:opacity-50"
+              style="field-sizing: content;"
+              placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}></textarea>
+          {:else if $workspace && currentStatusMessage}
+            <button
+              class="type-body relative z-10 w-full cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
+                     transition-all duration-150 leading-snug hover:text-foreground
+                     focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
+                     disabled:cursor-default disabled:opacity-50"
+              onclick={startEditingStatusMessage}
+              title={currentStatusMessage
+                ? m.workspace_sidebarHeader_editStatus_tooltip()
+                : m.workspace_sidebarHeader_addStatus_tooltip()}
+              aria-label={currentStatusMessage
+                ? m.workspace_sidebarHeader_editStatus_ariaLabel()
+                : m.workspace_sidebarHeader_addStatus_ariaLabel()}
+              disabled={!$workspace}
+            >
+              {currentStatusMessage}
+            </button>
+          {/if}
+          <span
+            aria-hidden="true"
+            data-workspace-status-edit-decoration
+            class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingStatusMessage
+              ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
+              : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+          ></span>
+        </div>
       </div>
     {/if}
 
@@ -1192,6 +1208,7 @@
           </span>
         {/if}
       </div>
+
       <button
         class="flex items-center gap-2 w-full text-left text-sm text-subtle transition-colors py-1 rounded cursor-pointer"
         onclick={() => onOpenNote?.(currentDisplayReadyTask.id as string)}
@@ -1212,3 +1229,16 @@
   {/if} -->
   </div>
 </div>
+
+<style>
+  .edit-input::selection {
+    background: hsl(var(--ring) / 0.3);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-workspace-title-edit-decoration],
+    [data-workspace-status-edit-decoration] {
+      transition-duration: 0s !important;
+    }
+  }
+</style>

@@ -62,7 +62,7 @@ describe('modelSelectionSaga', () => {
     mocks.updateSnapshot = undefined;
   });
 
-  it('switches a known compound provider before reload and selection', async () => {
+  it('lands a known compound provider switch before requesting its reload', async () => {
     const dispatch = vi.fn();
     await runSaga(
       { dispatch, getState: state },
@@ -71,11 +71,11 @@ describe('modelSelectionSaga', () => {
     ).toPromise();
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      { type: 'model/reloadModelsForProvider', payload: [] },
       {
         type: 'providerSettings/setAtomicDefaultModel',
         payload: [{ providerId: 'codex', model: 'gpt-5' }],
       },
+      { type: 'model/reloadModelsForProvider', payload: [] },
     ]);
   });
 
@@ -128,11 +128,11 @@ describe('modelSelectionSaga', () => {
     ).toPromise();
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      { type: 'model/reloadModelsForProvider', payload: [] },
       {
         type: 'providerSettings/setAtomicDefaultModel',
         payload: [{ providerId: 'claude-code', model: 'fable5' }],
       },
+      { type: 'model/reloadModelsForProvider', payload: [] },
     ]);
   });
 

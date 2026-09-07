@@ -4,6 +4,79 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.140.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.139.2...v2.140.0) (2026-09-07)
+
+
+### 🚀 Features
+
+* sandbox health endpoint and warm-up entries ([#2078](https://github.com/intent-hq/cloudlands-fe/issues/2078)) ([082becd](https://github.com/intent-hq/cloudlands-fe/commit/082becd13a0718abaacd17984d89284ad4a619fd))
+* show device icons across the UI ([#2135](https://github.com/intent-hq/cloudlands-fe/issues/2135)) ([14b3883](https://github.com/intent-hq/cloudlands-fe/commit/14b38830cc8d8d717e861bd556fa179b340904f0))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.34 ([#2237](https://github.com/intent-hq/cloudlands-fe/issues/2237)) ([b17bf56](https://github.com/intent-hq/cloudlands-fe/commit/b17bf567714f13ed58c362d80318a2083b57d295))
+* correct onboarding plug icon orientation and alignment ([#2182](https://github.com/intent-hq/cloudlands-fe/issues/2182)) ([11216e5](https://github.com/intent-hq/cloudlands-fe/commit/11216e50292f2bda5b349fc1318e3fb6beecc8ff))
+* stop redundant setActiveProvider dispatch racing model-selection-saga ([#2235](https://github.com/intent-hq/cloudlands-fe/issues/2235)) ([ef227ed](https://github.com/intent-hq/cloudlands-fe/commit/ef227ed4ed6c372eff1c19a3cdb84657c0bdd196))
+
+## [2.139.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.139.1...v2.139.2) (2026-09-06)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.33 ([#2231](https://github.com/intent-hq/cloudlands-fe/issues/2231)) ([97c9cde](https://github.com/intent-hq/cloudlands-fe/commit/97c9cde31a63dac3ec9c8b62683f0c466638b1b5))
+
+## [2.139.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.139.0...v2.139.1) (2026-09-06)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.32 ([#2229](https://github.com/intent-hq/cloudlands-fe/issues/2229)) ([a5fac0b](https://github.com/intent-hq/cloudlands-fe/commit/a5fac0b29cb06081a65dec7bb1a7f16cb2e41e37))
+
+## [2.139.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.138.5...v2.139.0) (2026-09-06)
+
+
+### 🚀 Features
+
+* **settings:** add tool replay cap and payload retention rows ([#2221](https://github.com/intent-hq/cloudlands-fe/issues/2221)) ([fdc1e31](https://github.com/intent-hq/cloudlands-fe/commit/fdc1e31c41e9adce86e160cf7ea6f38e46418036))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.31 ([#2227](https://github.com/intent-hq/cloudlands-fe/issues/2227)) ([c69698f](https://github.com/intent-hq/cloudlands-fe/commit/c69698f1dfeba3cf367a531fb5389f58308c7295))
+
+## [2.138.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.138.4...v2.138.5) (2026-09-06)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** activate agent-opened visible tabs and report display state truthfully ([#2222](https://github.com/intent-hq/cloudlands-fe/issues/2222)) ([15fb870](https://github.com/intent-hq/cloudlands-fe/commit/15fb8704f6cf9817cb551a04d2113bfa54c01799))
+* bump intentd sidecar to v0.9.30 ([#2225](https://github.com/intent-hq/cloudlands-fe/issues/2225)) ([7dd5462](https://github.com/intent-hq/cloudlands-fe/commit/7dd546251b8bdc39e9e00ef417a8037362527322))
+
+## [2.138.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.138.3...v2.138.4) (2026-09-06)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.29 ([#2223](https://github.com/intent-hq/cloudlands-fe/issues/2223)) ([0ef8a4a](https://github.com/intent-hq/cloudlands-fe/commit/0ef8a4aca1b11609c04caec19365f07d0c0f432e))
+
+
+### ⚡ Performance
+
+* tier workspace hydration and stage chat rendering (load-path batch C) ([#2120](https://github.com/intent-hq/cloudlands-fe/issues/2120)) ([3d1806f](https://github.com/intent-hq/cloudlands-fe/commit/3d1806f8407a9dae6d35e629f3181843a4fb0922))
+
+## [2.138.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.138.2...v2.138.3) (2026-09-06)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.28 ([#2218](https://github.com/intent-hq/cloudlands-fe/issues/2218)) ([7e768ca](https://github.com/intent-hq/cloudlands-fe/commit/7e768ca89836b2678dde30903beaac0a1b82a7cb))
+
+
+### ⚡ Performance
+
+* dedupe load-path RPCs and fix chat/file saga bugs ([#2113](https://github.com/intent-hq/cloudlands-fe/issues/2113)) ([028b1e0](https://github.com/intent-hq/cloudlands-fe/commit/028b1e039bb718d5a42ab4a6377fc24f2c347001))
+
 ## [2.138.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.138.1...v2.138.2) (2026-09-06)
 
 

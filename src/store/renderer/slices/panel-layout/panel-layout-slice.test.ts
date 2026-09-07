@@ -17,6 +17,7 @@ import {
   moveTabToSplitLevel,
   createGridLayout,
   closeTab,
+  activateVisibleTab,
   closeActiveTab,
   closeFocusedPanelTab,
   closePanel,
@@ -1203,6 +1204,147 @@ describe('panelLayoutReducer', () => {
         nowSpy.mockRestore();
       }
     });
+
+    // preserveFocus (agent-driven visible position:same opens): the tab is
+    // activated in the target panel so it paints, but panel focus and focus
+    // history stay put — the same contract as openTabInRightmostColumn.
+    it('preserveFocus activates the new tab in the target panel without moving focus', () => {
+      const state = stateWithPanel('p1', [{ id: 'note', type: 'note', title: 'Note' }]);
+      state.byWorkspaceId[WS].panels.p2 = {
+        id: 'p2',
+        tabs: [{ id: 'other', type: 'file', title: 'Other', closable: true }],
+        activeTabId: 'other',
+      };
+      const before = state.byWorkspaceId[WS];
+      const result = panelLayoutReducer(
+        state,
+        openTab(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          'p2',
+          'browser',
+          undefined,
+          10,
+          undefined,
+          true,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.p2.tabs.map((tab) => tab.id)).toEqual(['other', 'browser']);
+      expect(result.panels.p2.activeTabId).toBe('browser');
+      expect(result.focusedPanelId).toBe('p1');
+      expect(result.focusHistory).toEqual(before.focusHistory);
+      expect(result.pendingFocusTabId).toBeNull();
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'p2',
+        tabId: 'browser',
+        requestId: 'browser',
+        preserveFocus: true,
+      });
+      expect(result.layoutHistory).toHaveLength(1);
+      expect(result.layoutHistory[0].panels.p2).toMatchObject({ activeTabId: 'other' });
+    });
+
+    it('preserveFocus marks the reveal when the target is the focused panel', () => {
+      const state = stateWithPanel('p1', [{ id: 'note', type: 'note', title: 'Note' }]);
+      const result = panelLayoutReducer(
+        state,
+        openTab(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          undefined,
+          'browser',
+          undefined,
+          10,
+          undefined,
+          true,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.p1.activeTabId).toBe('browser');
+      expect(result.focusedPanelId).toBe('p1');
+      expect(result.pendingFocusTabId).toBeNull();
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'p1',
+        tabId: 'browser',
+        requestId: 'browser',
+        preserveFocus: true,
+      });
+
+      const userOpen = panelLayoutReducer(
+        state,
+        openTab(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://user.test', closable: true },
+          undefined,
+          'user-browser',
+          undefined,
+          10,
+        ),
+      ).byWorkspaceId[WS];
+      expect(userOpen.pendingPanelReveal?.preserveFocus).toBeUndefined();
+    });
+
+    it('preserveFocus activates an equivalent inactive tab in place without moving focus', () => {
+      const state = stateWithPanel('p1', [{ id: 'note', type: 'note', title: 'Note' }]);
+      state.byWorkspaceId[WS].panels.p2 = {
+        id: 'p2',
+        tabs: [
+          { id: 'other', type: 'file', title: 'Other', closable: true },
+          {
+            id: 'existing-browser',
+            type: 'browser',
+            title: 'Browser',
+            browserUrl: 'https://agent.test',
+            closable: true,
+          },
+        ],
+        activeTabId: 'other',
+        attentionTabIds: ['existing-browser'],
+      };
+      const result = panelLayoutReducer(
+        state,
+        openTab(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          'p2',
+          'request-1',
+          undefined,
+          10,
+          undefined,
+          true,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.p2.tabs.map((tab) => tab.id)).toEqual(['other', 'existing-browser']);
+      expect(result.panels.p2.activeTabId).toBe('existing-browser');
+      expect(result.panels.p2.attentionTabIds).toEqual([]);
+      expect(result.focusedPanelId).toBe('p1');
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'p2',
+        tabId: 'existing-browser',
+        requestId: 'request-1',
+        preserveFocus: true,
+      });
+    });
+
+    it('preserveFocus leaves state untouched when the target panel does not exist', () => {
+      const state = stateWithPanel('p1');
+      const result = panelLayoutReducer(
+        state,
+        openTab(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          'missing',
+          'browser',
+          undefined,
+          10,
+          undefined,
+          true,
+        ),
+      );
+      expect(result).toBe(state);
+    });
   });
 
   describe('openTabInRightmostColumn', () => {
@@ -1288,6 +1430,113 @@ describe('panelLayoutReducer', () => {
       expect(activated.focusedPanelId).toBe('left');
       expect(activated.panels.right.tabs.map((candidate) => candidate.id)).toEqual(['old-right']);
       expect(duplicated.panels.right.tabs.at(-1)?.id).toBe('duplicate');
+    });
+
+    // preserveFocus (agent-driven visible opens, monorepo#3045): the tab is
+    // activated so it paints, but panel focus and focus history stay put.
+    it('preserveFocus activates the new tab in the rightmost column without moving focus', () => {
+      const before = twoColumnState().byWorkspaceId[WS];
+      const result = panelLayoutReducer(
+        twoColumnState(),
+        openTabInRightmostColumn(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          { newTabId: 'new-right', preserveFocus: true },
+          10,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.right.tabs.map((tab) => tab.id)).toEqual(['old-right', 'new-right']);
+      expect(result.panels.right.activeTabId).toBe('new-right');
+      expect(result.panels.right.attentionTabIds ?? []).toEqual([]);
+      expect(result.focusedPanelId).toBe('left');
+      expect(result.focusHistory).toEqual(before.focusHistory);
+      expect(result.pendingFocusTabId).toBeNull();
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'right',
+        tabId: 'new-right',
+        requestId: 'new-right',
+        preserveFocus: true,
+      });
+      expect(result.layoutHistory).toHaveLength(1);
+      expect(result.layoutHistory[0].panels.right).toMatchObject({ activeTabId: 'old-right' });
+    });
+
+    // Single column: the rightmost panel already is the focused panel, so the
+    // reveal must carry the no-focus intent for the layout/tab to honour.
+    it('preserveFocus marks the reveal when the rightmost column is already focused', () => {
+      const state = stateWithPanel('p1', [{ id: 'note', type: 'note', title: 'Note' }]);
+      const result = panelLayoutReducer(
+        state,
+        openTabInRightmostColumn(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          { newTabId: 'browser', preserveFocus: true },
+          10,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.p1.activeTabId).toBe('browser');
+      expect(result.focusedPanelId).toBe('p1');
+      expect(result.pendingFocusTabId).toBeNull();
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'p1',
+        tabId: 'browser',
+        requestId: 'browser',
+        preserveFocus: true,
+      });
+
+      const userOpen = panelLayoutReducer(
+        state,
+        openTabInRightmostColumn(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://user.test', closable: true },
+          { newTabId: 'user-browser' },
+          10,
+        ),
+      ).byWorkspaceId[WS];
+      expect(userOpen.pendingPanelReveal?.preserveFocus).toBeUndefined();
+    });
+
+    it('preserveFocus activates an equivalent inactive tab in place without moving focus', () => {
+      const state = twoColumnState();
+      state.byWorkspaceId[WS].panels.right = {
+        ...state.byWorkspaceId[WS].panels.right,
+        tabs: [
+          ...state.byWorkspaceId[WS].panels.right.tabs,
+          {
+            id: 'existing-browser',
+            type: 'browser',
+            title: 'Browser',
+            browserUrl: 'https://agent.test',
+            closable: true,
+          },
+        ],
+        attentionTabIds: ['existing-browser'],
+      };
+      const result = panelLayoutReducer(
+        state,
+        openTabInRightmostColumn(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          { newTabId: 'request-1', preserveFocus: true },
+          10,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.right.tabs.map((tab) => tab.id)).toEqual([
+        'old-right',
+        'existing-browser',
+      ]);
+      expect(result.panels.right.activeTabId).toBe('existing-browser');
+      expect(result.panels.right.attentionTabIds).toEqual([]);
+      expect(result.focusedPanelId).toBe('left');
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'right',
+        tabId: 'existing-browser',
+        requestId: 'request-1',
+        preserveFocus: true,
+      });
     });
   });
 
@@ -3635,9 +3884,9 @@ describe('panelLayoutReducer', () => {
       expect(ws.panels.p1.tabs.at(-1)?.ownerAgentId).toBe('agent-1');
     });
 
-    // showTab without focus adds a selectable background pane and never
-    // replaces the content the user is viewing.
-    it('restoreHiddenTab with focus: false signals in the sole fixed column', () => {
+    // showTab without focus displays the pane (activates it in its column)
+    // via a focus-preserving reveal, never moving panel focus (monorepo#3045).
+    it('restoreHiddenTab with focus: false activates in the sole fixed column without moving focus', () => {
       const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
       const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
       const before = hidden.byWorkspaceId[WS];
@@ -3646,14 +3895,19 @@ describe('panelLayoutReducer', () => {
       expect(getItems(ws.hiddenTabs)).toHaveLength(0);
       expect(Object.keys(ws.panels)).toEqual(['p1']);
       expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2', 'owned']);
-      expect(ws.panels.p1.activeTabId).toBe('t2');
-      expect(ws.panels.p1.attentionTabIds).toEqual(['owned']);
+      expect(ws.panels.p1.activeTabId).toBe('owned');
+      expect(ws.panels.p1.attentionTabIds ?? []).toEqual([]);
       expect(ws.focusedPanelId).toBe(before.focusedPanelId);
-      expect(ws.pendingPanelReveal).toBeNull();
+      expect(ws.pendingPanelReveal).toEqual({
+        panelId: 'p1',
+        tabId: 'owned',
+        requestId: 'owned',
+        preserveFocus: true,
+      });
       expect(ws.focusHistory).toBe(before.focusHistory);
     });
 
-    it('restoreHiddenTab with focus: false signals in another fixed column without moving focus', () => {
+    it('restoreHiddenTab with focus: false activates in another fixed column without moving focus', () => {
       const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
       state.byWorkspaceId[WS].root = {
         type: 'split',
@@ -3677,10 +3931,65 @@ describe('panelLayoutReducer', () => {
       expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
       expect(ws.panels.p1.activeTabId).toBe(before.panels.p1.activeTabId);
       expect(ws.panels.p2.tabs.map((t) => t.id)).toEqual(['n2', 'owned']);
-      expect(ws.panels.p2.activeTabId).toBe('n2');
-      expect(ws.panels.p2.attentionTabIds).toEqual(['owned']);
+      expect(ws.panels.p2.activeTabId).toBe('owned');
+      expect(ws.panels.p2.attentionTabIds ?? []).toEqual([]);
       expect(ws.focusedPanelId).toBe(before.focusedPanelId);
-      expect(ws.pendingPanelReveal).toBeNull();
+      expect(ws.pendingPanelReveal).toEqual({
+        panelId: 'p2',
+        tabId: 'owned',
+        requestId: 'owned',
+        preserveFocus: true,
+      });
+      expect(ws.focusHistory).toBe(before.focusHistory);
+    });
+
+    // showTab without focus on a tab already in a panel but not its active
+    // tab: activate it in place via a focus-preserving reveal (monorepo#3045).
+    it('activateVisibleTab activates an inactive tab in its panel without moving focus', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      state.byWorkspaceId[WS].root = {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'panel', panelId: 'p1' },
+          { type: 'panel', panelId: 'p2' },
+        ],
+        sizes: [50, 50],
+      };
+      state.byWorkspaceId[WS].panels.p2 = {
+        id: 'p2',
+        tabs: [
+          { id: 'n2', type: 'note', title: 'B', closable: true } as any,
+          { id: 'b2', type: 'browser', title: 'Browser', browserUrl: 'http://b2/' } as any,
+        ],
+        activeTabId: 'n2',
+        attentionTabIds: ['b2'],
+      };
+      state.byWorkspaceId[WS].focusedPanelId = 'p1';
+      const before = state.byWorkspaceId[WS];
+      const result = panelLayoutReducer(state, activateVisibleTab(WS, 'b2', 1001));
+      const ws = result.byWorkspaceId[WS];
+      expect(ws.panels.p2.activeTabId).toBe('b2');
+      expect(ws.panels.p2.attentionTabIds).toEqual([]);
+      expect(ws.panels.p1.activeTabId).toBe(before.panels.p1.activeTabId);
+      expect(ws.focusedPanelId).toBe('p1');
+      expect(ws.focusHistory).toBe(before.focusHistory);
+      expect(ws.pendingPanelReveal).toEqual({
+        panelId: 'p2',
+        tabId: 'b2',
+        requestId: 'b2',
+        preserveFocus: true,
+      });
+    });
+
+    it('activateVisibleTab is a no-op for an already-active tab or a tab not in any panel', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      state.byWorkspaceId[WS].panels.p1.activeTabId = 'owned';
+      expect(panelLayoutReducer(state, activateVisibleTab(WS, 'owned', 1001))).toBe(state);
+      expect(panelLayoutReducer(state, activateVisibleTab(WS, 'missing', 1001))).toBe(state);
+
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
+      expect(panelLayoutReducer(hidden, activateVisibleTab(WS, 'owned', 1001))).toBe(hidden);
     });
 
     // Agent openTab is hidden by default (monorepo#3045): the tab is created
