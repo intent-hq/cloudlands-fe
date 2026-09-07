@@ -23,6 +23,7 @@ import {
   workspaceBrowserTabsReceived,
 } from './browser-clients-slice';
 import {
+  selectBrowserTabHost,
   selectLiveClient,
   selectLiveClients,
   selectLiveClientsLoaded,
@@ -83,6 +84,41 @@ describe('browserClientsReducer', () => {
 
     expect(selectLiveClients.select(asState(state))).toEqual([desk]);
     expect(selectLiveClient.select(asState(state), 'cli-laptop')).toBeUndefined();
+  });
+
+  describe('selectBrowserTabHost (a mirror tab host, REV-2 Model 3)', () => {
+    it('reports a listed host connected under its hello hostname, falling back to its name', () => {
+      const state = browserClientsReducer(initialState, liveClientsReceived([desk, laptop]));
+      expect(selectBrowserTabHost.select(asState(state), 'cli-desk')).toEqual({
+        name: 'dev-box',
+        connected: true,
+      });
+      expect(selectBrowserTabHost.select(asState(state), 'cli-laptop')).toEqual({
+        name: 'Intent Desktop',
+        connected: true,
+      });
+    });
+
+    it('reports an unlisted host offline once client.list has been read, named by its id', () => {
+      const state = browserClientsReducer(initialState, liveClientsReceived([desk]));
+      expect(selectBrowserTabHost.select(asState(state), 'cli-laptop')).toEqual({
+        name: 'cli-laptop',
+        connected: false,
+      });
+    });
+
+    it('flips a host offline and back as client.list presence changes', () => {
+      let state = browserClientsReducer(initialState, liveClientsReceived([desk, laptop]));
+      expect(selectBrowserTabHost.select(asState(state), 'cli-laptop').connected).toBe(true);
+      state = browserClientsReducer(state, liveClientsReceived([desk]));
+      expect(selectBrowserTabHost.select(asState(state), 'cli-laptop').connected).toBe(false);
+      state = browserClientsReducer(state, liveClientsReceived([desk, laptop]));
+      expect(selectBrowserTabHost.select(asState(state), 'cli-laptop').connected).toBe(true);
+    });
+
+    it('does not report a host offline before the first client.list read', () => {
+      expect(selectBrowserTabHost.select(asState(initialState), 'cli-laptop').connected).toBe(true);
+    });
   });
 
   it('stores the per-workspace browser client verbatim, null until the first read', () => {

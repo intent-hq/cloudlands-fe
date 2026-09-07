@@ -2,13 +2,16 @@
   /**
    * Browser Tab Type Component
    *
-   * Renders an embedded browser for web content.
+   * Renders an embedded browser for web content. A tab the daemon registry
+   * homes on another client renders as a viewer (mirror) instead — REV-2
+   * Model 3 — and flips live ↔ mirror as `hostClientId` changes.
    */
 
   import type { TabTypeComponentProps } from './registry';
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import EmbeddedBrowser from '$lib/components/browser/EmbeddedBrowser.svelte';
+  import BrowserViewerTab from '$lib/components/browser/BrowserViewerTab.svelte';
   import {
     BROWSER_VIEWPORT_CHANGE_EVENT,
     browserViewportAction,
@@ -21,7 +24,14 @@
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { updateContextItem } from '$store/renderer/slices/context/context-slice';
   import { selectPendingPanelReveal } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import { selectOwnClientId } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
+  import {
+    selectBrowserTabHost,
+    selectOwnClientId,
+  } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
+  import {
+    closeBrowserTabRequested,
+    navigateBrowserTabRequested,
+  } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { store as appStore } from '$store/renderer/store';
 
@@ -52,16 +62,39 @@
   let viewportActionNode: HTMLDivElement | null = $state(null);
 
   // The live webview mounts only on the tab's host (REV-2 §5.45). A tab the
-  // registry homes on another client is a mirror here: no guest, no
-  // navigation/title reports. Viewer rendering of mirrors is a follow-up.
+  // registry homes on another client is a mirror here: its own webview
+  // follows the canonical URL and forwards navigation to the host; no
+  // navigation/title reports.
   const ownClientId$ = selectOwnClientId();
   const isHostedHere = $derived(
     tab.hostClientId === undefined || tab.hostClientId === $ownClientId$,
   );
+  const hostClientIdStore = writable(untrack(() => tab.hostClientId ?? ''));
+  $effect(() => hostClientIdStore.set(tab.hostClientId ?? ''));
+  const tabHost$ = selectBrowserTabHost(hostClientIdStore);
 </script>
 
 {#if !isHostedHere}
-  <div class="h-full" data-browser-tab-mirror={tab.hostClientId}></div>
+  <div class="h-full" data-browser-tab-mirror={tab.hostClientId}>
+    <BrowserViewerTab
+      url={browserUrl}
+      title={tab.title}
+      host={$tabHost$}
+      {isActive}
+      onNavigate={(newUrl: string) => {
+        const action = navigateBrowserTabRequested(tab.id, newUrl);
+        appStore.dispatch(action);
+        return action.promise;
+      }}
+      onClose={({ force }) => {
+        appStore.dispatch(closeBrowserTabRequested(tab.id, force));
+      }}
+      onFaviconChange={(faviconUrl: string) => {
+        appStore.dispatch(updateTabFavicon(panelLayoutId, tab.id, faviconUrl));
+      }}
+      {onFocus}
+    />
+  </div>
 {:else if browserUrl}
   <div
     bind:this={viewportActionNode}
