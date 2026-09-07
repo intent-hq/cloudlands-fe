@@ -13,9 +13,10 @@
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
+  addItem,
   getItem,
   removeItem,
-  upsertItem,
+  replaceItem,
 } from '@augmentcode/themis/utils/collections/collection-utils';
 import type {
   BrowserTab,
@@ -136,13 +137,29 @@ browserClientsReducer.with(
 );
 browserClientsReducer.with(browserTabUpserted, (state, { payload: [wsId, tab] }) => {
   const ws = getWorkspaceState(state, wsId);
-  // Event payloads carry the registry row without the `browser.listTabs`
-  // presence decoration; keep whatever decoration the last list read stored.
-  const existing = getItem(ws.tabs, tab.tabId);
-  const next = existing ? { ...existing, ...tab } : tab;
+  // The event row is the canonical registry row (an omitted optional field
+  // was cleared), so it replaces the entry outright — `upsertItem` would
+  // merge and retain cleared fields. Only the `browser.listTabs` presence
+  // decoration, which event payloads never carry, is kept from the last read.
+  const existing = getItem(ws.tabs, tab.tabId) as BrowserTabListing | undefined;
+  if (!existing) {
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      tabs: addItem(ws.tabs, tab),
+      tabsRevision: ws.tabsRevision + 1,
+    });
+  }
+  const next: BrowserTab | BrowserTabListing =
+    'hostConnected' in existing
+      ? {
+          ...tab,
+          hostConnected: existing.hostConnected,
+          ...(existing.hostName !== undefined ? { hostName: existing.hostName } : {}),
+        }
+      : tab;
   return setWorkspaceState(state, wsId, {
     ...ws,
-    tabs: upsertItem(ws.tabs, next),
+    tabs: replaceItem(ws.tabs, tab.tabId, next),
     tabsRevision: ws.tabsRevision + 1,
   });
 });

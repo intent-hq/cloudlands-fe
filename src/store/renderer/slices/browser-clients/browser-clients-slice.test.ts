@@ -103,7 +103,7 @@ describe('browserClientsReducer', () => {
 
   it('mirrors browser.listTabs rows and patches them from browser:tab-* events', () => {
     const listed: BrowserTabListing = {
-      ...tab('tab-a'),
+      ...tab('tab-a', { title: 'Example', ownerAgentId: 'agent-1', ownerAgentName: 'Agent' }),
       hostConnected: true,
       hostName: 'Intent Desktop',
     };
@@ -113,15 +113,20 @@ describe('browserClientsReducer', () => {
     );
     expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual([listed]);
 
-    // tab-updated: the event row (no presence decoration) merges over the listing.
+    // tab-updated: the event row is the canonical registry row — optional
+    // fields it omits (title, owner) were cleared and must not survive; only
+    // the listing's presence decoration carries over.
     const moved = tab('tab-a', {
       url: 'https://example.com/next',
       updatedAt: '2026-09-07T00:00:05.000Z',
     });
     state = browserClientsReducer(state, browserTabUpserted('ws-1', moved));
     expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual([
-      { ...listed, ...moved },
+      { ...moved, hostConnected: true, hostName: 'Intent Desktop' },
     ]);
+    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')[0]).not.toHaveProperty(
+      'title',
+    );
 
     // tab-opened: a new row appends.
     state = browserClientsReducer(state, browserTabUpserted('ws-1', tab('tab-b')));
