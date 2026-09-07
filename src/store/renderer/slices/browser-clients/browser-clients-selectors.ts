@@ -25,15 +25,6 @@ export const selectLiveClientsLoaded = store.createSelector(
   (state): boolean => state?.browserClients?.liveClientsLoaded ?? false,
 );
 
-/**
- * Workspaces with a live per-workspace entry: populated by a mount's reads,
- * cleared on unmount/delete. These are the workspaces whose daemon browser
- * client resolution is currently displayed and worth re-reading.
- */
-export const selectTrackedBrowserClientWorkspaceIds = store.createSelector((state): string[] =>
-  Object.keys(state?.browserClients?.byWorkspaceId ?? {}),
-);
-
 /** One connected client by id, or undefined when it is not (or no longer) listed. */
 export const selectLiveClient = store.createSelector(
   (state, clientId: string): LiveClient | undefined =>

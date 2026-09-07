@@ -27,12 +27,15 @@ import type { StoreState } from '../../../types';
 import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
 import { selectWorkspaceDrivingClient } from '../browser-clients-selectors';
 import {
+  initialState as lifecycleInitialState,
   workspaceDeleted,
+  workspaceLifecycleReducer,
   workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   browserClientsReducer,
+  browserTabClosed,
   fetchWorkspaceBrowserClientRequested,
   fetchWorkspaceBrowserTabsRequested,
   hydrateBrowserClientsRequested,
@@ -66,7 +69,7 @@ const desk: LiveClient = {
 function start() {
   const channel = stdChannel();
   const dispatch = vi.fn((action) => channel.put(action));
-  const state = { browserClients: initialState };
+  const state = { browserClients: initialState, workspaceLifecycle: lifecycleInitialState };
   const task = runSaga({ channel, dispatch, getState: () => state }, browserClientsSaga);
   const dispatched = () => dispatch.mock.calls.map(([action]) => action);
   const setTabsRevision = (wsId: string, tabsRevision: number) => {
@@ -84,12 +87,15 @@ function start() {
   return { channel, task, dispatched, setTabsRevision };
 }
 
-/** Saga wired to the real reducer, so lifecycle races are observed on state. */
+/** Saga wired to the real reducers, so lifecycle races are observed on state. */
 function startWithReducer() {
   const channel = stdChannel();
-  let state = { browserClients: initialState };
+  let state = { browserClients: initialState, workspaceLifecycle: lifecycleInitialState };
   const dispatch = (action: StoreAction<unknown>) => {
-    state = { browserClients: browserClientsReducer(state.browserClients, action) };
+    state = {
+      browserClients: browserClientsReducer(state.browserClients, action),
+      workspaceLifecycle: workspaceLifecycleReducer(state.workspaceLifecycle, action),
+    };
     channel.put(action);
   };
   const task = runSaga({ channel, dispatch, getState: () => state }, browserClientsSaga);
@@ -208,6 +214,52 @@ describe('browserClientsSaga', () => {
 
       expect(mocks.list).toHaveBeenCalledTimes(2);
       expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1']]);
+    });
+
+    it('does not re-read a workspace that only a global browser:tab-* event touched', async () => {
+      mocks.list.mockResolvedValue([desk, laptop]);
+      mocks.getBrowserClient.mockResolvedValue(pinnedLaptop);
+      const { dispatch, task, entry } = startWithReducer();
+
+      dispatch(workspaceMounted('ws-1'));
+      await settle();
+      dispatch(browserTabClosed('ws-9', 'tab-x'));
+      expect(entry('ws-9')).toBeDefined();
+      mocks.getBrowserClient.mockClear();
+
+      dispatch(refreshLiveClientsRequested());
+      await settle();
+      task.cancel();
+
+      expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1']]);
+    });
+
+    it('a presence burst during an in-flight re-read coalesces into one trailing pass, never overlapping reads', async () => {
+      mocks.list.mockResolvedValue([desk, laptop]);
+      mocks.getBrowserClient.mockResolvedValue(pinnedLaptop);
+      const { dispatch, task } = startWithReducer();
+
+      dispatch(workspaceMounted('ws-1'));
+      await settle();
+      const slow = deferred<typeof pinnedLaptop>();
+      mocks.getBrowserClient.mockClear();
+      mocks.getBrowserClient.mockReturnValueOnce(slow.promise).mockResolvedValue(pinnedLaptop);
+
+      dispatch(refreshLiveClientsRequested());
+      await settle();
+      dispatch(refreshLiveClientsRequested());
+      dispatch(refreshLiveClientsRequested());
+      dispatch(refreshLiveClientsRequested());
+      await settle();
+      expect(mocks.list).toHaveBeenCalledTimes(2);
+      expect(mocks.getBrowserClient).toHaveBeenCalledTimes(1);
+
+      slow.resolve(pinnedLaptop);
+      await settle();
+      task.cancel();
+
+      expect(mocks.list).toHaveBeenCalledTimes(3);
+      expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1'], ['ws-1']]);
     });
 
     it('a pinned client disconnecting and reconnecting moves the sidebar offline and back without a remount', async () => {

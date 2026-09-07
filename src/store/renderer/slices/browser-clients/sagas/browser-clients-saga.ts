@@ -21,13 +21,23 @@
  */
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
-import { call, put, race, take, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import {
+  all,
+  call,
+  put,
+  race,
+  take,
+  takeEvery,
+  takeLatest,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 
 import {
   takeLatestByWorkspace,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
 import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
+import { selectMountedWorkspaceIds } from '../../workspace-lifecycle/workspace-lifecycle-selectors';
 import {
   workspaceDeleted,
   workspaceMounted,
@@ -36,7 +46,6 @@ import {
 import {
   selectLiveClientsLoaded,
   selectOwnClientId,
-  selectTrackedBrowserClientWorkspaceIds,
   selectWorkspaceBrowserTabsRevision,
 } from '../browser-clients-selectors';
 import {
@@ -61,8 +70,11 @@ const MAX_TABS_READ_ATTEMPTS = 3;
  * load) can also change what the daemon resolves for a workspace — a pinned
  * client going offline, or the default falling through to another client —
  * so the mounted workspaces' `workspace.getBrowserClient` is re-read too.
- * Only tracked (mounted) workspaces are re-read, never every stored one, and
- * each re-read keeps the per-workspace latest-wins and teardown protection.
+ * Only the mounted workspaces (the lifecycle slice's session set, not every
+ * workspace the global `browser:tab-*` / `workspace:updated` events touched)
+ * are re-read, and the re-reads run inside this single-flight worker, so a
+ * presence burst cannot start overlapping resolution calls: one pass is in
+ * flight and at most one trailing pass follows it.
  */
 function* readLiveClients(): SagaGenerator<void> {
   try {
@@ -70,9 +82,8 @@ function* readLiveClients(): SagaGenerator<void> {
     const clients = yield* call([appClient.clients, appClient.clients.list]);
     yield* put(liveClientsReceived(clients));
     if (!presenceChange) return;
-    for (const wsId of yield* selectTrackedBrowserClientWorkspaceIds.effect()) {
-      yield* put(fetchWorkspaceBrowserClientRequested(wsId));
-    }
+    const mounted = yield* selectMountedWorkspaceIds.effect();
+    yield* all(mounted.map((wsId) => call(readWorkspaceBrowserClientOf, wsId)));
   } catch (error) {
     logger.warn('client.list failed', { error: error instanceof Error ? error.message : error });
   }
@@ -119,7 +130,10 @@ function* untilWorkspaceCleanup<T>(
 function* readWorkspaceBrowserClient(
   action: ReturnType<typeof fetchWorkspaceBrowserClientRequested>,
 ): SagaGenerator<void> {
-  const [wsId] = action.payload;
+  yield* call(readWorkspaceBrowserClientOf, action.payload[0]);
+}
+
+function* readWorkspaceBrowserClientOf(wsId: string): SagaGenerator<void> {
   try {
     const read = yield* untilWorkspaceCleanup(
       wsId,
