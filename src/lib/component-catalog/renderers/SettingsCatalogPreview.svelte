@@ -127,13 +127,35 @@
       </SettingsFieldRow>
     </div>
   {:else if componentId === 'slider'}
-    <div class="grid max-w-md gap-4">
-      <label class="grid gap-1 text-sm font-medium">
-        Catalog volume: {volume}
-        <Slider bind:value={volume} aria-label="Catalog volume" />
-      </label>
-      <Slider value={25} disabled aria-label="Disabled catalog volume" />
-      <Slider value={75} aria-label="Invalid catalog volume" aria-invalid="true" />
+    <div class="grid max-w-md gap-5" data-slider-capture-delay-ms="200">
+      <div class="grid gap-1 text-sm">
+        <span class="text-muted-foreground">Default</span>
+        <Slider
+          bind:value={volume}
+          aria-label="Catalog volume"
+          data-capture-interaction="hover-drag"
+        />
+      </div>
+      <div class="grid gap-1 text-sm">
+        <span class="text-muted-foreground">Inline value</span>
+        <Slider value={62} showValue valuePosition="right" aria-label="Catalog volume with value" />
+      </div>
+      <div class="grid gap-1 text-sm">
+        <span class="text-muted-foreground">Discrete steps</span>
+        <Slider
+          value={40}
+          steps={[0, 15, 40, 70, 100]}
+          showSteps
+          showValue
+          valuePosition="right"
+          formatValue={(value) => `${value}%`}
+          aria-label="Catalog stepped volume"
+        />
+      </div>
+      <div class="grid gap-1 text-sm">
+        <span class="text-muted-foreground">Disabled</span>
+        <Slider value={25} disabled aria-label="Disabled catalog volume" />
+      </div>
       <output class="sr-only" aria-label="Catalog slider value">{volume}</output>
     </div>
   {:else if componentId === 'file-input'}
