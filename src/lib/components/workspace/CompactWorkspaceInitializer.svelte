@@ -67,6 +67,7 @@
     selectFileSpecialistsLoaded,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { refetchSpecialistsRequested } from '$store/renderer/slices/specialists/specialists-slice';
+  import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
   import { createLogger } from '$lib/utils/client-logger';
   import {
     getGitErrorMessage,
@@ -446,7 +447,6 @@
 
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
   const specialists$ = selectSpecialists();
-  const orchestrator$ = selectOrchestratorSpecialist();
   const customSpecialistsLoaded$ = selectCustomSpecialistsLoaded();
   const fileSpecialistsLoaded$ = selectFileSpecialistsLoaded();
   const compactFormState$ = selectCompactWorkspaceInitializerFormState();
@@ -480,13 +480,20 @@
   // NOTE: selectedSpecialist can be null (meaning "General / no specialist").
   // We check !== undefined instead of using ?? because null is a valid value
   // and ?? treats null as nullish, which would incorrectly fall through to the
-  // orchestrator default.
+  // first-launch default.
+  // First-launch default: single-agent Developer when the resolved specialist
+  // set carries it, else General (null).
+  const defaultSingleAgentSpecialist: string | null = $specialists$.some(
+    ({ id }) => id === DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
+  )
+    ? DEFAULT_NEW_WORKSPACE_SPECIALIST_ID
+    : null;
   let selectedSpecialist = $state<string | null>(
     savedState?.selectedSpecialist !== undefined
       ? savedState.selectedSpecialist
       : lastSubmittedAgent?.selectedSpecialist !== undefined
         ? lastSubmittedAgent.selectedSpecialist
-        : ($orchestrator$?.id ?? null),
+        : defaultSingleAgentSpecialist,
   );
   // Validate saved model against current provider - stale models from a different provider
   // (e.g., a claude-code pick when active provider is now 'opencode') should be discarded
@@ -519,9 +526,10 @@
       ? (savedState?.selectedReasoningEffort ?? lastSubmittedAgent?.selectedReasoningEffort)
       : undefined,
   );
-  // Track if team mode is selected (the orchestrator specialist coordinates)
+  // Track if team mode is selected (the orchestrator specialist coordinates).
+  // Defaults to single-agent mode on first launch; a remembered choice wins.
   let isTeamMode = $state<boolean>(
-    savedState?.isTeamMode ?? lastSubmittedAgent?.isTeamMode ?? $orchestrator$ !== null,
+    savedState?.isTeamMode ?? lastSubmittedAgent?.isTeamMode ?? false,
   );
 
   function resetUnavailableSpecialist(): void {
