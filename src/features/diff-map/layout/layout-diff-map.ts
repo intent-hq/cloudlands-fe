@@ -92,6 +92,38 @@ const MAX_STRETCH_FACTOR = 1.6;
 const STRETCH_EPSILON = 0.000001;
 const MAX_BLOCK_ROWS = 10;
 
+type DiffMapFile = DiffMapDocument['files'][number];
+type BlockLayoutRow =
+  | { kind: 'file'; file: DiffMapFile }
+  | { kind: 'more'; hiddenCount: number };
+
+interface VisibleBlockRows {
+  files: DiffMapFile[];
+  rows: BlockLayoutRow[];
+  hiddenCount: number;
+  expanded: boolean;
+}
+
+interface BlockColumnMeasurements {
+  countWidth: number;
+  columnCount: number;
+  columnWidth: number;
+  rowsPerColumn: number;
+  width: number;
+  height: number;
+  fileLabelWidth: number;
+}
+
+interface LayoutSectionGroup {
+  section: DiffMapSection | undefined;
+  groupIds: string[];
+}
+
+interface PackedLayoutSection {
+  section: DiffMapSection | undefined;
+  shelves: DiffMapLayoutBlock[][];
+}
+
 const RUNGS = [
   { rowHeight: 28, headerHeight: 24, minColumnWidth: 180, maxColumnWidth: 320, chrome: 116 },
   { rowHeight: 22, headerHeight: 22, minColumnWidth: 150, maxColumnWidth: 280, chrome: 76 },
@@ -172,25 +204,35 @@ function groupWithinSection(group: DiffMapGroup, section: DiffMapSection): DiffM
   };
 }
 
-function buildBlock(
+function visibleBlockRows(
   group: DiffMapGroup,
-  fileById: Map<string, DiffMapDocument['files'][number]>,
-  viewport: DiffMapViewport,
-  rung: DiffMapDensityRung,
-  measure: TextMeasurer,
+  fileById: ReadonlyMap<string, DiffMapFile>,
   expandedBlockIds?: ReadonlySet<string>,
-): DiffMapLayoutBlock {
-  const config = RUNGS[rung];
+): VisibleBlockRows {
   const allFiles = group.fileIds.map((id) => fileById.get(id)).filter((file) => file !== undefined);
   const hiddenCount = Math.max(0, allFiles.length - MAX_BLOCK_ROWS);
   const expanded = expandedBlockIds?.has(group.id) ?? false;
   const files = expanded ? allFiles : allFiles.slice(0, MAX_BLOCK_ROWS);
-  const layoutRows: Array<
-    { kind: 'file'; file: DiffMapDocument['files'][number] } | { kind: 'more'; hiddenCount: number }
-  > = [
-    ...files.map((file) => ({ kind: 'file' as const, file })),
-    ...(hiddenCount > 0 ? [{ kind: 'more' as const, hiddenCount }] : []),
-  ];
+  return {
+    files,
+    rows: [
+      ...files.map((file) => ({ kind: 'file' as const, file })),
+      ...(hiddenCount > 0 ? [{ kind: 'more' as const, hiddenCount }] : []),
+    ],
+    hiddenCount,
+    expanded,
+  };
+}
+
+function measureBlockColumns(
+  group: DiffMapGroup,
+  files: DiffMapFile[],
+  rows: BlockLayoutRow[],
+  viewport: DiffMapViewport,
+  rung: DiffMapDensityRung,
+  measure: TextMeasurer,
+): BlockColumnMeasurements {
+  const config = RUNGS[rung];
   const fileContext = { role: 'file', rung } as const;
   const groupContext = { role: 'group', rung } as const;
   const longestFileWidth = files.reduce(
@@ -215,7 +257,7 @@ function buildBlock(
     1,
     Math.floor((viewport.height - config.headerHeight - BLOCK_PADDING * 2) / config.rowHeight),
   );
-  let columnCount = Math.max(1, Math.ceil(layoutRows.length / maxRowsByHeight));
+  let columnCount = Math.max(1, Math.ceil(rows.length / maxRowsByHeight));
   const availableWidth = Math.max(0, viewport.width - BLOCK_PADDING * 2);
   const requestedColumnWidth =
     (availableWidth - COLUMN_GAP * Math.max(0, columnCount - 1)) / columnCount;
@@ -230,17 +272,37 @@ function buildBlock(
             (availableWidth - COLUMN_GAP * Math.max(0, columnCount - 1)) / columnCount,
           ),
         );
-  const rowsPerColumn = Math.max(1, Math.ceil(layoutRows.length / columnCount));
+  const rowsPerColumn = Math.max(1, Math.ceil(rows.length / columnCount));
   const width = Math.min(
     viewport.width,
     BLOCK_PADDING * 2 + columnCount * columnWidth + (columnCount - 1) * COLUMN_GAP,
   );
   const height = config.headerHeight + BLOCK_PADDING * 2 + rowsPerColumn * config.rowHeight;
   const fileLabelWidth = Math.max(0, columnWidth - config.chrome);
-  const columns = Array.from({ length: columnCount }, (_, columnIndex) => {
-    const columnRows = layoutRows.slice(
+  return {
+    countWidth,
+    columnCount,
+    columnWidth,
+    rowsPerColumn,
+    width,
+    height,
+    fileLabelWidth,
+  };
+}
+
+function buildBlockColumns(
+  rows: BlockLayoutRow[],
+  measurements: BlockColumnMeasurements,
+  rung: DiffMapDensityRung,
+  measure: TextMeasurer,
+): DiffMapLayoutColumn[] {
+  const config = RUNGS[rung];
+  const fileContext = { role: 'file', rung } as const;
+  const { columnCount, columnWidth, rowsPerColumn, fileLabelWidth } = measurements;
+  return Array.from({ length: columnCount }, (_, columnIndex) => {
+    const columnRows = rows.slice(
       columnIndex * rowsPerColumn,
-      Math.min(layoutRows.length, (columnIndex + 1) * rowsPerColumn),
+      Math.min(rows.length, (columnIndex + 1) * rowsPerColumn),
     );
     return {
       x: BLOCK_PADDING + columnIndex * (columnWidth + COLUMN_GAP),
@@ -265,9 +327,35 @@ function buildBlock(
       }),
     };
   });
+}
+
+function buildBlock(
+  group: DiffMapGroup,
+  fileById: ReadonlyMap<string, DiffMapFile>,
+  viewport: DiffMapViewport,
+  rung: DiffMapDensityRung,
+  measure: TextMeasurer,
+  expandedBlockIds?: ReadonlySet<string>,
+): DiffMapLayoutBlock {
+  const visible = visibleBlockRows(group, fileById, expandedBlockIds);
+  const measurements = measureBlockColumns(
+    group,
+    visible.files,
+    visible.rows,
+    viewport,
+    rung,
+    measure,
+  );
+  const columns = buildBlockColumns(visible.rows, measurements, rung, measure);
+  const groupContext = { role: 'group', rung } as const;
   const label = truncateGroupLabel(
     group,
-    Math.max(0, width - BLOCK_PADDING * 2 - (rung < 3 ? countWidth + HEADER_GAP : 0)),
+    Math.max(
+      0,
+      measurements.width -
+        BLOCK_PADDING * 2 -
+        (rung < 3 ? measurements.countWidth + HEADER_GAP : 0),
+    ),
     measure,
     groupContext,
   );
@@ -278,11 +366,11 @@ function buildBlock(
     labelName: label.name,
     x: 0,
     y: 0,
-    w: width,
-    h: height,
-    headerHeight: config.headerHeight,
-    hiddenCount,
-    expanded,
+    w: measurements.width,
+    h: measurements.height,
+    headerHeight: RUNGS[rung].headerHeight,
+    hiddenCount: visible.hiddenCount,
+    expanded: visible.expanded,
     columns,
   };
 }
@@ -305,7 +393,7 @@ function resizeBlock(
   block: DiffMapLayoutBlock,
   width: number,
   group: DiffMapGroup,
-  fileById: Map<string, DiffMapDocument['files'][number]>,
+  fileById: ReadonlyMap<string, DiffMapFile>,
   rung: DiffMapDensityRung,
   measure: TextMeasurer,
 ): DiffMapLayoutBlock {
@@ -361,8 +449,8 @@ function resizeBlock(
 function stretchShelf(
   blocks: DiffMapLayoutBlock[],
   width: number,
-  groupById: Map<string, DiffMapGroup>,
-  fileById: Map<string, DiffMapDocument['files'][number]>,
+  groupById: ReadonlyMap<string, DiffMapGroup>,
+  fileById: ReadonlyMap<string, DiffMapFile>,
   rung: DiffMapDensityRung,
   measure: TextMeasurer,
 ): DiffMapLayoutBlock[] {
@@ -396,14 +484,10 @@ function stretchShelf(
   });
 }
 
-function packAtRung(
-  document: DiffMapDocument,
-  viewport: DiffMapViewport,
-  rung: DiffMapDensityRung,
-  measure: TextMeasurer,
-  expandedBlockIds?: ReadonlySet<string>,
-): DiffMapLayout {
-  const fileById = new Map(document.files.map((file) => [file.id, file]));
+function groupLayoutSections(document: DiffMapDocument): {
+  displayGroups: DiffMapGroup[];
+  sections: LayoutSectionGroup[];
+} {
   const documentSections = document.sections;
   const preserveSections =
     (documentSections?.length ?? 0) > 1 &&
@@ -419,26 +503,27 @@ function packAtRung(
     const section = sectionByGroupId.get(group.id);
     return section ? groupWithinSection(group, section) : group;
   });
-  const groupById = new Map(displayGroups.map((group) => [group.id, group]));
-  const blocksById = new Map(
-    displayGroups.map((group) => [
-      group.id,
-      buildBlock(group, fileById, viewport, rung, measure, expandedBlockIds),
-    ]),
-  );
   const sections =
     preserveSections && documentSections
       ? documentSections.map((section) => ({ section, groupIds: section.groupIds }))
       : [{ section: undefined, groupIds: document.groups.map((group) => group.id) }];
-  const packedSections = sections.map(({ section, groupIds }) => {
+  return { displayGroups, sections };
+}
+
+function packSectionShelves(
+  sections: LayoutSectionGroup[],
+  blocksById: ReadonlyMap<string, DiffMapLayoutBlock>,
+  viewportWidth: number,
+): PackedLayoutSection[] {
+  return sections.map(({ section, groupIds }) => {
     const shelves: DiffMapLayoutBlock[][] = [];
     let shelf: DiffMapLayoutBlock[] = [];
     let shelfWidth = 0;
     for (const groupId of groupIds) {
       const block = blocksById.get(groupId);
       if (!block) continue;
-      const narrow = viewport.width < NARROW_WIDTH;
-      if (shelf.length > 0 && (narrow || shelfWidth + BLOCK_GAP + block.w > viewport.width)) {
+      const narrow = viewportWidth < NARROW_WIDTH;
+      if (shelf.length > 0 && (narrow || shelfWidth + BLOCK_GAP + block.w > viewportWidth)) {
         shelves.push(shelf);
         shelf = [];
         shelfWidth = 0;
@@ -449,6 +534,20 @@ function packAtRung(
     if (shelf.length > 0) shelves.push(shelf);
     return { section, shelves };
   });
+}
+
+function placeShelves(
+  packedSections: PackedLayoutSection[],
+  viewport: DiffMapViewport,
+  groupById: ReadonlyMap<string, DiffMapGroup>,
+  fileById: ReadonlyMap<string, DiffMapFile>,
+  rung: DiffMapDensityRung,
+  measure: TextMeasurer,
+): {
+  placed: Map<string, DiffMapLayoutBlock>;
+  sectionsPlaced: DiffMapLayoutSection[];
+  contentHeight: number;
+} {
   const shelfCount = packedSections.reduce((count, entry) => count + entry.shelves.length, 0);
   const placed = new Map<string, DiffMapLayoutBlock>();
   const sectionsPlaced: DiffMapLayoutSection[] = [];
@@ -487,8 +586,35 @@ function packAtRung(
       cursorY += OUTER_GAP;
     }
   }
-
   const contentHeight = Math.max(0, cursorY - (sectionsPlaced.length > 0 ? OUTER_GAP : 0));
+  return { placed, sectionsPlaced, contentHeight };
+}
+
+function packAtRung(
+  document: DiffMapDocument,
+  viewport: DiffMapViewport,
+  rung: DiffMapDensityRung,
+  measure: TextMeasurer,
+  expandedBlockIds?: ReadonlySet<string>,
+): DiffMapLayout {
+  const fileById = new Map(document.files.map((file) => [file.id, file]));
+  const { displayGroups, sections } = groupLayoutSections(document);
+  const groupById = new Map(displayGroups.map((group) => [group.id, group]));
+  const blocksById = new Map(
+    displayGroups.map((group) => [
+      group.id,
+      buildBlock(group, fileById, viewport, rung, measure, expandedBlockIds),
+    ]),
+  );
+  const packedSections = packSectionShelves(sections, blocksById, viewport.width);
+  const { placed, sectionsPlaced, contentHeight } = placeShelves(
+    packedSections,
+    viewport,
+    groupById,
+    fileById,
+    rung,
+    measure,
+  );
   return {
     rung,
     blocks: document.groups

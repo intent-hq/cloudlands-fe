@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   diffMapFixtures,
@@ -21,6 +22,10 @@ import {
 const measure: TextMeasurer = (text, context) => text.length * (context.role === 'file' ? 7 : 7.5);
 const widths = [280, 480, 720, 900, 1400];
 const heights = [400, 500, 900];
+const regressionWidths = [200, 280, 420, 900, 1400, 3000];
+const preRefactorLayouts = JSON.parse(
+  readFileSync('src/features/diff-map/layout/__snapshots__/layout-diff-map.before.json', 'utf8'),
+) as Record<string, DiffMapLayout>;
 
 function allRows(layout: DiffMapLayout) {
   return layout.blocks.flatMap((block) => block.columns.flatMap((column) => column.rows));
@@ -112,6 +117,19 @@ function deepHeaderDocument(): DiffMapDocument {
 }
 
 describe('layoutDiffMap', () => {
+  it('matches the pre-refactor output for every fixture and regression width', () => {
+    const layouts = Object.fromEntries(
+      diffMapFixtures.flatMap((fixture) =>
+        regressionWidths.map((width) => [
+          `${fixture.name}-${width}x500`,
+          layoutDiffMap(fixture.document, { width, height: 500 }, measure),
+        ]),
+      ),
+    );
+
+    expect(layouts).toEqual(preRefactorLayouts);
+  });
+
   it.each([
     [0, 28],
     [1, 22],
@@ -210,6 +228,17 @@ describe('layoutDiffMap', () => {
     );
     expect(layout.rung).toBe(0);
     expect(layout.overflow).toBe(false);
+    expect(layout.contentHeight).toBeLessThanOrEqual(500);
+    expectValidLayout(typicalDiffMapFixture.document, layout, 900);
+  });
+
+  it('uses one-column blocks and overflow rail layout at 280x600', () => {
+    const layout = layoutDiffMap(hugeDiffMapFixture.document, { width: 280, height: 600 }, measure);
+
+    expect(layout.overflow).toBe(true);
+    expect(layout.contentHeight).toBeGreaterThan(600);
+    expect(layout.blocks.every((block) => block.columns.length === 1)).toBe(true);
+    expect(layout.blocks.every((block) => block.w === 280)).toBe(true);
   });
 
   it('reports honest rung-3 overflow for 600 files at 280x500', () => {
