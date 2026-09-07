@@ -140,7 +140,10 @@ browserClientsReducer.with(browserTabUpserted, (state, { payload: [wsId, tab] })
   // The event row is the canonical registry row (an omitted optional field
   // was cleared), so it replaces the entry outright — `upsertItem` would
   // merge and retain cleared fields. Only the `browser.listTabs` presence
-  // decoration, which event payloads never carry, is kept from the last read.
+  // decoration, which event payloads never carry, is kept from the last read
+  // — and only while it still describes the same host: when the row moved to
+  // another client it is recomputed from the live client list (or dropped
+  // when that list has not been read yet).
   const existing = getItem(ws.tabs, tab.tabId) as BrowserTabListing | undefined;
   if (!existing) {
     return setWorkspaceState(state, wsId, {
@@ -149,20 +152,32 @@ browserClientsReducer.with(browserTabUpserted, (state, { payload: [wsId, tab] })
       tabsRevision: ws.tabsRevision + 1,
     });
   }
-  const next: BrowserTab | BrowserTabListing =
-    'hostConnected' in existing
-      ? {
-          ...tab,
-          hostConnected: existing.hostConnected,
-          ...(existing.hostName !== undefined ? { hostName: existing.hostName } : {}),
-        }
-      : tab;
   return setWorkspaceState(state, wsId, {
     ...ws,
-    tabs: replaceItem(ws.tabs, tab.tabId, next),
+    tabs: replaceItem(ws.tabs, tab.tabId, decorateReplacedTab(state, existing, tab)),
     tabsRevision: ws.tabsRevision + 1,
   });
 });
+
+function decorateReplacedTab(
+  state: BrowserClientsState,
+  existing: BrowserTab | BrowserTabListing,
+  tab: BrowserTab,
+): BrowserTab | BrowserTabListing {
+  if (!('hostConnected' in existing)) return tab;
+  if (existing.hostClientId === tab.hostClientId) {
+    return {
+      ...tab,
+      hostConnected: existing.hostConnected,
+      ...(existing.hostName !== undefined ? { hostName: existing.hostName } : {}),
+    };
+  }
+  if (!state.liveClientsLoaded) return tab;
+  const host = getItem(state.liveClients, tab.hostClientId);
+  return host
+    ? { ...tab, hostConnected: true, ...(host.name !== undefined ? { hostName: host.name } : {}) }
+    : { ...tab, hostConnected: false };
+}
 browserClientsReducer.with(browserTabClosed, (state, { payload: [wsId, tabId] }) => {
   const ws = getWorkspaceState(state, wsId);
   // Bump the revision even for an unknown tabId: the row may be in a

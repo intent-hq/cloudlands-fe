@@ -145,6 +145,40 @@ describe('browserClientsReducer', () => {
     ]);
   });
 
+  it('recomputes the presence decoration from client.list when a tab row moves to another host', () => {
+    const listed: BrowserTabListing = {
+      ...tab('tab-a', { hostClientId: 'cli-desk' }),
+      hostConnected: true,
+      hostName: 'Desk (hello name)',
+    };
+    const migrated = (hostClientId: string): BrowserTab =>
+      tab('tab-a', { hostClientId, updatedAt: '2026-09-07T00:00:05.000Z' });
+
+    // Live list read: the new host is listed → connected, with its hello name.
+    let state = browserClientsReducer(initialState, liveClientsReceived([desk, laptop]));
+    state = browserClientsReducer(state, workspaceBrowserTabsReceived('ws-1', [listed], 0));
+    state = browserClientsReducer(state, browserTabUpserted('ws-1', migrated('cli-laptop')));
+    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual([
+      { ...migrated('cli-laptop'), hostConnected: true, hostName: laptop.name },
+    ]);
+
+    // Live list read: the new host is not listed → disconnected, no stale name.
+    state = browserClientsReducer(state, browserTabUpserted('ws-1', migrated('cli-gone')));
+    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual([
+      { ...migrated('cli-gone'), hostConnected: false },
+    ]);
+
+    // Live list never read: the decoration is dropped rather than carried over.
+    let cold = browserClientsReducer(
+      initialState,
+      workspaceBrowserTabsReceived('ws-1', [listed], 0),
+    );
+    cold = browserClientsReducer(cold, browserTabUpserted('ws-1', migrated('cli-laptop')));
+    expect(selectWorkspaceBrowserTabs.select(asState(cold), 'ws-1')).toEqual([
+      migrated('cli-laptop'),
+    ]);
+  });
+
   it('drops a browser.listTabs snapshot issued before a browser:tab-* patch landed', () => {
     const listed = (tabId: string): BrowserTabListing => ({ ...tab(tabId), hostConnected: true });
     let state = browserClientsReducer(

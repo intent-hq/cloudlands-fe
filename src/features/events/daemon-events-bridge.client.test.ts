@@ -11913,6 +11913,87 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
     expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'browser.listTabs')).toEqual([]);
   });
 
+  it('browser:tab-updated replaces the listed row: cleared optionals drop, presence decoration stays', async () => {
+    const { workspaceBrowserTabsReceived } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+    const { selectWorkspaceBrowserTabs } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const listed = {
+      ...TAB,
+      title: 'Example',
+      requestedUrl: 'https://example.com/',
+      ownerAgentId: 'agent-1',
+      ownerAgentName: 'Agent',
+      emulatedSize: { width: 1280, height: 800 },
+      hostConnected: true,
+      hostName: 'Intent Desktop',
+    };
+    appStore.dispatch(workspaceBrowserTabsReceived(WS_BC, [listed as never], 0));
+
+    // The daemon released the owner, cleared the title, requestedUrl and
+    // emulation: the event row omits them.
+    const released = {
+      ...TAB,
+      url: 'https://example.com/next',
+      updatedAt: '2026-09-07T00:00:02.000Z',
+    };
+    handler(
+      tabNotification('browser:tab-updated', { tab: released, changes: { url: released.url } }),
+    );
+
+    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([
+      { ...released, hostConnected: true, hostName: 'Intent Desktop' },
+    ]);
+  });
+
+  it('browser:tab-updated moving a tab to another host recomputes hostConnected / hostName from client.list', async () => {
+    const { liveClientsReceived, workspaceBrowserTabsReceived } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+    const { selectWorkspaceBrowserTabs } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const LAPTOP_ROW = { ...DESK_ROW, clientId: 'cli-laptop', name: 'Intent Laptop' };
+    appStore.dispatch(liveClientsReceived([DESK_ROW as never, LAPTOP_ROW as never]));
+    appStore.dispatch(
+      workspaceBrowserTabsReceived(
+        WS_BC,
+        [{ ...TAB, hostConnected: true, hostName: 'Intent Desktop' } as never],
+        0,
+      ),
+    );
+
+    const onLaptop = { ...TAB, hostClientId: 'cli-laptop', updatedAt: '2026-09-07T00:00:02.000Z' };
+    handler(
+      tabNotification('browser:tab-updated', {
+        tab: onLaptop,
+        changes: { hostClientId: onLaptop.hostClientId },
+      }),
+    );
+    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([
+      { ...onLaptop, hostConnected: true, hostName: 'Intent Laptop' },
+    ]);
+
+    const onUnknown = {
+      ...onLaptop,
+      hostClientId: 'cli-gone',
+      updatedAt: '2026-09-07T00:00:03.000Z',
+    };
+    handler(
+      tabNotification('browser:tab-updated', {
+        tab: onUnknown,
+        changes: { hostClientId: onUnknown.hostClientId },
+      }),
+    );
+    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([
+      { ...onUnknown, hostConnected: false },
+    ]);
+  });
+
   it('ignores a browser:tab-* event whose payload is not a registry row', async () => {
     const { selectWorkspaceBrowserTabs } =
       await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
