@@ -43,7 +43,6 @@ describe('sidebar open-panel marker removal contract', () => {
 
   it('retains the keyboard focus treatment on shared list rows', () => {
     const listItem = source('../../../ui/list/ListItem.svelte');
-    expect(listItem).toContain('focus-visible:border-ring');
-    expect(listItem).toContain('focus-visible:ring-2');
+    expect(listItem).toContain('focus-visible:-outline-offset-1');
   });
 });

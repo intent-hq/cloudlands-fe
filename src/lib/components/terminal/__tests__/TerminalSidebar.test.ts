@@ -403,7 +403,7 @@ describe('TerminalSidebar workspace prop changes', () => {
       true,
     );
 
-    await fireEvent.contextMenu(screen.getByText('Script B'));
+    await fireEvent.contextMenu(screen.getByRole('button', { name: /^Script B(?:\s|$)/ }));
     await fireEvent.click(screen.getByText('Delete'));
 
     await waitFor(() => expect(mockScriptRemove).toHaveBeenCalledWith('ws-b', 'script-b'));
@@ -517,7 +517,7 @@ describe('TerminalSidebar context menu Escape handling', () => {
   it('closes the context menu on Escape via the escape-layer stack', async () => {
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
-    await fireEvent.contextMenu(screen.getByText('build'));
+    await fireEvent.contextMenu(screen.getByRole('button', { name: /^build(?:\s|$)/ }));
     await waitFor(() => expect(screen.getByText('Edit')).toBeTruthy());
 
     const event = pressEscape();
