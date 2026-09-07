@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { runSaga, stdChannel } from 'redux-saga';
 import { fork } from 'typed-redux-saga';
+import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 
@@ -1505,3 +1508,68 @@ describe('browserTabRegistrySaga', () => {
   });
 });
 
+describe('browserTabRegistrySaga boundary', () => {
+  const sagaPath = resolve(import.meta.dirname, 'browser-tab-registry-saga.ts');
+  const sourceFile = ts.createSourceFile(
+    sagaPath,
+    readFileSync(sagaPath, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+
+  function enclosingStep(node: ts.Node): string {
+    for (let cur: ts.Node | undefined = node.parent; cur; cur = cur.parent) {
+      if (ts.isFunctionDeclaration(cur) && cur.name) return cur.name.text;
+    }
+    return '<module>';
+  }
+
+  function collect<T>(pick: (node: ts.Node) => T | undefined): T[] {
+    const found: T[] = [];
+    function visit(node: ts.Node) {
+      const picked = pick(node);
+      if (picked !== undefined) found.push(picked);
+      ts.forEachChild(node, visit);
+    }
+    visit(sourceFile);
+    return found;
+  }
+
+  function dispatched(call: ts.CallExpression): string {
+    const [action] = call.arguments;
+    if (action && ts.isCallExpression(action) && ts.isIdentifier(action.expression)) {
+      return action.expression.text;
+    }
+    return '(argument)';
+  }
+
+  it('reaches the daemon only through wire', () => {
+    const browserSites = collect((node) =>
+      ts.isPropertyAccessExpression(node) && node.getText() === 'appClient.browser'
+        ? enclosingStep(node)
+        : undefined,
+    );
+
+    expect(browserSites.length).toBeGreaterThan(0);
+    expect([...new Set(browserSites)]).toEqual(['wire']);
+  });
+
+  it('dispatches only through effect, the two fence openers and the placement transaction', () => {
+    const putSites = collect((node) =>
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'put'
+        ? `${enclosingStep(node)}:${dispatched(node)}`
+        : undefined,
+    );
+
+    expect(putSites.sort()).toEqual([
+      'effect:(argument)',
+      'loadWorkspace:registryLoading',
+      'materialiseRow:openHiddenTab',
+      'materialiseRow:openTabInRightmostColumnRequested',
+      'syncOnConnect:registryReset',
+      'unplaceRow:closeTab',
+    ]);
+  });
+});
