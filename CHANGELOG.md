@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.140.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.139.2...v2.140.0) (2026-09-07)
+
+
+### 🚀 Features
+
+* sandbox health endpoint and warm-up entries ([#2078](https://github.com/intent-hq/cloudlands-fe/issues/2078)) ([082becd](https://github.com/intent-hq/cloudlands-fe/commit/082becd13a0718abaacd17984d89284ad4a619fd))
+* show device icons across the UI ([#2135](https://github.com/intent-hq/cloudlands-fe/issues/2135)) ([14b3883](https://github.com/intent-hq/cloudlands-fe/commit/14b38830cc8d8d717e861bd556fa179b340904f0))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.34 ([#2237](https://github.com/intent-hq/cloudlands-fe/issues/2237)) ([b17bf56](https://github.com/intent-hq/cloudlands-fe/commit/b17bf567714f13ed58c362d80318a2083b57d295))
+* correct onboarding plug icon orientation and alignment ([#2182](https://github.com/intent-hq/cloudlands-fe/issues/2182)) ([11216e5](https://github.com/intent-hq/cloudlands-fe/commit/11216e50292f2bda5b349fc1318e3fb6beecc8ff))
+* stop redundant setActiveProvider dispatch racing model-selection-saga ([#2235](https://github.com/intent-hq/cloudlands-fe/issues/2235)) ([ef227ed](https://github.com/intent-hq/cloudlands-fe/commit/ef227ed4ed6c372eff1c19a3cdb84657c0bdd196))
+
 ## [2.139.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.139.1...v2.139.2) (2026-09-06)
 
 
