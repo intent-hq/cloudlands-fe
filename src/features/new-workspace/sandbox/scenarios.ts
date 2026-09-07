@@ -361,6 +361,8 @@ export const REQUIRED_SCENARIO_IDS = [
   'setup-collapsed-summary',
   'setup-branch-fetch-failure',
   'setup-readiness-missing',
+  'setup-readiness-irrelevant-missing',
+  'setup-readiness-required-pending',
   'setup-new-folder',
   'capability-checking',
   'capability-no-provider',
@@ -527,6 +529,29 @@ export const NEW_WORKSPACE_SCENARIOS: readonly Scenario[] = [
       }),
       presentation: providerPresentation('connect-provider'),
       contract: { control: 'provider', width: 1280 },
+    },
+  ),
+  scenario(
+    'setup-readiness-irrelevant-missing',
+    'entry',
+    'Setup readiness ignores an optional missing runtime',
+    githubSetupDraft,
+    restoredState(githubSetupDraft, { ...READY_CAPABILITIES, node: 'missing' }),
+    {
+      fixtures: setupFixtures(githubSetupDraft, connectedSetup),
+      presentation: { requiredCapabilities: ['provider'] },
+      contract: { control: 'start', width: 1280 },
+    },
+  ),
+  scenario(
+    'setup-readiness-required-pending',
+    'entry',
+    'Setup readiness waits for a required check',
+    publicRepoDraft,
+    restoredState(publicRepoDraft, { ...READY_CAPABILITIES, github: 'pending' }),
+    {
+      presentation: { requiredCapabilities: ['provider', 'github'] },
+      contract: { control: 'none', width: 1280 },
     },
   ),
   scenario(

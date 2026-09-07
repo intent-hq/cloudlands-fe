@@ -134,6 +134,21 @@ test('restored invalid source is explained and cannot start', async ({ mount }) 
   await expect(component.getByTestId('draft-start')).toBeDisabled();
 });
 
+test('readiness label and Start share the required-capability model', async ({ mount }) => {
+  const optionalMissing = await mount(ScenarioContractHost, {
+    props: { scenarioId: 'setup-readiness-irrelevant-missing' },
+  });
+  await expect(optionalMissing.getByTestId('readiness-section')).toContainText('Ready');
+  await expect(optionalMissing.getByTestId('draft-start')).toBeEnabled();
+  await optionalMissing.unmount();
+
+  const requiredPending = await mount(ScenarioContractHost, {
+    props: { scenarioId: 'setup-readiness-required-pending' },
+  });
+  await expect(requiredPending.getByTestId('readiness-section')).toContainText('Checking…');
+  await expect(requiredPending.getByTestId('draft-start')).toBeDisabled();
+});
+
 test('conflict actions remain readable and reachable in a narrow panel', async ({
   mount,
   page,

@@ -3,7 +3,6 @@ import {
   configWith,
   hasModifiedOptions,
   issueSelectionPatch,
-  readinessState,
   sourceWithBranch,
   sourceWithIsolation,
 } from './setup-sections';
@@ -54,18 +53,6 @@ describe('setup section draft mappings', () => {
     );
     expect(pullRequest?.intentText).toBe('Keep my typed request');
     expect(pullRequest?.contextLinks.at(-1)?.kind).toBe('pr');
-  });
-
-  it('classifies unknown readiness separately from missing capabilities', () => {
-    expect(
-      readinessState({ provider: 'unknown', git: 'ready', node: 'ready', github: 'ready' }),
-    ).toBe('checking');
-    expect(
-      readinessState({ provider: 'ready', git: 'ready', node: 'ready', github: 'ready' }),
-    ).toBe('ready');
-    expect(
-      readinessState({ provider: 'ready', git: 'missing', node: 'unknown', github: 'ready' }),
-    ).toBe('attention');
   });
 
   it('distinguishes initial-agent defaults from explicit option changes', () => {

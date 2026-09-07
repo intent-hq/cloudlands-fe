@@ -19,7 +19,7 @@
   import SourceCard, { type SourcePickerMode } from './SourceCard.svelte';
   import ProjectSetupPanel from './setup/ProjectSetupPanel.svelte';
   import { coordinatorStateFor, isProgressPhase, type NewWorkspacePresentation } from './types';
-  import { isSourceValid } from '../utils/source-validation';
+  import { getSetupStatus } from '../utils/setup-status';
 
   interface Props {
     state: ControllerState;
@@ -62,16 +62,17 @@
   const requiredCapabilities = $derived<Capability[]>(
     presentation.requiredCapabilities ?? ['provider'],
   );
-  const missingCapabilities = $derived(
-    requiredCapabilities.filter(
-      (capability) => controllerState.capabilities[capability] === 'missing',
-    ),
+  const setupStatus = $derived(
+    getSetupStatus({
+      source: controllerState.input.source,
+      capabilities: controllerState.capabilities,
+      requiredCapabilities,
+    }),
   );
   const canStart = $derived(
     (controllerState.phase === 'pristine' || controllerState.phase === 'editing') &&
       controllerState.draft !== null &&
-      missingCapabilities.length === 0 &&
-      isSourceValid(controllerState.input.source),
+      setupStatus.canStart,
   );
   const saveState = $derived.by(() => {
     if (controllerState.phase === 'offline') return 'unsaved';
@@ -166,7 +167,7 @@
     setSetupPanelExpanded(false);
   }
 
-  function setupStatus(): 'pending' | 'active' | 'done' | 'error' | undefined {
+  function setupStepStatus(): 'pending' | 'active' | 'done' | 'error' | undefined {
     switch (presentation.progress?.setup?.state) {
       case 'none':
         return undefined;
@@ -316,6 +317,7 @@
                     contextLinks={controllerState.input.contextLinks}
                     config={controllerState.input.config}
                     capabilities={controllerState.capabilities}
+                    {requiredCapabilities}
                     {coordinator}
                     host={presentation.host}
                     presentation={presentation.source}
@@ -344,7 +346,7 @@
                       repoStatus={workspaceStepStatus()}
                       branchStatus={workspaceStepStatus()}
                       agentStatus={workspaceStepStatus()}
-                      setupScriptStatus={setupStatus()}
+                      setupScriptStatus={setupStepStatus()}
                       {setupScriptContent}
                       skipIsolation={source?.kind === 'local' && source.isolation === 'in-place'}
                       {progressId}

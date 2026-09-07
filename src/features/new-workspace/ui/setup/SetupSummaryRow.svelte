@@ -3,31 +3,29 @@
   import { faChevronDown } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
   import type { DraftSource, WorkspaceDraftConfig } from '$shared/types/workspace-draft';
-  import type { ControllerState } from '../../controller';
+  import type { Capability, ControllerState } from '../../controller';
   import SourceValidationMessage from '../SourceValidationMessage.svelte';
   import { getSourceValidationError } from '../../utils/source-validation';
   import { selectOrchestratorSpecialist } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { projectDescription, projectName } from './project-section';
-  import {
-    defaultSetupScriptForSource,
-    hasModifiedOptions,
-    readinessState,
-  } from './setup-sections';
+  import { defaultSetupScriptForSource, hasModifiedOptions } from './setup-sections';
+  import { getSetupStatus } from '../../utils/setup-status';
 
   interface Props {
     source: DraftSource | null;
     config: WorkspaceDraftConfig;
     capabilities: ControllerState['capabilities'];
+    requiredCapabilities: Capability[];
     onExpand?: () => void;
   }
 
-  let { source, config, capabilities, onExpand }: Props = $props();
+  let { source, config, capabilities, requiredCapabilities, onExpand }: Props = $props();
   const orchestrator$ = selectOrchestratorSpecialist();
   const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
-  const readiness = $derived(readinessState(capabilities));
+  const setupStatus = $derived(getSetupStatus({ source, capabilities, requiredCapabilities }));
   const sourceError = $derived(getSourceValidationError(source));
   const optionsModified = $derived(
     hasModifiedOptions(source, config, {
@@ -37,9 +35,9 @@
     }),
   );
   const readinessLabel = $derived(
-    readiness === 'ready'
+    setupStatus.readiness === 'ready'
       ? m.newWorkspace_capabilities_ready_label()
-      : readiness === 'attention'
+      : setupStatus.readiness === 'attention'
         ? m.workspace_statusIcon_needsAttention_label()
         : m.newWorkspace_capabilities_pending_label(),
   );

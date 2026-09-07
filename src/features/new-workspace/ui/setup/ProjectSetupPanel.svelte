@@ -3,7 +3,7 @@
   import { faChevronUp } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
   import type { ContextLink, DraftSource, WorkspaceDraftConfig } from '$shared/types';
-  import type { ControllerState, DraftInput } from '../../controller';
+  import type { Capability, ControllerState, DraftInput } from '../../controller';
   import CapabilityStrip from '../CapabilityStrip.svelte';
   import CoordinatorPanel from '../CoordinatorPanel.svelte';
   import type { CoordinatorPresentation, SourcePresentation } from '../types';
@@ -12,7 +12,7 @@
   import ProjectSection from './ProjectSection.svelte';
   import SetupSummaryRow from './SetupSummaryRow.svelte';
   import StartingPointSection from './StartingPointSection.svelte';
-  import { readinessState } from './setup-sections';
+  import { getSetupStatus } from '../../utils/setup-status';
   import type { DaemonHostRepairTarget } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
   interface Props {
@@ -21,6 +21,7 @@
     contextLinks: ContextLink[];
     config: WorkspaceDraftConfig;
     capabilities: ControllerState['capabilities'];
+    requiredCapabilities: Capability[];
     coordinator: CoordinatorPresentation & { state: NonNullable<CoordinatorPresentation['state']> };
     host?: DaemonHostRepairTarget;
     presentation?: SourcePresentation;
@@ -44,6 +45,7 @@
     contextLinks,
     config,
     capabilities,
+    requiredCapabilities,
     coordinator,
     host,
     presentation,
@@ -60,7 +62,7 @@
     onProviderSelected,
     onRecheckCapabilities,
   }: Props = $props();
-  const readiness = $derived(readinessState(capabilities));
+  const setupStatus = $derived(getSetupStatus({ source, capabilities, requiredCapabilities }));
 </script>
 
 <section class="rounded-xl border border-border bg-background shadow-sm">
@@ -94,9 +96,9 @@
             {m.newWorkspace_setup_readiness_title()}
           </h3>
           <span class="type-caption text-muted-foreground">
-            {readiness === 'ready'
+            {setupStatus.readiness === 'ready'
               ? m.newWorkspace_capabilities_ready_label()
-              : readiness === 'attention'
+              : setupStatus.readiness === 'attention'
                 ? m.workspace_statusIcon_needsAttention_label()
                 : m.newWorkspace_capabilities_pending_label()}
           </span>
@@ -106,7 +108,13 @@
       </section>
     </div>
   {:else}
-    <SetupSummaryRow {source} {config} {capabilities} onExpand={() => onExpandedChange?.(true)} />
+    <SetupSummaryRow
+      {source}
+      {config}
+      {capabilities}
+      {requiredCapabilities}
+      onExpand={() => onExpandedChange?.(true)}
+    />
   {/if}
 
   <SourceCard

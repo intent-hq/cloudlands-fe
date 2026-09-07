@@ -12,8 +12,6 @@ interface IssueSelection {
   url?: string;
 }
 
-type ReadinessState = 'checking' | 'ready' | 'attention';
-
 interface WorkspaceOptionDefaults {
   setupScript?: string;
   specialist?: string | null;
@@ -74,14 +72,6 @@ export function issueSelectionPatch(
     contextLinks,
     intentText: input.intentText.trim() ? input.intentText : text,
   };
-}
-
-export function readinessState(
-  capabilities: Record<'provider' | 'git' | 'node' | 'github', string>,
-): ReadinessState {
-  if (Object.values(capabilities).includes('missing')) return 'attention';
-  if (capabilities.provider === 'ready') return 'ready';
-  return 'checking';
 }
 
 export function hasModifiedOptions(
