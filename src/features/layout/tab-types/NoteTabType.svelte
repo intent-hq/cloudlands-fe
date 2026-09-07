@@ -320,7 +320,14 @@
       <!-- Show onboarding when coordinator is writing initial spec -->
       <SpecWritingOnboarding agentId={initialSpecWriterAgentId} {workspaceId} />
     {:else if showRenderedPreview}
-      <RenderedNotePreview content={$note.content || ''} {workspaceId} />
+      <RenderedNotePreview
+        content={$note.content || ''}
+        {workspaceId}
+        noteId={tab.noteId}
+        initialScrollPosition={$scrollPosition}
+        onScrollPositionSave={(scrollTop: number) =>
+          appStore.dispatch(saveScrollPosition(tab.id, scrollTop))}
+      />
     {:else if $workspace}
       <NoteWithComments
         workspace={$workspace}

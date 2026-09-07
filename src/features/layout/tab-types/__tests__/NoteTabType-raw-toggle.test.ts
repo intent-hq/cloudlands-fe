@@ -126,7 +126,10 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectScrollPosition: () => mockState.scrollPosition,
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
-  saveScrollPosition: () => ({ type: 'tabState/saveScrollPosition' }),
+  saveScrollPosition: (tabId: string, scrollTop: number) => ({
+    type: 'tabState/saveScrollPosition',
+    payload: [tabId, scrollTop],
+  }),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
   closeTab: () => ({ type: 'panelLayout/closeTab' }),
@@ -149,6 +152,7 @@ describe('NoteTabType note view modes', () => {
     mockState.noteViewMode.set('editor');
     mockState.spellcheckEnabled.set(true);
     mockState.noteFontStyle.set('sans');
+    mockState.scrollPosition.set(0);
     mockState.notesState.set({ loading: false, initialized: true });
     mockState.note.set({ ...mockState.defaultNote });
     mockState.initialSpecWriteInProgress.set(false);
@@ -232,6 +236,74 @@ $$\frac{1}{2}$$
     mockState.noteViewMode.set('editor');
     await waitFor(() => expect(screen.queryByTestId('rendered-note-preview')).toBeNull());
     expect(screen.getByTestId('mock-component')).toBeTruthy();
+  });
+
+  it('saves preview scroll position to the owning tab when returning to the editor', async () => {
+    mockState.noteViewMode.set('preview');
+    render(NoteTabTypeHeaderHarness, {
+      props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
+    });
+
+    const preview = await screen.findByTestId('rendered-note-preview');
+    preview.scrollTop = 240;
+    mockState.noteViewMode.set('editor');
+
+    await waitFor(() =>
+      expect(mockState.dispatch).toHaveBeenCalledWith({
+        type: 'tabState/saveScrollPosition',
+        payload: ['tab-1', 240],
+      }),
+    );
+  });
+
+  it('keeps a pending restore through delayed preview layout and isolates note navigation', async () => {
+    mockState.noteViewMode.set('preview');
+    mockState.scrollPosition.set(310);
+    render(NoteTabTypeHeaderHarness, {
+      props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
+    });
+    await screen.findByTestId('rendered-note-preview');
+
+    window.dispatchEvent(
+      new CustomEvent('note:restore-scroll-position', {
+        detail: { noteId: 'note-2', scrollPosition: 600 },
+      }),
+    );
+    mockState.noteViewMode.set('editor');
+
+    await waitFor(() =>
+      expect(mockState.dispatch).toHaveBeenCalledWith({
+        type: 'tabState/saveScrollPosition',
+        payload: ['tab-1', 310],
+      }),
+    );
+    expect(mockState.dispatch).not.toHaveBeenCalledWith({
+      type: 'tabState/saveScrollPosition',
+      payload: ['tab-1', 600],
+    });
+  });
+
+  it('uses a matching navigation restore without leaving listeners after unmount', async () => {
+    mockState.noteViewMode.set('preview');
+    const view = render(NoteTabTypeHeaderHarness, {
+      props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
+    });
+    await screen.findByTestId('rendered-note-preview');
+
+    window.dispatchEvent(
+      new CustomEvent('note:restore-scroll-position', {
+        detail: { noteId: 'note-1', scrollPosition: 275 },
+      }),
+    );
+    view.unmount();
+    expect(mockState.dispatch).toHaveBeenCalledWith({
+      type: 'tabState/saveScrollPosition',
+      payload: ['tab-1', 275],
+    });
+
+    const callback = vi.fn();
+    window.dispatchEvent(new CustomEvent('note:save-scroll-position', { detail: { callback } }));
+    expect(callback).not.toHaveBeenCalled();
   });
 
   it.each([
