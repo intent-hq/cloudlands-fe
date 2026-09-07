@@ -20,6 +20,7 @@
     onToggleCollapse?: () => void;
     children?: any;
     actions?: any; // Snippet for custom actions
+    headingLevel?: 2 | 3 | 4 | 5 | 6;
   }
 
   let {
@@ -36,6 +37,7 @@
     onToggleCollapse,
     children,
     actions,
+    headingLevel = 3,
     ...restProps
   }: Props = $props();
 
@@ -66,7 +68,11 @@
           {#if icon}
             <Fa {icon} size="12" class="text-muted-foreground/50" />
           {/if}
-          <h6 class="type-caption flex-1 text-left font-medium">{title}</h6>
+          <span
+            role="heading"
+            aria-level={headingLevel}
+            class="type-caption flex-1 text-left font-medium">{title}</span
+          >
           <Fa
             icon={faChevronDown}
             size="13"
@@ -103,8 +109,10 @@
           titleClass,
         )}
       >
-        <span class="a11y-ignore type-caption flex-1 text-left font-medium text-muted-foreground"
-          >{title}</span
+        <span
+          role="heading"
+          aria-level={headingLevel}
+          class="type-caption flex-1 text-left font-medium text-muted-foreground">{title}</span
         >
 
         <div class="flex items-center gap-1">

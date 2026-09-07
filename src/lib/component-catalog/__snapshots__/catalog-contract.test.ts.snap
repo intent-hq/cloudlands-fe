@@ -6707,6 +6707,175 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:label:labe
 }
 `;
 
+exports[`catalog DOM, token, and accessibility contracts > 'primitive:list:editorial-list' 1`] = `
+{
+  "declaredStates": [
+    "default",
+    "selected",
+    "active",
+    "disabled",
+    "loading",
+    "metadata",
+    "actions",
+    "keyboard-focus",
+    "proximity-hover",
+    "collapsed",
+    "empty-message",
+    "long-content",
+    "compact",
+    "zoom-200",
+    "reduced-motion",
+    "light",
+    "dark",
+  ],
+  "dom": "<body>
+  <div>
+    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+      <header class="border-b border-border entry-header svelte-<scope>">
+        <div class="min-w-0">
+          <div class="flex flex-wrap gap-2 items-baseline">
+            <p class="font-medium text-muted-foreground text-xs tracking-wide uppercase">
+              "Component focus"
+            <h1 class="font-medium mt-1 text-3xl tracking-tight">
+              "List"
+            <span class="bg-muted border border-border px-2 py-0.5 rounded-full text-muted-foreground text-xs">
+              "pattern"
+          <p class="leading-relaxed max-w-3xl mt-1 text-muted-foreground text-xs">
+            "Composable list building blocks for consistent product interfaces."
+        <div class="flex gap-2 items-center shrink-0">
+          <details class="entry-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Source"
+            <div class="inspector-popover svelte-<scope>">
+              <p class="text-foreground">
+                "Canonical source"
+              <code class="block break-all mt-1">
+                "src/lib/components/ui/list/index.ts"
+      <div class="fixture-grid svelte-<scope>">
+        <article class="fixture-card svelte-<scope>" data-catalog-fixture="editorial-list">
+          <div class="fixture-heading svelte-<scope>">
+            <h2 class="font-medium text-sm">
+              "Editorial list states"
+            <span class="bg-muted border border-border px-2 py-0.5 rounded-full text-muted-foreground text-xs">
+              "both"
+          <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="editorial-list" data-catalog-preview="list">
+            <div class="gap-4 grid grid-cols-1 max-w-2xl min-w-0 overflow-hidden w-full" data-catalog-renderer-fixture="editorial-list">
+              <div data-catalog-rendered-state="default selected active disabled loading metadata actions keyboard-focus proximity-hover light dark compact zoom-200 reduced-motion">
+                <div class="flex flex-col gap-px min-w-0 overflow-hidden p-px text-foreground" data-interactive="true" data-slot="list-container">
+                  <div class="flex flex-col min-w-0" data-slot="list-section">
+                    <div class="flex font-medium gap-2 group items-center justify-between mb-1 min-h-7 px-2 py-1 text-muted-foreground type-caption">
+                      <span aria-level="3" class="flex-1 font-medium text-left text-muted-foreground type-caption" role="heading">
+                        "Recent work"
+                      <div class="flex gap-1 items-center">
+                    <div class="flex flex-col items-stretch min-w-0 text-left" data-slot="list-section-content">
+                      <div class="grid group/list-item min-w-0 relative" data-slot="list-item-row">
+                        <div>
+                          <button aria-labelledby="c<id>-content" class="!px-0 !py-0 [&_[data-slot=button-content]]:justify-start [&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-selected border border-transparent col-start-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 font-inherit font-medium gap-1.5 group group/button h-full isolate items-center justify-start min-h-8 min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-md row-start-1 shrink-0 text-foreground text-left transition-colors type-caption w-full whitespace-nowrap" data-selected="true" data-slot="list-item" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                        <div class="col-start-1 flex gap-2 items-center min-h-8 pointer-events-none px-2 py-1.5 relative row-start-1 w-full">
+                          <div class="flex flex-1 gap-1 items-baseline min-w-0 text-left" id="c<id>-content">
+                            <div class="font-medium leading-5 max-w-full min-w-0 shrink truncate type-body">
+                              "Selected item"
+                            <div class="flex-1 min-w-0 text-muted-foreground truncate type-caption">
+                              "Supporting metadata"
+                      <div class="grid group/list-item min-w-0 relative" data-slot="list-item-row">
+                        <div>
+                          <button aria-current="true" aria-labelledby="c<id>-content" class="!px-0 !py-0 [&_[data-slot=button-content]]:justify-start [&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-active border border-transparent col-start-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 font-inherit font-medium gap-1.5 group group/button h-full isolate items-center justify-start min-h-8 min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-md row-start-1 shrink-0 text-foreground text-left transition-colors type-caption w-full whitespace-nowrap" data-active="true" data-slot="list-item" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                        <div class="col-start-1 flex gap-2 items-center min-h-8 pointer-events-none px-2 py-1.5 relative row-start-1 w-full">
+                          <div class="flex flex-1 gap-1 items-baseline min-w-0 text-left" id="c<id>-content">
+                            <div class="font-medium leading-5 max-w-full min-w-0 shrink truncate type-body">
+                              "Active item"
+                          <div class="flex gap-1 items-center motion-reduce:transition-none pointer-events-auto relative shrink-0 transition-opacity z-10">
+                            <span class="inline-flex" id="bits-<id>" tabindex="-1">
+                              <div>
+                                <button aria-label="More actions" class="!px-0 !py-0 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-transparent cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast font-inherit font-medium gap-1.5 group/button h-auto hover:bg-hover hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none p-1 relative rounded-sm shrink-0 size-(--control-height-compact) text-muted-foreground transition-colors type-caption w-auto whitespace-nowrap" data-delay-duration="0" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
+                                  <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                      <svg aria-hidden="true" data-icon="ellipsis" data-weight="bold" role="img">
+                                        <rect>
+                                        <path>
+                      <div class="grid group/list-item min-w-0 relative" data-slot="list-item-row">
+                        <div>
+                          <button aria-labelledby="c<id>-content" class="!px-0 !py-0 [&_[data-slot=button-content]]:justify-start [&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-transparent col-start-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 font-inherit font-medium gap-1.5 group group/button h-full isolate items-center justify-start min-h-8 min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-md row-start-1 shrink-0 text-foreground text-left transition-colors type-caption w-full whitespace-nowrap" data-slot="list-item" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                        <div class="col-start-1 flex gap-2 items-center min-h-8 pointer-events-none px-2 py-1.5 relative row-start-1 w-full">
+                          <div class="flex items-center justify-center shrink-0 w-3.5">
+                            <svg aria-label="Loading" class="intent-mark-loader svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                              <g aria-hidden="true" data-mark="">
+                                <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
+                                <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
+                                <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
+                                <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
+                                <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                          <div class="flex flex-1 gap-1 items-baseline min-w-0 text-left" id="c<id>-content">
+                            <div class="font-medium leading-5 max-w-full min-w-0 shrink truncate type-body">
+                              "Loading item"
+                      <div class="grid group/list-item min-w-0 relative" data-slot="list-item-row">
+                        <div>
+                          <button aria-labelledby="c<id>-content" class="!px-0 !py-0 [&_[data-slot=button-content]]:justify-start [&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-transparent col-start-1 cursor-not-allowed disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 font-inherit font-medium gap-1.5 group group/button h-full isolate items-center justify-start min-h-8 min-w-0 motion-reduce:transition-none opacity-50 pointer-events-none px-2 py-1.5 relative rounded-md row-start-1 shrink-0 text-foreground text-left transition-colors type-caption w-full whitespace-nowrap" data-slot="list-item" disabled="" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                        <div class="col-start-1 flex gap-2 items-center min-h-8 pointer-events-none px-2 py-1.5 relative row-start-1 w-full">
+                          <div class="flex flex-1 gap-1 items-baseline min-w-0 text-left" id="c<id>-content">
+                            <div class="font-medium leading-5 max-w-full min-w-0 shrink truncate type-body">
+                              "Disabled item"
+              <div data-catalog-rendered-state="collapsed">
+                <div class="flex flex-col gap-px min-w-0 overflow-hidden p-1 text-foreground" data-slot="list-container">
+                  <div class="flex flex-col min-w-0" data-slot="list-section">
+                    <div class="border border-transparent duration-spring-fast ease-spring-fast flex font-medium group hover:bg-hover hover:text-foreground items-center min-h-7 motion-reduce:transition-none rounded-md text-left text-muted-foreground transition-colors type-caption">
+                      <div>
+                        <button aria-expanded="false" class="!px-0 !py-0 [&_[data-slot=button-content]]:justify-start [&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-transparent cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex flex-1 focus-visible:-outline-offset-1 font-inherit font-medium gap-1.5 group/button h-(--control-height-medium) isolate items-center justify-start min-h-7 min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-md text-inherit text-left transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                          <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                          <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                            <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                              <span aria-level="3" class="flex-1 font-medium text-left type-caption" role="heading">
+                                "Collapsed section"
+                              <svg aria-hidden="true" class="-rotate-90 duration-spring-moderate ease-spring-moderate motion-reduce:transition-none text-muted-foreground/50 transition-transform" data-icon="chevron-down" data-weight="bold" role="img">
+                                <rect>
+                                <path>
+                      <div class="flex gap-1 items-center pr-1 shrink-0">
+              <div data-catalog-rendered-state="empty-message">
+                <div class="flex items-center justify-center min-h-28 px-4 py-8 text-center text-muted-foreground type-body" data-slot="list-empty">
+                  <p>
+                    "No catalog items"
+              <div data-catalog-rendered-state="long-content">
+                <div class="flex flex-col gap-px min-w-0 overflow-hidden p-1 text-foreground" data-slot="list-container">
+                  <div class="grid group/list-item min-w-0 relative" data-slot="list-item-row">
+                    <div>
+                      <button aria-labelledby="c<id>-content" class="!px-0 !py-0 [&_[data-slot=button-content]]:justify-start [&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-transparent col-start-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 font-inherit font-medium gap-1.5 group group-hover/list-item:bg-hover group/button h-full isolate items-center justify-start min-h-8 min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-md row-start-1 shrink-0 text-foreground text-left transition-colors type-caption w-full whitespace-nowrap" data-slot="list-item" type="button">
+                        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                    <div class="col-start-1 flex gap-2 items-center min-h-8 pointer-events-none px-2 py-1.5 relative row-start-1 w-full">
+                      <div class="flex flex-1 gap-1 items-baseline min-w-0 text-left" id="c<id>-content">
+                        <div class="font-medium leading-5 max-w-full min-w-0 shrink truncate type-body">
+                          "A deliberately long piece of editorial content that remains readable without overflowing a compact catalog viewport."
+          <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Fixture details"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "States"
+                <dd class="mt-1 text-foreground">
+                  "default, selected, active, disabled, loading, metadata, actions, keyboard-focus, proximity-hover, collapsed, empty-message, long-content, compact, zoom-200, reduced-motion, light, dark"
+              <div>
+                <dt>
+                  "Themes"
+                <dd class="mt-1 text-foreground">
+                  "light, dark"",
+}
+`;
+
 exports[`catalog DOM, token, and accessibility contracts > 'primitive:menu:menu-command-states' 1`] = `
 {
   "declaredStates": [

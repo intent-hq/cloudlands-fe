@@ -24,7 +24,7 @@ type ContractCase = {
 
 const cases: ContractCase[] = [
   ...canonicalComponentManifest
-    .filter(({ category, id }) => category === 'primitive' || id === 'toast')
+    .filter(({ category, id }) => category === 'primitive' || id === 'toast' || id === 'list')
     .flatMap(({ id, fixtures }) =>
       fixtures.map((fixture) => ({
         key: `primitive:${id}:${fixture.id}`,

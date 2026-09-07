@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
+import { faEllipsis } from '@fortawesome/free-solid-svg-icons';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseUiComponentMetadata } from '../component-metadata';
 import ListHarness from './ListHarness.svelte';
@@ -29,6 +30,7 @@ describe('List', () => {
     const list = container.querySelector('[data-slot="list-container"]');
     const selected = getByRole('button', { name: /A long list title/ });
     const active = getByRole('button', { name: /Active row/ });
+    const selectedRow = selected.closest('[data-slot="list-item-row"]');
     expect(list?.className).toContain('gap-px');
     expect(selected.className).toContain('rounded-md');
     expect(selected.className).toContain('border-transparent');
@@ -43,8 +45,8 @@ describe('List', () => {
     expect(selected.style.paddingRight).toBe('8px');
     expect(selected.style.marginLeft).toBe('');
     expect(selected.style.width).toBe('');
-    expect(selected.querySelector('.type-body')).not.toBeNull();
-    expect(selected.querySelector('.type-caption')).not.toBeNull();
+    expect(selectedRow?.querySelector('.type-body')).not.toBeNull();
+    expect(selectedRow?.querySelector('.type-caption')).not.toBeNull();
     selected.focus();
     await fireEvent.keyDown(selected, { key: 'Enter' });
     expect(document.activeElement).toBe(selected);
@@ -87,6 +89,7 @@ describe('List', () => {
   it('preserves collapsible keyboard semantics and renders empty content as plain text', async () => {
     const { container, getByRole } = render(ListHarness);
     const toggle = getByRole('button', { name: 'Recent work' });
+    expect(getByRole('heading', { name: 'Recent work', level: 3 })).not.toBeNull();
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(toggle.className).toContain('[&_[data-slot=button-content]]:w-full');
     await fireEvent.click(toggle);
@@ -100,14 +103,41 @@ describe('List', () => {
     expect(empty?.querySelector('svg')).toBeNull();
   });
 
+  it('keeps row actions named and separate from the primary row control', async () => {
+    const onPrimary = vi.fn();
+    const onAction = vi.fn();
+    const { container, getAllByRole, getByRole } = render(ListItem, {
+      props: {
+        title: 'Accessible row',
+        onclick: onPrimary,
+        actions: [{ icon: faEllipsis, label: 'More actions', onClick: onAction }],
+      },
+    });
+    const primary = getByRole('button', { name: 'Accessible row' });
+    const action = getByRole('button', { name: 'More actions' });
+
+    expect(getAllByRole('button')).toEqual([primary, action]);
+    expect(primary.contains(action)).toBe(false);
+    await fireEvent.click(action);
+    expect(onAction).toHaveBeenCalledOnce();
+    expect(onPrimary).not.toHaveBeenCalled();
+    await fireEvent.click(primary);
+    expect(onPrimary).toHaveBeenCalledOnce();
+    expect(
+      container.querySelector('[data-slot="list-item"]')?.getAttribute('data-selected'),
+    ).toBeNull();
+  });
+
   it('uses the shared intent mark for a loading row and keeps mixed-size text baseline aligned', () => {
     const { container, getByRole } = render(ListHarness);
     const loading = getByRole('button', { name: /Loading row/ });
     const selected = getByRole('button', { name: /A long list title/ });
-    const loader = loading.querySelector('[data-slot="intent-mark-loader"]');
+    const loadingRow = loading.closest('[data-slot="list-item-row"]');
+    const selectedRow = selected.closest('[data-slot="list-item-row"]');
+    const loader = loadingRow?.querySelector('[data-slot="intent-mark-loader"]');
     expect(loader).not.toBeNull();
     expect(loader?.getAttribute('width')).toBe('14');
-    expect(selected.querySelector('.items-baseline')).not.toBeNull();
+    expect(selectedRow?.querySelector('.items-baseline')).not.toBeNull();
     expect(container.querySelector('[data-slot="list-section-content"]')?.className).toContain(
       'text-left',
     );
