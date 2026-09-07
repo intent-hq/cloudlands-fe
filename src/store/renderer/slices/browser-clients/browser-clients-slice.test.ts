@@ -27,6 +27,7 @@ import {
   selectLiveClients,
   selectLiveClientsLoaded,
   selectOwnClientId,
+  selectTrackedBrowserClientWorkspaceIds,
   selectWorkspaceBrowserClient,
   selectWorkspaceBrowserTabs,
   selectWorkspaceBrowserTabsRevision,
@@ -100,6 +101,21 @@ describe('browserClientsReducer', () => {
     const cleared = { source: 'default' as const, resolved: null };
     state = browserClientsReducer(state, workspaceBrowserClientReceived('ws-1', cleared));
     expect(selectWorkspaceBrowserClient.select(asState(state), 'ws-1')).toEqual(cleared);
+  });
+
+  it('tracks the workspaces with a live entry until they are torn down', () => {
+    expect(selectTrackedBrowserClientWorkspaceIds.select(asState(initialState))).toEqual([]);
+
+    const resolved = { source: 'default' as const, resolved: { clientId: 'cli-desk' } };
+    let state = browserClientsReducer(
+      initialState,
+      workspaceBrowserClientReceived('ws-1', resolved),
+    );
+    state = browserClientsReducer(state, workspaceBrowserClientReceived('ws-2', resolved));
+    expect(selectTrackedBrowserClientWorkspaceIds.select(asState(state))).toEqual(['ws-1', 'ws-2']);
+
+    state = browserClientsReducer(state, workspaceUnmounted('ws-2'));
+    expect(selectTrackedBrowserClientWorkspaceIds.select(asState(state))).toEqual(['ws-1']);
   });
 
   it('derives the driving-client indicator input from the live list and the workspace pin', () => {

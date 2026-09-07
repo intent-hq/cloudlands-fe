@@ -20,9 +20,12 @@ vi.mock('$lib/client', () => ({
 }));
 
 import type { LiveClient } from '$shared/types/browser-clients';
+import { resolveDrivingClientView } from '$lib/components/workspace/driving-indicator';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreAction } from '@augmentcode/themis/utils/store/create-action';
+import type { StoreState } from '../../../types';
 import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
+import { selectWorkspaceDrivingClient } from '../browser-clients-selectors';
 import {
   workspaceDeleted,
   workspaceMounted,
@@ -90,7 +93,16 @@ function startWithReducer() {
     channel.put(action);
   };
   const task = runSaga({ channel, dispatch, getState: () => state }, browserClientsSaga);
-  return { dispatch, task, entry: (wsId: string) => state.browserClients.byWorkspaceId[wsId] };
+  return {
+    dispatch,
+    task,
+    entry: (wsId: string) => state.browserClients.byWorkspaceId[wsId],
+    /** The sidebar indicator's view for `wsId`, resolved from live state. */
+    sidebar: (wsId: string) =>
+      resolveDrivingClientView(
+        selectWorkspaceDrivingClient.select(state as unknown as StoreState, wsId),
+      ),
+  };
 }
 
 describe('browserClientsSaga', () => {
@@ -168,6 +180,78 @@ describe('browserClientsSaga', () => {
     expect(mocks.list).toHaveBeenCalledTimes(1);
     expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1'], ['ws-2']]);
     expect(entry('ws-2').browserClient).toEqual(browserClient);
+  });
+
+  describe('presence changes (client:connected / client:disconnected → refreshLiveClientsRequested)', () => {
+    const laptop: LiveClient = { ...desk, clientId: 'cli-laptop', name: 'laptop' };
+    const pinnedLaptop = { source: 'workspace', clientId: 'cli-laptop', resolved: laptop };
+    const pinnedLaptopOffline = { source: 'workspace', clientId: 'cli-laptop', resolved: null };
+
+    it('re-reads the browser client of mounted workspaces only, not on the initial load', async () => {
+      mocks.list.mockResolvedValue([desk, laptop]);
+      mocks.getBrowserClient.mockResolvedValue(pinnedLaptop);
+      const { dispatch, task } = startWithReducer();
+
+      dispatch(workspaceMounted('ws-1'));
+      await settle();
+      expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1']]);
+
+      dispatch(workspaceMounted('ws-2'));
+      await settle();
+      dispatch(workspaceUnmounted('ws-2'));
+      await settle();
+      mocks.getBrowserClient.mockClear();
+
+      dispatch(refreshLiveClientsRequested());
+      await settle();
+      task.cancel();
+
+      expect(mocks.list).toHaveBeenCalledTimes(2);
+      expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1']]);
+    });
+
+    it('a pinned client disconnecting and reconnecting moves the sidebar offline and back without a remount', async () => {
+      mocks.list.mockResolvedValue([desk, laptop]);
+      mocks.getBrowserClient.mockResolvedValue(pinnedLaptop);
+      const { dispatch, task, sidebar } = startWithReducer();
+
+      dispatch(workspaceMounted('ws-1'));
+      await settle();
+      expect(sidebar('ws-1')).toMatchObject({ mode: 'elsewhere', canSwitchHere: true });
+
+      mocks.list.mockResolvedValue([desk]);
+      mocks.getBrowserClient.mockResolvedValue(pinnedLaptopOffline);
+      dispatch(refreshLiveClientsRequested());
+      await settle();
+      expect(sidebar('ws-1')).toMatchObject({ mode: 'offline', canSwitchHere: true });
+
+      mocks.list.mockResolvedValue([desk, laptop]);
+      mocks.getBrowserClient.mockResolvedValue(pinnedLaptop);
+      dispatch(refreshLiveClientsRequested());
+      await settle();
+      task.cancel();
+
+      expect(sidebar('ws-1')).toMatchObject({ mode: 'elsewhere', canSwitchHere: true });
+    });
+
+    it('an unpinned default falling through to this client is reflected after the disconnect', async () => {
+      mocks.list.mockResolvedValue([desk, laptop]);
+      mocks.getBrowserClient.mockResolvedValue({ source: 'default', resolved: laptop });
+      const { dispatch, task, sidebar, entry } = startWithReducer();
+
+      dispatch(workspaceMounted('ws-1'));
+      await settle();
+      expect(sidebar('ws-1')).toMatchObject({ mode: 'elsewhere' });
+
+      mocks.list.mockResolvedValue([desk]);
+      mocks.getBrowserClient.mockResolvedValue({ source: 'default', resolved: desk });
+      dispatch(refreshLiveClientsRequested());
+      await settle();
+      task.cancel();
+
+      expect(entry('ws-1').browserClient).toEqual({ source: 'default', resolved: desk });
+      expect(sidebar('ws-1')).toBeNull();
+    });
   });
 
   it('reads workspace.getBrowserClient per workspace and stores the result', async () => {

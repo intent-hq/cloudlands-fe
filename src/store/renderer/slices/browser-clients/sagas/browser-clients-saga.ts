@@ -5,7 +5,10 @@
  * and `client.list` on hydrate, single-flight coalesced `client.list`
  * re-reads on `refreshLiveClientsRequested` (the bridge dispatches it for
  * every `client:connected` / `client:disconnected`, so a reconnect burst
- * collapses into one in-flight read plus at most one trailing read), and the
+ * collapses into one in-flight read plus at most one trailing read; each
+ * such presence refresh also re-reads the mounted workspaces' daemon
+ * browser-client resolution, since the pin or default may now resolve
+ * differently), and the
  * per-workspace `workspace.getBrowserClient` / `setBrowserClient` /
  * `browser.listTabs` reads keyed by workspace (latest wins per workspace, so
  * a slow earlier pin write cannot overwrite a later daemon echo). A workspace
@@ -33,6 +36,7 @@ import {
 import {
   selectLiveClientsLoaded,
   selectOwnClientId,
+  selectTrackedBrowserClientWorkspaceIds,
   selectWorkspaceBrowserTabsRevision,
 } from '../browser-clients-selectors';
 import {
@@ -52,10 +56,23 @@ const LIVE_CLIENTS_CONTEXT = 'live-clients';
 /** Re-reads allowed when `browser:tab-*` patches keep landing mid-`browser.listTabs`. */
 const MAX_TABS_READ_ATTEMPTS = 3;
 
+/**
+ * Re-reads `client.list`. A presence change (any read after the initial
+ * load) can also change what the daemon resolves for a workspace — a pinned
+ * client going offline, or the default falling through to another client —
+ * so the mounted workspaces' `workspace.getBrowserClient` is re-read too.
+ * Only tracked (mounted) workspaces are re-read, never every stored one, and
+ * each re-read keeps the per-workspace latest-wins and teardown protection.
+ */
 function* readLiveClients(): SagaGenerator<void> {
   try {
+    const presenceChange = yield* selectLiveClientsLoaded.effect();
     const clients = yield* call([appClient.clients, appClient.clients.list]);
     yield* put(liveClientsReceived(clients));
+    if (!presenceChange) return;
+    for (const wsId of yield* selectTrackedBrowserClientWorkspaceIds.effect()) {
+      yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+    }
   } catch (error) {
     logger.warn('client.list failed', { error: error instanceof Error ? error.message : error });
   }
