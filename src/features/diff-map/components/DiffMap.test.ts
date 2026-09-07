@@ -199,7 +199,8 @@ describe('DiffMap', () => {
     const firstGroup = container.querySelector<HTMLElement>(
       `[data-group-id="${typicalDiffMapFixture.document.groups[0].id}"]`,
     );
-    const groupRows = rows(firstGroup!);
+    if (!firstGroup) throw new Error('Expected first diff map group');
+    const groupRows = rows(firstGroup);
     const columnBoundary = groupRows.findIndex(
       (row, index) => index > 0 && row.style.left !== groupRows[index - 1].style.left,
     );
@@ -215,7 +216,8 @@ describe('DiffMap', () => {
     await waitFor(() => expect(document.activeElement).toBe(groupRows[columnBoundary - 1]));
 
     const allRows = rows(container);
-    const lastInFirstGroup = groupRows.at(-1)!;
+    const lastInFirstGroup = groupRows.at(-1);
+    if (!lastInFirstGroup) throw new Error('Expected a row in the first diff map group');
     const firstInSecondGroup = allRows[allRows.indexOf(lastInFirstGroup) + 1];
     lastInFirstGroup.focus();
     await fireEvent.keyDown(lastInFirstGroup, { key: 'ArrowDown' });
@@ -239,11 +241,15 @@ describe('DiffMap', () => {
 
     await waitFor(() => expect(rows(container)).toHaveLength(3));
     const viewedRow = rows(container).find((row) => row.dataset.fileId === first);
-    expect(viewedRow?.dataset.viewedState).toBe('viewed');
-    expect(viewedRow?.getAttribute('aria-label')?.toLocaleLowerCase()).toContain('modified');
-    expect(viewedRow?.getAttribute('aria-label')).toContain('Viewed');
-    expect(getComputedStyle(viewedRow!.querySelector('.status')!).gridColumn).toBe('1');
-    expect(getComputedStyle(viewedRow!.querySelector('.overlay')!).gridColumn).toBe('3');
+    if (!viewedRow) throw new Error('Expected viewed diff map row');
+    const status = viewedRow.querySelector('.status');
+    const overlay = viewedRow.querySelector('.overlay');
+    if (!status || !overlay) throw new Error('Expected row status and overlay');
+    expect(viewedRow.dataset.viewedState).toBe('viewed');
+    expect(viewedRow.getAttribute('aria-label')?.toLocaleLowerCase()).toContain('modified');
+    expect(viewedRow.getAttribute('aria-label')).toContain('Viewed');
+    expect(getComputedStyle(status).gridColumn).toBe('1');
+    expect(getComputedStyle(overlay).gridColumn).toBe('3');
     expect(rows(container).find((row) => row.dataset.fileId === second)?.dataset.viewedState).toBe(
       'changed',
     );
@@ -268,8 +274,9 @@ describe('DiffMap', () => {
       expect(countElement?.textContent).toBe(count);
       const matching = rows(container).find((row) => row.dataset.fileId?.includes('format.ts'));
       const dimmed = rows(container).find((row) => row.dataset.fileId?.includes('index.ts'));
-      expect(getComputedStyle(matching!).opacity).toBe('1');
-      expect(getComputedStyle(dimmed!).opacity).toBe('0.28');
+      if (!matching || !dimmed) throw new Error('Expected matching and dimmed rows');
+      expect(getComputedStyle(matching).opacity).toBe('1');
+      expect(getComputedStyle(dimmed).opacity).toBe('0.28');
     });
   });
 
@@ -367,13 +374,14 @@ describe('DiffMap', () => {
     });
     await waitFor(() => expect(rows(container)).toHaveLength(10));
     const block = container.querySelector('[data-group-id]');
+    if (!block) throw new Error('Expected diff map block');
     const existingRows = rows(container);
 
     await fireEvent.click(screen.getByRole('button', { name: '+15 more' }));
     await waitFor(() => expect(rows(container)).toHaveLength(25));
     await flushLayout();
     const targets = new Set(animate.mock.instances);
-    expect(targets.has(block!)).toBe(true);
+    expect(targets.has(block)).toBe(true);
     expect(existingRows.every((row) => targets.has(row))).toBe(true);
     expect(targets.size).toBe(existingRows.length + 1);
   });

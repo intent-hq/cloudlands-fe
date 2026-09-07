@@ -42,7 +42,9 @@ test('reflows every block while narrowing and suppresses FLIP under reduced moti
   }
 
   const geometry = await component.evaluate((root) => {
-    const viewport = root.querySelector<HTMLElement>('.viewport')!.getBoundingClientRect();
+    const viewportElement = root.querySelector<HTMLElement>('.viewport');
+    if (!viewportElement) throw new Error('Expected diff map viewport');
+    const viewport = viewportElement.getBoundingClientRect();
     const blocks = [...root.querySelectorAll<HTMLElement>('[data-group-id]')].map((block) => {
       const bounds = block.getBoundingClientRect();
       return { left: bounds.left, right: bounds.right };
@@ -97,9 +99,10 @@ test('keeps the overflow rail inside the viewport after scrolling', async ({ mou
   expect(viewportBounds).not.toBeNull();
   expect(initialRail).not.toBeNull();
   expect(railBounds).not.toBeNull();
-  expect(railBounds!.y).toBeCloseTo(initialRail!.y, 0);
-  expect(railBounds!.y).toBeGreaterThanOrEqual(viewportBounds!.y);
-  expect(railBounds!.y + railBounds!.height).toBeLessThanOrEqual(
-    viewportBounds!.y + viewportBounds!.height,
+  if (!viewportBounds || !initialRail || !railBounds) throw new Error('Expected rail geometry');
+  expect(railBounds.y).toBeCloseTo(initialRail.y, 0);
+  expect(railBounds.y).toBeGreaterThanOrEqual(viewportBounds.y);
+  expect(railBounds.y + railBounds.height).toBeLessThanOrEqual(
+    viewportBounds.y + viewportBounds.height,
   );
 });
