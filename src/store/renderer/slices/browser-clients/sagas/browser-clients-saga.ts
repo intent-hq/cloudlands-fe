@@ -8,16 +8,25 @@
  * collapses into one in-flight read plus at most one trailing read), and the
  * per-workspace `workspace.getBrowserClient` / `setBrowserClient` /
  * `browser.listTabs` reads keyed by workspace (latest wins per workspace, so
- * a slow earlier pin write cannot overwrite a later daemon echo).
+ * a slow earlier pin write cannot overwrite a later daemon echo). Every
+ * per-workspace call races the workspace's teardown (`workspaceUnmounted` /
+ * `workspaceDeleted` / `removeWorkspaceEntity`): a reply that lands after the
+ * reducer cleared the entry is dropped, so it can neither resurrect a deleted
+ * workspace nor leak into a later remount.
  */
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
-import { call, put, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, race, take, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   takeLatestByWorkspace,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
+import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
+import {
+  workspaceDeleted,
+  workspaceUnmounted,
+} from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { selectWorkspaceBrowserTabsRevision } from '../browser-clients-selectors';
 import {
   fetchWorkspaceBrowserClientRequested,
@@ -61,16 +70,39 @@ function* hydrate(): SagaGenerator<void> {
   yield* put(refreshLiveClientsRequested());
 }
 
+function matchesWorkspaceCleanup(wsId: string) {
+  return (action: { type: string; payload?: unknown }) =>
+    (action.type === workspaceUnmounted.type ||
+      action.type === workspaceDeleted.type ||
+      action.type === removeWorkspaceEntity.type) &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === wsId;
+}
+
+/**
+ * Awaits `request` unless the workspace is torn down first. `{ cleanup: true }`
+ * means the reply (if it ever lands) belongs to a cleared entry and must be
+ * discarded; the daemon still applies the call.
+ */
+function* untilWorkspaceCleanup<T>(
+  wsId: string,
+  request: SagaGenerator<T>,
+): SagaGenerator<{ result: T; cleanup?: undefined } | { result?: undefined; cleanup: true }> {
+  const outcome = yield* race({ result: request, cleanup: take(matchesWorkspaceCleanup(wsId)) });
+  return outcome.cleanup ? { cleanup: true } : { result: outcome.result as T };
+}
+
 function* readWorkspaceBrowserClient(
   action: ReturnType<typeof fetchWorkspaceBrowserClientRequested>,
 ): SagaGenerator<void> {
   const [wsId] = action.payload;
   try {
-    const browserClient = yield* call(
-      [appClient.workspaces, appClient.workspaces.getBrowserClient],
+    const read = yield* untilWorkspaceCleanup(
       wsId,
+      call([appClient.workspaces, appClient.workspaces.getBrowserClient], wsId),
     );
-    yield* put(workspaceBrowserClientReceived(wsId, browserClient));
+    if (read.cleanup) return;
+    yield* put(workspaceBrowserClientReceived(wsId, read.result));
   } catch (error) {
     logger.warn('workspace.getBrowserClient failed', {
       wsId,
@@ -84,12 +116,12 @@ function* writeWorkspaceBrowserClient(
 ): SagaGenerator<void> {
   const [wsId, clientId] = action.payload;
   try {
-    const browserClient = yield* call(
-      [appClient.workspaces, appClient.workspaces.setBrowserClient],
+    const write = yield* untilWorkspaceCleanup(
       wsId,
-      clientId,
+      call([appClient.workspaces, appClient.workspaces.setBrowserClient], wsId, clientId),
     );
-    yield* put(workspaceBrowserClientReceived(wsId, browserClient));
+    if (write.cleanup) return;
+    yield* put(workspaceBrowserClientReceived(wsId, write.result));
   } catch (error) {
     logger.warn('workspace.setBrowserClient failed', {
       wsId,
@@ -106,8 +138,12 @@ function* readWorkspaceBrowserTabs(
   try {
     for (let attempt = 0; attempt < MAX_TABS_READ_ATTEMPTS; attempt++) {
       const revision = yield* selectWorkspaceBrowserTabsRevision.effect(wsId);
-      const tabs = yield* call([appClient.browser, appClient.browser.listTabs], wsId);
-      yield* put(workspaceBrowserTabsReceived(wsId, tabs, revision));
+      const read = yield* untilWorkspaceCleanup(
+        wsId,
+        call([appClient.browser, appClient.browser.listTabs], wsId),
+      );
+      if (read.cleanup) return;
+      yield* put(workspaceBrowserTabsReceived(wsId, read.result, revision));
       if ((yield* selectWorkspaceBrowserTabsRevision.effect(wsId)) === revision) return;
     }
     logger.warn('browser.listTabs snapshot kept racing browser:tab-* events; keeping patches', {

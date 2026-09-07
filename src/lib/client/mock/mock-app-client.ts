@@ -168,10 +168,17 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     // REV-2 tab registry: no fixture era — an empty registry and accepted no-ops.
     listTabs: async () => [],
     upsertTab: async (workspaceId, tab) => ({
-      ...tab,
+      tabId: tab.tabId,
       workspaceId,
       hostClientId: 'mock-client',
+      url: tab.url,
+      // Like the daemon row, a cleared (`null` / omitted) optional is omitted.
+      ...(tab.requestedUrl != null ? { requestedUrl: tab.requestedUrl } : {}),
+      ...(tab.title != null ? { title: tab.title } : {}),
+      ...(tab.ownerAgentId != null ? { ownerAgentId: tab.ownerAgentId } : {}),
+      ...(tab.ownerAgentName != null ? { ownerAgentName: tab.ownerAgentName } : {}),
       visibility: tab.visibility ?? 'visible',
+      ...(tab.emulatedSize != null ? { emulatedSize: tab.emulatedSize } : {}),
       createdAt: new Date(0).toISOString(),
       updatedAt: new Date(0).toISOString(),
     }),

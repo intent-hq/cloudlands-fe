@@ -20,13 +20,22 @@ vi.mock('$lib/client', () => ({
 }));
 
 import type { LiveClient } from '$shared/types/browser-clients';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { StoreAction } from '@augmentcode/themis/utils/store/create-action';
+import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
 import {
+  workspaceDeleted,
+  workspaceUnmounted,
+} from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  browserClientsReducer,
   fetchWorkspaceBrowserClientRequested,
   fetchWorkspaceBrowserTabsRequested,
   hydrateBrowserClientsRequested,
   initialState,
   refreshLiveClientsRequested,
   setWorkspaceBrowserClientRequested,
+  workspaceBrowserClientReceived,
 } from '../browser-clients-slice';
 import { emptyWorkspaceBrowserClientsState } from '../browser-clients-types';
 import { browserClientsSaga } from './browser-clients-saga';
@@ -69,6 +78,18 @@ function start() {
     };
   };
   return { channel, task, dispatched, setTabsRevision };
+}
+
+/** Saga wired to the real reducer, so lifecycle races are observed on state. */
+function startWithReducer() {
+  const channel = stdChannel();
+  let state = { browserClients: initialState };
+  const dispatch = (action: StoreAction<unknown>) => {
+    state = { browserClients: browserClientsReducer(state.browserClients, action) };
+    channel.put(action);
+  };
+  const task = runSaga({ channel, dispatch, getState: () => state }, browserClientsSaga);
+  return { dispatch, task, entry: (wsId: string) => state.browserClients.byWorkspaceId[wsId] };
 }
 
 describe('browserClientsSaga', () => {
@@ -252,6 +273,121 @@ describe('browserClientsSaga', () => {
     expect(dispatched()).toContainEqual({
       type: 'browserClients/workspaceBrowserTabsReceived',
       payload: ['ws-1', tabs, 0],
+    });
+  });
+
+  describe('workspace teardown while a per-workspace call is in flight', () => {
+    const WS = 'ws-gone';
+    const listedTab = {
+      tabId: 'tab-1',
+      workspaceId: WS,
+      hostClientId: 'cli-desk',
+      url: 'https://a/',
+      visibility: 'visible',
+      createdAt: 't',
+      updatedAt: 't',
+      hostConnected: true,
+    };
+    const pinned = {
+      source: 'workspace',
+      clientId: 'cli-desk',
+      resolved: { clientId: 'cli-desk' },
+    };
+    const unpinned = { source: 'default', resolved: null };
+
+    const requests = {
+      listTabs: {
+        mock: () => mocks.listTabs,
+        request: () => fetchWorkspaceBrowserTabsRequested(WS),
+        reply: [listedTab],
+      },
+      getBrowserClient: {
+        mock: () => mocks.getBrowserClient,
+        request: () => fetchWorkspaceBrowserClientRequested(WS),
+        reply: pinned,
+      },
+      setBrowserClient: {
+        mock: () => mocks.setBrowserClient,
+        request: () => setWorkspaceBrowserClientRequested(WS, 'cli-desk'),
+        reply: pinned,
+      },
+    } as const;
+    const teardowns = {
+      workspaceDeleted: () => workspaceDeleted(WS),
+      workspaceUnmounted: () => workspaceUnmounted(WS),
+      removeWorkspaceEntity: () => removeWorkspaceEntity(WS),
+    } as const;
+    const cells = Object.keys(requests).flatMap((call) =>
+      Object.keys(teardowns).map((teardown) => [call, teardown] as const),
+    ) as [keyof typeof requests, keyof typeof teardowns][];
+
+    it.each(cells)('drops the %s reply that lands after %s', async (call, teardown) => {
+      const slow = deferred<unknown>();
+      requests[call].mock().mockReturnValue(slow.promise);
+      const { dispatch, task, entry } = startWithReducer();
+      dispatch(workspaceBrowserClientReceived(WS, unpinned));
+      dispatch(requests[call].request());
+      await settle();
+      expect(requests[call].mock()).toHaveBeenCalledTimes(1);
+
+      dispatch(teardowns[teardown]());
+      expect(entry(WS)).toBeUndefined();
+      slow.resolve(requests[call].reply);
+      await settle();
+      task.cancel();
+
+      // The cleared entry is not recreated by the late reply.
+      expect(entry(WS)).toBeUndefined();
+    });
+
+    it('a reply from before an unmount does not apply to the remounted workspace (listTabs)', async () => {
+      const first = deferred<unknown>();
+      const second = deferred<unknown>();
+      const fresh = [{ ...listedTab, tabId: 'tab-fresh' }];
+      mocks.listTabs.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+      const { dispatch, task, entry } = startWithReducer();
+
+      dispatch(fetchWorkspaceBrowserTabsRequested(WS));
+      await settle();
+      dispatch(workspaceUnmounted(WS));
+
+      // Remounted, but its own read is not in flight yet when the pre-unmount
+      // read lands: nothing supersedes it, and it is stamped with the same
+      // revision (0) a fresh mount starts at — it must still be discarded.
+      first.resolve([listedTab]);
+      await settle();
+      expect(entry(WS)).toBeUndefined();
+
+      dispatch(fetchWorkspaceBrowserTabsRequested(WS));
+      await settle();
+      expect(mocks.listTabs).toHaveBeenCalledTimes(2);
+      second.resolve(fresh);
+      await settle();
+      task.cancel();
+      expect(getItems(entry(WS)!.tabs)).toEqual(fresh);
+    });
+
+    it('a reply from before an unmount does not apply to the remounted workspace (getBrowserClient)', async () => {
+      const first = deferred<unknown>();
+      const second = deferred<unknown>();
+      mocks.getBrowserClient.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+      const { dispatch, task, entry } = startWithReducer();
+
+      dispatch(fetchWorkspaceBrowserClientRequested(WS));
+      await settle();
+      dispatch(workspaceUnmounted(WS));
+
+      first.resolve(pinned);
+      await settle();
+      expect(entry(WS)).toBeUndefined();
+
+      dispatch(fetchWorkspaceBrowserClientRequested(WS));
+      await settle();
+      expect(mocks.getBrowserClient).toHaveBeenCalledTimes(2);
+      second.resolve(unpinned);
+      await settle();
+      task.cancel();
+      expect(entry(WS)?.browserClient).toEqual(unpinned);
     });
   });
 });

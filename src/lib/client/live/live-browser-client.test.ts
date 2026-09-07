@@ -3,7 +3,7 @@
  *
  * Covers read/write round-trip, MAX_RECENT_URLS cap, and corrupt/missing data handling.
  */
-import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, expectTypeOf, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 
 // FAKE transport for the REV-2 tab-registry RPCs — no request reaches a daemon.
 vi.mock('./backend-transport', () => ({
@@ -221,6 +221,59 @@ describe('LiveBrowserClient daemon tab registry (REV-2 PROTOCOL §5.17, fake tra
       workspaceId: 'ws-1',
       tab: input,
     });
+  });
+
+  it('upsertTab forwards an explicit null clear verbatim and accepts the omitted-field row back', async () => {
+    const cleared = { ...TAB, updatedAt: '2026-09-07T00:00:02.000Z' };
+    delete (cleared as { title?: string }).title;
+    mockedRequest.mockResolvedValueOnce({ tab: cleared });
+    const input = {
+      tabId: 'tab-1',
+      url: 'https://example.com/',
+      title: null,
+      requestedUrl: null,
+      ownerAgentId: null,
+      ownerAgentName: null,
+      emulatedSize: null,
+    };
+
+    const row = await client.upsertTab('ws-1', input);
+    expect(row).toEqual(cleared);
+    expect(row).not.toHaveProperty('title');
+    expect(mockedRequest).toHaveBeenCalledWith('browser.upsertTab', {
+      workspaceId: 'ws-1',
+      tab: input,
+    });
+  });
+
+  it('types: input optionals accept null, the canonical row never carries null', () => {
+    type Input = Parameters<LiveBrowserClient['upsertTab']>[1];
+    type SyncEntry = Parameters<LiveBrowserClient['syncTabs']>[0][number];
+    type Row = Awaited<ReturnType<LiveBrowserClient['upsertTab']>>;
+    type Listed = Awaited<ReturnType<LiveBrowserClient['listTabs']>>[number];
+
+    expectTypeOf<Input['requestedUrl']>().toEqualTypeOf<string | null | undefined>();
+    expectTypeOf<Input['title']>().toEqualTypeOf<string | null | undefined>();
+    expectTypeOf<Input['ownerAgentId']>().toEqualTypeOf<string | null | undefined>();
+    expectTypeOf<Input['ownerAgentName']>().toEqualTypeOf<string | null | undefined>();
+    expectTypeOf<Input['emulatedSize']>().toEqualTypeOf<
+      { width: number; height: number } | null | undefined
+    >();
+    expectTypeOf<Input['visibility']>().toEqualTypeOf<'visible' | 'hidden' | undefined>();
+    expectTypeOf<SyncEntry['workspaceId']>().toEqualTypeOf<string>();
+    expectTypeOf<SyncEntry['title']>().toEqualTypeOf<string | null | undefined>();
+
+    expectTypeOf<Row['requestedUrl']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<Row['title']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<Row['ownerAgentId']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<Row['ownerAgentName']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<Row['emulatedSize']>().toEqualTypeOf<
+      { width: number; height: number } | undefined
+    >();
+    expectTypeOf<Row['visibility']>().toEqualTypeOf<'visible' | 'hidden'>();
+    expectTypeOf<Row['hostClientId']>().toEqualTypeOf<string>();
+    expectTypeOf<Listed['hostConnected']>().toEqualTypeOf<boolean>();
+    expectTypeOf<Listed['hostName']>().toEqualTypeOf<string | undefined>();
   });
 
   it('removeTab sends { tabId } and requires the { ok: true } acknowledgement', async () => {

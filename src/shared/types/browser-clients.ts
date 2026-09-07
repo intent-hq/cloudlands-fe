@@ -59,23 +59,38 @@ interface BrowserTabSize {
   height: number;
 }
 
-/** Host-reported tab fields (`browser.upsertTab` `tab`, `browser.syncTabs` entries). */
+/**
+ * Host-reported tab fields (`browser.upsertTab` `tab`, `browser.syncTabs`
+ * entries). An optional field is cleared by omitting it or sending an
+ * explicit `null`; the daemon accepts both.
+ */
 export interface BrowserTabInput {
   tabId: string;
   workspaceId: string;
+  url: string;
+  requestedUrl?: string | null;
+  title?: string | null;
+  ownerAgentId?: string | null;
+  ownerAgentName?: string | null;
+  visibility?: BrowserTabVisibility;
+  emulatedSize?: BrowserTabSize | null;
+}
+
+/**
+ * Daemon tab-registry row (`browser.upsertTab` result, `browser:tab-*`
+ * payload). A cleared optional field is omitted — never `null` — on output.
+ */
+export interface BrowserTab {
+  tabId: string;
+  workspaceId: string;
+  hostClientId: string;
   url: string;
   requestedUrl?: string;
   title?: string;
   ownerAgentId?: string;
   ownerAgentName?: string;
-  visibility?: BrowserTabVisibility;
-  emulatedSize?: BrowserTabSize;
-}
-
-/** Daemon tab-registry row (`browser.upsertTab` result, `browser:tab-*` payload). */
-export interface BrowserTab extends Omit<BrowserTabInput, 'visibility'> {
-  hostClientId: string;
   visibility: BrowserTabVisibility;
+  emulatedSize?: BrowserTabSize;
   createdAt: string;
   updatedAt: string;
 }
