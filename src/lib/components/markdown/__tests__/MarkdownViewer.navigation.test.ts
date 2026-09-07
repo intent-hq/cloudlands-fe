@@ -5,11 +5,44 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const handleLink = vi.hoisted(() => vi.fn(() => Promise.resolve(true)));
+const dispatch = vi.hoisted(() => vi.fn());
 
 vi.mock('$features/navigation/link-handler', () => ({ handleLink }));
+vi.mock('$store/renderer/store', () => ({ store: { dispatch } }));
 
 describe('MarkdownViewer panel navigation', () => {
-  beforeEach(() => handleLink.mockClear());
+  beforeEach(() => {
+    handleLink.mockClear();
+    dispatch.mockClear();
+  });
+
+  it('opens a file mention at its captured line', async () => {
+    const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;
+    render(MarkdownViewer, {
+      props: { content: 'see docs/chl-spec.md:2471 for details', workspaceId: 'ws-1' },
+    });
+
+    await fireEvent.click(await screen.findByText('docs/chl-spec.md:2471'));
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceFile',
+        payload: ['ws-1', 'docs/chl-spec.md', expect.objectContaining({ line: 2471 })],
+      }),
+    );
+  });
+
+  it('passes a captured line through the file-click callback', async () => {
+    const onFileClick = vi.fn();
+    const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;
+    render(MarkdownViewer, {
+      props: { content: '@src/a.ts:10', workspaceId: 'ws-1', onFileClick },
+    });
+
+    await fireEvent.click(await screen.findByText('src/a.ts:10'));
+
+    expect(onFileClick).toHaveBeenCalledWith('src/a.ts', expect.objectContaining({ line: 10 }));
+  });
 
   it('uses the owning chat workspace and rendered source panel for markdown links', async () => {
     const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;
