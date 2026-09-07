@@ -153,6 +153,8 @@
     devices: 'devices',
     machines: 'devices',
     'backend-sync': 'devices',
+    'websocket-api': 'devices',
+    'remote-access': 'devices',
     voice: 'input',
     'keyboard-shortcuts': 'input',
     'git-workspace': 'setup',
@@ -180,7 +182,6 @@
     'agent-backend': 'advanced',
     'utility-default-model': 'providers',
     hardware: 'advanced',
-    'websocket-api': 'advanced',
     connection: 'advanced',
     data: 'advanced',
     reset: 'advanced',
@@ -611,13 +612,30 @@
           </div>
 
           <!-- Backend sync (iCloud Keychain) -->
-          <div id="backend-sync" class="mb-6 scroll-mt-20">
+          <div id="backend-sync" class="mb-12 scroll-mt-20">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_backendSync()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
               <section class="px-6 py-5">
                 <BackendSyncSettings />
+              </section>
+            </div>
+          </div>
+
+          <!-- Remote Access (WebSocket API) -->
+          <div
+            id="websocket-api"
+            data-highlight-id="websocket-api"
+            use:highlightTarget
+            class="mb-6 scroll-mt-20"
+          >
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_remoteAccess()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <WebSocketApiSettings />
               </section>
             </div>
           </div>
@@ -1002,24 +1020,7 @@
             </div>
           </div>
 
-          <!-- WebSocket API -->
-          <div
-            id="websocket-api"
-            data-highlight-id="websocket-api"
-            use:highlightTarget
-            class="mb-12"
-          >
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_websocketApi()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
-                <WebSocketApiSettings />
-              </section>
-            </div>
-          </div>
-
-          <!-- Workspace API Output -->
+          <!-- Tool Output & Retention (anchor id kept as workspace-api for deep links) -->
           <div
             id="workspace-api"
             data-highlight-id="workspace-api"

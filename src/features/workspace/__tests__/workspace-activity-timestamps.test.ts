@@ -87,6 +87,7 @@ const backendMocks = vi.hoisted(() => {
 
 vi.mock('../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: backendMocks.request }),
+  onBackendReconnected: () => () => {},
 }));
 
 describe('workspace activity timestamps', () => {

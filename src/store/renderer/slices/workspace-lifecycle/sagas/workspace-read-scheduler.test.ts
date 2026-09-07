@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  createWorkspaceHydrationTierScheduler,
   createWorkspaceReadScheduler,
+  deriveCriticalHydrationBranches,
   MAX_CONCURRENT_WORKSPACE_READS,
+  WORKSPACE_HYDRATION_BRANCHES,
 } from './workspace-read-scheduler';
 
 describe('createWorkspaceReadScheduler', () => {
@@ -121,5 +124,85 @@ describe('createWorkspaceReadScheduler', () => {
 
     expect(scheduler.activeCount()).toBe(MAX_CONCURRENT_WORKSPACE_READS);
     expect(slots[MAX_CONCURRENT_WORKSPACE_READS].granted).toBe(false);
+  });
+});
+
+describe('createWorkspaceHydrationTierScheduler', () => {
+  const hiddenConsumers = { activePanelTypes: [], visibleSidebarTabs: [] } as const;
+
+  it('returns visible-panel and sidebar reads for first reveal without flushing deferred work', () => {
+    const critical = deriveCriticalHydrationBranches({
+      activePanelTypes: ['activity'],
+      visibleSidebarTabs: ['context'],
+    });
+
+    expect([...critical]).toEqual([
+      'tasks',
+      'agents',
+      'terminals',
+      'taskAgentLinks',
+      'notes',
+      'events',
+      'context',
+    ]);
+    expect(critical.has('scripts')).toBe(false);
+  });
+
+  it('promotes a deferred branch when its panel becomes visible', () => {
+    const scheduler = createWorkspaceHydrationTierScheduler();
+    scheduler.start('ws', hiddenConsumers);
+
+    const promoted = scheduler.promote('ws', {
+      activePanelTypes: ['hook-script'],
+      visibleSidebarTabs: [],
+    });
+
+    expect(promoted?.branches).toEqual(['scripts']);
+  });
+
+  it('invalidates deferred work when its workspace generation is cancelled', () => {
+    const scheduler = createWorkspaceHydrationTierScheduler();
+    const started = scheduler.start('ws', hiddenConsumers);
+
+    scheduler.cancel('ws');
+
+    expect(scheduler.flush('ws', started.generation)).toBeNull();
+  });
+
+  it('resets freshness on reconnect and rejects the stale fallback generation', () => {
+    const scheduler = createWorkspaceHydrationTierScheduler();
+    const stale = scheduler.start('ws', hiddenConsumers);
+    const fresh = scheduler.start('ws', hiddenConsumers, true);
+
+    expect(fresh.generation).not.toBe(stale.generation);
+    expect(scheduler.flush('ws', stale.generation)).toBeNull();
+    const flushed = scheduler.flush('ws', fresh.generation);
+    expect(flushed?.force).toBe(true);
+    expect(flushed?.branches).toEqual(
+      WORKSPACE_HYDRATION_BRANCHES.filter((branch) => !fresh.branches.includes(branch)),
+    );
+  });
+
+  it('settles a failed branch without retrying it or blocking the remaining fallback', () => {
+    const scheduler = createWorkspaceHydrationTierScheduler();
+    const started = scheduler.start('ws', hiddenConsumers);
+
+    scheduler.settle('ws', 'notes', 'failure');
+    expect(
+      scheduler.promote('ws', { activePanelTypes: ['note'], visibleSidebarTabs: [] })?.branches,
+    ).toEqual([]);
+    expect(scheduler.flush('ws', started.generation)?.branches).not.toContain('notes');
+  });
+
+  it('records a stable per-branch dispatch-to-settle performance measure', () => {
+    const name = 'intent:workspace-hydration:notes:dispatch-to-settle';
+    performance.clearMeasures(name);
+    const scheduler = createWorkspaceHydrationTierScheduler();
+
+    scheduler.start('ws', hiddenConsumers);
+    scheduler.settle('ws', 'notes', 'success');
+
+    expect(performance.getEntriesByName(name)).toHaveLength(1);
+    performance.clearMeasures(name);
   });
 });
