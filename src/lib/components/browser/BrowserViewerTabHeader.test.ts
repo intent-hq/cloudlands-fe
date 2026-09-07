@@ -92,6 +92,37 @@ describe('BrowserViewerTabHeader', () => {
     expect(onNavigate).not.toHaveBeenCalled();
   });
 
+  it('cancels an open address edit when the host disconnects and does not submit it', async () => {
+    const onNavigate = vi.fn();
+    const { rerender } = render(BrowserViewerTabHeader, {
+      props: { url: 'https://intentapp.dev/docs', host: online, onNavigate },
+    });
+
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.browser_embedded_editAddress_ariaLabel() }),
+    );
+    const input = screen.getByRole('textbox', {
+      name: m.browser_embedded_addressInput_ariaLabel(),
+    });
+    await fireEvent.input(input, { target: { value: 'https://intentapp.dev/changelog' } });
+    const form = input.closest('form')!;
+
+    await rerender({ host: offline });
+    await fireEvent.submit(form);
+
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole('textbox', { name: m.browser_embedded_addressInput_ariaLabel() }),
+    ).toBeNull();
+    expect(
+      (
+        screen.getByRole('button', {
+          name: m.browser_embedded_editAddress_ariaLabel(),
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
+
   it('routes history and refresh controls, and close as a non-forced close', async () => {
     const handlers = {
       onGoBack: vi.fn(),

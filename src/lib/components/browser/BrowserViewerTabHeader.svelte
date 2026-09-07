@@ -82,11 +82,20 @@
     urlInputRef?.select();
   }
 
+  // A disconnect while the address is being edited cancels the edit: the
+  // host cannot take the request.
+  $effect(() => {
+    if (offline) {
+      isEditingUrl = false;
+      urlDraftInvalid = false;
+    }
+  });
+
   // Same normalization and validation as the local address bars, so a bare
   // hostname is accepted here exactly as it is on a locally hosted tab.
   function submitUrl(event: SubmitEvent) {
     event.preventDefault();
-    if (!urlDraft.trim()) {
+    if (offline || !urlDraft.trim()) {
       isEditingUrl = false;
       return;
     }
@@ -163,6 +172,7 @@
             onkeydown={handleUrlKeydown}
             onblur={() => (isEditingUrl = false)}
             noFocusStyle
+            disabled={offline}
             class="h-full flex-1 rounded-none border-0 bg-transparent px-0 hover:border-transparent"
             placeholder={m.browser_embedded_url_placeholder()}
             aria-label={m.browser_embedded_addressInput_ariaLabel()}

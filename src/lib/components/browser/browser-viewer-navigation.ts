@@ -11,17 +11,24 @@
  *   produces (including redirects) are the mirror catching up, not the user
  *   steering, so they are not forwarded.
  * - **Forward** (mirror → host): a main-frame navigation the mirror webview
- *   makes on its own (a link click, back/forward, the address bar) is
- *   forwarded to the host as `browser.navigateTab`. The host navigates and
- *   reports the new URL, which comes back as the canonical URL; since the
- *   mirror already targets it, no follow-load is issued — the loop ends.
+ *   makes on its own (a link click, back/forward) is forwarded to the host as
+ *   `browser.navigateTab`. The host navigates and reports the new URL, which
+ *   comes back as the canonical URL; since the mirror already targets it, no
+ *   follow-load is issued — the loop ends.
+ * - **Address bar / refresh** (user → host, mirrored here): an explicit
+ *   request is forwarded to the host outright and loaded here as a follow, so
+ *   the host request never depends on the mirror being able to reach the URL
+ *   (a host-only `localhost`, a viewer-side redirect to a login page) and the
+ *   mirror's own resulting navigations are not forwarded again.
  *
  * Every follow-load carries a monotonically increasing `seq` captured when it
  * is issued; the initial `src` load is follow #1. A result (the load's
  * settlement, a guest navigation) is attributed to a follow only while that
  * follow is the *current* one, so a superseded load's late rejection never
- * clears its successor, and a guest navigation is forwarded exactly when it
- * is a main-frame navigation not attributable to a live follow. Forwards are
+ * clears its successor. A full main-frame navigation during a live follow is
+ * the follow's own (its commit, a redirect); an in-page navigation (hash,
+ * SPA history) after the follow's document committed is the user steering
+ * while slow resources keep the load open, and is forwarded. Forwards are
  * fenced the same way: a rejected `browser.navigateTab` reloads the canonical
  * URL only if no later follow has moved the mirror on since.
  *
@@ -32,12 +39,14 @@
 export type ViewerNavigationEvent =
   /** The canonical URL (re)rendered, or the webview's readiness changed. */
   | { type: 'canonical'; url: string; webviewReady: boolean }
-  /** The mirror webview navigated (`did-navigate` / `did-navigate-in-page`). */
-  | { type: 'guest-navigated'; url: string; isMainFrame: boolean }
+  /** The mirror webview navigated; `inPage` for `did-navigate-in-page` (hash / history API). */
+  | { type: 'guest-navigated'; url: string; isMainFrame: boolean; inPage: boolean }
   /** A follow-load settled: `loadURL` resolved or rejected, or the initial load stopped. */
   | { type: 'follow-settled'; seq: number }
   /** The host answered a forwarded navigation (`ok: false` = rejected or failed). */
   | { type: 'forward-settled'; seq: number; ok: boolean }
+  /** The user submitted the address bar: navigate the host to `url` and mirror it here. */
+  | { type: 'address'; url: string }
   /** The user pressed refresh: reload the canonical URL here and on the host. */
   | { type: 'refresh' };
 
@@ -52,6 +61,8 @@ export interface ViewerNavigationState {
   followSeq: number;
   /** The follow-load still in flight, or null once it settled. */
   activeFollowSeq: number | null;
+  /** Whether the active follow's document has committed (its first full main-frame navigation). */
+  activeFollowCommitted: boolean;
   /** Sequence of the newest forward issued. */
   forwardSeq: number;
   /** The newest forward awaiting the host, with the follow sequence at issue time. */
@@ -71,6 +82,7 @@ export function createViewerNavigationState(options: {
   return {
     followSeq: 0,
     activeFollowSeq: null,
+    activeFollowCommitted: false,
     forwardSeq: 0,
     pendingForward: null,
     canonicalUrl: null,
@@ -83,8 +95,16 @@ export function createViewerNavigationState(options: {
 function issueFollow(state: ViewerNavigationState, url: string): ViewerNavigationCommand {
   state.followSeq += 1;
   state.activeFollowSeq = state.followSeq;
+  state.activeFollowCommitted = false;
   state.targetUrl = url;
   return { type: 'load', seq: state.followSeq, url };
+}
+
+/** An explicit user request: the host navigates; the mirror follows independently. */
+function issueRequest(state: ViewerNavigationState, url: string): ViewerNavigationCommand[] {
+  // The follow is issued first so the forward records it: a host rejection
+  // then reloads the canonical URL unless a later follow moved the mirror on.
+  return [issueFollow(state, url), issueForward(state, url)];
 }
 
 function issueForward(state: ViewerNavigationState, url: string): ViewerNavigationCommand {
@@ -108,6 +128,7 @@ export function applyViewerNavigationEvent(
       if (state.followSeq === 0) {
         state.followSeq = 1;
         state.activeFollowSeq = 1;
+        state.activeFollowCommitted = false;
         state.targetUrl = event.url;
         return [];
       }
@@ -129,7 +150,17 @@ export function applyViewerNavigationEvent(
     case 'guest-navigated': {
       if (!event.isMainFrame || !event.url) return [];
       state.mirrorUrl = event.url;
-      if (state.activeFollowSeq !== null) return [];
+      if (state.activeFollowSeq !== null) {
+        // A full navigation is the follow's own: its commit, or a redirect.
+        if (!event.inPage) {
+          state.activeFollowCommitted = true;
+          return [];
+        }
+        // An in-page navigation before the follow's document committed
+        // happens on the document being replaced; one to the target itself
+        // is the page normalizing its own URL. Anything else is the user.
+        if (!state.activeFollowCommitted || event.url === state.targetUrl) return [];
+      }
       return [issueForward(state, event.url)];
     }
 
@@ -155,12 +186,19 @@ export function applyViewerNavigationEvent(
       return [issueFollow(state, canonical)];
     }
 
+    case 'address': {
+      // The host request does not wait for the mirror load: the URL may be
+      // reachable only from the host, or redirect differently here.
+      if (!event.url || !state.isValidBrowserUrl(event.url)) return [];
+      return issueRequest(state, event.url);
+    }
+
     case 'refresh': {
       const canonical = state.canonicalUrl;
       if (!canonical || !state.isValidBrowserUrl(canonical)) return [];
       // The mirror reloads as a follow so the resulting navigation is not
       // forwarded again; the host reloads by navigating to its own URL.
-      return [issueFollow(state, canonical), issueForward(state, canonical)];
+      return issueRequest(state, canonical);
     }
   }
 }

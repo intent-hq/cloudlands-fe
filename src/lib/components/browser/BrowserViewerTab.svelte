@@ -122,23 +122,25 @@
   function handleNavigated(
     target: EmbeddedBrowserWebview,
     e: { url?: string; isMainFrame?: boolean },
+    inPage: boolean,
   ) {
-    dispatch({ type: 'guest-navigated', url: e.url ?? '', isMainFrame: e.isMainFrame !== false });
+    dispatch({
+      type: 'guest-navigated',
+      url: e.url ?? '',
+      isMainFrame: e.isMainFrame !== false,
+      inPage,
+    });
     updateHistoryState(target);
   }
 
   /**
-   * The address bar loads locally like any browser; the resulting
-   * `did-navigate` is a guest navigation and is forwarded to the host.
+   * The address bar is a request to the host: forwarded outright, and
+   * mirrored here as a follow-load whose own navigations are not forwarded
+   * again. The host request does not depend on the mirror reaching the URL.
    */
-  function loadFromAddressBar(nextUrl: string) {
-    const target = webviewRef;
-    if (!target || !webviewReady) return;
-    try {
-      target.loadURL(nextUrl).catch(() => {});
-    } catch {
-      // The guest may have been detached.
-    }
+  function navigateFromAddressBar(nextUrl: string) {
+    if (!host.connected) return;
+    dispatch({ type: 'address', url: nextUrl });
   }
 
   $effect(() => {
@@ -163,8 +165,8 @@
       if (e.isMainFrame === false) return;
       dispatch({ type: 'follow-settled', seq: INITIAL_FOLLOW_SEQ });
     });
-    addListener(target, 'did-navigate', (e) => handleNavigated(target, e));
-    addListener(target, 'did-navigate-in-page', (e) => handleNavigated(target, e));
+    addListener(target, 'did-navigate', (e) => handleNavigated(target, e, false));
+    addListener(target, 'did-navigate-in-page', (e) => handleNavigated(target, e, true));
     addListener(target, 'page-favicon-updated', (e) => {
       if (e.favicons?.length > 0) onFaviconChange?.(e.favicons[0]);
     });
@@ -201,7 +203,7 @@
     {host}
     {canGoBack}
     {canGoForward}
-    onNavigate={loadFromAddressBar}
+    onNavigate={navigateFromAddressBar}
     onGoBack={() => webviewReady && webviewRef?.goBack()}
     onGoForward={() => webviewReady && webviewRef?.goForward()}
     onRefresh={() => webviewReady && dispatch({ type: 'refresh' })}

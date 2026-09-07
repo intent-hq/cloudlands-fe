@@ -20,7 +20,15 @@ const guest = (url: string, isMainFrame = true): ViewerNavigationEvent => ({
   type: 'guest-navigated',
   url,
   isMainFrame,
+  inPage: false,
 });
+const inPage = (url: string, isMainFrame = true): ViewerNavigationEvent => ({
+  type: 'guest-navigated',
+  url,
+  isMainFrame,
+  inPage: true,
+});
+const address = (url: string): ViewerNavigationEvent => ({ type: 'address', url });
 const followSettled = (seq: number): ViewerNavigationEvent => ({ type: 'follow-settled', seq });
 const forwardSettled = (seq: number, ok: boolean): ViewerNavigationEvent => ({
   type: 'forward-settled',
@@ -197,6 +205,67 @@ const scenarios: Array<{ name: string; steps: Step[] }> = [
       [canonical(''), []],
       [canonical('https://a/', false), []],
       [canonical(''), []],
+    ],
+  },
+  {
+    name: 'an address-bar request reaches the host even though the mirror cannot load the URL',
+    steps: [
+      ...opened('https://a/'),
+      [address('https://b/'), [load(2, 'https://b/'), forward(1, 'https://b/')]],
+      [followSettled(2), []],
+      [forwardSettled(1, true), []],
+      [canonical('https://b/'), []],
+    ],
+  },
+  {
+    name: 'an address-bar request forwards the typed URL, not where the mirror was redirected',
+    steps: [
+      ...opened('https://a/'),
+      [
+        address('https://b/dashboard'),
+        [load(2, 'https://b/dashboard'), forward(1, 'https://b/dashboard')],
+      ],
+      [guest('https://b/dashboard'), []],
+      [guest('https://b/login'), []],
+      [followSettled(2), []],
+      [canonical('https://b/dashboard'), []],
+    ],
+  },
+  {
+    name: 'a rejected address-bar request brings the mirror back to the canonical URL',
+    steps: [
+      ...opened('https://a/'),
+      [address('https://b/'), [load(2, 'https://b/'), forward(1, 'https://b/')]],
+      [guest('https://b/'), []],
+      [followSettled(2), []],
+      [forwardSettled(1, false), [load(3, 'https://a/')]],
+    ],
+  },
+  {
+    name: 'an address the mirror may not load is not requested either',
+    steps: [...opened('https://a/'), [address('http://b/'), []], [address(''), []]],
+  },
+  {
+    name: 'in-page navigation after the follow committed is forwarded while slow resources keep the load open',
+    steps: [
+      ...opened('https://a/'),
+      [canonical('https://b/'), [load(2, 'https://b/')]],
+      [guest('https://b/'), []],
+      [inPage('https://b/#section'), [forward(1, 'https://b/#section')]],
+      [followSettled(2), []],
+      [canonical('https://b/#section'), []],
+    ],
+  },
+  {
+    name: 'in-page navigation during the initial load is forwarded once its document committed',
+    steps: [
+      [canonical('https://a/', false), []],
+      [inPage('https://old/#x'), []],
+      [guest('https://a/'), []],
+      [inPage('https://a/'), []],
+      [inPage('https://a/#x'), [forward(1, 'https://a/#x')]],
+      [inPage('https://a/#x', false), []],
+      [followSettled(1), []],
     ],
   },
 ];
