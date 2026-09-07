@@ -16,6 +16,7 @@ export const {
   formatNumber,
   formatInteger,
   formatCompactNumber,
+  formatCurrency,
   formatBytesBinary,
   formatRelativeTime,
   formatCompactRelativeTime,
