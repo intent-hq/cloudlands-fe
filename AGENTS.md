@@ -39,6 +39,7 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 | agents              | ../../docs/fe/agent-message-dedup-and-stream-sagas.md, ../../docs/fe/RULES_SYSTEM.md |
 | state/store         | ../../docs/fe/STATE_MANAGEMENT.md, src/store/renderer/docs/                          |
 | component design    | ../../docs/fe/COMPONENTS_DESIGN.md                                                   |
+| UI invariant gates  | `pnpm run test:ui-invariants` — ratchets + catalog `*.meta.ts` ledgers, see below    |
 | panels/layout       | ../../docs/fe/panel-system-refactoring.md, ../../docs/fe/PANEL_TAB_UX_SPEC.md        |
 | PR descriptions     | ../../docs/fe/PR_DESCRIPTION_GUIDE.md                                                |
 | browser/CDP         | ../../docs/fe/BROWSER_PANEL_SPEC.md, ../../docs/fe/CDP_MCP_TOOLS.md                  |
@@ -299,6 +300,12 @@ selected commands without running them. The command runs scoped Prettier and ESL
 related Vitest tests, directly imported colocated component tests, and only the
 renderer/main/preload TypeScript boundaries that changed. Ambiguous or high-risk files
 select a conservative suite instead of silently skipping coverage.
+
+Any renderer source change also runs `pnpm run test:ui-invariants` (chained into
+`validate:architecture` too): the repo-wide UI ratchets (`scripts/*-audit.test.ts`,
+`scripts/ui-component-integration.test.ts`) and the component-catalog `*.meta.ts` caller
+ledgers. These suites do not import the changed component, so `vitest related` and
+targeted runs miss them — cloudlands-fe#2256 hit CI red twice this way.
 
 Only checks that genuinely conflict use host-wide locks, held for one check at a time:
 Playwright CT uses `ct-<CT_PORT>` (default `ct-3100`) and the full Vitest fallback uses
