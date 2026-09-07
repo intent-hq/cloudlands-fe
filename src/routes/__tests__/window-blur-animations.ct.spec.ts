@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
+import IntentMarkLoader from '$lib/components/ui/indicators/IntentMarkLoader.svelte';
 import WindowBlurAnimationProbe from './WindowBlurAnimationProbe.svelte';
 
 test.afterEach(async ({ page }) => {
@@ -28,4 +29,31 @@ test('pauses ambient animations while the window-blurred attribute is present', 
   await expect.poll(playState).toBe('paused');
   await page.evaluate(() => document.documentElement.removeAttribute('data-window-blurred'));
   await expect.poll(playState).toBe('running');
+});
+
+test('stops the Web Animations mark loop while the window-blurred attribute is present', async ({
+  mount,
+  page,
+}) => {
+  await page.evaluate(() => document.documentElement.removeAttribute('data-window-blurred'));
+  await mount(IntentMarkLoader, { props: { variant: 'bloom', size: 128, playing: true } });
+  const root = page.getByRole('status', { name: 'Loading' });
+  const animationCount = () =>
+    root.evaluate((node) => node.getAnimations({ subtree: true }).length);
+  const runningCount = () =>
+    root.evaluate(
+      (node) =>
+        node
+          .getAnimations({ subtree: true })
+          .filter((animation) => animation.playState === 'running').length,
+    );
+
+  await expect(root).toHaveAttribute('data-motion-state', 'playing');
+  await expect.poll(runningCount).toBeGreaterThan(0);
+  await page.evaluate(() => document.documentElement.setAttribute('data-window-blurred', ''));
+  await expect(root).toHaveAttribute('data-motion-state', 'neutral');
+  await expect.poll(animationCount).toBe(0);
+  await page.evaluate(() => document.documentElement.removeAttribute('data-window-blurred'));
+  await expect(root).toHaveAttribute('data-motion-state', 'playing');
+  await expect.poll(runningCount).toBeGreaterThan(0);
 });
