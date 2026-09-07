@@ -106,11 +106,11 @@ const WORKER_TIMEOUT_MS = 30_000;
  */
 async function parseMarkdownMainThread(
   markdown: string,
-  pipeline?: { preserveAnchors: boolean },
+  pipeline?: { preserveAnchors: boolean; renderMath: boolean },
 ): Promise<string> {
   const content = pipeline?.preserveAnchors ? normalizeAnchorPositions(markdown) : markdown;
 
-  const markedInst = getMarkedInstance();
+  const markedInst = getMarkedInstance(pipeline?.renderMath);
   let html = await markedInst.parse(content);
 
   if (pipeline?.preserveAnchors) {
@@ -127,7 +127,7 @@ async function parseMarkdownMainThread(
  */
 function parseMarkdownInWorker(
   markdown: string,
-  pipeline?: { preserveAnchors: boolean },
+  pipeline?: { preserveAnchors: boolean; renderMath: boolean },
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     try {
@@ -319,14 +319,16 @@ function escapeHtmlTags(content: string): string {
  */
 
 // Create a singleton instance of the marked processor
-let markedInstance: ReturnType<typeof createTiptapTaskListMarked> | null = null;
+const markedInstances = new Map<boolean, ReturnType<typeof createTiptapTaskListMarked>>();
 
 /**
  * Get the singleton marked instance with Tiptap task list support
  */
-function getMarkedInstance() {
+function getMarkedInstance(renderMath = false) {
+  let markedInstance = markedInstances.get(renderMath);
   if (!markedInstance) {
-    markedInstance = createTiptapTaskListMarked();
+    markedInstance = createTiptapTaskListMarked({ renderMath });
+    markedInstances.set(renderMath, markedInstance);
   }
   return markedInstance;
 }
@@ -467,6 +469,8 @@ export async function processMarkdownToHTML(
     workspaceId?: string;
     /** Render Mermaid and diff fences as visible source instead of TipTap node placeholders */
     renderRichFencesAsCode?: boolean;
+    /** Render supported TeX delimiters for read-only Markdown consumers. */
+    renderMath?: boolean;
     /**
      * Cache-busting token appended as `?v=` to rewritten workspace-file image
      * URLs. Defaults to a fresh token per call so a regenerated file renders
@@ -486,6 +490,7 @@ export async function processMarkdownToHTML(
     taskBlockRenderMode = 'placeholder',
     workspaceId,
     renderRichFencesAsCode = false,
+    renderMath = false,
     workspaceFileVersion,
   } = options;
 
@@ -518,7 +523,7 @@ export async function processMarkdownToHTML(
   // Check cache first — use a fast hash + length instead of the full content string as key.
   // Including content.length virtually eliminates hash collision risk (different-length
   // strings that produce the same 53-bit hash would be needed).
-  const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}|${workspaceId ?? ''}|${renderRichFencesAsCode}`;
+  const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}|${workspaceId ?? ''}|${renderRichFencesAsCode}|${renderMath}`;
   const cached = getCachedMarkdown(cacheKey);
   if (cached !== null) {
     return stampVersions(cached);
@@ -579,14 +584,14 @@ export async function processMarkdownToHTML(
     let htmlOut: string;
     if (isLargeContent) {
       // Offload normalize + legacy syntax + marked.parse + anchor conversion to worker
-      htmlOut = await parseMarkdownInWorker(processedContent, { preserveAnchors });
+      htmlOut = await parseMarkdownInWorker(processedContent, { preserveAnchors, renderMath });
     } else {
       // Small content: run everything on main thread
       const normalizedContent = preserveAnchors
         ? normalizeAnchorPositions(processedContent)
         : processedContent;
 
-      const markedInst = getMarkedInstance();
+      const markedInst = getMarkedInstance(renderMath);
       const result = await markedInst.parse(normalizedContent);
       htmlOut = preserveAnchors ? convertHTMLCommentsToSpanAnchors(result) : result;
     }
@@ -1063,6 +1068,7 @@ function injectMentionSpans(html: string): string {
         blocked ||
         BLOCK_TAGS.has(el.tagName) ||
         el.hasAttribute('data-mention') ||
+        el.hasAttribute('data-math-source') ||
         el.tagName === 'A';
       for (const child of Array.from(el.childNodes)) {
         walk(child, isBlocked);
@@ -1175,6 +1181,8 @@ export function processHTMLToMarkdown(
           result += `*${processInlineContent(childEl)}*`;
         } else if (childEl.tagName === 'CODE') {
           result += `\`${childEl.textContent || ''}\``;
+        } else if (childEl.hasAttribute('data-math-source')) {
+          result += childEl.getAttribute('data-math-source') || '';
         } else if (childEl.tagName === 'SPAN') {
           if (childEl.hasAttribute('data-mention')) {
             // Preserve canonical @-token using mention metadata
@@ -1487,7 +1495,9 @@ export function processHTMLToMarkdown(
    * Convert common elements to markdown
    */
   const convertElement = (el: Element): string => {
-    if (el.tagName === 'IMG') {
+    if (el.hasAttribute('data-math-source')) {
+      return `${el.getAttribute('data-math-source') || ''}${el.tagName === 'DIV' ? '\n\n' : ''}`;
+    } else if (el.tagName === 'IMG') {
       // Handle image elements
       const rawSrc = el.getAttribute('src') || '';
       const src = workspaceFileImageUrlToIntentFileUrl(rawSrc) ?? rawSrc;
