@@ -151,12 +151,38 @@ function pairAdjacentReasoningGroup(
   }
 
   histories = histories.filter((block) => (block.text ?? block.content ?? '').trim());
+  const hasDescription = namedGroup.children[0]?.type === 'text';
 
   return {
     ...namedGroup,
     hasAdjacentReasoningHistory: true,
     adjacentReasoningHistoryCount: histories.length,
+    hasAdjacentReasoningDescription: hasDescription,
     children: insertAdjacentReasoning(namedGroup.children, histories),
+  };
+}
+
+function responseGroupSegment(
+  block: ContentBlockGroup,
+  start: number,
+  end: number,
+): ContentBlockGroup {
+  const children = block.children.slice(start, end);
+  if (!block.hasAdjacentReasoningHistory) return { ...block, children };
+
+  const descriptionCount = block.hasAdjacentReasoningDescription ? 1 : 0;
+  const historyStart = descriptionCount;
+  const historyEnd = historyStart + (block.adjacentReasoningHistoryCount ?? 0);
+  const historyCount = Math.max(0, Math.min(end, historyEnd) - Math.max(start, historyStart));
+  const hasDescription = descriptionCount === 1 && start === 0 && end > 0;
+  const hasAdjacentLayout = hasDescription || historyCount > 0;
+
+  return {
+    ...block,
+    children,
+    hasAdjacentReasoningHistory: hasAdjacentLayout,
+    adjacentReasoningHistoryCount: historyCount,
+    hasAdjacentReasoningDescription: hasDescription,
   };
 }
 
@@ -177,7 +203,7 @@ export function hoistProposalBlocksFromResponseGroups(
       if (!getProposalFromBlock(child)) continue;
 
       if (segmentStart < index) {
-        hoisted.push({ ...block, children: block.children.slice(segmentStart, index) });
+        hoisted.push(responseGroupSegment(block, segmentStart, index));
       }
       hoisted.push(child);
       segmentStart = index + 1;
@@ -186,7 +212,7 @@ export function hoistProposalBlocksFromResponseGroups(
     if (segmentStart === 0) {
       hoisted.push(block);
     } else if (segmentStart < block.children.length) {
-      hoisted.push({ ...block, children: block.children.slice(segmentStart) });
+      hoisted.push(responseGroupSegment(block, segmentStart, block.children.length));
     }
   }
 
@@ -355,16 +381,20 @@ export function getResponseGroupCurrentBlockIndex(blocks: readonly ContentBlock[
 export function getResponseGroupCurrentChildIndex(
   group: Pick<
     ContentBlockGroup,
-    'children' | 'hasAdjacentReasoningHistory' | 'adjacentReasoningHistoryCount'
+    | 'children'
+    | 'hasAdjacentReasoningHistory'
+    | 'adjacentReasoningHistoryCount'
+    | 'hasAdjacentReasoningDescription'
   >,
 ): number {
-  const adjacentHistoryCount = Math.max(group.adjacentReasoningHistoryCount ?? 1, 1);
-  if (
-    group.hasAdjacentReasoningHistory &&
-    getResponseGroupCurrentBlockIndex(group.children.slice(adjacentHistoryCount + 1)) < 0
-  ) {
-    return group.children.length > 0 ? 0 : -1;
-  }
+  if (!group.hasAdjacentReasoningHistory) return getResponseGroupCurrentBlockIndex(group.children);
+
+  const historyCount = Math.max(group.adjacentReasoningHistoryCount ?? 0, 0);
+  const descriptionCount = group.hasAdjacentReasoningDescription ? 1 : 0;
+  const currentStart = historyCount + descriptionCount;
+  const currentIndex = getResponseGroupCurrentBlockIndex(group.children.slice(currentStart));
+  if (currentIndex >= 0) return currentStart + currentIndex;
+  if (descriptionCount) return 0;
 
   return getResponseGroupCurrentBlockIndex(group.children);
 }

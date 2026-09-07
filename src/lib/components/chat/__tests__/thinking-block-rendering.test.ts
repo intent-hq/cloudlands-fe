@@ -245,6 +245,34 @@ describe('thinking blocks — StreamingMessageContent', () => {
   it.each([
     ['MessageContent', renderMessage],
     ['StreamingMessageContent', renderStreaming],
+  ])('keeps a descriptionless active tool visible after collapsing %s', async (_, renderer) => {
+    const content = [
+      thinking('descriptionless:0', 'I will inspect the source.'),
+      { type: 'text', id: 'descriptionless:1', text: '<group:Prepping>' },
+      {
+        type: 'tool_use',
+        id: 'descriptionless:2',
+        toolCallId: 'descriptionless-call',
+        name: 'view',
+        input: { path: 'src/example.ts' },
+      },
+    ] as ContentBlock[];
+    await renderer(content, true);
+
+    const disclosure = screen.getByTestId('response-group-disclosure');
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(document.querySelectorAll('[data-tool-use-id]')).toHaveLength(1);
+
+    await fireEvent.click(disclosure);
+
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(document.querySelectorAll('[data-tool-use-id]')).toHaveLength(1);
+    expect(document.body.textContent).not.toContain('I will inspect the source.');
+  });
+
+  it.each([
+    ['MessageContent', renderMessage],
+    ['StreamingMessageContent', renderStreaming],
   ])(
     'transitions standalone active reasoning to a collapsed disclosure in %s',
     async (_, renderer) => {

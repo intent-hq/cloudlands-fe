@@ -1317,6 +1317,7 @@ export interface ContentBlockGroup {
   sourceName?: string;
   hasAdjacentReasoningHistory?: boolean;
   adjacentReasoningHistoryCount?: number;
+  hasAdjacentReasoningDescription?: boolean;
 }
 
 export type RenderContentBlock = ContentBlock | ContentBlockGroup;

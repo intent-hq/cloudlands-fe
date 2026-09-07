@@ -29,6 +29,7 @@ import { extractReasoningHistory } from '../reasoning-heading';
 import { ChatTranscriptReconciler } from '$lib/client/live/live-chat-client';
 import { warmImport } from '../../../../test/warm-import';
 import type { ContentBlock } from '$shared/types';
+import type { ContentBlockGroup } from '$lib/utils/messageParser';
 import ResponseGroupCollapseHost from './ResponseGroupCollapseHost.svelte';
 
 vi.mock('svelte-fa', async () => {
@@ -866,6 +867,7 @@ describe('ResponseGroup - block identity', () => {
         isReasoningPhase: true,
         hasAdjacentReasoningHistory: true,
         adjacentReasoningHistoryCount: 1,
+        hasAdjacentReasoningDescription: true,
         children: [
           description,
           {
@@ -912,6 +914,7 @@ describe('ResponseGroup - block identity', () => {
         isReasoningPhase: true,
         hasAdjacentReasoningHistory: true,
         adjacentReasoningHistoryCount: 1,
+        hasAdjacentReasoningDescription: false,
         children: [preceding, tool, laterReasoning],
       },
     ]);
@@ -1000,6 +1003,7 @@ describe('ResponseGroup - block identity', () => {
         isReasoningPhase: true,
         hasAdjacentReasoningHistory: true,
         adjacentReasoningHistoryCount: 1,
+        hasAdjacentReasoningDescription: true,
         children: [description, { ...proseReasoning, text: 'Explain the next step.' }],
       },
     ]);
@@ -1039,6 +1043,7 @@ describe('ResponseGroup - block identity', () => {
         isReasoningPhase: true,
         hasAdjacentReasoningHistory: true,
         adjacentReasoningHistoryCount: 2,
+        hasAdjacentReasoningDescription: true,
         children: [description, first, { ...second, text: 'Second body.' }],
       },
     ]);
@@ -1141,6 +1146,7 @@ describe('ResponseGroup - block identity', () => {
         children: [description, ...histories],
         hasAdjacentReasoningHistory: true,
         adjacentReasoningHistoryCount: historyCount,
+        hasAdjacentReasoningDescription: true,
       };
 
       expect(getResponseGroupCurrentChildIndex(group)).toBe(0);
@@ -1150,6 +1156,41 @@ describe('ResponseGroup - block identity', () => {
       expect(getResponseGroupCurrentChildIndex(group)).toBe(historyCount + 1);
     },
   );
+
+  it('selects a live child after adjacent history when no description exists', () => {
+    const history = { type: 'thinking', text: 'I will inspect the source.' } as ContentBlock;
+    const tool = { type: 'tool_use', id: 'tool-1', name: 'view', input: {} } as ContentBlock;
+    const [normalized] = normalizeResponseGroups([
+      history,
+      { type: 'content_group', name: 'Prepping', isStreaming: true, children: [tool] },
+    ]);
+    const group = normalized as ContentBlockGroup;
+
+    expect(group).toMatchObject({
+      children: [history, tool],
+      adjacentReasoningHistoryCount: 1,
+      hasAdjacentReasoningDescription: false,
+    });
+    expect(getResponseGroupCurrentChildIndex(group)).toBe(1);
+  });
+
+  it('honors a consumed title-only predecessor as zero adjacent history', () => {
+    const title = { type: 'thinking', text: '# Preparation' } as ContentBlock;
+    const tool = { type: 'tool_use', id: 'tool-1', name: 'view', input: {} } as ContentBlock;
+    const [normalized] = normalizeResponseGroups([
+      title,
+      { type: 'content_group', name: 'Prepping', isStreaming: true, children: [tool] },
+    ]);
+    const group = normalized as ContentBlockGroup;
+
+    expect(group).toMatchObject({
+      name: 'Preparation',
+      children: [tool],
+      adjacentReasoningHistoryCount: 0,
+      hasAdjacentReasoningDescription: false,
+    });
+    expect(getResponseGroupCurrentChildIndex(group)).toBe(0);
+  });
 
   it('uses protocol-backed tool identities instead of positions', () => {
     const toolUse = { type: 'tool_use', id: 'tool-42', name: 'search' } as ContentBlock;
