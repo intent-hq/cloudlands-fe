@@ -2229,7 +2229,6 @@
   "chat_queuedMessages_edit_tooltip": "편집",
   "chat_backgroundHooks_row_ariaLabel": "백그라운드 훅",
   "chat_backgroundHooks_running_label": "실행 중",
-  "chat_backgroundHooks_runningFor": "{duration} 동안 실행 중",
   "chat_backgroundHooks_runNow_label": "지금 실행",
   "chat_backgroundHooks_cancel_label": "취소",
   "chat_backgroundHooks_state_scheduled_label": "예약됨",

@@ -2229,7 +2229,6 @@
   "chat_queuedMessages_edit_tooltip": "Editar",
   "chat_backgroundHooks_row_ariaLabel": "Hooks en segundo plano",
   "chat_backgroundHooks_running_label": "en ejecución",
-  "chat_backgroundHooks_runningFor": "en ejecución durante {duration}",
   "chat_backgroundHooks_runNow_label": "Ejecutar ahora",
   "chat_backgroundHooks_cancel_label": "Cancelar",
   "chat_backgroundHooks_state_scheduled_label": "programado",

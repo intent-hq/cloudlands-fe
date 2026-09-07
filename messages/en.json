@@ -2230,7 +2230,6 @@
   "chat_queuedMessages_edit_tooltip": "Edit",
   "chat_backgroundHooks_row_ariaLabel": "Background hooks",
   "chat_backgroundHooks_running_label": "running",
-  "chat_backgroundHooks_runningFor": "running for {duration}",
   "chat_backgroundHooks_runNow_label": "Run now",
   "chat_backgroundHooks_cancel_label": "Cancel",
   "chat_backgroundHooks_state_scheduled_label": "scheduled",
