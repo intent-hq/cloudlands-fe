@@ -304,7 +304,7 @@ export function workspaceTabLifecycleMotion(
       if (controls && tracksLauncher) {
         const desiredOffset = slotProgress * launcherOffset;
         const currentLeft = launcherLeft;
-        if (currentLeft != null && previousLauncherLeft != null && progress > 0) {
+        if (currentLeft != null && previousLauncherLeft != null) {
           const desiredLeft =
             launcherTargetLeft !== null && launcherStartLeft !== null
               ? launcherTargetLeft + releaseProgress * (launcherStartLeft - launcherTargetLeft)

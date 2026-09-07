@@ -638,6 +638,76 @@ test('grows and removes a tab while the active mask follows the shared motion', 
   await expectMaskAttachedToActiveTab(component);
 });
 
+for (const controlsWidth of [650, 490, 360]) {
+  test(`reopens a tab during its outro at ${controlsWidth}px without losing the tab`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    const pageErrors: string[] = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    const component = await mount(WorkspaceTabStripGeometryPreview, {
+      props: {
+        initialOpenWorkspaceIds: ['geometry-alpha', 'geometry-beta', 'geometry-gamma'],
+        activeWorkspaceId: 'geometry-gamma',
+        interactive: true,
+      },
+    });
+    await component.locator('.workspace-controls').evaluate((controls, width) => {
+      const element = controls as HTMLElement;
+      element.style.width = `${width}px`;
+      element.style.flex = 'none';
+    }, controlsWidth);
+    await page.waitForTimeout(WORKSPACE_TAB_MOTION_DURATION_MS + 50);
+
+    const interruptedWidth = await component
+      .locator('[data-close-tab]')
+      .evaluate(async (button) => {
+        const slot = document.querySelector<HTMLElement>(
+          '[data-workspace-tab-motion="geometry-gamma"]',
+        );
+        if (!slot) throw new Error('Missing gamma tab slot');
+        (button as HTMLButtonElement).click();
+        for (let frame = 0; frame < 120; frame += 1) {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          const width = slot.getBoundingClientRect().width;
+          if (width > 30 && width < 140) return width;
+        }
+        return slot.getBoundingClientRect().width;
+      });
+    expect(interruptedWidth).toBeGreaterThan(30);
+    expect(interruptedWidth).toBeLessThan(140);
+    await component.locator('[data-open-tab]').click();
+    await page.waitForTimeout(1_000);
+
+    const tabOrder = await component
+      .locator('[data-workspace-tab]')
+      .evaluateAll((tabs) => tabs.map((tab) => (tab as HTMLElement).dataset.workspaceTab));
+    const settledWidths = await component
+      .locator('[data-workspace-tab-motion]')
+      .evaluateAll((slots) => slots.map((slot) => slot.getBoundingClientRect().width));
+    const activeAnimationCount = await component
+      .locator('[data-workspace-tab-motion]')
+      .evaluateAll(
+        (slots) =>
+          slots
+            .flatMap((slot) => slot.getAnimations())
+            .filter((animation) => animation.playState !== 'finished').length,
+      );
+    const evidence = JSON.stringify({
+      interruptedWidth,
+      pageErrors,
+      tabOrder,
+      settledWidths,
+      activeAnimationCount,
+    });
+    expect(pageErrors, evidence).toEqual([]);
+    expect(tabOrder, evidence).toEqual(['geometry-alpha', 'geometry-beta', 'geometry-gamma']);
+    expect(settledWidths, evidence).toEqual([160, 160, 160]);
+    expect(activeAnimationCount, evidence).toBe(0);
+  });
+}
+
 test('closes the active rightmost tab without reversing an overflowing strip', async ({
   mount,
   page,

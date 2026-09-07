@@ -97,6 +97,8 @@
   let pendingRemovedTabIds: string[] = [];
   const pendingOutroWorkspaceIds = new Set<string>();
   let pendingRemovalResetQueued = false;
+  let overflowRefreshFrame: number | null = null;
+  let queuedOutroOverflow: boolean | null | undefined;
 
   const workspaceById = $derived(
     new Map($workspaceItems$.map((workspace) => [String(workspace.id), workspace])),
@@ -204,6 +206,19 @@
   const emitActiveTabBounds = (bounds: WorkspaceTabBorderMaskBounds | null) =>
     flushSync(() => onActiveTabBoundsChange?.(bounds));
 
+  function scheduleOverflowRefresh(overflow?: boolean | null) {
+    if (overflow !== undefined) queuedOutroOverflow = overflow;
+    if (overflowRefreshFrame !== null) return;
+    overflowRefreshFrame = requestAnimationFrame(() => {
+      overflowRefreshFrame = null;
+      if (queuedOutroOverflow !== undefined) {
+        pendingOutroOverflow = queuedOutroOverflow;
+        queuedOutroOverflow = undefined;
+      }
+      refreshOverflow();
+    });
+  }
+
   onMount(() => {
     activeStreamsTracker.startPolling();
     const unsubscribe = activeStreamsTracker.subscribe(() => activeStreamsVersion++);
@@ -219,8 +234,7 @@
       observedTabOrder = nextTabOrder;
       if (reappearedTabIds.length > 0) {
         reappearedTabIds.forEach((workspaceId) => pendingOutroWorkspaceIds.delete(workspaceId));
-        pendingOutroOverflow = null;
-        refreshOverflow();
+        scheduleOverflowRefresh(null);
       }
       if (removedTabIds.length === 0) return;
       removedTabIds.forEach((workspaceId) => pendingOutroWorkspaceIds.add(workspaceId));
@@ -255,6 +269,7 @@
       openWorkspaceHoverCardIds.clear();
       pointerOpenEligibleWorkspaceHoverCardIds.clear();
       cancelAnimationFrame(lifecycleFrame);
+      if (overflowRefreshFrame !== null) cancelAnimationFrame(overflowRefreshFrame);
       motionQuery.removeEventListener('change', updateMotionPreference);
       window.removeEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
     };
@@ -875,8 +890,7 @@
 
   function handleTabIntroEnd(workspaceId: string) {
     if (pendingOutroWorkspaceIds.delete(workspaceId)) {
-      pendingOutroOverflow = null;
-      refreshOverflow();
+      scheduleOverflowRefresh(null);
     }
     if (workspaceId !== visualActiveWorkspaceId) return;
     activeTabBoundsPollers.forEach((poll) => poll());
@@ -947,18 +961,13 @@
           duration: lifecycleMotionReady && !isDragged ? workspaceTabMotionDuration : 0,
           easing: workspaceTabMotionEasing,
           phase: 'intro',
-          onFrame: () => refreshOverflow(),
+          onFrame: () => scheduleOverflowRefresh(),
         }}
         out:workspaceTabLifecycleMotion={{
           duration: lifecycleMotionReady && !isDragged ? workspaceTabMotionDuration : 0,
           easing: workspaceTabMotionEasing,
           phase: 'outro',
-          onFrame: (overflow) => {
-            flushSync(() => {
-              pendingOutroOverflow = overflow ?? pendingOutroOverflow;
-              refreshOverflow();
-            });
-          },
+          onFrame: (overflow) => scheduleOverflowRefresh(overflow),
         }}
         onintroend={() => handleTabIntroEnd(workspaceId)}
         onoutroend={() => handleTabOutroEnd(workspaceId)}
