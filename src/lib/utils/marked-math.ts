@@ -51,12 +51,22 @@ function inlineDollarToken(src: string): MathToken | undefined {
   if (!match) return undefined;
   const text = match[1];
   if (/^\s|\s$/.test(text) || /^[\d.,]+$/.test(text)) return undefined;
-  if (/^\d/.test(text) && /[A-Za-z]/.test(text) && !/[\\^_{}=+\-*/<>]/.test(text)) {
-    return undefined;
-  }
   const next = src[match[0].length];
   if (next && /\d/.test(next)) return undefined;
   return { type: 'mathInline', raw: match[0], text, source: match[0], displayMode: false };
+}
+
+function misplacedDisplayToken(src: string): MathToken | undefined {
+  const source = /^\$\$[^\n]*?\$\$/.exec(src)?.[0] ?? /^\\\[[^\n]*?\\\]/.exec(src)?.[0];
+  if (!source) return undefined;
+  return {
+    type: 'mathInline',
+    raw: source,
+    text: '',
+    source,
+    displayMode: false,
+    literalOnly: true,
+  };
 }
 
 function inlineParenthesisToken(src: string): MathToken | undefined {
@@ -125,9 +135,11 @@ export function addMathSupport(markedInstance: Marked, renderEnabled: boolean): 
       {
         name: 'mathInline',
         level: 'inline',
-        start: (src) => src.search(/\$|\\\(/),
+        start: (src) => src.search(/\$|\\[([]/),
         tokenizer(src) {
-          return inlineDollarToken(src) ?? inlineParenthesisToken(src);
+          return (
+            misplacedDisplayToken(src) ?? inlineDollarToken(src) ?? inlineParenthesisToken(src)
+          );
         },
         renderer: (token) => renderMath(token as MathToken, renderEnabled),
       },

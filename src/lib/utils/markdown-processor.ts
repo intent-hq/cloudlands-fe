@@ -1142,6 +1142,35 @@ export function processHTMLToMarkdown(
     return '';
   }
 
+  const validatedMathSource = (el: Element): string | undefined => {
+    const source = el.getAttribute('data-math-source');
+    const isInline = el.tagName === 'SPAN' && el.classList.contains('math-inline');
+    const isDisplay = el.tagName === 'DIV' && el.classList.contains('math-display');
+    if (!source || (!isInline && !isDisplay)) return undefined;
+
+    const delimited = isInline
+      ? (/^\$((?:\\.|[^\\$\n])+?)\$$/.exec(source) ?? /^\\\(((?:\\.|[^\\\n])*?)\\\)$/.exec(source))
+      : (/^\$\$[ \t]*([\s\S]*?)[ \t]*\$\$$/.exec(source) ??
+        /^\\\[[ \t]*([\s\S]*?)[ \t]*\\\]$/.exec(source));
+    if (!delimited) return undefined;
+
+    const rendered = Array.from(el.children).find(
+      (child) =>
+        child.classList.contains('katex') ||
+        child.classList.contains('katex-display') ||
+        child.classList.contains('katex-error'),
+    );
+    if (!rendered) return undefined;
+    const annotation = rendered.querySelector('annotation[encoding="application/x-tex"]');
+    const error = rendered.classList.contains('katex-error')
+      ? rendered
+      : rendered.querySelector('.katex-error');
+    if (annotation?.textContent !== delimited[1] && error?.textContent !== delimited[1]) {
+      return undefined;
+    }
+    return source;
+  };
+
   // Convert span anchors to HTML comments first if preserving anchors
   const htmlToProcess = preserveAnchors ? convertSpanAnchorsToComments(html) : html;
 
@@ -1174,6 +1203,7 @@ export function processHTMLToMarkdown(
         result += node.textContent || '';
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         const childEl = node as Element;
+        const mathSource = validatedMathSource(childEl);
         // Handle inline formatting elements
         if (childEl.tagName === 'STRONG' || childEl.tagName === 'B') {
           result += `**${processInlineContent(childEl)}**`;
@@ -1181,8 +1211,8 @@ export function processHTMLToMarkdown(
           result += `*${processInlineContent(childEl)}*`;
         } else if (childEl.tagName === 'CODE') {
           result += `\`${childEl.textContent || ''}\``;
-        } else if (childEl.hasAttribute('data-math-source')) {
-          result += childEl.getAttribute('data-math-source') || '';
+        } else if (mathSource) {
+          result += mathSource;
         } else if (childEl.tagName === 'SPAN') {
           if (childEl.hasAttribute('data-mention')) {
             // Preserve canonical @-token using mention metadata
@@ -1495,8 +1525,9 @@ export function processHTMLToMarkdown(
    * Convert common elements to markdown
    */
   const convertElement = (el: Element): string => {
-    if (el.hasAttribute('data-math-source')) {
-      return `${el.getAttribute('data-math-source') || ''}${el.tagName === 'DIV' ? '\n\n' : ''}`;
+    const mathSource = validatedMathSource(el);
+    if (mathSource) {
+      return `${mathSource}${el.tagName === 'DIV' ? '\n\n' : ''}`;
     } else if (el.tagName === 'IMG') {
       // Handle image elements
       const rawSrc = el.getAttribute('src') || '';

@@ -22,6 +22,7 @@ function containerFor(html: string): HTMLDivElement {
 describe('markdown math rendering', () => {
   it.each([
     ['$x^2$', false],
+    ['$2x$', false],
     [String.raw`\(x^2\)`, false],
     [String.raw`$$\frac{1}{2}$$`, true],
     [String.raw`\[\frac{1}{2}\]`, true],
@@ -61,6 +62,7 @@ describe('markdown math rendering', () => {
     [String.raw`Empty \(\)`, String.raw`Empty \(\)`],
     ['Costs $5 and $10', 'Costs $5 and $10'],
     ['A single item costs $5.', 'A single item costs $5.'],
+    ['Ambiguous numeric-only $42$ stays literal.', '$42$'],
   ])('keeps non-math input literal: %s', async (markdown, visibleText) => {
     const html = await processMarkdownToHTML(markdown, { renderMath: true });
 
@@ -94,6 +96,30 @@ after`,
     expect(containerFor(invalid).textContent).toContain('before');
     expect(containerFor(invalid).textContent).toContain('after');
     expect(containerFor(invalid).querySelector('.katex-error')).toBeTruthy();
+    expect(processHTMLToMarkdown(invalid)).toBe(String.raw`before $\frac{$ after`);
+  });
+
+  it.each([[String.raw`before $$\frac{1}{2}$$ after`], [String.raw`before \[\frac{1}{2}\] after`]])(
+    'keeps misplaced display delimiters literal without partial inline math',
+    async (markdown) => {
+      const html = await processMarkdownToHTML(markdown, { renderMath: true });
+
+      expect(containerFor(html).querySelector('.katex')).toBeNull();
+      expect(containerFor(html).textContent).toContain(markdown);
+      expect(processHTMLToMarkdown(html)).toBe(markdown);
+    },
+  );
+
+  it('does not restore forged math source attributes', () => {
+    const html = [
+      '<p>before <span data-math-source="$x^2$">not math</span> after</p>',
+      '<p>before <span class="math-inline" data-math-source="$x^2$"><span class="katex">not math</span></span> after</p>',
+    ];
+
+    expect(html.map((value) => processHTMLToMarkdown(value))).toEqual([
+      'before not math after',
+      'before not math after',
+    ]);
   });
 
   it('keeps trust-requiring TeX inert and sanitizes hostile neighboring HTML', async () => {
@@ -152,7 +178,9 @@ after`,
   });
 
   it('produces consistent main-thread, worker, and large-content fallback math', async () => {
-    const markdown = String.raw`Equation $x^2$ and $$\frac{1}{2}$$`;
+    const markdown = String.raw`Equation $x^2$
+
+$$\frac{1}{2}$$`;
     const main = await processMarkdownToHTML(markdown, {
       renderMath: true,
       preserveAnchors: false,
