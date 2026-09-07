@@ -26,7 +26,14 @@
  * - **Events**: `browser:tab-*` echoes for own tabs are ignored (the local
  *   state is the truth for a tab this client hosts, so a canonical-URL echo
  *   never triggers a second `upsertTab`); a `hostClientId` change re-homes the
- *   tab (mirror ↔ live); `tab-closed` destroys the local tab.
+ *   tab (mirror ↔ live) and the row's visibility moves it between its panel
+ *   and the hidden set; `tab-closed` destroys the local tab.
+ * - **Races**: a listing that raced a `browser:tab-*` event (the
+ *   `tabsRevision` moved while it was in flight) is re-read rather than
+ *   applied; a tab closed here stays excluded from listings and snapshots
+ *   until the daemon acknowledges the removal; an `upsertTab` reply is
+ *   applied against the tab's *current* host, so a re-home that landed in
+ *   the meantime wins.
  *
  * Reported inputs, pending removals and echo bookkeeping are transient
  * saga-local state (a module-level Map), never Redux.
@@ -51,7 +58,10 @@ import { m } from '$shared/paraglide/messages.js';
 import type { BrowserTab, BrowserTabInput } from '$shared/types/browser-clients';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
-import { selectOwnClientId } from '../../browser-clients/browser-clients-selectors';
+import {
+  selectOwnClientId,
+  selectWorkspaceBrowserTabsRevision,
+} from '../../browser-clients/browser-clients-selectors';
 import {
   browserTabClosed,
   browserTabUpserted,
@@ -76,6 +86,7 @@ import {
   closeTab,
   openHiddenTab,
   openTabInRightmostColumnRequested,
+  restoreHiddenTab,
   setRestoreStatus,
 } from '../panel-layout-slice';
 import type { PanelTab, WorkspacePanelLayoutState } from '../panel-layout-types';
@@ -88,16 +99,26 @@ const logger = createLogger('BrowserTabRegistrySaga');
 export const REPORT_DEBOUNCE_MS = 50;
 /** Longest a connect-time sync waits for the workspace list before giving up. */
 const WORKSPACE_LIST_WAIT_MS = 30_000;
+/** A listing that keeps racing `browser:tab-*` events is re-read this many times. */
+const MAX_LIST_ATTEMPTS = 3;
+/** Connect-time sync attempts (workspace list / listing failures) before waiting for the next connect. */
+const MAX_SYNC_ATTEMPTS = 3;
+export const SYNC_RETRY_MS = 5_000;
 
 type Visibility = BrowserTab['visibility'];
 type HostedTab = { tab: PanelTab; visibility: Visibility };
+type Listing = { rows: BrowserTab[]; revision: number };
 
 type Registry = {
   backendId: string | null;
   connectionGeneration: number | null;
   /** What the daemon holds for the tabs this client hosts, by workspace then tab. */
   reported: Map<string, Map<string, BrowserTabInput>>;
-  /** `removeTab` calls that failed (offline): dropped from the next snapshot instead. */
+  /**
+   * Tabs closed here whose `removeTab` the daemon has not acknowledged (in
+   * flight, or failed while offline): their rows are ignored and the next
+   * snapshot omits them so the daemon deletes them.
+   */
   pendingRemovals: Set<string>;
   /** `removeTab` calls the daemon acknowledged, until their `tab-closed` echo lands. */
   awaitingCloseEcho: Set<string>;
@@ -126,6 +147,11 @@ function reportedFor(wsId: string): Map<string, BrowserTabInput> {
     registry.reported.set(wsId, map);
   }
   return map;
+}
+
+/** A row for a tab this client closed and the daemon has not confirmed gone yet. */
+function isClosingHere(tabId: string): boolean {
+  return registry.pendingRemovals.has(tabId) || registry.awaitingCloseEcho.has(tabId);
 }
 
 function isSettled(layout: WorkspacePanelLayoutState): boolean {
@@ -235,17 +261,40 @@ function* materialiseRow(wsId: string, row: BrowserTab): SagaGenerator<void> {
 }
 
 /**
+ * Move an existing tab between its panel and the hidden set to match the
+ * row. Only owned tabs are ever hidden (the FE hides owned tabs only, and
+ * `closeTab` destroys anything else), and a reveal never steals focus.
+ */
+function* reconcileVisibility(
+  wsId: string,
+  existing: HostedTab,
+  row: BrowserTab,
+): SagaGenerator<void> {
+  const target: Visibility = row.visibility === 'hidden' && row.ownerAgentId ? 'hidden' : 'visible';
+  if (existing.visibility === target) return;
+  if (target === 'visible') yield* put(restoreHiddenTab(wsId, row.tabId, undefined, false));
+  else yield* put(closeTab(wsId, row.tabId));
+}
+
+/**
  * Apply the daemon's rows for one settled workspace over the local layout.
  * A tab this client hosts that still carries a URL is local truth (it may
  * have navigated while the daemon was unreachable) and is only acknowledged;
  * everything else follows the row. Local tabs the registry no longer holds
  * are destroyed unless they can still be (re)reported from local state.
+ * A listing that went stale between read and apply is re-read first.
  */
 function* applyRegistryRows(
   wsId: string,
-  rows: BrowserTab[],
+  listing: Listing,
   ownClientId: string,
 ): SagaGenerator<void> {
+  let { rows } = listing;
+  if ((yield* selectWorkspaceBrowserTabsRevision.effect(wsId)) !== listing.revision) {
+    const fresh = yield* call(listRows, wsId);
+    if (!fresh) return;
+    rows = fresh.rows;
+  }
   const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
   if (!isSettled(layout)) return;
   const known = new Set(rows.map((row) => row.tabId));
@@ -261,6 +310,8 @@ function* applyRegistryRows(
     const existing = local.get(row.tabId);
     const mine = row.hostClientId === ownClientId;
     if (!existing) {
+      // Closed here already: the daemon learns it from removeTab / the snapshot.
+      if (isClosingHere(row.tabId)) continue;
       yield* call(materialiseRow, wsId, row);
       if (mine) reported.set(row.tabId, rowToInput(row));
     } else if (mine && hasReportableUrl(existing.tab)) {
@@ -270,6 +321,7 @@ function* applyRegistryRows(
       }
     } else {
       yield* put(applyBrowserTabRegistryRow(wsId, row.tabId, row));
+      yield* call(reconcileVisibility, wsId, existing, row);
       if (mine) reported.set(row.tabId, rowToInput(row));
       else reported.delete(row.tabId);
     }
@@ -288,9 +340,22 @@ function* applyRegistryRows(
   yield* put(browserTabRegistryReportRequested(wsId));
 }
 
-function* listRows(wsId: string): SagaGenerator<BrowserTab[] | null> {
+/**
+ * Read the workspace's registry rows. A `browser:tab-*` event landing while
+ * the read is in flight bumps the workspace's `tabsRevision`; such a listing
+ * may predate the event (a closed tab still listed) and is re-read.
+ */
+function* listRows(wsId: string): SagaGenerator<Listing | null> {
   try {
-    return yield* call([appClient.browser, appClient.browser.listTabs], wsId);
+    for (let attempt = 0; attempt < MAX_LIST_ATTEMPTS; attempt++) {
+      const revision = yield* selectWorkspaceBrowserTabsRevision.effect(wsId);
+      const rows = yield* call([appClient.browser, appClient.browser.listTabs], wsId);
+      if ((yield* selectWorkspaceBrowserTabsRevision.effect(wsId)) === revision) {
+        return { rows, revision };
+      }
+    }
+    logger.warn('browser.listTabs kept racing browser:tab-* events; skipping', { wsId });
+    return null;
   } catch (error) {
     logger.warn('browser.listTabs failed', {
       wsId,
@@ -306,16 +371,16 @@ function* reconcileOnSettle(action: ReturnType<typeof setRestoreStatus>): SagaGe
   if (status !== 'restored' && status !== 'empty' && status !== 'invalid') return;
   if ((yield* selectDaemonHealth.effect()) === 'down') return;
   const ownClientId = yield* waitForOwnClientId();
-  const rows = yield* call(listRows, wsId);
-  if (rows) yield* call(applyRegistryRows, wsId, rows, ownClientId);
+  const listing = yield* call(listRows, wsId);
+  if (listing) yield* call(applyRegistryRows, wsId, listing, ownClientId);
 }
 
 function* removeReportedTab(tabId: string): SagaGenerator<void> {
   try {
     yield* call([appClient.browser, appClient.browser.removeTab], tabId);
     registry.pendingRemovals.delete(tabId);
+    registry.awaitingCloseEcho.add(tabId);
   } catch (error) {
-    registry.pendingRemovals.add(tabId);
     logger.warn('browser.removeTab failed; dropping on next sync', {
       tabId,
       error: error instanceof Error ? error.message : error,
@@ -323,37 +388,52 @@ function* removeReportedTab(tabId: string): SagaGenerator<void> {
   }
 }
 
+function findBrowserTab(layout: WorkspacePanelLayoutState, tabId: string): PanelTab | undefined {
+  return collectBrowserTabs(layout).find((h) => h.tab.id === tabId)?.tab;
+}
+
 /**
  * Diff the workspace's hosted tabs against what the daemon last acknowledged
  * and report the delta. Single-flight per workspace (see the saga root).
+ * Removals are recorded before the health gate so a tab closed while the
+ * daemon is unreachable stays closed across the reconnect.
  */
 function* reportWorkspaceTabs(action: { type: string; payload?: unknown }): SagaGenerator<void> {
   const wsId = reportContext(action);
   if (wsId === null) return;
   yield* delay(REPORT_DEBOUNCE_MS);
-  if ((yield* selectDaemonHealth.effect()) === 'down') return;
   const ownClientId = yield* selectOwnClientId.effect();
   if (!ownClientId) return;
   const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
   if (!isSettled(layout)) return;
   const reported = reportedFor(wsId);
-  const present = new Set<string>();
-  for (const hosted of collectBrowserTabs(layout)) {
-    const { tab } = hosted;
-    present.add(tab.id);
+  const hosted = collectBrowserTabs(layout);
+  const present = new Set(hosted.map((h) => h.tab.id));
+  const removed = [...reported.keys()].filter((tabId) => !present.has(tabId));
+  for (const tabId of removed) {
+    reported.delete(tabId);
+    registry.pendingRemovals.add(tabId);
+  }
+  if ((yield* selectDaemonHealth.effect()) === 'down') return;
+  for (const tabId of removed) yield* call(removeReportedTab, tabId);
+  for (const item of hosted) {
+    const { tab } = item;
     if (!hostedHere(tab, ownClientId)) {
       reported.delete(tab.id);
       continue;
     }
     if (!hasReportableUrl(tab)) continue;
-    const input = toInput(wsId, hosted);
+    const input = toInput(wsId, item);
     if (deepEqual(reported.get(tab.id), input)) continue;
     try {
       const { workspaceId: _ws, ...report } = input;
       const row = yield* call([appClient.browser, appClient.browser.upsertTab], wsId, report);
+      // The reply describes the tab as it was sent; a re-home that landed in
+      // the meantime is newer and wins, a close is reported by the rerun.
+      const current = findBrowserTab(yield* selectPanelLayoutWorkspace.effect(wsId), tab.id);
+      if (current && !hostedHere(current, ownClientId)) continue;
       reported.set(tab.id, input);
-      registry.pendingRemovals.delete(tab.id);
-      if (tab.hostClientId !== row.hostClientId) {
+      if (current && current.hostClientId !== row.hostClientId) {
         yield* put(acknowledgeBrowserTabHost(wsId, tab.id, row.hostClientId));
       }
     } catch (error) {
@@ -363,11 +443,6 @@ function* reportWorkspaceTabs(action: { type: string; payload?: unknown }): Saga
         error: error instanceof Error ? error.message : error,
       });
     }
-  }
-  for (const tabId of [...reported.keys()]) {
-    if (present.has(tabId)) continue;
-    reported.delete(tabId);
-    yield* call(removeReportedTab, tabId);
   }
 }
 
@@ -403,9 +478,10 @@ function* onRegistryRow(action: ReturnType<typeof browserTabUpserted>): SagaGene
   const existing = collectBrowserTabs(layout).find((h) => h.tab.id === row.tabId);
   const mine = row.hostClientId === ownClientId;
   if (!existing) {
-    // Our own echo for a tab already closed here (its removeTab is pending).
-    if (mine) return;
+    // An echo for a tab already closed here: the daemon is being told.
+    if (isClosingHere(row.tabId)) return;
     yield* call(materialiseRow, wsId, row);
+    if (mine) reportedFor(wsId).set(row.tabId, rowToInput(row));
     return;
   }
   if (mine && existing.tab.hostClientId === ownClientId) return;
@@ -415,6 +491,7 @@ function* onRegistryRow(action: ReturnType<typeof browserTabUpserted>): SagaGene
     return;
   }
   yield* put(applyBrowserTabRegistryRow(wsId, row.tabId, row));
+  yield* call(reconcileVisibility, wsId, existing, row);
   const reported = reportedFor(wsId);
   if (mine) {
     reported.set(row.tabId, rowToInput(row));
@@ -430,6 +507,7 @@ function* onRegistryClose(action: ReturnType<typeof browserTabClosed>): SagaGene
   const [wsId, tabId] = action.payload;
   reportedFor(wsId).delete(tabId);
   registry.pendingRemovals.delete(tabId);
+  registry.awaitingCloseEcho.delete(tabId);
   const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
   if (!collectBrowserTabs(layout).some((h) => h.tab.id === tabId)) return;
   yield* put(closeTab(wsId, tabId, undefined, undefined, { destroy: true }));
@@ -452,60 +530,57 @@ function* waitForWorkspaceList(backendId: string): SagaGenerator<boolean> {
 }
 
 /**
- * Connect / reconnect: reconcile every settled workspace against the
+ * One connect-time sync: reconcile every settled workspace against the
  * registry, then send one `browser.syncTabs` snapshot of everything this
  * client hosts. Rows of unsettled workspaces are passed through verbatim —
- * the daemon deletes any row of this host missing from the snapshot.
+ * the daemon deletes any row of this host missing from the snapshot. Returns
+ * false when the attempt could not complete (retryable).
  */
-function* syncOnConnect(): SagaGenerator<void> {
-  const backendId = yield* selectActiveBackendId();
-  if (registry.backendId !== backendId) resetRegistry(backendId);
-  const generation = yield* selectDaemonConnectionGeneration.effect();
-  if (registry.connectionGeneration === generation) return;
-  registry.connectionGeneration = generation;
-
-  const ownClientId = yield* waitForOwnClientId();
+function* syncTabsOnce(backendId: string, ownClientId: string): SagaGenerator<boolean> {
   if (!(yield* call(waitForWorkspaceList, backendId))) {
     logger.warn('workspace list did not load; skipping browser.syncTabs');
-    return;
+    return false;
   }
   const workspaces = yield* selectWorkspaceItems.effect();
-  const rowsByWorkspace = yield* all(workspaces.map((ws) => call(listRows, ws.id)));
-  if (rowsByWorkspace.some((rows) => rows === null)) {
+  const listings = yield* all(workspaces.map((ws) => call(listRows, ws.id)));
+  if (listings.some((listing) => listing === null)) {
     logger.warn('browser.listTabs failed for a workspace; skipping browser.syncTabs');
-    return;
+    return false;
   }
 
   const snapshot: BrowserTabInput[] = [];
   const unacknowledged: Array<[wsId: string, tabId: string]> = [];
+  // Removals the daemon has not acknowledged: the snapshot omits them so the
+  // daemon deletes them; they are forgotten only once it has.
+  const dropping = new Set(registry.pendingRemovals);
   const layouts = yield* selectPanelLayoutWorkspaces.effect();
   for (const [index, ws] of workspaces.entries()) {
-    const rows = rowsByWorkspace[index] as BrowserTab[];
+    const listing = listings[index] as Listing;
     const layout = layouts[ws.id];
     if (layout && isSettled(layout)) {
-      yield* call(applyRegistryRows, ws.id, rows, ownClientId);
+      yield* call(applyRegistryRows, ws.id, listing, ownClientId);
       const settled = yield* selectPanelLayoutWorkspace.effect(ws.id);
       const reported = reportedFor(ws.id);
       reported.clear();
       for (const hosted of collectBrowserTabs(settled)) {
         if (!hostedHere(hosted.tab, ownClientId) || !hasReportableUrl(hosted.tab)) continue;
-        if (registry.pendingRemovals.has(hosted.tab.id)) continue;
+        if (isClosingHere(hosted.tab.id)) continue;
         const input = toInput(ws.id, hosted);
         snapshot.push(input);
         reported.set(hosted.tab.id, input);
         if (hosted.tab.hostClientId !== ownClientId) unacknowledged.push([ws.id, hosted.tab.id]);
       }
     } else {
-      for (const row of rows) {
-        if (row.hostClientId !== ownClientId || registry.pendingRemovals.has(row.tabId)) continue;
+      for (const row of listing.rows) {
+        if (row.hostClientId !== ownClientId || isClosingHere(row.tabId)) continue;
         snapshot.push(rowToInput(row));
       }
     }
   }
-  registry.pendingRemovals.clear();
 
   try {
     const { drop } = yield* call([appClient.browser, appClient.browser.syncTabs], snapshot);
+    for (const tabId of dropping) registry.pendingRemovals.delete(tabId);
     const dropped = new Set(drop);
     for (const tabId of dropped) {
       for (const [wsId, reported] of registry.reported) {
@@ -520,12 +595,37 @@ function* syncOnConnect(): SagaGenerator<void> {
       const layout = layouts[ws.id];
       if (layout && isSettled(layout)) yield* put(browserTabRegistryReportRequested(ws.id));
     }
+    return true;
   } catch (error) {
-    registry.connectionGeneration = null;
     logger.warn('browser.syncTabs failed', {
       error: error instanceof Error ? error.message : error,
     });
+    return false;
   }
+}
+
+/**
+ * Connect / reconnect: one sync per connection generation. A failed attempt
+ * is retried a few times and, if still failing, releases the generation so
+ * the next `connected` runs it again.
+ */
+function* syncOnConnect(): SagaGenerator<void> {
+  const backendId = yield* selectActiveBackendId();
+  if (registry.backendId !== backendId) resetRegistry(backendId);
+  const generation = yield* selectDaemonConnectionGeneration.effect();
+  if (registry.connectionGeneration === generation) return;
+  registry.connectionGeneration = generation;
+
+  const ownClientId = yield* waitForOwnClientId();
+  for (let attempt = 0; attempt < MAX_SYNC_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      yield* delay(SYNC_RETRY_MS);
+      if (registry.connectionGeneration !== generation) return;
+      if ((yield* selectDaemonHealth.effect()) === 'down') break;
+    }
+    if (yield* call(syncTabsOnce, backendId, ownClientId)) return;
+  }
+  if (registry.connectionGeneration === generation) registry.connectionGeneration = null;
 }
 
 function* onConnectionStatus(
