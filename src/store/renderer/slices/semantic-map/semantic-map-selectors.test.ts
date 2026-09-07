@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
-import { SEMANTIC_MAP_FIXTURE_ACTIVITIES } from '$lib/components/visualization/semantic-map/core/fixtures';
+import {
+  SEMANTIC_MAP_FIXTURE_ACTIVITIES,
+  SEMANTIC_MAP_FIXTURE_MANIFEST,
+} from '$lib/components/visualization/semantic-map/core/fixtures';
 import {
   initialState,
-  semanticMapActivitiesLoaded,
   semanticMapAgentFilterChanged,
+  semanticMapHydrated,
   semanticMapKindFilterChanged,
+  semanticMapLoadStarted,
   semanticMapReducer,
   semanticMapTimeWindowChanged,
 } from './semantic-map-slice';
@@ -15,6 +19,23 @@ import {
 } from './semantic-map-selectors';
 
 const WORKSPACE_ID = 'ws-1';
+const GENERATION = 1;
+
+function withActivities() {
+  let slice = semanticMapReducer(initialState, semanticMapLoadStarted(WORKSPACE_ID, GENERATION));
+  slice = semanticMapReducer(
+    slice,
+    semanticMapHydrated(
+      WORKSPACE_ID,
+      GENERATION,
+      SEMANTIC_MAP_FIXTURE_MANIFEST,
+      'curated',
+      SEMANTIC_MAP_FIXTURE_ACTIVITIES,
+      [],
+    ),
+  );
+  return slice;
+}
 
 function rootState(semanticMap: ReturnType<typeof semanticMapReducer>): StoreState {
   return { semanticMap } as StoreState;
@@ -29,10 +50,7 @@ describe('semantic-map selectors', () => {
   });
 
   it('returns the daemon activity unchanged when filters are empty', () => {
-    const slice = semanticMapReducer(
-      initialState,
-      semanticMapActivitiesLoaded(WORKSPACE_ID, SEMANTIC_MAP_FIXTURE_ACTIVITIES),
-    );
+    const slice = withActivities();
 
     expect(selectFilteredSemanticMapActivities.select(rootState(slice), WORKSPACE_ID)).toEqual(
       SEMANTIC_MAP_FIXTURE_ACTIVITIES,
@@ -40,10 +58,7 @@ describe('semantic-map selectors', () => {
   });
 
   it('filters by kind, agent, and inclusive time window without aggregating', () => {
-    let slice = semanticMapReducer(
-      initialState,
-      semanticMapActivitiesLoaded(WORKSPACE_ID, SEMANTIC_MAP_FIXTURE_ACTIVITIES),
-    );
+    let slice = withActivities();
     slice = semanticMapReducer(slice, semanticMapKindFilterChanged(WORKSPACE_ID, ['edit']));
     slice = semanticMapReducer(slice, semanticMapAgentFilterChanged(WORKSPACE_ID, ['agent-1']));
     slice = semanticMapReducer(

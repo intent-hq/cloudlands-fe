@@ -3,6 +3,7 @@ import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   addItem,
   createCollection,
+  getItems,
   removeItem,
   type Collection,
 } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -25,6 +26,7 @@ export interface SemanticMapTimeWindow {
 type SemanticMapHydrationStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
 export interface SemanticMapWorkspaceState {
+  mountGeneration: number;
   hydrationStatus: SemanticMapHydrationStatus;
   manifest: Manifest | null;
   source: MapSource | null;
@@ -43,6 +45,7 @@ export interface SemanticMapState {
 }
 
 export const emptySemanticMapWorkspaceState: SemanticMapWorkspaceState = {
+  mountGeneration: 0,
   hydrationStatus: 'idle',
   manifest: null,
   source: null,
@@ -62,14 +65,23 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWork
   emptySemanticMapWorkspaceState,
 );
 
-export const semanticMapLoaded =
-  createAction<[workspaceId: string, manifest: Manifest, source: MapSource]>('semanticMap/loaded');
+export type SemanticMapRouteSubject = { agentId: string } | { taskNoteId: string };
+
+export const semanticMapHydrated =
+  createAction<
+    [
+      workspaceId: string,
+      generation: number,
+      manifest: Manifest,
+      source: MapSource,
+      activities: MapActivity[],
+      baselineActivityIds: string[],
+    ]
+  >('semanticMap/hydrated');
 export const semanticMapLoadStarted =
-  createAction<[workspaceId: string]>('semanticMap/loadStarted');
-export const semanticMapLoadFailed = createAction<[workspaceId: string]>('semanticMap/loadFailed');
-export const semanticMapActivitiesLoaded = createAction<
-  [workspaceId: string, activities: MapActivity[]]
->('semanticMap/activitiesLoaded');
+  createAction<[workspaceId: string, generation: number]>('semanticMap/loadStarted');
+export const semanticMapLoadFailed =
+  createAction<[workspaceId: string, generation: number]>('semanticMap/loadFailed');
 export const semanticMapActivityReceived = createAction<
   [workspaceId: string, activity: MapActivity]
 >('semanticMap/activityReceived');
@@ -80,7 +92,9 @@ export const semanticMapRouteRefreshRequested = createAction<[workspaceId: strin
   'semanticMap/routeRefreshRequested',
 );
 export const semanticMapRouteLoaded =
-  createAction<[workspaceId: string, route: Route | null]>('semanticMap/routeLoaded');
+  createAction<
+    [workspaceId: string, generation: number, subject: SemanticMapRouteSubject, route: Route]
+  >('semanticMap/routeLoaded');
 export const semanticMapSelectedAgentChanged = createAction<
   [workspaceId: string, agentId: string | null]
 >('semanticMap/selectedAgentChanged');
@@ -103,46 +117,80 @@ export const semanticMapCleared = createAction<[workspaceId: string]>('semanticM
 
 export const semanticMapReducer = createReducer<SemanticMapState>(initialState);
 
-semanticMapReducer.with(semanticMapLoadStarted, (state, { payload: [workspaceId] }) => {
-  const workspaceState = getWorkspaceState(state, workspaceId);
+function createCappedActivities(activities: MapActivity[]): Collection<MapActivity, 'id'> {
+  const collection = createCollection('id', activities);
+  if (collection.ids.length <= SEMANTIC_MAP_ACTIVITY_LIMIT) return collection;
+  return createCollection('id', getItems(collection).slice(-SEMANTIC_MAP_ACTIVITY_LIMIT));
+}
+
+function matchesRouteSubject(
+  workspaceState: SemanticMapWorkspaceState,
+  subject: SemanticMapRouteSubject,
+): boolean {
+  return 'agentId' in subject
+    ? workspaceState.selectedAgentId === subject.agentId &&
+        workspaceState.selectedTaskNoteId === null
+    : workspaceState.selectedTaskNoteId === subject.taskNoteId &&
+        workspaceState.selectedAgentId === null;
+}
+
+semanticMapReducer.with(semanticMapLoadStarted, (state, { payload: [workspaceId, generation] }) => {
+  const current = state.byWorkspaceId[workspaceId];
+  const workspaceState =
+    current?.mountGeneration === generation
+      ? current
+      : { ...emptySemanticMapWorkspaceState, mountGeneration: generation };
   return setWorkspaceState(state, workspaceId, {
     ...workspaceState,
     hydrationStatus: 'loading',
   });
 });
 semanticMapReducer.with(
-  semanticMapLoaded,
-  (state, { payload: [workspaceId, manifest, source] }) => {
-    const workspaceState = getWorkspaceState(state, workspaceId);
+  semanticMapHydrated,
+  (
+    state,
+    { payload: [workspaceId, generation, manifest, source, activities, baselineActivityIds] },
+  ) => {
+    const workspaceState = state.byWorkspaceId[workspaceId];
+    if (!workspaceState || workspaceState.mountGeneration !== generation) return state;
+
+    const baselineIds = baselineActivityIds.reduce<Record<string, true>>((ids, id) => {
+      ids[id] = true;
+      return ids;
+    }, {});
+    const liveActivities = getItems(workspaceState.activities).filter(
+      (activity) => !baselineIds[activity.id],
+    );
+    const selectedRegionId = manifest.regions.some(
+      (region) => region.id === workspaceState.selectedRegionId,
+    )
+      ? workspaceState.selectedRegionId
+      : null;
+
     return setWorkspaceState(state, workspaceId, {
       ...workspaceState,
       hydrationStatus: 'loaded',
       manifest,
       source,
+      activities: createCappedActivities([...activities, ...liveActivities]),
+      route: null,
+      selectedRegionId,
     });
   },
 );
-semanticMapReducer.with(semanticMapLoadFailed, (state, { payload: [workspaceId] }) => {
-  const workspaceState = getWorkspaceState(state, workspaceId);
+semanticMapReducer.with(semanticMapLoadFailed, (state, { payload: [workspaceId, generation] }) => {
+  const workspaceState = state.byWorkspaceId[workspaceId];
+  if (!workspaceState || workspaceState.mountGeneration !== generation) return state;
   return setWorkspaceState(state, workspaceId, {
     ...workspaceState,
     hydrationStatus: 'error',
   });
 });
 semanticMapReducer.with(
-  semanticMapActivitiesLoaded,
-  (state, { payload: [workspaceId, activities] }) => {
-    const workspaceState = getWorkspaceState(state, workspaceId);
-    return setWorkspaceState(state, workspaceId, {
-      ...workspaceState,
-      activities: createCollection('id', activities.slice(-SEMANTIC_MAP_ACTIVITY_LIMIT)),
-    });
-  },
-);
-semanticMapReducer.with(
   semanticMapActivityReceived,
   (state, { payload: [workspaceId, activity] }) => {
-    const workspaceState = getWorkspaceState(state, workspaceId);
+    const workspaceState = state.byWorkspaceId[workspaceId];
+    if (!workspaceState) return state;
     let activities = addItem(workspaceState.activities, activity);
     if (activities.ids.length > SEMANTIC_MAP_ACTIVITY_LIMIT) {
       activities = removeItem(activities, activities.ids[0]);
@@ -153,10 +201,20 @@ semanticMapReducer.with(
     });
   },
 );
-semanticMapReducer.with(semanticMapRouteLoaded, (state, { payload: [workspaceId, route] }) => {
-  const workspaceState = getWorkspaceState(state, workspaceId);
-  return setWorkspaceState(state, workspaceId, { ...workspaceState, route });
-});
+semanticMapReducer.with(
+  semanticMapRouteLoaded,
+  (state, { payload: [workspaceId, generation, subject, route] }) => {
+    const workspaceState = state.byWorkspaceId[workspaceId];
+    if (
+      !workspaceState ||
+      workspaceState.mountGeneration !== generation ||
+      !matchesRouteSubject(workspaceState, subject)
+    ) {
+      return state;
+    }
+    return setWorkspaceState(state, workspaceId, { ...workspaceState, route });
+  },
+);
 semanticMapReducer.with(
   semanticMapSelectedAgentChanged,
   (state, { payload: [workspaceId, selectedAgentId] }) => {

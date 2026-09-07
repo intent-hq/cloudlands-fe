@@ -1,4 +1,4 @@
-import { all, call, put, takeEvery, throttle } from 'typed-redux-saga';
+import { all, call, put, takeEvery, throttle, type SagaGenerator } from 'typed-redux-saga';
 
 import { SemanticMapClient } from '$lib/components/visualization/semantic-map/core/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -10,15 +10,15 @@ import {
 import { applyNoteCreated, applyNoteUpdated } from '../../workspace-notes/workspace-notes-slice';
 import { selectSemanticMapState } from '../semantic-map-selectors';
 import {
-  semanticMapActivitiesLoaded,
   semanticMapActivityReceived,
   semanticMapCleared,
+  semanticMapHydrated,
   semanticMapLoadFailed,
   semanticMapLoadStarted,
-  semanticMapLoaded,
   semanticMapRefreshRequested,
   semanticMapRouteLoaded,
   semanticMapRouteRefreshRequested,
+  type SemanticMapRouteSubject,
   semanticMapSelectedAgentChanged,
   semanticMapSelectedTaskChanged,
 } from '../semantic-map-slice';
@@ -28,26 +28,64 @@ const client = new SemanticMapClient();
 
 type MapReadAction =
   ReturnType<typeof workspaceMounted> | ReturnType<typeof semanticMapRefreshRequested>;
+type MapContextAction = MapReadAction | ReturnType<typeof workspaceUnmounted>;
+type RouteContextAction =
+  ReturnType<typeof semanticMapRouteRefreshRequested> | ReturnType<typeof workspaceUnmounted>;
+type GenerationCoordinator = Map<string, number>;
+type RequestGenerations<Action extends object> = WeakMap<Action, number>;
 
-function* readMapWorker(action: MapReadAction) {
+function mapContext(
+  generations: GenerationCoordinator,
+  requests: RequestGenerations<MapReadAction>,
+  action: MapContextAction,
+) {
   const [workspaceId] = action.payload;
-  yield* put(semanticMapLoadStarted(workspaceId));
+  if (action.type === workspaceUnmounted.type) {
+    generations.set(workspaceId, (generations.get(workspaceId) ?? 0) + 1);
+    return { context: workspaceId, cancel: true as const };
+  }
+  const generation =
+    action.type === workspaceMounted.type
+      ? (generations.get(workspaceId) ?? 0) + 1
+      : generations.get(workspaceId);
+  if (generation === undefined) return { context: workspaceId, cancel: true as const };
+  generations.set(workspaceId, generation);
+  requests.set(action, generation);
+  return workspaceId;
+}
+
+function* readMapWorker(
+  requests: RequestGenerations<MapReadAction>,
+  action: MapReadAction,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  const generation = requests.get(action);
+  if (generation === undefined) return;
+  const state = yield* selectSemanticMapState.effect(workspaceId);
+  const baselineActivityIds = state.activities.map((activity) => activity.id);
+  yield* put(semanticMapLoadStarted(workspaceId, generation));
   try {
     const snapshot: Awaited<ReturnType<SemanticMapClient['get']>> = yield* call(
       [client, client.get],
       workspaceId,
     );
-    yield* put(semanticMapLoaded(workspaceId, snapshot.manifest, snapshot.source));
-    if (action.type === workspaceMounted.type) {
-      const activities: Awaited<ReturnType<SemanticMapClient['activity']>> = yield* call(
-        [client, client.activity],
+    const activities: Awaited<ReturnType<SemanticMapClient['activity']>> = yield* call(
+      [client, client.activity],
+      workspaceId,
+      { minutesAgo: 60 },
+    );
+    yield* put(
+      semanticMapHydrated(
         workspaceId,
-        { minutesAgo: 60 },
-      );
-      yield* put(semanticMapActivitiesLoaded(workspaceId, activities));
-    }
+        generation,
+        snapshot.manifest,
+        snapshot.source,
+        activities,
+        baselineActivityIds,
+      ),
+    );
   } catch (error) {
-    yield* put(semanticMapLoadFailed(workspaceId));
+    yield* put(semanticMapLoadFailed(workspaceId, generation));
     logger.warn('Semantic map hydration failed', { workspaceId, error });
   }
 }
@@ -70,16 +108,36 @@ function* requestRouteRefresh(
   yield* put(semanticMapRouteRefreshRequested(action.payload[0]));
 }
 
-function* readRouteWorker(action: ReturnType<typeof semanticMapRouteRefreshRequested>) {
+function routeContext(
+  generations: GenerationCoordinator,
+  requests: RequestGenerations<ReturnType<typeof semanticMapRouteRefreshRequested>>,
+  action: RouteContextAction,
+) {
   const [workspaceId] = action.payload;
+  if (action.type === workspaceUnmounted.type) {
+    return { context: workspaceId, cancel: true as const };
+  }
+  const generation = generations.get(workspaceId);
+  if (generation === undefined) return { context: workspaceId, cancel: true as const };
+  requests.set(action, generation);
+  return workspaceId;
+}
+
+function* readRouteWorker(
+  generations: GenerationCoordinator,
+  requests: RequestGenerations<ReturnType<typeof semanticMapRouteRefreshRequested>>,
+  action: ReturnType<typeof semanticMapRouteRefreshRequested>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  const generation = requests.get(action);
+  if (generation === undefined) return;
   const state = yield* selectSemanticMapState.effect(workspaceId);
-  const subject = state.selectedAgentId
+  const subject: SemanticMapRouteSubject | null = state.selectedAgentId
     ? { agentId: state.selectedAgentId }
     : state.selectedTaskNoteId
       ? { taskNoteId: state.selectedTaskNoteId }
       : null;
   if (!subject) {
-    yield* put(semanticMapRouteLoaded(workspaceId, null));
     return;
   }
   try {
@@ -88,7 +146,14 @@ function* readRouteWorker(action: ReturnType<typeof semanticMapRouteRefreshReque
       workspaceId,
       subject,
     );
-    yield* put(semanticMapRouteLoaded(workspaceId, route));
+    const current = yield* selectSemanticMapState.effect(workspaceId);
+    const subjectIsCurrent =
+      'agentId' in subject
+        ? current.selectedAgentId === subject.agentId && current.selectedTaskNoteId === null
+        : current.selectedTaskNoteId === subject.taskNoteId && current.selectedAgentId === null;
+    if (generations.get(workspaceId) === generation && subjectIsCurrent) {
+      yield* put(semanticMapRouteLoaded(workspaceId, generation, subject, route));
+    }
   } catch (error) {
     logger.warn('Semantic map route refresh failed', { workspaceId, error });
   }
@@ -99,11 +164,16 @@ function* clearWorkspace(action: ReturnType<typeof workspaceUnmounted>) {
 }
 
 export function* semanticMapSaga() {
+  const generations: GenerationCoordinator = new Map();
+  const mapRequests: RequestGenerations<MapReadAction> = new WeakMap();
+  const routeRequests: RequestGenerations<ReturnType<typeof semanticMapRouteRefreshRequested>> =
+    new WeakMap();
   yield* all([
     takeSingleFlightInContext(
-      [workspaceMounted, semanticMapRefreshRequested],
-      (action: MapReadAction) => action.payload[0],
+      [workspaceMounted, semanticMapRefreshRequested, workspaceUnmounted],
+      (action: MapContextAction) => mapContext(generations, mapRequests, action),
       readMapWorker,
+      mapRequests,
     ),
     takeEvery([applyNoteCreated, applyNoteUpdated], refreshTaggedManifest),
     takeEvery(
@@ -112,9 +182,11 @@ export function* semanticMapSaga() {
     ),
     throttle(1_000, semanticMapActivityReceived, requestRouteRefresh),
     takeSingleFlightInContext(
-      semanticMapRouteRefreshRequested,
-      (action) => action.payload[0],
+      [semanticMapRouteRefreshRequested, workspaceUnmounted],
+      (action: RouteContextAction) => routeContext(generations, routeRequests, action),
       readRouteWorker,
+      generations,
+      routeRequests,
     ),
     takeEvery(workspaceUnmounted, clearWorkspace),
   ]);
