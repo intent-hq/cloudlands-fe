@@ -14,6 +14,7 @@
     locale?: AppLocale;
     crossFilter?: boolean;
     navigators?: boolean;
+    messageOnly?: boolean;
   }
 
   let {
@@ -24,6 +25,7 @@
     locale = 'en',
     crossFilter = true,
     navigators = true,
+    messageOnly = false,
   }: Props = $props();
   // svelte-ignore state_referenced_locally -- a mounted test host keeps one locale
   applyLanguagePreference(locale);
@@ -197,6 +199,23 @@
           humanMessages: 1,
           agentMessages: 1,
         },
+        ...(messageOnly
+          ? [
+              {
+                agentId: 'messages-only',
+                model: 'model-message-only',
+                totals: {
+                  inputTokens: 0,
+                  outputTokens: 0,
+                  cacheReadTokens: 0,
+                  cacheCreationTokens: 0,
+                  cost: { amount: 0, currency: 'USD' },
+                },
+                humanMessages: 9,
+                agentMessages: 1,
+              },
+            ]
+          : []),
       ],
       ...(crossFilter ? {} : { byAgentModel: undefined }),
       ...(navigators ? {} : { byAgentId: {}, byModel: {} }),
