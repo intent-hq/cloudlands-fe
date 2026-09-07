@@ -309,6 +309,7 @@ file with the PR base revision to reject baseline additions while allowing remov
 | `intent/no-adhoc-transitions`            | shared motion tiers from `$lib/motion`           |
 | `intent/no-arbitrary-motion-or-color`    | semantic color and spring motion tokens          |
 | `intent/no-dialog-root-outside-patterns` | `FormDialog` (or the imperative Confirm service) |
+| `intent/no-legacy-spinner`               | `IntentMarkLoader` from the indicators module    |
 | `intent/settings-use-schema`             | `defineSettings` rendered through `SettingsForm` |
 
 `no-raw-controls` shares the narrow exception policy in

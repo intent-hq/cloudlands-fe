@@ -9,6 +9,7 @@ import noArbitraryMotionOrColor from './no-arbitrary-motion-or-color.js';
 import noButtonCompatibilityAliases from './no-button-compatibility-aliases.js';
 import noDialogRootOutsidePatterns from './no-dialog-root-outside-patterns.js';
 import noDirectToast from './no-direct-toast.js';
+import noLegacySpinner from './no-legacy-spinner.js';
 import noNativeDialogs from './no-native-dialogs.js';
 import noRawControls from './no-raw-controls.js';
 import settingsUseSchema from './settings-use-schema.js';
@@ -87,6 +88,49 @@ svelteTester.run('no-button-compatibility-aliases', noButtonCompatibilityAliases
     {
       code: '<script>import { Button } from "$lib/components/ui/button/index.js";</script><Button variant="default">Save</Button>',
       errors: [{ message: 'Use `variant="primary"` instead — /sandbox/button' }],
+    },
+  ],
+});
+
+svelteTester.run('no-legacy-spinner', noLegacySpinner, {
+  valid: [
+    {
+      code: '<script>import { IntentMarkLoader } from "$lib/components/ui/indicators";</script><IntentMarkLoader size={16} />',
+      filename: projectFile('src/features/example/LoadingView.svelte'),
+    },
+    {
+      code: '<script>import { faSpinner } from "icons"; import SpinnerIcon from "./SpinnerIcon.svelte";</script><SpinnerIcon /><div class:animate-spin={loading} />',
+      filename: projectFile('src/lib/components/ui/indicators/LegacyPreview.svelte'),
+    },
+    {
+      code: 'import { faSpinner } from "icons";',
+      filename: projectFile('src/features/example/loading.ts'),
+    },
+  ],
+  invalid: [
+    {
+      code: '<script>import { faSpinner as loadingIcon } from "icons";</script>',
+      filename: projectFile('src/features/example/LoadingView.svelte'),
+      errors: [{ messageId: 'legacyIcon' }],
+    },
+    {
+      code: '<script>import LegacyLoader from "$lib/SpinnerIcon.svelte";</script><LegacyLoader />',
+      filename: projectFile('src/features/example/LoadingView.svelte'),
+      errors: [{ messageId: 'legacyComponent' }, { messageId: 'legacyComponent' }],
+    },
+    {
+      code: '<SpinnerIcon /><div class="motion-safe:animate-spin" /><span class:animate-spin={loading} />',
+      filename: projectFile('src/routes/example/+page.svelte'),
+      errors: [
+        { messageId: 'legacyComponent' },
+        { messageId: 'spinClass' },
+        { messageId: 'spinClass' },
+      ],
+    },
+    {
+      code: '<script>const classes = loading ? `size-4 animate-spin` : "";</script>',
+      filename: projectFile('src/features/example/LoadingView.svelte'),
+      errors: [{ messageId: 'spinClass' }],
     },
   ],
 });
