@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.144.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.143.0...v2.144.0) (2026-09-07)
+
+
+### 🚀 Features
+
+* **browser:** viewer tabs for remotely hosted browser tabs ([#2256](https://github.com/intent-hq/cloudlands-fe/issues/2256)) ([3cc5e2d](https://github.com/intent-hq/cloudlands-fe/commit/3cc5e2d59d31732bcacee3a9475965e10f64adfa))
+
 ## [2.143.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.142.0...v2.143.0) (2026-09-07)
 
 
