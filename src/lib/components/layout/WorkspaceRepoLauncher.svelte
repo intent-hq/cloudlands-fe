@@ -10,7 +10,11 @@
   }
 </script>
 
-<div class="app-no-drag shrink-0" data-workspace-repo-launcher>
+<div
+  class="app-no-drag shrink-0"
+  data-workspace-repo-launcher
+  style:translate="var(--workspace-tab-launcher-offset, 0px) 0"
+>
   <Button
     variant="ghost"
     size="icon"

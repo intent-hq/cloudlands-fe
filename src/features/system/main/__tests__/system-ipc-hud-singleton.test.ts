@@ -176,6 +176,17 @@ describe('HUD window singleton via WINDOW.OPEN_NEW', () => {
     expect(electronMocks.constructed).toHaveLength(2);
   });
 
+  it('registers the page-title listener on HUD and workspace windows', async () => {
+    const openNew = handlerFor(WINDOW_CHANNELS.OPEN_NEW);
+    await openNew({ sender: {} }, { route: '/hud' });
+    await openNew({ sender: {} }, { route: '/workspace/ws-1' });
+
+    expect(electronMocks.constructed).toHaveLength(2);
+    for (const window of electronMocks.constructed) {
+      expect(window.on).toHaveBeenCalledWith('page-title-updated', expect.any(Function));
+    }
+  });
+
   it('accepts one BrowserWindow creation when two renderers handle the same app event', async () => {
     const openNew = handlerFor(WINDOW_CHANNELS.OPEN_NEW);
     const request = { route: '/workspace/ws-1', requestId: 'evt-workspace-open-1' };
