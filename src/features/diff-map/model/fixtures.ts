@@ -3,7 +3,7 @@ import { buildDiffMapDocument, type BuildDiffMapDocumentOptions } from './build-
 import type { DiffMapDocument, DiffMapFileStatus, DiffMapRepoTreeNode } from './types';
 
 export interface DiffMapFixture {
-  name: 'tiny' | 'typical' | 'large' | 'huge' | 'monorepo' | 'edge';
+  name: 'tiny' | 'typical' | 'large' | 'huge' | 'monorepo' | 'edge' | 'overflow';
   changes: TrackedChange[];
   options: BuildDiffMapDocumentOptions;
   document: DiffMapDocument;
@@ -167,6 +167,7 @@ export const largeDiffMapFixture = fixture('large', generatedChanges('src', 18, 
 export const hugeDiffMapFixture = fixture('huge', generatedChanges('packages', 30, 600));
 export const monorepoDiffMapFixture = fixture('monorepo', monorepoChanges);
 export const edgeDiffMapFixture = fixture('edge', edgeChanges, { patches: edgePatches });
+export const overflowDiffMapFixture = fixture('overflow', generatedChanges('src', 1, 25));
 
 export const diffMapFixtures = [
   tinyDiffMapFixture,

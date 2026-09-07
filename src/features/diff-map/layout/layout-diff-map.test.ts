@@ -13,6 +13,7 @@ import {
   layoutDiffMap,
   shouldRelayoutDiffMap,
   type DiffMapLayout,
+  type DiffMapLayoutFileRow,
   type LayoutRect,
   type TextMeasurer,
 } from './layout-diff-map';
@@ -21,8 +22,16 @@ const measure: TextMeasurer = (text, context) => text.length * (context.role ===
 const widths = [280, 480, 720, 900, 1400];
 const heights = [400, 500, 900];
 
-function rows(layout: DiffMapLayout) {
+function allRows(layout: DiffMapLayout) {
   return layout.blocks.flatMap((block) => block.columns.flatMap((column) => column.rows));
+}
+
+function rows(layout: DiffMapLayout): DiffMapLayoutFileRow[] {
+  return allRows(layout).filter((row) => row.kind === 'file');
+}
+
+function moreRows(layout: DiffMapLayout) {
+  return allRows(layout).filter((row) => row.kind === 'more');
 }
 
 function overlaps(a: LayoutRect, b: LayoutRect): boolean {
@@ -121,11 +130,54 @@ describe('layoutDiffMap', () => {
     expect(rows(layout).every((row) => row.h === rowHeight)).toBe(true);
   });
 
+  it.each([
+    [10, 10, 0],
+    [11, 10, 1],
+    [25, 10, 15],
+  ])('caps a %i-file block at 10 files with %i hidden', (fileCount, visibleCount, hiddenCount) => {
+    const layout = layoutDiffMap(shelfDocument([fileCount]), { width: 500, height: 900 }, measure, {
+      rungOverride: 0,
+    });
+
+    expect(rows(layout)).toHaveLength(visibleCount);
+    expect(moreRows(layout)).toHaveLength(hiddenCount > 0 ? 1 : 0);
+    expect(moreRows(layout)[0]?.hiddenCount).toBe(hiddenCount || undefined);
+    expect(layout.blocks[0]).toMatchObject({ hiddenCount, expanded: false });
+  });
+
+  it('expands only IDs in expandedBlockIds and keeps the collapse row', () => {
+    const layout = layoutDiffMap(shelfDocument([25, 25]), { width: 900, height: 900 }, measure, {
+      rungOverride: 0,
+      expandedBlockIds: new Set(['group-1']),
+    });
+    const fileCounts = layout.blocks.map(
+      (block) =>
+        block.columns.flatMap((column) => column.rows).filter((row) => row.kind === 'file').length,
+    );
+
+    expect(fileCounts).toEqual([10, 25]);
+    expect(layout.blocks.map((block) => block.expanded)).toEqual([false, true]);
+    expect(layout.blocks.map((block) => block.hiddenCount)).toEqual([15, 15]);
+    expect(moreRows(layout)).toHaveLength(2);
+  });
+
+  it('counts the overflow row when splitting a block into columns', () => {
+    const block = layoutDiffMap(shelfDocument([11]), { width: 500, height: 316 }, measure, {
+      rungOverride: 0,
+    }).blocks[0];
+
+    expect(block.columns).toHaveLength(2);
+    expect(block.columns.map((column) => column.rows.length)).toEqual([6, 5]);
+    expect(block.columns.flatMap((column) => column.rows).at(-1)?.kind).toBe('more');
+  });
+
   for (const fixture of diffMapFixtures) {
     for (const width of widths) {
       for (const height of heights) {
         it(`places ${fixture.name} exactly once at ${width}x${height}`, () => {
-          const layout = layoutDiffMap(fixture.document, { width, height }, measure);
+          const layout = layoutDiffMap(fixture.document, { width, height }, measure, {
+            expandedBlockIds: new Set(fixture.document.groups.map((group) => group.id)),
+          });
           expectValidLayout(fixture.document, layout, width);
           if (!layout.overflow) expect(layout.contentHeight).toBeLessThanOrEqual(height);
         });
@@ -429,6 +481,18 @@ describe('layout stability', () => {
       shouldRelayoutDiffMap(previous, { document, viewport: { width: 875, height: 500 } }),
     ).toBe(true);
     expect(shouldRelayoutDiffMap(previous, { ...previous, rungOverride: 2 })).toBe(true);
+    expect(
+      shouldRelayoutDiffMap(
+        { ...previous, expandedBlockIds: new Set(['src/lib/auth']) },
+        { ...previous, expandedBlockIds: new Set(['src/lib/auth']) },
+      ),
+    ).toBe(false);
+    expect(
+      shouldRelayoutDiffMap(previous, {
+        ...previous,
+        expandedBlockIds: new Set(['src/lib/auth']),
+      }),
+    ).toBe(true);
   });
 
   it('returns ID-keyed row and block rects for FLIP transitions', () => {
@@ -448,5 +512,20 @@ describe('layout stability', () => {
     );
     expect(delta.rows).toHaveLength(24);
     expect(delta.rows.every((entry) => entry.from && entry.to)).toBe(true);
+  });
+
+  it('excludes synthetic overflow rows from FLIP row deltas', () => {
+    const document = shelfDocument([25]);
+    const previous = layoutDiffMap(document, { width: 500, height: 900 }, measure, {
+      rungOverride: 0,
+    });
+    const next = layoutDiffMap(document, { width: 500, height: 900 }, measure, {
+      rungOverride: 0,
+      expandedBlockIds: new Set(['group-0']),
+    });
+    const delta = diffLayouts(previous, next);
+
+    expect(delta.rows).toHaveLength(25);
+    expect(delta.rows.map((entry) => entry.fileId)).toEqual(document.groups[0].fileIds);
   });
 });

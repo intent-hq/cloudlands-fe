@@ -5,6 +5,7 @@ import {
   hugeDiffMapFixture,
   largeDiffMapFixture,
   monorepoDiffMapFixture,
+  overflowDiffMapFixture,
   tinyDiffMapFixture,
   typicalDiffMapFixture,
 } from '../model/fixtures';
@@ -43,6 +44,7 @@ export const preview = definePreview<DiffMapProps>({
     huge: { props: props(hugeDiffMapFixture.document) },
     monorepo: { props: props(monorepoDiffMapFixture.document) },
     edge: { props: props(edgeDiffMapFixture.document) },
+    overflow: { props: props(overflowDiffMapFixture.document) },
   },
 });
 

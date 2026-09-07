@@ -2,7 +2,7 @@
   import { Button } from '$lib/components/ui/button';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
-  import type { DiffMapDensityRung, DiffMapLayoutRow } from '../layout/layout-diff-map';
+  import type { DiffMapDensityRung, DiffMapLayoutFileRow } from '../layout/layout-diff-map';
   import type { DiffMapAttribution, DiffMapFile } from '../model/types';
   import HunkTracks from './HunkTracks.svelte';
 
@@ -15,7 +15,7 @@
 
   interface Props {
     file: DiffMapFile;
-    row: DiffMapLayoutRow;
+    row: DiffMapLayoutFileRow;
     blockX: number;
     blockY: number;
     rung: DiffMapDensityRung;

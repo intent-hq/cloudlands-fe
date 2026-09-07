@@ -5,6 +5,8 @@
   "workspace_fileChanges_viewMode_ariaLabel": "변경 사항 보기",
   "diffMap_groupChanged_label": "{count}개 변경",
   "diffMap_groupChangedTotal_label": "{count}개 변경 · {total}",
+  "diffMap_moreFiles_label": "+{count}개 더",
+  "diffMap_showLess_label": "간략히 보기",
   "diffMap_changedSinceViewed_label": "확인 후 변경됨",
   "diffMap_overflowRail_ariaLabel": "위에 파일 {above}개, 아래에 파일 {below}개",
   "diffMap_reviewSelection_agentName": "선택한 변경 사항 검토",

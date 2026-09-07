@@ -55,15 +55,19 @@
   let filter = $state('');
   let focusedPath = $state<string | undefined>();
   let selectionAnchor = $state<string | undefined>();
+  let expandedBlockIds = $state<ReadonlySet<string>>(new Set());
   let renderedLayout: DiffMapLayout | undefined;
   let previousRequest: DiffMapLayoutRequest | undefined;
+  let expandedSnapshotId: string | undefined = $state();
   let measured = false;
   let measureContext: CanvasRenderingContext2D | null | undefined;
 
   const filesById = $derived(new Map(document.files.map((file) => [file.id, file])));
   const groupsById = $derived(new Map(document.groups.map((group) => [group.id, group])));
   const layoutRows = $derived(
-    layout?.blocks.flatMap((block) => block.columns.flatMap((column) => column.rows)) ?? [],
+    layout?.blocks.flatMap((block) =>
+      block.columns.flatMap((column) => column.rows.filter((row) => row.kind === 'file')),
+    ) ?? [],
   );
   const readingFiles = $derived(
     layoutRows.map((row) => filesById.get(row.fileId)).filter((file) => file !== undefined),
@@ -89,7 +93,10 @@
   }
 
   function computeLayout(request: DiffMapLayoutRequest) {
-    const options = { rungOverride: request.rungOverride };
+    const options = {
+      rungOverride: request.rungOverride,
+      expandedBlockIds: request.expandedBlockIds,
+    };
     let next = layoutDiffMap(request.document, request.viewport, measure, options);
     if (next.overflow && request.viewport.width > RAIL_WIDTH) {
       next = layoutDiffMap(
@@ -141,7 +148,16 @@
   }
 
   $effect(() => {
-    const request: DiffMapLayoutRequest = { document, viewport, rungOverride };
+    if (document.source.snapshotId !== expandedSnapshotId) {
+      expandedSnapshotId = document.source.snapshotId;
+      expandedBlockIds = new Set();
+    }
+    const request: DiffMapLayoutRequest = {
+      document,
+      viewport,
+      rungOverride,
+      expandedBlockIds,
+    };
     if (previousRequest && !shouldRelayoutDiffMap(previousRequest, request)) {
       previousRequest = request;
       return;
@@ -196,6 +212,13 @@
   function commitSelection(next: Set<string>) {
     selection = next;
     onSelectionChange?.(new Set(next));
+  }
+
+  function toggleBlock(groupId: string) {
+    const next = new Set(expandedBlockIds);
+    if (next.has(groupId)) next.delete(groupId);
+    else next.add(groupId);
+    expandedBlockIds = next;
   }
 
   function selectRange(anchor: string, target: string, additive = false) {
@@ -348,6 +371,7 @@
                 focusedPath = file.path;
               }}
               onHover={(hovered) => onHoverGroup?.(hovered)}
+              onToggleExpanded={() => toggleBlock(block.groupId)}
             />
           {/if}
         {/each}

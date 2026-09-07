@@ -3,10 +3,11 @@
     diffMapGroupCountLabel,
     type DiffMapDensityRung,
     type DiffMapLayoutBlock,
-    type DiffMapLayoutRow,
+    type DiffMapLayoutFileRow,
   } from '../layout/layout-diff-map';
   import type { DiffMapFile, DiffMapGroup } from '../model/types';
   import DiffMapRow, { type DiffMapLayers } from './DiffMapRow.svelte';
+  import DiffMapMoreRow from './DiffMapMoreRow.svelte';
 
   interface Props {
     block: DiffMapLayoutBlock;
@@ -23,6 +24,7 @@
     onKeydown: (file: DiffMapFile, event: KeyboardEvent) => void;
     onFocus: (file: DiffMapFile) => void;
     onHover: (group: DiffMapGroup | null) => void;
+    onToggleExpanded: () => void;
   }
 
   let {
@@ -40,11 +42,12 @@
     onKeydown,
     onFocus,
     onHover,
+    onToggleExpanded,
   }: Props = $props();
 
   const rows = $derived(block.columns.flatMap((column) => column.rows));
   const countLabel = $derived(diffMapGroupCountLabel(group));
-  function matches(row: DiffMapLayoutRow) {
+  function matches(row: DiffMapLayoutFileRow) {
     const file = files.get(row.fileId);
     return (
       (!filter || file?.path.toLocaleLowerCase().includes(filter) === true) &&
@@ -76,24 +79,34 @@
     <span class="count">{countLabel}</span>
   </header>
 
-  {#each rows as row (row.fileId)}
-    {@const file = files.get(row.fileId)}
-    {#if file}
-      <DiffMapRow
-        {file}
+  {#each rows as row (row.kind === 'file' ? row.fileId : `more-${group.id}`)}
+    {#if row.kind === 'more'}
+      <DiffMapMoreRow
         {row}
         blockX={block.x}
         blockY={block.y}
-        {rung}
-        active={file.path === activePath}
-        selected={selection.has(file.path)}
-        focused={file.path === focusedPath}
-        matchesFilter={matches(row)}
-        {layers}
-        {onActivate}
-        {onKeydown}
-        {onFocus}
+        expanded={block.expanded}
+        onToggle={onToggleExpanded}
       />
+    {:else}
+      {@const file = files.get(row.fileId)}
+      {#if file}
+        <DiffMapRow
+          {file}
+          {row}
+          blockX={block.x}
+          blockY={block.y}
+          {rung}
+          active={file.path === activePath}
+          selected={selection.has(file.path)}
+          focused={file.path === focusedPath}
+          matchesFilter={matches(row)}
+          {layers}
+          {onActivate}
+          {onKeydown}
+          {onFocus}
+        />
+      {/if}
     {/if}
   {/each}
 </section>

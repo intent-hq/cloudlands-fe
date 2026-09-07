@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   diffMapFixtures,
   hugeDiffMapFixture,
+  overflowDiffMapFixture,
   tinyDiffMapFixture,
   typicalDiffMapFixture,
 } from '../model/fixtures';
@@ -148,15 +149,48 @@ describe('DiffMap', () => {
     expect(renamed?.getAttribute('aria-label')).not.toContain('+0 −0');
   });
 
+  it('expands, collapses, and resets a capped directory block for a new snapshot', async () => {
+    const onOpen = vi.fn();
+    const view = render(DiffMap, {
+      props: { document: overflowDiffMapFixture.document, onOpen },
+    });
+
+    await waitFor(() => expect(rows(view.container)).toHaveLength(10));
+    const more = screen.getByRole('button', { name: '+15 more' });
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(more);
+    await waitFor(() => expect(rows(view.container)).toHaveLength(25));
+    expect(onOpen).not.toHaveBeenCalled();
+
+    const less = screen.getByRole('button', { name: 'Show less' });
+    expect(less.getAttribute('aria-expanded')).toBe('true');
+    await fireEvent.click(less);
+    await waitFor(() => expect(rows(view.container)).toHaveLength(10));
+
+    await fireEvent.click(screen.getByRole('button', { name: '+15 more' }));
+    await waitFor(() => expect(rows(view.container)).toHaveLength(25));
+    await view.rerender({
+      document: {
+        ...overflowDiffMapFixture.document,
+        source: { ...overflowDiffMapFixture.document.source, snapshotId: 'next-snapshot' },
+      },
+      onOpen,
+    });
+    await waitFor(() => expect(rows(view.container)).toHaveLength(10));
+    expect(screen.getByRole('button', { name: '+15 more' })).toBeTruthy();
+  });
+
   it('renders every fixture at every density rung and exposes an overflow rail', async () => {
     for (const fixture of diffMapFixtures) {
       for (const rungOverride of [0, 1, 2, 3] as const) {
         const view = render(DiffMap, {
           props: { document: fixture.document, rungOverride, onOpen: vi.fn(), filterable: false },
         });
-        await waitFor(() =>
-          expect(rows(view.container)).toHaveLength(fixture.document.files.length),
+        const visibleCount = fixture.document.groups.reduce(
+          (count, group) => count + Math.min(10, group.fileIds.length),
+          0,
         );
+        await waitFor(() => expect(rows(view.container)).toHaveLength(visibleCount));
         view.unmount();
       }
     }

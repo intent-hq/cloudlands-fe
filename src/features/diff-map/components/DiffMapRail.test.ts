@@ -3,7 +3,7 @@
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { DiffMapLayoutRow } from '../layout/layout-diff-map';
+import type { DiffMapLayoutFileRow } from '../layout/layout-diff-map';
 import type { DiffMapFile, DiffMapFileStatus } from '../model/types';
 import DiffMapRail from './DiffMapRail.svelte';
 
@@ -22,8 +22,8 @@ function file(id: string, status: DiffMapFileStatus): DiffMapFile {
   };
 }
 
-function row(fileId: string, y: number): DiffMapLayoutRow {
-  return { fileId, label: fileId, x: 0, y, w: 100, h: 10 };
+function row(fileId: string, y: number): DiffMapLayoutFileRow {
+  return { kind: 'file', fileId, label: fileId, x: 0, y, w: 100, h: 10 };
 }
 
 describe('DiffMapRail', () => {

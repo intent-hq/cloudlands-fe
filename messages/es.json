@@ -5,6 +5,8 @@
   "workspace_fileChanges_viewMode_ariaLabel": "Vista de cambios",
   "diffMap_groupChanged_label": "{count} cambiados",
   "diffMap_groupChangedTotal_label": "{count} cambiados · {total}",
+  "diffMap_moreFiles_label": "+{count} más",
+  "diffMap_showLess_label": "Mostrar menos",
   "diffMap_changedSinceViewed_label": "Cambió desde que se vio",
   "diffMap_overflowRail_ariaLabel": "{above} archivos arriba, {below} archivos abajo",
   "diffMap_reviewSelection_agentName": "Revisar cambios seleccionados",

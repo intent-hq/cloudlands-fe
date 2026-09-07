@@ -5,6 +5,8 @@
   "workspace_fileChanges_viewMode_ariaLabel": "更改视图",
   "diffMap_groupChanged_label": "已更改 {count} 个",
   "diffMap_groupChangedTotal_label": "已更改 {count} 个 · {total}",
+  "diffMap_moreFiles_label": "另有 {count} 个",
+  "diffMap_showLess_label": "收起",
   "diffMap_changedSinceViewed_label": "查看后已更改",
   "diffMap_overflowRail_ariaLabel": "上方 {above} 个文件，下方 {below} 个文件",
   "diffMap_reviewSelection_agentName": "审查所选更改",

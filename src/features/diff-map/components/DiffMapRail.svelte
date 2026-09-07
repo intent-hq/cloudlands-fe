@@ -2,7 +2,7 @@
   import { Button } from '$lib/components/ui/button';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
-  import type { DiffMapLayoutRow } from '../layout/layout-diff-map';
+  import type { DiffMapLayoutFileRow } from '../layout/layout-diff-map';
   import type { DiffMapFile, DiffMapFileStatus } from '../model/types';
 
   interface RailBucket {
@@ -13,7 +13,7 @@
   }
 
   interface Props {
-    rows: DiffMapLayoutRow[];
+    rows: DiffMapLayoutFileRow[];
     files: ReadonlyMap<string, DiffMapFile>;
     contentHeight: number;
     viewportHeight: number;
