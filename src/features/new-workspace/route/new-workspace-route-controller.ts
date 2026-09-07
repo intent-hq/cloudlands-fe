@@ -14,6 +14,7 @@ const SENTINEL_WORKSPACE_ID = '__new-workspace__';
 const SENTINEL_AGENT_ID = '__initializer__';
 
 interface NewWorkspaceRouteController {
+  readonly remoteDaemonPathRejection?: string;
   start(listener: (state: ControllerState) => void): Promise<void>;
   edit(patch: Partial<DraftInput>): void;
   dispatch: DraftTransactionRunner['dispatch'];
@@ -33,8 +34,7 @@ async function migrateSentinelDraft(): Promise<string | null> {
   return draft.id;
 }
 
-function initialInput(start: ResolveStartInput): DraftInput {
-  const resolved = resolveStart(start);
+function initialInput(resolved: ReturnType<typeof resolveStart>): DraftInput {
   return {
     ...(resolved.title ? { title: resolved.title } : {}),
     intentText: resolved.intentText,
@@ -49,6 +49,10 @@ export function createNewWorkspaceRouteController(options: {
   startInput: ResolveStartInput;
   requestedDraftId?: string | null;
 }): NewWorkspaceRouteController {
+  const resolvedStart = resolveStart(options.startInput);
+  const remoteDaemonPathRejection = resolvedStart.unresolved.find(
+    ({ reason }) => reason === 'remote-daemon-path',
+  )?.value;
   let runner: DraftTransactionRunner | null = null;
   let stopped = false;
   let daemonConnected: boolean | undefined;
@@ -57,6 +61,7 @@ export function createNewWorkspaceRouteController(options: {
     runner.dispatch({ type: daemonConnected ? 'reconnect' : 'daemon.offline' });
   };
   return {
+    remoteDaemonPathRejection,
     async start(listener) {
       let requestedDraftId = options.requestedDraftId;
       if (requestedDraftId === undefined) {
@@ -71,7 +76,7 @@ export function createNewWorkspaceRouteController(options: {
       runner.subscribe((state) => {
         listener(state);
       });
-      runner.start(createInitialControllerState(1, initialInput(options.startInput)));
+      runner.start(createInitialControllerState(1, initialInput(resolvedStart)));
       applyDaemonConnection();
     },
     edit(patch) {

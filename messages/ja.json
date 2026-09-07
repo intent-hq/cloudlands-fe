@@ -3314,6 +3314,7 @@
   "newWorkspace_source_none_title": "ソースを選択",
   "newWorkspace_source_unresolved_title": "リンクにソースが必要です",
   "newWorkspace_source_unresolved_description": "リンクはコンテキストとして保持されます。開始前に関連するプロジェクトを選択してください。",
+  "newWorkspace_source_remoteDaemonPath_description": "このローカルパスは送信されませんでした。デーモンホストに存在するプロジェクトパスを選択してください。",
   "newWorkspace_source_publicGithub_title": "公開 GitHub リポジトリ",
   "newWorkspace_source_privateGithub_title": "非公開 GitHub リポジトリ",
   "newWorkspace_source_newProject_title": "新しいプロジェクトを開始",

@@ -23,6 +23,7 @@
   import { stageNewWorkspaceFiles } from './new-workspace-attachments';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
+  import RemoteDaemonPathGuidance from './RemoteDaemonPathGuidance.svelte';
 
   interface Props {
     url: URL;
@@ -34,6 +35,7 @@
     startInput: consumeNewWorkspaceStartInput(url),
     requestedDraftId,
   });
+  let remoteDaemonPathRejection = $state(routeController.remoteDaemonPathRejection);
   let controllerState = $state<ControllerState>(createInitialControllerState(1));
   let fileInput: HTMLInputElement | undefined = $state();
   const hasCheckedProviders$ = selectHasCheckedOnce();
@@ -92,7 +94,10 @@
 </script>
 
 <input class="hidden" type="file" multiple bind:this={fileInput} onchange={handleFilesSelected} />
-<div class="h-full">
+<div class="relative h-full">
+  {#if remoteDaemonPathRejection}
+    <RemoteDaemonPathGuidance path={remoteDaemonPathRejection} />
+  {/if}
   <UntitledWorkspaceShell
     state={controllerState}
     presentation={{ host: $daemonHostRepairTarget$ }}
@@ -106,11 +111,16 @@
     onReconnect={() => routeController.dispatch({ type: 'reconnect' })}
     onAcceptRemote={() => routeController.dispatch({ type: 'conflict.acceptRemote' })}
     onKeepLocal={() => routeController.dispatch({ type: 'conflict.keepLocal' })}
-    onSourceSelected={(source) => routeController.edit({ source })}
-    onChooseNewFolder={(name) =>
+    onSourceSelected={(source) => {
+      remoteDaemonPathRejection = undefined;
+      routeController.edit({ source });
+    }}
+    onChooseNewFolder={(name) => {
+      remoteDaemonPathRejection = undefined;
       routeController.edit({
         source: { kind: 'newFolder', parentPath: $defaultParentPath$, name },
-      })}
+      });
+    }}
     onProviderSelected={selectProvider}
     onRecheckCapabilities={() =>
       routeController.dispatch({

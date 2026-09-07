@@ -223,6 +223,19 @@ describe('new workspace route controller', () => {
     expect(mocks.legacyGet).not.toHaveBeenCalled();
   });
 
+  it('exposes remote-daemon path rejection without placing the renderer path in draft input', async () => {
+    const controller = createNewWorkspaceRouteController({
+      startInput: { prefill: { repoPath: '/renderer/only/path', isRemoteDaemon: true } },
+      requestedDraftId: null,
+    });
+    let observed: ControllerState | undefined;
+
+    await controller.start((state) => (observed = state));
+
+    expect(controller.remoteDaemonPathRejection).toBe('/renderer/only/path');
+    expect(observed?.input.source).toBeNull();
+  });
+
   it('keeps two new drafts in one client independently addressed without identity swap', async () => {
     const first = createNewWorkspaceRouteController({
       startInput: { text: 'First' },

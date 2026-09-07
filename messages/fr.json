@@ -3314,6 +3314,7 @@
   "newWorkspace_source_none_title": "Choisir une source",
   "newWorkspace_source_unresolved_title": "Le lien nécessite une source",
   "newWorkspace_source_unresolved_description": "Le lien est conservé comme contexte. Choisissez le projet auquel il appartient avant de démarrer.",
+  "newWorkspace_source_remoteDaemonPath_description": "Ce chemin local n’a pas été envoyé. Choisissez un chemin de projet qui existe sur l’hôte du daemon.",
   "newWorkspace_source_publicGithub_title": "Dépôt GitHub public",
   "newWorkspace_source_privateGithub_title": "Dépôt GitHub privé",
   "newWorkspace_source_newProject_title": "Démarrer un nouveau projet",

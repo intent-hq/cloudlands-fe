@@ -3314,6 +3314,7 @@
   "newWorkspace_source_none_title": "Quelle auswählen",
   "newWorkspace_source_unresolved_title": "Link benötigt eine Quelle",
   "newWorkspace_source_unresolved_description": "Der Link bleibt als Kontext erhalten. Wähle vor dem Start das zugehörige Projekt.",
+  "newWorkspace_source_remoteDaemonPath_description": "Dieser lokale Pfad wurde nicht gesendet. Wähle einen Projektpfad aus, der auf dem Daemon-Host vorhanden ist.",
   "newWorkspace_source_publicGithub_title": "Öffentliches GitHub-Repository",
   "newWorkspace_source_privateGithub_title": "Privates GitHub-Repository",
   "newWorkspace_source_newProject_title": "Neues Projekt starten",
