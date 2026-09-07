@@ -27,7 +27,7 @@
       clustered
         ? 'relative flex size-6 items-center justify-center'
         : 'absolute right-3.5 top-3 flex size-6 items-center justify-center',
-      'text-muted-foreground rounded-md p-0 outline-none hover:bg-hover hover:text-foreground transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-focus-ring [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:transition-[stroke-width] [&>svg]:duration-spring-fast',
+      'text-muted-foreground rounded-md p-0 hover:bg-hover hover:text-foreground transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none focus-visible:outline focus-visible:-outline-offset-1 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:transition-[stroke-width] [&>svg]:duration-spring-fast',
       // Increases the hit area of the button on mobile.
       'after:absolute after:-inset-2 md:after:hidden',
       'group-data-[collapsible=icon]:hidden',

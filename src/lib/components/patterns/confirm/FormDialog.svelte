@@ -147,7 +147,7 @@
                 type="submit"
                 variant={submitVariant}
                 class={focusSubmit
-                  ? 'focus-visible:ring-ring/50 focus-visible:ring-[3px]'
+                  ? 'focus-visible:outline focus-visible:-outline-offset-1'
                   : undefined}
                 loading={isBusy}
                 disabled={!canSubmit || isBusy}

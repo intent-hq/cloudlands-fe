@@ -17,7 +17,7 @@
 <AccordionPrimitive.Trigger
   class={cn(
     density === 'compact' ? 'min-h-7 py-1' : 'min-h-9 py-2',
-    'group type-caption flex flex-1 cursor-pointer items-center justify-between gap-2 rounded-(--radius-small) px-2 text-left font-normal text-muted-foreground outline-none transition-[color,background-color,font-weight] duration-(--motion-fast) ease-(--ease-standard) hover:bg-hover hover:text-foreground data-[state=open]:font-semibold data-[state=open]:text-foreground focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
+    'group type-caption flex flex-1 cursor-pointer items-center justify-between gap-2 rounded-(--radius-small) px-2 text-left font-normal text-muted-foreground transition-[color,background-color,font-weight] duration-(--motion-fast) ease-(--ease-standard) hover:bg-hover hover:text-foreground data-[state=open]:font-semibold data-[state=open]:text-foreground focus-visible:outline focus-visible:-outline-offset-1 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
     className,
   )}
   {...restProps as any}

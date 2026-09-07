@@ -44,7 +44,7 @@
   {#each ['Nearest row', 'Selected row', 'Merged selection'] as label, index}
     <Button
       variant="plain"
-      class="relative z-10 h-8 rounded-(--radius-small) px-2 text-left text-sm focus-visible:outline-none"
+      class="relative z-10 h-8 rounded-(--radius-small) px-2 text-left text-sm"
       onpointerenter={() => store.setActiveIndex(index)}
       onpointerleave={() => store.setActiveIndex(null)}
       onfocus={() => store.setActiveIndex(index)}>{label}</Button

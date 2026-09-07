@@ -622,7 +622,7 @@
                         ? 0
                         : -1}
                       class={cn(
-                        'group/question-row relative z-10 flex cursor-pointer select-none outline-none focus-visible:ring-1 focus-visible:ring-ring',
+                        'group/question-row relative z-10 flex cursor-pointer select-none focus-visible:outline focus-visible:-outline-offset-1',
                         chipPosition === 'left' ? 'gap-2 pl-1.5 pr-3' : 'gap-3 pr-1.5 pl-3',
                         question.layout === 'stacked' ? 'items-start' : 'items-center',
                         question.layout === 'stacked'

@@ -51,7 +51,7 @@
       textEntryGroupClasses,
       textEntryHeight(resolvedSize),
       '[&_[data-slot=input]]:h-full [&_[data-slot=input]]:rounded-none [&_[data-slot=input]]:border-0 [&_[data-slot=input]]:bg-transparent [&_[data-slot=input]]:shadow-none [&_[data-slot=input]]:hover:bg-transparent [&_[data-slot=input]]:focus-visible:bg-transparent [&_[data-slot=input]]:focus-visible:shadow-none',
-      '[&_[data-slot=button]]:h-full [&_[data-slot=button]]:rounded-none [&_[data-slot=button]]:border-0 [&_[data-slot=button]]:bg-transparent [&_[data-slot=button]]:shadow-none [&_[data-slot=button]]:focus-visible:ring-0 [&_[data-slot=button]]:hover:text-foreground [&_[data-slot=button-surface]]:hidden',
+      '[&_[data-slot=button]]:h-full [&_[data-slot=button]]:rounded-none [&_[data-slot=button]]:border-0 [&_[data-slot=button]]:bg-transparent [&_[data-slot=button]]:shadow-none [&_[data-slot=button]]:focus-visible:-outline-offset-1 [&_[data-slot=button]]:hover:text-foreground [&_[data-slot=button-surface]]:hidden',
     )}
     {...restProps}
   >

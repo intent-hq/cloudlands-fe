@@ -8,7 +8,7 @@ export const textEntryControlClasses = `border-border bg-transparent shadow-none
 export const textEntryGroupClasses = `border-border bg-transparent shadow-none outline-none transition-[background-color,border-color,box-shadow,color] duration-(--spring-fast) hover:bg-hover focus-within:bg-card focus-within:shadow-[inset_0_0_0_1px_var(--ring)] focus-within:outline-none focus-within:ring-0 ${forcedStateClasses} data-[disabled=true]:pointer-events-none data-[disabled=true]:bg-transparent data-[disabled=true]:opacity-60 data-[disabled=true]:hover:bg-transparent data-[invalid=true]:border-danger motion-reduce:transition-none`;
 
 export const textEntryFocusResetClasses =
-  'focus-visible:!bg-transparent focus-visible:!shadow-none focus-visible:outline-none focus-visible:ring-0';
+  'focus-visible:!bg-transparent focus-visible:!shadow-none focus-visible:outline-none';
 
 export function textEntryHeight(size: UiSize): string {
   return size === 'compact' ? 'h-(--control-height-small)' : 'h-(--control-height-medium)';

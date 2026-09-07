@@ -670,7 +670,7 @@
       <Input
         bind:ref={inputRef}
         type="text"
-        class="w-full bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/50 outline-none border-none ring-0 focus:ring-0! focus:outline-none!"
+        class="w-full bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/50 outline-none border-none ring-0 focus:outline-none!"
         {placeholder}
         role="searchbox"
         aria-label={m.ui_dropdown_search_ariaLabel()}

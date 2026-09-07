@@ -477,7 +477,7 @@
                 size="icon-xs"
                 iconOnly
                 aria-label={m.chat_attachmentPreview_remove_ariaLabel({ name: file.name })}
-                class="absolute right-1 top-1 size-5! rounded-full! bg-foreground! text-background! opacity-0 focus-visible:ring-1 focus-visible:ring-ring group-hover/file:opacity-100 group-focus-within/file:opacity-100"
+                class="absolute right-1 top-1 size-5! rounded-full! bg-foreground! text-background! opacity-0 focus-visible:-outline-offset-1 group-hover/file:opacity-100 group-focus-within/file:opacity-100"
                 onclick={(event) => {
                   event.stopPropagation();
                   onFilesChange?.(filesArr.filter((_, fileIndex) => fileIndex !== index));

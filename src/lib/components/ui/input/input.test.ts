@@ -89,7 +89,6 @@ describe('Input', () => {
     });
     const classes = getByRole('textbox', { name: 'Composite field' }).className.split(/\s+/);
     expect(classes).toContain('focus-visible:outline-none');
-    expect(classes).toContain('focus-visible:ring-0');
     expect(classes).toContain('focus-visible:!shadow-none');
   });
 });

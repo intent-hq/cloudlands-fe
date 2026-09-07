@@ -43,8 +43,8 @@
     surfaceClasses(surface),
     interactive
       ? cn(
-          'cursor-pointer outline-none transition-[background-color,box-shadow] duration-(--motion-fast) ease-(--ease-standard)',
-          'focus-visible:ring-1 focus-visible:ring-ring',
+          'cursor-pointer transition-[background-color,box-shadow] duration-(--motion-fast) ease-(--ease-standard)',
+          'focus-visible:outline focus-visible:-outline-offset-1',
           'active:bg-active data-[state=pressed]:bg-active motion-reduce:transition-none',
           surfaceHoverClasses(hoverSurface),
         )

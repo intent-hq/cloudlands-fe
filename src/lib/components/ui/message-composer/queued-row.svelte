@@ -53,14 +53,14 @@
 <li
   data-message-composer-queue
   data-queued-id={item.id}
-  class="group/qrow flex cursor-grab select-none items-center gap-2 rounded-(--radius-medium) bg-muted px-2.5 text-foreground/85 outline-none active:cursor-grabbing focus-visible:ring-1 focus-visible:ring-ring"
+  class="group/qrow flex cursor-grab select-none items-center gap-2 rounded-(--radius-medium) bg-muted px-2.5 text-foreground/85 active:cursor-grabbing"
   class:h-7={compact}
   class:h-8={!compact}
   class:text-xs={compact}
   class:text-[13px]={!compact}
 >
   <div
-    class="flex min-w-0 flex-1 items-center gap-2 outline-none"
+    class="flex min-w-0 flex-1 items-center gap-2 focus-visible:outline focus-visible:-outline-offset-1"
     role="button"
     tabindex="0"
     draggable="true"

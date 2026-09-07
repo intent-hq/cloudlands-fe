@@ -134,7 +134,7 @@
       class={cn(
         textClass,
         'edit-input relative z-10 bg-transparent border-none outline-none px-0',
-        'focus:ring-0! focus:outline-none! focus:ring-transparent!',
+        'focus:outline-none!',
         'min-w-[60px]',
       )}
       noFocusStyle

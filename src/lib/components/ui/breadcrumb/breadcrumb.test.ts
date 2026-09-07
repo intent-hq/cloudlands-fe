@@ -39,7 +39,7 @@ describe('Breadcrumb', () => {
     const { getByRole } = render(BreadcrumbHarness);
     const link = getByRole('link', { name: 'Projects' });
     expect(link.className).toContain('focus-visible:-outline-offset-1');
-    expect(link.className).not.toContain('focus-visible:ring-');
+    expect(link.className).not.toMatch(/focus-visible:.*ring-/);
     expect(link.className).toContain('hover:bg-hover');
     expect(link.className).toContain('duration-spring-fast');
     expect(link.className).toContain('motion-reduce:transition-none');

@@ -33,7 +33,7 @@
         : 'absolute right-1.5 z-10 flex size-6 items-center justify-center',
       !cluster?.clustered && row?.hasBadge && 'right-8.5',
       !cluster?.clustered && (row?.isSubRow ? 'top-0' : 'top-1'),
-      'text-muted-foreground rounded-md outline-none hover:bg-hover hover:text-foreground transition-[color,background-color,opacity] duration-spring-fast ease-spring-fast focus-visible:ring-1 focus-visible:ring-focus-ring motion-reduce:transition-none [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:transition-[stroke-width] [&>svg]:duration-spring-fast',
+      'text-muted-foreground rounded-md hover:bg-hover hover:text-foreground transition-[color,background-color,opacity] duration-spring-fast ease-spring-fast focus-visible:outline focus-visible:-outline-offset-1 motion-reduce:transition-none [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:transition-[stroke-width] [&>svg]:duration-spring-fast',
       // Increases the hit area of the button on mobile.
       'after:absolute after:-inset-2 md:after:hidden',
       'group-data-[collapsible=icon]:hidden',

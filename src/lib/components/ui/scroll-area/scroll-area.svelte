@@ -72,7 +72,7 @@
     bind:ref={viewport}
     data-slot="scroll-area-viewport"
     tabindex={0}
-    class="size-full rounded-[inherit] outline-none transition-[box-shadow,mask-image] duration-(--motion-fast) focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
+    class="size-full rounded-[inherit] transition-[mask-image] duration-(--motion-fast) focus-visible:outline focus-visible:-outline-offset-1 motion-reduce:transition-none"
     style={fadeMask ? `mask-image: ${fadeMask}; -webkit-mask-image: ${fadeMask};` : undefined}
     onscroll={updateEdges}
   >
