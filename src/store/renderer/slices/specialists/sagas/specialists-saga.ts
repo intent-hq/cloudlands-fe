@@ -19,9 +19,14 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { SpecialistFileScope } from '$shared/specialist-file-types';
 import { settingsChanged } from '../../settings-events/settings-events-slice';
-import { selectBundledSpecialists, selectGetFileSpecialist } from '../specialists-selectors';
+import {
+  selectBundledSpecialists,
+  selectBundledSpecialistsLoaded,
+  selectGetFileSpecialist,
+} from '../specialists-selectors';
 import {
   deleteFileSpecialist,
+  refetchSpecialistsRequested,
   saveFileSpecialist,
   setBundledSpecialists,
   setBundledSpecialistsLoaded,
@@ -53,11 +58,11 @@ const MODEL_RESOLUTION_SETTINGS_PATHS: readonly string[] = [
 ];
 
 /**
- * Trailing debounce for settings-driven refetches so one `specialist.list`
- * call serves a multi-path delta burst — mirrors the live client's
+ * Trailing debounce for explicit and settings-driven refetches so one
+ * `specialist.list` call serves a trigger burst — mirrors the live client's
  * `specialists:changed` debounce.
  */
-const SETTINGS_REFETCH_DEBOUNCE_MS = 100;
+const REFETCH_DEBOUNCE_MS = 100;
 
 /**
  * Predicate pattern (not the action creator) so unrelated settings deltas
@@ -73,6 +78,10 @@ function touchesModelResolutionSettings(action: { type: string; payload?: unknow
       MODEL_RESOLUTION_SETTINGS_PATHS.includes(change.path),
     )
   );
+}
+
+function triggersSpecialistRefetch(action: { type: string; payload?: unknown }): boolean {
+  return action.type === refetchSpecialistsRequested.type || touchesModelResolutionSettings(action);
 }
 
 function toBundledSpecialist(def: SpecialistDef): Specialist {
@@ -145,13 +154,20 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
 }
 
 function* applySpecialistList(defs: SpecialistDef[]) {
+  // The daemon always ships bundled specialists. The live client folds a
+  // transport failure into [], so an empty result after initial load is a
+  // failed read and must not replace the last-known-good roster or loaded flags.
+  if (defs.length === 0 && (yield* selectBundledSpecialistsLoaded.effect())) {
+    logger.warn('Ignoring empty specialist list after initial load');
+    return;
+  }
+
   const bundledDefs = defs.filter((def) => def.source === 'bundled');
   const fileDefs = defs.filter((def) => def.source === 'user' || def.source === 'project');
   // The daemon list is authoritative: shipped specialists absent from it must
   // not resurrect (daemon replacement mode). A successful response with only
   // user/project defs means the base set is intentionally empty, so the
-  // hardcoded SPECIALISTS fallback only applies to a fully empty list
-  // (specialist.list already folds transport failures to []).
+  // hardcoded SPECIALISTS fallback only applies to an empty initial load.
   const bundled = defs.length
     ? bundledDefs.map(toBundledSpecialist)
     : SPECIALISTS.map(bundledFallback);
@@ -297,19 +313,19 @@ function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFil
 }
 
 /**
- * Single-flight, trailing-coalesced settings-driven refetch loop (per the
+ * Single-flight, trailing-coalesced refetch loop (per the
  * event-driven refetch rule in AGENTS.md). A sliding(1) action channel
- * buffers relevant deltas: the debounce window folds a burst into one
+ * buffers explicit requests and relevant settings deltas: the debounce window folds a burst into one
  * `specialist.list` call, the blocking `call` guarantees no concurrent
- * refetches, and deltas arriving mid-flight collapse into at most one
+ * refetches, and triggers arriving mid-flight collapse into at most one
  * trailing refetch after the current one settles.
  */
-function* watchModelResolutionSettings(context: ListContext) {
-  const channel = yield* actionChannel(touchesModelResolutionSettings, buffers.sliding(1));
+function* watchSpecialistRefetches(context: ListContext) {
+  const channel = yield* actionChannel(triggersSpecialistRefetch, buffers.sliding(1));
   while (true) {
     yield* take(channel);
-    yield* delay(SETTINGS_REFETCH_DEBOUNCE_MS);
-    // Deltas that arrived during the window are served by this refetch.
+    yield* delay(REFETCH_DEBOUNCE_MS);
+    // Triggers that arrived during the window are served by this refetch.
     yield* flush(channel);
     yield* call(refetchSpecialists, context);
   }
@@ -342,6 +358,6 @@ export function* specialistsSaga() {
   yield* all([
     takeEvery(saveFileSpecialist, handleSave, context),
     takeEvery(deleteFileSpecialist, handleDelete, context),
-    fork(watchModelResolutionSettings, context),
+    fork(watchSpecialistRefetches, context),
   ]);
 }

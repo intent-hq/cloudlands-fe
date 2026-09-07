@@ -63,7 +63,10 @@
     selectSpecialists,
     selectEffectiveBehaviorPrompt,
     selectOrchestratorSpecialist,
+    selectCustomSpecialistsLoaded,
+    selectFileSpecialistsLoaded,
   } from '$store/renderer/slices/specialists/specialists-selectors';
+  import { refetchSpecialistsRequested } from '$store/renderer/slices/specialists/specialists-slice';
   import { createLogger } from '$lib/utils/client-logger';
   import {
     getGitErrorMessage,
@@ -160,6 +163,7 @@
 
   // Constants
   const PREFILL_KEY = 'workspace-prefill';
+  const UNKNOWN_SPECIALIST_ERROR_PREFIX = 'unknown specialist:'; // i18n-ignore (daemon error prefix)
 
   function hasWorkspacePrefillData(): boolean {
     try {
@@ -441,7 +445,10 @@
   }
 
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
+  const specialists$ = selectSpecialists();
   const orchestrator$ = selectOrchestratorSpecialist();
+  const customSpecialistsLoaded$ = selectCustomSpecialistsLoaded();
+  const fileSpecialistsLoaded$ = selectFileSpecialistsLoaded();
   const compactFormState$ = selectCompactWorkspaceInitializerFormState();
   const lastSelectedRepo$ = selectWorkspaceInitializerLastSelectedRepo();
   const lastSubmittedAgent$ = selectWorkspaceInitializerLastSubmittedAgent();
@@ -516,6 +523,12 @@
   let isTeamMode = $state<boolean>(
     savedState?.isTeamMode ?? lastSubmittedAgent?.isTeamMode ?? $orchestrator$ !== null,
   );
+
+  function resetUnavailableSpecialist(): void {
+    selectedSpecialist = isTeamMode
+      ? (selectOrchestratorSpecialist.select(appStore.state)?.id ?? null)
+      : null;
+  }
   // Track which provider the user selected for the initial agent
   // Priority: active provider store takes precedence since it's the user's
   // explicit choice, else the settings-derived effective default. '' when
@@ -795,6 +808,20 @@
     }
   });
 
+  // A specialist can disappear while this form is closed. Only discard a
+  // persisted selection after both custom/file rosters are authoritative;
+  // the bundled-only startup fallback cannot prove a custom id disappeared.
+  $effect(() => {
+    if (
+      $customSpecialistsLoaded$ &&
+      $fileSpecialistsLoaded$ &&
+      selectedSpecialist &&
+      !$specialists$.some(({ id }) => id === selectedSpecialist)
+    ) {
+      resetUnavailableSpecialist();
+    }
+  });
+
   // Track previous workspace info for inserting @ mention after mount
   let pendingPreviousWorkspace: { id: string; title: string } | null = $state(null);
 
@@ -808,6 +835,7 @@
   // Preload Linear and Sentry issues as soon as this component mounts
   // so they're ready when the user expands the form
   onMount(() => {
+    appStore.dispatch(refetchSpecialistsRequested());
     logger.debug('Preloading issues on mount');
     preloadIssues();
 
@@ -2247,10 +2275,16 @@
       clearForm();
       oncreate?.();
     } catch (err) {
-      error =
-        err instanceof Error
-          ? getGitErrorMessage(err.message)
-          : m.workspace_compactInitializer_createFailed_error();
+      if (err instanceof Error && err.message.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {
+        appStore.dispatch(refetchSpecialistsRequested());
+        resetUnavailableSpecialist();
+        error = m.workspace_compactInitializer_specialistUnavailable_error();
+      } else {
+        error =
+          err instanceof Error
+            ? getGitErrorMessage(err.message)
+            : m.workspace_compactInitializer_createFailed_error();
+      }
     } finally {
       isCreating = false;
       // The create settled (success, failure, or early return) — drop the

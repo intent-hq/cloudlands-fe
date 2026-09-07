@@ -60,6 +60,8 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: Object.assign(() => mocks.readable(() => []), {
     select: vi.fn(() => []),
   }),
+  selectCustomSpecialistsLoaded: () => mocks.readable(() => true),
+  selectFileSpecialistsLoaded: () => mocks.readable(() => true),
   selectEffectiveBehaviorPrompt: { select: vi.fn(() => undefined) },
   selectEffectiveModel: { select: vi.fn(() => undefined) },
   selectEffectiveCodingAgent: { select: vi.fn(() => undefined) },

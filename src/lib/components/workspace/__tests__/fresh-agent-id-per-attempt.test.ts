@@ -7,7 +7,7 @@
  * (STAB-143): with no client id on the wire, a failed create can no longer
  * poison retries with a duplicate agent_session.id.
  */
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
@@ -30,8 +30,17 @@ const mocks = vi.hoisted(() => {
         value = next;
         for (const run of subscribers) run(next);
       },
+      get() {
+        return value;
+      },
     };
   }
+  const coordinator = {
+    id: 'spec-writer',
+    name: 'Coordinator',
+    description: '',
+    role: 'orchestrator',
+  };
   return {
     readable,
     dispatch: vi.fn(),
@@ -42,11 +51,17 @@ const mocks = vi.hoisted(() => {
     setReasoningEffort: vi.fn(),
     hydrated$: writable(false),
     compactFormState$: writable<{
+      selectedSpecialist?: string | null;
       selectedModel?: string;
       modelWasOverridden?: boolean;
       selectedReasoningEffort?: string;
+      isTeamMode?: boolean;
       skipIsolation?: boolean;
     } | null>(null),
+    specialists$: writable([coordinator]),
+    customSpecialistsLoaded$: writable(true),
+    fileSpecialistsLoaded$: writable(true),
+    coordinator,
   };
 });
 
@@ -90,30 +105,18 @@ vi.mock('$store/renderer/slices/voice-settings/voice-settings-selectors', () => 
 }));
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
-  selectSpecialists: Object.assign(() => mocks.readable(() => []), {
-    select: vi.fn(() => []),
+  selectSpecialists: Object.assign(() => mocks.specialists$, {
+    select: vi.fn(() => mocks.specialists$.get()),
   }),
+  selectCustomSpecialistsLoaded: () => mocks.customSpecialistsLoaded$,
+  selectFileSpecialistsLoaded: () => mocks.fileSpecialistsLoaded$,
   selectEffectiveBehaviorPrompt: { select: vi.fn(() => undefined) },
   selectEffectiveModel: { select: vi.fn(() => undefined) },
   selectEffectiveCodingAgent: { select: vi.fn(() => undefined) },
   selectUserOverrides: { select: vi.fn(() => ({ modelOverrides: {} })) },
-  selectOrchestratorSpecialist: Object.assign(
-    () =>
-      mocks.readable(() => ({
-        id: 'spec-writer',
-        name: 'Coordinator',
-        description: '',
-        role: 'orchestrator',
-      })),
-    {
-      select: vi.fn(() => ({
-        id: 'spec-writer',
-        name: 'Coordinator',
-        description: '',
-        role: 'orchestrator',
-      })),
-    },
-  ),
+  selectOrchestratorSpecialist: Object.assign(() => mocks.readable(() => mocks.coordinator), {
+    select: vi.fn(() => mocks.coordinator),
+  }),
 }));
 
 vi.mock('$features/setup-scripts', async (importOriginal) => ({
@@ -244,6 +247,9 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     sessionStorage.clear();
     mocks.hydrated$.set(false);
     mocks.compactFormState$.set(null);
+    mocks.specialists$.set([mocks.coordinator]);
+    mocks.customSpecialistsLoaded$.set(true);
+    mocks.fileSpecialistsLoaded$.set(true);
     mocks.setReasoningEffort.mockResolvedValue({ success: true });
   });
 
@@ -252,18 +258,138 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     sessionStorage.clear();
   });
 
+  it('requests a fresh specialist roster once when mounted', () => {
+    render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
+
+    const refetches = mocks.dispatch.mock.calls.filter(
+      ([action]) => action.type === 'specialists/refetchRequested',
+    );
+    expect(refetches).toHaveLength(1);
+  });
+
+  it.each([
+    { isTeamMode: false, expectedSpecialist: undefined },
+    { isTeamMode: true, expectedSpecialist: 'spec-writer' },
+  ])(
+    'replaces a stale persisted specialist before submit when team mode is $isTeamMode',
+    async ({ isTeamMode, expectedSpecialist }) => {
+      mocks.compactFormState$.set({ selectedSpecialist: 'deleted-specialist', isTeamMode });
+      mocks.create.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+      seedAutoCreatePrefill();
+      const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
+
+      await component.applyPrefill();
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+
+      expect(mocks.create.mock.calls[0][0].initialAgent.specialist).toBe(expectedSpecialist);
+    },
+  );
+
+  it('waits for an authoritative roster before resetting a persisted custom specialist', async () => {
+    const customSpecialist = {
+      id: 'custom-specialist',
+      name: 'Custom specialist',
+      description: '',
+    };
+    mocks.compactFormState$.set({ selectedSpecialist: customSpecialist.id, isTeamMode: false });
+    mocks.customSpecialistsLoaded$.set(false);
+    mocks.fileSpecialistsLoaded$.set(false);
+    mocks.create.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+
+    seedAutoCreatePrefill();
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(mocks.create.mock.calls[0][0].initialAgent.specialist).toBe(customSpecialist.id);
+
+    mocks.customSpecialistsLoaded$.set(true);
+    mocks.fileSpecialistsLoaded$.set(true);
+    seedAutoCreatePrefill();
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
+    expect(mocks.create.mock.calls[1][0].initialAgent.specialist).toBeUndefined();
+
+    cleanup();
+    mocks.compactFormState$.set({ selectedSpecialist: customSpecialist.id, isTeamMode: false });
+    mocks.specialists$.set([mocks.coordinator, customSpecialist]);
+    seedAutoCreatePrefill();
+    const { component: loadedComponent } = render(CompactWorkspaceInitializer, {
+      props: { isExpanded: false },
+    });
+    await loadedComponent.applyPrefill();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(3));
+    expect(mocks.create.mock.calls[2][0].initialAgent.specialist).toBe(customSpecialist.id);
+  });
+
+  it('refreshes and resets an unknown specialist so retry succeeds without reopening', async () => {
+    const deletedSpecialist = {
+      id: 'deleted-specialist',
+      name: 'Deleted specialist',
+      description: '',
+    };
+    mocks.specialists$.set([mocks.coordinator, deletedSpecialist]);
+    mocks.compactFormState$.set({
+      selectedSpecialist: deletedSpecialist.id,
+      isTeamMode: false,
+    });
+    mocks.create
+      .mockResolvedValueOnce({
+        ok: false,
+        error:
+          'unknown specialist: deleted-specialist (known specialists: spec-writer; aliases are accepted)',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          workspace: {
+            id: 'ws-created',
+            title: 'Created workspace',
+            path: '/tmp/ws-created',
+            repositoryPath: '/tmp/test-repo',
+            worktreePath: '/tmp/ws-created',
+            status: 'Active',
+          },
+          initialAgent: { id: 'agent-created' },
+        },
+      });
+
+    seedAutoCreatePrefill();
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    await component.applyPrefill();
+
+    expect(
+      await screen.findByText(
+        'That specialist no longer exists. The specialist list has been refreshed; try again.',
+      ),
+    ).toBeTruthy();
+    expect(mocks.create.mock.calls[0][0].initialAgent.specialist).toBe(deletedSpecialist.id);
+    expect(
+      mocks.dispatch.mock.calls.filter(
+        ([action]) => action.type === 'specialists/refetchRequested',
+      ),
+    ).toHaveLength(2);
+
+    seedAutoCreatePrefill();
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
+
+    expect(mocks.create.mock.calls[1][0].initialAgent.specialist).toBeUndefined();
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+  });
+
   it('never sends initialAgent.agentId, including on the retry after a failed create', async () => {
     mocks.create.mockRejectedValue(new Error('daemon rejected create'));
 
     seedAutoCreatePrefill();
     const { component } = render(CompactWorkspaceInitializer, {
-      props: { isExpanded: false },
+      props: { isExpanded: true },
     });
 
     // First attempt: applyPrefill() arms pendingAutoCreate; the auto-submit
     // $effect fires once the async git check makes the form valid.
     await component.applyPrefill();
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    await screen.findByText('daemon rejected create');
 
     // Retry after failure via the same auto-create path.
     seedAutoCreatePrefill();
