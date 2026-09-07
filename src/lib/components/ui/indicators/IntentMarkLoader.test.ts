@@ -120,6 +120,7 @@ describe('IntentMarkLoader', () => {
     expect(root.getAttribute('data-variant')).toBe('pulse');
     expect(root.classList.contains('custom-mark')).toBe(true);
     expect(container.querySelectorAll('[data-mark-arm]')).toHaveLength(5);
+    expect(container.querySelectorAll('[data-mark-arm-box]')).toHaveLength(5);
     expect(container.querySelectorAll('[data-bloom-arm]')).toHaveLength(5);
     expect(intentMarkVariants).toEqual(['bloom', 'pulse', 'twist']);
     expect(spinnerMetadata.exports).toContain('IntentMarkVariant');
@@ -139,12 +140,12 @@ describe('IntentMarkLoader', () => {
     'morphs %s to %s on the same root and continues at the handoff frame',
     async (from, to) => {
       const view = render(IntentMarkLoader, { props: { variant: from, playing: true } });
-      const root = view.container.querySelector('svg')!;
+      const root = view.container.querySelector<HTMLElement>('[data-slot="intent-mark-loader"]')!;
       completeTransition();
       const originalRoot = root;
 
       await view.rerender({ variant: to, playing: true });
-      expect(view.container.querySelector('svg')).toBe(originalRoot);
+      expect(view.container.querySelector('[data-slot="intent-mark-loader"]')).toBe(originalRoot);
       expect(root.dataset.motionState).toBe('morphing');
       expect(root.dataset.handoffVariant).toBe(to);
       const morphs = records.filter(
@@ -153,14 +154,24 @@ describe('IntentMarkLoader', () => {
       expect(morphs).toHaveLength(5);
       expect(morphs.every(({ frames }) => frames[0].d && frames[1].d)).toBe(true);
       completeTransition();
-      expect(liveLoops(root)).toHaveLength(5);
+      const loops = liveLoops(root);
+      expect(loops).toHaveLength(5);
+      expect(
+        loops.every(({ frames }) =>
+          frames.every((frame) =>
+            Object.keys(frame).every((property) =>
+              ['easing', 'offset', 'opacity', 'transform'].includes(property),
+            ),
+          ),
+        ),
+      ).toBe(true);
       expect(root.dataset.motionState).toBe('playing');
     },
   );
 
   it('samples a rapid mid-morph pose and does not restart the stale destination', async () => {
     const view = render(IntentMarkLoader, { props: { variant: 'pulse', playing: true } });
-    const root = view.container.querySelector('svg')!;
+    const root = view.container.querySelector<HTMLElement>('[data-slot="intent-mark-loader"]')!;
     completeTransition();
     await view.rerender({ variant: 'bloom', playing: true });
     const staleMorphs = records.filter(
@@ -196,7 +207,7 @@ describe('IntentMarkLoader', () => {
 
   it('stops, reactivates, respects tab visibility and reduced motion, and cleans up', async () => {
     const view = render(IntentMarkLoader, { props: { variant: 'bloom', playing: true } });
-    const root = view.container.querySelector('svg')!;
+    const root = view.container.querySelector<HTMLElement>('[data-slot="intent-mark-loader"]')!;
     completeTransition();
     await view.rerender({ variant: 'bloom', playing: false });
     expect(root.dataset.motionState).toBe('settling');
@@ -225,10 +236,14 @@ describe('IntentMarkLoader', () => {
 
   it('keeps concurrent indicators independent when one loop becomes idle', () => {
     const first = render(IntentMarkLoader, { props: { variant: 'bloom', playing: true } });
-    const firstRoot = first.container.querySelector('svg')!;
+    const firstRoot = first.container.querySelector<HTMLElement>(
+      '[data-slot="intent-mark-loader"]',
+    )!;
     completeTransition();
     const second = render(IntentMarkLoader, { props: { variant: 'twist', playing: true } });
-    const secondRoot = second.container.querySelector('svg')!;
+    const secondRoot = second.container.querySelector<HTMLElement>(
+      '[data-slot="intent-mark-loader"]',
+    )!;
     completeTransition();
     const firstLoops = liveLoops(firstRoot);
     const secondLoops = liveLoops(secondRoot);
@@ -242,7 +257,7 @@ describe('IntentMarkLoader', () => {
     expect(secondLoops.every(({ cancel }) => cancel.mock.calls.length === 0)).toBe(true);
   });
 
-  it('maps Bloom to the approved 61-frame source timeline without a JS frame loop', () => {
+  it('samples every Bloom frame with compositor properties and no JS frame loop', () => {
     expect(intentMarkMotionTiming).toMatchObject({
       settleMs: 160,
       bloomMs: 61_000 / 30,
@@ -254,6 +269,20 @@ describe('IntentMarkLoader', () => {
     const loops = records.slice(-5);
     expect(loops.every(({ frames }) => frames.length === 63)).toBe(true);
     expect(loops.every(({ options }) => options.duration === 61_000 / 30)).toBe(true);
-    expect(loops.every(({ frames }) => frames.at(-1)?.opacity === 0)).toBe(true);
+    expect(
+      loops.every(({ frames }) => frames.every(({ easing }) => easing === 'steps(1, end)')),
+    ).toBe(true);
+    expect(
+      loops.every(({ frames }) =>
+        frames.every(
+          ({ d, strokeWidth, transformOrigin }) => !d && !strokeWidth && !transformOrigin,
+        ),
+      ),
+    ).toBe(true);
+    const arms = loops.map(({ target }) => target as SVGSVGElement);
+    expect(arms.every((arm) => arm.matches('[data-mark-arm-box]'))).toBe(true);
+    const paths = arms.map((arm) => arm.querySelector('path')!);
+    expect(paths.every((path) => path.style.strokeWidth === '18.45088')).toBe(true);
+    expect(paths.every((path) => path.style.transformOrigin === '128px 101px')).toBe(true);
   });
 });
