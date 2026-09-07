@@ -187,6 +187,43 @@
   let hoverCardId = $derived(workspace ? `workspace-hover-card-${workspace.id}` : undefined);
   let hoverCardVisible = $state(false);
   let rowElement: HTMLDivElement | null = $state(null);
+  let titleElement: HTMLSpanElement | null = $state(null);
+  let titleTextElement: HTMLSpanElement | null = $state(null);
+  let actionsElement: HTMLDivElement | null = $state(null);
+  let titleOverflowPx = $state(0);
+  let titleActionsCoveredPx = $state(0);
+  let titleMarqueeDistancePx = $derived(
+    titleOverflowPx + (titleActionsCoveredPx > 0 ? titleActionsCoveredPx + 4 : 0),
+  );
+
+  function measureTitleOverflow() {
+    const title = titleElement;
+    const actionCluster = actionsElement;
+    titleOverflowPx = title ? Math.max(0, title.scrollWidth - title.clientWidth) : 0;
+    titleActionsCoveredPx =
+      title && actionCluster && actionCluster.getClientRects().length > 0
+        ? Math.max(
+            0,
+            title.getBoundingClientRect().right - actionCluster.getBoundingClientRect().left,
+          )
+        : 0;
+  }
+
+  $effect(() => {
+    const clip = titleElement;
+    const text = titleTextElement;
+    const actionCluster = actionsElement;
+    if (!clip || !text) return;
+
+    measureTitleOverflow();
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(measureTitleOverflow);
+    observer.observe(clip);
+    observer.observe(text);
+    if (actionCluster) observer.observe(actionCluster);
+    return () => observer.disconnect();
+  });
 
   // Hover-intent delay before mounting the hover card. Mounting
   // WorkspaceHoverCard is expensive (7 store selector subscriptions plus
@@ -269,6 +306,7 @@
 
   function handleMouseEnter() {
     pointerWithinRow = true;
+    measureTitleOverflow();
     onHover?.();
     if (workspace && !suppressHover && !focusWithinRow) {
       clearHoverCardOpenTimer();
@@ -554,16 +592,27 @@
 
     <div class="relative z-10 flex min-w-0 flex-1 items-center gap-2">
       <span class="flex min-w-0 flex-1 items-center gap-1" data-workspace-card-title-group>
+        <!-- The fade + marquee assume LTR overflow (negative X translate and right-edge mask/action coverage); all registered locales are LTR, so pin the title LTR until logical-edge measurement and mirrored translate/mask support RTL. -->
         <span
+          bind:this={titleElement}
+          dir="ltr"
           class="wc-title type-body min-w-0 truncate font-normal!
           {isCurrent
             ? 'text-foreground'
             : workspace.title
               ? 'text-foreground'
               : 'text-muted-foreground'}"
+          data-overflowing={titleOverflowPx > 0}
+          data-marquee-enabled={titleOverflowPx > 0 && !highlighted && !suppressHover}
+          style="--wc-title-marquee-distance: {titleMarqueeDistancePx}px; --wc-title-marquee-duration: {Math.max(
+            0.4,
+            titleMarqueeDistancePx / 35,
+          ).toFixed(2)}s;"
           data-workspace-card-title
         >
-          {workspace.title || m.workspace_links_untitled_label()}
+          <span bind:this={titleTextElement} class="wc-title-text">
+            {workspace.title || m.workspace_links_untitled_label()}
+          </span>
         </span>
         {#if isPinned}
           <span
@@ -662,6 +711,7 @@
 
     {#if actions || onOpenInNewWindow || onTogglePin || (isUnread && onMarkAsRead)}
       <div
+        bind:this={actionsElement}
         class="wc-actions absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 focus-within:opacity-100
           {isolateHoverReveal
           ? 'group-focus-within/wc:opacity-100'
@@ -674,31 +724,6 @@
               ? 'opacity-0 group-hover/wc:opacity-100'
               : 'opacity-0 group-hover:opacity-100'}"
       >
-        {#if onOpenInNewWindow}
-          <SidebarOverflowMenu
-            bind:open={overflowMenuOpen}
-            items={getContextMenuItems()}
-            ariaLabel={m.workspace_progressCard_actions_ariaLabel()}
-            class="flex size-5 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:outline-none"
-          />
-        {/if}
-        {@render actions?.()}
-        {#if isUnread && onMarkAsRead}
-          <Button
-            variant="plain"
-            size="icon-xs"
-            iconOnly
-            class="text-muted-foreground hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0"
-            onclick={(event) => {
-              event.stopPropagation();
-              onMarkAsRead?.(event);
-            }}
-            aria-label={m.workspace_card_markAsRead_label()}
-            title={m.workspace_card_markAsRead_label()}
-          >
-            <Fa icon={faCheck} size="xs" />
-          </Button>
-        {/if}
         {#if onTogglePin}
           <Button
             variant="plain"
@@ -717,6 +742,31 @@
           >
             <span aria-hidden="true"><Fa icon={faThumbtack} size="xs" /></span>
           </Button>
+        {/if}
+        {#if isUnread && onMarkAsRead}
+          <Button
+            variant="plain"
+            size="icon-xs"
+            iconOnly
+            class="text-muted-foreground hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0"
+            onclick={(event) => {
+              event.stopPropagation();
+              onMarkAsRead?.(event);
+            }}
+            aria-label={m.workspace_card_markAsRead_label()}
+            title={m.workspace_card_markAsRead_label()}
+          >
+            <Fa icon={faCheck} size="xs" />
+          </Button>
+        {/if}
+        {@render actions?.()}
+        {#if onOpenInNewWindow}
+          <SidebarOverflowMenu
+            bind:open={overflowMenuOpen}
+            items={getContextMenuItems()}
+            ariaLabel={m.workspace_progressCard_actions_ariaLabel()}
+            class="flex size-5 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:outline-none"
+          />
         {/if}
       </div>
     {/if}
@@ -910,6 +960,60 @@
 {/if}
 
 <style>
+  .wc-title {
+    --wc-title-marquee-distance: 0px;
+    --wc-title-marquee-duration: 0.4s;
+
+    overflow: hidden;
+    text-overflow: clip;
+    white-space: nowrap;
+  }
+
+  .wc-title[data-overflowing='true'] {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      black 0,
+      black calc(100% - 1.5rem),
+      transparent 100%
+    );
+    mask-image: linear-gradient(to right, black 0, black calc(100% - 1.5rem), transparent 100%);
+  }
+
+  .wc-title-text {
+    display: inline-block;
+    min-width: max-content;
+    transform: translateX(0);
+    transition: transform var(--motion-standard) var(--ease-standard);
+  }
+
+  .wc-root:hover .wc-title[data-marquee-enabled='true'] {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, black 1.5rem, black 100%);
+    mask-image: linear-gradient(to right, transparent 0, black 1.5rem, black 100%);
+  }
+
+  .wc-root:hover .wc-title[data-marquee-enabled='true'] .wc-title-text {
+    transform: translateX(calc(-1 * var(--wc-title-marquee-distance)));
+    transition-duration: var(--wc-title-marquee-duration);
+    transition-timing-function: linear;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wc-title-text {
+      transform: none !important;
+      transition: none;
+    }
+
+    .wc-root:hover .wc-title[data-marquee-enabled='true'] {
+      -webkit-mask-image: linear-gradient(
+        to right,
+        black 0,
+        black calc(100% - 1.5rem),
+        transparent 100%
+      );
+      mask-image: linear-gradient(to right, black 0, black calc(100% - 1.5rem), transparent 100%);
+    }
+  }
+
   @container (max-width: 220px) {
     .wc-secondary {
       display: none;
