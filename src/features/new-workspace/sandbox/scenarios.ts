@@ -547,8 +547,8 @@ export const NEW_WORKSPACE_SCENARIOS: readonly Scenario[] = [
     'setup-readiness-required-pending',
     'entry',
     'Setup readiness waits for a required check',
-    publicRepoDraft,
-    restoredState(publicRepoDraft, { ...READY_CAPABILITIES, github: 'pending' }),
+    githubSetupDraft,
+    restoredState(githubSetupDraft, { ...READY_CAPABILITIES, github: 'pending' }),
     {
       presentation: { requiredCapabilities: ['provider', 'github'] },
       contract: { control: 'none', width: 1280 },
@@ -592,7 +592,7 @@ export const NEW_WORKSPACE_SCENARIOS: readonly Scenario[] = [
       node: 'pending',
       github: 'pending',
     }),
-    { contract: { control: 'start', width: 768 } },
+    { contract: { control: 'none', width: 768 } },
   ),
   scenario(
     'capability-no-provider',
