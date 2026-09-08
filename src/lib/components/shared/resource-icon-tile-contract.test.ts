@@ -92,7 +92,8 @@ describe('resource icon tile source contract', () => {
     );
     expect(empty).not.toContain('ResourceIconTile');
     expect(empty).toContain('<Fa icon={action.icon} class="size-[1em]" />');
-    expect(empty).toContain('<Fa icon={getTabIcon(item.tab.type)} class="size-[1em]" />');
+    expect(empty).toContain('<Fa icon={row.icon} class="size-[1em]" />');
+    expect(empty).toContain('icon: getTabIcon(item.tab.type)');
   });
 
   it('maps the note and every changes alias to one canonical identity', () => {
