@@ -1,0 +1,186 @@
+diff --git a/dist/utils/selector-core/selector-output-cache.d.ts b/dist/utils/selector-core/selector-output-cache.d.ts
+index 512207f520f14d1c1dd0b4d563c7e72d3d00ea5a..c27e2777d36911ceb0c51df8125e3d20e8c1ff5a 100644
+--- a/dist/utils/selector-core/selector-output-cache.d.ts
++++ b/dist/utils/selector-core/selector-output-cache.d.ts
+@@ -1,5 +1,6 @@
+ import { SelectorOutputCacheKey, SelectorOutputCacheOptions, SelectorOutputFactory } from '../types';
+ export type { SelectorOutputCacheKey, SelectorOutputCacheOptions, SelectorOutputFactory, } from '../types';
+ export declare const evictSelectorOutputsForStateSource: (stateSource: object) => void;
++export declare const retainSelectorOutputForStateSource: (stateSource: object, output: object) => () => void;
+ export declare const getOrCreate: <OUTPUT>(stateSource: object, selectorFunc: SelectorOutputCacheKey, selectorArgs: readonly unknown[], factory: SelectorOutputFactory<OUTPUT>, options?: SelectorOutputCacheOptions) => OUTPUT;
+ //# sourceMappingURL=selector-output-cache.d.ts.map
+\ No newline at end of file
+diff --git a/dist/utils/selector-core/selector-output-cache.js b/dist/utils/selector-core/selector-output-cache.js
+index 58b4722af2b630188c331505c89f49ad08b10e8f..908d480dcf4a31f78ef42ace7d5679dca0adc18e 100644
+--- a/dist/utils/selector-core/selector-output-cache.js
++++ b/dist/utils/selector-core/selector-output-cache.js
+@@ -4,7 +4,7 @@ var getWeakChild = (node, key) => {
+ 	node.weakChildren ??= /* @__PURE__ */ new WeakMap();
+ 	const existing = node.weakChildren.get(key);
+ 	if (existing) return existing;
+-	const child = {};
++	const child = { entryCount: 0 };
+ 	node.weakChildren.set(key, child);
+ 	return child;
+ };
+@@ -12,19 +12,52 @@ var getPrimitiveChild = (node, key) => {
+ 	node.primitiveChildren ??= /* @__PURE__ */ new Map();
+ 	const existing = node.primitiveChildren.get(key);
+ 	if (existing) return existing;
+-	const child = {};
++	const child = { entryCount: 0 };
+ 	node.primitiveChildren.set(key, child);
+ 	return child;
+ };
+-var getChild = (node, key) => {
+-	if (isWeakCacheKey(key)) return getWeakChild(node, key);
+-	return getPrimitiveChild(node, key);
++var getChild = (parent, key, path) => {
++	const weak = isWeakCacheKey(key);
++	const node = weak ? getWeakChild(parent, key) : getPrimitiveChild(parent, key);
++	path.push({ parent, node, weak, key: weak ? new WeakRef(key) : key });
++	return node;
+ };
+ var root = {};
++// Temporary downstream fix: https://github.com/intent-hq/intent/issues/4596.
++// Outputs own their snapshots; the lookup cache must not extend their lifetime.
++// Counts include pending finalizers so a late cleanup cannot remove a new value
++// at the same key or a still-live descendant/prefix. Object keys stay weak even
++// in finalizer holdings. Prune primitive-key paths as well as the output itself.
++var outputFinalizer = new FinalizationRegistry(({ path, reference }) => {
++	const leaf = path[path.length - 1].node;
++	if (leaf.value === reference) {
++		leaf.value = void 0;
++		leaf.hasValue = false;
++	}
++	for (let i = path.length - 1; i >= 0; i--) {
++		const { parent, node, weak, key } = path[i];
++		if (--node.entryCount !== 0) continue;
++		const children = weak ? parent.weakChildren : parent.primitiveChildren;
++		const rawKey = weak ? key.deref() : key;
++		if (children?.get(rawKey) === node) children.delete(rawKey);
++	}
++});
+ var traceStateByStateSource = /* @__PURE__ */ new WeakMap();
++var activeOutputsByStateSource = /* @__PURE__ */ new WeakMap();
++var retainSelectorOutputForStateSource = (stateSource, output) => {
++	let active = activeOutputsByStateSource.get(stateSource);
++	if (!active) {
++		active = new Set();
++		activeOutputsByStateSource.set(stateSource, active);
++	}
++	active.add(output);
++	return () => active.delete(output);
++};
+ var evictSelectorOutputsForStateSource = (stateSource) => {
+ 	root.weakChildren?.delete(stateSource);
+ 	traceStateByStateSource.delete(stateSource);
++	activeOutputsByStateSource.get(stateSource)?.clear();
++	activeOutputsByStateSource.delete(stateSource);
+ };
+ var getTraceState = (stateSource, selectorFunc) => {
+ 	let traceStateBySelector = traceStateByStateSource.get(stateSource);
+@@ -58,17 +91,22 @@ var reportCacheTrace = (selectorFunc, options, traceState, outputCacheStatus) =>
+ var getOrCreate = (stateSource, selectorFunc, selectorArgs, factory, options) => {
+ 	const traceState = options?.traceReporter ? getTraceState(stateSource, selectorFunc) : void 0;
+ 	if (traceState) traceState.observableCacheRequestCount += 1;
+-	let current = getChild(root, stateSource);
+-	current = getChild(current, selectorFunc);
+-	for (const arg of selectorArgs) current = getChild(current, arg);
+-	if (current.hasValue) {
++	const path = [];
++	let current = getChild(root, stateSource, path);
++	current = getChild(current, selectorFunc, path);
++	for (const arg of selectorArgs) current = getChild(current, arg, path);
++	const cached = current.weakValue ? current.value?.deref() : current.value;
++	if (current.hasValue && (!current.weakValue || cached !== void 0)) {
+ 		if (traceState) traceState.outputCacheHitCount += 1;
+ 		reportCacheTrace(selectorFunc, options, traceState, "hit");
+-		return current.value;
++		return cached;
+ 	}
+ 	const value = factory();
+-	current.value = value;
++	current.weakValue = options?.weakOutputs === true && isWeakCacheKey(value);
++	current.value = current.weakValue ? new WeakRef(value) : value;
+ 	current.hasValue = true;
++	for (const { node } of path) node.entryCount += 1;
++	if (current.weakValue) outputFinalizer.register(value, { path, reference: current.value });
+ 	if (traceState) {
+ 		traceState.observableCacheCachedCount += 1;
+ 		traceState.outputCacheMissCount += 1;
+@@ -77,6 +115,6 @@ var getOrCreate = (stateSource, selectorFunc, selectorArgs, factory, options) =>
+ 	return value;
+ };
+ //#endregion
+-export { evictSelectorOutputsForStateSource, getOrCreate };
++export { evictSelectorOutputsForStateSource, getOrCreate, retainSelectorOutputForStateSource };
+ 
+ //# sourceMappingURL=selector-output-cache.js.map
+\ No newline at end of file
+diff --git a/dist/utils/svelte-selectors/create-selector.js b/dist/utils/svelte-selectors/create-selector.js
+index 9679c07353778e927a502f2853d040537def74cf..8a7aa54a567ac74ddffbe9813164e81b1f7a2f24 100644
+--- a/dist/utils/svelte-selectors/create-selector.js
++++ b/dist/utils/svelte-selectors/create-selector.js
+@@ -1,5 +1,5 @@
+ import { createCachedSelector } from "../selector-core/create-cached-selector.js";
+-import { getOrCreate } from "../selector-core/selector-output-cache.js";
++import { getOrCreate, retainSelectorOutputForStateSource } from "../selector-core/selector-output-cache.js";
+ import { getSelectorCacheTraceReporter, getSelectorComputationTraceOptions } from "../selector-core/selector-tracing-bridge.js";
+ import { StoreRuntime } from "../../store-runtime.js";
+ import { createConstantKefirProperty, createKefirPropertyFromSubscribe, createKefirSelectorProperty } from "../selector-core/kefir-selector.js";
+@@ -18,9 +18,10 @@ var readReadableArg = (arg) => {
+ 	if (isReadable(arg)) return get(arg);
+ 	return arg;
+ };
+-var kefirSelectorPropertyToReadable = (selected) => {
++// Subscriptions own shared readables only until last unsubscribe or store disposal.
++var kefirSelectorPropertyToReadable = (selected, stateSource) => {
+ 	let currentValue = selected.getSnapshot();
+-	return readable(currentValue, (set) => {
++	const output = readable(currentValue, (set) => {
+ 		const setIfChanged = (value) => {
+ 			if (value !== currentValue) {
+ 				currentValue = value;
+@@ -29,10 +30,16 @@ var kefirSelectorPropertyToReadable = (selected) => {
+ 		};
+ 		setIfChanged(selected.getSnapshot());
+ 		const subscription = selected.property.observe(setIfChanged);
++		const releaseOutput = retainSelectorOutputForStateSource(stateSource, output);
+ 		return () => {
+-			subscription.unsubscribe();
++			try {
++				subscription.unsubscribe();
++			} finally {
++				releaseOutput();
++			}
+ 		};
+ 	});
++	return output;
+ };
+ var isStoreRuntime = (arg) => arg instanceof StoreRuntime;
+ var createSelector = (store, selectorFunc) => {
+@@ -41,8 +48,8 @@ var createSelector = (store, selectorFunc) => {
+ 		const traceOptions = getSelectorComputationTraceOptions(store);
+ 		const traceCacheReporter = getSelectorCacheTraceReporter(store);
+ 		return getOrCreate(store, selectorFunc, restArgs, () => {
+-			return kefirSelectorPropertyToReadable(createKefirSelectorProperty(store, selectorFunc, restArgs.map(readableArgToKefirProperty), () => restArgs.map(readReadableArg), traceOptions));
+-		}, traceCacheReporter ? { traceReporter: traceCacheReporter } : void 0);
++			return kefirSelectorPropertyToReadable(createKefirSelectorProperty(store, selectorFunc, restArgs.map(readableArgToKefirProperty), () => restArgs.map(readReadableArg), traceOptions), store);
++		}, { weakOutputs: true, traceReporter: traceCacheReporter });
+ 	};
+ 	const readableSelector = ((...restArgs) => {
+ 		return boundSelector(store, ...restArgs);
+diff --git a/dist/utils/types.d.ts b/dist/utils/types.d.ts
+index bfe40dfd001f56318b5be3ee54af218a7abd44b8..d58fc9a25c91b728cc8ad571066b4a96394c0f81 100644
+--- a/dist/utils/types.d.ts
++++ b/dist/utils/types.d.ts
+@@ -76,6 +76,8 @@ export type SelectorOutputCacheKey = (...args: any[]) => unknown;
+ export type SelectorOutputFactory<OUTPUT> = () => OUTPUT;
+ export type SelectorOutputCacheOptions = {
+     traceReporter?: SelectorTraceReporter<any, any, any[]>;
++    /** Opt in only when the adapter owns active output lifetimes. */
++    weakOutputs?: boolean;
+ };
+ export type KefirSelectorProperty<T> = {
+     property: Property<T, any>;
