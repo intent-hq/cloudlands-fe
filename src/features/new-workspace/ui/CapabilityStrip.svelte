@@ -44,7 +44,10 @@
       data-status={item.status}
       data-capability-guidance={item.id}
     >
-      <Fa icon={faTriangleExclamation} class="mt-0.5 shrink-0 text-warning" />
+      <Fa
+        icon={faTriangleExclamation}
+        class="mt-0.5 shrink-0 text-warning-foreground dark:text-warning"
+      />
       <span>
         {m.newWorkspace_capabilities_repairOnHost_description({
           capability: item.name,

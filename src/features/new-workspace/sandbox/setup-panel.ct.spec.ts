@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import ScenarioContractHost from './ScenarioContractHost.svelte';
 
 const consoleErrors = new WeakMap<Page, string[]>();
@@ -46,6 +46,40 @@ const SURFACE_CONTRACTS = [
   { theme: 'dark', width: 1280 },
 ] as const;
 
+async function readCssColor(
+  locator: Locator,
+  property: 'backgroundColor' | 'borderTopColor' | 'color',
+): Promise<number[]> {
+  return locator.evaluate((node, cssProperty) => {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas rendering context is unavailable');
+    context.fillStyle = getComputedStyle(node)[cssProperty];
+    context.fillRect(0, 0, 1, 1);
+    return [...context.getImageData(0, 0, 1, 1).data];
+  }, property);
+}
+
+function contrastRatio(background: number[], foreground: number[]): number {
+  const luminance = (color: number[]) =>
+    color
+      .slice(0, 3)
+      .map((channel) => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      })
+      .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+  const alpha = foreground[3] / 255;
+  const composited = foreground
+    .slice(0, 3)
+    .map((channel, index) => channel * alpha + background[index] * (1 - alpha));
+  const [firstLuminance, secondLuminance] = [luminance(background), luminance(composited)];
+  return (
+    (Math.max(firstLuminance, secondLuminance) + 0.05) /
+    (Math.min(firstLuminance, secondLuminance) + 0.05)
+  );
+}
+
 for (const { theme, width } of SURFACE_CONTRACTS) {
   test(`setup panel keeps its copy on an opaque readable surface in ${theme} at ${width}px`, async ({
     mount,
@@ -88,6 +122,50 @@ for (const { theme, width } of SURFACE_CONTRACTS) {
 
     expect(surface.alpha).toBe(1);
     expect(surface.contrast).toBeGreaterThanOrEqual(4.5);
+  });
+}
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`capability warning icon meets non-text contrast in ${theme}`, async ({ mount, page }) => {
+    await page.evaluate(
+      (dark) => document.documentElement.classList.toggle('dark', dark),
+      theme === 'dark',
+    );
+    const component = await mount(ScenarioContractHost, {
+      props: { scenarioId: 'setup-readiness-missing' },
+    });
+    const panel = component.getByTestId('project-setup-panel');
+    const warning = component.locator('[data-capability="git"] svg');
+    const [background, foreground] = await Promise.all([
+      readCssColor(panel, 'backgroundColor'),
+      readCssColor(warning, 'color'),
+    ]);
+
+    expect(contrastRatio(background, foreground)).toBeGreaterThanOrEqual(3);
+  });
+
+  test(`active setup boundaries meet non-text contrast in ${theme}`, async ({ mount, page }) => {
+    await page.evaluate(
+      (dark) => document.documentElement.classList.toggle('dark', dark),
+      theme === 'dark',
+    );
+    const component = await mount(ScenarioContractHost, { props: { scenarioId: 'setup-empty' } });
+    const panel = component.getByTestId('project-setup-panel');
+    const action = component.getByRole('button', { name: /Open a folder/ });
+    const content = component.locator('#project-setup-content');
+    const [background, ...boundaries] = await Promise.all([
+      readCssColor(panel, 'backgroundColor'),
+      readCssColor(panel, 'borderTopColor'),
+      readCssColor(content, 'borderTopColor'),
+      readCssColor(action, 'borderTopColor'),
+    ]);
+
+    for (const boundary of boundaries) {
+      expect(
+        contrastRatio(background, boundary),
+        `${theme} boundary ${boundary.join(',')} on ${background.join(',')}`,
+      ).toBeGreaterThanOrEqual(3);
+    }
   });
 }
 

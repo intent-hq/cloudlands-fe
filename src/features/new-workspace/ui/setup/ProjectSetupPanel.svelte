@@ -66,7 +66,7 @@
 </script>
 
 <section
-  class="rounded-xl border border-border bg-background shadow-sm"
+  class="rounded-xl border border-input/50 bg-background shadow-sm"
   data-testid="project-setup-panel"
 >
   {#if expanded}
@@ -85,7 +85,7 @@
       </span>
       <Fa icon={faChevronUp} class="mt-1 size-3.5 shrink-0 text-muted-foreground" />
     </button>
-    <div id="project-setup-content" class="border-t border-border px-4 py-4">
+    <div id="project-setup-content" class="border-t border-input/50 px-4 py-4">
       <ProjectSection {source} {disabled} {onOpenPicker} onSelectSource={onSourceSelected} />
       {#if source && source.kind !== 'newFolder'}
         <StartingPointSection {source} {intentText} {contextLinks} {disabled} {onEdit} />

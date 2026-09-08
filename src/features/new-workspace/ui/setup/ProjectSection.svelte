@@ -162,7 +162,7 @@
     min-width: 0;
     align-items: flex-start;
     gap: 0.625rem;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--input) / 0.5);
     border-radius: var(--radius-md);
     padding: 0.625rem 0.75rem;
     text-align: left;
