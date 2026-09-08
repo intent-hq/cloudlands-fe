@@ -332,10 +332,11 @@ describe('NewSpaceModal model-picker composition', () => {
     await fireEvent.click(pickerTrigger(team));
     const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
     await fireEvent.click(reasoningTrigger);
-    const reasoningPopup = document.getElementById(
+    const reasoningListbox = document.getElementById(
       reasoningTrigger.getAttribute('aria-controls')!,
     )!;
-    const reasoningListbox = within(reasoningPopup).getByRole('listbox');
+    expect(reasoningListbox.getAttribute('role')).toBe('listbox');
+    expect(reasoningListbox.getAttribute('tabindex')).toBe('0');
     await fireEvent.pointerUp(within(reasoningListbox).getByRole('option', { name: 'High' }), {
       pointerType: 'mouse',
     });

@@ -48,7 +48,8 @@ describe('DeleteWarningDialog', () => {
 
     const deleteButton = screen.getByRole('button', { name: 'Stop work and delete' });
     await waitFor(() => expect(document.activeElement).toBe(deleteButton));
-    expect(deleteButton.className).toContain('ring-[3px]');
+    expect(deleteButton.className).toContain('focus-visible:outline');
+    expect(deleteButton.className).toContain('focus-visible:-outline-offset-1');
     expect(screen.getByRole('dialog').querySelector('.svelte-fa')).toBeNull();
 
     await fireEvent.click(deleteButton);
