@@ -121,7 +121,9 @@ test('collapsed setup keeps its readiness text visible in a narrow pane', async 
     props: { scenarioId: 'setup-collapsed-summary' },
   });
 
-  await expect(component.getByText('Ready', { exact: true })).toBeVisible();
+  await expect(
+    component.getByText('Ready', { exact: true }).filter({ visible: true }),
+  ).toBeVisible();
 });
 
 for (const testCase of SCENARIOS) {
