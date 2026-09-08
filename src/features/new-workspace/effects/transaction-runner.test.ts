@@ -389,6 +389,7 @@ describe('draft transaction integration seams', () => {
       }),
     );
     expect(promote).toHaveBeenCalledWith(remote.id, 3, {
+      name: 'Implementor',
       prompt: '',
       specialist: 'implementor',
       model: 'model-latest',

@@ -6,12 +6,13 @@
   import type { Capability, ControllerState } from '../../controller';
   import SourceValidationMessage from '../SourceValidationMessage.svelte';
   import { getSourceValidationError } from '../../utils/source-validation';
-  import { selectOrchestratorSpecialist } from '$store/renderer/slices/specialists/specialists-selectors';
+  import { selectSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { projectDescription, projectName } from './project-section';
   import { defaultSetupScriptForSource, hasModifiedOptions } from './setup-sections';
   import { getSetupStatus } from '../../utils/setup-status';
+  import { resolveNewWorkspaceSpecialistId } from '../../utils/initial-agent';
 
   interface Props {
     source: DraftSource | null;
@@ -22,15 +23,16 @@
   }
 
   let { source, config, capabilities, requiredCapabilities, onExpand }: Props = $props();
-  const orchestrator$ = selectOrchestratorSpecialist();
+  const specialists$ = selectSpecialists();
   const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const setupStatus = $derived(getSetupStatus({ source, capabilities, requiredCapabilities }));
   const sourceError = $derived(getSourceValidationError(source));
+  const defaultSpecialist = $derived(resolveNewWorkspaceSpecialistId($specialists$, undefined));
   const optionsModified = $derived(
     hasModifiedOptions(source, config, {
       setupScript: source ? defaultSetupScriptForSource(source) : undefined,
-      specialist: $orchestrator$?.id,
+      specialist: defaultSpecialist,
       provider: $activeProviderId$ || $defaultProviderId$ || undefined,
     }),
   );

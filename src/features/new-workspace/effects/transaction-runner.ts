@@ -1,5 +1,6 @@
 import type { AppClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
+import { selectSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
 
 import { effectsFor, hasUnsavedInput, reduceDetailed } from '../controller';
 import type { ControllerEvent, ControllerState } from '../controller';
@@ -31,6 +32,14 @@ interface DraftTransactionRunnerOptions {
   log?: DraftTransactionLog;
   /** Test seam; production uses the configured app Store saga runtime. */
   executeEffect?: EffectExecutor;
+}
+
+function currentSpecialists() {
+  try {
+    return selectSpecialists.select(appStore.state);
+  } catch {
+    return [];
+  }
 }
 
 export interface DraftTransactionRunner {
@@ -112,6 +121,7 @@ export function createDraftTransactionRunner(
         if (!state) throw new Error('Draft transaction runner has not started');
         return state;
       },
+      getSpecialists: currentSpecialists,
       saveDebounceMs,
     };
     cancel = execute(state, dependencies, () => {

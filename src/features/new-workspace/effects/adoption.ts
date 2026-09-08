@@ -18,6 +18,7 @@ interface WorkspaceAdoptionInput {
   workspace: Workspace;
   initialAgent: Agent | null;
   operationKey?: string;
+  writesSpecFirst?: boolean;
 }
 
 export type WorkspaceAdoption = (input: WorkspaceAdoptionInput) => void | Promise<void>;
@@ -32,7 +33,7 @@ export function createWorkspaceAdoption(
 ): WorkspaceAdoption {
   const dispatch = dependencies.dispatch ?? ((action: ReduxAction) => appStore.dispatch(action));
 
-  return ({ workspace, initialAgent, operationKey }) => {
+  return ({ workspace, initialAgent, operationKey, writesSpecFirst = true }) => {
     const agentId = initialAgent?.id ?? null;
     const actions: ReduxAction[] = [
       setWorkspaceEntity(workspace),
@@ -42,7 +43,7 @@ export function createWorkspaceAdoption(
         workspace.id,
         agentId,
         initialAgent?.name ?? '',
-        true,
+        writesSpecFirst,
         undefined,
         workspace.contextLinks,
       ),

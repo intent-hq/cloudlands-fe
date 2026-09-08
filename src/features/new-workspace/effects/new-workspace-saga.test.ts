@@ -120,6 +120,20 @@ async function execute(
       dispatch: reduxDispatch,
     }),
     identifyClient: async () => ({ clientId: 'client-1' }),
+    getSpecialists: () => [
+      {
+        id: 'developer',
+        name: 'Developer',
+        description: 'Builds features end to end',
+        defaultBehaviorPrompt: '',
+      },
+      {
+        id: 'implementor',
+        name: 'Implementor',
+        description: 'Implements scoped tasks',
+        defaultBehaviorPrompt: '',
+      },
+    ],
     saveDebounceMs: 0,
   };
   await runSaga(
@@ -337,8 +351,9 @@ describe('newWorkspaceEffectSaga', () => {
 
       expect(promote).toHaveBeenCalledOnce();
       expect(promote).toHaveBeenCalledWith(FIXED_IDS.draft, 2, {
+        name: 'Developer',
         prompt: '',
-        specialist: 'spec-writer',
+        specialist: 'developer',
       });
       expect(result.state).toMatchObject({
         phase: 'adopting',
@@ -368,10 +383,50 @@ describe('newWorkspaceEffectSaga', () => {
     await execute(state, client({ workspaceDrafts: { promote } }));
 
     expect(promote).toHaveBeenCalledWith(FIXED_IDS.draft, 1, {
+      name: 'Implementor',
       prompt: '',
       specialist: 'implementor',
       model: 'claude-sonnet',
       provider: 'claude-code',
+    });
+  });
+
+  it('falls back to a named General agent when the authoritative roster lacks Developer', async () => {
+    const promote = vi.fn().mockResolvedValue({
+      draft: draft({ phase: 'promoted', promotedWorkspaceId: FIXED_IDS.workspace }),
+      workspace: { id: FIXED_IDS.workspace },
+    });
+    const state = {
+      ...baseState(),
+      phase: 'promoting',
+      operationKey: FIXED_IDS.operation,
+      promoteAttempt: 'not-issued',
+    } as ControllerState;
+    const dependencies = {
+      getSpecialists: () => [
+        {
+          id: 'spec-writer',
+          name: 'Coordinator',
+          description: 'Plans work',
+          defaultBehaviorPrompt: '',
+        },
+      ],
+    };
+
+    let current = state;
+    await runSaga({ dispatch: vi.fn(), getState: () => ({}) }, newWorkspaceEffectSaga, current, {
+      client: client({ workspaceDrafts: { promote } }),
+      getState: () => current,
+      dispatch: (event) => {
+        current = reduce(current, event);
+      },
+      saveDebounceMs: 0,
+      ...dependencies,
+    }).toPromise();
+
+    expect(promote).toHaveBeenCalledWith(FIXED_IDS.draft, 1, {
+      name: expect.any(String),
+      prompt: '',
     });
   });
 

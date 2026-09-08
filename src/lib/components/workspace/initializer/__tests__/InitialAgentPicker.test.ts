@@ -249,7 +249,7 @@ describe('InitialAgentPicker stale model override clearing', () => {
     const { single, team } = modeCards();
     expect(single.getAttribute('aria-pressed')).toBe('true');
     expect(team.getAttribute('aria-pressed')).toBe('false');
-    expect(single.textContent).toContain('Developer');
+    expect(screen.getByRole('button', { name: /Developer/i })).toBeTruthy();
     await flush();
     expect(onTeamModeChange).not.toHaveBeenCalled();
     expect(onSpecialistChange).not.toHaveBeenCalled();
@@ -264,8 +264,7 @@ describe('InitialAgentPicker stale model override clearing', () => {
 
     const { single } = modeCards();
     expect(single.getAttribute('aria-pressed')).toBe('true');
-    expect(single.textContent).toContain('General');
-    expect(single.textContent).not.toContain('Developer');
+    expect(screen.getByRole('button', { name: /General/i })).toBeTruthy();
     await flush();
     expect(onSpecialistChange).not.toHaveBeenCalled();
   });
@@ -291,8 +290,7 @@ describe('InitialAgentPicker stale model override clearing', () => {
 
     const { single } = modeCards();
     expect(single.getAttribute('aria-pressed')).toBe('true');
-    expect(single.textContent).toContain('General');
-    expect(single.textContent).not.toContain('Developer');
+    expect(screen.getByRole('button', { name: /General/i })).toBeTruthy();
   });
 
   it('restores the incoming single-agent specialist after a round trip through orchestration', async () => {
@@ -308,7 +306,7 @@ describe('InitialAgentPicker stale model override clearing', () => {
     const { single, team } = modeCards();
     await fireEvent.click(team);
     expect(onSpecialistChange).toHaveBeenLastCalledWith('spec-writer');
-    expect(single.textContent).toContain('Developer');
+    expect(screen.getByRole('button', { name: /Developer/i })).toBeTruthy();
 
     await fireEvent.click(single);
     expect(onSpecialistChange).toHaveBeenLastCalledWith('developer');

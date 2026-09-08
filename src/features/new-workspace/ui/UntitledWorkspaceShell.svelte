@@ -26,6 +26,11 @@
   } from './types';
   import { getSetupStatus } from '../utils/setup-status';
   import { getFailurePresentation, type FailureStage } from '../utils/failure-presentation';
+  import { selectSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
+  import {
+    resolveNewWorkspaceAgentName,
+    resolveNewWorkspaceSpecialistId,
+  } from '../utils/initial-agent';
 
   interface Props {
     state: ControllerState;
@@ -60,6 +65,7 @@
     onRecheckCapabilities,
     onProviderSelected,
   }: Props = $props();
+  const specialists$ = selectSpecialists();
 
   const coordinator = $derived({
     ...presentation.coordinator,
@@ -88,6 +94,12 @@
   });
   const composerLocked = $derived(!isEditorEnabled(controllerState));
   const progressId = $derived(controllerState.draft?.operationKey);
+  const initialSpecialistId = $derived(
+    resolveNewWorkspaceSpecialistId($specialists$, controllerState.input.config.specialist),
+  );
+  const initialAgentName = $derived(
+    resolveNewWorkspaceAgentName($specialists$, initialSpecialistId),
+  );
   const failurePresentation = $derived(
     controllerState.phase === 'failed' ? getFailurePresentation(controllerState) : null,
   );
@@ -408,7 +420,8 @@
                       {repoPath}
                       {branch}
                       baseRef="origin/main"
-                      specialistName={m.notification_specialist_coordinator()}
+                      specialistId={initialSpecialistId}
+                      specialistName={initialAgentName}
                       hasPrompt={Boolean(controllerState.input.intentText.trim())}
                       repoStatus={workspaceStepStatus('repo')}
                       branchStatus={workspaceStepStatus('branch')}

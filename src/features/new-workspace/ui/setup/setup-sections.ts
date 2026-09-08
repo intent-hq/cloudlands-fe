@@ -41,6 +41,7 @@ export function configWith<K extends keyof WorkspaceDraftConfig>(
   key: K,
   value: WorkspaceDraftConfig[K],
 ): WorkspaceDraftConfig {
+  if (key === 'specialist' && value === null) return { ...config, specialist: null };
   if (value !== undefined && value !== null && value !== '') return { ...config, [key]: value };
   const next = { ...config };
   delete next[key];
@@ -84,7 +85,7 @@ export function hasModifiedOptions(
   );
   return (
     (source?.kind === 'local' && source.isolation === 'in-place') ||
-    config.isTeamMode === false ||
+    config.isTeamMode === true ||
     (config.specialist !== undefined && config.specialist !== defaults.specialist) ||
     (config.provider !== undefined && config.provider !== defaults.provider) ||
     Boolean(config.model) ||

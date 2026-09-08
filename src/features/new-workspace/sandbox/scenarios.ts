@@ -294,7 +294,7 @@ const githubSetupDraft = draft({
 });
 const modifiedOptionsDraft = draft({
   ...githubSetupDraft,
-  config: { setupPanelExpanded: true, isTeamMode: false },
+  config: { setupPanelExpanded: true, isTeamMode: true },
 });
 const collapsedSetupDraft = draft({
   ...publicRepoDraft,

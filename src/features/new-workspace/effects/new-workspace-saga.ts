@@ -1,6 +1,7 @@
 import { all, call, delay, put, select, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient, type AppClient, type FileBlock, type ImageBlock } from '$lib/client';
+import type { Specialist } from '$lib/constants/specialists';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
 import {
   redeemStagedAttachments,
@@ -32,6 +33,10 @@ import type {
   FailureKind,
 } from '../controller/types';
 import { adoptPromotedWorkspace, type WorkspaceAdoption } from './adoption';
+import {
+  resolveNewWorkspaceAgentName,
+  resolveNewWorkspaceSpecialistId,
+} from '../utils/initial-agent';
 
 const SAVE_DEBOUNCE_MS = 250;
 const CONFLICT_CODE = -32009;
@@ -54,6 +59,7 @@ export interface NewWorkspaceSagaDependencies {
   adopt?: WorkspaceAdoption;
   saveDebounceMs?: number;
   identifyClient?: () => Promise<{ clientId?: string }>;
+  getSpecialists?: () => Specialist[];
 }
 
 function identifyClient(): Promise<{ clientId?: string }> {
@@ -220,15 +226,16 @@ function* promote(
   try {
     const state = dependencies.getState();
     const { model, provider, specialist } = state.input.config;
+    const specialists = yield* call(dependencies.getSpecialists ?? (() => []));
+    const specialistId = resolveNewWorkspaceSpecialistId(specialists, specialist);
     const result = yield* call(
       [client.workspaceDrafts, client.workspaceDrafts.promote],
       effect.draftId,
       effect.expectedRevision,
       {
+        name: resolveNewWorkspaceAgentName(specialists, specialistId),
         prompt: '',
-        ...(specialist === null
-          ? {}
-          : { specialist: typeof specialist === 'string' ? specialist : 'spec-writer' }),
+        ...(specialistId ? { specialist: specialistId } : {}),
         ...(model ? { model } : {}),
         ...(provider ? { provider } : {}),
       },
@@ -332,6 +339,7 @@ function* adopt(
       workspace,
       initialAgent,
       operationKey,
+      writesSpecFirst: state.input.config.specialist !== null,
     });
     if (operationKey) runtime.operationByWorkspace.delete(workspace.id);
 

@@ -23,6 +23,7 @@ describe('setup section draft mappings', () => {
       setupPanelExpanded: true,
       model: 'claude-sonnet',
     });
+    expect(configWith({}, 'specialist', null)).toEqual({ specialist: null });
   });
 
   it('appends issue and PR context while prefilling only an empty intent', () => {
@@ -66,6 +67,8 @@ describe('setup section draft mappings', () => {
     expect(hasModifiedOptions(source, { specialist: 'implementor' }, defaults)).toBe(true);
     expect(hasModifiedOptions(source, { provider: 'auggie' }, defaults)).toBe(false);
     expect(hasModifiedOptions(source, { provider: 'codex' }, defaults)).toBe(true);
+    expect(hasModifiedOptions(source, { isTeamMode: false }, defaults)).toBe(false);
+    expect(hasModifiedOptions(source, { isTeamMode: true }, defaults)).toBe(true);
     expect(hasModifiedOptions(source, { reasoningEffort: 'high' })).toBe(true);
     expect(hasModifiedOptions({ ...source, isolation: 'in-place' }, {})).toBe(true);
     expect(

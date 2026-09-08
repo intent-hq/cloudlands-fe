@@ -11,7 +11,7 @@
   import type { DraftSource, WorkspaceDraftConfig } from '$shared/types';
   import { selectWorkspaceCreationRemoteSetups } from '$store/renderer/slices/workspace-creation-settings/workspace-creation-settings-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectOrchestratorSpecialist } from '$store/renderer/slices/specialists/specialists-selectors';
+  import { selectSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import {
@@ -22,6 +22,7 @@
     sourceRepoKey,
     sourceWithIsolation,
   } from './setup-sections';
+  import { resolveNewWorkspaceSpecialistId } from '../../utils/initial-agent';
 
   interface Props {
     source: DraftSource;
@@ -33,15 +34,16 @@
   let { source, config, disabled = false, onEdit }: Props = $props();
   const remoteSetups$ = selectWorkspaceCreationRemoteSetups();
   const workspaceItems$ = selectWorkspaceItems();
-  const orchestrator$ = selectOrchestratorSpecialist();
+  const specialists$ = selectSpecialists();
   const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const repoKey = $derived(sourceRepoKey(source));
   const remoteSetup = $derived(isRemoteSetup(config.remoteSetup) ? config.remoteSetup : null);
+  const defaultSpecialist = $derived(resolveNewWorkspaceSpecialistId($specialists$, undefined));
   const modified = $derived(
     hasModifiedOptions(source, config, {
       setupScript: defaultSetupScriptForSource(source),
-      specialist: $orchestrator$?.id,
+      specialist: defaultSpecialist,
       provider: $activeProviderId$ || $defaultProviderId$ || undefined,
     }),
   );
@@ -110,7 +112,7 @@
       selectedModel={config.model}
       bind:modelWasOverridden
       selectedReasoningEffort={config.reasoningEffort}
-      isTeamMode={config.isTeamMode !== false}
+      isTeamMode={config.isTeamMode ?? false}
       selectedProvider={config.provider}
       onSpecialistChange={(value) => updateConfig('specialist', value)}
       onModelChange={(value) => updateConfig('model', value)}
