@@ -3,7 +3,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { loadPreview, setActivePreview } from './preview-discovery';
   import { resolvePreviewState, type PreviewState } from './preview-definition';
-  import { waitForCaptureStability } from './capture-stability';
+  import { watchCaptureStability } from './capture-stability';
 
   interface RenderedScene {
     name: string;
@@ -27,6 +27,9 @@
   let stabilityStatus = $state<'waiting' | 'stable' | 'error'>('waiting');
   let stabilityError = $state('');
   let captureMotion = $state<'full' | 'reduced'>('full');
+  let previewGeneration = $state(0);
+  let stabilityGeneration = $state(0);
+  let nextPreviewGeneration = 0;
   const width = $derived(Math.min(1600, Math.max(240, Math.round(requestedWidth))));
   const isDiagramWorkbench = $derived(slug === 'diagram-workbench');
 
@@ -50,6 +53,8 @@
     const disposeSetups: Array<() => void> = [];
     let setupDisposed = false;
     const stabilityController = new AbortController();
+    const generation = ++nextPreviewGeneration;
+    previewGeneration = generation;
 
     const cleanupSetup = (): unknown => {
       if (setupDisposed) return;
@@ -148,15 +153,32 @@
 
       try {
         if (!sceneElement) throw new Error('Preview scene element is unavailable.');
-        const stability = await waitForCaptureStability(sceneElement, {
-          readinessSelector: loaded.definition.captureReadySelector,
-          signal: stabilityController.signal,
-        });
-        if (cancelled) return;
-        captureMotion = stability.reducedMotion ? 'reduced' : 'full';
-        stabilityStatus = 'stable';
-        status = 'ready';
-        setActivePreview({ slug: nextSlug, state: stateName, width: nextWidth, status: 'ready' });
+        await watchCaptureStability(
+          sceneElement,
+          { readiness: loaded.definition.captureReadiness, signal: stabilityController.signal },
+          {
+            onWaiting: (nextStabilityGeneration) => {
+              if (cancelled || generation !== previewGeneration) return;
+              stabilityGeneration = nextStabilityGeneration;
+              stabilityStatus = 'waiting';
+              status = 'loading';
+              setActivePreview(null);
+            },
+            onStable: (stability, nextStabilityGeneration) => {
+              if (cancelled || generation !== previewGeneration) return;
+              stabilityGeneration = nextStabilityGeneration;
+              captureMotion = stability.reducedMotion ? 'reduced' : 'full';
+              stabilityStatus = 'stable';
+              status = 'ready';
+              setActivePreview({
+                slug: nextSlug,
+                state: stateName,
+                width: nextWidth,
+                status: 'ready',
+              });
+            },
+          },
+        );
       } catch (preparationError) {
         if (cancelled || stabilityController.signal.aborted) return;
         const cleanupError = cleanupSetup();
@@ -187,6 +209,8 @@
   data-preview-stability={stabilityStatus}
   data-preview-stable={stabilityStatus === 'stable' ? 'true' : 'false'}
   data-preview-capture-motion={captureMotion}
+  data-preview-generation={previewGeneration}
+  data-preview-stability-generation={stabilityGeneration}
   bind:this={sceneElement}
 >
   {#if !isDiagramWorkbench}

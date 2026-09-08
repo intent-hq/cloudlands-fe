@@ -18,6 +18,10 @@
       return m.sandbox_diagramWorkbench_review_title();
     },
     defaultState: 'note',
+    captureReadiness: {
+      selector: '[data-diagram-settled="true"]',
+      count: 1,
+    },
     states: {
       note: { props: { context: 'note', diagram: architecture.diagram } },
       chat: { props: { context: 'chat', diagram: architecture.diagram } },

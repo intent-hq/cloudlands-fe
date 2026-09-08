@@ -13,13 +13,25 @@
     fixture: DiagramWorkbenchCase;
   }
 
+  const caseCount = Object.keys(DIAGRAM_WORKBENCH_CASES).length;
+  const mermaidCaseCount = Object.values(DIAGRAM_WORKBENCH_CASES).filter(
+    ({ kind }) => kind === 'mermaid',
+  ).length;
+  const customCaseCount = Object.values(DIAGRAM_WORKBENCH_CASES).filter(
+    ({ kind }) => kind === 'custom',
+  ).length;
+
   export const preview = definePreview<DiagramWorkbenchPreviewProps>({
     id: 'diagram-workbench',
     get title() {
       return m.sandbox_diagramWorkbench_title();
     },
     defaultState: 'mermaid-flow',
-    captureReadySelector: '[data-diagram-workbench-ready="true"]',
+    captureReadiness: {
+      selector: '[data-diagram-workbench-ready="true"]',
+      count: 1,
+      generationAttribute: 'data-diagram-workbench-generation',
+    },
     states: Object.fromEntries(
       Object.entries(DIAGRAM_WORKBENCH_CASES).map(([name, fixture]) => [
         name,
@@ -37,12 +49,8 @@
   let { caseId, fixture }: DiagramWorkbenchPreviewProps = $props();
   let workbenchElement = $state<HTMLElement>();
   let allCasesReady = $state(false);
+  let readinessGeneration = $state(0);
   let bindingTargets = $state<Partial<Record<DiagramWorkbenchCaseId, string>>>({});
-
-  const caseCount = Object.keys(DIAGRAM_WORKBENCH_CASES).length;
-  const mermaidCaseCount = Object.values(DIAGRAM_WORKBENCH_CASES).filter(
-    ({ kind }) => kind === 'mermaid',
-  ).length;
 
   function groupTitle(groupId: (typeof DIAGRAM_WORKBENCH_CASE_GROUPS)[number]['id']): string {
     if (groupId === 'mermaid') return m.sandbox_diagramWorkbench_mermaidCases_title();
@@ -54,6 +62,7 @@
 
   onMount(() => {
     if (!workbenchElement) return;
+    let scrolledToTarget = false;
 
     const markReady = () => {
       if (!workbenchElement) return;
@@ -61,33 +70,53 @@
       const mermaidRenderers = [
         ...workbenchElement.querySelectorAll<HTMLElement>('.mermaid-renderer'),
       ];
-      const mermaidReady = mermaidRenderers.every(
-        (renderer) =>
-          Boolean(renderer.querySelector('.mermaid-error, .mermaid-empty')) ||
-          (renderer.dataset.renderSettled === 'true' &&
-            Boolean(renderer.querySelector('.mermaid-svg svg[data-layout-settled="true"]'))),
+      const mermaidReady = mermaidRenderers.every((renderer) => {
+        const generation = renderer.dataset.renderGeneration;
+        const svg = renderer.querySelector<SVGSVGElement>('.mermaid-svg svg');
+        return (
+          renderer.dataset.renderSettled === 'true' &&
+          (Boolean(renderer.querySelector('.mermaid-error, .mermaid-empty')) ||
+            (svg?.dataset.layoutSettled === 'true' && svg.dataset.layoutGeneration === generation))
+        );
+      });
+      const customRenderers = [
+        ...workbenchElement.querySelectorAll<HTMLElement>('.diagram-renderer'),
+      ];
+      const customReady = customRenderers.every(
+        (renderer) => renderer.dataset.diagramSettled === 'true',
       );
-      if (
+      const ready = !(
         cases.length !== caseCount ||
         mermaidRenderers.length !== mermaidCaseCount ||
-        !mermaidReady
-      ) {
-        return;
+        customRenderers.length !== customCaseCount ||
+        !mermaidReady ||
+        !customReady
+      );
+      if (ready === allCasesReady) return;
+      allCasesReady = ready;
+      if (ready) {
+        readinessGeneration += 1;
+        if (!scrolledToTarget) {
+          scrolledToTarget = true;
+          requestAnimationFrame(() => {
+            workbenchElement
+              ?.querySelector<HTMLElement>(`#${CSS.escape(caseId)}`)
+              ?.scrollIntoView({ block: 'start' });
+          });
+        }
       }
-
-      allCasesReady = true;
-      observer.disconnect();
-      requestAnimationFrame(() => {
-        workbenchElement
-          ?.querySelector<HTMLElement>(`#${CSS.escape(caseId)}`)
-          ?.scrollIntoView({ block: 'start' });
-      });
     };
 
     const observer = new MutationObserver(markReady);
     observer.observe(workbenchElement, {
       attributes: true,
-      attributeFilter: ['data-render-settled', 'data-layout-settled'],
+      attributeFilter: [
+        'data-render-generation',
+        'data-render-settled',
+        'data-layout-generation',
+        'data-layout-settled',
+        'data-diagram-settled',
+      ],
       childList: true,
       subtree: true,
     });
@@ -123,6 +152,7 @@
   data-target-case={caseId}
   data-target-kind={fixture.kind}
   data-diagram-workbench-ready={allCasesReady ? 'true' : 'false'}
+  data-diagram-workbench-generation={readinessGeneration}
   bind:this={workbenchElement}
 >
   <header class="page-header">

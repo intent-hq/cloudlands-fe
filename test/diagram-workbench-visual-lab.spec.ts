@@ -520,6 +520,102 @@ for (let repetition = 1; repetition <= 3; repetition += 1) {
   });
 }
 
+test('keeps 30 consecutive 640px readiness generations active and stable', async ({ page }) => {
+  await openSandbox(page, 'state=mermaid-cycle-fanout&theme=light&width=640&motion=reduced');
+  const scene = page.getByTestId('catalog-scene');
+  const workbench = page.locator('[data-diagram-workbench]');
+  const initialGeometry = await page
+    .locator('#mermaid-cycle-fanout .mermaid-svg > svg')
+    .evaluate((svg) => ({
+      viewBox: svg.getAttribute('viewBox'),
+      width: svg.getAttribute('width'),
+      height: svg.getAttribute('height'),
+      routes: [...svg.querySelectorAll('.flowchart-link')].map((path) => path.getAttribute('d')),
+    }));
+
+  for (let cycle = 1; cycle <= 30; cycle += 1) {
+    const priorWorkbenchGeneration = Number(
+      await workbench.getAttribute('data-diagram-workbench-generation'),
+    );
+    if (cycle === 10 || cycle === 20) {
+      const state = cycle === 10 ? 'custom-architecture' : 'custom-walkthrough';
+      const theme = cycle === 20 ? 'light' : 'dark';
+      await page
+        .getByTestId('catalog-theme-control')
+        .getByRole('radio', { name: theme })
+        .evaluate((button) => button.click());
+      await page.evaluate((state) => {
+        const url = new URL(window.location.href);
+        url.searchParams.set('state', state);
+        window.history.pushState({}, '', url);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, state);
+      await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-theme', theme);
+    } else {
+      const steppedCase = cycle % 2 === 0 ? 'custom-walkthrough' : 'custom-architecture';
+      await page
+        .locator(`#${steppedCase} [data-diagram-step-index]:not([aria-current="step"])`)
+        .first()
+        .evaluate((button) => (button as HTMLButtonElement).click());
+    }
+    await expect(scene).toHaveAttribute('data-preview-ready', 'false');
+    await expect(scene).toHaveAttribute('data-preview-ready', 'true', { timeout: 90_000 });
+    await expect(scene).toHaveAttribute('data-preview-stable', 'true');
+    await expect(scene).toHaveAttribute('data-preview-width', '640');
+    await expect(workbench).toHaveAttribute('data-diagram-workbench-ready', 'true');
+    if (cycle !== 10 && cycle !== 20) {
+      await expect
+        .poll(async () => Number(await workbench.getAttribute('data-diagram-workbench-generation')))
+        .toBeGreaterThan(priorWorkbenchGeneration);
+    }
+
+    const readiness = await page.locator('.mermaid-renderer').evaluateAll((renderers) =>
+      renderers.map((renderer) => {
+        const active = renderer.getAttribute('data-render-generation');
+        const settled = renderer.getAttribute('data-render-settled-generation');
+        const svg = renderer.querySelector('.mermaid-svg > svg');
+        return {
+          active,
+          settled,
+          ready: renderer.getAttribute('data-render-settled'),
+          layout: svg?.getAttribute('data-layout-generation') ?? active,
+        };
+      }),
+    );
+    expect(
+      readiness.every(
+        ({ active, settled, ready, layout }) =>
+          ready === 'true' && active === settled && active === layout,
+      ),
+    ).toBe(true);
+  }
+
+  await expect
+    .poll(async () => Number(await workbench.getAttribute('data-diagram-workbench-generation')))
+    .toBeGreaterThan(0);
+  await expect(scene).toHaveAttribute('data-preview-width', '640');
+
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await expect(scene).toHaveAttribute('data-preview-ready', 'true');
+  await expect(page.locator('#mermaid-cycle-fanout .mermaid-svg > svg')).toHaveAttribute(
+    'data-layout-settled',
+    'true',
+  );
+  expect(
+    await page.locator('#mermaid-cycle-fanout .mermaid-svg > svg').evaluate((svg) => ({
+      viewBox: svg.getAttribute('viewBox'),
+      width: svg.getAttribute('width'),
+      height: svg.getAttribute('height'),
+      routes: [...svg.querySelectorAll('.flowchart-link')].map((path) => path.getAttribute('d')),
+    })),
+  ).toEqual(initialGeometry);
+});
+
 test('keeps final diagram geometry polished across themes and widths', async ({ page }) => {
   test.setTimeout(360_000);
   await page.setViewportSize({ width: 1400, height: 1000 });

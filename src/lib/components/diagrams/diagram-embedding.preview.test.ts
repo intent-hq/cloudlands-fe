@@ -23,6 +23,10 @@ describe('diagram embedding preview', () => {
   it('registers stable note and chat states with one deterministic fixture', () => {
     expect(preview.id).toBe('diagram-embedding');
     expect(preview.defaultState).toBe('note');
+    expect(preview.captureReadiness).toEqual({
+      selector: '[data-diagram-settled="true"]',
+      count: 1,
+    });
     expect(Object.keys(preview.states)).toEqual(['note', 'chat']);
     expect(preview.states.note.props.diagram).toBe(preview.states.chat.props.diagram);
     expect(preview.states.note.props.diagram.createdAt).toBe('2026-08-23T12:00:00.000Z');

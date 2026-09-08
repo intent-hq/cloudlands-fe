@@ -87,6 +87,7 @@
   let compactLayout = $state(false);
   let narrowLayout = $state(false);
   let renderGeneration = 0;
+  let activeGeneration = $state(0);
   let fitGeneration = 0;
   let settledGeneration = $state(0);
   let decodedSource = $derived(decodeHtmlEntities(decodeBase64(code)));
@@ -1071,6 +1072,7 @@ ${verticalSource}`;
       polishSequenceDiagram(svg);
       addMermaidLabelKnockouts(svg);
       setReadableMermaidWidth(svg, svg.viewBox.baseVal.width);
+      svg.dataset.layoutGeneration = String(generation);
       svg.dataset.layoutSettled = 'true';
       return true;
     }
@@ -1270,12 +1272,14 @@ ${verticalSource}`;
       if (generation !== renderGeneration || fit !== fitGeneration) return false;
     }
     applyMermaidTerminalGaps(svg);
+    svg.dataset.layoutGeneration = String(generation);
     svg.dataset.layoutSettled = 'true';
     return true;
   }
 
   async function renderDiagram(rawCode: string) {
     const generation = ++renderGeneration;
+    activeGeneration = generation;
     settledGeneration = 0;
     // First decode base64, then decode any HTML entities (for legacy support)
     const base64Decoded = decodeBase64(rawCode);
@@ -1284,6 +1288,7 @@ ${verticalSource}`;
     if (!decodedCode?.trim()) {
       renderedSvg = '';
       error = null;
+      settledGeneration = generation;
       return;
     }
 
@@ -1334,6 +1339,7 @@ ${verticalSource}`;
       logger.error('Failed to render mermaid diagram:', err);
       error = err instanceof Error ? err.message : m.markdown_mermaid_renderFailed_error();
       renderedSvg = '';
+      settledGeneration = generation;
     }
   }
 
@@ -1421,8 +1427,9 @@ ${verticalSource}`;
 <div
   class="mermaid-renderer {className}"
   class:has-diagram={Boolean(renderedSvg)}
-  data-render-generation={settledGeneration}
-  data-render-settled={settledGeneration > 0}
+  data-render-generation={activeGeneration}
+  data-render-settled-generation={settledGeneration}
+  data-render-settled={activeGeneration > 0 && settledGeneration === activeGeneration}
   style="--mermaid-font-family: var(--font-ui)"
   bind:this={rendererElement}
 >
