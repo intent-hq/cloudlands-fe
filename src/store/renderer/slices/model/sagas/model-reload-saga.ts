@@ -20,10 +20,10 @@ export function* reloadModelsWorker() {
   yield* put(setAvailableModels([], providerId));
 
   try {
-    const models: Awaited<ReturnType<typeof appClient.models.list>> = yield* call([
-      appClient.models,
-      appClient.models.list,
-    ]);
+    const models: Awaited<ReturnType<typeof appClient.models.list>> = yield* call(
+      [appClient.models, appClient.models.list],
+      providerId,
+    );
     const activeProviderId = yield* selectActiveProviderId.effect();
     if (activeProviderId !== providerId) return;
 
