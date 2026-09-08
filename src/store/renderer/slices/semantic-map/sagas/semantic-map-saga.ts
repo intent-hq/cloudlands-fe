@@ -11,8 +11,8 @@ import {
   applyNoteCreated,
   applyNoteDeleted,
   applyNoteUpdated,
-  loadWorkspaceNotesSucceeded,
 } from '../../workspace-notes/workspace-notes-slice';
+import { selectAllNotes } from '../../workspace-notes/workspace-notes-selectors';
 import { selectSemanticMapState } from '../semantic-map-selectors';
 import {
   semanticMapActivityReceived,
@@ -66,11 +66,19 @@ function mapContext(
 
 function* readMapWorker(
   requests: RequestGenerations<MapReadAction>,
+  taggedManifestNotes: TaggedManifestNotes,
   action: MapReadAction,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
   const generation = requests.get(action);
   if (generation === undefined) return;
+  const notes = yield* selectAllNotes.effect(workspaceId);
+  taggedManifestNotes.set(
+    workspaceId,
+    new Set(
+      notes.filter((note) => note.tags.includes('semantic-map')).map((note) => String(note.id)),
+    ),
+  );
   const state = yield* selectSemanticMapState.effect(workspaceId);
   const baselineActivityIds = state.activities.map((activity) => activity.id);
   yield* put(semanticMapLoadStarted(workspaceId, generation));
@@ -104,23 +112,6 @@ function* readMapWorker(
   }
 }
 
-function rememberTaggedManifestNotes(
-  taggedManifestNotes: TaggedManifestNotes,
-  action: ReturnType<typeof loadWorkspaceNotesSucceeded>,
-): void {
-  const [workspaceIds, notesByWorkspace] = action.payload;
-  for (const workspaceId of workspaceIds) {
-    taggedManifestNotes.set(
-      workspaceId,
-      new Set(
-        (notesByWorkspace[workspaceId] ?? [])
-          .filter((note) => note.tags.includes('semantic-map'))
-          .map((note) => String(note.id)),
-      ),
-    );
-  }
-}
-
 function* refreshTaggedManifest(
   taggedManifestNotes: TaggedManifestNotes,
   action: ManifestNoteAction,
@@ -131,13 +122,14 @@ function* refreshTaggedManifest(
     action.type === applyNoteCreated.type && typeof note === 'object' && note !== null
       ? String(note.id)
       : String(noteOrId);
+  const wasSeeded = taggedManifestNotes.has(workspaceId);
   const taggedNoteIds = taggedManifestNotes.get(workspaceId) ?? new Set<string>();
   const wasTagged = taggedNoteIds.has(noteId);
   const isTagged = typeof note === 'object' && note !== null && note.tags.includes('semantic-map');
   if (isTagged) taggedNoteIds.add(noteId);
   else taggedNoteIds.delete(noteId);
   taggedManifestNotes.set(workspaceId, taggedNoteIds);
-  if (!wasTagged && !isTagged) return;
+  if (!wasTagged && !isTagged && (wasSeeded || action.type !== applyNoteDeleted.type)) return;
   yield* put(semanticMapRefreshRequested(workspaceId));
 }
 
@@ -224,8 +216,8 @@ export function* semanticMapSaga() {
       (action: MapContextAction) => mapContext(generations, mapRequests, action),
       readMapWorker,
       mapRequests,
+      taggedManifestNotes,
     ),
-    takeEvery(loadWorkspaceNotesSucceeded, rememberTaggedManifestNotes, taggedManifestNotes),
     takeEvery(
       [applyNoteCreated, applyNoteUpdated, applyNoteDeleted],
       refreshTaggedManifest,

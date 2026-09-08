@@ -27,7 +27,9 @@ import {
   applyNoteCreated,
   applyNoteDeleted,
   applyNoteUpdated,
+  initialState as workspaceNotesInitialState,
   loadWorkspaceNotesSucceeded,
+  workspaceNotesReducer,
 } from '../../workspace-notes/workspace-notes-slice';
 import {
   initialState,
@@ -55,8 +57,10 @@ function createHarness() {
   const channel = stdChannel();
   const actions: unknown[] = [];
   let semanticMap = initialState;
+  let workspaceNotes = workspaceNotesInitialState;
   const reduce = (action: unknown) => {
     semanticMap = semanticMapReducer(semanticMap, action as never);
+    workspaceNotes = workspaceNotesReducer(workspaceNotes, action as never);
   };
   const dispatch = (action: unknown) => {
     actions.push(action);
@@ -64,7 +68,7 @@ function createHarness() {
     channel.put(action as never);
   };
   const task = runSaga(
-    { channel, dispatch, getState: () => ({ semanticMap }) as never },
+    { channel, dispatch, getState: () => ({ semanticMap, workspaceNotes }) as never },
     semanticMapSaga,
   );
   return {
@@ -257,8 +261,6 @@ describe('semanticMapSaga', () => {
   it('refreshes when a manifest is untagged or deleted without refreshing unrelated notes', async () => {
     const harness = createHarness();
     await settle();
-    harness.dispatch(workspaceMounted('ws-1'));
-    await settle();
     harness.dispatch(
       loadWorkspaceNotesSucceeded(['ws-1'], {
         'ws-1': [
@@ -268,6 +270,8 @@ describe('semanticMapSaga', () => {
         ],
       }),
     );
+    harness.dispatch(workspaceMounted('ws-1'));
+    await settle();
     harness.dispatch(applyNoteUpdated('ws-1', 'ordinary', { id: 'ordinary', tags: [] } as never));
     harness.dispatch(applyNoteDeleted('ws-1', 'ordinary'));
     await settle();
