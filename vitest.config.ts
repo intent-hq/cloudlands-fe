@@ -41,6 +41,12 @@ export default defineConfig(async () => {
       globals: true,
       environment: 'jsdom',
       setupFiles: ['./src/test-setup.ts'],
+      // Node 24's child-process pool exits nondeterministically late in these
+      // 400+ file shards: the unstarted file varies and passes alone, while
+      // lowering the fork count makes every longer-lived fork disappear. The
+      // regular thread pool preserves per-file isolation and completed the
+      // same shard without dropped files or worker errors.
+      pool: 'threads',
       // Cap workers at 50% of logical cores. Vitest defaults to one worker per
       // core; ~20 jsdom workers oversubscribe the CPU and, when the machine is
       // under external load (builds, other agents), heavy component suites blow

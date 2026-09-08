@@ -60,6 +60,9 @@ describe('design-system ESLint baseline', () => {
     expect(() => assertBaselineOnlyShrinks(comparison.baseline, baseline)).not.toThrow();
   });
 
+  // Full-source ESLint takes ~47s alone on the shared host, but exceeded 120s
+  // while competing with the other shard workers. Keep this budget local to
+  // the ratchet; a global timeout increase would hide unrelated hung tests.
   it('only shrinks: current violations never exceed the checked-in baseline', async () => {
     const eslint = new ESLint({
       cwd: root,
@@ -114,5 +117,5 @@ describe('design-system ESLint baseline', () => {
       if (added.length) additions[rule] = added;
     }
     expect(additions).toEqual({});
-  }, 120_000);
+  }, 240_000);
 });
