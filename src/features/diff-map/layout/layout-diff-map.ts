@@ -93,9 +93,7 @@ const STRETCH_EPSILON = 0.000001;
 const MAX_BLOCK_ROWS = 10;
 
 type DiffMapFile = DiffMapDocument['files'][number];
-type BlockLayoutRow =
-  | { kind: 'file'; file: DiffMapFile }
-  | { kind: 'more'; hiddenCount: number };
+type BlockLayoutRow = { kind: 'file'; file: DiffMapFile } | { kind: 'more'; hiddenCount: number };
 
 interface VisibleBlockRows {
   files: DiffMapFile[];

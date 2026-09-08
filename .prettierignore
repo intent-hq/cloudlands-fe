@@ -11,6 +11,8 @@ build/
 # Test outputs
 test-reports/
 logs/
+# Layout golden fixtures are machine-generated
+**/__snapshots__/
 
 # Generated files
 *.min.js
@@ -37,6 +39,7 @@ docs-archive-*/
 cdp-mcp-server/dist/
 
 # Other
+.prettierignore
 *.log
 *.png
 *.svg
