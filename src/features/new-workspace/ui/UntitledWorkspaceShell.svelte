@@ -118,6 +118,34 @@
         ? controllerState.input.config.setupPanelExpanded
         : source === null),
   );
+  const phaseAnnouncement = $derived.by(() => {
+    switch (controllerState.phase) {
+      case 'boot':
+      case 'restoring':
+        return m.newWorkspace_progress_preparing_label();
+      case 'pristine':
+      case 'editing':
+        return m.newWorkspace_coordinator_readyIdle_description();
+      case 'starting':
+        return m.newWorkspace_progress_checkingPrerequisites_label();
+      case 'promoting':
+        return m.newWorkspace_progress_promoting_label();
+      case 'adopting':
+        return m.newWorkspace_progress_adopting_label();
+      case 'placingAttachments':
+        return m.newWorkspace_progress_attachments_label();
+      case 'sending':
+        return m.newWorkspace_progress_sending_label();
+      case 'live':
+        return m.newWorkspace_coordinator_live_description();
+      case 'failed':
+        return m.newWorkspace_recovery_failed_title();
+      case 'offline':
+        return m.newWorkspace_coordinator_offline_description();
+      case 'conflict':
+        return m.newWorkspace_recovery_conflict_title();
+    }
+  });
   let sourcePickerOpen = $state(false);
   let sourcePickerMode = $state<SourcePickerMode>('github');
   const sourceActionGroups = $derived.by((): StackedMenuGroup[] =>
@@ -300,6 +328,15 @@
   data-controller-phase={controllerState.phase}
   data-save-state={saveState}
 >
+  <p
+    class="sr-only"
+    role="status"
+    aria-live="polite"
+    aria-atomic="true"
+    data-testid="controller-phase-status"
+  >
+    {phaseAnnouncement}
+  </p>
   {#if presentation.remoteDaemonPathRejection}
     <RemoteDaemonPathGuidance path={presentation.remoteDaemonPathRejection} />
   {/if}

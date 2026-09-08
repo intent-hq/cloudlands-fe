@@ -98,7 +98,13 @@
           <h3 class="type-caption font-medium text-foreground">
             {m.newWorkspace_setup_readiness_title()}
           </h3>
-          <span class="type-caption text-muted-foreground">
+          <span
+            class="type-caption text-muted-foreground"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            data-testid="readiness-status"
+          >
             {setupStatus.readiness === 'ready'
               ? m.newWorkspace_capabilities_ready_label()
               : setupStatus.readiness === 'attention'

@@ -126,6 +126,20 @@ test('collapsed setup keeps its readiness text visible in a narrow pane', async 
   ).toBeVisible();
 });
 
+test('phase and readiness changes are exposed as polite status updates', async ({ mount }) => {
+  const component = await mount(ScenarioContractHost, {
+    props: { scenarioId: 'setup-options-open' },
+  });
+  const phaseStatus = component.getByTestId('controller-phase-status');
+  const readinessStatus = component.getByTestId('readiness-status');
+
+  await expect(phaseStatus).toHaveAttribute('aria-live', 'polite');
+  await expect(readinessStatus).toHaveAttribute('aria-live', 'polite');
+  await expect(readinessStatus).toContainText('Ready');
+  await component.getByTestId('draft-start').click();
+  await expect(phaseStatus).toContainText('Checking required capabilities');
+});
+
 for (const testCase of SCENARIOS) {
   test(`setup panel: ${testCase}`, async ({ mount, page }) => {
     const scenarioId =
