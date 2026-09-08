@@ -10,7 +10,7 @@
  * routing decisions are made here; the daemon owns them.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   addItem,
@@ -68,6 +68,26 @@ export const setWorkspaceBrowserClientRequested = createAction<
 /** Read `browser.listTabs` for one workspace. */
 export const fetchWorkspaceBrowserTabsRequested = createAction<[wsId: string]>(
   'browserClients/fetchWorkspaceBrowserTabsRequested',
+);
+
+/**
+ * Forward a viewer's navigation to the tab's host (`browser.navigateTab`,
+ * REV-2 Model 3). The canonical URL follows the host's `browser:tab-updated`
+ * echo, not this request; the action's promise settles with the host's
+ * answer so the mirror can reload the canonical URL when the host rejected.
+ */
+export const navigateBrowserTabRequested = createAsyncAction<[tabId: string, url: string], void>(
+  'browserClients/navigateBrowserTab',
+  'browserClients/navigateBrowserTabRequested',
+);
+
+/**
+ * Close a tab hosted elsewhere (`browser.closeTab`). `force` tombstones the
+ * row while the host is offline; the local mirror goes with the
+ * `browser:tab-closed` echo, not with this request.
+ */
+export const closeBrowserTabRequested = createAction<[tabId: string, force: boolean]>(
+  'browserClients/closeBrowserTabRequested',
 );
 
 // ---------------------------------------------------------------------------

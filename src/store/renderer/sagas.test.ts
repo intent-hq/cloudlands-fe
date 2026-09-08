@@ -86,6 +86,7 @@ describe('renderer app saga registry', () => {
       'workspaceTabCleanupSaga',
       'sidebarNavSaga',
       'panelLayoutSaga',
+      'browserTabRegistrySaga',
       'unreadTrackingSaga',
       'releaseNotesSaga',
       'browserPersistenceSaga',

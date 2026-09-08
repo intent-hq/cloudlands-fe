@@ -1859,6 +1859,72 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(task);
   });
 
+  // REV-2 §5.45: a registry-hosted browser tab persists geometry only; its
+  // URL/owner/size are restored from the daemon and must not shadow it.
+  it('persists registry-hosted browser tabs without their registry-held fields', async () => {
+    const hosted = {
+      id: 'tab-hosted',
+      type: 'browser' as const,
+      title: 'Hosted',
+      closable: true,
+      browserUrl: 'http://a.test/',
+      browserRequestedUrl: 'http://localhost:1/',
+      ownerAgentId: 'agent-1',
+      ownerAgentName: 'Agent',
+      emulatedSize: { width: 800, height: 600 },
+      hostClientId: 'cli-desk',
+    };
+    const legacy = {
+      id: 'tab-legacy',
+      type: 'browser' as const,
+      title: 'Legacy',
+      closable: true,
+      browserUrl: 'http://legacy.test/',
+    };
+    const hiddenHosted = { ...hosted, id: 'tab-hidden' };
+    // A pre-migration store still carries the fields; the first write after
+    // restore drops them.
+    const panels = {
+      'panel-1': { id: 'panel-1', tabs: [hosted, legacy], activeTabId: hosted.id },
+    };
+    mocks.getJSON.mockReturnValue({ ...layout, panels, hiddenTabs: [hiddenHosted] });
+    const state = storeState();
+    state.panelLayout.byWorkspaceId[WS_1] = {
+      ...workspaceState(),
+      panels,
+      hiddenTabs: createCollection('id', [hiddenHosted]),
+    };
+    const { channel, task } = startSaga(state);
+    await settle();
+    channel.put(workspaceMounted(WS_1));
+    await settle();
+    channel.put({ type: focusPanel.type, payload: [WS_1, 'panel-1'] });
+    await settle();
+
+    expect(mocks.setJSON).toHaveBeenCalledTimes(1);
+    const stored = mocks.setJSON.mock.calls[0]?.[1] as WorkspacePanelLayout;
+    expect(stored.panels['panel-1'].tabs).toEqual([
+      {
+        id: 'tab-hosted',
+        type: 'browser',
+        title: 'Hosted',
+        closable: true,
+        hostClientId: 'cli-desk',
+      },
+      legacy,
+    ]);
+    expect(stored.hiddenTabs).toEqual([
+      {
+        id: 'tab-hidden',
+        type: 'browser',
+        title: 'Hosted',
+        closable: true,
+        hostClientId: 'cli-desk',
+      },
+    ]);
+    await cancelSaga(task);
+  });
+
   it('round-trips browser requested URL and viewport with the persisted tab', async () => {
     const browserTab = {
       id: 'tab-b',

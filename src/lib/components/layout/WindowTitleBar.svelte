@@ -19,6 +19,7 @@
   import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
+  import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import {
     selectZoomFactor,
@@ -32,8 +33,14 @@
   } from './titlebar-navigation';
   import {
     getCounterScaledTitlebarHeight,
+    getWorkspaceTabBorderMaskImage,
+    getWorkspaceTabLeadingInsetPx,
+    getWorkspaceTabScrollerMarginLeftPx,
     TITLEBAR_LEFT_DRAG_SURFACE_CLASS,
     WINDOW_TITLEBAR_HEIGHT_PX,
+    WORKSPACE_TAB_MOTION_DURATION_MS,
+    WORKSPACE_TAB_MOTION_EASING,
+    type WorkspaceTabBorderMaskBounds,
   } from './titlebar-geometry';
   import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
@@ -50,8 +57,9 @@
   }
 
   let { workspaceId }: Props = $props();
-  let activeTabBounds = $state<{ left: number; width: number } | null>(null);
+  let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
+  let prefersReducedMotion = $state(false);
   const routedWorkspaceId = $derived(
     page.url.pathname.startsWith('/workspace/') && page.params.id !== 'new'
       ? (page.params.id ?? null)
@@ -68,12 +76,14 @@
   const CONTROLS_GAP = 4; // gap-1 between titlebar control groups
   let fixedControlsEl = $state<HTMLDivElement | null>(null);
   let controlsBaseLeft = $state(0);
+  let fixedControlsTrailingInset = $state(0);
 
   $effect(() => {
     const el = fixedControlsEl;
     if (!el) return;
     const measure = () => {
       controlsBaseLeft = el.offsetLeft + el.offsetWidth + CONTROLS_GAP;
+      fixedControlsTrailingInset = Number.parseFloat(getComputedStyle(el).paddingRight) || 0;
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -83,11 +93,20 @@
 
   // Align the workspace controls (tabs) with the left panel's right edge
   // when a sidebar panel is open; tracks the panel width live.
+  const sidebarPanelOpen = $derived(Boolean($panelItem$));
+  const workspaceTabLeadingInsetPx = $derived(getWorkspaceTabLeadingInsetPx(sidebarPanelOpen));
+  const workspaceTabScrollerMarginLeftPx = $derived(
+    getWorkspaceTabScrollerMarginLeftPx(
+      workspaceTabLeadingInsetPx === getWorkspaceTabLeadingInsetPx(true),
+    ),
+  );
   const panelOffset = $derived(
-    $panelItem$ ? Math.max(0, $panelWidth$ + SIDEBAR_PANEL_LEFT_INSET - controlsBaseLeft) : 0,
+    sidebarPanelOpen
+      ? Math.max(0, $panelWidth$ + SIDEBAR_PANEL_LEFT_INSET - controlsBaseLeft)
+      : -fixedControlsTrailingInset,
   );
 
-  function handleActiveTabBoundsChange(bounds: { left: number; width: number } | null) {
+  function handleActiveTabBoundsChange(bounds: WorkspaceTabBorderMaskBounds | null) {
     activeTabBounds = bounds;
   }
 
@@ -129,6 +148,16 @@
   // Get focused tab info
   const focusedTab = $derived($focusedTab$ ?? null);
 
+  onMount(() => {
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updateMotionPreference = () => (prefersReducedMotion = motionQuery.matches);
+    updateMotionPreference();
+    motionQuery.addEventListener('change', updateMotionPreference);
+
+    return () => {
+      motionQuery.removeEventListener('change', updateMotionPreference);
+    };
+  });
   // Build display text for the search bar - show focused tab title and workspace
   const displayText = $derived.by(() => {
     if (focusedTab?.title && workspace?.title) {
@@ -231,7 +260,11 @@
           onActiveTabBoundsChange={handleActiveTabBoundsChange}
           onActiveTabTrackingChange={handleActiveTabTrackingChange}
           activeWorkspaceId={routedWorkspaceId}
-          horizontalPositionTrackingKey={panelOffset}
+          leadingInsetPx={workspaceTabLeadingInsetPx}
+          scrollerMarginLeftPx={workspaceTabScrollerMarginLeftPx}
+          horizontalPositionTrackingKey={panelOffset +
+            workspaceTabLeadingInsetPx +
+            workspaceTabScrollerMarginLeftPx}
         />
         {#if !$onboardingActive$}
           <WorkspaceRepoLauncher />
@@ -259,11 +292,12 @@
     {#if activeTabBounds}
       <div
         class="pointer-events-none absolute -bottom-px z-[60] h-px bg-sidebar motion-reduce:transition-none"
-        style:left={`${activeTabBounds.left - 6}px`}
-        style:width={`${Math.max(0, activeTabBounds.width + 13)}px`}
-        style:transition={activeTabTracking
+        style:left={`${activeTabBounds.left}px`}
+        style:width={`${activeTabBounds.width}px`}
+        style:mask-image={getWorkspaceTabBorderMaskImage(activeTabBounds)}
+        style:transition={activeTabTracking || prefersReducedMotion
           ? 'none'
-          : 'left 200ms cubic-bezier(0.215, 0.61, 0.355, 1)'}
+          : `left ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}, width ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}`}
         data-active-tab-border-mask
         aria-hidden="true"
       ></div>

@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+vi.mock('svelte', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('svelte')>()),
+  getContext: () => undefined,
+}));
+
+import type { StoreState } from '../../types';
 import { removeWorkspaceEntity, resetWorkspaceState } from '../workspace/workspace-slice';
+import { selectMountedWorkspaceIds } from './workspace-lifecycle-selectors';
 import {
   backendReconnected,
   initialState,
@@ -69,5 +76,21 @@ describe('workspaceLifecycleReducer', () => {
 
     expect(workspaceLifecycleReducer(live, resetWorkspaceState())).toBe(initialState);
     expect(workspaceLifecycleReducer(initialState, workspaceOpenFailed(WS))).toBe(initialState);
+  });
+
+  it('lists the mounted workspaces (hydrated or live) until they are torn down', () => {
+    const asState = (workspaceLifecycle: typeof initialState) =>
+      ({ workspaceLifecycle }) as unknown as StoreState;
+    expect(selectMountedWorkspaceIds.select(asState(initialState))).toEqual([]);
+
+    let state = workspaceLifecycleReducer(initialState, workspaceMounted('ws-a'));
+    state = workspaceLifecycleReducer(state, workspaceOpenSucceeded('ws-a'));
+    state = workspaceLifecycleReducer(state, workspaceMounted('ws-b'));
+    state = workspaceLifecycleReducer(state, workspaceOpenSucceeded('ws-c'));
+    expect(selectMountedWorkspaceIds.select(asState(state))).toEqual(['ws-a', 'ws-b']);
+
+    state = workspaceLifecycleReducer(state, workspaceUnmounted('ws-b'));
+    state = workspaceLifecycleReducer(state, workspaceDeleted('ws-a', []));
+    expect(selectMountedWorkspaceIds.select(asState(state))).toEqual([]);
   });
 });

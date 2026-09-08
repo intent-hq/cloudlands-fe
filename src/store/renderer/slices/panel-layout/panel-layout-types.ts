@@ -82,6 +82,16 @@ export interface PanelTab {
    * The live agent store, when it has the owner, takes precedence (renames).
    */
   ownerAgentName?: string;
+  /**
+   * The daemon tab registry's host for this browser tab (REV-2 §5.45): the
+   * logical client whose webview renders it. Set once the registry
+   * acknowledged the tab (own host) or when the tab was materialised from a
+   * registry row hosted elsewhere (a mirror — no live webview here). Absent
+   * on a tab the registry has not seen yet (legacy layouts, offline opens).
+   * A tab with a host persists geometry only; its URL, owner and emulated
+   * size live in the registry.
+   */
+  hostClientId?: string;
   /** Persisted browser viewport mode. Absent legacy values default to fit. */
   viewport?: BrowserTabViewport;
   /**

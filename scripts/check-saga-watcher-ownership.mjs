@@ -74,6 +74,10 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
     rationale: 'key-pin persistence and deferred first-open layout seeding are independent',
   },
   {
+    pattern: /workspace-slice\.ts#removeWorkspaceEntity$/,
+    rationale: 'key-pin persistence and browser-client resolution lane teardown are independent',
+  },
+  {
     pattern: /user-preferences-slice\.ts#setPanelColumnCount$/,
     rationale: 'preference persistence and fixed-column reconciliation are independent',
   },

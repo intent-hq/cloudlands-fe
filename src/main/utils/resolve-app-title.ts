@@ -1,4 +1,5 @@
 import { resolveDevInstance } from './resolve-dev-instance';
+import type { BrowserWindow } from 'electron';
 
 /**
  * Build the window/app title.
@@ -19,7 +20,15 @@ export function resolveAppTitle(): string {
 
 export function decorateWindowTitle(title: string): string {
   if (process.env.NODE_ENV !== 'development') return title;
-  return `${title} — ${resolveAppTitle()}`;
+  const suffix = ` — ${resolveAppTitle()}`;
+  return title.endsWith(suffix) ? title : `${title}${suffix}`;
+}
+
+export function registerWindowTitleListener(window: BrowserWindow): void {
+  window.on('page-title-updated', (event, title) => {
+    event.preventDefault();
+    window.setTitle(decorateWindowTitle(title));
+  });
 }
 
 export function setResolvedAppName(

@@ -102,6 +102,7 @@ describe('PanelEmptyState', () => {
     expect(onCreateTerminal).toHaveBeenCalledOnce();
     expect(onCreateTerminal).toHaveBeenCalledWith('panel-1');
     expect(layoutManager.reopenClosedTab).toHaveBeenCalledOnce();
+    expect(layoutManager.reopenClosedTab).toHaveBeenCalledWith();
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'palette/open' });
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'uiLayout/toggleSidebar', payload: [] });
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'shortcuts/open', payload: 'global' });
@@ -134,6 +135,20 @@ describe('PanelEmptyState', () => {
     ).not.toContain('border-t');
     expect(screen.queryByText('Empty panel')).toBeNull();
     expect(screen.queryByText(/Start something here/)).toBeNull();
+  });
+
+  it('reopens the clicked recent entry into this panel (monorepo#4553)', async () => {
+    const now = Date.now();
+    mocks.recentlyClosed = [
+      { tab: { id: 'newest', type: 'note', title: 'Newest' }, closedAt: now },
+      { tab: { id: 'older', type: 'file', title: 'Older' }, closedAt: now - 1000 },
+    ];
+    const layoutManager = renderEmptyState({ panelId: 'panel-2' });
+
+    await fireEvent.click(screen.getByRole('button', { name: /^Older/ }));
+
+    expect(layoutManager.reopenClosedTab).toHaveBeenCalledOnce();
+    expect(layoutManager.reopenClosedTab).toHaveBeenCalledWith('older', 'panel-2');
   });
 
   it('uses resource tiles for the note action and every changes recent alias', () => {

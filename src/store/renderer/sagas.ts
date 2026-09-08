@@ -62,6 +62,7 @@ import {
   notificationIpcSaga,
   webNotificationSaga,
 } from './slices/notifications/sagas/notifications-saga';
+import { browserTabRegistrySaga } from './slices/panel-layout/sagas/browser-tab-registry-saga';
 import { panelLayoutSaga } from './slices/panel-layout/sagas/panel-layout-saga';
 import { permissionResponseSaga } from './slices/permission/sagas/permission-response-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
@@ -199,6 +200,7 @@ export const sagas = [
   workspaceTabCleanupSaga,
   sidebarNavSaga,
   panelLayoutSaga,
+  browserTabRegistrySaga,
   unreadTrackingSaga,
   releaseNotesSaga,
   browserPersistenceSaga,
