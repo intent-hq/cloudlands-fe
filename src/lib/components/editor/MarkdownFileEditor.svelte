@@ -19,6 +19,7 @@
     processHTMLToMarkdown,
     extractFrontMatter,
   } from '$lib/utils/markdown-processor';
+  import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
   import BubbleMenu from '$lib/components/tiptap/BubbleMenu.svelte';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -34,6 +35,10 @@
   }
 
   let { value = $bindable(), readOnly = false, externalContentVersion = 0 }: Props = $props();
+
+  // One cache-busting token per editor instance so external content syncs
+  // keep identical workspace image URLs (no per-sync image re-fetch).
+  const workspaceFileVersion = createWorkspaceFileVersion();
 
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
@@ -71,7 +76,7 @@
       return;
     }
 
-    const markdown = processHTMLToMarkdown(html, { preserveAnchors: false });
+    const markdown = processHTMLToMarkdown(html, { preserveAnchors: false, workspaceId });
     // Ensure there's a newline separator between front matter and body
     // (front matter may end at EOF without trailing newline)
     const separator = preservedFrontMatter && !preservedFrontMatter.endsWith('\n') ? '\n' : '';
@@ -95,6 +100,8 @@
     const html = await processMarkdownToHTML(value, {
       preserveAnchors: false,
       processPrimitives: false,
+      workspaceId,
+      workspaceFileVersion,
     });
 
     lastMarkdownFromParent = value;
@@ -119,6 +126,7 @@
       enableComments: false,
       enableMentions: false,
       enableNotePrimitives: false,
+      workspace: workspaceId ? ({ id: workspaceId } as any) : undefined,
     });
 
     editor = new Editor(config);
@@ -182,6 +190,8 @@
       processMarkdownToHTML(currentValue, {
         preserveAnchors: false,
         processPrimitives: false,
+        workspaceId,
+        workspaceFileVersion,
       })
         .then((html) => {
           if (syncSequence !== externalContentSyncSequence) return;

@@ -21,12 +21,13 @@
     base64ByteSize,
     base64ToBlob,
     imageDownloadFileName,
+    isHttpsImageUrl,
     parseBase64DataUrl,
     parseWorkspaceFileImageUrl,
   } from '$lib/utils/image-actions';
 
   interface Props {
-    /** Image source: a base64 `data:` URL or a `workspace-file://` URL. */
+    /** Image source: data, workspace-file, workspace-asset, or HTTPS URL. */
     imageUrl: string;
     /** Display name — download filename fallback for data-URL images. */
     imageName?: string;
@@ -47,6 +48,7 @@
 
   const dataUrl = $derived(parseBase64DataUrl(imageUrl));
   const workspaceFile = $derived(parseWorkspaceFileImageUrl(imageUrl));
+  const isHttpsImage = $derived(isHttpsImageUrl(imageUrl));
 
   // Info rows: dimensions from the decoded image, size from the byte payload.
   let dimensions = $state<{ width: number; height: number } | null>(null);
@@ -138,6 +140,16 @@
     }
   }
 
+  async function copyLink() {
+    if (!isHttpsImage) return;
+    try {
+      await writeTextToClipboard(imageUrl);
+      toast.success(m.ui_imageActionsMenu_linkCopied_label());
+    } catch {
+      toast.error(m.ui_imageActionsMenu_copyFailed_error());
+    }
+  }
+
   async function convertToPngBlob(blob: Blob): Promise<Blob> {
     const bitmap = await createImageBitmap(blob);
     try {
@@ -188,13 +200,16 @@
     <Menu.Item onSelect={() => void download()}>
       {m.ui_imageActionsMenu_download_label()}
     </Menu.Item>
+    <Menu.Item onSelect={() => void copyImage()}>
+      {m.ui_imageActionsMenu_copyImage_label()}
+    </Menu.Item>
     {#if workspaceFile}
       <Menu.Item onSelect={() => void copyPath()}>
         {m.ui_imageActionsMenu_copyPath_label()}
       </Menu.Item>
-    {:else}
-      <Menu.Item onSelect={() => void copyImage()}>
-        {m.ui_imageActionsMenu_copyImage_label()}
+    {:else if isHttpsImage}
+      <Menu.Item onSelect={() => void copyLink()}>
+        {m.ui_imageActionsMenu_copyLink_label()}
       </Menu.Item>
     {/if}
     {#if dimensions || byteSize !== null}

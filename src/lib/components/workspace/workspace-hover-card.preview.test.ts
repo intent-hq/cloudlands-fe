@@ -37,7 +37,7 @@ describe('workspace hover-card preview audit', () => {
     ]);
   });
 
-  it('provides the approved representative two-column scenes', () => {
+  it('provides the approved representative stacked scenes', () => {
     const states = workspaceHoverCardPreview.states;
 
     expect(states.working.props.cards[0]?.workspace?.displayStatus).toBe('in_progress');
@@ -154,6 +154,7 @@ describe('workspace hover-card preview audit', () => {
       'not_started',
       'idle',
       'complete',
+      'pr_queued',
       'pr_ready',
       'pr_open',
       'pr_merged',

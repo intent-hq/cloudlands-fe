@@ -55,6 +55,21 @@ describe('WorkspaceClient.open wire contract', () => {
   });
 });
 
+describe('WorkspaceClient.list cache ownership', () => {
+  afterEach(() => unregisterMockIpcHandler(WORKSPACE_CHANNELS.LIST));
+
+  it('forwards sequential list reads to the service instead of keeping a second resolved cache', async () => {
+    const handler = vi.fn().mockResolvedValue({ success: true, data: { workspaces: [] } });
+    registerMockIpcHandler(WORKSPACE_CHANNELS.LIST, handler);
+    const client = new WorkspaceClient();
+
+    await client.list({ lite: true });
+    await client.list({ lite: true });
+
+    expect(handler.mock.calls).toEqual([[{ lite: true }], [{ lite: true }]]);
+  });
+});
+
 describe('WorkspaceClient.create (AppClient seam, PROTOCOL §5.1)', () => {
   afterEach(() => vi.clearAllMocks());
 

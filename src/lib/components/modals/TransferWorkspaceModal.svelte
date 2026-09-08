@@ -315,7 +315,7 @@
               {m.workspace_transfer_planLoading_message()}
             </p>
           {:else if planStatus === 'error'}
-            <p class="text-xs text-error-foreground" data-testid="transfer-plan-error">
+            <p class="text-xs text-danger" data-testid="transfer-plan-error">
               {m.workspace_transfer_planFailed_error({ error: planError ?? '' })}
             </p>
           {:else if plan}
@@ -534,13 +534,13 @@
                 {m.workspace_transfer_finalizing_message()}
               </p>
             {:else if finalizeStatus === 'error'}
-              <p class="text-xs text-error-foreground" data-testid="transfer-finalize-error">
+              <p class="text-xs text-danger" data-testid="transfer-finalize-error">
                 {m.workspace_transfer_finalizeFailed_error({ error: finalizeError ?? '' })}
               </p>
             {/if}
           {:else}
             <p class="flex items-center gap-2 text-sm" data-testid="transfer-result-failed">
-              <Fa icon={faCircleXmark} class="text-error-foreground shrink-0" />
+              <Fa icon={faCircleXmark} class="text-danger shrink-0" />
               <span class="font-semibold">
                 {isDownload
                   ? m.workspace_transfer_result_downloadFailed_title()

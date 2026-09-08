@@ -1,6 +1,6 @@
 /**
- * Model catalog bridge — routes the 9 per-provider `*:get-models` channels
- * (auggie / claude-code / codex / cortex / droid / grok / opencode / pi /
+ * Model catalog bridge — routes the per-provider `*:get-models` channels
+ * (antigravity / auggie / claude-code / codex / cortex / droid / grok / opencode / pi /
  * unsloth) to the daemon's per-provider model catalog (`models.list { providerId,
  * forceRefresh }`, PROTOCOL §6.7) for daemon/web builds where no Electron
  * main process serves these channels.
@@ -18,8 +18,9 @@
  *
  * Handlers are registered at import time (host-bridge-seeder idiom).
  */
-import { registerMockIpcHandler } from "$shared/ipc-mock-router";
+import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import {
+  ANTIGRAVITY_CHANNELS,
   AUGGIE_CHANNELS,
   CLAUDE_CODE_CHANNELS,
   CODEX_CHANNELS,
@@ -29,13 +30,13 @@ import {
   OPENCODE_CHANNELS,
   PI_CHANNELS,
   UNSLOTH_CHANNELS,
-} from "$shared/ipc/channels";
+} from '$shared/ipc/channels';
 import {
   wireModelsToProviderModels,
   type ProviderModelInfo,
   type WireModelsListResult,
-} from "$shared/models/wire-model-info";
-import { backendRequest } from "$lib/client/live/backend-transport";
+} from '$shared/models/wire-model-info';
+import { backendRequest } from '$lib/client/live/backend-transport';
 
 type GetModelsEnvelope = {
   success: boolean;
@@ -49,23 +50,23 @@ const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 const PROVIDER_MODEL_CHANNELS: Array<[string, string]> = [
-  ["auggie", AUGGIE_CHANNELS.GET_MODELS],
-  ["claude-code", CLAUDE_CODE_CHANNELS.GET_MODELS],
-  ["codex", CODEX_CHANNELS.GET_MODELS],
-  ["cortex", CORTEX_CHANNELS.GET_MODELS],
-  ["droid", DROID_CHANNELS.GET_MODELS],
-  ["grok", GROK_CHANNELS.GET_MODELS],
-  ["opencode", OPENCODE_CHANNELS.GET_MODELS],
-  ["pi", PI_CHANNELS.GET_MODELS],
-  ["unsloth", UNSLOTH_CHANNELS.GET_MODELS],
+  ['antigravity', ANTIGRAVITY_CHANNELS.GET_MODELS],
+  ['auggie', AUGGIE_CHANNELS.GET_MODELS],
+  ['claude-code', CLAUDE_CODE_CHANNELS.GET_MODELS],
+  ['codex', CODEX_CHANNELS.GET_MODELS],
+  ['cortex', CORTEX_CHANNELS.GET_MODELS],
+  ['droid', DROID_CHANNELS.GET_MODELS],
+  ['grok', GROK_CHANNELS.GET_MODELS],
+  ['opencode', OPENCODE_CHANNELS.GET_MODELS],
+  ['pi', PI_CHANNELS.GET_MODELS],
+  ['unsloth', UNSLOTH_CHANNELS.GET_MODELS],
 ];
 
 for (const [providerId, channel] of PROVIDER_MODEL_CHANNELS) {
   registerMockIpcHandler(channel, async (data?: unknown): Promise<GetModelsEnvelope> => {
     try {
-      const forceRefresh =
-        (data as { forceRefresh?: boolean } | undefined)?.forceRefresh === true;
-      const result = await backendRequest<WireModelsListResult>("models.list", {
+      const forceRefresh = (data as { forceRefresh?: boolean } | undefined)?.forceRefresh === true;
+      const result = await backendRequest<WireModelsListResult>('models.list', {
         providerId,
         ...(forceRefresh ? { forceRefresh: true } : {}),
       });
@@ -73,7 +74,7 @@ for (const [providerId, channel] of PROVIDER_MODEL_CHANNELS) {
         success: true,
         data: wireModelsToProviderModels(result),
       };
-      if (typeof result?.warning === "string" && result.warning) {
+      if (typeof result?.warning === 'string' && result.warning) {
         envelope.warning = result.warning;
       }
       if (result?.stale === true) envelope.stale = true;

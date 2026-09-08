@@ -2,14 +2,7 @@
  * Tests for WorkspaceStorageManager
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WorkspaceStorageManager } from '../workspace-storage-manager';
 
 // Mock localStorage

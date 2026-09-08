@@ -9,10 +9,7 @@
   import { cubicOut } from 'svelte/easing';
   import Button from '$lib/components/ui/button/button.svelte';
   import Fa from 'svelte-fa';
-  import {
-  faCheck,
-  faXmark,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -77,8 +74,7 @@
     placeholder={m.chat_chatMessage_edit_placeholder()}
     autocorrect="off"
     autocapitalize="off"
-    spellcheck="false"
-  ></textarea>
+    spellcheck="false"></textarea>
 
   <div class="flex justify-end gap-2">
     <Button variant="ghost" size="sm" onclick={onCancel} class="text-subtle">
@@ -92,7 +88,8 @@
   </div>
 
   <p class="text-ui text-subtle text-right">
-    {m.chat_messageEditor_kbdHint_before()} <kbd
+    {m.chat_messageEditor_kbdHint_before()}
+    <kbd
       class="inline-flex items-center justify-center min-w-5 px-1 py-0.5 text-ui font-medium bg-muted border border-border rounded mx-0.5"
       >⌘</kbd
     ><kbd
@@ -103,6 +100,7 @@
     <kbd
       class="inline-flex items-center justify-center min-w-5 px-1 py-0.5 text-ui font-medium bg-muted border border-border rounded mx-0.5"
       >{m.chat_messageEditor_kbdEsc_label()}</kbd
-    > {m.chat_messageEditor_kbdHint_after()}
+    >
+    {m.chat_messageEditor_kbdHint_after()}
   </p>
 </div>

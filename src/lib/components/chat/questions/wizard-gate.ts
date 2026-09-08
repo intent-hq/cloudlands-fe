@@ -8,17 +8,21 @@ import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
 import {
   classifyPendingQuestionMarker,
   derivePendingQuestions,
+  isQuestionSetAnswered,
   type PendingQuestionSet,
 } from './pending-questions';
 
 /**
- * Production wizard gate: pending questions derive against the agent's OWN
- * active turn (`selectAgentIsResponding`) — NOT the broad
- * `selectAgentIsRunning` gate, which stays true while the agent merely waits
- * on delegated agents (isWaitingForOtherAgents) and must not suppress the
- * wizard. The daemon's `pendingQuestionsMessageId` metadata is authoritative
- * when present; transcript derivation remains the compatibility fallback when
- * it is absent. A question set the user dismissed never pends: the daemon persists
+ * Production wizard gate. The daemon's `pendingQuestionsMessageId` metadata is
+ * authoritative when present: the marked question set stays pending across
+ * later automatic/user turns (the marker is written once the asking turn has
+ * ended) until the daemon clears it, a tagged answer row names it, or the user
+ * dismisses it. Transcript derivation remains the compatibility fallback when
+ * the marker is absent; only that fallback gates on the agent's OWN active
+ * turn (`selectAgentIsResponding`) — NOT the broad `selectAgentIsRunning`
+ * gate, which stays true while the agent merely waits on delegated agents
+ * (isWaitingForOtherAgents) and must not suppress the wizard.
+ * A question set the user dismissed never pends: the daemon persists
  * `dismissedQuestionsMessageId` in session metadata (`agent.dismissQuestions`,
  * PROTOCOL §5.5), so the suppression survives reload/rehydrate; a NEWER
  * question-bearing message (different id) pends normally. Lives outside
@@ -50,12 +54,19 @@ export function deriveWizardPendingQuestions(
     recovery.questions.length > 0
       ? { messageId: marker.messageId, questions: recovery.questions }
       : null;
+  // A marked message recovered from the paged history segment is not in the
+  // tail; prepend it so the marker path can still find it while the tail is
+  // scanned for a tagged answer row.
+  const derivationMessages =
+    marker.kind === 'set' && markedMessage && !messages.includes(markedMessage)
+      ? [markedMessage, ...messages]
+      : messages;
   const pending = recoveredPending
-    ? isTurnActive || showingPendingUserMessage
+    ? showingPendingUserMessage || isQuestionSetAnswered(messages, recoveredPending.messageId)
       ? null
       : recoveredPending
     : derivePendingQuestions(
-        marker.kind === 'set' && markedMessage ? [markedMessage] : messages,
+        derivationMessages,
         isTurnActive,
         showingPendingUserMessage,
         marker.kind === 'set' ? marker.messageId : marker.kind === 'cleared' ? '' : undefined,

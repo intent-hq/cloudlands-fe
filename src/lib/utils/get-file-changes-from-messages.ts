@@ -522,7 +522,6 @@ function extractFileChangeFromBlock(block: ContentBlock): ChatFileChange | null 
 }
 
 function extractFileChangeFromBlockInner(block: ContentBlock): ChatFileChange | null {
-
   // Tool names are not guaranteed to be strings; use the first non-empty string candidate
   const toolName =
     typeof block.name === 'string' && block.name

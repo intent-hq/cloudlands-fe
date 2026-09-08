@@ -2,7 +2,10 @@ import { DOMSerializer } from '@tiptap/pm/model';
 import type { EditorView } from '@tiptap/pm/view';
 import { processHTMLToMarkdown } from './markdown-processor';
 
-export function serializeSelectionToMarkdown(view: EditorView): string | null {
+export function serializeSelectionToMarkdown(
+  view: EditorView,
+  workspaceId?: string,
+): string | null {
   const { state } = view;
 
   if (state.selection.empty || typeof document === 'undefined') {
@@ -23,13 +26,17 @@ export function serializeSelectionToMarkdown(view: EditorView): string | null {
     return null;
   }
 
-  const markdown = processHTMLToMarkdown(html, { preserveAnchors: false }).trim();
+  const markdown = processHTMLToMarkdown(html, { preserveAnchors: false, workspaceId }).trim();
   return markdown || null;
 }
 
-export function handleNoteEditorCopyAsMarkdown(view: EditorView, event: ClipboardEvent): boolean {
+export function handleNoteEditorCopyAsMarkdown(
+  view: EditorView,
+  event: ClipboardEvent,
+  workspaceId?: string,
+): boolean {
   try {
-    const markdown = serializeSelectionToMarkdown(view);
+    const markdown = serializeSelectionToMarkdown(view, workspaceId);
     if (!markdown || !event.clipboardData) {
       return false;
     }

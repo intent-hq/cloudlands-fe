@@ -59,11 +59,7 @@ function stubHelper(stdout: string, exitCode = 0, stderr = '') {
       _path: string,
       _args: string[],
       _options: unknown,
-      callback: (
-        error: (Error & { code?: number }) | null,
-        stdout: string,
-        stderr: string,
-      ) => void,
+      callback: (error: (Error & { code?: number }) | null, stdout: string, stderr: string) => void,
     ) => {
       if (exitCode === 0) {
         callback(null, stdout, stderr);

@@ -54,4 +54,3 @@ export function toLocalEndpoint(
   if (platform !== 'win32' || isWindowsPipePath(socketPath)) return socketPath;
   return windowsPipeName(socketPath);
 }
-

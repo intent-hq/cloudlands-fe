@@ -7,11 +7,7 @@
 
 import * as os from 'os';
 import * as path from 'path';
-import {
-  findBinary,
-  findBinaryStrict,
-  getCommonNpmPaths,
-} from '../../../shared/main/find-binary';
+import { findBinary, findBinaryStrict, getCommonNpmPaths } from '../../../shared/main/find-binary';
 
 // Common paths to look for cortex binary
 const CORTEX_PATHS = [
@@ -22,12 +18,14 @@ const CORTEX_PATHS = [
   path.join(os.homedir(), '.bun/bin/cortex'),
   path.join(os.homedir(), '.npm-global/bin/cortex'),
   // Windows paths
-  ...(process.platform === 'win32' ? [
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'cortex.cmd'),
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'cortex'),
-    path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'cortex.exe'),
-    path.join(os.homedir(), 'scoop', 'shims', 'cortex.exe'),
-  ] : []),
+  ...(process.platform === 'win32'
+    ? [
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'cortex.cmd'),
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'cortex'),
+        path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'cortex.exe'),
+        path.join(os.homedir(), 'scoop', 'shims', 'cortex.exe'),
+      ]
+    : []),
 ];
 
 let cachedCortexPath: string | null = null;
@@ -81,4 +79,3 @@ export async function isCortexInstalled(): Promise<boolean> {
 export async function getCortexPath(): Promise<string | null> {
   return findCortexPath();
 }
-

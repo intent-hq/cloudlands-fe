@@ -4,8 +4,11 @@ import type { BrowserWindow as BrowserWindowType } from 'electron';
 import fs from 'fs';
 import fsAsync from 'fs/promises';
 import { Logger } from '../shared/logger';
-import { resolveAppTitle } from './utils/resolve-app-title';
+import { registerWindowTitleListener, resolveAppTitle } from './utils/resolve-app-title';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
+import { scrubToken } from '../features/deeplink/utils/scrub-token';
+import { findIntentUrl } from '../features/deeplink/utils/find-intent-url';
+import { isPairingUri } from '../shared/utils/pairing-uri';
 import { getMainWindow, setMainWindow } from './state';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { fileURLToPath } from 'url';
@@ -116,6 +119,12 @@ function buildWindowOptions(opts: {
     ...getWindowAppearanceOptions(isDarkMode),
     ...(opts.iconPath && { icon: opts.iconPath }),
   };
+}
+
+function createConfiguredWindow(opts: Parameters<typeof buildWindowOptions>[0]): BrowserWindowType {
+  const window = new BrowserWindow(buildWindowOptions(opts));
+  registerWindowTitleListener(window);
+  return window;
 }
 
 // Bounds for the renderer-console forwarder: per-message size cap and
@@ -600,9 +609,7 @@ export function createWindowForSession(
   const { workArea } = screen.getDisplayMatching(session.bounds);
   const bounds = validateBounds(session.bounds, workArea);
 
-  const window = new BrowserWindow(
-    buildWindowOptions({ bounds, title: resolveAppTitle(), iconPath }),
-  );
+  const window = createConfiguredWindow({ bounds, title: resolveAppTitle(), iconPath });
   // A restored HUD session keeps its saved backend bucket — the HUD is bound
   // to the backend it was opened on, not forced to local. Register it as THE
   // HUD for that backend right away (stamp first — the registry keys off the
@@ -847,9 +854,11 @@ export function createWindow(backendId: string = LOCAL_CONNECTION_ID) {
     logger.warn('Failed to load saved window bounds:', err);
   }
 
-  const window = new BrowserWindow(
-    buildWindowOptions({ bounds: windowBounds, title: resolveAppTitle(), iconPath }),
-  );
+  const window = createConfiguredWindow({
+    bounds: windowBounds,
+    title: resolveAppTitle(),
+    iconPath,
+  });
   stampWindowWithBackend(window, backendId);
   forwardRendererConsoleToMainLog(window);
 
@@ -886,11 +895,14 @@ export function createWindow(backendId: string = LOCAL_CONNECTION_ID) {
       .catch((error: unknown) => logger.error('Failed to clear cache:', error as Error));
   }
 
-  // Check process.argv for intent:// URL on cold start
-  const intentUrl = process.argv.find((arg: string) => arg.startsWith('intent://'));
+  // Check process.argv for intent:// URL on cold start. Pair links are
+  // excluded: they are handled fully in the main process (parked at startup,
+  // processed once the window is ready) and must never be embedded in the
+  // renderer load URL — the pairing bearer token would leak to the renderer.
+  const intentUrl = findIntentUrl(process.argv);
   let loadUrl = buildLoadUrl();
 
-  if (intentUrl) {
+  if (intentUrl && !isPairingUri(intentUrl)) {
     const deepLinkHandler = new DeepLinkHandler();
     const action = deepLinkHandler.parseDeepLink(intentUrl);
     if (action) {
@@ -919,7 +931,16 @@ export async function createWindowForDeepLink(
   deepLinkUrl: string,
   deepLinkHandler: DeepLinkHandler,
 ) {
-  logger.info('Creating window for deep link:', { url: deepLinkUrl });
+  logger.info('Creating window for deep link:', { url: scrubToken(deepLinkUrl) });
+
+  // Pair links never touch the renderer (no window, no IPC): route straight
+  // to the main-process pair handler. Dynamic import — pair-deep-link reaches
+  // backend.ipc, which imports this module (a static import would cycle).
+  if (isPairingUri(deepLinkUrl)) {
+    const { handlePairDeepLink } = await import('../features/deeplink/main/pair-deep-link');
+    await handlePairDeepLink(deepLinkUrl);
+    return;
+  }
 
   // Parse the deep link to extract action and params
   const action = deepLinkHandler.parseDeepLink(deepLinkUrl);
@@ -956,9 +977,7 @@ export async function createWindowForDeepLink(
   const bounds = { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height };
 
   const iconPath = resolveIcon(false);
-  const newWindow = new BrowserWindow(
-    buildWindowOptions({ bounds, title: resolveAppTitle(), iconPath }),
-  );
+  const newWindow = createConfiguredWindow({ bounds, title: resolveAppTitle(), iconPath });
   stampWindowWithBackend(newWindow);
   forwardRendererConsoleToMainLog(newWindow);
 

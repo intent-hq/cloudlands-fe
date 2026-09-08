@@ -17,7 +17,6 @@ class GlobalCleanupService {
   private boundHandleBeforeUnload?: (e: BeforeUnloadEvent) => void;
   private boundHandleUnload?: () => void;
 
-
   /**
    * Initialize global cleanup handlers
    */
@@ -87,7 +86,7 @@ class GlobalCleanupService {
   /**
    * Handle before unload event
    */
-   
+
   private handleBeforeUnload(_event: BeforeUnloadEvent): void {
     logger.debug('Before unload event triggered');
 

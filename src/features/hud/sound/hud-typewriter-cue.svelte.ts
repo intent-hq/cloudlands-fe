@@ -55,11 +55,14 @@ export function createTypewriterCue(deps: {
     }
     const delayMs = Number(bannerDelay(deps.needsPan(), 0)) * 1000;
     clearTimeout(timer);
-    timer = setTimeout(() => {
-      fired = true;
-      if (!deps.motion()) return;
-      void playHudSoundCue('banner-typewriter');
-    }, Math.max(0, openedAtMs + delayMs - Date.now()));
+    timer = setTimeout(
+      () => {
+        fired = true;
+        if (!deps.motion()) return;
+        void playHudSoundCue('banner-typewriter');
+      },
+      Math.max(0, openedAtMs + delayMs - Date.now()),
+    );
   });
 
   return {

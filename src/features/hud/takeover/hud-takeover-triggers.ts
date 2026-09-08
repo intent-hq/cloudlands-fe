@@ -9,7 +9,8 @@
  * STATUS MESSAGE text changes (`workspace:updated` whose §6.5 `changes`
  * delta carries a non-empty `statusMessage`), and workspace displayStatus
  * transitions (`workspace:displayStatus-changed`, §6.5) landing on the
- * ALLOWLIST — idle / pr_open / pr_ready / pr_merged / complete; every other
+ * ALLOWLIST — idle / pr_open / pr_ready / pr_queued / pr_merged / complete;
+ * every other
  * displayStatus value (in_progress, needs_attention, not_started, unknown)
  * keeps updating cards and counters live via the feed families without
  * taking over, and per-agent idle events (`agent:idle`, idle-bucket
@@ -54,6 +55,7 @@ const DISPLAY_STATUS_TAKEOVER_KINDS: Readonly<Record<string, HudTakeoverKind>> =
   idle: 'workspace_idle',
   pr_open: 'pr_open',
   pr_ready: 'pr_ready',
+  pr_queued: 'pr_queued',
   pr_merged: 'pr_merged',
   complete: 'workspace_complete',
 };
@@ -107,7 +109,8 @@ function agentDisplayName(
  *    updates never take over); the caller dedupes same-text repeats;
  *  - `workspace:displayStatus-changed` only fires on the
  *    `DISPLAY_STATUS_TAKEOVER_KINDS` allowlist (idle / pr_open / pr_ready /
- *    pr_merged / complete), resolving the kind from the displayStatus value;
+ *    pr_queued / pr_merged / complete), resolving the kind from the
+ *    displayStatus value;
  *    the raw wire word never travels as `detail` — the banner renders the
  *    workspace title with the localized kind chip;
  *  - `agent:failed` / `agent:created` / `agent:started` always fire.

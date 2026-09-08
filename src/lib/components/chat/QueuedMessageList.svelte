@@ -14,7 +14,6 @@
     faTimes,
     faArrowRight,
     faRotateRight,
-    faCircleQuestion,
     faFile,
     faChevronDown,
   } from '@fortawesome/free-solid-svg-icons';
@@ -25,7 +24,7 @@
   import Button from '../ui/button/button.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import { resolveAttachmentImageUrl } from './attachment-image-url';
+  import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
   import { store as appStore } from '$store/renderer/store';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import { m } from '$shared/paraglide/messages.js';
@@ -44,13 +43,6 @@
   interface Props {
     messages: QueuedMessage[];
     disabled?: boolean;
-    /**
-     * The daemon is parking these deliveries behind pending Agent Q&A
-     * questions (question hold, PROTOCOL §5.5): render a hint that the queue
-     * is deliberately held — not stalled — until the user answers or
-     * dismisses the questions.
-     */
-    heldForQuestions?: boolean;
     onedit?: (
       messageId: string,
       content: string,
@@ -61,15 +53,7 @@
     ondone?: () => void;
   }
 
-  let {
-    messages = [],
-    disabled = false,
-    heldForQuestions = false,
-    onedit,
-    onremove,
-    onsendnow,
-    ondone,
-  }: Props = $props();
+  let { messages = [], disabled = false, onedit, onremove, onsendnow, ondone }: Props = $props();
 
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
@@ -199,12 +183,22 @@
   // Resolved workspace-file:// URLs for queued attachment-reference image
   // blocks (monorepo#3338), keyed by attachmentId.
   let referenceImageUrls = $state<Record<string, string>>({});
+  // Attachment ids whose resolved <img> failed to load in this instance: they
+  // keep the placeholder here (no resolve/fail loop), while the evicted
+  // module cache lets the next render elsewhere retry.
+  let failedReferenceImages = $state<Record<string, true>>({});
   $effect(() => {
     if (!workspaceId) return;
     for (const message of messages) {
       for (const block of message.imageBlocks ?? []) {
-        if (!block.attachmentId || referenceImageUrls[block.attachmentId] !== undefined) continue;
         const attachmentId = block.attachmentId;
+        if (
+          !attachmentId ||
+          referenceImageUrls[attachmentId] !== undefined ||
+          failedReferenceImages[attachmentId]
+        ) {
+          continue;
+        }
         void resolveAttachmentImageUrl(workspaceId, attachmentId).then((url) => {
           if (url) referenceImageUrls = { ...referenceImageUrls, [attachmentId]: url };
         });
@@ -214,9 +208,28 @@
 
   /** Renderable src for a queued image block: inline data URL or resolved reference URL. */
   function queuedImageSrc(block: NonNullable<QueuedMessage['imageBlocks']>[number]): string | null {
-    if (block.attachmentId) return referenceImageUrls[block.attachmentId] ?? null;
+    if (block.attachmentId) {
+      if (failedReferenceImages[block.attachmentId]) return null;
+      return referenceImageUrls[block.attachmentId] ?? null;
+    }
     if (block.data && block.mimeType) return `data:${block.mimeType};base64,${block.data}`;
     return null;
+  }
+
+  // A resolved reference thumbnail failed to load (the protocol handler
+  // refused the read, e.g. its backend is disconnected): fall back to the
+  // placeholder tile and evict the URL so the next render re-resolves.
+  function handleReferenceImageError(
+    block: NonNullable<QueuedMessage['imageBlocks']>[number],
+    src: string,
+  ) {
+    const attachmentId = block.attachmentId;
+    if (!attachmentId) return;
+    console.warn('Attachment thumbnail failed to load', { attachmentId, url: src });
+    if (workspaceId) evictAttachmentImageUrl(workspaceId, attachmentId);
+    const { [attachmentId]: _dropped, ...rest } = referenceImageUrls;
+    referenceImageUrls = rest;
+    failedReferenceImages = { ...failedReferenceImages, [attachmentId]: true };
   }
 
   // Open a queued image attachment in the lightbox
@@ -430,10 +443,14 @@
               {src}
               alt={m.chat_chatMessage_attachedImage_alt({ number: formatInteger(i + 1) })}
               class="h-[1.1em] w-[1.1em] rounded-sm border border-border object-cover hover:opacity-90 transition-opacity"
+              onerror={() => handleReferenceImageError(block, src)}
             />
           {:else}
+            <!-- Reference still resolving, failed to load, or its file is
+             gone: neutral placeholder tile instead of a broken img. -->
             <span
               class="h-[1.1em] w-[1.1em] rounded-sm border border-border bg-muted/50 inline-block"
+              data-testid="queued-image-placeholder"
             ></span>
           {/if}
         </button>
@@ -504,25 +521,6 @@
         data-testid="queued-messages-content"
         transition:safeSubscriptionSlide
       >
-        {#if heldForQuestions}
-          <div
-            class="type-caption mb-2 flex items-center gap-1.5 px-2.5 text-warning"
-            data-testid="queued-messages-held-hint"
-            role="status"
-          >
-            <div aria-hidden="true" class="shrink-0">
-              <Fa icon={faCircleQuestion} class="w-3 h-3" />
-            </div>
-            <span>
-              {messages.length === 1
-                ? m.chat_queuedMessages_heldForQuestionsHint_one()
-                : m.chat_queuedMessages_heldForQuestionsHint_many({
-                    count: formatInteger(messages.length),
-                  })}
-            </span>
-          </div>
-        {/if}
-
         <div class="space-y-px">
           {#each messages as message (message.id)}
             <div

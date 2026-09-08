@@ -21,7 +21,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../main/embedded-browser-cdp-service', () => ({
-  embeddedBrowserCdp: { registerTab: vi.fn(), unregisterTab: vi.fn() },
+  embeddedBrowserCdp: {
+    registerTab: vi.fn(),
+    unregisterTab: vi.fn(),
+    openDevToolsPanel: vi.fn(),
+  },
 }));
 vi.mock('../main/browser-action-executor', () => ({
   executeActions: vi.fn(),
@@ -416,6 +420,28 @@ describe('browser:resolve-url IPC handler', () => {
   it('rejects an unknown mode with a VALIDATION_ERROR envelope', async () => {
     const handler = await registerAndGetHandler();
     const result = await handler({}, { url: 'http://localhost:3000/', mode: 'probe-hard' });
+    expect(result.success).toBe(false);
+    expect(result.error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('browser:open-devtools-panel IPC handler', () => {
+  beforeEach(() => vi.resetModules());
+
+  it('validates and forwards the exact tab and panel request', async () => {
+    const handler = await registerAndGetHandler('browser:open-devtools-panel');
+    const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+
+    await expect(handler({}, { tabId: 'tab-1', panel: 'sources' })).resolves.toEqual({
+      success: true,
+    });
+    expect(embeddedBrowserCdp.openDevToolsPanel).toHaveBeenCalledWith('tab-1', 'sources');
+  });
+
+  it('rejects unsupported DevTools panels', async () => {
+    const handler = await registerAndGetHandler('browser:open-devtools-panel');
+    const result = await handler({}, { tabId: 'tab-1', panel: 'network' });
+
     expect(result.success).toBe(false);
     expect(result.error.code).toBe('VALIDATION_ERROR');
   });

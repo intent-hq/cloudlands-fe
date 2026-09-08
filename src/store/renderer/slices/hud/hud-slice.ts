@@ -231,10 +231,13 @@ export const hudTakeoverRequestCleared = createAction('hud/takeoverRequestCleare
 export const hudQuestionCaptured =
   createAction<[question: HudCapturedQuestion]>('hud/questionCaptured');
 /**
- * The agent started a new turn (`agent:status-changed` → a running status):
- * a question hold only breaks on a user-origin delivery (PROTOCOL §7.1 — any
- * later user message supersedes the questions), so the captured question is
- * answered/moot and must stop pending everywhere.
+ * The workspace's daemon display-status rollup left the attention statuses
+ * (`hud-subscription` dispatches this off `workspace:updated` /
+ * `agent:status-changed`): a pending question set keeps the rollup in
+ * `needs_attention` until it is answered or dismissed (PROTOCOL §7.1), so a
+ * non-attention rollup means the captured question is resolved/moot and must
+ * stop pending everywhere. Later automatic turns alone do not resolve it —
+ * the wizard stays sticky until answered or dismissed.
  */
 export const hudQuestionsResolvedForWorkspace = createAction<[workspaceId: string]>(
   'hud/questionsResolvedForWorkspace',
@@ -253,9 +256,8 @@ export const hudGridFilterStatesCleared = createAction('hud/gridFilterStatesClea
  * Persisted per-backend grid filter restored on activation (already sanitized
  * by `$features/hud/hud-grid-filter-persistence`).
  */
-export const hudGridFilterHydrated = createAction<[filter: HudGridFilter]>(
-  'hud/gridFilterHydrated',
-);
+export const hudGridFilterHydrated =
+  createAction<[filter: HudGridFilter]>('hud/gridFilterHydrated');
 
 // ── Reducer ──
 

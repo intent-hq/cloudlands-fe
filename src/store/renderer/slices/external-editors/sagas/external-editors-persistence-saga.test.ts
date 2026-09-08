@@ -20,10 +20,15 @@ vi.mock('$lib/utils/safe-storage', async (importOriginal) => {
 
 import {
   externalEditorsReducer,
+  fetchEditorsSuccess,
+  setEditorOrder,
   setOpenAction,
   toggleHiddenEditor,
 } from '../external-editors-slice';
-import { externalEditorsPersistenceSaga } from './external-editors-persistence-saga';
+import {
+  EDITOR_ORDER_STORAGE_KEY,
+  externalEditorsPersistenceSaga,
+} from './external-editors-persistence-saga';
 
 const settle = async () => {
   await Promise.resolve();
@@ -82,6 +87,32 @@ describe('externalEditorsPersistenceSaga', () => {
     await task.toPromise();
   });
 
+  it('hydrates a normalized editor ID order', async () => {
+    storage.getItem.mockImplementation((key: string) =>
+      key === EDITOR_ORDER_STORAGE_KEY ? JSON.stringify(['zed', 3, 'zed', 'vscode']) : null,
+    );
+    const { dispatched, task } = startSaga();
+    await settle();
+
+    expect(dispatched).toEqual([
+      { type: 'externalEditors/setEditorOrder', payload: [['zed', 'vscode']] },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('ignores malformed editor order storage safely', async () => {
+    storage.getItem.mockImplementation((key: string) =>
+      key === EDITOR_ORDER_STORAGE_KEY ? JSON.stringify({ ids: ['zed'] }) : null,
+    );
+    const { dispatched, task } = startSaga();
+    await settle();
+
+    expect(dispatched).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('persists the exact open action under the legacy-compatible key', async () => {
     const { send, task } = startSaga();
     await settle();
@@ -109,6 +140,63 @@ describe('externalEditorsPersistenceSaga', () => {
       ['legacy-settings:hiddenOpenInEditors', JSON.stringify(['vscode'])],
       ['legacy-settings:hiddenOpenInEditors', JSON.stringify(['vscode', 'zed'])],
       ['legacy-settings:hiddenOpenInEditors', JSON.stringify(['zed'])],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('persists post-reducer editor order IDs', async () => {
+    const { send, task } = startSaga();
+    await settle();
+    storage.setItem.mockClear();
+    send(setEditorOrder(['zed', 'vscode']));
+    await settle();
+
+    expect(storage.setItem.mock.calls).toEqual([
+      [EDITOR_ORDER_STORAGE_KEY, JSON.stringify(['zed', 'vscode'])],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('persists reconciled editor order after detection changes', async () => {
+    const { send, task } = startSaga();
+    await settle();
+    storage.setItem.mockClear();
+    send(setEditorOrder(['zed', 'removed']));
+    await settle();
+    storage.setItem.mockClear();
+    send(
+      fetchEditorsSuccess(
+        [
+          {
+            id: 'vscode',
+            name: 'VS Code',
+            shortLabel: 'VS Code',
+            appName: 'VS Code',
+            category: 'ide',
+            handlerType: 'vscode',
+            priority: 1,
+            installed: true,
+          },
+          {
+            id: 'zed',
+            name: 'Zed',
+            shortLabel: 'Zed',
+            appName: 'Zed',
+            category: 'ide',
+            handlerType: 'generic',
+            priority: 0,
+            installed: true,
+          },
+        ],
+        123,
+      ),
+    );
+    await settle();
+
+    expect(storage.setItem.mock.calls).toEqual([
+      [EDITOR_ORDER_STORAGE_KEY, JSON.stringify(['zed', 'vscode'])],
     ]);
     task.cancel();
     await task.toPromise();

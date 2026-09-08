@@ -68,6 +68,10 @@ function hasCurrentChiefIdentity(session: AgentSession): boolean {
   );
 }
 
+function getChiefSessionMessageCount(session: AgentSession): number {
+  return Math.max(session.messages.length, session.messageCount ?? 0);
+}
+
 function toChiefThreadPreview(session: AgentSession): ChiefThreadPreview {
   const latestMessage = session.messages.at(-1);
   return {
@@ -83,7 +87,7 @@ function toChiefThreadPreview(session: AgentSession): ChiefThreadPreview {
       session.isStreaming === true ||
       session.isProcessing === true ||
       session.isResponding === true,
-    messageCount: session.messages.length,
+    messageCount: getChiefSessionMessageCount(session),
   };
 }
 
@@ -183,7 +187,12 @@ export const selectCurrentChiefThread = store.createSelector((state): ChiefThrea
 export const selectReusableChiefThread = store.createSelector(
   (state): ChiefThreadPreview | null => {
     const reusable = getChiefSessions(state)
-      .filter((session) => session.messages.length === 0 && hasCurrentChiefIdentity(session))
+      .filter(
+        (session) =>
+          getChiefSessionMessageCount(session) === 0 &&
+          !session.lastMessageId &&
+          hasCurrentChiefIdentity(session),
+      )
       .sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a))[0];
 
     return reusable ? toChiefThreadPreview(reusable) : null;

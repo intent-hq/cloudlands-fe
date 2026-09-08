@@ -530,9 +530,9 @@ export class LiveAgentsClient implements AgentsClient {
     // `agent.dismissQuestions` (§5.5) takes `{ agentId, workspaceId,
     // messageId }` (all required — workspace mismatch surfaces as NotFound)
     // and returns `{ success: true, dismissedQuestionsMessageId }`. The daemon
-    // persists the marker in session metadata (survives reload), emits
-    // `agent:updated`, and kicks the queue drain so messages held by the
-    // question hold resume. Idempotent on the same messageId.
+    // persists the marker in session metadata (survives reload) and emits
+    // `agent:updated`, which clears the pending question set so the sticky
+    // wizard hides. Idempotent on the same messageId.
     return runMutation('agent.dismissQuestions', {
       agentId: params.agentId,
       workspaceId: params.workspaceId,

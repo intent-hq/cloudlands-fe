@@ -36,7 +36,9 @@ export const initialState: OnboardingState = {
 
 export const goToStep = createAction<[step: OnboardingStep]>('onboarding/goToStep');
 export const nextStep = createAction('onboarding/nextStep');
-export const setProjectConfig = createAction<[config: Partial<ProjectConfig>]>('onboarding/setProjectConfig');
+export const setProjectConfig = createAction<[config: Partial<ProjectConfig>]>(
+  'onboarding/setProjectConfig',
+);
 export const setOnboardingWorkspaceId = createAction<[id: string]>('onboarding/setWorkspaceId');
 export const resetOnboarding = createAction('onboarding/reset');
 export const setOnboardingFullFlowRequested = createAction<[value: boolean]>(
@@ -49,32 +51,32 @@ export const setOnboardingFullFlowRequested = createAction<[value: boolean]>(
 
 export const onboardingReducer = createReducer<OnboardingState>(initialState);
 onboardingReducer.with(goToStep, (state, { payload: [step] }) => ({
-    ...state,
-    step,
-  }));
+  ...state,
+  step,
+}));
 onboardingReducer.with(nextStep, (state) => {
-    const idx = STEP_ORDER.indexOf(state.step);
-    if (idx < STEP_ORDER.length - 1) {
-      return { ...state, step: STEP_ORDER[idx + 1] };
-    }
-    return state;
-  });
+  const idx = STEP_ORDER.indexOf(state.step);
+  if (idx < STEP_ORDER.length - 1) {
+    return { ...state, step: STEP_ORDER[idx + 1] };
+  }
+  return state;
+});
 onboardingReducer.with(setProjectConfig, (state, { payload: [config] }) => ({
-    ...state,
-    projectConfig: { ...state.projectConfig, ...config },
-  }));
+  ...state,
+  projectConfig: { ...state.projectConfig, ...config },
+}));
 onboardingReducer.with(setOnboardingWorkspaceId, (state, { payload: [id] }) => ({
-    ...state,
-    workspaceId: id,
-  }));
+  ...state,
+  workspaceId: id,
+}));
 // Reset preserves a pending full-flow request: explicit restart paths dispatch
 // it before navigating, and OnboardingPage's own mount reset must not clear it
 // before the initial-step decision consumes it.
 onboardingReducer.with(resetOnboarding, (state) => ({
-    ...initialState,
-    fullFlowRequested: state.fullFlowRequested,
-  }));
+  ...initialState,
+  fullFlowRequested: state.fullFlowRequested,
+}));
 onboardingReducer.with(setOnboardingFullFlowRequested, (state, { payload: [value] }) => ({
-    ...state,
-    fullFlowRequested: value,
-  }));
+  ...state,
+  fullFlowRequested: value,
+}));

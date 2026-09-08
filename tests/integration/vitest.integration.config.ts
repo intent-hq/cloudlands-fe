@@ -6,9 +6,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '../..');
 const coverageEnabled = process.env.VITEST_COVERAGE === 'true' || process.env.COVERAGE === 'true';
 
-// CI-only budget headroom mirroring vitest.config.ts: the integration step runs
-// in the same Unit & Integration Tests job on the shared self-hosted runner, so
-// it is exposed to the same load-induced starvation (intent-hq/monorepo#3082).
+// CI-only budget headroom mirroring vitest.config.ts: the Integration Tests job
+// runs on the shared self-hosted runner alongside the unit-shard legs, so it is
+// exposed to the same load-induced starvation (intent-hq/monorepo#3082).
 // Local runs are unchanged. std-env semantics: CI=false means "not CI".
 const isCI = !!process.env.CI && process.env.CI !== 'false';
 

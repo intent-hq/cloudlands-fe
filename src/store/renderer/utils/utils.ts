@@ -1,5 +1,3 @@
-
-
 /**
  * Removes a key from an object immutably without using `delete`.
  * Using destructuring instead of `delete` avoids V8 de-optimization

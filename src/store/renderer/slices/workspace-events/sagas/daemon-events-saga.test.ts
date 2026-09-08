@@ -272,6 +272,11 @@ describe('daemonEventsSaga', () => {
       'pr:*',
       'mcp.servers:status-changed',
       'github:auth-changed',
+      'client:connected',
+      'client:disconnected',
+      'browser:tab-opened',
+      'browser:tab-updated',
+      'browser:tab-closed',
       'app:ui-navigate',
       'app:ui-highlight',
       'app:workspace-open',
@@ -563,7 +568,7 @@ describe('daemonEventsSaga', () => {
         _subscriptionIds,
         overrides: { onSettingsChanges: (changes: unknown[]) => void },
       ) => {
-        overrides.onSettingsChanges([{ path: 'providers.active', value: 'auggie' }]);
+        overrides.onSettingsChanges([{ path: 'model.defaultProvider', value: 'auggie' }]);
       },
     );
     const dispatch = vi.fn();
@@ -576,7 +581,7 @@ describe('daemonEventsSaga', () => {
     await settle();
 
     expect(dispatch).toHaveBeenCalledWith(
-      settingsChangesReceived([{ path: 'providers.active', value: 'auggie' }], undefined),
+      settingsChangesReceived([{ path: 'model.defaultProvider', value: 'auggie' }], undefined),
     );
     task.cancel();
     await task.toPromise();

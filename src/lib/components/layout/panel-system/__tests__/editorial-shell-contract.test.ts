@@ -197,12 +197,13 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain('data-titlebar-workspace-controls');
     expect(titlebar).toContain('--titlebar-control-shift: 0px');
     expect(titlebar).toContain('--titlebar-control-shift: 8px');
-    expect(titlebar).toContain('padding-left: 60px');
+    expect(titlebar).toContain('padding-left: 80px');
     expect(titlebar).toContain('width: calc(16px - var(--titlebar-control-shift))');
     expect(titlebar).toContain('padding-right: var(--titlebar-control-shift)');
     expect(titlebar.indexOf('<SidebarNav />')).toBeLessThan(titlebar.indexOf('<WorkspaceTabStrip'));
     expect(titlebar).toContain('style:margin-left={`${panelOffset}px`}');
-    expect(titlebar).toContain('activeTabBounds.left - 6');
+    expect(titlebar).toContain('style:left={`${activeTabBounds.left}px`}');
+    expect(titlebar).toContain('style:width={`${activeTabBounds.width}px`}');
     expect(titlebar).toContain('.titlebar-drag-handle');
     expect(titlebar).toContain('.titlebar-left-drag-surface');
     expect(titlebar).toContain('.titlebar-left-drag-handle');
@@ -215,7 +216,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).not.toContain('mx-0.5 h-4 w-px shrink-0 bg-border/70');
     expect(tabs).toContain('w-fit min-w-0 max-w-[100%]');
     expect(tabs).toContain('use:reportActiveTabBounds={isCurrent}');
-    expect(tabs).toContain('onActiveTabBoundsChange?.({');
     expect(titlebar).toContain('data-active-tab-border-mask');
     expect(titlebar).toContain('absolute -bottom-px z-[60] h-px bg-sidebar');
     expect(nav).not.toContain('faBell');
@@ -289,6 +289,13 @@ describe('editorial workspace shell presentation contract', () => {
       /:where\(\.dark\) \.panel-layout-container\s*{\s*background-color:\s*transparent;\s*}/,
     );
     expect(appLayout).toContain('class="workspace-main flex');
+    expect(appLayout).toContain(
+      'const shellTransparencyEnabled$ = selectShellTransparencyEnabled()',
+    );
+    expect(appLayout).toContain('data-shell-opaque={!$shellTransparencyEnabled$ || undefined}');
+    expect(appLayoutCss).toMatch(
+      /\.panel-layout-container\[data-shell-opaque\],[\s\S]*background-color:\s*hsl\(var\(--background\)\);/,
+    );
     expect(appLayout).toContain('rounded-xl bg-sidebar border border-border shadow-sm');
     expect(sidebarPanel).toContain('relative text-sidebar-foreground');
     expect(sidebarPanel).not.toContain('relative bg-sidebar text-sidebar-foreground');

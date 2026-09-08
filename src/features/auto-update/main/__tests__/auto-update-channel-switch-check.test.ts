@@ -745,10 +745,10 @@ describe("'disabled' update channel", () => {
     // The preference is persisted like any other channel.
     const prefsPath = path.join(testUserDataPath, 'local-prefs.json');
     await expect
-      .poll(
-        async () => JSON.parse(await fs.readFile(prefsPath, 'utf8')).updateChannel,
-        { timeout: 2000, interval: 50 },
-      )
+      .poll(async () => JSON.parse(await fs.readFile(prefsPath, 'utf8')).updateChannel, {
+        timeout: 2000,
+        interval: 50,
+      })
       .toBe('disabled');
   });
 

@@ -23,8 +23,8 @@ const REQUEST_TIMEOUT_MS = 30_000;
  */
 function githubHeaders(token) {
   return {
-    'Authorization': `Bearer ${token}`,
-    'Accept': 'application/vnd.github+json',
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
     'User-Agent': 'intent-release-notes-generator',
   };
@@ -116,7 +116,9 @@ export async function buildIntentdSectionWithDelta({ version, baseVersion = null
 
   const token = process.env.INTENTD_TOKEN || process.env.GITHUB_TOKEN;
   if (!token) {
-    console.warn('⚠️ No INTENTD_TOKEN (or GITHUB_TOKEN fallback) available — skipping intentd delta fetch.');
+    console.warn(
+      '⚠️ No INTENTD_TOKEN (or GITHUB_TOKEN fallback) available — skipping intentd delta fetch.',
+    );
     return renderIntentdSection({ version, baseVersion, commits: null });
   }
 
@@ -128,8 +130,8 @@ export async function buildIntentdSectionWithDelta({ version, baseVersion = null
     console.log(`  Found ${intentdCommits.length} commits\n`);
 
     const parsedIntentdCommits = intentdCommits
-      .map(c => parseCommitMessage(c.commit.message.split('\n')[0]))
-      .filter(c => c && !shouldSkipCommit(c));
+      .map((c) => parseCommitMessage(c.commit.message.split('\n')[0]))
+      .filter((c) => c && !shouldSkipCommit(c));
 
     return renderIntentdSection({ version, baseVersion, commits: parsedIntentdCommits });
   } catch (error) {

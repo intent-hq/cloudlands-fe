@@ -96,8 +96,9 @@ describe('ChatPolishGeometryControls', () => {
         '640',
       );
       expect(screen.getAllByTestId('chat-polish-preview')).toHaveLength(1);
-      expect((screen.getByRole('slider', { name: 'Operational row gap' }) as HTMLInputElement).value)
-        .toBe('12');
+      expect(
+        (screen.getByRole('slider', { name: 'Operational row gap' }) as HTMLInputElement).value,
+      ).toBe('12');
     });
     await fireEvent.click(screen.getByRole('button', { name: 'Reset production defaults' }));
     expect((screen.getByRole('slider', { name: 'Panel width' }) as HTMLInputElement).value).toBe(
@@ -106,8 +107,9 @@ describe('ChatPolishGeometryControls', () => {
     expect(screen.getByRole('switch', { name: 'Compact mode' }).getAttribute('aria-checked')).toBe(
       'false',
     );
-    expect((screen.getByRole('slider', { name: 'Operational row gap' }) as HTMLInputElement).value)
-      .toBe(String(defaultChatPolishGeometry.operationalRowGap));
+    expect(
+      (screen.getByRole('slider', { name: 'Operational row gap' }) as HTMLInputElement).value,
+    ).toBe(String(defaultChatPolishGeometry.operationalRowGap));
     expect(screen.getAllByTestId('chat-polish-preview')).toHaveLength(entry.fixtures.length);
     expect(localStorage.removeItem).toHaveBeenCalledWith(CHAT_POLISH_STORAGE_KEY);
     expect(screen.getByLabelText('Save status').textContent).toBe('Production defaults restored');

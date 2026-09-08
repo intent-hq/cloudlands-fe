@@ -10,11 +10,18 @@ vi.mock('$lib/client/live/backend-transport', async () => {
 });
 
 import {
+  BackendError,
   installMockBackend,
   resetMockBackend,
   type MockBackendHandle,
 } from '../../../test/mocks/backend-transport.mock';
-import { getActiveHookNames, getOpenPrItems } from '../delete-warning-utils';
+import {
+  getActiveHookNames,
+  getActiveWorkNames,
+  getLocalChanges,
+  getOpenPrItems,
+  type LocalChangesWarning,
+} from '../delete-warning-utils';
 import { store as appStore } from '$store/renderer/store';
 import {
   backgroundHooksMarkedStale,
@@ -254,5 +261,152 @@ describe('getOpenPrItems', () => {
     seedWorkspace([makePr(8, { url: '' }), makePr(8, { url: '' })]);
 
     expect(getOpenPrItems(WS)).toEqual([{ number: 8, title: 'PR 8', url: '', status: 'Open' }]);
+  });
+});
+
+// PROTOCOL-shaped `workspace.localChanges` result: primary worktree first,
+// then each registered secondary root in `gitRoot.list` order.
+const localChangesResult: LocalChangesWarning = {
+  roots: [
+    {
+      kind: 'primary',
+      path: '/work/repo',
+      branch: 'feat/x',
+      hasRemoteRefs: true,
+      unpushedCount: 3,
+      uncommittedCount: 2,
+    },
+    {
+      kind: 'secondary',
+      gitRootId: 'root-1',
+      path: '/work/repo/packages/sub',
+      hasRemoteRefs: false,
+      unpushedCount: 0,
+      uncommittedCount: 0,
+      error: 'unreadable HEAD',
+    },
+  ],
+  hasUnpushedCommits: true,
+  hasUncommittedChanges: true,
+};
+
+describe('getLocalChanges', () => {
+  let backend: MockBackendHandle;
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(() => {
+    backend = installMockBackend();
+  });
+
+  afterEach(() => {
+    resetMockBackend();
+  });
+
+  const localChangesRequests = () =>
+    backend.requests.filter((r) => r.method === 'workspace.localChanges');
+
+  it('sends the exact workspace.localChanges request with a 10s per-call timeout and returns the wire result as-is', async () => {
+    backend.onRequest('workspace.localChanges', () => localChangesResult);
+
+    const result = await getLocalChanges(WS);
+
+    expect(localChangesRequests()).toEqual([
+      {
+        method: 'workspace.localChanges',
+        params: { workspaceId: WS },
+        options: { timeoutMs: 10000 },
+      },
+    ]);
+    expect(result).toEqual(localChangesResult);
+  });
+
+  it('fails open (returns null) when the daemon rejects the call', async () => {
+    backend.onRequest('workspace.localChanges', () => {
+      throw new Error('daemon unavailable');
+    });
+
+    await expect(getLocalChanges(WS)).resolves.toBeNull();
+    expect(localChangesRequests()).toHaveLength(1);
+  });
+
+  it('fails open (returns null) when the transport times the request out', async () => {
+    // Mirrors the transport's per-call timeout rejection (a BackendError
+    // rather than a daemon result), which must not surface to the caller.
+    backend.onRequest('workspace.localChanges', () => {
+      throw new BackendError({
+        code: 'TIMEOUT',
+        message: 'JSON-RPC request timed out: workspace.localChanges',
+        data: { code: 'TIMEOUT' },
+      });
+    });
+
+    await expect(getLocalChanges(WS)).resolves.toBeNull();
+    expect(localChangesRequests()).toHaveLength(1);
+  });
+
+  it('fails open (returns null) on an older daemon without the method', async () => {
+    // No handler registered → the mock raises a BackendError, like a
+    // JSON-RPC "method not found" from a pre-feature daemon.
+    await expect(getLocalChanges(WS)).resolves.toBeNull();
+    expect(localChangesRequests()).toHaveLength(1);
+  });
+});
+
+describe('getActiveWorkNames', () => {
+  let backend: MockBackendHandle;
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(() => {
+    backend = installMockBackend();
+    appStore.dispatch(backgroundHooksUpdated(WS, []));
+  });
+
+  afterEach(() => {
+    appStore.dispatch(removeWorkspaceEntity(WS));
+    resetMockBackend();
+  });
+
+  const localChangesRequests = () =>
+    backend.requests.filter((r) => r.method === 'workspace.localChanges');
+
+  it('includes local changes only when asked (single-workspace gating)', async () => {
+    backend.onRequest('workspace.localChanges', () => localChangesResult);
+
+    const result = await getActiveWorkNames(WS, { includeLocalChanges: true });
+
+    expect(result).toEqual({
+      agentNames: [],
+      hookNames: [],
+      openPrs: [],
+      localChanges: localChangesResult,
+    });
+    expect(localChangesRequests()).toEqual([
+      {
+        method: 'workspace.localChanges',
+        params: { workspaceId: WS },
+        options: { timeoutMs: 10000 },
+      },
+    ]);
+  });
+
+  it('never requests workspace.localChanges by default (bulk flows)', async () => {
+    backend.onRequest('workspace.localChanges', () => localChangesResult);
+
+    const result = await getActiveWorkNames(WS);
+
+    expect(result.localChanges).toBeNull();
+    expect(localChangesRequests()).toHaveLength(0);
+  });
+
+  it('carries localChanges: null when the RPC fails so gating falls through to other signals', async () => {
+    backend.onRequest('workspace.localChanges', () => {
+      throw new Error('boom');
+    });
+
+    const result = await getActiveWorkNames(WS, { includeLocalChanges: true });
+
+    expect(result).toEqual({ agentNames: [], hookNames: [], openPrs: [], localChanges: null });
   });
 });

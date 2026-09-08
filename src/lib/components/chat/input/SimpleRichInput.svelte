@@ -8,7 +8,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
-  import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
+  import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import {
     selectEffectiveDefaultProviderId,
     selectNormalizedProviderId,
@@ -102,7 +102,8 @@
     providerId: string;
     modelId: string;
   } {
-    return parseCompoundModelIdWithDefault(compoundModelId, $defaultProviderId$);
+    const { providerId, modelId } = splitLegacyCompoundId(compoundModelId);
+    return { providerId: providerId ?? $defaultProviderId$, modelId };
   }
 
   type MainPanelContext = {
@@ -1633,11 +1634,13 @@
         updateGlobalStore
         showReasoning
         reasoningDisabled={disabled}
-        onModelChange={(newModel) => {
+        onModelChange={(newModel, pick) => {
           if (!newModel) return;
 
-          // Check if the model is from a different provider
-          const rawProvider = parseCompoundModelId(newModel).providerId;
+          // Check if the model is from a different provider. The picker
+          // resolves the pick's owning provider (catalog rows are bare for
+          // every provider); parsing the id is only a legacy fallback.
+          const rawProvider = pick?.providerId ?? parseCompoundModelId(newModel).providerId;
           const newProvider = normalizeProviderId(rawProvider);
           if (agentId && newProvider !== selectedProviderId) {
             // Provider is changing — run the full provider switch flow
@@ -1713,7 +1716,7 @@
             onmousedown={handleMicMouseDown}
             aria-label={m.chat_richInput_micStop_label()}
             aria-pressed="true"
-            class="text-error-foreground animate-pulse"
+            class="text-danger animate-pulse"
             data-testid="composer-mic-button"
           >
             <Fa icon={faMicrophone} size="sm" />

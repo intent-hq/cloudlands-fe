@@ -287,9 +287,9 @@
         {:else}
           <!-- Agent not found error (comment is old) -->
           <div class="flex items-start gap-2">
-            <Fa icon={faExclamationTriangle} class="h-4 w-4 mt-0.5 text-error-foreground" />
+            <Fa icon={faExclamationTriangle} class="h-4 w-4 mt-0.5 text-danger" />
             <div class="flex-1">
-              <div class="text-sm font-medium text-error-foreground">
+              <div class="text-sm font-medium text-danger">
                 {displayMode === 'full'
                   ? m.tiptap_agentPeek_assignedNotFound_label()
                   : m.tiptap_agentPeek_notFound_label()}
@@ -336,8 +336,8 @@
   }
 
   .icon-button.session-comment.error {
-    border-color: var(--destructive);
-    background: var(--error-foreground);
+    border-color: hsl(var(--danger));
+    background: hsl(var(--danger-background));
   }
 
   .icon-button:hover {

@@ -73,11 +73,7 @@ export function hasChatServiceStateChanged(
 export function syncChatStateFromService(
   currentState: ChatPanelServiceState,
   incomingState: ChatPanelServiceState,
-  {
-    isStreaming,
-    isProcessing,
-    preserveTransientState = false,
-  }: ChatStateSyncOptions = {},
+  { isStreaming, isProcessing, preserveTransientState = false }: ChatStateSyncOptions = {},
 ): ChatPanelServiceState {
   return {
     ...currentState,

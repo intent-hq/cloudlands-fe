@@ -29,8 +29,10 @@ describe('WorkspaceProgressCard repository tooltip', () => {
     // Perf invariant (Trace-20260831T161502): opening a tooltip triggers
     // floating-ui measurement, so switch-path sidebar action rows must not
     // use the plain Tooltip default of delayDuration 0.
+    // Only the workflow action row remains; the View PR row moved to the
+    // Changes launcher's PR dropdown.
     const actionTooltips = source.match(/<Tooltip\s+content=\{action\?\.tooltip\}[\s\S]*?>/g);
-    expect(actionTooltips).toHaveLength(2);
+    expect(actionTooltips).toHaveLength(1);
     for (const tooltip of actionTooltips!) {
       expect(tooltip).toContain('delayDuration={300}');
     }

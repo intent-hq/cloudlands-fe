@@ -52,10 +52,12 @@
  *      workspaces only) — task notes are plain notes, so a created/deleted
  *      task note changes the BE-owned `task.list` stats rollup without a
  *      `task:status-changed` edge.
- *   5. `task:status-changed` (§6.5) → `applyTaskStatusChanged` on the
- *      workspace-tasks slice so a task ticked complete/in-progress by an agent
- *      or a sibling client updates the tasks pane / progress card without a
- *      workspace reload. The event payload is self-sufficient
+ *   5. `task:status-changed` (§6.5) → `applyTaskStatusChanged` on BOTH the
+ *      workspace-tasks slice (tasks pane / progress card) and the
+ *      workspace-notes slice (the context sidebar's per-row task icon reads
+ *      `note.metadata.task.status`) so a task ticked complete/in-progress by
+ *      an agent or a sibling client updates live without a workspace reload
+ *      or opening the note. The event payload is self-sufficient
  *      (`{ noteId, previousStatus, newStatus, ... }`), so the bridge maps it
  *      directly without a follow-up fetch.
  *   6. `comment:added` / `comment:resolved` (§6.5) → `applyCommentFromEvent` in
@@ -134,6 +136,7 @@ import { m } from '$shared/paraglide/messages.js';
 import type {
   AgentSession,
   ContentBlock,
+  MessageMetadata,
   PullRequestInfo,
   PullRequestStatus,
   QueuedMessage,
@@ -153,6 +156,7 @@ import {
 import { dedupeResourceBlocks, getResourceContents } from '$shared/types/resource-block-identity';
 import { hasStandingChatSubscription } from '$features/agent/utils/chat-subscription-registry';
 import type { AppliedSettingChange } from '$lib/client/app-client';
+import { isAcceptChangesStatusEvent } from './accept-changes-status-events';
 import { store as appStore } from '$store/renderer/store';
 import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
@@ -194,7 +198,9 @@ import {
   applyTaskStatusChanged,
   loadWorkspaceTasksRequested,
 } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+import { applyTaskStatusChanged as applyNoteTaskStatusChanged } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
+import { acceptChangesStatusInvalidated } from '$store/renderer/slices/git/git-slice';
 import { setAgentLockState } from '$store/renderer/slices/agent-lock/agent-lock-slice';
 import { toLockRecord } from '$features/file-tracking/file-tracking.client';
 import {
@@ -270,6 +276,13 @@ import {
 import { mapDaemonMcpState } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
 import {
+  browserTabClosed,
+  browserTabUpserted,
+  fetchWorkspaceBrowserClientRequested,
+  refreshLiveClientsRequested,
+} from '$store/renderer/slices/browser-clients/browser-clients-slice';
+import { isBrowserTab, isLiveClientTransition } from '$shared/types/browser-clients';
+import {
   hydrateAgentQueue,
   noteAgentQueueEventSnapshotApplied,
 } from '$features/agent/agent-queue-read-service';
@@ -281,6 +294,7 @@ import {
   streamTurnCorrelation,
 } from '$lib/utils/stream-lifecycle-telemetry';
 import { requestUiHighlight } from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
+import { resolveHashToTarget } from '$shared/app-ui-targets';
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 
@@ -723,12 +737,67 @@ function predictAttachmentBlockId(
   return `${toolUseBlockId.slice(0, separator)}:${Number(suffix) + 2 + attachmentOrdinal}`;
 }
 
+/**
+ * Optional terminal fields of `agent:stream:end` (PROTOCOL §7 / §7.2) that
+ * the finalized message's metadata mirrors: the interrupt marker with its
+ * reason + sender attribution, and the abnormal finish reason. Every field is
+ * omitted when absent on the wire — never defaulted or `null`ed.
+ */
+interface StreamEndMetadata {
+  stopReason?: string;
+  finishReason?: string;
+  interruptReason?: MessageMetadata['interruptReason'];
+  interruptedBy?: MessageMetadata['interruptedBy'];
+}
+
+/**
+ * Read the §7.2 `interruptedBy` sender attribution off an `agent:stream:end`
+ * payload: `{ kind: "user" }` or `{ kind: "agent", agentId?, name? }`. A value
+ * that diverges from the documented shape is rejected whole rather than
+ * partially absorbed — and logged, so a daemon/FE contract drift is visible
+ * instead of silent (same posture as bare `trailingBlocks`).
+ */
+function readInterruptedBy(
+  value: unknown,
+  agentId: string,
+): MessageMetadata['interruptedBy'] | undefined {
+  if (value === undefined) return undefined;
+  const parsed = parseInterruptedBy(value);
+  if (parsed === undefined) {
+    logger.debug('Dropping malformed agent:stream:end interruptedBy', { agentId, value });
+  }
+  return parsed;
+}
+
+function parseInterruptedBy(value: unknown): MessageMetadata['interruptedBy'] | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { kind, agentId, name } = value as Record<string, unknown>;
+  if (kind === 'user') return { kind: 'user' };
+  if (kind !== 'agent') return undefined;
+  if (agentId !== undefined && typeof agentId !== 'string') return undefined;
+  if (name !== undefined && typeof name !== 'string') return undefined;
+  return {
+    kind: 'agent',
+    ...(agentId !== undefined ? { agentId } : {}),
+    ...(name !== undefined ? { name } : {}),
+  };
+}
+
+function streamEndMetadataFields(end: StreamEndMetadata | undefined): StreamEndMetadata {
+  if (!end) return {};
+  return {
+    ...(end.stopReason ? { stopReason: end.stopReason } : {}),
+    ...(end.finishReason ? { finishReason: end.finishReason } : {}),
+    ...(end.interruptReason ? { interruptReason: end.interruptReason } : {}),
+    ...(end.interruptedBy ? { interruptedBy: end.interruptedBy } : {}),
+  };
+}
+
 function dispatchStreamUpdate(
   agentId: string,
   state: StreamState,
   eventType: 'chunk' | 'content-blocks' | 'complete' | 'error',
-  stopReason?: string,
-  finishReason?: string,
+  end?: StreamEndMetadata,
 ): void {
   // SOLE-WRITER INVARIANT (PROTOCOL §7.1): when a standing chat.subscribe
   // registration covers this agent, the subscription owns message CONTENT —
@@ -754,8 +823,7 @@ function dispatchStreamUpdate(
       eventType,
       assistantMessageId: state.messageId,
       ...(contentBlocks ? { contentBlocks } : {}),
-      ...(stopReason ? { stopReason } : {}),
-      ...(finishReason ? { finishReason } : {}),
+      ...streamEndMetadataFields(end),
     }),
   );
   reportStreamLifecycle({
@@ -1278,6 +1346,21 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // as `metadata.finishReason`, so stamping it here just makes the notice
   // render live without waiting for a reconcile.
   const finishReason = typeof data?.finishReason === 'string' ? data.finishReason : undefined;
+  // Interrupt cause + sender attribution (PROTOCOL §7.2): the interrupt-path
+  // emit always carries `interruptReason` (`user_stop` | `preempted_by_message`)
+  // and `interruptedBy` on an attributable preemption. Both mirror the
+  // persisted row's metadata, so stamping them here makes the reason-specific
+  // Stopped label ("Interrupted by <agent>" …) resolve live instead of the
+  // generic "Stopped" until the transcript reloads.
+  const interruptReason =
+    typeof data?.interruptReason === 'string' ? data.interruptReason : undefined;
+  const interruptedBy = readInterruptedBy(data?.interruptedBy, agentId);
+  const endMetadata: StreamEndMetadata = {
+    stopReason,
+    finishReason,
+    interruptReason,
+    interruptedBy,
+  };
   const messageId = typeof data?.messageId === 'string' ? data.messageId : undefined;
   // LIVE Q&A DELIVERY (PROTOCOL §7): the terminal `agent:stream:end` carries
   // `trailingBlocks` — the standalone resource blocks the daemon appended to
@@ -1341,16 +1424,16 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         state.blocksByIndex.set(maxIndex + 1 + ordinal, block);
       });
     }
-    dispatchStreamUpdate(agentId, state, 'complete', stopReason, finishReason);
+    dispatchStreamUpdate(agentId, state, 'complete', endMetadata);
     streamsByAgent.delete(agentId);
     return;
   }
   if (state) {
     // Accumulator holds a DIFFERENT turn's message: finalize it as-is and
     // fall through so the trailing blocks land under their own messageId.
-    // The stopReason/finishReason belong to THIS event's messageId — do not
-    // stamp the Stopped badge / finish notice onto the unrelated accumulated
-    // turn.
+    // The stopReason/finishReason/interrupt attribution belong to THIS
+    // event's messageId — do not stamp the Stopped badge / finish notice onto
+    // the unrelated accumulated turn.
     dispatchStreamUpdate(agentId, state, 'complete');
     streamsByAgent.delete(agentId);
   }
@@ -1377,8 +1460,7 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         ...(hasStandingChatSubscription(agentId)
           ? {}
           : { contentBlocks: dedupeResourceBlocks(trailingBlocks) }),
-        ...(stopReason ? { stopReason } : {}),
-        ...(finishReason ? { finishReason } : {}),
+        ...streamEndMetadataFields(endMetadata),
       }),
     );
     reportStreamLifecycle({
@@ -2064,8 +2146,12 @@ function handleTaskCreatedEvent(workspaceId: string): void {
  * `{ noteId, noteTitle, previousStatus, newStatus, changedAt }` — the daemon
  * mints the FE-canonical status word (`not_started` | `in_progress` |
  * `complete` | ...) via `status_word` in `intent-services`, so no mapping is
- * needed. The workspace-tasks reducer's own guard makes this a no-op if the
- * workspace is not initialized or the task/status is unknown/unchanged.
+ * needed. Each reducer's own guard makes this a no-op if its workspace is not
+ * initialized or the task/status is unknown/unchanged. The workspace-notes
+ * dispatch mirrors the local write path in `tasks-write-service` — the
+ * context sidebar renders its row icon from `note.metadata.task.status`, so
+ * without it a status change from another client/agent stayed stale until
+ * the note was opened (intent#4362).
  */
 function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -2073,6 +2159,7 @@ function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string
   const noteId = data.noteId;
   const newStatus = data.newStatus;
   if (typeof noteId !== 'string' || typeof newStatus !== 'string') return;
+  appStore.dispatch(applyNoteTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
   appStore.dispatch(applyTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
   // STAB-8: Force refetch task list (including BE-owned stats) so sidebar updates live
   appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
@@ -2603,6 +2690,15 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
     changes.archivedAt = raw.archivedAt;
   } else if (raw.archivedAt === null) {
     changes.archivedAt = undefined;
+  }
+  // `browserClientId` (REV-2 pin, §5.17) is nullable on the wire the same way:
+  // `workspace.setBrowserClient { clientId }` sends the pinned id, clearing
+  // sends an explicit JSON null. The pin change also moves the daemon's
+  // `resolved` driving client, so re-read `workspace.getBrowserClient` for
+  // this one workspace (targeted, never a per-workspace fan-out).
+  if (typeof raw.browserClientId === 'string' || raw.browserClientId === null) {
+    changes.browserClientId = raw.browserClientId ?? undefined;
+    appStore.dispatch(fetchWorkspaceBrowserClientRequested(workspaceId));
   }
   if (Object.keys(changes).length === 0) return;
   // Same reducer path as `handlePrEvent` — `updateWorkspaceEntity` has no
@@ -3196,6 +3292,49 @@ function handleGitHubAuthChangedEvent(event: WorkspaceEvent): void {
   }
 }
 
+/**
+ * `client:connected` / `client:disconnected` (REV-2, §5.17) are global — the
+ * daemon publishes `data = { clientId, name?, capabilities }` when a logical
+ * client gains its first / loses its last live connection. The payload is a
+ * transition, not a `client.list` row (no host triple, connection count or
+ * `connectedAt`), so the bridge asks the browser-clients saga to re-read
+ * `client.list`; the saga is single-flight with trailing coalesce, so a
+ * reconnect burst costs at most one in-flight read plus one trailing read.
+ */
+function handleClientTransitionEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: unknown }).data;
+  if (!isLiveClientTransition(data)) {
+    logger.warn('client:* event with malformed payload', { type: event.type, data });
+    return;
+  }
+  appStore.dispatch(refreshLiveClientsRequested());
+}
+
+/**
+ * `browser:tab-opened` / `browser:tab-updated` / `browser:tab-closed` (REV-2)
+ * are workspace-scoped and self-sufficient: `data = { tab, changes? }` carries
+ * the daemon registry row for the tab, so the mirror is patched in place —
+ * upsert the row on opened/updated, drop it on closed — without a
+ * `browser.listTabs` refetch.
+ */
+function handleBrowserTabEvent(
+  event: WorkspaceEvent,
+  workspaceId: string,
+  type: 'browser:tab-opened' | 'browser:tab-updated' | 'browser:tab-closed',
+): void {
+  const data = (event as { data?: { tab?: unknown } }).data;
+  const tab = data?.tab;
+  if (!isBrowserTab(tab)) {
+    logger.warn(`${type} with malformed payload`, { workspaceId, data });
+    return;
+  }
+  if (type === 'browser:tab-closed') {
+    appStore.dispatch(browserTabClosed(workspaceId, tab.tabId));
+    return;
+  }
+  appStore.dispatch(browserTabUpserted(workspaceId, tab));
+}
+
 function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
@@ -3272,6 +3411,16 @@ function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
 }
 
 /**
+ * Daemon-sent highlight ids may be legacy hash aliases (e.g.
+ * `quickActions.defaultModel`); resolve them to the registry target id the
+ * DOM carries as `data-highlight-id`, like NavLink does, falling back to the
+ * raw id when unresolved.
+ */
+function resolveHighlightId(highlightId: string): string {
+  return resolveHashToTarget(highlightId)?.id ?? highlightId;
+}
+
+/**
  * `app:ui-navigate` (§6.5 Chief-workspace UI navigation) — carries
  * `{ route, workspaceId?, highlightId?, durationMs? }`. Navigate the app UI to
  * the specified route and optionally pulse the highlight target with the given
@@ -3286,7 +3435,8 @@ function handleAppUiNavigateEvent(event: WorkspaceEvent): void {
   const route = rawRoute.trim();
   if (route.length === 0) return;
 
-  const highlightId = typeof data.highlightId === 'string' ? data.highlightId.trim() : '';
+  const rawHighlightId = typeof data.highlightId === 'string' ? data.highlightId.trim() : '';
+  const highlightId = rawHighlightId ? resolveHighlightId(rawHighlightId) : '';
   const durationMs =
     typeof data.durationMs === 'number' && Number.isFinite(data.durationMs) && data.durationMs > 0
       ? data.durationMs
@@ -3322,7 +3472,7 @@ function handleAppUiHighlightEvent(event: WorkspaceEvent): void {
   const id = data.id;
   if (typeof id !== 'string' || id.trim().length === 0) return;
 
-  const highlightId = id.trim();
+  const highlightId = resolveHighlightId(id.trim());
   const durationMs =
     typeof data.durationMs === 'number' && Number.isFinite(data.durationMs) && data.durationMs > 0
       ? data.durationMs
@@ -3351,7 +3501,7 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
 
   if (openInNewWindow) {
     // Try to open in new window via IPC, fall back to navigation if it fails
-    invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route })
+    invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route, requestId: event.id })
       .then(async (result: unknown) => {
         // window:open-new resolves {success: false, error} on failure
         if (
@@ -3480,6 +3630,13 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  // `client:connected` / `client:disconnected` (REV-2, §5.17) are global — no
+  // `workspaceId` envelope — so they must also run before the gate below.
+  if (type === 'client:connected' || type === 'client:disconnected') {
+    handleClientTransitionEvent(event);
+    return;
+  }
+
   // `git:clone:progress` / `git:clone:done` frames carrying a `data.progressId`
   // correlate to an in-flight `workspace.create` by progressId, not by
   // workspaceId (server-minted mid-create, unknown to the FE), so they route
@@ -3494,6 +3651,14 @@ export function routeDaemonEventsNotification(
 
   const workspaceId = workspaceIdOf(event);
   if (!workspaceId) return;
+
+  // Accept-status invalidation is deliberately narrow: repository mutations
+  // (`git:*`), linked-PR changes (`pr:*`), and the daemon's authoritative
+  // accept-status snapshot edge (`changes:git-status`). The owning saga gates
+  // the follow-up read on active consumer visibility and coalesces bursts.
+  if (isAcceptChangesStatusEvent(type)) {
+    appStore.dispatch(acceptChangesStatusInvalidated(workspaceId));
+  }
 
   // Workspace lifecycle: purge every Redux trace of the deleted workspace so a
   // recreated same-slug workspace does not surface ghost agents (§7).
@@ -3558,6 +3723,17 @@ export function routeDaemonEventsNotification(
   // without a refetch. Side effect, never an early return.
   if (type === 'workspace:waiting-changed') {
     handleWaitingChangedEvent(event, workspaceId);
+  }
+  // `browser:tab-*` (REV-2) — patch the daemon tab-registry mirror for this
+  // workspace from the self-sufficient `{ tab, changes? }` payload. Side
+  // effect, never an early return: the timeline dispatch below still records
+  // the tab activity.
+  if (
+    type === 'browser:tab-opened' ||
+    type === 'browser:tab-updated' ||
+    type === 'browser:tab-closed'
+  ) {
+    handleBrowserTabEvent(event, workspaceId, type);
   }
 
   // Legacy mock-IPC re-emit (side effect, never an early return) — components
@@ -4051,6 +4227,16 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // `github:auth-changed` (§6.5) — device-flow terminal transitions and
   // `github.revoke`; global, so the connect UX converges without polling.
   'github:auth-changed',
+  // REV-2 browser-client routing (§5.17): global logical-client transitions
+  // (re-read `client.list`) and the workspace-scoped daemon tab-registry
+  // change events (`{ tab, changes? }`, patched into the browser-clients
+  // mirror). The `workspace:updated` subscription above already carries the
+  // `browserClientId` pin delta.
+  'client:connected',
+  'client:disconnected',
+  'browser:tab-opened',
+  'browser:tab-updated',
+  'browser:tab-closed',
   // Chief-workspace app-UI control events (§6.5 daemon emission) — the daemon
   // emits these when Chief agents call ws.app.ui.navigate/highlight or
   // ws.app.workspaces.open, bridged here into the FE's routing + highlight

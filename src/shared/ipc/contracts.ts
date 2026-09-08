@@ -42,7 +42,7 @@ export namespace AgentIpc {
    * but are IGNORED by the backend. Frontend interfaces (UnifiedAgentConfig, CreateAgentOptions)
    * have these fields removed to prevent their use.
    *
-   * Backend builds system prompt from agentType via InstructionService.
+   * The intentd daemon builds the system prompt from agentType.
    */
   export interface CreateRequest {
     workspaceId: WorkspaceId;

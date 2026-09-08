@@ -41,7 +41,11 @@ import {
   selectAgentSession,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import type { AgentMessage } from '$shared/types';
-import { ensureAgentSession, refreshAgentSessionAfterEvent } from './agent-read-service';
+import {
+  ensureAgentSession,
+  readAgentSession,
+  refreshAgentSessionAfterEvent,
+} from './agent-read-service';
 import {
   clearPendingAgentDeletions,
   removePendingAgentDeletion,
@@ -202,6 +206,63 @@ describe('agentReadService (fake seam, real store)', () => {
     expect(agentsApi.get).toHaveBeenCalledTimes(1);
   });
 
+  it('shares one request between a raw caller and the guarded hydrator', async () => {
+    const agentId = 'agent-read-cross-caller';
+    let resolveGet!: (value: AgentSession) => void;
+    agentsApi.get.mockReturnValueOnce(
+      new Promise<AgentSession>((resolve) => {
+        resolveGet = resolve;
+      }) as never,
+    );
+
+    const rawCaller = readAgentSession(agentId);
+    const hydratedCaller = ensureAgentSession(agentId);
+    expect(agentsApi.get).toHaveBeenCalledTimes(1);
+
+    resolveGet(makeSession({ id: agentId, name: 'shared across callers' }));
+    await Promise.all([rawCaller, hydratedCaller]);
+
+    expect(agentsApi.get).toHaveBeenCalledTimes(1);
+    expect(selectAgentSession.select(appStore.state, agentId)?.name).toBe('shared across callers');
+  });
+
+  it('does not cache a rejected request', async () => {
+    const agentId = 'agent-read-retry-after-rejection';
+    agentsApi.get
+      .mockRejectedValueOnce(new Error('temporary failure') as never)
+      .mockResolvedValueOnce(makeSession({ id: agentId, name: 'retry succeeded' }) as never);
+
+    await ensureAgentSession(agentId);
+    await ensureAgentSession(agentId);
+
+    expect(agentsApi.get).toHaveBeenCalledTimes(2);
+    expect(selectAgentSession.select(appStore.state, agentId)?.name).toBe('retry succeeded');
+  });
+
+  it('runs exactly one trailing refresh when events arrive during a raw caller request', async () => {
+    const agentId = 'agent-read-event-during-raw';
+    let resolveLeading!: (value: AgentSession) => void;
+    agentsApi.get
+      .mockImplementationOnce(
+        () =>
+          new Promise<AgentSession>((resolve) => {
+            resolveLeading = resolve;
+          }) as never,
+      )
+      .mockResolvedValueOnce(makeSession({ id: agentId, name: 'trailing' }) as never);
+
+    const leading = readAgentSession(agentId);
+    const trailing = refreshAgentSessionAfterEvent(agentId);
+    const duplicateEvent = refreshAgentSessionAfterEvent(agentId);
+    expect(agentsApi.get).toHaveBeenCalledTimes(1);
+
+    resolveLeading(makeSession({ id: agentId, name: 'leading' }));
+    await Promise.all([leading, trailing, duplicateEvent]);
+
+    expect(agentsApi.get).toHaveBeenCalledTimes(2);
+    expect(selectAgentSession.select(appStore.state, agentId)?.name).toBe('trailing');
+  });
+
   it.each([
     {
       direction: 'clear to set',
@@ -301,8 +362,8 @@ describe('agentReadService (fake seam, real store)', () => {
   // the both-true isStreaming/isProcessing pair that no stream-end event will
   // ever clear. When this authoritative refetch returns an idle session, the
   // explicit-false flags must win over the upsert pair-guard.
-  it("clears a crash-orphaned runtime-flag pair when the refetched session is idle", async () => {
-    const agentId = "agent-stale-pair-clear";
+  it('clears a crash-orphaned runtime-flag pair when the refetched session is idle', async () => {
+    const agentId = 'agent-stale-pair-clear';
     appStore.dispatch(
       bulkUpsertSessions([
         makeSession({
@@ -334,8 +395,8 @@ describe('agentReadService (fake seam, real store)', () => {
 
   // Companion (monorepo#1250 non-goal): when the daemon reports the turn
   // still in flight, the pre-existing pair is genuinely live and survives.
-  it("keeps the runtime-flag pair when the refetched session reports the turn in flight", async () => {
-    const agentId = "agent-live-pair-keep";
+  it('keeps the runtime-flag pair when the refetched session reports the turn in flight', async () => {
+    const agentId = 'agent-live-pair-keep';
     appStore.dispatch(
       bulkUpsertSessions([
         makeSession({

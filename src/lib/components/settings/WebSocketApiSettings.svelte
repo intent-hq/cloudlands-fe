@@ -39,6 +39,8 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { toast } from '$lib/components/ui/toast';
   import { appClient } from '$lib/client';
+  import ListenTargetSelector from './ListenTargetSelector.svelte';
+  import type { ListenTargetSelection } from './ListenTargetSelector.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { selectCurrentConnectionId } from '$store/renderer/slices/connections/connections-selectors';
   import { loadKeychainSyncStateRequested } from '$store/renderer/slices/connections/connections-slice';
@@ -61,6 +63,11 @@
   let port = $state<number | null>(null);
   let certFingerprint = $state('');
   let localIps = $state<string[]>([]);
+  // Bind candidates unfiltered by the bind set (additive `availableIps`).
+  // Undefined on older daemons, where the selector falls back to the
+  // bind-filtered `localIps` (its union with the bound set keeps the bound
+  // entries visible, but a loopback-only bind then offers nothing to pick).
+  let availableIps = $state<string[] | undefined>(undefined);
   let _hostname = $state('');
   let loading = $state(true);
   let regenerating = $state(false);
@@ -69,6 +76,17 @@
   let persistedPort = $state<number>(5181); // persisted setting value
   let editedPort = $state<string>('5181'); // input value as string
   let portSaving = $state(false);
+
+  // Listen targets + tunnel state (monorepo tailcat feature). `tunnelSupported`
+  // gates the whole tunnel surface: false on daemons predating the
+  // `server.tunnel.*` settings, so the UI degrades to the plain IP selector.
+  let bindIps = $state<string[]>([]);
+  let bindAddressSupported = $state(false);
+  let tunnelEnabled = $state(false);
+  let tunnelOnly = $state(false);
+  let tunnelSupported = $state(false);
+  let tcAddress = $state('');
+  let listenSaving = $state(false);
 
   let showToken = $state(false);
   let showQr = $state(false);
@@ -132,13 +150,34 @@
         editedPort = String(wsApiPort.value);
       }
 
+      // Listen targets + tunnel settings (additive; absent on older daemons —
+      // `tunnelSupported` stays false and the tunnel UI is not rendered).
+      const bindAddress = settings.find(
+        (s: { path: string; value: unknown }) => s.path === 'server.bindAddress',
+      );
+      bindAddressSupported = bindAddress !== undefined;
+      bindIps = parseBindAddress(bindAddress?.value);
+      const tunnelSetting = settings.find(
+        (s: { path: string; value: unknown }) => s.path === 'server.tunnel.enabled',
+      );
+      tunnelSupported = tunnelSetting !== undefined;
+      tunnelEnabled = tunnelSetting?.value === true;
+      const tunnelOnlySetting = settings.find(
+        (s: { path: string; value: unknown }) => s.path === 'server.tunnel.only',
+      );
+      // Tunnel-only keeps the persisted bindAddress for later restoration, so
+      // the selector must not present those IPs as active listeners.
+      tunnelOnly = tunnelEnabled && tunnelOnlySetting?.value === true;
+
       if (enabled) {
         const info = await appClient.server.pairingInfo();
         token = info.token;
         port = info.port; // bound port from pairing info
         certFingerprint = info.certFingerprint;
         localIps = info.localIps;
+        availableIps = info.availableIps;
         _hostname = info.hostname;
+        tcAddress = info.tcAddress ?? '';
         await refreshPublishState();
       }
     } catch (error) {
@@ -149,6 +188,177 @@
       );
     } finally {
       loading = false;
+    }
+  }
+
+  /**
+   * `server.bindAddress` is a single IP string (back-compat) or an array of
+   * IP strings (monorepo#3314) — normalize to an array for the selector.
+   */
+  function parseBindAddress(value: unknown): string[] {
+    if (typeof value === 'string' && value.length > 0) return [value];
+    if (Array.isArray(value)) {
+      return value.filter((v): v is string => typeof v === 'string' && v.length > 0);
+    }
+    return [];
+  }
+
+  /**
+   * Persist a listen-target change: bind IPs → `server.bindAddress`, tunnel →
+   * `server.tunnel.enabled`. Loopback is always bound (every selection
+   * carries at least 127.0.0.1 or 0.0.0.0), so a change always leaves the
+   * tunnel-only posture (`server.tunnel.only=false`). One atomic
+   * settings.update batch; on failure the selector re-syncs from a fresh
+   * loadStatus().
+   */
+  async function handleListenTargetChange(selection: ListenTargetSelection) {
+    if (listenSaving) return;
+    listenSaving = true;
+    try {
+      const changes: { path: string; value: unknown }[] = [
+        { path: 'server.bindAddress', value: selection.ips },
+      ];
+      // settings.update is atomic: on daemons predating server.tunnel.* the
+      // unknown paths would reject the whole batch, so only include them when
+      // supported (the selector never emits tunnel selections otherwise).
+      if (tunnelSupported) {
+        changes.push({ path: 'server.tunnel.enabled', value: selection.tunnel });
+        changes.push({ path: 'server.tunnel.only', value: false });
+      }
+      await appClient.settings.update(changes);
+      bindIps = selection.ips;
+      tunnelEnabled = selection.tunnel;
+      tunnelOnly = false;
+      toast.success(m.settings_listenTargets_saved());
+      // The listen targets changed the published fields (hosts from the new
+      // bind IPs, tc address from the tunnel toggle) — propagate them to the
+      // published self entry (no-op in main when unpublished/suppressed).
+      refreshSelfEntry();
+      // The bound listeners changed — refresh the pairing info (port/IPs/tc).
+      await loadStatus();
+    } catch (error) {
+      toast.error(
+        m.settings_listenTargets_saveError({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      await loadStatus();
+    } finally {
+      listenSaving = false;
+    }
+  }
+
+  const ALL_INTERFACES = '0.0.0.0';
+  const LOOPBACK = '127.0.0.1';
+  // The daemon treats the IPv6 unspecified address like 0.0.0.0: it must
+  // stand alone and already covers loopback (out-of-band config only).
+  const UNSPECIFIED = new Set([ALL_INTERFACES, '::']);
+
+  // "Enable Local Network Access" is a view over server.bindAddress (no
+  // daemon setting of its own): ON whenever a non-loopback target is bound.
+  // Tunnel-only has no direct listeners (the persisted bindAddress is kept
+  // only for later restoration), so it reads OFF there; toggling ON from
+  // that posture emits 0.0.0.0 + tunnel.only=false.
+  const localNetworkEnabled = $derived(!tunnelOnly && bindIps.some((ip) => ip !== LOOPBACK));
+
+  // Sticky UI-only counterpart: once the user hand-picks targets in the
+  // selector, the section stays open even when the pick lands loopback-only
+  // (e.g. unchecking 0.0.0.0 to pick specific IPs) — otherwise the section
+  // would collapse under them mid-edit. Cleared by an explicit Local Network
+  // Access OFF and by turning the WebSocket API off.
+  let localNetworkOpen = $state(false);
+  const localNetworkShown = $derived(localNetworkEnabled || localNetworkOpen);
+
+  /**
+   * Loopback is always bound: this app and the tailcat sidecar (which forwards
+   * tunnel connections to 127.0.0.1:<port>) reach the daemon over it. Force
+   * it into every persisted bind set unless an unspecified address already
+   * covers it. An empty set (tunnel-only restore) therefore becomes
+   * loopback-only.
+   */
+  function withLoopback(ips: string[]): string[] {
+    if (ips.some((ip) => UNSPECIFIED.has(ip)) || ips.includes(LOOPBACK)) return ips;
+    return [...ips, LOOPBACK];
+  }
+
+  /**
+   * The "Enable Tailcat Tunnel" toggle drives `server.tunnel.enabled`; the
+   * bind set is carried through (loopback-repaired). Disabling from the
+   * tunnel-only posture restores the persisted bind IPs as active listeners
+   * so the daemon never ends up with zero targets.
+   */
+  function handleTunnelToggle() {
+    if (listenSaving) return;
+    void handleListenTargetChange({ ips: withLoopback(bindIps), tunnel: !tunnelEnabled });
+  }
+
+  /**
+   * The "Enable Local Network Access" toggle rewrites the bind set: OFF
+   * narrows it to loopback only (the tunnel, when on, still forwards to
+   * 127.0.0.1) and collapses the section, ON widens it to all interfaces.
+   * The tunnel state is carried through untouched. When the section is open
+   * only via the sticky flag (loopback-only already persisted), OFF just
+   * collapses it — no round-trip.
+   */
+  function handleLocalNetworkToggle() {
+    if (listenSaving) return;
+    const turningOff = localNetworkShown;
+    if (turningOff) {
+      localNetworkOpen = false;
+      if (!localNetworkEnabled) return;
+    }
+    void handleListenTargetChange({
+      ips: turningOff ? [LOOPBACK] : [ALL_INTERFACES],
+      tunnel: tunnelEnabled,
+    });
+  }
+
+  /** Selector picks keep the section open (see localNetworkOpen). */
+  function handleSelectorChange(selection: ListenTargetSelection) {
+    if (listenSaving) return;
+    localNetworkOpen = true;
+    void handleListenTargetChange(selection);
+  }
+
+  /**
+   * Loopback-only enable default: the daemon binds loopback only out of the
+   * box, so turning the WebSocket API on from that state widens the bind set
+   * to all interfaces (Local Network Access ON). This applies on EVERY enable
+   * from loopback-only, not just the first — an explicit Local Network Access
+   * OFF followed by disable/enable re-applies the default by design.
+   * A bindAddress the user already customized beyond loopback is left alone,
+   * the tunnel is untouched, and a persisted tunnel-only posture is respected
+   * (writing 0.0.0.0 there would contradict tunnel.only=true). Runs under
+   * listenSaving so the LNA/tunnel toggles cannot issue a concurrent
+   * bindAddress write.
+   * Fail-soft: a failure surfaces a toast and never rolls back the toggle.
+   */
+  async function maybeDefaultLocalNetworkAccess() {
+    if (!bindAddressSupported || localNetworkEnabled || tunnelOnly || listenSaving) return;
+    listenSaving = true;
+    try {
+      await appClient.settings.update([{ path: 'server.bindAddress', value: [ALL_INTERFACES] }]);
+      bindIps = [ALL_INTERFACES];
+      refreshSelfEntry();
+      // The bound listeners changed — refresh the pairing info (port/IPs).
+      await loadStatus();
+    } catch (error) {
+      toast.error(
+        m.settings_listenTargets_saveError({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    } finally {
+      listenSaving = false;
+    }
+  }
+
+  async function handleCopyTcAddress() {
+    try {
+      await navigator.clipboard.writeText(tcAddress);
+      toast.success(m.settings_tunnel_tcAddress_copied());
+    } catch {
+      toast.error(m.settings_tunnel_tcAddress_copyError());
     }
   }
 
@@ -173,8 +383,10 @@
       enabled = checked;
       if (checked) {
         await loadStatus();
+        await maybeDefaultLocalNetworkAccess();
         await maybeAutoPublish();
       } else {
+        localNetworkOpen = false;
         await maybeAutoUnpublish();
       }
     } catch (error) {
@@ -401,11 +613,13 @@
     }
     try {
       const QRCode = (await import('qrcode')).default;
+      // `tc=` carries the tunnel address (PROTOCOL §12.3) so a scanned device
+      // can reach the daemon in tunnel-only mode or away from the LAN.
       const pairingUri = `intent://pair?token=${encodeURIComponent(token)}&host=${localIps
         .map(encodeURIComponent)
         .join(',')}&port=${port}&path=/ws${
         certFingerprint ? `&certFingerprint=${encodeURIComponent(certFingerprint)}` : ''
-      }`;
+      }${tcAddress ? `&tc=${encodeURIComponent(tcAddress)}` : ''}`;
       qrDataUrl = await QRCode.toDataURL(pairingUri, {
         width: 200,
         margin: 2,
@@ -469,6 +683,95 @@
       </div>
     </section>
 
+    {#if enabled && tunnelSupported}
+      <div transition:slide={{ duration: 200 }} class="space-y-4">
+        <!-- Tailcat tunnel toggle: drives server.tunnel.enabled. Absent on
+             old daemons predating the server.tunnel.* settings. -->
+        <section data-tunnel-toggle-row>
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-foreground">
+                {m.settings_tunnel_enable_label()}
+              </p>
+              <p class="text-xs text-subtle mt-1">
+                {m.settings_tunnel_enable_description()}{' '}<a
+                  href="https://github.com/tailscale/tailcat"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="underline hover:text-foreground">{m.settings_tunnel_github_link()}</a
+                >
+              </p>
+            </div>
+            <Toggle
+              pressed={tunnelEnabled}
+              onclick={handleTunnelToggle}
+              variant="indicator"
+              size="xs"
+              class="mb-auto"
+              disabled={toggleBusy || listenSaving}
+              ariaLabel={m.settings_tunnel_enable_label()}
+            />
+          </div>
+        </section>
+
+        <!-- This daemon's own tailcat tunnel address (copyable) — shown only
+             while the tunnel is on and the daemon reports one. -->
+        {#if tunnelEnabled && tcAddress}
+          <section data-tunnel-address-row>
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm text-muted-foreground">
+                {m.settings_tunnel_tcAddress_label()}
+              </span>
+              <div class="flex items-center gap-2 shrink-0">
+                <code
+                  class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
+                  title={tcAddress}>{tcAddress}</code
+                >
+                <button
+                  type="button"
+                  onclick={handleCopyTcAddress}
+                  class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
+                  title={m.settings_tunnel_tcAddress_copy()}
+                >
+                  <Fa icon={faCopy} size="sm" />
+                </button>
+              </div>
+            </div>
+          </section>
+        {/if}
+      </div>
+    {/if}
+
+    {#if enabled && bindAddressSupported}
+      <div transition:slide={{ duration: 200 }}>
+        <!-- Local Network Access: a view over server.bindAddress (ON when a
+             non-loopback target is bound, or while the user is hand-picking
+             targets). Absent on daemons that do not report
+             server.bindAddress. -->
+        <section data-local-network-toggle-row>
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-foreground">
+                {m.settings_wsApi_localNetworkAccess_label()}
+              </p>
+              <p class="text-xs text-subtle mt-1">
+                {m.settings_wsApi_localNetworkAccess_description()}
+              </p>
+            </div>
+            <Toggle
+              pressed={localNetworkShown}
+              onclick={handleLocalNetworkToggle}
+              variant="indicator"
+              size="xs"
+              class="mb-auto"
+              disabled={toggleBusy || listenSaving}
+              ariaLabel={m.settings_wsApi_localNetworkAccess_label()}
+            />
+          </div>
+        </section>
+      </div>
+    {/if}
+
     <!-- Port (always visible) -->
     <section>
       {#snippet portValidation()}
@@ -476,7 +779,7 @@
         <!-- i18n-ignore (template expression, not user-facing text) -->
         {@const isValid = Number.isInteger(portNum) && portNum >= 1024 && portNum <= 65535}
         <div class="flex items-center justify-between gap-3">
-          <span class="text-sm text-muted-foreground">{m.settings_wsApi_port_label()}</span>
+          <span class="text-sm font-medium text-foreground">{m.settings_wsApi_port_label()}</span>
           <div class="flex items-center gap-2">
             <div class="shrink-0 w-32">
               <Input
@@ -504,17 +807,27 @@
         {#if !isValid}
           <p class="text-xs text-amber-500/90 mt-1">{m.settings_wsApi_port_invalid()}</p>
         {/if}
-        {#if enabled && port}
-          <p class="text-xs text-subtle mt-1">
-            {m.settings_wsApi_port_currentlyBound({ port: String(port) })}
-          </p>
-        {/if}
       {/snippet}
       {@render portValidation()}
     </section>
 
     {#if enabled}
       <div transition:slide={{ duration: 200 }} class="space-y-4">
+        <!-- Listen targets: the daemon's bind candidates with the bound ones
+             selected. Shown only while Local Network Access is ON; the tunnel
+             is toggled above, not in the selector. -->
+        {#if localNetworkShown}
+          <section transition:slide={{ duration: 200 }}>
+            <ListenTargetSelector
+              availableIps={availableIps ?? localIps}
+              selectedIps={tunnelOnly ? [] : bindIps}
+              tunnelSelected={tunnelEnabled}
+              saving={listenSaving}
+              onchange={handleSelectorChange}
+            />
+          </section>
+        {/if}
+
         <!-- Mobile App Pairing -->
         <section>
           <div class="flex items-center justify-between">
@@ -559,16 +872,18 @@
           </section>
         {/if}
 
-        <!-- TLS Certificate Fingerprint -->
+        <!-- TLS Certificate Fingerprint (truncated single line by user
+             preference — reverses cloudlands-fe#1979's full-width display;
+             the full value stays available via the title tooltip) -->
         {#if certFingerprint}
           <section>
-            <div class="flex items-start justify-between gap-2">
-              <span class="text-sm text-muted-foreground shrink-0"
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-muted-foreground"
                 >{m.settings_wsApi_tlsFingerprint_label()}</span
               >
               <code
-                class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded break-all"
-                title={certFingerprint}>{certFingerprint}</code
+                class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
+                title={certFingerprint}>{certFingerprint.slice(0, 23)}…</code
               >
             </div>
           </section>

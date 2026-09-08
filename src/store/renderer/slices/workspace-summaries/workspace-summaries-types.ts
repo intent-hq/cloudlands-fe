@@ -1,4 +1,4 @@
-import type { WorkspaceDiffSummary, WorkspaceGitSummary } from "$shared/types";
+import type { WorkspaceDiffSummary, WorkspaceGitSummary } from '$shared/types';
 
 /** Per-workspace on-demand diff/git summary state. */
 export interface WorkspaceSummariesWorkspaceState {
@@ -14,4 +14,3 @@ export interface WorkspaceSummariesWorkspaceState {
 export interface WorkspaceSummariesState {
   byWorkspaceId: Record<string, WorkspaceSummariesWorkspaceState>;
 }
-

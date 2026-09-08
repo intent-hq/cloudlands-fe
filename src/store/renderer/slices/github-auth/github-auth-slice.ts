@@ -1,7 +1,7 @@
-import type { GitHubUser } from "$features/github-auth/types";
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import type { GitHubAuthState, GitHubDeviceFlowInfo } from "./github-auth-types";
+import type { GitHubUser } from '$features/github-auth/types';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import type { GitHubAuthState, GitHubDeviceFlowInfo } from './github-auth-types';
 
 // ============================================================================
 // Initial State
@@ -23,20 +23,20 @@ export const initialState: GitHubAuthState = {
 // ============================================================================
 
 /** Trigger: fetch auth state from backend and hydrate */
-export const initializeGitHubAuth = createAction("githubAuth/initialize");
+export const initializeGitHubAuth = createAction('githubAuth/initialize');
 
 /** Trigger: start the OAuth authentication flow */
-export const startGitHubAuth = createAction("githubAuth/startAuth");
+export const startGitHubAuth = createAction('githubAuth/startAuth');
 
 /** Trigger: cancel ongoing authentication */
-export const cancelGitHubAuth = createAction("githubAuth/cancelAuth");
+export const cancelGitHubAuth = createAction('githubAuth/cancelAuth');
 
 /** Trigger: log out of GitHub */
-export const logoutGitHub = createAction("githubAuth/logout");
+export const logoutGitHub = createAction('githubAuth/logout');
 
 /** Set full auth state from backend response */
 export const setGitHubAuthState = createAction(
-  "githubAuth/setAuthState",
+  'githubAuth/setAuthState',
   (params: {
     isAuthenticated: boolean;
     requiresDaemonAuth: boolean;
@@ -48,7 +48,7 @@ export const setGitHubAuthState = createAction(
 
 /** Set authenticating flag and clear error */
 export const setAuthenticating = createAction<[isAuthenticating: boolean]>(
-  "githubAuth/setAuthenticating",
+  'githubAuth/setAuthenticating',
 );
 
 /**
@@ -57,52 +57,50 @@ export const setAuthenticating = createAction<[isAuthenticating: boolean]>(
  * OAuth URL.
  */
 export const setOAuthInfo = createAction(
-  "githubAuth/setOAuthInfo",
+  'githubAuth/setOAuthInfo',
   (oauthUrl: string | null, needsScopeUpdate: boolean) => ({ oauthUrl, needsScopeUpdate }),
 );
 
 /** Set the device-flow codes after `github.connect` (PROTOCOL §5.27) */
 export const setDeviceFlowInfo = createAction<[deviceFlow: GitHubDeviceFlowInfo | null]>(
-  "githubAuth/setDeviceFlowInfo",
+  'githubAuth/setDeviceFlowInfo',
 );
 
 /**
  * A `github:auth-changed` event arrived from the daemon (PROTOCOL §6.5).
  * Terminal device-flow transitions plus `revoked` from `github.revoke`.
  */
-export const githubAuthChanged = createAction<
-  [status: "authorized" | "expired" | "denied" | "error" | "revoked"]
->("githubAuth/authChanged");
+export const githubAuthChanged =
+  createAction<[status: 'authorized' | 'expired' | 'denied' | 'error' | 'revoked']>(
+    'githubAuth/authChanged',
+  );
 
 /** Auth completed successfully */
 export const authCompleted = createAction(
-  "githubAuth/authCompleted",
+  'githubAuth/authCompleted',
   (user: GitHubUser | null) => ({ user }),
 );
 
 /** Set error message */
-export const setGitHubAuthError = createAction<[error: string | null]>(
-  "githubAuth/setError",
-);
+export const setGitHubAuthError = createAction<[error: string | null]>('githubAuth/setError');
 
 /** Clear error */
-export const clearGitHubAuthError = createAction("githubAuth/clearError");
+export const clearGitHubAuthError = createAction('githubAuth/clearError');
 
 /** Trigger: check auth status once (used on window focus during auth) */
-export const checkGitHubAuthStatus = createAction("githubAuth/checkAuthStatus");
+export const checkGitHubAuthStatus = createAction('githubAuth/checkAuthStatus');
 
 /** Auth was cancelled */
-export const authCancelled = createAction("githubAuth/authCancelled");
+export const authCancelled = createAction('githubAuth/authCancelled');
 
 /** Logout completed */
-export const logoutCompleted = createAction("githubAuth/logoutCompleted");
+export const logoutCompleted = createAction('githubAuth/logoutCompleted');
 
 // ============================================================================
 // Reducer
 // ============================================================================
 
 export const githubAuthReducer = createReducer<GitHubAuthState>(initialState);
-
 
 githubAuthReducer.with(setGitHubAuthState, (state, { payload }) => ({
   ...state,

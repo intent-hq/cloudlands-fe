@@ -4,11 +4,7 @@
 
   /** Content-specific preset type */
   export type ContentPresetId =
-    | 'focus-agent'
-    | 'focus-code'
-    | 'focus-notes'
-    | 'code-review'
-    | 'research';
+    'focus-agent' | 'focus-code' | 'focus-notes' | 'code-review' | 'research';
 
   /** Tab configuration for AI-generated layouts */
   export interface TabConfig {
@@ -51,20 +47,20 @@
    */
 
   import {
-  faArrowLeft,
-  faArrowRight,
-  faRobot,
-  faCode,
-  faFileAlt,
-  faColumns,
-  faTableColumns,
-  faGripLines,
-  faWandMagicSparkles,
-  faChevronDown,
-  faSpinner,
-  faMagic,
-  faGlobe,
-} from '@fortawesome/free-solid-svg-icons';
+    faArrowLeft,
+    faArrowRight,
+    faRobot,
+    faCode,
+    faFileAlt,
+    faColumns,
+    faTableColumns,
+    faGripLines,
+    faWandMagicSparkles,
+    faChevronDown,
+    faSpinner,
+    faMagic,
+    faGlobe,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
@@ -77,10 +73,7 @@
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectModelForType } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
-  import {
-  fade,
-  slide,
-} from 'svelte/transition';
+  import { fade, slide } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectForegroundWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
@@ -506,7 +499,9 @@ Only respond with the <layout> tag and valid JSON inside it.`;
       </button>
     </Tooltip>
     <Tooltip
-      content={m.layout_layoutHeader_goForward_tooltip({ shortcut: getShortcutDisplay('GO_FORWARD') })}
+      content={m.layout_layoutHeader_goForward_tooltip({
+        shortcut: getShortcutDisplay('GO_FORWARD'),
+      })}
       side="bottom"
       delayDuration={300}
     >
@@ -531,7 +526,14 @@ Only respond with the <layout> tag and valid JSON inside it.`;
   <div class="preset-dropdown-container relative flex items-center gap-0.5">
     <!-- Quick layout buttons -->
     {#each layoutPresets as preset (preset.id)}
-      <Tooltip content={m.layout_layoutHeader_presetWithShortcut_tooltip({ label: preset.label(), shortcut: preset.shortcut })} side="bottom" delayDuration={300}>
+      <Tooltip
+        content={m.layout_layoutHeader_presetWithShortcut_tooltip({
+          label: preset.label(),
+          shortcut: preset.shortcut,
+        })}
+        side="bottom"
+        delayDuration={300}
+      >
         <button
           class={cn(
             'p-1.5 rounded transition-colors',
@@ -552,7 +554,11 @@ Only respond with the <layout> tag and valid JSON inside it.`;
     {/each}
 
     <!-- Content presets dropdown trigger -->
-    <Tooltip content={m.layout_layoutHeader_layoutPresets_tooltip()} side="bottom" delayDuration={300}>
+    <Tooltip
+      content={m.layout_layoutHeader_layoutPresets_tooltip()}
+      side="bottom"
+      delayDuration={300}
+    >
       <button
         class={cn(
           'p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted',
@@ -592,7 +598,11 @@ Only respond with the <layout> tag and valid JSON inside it.`;
 
   <!-- AI Layout prompt toggle (§5.31 auggie-only gate) -->
   {#if aiLayoutAvailable}
-    <Tooltip content={m.layout_layoutHeader_aiSuggestion_tooltip()} side="bottom" delayDuration={300}>
+    <Tooltip
+      content={m.layout_layoutHeader_aiSuggestion_tooltip()}
+      side="bottom"
+      delayDuration={300}
+    >
       <button
         class={cn(
           'p-1.5 rounded transition-colors',

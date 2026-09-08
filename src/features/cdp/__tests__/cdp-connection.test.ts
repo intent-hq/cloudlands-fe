@@ -2,17 +2,8 @@
  * Tests for CDP Connection Manager
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-} from 'vitest';
-import {
-  CdpConnectionManager,
-  type ConsoleLogEntry,
-} from '../cdp-connection';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { CdpConnectionManager, type ConsoleLogEntry } from '../cdp-connection';
 
 // Mock chrome-remote-interface
 vi.mock('chrome-remote-interface', () => ({

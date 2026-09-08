@@ -7,7 +7,7 @@
  * provided by `store.createSelector(...)` for main-process services and tests.
  */
 
-import type { MainStoreState } from "./types";
+import type { MainStoreState } from './types';
 
 export interface MainSelector<R, ARGS extends unknown[] = []> {
   select(state: MainStoreState, ...args: ARGS): R;

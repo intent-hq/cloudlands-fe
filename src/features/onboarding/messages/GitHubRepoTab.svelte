@@ -311,7 +311,7 @@
     <GitHubAuthBanner message={m.onboarding_githubRepoTab_signIn_description()} />
   {:else if $reposError$}
     <div
-      class="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-xs text-error-foreground space-y-2"
+      class="rounded-lg border border-danger/30 bg-danger-background/5 px-3 py-2.5 text-xs text-danger space-y-2"
     >
       <p>{m.onboarding_githubRepoTab_loadFailed_error({ error: $reposError$ })}</p>
       <button

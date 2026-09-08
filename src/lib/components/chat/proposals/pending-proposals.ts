@@ -4,13 +4,11 @@ import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
 import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
 
 /**
- * Pending-proposal derivation for the composer-slot tray — the SOLE
- * rendering surface for proposals (question-wizard model; the transcript
- * renderers strip proposal blocks entirely). The daemon's ordered
- * `pendingProposals` session-metadata set (PROTOCOL §5.5) is the single
- * authority for WHICH proposals pend; the transcript's lifted proposal
- * resource blocks supply the proposal bodies. Absent metadata means an old
- * daemon — the tray degrades to nothing.
+ * Pending-proposal derivation for inline transcript cards and the off-screen
+ * composer chip. The daemon's ordered `pendingProposals` session-metadata set
+ * (PROTOCOL §5.5) is the single authority for WHICH proposals pend; the
+ * transcript's lifted proposal resource blocks supply the proposal bodies.
+ * Absent metadata means an old daemon, so no proposals are treated as pending.
  *
  * Unlike `derivePendingQuestions` there is NO turn-active gating: proposals
  * do not hold deliveries, so the set stays pending while the agent keeps

@@ -6,12 +6,12 @@ import {
 } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { getAgentProvider } from '$shared/types/agent-session';
-import { isModelValidForProvider } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import {
   selectActiveProviderId,
   selectAvailableEnabledProviderIds,
 } from '../provider-settings/provider-settings-selectors';
-import { findAvailableModelMatch, resolveDefaultModel } from './model-selection-utils';
+import { resolveDefaultModel } from './model-selection-utils';
 import type { ModelLoadingState } from './model-types';
 import { selectEffectiveDefaultProviderId } from '../provider-catalog/provider-catalog-selectors';
 
@@ -32,39 +32,22 @@ function getEffectiveProviderId(state: any, providerId?: string): string {
  */
 export const selectSelectedModel = store.createSelector((state, providerId?: string): string => {
   const effectiveProviderId = getEffectiveProviderId(state, providerId);
+  // Catalog rows carry bare ids; provenance lives in availableModelsProviderId.
+  const catalogModels =
+    state.model.availableModelsProviderId === effectiveProviderId
+      ? getItems<AuggieModel, 'value'>(state.model.availableModels)
+      : [];
   const persisted = state.model.providerModels[effectiveProviderId];
   if (persisted) {
-    const catalogModels =
-      state.model.availableModelsProviderId === effectiveProviderId
-        ? getItems<AuggieModel, 'value'>(state.model.availableModels)
-        : [];
     if (catalogModels.length === 0) return persisted;
-
-    const providerCatalogModels = catalogModels.filter((model) =>
-      isModelValidForProvider(model.value, effectiveProviderId, state.model.defaultProviderId),
-    );
-    const availableValues = providerCatalogModels.map((model) => model.value);
-    if (
-      findAvailableModelMatch(
-        availableValues,
-        effectiveProviderId,
-        persisted,
-        state.model.defaultProviderId,
-      )
-    ) {
-      return persisted;
-    }
-
-    return resolveDefaultModel(providerCatalogModels);
+    if (catalogModels.some((model) => model.value === persisted)) return persisted;
+    return resolveDefaultModel(catalogModels);
   }
 
   const isAvailable = selectAvailableEnabledProviderIds.select(state).includes(effectiveProviderId);
   if (!isAvailable) return '';
 
-  const models = getItems<AuggieModel, 'value'>(state.model.availableModels).filter((m) =>
-    isModelValidForProvider(m.value, effectiveProviderId, state.model.defaultProviderId),
-  );
-  return resolveDefaultModel(models);
+  return resolveDefaultModel(catalogModels);
 });
 
 /** Whether `selectSelectedModel` resolved to an actual model for the effective provider. */
@@ -174,14 +157,6 @@ export const selectProviderModels = store.createSelector((state): Record<string,
 });
 
 /**
- * Effective default provider id mirrored by the model slice for model-id
- * normalization ('' before hydration). See `ModelState.defaultProviderId`.
- */
-export const selectDefaultProviderId = store.createSelector((state): string => {
-  return state.model.defaultProviderId;
-});
-
-/**
  * Default reasoning-effort level paired with the default-model setting
  * (`model.defaultReasoningEffort`), or '' when unset.
  */
@@ -198,19 +173,23 @@ export const selectModelFallbackInfo = store.createSelector((state, agentId: str
 });
 
 /**
- * Pretty display name (catalog `label`) for a (provider, raw model id) pair,
- * or `undefined` on a lookup miss (catalog not loaded / unknown model).
- * Catalog values are bare for the registry default provider and
- * `provider:model` otherwise (see `prefixModelsForProvider` in model-utils).
+ * Pretty display name (catalog `label`) for a (provider, bare model id) pair,
+ * or `undefined` on a lookup miss (catalog not loaded for that provider /
+ * unknown model). Catalog rows carry bare ids: the active catalog resolves
+ * when its `availableModelsProviderId` provenance matches, and other
+ * providers resolve through the session-lifetime provider-models cache.
  */
 export const selectModelDisplayName = store.createSelector(
   (state, providerId: string, modelId: string): string | undefined => {
+    const bareId = splitLegacyCompoundId(modelId).modelId;
     const models: Collection<AuggieModel, 'value'> | undefined = state.model?.availableModels;
-    if (!models) return undefined;
-    const compound = getItem(models, `${providerId}:${modelId}`);
-    if (compound) return compound.label;
-    if (providerId === state.model.defaultProviderId) {
-      return getItem(models, modelId)?.label;
+    if (models && (!providerId || providerId === state.model.availableModelsProviderId)) {
+      const label = getItem(models, bareId)?.label;
+      if (label) return label;
+    }
+    if (providerId) {
+      const cached = state.providerModels?.byProviderId[providerId];
+      return cached?.models.find((model) => model.value === bareId)?.label;
     }
     return undefined;
   },
@@ -219,8 +198,8 @@ export const selectModelDisplayName = store.createSelector(
 /**
  * Supported reasoning-effort levels for a model id (catalog `effortLevels`
  * metadata, PROTOCOL §5.30/§6.7 — collapsed codex rows plus claude-code rows
- * carry them). Accepts bare or `provider:model` ids; a legacy codex compound
- * `{model}/{effort}` suffix is stripped before the catalog lookup so
+ * carry them). Legacy compound `provider:model` ids and codex `{model}/{effort}`
+ * suffixes are stripped down to the bare base id before the catalog lookup so
  * pre-migration session models still resolve their base row. `undefined` on
  * lookup miss (catalog not loaded / model without effort support).
  */
@@ -229,14 +208,42 @@ export const selectModelEffortLevels = store.createSelector(
     if (!modelId) return undefined;
     const models: Collection<AuggieModel, 'value'> | undefined = state.model?.availableModels;
     if (!models) return undefined;
-    const slashIndex = modelId.indexOf('/');
-    const baseId = slashIndex > 0 ? modelId.slice(0, slashIndex) : modelId;
-    const row = getItem(models, baseId);
-    if (row?.effortLevels) return row.effortLevels;
-    // Bare id from a session may be stored compound in the catalog under the
-    // default provider prefix (see prefixModelsForProvider in model-utils).
-    if (!baseId.includes(':') && state.model.defaultProviderId) {
-      return getItem(models, `${state.model.defaultProviderId}:${baseId}`)?.effortLevels;
+    const baseId = toBaseModelId(modelId);
+    return getItem(models, baseId)?.effortLevels;
+  },
+);
+
+/** Bare base id: legacy compound prefix and `{model}/{effort}` suffix stripped. */
+function toBaseModelId(modelId: string): string {
+  const bareId = splitLegacyCompoundId(modelId).modelId;
+  const slashIndex = bareId.indexOf('/');
+  return slashIndex > 0 ? bareId.slice(0, slashIndex) : bareId;
+}
+
+/**
+ * Provider-aware companion to `selectModelEffortLevels` for surfaces holding
+ * an explicit (provider, model) pair (e.g. specialist `modelOptions` triples,
+ * PROTOCOL §5.11). Mirrors `selectModelDisplayName`: the active catalog
+ * resolves when its `availableModelsProviderId` provenance matches (or no
+ * provider is given); other providers resolve through the session-lifetime
+ * provider-models cache, whose rows may carry compound `provider:model`
+ * values. `undefined` on lookup miss.
+ */
+export const selectProviderModelEffortLevels = store.createSelector(
+  (
+    state,
+    providerId: string | undefined,
+    modelId: string | null | undefined,
+  ): string[] | undefined => {
+    if (!modelId) return undefined;
+    if (!providerId || providerId === state.model?.availableModelsProviderId) {
+      const levels = selectModelEffortLevels.select(state, modelId);
+      if (levels) return levels;
+    }
+    if (providerId) {
+      const baseId = toBaseModelId(modelId);
+      const cached = state.providerModels?.byProviderId[providerId];
+      return cached?.models.find((model) => toBaseModelId(model.value) === baseId)?.effortLevels;
     }
     return undefined;
   },

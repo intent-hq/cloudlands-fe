@@ -141,20 +141,21 @@
 </script>
 
 {#if workspaceIds.length > 0}
-  <div class="my-2 flex w-full flex-col gap-1.5" use:blockContextMenuCapture>
+  <div class="my-3 flex w-full flex-col gap-2" use:blockContextMenuCapture>
     {#each workspaceIds as workspaceId (workspaceId)}
       {@const workspace = workspacesById[workspaceId]}
       {#if workspace}
         <WorkspaceCard
           {workspace}
           variant="compact"
-          class="rounded-md border border-border bg-background/40"
+          isolateHoverReveal
+          class="mx-0 rounded-md border border-border bg-background/40"
           onClick={(event) => handleWorkspaceClick(workspaceId, event)}
         >
           {#snippet actions()}
             <SidebarOverflowMenu
               items={getOverflowMenuItems(workspaceId)}
-              orientation="horizontal"
+              orientation="vertical"
               class="flex h-5 w-5 -my-1 cursor-pointer items-center justify-center rounded text-ghost transition-all hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:outline-none"
               ariaLabel={m.chat_chatWorkspaceCard_actionsFor_ariaLabel({
                 name: workspace.title || m.workspace_links_untitled_label(),

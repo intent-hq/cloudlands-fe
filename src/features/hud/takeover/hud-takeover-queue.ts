@@ -46,6 +46,7 @@ export const HUD_TAKEOVER_KINDS = [
   'workspace_idle',
   'pr_open',
   'pr_ready',
+  'pr_queued',
   'pr_merged',
   'workspace_complete',
   'manual',

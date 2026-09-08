@@ -1,33 +1,30 @@
 <script lang="ts">
-  import {
-  onMount,
-  onDestroy,
-} from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { Editor } from '@tiptap/core';
   import { createEditorConfig } from '$lib/utils/editor-config';
   import { CommentManagerV2 } from '$features/comments/comment-manager-v2';
 
   import {
-  selectComments,
-  selectSelectedComment,
-} from '$store/renderer/slices/comments/comments-selectors';
+    selectComments,
+    selectSelectedComment,
+  } from '$store/renderer/slices/comments/comments-selectors';
   import {
-  selectCommentAction,
-  loadCommentsAction,
-  clearCommentsAction,
-} from '$store/renderer/slices/comments/comments-slice';
+    selectCommentAction,
+    loadCommentsAction,
+    clearCommentsAction,
+  } from '$store/renderer/slices/comments/comments-slice';
 
   import { createLogger } from '$lib/utils/client-logger';
   import Fa from 'svelte-fa';
   import {
-  faComment,
-  faLightbulb,
-  faCodePullRequest,
-  faCircleQuestion,
-  faPaperPlane,
-  faCheck,
-  faTrash,
-} from '@fortawesome/free-solid-svg-icons';
+    faComment,
+    faLightbulb,
+    faCodePullRequest,
+    faCircleQuestion,
+    faPaperPlane,
+    faCheck,
+    faTrash,
+  } from '@fortawesome/free-solid-svg-icons';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('CommentSystemDemo');

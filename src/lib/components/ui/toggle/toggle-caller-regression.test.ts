@@ -1,4 +1,5 @@
 // @vitest-environment node
+// @ui-invariant
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -93,6 +94,7 @@ describe('B2 caller metadata regression', () => {
   it('matches current source-derived callers for every field primitive', () => {
     const expected = {
       checkbox: [
+        'src/features/onboarding/OnboardingPage.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
         'src/lib/components/chat/input/ContextPickerButton.svelte',
@@ -111,10 +113,12 @@ describe('B2 caller metadata regression', () => {
         'src/lib/components/debug/DebugPanel.svelte',
         'src/lib/components/settings/AgentBackendSettings.svelte',
         'src/lib/components/settings/BackendSyncSettings.svelte',
+        'src/lib/components/settings/DeviceRow.svelte',
         'src/lib/components/settings/OpenInAppsSettings.svelte',
         'src/lib/components/settings/mcp/McpServerCard.svelte',
         'src/lib/components/workspace/sidebar/McpServersSection.svelte',
         'src/lib/components/workspace/sidebar/MergePanel.svelte',
+        'src/routes/(app)/settings/+page.svelte',
       ],
       toggle: [
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
@@ -172,7 +176,7 @@ describe('B2 caller metadata regression', () => {
         { path: 'src/lib/components/settings/McpServersSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/NotificationSettings.svelte', count: 3 },
         { path: 'src/lib/components/settings/RtkSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 1 },
+        { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 3 },
         { path: 'src/lib/components/settings/WorkspaceApiSettings.svelte', count: 1 },
       ],
     };

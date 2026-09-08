@@ -14,14 +14,7 @@
  *      the undo toast.
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('svelte-sonner', () => ({
   toast: {
@@ -34,10 +27,7 @@ vi.mock('svelte-sonner', () => ({
 }));
 
 import { toast } from 'svelte-sonner';
-import {
-  renameWithUndo,
-  reversibleActions,
-} from '$lib/utils/reversible-actions';
+import { renameWithUndo, reversibleActions } from '$lib/utils/reversible-actions';
 
 /**
  * Reproduces the `handleTabRename` agent branch from PanelLayout.svelte

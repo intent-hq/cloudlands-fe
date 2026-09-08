@@ -1,11 +1,5 @@
-import {
-  parseVSCodeTheme,
-  type ParsedVSCodeTheme,
-} from './vscode-theme-parser';
-import {
-  applyCustomMonacoTheme,
-  revertMonacoTheme,
-} from './monaco-theme';
+import { parseVSCodeTheme, type ParsedVSCodeTheme } from './vscode-theme-parser';
+import { applyCustomMonacoTheme, revertMonacoTheme } from './monaco-theme';
 import { dispatchWindowEvent } from './window-events';
 import { safeLocalStorage } from './safe-storage';
 
@@ -346,7 +340,8 @@ export class ThemeManager {
 // Lazy compatibility facade. Importing this module should not construct the singleton;
 // the Redux theme saga is the app-level owner that initializes ThemeManager at startup.
 export const themeManager = {
-  setTheme: (...args: Parameters<ThemeManager['setTheme']>) => ThemeManager.getInstance().setTheme(...args),
+  setTheme: (...args: Parameters<ThemeManager['setTheme']>) =>
+    ThemeManager.getInstance().setTheme(...args),
   getTheme: () => ThemeManager.getInstance().getTheme(),
   setCustomTheme: (...args: Parameters<ThemeManager['setCustomTheme']>) =>
     ThemeManager.getInstance().setCustomTheme(...args),

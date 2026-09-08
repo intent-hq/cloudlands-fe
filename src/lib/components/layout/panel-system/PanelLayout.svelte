@@ -224,6 +224,7 @@
           if (!isCurrent()) return;
           const moved = scrollPanelIntoView(container, request.panelId, 'smooth');
           appStore.dispatch(consumePanelReveal(targetLayoutId, request.requestId));
+          if (request.preserveFocus) return;
           setTimeout(
             () => {
               if (

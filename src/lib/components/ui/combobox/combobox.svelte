@@ -246,7 +246,7 @@
       'type-body border-border bg-card text-foreground placeholder:text-muted-foreground/70 h-(--control-height-medium) w-full min-w-0 rounded-(--radius-medium) border px-3 shadow-(--elevation-raised) outline-none transition-[border-color,background-color,box-shadow] duration-(--motion-fast)',
       'hover:border-input focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40',
       'disabled:cursor-not-allowed disabled:bg-muted/40 disabled:opacity-60 disabled:hover:border-border motion-reduce:transition-none',
-      invalid && 'border-destructive-foreground ring-1 ring-destructive-foreground/25',
+      invalid && 'border-danger ring-1 ring-danger/25',
       inputClass,
     )}
   />

@@ -45,6 +45,7 @@ vi.mock('../embedded-browser-cdp-service', () => ({
     waitForTabRegistration: vi.fn().mockResolvedValue(true),
     reportTabViewBounds: vi.fn(),
     clearTabViewBounds: vi.fn(),
+    setTabViewport: vi.fn(),
   },
 }));
 
@@ -219,5 +220,38 @@ describe('browser:report-tab-bounds IPC', () => {
     expect(result).toMatchObject({ success: false, error: { code: 'VALIDATION_ERROR' } });
     expect(embeddedBrowserCdp.reportTabViewBounds).not.toHaveBeenCalled();
     expect(embeddedBrowserCdp.clearTabViewBounds).not.toHaveBeenCalled();
+  });
+});
+
+describe('browser:set-tab-viewport IPC', () => {
+  beforeEach(async () => {
+    vi.mocked(ipcMain.handle).mockReset();
+    const { embeddedBrowserCdp } = await import('../embedded-browser-cdp-service');
+    vi.mocked(embeddedBrowserCdp.setTabViewport).mockClear();
+  });
+
+  it('validates and forwards a preset viewport', async () => {
+    const { embeddedBrowserCdp } = await import('../embedded-browser-cdp-service');
+    const handler = registerAndGetHandler(IPC_CHANNELS.BROWSER.SET_TAB_VIEWPORT);
+    const viewport = { mode: 'preset', presetId: 'iphone-se', width: 375, height: 667 };
+
+    await expect(handler({}, { tabId: 'tab-1', viewport })).resolves.toEqual({ success: true });
+    expect(embeddedBrowserCdp.setTabViewport).toHaveBeenCalledWith('tab-1', viewport);
+  });
+
+  it('rejects invalid fixed dimensions before calling the service', async () => {
+    const { embeddedBrowserCdp } = await import('../embedded-browser-cdp-service');
+    const handler = registerAndGetHandler(IPC_CHANNELS.BROWSER.SET_TAB_VIEWPORT);
+
+    const result = await handler(
+      {},
+      {
+        tabId: 'tab-1',
+        viewport: { mode: 'custom', width: 0, height: 800 },
+      },
+    );
+
+    expect(result).toMatchObject({ success: false, error: { code: 'VALIDATION_ERROR' } });
+    expect(embeddedBrowserCdp.setTabViewport).not.toHaveBeenCalled();
   });
 });

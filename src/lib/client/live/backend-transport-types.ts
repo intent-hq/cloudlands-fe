@@ -30,7 +30,7 @@ export class BackendError extends Error {
   readonly rpcCode?: number;
   constructor(payload: BackendErrorPayload) {
     super(payload.message);
-    this.name = "BackendError";
+    this.name = 'BackendError';
     this.code = payload.code;
     this.data = payload.data;
     this.rpcCode = payload.rpcCode;
@@ -47,8 +47,8 @@ export class BackendError extends Error {
  * regardless of how the transport layer is mocked in tests.
  */
 export function isDaemonErrorResponse(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  return typeof (error as { rpcCode?: unknown }).rpcCode === "number";
+  if (!error || typeof error !== 'object') return false;
+  return typeof (error as { rpcCode?: unknown }).rpcCode === 'number';
 }
 
 /** Daemon JSON-RPC notification delivered to `onNotification` handlers. */

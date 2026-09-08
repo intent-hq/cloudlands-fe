@@ -40,6 +40,20 @@ function unwrap<T>(response: BackendResult<T> | undefined): T {
 }
 
 /**
+ * Serialize request params to plain JSON before they cross the IPC boundary.
+ *
+ * `ipcRenderer.invoke` structured-clones its arguments, and structured clone
+ * throws on non-cloneable values such as Svelte 5 `$state` proxies ("An
+ * object could not be cloned") — e.g. a proxied state array reaching
+ * `settings.update` through a component callback. Params are JSON on the
+ * wire anyway (JSON-RPC to the daemon), so a JSON round-trip is lossless.
+ */
+function toPlainJson(value: unknown): unknown {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
+/**
  * Fan-outs that currently hold at least one subscriber.
  *
  * `createChannelFanout` collapses N subscribers onto ONE bridge listener, so
@@ -163,7 +177,7 @@ export function createElectronIpcBackendTransport(): BackendTransport {
         throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend bridge unavailable' });
       const invokePayload: { method: string; params?: unknown; timeoutMs?: number } = {
         method,
-        params,
+        params: toPlainJson(params),
       };
       if (options?.timeoutMs !== undefined) invokePayload.timeoutMs = options.timeoutMs;
       const response = (await api.invoke(BACKEND.REQUEST, invokePayload)) as BackendResult<T>;
@@ -174,7 +188,10 @@ export function createElectronIpcBackendTransport(): BackendTransport {
       const api = electronAPI();
       if (!api)
         throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend bridge unavailable' });
-      const response = (await api.invoke(BACKEND.SUBSCRIBE, params)) as BackendResult<T>;
+      const response = (await api.invoke(
+        BACKEND.SUBSCRIBE,
+        toPlainJson(params),
+      )) as BackendResult<T>;
       return unwrap(response);
     },
 

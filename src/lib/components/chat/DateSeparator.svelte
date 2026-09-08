@@ -2,7 +2,7 @@
   import Fa from 'svelte-fa';
   import { faCalendar } from '@fortawesome/free-solid-svg-icons';
 
-interface Props {
+  interface Props {
     label: string;
     showIcon?: boolean;
   }

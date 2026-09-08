@@ -79,7 +79,7 @@
   </div>
 
   {#if error}
-    <div class="text-sm text-error-foreground">{error}</div>
+    <div class="text-sm text-danger">{error}</div>
   {/if}
 
   <div class="flex gap-2">

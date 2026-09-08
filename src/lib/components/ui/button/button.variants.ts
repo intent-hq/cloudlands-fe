@@ -4,13 +4,13 @@ import { tv, type VariantProps } from 'tailwind-variants';
 import type { WithElementRef } from '$lib/utils.js';
 
 export const buttonVariants = tv({
-  base: 'type-body relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent font-medium outline-none transition-[background-color,border-color,color,box-shadow,opacity] duration-[var(--motion-fast)] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/25 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0',
+  base: 'type-body relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent font-medium outline-none transition-[background-color,border-color,color,box-shadow,opacity] duration-[var(--motion-fast)] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-invalid:border-danger aria-invalid:ring-2 aria-invalid:ring-danger/25 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0',
   variants: {
     variant: {
       default:
         'border-border bg-card text-foreground shadow-xs hover:border-input hover:bg-secondary hover:text-foreground active:border-input active:bg-muted',
       destructive:
-        'border-destructive-foreground/25 bg-card text-error-foreground shadow-xs hover:border-destructive-foreground/40 hover:bg-destructive hover:text-destructive-foreground focus-visible:ring-destructive/35 active:bg-destructive/80',
+        'border-danger/25 bg-card text-danger shadow-xs hover:border-danger/40 hover:bg-danger hover:text-danger-background focus-visible:ring-danger/35 active:bg-danger/80',
       outline:
         'border-border bg-transparent text-foreground shadow-none hover:border-input hover:bg-secondary hover:text-foreground active:bg-muted',
       secondary:

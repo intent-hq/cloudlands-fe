@@ -21,9 +21,7 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 const mockedRequest = vi.mocked(backendRequest);
 
 /** PROTOCOL §5.14 host.exec result. */
-function execResult(
-  overrides: Partial<{ stdout: string; stderr: string; exitCode: number }> = {},
-) {
+function execResult(overrides: Partial<{ stdout: string; stderr: string; exitCode: number }> = {}) {
   return { stdout: '', stderr: '', exitCode: 0, ...overrides };
 }
 

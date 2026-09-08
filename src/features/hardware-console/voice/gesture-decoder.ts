@@ -23,10 +23,7 @@ export const VOICE_HOLD_THRESHOLD_MS = 300;
 export const VOICE_DOUBLE_PRESS_WINDOW_MS = 300;
 
 export type VoiceGestureStopReason =
-  | 'hold-release'
-  | 'latch-stop'
-  | 'double-press'
-  | 'double-hold-release';
+  'hold-release' | 'latch-stop' | 'double-press' | 'double-hold-release';
 
 /** How a gesture ended and whether it requests an auto-send. */
 export interface VoiceGestureOutcome {

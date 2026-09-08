@@ -33,10 +33,8 @@ describe('Textarea', () => {
   it('uses a contrast-validated invalid border and ring', () => {
     const { getByRole } = render(TextareaHarness);
     const textarea = getByRole('textbox', { name: 'Workspace summary' });
-    expect(textarea.className.split(/\s+/)).toContain('aria-invalid:border-destructive-foreground');
-    expect(textarea.className.split(/\s+/)).toContain(
-      'aria-invalid:ring-destructive-foreground/25',
-    );
+    expect(textarea.className.split(/\s+/)).toContain('aria-invalid:border-danger');
+    expect(textarea.className.split(/\s+/)).toContain('aria-invalid:ring-danger/25');
     for (const { label, ratio } of invalidControlContrastCases()) {
       expect(ratio, label).toBeGreaterThanOrEqual(3);
     }

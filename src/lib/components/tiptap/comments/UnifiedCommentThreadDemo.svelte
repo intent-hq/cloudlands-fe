@@ -58,8 +58,8 @@
       <h1 class="text-2xl font-bold mb-4">Unified Comment Thread Demo</h1>
       <p class="text-subtle mb-6">
         <!-- i18n-ignore (dev-only demo content) -->
-        Click the comment or the "Show replies" button to expand. The same first message structure
-        is used in both states for smooth animation.
+        Click the comment or the "Show replies" button to expand. The same first message structure is
+        used in both states for smooth animation.
       </p>
     </div>
 

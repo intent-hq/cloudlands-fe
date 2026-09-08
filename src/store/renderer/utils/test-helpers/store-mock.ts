@@ -35,10 +35,7 @@ export const createStoreMockModule = <TStore extends object>(appStore: TStore) =
   store: appStore,
 });
 
-export const createAppStoreMock = ({
-  state,
-  dispatch,
-}: AppStoreMockOptions = {}) => {
+export const createAppStoreMock = ({ state, dispatch }: AppStoreMockOptions = {}) => {
   // Live subscribers to the mock's readables; `emitState()` re-notifies them
   // all so tests can simulate a store-state change after mutating the state
   // source (e.g. clearing a seeded slice).
@@ -69,11 +66,10 @@ export const createAppStoreMock = ({
         {
           select: selectorFunc,
           effect: function* (..._args: any[]): Generator<any, any, any> {
-            throw new Error(
-              "selector.effect is unavailable: the saga runtime has been removed.",
-            );
+            throw new Error('selector.effect is unavailable: the saga runtime has been removed.');
           },
-          withStore: (storeSource: StoreReadableStateSource) =>
+          withStore:
+            (storeSource: StoreReadableStateSource) =>
             (...args: any[]) =>
               readable(() =>
                 selectorFunc(storeSource.state ?? appStore.state, ...args.map(readReadableArg)),

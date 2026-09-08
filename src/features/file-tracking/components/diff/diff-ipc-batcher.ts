@@ -527,10 +527,8 @@ export function batchedGitDiff(
     pending.timer = setTimeout(() => flushDiffGroup(key), 0);
   }
   const wirePath = isSuspiciousDiffPath(filePath)
-    ? (toWorktreeRelative(
-        filePath,
-        options?.gitRootPath || workspaceWorktreeRoot(workspaceId),
-      ) ?? filePath)
+    ? (toWorktreeRelative(filePath, options?.gitRootPath || workspaceWorktreeRoot(workspaceId)) ??
+      filePath)
     : filePath;
   pending.paths.add(wirePath);
   pending.wirePaths?.set(filePath, wirePath);

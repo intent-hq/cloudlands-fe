@@ -180,4 +180,3 @@ export class WorkspaceRebindTracker {
     return true;
   }
 }
-

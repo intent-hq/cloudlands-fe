@@ -1,12 +1,5 @@
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import {
-  extractAgentAnchors,
-  preserveAgentAnchors,
-} from '../agent-anchor-preservation';
+import { describe, it, expect } from 'vitest';
+import { extractAgentAnchors, preserveAgentAnchors } from '../agent-anchor-preservation';
 
 describe('agent-anchor-preservation', () => {
   describe('extractAgentAnchors', () => {

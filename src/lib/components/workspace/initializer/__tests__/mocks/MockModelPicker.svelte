@@ -9,7 +9,10 @@
   }: {
     selectedModel?: string;
     defaultModelId?: string;
-    onModelChange?: (model: string | undefined) => void;
+    onModelChange?: (
+      model: string | undefined,
+      pick?: { providerId: string; modelId: string },
+    ) => void;
     showReasoning?: boolean;
     reasoningEffort?: string | null;
     onReasoningChange?: (effort: string | null) => boolean | void | Promise<boolean | void>;
@@ -37,6 +40,14 @@
   </button>
   <button type="button" data-testid="pick-default" onclick={() => onModelChange?.('')}>
     pick default
+  </button>
+  <button
+    type="button"
+    data-testid="pick-model-with-triple"
+    onclick={() =>
+      onModelChange?.('bare-picked-model', { providerId: 'codex', modelId: 'bare-picked-model' })}
+  >
+    pick model with resolved triple
   </button>
   {#if showReasoning}
     <button type="button" data-testid="pick-reasoning" onclick={() => onReasoningChange?.('high')}>

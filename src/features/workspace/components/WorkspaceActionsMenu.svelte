@@ -22,13 +22,10 @@
 </script>
 
 <script lang="ts">
-  import CursorCodeIcon from '$lib/components/shared/icons/CursorCodeIcon.svelte';
-  import GhosttyIcon from '$lib/components/shared/icons/GhosttyIcon.svelte';
-  import JetBrainsIcon from '$lib/components/shared/icons/JetBrainsIcon.svelte';
-  import TerminalIcon from '$lib/components/shared/icons/TerminalIcon.svelte';
-  import VSCodeIcon from '$lib/components/shared/icons/VSCodeIcon.svelte';
-  import WarpIcon from '$lib/components/shared/icons/WarpIcon.svelte';
-  import XcodeIcon from '$lib/components/shared/icons/XcodeIcon.svelte';
+  import {
+    resolveEditorFallbackIcon,
+    resolveEditorIcon,
+  } from '$lib/components/shared/icons/editor-icon';
   import { invoke } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
   import { fetchEditors } from '$store/renderer/slices/external-editors/external-editors-slice';
@@ -46,11 +43,8 @@
     faCheck,
     faChevronDown,
     faChevronLeft,
-    faCode,
     faFile,
-    faFolder,
     faSpinner,
-    faTerminal,
     faTrash,
     faUpRightFromSquare,
   } from '@fortawesome/free-solid-svg-icons';
@@ -62,17 +56,6 @@
   import { Button } from '$lib/components/ui/button';
   import { formatShortcut } from '$lib/utils/shortcuts';
   import { store as appStore } from '$store/renderer/store';
-
-  /** Icon mapping from editor ID to Svelte component */
-  const EDITOR_ICONS: Record<string, typeof VSCodeIcon> = {
-    vscode: VSCodeIcon,
-    cursor: CursorCodeIcon,
-    jetbrains: JetBrainsIcon,
-    xcode: XcodeIcon,
-    warp: WarpIcon,
-    ghostty: GhosttyIcon,
-    terminal: TerminalIcon,
-  };
 
   interface Props {
     filePath?: string;
@@ -134,9 +117,9 @@
 
   const installedEditors$ = selectInstalledEditorsFiltered(workspaceIdStore);
 
-  // Editors arrive priority-sorted; show only the top few and rely on "Choose app" for the rest.
-  const MAX_VISIBLE_EDITORS = 3;
-  const visibleEditors = $derived($installedEditors$.slice(0, MAX_VISIBLE_EDITORS));
+  // Editors arrive priority-sorted; expose every installed editor and rely on
+  // "Choose app" for applications that are not installed or enabled.
+  const visibleEditors = $derived($installedEditors$);
 
   // Shared layout so every row's icon and label line up in the same columns.
   const menuItemClass =
@@ -667,7 +650,7 @@
       <!-- Open Actions - dynamically rendered based on installed editors -->
       <div class="space-y-0.5">
         {#each visibleEditors as editor (editor.id)}
-          {@const IconComponent = EDITOR_ICONS[editor.id]}
+          {@const IconComponent = resolveEditorIcon(editor)}
           <Button
             variant="ghost"
             onclick={() => openInEditor(editor)}
@@ -683,12 +666,12 @@
                 />
               {:else if IconComponent}
                 <IconComponent size={12} />
-              {:else if editor.category === 'terminal'}
-                <Fa icon={faTerminal} size="12" class="opacity-50" />
-              {:else if editor.category === 'finder'}
-                <Fa icon={faFolder} size="12" class="opacity-50" />
               {:else}
-                <Fa icon={faCode} size="12" class="opacity-50" />
+                <Fa
+                  icon={resolveEditorFallbackIcon(editor.category)}
+                  size="12"
+                  class="opacity-50"
+                />
               {/if}
             </span>
             <span
@@ -760,7 +743,7 @@
         variant="ghost"
         onclick={() => handleActionClick(action)}
         class="{menuItemClass} {action.variant === 'destructive'
-          ? 'hover:bg-destructive hover:text-destructive-foreground'
+          ? 'hover:bg-danger hover:text-danger-background'
           : ''}"
         size="sm"
       >
@@ -828,7 +811,7 @@
     <Button
       variant="ghost"
       onclick={handleDelete}
-      class="{menuItemClass} hover:bg-destructive hover:text-destructive-foreground"
+      class="{menuItemClass} hover:bg-danger hover:text-danger-background"
       size="sm"
     >
       <span class={iconSlotClass}>
@@ -847,7 +830,7 @@
       variant="ghost"
       onclick={handleDeleteFile}
       disabled={isDeletingFile}
-      class="{menuItemClass} hover:bg-destructive hover:text-destructive-foreground"
+      class="{menuItemClass} hover:bg-danger hover:text-danger-background"
       size="sm"
     >
       <span class={iconSlotClass}>

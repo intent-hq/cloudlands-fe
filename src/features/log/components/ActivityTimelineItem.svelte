@@ -64,7 +64,7 @@
 
   const statusColors: Record<Status, string> = {
     success: 'text-green-500',
-    error: 'text-error-foreground',
+    error: 'text-danger',
     pending: 'text-amber-500 animate-spin',
     neutral: '',
   };

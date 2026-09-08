@@ -175,7 +175,10 @@
   // Test 5: Streaming Completion
   await test('Streaming indicators removed after completion', async () => {
     // Wait for any active streaming to complete
-    await waitForCondition(() => document.querySelectorAll('[data-streaming="true"]').length === 0, 30000);
+    await waitForCondition(
+      () => document.querySelectorAll('[data-streaming="true"]').length === 0,
+      30000,
+    );
 
     // Check no streaming indicators remain
     const streamingElements = document.querySelectorAll(
@@ -306,7 +309,7 @@
   });
 
   // Results Summary
-  console.log(`\n${  '='.repeat(50)}`);
+  console.log(`\n${'='.repeat(50)}`);
   console.log('%c📊 Test Results', 'color: #4CAF50; font-weight: bold; font-size: 14px');
   console.log('='.repeat(50));
 
@@ -331,7 +334,7 @@
   const status = allPassed ? '✅ All tests passed!' : '❌ Some tests failed';
   const color = allPassed ? '#4CAF50' : '#f44336';
 
-  console.log(`\n${  '='.repeat(50)}`);
+  console.log(`\n${'='.repeat(50)}`);
   console.log(`%c${status}`, `color: ${color}; font-weight: bold; font-size: 16px`);
   console.log('='.repeat(50));
 

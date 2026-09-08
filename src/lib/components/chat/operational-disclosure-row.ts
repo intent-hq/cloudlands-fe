@@ -2,7 +2,7 @@ import { safeSlide } from '$lib/utils/animations';
 
 /** Shared presentation contract for quiet, collapsible operational chat rows. */
 export const OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS =
-  '[--operational-row-inline-padding:0.5rem] [--operational-leading-slot-size:1.25rem] [--operational-leading-half-slot-size:0.625rem] [--operational-leading-gap:0.5rem]';
+  '[--operational-row-inline-padding:var(--chat-operational-row-inline-padding,0.5rem)] [--operational-leading-slot-size:1.25rem] [--operational-leading-half-slot-size:0.625rem] [--operational-leading-gap:var(--chat-operational-leading-gap,0.5rem)]';
 
 export const OPERATIONAL_ROW_TONE_CLASS =
   'type-body font-family-child font-normal text-muted-foreground';

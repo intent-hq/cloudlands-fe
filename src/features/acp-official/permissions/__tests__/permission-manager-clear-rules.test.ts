@@ -34,12 +34,10 @@ describe('PermissionManager.clearRules (AUDIT-P0-2)', () => {
   it('rejects when the underlying persistence (localStorage) throws (AUDIT-P0-2)', async () => {
     const manager = new PermissionManager();
     const original = window.localStorage.setItem.bind(window.localStorage);
-    const spy = vi
-      .spyOn(window.localStorage, 'setItem')
-      .mockImplementation((key, value) => {
-        if (key === 'acp_permission_rules') throw new Error('quota exceeded');
-        original(key, value);
-      });
+    const spy = vi.spyOn(window.localStorage, 'setItem').mockImplementation((key, value) => {
+      if (key === 'acp_permission_rules') throw new Error('quota exceeded');
+      original(key, value);
+    });
 
     try {
       await expect(manager.clearRules()).rejects.toThrow('quota exceeded');

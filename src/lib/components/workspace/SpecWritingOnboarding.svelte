@@ -11,7 +11,6 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
-
   const logger = createLogger('SpecWritingOnboarding');
 
   interface Props {
@@ -21,7 +20,6 @@
   }
 
   let { agentId, workspaceId }: Props = $props();
-
 
   let isStopping = $state(false);
 

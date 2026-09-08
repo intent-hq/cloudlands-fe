@@ -1,7 +1,4 @@
-import {
-  PATTERNS,
-  LIMITS,
-} from '$shared/constants';
+import { PATTERNS, LIMITS } from '$shared/constants';
 
 /**
  * Sanitize a string to create a valid agent name.

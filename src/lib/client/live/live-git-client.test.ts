@@ -1,11 +1,11 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // FAKE transport only: the backend bridge is mocked so no request ever reaches
 // the user's real daemon. Each test asserts the JSON-RPC method + params the
 // client emits and how it maps the daemon result.
-vi.mock("./backend-transport", () => ({
+vi.mock('./backend-transport', () => ({
   backendRequest: vi.fn(),
-  backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: "sub-1" })),
+  backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: 'sub-1' })),
   backendUnsubscribe: vi.fn(() => Promise.resolve()),
   onBackendNotification: vi.fn(() => () => {}),
   // RESUB-1: subscribe() installs a reconnect listener; these tests do not
@@ -17,8 +17,8 @@ vi.mock("./backend-transport", () => ({
 // params it forwards to the mocked transport) but stub the subscribe-only
 // helpers. `git.agentCommit` does not take an idempotencyKey, so
 // `newIdempotencyKey` is no longer used by the commit path.
-vi.mock("./live-support", async (importActual) => {
-  const actual = await importActual<typeof import("./live-support")>();
+vi.mock('./live-support', async (importActual) => {
+  const actual = await importActual<typeof import('./live-support')>();
   return {
     ...actual,
     isEventInFamily: vi.fn(() => false),
@@ -36,9 +36,9 @@ import {
   backendSubscribe,
   onBackendNotification,
   onBackendReconnected,
-} from "./backend-transport";
-import { isEventInFamily, listWorkspaceIds, subscribeWorkspaceIds } from "./live-support";
-import { LiveGitClient } from "./live-git-client";
+} from './backend-transport';
+import { isEventInFamily, listWorkspaceIds, subscribeWorkspaceIds } from './live-support';
+import { LiveGitClient } from './live-git-client';
 
 const mockedRequest = vi.mocked(backendRequest);
 const mockedSubscribe = vi.mocked(backendSubscribe);
@@ -50,7 +50,7 @@ const mockedOnBackendReconnected = vi.mocked(onBackendReconnected);
 
 /** Daemon-shaped `git.status` result used by the subscribe suites. */
 const GIT_STATUS_FIXTURE = {
-  branch: "main",
+  branch: 'main',
   ahead: 0,
   behind: 0,
   diverged: false,
@@ -59,36 +59,36 @@ const GIT_STATUS_FIXTURE = {
   hasUntrackedFiles: false,
 };
 
-describe("LiveGitClient reads (fake transport)", () => {
+describe('LiveGitClient reads (fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("status maps the daemon git.status shape into GitStatus", async () => {
+  it('status maps the daemon git.status shape into GitStatus', async () => {
     mockedRequest.mockResolvedValueOnce({
-      branch: "main",
+      branch: 'main',
       ahead: 1,
       behind: 2,
       diverged: true,
-      files: [{ path: "a.ts", status: "M", staged: true }],
+      files: [{ path: 'a.ts', status: 'M', staged: true }],
       hasUncommittedChanges: true,
       hasUntrackedFiles: false,
     });
     const client = new LiveGitClient();
 
-    const status = await client.status("ws-1");
+    const status = await client.status('ws-1');
 
-    expect(mockedRequest).toHaveBeenCalledWith("git.status", { workspaceId: "ws-1" });
+    expect(mockedRequest).toHaveBeenCalledWith('git.status', { workspaceId: 'ws-1' });
     expect(status).toEqual({
-      branch: "main",
+      branch: 'main',
       ahead: 1,
       behind: 2,
       diverged: true,
-      files: [{ path: "a.ts", status: "M", staged: true }],
+      files: [{ path: 'a.ts', status: 'M', staged: true }],
       hasUncommittedChanges: true,
       hasUntrackedFiles: false,
     });
   });
 
-  it("shares one exact git.status wire request across concurrent Git and Changes readers", async () => {
+  it('shares one exact git.status wire request across concurrent Git and Changes readers', async () => {
     let resolveStatus!: (status: typeof GIT_STATUS_FIXTURE) => void;
     mockedRequest.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -97,11 +97,11 @@ describe("LiveGitClient reads (fake transport)", () => {
     );
     const client = new LiveGitClient();
 
-    const gitOwner = client.status("ws-1");
-    const changesOwner = client.status("ws-1");
+    const gitOwner = client.status('ws-1');
+    const changesOwner = client.status('ws-1');
 
     expect(mockedRequest).toHaveBeenCalledTimes(1);
-    expect(mockedRequest).toHaveBeenCalledWith("git.status", { workspaceId: "ws-1" });
+    expect(mockedRequest).toHaveBeenCalledWith('git.status', { workspaceId: 'ws-1' });
 
     resolveStatus(GIT_STATUS_FIXTURE);
     const [gitStatus, changesStatus] = await Promise.all([gitOwner, changesOwner]);
@@ -109,32 +109,32 @@ describe("LiveGitClient reads (fake transport)", () => {
     expect(gitStatus).toEqual(GIT_STATUS_FIXTURE);
   });
 
-  it("keeps concurrent git.status requests distinct across workspaces", async () => {
+  it('keeps concurrent git.status requests distinct across workspaces', async () => {
     mockedRequest.mockResolvedValue(GIT_STATUS_FIXTURE);
     const client = new LiveGitClient();
 
-    await Promise.all([client.status("ws-1"), client.status("ws-2")]);
+    await Promise.all([client.status('ws-1'), client.status('ws-2')]);
 
     expect(mockedRequest.mock.calls).toEqual([
-      ["git.status", { workspaceId: "ws-1" }],
-      ["git.status", { workspaceId: "ws-2" }],
+      ['git.status', { workspaceId: 'ws-1' }],
+      ['git.status', { workspaceId: 'ws-2' }],
     ]);
   });
 
-  it("issues a fresh git.status request after the shared in-flight read settles", async () => {
+  it('issues a fresh git.status request after the shared in-flight read settles', async () => {
     mockedRequest
       .mockResolvedValueOnce(GIT_STATUS_FIXTURE)
       .mockResolvedValueOnce({ ...GIT_STATUS_FIXTURE, ahead: 1 });
     const client = new LiveGitClient();
 
-    await client.status("ws-1");
-    const refreshed = await client.status("ws-1");
+    await client.status('ws-1');
+    const refreshed = await client.status('ws-1');
 
     expect(mockedRequest).toHaveBeenCalledTimes(2);
     expect(refreshed?.ahead).toBe(1);
   });
 
-  it("force-refreshes git.status without joining a pre-existing in-flight read", async () => {
+  it('force-refreshes git.status without joining a pre-existing in-flight read', async () => {
     let resolveStale!: (status: typeof GIT_STATUS_FIXTURE) => void;
     mockedRequest
       .mockReturnValueOnce(
@@ -145,12 +145,12 @@ describe("LiveGitClient reads (fake transport)", () => {
       .mockResolvedValueOnce({ ...GIT_STATUS_FIXTURE, ahead: 1 });
     const client = new LiveGitClient();
 
-    const staleRead = client.status("ws-1");
-    const freshStatus = await client.status("ws-1", { forceRefresh: true });
+    const staleRead = client.status('ws-1');
+    const freshStatus = await client.status('ws-1', { forceRefresh: true });
 
     expect(mockedRequest.mock.calls).toEqual([
-      ["git.status", { workspaceId: "ws-1" }],
-      ["git.status", { workspaceId: "ws-1", forceRefresh: true }],
+      ['git.status', { workspaceId: 'ws-1' }],
+      ['git.status', { workspaceId: 'ws-1', forceRefresh: true }],
     ]);
     expect(freshStatus?.ahead).toBe(1);
 
@@ -158,113 +158,113 @@ describe("LiveGitClient reads (fake transport)", () => {
     await expect(staleRead).resolves.toEqual(GIT_STATUS_FIXTURE);
   });
 
-  it("status carries gitlink mode/oldSha/newSha on submodule entries and omits them elsewhere (#1739)", async () => {
+  it('status carries gitlink mode/oldSha/newSha on submodule entries and omits them elsewhere (#1739)', async () => {
     mockedRequest.mockResolvedValueOnce({
       ...GIT_STATUS_FIXTURE,
       hasUncommittedChanges: true,
       files: [
         {
-          path: "packages/intentd",
-          status: "M",
+          path: 'packages/intentd',
+          status: 'M',
           staged: false,
-          mode: "160000",
-          oldSha: "a".repeat(40),
-          newSha: "b".repeat(40),
+          mode: '160000',
+          oldSha: 'a'.repeat(40),
+          newSha: 'b'.repeat(40),
         },
-        { path: "src/plain.ts", status: "M", staged: false },
+        { path: 'src/plain.ts', status: 'M', staged: false },
       ],
     });
     const client = new LiveGitClient();
 
-    const status = await client.status("ws-1");
+    const status = await client.status('ws-1');
 
     expect(status?.files[0]).toEqual({
-      path: "packages/intentd",
-      status: "M",
+      path: 'packages/intentd',
+      status: 'M',
       staged: false,
-      mode: "160000",
-      oldSha: "a".repeat(40),
-      newSha: "b".repeat(40),
+      mode: '160000',
+      oldSha: 'a'.repeat(40),
+      newSha: 'b'.repeat(40),
     });
-    expect(status?.files[1]).toEqual({ path: "src/plain.ts", status: "M", staged: false });
+    expect(status?.files[1]).toEqual({ path: 'src/plain.ts', status: 'M', staged: false });
   });
 
-  it("prStatus forwards pr.status and maps prNumber/url/state", async () => {
+  it('prStatus forwards pr.status and maps prNumber/url/state', async () => {
     mockedRequest.mockResolvedValueOnce({
       prNumber: 42,
-      title: "My PR",
-      url: "https://example.test/pr/42",
-      state: "open",
+      title: 'My PR',
+      url: 'https://example.test/pr/42',
+      state: 'open',
       mergeable: true,
-      mergeableState: "clean",
+      mergeableState: 'clean',
       hasConflicts: false,
       isDraft: false,
       isMerged: false,
       isClosed: false,
-      summary: "ready",
+      summary: 'ready',
     });
     const client = new LiveGitClient();
 
-    const result = await client.prStatus("ws-1");
+    const result = await client.prStatus('ws-1');
 
-    expect(mockedRequest).toHaveBeenCalledWith("pr.status", { workspaceId: "ws-1" });
+    expect(mockedRequest).toHaveBeenCalledWith('pr.status', { workspaceId: 'ws-1' });
     expect(result).toEqual({
       prNumber: 42,
-      url: "https://example.test/pr/42",
-      state: "open",
+      url: 'https://example.test/pr/42',
+      state: 'open',
     });
   });
 
-  it("prStatus resolves null when the daemon errors (no active PR)", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("no active PR"));
+  it('prStatus resolves null when the daemon errors (no active PR)', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('no active PR'));
     const client = new LiveGitClient();
 
-    expect(await client.prStatus("ws-1")).toBeNull();
+    expect(await client.prStatus('ws-1')).toBeNull();
   });
 
-  it("prRefresh forwards pr.refresh and maps outcome/prNumber/prUrl/prStatus/pullRequests", async () => {
+  it('prRefresh forwards pr.refresh and maps outcome/prNumber/prUrl/prStatus/pullRequests', async () => {
     const pullRequests = [
       {
         number: 299,
-        title: "Old merged PR",
-        url: "https://example.test/pr/299",
-        status: "Merged",
-        createdAt: "2026-07-01T00:00:00Z",
-        updatedAt: "2026-07-02T00:00:00Z",
+        title: 'Old merged PR',
+        url: 'https://example.test/pr/299',
+        status: 'Merged',
+        createdAt: '2026-07-01T00:00:00Z',
+        updatedAt: '2026-07-02T00:00:00Z',
       },
       {
         number: 300,
-        title: "New PR",
-        url: "https://example.test/pr/300",
-        status: "Open",
-        createdAt: "2026-07-03T00:00:00Z",
-        updatedAt: "2026-07-03T00:00:00Z",
+        title: 'New PR',
+        url: 'https://example.test/pr/300',
+        status: 'Open',
+        createdAt: '2026-07-03T00:00:00Z',
+        updatedAt: '2026-07-03T00:00:00Z',
       },
     ];
     mockedRequest.mockResolvedValueOnce({
-      outcome: "linked",
+      outcome: 'linked',
       prNumber: 300,
-      prUrl: "https://example.test/pr/300",
-      prStatus: "Open",
+      prUrl: 'https://example.test/pr/300',
+      prStatus: 'Open',
       pullRequests,
     });
     const client = new LiveGitClient();
 
-    const result = await client.prRefresh("ws-1");
+    const result = await client.prRefresh('ws-1');
 
-    expect(mockedRequest).toHaveBeenCalledWith("pr.refresh", { workspaceId: "ws-1" });
+    expect(mockedRequest).toHaveBeenCalledWith('pr.refresh', { workspaceId: 'ws-1' });
     expect(result).toEqual({
-      outcome: "linked",
+      outcome: 'linked',
       prNumber: 300,
-      prUrl: "https://example.test/pr/300",
-      prStatus: "Open",
+      prUrl: 'https://example.test/pr/300',
+      prStatus: 'Open',
       pullRequests,
     });
   });
 
-  it("prRefresh maps a no-PR refresh (outcome without linkage fields) to an empty-list result", async () => {
+  it('prRefresh maps a no-PR refresh (outcome without linkage fields) to an empty-list result', async () => {
     mockedRequest.mockResolvedValueOnce({
-      outcome: "unchanged",
+      outcome: 'unchanged',
       prNumber: null,
       prUrl: null,
       prStatus: null,
@@ -272,10 +272,10 @@ describe("LiveGitClient reads (fake transport)", () => {
     });
     const client = new LiveGitClient();
 
-    const result = await client.prRefresh("ws-1");
+    const result = await client.prRefresh('ws-1');
 
     expect(result).toEqual({
-      outcome: "unchanged",
+      outcome: 'unchanged',
       prNumber: undefined,
       prUrl: undefined,
       prStatus: undefined,
@@ -283,24 +283,24 @@ describe("LiveGitClient reads (fake transport)", () => {
     });
   });
 
-  it("prRefresh resolves null when the daemon errors", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("boom"));
+  it('prRefresh resolves null when the daemon errors', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('boom'));
     const client = new LiveGitClient();
 
-    expect(await client.prRefresh("ws-1")).toBeNull();
+    expect(await client.prRefresh('ws-1')).toBeNull();
   });
 
-  it("prRefresh folds an out-of-contract outcome value to null", async () => {
-    mockedRequest.mockResolvedValueOnce({ outcome: "exploded", pullRequests: [] });
+  it('prRefresh folds an out-of-contract outcome value to null', async () => {
+    mockedRequest.mockResolvedValueOnce({ outcome: 'exploded', pullRequests: [] });
     const client = new LiveGitClient();
 
-    expect(await client.prRefresh("ws-1")).toBeNull();
+    expect(await client.prRefresh('ws-1')).toBeNull();
   });
 
-  it("diffs forwards git.diffs and maps path/hunks/lines into DiffChunk[]", async () => {
+  it('diffs forwards git.diffs and maps path/hunks/lines into DiffChunk[]', async () => {
     mockedRequest.mockResolvedValueOnce([
       {
-        path: "src/a.ts",
+        path: 'src/a.ts',
         hunks: [
           {
             oldStart: 1,
@@ -308,9 +308,9 @@ describe("LiveGitClient reads (fake transport)", () => {
             newStart: 1,
             newLines: 3,
             lines: [
-              { type: "Context", content: " keep", oldNumber: 1, newNumber: 1 },
-              { type: "Addition", content: "+added", newNumber: 2 },
-              { type: "Deletion", content: "-gone", oldNumber: 2 },
+              { type: 'Context', content: ' keep', oldNumber: 1, newNumber: 1 },
+              { type: 'Addition', content: '+added', newNumber: 2 },
+              { type: 'Deletion', content: '-gone', oldNumber: 2 },
             ],
           },
         ],
@@ -318,12 +318,12 @@ describe("LiveGitClient reads (fake transport)", () => {
     ]);
     const client = new LiveGitClient();
 
-    const diffs = await client.diffs("ws-1");
+    const diffs = await client.diffs('ws-1');
 
-    expect(mockedRequest).toHaveBeenCalledWith("git.diffs", { workspaceId: "ws-1" });
+    expect(mockedRequest).toHaveBeenCalledWith('git.diffs', { workspaceId: 'ws-1' });
     expect(diffs).toEqual([
       {
-        file: "src/a.ts",
+        file: 'src/a.ts',
         chunks: [
           {
             oldStart: 1,
@@ -331,9 +331,9 @@ describe("LiveGitClient reads (fake transport)", () => {
             newStart: 1,
             newLines: 3,
             lines: [
-              { type: "Context", content: " keep", oldNumber: 1, newNumber: 1 },
-              { type: "Addition", content: "+added", newNumber: 2 },
-              { type: "Deletion", content: "-gone", oldNumber: 2 },
+              { type: 'Context', content: ' keep', oldNumber: 1, newNumber: 1 },
+              { type: 'Addition', content: '+added', newNumber: 2 },
+              { type: 'Deletion', content: '-gone', oldNumber: 2 },
             ],
           },
         ],
@@ -341,165 +341,165 @@ describe("LiveGitClient reads (fake transport)", () => {
     ]);
   });
 
-  it("diffs resolves [] when the daemon errors", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("diff boom"));
+  it('diffs resolves [] when the daemon errors', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('diff boom'));
     const client = new LiveGitClient();
 
-    expect(await client.diffs("ws-1")).toEqual([]);
+    expect(await client.diffs('ws-1')).toEqual([]);
   });
 
-  it("diffs forwards optional commitHash + path for the per-commit read", async () => {
+  it('diffs forwards optional commitHash + path for the per-commit read', async () => {
     mockedRequest.mockResolvedValueOnce([]);
     const client = new LiveGitClient();
 
-    await client.diffs("ws-1", { commitHash: "abc123", path: "seed.txt" });
+    await client.diffs('ws-1', { commitHash: 'abc123', path: 'seed.txt' });
 
-    expect(mockedRequest).toHaveBeenCalledWith("git.diffs", {
-      workspaceId: "ws-1",
-      path: "seed.txt",
-      commitHash: "abc123",
+    expect(mockedRequest).toHaveBeenCalledWith('git.diffs', {
+      workspaceId: 'ws-1',
+      path: 'seed.txt',
+      commitHash: 'abc123',
     });
   });
 
-  it("diffs forwards staged:true when no commitHash is set", async () => {
+  it('diffs forwards staged:true when no commitHash is set', async () => {
     mockedRequest.mockResolvedValueOnce([]);
     const client = new LiveGitClient();
 
-    await client.diffs("ws-1", { staged: true });
+    await client.diffs('ws-1', { staged: true });
 
-    expect(mockedRequest).toHaveBeenCalledWith("git.diffs", {
-      workspaceId: "ws-1",
+    expect(mockedRequest).toHaveBeenCalledWith('git.diffs', {
+      workspaceId: 'ws-1',
       staged: true,
     });
   });
 
-  it("diffs forwards the paths narrowing set and omits an empty one", async () => {
+  it('diffs forwards the paths narrowing set and omits an empty one', async () => {
     mockedRequest.mockResolvedValue([]);
     const client = new LiveGitClient();
 
-    await client.diffs("ws-1", { paths: ["a.ts", "b.ts"] });
-    expect(mockedRequest).toHaveBeenCalledWith("git.diffs", {
-      workspaceId: "ws-1",
-      paths: ["a.ts", "b.ts"],
+    await client.diffs('ws-1', { paths: ['a.ts', 'b.ts'] });
+    expect(mockedRequest).toHaveBeenCalledWith('git.diffs', {
+      workspaceId: 'ws-1',
+      paths: ['a.ts', 'b.ts'],
     });
 
-    await client.diffs("ws-1", { paths: [] });
-    expect(mockedRequest).toHaveBeenLastCalledWith("git.diffs", { workspaceId: "ws-1" });
+    await client.diffs('ws-1', { paths: [] });
+    expect(mockedRequest).toHaveBeenLastCalledWith('git.diffs', { workspaceId: 'ws-1' });
   });
 
-  it("diffs forwards gitRootId exactly when set and omits it otherwise (v6.15)", async () => {
+  it('diffs forwards gitRootId exactly when set and omits it otherwise (v6.15)', async () => {
     mockedRequest.mockResolvedValue([]);
     const client = new LiveGitClient();
 
-    await client.diffs("ws-1", { commitHash: "abc123", path: "a.ts", gitRootId: "root-1" });
-    expect(mockedRequest).toHaveBeenLastCalledWith("git.diffs", {
-      workspaceId: "ws-1",
-      commitHash: "abc123",
-      path: "a.ts",
-      gitRootId: "root-1",
+    await client.diffs('ws-1', { commitHash: 'abc123', path: 'a.ts', gitRootId: 'root-1' });
+    expect(mockedRequest).toHaveBeenLastCalledWith('git.diffs', {
+      workspaceId: 'ws-1',
+      commitHash: 'abc123',
+      path: 'a.ts',
+      gitRootId: 'root-1',
     });
 
-    await client.diffs("ws-1", { commitHash: "abc123", path: "a.ts" });
-    expect(mockedRequest).toHaveBeenLastCalledWith("git.diffs", {
-      workspaceId: "ws-1",
-      commitHash: "abc123",
-      path: "a.ts",
+    await client.diffs('ws-1', { commitHash: 'abc123', path: 'a.ts' });
+    expect(mockedRequest).toHaveBeenLastCalledWith('git.diffs', {
+      workspaceId: 'ws-1',
+      commitHash: 'abc123',
+      path: 'a.ts',
     });
   });
 
-  it("commitDetails forwards git.commitDetails and normalizes the wire shape", async () => {
+  it('commitDetails forwards git.commitDetails and normalizes the wire shape', async () => {
     mockedRequest.mockResolvedValueOnce({
-      commitHash: "abc123",
-      author: "Ada",
-      authorEmail: "ada@example.test",
-      date: "2025-01-02T03:04:05Z",
-      message: "second",
-      files: ["seed.txt", "new.txt"],
+      commitHash: 'abc123',
+      author: 'Ada',
+      authorEmail: 'ada@example.test',
+      date: '2025-01-02T03:04:05Z',
+      message: 'second',
+      files: ['seed.txt', 'new.txt'],
       fileDetails: [
-        { path: "seed.txt", additions: 2, deletions: 1 },
-        { path: "new.txt", additions: 1, deletions: 0 },
+        { path: 'seed.txt', additions: 2, deletions: 1 },
+        { path: 'new.txt', additions: 1, deletions: 0 },
       ],
     });
     const client = new LiveGitClient();
 
-    const details = await client.commitDetails("ws-1", "abc123");
+    const details = await client.commitDetails('ws-1', 'abc123');
 
-    expect(mockedRequest).toHaveBeenCalledWith("git.commitDetails", {
-      workspaceId: "ws-1",
-      commitHash: "abc123",
+    expect(mockedRequest).toHaveBeenCalledWith('git.commitDetails', {
+      workspaceId: 'ws-1',
+      commitHash: 'abc123',
     });
     expect(details).toEqual({
-      commitHash: "abc123",
-      author: "Ada",
-      authorEmail: "ada@example.test",
-      date: "2025-01-02T03:04:05Z",
-      message: "second",
-      files: ["seed.txt", "new.txt"],
+      commitHash: 'abc123',
+      author: 'Ada',
+      authorEmail: 'ada@example.test',
+      date: '2025-01-02T03:04:05Z',
+      message: 'second',
+      files: ['seed.txt', 'new.txt'],
       fileDetails: [
-        { path: "seed.txt", additions: 2, deletions: 1 },
-        { path: "new.txt", additions: 1, deletions: 0 },
+        { path: 'seed.txt', additions: 2, deletions: 1 },
+        { path: 'new.txt', additions: 1, deletions: 0 },
       ],
     });
   });
 
-  it("commitDetails forwards gitRootId exactly when set and omits it otherwise (v6.15)", async () => {
+  it('commitDetails forwards gitRootId exactly when set and omits it otherwise (v6.15)', async () => {
     mockedRequest.mockResolvedValue({
-      commitHash: "abc123",
-      author: "",
-      authorEmail: "",
-      date: "",
-      message: "",
+      commitHash: 'abc123',
+      author: '',
+      authorEmail: '',
+      date: '',
+      message: '',
       files: [],
       fileDetails: [],
     });
     const client = new LiveGitClient();
 
-    await client.commitDetails("ws-1", "abc123", { gitRootId: "root-1" });
-    expect(mockedRequest).toHaveBeenLastCalledWith("git.commitDetails", {
-      workspaceId: "ws-1",
-      commitHash: "abc123",
-      gitRootId: "root-1",
+    await client.commitDetails('ws-1', 'abc123', { gitRootId: 'root-1' });
+    expect(mockedRequest).toHaveBeenLastCalledWith('git.commitDetails', {
+      workspaceId: 'ws-1',
+      commitHash: 'abc123',
+      gitRootId: 'root-1',
     });
 
-    await client.commitDetails("ws-1", "abc123", {});
-    expect(mockedRequest).toHaveBeenLastCalledWith("git.commitDetails", {
-      workspaceId: "ws-1",
-      commitHash: "abc123",
+    await client.commitDetails('ws-1', 'abc123', {});
+    expect(mockedRequest).toHaveBeenLastCalledWith('git.commitDetails', {
+      workspaceId: 'ws-1',
+      commitHash: 'abc123',
     });
   });
 
-  it("commitDetails normalizes a graceful-empty envelope from the daemon", async () => {
+  it('commitDetails normalizes a graceful-empty envelope from the daemon', async () => {
     // The daemon returns an empty envelope (same `commitHash`, empty arrays)
     // for non-repo / remote / unresolvable-hash workspaces (PROTOCOL §5.6).
     mockedRequest.mockResolvedValueOnce({
-      commitHash: "missing",
-      author: "",
-      authorEmail: "",
-      date: "",
-      message: "",
+      commitHash: 'missing',
+      author: '',
+      authorEmail: '',
+      date: '',
+      message: '',
       files: [],
       fileDetails: [],
     });
     const client = new LiveGitClient();
 
-    const details = await client.commitDetails("ws-1", "missing");
+    const details = await client.commitDetails('ws-1', 'missing');
 
     expect(details).toEqual({
-      commitHash: "missing",
-      author: "",
-      authorEmail: "",
-      date: "",
-      message: "",
+      commitHash: 'missing',
+      author: '',
+      authorEmail: '',
+      date: '',
+      message: '',
       files: [],
       fileDetails: [],
     });
   });
 
-  it("commitDetails resolves null when the daemon errors", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("commit details boom"));
+  it('commitDetails resolves null when the daemon errors', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('commit details boom'));
     const client = new LiveGitClient();
 
-    expect(await client.commitDetails("ws-1", "abc123")).toBeNull();
+    expect(await client.commitDetails('ws-1', 'abc123')).toBeNull();
   });
 
   // §5.19 `file-tracking.loadCommits` returns `{ commits: CommitWithAttribution[] }`
@@ -507,142 +507,142 @@ describe("LiveGitClient reads (fake transport)", () => {
   // The list payload is metadata-only: `files`/`filesChanged` are omitted and
   // carried through as absent (not healed to `[]`/`0`) so consumers lazily
   // fetch `git.commitDetails` on demand.
-  it("commits forwards file-tracking.loadCommits and maps CommitWithAttribution[] into CommitInfo[]", async () => {
+  it('commits forwards file-tracking.loadCommits and maps CommitWithAttribution[] into CommitInfo[]', async () => {
     mockedRequest.mockResolvedValueOnce({
       commits: [
         {
-          hash: "abc123",
-          message: "init",
-          author: "Ada",
-          date: "2025-01-02T03:04:05Z",
+          hash: 'abc123',
+          message: 'init',
+          author: 'Ada',
+          date: '2025-01-02T03:04:05Z',
           filesChanged: 2,
           isPushed: false,
           files: [
-            { path: "a.ts", additions: 10, deletions: 2, status: "modified" },
-            { path: "b.ts" },
+            { path: 'a.ts', additions: 10, deletions: 2, status: 'modified' },
+            { path: 'b.ts' },
           ],
-          agentId: "agent-1",
-          linkedNoteId: "note-1",
+          agentId: 'agent-1',
+          linkedNoteId: 'note-1',
         },
         {
-          hash: "def456",
-          message: "pushed one",
-          author: "Ada",
-          date: "2025-01-01T00:00:00Z",
+          hash: 'def456',
+          message: 'pushed one',
+          author: 'Ada',
+          date: '2025-01-01T00:00:00Z',
           isPushed: true,
         },
       ],
     });
     const client = new LiveGitClient();
 
-    const commits = await client.commits("ws-1");
+    const commits = await client.commits('ws-1');
 
-    expect(mockedRequest).toHaveBeenCalledWith("file-tracking.loadCommits", {
-      workspaceId: "ws-1",
+    expect(mockedRequest).toHaveBeenCalledWith('file-tracking.loadCommits', {
+      workspaceId: 'ws-1',
     });
     expect(commits).toEqual([
       {
-        hash: "abc123",
-        message: "init",
-        author: "Ada",
-        timestamp: Date.parse("2025-01-02T03:04:05Z"),
-        date: "2025-01-02T03:04:05Z",
+        hash: 'abc123',
+        message: 'init',
+        author: 'Ada',
+        timestamp: Date.parse('2025-01-02T03:04:05Z'),
+        date: '2025-01-02T03:04:05Z',
         files: [
-          { path: "a.ts", additions: 10, deletions: 2, status: "modified" },
-          { path: "b.ts" },
+          { path: 'a.ts', additions: 10, deletions: 2, status: 'modified' },
+          { path: 'b.ts' },
         ],
         filesChanged: 2,
-        stage: "local",
+        stage: 'local',
         isPushed: false,
-        agentId: "agent-1",
-        linkedNoteId: "note-1",
+        agentId: 'agent-1',
+        linkedNoteId: 'note-1',
       },
       {
-        hash: "def456",
-        message: "pushed one",
-        author: "Ada",
-        timestamp: Date.parse("2025-01-01T00:00:00Z"),
-        date: "2025-01-01T00:00:00Z",
-        stage: "pushed",
+        hash: 'def456',
+        message: 'pushed one',
+        author: 'Ada',
+        timestamp: Date.parse('2025-01-01T00:00:00Z'),
+        date: '2025-01-01T00:00:00Z',
+        stage: 'pushed',
         isPushed: true,
       },
     ]);
     // Metadata-only entry: files stays absent, not [].
-    expect("files" in commits[1]).toBe(false);
-    expect("filesChanged" in commits[1]).toBe(false);
+    expect('files' in commits[1]).toBe(false);
+    expect('filesChanged' in commits[1]).toBe(false);
   });
 
-  it("commits resolves [] when the daemon errors", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("log boom"));
+  it('commits resolves [] when the daemon errors', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('log boom'));
     const client = new LiveGitClient();
 
-    expect(await client.commits("ws-1")).toEqual([]);
+    expect(await client.commits('ws-1')).toEqual([]);
   });
 
-  it("commits forwards includeOlder parameter when provided", async () => {
+  it('commits forwards includeOlder parameter when provided', async () => {
     mockedRequest.mockResolvedValueOnce({
       commits: [
         {
-          hash: "older123",
-          message: "older commit",
-          author: "Ada",
-          date: "2025-01-01T00:00:00Z",
+          hash: 'older123',
+          message: 'older commit',
+          author: 'Ada',
+          date: '2025-01-01T00:00:00Z',
           filesChanged: 1,
           isPushed: true,
         },
       ],
-      boundarySha: "boundary-sha",
+      boundarySha: 'boundary-sha',
       nextToken: null,
     });
     const client = new LiveGitClient();
 
-    const commits = await client.commits("ws-1", true);
+    const commits = await client.commits('ws-1', true);
 
-    expect(mockedRequest).toHaveBeenCalledWith("file-tracking.loadCommits", {
-      workspaceId: "ws-1",
+    expect(mockedRequest).toHaveBeenCalledWith('file-tracking.loadCommits', {
+      workspaceId: 'ws-1',
       includeOlder: true,
     });
     expect(commits).toHaveLength(1);
-    expect(commits[0].hash).toBe("older123");
+    expect(commits[0].hash).toBe('older123');
   });
 
-  it("commitsWithBoundary returns full envelope with boundarySha and nextToken", async () => {
+  it('commitsWithBoundary returns full envelope with boundarySha and nextToken', async () => {
     mockedRequest.mockResolvedValueOnce({
       commits: [
         {
-          hash: "abc123",
-          message: "workspace commit",
-          author: "Ada",
-          date: "2025-01-02T03:04:05Z",
+          hash: 'abc123',
+          message: 'workspace commit',
+          author: 'Ada',
+          date: '2025-01-02T03:04:05Z',
           filesChanged: 2,
           isPushed: false,
-          files: [{ path: "a.ts", additions: 10, deletions: 2, status: "modified" }],
+          files: [{ path: 'a.ts', additions: 10, deletions: 2, status: 'modified' }],
         },
       ],
-      boundarySha: "boundary-sha-123",
-      nextToken: "page-2-token",
+      boundarySha: 'boundary-sha-123',
+      nextToken: 'page-2-token',
     });
     const client = new LiveGitClient();
 
-    const result = await client.commitsWithBoundary("ws-1");
+    const result = await client.commitsWithBoundary('ws-1');
 
-    expect(mockedRequest).toHaveBeenCalledWith("file-tracking.loadCommits", {
-      workspaceId: "ws-1",
+    expect(mockedRequest).toHaveBeenCalledWith('file-tracking.loadCommits', {
+      workspaceId: 'ws-1',
     });
     expect(result.commits).toHaveLength(1);
-    expect(result.commits[0].hash).toBe("abc123");
-    expect(result.boundarySha).toBe("boundary-sha-123");
-    expect(result.nextToken).toBe("page-2-token");
+    expect(result.commits[0].hash).toBe('abc123');
+    expect(result.boundarySha).toBe('boundary-sha-123');
+    expect(result.nextToken).toBe('page-2-token');
   });
 
-  it("commitsWithBoundary returns null boundarySha when daemon returns null", async () => {
+  it('commitsWithBoundary returns null boundarySha when daemon returns null', async () => {
     mockedRequest.mockResolvedValueOnce({
       commits: [
         {
-          hash: "abc123",
-          message: "commit",
-          author: "Ada",
-          date: "2025-01-02T03:04:05Z",
+          hash: 'abc123',
+          message: 'commit',
+          author: 'Ada',
+          date: '2025-01-02T03:04:05Z',
           filesChanged: 1,
           isPushed: false,
         },
@@ -652,33 +652,33 @@ describe("LiveGitClient reads (fake transport)", () => {
     });
     const client = new LiveGitClient();
 
-    const result = await client.commitsWithBoundary("ws-1");
+    const result = await client.commitsWithBoundary('ws-1');
 
     expect(result.boundarySha).toBeNull();
     expect(result.nextToken).toBeNull();
   });
 
-  it("commitsWithBoundary forwards includeOlder parameter", async () => {
+  it('commitsWithBoundary forwards includeOlder parameter', async () => {
     mockedRequest.mockResolvedValueOnce({
       commits: [],
-      boundarySha: "boundary-sha",
+      boundarySha: 'boundary-sha',
       nextToken: null,
     });
     const client = new LiveGitClient();
 
-    await client.commitsWithBoundary("ws-1", true);
+    await client.commitsWithBoundary('ws-1', true);
 
-    expect(mockedRequest).toHaveBeenCalledWith("file-tracking.loadCommits", {
-      workspaceId: "ws-1",
+    expect(mockedRequest).toHaveBeenCalledWith('file-tracking.loadCommits', {
+      workspaceId: 'ws-1',
       includeOlder: true,
     });
   });
 
-  it("commitsWithBoundary degrades gracefully on daemon error", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("daemon error"));
+  it('commitsWithBoundary degrades gracefully on daemon error', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('daemon error'));
     const client = new LiveGitClient();
 
-    const result = await client.commitsWithBoundary("ws-1");
+    const result = await client.commitsWithBoundary('ws-1');
 
     expect(result).toEqual({
       commits: [],
@@ -689,34 +689,34 @@ describe("LiveGitClient reads (fake transport)", () => {
 
   // §5.19 `file-tracking.getChanges` returns `{ changes, truncated, totalCount }`
   // where each change mirrors the renderer `TrackedChange` (stage/stats/attribution).
-  it("trackedChanges forwards file-tracking.getChanges and carries the §5.19 TrackedChange fields through", async () => {
+  it('trackedChanges forwards file-tracking.getChanges and carries the §5.19 TrackedChange fields through', async () => {
     mockedRequest.mockResolvedValueOnce({
       changes: [
         {
-          id: "git-1-src/x.ts",
-          file: "/ws/src/x.ts",
-          relativePath: "src/x.ts",
-          stage: "committed",
-          status: "modified",
+          id: 'git-1-src/x.ts',
+          file: '/ws/src/x.ts',
+          relativePath: 'src/x.ts',
+          stage: 'committed',
+          status: 'modified',
           stats: { additions: 10, deletions: 2 },
           attribution: {
             agent: {
-              agentId: "agent-123",
-              agentName: "Coordinator",
-              sessionId: "sess-9",
+              agentId: 'agent-123',
+              agentName: 'Coordinator',
+              sessionId: 'sess-9',
               turnNumber: 4,
               timestamp: 1750000000000,
             },
             timestamp: 1750000000000,
           },
-          commitHash: "abc123",
+          commitHash: 'abc123',
         },
         {
-          id: "b.ts",
-          file: "b.ts",
-          relativePath: "b.ts",
-          stage: "unstaged",
-          status: "added",
+          id: 'b.ts',
+          file: 'b.ts',
+          relativePath: 'b.ts',
+          stage: 'unstaged',
+          status: 'added',
           stats: { additions: 3, deletions: 0 },
           attribution: { manual: true, timestamp: 1750000001000 },
         },
@@ -726,53 +726,53 @@ describe("LiveGitClient reads (fake transport)", () => {
     });
     const client = new LiveGitClient();
 
-    const tracked = await client.trackedChanges("ws-1");
+    const tracked = await client.trackedChanges('ws-1');
 
-    expect(mockedRequest).toHaveBeenCalledWith("file-tracking.getChanges", {
-      workspaceId: "ws-1",
+    expect(mockedRequest).toHaveBeenCalledWith('file-tracking.getChanges', {
+      workspaceId: 'ws-1',
     });
     expect(tracked).toHaveLength(2);
     expect(tracked[0]).toEqual({
-      id: "git-1-src/x.ts",
-      file: "/ws/src/x.ts",
-      relativePath: "src/x.ts",
-      stage: "committed",
-      status: "modified",
+      id: 'git-1-src/x.ts',
+      file: '/ws/src/x.ts',
+      relativePath: 'src/x.ts',
+      stage: 'committed',
+      status: 'modified',
       stats: { additions: 10, deletions: 2 },
       attribution: {
         agent: {
-          agentId: "agent-123",
-          agentName: "Coordinator",
-          sessionId: "sess-9",
+          agentId: 'agent-123',
+          agentName: 'Coordinator',
+          sessionId: 'sess-9',
           turnNumber: 4,
           timestamp: 1750000000000,
         },
         timestamp: 1750000000000,
       },
-      commitHash: "abc123",
+      commitHash: 'abc123',
     });
     expect(tracked[1]).toMatchObject({
-      id: "b.ts",
-      stage: "unstaged",
-      status: "added",
+      id: 'b.ts',
+      stage: 'unstaged',
+      status: 'added',
       stats: { additions: 3, deletions: 0 },
       attribution: { manual: true, timestamp: 1750000001000 },
     });
   });
 
-  it("trackedChanges distinguishes a daemon error from a successful empty result", async () => {
+  it('trackedChanges distinguishes a daemon error from a successful empty result', async () => {
     mockedRequest
       .mockResolvedValueOnce({ changes: [], truncated: false, totalCount: 0 })
-      .mockRejectedValueOnce(new Error("changes boom"));
+      .mockRejectedValueOnce(new Error('changes boom'));
     const client = new LiveGitClient();
 
-    expect(await client.trackedChanges("ws-1")).toEqual([]);
-    expect(await client.trackedChanges("ws-1")).toBeNull();
-    expect(mockedRequest).toHaveBeenNthCalledWith(1, "file-tracking.getChanges", {
-      workspaceId: "ws-1",
+    expect(await client.trackedChanges('ws-1')).toEqual([]);
+    expect(await client.trackedChanges('ws-1')).toBeNull();
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'file-tracking.getChanges', {
+      workspaceId: 'ws-1',
     });
-    expect(mockedRequest).toHaveBeenNthCalledWith(2, "file-tracking.getChanges", {
-      workspaceId: "ws-1",
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'file-tracking.getChanges', {
+      workspaceId: 'ws-1',
     });
   });
 
@@ -781,58 +781,58 @@ describe("LiveGitClient reads (fake transport)", () => {
   // workspace initializer (P2 task). The contract asserts method + params
   // verbatim, and the renderer-shape mapping mirrors the daemon `GitBranches`
   // payload (snake_case → camelCase by serde).
-  it("getBranches forwards git.getBranches with the documented params and maps the daemon payload", async () => {
+  it('getBranches forwards git.getBranches with the documented params and maps the daemon payload', async () => {
     mockedRequest.mockResolvedValueOnce({
-      branches: ["main", "feature/x"],
-      remoteBranches: ["origin/release"],
-      currentBranch: "feature/x",
-      defaultBranch: "main",
+      branches: ['main', 'feature/x'],
+      remoteBranches: ['origin/release'],
+      currentBranch: 'feature/x',
+      defaultBranch: 'main',
     });
     const client = new LiveGitClient();
 
-    const result = await client.getBranches("/Users/clement/src/intent", true);
+    const result = await client.getBranches('/Users/clement/src/intent', true);
 
-    expect(mockedRequest).toHaveBeenCalledWith("git.getBranches", {
-      repoPath: "/Users/clement/src/intent",
+    expect(mockedRequest).toHaveBeenCalledWith('git.getBranches', {
+      repoPath: '/Users/clement/src/intent',
       includeRemote: true,
     });
     expect(result).toEqual({
-      branches: ["main", "feature/x"],
-      remoteBranches: ["origin/release"],
-      currentBranch: "feature/x",
-      defaultBranch: "main",
+      branches: ['main', 'feature/x'],
+      remoteBranches: ['origin/release'],
+      currentBranch: 'feature/x',
+      defaultBranch: 'main',
     });
   });
 
-  it("getBranches resolves null when the daemon errors (e.g. known-repo gate rejection)", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("Unknown or unauthorized repository path"));
+  it('getBranches resolves null when the daemon errors (e.g. known-repo gate rejection)', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('Unknown or unauthorized repository path'));
     const client = new LiveGitClient();
 
-    expect(await client.getBranches("/tmp/not-a-repo", true)).toBeNull();
+    expect(await client.getBranches('/tmp/not-a-repo', true)).toBeNull();
   });
 
-  it("getBranches resolves null when the daemon returns undefined (no crash on missing payload)", async () => {
+  it('getBranches resolves null when the daemon returns undefined (no crash on missing payload)', async () => {
     mockedRequest.mockResolvedValueOnce(undefined as unknown as Record<string, unknown>);
     const client = new LiveGitClient();
 
     // Guard against the original BranchSelector crash: a missing payload
     // would have thrown "Cannot read properties of undefined (reading
     // 'success')" before this fix. Now it folds to null.
-    expect(await client.getBranches("/repo", true)).toBeNull();
+    expect(await client.getBranches('/repo', true)).toBeNull();
   });
 
-  it("getBranches tolerates partial payloads by defaulting missing fields", async () => {
-    mockedRequest.mockResolvedValueOnce({ branches: ["main"] });
+  it('getBranches tolerates partial payloads by defaulting missing fields', async () => {
+    mockedRequest.mockResolvedValueOnce({ branches: ['main'] });
     const client = new LiveGitClient();
 
-    expect(await client.getBranches("/repo", false)).toEqual({
-      branches: ["main"],
+    expect(await client.getBranches('/repo', false)).toEqual({
+      branches: ['main'],
       remoteBranches: [],
-      currentBranch: "",
-      defaultBranch: "",
+      currentBranch: '',
+      defaultBranch: '',
     });
-    expect(mockedRequest).toHaveBeenCalledWith("git.getBranches", {
-      repoPath: "/repo",
+    expect(mockedRequest).toHaveBeenCalledWith('git.getBranches', {
+      repoPath: '/repo',
       includeRemote: false,
     });
   });
@@ -841,10 +841,10 @@ describe("LiveGitClient reads (fake transport)", () => {
   // that replaces the legacy `invoke('git:getBranchStatus')` Electron IPC. The
   // contract asserts method + params verbatim and the renderer-shape mapping
   // mirrors the daemon `GitBranchStatus` payload (snake_case → camelCase).
-  it("branchStatus forwards git.branchStatus with the documented params and maps the daemon payload", async () => {
+  it('branchStatus forwards git.branchStatus with the documented params and maps the daemon payload', async () => {
     mockedRequest.mockResolvedValueOnce({
-      branch: "feature/x",
-      currentBranch: "main",
+      branch: 'feature/x',
+      currentBranch: 'main',
       isCurrentBranch: false,
       ahead: 0,
       behind: 3,
@@ -852,15 +852,15 @@ describe("LiveGitClient reads (fake transport)", () => {
     });
     const client = new LiveGitClient();
 
-    const result = await client.branchStatus("/Users/clement/src/intent", "feature/x");
+    const result = await client.branchStatus('/Users/clement/src/intent', 'feature/x');
 
-    expect(mockedRequest).toHaveBeenCalledWith("git.branchStatus", {
-      repoPath: "/Users/clement/src/intent",
-      branchName: "feature/x",
+    expect(mockedRequest).toHaveBeenCalledWith('git.branchStatus', {
+      repoPath: '/Users/clement/src/intent',
+      branchName: 'feature/x',
     });
     expect(result).toEqual({
-      branch: "feature/x",
-      currentBranch: "main",
+      branch: 'feature/x',
+      currentBranch: 'main',
       isCurrentBranch: false,
       ahead: 0,
       behind: 3,
@@ -868,214 +868,214 @@ describe("LiveGitClient reads (fake transport)", () => {
     });
   });
 
-  it("branchStatus resolves null when the daemon errors (e.g. known-repo gate rejection)", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("Unknown or unauthorized repository path"));
+  it('branchStatus resolves null when the daemon errors (e.g. known-repo gate rejection)', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('Unknown or unauthorized repository path'));
     const client = new LiveGitClient();
 
-    expect(await client.branchStatus("/tmp/not-a-repo", "main")).toBeNull();
+    expect(await client.branchStatus('/tmp/not-a-repo', 'main')).toBeNull();
   });
 
-  it("branchStatus resolves null when the daemon returns undefined (no crash on missing payload)", async () => {
+  it('branchStatus resolves null when the daemon returns undefined (no crash on missing payload)', async () => {
     mockedRequest.mockResolvedValueOnce(undefined as unknown as Record<string, unknown>);
     const client = new LiveGitClient();
 
-    expect(await client.branchStatus("/repo", "main")).toBeNull();
+    expect(await client.branchStatus('/repo', 'main')).toBeNull();
   });
 
-  it("branchStatus tolerates partial payloads by defaulting missing fields", async () => {
+  it('branchStatus tolerates partial payloads by defaulting missing fields', async () => {
     mockedRequest.mockResolvedValueOnce({ behind: 2 });
     const client = new LiveGitClient();
 
-    expect(await client.branchStatus("/repo", "main")).toEqual({
-      branch: "main",
-      currentBranch: "",
+    expect(await client.branchStatus('/repo', 'main')).toEqual({
+      branch: 'main',
+      currentBranch: '',
       isCurrentBranch: false,
       ahead: 0,
       behind: 2,
       hasUncommittedChanges: false,
     });
-    expect(mockedRequest).toHaveBeenCalledWith("git.branchStatus", {
-      repoPath: "/repo",
-      branchName: "main",
+    expect(mockedRequest).toHaveBeenCalledWith('git.branchStatus', {
+      repoPath: '/repo',
+      branchName: 'main',
     });
   });
 });
 
-describe("LiveGitClient.stage (fake transport)", () => {
+describe('LiveGitClient.stage (fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("forwards git.stage with trimmed explicit paths and folds success", async () => {
-    mockedRequest.mockResolvedValueOnce({ branch: "main", files: [] });
+  it('forwards git.stage with trimmed explicit paths and folds success', async () => {
+    mockedRequest.mockResolvedValueOnce({ branch: 'main', files: [] });
     const client = new LiveGitClient();
 
-    const result = await client.stage("ws-1", [" a.ts ", "b.ts", ""]);
+    const result = await client.stage('ws-1', [' a.ts ', 'b.ts', '']);
 
-    expect(mockedRequest).toHaveBeenCalledWith("git.stage", {
-      workspaceId: "ws-1",
-      paths: ["a.ts", "b.ts"],
+    expect(mockedRequest).toHaveBeenCalledWith('git.stage', {
+      workspaceId: 'ws-1',
+      paths: ['a.ts', 'b.ts'],
     });
     expect(result).toEqual({ success: true });
   });
 
-  it("rejects all-files globs upstream WITHOUT touching the daemon", async () => {
+  it('rejects all-files globs upstream WITHOUT touching the daemon', async () => {
     const client = new LiveGitClient();
 
-    for (const glob of [".", "*", "git add --all"]) {
-      const result = await client.stage("ws-1", [glob]);
+    for (const glob of ['.', '*', 'git add --all']) {
+      const result = await client.stage('ws-1', [glob]);
       expect(result.success).toBe(false);
     }
     expect(mockedRequest).not.toHaveBeenCalled();
   });
 
-  it("rejects an empty path list WITHOUT touching the daemon", async () => {
+  it('rejects an empty path list WITHOUT touching the daemon', async () => {
     const client = new LiveGitClient();
 
-    const result = await client.stage("ws-1", ["   ", ""]);
+    const result = await client.stage('ws-1', ['   ', '']);
 
     expect(result.success).toBe(false);
     expect(mockedRequest).not.toHaveBeenCalled();
   });
 
-  it("maps a daemon stage error into a failed MutationResult", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("stage boom"));
+  it('maps a daemon stage error into a failed MutationResult', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('stage boom'));
     const client = new LiveGitClient();
 
-    expect(await client.stage("ws-1", ["a.ts"])).toEqual({
+    expect(await client.stage('ws-1', ['a.ts'])).toEqual({
       success: false,
-      error: "stage boom",
+      error: 'stage boom',
     });
   });
 });
 
 // `git.unstage` (PROTOCOL §5.6 extensions) is the inverse of `git.stage` and
 // shares the explicit-paths contract (all-files globs rejected upstream).
-describe("LiveGitClient.unstage (fake transport)", () => {
+describe('LiveGitClient.unstage (fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("forwards git.unstage with trimmed explicit paths and folds success", async () => {
-    mockedRequest.mockResolvedValueOnce({ ok: true, paths: ["a.ts", "b.ts"] });
+  it('forwards git.unstage with trimmed explicit paths and folds success', async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true, paths: ['a.ts', 'b.ts'] });
     const client = new LiveGitClient();
 
-    const result = await client.unstage("ws-1", [" a.ts ", "b.ts", ""]);
+    const result = await client.unstage('ws-1', [' a.ts ', 'b.ts', '']);
 
-    expect(mockedRequest).toHaveBeenCalledWith("git.unstage", {
-      workspaceId: "ws-1",
-      paths: ["a.ts", "b.ts"],
+    expect(mockedRequest).toHaveBeenCalledWith('git.unstage', {
+      workspaceId: 'ws-1',
+      paths: ['a.ts', 'b.ts'],
     });
     expect(result).toEqual({ success: true });
   });
 
-  it("rejects all-files globs and empty lists upstream WITHOUT touching the daemon", async () => {
+  it('rejects all-files globs and empty lists upstream WITHOUT touching the daemon', async () => {
     const client = new LiveGitClient();
 
-    for (const paths of [["."], ["*"], ["git reset --all"], ["   ", ""]]) {
-      const result = await client.unstage("ws-1", paths);
+    for (const paths of [['.'], ['*'], ['git reset --all'], ['   ', '']]) {
+      const result = await client.unstage('ws-1', paths);
       expect(result.success).toBe(false);
     }
     expect(mockedRequest).not.toHaveBeenCalled();
   });
 
-  it("maps a daemon unstage error into a failed MutationResult", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("unstage boom"));
+  it('maps a daemon unstage error into a failed MutationResult', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('unstage boom'));
     const client = new LiveGitClient();
 
-    expect(await client.unstage("ws-1", ["a.ts"])).toEqual({
+    expect(await client.unstage('ws-1', ['a.ts'])).toEqual({
       success: false,
-      error: "unstage boom",
+      error: 'unstage boom',
     });
   });
 });
 
 // `git.discard` (PROTOCOL §5.6 extensions) discards working-tree changes for
 // explicit paths (DESTRUCTIVE); same params/validation family as git.stage.
-describe("LiveGitClient.discard (fake transport)", () => {
+describe('LiveGitClient.discard (fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("forwards git.discard with trimmed explicit paths and folds success", async () => {
-    mockedRequest.mockResolvedValueOnce({ ok: true, paths: ["a.ts"] });
+  it('forwards git.discard with trimmed explicit paths and folds success', async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true, paths: ['a.ts'] });
     const client = new LiveGitClient();
 
-    const result = await client.discard("ws-1", [" a.ts ", ""]);
+    const result = await client.discard('ws-1', [' a.ts ', '']);
 
-    expect(mockedRequest).toHaveBeenCalledWith("git.discard", {
-      workspaceId: "ws-1",
-      paths: ["a.ts"],
+    expect(mockedRequest).toHaveBeenCalledWith('git.discard', {
+      workspaceId: 'ws-1',
+      paths: ['a.ts'],
     });
     expect(result).toEqual({ success: true });
   });
 
-  it("rejects all-files globs and empty lists upstream WITHOUT touching the daemon", async () => {
+  it('rejects all-files globs and empty lists upstream WITHOUT touching the daemon', async () => {
     const client = new LiveGitClient();
 
-    for (const paths of [["."], ["*"], ["git checkout --all"], ["   ", ""]]) {
-      const result = await client.discard("ws-1", paths);
+    for (const paths of [['.'], ['*'], ['git checkout --all'], ['   ', '']]) {
+      const result = await client.discard('ws-1', paths);
       expect(result.success).toBe(false);
     }
     expect(mockedRequest).not.toHaveBeenCalled();
   });
 
-  it("maps a daemon discard error into a failed MutationResult", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("discard boom"));
+  it('maps a daemon discard error into a failed MutationResult', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('discard boom'));
     const client = new LiveGitClient();
 
-    expect(await client.discard("ws-1", ["a.ts"])).toEqual({
+    expect(await client.discard('ws-1', ['a.ts'])).toEqual({
       success: false,
-      error: "discard boom",
+      error: 'discard boom',
     });
   });
 });
 
-describe("LiveGitClient.commit (fake transport)", () => {
+describe('LiveGitClient.commit (fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("forwards git.agentCommit with message + userRequested and optional files", async () => {
-    mockedRequest.mockResolvedValueOnce({ ok: true, hash: "abc", files: ["a.ts"], fileCount: 1 });
+  it('forwards git.agentCommit with message + userRequested and optional files', async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true, hash: 'abc', files: ['a.ts'], fileCount: 1 });
     const client = new LiveGitClient();
 
-    const result = await client.commit("ws-1", {
-      message: "msg",
-      files: ["a.ts"],
+    const result = await client.commit('ws-1', {
+      message: 'msg',
+      files: ['a.ts'],
       userRequested: true,
     });
 
-    expect(mockedRequest).toHaveBeenCalledWith("git.agentCommit", {
-      workspaceId: "ws-1",
-      message: "msg",
-      files: ["a.ts"],
+    expect(mockedRequest).toHaveBeenCalledWith('git.agentCommit', {
+      workspaceId: 'ws-1',
+      message: 'msg',
+      files: ['a.ts'],
       userRequested: true,
     });
     expect(result).toEqual({ success: true });
   });
 
-  it("omits files when not provided and does NOT forward amend/idempotencyKey", async () => {
+  it('omits files when not provided and does NOT forward amend/idempotencyKey', async () => {
     mockedRequest.mockResolvedValueOnce({ ok: true });
     const client = new LiveGitClient();
 
-    await client.commit("ws-1", { message: "msg", amend: true, userRequested: true });
+    await client.commit('ws-1', { message: 'msg', amend: true, userRequested: true });
 
-    expect(mockedRequest).toHaveBeenCalledWith("git.agentCommit", {
-      workspaceId: "ws-1",
-      message: "msg",
+    expect(mockedRequest).toHaveBeenCalledWith('git.agentCommit', {
+      workspaceId: 'ws-1',
+      message: 'msg',
       userRequested: true,
     });
   });
 
-  it("refuses to commit (and never calls the daemon) when userRequested is false", async () => {
+  it('refuses to commit (and never calls the daemon) when userRequested is false', async () => {
     const client = new LiveGitClient();
 
-    const result = await client.commit("ws-1", { message: "msg", userRequested: false });
+    const result = await client.commit('ws-1', { message: 'msg', userRequested: false });
 
     expect(result.success).toBe(false);
     expect(mockedRequest).not.toHaveBeenCalled();
   });
 
-  it("maps a daemon commit error into a failed MutationResult", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("commit boom"));
+  it('maps a daemon commit error into a failed MutationResult', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('commit boom'));
     const client = new LiveGitClient();
 
-    expect(await client.commit("ws-1", { message: "msg", userRequested: true })).toEqual({
+    expect(await client.commit('ws-1', { message: 'msg', userRequested: true })).toEqual({
       success: false,
-      error: "commit boom",
+      error: 'commit boom',
     });
   });
 });
@@ -1085,18 +1085,18 @@ describe("LiveGitClient.commit (fake transport)", () => {
 // workspace. It replaces the dead legacy `invoke('git:pullBranch')` IPC.
 // Ordinary pull failures are the structured `{ ok: false, error }` result,
 // never a JSON-RPC error.
-describe("LiveGitClient.pull (fake transport)", () => {
+describe('LiveGitClient.pull (fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("forwards git.pull with the documented params and folds { ok: true } to success", async () => {
+  it('forwards git.pull with the documented params and folds { ok: true } to success', async () => {
     mockedRequest.mockResolvedValueOnce({ ok: true });
     const client = new LiveGitClient();
 
-    const result = await client.pull("/Users/clement/src/intent", "main");
+    const result = await client.pull('/Users/clement/src/intent', 'main');
 
     expect(mockedRequest).toHaveBeenCalledWith(
-      "git.pull",
-      { repoPath: "/Users/clement/src/intent", branchName: "main" },
+      'git.pull',
+      { repoPath: '/Users/clement/src/intent', branchName: 'main' },
       { timeoutMs: 150_000 },
     );
     expect(result).toEqual({ success: true });
@@ -1111,43 +1111,43 @@ describe("LiveGitClient.pull (fake transport)", () => {
     mockedRequest.mockResolvedValueOnce({ ok: true });
     const client = new LiveGitClient();
 
-    await client.pull("/repo", "main");
+    await client.pull('/repo', 'main');
 
     const call = mockedRequest.mock.calls[0];
-    expect(call[0]).toBe("git.pull");
+    expect(call[0]).toBe('git.pull');
     expect(call[2]).toEqual({ timeoutMs: 150_000 });
   });
 
-  it("maps the structured { ok: false, error } failure into a failed MutationResult", async () => {
+  it('maps the structured { ok: false, error } failure into a failed MutationResult', async () => {
     mockedRequest.mockResolvedValueOnce({
       ok: false,
-      error: "Merge conflict detected. Please resolve conflicts manually.",
+      error: 'Merge conflict detected. Please resolve conflicts manually.',
     });
     const client = new LiveGitClient();
 
-    expect(await client.pull("/repo", "main")).toEqual({
+    expect(await client.pull('/repo', 'main')).toEqual({
       success: false,
-      error: "Merge conflict detected. Please resolve conflicts manually.",
+      error: 'Merge conflict detected. Please resolve conflicts manually.',
     });
   });
 
-  it("falls back to a generic message when the structured failure carries no error text", async () => {
+  it('falls back to a generic message when the structured failure carries no error text', async () => {
     mockedRequest.mockResolvedValueOnce({ ok: false });
     const client = new LiveGitClient();
 
-    expect(await client.pull("/repo", "main")).toEqual({
+    expect(await client.pull('/repo', 'main')).toEqual({
       success: false,
-      error: "Failed to pull changes",
+      error: 'Failed to pull changes',
     });
   });
 
-  it("maps a JSON-RPC error (e.g. repoPath validation) into a failed MutationResult", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("Repository path does not exist: /tmp/nope"));
+  it('maps a JSON-RPC error (e.g. repoPath validation) into a failed MutationResult', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('Repository path does not exist: /tmp/nope'));
     const client = new LiveGitClient();
 
-    expect(await client.pull("/tmp/nope", "main")).toEqual({
+    expect(await client.pull('/tmp/nope', 'main')).toEqual({
       success: false,
-      error: "Repository path does not exist: /tmp/nope",
+      error: 'Repository path does not exist: /tmp/nope',
     });
   });
 });
@@ -1160,7 +1160,7 @@ describe("LiveGitClient.pull (fake transport)", () => {
 // This suite swaps the mocked matcher for the REAL implementation and pins the
 // routing end-to-end: terminal:data does NOT trigger `git.status`; git:* and
 // changes:git-status do.
-describe("LiveGitClient.subscribe event-family routing (fake transport)", () => {
+describe('LiveGitClient.subscribe event-family routing (fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
   // The mocks mirror the production transports
@@ -1168,9 +1168,9 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
   // EVERY notification and reconnect out to ALL registered listeners. Keeping
   // only the last-registered callback would mask multi-subscriber regressions.
   async function setupWithRealMatcher() {
-    const real = await vi.importActual<typeof import("./live-support")>("./live-support");
+    const real = await vi.importActual<typeof import('./live-support')>('./live-support');
     mockedIsEventInFamily.mockImplementation(real.isEventInFamily);
-    mockedListWorkspaceIds.mockResolvedValue(["ws-1"]);
+    mockedListWorkspaceIds.mockResolvedValue(['ws-1']);
     // Default: the id-source hold is inert (vi.clearAllMocks keeps
     // implementations, so re-stub it for every test in this suite).
     mockedSubscribeWorkspaceIds.mockImplementation(() => () => {});
@@ -1203,11 +1203,11 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
    */
   const flushTrailing = () => new Promise((resolve) => setTimeout(resolve, 300));
   const gitStatusCalls = () =>
-    mockedRequest.mock.calls.filter(([method]) => method === "git.status").length;
+    mockedRequest.mock.calls.filter(([method]) => method === 'git.status').length;
   const workspaceListCalls = () =>
-    mockedRequest.mock.calls.filter(([method]) => method === "workspace.list").length;
+    mockedRequest.mock.calls.filter(([method]) => method === 'workspace.list').length;
 
-  it("does NOT refetch git.status on a wrapped terminal:data notification", async () => {
+  it('does NOT refetch git.status on a wrapped terminal:data notification', async () => {
     const { notify } = await setupWithRealMatcher();
     const client = new LiveGitClient();
 
@@ -1216,8 +1216,8 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
     const initialCount = gitStatusCalls();
 
     notify({
-      method: "events.event",
-      params: { event: { type: "terminal:data", data: { chunk: "x" } } },
+      method: 'events.event',
+      params: { event: { type: 'terminal:data', data: { chunk: 'x' } } },
     });
     await flush();
 
@@ -1225,7 +1225,7 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
     unsubscribe();
   });
 
-  it("DOES refetch git.status on a wrapped git:commit notification", async () => {
+  it('DOES refetch git.status on a wrapped git:commit notification', async () => {
     const { notify } = await setupWithRealMatcher();
     const client = new LiveGitClient();
 
@@ -1234,17 +1234,17 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
     const initialCount = gitStatusCalls();
 
     notify({
-      method: "events.event",
-      params: { event: { type: "git:commit" }, subscriptionId: "s-1" },
+      method: 'events.event',
+      params: { event: { type: 'git:commit' }, subscriptionId: 's-1' },
     });
     await flush();
 
     expect(gitStatusCalls()).toBe(initialCount + 1);
-    expect(mockedRequest).toHaveBeenLastCalledWith("git.status", { workspaceId: "ws-1" });
+    expect(mockedRequest).toHaveBeenLastCalledWith('git.status', { workspaceId: 'ws-1' });
     unsubscribe();
   });
 
-  it("DOES refetch git.status on a wrapped changes:git-status notification", async () => {
+  it('DOES refetch git.status on a wrapped changes:git-status notification', async () => {
     const { notify } = await setupWithRealMatcher();
     const client = new LiveGitClient();
 
@@ -1253,8 +1253,8 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
     const initialCount = gitStatusCalls();
 
     notify({
-      method: "events.event",
-      params: { event: { type: "changes:git-status" } },
+      method: 'events.event',
+      params: { event: { type: 'changes:git-status' } },
     });
     await flush();
 
@@ -1265,7 +1265,7 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
   // §6.5: `changes:tracked` (daemon tracked-change writes) must refresh the
   // display like `changes:git-status` does — the local file-tracking store is
   // retired, so these events are the only signal that tracked changes moved.
-  it("DOES refetch git.status on a wrapped changes:tracked notification", async () => {
+  it('DOES refetch git.status on a wrapped changes:tracked notification', async () => {
     const { notify } = await setupWithRealMatcher();
     const client = new LiveGitClient();
 
@@ -1274,8 +1274,8 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
     const initialCount = gitStatusCalls();
 
     notify({
-      method: "events.event",
-      params: { event: { type: "changes:tracked" } },
+      method: 'events.event',
+      params: { event: { type: 'changes:tracked' } },
     });
     await flush();
 
@@ -1283,7 +1283,7 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
     unsubscribe();
   });
 
-  it("subscribes to the git:* family plus changes:tracked and changes:git-status (§6.5)", async () => {
+  it('subscribes to the git:* family plus changes:tracked and changes:git-status (§6.5)', async () => {
     await setupWithRealMatcher();
     const client = new LiveGitClient();
 
@@ -1292,13 +1292,13 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
 
     expect(mockedSubscribe).toHaveBeenCalledWith({
       eventTypes: [
-        "git:commit",
-        "git:push",
-        "git:pull",
-        "git:branch",
-        "git:merge",
-        "changes:tracked",
-        "changes:git-status",
+        'git:commit',
+        'git:push',
+        'git:pull',
+        'git:branch',
+        'git:merge',
+        'changes:tracked',
+        'changes:git-status',
       ],
     });
     unsubscribe();
@@ -1308,13 +1308,13 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
   // with trailing coalesce and the guard is module-level, so a burst of daemon
   // events across N subscribers costs at most one in-flight fetch plus one
   // trailing fetch — not one per (event × subscriber).
-  describe("single-flight + trailing coalesce", () => {
-    it("collapses N notifications arriving during an in-flight fetch into 1 trailing git.status", async () => {
+  describe('single-flight + trailing coalesce', () => {
+    it('collapses N notifications arriving during an in-flight fetch into 1 trailing git.status', async () => {
       const { notify } = await setupWithRealMatcher();
       // Hold every `git.status` open so the burst lands mid-flight.
       const resolvers: Array<(status: unknown) => void> = [];
       mockedRequest.mockImplementation((method: string) => {
-        if (method !== "git.status") return Promise.resolve({});
+        if (method !== 'git.status') return Promise.resolve({});
         return new Promise((resolve) => resolvers.push(() => resolve(GIT_STATUS_FIXTURE)));
       });
       const client = new LiveGitClient();
@@ -1325,7 +1325,7 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
 
       // Five events while the initial fetch is still in flight.
       for (let i = 0; i < 5; i += 1) {
-        notify({ method: "events.event", params: { event: { type: "git:commit" } } });
+        notify({ method: 'events.event', params: { event: { type: 'git:commit' } } });
       }
       await flush();
       expect(gitStatusCalls()).toBe(1);
@@ -1350,15 +1350,15 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
     // intent-hq/monorepo#1716: the id comes from the shared cached/push-driven
     // source, so a sustained git/changes stream costs no `workspace.list`
     // round-trips — the old code issued one per event.
-    it("issues no per-event workspace.list for a git/changes event burst", async () => {
+    it('issues no per-event workspace.list for a git/changes event burst', async () => {
       const { notify } = await setupWithRealMatcher();
-      const real = await vi.importActual<typeof import("./live-support")>("./live-support");
+      const real = await vi.importActual<typeof import('./live-support')>('./live-support');
       real.__resetLiveSupportCachesForTests();
       mockedListWorkspaceIds.mockImplementation(real.listWorkspaceIds);
       // Real id source: the client's own hold is what keeps it seeded here.
       mockedSubscribeWorkspaceIds.mockImplementation(real.subscribeWorkspaceIds);
       mockedRequest.mockImplementation((method: string) => {
-        if (method === "workspace.list") return Promise.resolve({ workspaces: [{ id: "ws-1" }] });
+        if (method === 'workspace.list') return Promise.resolve({ workspaces: [{ id: 'ws-1' }] });
         return Promise.resolve(GIT_STATUS_FIXTURE);
       });
       const client = new LiveGitClient();
@@ -1372,7 +1372,7 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
       real.__resetLiveSupportCachesForTests();
 
       for (let i = 0; i < 6; i += 1) {
-        notify({ method: "events.event", params: { event: { type: "changes:git-status" } } });
+        notify({ method: 'events.event', params: { event: { type: 'changes:git-status' } } });
       }
       await flushTrailing();
 
@@ -1387,7 +1387,7 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
 
     // The hold is what keeps the shared id source seeded for this client; it
     // must be released with the last subscriber so the source can reset.
-    it("holds the shared workspace-id source while subscribers exist", async () => {
+    it('holds the shared workspace-id source while subscribers exist', async () => {
       await setupWithRealMatcher();
       const release = vi.fn();
       mockedSubscribeWorkspaceIds.mockReturnValue(release);
@@ -1409,12 +1409,12 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
 
     // Without the delay the trailing fetch starts the instant the in-flight
     // one settles, so a sustained event stream loops with zero gap.
-    it("spaces the trailing fetch from the settled one by the coalesce delay", async () => {
+    it('spaces the trailing fetch from the settled one by the coalesce delay', async () => {
       const { notify } = await setupWithRealMatcher();
       const startedAt: number[] = [];
       const resolvers: Array<() => void> = [];
       mockedRequest.mockImplementation((method: string) => {
-        if (method !== "git.status") return Promise.resolve({});
+        if (method !== 'git.status') return Promise.resolve({});
         startedAt.push(Date.now());
         return new Promise((resolve) => resolvers.push(() => resolve(GIT_STATUS_FIXTURE)));
       });
@@ -1426,7 +1426,7 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
 
       // Event lands while the leading fetch is still open, so it can only be
       // served by the trailing fetch.
-      notify({ method: "events.event", params: { event: { type: "changes:git-status" } } });
+      notify({ method: 'events.event', params: { event: { type: 'changes:git-status' } } });
       await flush();
       expect(startedAt).toHaveLength(1);
 
@@ -1445,7 +1445,7 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
       await flush();
     });
 
-    it("serves two concurrent subscribers from one shared fetch per event", async () => {
+    it('serves two concurrent subscribers from one shared fetch per event', async () => {
       const { notify, notifyListenerCount } = await setupWithRealMatcher();
       const client = new LiveGitClient();
       const first = vi.fn();
@@ -1465,7 +1465,7 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
       // would turn one event into M triggers (leading + guaranteed trailing).
       expect(notifyListenerCount()).toBe(1);
 
-      notify({ method: "events.event", params: { event: { type: "git:commit" } } });
+      notify({ method: 'events.event', params: { event: { type: 'git:commit' } } });
       await flush();
 
       expect(gitStatusCalls()).toBe(afterSnapshot + 1);
@@ -1477,11 +1477,11 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
       expect(notifyListenerCount()).toBe(0);
     });
 
-    it("keeps fanning out to the remaining subscribers when one handler throws", async () => {
+    it('keeps fanning out to the remaining subscribers when one handler throws', async () => {
       const { notify } = await setupWithRealMatcher();
       const client = new LiveGitClient();
       const throwing = vi.fn(() => {
-        throw new Error("subscriber boom");
+        throw new Error('subscriber boom');
       });
       const healthy = vi.fn();
 
@@ -1492,7 +1492,7 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
       throwing.mockClear();
       healthy.mockClear();
 
-      notify({ method: "events.event", params: { event: { type: "git:commit" } } });
+      notify({ method: 'events.event', params: { event: { type: 'git:commit' } } });
       await flush();
 
       expect(throwing).toHaveBeenCalledTimes(1);
@@ -1503,11 +1503,11 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
 
     // A stranded in-flight flag would permanently wedge every later refetch,
     // so pin that a rejected fetch still clears the guard.
-    it("clears the in-flight flag when a fetch rejects", async () => {
+    it('clears the in-flight flag when a fetch rejects', async () => {
       const { notify } = await setupWithRealMatcher();
       let rejectStatus: ((reason: unknown) => void) | undefined;
       mockedRequest.mockImplementation((method: string) => {
-        if (method !== "git.status") return Promise.resolve({});
+        if (method !== 'git.status') return Promise.resolve({});
         return new Promise((_resolve, reject) => {
           rejectStatus = reject;
         });
@@ -1518,11 +1518,11 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
       await flush();
       expect(gitStatusCalls()).toBe(1);
 
-      rejectStatus!(new Error("status failed"));
+      rejectStatus!(new Error('status failed'));
       await flush();
 
       mockedRequest.mockResolvedValue(GIT_STATUS_FIXTURE);
-      notify({ method: "events.event", params: { event: { type: "git:commit" } } });
+      notify({ method: 'events.event', params: { event: { type: 'git:commit' } } });
       await flush();
 
       expect(gitStatusCalls()).toBe(2);
@@ -1530,11 +1530,11 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
       await flush();
     });
 
-    it("skips the trailing fetch once the last subscriber has unsubscribed", async () => {
+    it('skips the trailing fetch once the last subscriber has unsubscribed', async () => {
       const { notify } = await setupWithRealMatcher();
       const resolvers: Array<() => void> = [];
       mockedRequest.mockImplementation((method: string) => {
-        if (method !== "git.status") return Promise.resolve({});
+        if (method !== 'git.status') return Promise.resolve({});
         return new Promise((resolve) => resolvers.push(() => resolve(GIT_STATUS_FIXTURE)));
       });
       const client = new LiveGitClient();
@@ -1544,7 +1544,7 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
       expect(gitStatusCalls()).toBe(1);
 
       // Event lands mid-flight (dirty flag set), then the last subscriber goes.
-      notify({ method: "events.event", params: { event: { type: "git:commit" } } });
+      notify({ method: 'events.event', params: { event: { type: 'git:commit' } } });
       unsubscribe();
       await flush();
 
@@ -1556,11 +1556,11 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
       await flush();
     });
 
-    it("routes reconnect refreshes through the same guard", async () => {
+    it('routes reconnect refreshes through the same guard', async () => {
       const { reconnect } = await setupWithRealMatcher();
       const resolvers: Array<() => void> = [];
       mockedRequest.mockImplementation((method: string) => {
-        if (method !== "git.status") return Promise.resolve({});
+        if (method !== 'git.status') return Promise.resolve({});
         return new Promise((resolve) => resolvers.push(() => resolve(GIT_STATUS_FIXTURE)));
       });
       const client = new LiveGitClient();

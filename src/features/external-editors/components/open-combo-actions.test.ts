@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
-import {
-  FILE_MANAGER_EDITOR_ID,
-  getVisibleOpenInEditors,
-  MAX_OPEN_IN_APPS,
-} from './open-combo-actions';
+import { getVisibleOpenInEditors } from './open-combo-actions';
 
 function editor(id: string): InstalledEditor {
   return {
@@ -20,21 +16,22 @@ function editor(id: string): InstalledEditor {
 }
 
 describe('getVisibleOpenInEditors', () => {
-  it('keeps at most the first three configured apps in the action menu', () => {
+  it('offers every installed editor in the supplied order', () => {
     const editors = ['one', 'two', 'three', 'four'].map(editor);
+    editors.push({ ...editor('finder'), category: 'finder', handlerType: 'finder' });
 
-    expect(MAX_OPEN_IN_APPS).toBe(3);
     expect(getVisibleOpenInEditors(editors).map(({ id }) => id)).toEqual([
       'one',
       'two',
       'three',
-      FILE_MANAGER_EDITOR_ID,
+      'four',
+      'finder',
     ]);
   });
 
-  it('keeps a detected platform file manager after the configured app cap', () => {
+  it('preserves a detected platform file manager in the supplied order', () => {
     const finder = {
-      ...editor(FILE_MANAGER_EDITOR_ID),
+      ...editor('finder'),
       name: 'File Explorer',
       shortLabel: 'Explorer',
       category: 'finder' as const,
@@ -48,7 +45,22 @@ describe('getVisibleOpenInEditors', () => {
       editor('four'),
     ]);
 
-    expect(visible.map(({ id }) => id)).toEqual(['one', 'two', 'three', FILE_MANAGER_EDITOR_ID]);
-    expect(visible.at(-1)?.name).toBe('File Explorer');
+    expect(visible.map(({ id }) => id)).toEqual(['one', 'finder', 'two', 'three', 'four']);
+    expect(visible[1]?.name).toBe('File Explorer');
+  });
+
+  it('omits hidden and not-installed editors without restoring a fallback', () => {
+    const hidden = editor('hidden');
+    const finder = {
+      ...editor('finder'),
+      category: 'finder' as const,
+      handlerType: 'finder' as const,
+    };
+    expect(
+      getVisibleOpenInEditors(
+        [editor('one'), hidden, { ...editor('missing'), installed: false }, finder],
+        ['hidden', 'finder'],
+      ).map(({ id }) => id),
+    ).toEqual(['one']);
   });
 });

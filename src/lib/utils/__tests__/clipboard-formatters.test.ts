@@ -2,11 +2,7 @@
  * Tests for clipboard-formatters utility functions
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   safeStringify,
   formatToolCallForClipboard,
@@ -170,9 +166,7 @@ describe('clipboard-formatters', () => {
       const messages = [
         {
           role: 'user',
-          contentBlocks: [
-            { type: 'tool_result', tool_use_id: 'tool-1', content: 'file contents' },
-          ],
+          contentBlocks: [{ type: 'tool_result', tool_use_id: 'tool-1', content: 'file contents' }],
         },
       ];
       const result = formatAgentMessagesForClipboard(messages);
@@ -225,9 +219,7 @@ describe('clipboard-formatters', () => {
         { role: 'assistant', contentBlocks: [{ type: 'text', text: 'Hi there!' }] },
       ];
       const result = formatAgentMessagesForClipboard(messages);
-      expect(result).toContain(
-        'System:\nModel changed from Claude Opus 4.5 to Claude Sonnet 4.5',
-      );
+      expect(result).toContain('System:\nModel changed from Claude Opus 4.5 to Claude Sonnet 4.5');
       expect(result).toContain('User:\nHello');
       expect(result).toContain('Assistant:\nHi there!');
     });

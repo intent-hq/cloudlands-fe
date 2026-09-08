@@ -1,4 +1,4 @@
-import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import type { PrMonitorRow, PrMonitorSnapshot } from '$features/pr-monitor/pr-monitor-service';
 import type { PullRequestInfo } from '$shared/types';
 import { PullRequestStatus } from '$shared/types';
 import { describe, expect, it } from 'vitest';
@@ -40,6 +40,28 @@ function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
   };
 }
 
+function makeSnapshot(overrides: Partial<PrMonitorSnapshot> = {}): PrMonitorSnapshot {
+  return {
+    state: 'open',
+    isDraft: false,
+    hasConflicts: false,
+    isBehind: false,
+    checks: {
+      total: 0,
+      passed: 0,
+      failed: 0,
+      pending: 0,
+      failingRequired: 0,
+      pendingRequired: 0,
+      requiredKnown: false,
+    },
+    approvals: { decision: '', have: 0, changesRequested: 0 },
+    threads: { unresolved: 0 },
+    rulesKnown: false,
+    ...overrides,
+  };
+}
+
 function build(
   workspacePRs: PullRequestInfo[] | undefined,
   activePR: PullRequestInfo | null,
@@ -56,7 +78,7 @@ function build(
 }
 
 describe('buildWorkspacePRPresentationModel', () => {
-  it('returns every branch-linked PR in deterministic status order', () => {
+  it('returns every branch-linked PR in lifecycle order, earliest state first', () => {
     const rows = build(
       [
         makePR({ id: 'closed', number: 4, status: PullRequestStatus.Closed }),
@@ -68,8 +90,24 @@ describe('buildWorkspacePRPresentationModel', () => {
       [],
     );
 
-    expect(rows.map(({ status }) => status)).toEqual(['open', 'draft', 'merged', 'closed']);
-    expect(rows.map(({ number }) => number)).toEqual([1, 2, 3, 4]);
+    expect(rows.map(({ status }) => status)).toEqual(['draft', 'open', 'merged', 'closed']);
+    expect(rows.map(({ number }) => number)).toEqual([2, 1, 3, 4]);
+  });
+
+  it('breaks same-status ties by most recent update, then higher PR number', () => {
+    const rows = build(
+      [
+        makePR({ id: 'older', number: 12, updatedAt: '2026-08-01T00:00:00Z' }),
+        makePR({ id: 'newer', number: 5, updatedAt: '2026-08-09T00:00:00Z' }),
+        makePR({ id: 'no-timestamp', number: 20, updatedAt: undefined }),
+        makePR({ id: 'same-time-low', number: 7, updatedAt: '2026-08-09T00:00:00Z' }),
+      ],
+      null,
+      [],
+    );
+
+    expect(rows.every(({ status }) => status === 'open')).toBe(true);
+    expect(rows.map(({ number }) => number)).toEqual([7, 5, 12, 20]);
   });
 
   it('uses the active PR only as the legacy fallback', () => {
@@ -209,7 +247,145 @@ describe('buildWorkspacePRPresentationModel', () => {
 
   it('presents a snapshotless monitor without inventing merge state', () => {
     const [row] = build([], null, [makeMonitor({ prNumber: 8, lastSnapshot: undefined })]);
-    expect(row).toMatchObject({ status: 'open', accessibleStateLabel: 'Open', details: 'Open' });
+    expect(row).toMatchObject({
+      status: 'open',
+      queued: false,
+      accessibleStateLabel: 'Open',
+      details: 'Open',
+    });
+  });
+
+  describe('merge-queued rows', () => {
+    it('labels an open PR Queued when its monitor snapshot reports it in the merge queue', () => {
+      const [row] = build([makePR()], null, [
+        makeMonitor({ lastSnapshot: makeSnapshot({ isInMergeQueue: true }) }),
+      ]);
+
+      expect(row).toMatchObject({ status: 'open', queued: true, accessibleStateLabel: 'Queued' });
+      expect(row.details.split('\n')[0]).toBe('Queued');
+      expect(row.details).not.toContain('Open');
+    });
+
+    it('keeps Open for an open PR whose snapshot carries no queue flag', () => {
+      const [row] = build([makePR()], null, [makeMonitor({ lastSnapshot: makeSnapshot() })]);
+
+      expect(row).toMatchObject({ status: 'open', queued: false, accessibleStateLabel: 'Open' });
+      expect(row.details.split('\n')[0]).toBe('Open');
+    });
+
+    it('ignores a stale queue flag on a merged PR', () => {
+      const [row] = build([makePR({ status: PullRequestStatus.Merged })], null, [
+        makeMonitor({ lastSnapshot: makeSnapshot({ state: 'merged', isInMergeQueue: true }) }),
+      ]);
+
+      expect(row).toMatchObject({
+        status: 'merged',
+        queued: false,
+        accessibleStateLabel: 'Merged',
+        details: 'Merged',
+      });
+    });
+
+    it('ignores a stale queue flag on a draft PR', () => {
+      const [row] = build([makePR({ isDraft: true })], null, [
+        makeMonitor({ lastSnapshot: makeSnapshot({ isInMergeQueue: true }) }),
+      ]);
+
+      expect(row).toMatchObject({ status: 'draft', queued: false, accessibleStateLabel: 'Draft' });
+    });
+
+    it('keeps the open sort position and colour treatment for a queued row', () => {
+      const rows = build(
+        [
+          makePR({
+            id: 'draft',
+            number: 2,
+            url: 'https://github.com/acme/widgets/pull/2',
+            isDraft: true,
+          }),
+          makePR({ id: 'queued', number: 1 }),
+        ],
+        null,
+        [makeMonitor({ prNumber: 1, lastSnapshot: makeSnapshot({ isInMergeQueue: true }) })],
+      );
+
+      expect(rows.map(({ number, status }) => [number, status])).toEqual([
+        [2, 'draft'],
+        [1, 'open'],
+      ]);
+      expect(rows[1]).toMatchObject({
+        queued: true,
+        foregroundClass: 'text-success',
+        backgroundClass: 'bg-success/10',
+      });
+    });
+
+    it('labels a monitor-only row Queued from its snapshot', () => {
+      const [row] = build([], null, [
+        makeMonitor({ prNumber: 9, lastSnapshot: makeSnapshot({ isInMergeQueue: true }) }),
+      ]);
+
+      expect(row).toMatchObject({
+        number: 9,
+        monitorOnly: true,
+        status: 'open',
+        queued: true,
+        accessibleStateLabel: 'Queued',
+      });
+      expect(row.details.split('\n')[0]).toBe('Queued');
+    });
+
+    it('labels a cross-repo monitor-only row Queued from its snapshot', () => {
+      const [row] = build([], null, [
+        makeMonitor({
+          repo: 'other/tools',
+          prNumber: 5,
+          url: 'https://github.com/other/tools/pull/5',
+          lastSnapshot: makeSnapshot({ isInMergeQueue: true }),
+        }),
+      ]);
+
+      expect(row).toMatchObject({
+        identity: 'other/tools#5',
+        repoContext: 'other/tools',
+        monitorOnly: true,
+        status: 'open',
+        queued: true,
+        accessibleStateLabel: 'Queued',
+      });
+    });
+
+    it('ignores a stale queue flag on a settled monitor-only row', () => {
+      const rows = build([], null, [
+        makeMonitor({
+          monitorId: 'mon-merged',
+          prNumber: 3,
+          url: 'https://github.com/acme/widgets/pull/3',
+          lastSnapshot: makeSnapshot({ state: 'merged', isInMergeQueue: true }),
+        }),
+        makeMonitor({
+          monitorId: 'mon-closed',
+          prNumber: 4,
+          url: 'https://github.com/acme/widgets/pull/4',
+          lastSnapshot: makeSnapshot({ state: 'closed', isInMergeQueue: true }),
+        }),
+      ]);
+
+      expect(rows.find((row) => row.number === 3)).toMatchObject({
+        monitorOnly: true,
+        status: 'merged',
+        queued: false,
+        accessibleStateLabel: 'Merged',
+        details: 'Merged',
+      });
+      expect(rows.find((row) => row.number === 4)).toMatchObject({
+        monitorOnly: true,
+        status: 'closed',
+        queued: false,
+        accessibleStateLabel: 'Closed',
+        details: 'Closed',
+      });
+    });
   });
 
   it('returns one semantic icon and color treatment for each state', () => {
@@ -233,16 +409,16 @@ describe('buildWorkspacePRPresentationModel', () => {
       })),
     ).toEqual([
       {
-        status: 'open',
-        foregroundClass: 'text-success',
-        backgroundClass: 'bg-success/10',
-        accessibleStateLabel: 'Open',
-      },
-      {
         status: 'draft',
         foregroundClass: 'text-muted-foreground',
         backgroundClass: 'bg-muted',
         accessibleStateLabel: 'Draft',
+      },
+      {
+        status: 'open',
+        foregroundClass: 'text-success',
+        backgroundClass: 'bg-success/10',
+        accessibleStateLabel: 'Open',
       },
       {
         status: 'merged',
@@ -252,8 +428,8 @@ describe('buildWorkspacePRPresentationModel', () => {
       },
       {
         status: 'closed',
-        foregroundClass: 'text-error-foreground',
-        backgroundClass: 'bg-destructive/10',
+        foregroundClass: 'text-danger',
+        backgroundClass: 'bg-danger-background/10',
         accessibleStateLabel: 'Closed',
       },
     ]);

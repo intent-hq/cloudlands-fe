@@ -1,6 +1,6 @@
 import { call, cancelled, delay, put, takeEvery, takeLatest } from 'typed-redux-saga';
 
-import { backendRequest } from '$lib/client/live/backend-transport';
+import { updateSettings } from '$lib/client/live/live-settings-client';
 import { createLogger } from '$lib/utils/client-logger';
 import {
   selectNotificationEnabled,
@@ -40,18 +40,16 @@ export function* persistNotificationSettingsWorker() {
   const volume = yield* selectNotificationVolume.effect();
   const soundPath = yield* selectSoundPath.effect();
   try {
-    yield* call(backendRequest, 'settings.update', {
-      changes: [
-        { path: NOTIFICATION_PATHS.enabled, value: enabled ?? true },
-        { path: NOTIFICATION_PATHS.soundEnabled, value: soundEnabled ?? true },
-        {
-          path: NOTIFICATION_PATHS.soundOnlyWhenUnfocused,
-          value: soundOnlyWhenUnfocused ?? false,
-        },
-        { path: NOTIFICATION_PATHS.volume, value: volume ?? 0.5 },
-        { path: NOTIFICATION_PATHS.soundPath, value: soundPath },
-      ],
-    });
+    yield* call(updateSettings, [
+      { path: NOTIFICATION_PATHS.enabled, value: enabled ?? true },
+      { path: NOTIFICATION_PATHS.soundEnabled, value: soundEnabled ?? true },
+      {
+        path: NOTIFICATION_PATHS.soundOnlyWhenUnfocused,
+        value: soundOnlyWhenUnfocused ?? false,
+      },
+      { path: NOTIFICATION_PATHS.volume, value: volume ?? 0.5 },
+      { path: NOTIFICATION_PATHS.soundPath, value: soundPath },
+    ]);
   } catch (error) {
     logger.warn('Failed to persist notification settings to daemon', { error });
   }

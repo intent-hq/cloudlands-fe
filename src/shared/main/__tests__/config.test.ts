@@ -7,11 +7,7 @@
  * below fail if that pattern creeps back in.
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
 import * as path from 'path';
 

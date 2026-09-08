@@ -4,13 +4,6 @@ import { resolveProviderEnabled } from '$shared/provider-catalog';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 
 export type ProviderSettingsState = {
-  activeProviderId: string;
-  /**
-   * Newest local active-provider choice awaiting a matching daemon hydration.
-   * Conflicting hydration values are older snapshots/echoes and cannot replace
-   * the choice until it is confirmed or the persistence write is rejected.
-   */
-  pendingActiveProviderId: string | null;
   enabledProviders: Record<string, boolean>;
   /**
    * Registry metadata snapshotted from `providerCatalogLoaded` (reducers only
@@ -34,8 +27,6 @@ export type ProviderSettingsState = {
 };
 
 export const initialState: ProviderSettingsState = {
-  activeProviderId: '',
-  pendingActiveProviderId: null,
   enabledProviders: {},
   nonDisableableProviderIds: [],
   pendingEnablementOverrides: {},
@@ -50,17 +41,14 @@ function canBeDisabled(state: ProviderSettingsState, providerId: string): boolea
   return !state.nonDisableableProviderIds.includes(providerId);
 }
 
+/**
+ * User pick of the default provider (the provider leg of the default model
+ * triple). The state lives in the model slice (`ModelState.defaultProviderId`
+ * with a `pendingDefaultProviderId` hydration guard); the persistence saga
+ * writes `model.defaultProvider` (PROTOCOL §5.12).
+ */
 export const setActiveProvider = createAction<[providerId: string]>(
   'providerSettings/setActiveProvider',
-);
-
-export const hydrateActiveProvider = createAction<[providerId: string]>(
-  'providerSettings/hydrateActiveProvider',
-);
-
-/** Effective active provider after guarded daemon hydration reconciliation. */
-export const activeProviderReconciled = createAction<[providerId: string]>(
-  'providerSettings/activeProviderReconciled',
 );
 
 // NOTE: there is intentionally no "validate active provider against
@@ -94,6 +82,11 @@ export const enablementPersistRejected = createAction<[providerId: string]>(
   'providerSettings/enablementPersistRejected',
 );
 
+/**
+ * Dispatched by the persistence sagas when the daemon rejects a
+ * `model.defaultProvider` write. Handled in the model slice: retires the
+ * matching pending default provider so later hydrations apply verbatim.
+ */
 export const activeProviderPersistRejected = createAction<[providerId: string]>(
   'providerSettings/activeProviderPersistRejected',
 );
@@ -108,24 +101,6 @@ providerSettingsReducer.with(providerCatalogLoaded, (state, { payload: [catalog]
   // user-derived (settings hydration / onboarding pick). Before those land
   // it stays '' — never silently adopted from the catalog.
 }));
-providerSettingsReducer.with(setActiveProvider, (state, { payload: [providerId] }) => ({
-  ...state,
-  activeProviderId: providerId,
-  pendingActiveProviderId: providerId,
-}));
-providerSettingsReducer.with(setAtomicDefaultModel, (state, { payload: [{ providerId }] }) => ({
-  ...state,
-  activeProviderId: providerId,
-  pendingActiveProviderId: providerId,
-}));
-providerSettingsReducer.with(hydrateActiveProvider, (state, { payload: [providerId] }) => {
-  if (state.pendingActiveProviderId && providerId !== state.pendingActiveProviderId) return state;
-  return {
-    ...state,
-    activeProviderId: providerId,
-    pendingActiveProviderId: null,
-  };
-});
 providerSettingsReducer.with(
   setProviderEnabled,
   (state, { payload: [{ providerId, enabled }] }) => {
@@ -166,10 +141,6 @@ providerSettingsReducer.with(enablementPersistRejected, (state, { payload: [prov
   const pending = { ...state.pendingEnablementOverrides };
   delete pending[providerId];
   return { ...state, pendingEnablementOverrides: pending };
-});
-providerSettingsReducer.with(activeProviderPersistRejected, (state, { payload: [providerId] }) => {
-  if (state.pendingActiveProviderId !== providerId) return state;
-  return { ...state, pendingActiveProviderId: null };
 });
 providerSettingsReducer.with(loadEnabledProvidersFromStorage, (state, { payload: [providers] }) => {
   // Hydration (boot snapshot or settings:changed) never clobbers newer

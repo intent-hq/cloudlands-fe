@@ -216,14 +216,11 @@ describe('ChatWorkspaceCard overflow menu', () => {
     });
   });
 
-  it('opens and closes the hover overflow menu without triggering card navigation', async () => {
+  it('opens and closes the focused overflow menu without triggering card navigation', async () => {
     await renderWorkspaceCard();
     await waitFor(() => expect(screen.getByText('Archive Cleanup')).toBeTruthy());
 
     const button = screen.getByRole('button', { name: /workspace actions for archive cleanup/i });
-    const actions = button.closest('.wc-actions');
-    expect(actions?.className).toContain('opacity-0');
-    expect(actions?.className).toContain('group-hover:opacity-100');
     expect(button.getAttribute('aria-expanded')).toBe('false');
 
     const menu = await openMenu();

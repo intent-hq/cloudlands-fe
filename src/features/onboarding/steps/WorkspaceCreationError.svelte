@@ -84,7 +84,7 @@
 <div
   class="rounded-lg border px-4 py-3 text-sm {variant === 'warning'
     ? 'border-amber-500/30 bg-amber-500/5'
-    : 'border-destructive/30 bg-destructive/5'}"
+    : 'border-danger/30 bg-danger-background/5'}"
   in:fly={{ y: 10, duration: 200 }}
   role="alert"
 >
@@ -93,12 +93,12 @@
       icon={faExclamationTriangle}
       class="mt-0.5 shrink-0 {variant === 'warning'
         ? 'text-amber-600 dark:text-amber-400'
-        : 'text-error-foreground'}"
+        : 'text-danger'}"
     />
     <p
       class="font-medium {variant === 'warning'
         ? 'text-amber-700 dark:text-amber-300'
-        : 'text-error-foreground'}"
+        : 'text-danger'}"
     >
       {titles[diagnosis.kind]}
     </p>

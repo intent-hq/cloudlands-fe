@@ -63,7 +63,11 @@
     selectSpecialists,
     selectEffectiveBehaviorPrompt,
     selectOrchestratorSpecialist,
+    selectCustomSpecialistsLoaded,
+    selectFileSpecialistsLoaded,
   } from '$store/renderer/slices/specialists/specialists-selectors';
+  import { refetchSpecialistsRequested } from '$store/renderer/slices/specialists/specialists-slice';
+  import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
   import { createLogger } from '$lib/utils/client-logger';
   import {
     getGitErrorMessage,
@@ -121,11 +125,13 @@
   import { noteUrl } from '$shared/constants/intent-links';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { parseCompoundModelId } from '$shared/utils/compound-model-id';
-  import { resolveSubmitProvider } from '$lib/utils/effective-model-resolution';
+  import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+  import { resolveSubmitModelAndProvider } from '$lib/utils/effective-model-resolution';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
+  import { isRemoteBackend } from '$lib/components/chat/input/attachment-placement';
+  import { splitDroppedItems } from '$lib/utils/drop-split';
   import {
     imageFilesToContextItems,
     REFERENCE_IMAGE_MAX_BYTES,
@@ -158,6 +164,7 @@
 
   // Constants
   const PREFILL_KEY = 'workspace-prefill';
+  const UNKNOWN_SPECIALIST_ERROR_PREFIX = 'unknown specialist:'; // i18n-ignore (daemon error prefix)
 
   function hasWorkspacePrefillData(): boolean {
     try {
@@ -439,7 +446,9 @@
   }
 
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
-  const orchestrator$ = selectOrchestratorSpecialist();
+  const specialists$ = selectSpecialists();
+  const customSpecialistsLoaded$ = selectCustomSpecialistsLoaded();
+  const fileSpecialistsLoaded$ = selectFileSpecialistsLoaded();
   const compactFormState$ = selectCompactWorkspaceInitializerFormState();
   const lastSelectedRepo$ = selectWorkspaceInitializerLastSelectedRepo();
   const lastSubmittedAgent$ = selectWorkspaceInitializerLastSubmittedAgent();
@@ -471,22 +480,37 @@
   // NOTE: selectedSpecialist can be null (meaning "General / no specialist").
   // We check !== undefined instead of using ?? because null is a valid value
   // and ?? treats null as nullish, which would incorrectly fall through to the
-  // orchestrator default.
+  // first-launch default.
+  // First-launch default: single-agent Developer when the resolved specialist
+  // set carries it, else General (null).
+  const defaultSingleAgentSpecialist: string | null = $specialists$.some(
+    ({ id }) => id === DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
+  )
+    ? DEFAULT_NEW_WORKSPACE_SPECIALIST_ID
+    : null;
   let selectedSpecialist = $state<string | null>(
     savedState?.selectedSpecialist !== undefined
       ? savedState.selectedSpecialist
       : lastSubmittedAgent?.selectedSpecialist !== undefined
         ? lastSubmittedAgent.selectedSpecialist
-        : ($orchestrator$?.id ?? null),
+        : defaultSingleAgentSpecialist,
   );
   // Validate saved model against current provider - stale models from a different provider
-  // (e.g., 'claude-code:default' when active provider is now 'opencode') should be discarded
+  // (e.g., a claude-code pick when active provider is now 'opencode') should be discarded
   // since they won't exist in the current model list and cause a flash of the wrong model.
+  // A persisted bare model id is attributed to the provider persisted alongside it;
+  // only a legacy pre-triple compound id carries its own prefix.
   const restoredModel = savedState?.selectedModel ?? lastSubmittedAgent?.selectedModel;
+  const restoredModelProvider =
+    savedState?.selectedModel !== undefined
+      ? savedState?.selectedProvider
+      : lastSubmittedAgent?.selectedProvider;
   const currentProviderAtInit = $activeProviderId$ || $defaultProviderId$;
   const isModelForCurrentProvider =
     !restoredModel ||
-    parseCompoundModelId(restoredModel, $defaultProviderId$).providerId === currentProviderAtInit;
+    (splitLegacyCompoundId(restoredModel).providerId ??
+      restoredModelProvider ??
+      $defaultProviderId$) === currentProviderAtInit;
 
   let selectedModel = $state<string | undefined>(
     isModelForCurrentProvider ? restoredModel : undefined,
@@ -502,10 +526,17 @@
       ? (savedState?.selectedReasoningEffort ?? lastSubmittedAgent?.selectedReasoningEffort)
       : undefined,
   );
-  // Track if team mode is selected (the orchestrator specialist coordinates)
+  // Track if team mode is selected (the orchestrator specialist coordinates).
+  // Defaults to single-agent mode on first launch; a remembered choice wins.
   let isTeamMode = $state<boolean>(
-    savedState?.isTeamMode ?? lastSubmittedAgent?.isTeamMode ?? $orchestrator$ !== null,
+    savedState?.isTeamMode ?? lastSubmittedAgent?.isTeamMode ?? false,
   );
+
+  function resetUnavailableSpecialist(): void {
+    selectedSpecialist = isTeamMode
+      ? (selectOrchestratorSpecialist.select(appStore.state)?.id ?? null)
+      : null;
+  }
   // Track which provider the user selected for the initial agent
   // Priority: active provider store takes precedence since it's the user's
   // explicit choice, else the settings-derived effective default. '' when
@@ -609,10 +640,13 @@
     if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
     if (modelPickedThisSession) return;
     const model = settings.selectedModel;
+    // A persisted bare model id belongs to the provider persisted with it;
+    // only a legacy pre-triple compound id carries its own prefix.
     const savedModelAccepted =
       !!model &&
-      parseCompoundModelId(model, $defaultProviderId$).providerId ===
-        ($activeProviderId$ || $defaultProviderId$);
+      (splitLegacyCompoundId(model).providerId ??
+        settings.selectedProvider ??
+        $defaultProviderId$) === ($activeProviderId$ || $defaultProviderId$);
     if (savedModelAccepted) {
       selectedModel = model;
       modelWasOverridden = settings.modelWasOverridden ?? modelWasOverridden;
@@ -782,6 +816,20 @@
     }
   });
 
+  // A specialist can disappear while this form is closed. Only discard a
+  // persisted selection after both custom/file rosters are authoritative;
+  // the bundled-only startup fallback cannot prove a custom id disappeared.
+  $effect(() => {
+    if (
+      $customSpecialistsLoaded$ &&
+      $fileSpecialistsLoaded$ &&
+      selectedSpecialist &&
+      !$specialists$.some(({ id }) => id === selectedSpecialist)
+    ) {
+      resetUnavailableSpecialist();
+    }
+  });
+
   // Track previous workspace info for inserting @ mention after mount
   let pendingPreviousWorkspace: { id: string; title: string } | null = $state(null);
 
@@ -795,6 +843,7 @@
   // Preload Linear and Sentry issues as soon as this component mounts
   // so they're ready when the user expands the form
   onMount(() => {
+    appStore.dispatch(refetchSpecialistsRequested());
     logger.debug('Preloading issues on mount');
     preloadIssues();
 
@@ -1933,6 +1982,16 @@
         }
       }
 
+      // Staged folder pills (dropped folders, local daemon only) ride as
+      // path context references on the initial message — never placed via
+      // file.placeAttachment (the daemon rejects directories). Same shape a
+      // folder @-mention produces in chat (type 'file' + absolute path).
+      for (const item of $state.snapshot(contextItems)) {
+        if (item.type === 'folder' && item.path) {
+          contextReferences.push({ type: 'file', path: item.path, title: item.label });
+        }
+      }
+
       // Extract imageBlocks from ALL context items with imageData/imageMimeType
       // (includes attachment items created by processImageFiles)
       const imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }> = [];
@@ -1968,17 +2027,12 @@
       // With no explicit pick the daemon applies its own resolved default at
       // creation time (the same value the picker previews via
       // `resolvedModel`), so no client-side tier/preference fallback runs.
-      const resolvedModel = modelWasOverridden && selectedModel ? selectedModel : undefined;
-
-      // Derive the submitted provider from the explicit model (if any) so
-      // intent and daemon spawn can never diverge: the daemon's
-      // resolve_provider_id gives a compound model prefix precedence over the
-      // provider field, and a bare model id resolves to the default provider.
-      // With no explicit model, keep the form's selected provider.
-      const submitProvider = resolveSubmitProvider(
-        resolvedModel,
+      // The submitted triple legs are the bare model id paired with the
+      // form's selected provider; a persisted pre-triple compound id is
+      // normalized at this one legacy boundary.
+      const { model: resolvedModel, provider: submitProvider } = resolveSubmitModelAndProvider(
+        modelWasOverridden && selectedModel ? selectedModel : undefined,
         selectedProvider,
-        $defaultProviderId$,
       );
 
       // Staged non-image attachments cannot ride the create request: the
@@ -2222,16 +2276,23 @@
           modelWasOverridden,
           selectedReasoningEffort,
           isTeamMode,
+          selectedProvider,
         }),
       );
 
       clearForm();
       oncreate?.();
     } catch (err) {
-      error =
-        err instanceof Error
-          ? getGitErrorMessage(err.message)
-          : m.workspace_compactInitializer_createFailed_error();
+      if (err instanceof Error && err.message.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {
+        appStore.dispatch(refetchSpecialistsRequested());
+        resetUnavailableSpecialist();
+        error = m.workspace_compactInitializer_specialistUnavailable_error();
+      } else {
+        error =
+          err instanceof Error
+            ? getGitErrorMessage(err.message)
+            : m.workspace_compactInitializer_createFailed_error();
+      }
     } finally {
       isCreating = false;
       // The create settled (success, failure, or early return) — drop the
@@ -2405,10 +2466,59 @@
     e.stopPropagation();
     isDraggingOver = false;
 
-    const files = e.dataTransfer?.files;
-    if (!files || files.length === 0) return;
+    // Folder detection must happen HERE, synchronously in the drop event —
+    // webkitGetAsEntry() returns null once the event loop turns.
+    const { files, folderFiles } = splitDroppedItems(e.dataTransfer);
+    if (files.length === 0 && folderFiles.length === 0) return;
 
-    await processImageFiles(Array.from(files));
+    if (folderFiles.length > 0) {
+      // Folders are path-only references — the agent reads them off the
+      // host filesystem, which a remote daemon cannot do. Any folder in the
+      // drop rejects the WHOLE drop when remote (files included). Mirrors
+      // OnboardingPromptStep's folder-drop behavior.
+      if (isRemoteBackend()) {
+        toast.error(m.chat_richInput_folderDropRemote_error());
+        return;
+      }
+      for (const folder of folderFiles) {
+        stageFolderReference(folder);
+      }
+    }
+    if (files.length > 0) {
+      await processImageFiles(files);
+    }
+  }
+
+  /**
+   * Stage a dropped folder as a path-only context item (local daemon only).
+   * Never placed via `file.placeAttachment` (the daemon rejects directories)
+   * — the submit path carries the absolute host path as a context reference
+   * on the initial message instead.
+   *
+   * When the Electron `getPathForFile` bridge is unavailable or returns ''
+   * the folder is SKIPPED with a toast: a bare folder name would ride
+   * `contextReferences` as if it were an absolute host path the agent
+   * cannot resolve. Mirrors OnboardingPromptStep.stageFolderReference.
+   */
+  function stageFolderReference(folder: File) {
+    const absolutePath = (window as any).electronAPI?.getPathForFile?.(folder) || '';
+    if (!absolutePath) {
+      logger.warn('Dropped folder has no resolvable absolute path; skipping', {
+        name: folder.name,
+      });
+      toast.error(m.workspace_compactInitializer_attachmentNoPath_error({ fileName: folder.name }));
+      return;
+    }
+    // Path-keyed like folder @-mentions, so two dropped folders sharing a
+    // basename stay distinct. Re-dropping the SAME folder is a no-op: the
+    // strip is keyed by item.id, so a duplicate id would break keyed
+    // rendering and make one remove drop both pills while both references
+    // still ride the submit.
+    const id = `staged-folder-${absolutePath}`;
+    if (contextItems.some((item) => item.id === id)) return;
+    // Windows-aware basename fallback ('\' or '/' separators).
+    const label = folder.name || absolutePath.split(/[/\\]/).pop() || absolutePath;
+    contextItems = [...contextItems, { id, type: 'folder', label, path: absolutePath }];
   }
 
   // Handle clipboard paste for images
@@ -2512,8 +2622,9 @@
 
   // A context item the attachment strip should render: image attachments
   // (thumbnails) plus staged/placed/failed non-image files (chips with
-  // placement state).
+  // placement state) and staged folder references (path-only chips).
   function isPreviewableAttachment(item: ContextItem): boolean {
+    if (item.type === 'folder') return true;
     if (item.type !== 'file') return false;
     if (item.imageData && item.imageMimeType) return true;
     if (item.file && item.file.type?.startsWith('image/')) return true;
@@ -2944,7 +3055,9 @@
           <AttachmentPreview
             id={item.id}
             name={item.label}
-            type={item.file?.type || item.imageMimeType || item.attachmentMimeType || ''}
+            type={item.type === 'folder'
+              ? 'folder'
+              : item.file?.type || item.imageMimeType || item.attachmentMimeType || ''}
             size={item.file?.size ?? item.attachmentSize}
             file={item.file}
             imageData={item.imageData}
@@ -3000,7 +3113,7 @@
               tooltipSide="top"
               aria-label={m.chat_richInput_micStop_label()}
               aria-pressed="true"
-              class="text-error-foreground animate-pulse"
+              class="text-danger animate-pulse"
               data-testid="initializer-mic-button"
             >
               <Fa icon={faMicrophone} size="xs" />
@@ -3037,7 +3150,7 @@
               tooltipSide="top"
             >
               {#if isEnhancing}
-                <Fa icon={faStop} size="xs" class="text-error-foreground" />
+                <Fa icon={faStop} size="xs" class="text-danger" />
               {:else}
                 <Fa icon={faMagicWandSparkles} size="xs" />
               {/if}
@@ -3073,13 +3186,13 @@
       <!-- Git not installed banner -->
       {#if gitAvailable === false}
         <div
-          class="mx-0 mb-3 px-4 py-3 bg-destructive/10 border border-destructive/30 rounded-md text-sm"
+          class="mx-0 mb-3 px-4 py-3 bg-danger-background/10 border border-danger/30 rounded-md text-sm"
           transition:slide={{ axis: 'y', duration: 200 }}
         >
           <div class="flex items-start gap-3">
-            <Fa icon={faExclamationTriangle} class="text-error-foreground mt-0.5 shrink-0" />
+            <Fa icon={faExclamationTriangle} class="text-danger mt-0.5 shrink-0" />
             <div>
-              <p class="font-medium text-error-foreground">
+              <p class="font-medium text-danger">
                 {m.workspace_compactInitializer_gitNotInstalled_label()}
               </p>
               <p class="text-subtle mt-1">
@@ -3194,7 +3307,7 @@
       <!-- Error message -->
       {#if error}
         <div
-          class="mt-3 mb-3 px-4.5 py-2 text-sm bg-destructive text-destructive-foreground"
+          class="mt-3 mb-3 px-4.5 py-2 text-sm bg-danger-background text-danger"
           transition:slide={{ axis: 'y', duration: 200 }}
         >
           {error}

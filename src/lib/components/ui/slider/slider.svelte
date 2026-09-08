@@ -42,7 +42,7 @@
     'operate-slider h-(--control-height-medium) w-full min-w-24 cursor-pointer appearance-none rounded-(--radius-medium) bg-transparent accent-primary outline-none',
     'focus-visible:ring-2 focus-visible:ring-ring/40',
     'disabled:cursor-not-allowed disabled:opacity-60',
-    'aria-invalid:accent-destructive-foreground aria-invalid:ring-1 aria-invalid:ring-destructive-foreground/25',
+    'aria-invalid:accent-danger aria-invalid:ring-1 aria-invalid:ring-danger/25',
     'transition-[opacity,box-shadow] duration-(--motion-fast) motion-reduce:transition-none',
     className,
   )}
@@ -92,11 +92,11 @@
 
   .operate-slider[aria-invalid='true']::-webkit-slider-thumb,
   .operate-slider[aria-invalid='true']::-moz-range-thumb {
-    background: hsl(var(--destructive-foreground));
+    background: hsl(var(--danger));
   }
 
   .operate-slider[aria-invalid='true']::-webkit-slider-runnable-track,
   .operate-slider[aria-invalid='true']::-moz-range-track {
-    border-color: hsl(var(--destructive-foreground));
+    border-color: hsl(var(--danger));
   }
 </style>

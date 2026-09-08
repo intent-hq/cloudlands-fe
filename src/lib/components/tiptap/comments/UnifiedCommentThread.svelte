@@ -1,9 +1,5 @@
 <script lang="ts">
-  import {
-  faArrowUp,
-  faAt,
-  faPaperclip,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faArrowUp, faAt, faPaperclip } from '@fortawesome/free-solid-svg-icons';
   import AgentPeekCard from './AgentPeekCard.svelte';
   import Comment from './Comment.svelte';
   import Fa from 'svelte-fa';
@@ -13,10 +9,8 @@
   import { Button } from '$lib/components/ui/button';
   import { slide } from 'svelte/transition';
 
-  import {
-  processMarkdownToHTML,
-  processHTMLToMarkdown,
-} from '$lib/utils/markdown-processor';
+  import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
+  import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
 
   import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
   import { updateCommentAction } from '$store/renderer/slices/comments/comments-slice';
@@ -97,6 +91,10 @@
     showType = true,
   }: Props = $props();
 
+  // One cache-busting token per thread instance: re-rendering the comment or
+  // its replies keeps their workspace image URLs stable.
+  const workspaceFileVersion = createWorkspaceFileVersion();
+
   let replyEditor: any = $state(null);
   $effect(() => {
     if (replyEditor && registerReplyInput) {
@@ -113,7 +111,11 @@
     editingReplyId = replyId;
     const reply = replies.find((r) => r.id === replyId);
     const html = await Promise.resolve(
-      processMarkdownToHTML(reply?.content || '', { allowEmpty: true }),
+      processMarkdownToHTML(reply?.content || '', {
+        allowEmpty: true,
+        workspaceId: workspace?.id,
+        workspaceFileVersion,
+      }),
     );
     replyEditHTML = html || '';
   }
@@ -123,7 +125,10 @@
     if (!id) return cancelEditReply();
     try {
       const html = replyEditEditor?.getHTML?.() ?? '';
-      const md = processHTMLToMarkdown(html, { preserveAnchors: false }).trim();
+      const md = processHTMLToMarkdown(html, {
+        preserveAnchors: false,
+        workspaceId: workspace?.id,
+      }).trim();
       if (!md) return cancelEditReply();
       const v2 = selectCommentById.select(appStore.state, id);
       if (v2) {
@@ -146,7 +151,13 @@
   $effect(() => {
     let destroyed = false;
     const content = comment.content || '';
-    Promise.resolve(processMarkdownToHTML(content, { allowEmpty: true })).then((h) => {
+    Promise.resolve(
+      processMarkdownToHTML(content, {
+        allowEmpty: true,
+        workspaceId: workspace?.id,
+        workspaceFileVersion,
+      }),
+    ).then((h) => {
       if (destroyed) return;
       try {
         const d = document.createElement('div');
@@ -164,7 +175,13 @@
   $effect(() => {
     let destroyed = false;
     replies?.forEach((r) => {
-      Promise.resolve(processMarkdownToHTML(r.content || '', { allowEmpty: true })).then((h) => {
+      Promise.resolve(
+        processMarkdownToHTML(r.content || '', {
+          allowEmpty: true,
+          workspaceId: workspace?.id,
+          workspaceFileVersion,
+        }),
+      ).then((h) => {
         if (destroyed) return;
         replyHtmls[r.id] = h || '';
       });
@@ -179,7 +196,10 @@
     if (!text) return;
     try {
       const html = replyEditor?.getHTML?.() ?? '';
-      const md = processHTMLToMarkdown(html, { preserveAnchors: false });
+      const md = processHTMLToMarkdown(html, {
+        preserveAnchors: false,
+        workspaceId: workspace?.id,
+      });
       const out = (md || text).trim();
       if (out) onReply?.(out);
     } finally {
@@ -248,7 +268,8 @@
         <div class="ml-8">
           <span
             class="text-xs text-amber-600 mt-1 inline-block"
-            title={m.tiptap_commentThread_unlinked_tooltip()}>{m.tiptap_commentThread_unlinked_label()}</span
+            title={m.tiptap_commentThread_unlinked_tooltip()}
+            >{m.tiptap_commentThread_unlinked_label()}</span
           >
         </div>
       {/if}
@@ -301,7 +322,11 @@
               onSubmit={() => submitReply()}
             />
           </div>
-          <Button variant="ghost-light" size="icon-sm" tooltip={m.tiptap_commentThread_attach_tooltip()}>
+          <Button
+            variant="ghost-light"
+            size="icon-sm"
+            tooltip={m.tiptap_commentThread_attach_tooltip()}
+          >
             <Fa icon={faPaperclip} size="sm" class="text-ghost" />
           </Button>
           <Button

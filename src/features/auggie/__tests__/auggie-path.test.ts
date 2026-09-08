@@ -1,11 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock logger before importing the module under test
 vi.mock('../../../shared/logger', () => ({
@@ -128,9 +121,7 @@ describe('auggie-path — host-backed PATH and binary discovery', () => {
       // A malformed/proxy-degraded response is not an authoritative
       // unavailable verdict — it must not fold to null.
       mockHostRequest.mockResolvedValue({ available: true });
-      await expect(findAuggiePathStrict()).rejects.toThrow(
-        'available:true without a path',
-      );
+      await expect(findAuggiePathStrict()).rejects.toThrow('available:true without a path');
     });
   });
 

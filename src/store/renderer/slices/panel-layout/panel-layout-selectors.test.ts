@@ -7,6 +7,7 @@ import {
   selectPanelIds,
   selectPanelNavigatorItems,
   selectPanelRestoreStatusesByWorkspaceId,
+  selectMostRecentAgentTab,
 } from './panel-layout-selectors';
 import { emptyWorkspaceState } from './panel-layout-slice';
 
@@ -105,5 +106,58 @@ describe('panel layout selectors', () => {
       populated: 'restored',
       vertical: 'pending',
     });
+  });
+
+  it('selects the most recently focused live agent tab behind later browser focus', () => {
+    const state = {
+      panelLayout: {
+        byWorkspaceId: {
+          workspace: {
+            ...emptyWorkspaceState,
+            panels: {
+              chat: {
+                id: 'chat',
+                activeTabId: 'agent-new',
+                tabs: [
+                  {
+                    id: 'agent-old',
+                    type: 'agent' as const,
+                    title: 'Old',
+                    closable: true,
+                    agentId: 'agent-old',
+                  },
+                  {
+                    id: 'agent-new',
+                    type: 'agent' as const,
+                    title: 'New',
+                    closable: true,
+                    agentId: 'agent-new',
+                  },
+                ],
+              },
+              browser: {
+                id: 'browser',
+                activeTabId: 'browser-tab',
+                tabs: [
+                  { id: 'browser-tab', type: 'browser' as const, title: 'Web', closable: true },
+                ],
+              },
+            },
+            focusHistory: [
+              { panelId: 'chat', tabId: 'agent-old', timestamp: 1 },
+              { panelId: 'missing', tabId: 'stale-agent', timestamp: 2 },
+              { panelId: 'chat', tabId: 'agent-new', timestamp: 3 },
+              { panelId: 'browser', tabId: 'browser-tab', timestamp: 4 },
+            ],
+          },
+        },
+      },
+    };
+
+    expect(selectMostRecentAgentTab.select(state as any, 'workspace')).toMatchObject({
+      id: 'agent-new',
+      agentId: 'agent-new',
+    });
+    expect(selectMostRecentAgentTab.select(state as any, 'missing')).toBeUndefined();
   });
 });

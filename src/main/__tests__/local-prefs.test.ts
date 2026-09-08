@@ -68,11 +68,7 @@ describe('local-prefs', () => {
 
   it('writes are serialized (no torn file with concurrent setters)', async () => {
     const { setLocalPref, getLocalPref } = await import('../local-prefs');
-    await Promise.all([
-      setLocalPref('x', 1),
-      setLocalPref('y', 2),
-      setLocalPref('z', 3),
-    ]);
+    await Promise.all([setLocalPref('x', 1), setLocalPref('y', 2), setLocalPref('z', 3)]);
     expect(await getLocalPref('x')).toBe(1);
     expect(await getLocalPref('y')).toBe(2);
     expect(await getLocalPref('z')).toBe(3);

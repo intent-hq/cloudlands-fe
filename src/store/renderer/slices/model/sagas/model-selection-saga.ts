@@ -5,7 +5,7 @@ import { appClient } from '$lib/client';
 import type { SettingsUpdateResult } from '$lib/client/app-client';
 import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
-import { splitCompoundModelId } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import {
   selectProviderCatalogEntry,
   selectProviderCatalogLoaded,
@@ -15,8 +15,7 @@ import {
   activeProviderPersistRejected,
   setAtomicDefaultModel,
 } from '../../provider-settings/provider-settings-slice';
-import { selectDefaultProviderId, selectProviderModels } from '../model-selectors';
-import { normalizeModelForProvider } from '../model-selection-utils';
+import { selectProviderModels } from '../model-selectors';
 import {
   providerModelsPersistRejected,
   reloadModelsForProvider,
@@ -29,36 +28,42 @@ import { settingsChangesReceived } from '../../settings-events/settings-events-s
 const logger = createLogger('ModelSelectionSaga');
 
 export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
-  const model = action.payload[0];
-  if (!model) return;
+  const [rawModel, explicitProviderId] = action.payload;
+  if (!rawModel) return;
 
   const activeProviderId = yield* selectActiveProviderId.effect();
-  const compoundProviderId = model.includes(':')
-    ? (splitCompoundModelId(model).providerId ?? '')
-    : '';
-  const providerId = compoundProviderId || activeProviderId;
+  // Explicit providerId from the pick wins; a legacy compound prefix in the
+  // model string is honored as a fallback for old callers/persisted echoes.
+  const { providerId: legacyPrefix, modelId: model } = splitLegacyCompoundId(rawModel);
+  const providerId = explicitProviderId || legacyPrefix || activeProviderId;
 
-  if (compoundProviderId && compoundProviderId !== activeProviderId) {
-    const provider = yield* selectProviderCatalogEntry.effect(compoundProviderId);
+  let shouldReload = false;
+  if (providerId && providerId !== activeProviderId) {
+    const provider = yield* selectProviderCatalogEntry.effect(providerId);
     const catalogLoaded = yield* selectProviderCatalogLoaded.effect();
     // Before the catalog hydrates (fresh install, onboarding racing the boot
     // reads — intent-hq/monorepo#1924) the pick's provider is adopted
     // optimistically, mirroring the model slice's pre-hydration handling
     // (`validatedDefaultProviderId`): the picker only offers real providers,
     // and the mirrored id is re-validated at `providerCatalogLoaded`. Once
-    // the catalog is loaded, unknown prefixes are still rejected.
+    // the catalog is loaded, unknown providers are still rejected.
     if (provider || !catalogLoaded) {
-      yield* put(reloadModelsForProvider());
+      shouldReload = true;
     } else {
-      logger.warn('Ignoring model selection for unknown provider', {
-        model,
-        providerId: compoundProviderId,
-      });
+      logger.warn('Ignoring model selection for unknown provider', { model, providerId });
       return;
     }
   }
 
+  // Land the provider/model switch BEFORE requesting a reload:
+  // `reloadModelsWorker` reads `selectActiveProviderId` at the start of its
+  // run, so if the reload were requested first it would fetch the PREVIOUS
+  // provider's catalog and leave the newly picked provider without models
+  // until another reload happened to fire.
   yield* put(setAtomicDefaultModel({ providerId, model }));
+  if (shouldReload) {
+    yield* put(reloadModelsForProvider());
+  }
 }
 
 /**
@@ -89,15 +94,16 @@ export function* persistSelectedModelsWorker(
   atomicProviderId?: string,
 ) {
   const providerModels = yield* selectProviderModels.effect();
-  const defaultProviderId = yield* selectDefaultProviderId.effect();
+  // Store values and session picks are bare model ids keyed by provider —
+  // persisted as-is; the daemon rejects compound ids on the wire (-32602).
   const value = { ...providerModels };
   for (const [providerId, model] of Object.entries(sessionPicks)) {
-    value[providerId] = normalizeModelForProvider(providerId, model, defaultProviderId);
+    value[providerId] = splitLegacyCompoundId(model).modelId;
   }
   try {
     const changes = atomicProviderId
       ? [
-          { path: 'providers.active', value: atomicProviderId },
+          { path: 'model.defaultProvider', value: atomicProviderId },
           { path: 'model.providerDefaults', value },
         ]
       : [{ path: 'model.providerDefaults', value }];

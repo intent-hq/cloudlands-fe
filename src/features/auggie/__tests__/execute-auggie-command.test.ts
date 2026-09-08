@@ -1,11 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock auggie-path before importing the module under test
 vi.mock('../main/auggie-path', () => ({
@@ -41,10 +34,7 @@ import {
   executeAuggieCommand,
   execWithEnhancedPath,
 } from '../main/execute-auggie-command';
-import {
-  getEnhancedPath,
-  findAuggiePathAsync,
-} from '../main/auggie-path';
+import { getEnhancedPath, findAuggiePathAsync } from '../main/auggie-path';
 import { hostExec } from '../../../shared/main/host-exec';
 import { hostExecStream } from '../../../shared/main/host-exec-stream';
 
@@ -141,7 +131,6 @@ describe('shouldUseWindowsShell', () => {
     expect(shouldUseWindowsShell('/usr/local/bin/auggie')).toBe(false);
   });
 });
-
 
 describe('executeAuggieCommand (host.exec seam)', () => {
   beforeEach(() => {
@@ -289,9 +278,9 @@ describe('executeAuggieCommand (host.exec seam)', () => {
       done: Promise.resolve({ ok: false, timedOut: true, exitCode: 124 }),
     });
 
-    await expect(
-      executeAuggieCommand('login', { stdin: 'y\n', timeout: 500 }),
-    ).rejects.toThrow(/timed out after 500ms/);
+    await expect(executeAuggieCommand('login', { stdin: 'y\n', timeout: 500 })).rejects.toThrow(
+      /timed out after 500ms/,
+    );
   });
 
   it('throws stderr-annotated error when host.execStream exits non-zero with stdin', async () => {

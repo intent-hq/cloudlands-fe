@@ -3,8 +3,6 @@
  * Helpers for optimizing performance in the workspace
  */
 
-
-
 /**
  * Creates a debounced version of a function
  * The function will only be called after it stops being called for `delay` milliseconds

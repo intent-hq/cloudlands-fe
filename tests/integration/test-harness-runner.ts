@@ -211,7 +211,7 @@ class TestHarnessRunner {
         passed,
         failed,
         duration,
-        successRate: `${((passed / this.results.length) * 100).toFixed(2)  }%`,
+        successRate: `${((passed / this.results.length) * 100).toFixed(2)}%`,
       },
       performance: {
         averageResponseTime: metrics.averageResponseTime,
@@ -231,7 +231,7 @@ class TestHarnessRunner {
     };
 
     // Print summary
-    console.log(`\n${  '='.repeat(60)}`);
+    console.log(`\n${'='.repeat(60)}`);
     console.log('📊 TEST REPORT SUMMARY');
     console.log('='.repeat(60));
     console.log(`Total Tests: ${report.summary.totalTests}`);

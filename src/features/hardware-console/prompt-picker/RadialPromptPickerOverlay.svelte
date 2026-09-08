@@ -115,13 +115,9 @@
   /* Destructive styling for the Cancel sector, matching the app's
      destructive tokens (button/badge destructive variants). */
   .radial-cancel {
-    background: var(--color-destructive, hsl(0 84% 95%));
-    color: var(--color-error-foreground, hsl(0 92% 30%));
-    border-color: color-mix(
-      in srgb,
-      var(--color-error-foreground, hsl(0 92% 30%)) 35%,
-      transparent
-    );
+    background: var(--color-danger-background, hsl(0 84% 95%));
+    color: var(--color-danger, hsl(0 92% 30%));
+    border-color: color-mix(in srgb, var(--color-danger, hsl(0 92% 30%)) 35%, transparent);
   }
   .radial-cancel.radial-item-active {
     background: var(--color-red-700, #b91c1c);

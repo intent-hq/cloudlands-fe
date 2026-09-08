@@ -11,13 +11,13 @@ test scripts via `installMockBackend()`.
 Every migrated `LiveAppClient` domain reaches the daemon through **exactly one**
 module — `src/lib/client/live/backend-transport.ts` — via:
 
-| Export                       | Purpose                                                |
-| ---------------------------- | ------------------------------------------------------ |
-| `backendRequest`             | JSON-RPC request over `BACKEND.REQUEST`.               |
-| `backendSubscribe`           | `events.subscribe` fast-path over `BACKEND.SUBSCRIBE`. |
-| `backendUnsubscribe`         | `events.unsubscribe` fast-path.                        |
-| `onBackendNotification`      | Daemon → renderer notifications (§6.3, §6).            |
-| `detectLiveStateCapability`  | Cached `client.hello` probe for `liveState`.           |
+| Export                      | Purpose                                                |
+| --------------------------- | ------------------------------------------------------ |
+| `backendRequest`            | JSON-RPC request over `BACKEND.REQUEST`.               |
+| `backendSubscribe`          | `events.subscribe` fast-path over `BACKEND.SUBSCRIBE`. |
+| `backendUnsubscribe`        | `events.unsubscribe` fast-path.                        |
+| `onBackendNotification`     | Daemon → renderer notifications (§6.3, §6).            |
+| `detectLiveStateCapability` | Cached `client.hello` probe for `liveState`.           |
 
 Domain clients, the delta-subscription reconciler, and
 `daemon-events-bridge.ts` all compose on top of these. Mocking this one module
@@ -30,15 +30,15 @@ gives a coherent scripted daemon to every consumer — no socket, no IPC.
 each test file that uses the fixture:
 
 ```ts
-import { afterEach, beforeEach, vi } from "vitest";
+import { afterEach, beforeEach, vi } from 'vitest';
 import {
   installMockBackend,
   resetMockBackend,
   type MockBackendHandle,
-} from "../../../test/mocks/backend-transport.mock"; // relative path to fixture
+} from '../../../test/mocks/backend-transport.mock'; // relative path to fixture
 
-vi.mock("$lib/client/live/backend-transport", async () => {
-  const mod = await import("../../../test/mocks/backend-transport.mock");
+vi.mock('$lib/client/live/backend-transport', async () => {
+  const mod = await import('../../../test/mocks/backend-transport.mock');
   return mod.mockBackendTransportModule;
 });
 
@@ -58,14 +58,14 @@ teardown ordering.
 ## Scripting API
 
 ```ts
-backend.onRequest("agent.list", (params) => ({ agents: [] }));
-backend.onSubscribe((params) => ({ subscriptionId: "sub-42" }));
-backend.pushEvent({ type: "agent:idle", data: { agentId: "a-1" } });
+backend.onRequest('agent.list', (params) => ({ agents: [] }));
+backend.onSubscribe((params) => ({ subscriptionId: 'sub-42' }));
+backend.pushEvent({ type: 'agent:idle', data: { agentId: 'a-1' } });
 backend.pushSubscriptionPush({
-  subscriptionId: "sub-42",
-  kind: "snapshot",
+  subscriptionId: 'sub-42',
+  kind: 'snapshot',
   seq: 0,
-  snapshot: [{ id: "a-1" }],
+  snapshot: [{ id: 'a-1' }],
 });
 backend.setLiveStateCapability(true); // drives detectLiveStateCapability()
 ```
@@ -78,11 +78,11 @@ Recorded calls are available via `backend.requests`, `backend.subscribes`, and
 Request handlers can `throw` a `BackendError` built with `buildErrorPayload`:
 
 ```ts
-import { BackendError } from "../../../test/mocks/backend-transport.mock";
+import { BackendError } from '../../../test/mocks/backend-transport.mock';
 
-backend.onRequest("note.update", () => {
+backend.onRequest('note.update', () => {
   throw new BackendError(
-    backend.builders.buildErrorPayload("CONFLICT", "expectedVersion mismatch", {
+    backend.builders.buildErrorPayload('CONFLICT', 'expectedVersion mismatch', {
       rpcCode: -32005,
       data: { current: { rev: 3 } },
     }),

@@ -23,7 +23,7 @@
  * (workspace-create auto-pull). All fold the daemon outcome into a
  * `MutationResult`.
  */
-import { GitFileStatus, LineType } from "$shared/types";
+import { GitFileStatus, LineType } from '$shared/types';
 import type {
   DiffChunk,
   DiffLine,
@@ -31,14 +31,14 @@ import type {
   GitStatus,
   PullRequestInfo,
   PullRequestStatus,
-} from "$shared/types";
-import { ChangeStage } from "$features/file-tracking/types";
+} from '$shared/types';
+import { ChangeStage } from '$features/file-tracking/types';
 import type {
   CommitFile,
   CommitInfo,
   FileChangeStatus,
   TrackedChange,
-} from "$features/file-tracking/types";
+} from '$features/file-tracking/types';
 import type {
   CommitDetailsResult,
   CommitFileDetail,
@@ -52,20 +52,20 @@ import type {
   PrStatusSummary,
   SubscriptionHandler,
   Unsubscribe,
-} from "../app-client";
+} from '../app-client';
 import {
   backendRequest,
   backendSubscribe,
   backendUnsubscribe,
   onBackendNotification,
   onBackendReconnected,
-} from "./backend-transport";
+} from './backend-transport';
 import {
   isEventInFamily,
   listWorkspaceIds,
   runMutation,
   subscribeWorkspaceIds,
-} from "./live-support";
+} from './live-support';
 
 /**
  * Transport timeout for `git.pull` (PROTOCOL §5.6). Longer than the daemon's
@@ -80,20 +80,20 @@ function normalizeGitStatus(raw: Record<string, unknown>): GitStatus {
   const files: FileStatus[] = rawFiles.map((f) => {
     const file = f as Record<string, unknown>;
     const entry: FileStatus = {
-      path: String(file.path ?? ""),
-      status: (typeof file.status === "string"
+      path: String(file.path ?? ''),
+      status: (typeof file.status === 'string'
         ? file.status.trim() || GitFileStatus.Modified
         : GitFileStatus.Modified) as GitFileStatus,
       staged: Boolean(file.staged),
     };
     // Gitlink (submodule) marking — present only on 160000 entries (#1739).
-    if (typeof file.mode === "string") entry.mode = file.mode;
-    if (typeof file.oldSha === "string") entry.oldSha = file.oldSha;
-    if (typeof file.newSha === "string") entry.newSha = file.newSha;
+    if (typeof file.mode === 'string') entry.mode = file.mode;
+    if (typeof file.oldSha === 'string') entry.oldSha = file.oldSha;
+    if (typeof file.newSha === 'string') entry.newSha = file.newSha;
     return entry;
   });
   return {
-    branch: String(raw.branch ?? ""),
+    branch: String(raw.branch ?? ''),
     ahead: Number(raw.ahead ?? 0),
     behind: Number(raw.behind ?? 0),
     diverged: Boolean(raw.diverged),
@@ -115,12 +115,12 @@ function fetchStatus(
     if (existing) return existing;
   }
 
-  const request = backendRequest<unknown>("git.status", {
+  const request = backendRequest<unknown>('git.status', {
     workspaceId,
     ...(options?.forceRefresh ? { forceRefresh: true } : {}),
   })
     .then((result) => {
-      if (!result || typeof result !== "object") return null;
+      if (!result || typeof result !== 'object') return null;
       return normalizeGitStatus(result as Record<string, unknown>);
     })
     .catch(() => null);
@@ -187,7 +187,7 @@ function refetchSharedStatus(): void {
   // from the seeded set or the short TTL cache, so a git/changes event stream
   // issues ZERO `workspace.list` RPCs. Only `ids[0]` is needed — this path
   // picks a workspace for `git.status`, it never needs a fresh enumeration.
-  listWorkspaceIds("git-status")
+  listWorkspaceIds('git-status')
     .then((ids) => (ids.length > 0 ? fetchStatus(ids[0]) : null))
     .then((status) => {
       for (const handler of [...statusHandlers]) {
@@ -235,7 +235,10 @@ function attachStatusTriggers(): void {
   // events it already listens to.
   statusWorkspaceIdsOff = subscribeWorkspaceIds(() => {});
   const offNotify = onBackendNotification((n) => {
-    if (isEventInFamily(n.method, n.params, "git") || isEventInFamily(n.method, n.params, "changes"))
+    if (
+      isEventInFamily(n.method, n.params, 'git') ||
+      isEventInFamily(n.method, n.params, 'changes')
+    )
       refetchSharedStatus();
   });
   const offReconnect = onBackendReconnected(() => {
@@ -263,17 +266,17 @@ function detachStatusTriggers(): void {
 
 /** Coerce a daemon `git.diffs` line into the renderer `DiffLine`. */
 function toDiffLine(raw: unknown): DiffLine {
-  const line = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const rawType = typeof line.type === "string" ? line.type : "Context";
+  const line = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const rawType = typeof line.type === 'string' ? line.type : 'Context';
   const type =
-    rawType === "Addition"
+    rawType === 'Addition'
       ? LineType.Addition
-      : rawType === "Deletion"
+      : rawType === 'Deletion'
         ? LineType.Deletion
         : LineType.Context;
-  const out: DiffLine = { type, content: typeof line.content === "string" ? line.content : "" };
-  if (typeof line.oldNumber === "number") out.oldNumber = line.oldNumber;
-  if (typeof line.newNumber === "number") out.newNumber = line.newNumber;
+  const out: DiffLine = { type, content: typeof line.content === 'string' ? line.content : '' };
+  if (typeof line.oldNumber === 'number') out.oldNumber = line.oldNumber;
+  if (typeof line.newNumber === 'number') out.newNumber = line.newNumber;
   return out;
 }
 
@@ -282,13 +285,13 @@ function toDiffChunks(result: unknown): DiffChunk[] {
   const entries = Array.isArray(result) ? result : [];
   const chunks: DiffChunk[] = [];
   for (const entry of entries) {
-    if (!entry || typeof entry !== "object") continue;
+    if (!entry || typeof entry !== 'object') continue;
     const e = entry as Record<string, unknown>;
-    const file = typeof e.path === "string" ? e.path : "";
+    const file = typeof e.path === 'string' ? e.path : '';
     if (!file) continue;
     const rawHunks = Array.isArray(e.hunks) ? e.hunks : [];
     const mapped = rawHunks.map((h) => {
-      const hunk = (h && typeof h === "object" ? h : {}) as Record<string, unknown>;
+      const hunk = (h && typeof h === 'object' ? h : {}) as Record<string, unknown>;
       return {
         oldStart: Number(hunk.oldStart ?? 0),
         oldLines: Number(hunk.oldLines ?? 0),
@@ -304,21 +307,21 @@ function toDiffChunks(result: unknown): DiffChunk[] {
 
 /** Best-effort epoch timestamp from a daemon commit `date` (ISO/RFC string). */
 function dateToTimestamp(date: unknown): number {
-  if (typeof date !== "string" || !date) return 0;
+  if (typeof date !== 'string' || !date) return 0;
   const t = Date.parse(date);
   return Number.isFinite(t) ? t : 0;
 }
 
 /** Map a §5.19 `CommitWithAttribution` file entry into the renderer `CommitFile`. */
 function toCommitFile(raw: unknown): CommitFile | null {
-  if (!raw || typeof raw !== "object") return null;
+  if (!raw || typeof raw !== 'object') return null;
   const f = raw as Record<string, unknown>;
-  const path = typeof f.path === "string" ? f.path : "";
+  const path = typeof f.path === 'string' ? f.path : '';
   if (!path) return null;
   const file: CommitFile = { path };
-  if (typeof f.additions === "number") file.additions = f.additions;
-  if (typeof f.deletions === "number") file.deletions = f.deletions;
-  if (typeof f.status === "string") file.status = f.status;
+  if (typeof f.additions === 'number') file.additions = f.additions;
+  if (typeof f.deletions === 'number') file.deletions = f.deletions;
+  if (typeof f.status === 'string') file.status = f.status;
   return file;
 }
 
@@ -330,26 +333,26 @@ function toCommitFile(raw: unknown): CommitFile | null {
  * so consumers lazily fetch `git.commitDetails` on demand.
  */
 function toCommitInfo(raw: unknown): CommitInfo | null {
-  if (!raw || typeof raw !== "object") return null;
+  if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
-  const hash = typeof r.hash === "string" ? r.hash : "";
+  const hash = typeof r.hash === 'string' ? r.hash : '';
   if (!hash) return null;
   const isPushed = Boolean(r.isPushed);
   const info: CommitInfo = {
     hash,
-    message: typeof r.message === "string" ? r.message : "",
-    author: typeof r.author === "string" ? r.author : "",
+    message: typeof r.message === 'string' ? r.message : '',
+    author: typeof r.author === 'string' ? r.author : '',
     timestamp: dateToTimestamp(r.date),
-    stage: isPushed ? "pushed" : "local",
+    stage: isPushed ? 'pushed' : 'local',
     isPushed,
   };
   if (Array.isArray(r.files)) {
     info.files = r.files.map(toCommitFile).filter((f): f is CommitFile => f !== null);
   }
-  if (typeof r.filesChanged === "number") info.filesChanged = r.filesChanged;
-  if (typeof r.date === "string") info.date = r.date;
-  if (typeof r.agentId === "string") info.agentId = r.agentId;
-  if (typeof r.linkedNoteId === "string") info.linkedNoteId = r.linkedNoteId;
+  if (typeof r.filesChanged === 'number') info.filesChanged = r.filesChanged;
+  if (typeof r.date === 'string') info.date = r.date;
+  if (typeof r.agentId === 'string') info.agentId = r.agentId;
+  if (typeof r.linkedNoteId === 'string') info.linkedNoteId = r.linkedNoteId;
   return info;
 }
 
@@ -360,28 +363,28 @@ function normalizeCommitDetails(
 ): CommitDetailsResult {
   const rawFiles = Array.isArray(raw.files) ? raw.files : [];
   const files: string[] = rawFiles
-    .map((p) => (typeof p === "string" ? p : null))
+    .map((p) => (typeof p === 'string' ? p : null))
     .filter((p): p is string => p !== null);
   const rawDetails = Array.isArray(raw.fileDetails) ? raw.fileDetails : [];
   const fileDetails: CommitFileDetail[] = rawDetails
     .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
+      if (!entry || typeof entry !== 'object') return null;
       const e = entry as Record<string, unknown>;
-      const path = typeof e.path === "string" ? e.path : "";
+      const path = typeof e.path === 'string' ? e.path : '';
       if (!path) return null;
       return {
         path,
-        additions: typeof e.additions === "number" ? e.additions : 0,
-        deletions: typeof e.deletions === "number" ? e.deletions : 0,
+        additions: typeof e.additions === 'number' ? e.additions : 0,
+        deletions: typeof e.deletions === 'number' ? e.deletions : 0,
       };
     })
     .filter((f): f is CommitFileDetail => f !== null);
   return {
-    commitHash: typeof raw.commitHash === "string" ? raw.commitHash : fallbackHash,
-    author: typeof raw.author === "string" ? raw.author : "",
-    authorEmail: typeof raw.authorEmail === "string" ? raw.authorEmail : "",
-    date: typeof raw.date === "string" ? raw.date : "",
-    message: typeof raw.message === "string" ? raw.message : "",
+    commitHash: typeof raw.commitHash === 'string' ? raw.commitHash : fallbackHash,
+    author: typeof raw.author === 'string' ? raw.author : '',
+    authorEmail: typeof raw.authorEmail === 'string' ? raw.authorEmail : '',
+    date: typeof raw.date === 'string' ? raw.date : '',
+    message: typeof raw.message === 'string' ? raw.message : '',
     files,
     fileDetails,
   };
@@ -390,10 +393,10 @@ function normalizeCommitDetails(
 /** Wire stage values (§5.19) — a 1:1 match with the renderer `ChangeStage` enum. */
 const WIRE_CHANGE_STAGES: ReadonlySet<string> = new Set(Object.values(ChangeStage));
 const WIRE_CHANGE_STATUSES: ReadonlySet<string> = new Set([
-  "added",
-  "modified",
-  "deleted",
-  "renamed",
+  'added',
+  'modified',
+  'deleted',
+  'renamed',
 ]);
 
 /**
@@ -403,45 +406,44 @@ const WIRE_CHANGE_STATUSES: ReadonlySet<string> = new Set([
  * carried through with type guards rather than re-derived.
  */
 function toTrackedChange(raw: unknown): TrackedChange | null {
-  if (!raw || typeof raw !== "object") return null;
+  if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
-  const file = typeof r.file === "string" ? r.file : "";
-  const relativePath = typeof r.relativePath === "string" ? r.relativePath : file;
+  const file = typeof r.file === 'string' ? r.file : '';
+  const relativePath = typeof r.relativePath === 'string' ? r.relativePath : file;
   if (!file && !relativePath) return null;
   const stage =
-    typeof r.stage === "string" && WIRE_CHANGE_STAGES.has(r.stage)
+    typeof r.stage === 'string' && WIRE_CHANGE_STAGES.has(r.stage)
       ? (r.stage as ChangeStage)
       : ChangeStage.Unstaged;
   const status =
-    typeof r.status === "string" && WIRE_CHANGE_STATUSES.has(r.status)
+    typeof r.status === 'string' && WIRE_CHANGE_STATUSES.has(r.status)
       ? (r.status as FileChangeStatus)
       : undefined;
-  const rawStats = (r.stats && typeof r.stats === "object" ? r.stats : {}) as Record<
+  const rawStats = (r.stats && typeof r.stats === 'object' ? r.stats : {}) as Record<
     string,
     unknown
   >;
   const rawAttribution = (
-    r.attribution && typeof r.attribution === "object" ? r.attribution : {}
+    r.attribution && typeof r.attribution === 'object' ? r.attribution : {}
   ) as Record<string, unknown>;
   return {
-    id: typeof r.id === "string" && r.id ? r.id : relativePath || file,
+    id: typeof r.id === 'string' && r.id ? r.id : relativePath || file,
     file: file || relativePath,
     relativePath: relativePath || file,
     stage,
     stats: {
-      additions: typeof rawStats.additions === "number" ? rawStats.additions : 0,
-      deletions: typeof rawStats.deletions === "number" ? rawStats.deletions : 0,
+      additions: typeof rawStats.additions === 'number' ? rawStats.additions : 0,
+      deletions: typeof rawStats.deletions === 'number' ? rawStats.deletions : 0,
     },
     ...(status ? { status } : {}),
     attribution: {
-      ...(rawAttribution.agent && typeof rawAttribution.agent === "object"
-        ? { agent: rawAttribution.agent as TrackedChange["attribution"]["agent"] }
+      ...(rawAttribution.agent && typeof rawAttribution.agent === 'object'
+        ? { agent: rawAttribution.agent as TrackedChange['attribution']['agent'] }
         : {}),
-      ...(typeof rawAttribution.manual === "boolean" ? { manual: rawAttribution.manual } : {}),
-      timestamp:
-        typeof rawAttribution.timestamp === "number" ? rawAttribution.timestamp : 0,
+      ...(typeof rawAttribution.manual === 'boolean' ? { manual: rawAttribution.manual } : {}),
+      timestamp: typeof rawAttribution.timestamp === 'number' ? rawAttribution.timestamp : 0,
     },
-    ...(typeof r.commitHash === "string" ? { commitHash: r.commitHash } : {}),
+    ...(typeof r.commitHash === 'string' ? { commitHash: r.commitHash } : {}),
   };
 }
 
@@ -466,7 +468,7 @@ function cleanExplicitPaths(
       },
     };
   }
-  if (cleaned.some((path) => path === "." || path === "*" || path.includes("--all"))) {
+  if (cleaned.some((path) => path === '.' || path === '*' || path.includes('--all'))) {
     return {
       ok: false,
       failure: {
@@ -509,7 +511,7 @@ export class LiveGitClient implements GitClient {
     if (options?.commitHash) params.commitHash = options.commitHash;
     if (options?.gitRootId) params.gitRootId = options.gitRootId;
     try {
-      const result = await backendRequest<unknown>("git.diffs", params);
+      const result = await backendRequest<unknown>('git.diffs', params);
       return toDiffChunks(result);
     } catch {
       return [];
@@ -528,12 +530,12 @@ export class LiveGitClient implements GitClient {
     opts?: { gitRootId?: string },
   ): Promise<CommitDetailsResult | null> {
     try {
-      const result = await backendRequest<Record<string, unknown>>("git.commitDetails", {
+      const result = await backendRequest<Record<string, unknown>>('git.commitDetails', {
         workspaceId,
         commitHash,
         ...(opts?.gitRootId ? { gitRootId: opts.gitRootId } : {}),
       });
-      if (!result || typeof result !== "object") return null;
+      if (!result || typeof result !== 'object') return null;
       return normalizeCommitDetails(result, commitHash);
     } catch {
       return null;
@@ -548,13 +550,11 @@ export class LiveGitClient implements GitClient {
   // (`truncated`/`totalCount`) is not yet threaded through.
   async trackedChanges(workspaceId: string): Promise<TrackedChange[] | null> {
     try {
-      const result = await backendRequest<{ changes?: unknown[] }>("file-tracking.getChanges", {
+      const result = await backendRequest<{ changes?: unknown[] }>('file-tracking.getChanges', {
         workspaceId,
       });
       const changes = Array.isArray(result?.changes) ? result.changes : [];
-      return changes
-        .map(toTrackedChange)
-        .filter((c): c is TrackedChange => c !== null);
+      return changes.map(toTrackedChange).filter((c): c is TrackedChange => c !== null);
     } catch {
       return null;
     }
@@ -573,28 +573,32 @@ export class LiveGitClient implements GitClient {
 
   // `file-tracking.loadCommits` with full envelope — returns the boundary SHA
   // alongside the commits for the Changes panel to render the workspace-start marker.
-  async commitsWithBoundary(workspaceId: string, includeOlder?: boolean): Promise<{
+  async commitsWithBoundary(
+    workspaceId: string,
+    includeOlder?: boolean,
+  ): Promise<{
     commits: CommitInfo[];
     boundarySha: string | null;
     nextToken: string | null;
   }> {
     try {
-      const result = await backendRequest<{ commits?: unknown[]; boundarySha?: unknown; nextToken?: unknown }>(
-        "file-tracking.loadCommits",
-        {
-          workspaceId,
-          ...(includeOlder !== undefined ? { includeOlder } : {}),
-        }
-      );
+      const result = await backendRequest<{
+        commits?: unknown[];
+        boundarySha?: unknown;
+        nextToken?: unknown;
+      }>('file-tracking.loadCommits', {
+        workspaceId,
+        ...(includeOlder !== undefined ? { includeOlder } : {}),
+      });
       const commits = Array.isArray(result?.commits) ? result.commits : [];
       // Runtime validation: boundarySha and nextToken must be string | null.
       // Untrusted payloads from backendRequest could send any shape.
       const boundarySha =
-        result?.boundarySha === null || typeof result?.boundarySha === "string"
+        result?.boundarySha === null || typeof result?.boundarySha === 'string'
           ? result.boundarySha
           : null;
       const nextToken =
-        result?.nextToken === null || typeof result?.nextToken === "string"
+        result?.nextToken === null || typeof result?.nextToken === 'string'
           ? result.nextToken
           : null;
       return {
@@ -616,22 +620,22 @@ export class LiveGitClient implements GitClient {
   // instead of crashing on `result.success` against an undefined payload.
   async getBranches(repoPath: string, includeRemote: boolean): Promise<GitBranchesResult | null> {
     try {
-      const result = await backendRequest<Record<string, unknown>>("git.getBranches", {
+      const result = await backendRequest<Record<string, unknown>>('git.getBranches', {
         repoPath,
         includeRemote,
       });
-      if (!result || typeof result !== "object") return null;
+      if (!result || typeof result !== 'object') return null;
       const branches = Array.isArray(result.branches)
-        ? result.branches.filter((b): b is string => typeof b === "string")
+        ? result.branches.filter((b): b is string => typeof b === 'string')
         : [];
       const remoteBranches = Array.isArray(result.remoteBranches)
-        ? result.remoteBranches.filter((b): b is string => typeof b === "string")
+        ? result.remoteBranches.filter((b): b is string => typeof b === 'string')
         : [];
       return {
         branches,
         remoteBranches,
-        currentBranch: typeof result.currentBranch === "string" ? result.currentBranch : "",
-        defaultBranch: typeof result.defaultBranch === "string" ? result.defaultBranch : "",
+        currentBranch: typeof result.currentBranch === 'string' ? result.currentBranch : '',
+        defaultBranch: typeof result.defaultBranch === 'string' ? result.defaultBranch : '',
       };
     } catch {
       return null;
@@ -645,22 +649,19 @@ export class LiveGitClient implements GitClient {
   // the wire model) into the renderer `GitBranchStatusResult`. Errors
   // (including the known-repo gate rejection) fold to `null` so the seam
   // degrades silently — branch status is informational, never a hard failure.
-  async branchStatus(
-    repoPath: string,
-    branchName: string,
-  ): Promise<GitBranchStatusResult | null> {
+  async branchStatus(repoPath: string, branchName: string): Promise<GitBranchStatusResult | null> {
     try {
-      const result = await backendRequest<Record<string, unknown>>("git.branchStatus", {
+      const result = await backendRequest<Record<string, unknown>>('git.branchStatus', {
         repoPath,
         branchName,
       });
-      if (!result || typeof result !== "object") return null;
+      if (!result || typeof result !== 'object') return null;
       return {
-        branch: typeof result.branch === "string" ? result.branch : branchName,
-        currentBranch: typeof result.currentBranch === "string" ? result.currentBranch : "",
+        branch: typeof result.branch === 'string' ? result.branch : branchName,
+        currentBranch: typeof result.currentBranch === 'string' ? result.currentBranch : '',
         isCurrentBranch: Boolean(result.isCurrentBranch),
-        ahead: typeof result.ahead === "number" ? result.ahead : 0,
-        behind: typeof result.behind === "number" ? result.behind : 0,
+        ahead: typeof result.ahead === 'number' ? result.ahead : 0,
+        behind: typeof result.behind === 'number' ? result.behind : 0,
         hasUncommittedChanges: Boolean(result.hasUncommittedChanges),
       };
     } catch {
@@ -672,12 +673,12 @@ export class LiveGitClient implements GitClient {
   // no active PR, which is folded to `null` (the seam's "no PR" signal).
   async prStatus(workspaceId: string): Promise<PrStatusSummary | null> {
     try {
-      const result = await backendRequest<Record<string, unknown>>("pr.status", { workspaceId });
-      if (!result || typeof result !== "object") return null;
+      const result = await backendRequest<Record<string, unknown>>('pr.status', { workspaceId });
+      if (!result || typeof result !== 'object') return null;
       return {
-        prNumber: typeof result.prNumber === "number" ? result.prNumber : undefined,
-        url: typeof result.url === "string" ? result.url : undefined,
-        state: typeof result.state === "string" ? result.state : undefined,
+        prNumber: typeof result.prNumber === 'number' ? result.prNumber : undefined,
+        url: typeof result.url === 'string' ? result.url : undefined,
+        state: typeof result.state === 'string' ? result.state : undefined,
       };
     } catch {
       return null;
@@ -694,16 +695,16 @@ export class LiveGitClient implements GitClient {
   // thin-presenter rules.
   async prRefresh(workspaceId: string): Promise<PrRefreshResult | null> {
     try {
-      const result = await backendRequest<Record<string, unknown>>("pr.refresh", { workspaceId });
-      if (!result || typeof result !== "object" || typeof result.outcome !== "string") return null;
-      const outcomes: readonly string[] = ["skipped", "unchanged", "linked", "updated", "unlinked"];
+      const result = await backendRequest<Record<string, unknown>>('pr.refresh', { workspaceId });
+      if (!result || typeof result !== 'object' || typeof result.outcome !== 'string') return null;
+      const outcomes: readonly string[] = ['skipped', 'unchanged', 'linked', 'updated', 'unlinked'];
       if (!outcomes.includes(result.outcome)) return null;
       return {
-        outcome: result.outcome as PrRefreshResult["outcome"],
-        prNumber: typeof result.prNumber === "number" ? result.prNumber : undefined,
-        prUrl: typeof result.prUrl === "string" ? result.prUrl : undefined,
+        outcome: result.outcome as PrRefreshResult['outcome'],
+        prNumber: typeof result.prNumber === 'number' ? result.prNumber : undefined,
+        prUrl: typeof result.prUrl === 'string' ? result.prUrl : undefined,
         prStatus:
-          typeof result.prStatus === "string" ? (result.prStatus as PullRequestStatus) : undefined,
+          typeof result.prStatus === 'string' ? (result.prStatus as PullRequestStatus) : undefined,
         pullRequests: Array.isArray(result.pullRequests)
           ? (result.pullRequests as PullRequestInfo[])
           : [],
@@ -724,26 +725,26 @@ export class LiveGitClient implements GitClient {
   // even sent. `git.unstage` and `git.discard` share the same explicit-paths
   // contract (§5.6 extensions).
   async stage(workspaceId: string, paths: string[]): Promise<MutationResult> {
-    const cleaned = cleanExplicitPaths(paths, "Staging");
+    const cleaned = cleanExplicitPaths(paths, 'Staging');
     if (!cleaned.ok) return cleaned.failure;
-    return runMutation("git.stage", { workspaceId, paths: cleaned.paths });
+    return runMutation('git.stage', { workspaceId, paths: cleaned.paths });
   }
 
   // `git.unstage` (PROTOCOL §5.6 extensions) — the inverse of `git.stage`;
   // idempotent on already-unstaged paths.
   async unstage(workspaceId: string, paths: string[]): Promise<MutationResult> {
-    const cleaned = cleanExplicitPaths(paths, "Unstaging");
+    const cleaned = cleanExplicitPaths(paths, 'Unstaging');
     if (!cleaned.ok) return cleaned.failure;
-    return runMutation("git.unstage", { workspaceId, paths: cleaned.paths });
+    return runMutation('git.unstage', { workspaceId, paths: cleaned.paths });
   }
 
   // `git.discard` (PROTOCOL §5.6 extensions) — DESTRUCTIVE: discards
   // working-tree changes for the given paths (ports the legacy
   // `discardChanges` behind the revert buttons).
   async discard(workspaceId: string, paths: string[]): Promise<MutationResult> {
-    const cleaned = cleanExplicitPaths(paths, "Discarding");
+    const cleaned = cleanExplicitPaths(paths, 'Discarding');
     if (!cleaned.ok) return cleaned.failure;
-    return runMutation("git.discard", { workspaceId, paths: cleaned.paths });
+    return runMutation('git.discard', { workspaceId, paths: cleaned.paths });
   }
 
   // `git.agentCommit` is DESTRUCTIVE: it requires `userRequested: true`. The
@@ -755,9 +756,9 @@ export class LiveGitClient implements GitClient {
   // `git.commit` fallback here only if a renderer surface starts needing amend.
   async commit(workspaceId: string, params: GitCommitParams): Promise<MutationResult> {
     if (!params.userRequested) {
-      return { success: false, error: "git.agentCommit requires userRequested: true." };
+      return { success: false, error: 'git.agentCommit requires userRequested: true.' };
     }
-    return runMutation("git.agentCommit", {
+    return runMutation('git.agentCommit', {
       workspaceId,
       message: params.message,
       ...(params.files !== undefined ? { files: params.files } : {}),
@@ -781,15 +782,15 @@ export class LiveGitClient implements GitClient {
   async pull(repoPath: string, branchName: string): Promise<MutationResult> {
     try {
       const result = await backendRequest<Record<string, unknown>>(
-        "git.pull",
+        'git.pull',
         { repoPath, branchName },
         { timeoutMs: PULL_TIMEOUT_MS },
       );
-      if (result && typeof result === "object" && result.ok === true) return { success: true };
+      if (result && typeof result === 'object' && result.ok === true) return { success: true };
       const error =
-        result && typeof result === "object" && typeof result.error === "string" && result.error
+        result && typeof result === 'object' && typeof result.error === 'string' && result.error
           ? result.error
-          : "Failed to pull changes";
+          : 'Failed to pull changes';
       return { success: false, error };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -814,13 +815,13 @@ export class LiveGitClient implements GitClient {
     const doSubscribe = () =>
       backendSubscribe<{ subscriptionId?: string }>({
         eventTypes: [
-          "git:commit",
-          "git:push",
-          "git:pull",
-          "git:branch",
-          "git:merge",
-          "changes:tracked",
-          "changes:git-status",
+          'git:commit',
+          'git:push',
+          'git:pull',
+          'git:branch',
+          'git:merge',
+          'changes:tracked',
+          'changes:git-status',
         ],
       })
         .then((result) => {

@@ -21,21 +21,17 @@ import type { FileContentEntry } from '$store/renderer/slices/files/files-types'
 // update() rides the same scriptId upsert and MUST apply the same
 // running-script guard: refuse with an error instead of sending
 // script.create.
-const {
-  scriptsList,
-  scriptsCreate,
-  scriptsRemove,
-  filesRead,
-  backendRequestMock,
-} = vi.hoisted(() => ({
-  scriptsList: vi.fn<(workspaceId: string) => Promise<unknown[]>>(() => Promise.resolve([])),
-  scriptsCreate: vi.fn(() => Promise.resolve({ success: true })),
-  scriptsRemove: vi.fn(() => Promise.resolve({ success: true })),
-  filesRead: vi.fn<(workspaceId: string, path: string) => Promise<unknown>>(
-    () => Promise.resolve(null),
-  ),
-  backendRequestMock: vi.fn(() => Promise.resolve({ config: {} })),
-}));
+const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock } = vi.hoisted(
+  () => ({
+    scriptsList: vi.fn<(workspaceId: string) => Promise<unknown[]>>(() => Promise.resolve([])),
+    scriptsCreate: vi.fn(() => Promise.resolve({ success: true })),
+    scriptsRemove: vi.fn(() => Promise.resolve({ success: true })),
+    filesRead: vi.fn<(workspaceId: string, path: string) => Promise<unknown>>(() =>
+      Promise.resolve(null),
+    ),
+    backendRequestMock: vi.fn(() => Promise.resolve({ config: {} })),
+  }),
+);
 vi.mock('$lib/client', () => ({
   appClient: {
     scripts: { list: scriptsList, create: scriptsCreate, remove: scriptsRemove },

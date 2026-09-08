@@ -14,13 +14,17 @@ import {
   installUpdate,
 } from '$store/renderer/slices/auto-update/auto-update-slice';
 import {
+  selectChatAuroraEnabled,
   selectUpdateChannel,
   selectNoteFontStyle,
   selectAgentFontStyle,
+  selectShellTransparencyEnabled,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
   setAgentFontStyle,
+  setChatAuroraEnabled,
   setNoteFontStyle,
+  setShellTransparencyEnabled,
   setUpdateChannel,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
@@ -93,6 +97,7 @@ function renderSettingsTab(tab: 'general' | 'appearance' | 'app-behavior' | 'adv
 }
 
 const renderGeneral = () => renderSettingsTab('general');
+const renderAppearance = () => renderSettingsTab('appearance');
 const renderAppBehavior = () => renderSettingsTab('app-behavior');
 const renderAdvanced = () => renderSettingsTab('advanced');
 
@@ -128,6 +133,8 @@ beforeEach(() => {
   appStore.dispatch(setUpdateChannel('stable'));
   appStore.dispatch(setNoteFontStyle('monospace'));
   appStore.dispatch(setAgentFontStyle('monospace'));
+  appStore.dispatch(setChatAuroraEnabled(true));
+  appStore.dispatch(setShellTransparencyEnabled(true));
   appStore.dispatch(simulateSetState({ status: 'idle' }));
   vi.clearAllMocks();
   (globalThis as typeof globalThis & { __APP_VERSION__: string }).__APP_VERSION__ = '2.0.10';
@@ -151,6 +158,28 @@ afterAll(() => {
 });
 
 describe('Settings migration', () => {
+  it('updates both appearance preferences immediately through Redux', async () => {
+    const recorder = installDispatchRecorder();
+    renderAppearance();
+
+    const chatAurora = screen.getByRole('switch', { name: 'Chat aurora' });
+    const translucentWindow = screen.getByRole('switch', { name: 'Translucent window' });
+    expect(chatAurora.getAttribute('aria-checked')).toBe('true');
+    expect(translucentWindow.getAttribute('aria-checked')).toBe('true');
+
+    await fireEvent.click(chatAurora);
+    await fireEvent.click(translucentWindow);
+
+    await waitFor(() => {
+      expect(selectChatAuroraEnabled.select(appStore.state)).toBe(false);
+      expect(selectShellTransparencyEnabled.select(appStore.state)).toBe(false);
+    });
+    expect(recorder.calls).toContainEqual(setChatAuroraEnabled(false));
+    expect(recorder.calls).toContainEqual(setShellTransparencyEnabled(false));
+    expect(backendCalls()).toHaveLength(0);
+    recorder.restore();
+  });
+
   it('dispatches the exact Redux update-channel action without a direct backend request', async () => {
     const recorder = installDispatchRecorder();
     renderAppBehavior();

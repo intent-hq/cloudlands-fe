@@ -17,6 +17,15 @@ describe('app settings schema', () => {
       apply: { kind: 'redux-action', action: 'notificationSettings/setSoundPath' },
     });
   });
+  it('defines the persisted Open In editor order setting', () => {
+    expect(findAppSettingDefinition('openIn.editorOrder')).toMatchObject({
+      type: 'array',
+      source: 'local-storage',
+      storageKey: 'settings:openInEditorsOrder',
+      defaultValue: [],
+      apply: { kind: 'local-storage-set', key: 'settings:openInEditorsOrder' },
+    });
+  });
   it('defines the persisted GitHub link default action choices', () => {
     expect(findAppSettingDefinition('githubLinks.defaultAction')).toMatchObject({
       type: 'enum',
@@ -46,6 +55,25 @@ describe('app settings schema', () => {
     }
     expect(definition?.enumLabels?.disabled).toBe('Disabled');
     expect(definition?.description).toContain('disabled');
+  });
+
+  it('defines persisted appearance preferences that default to enabled', () => {
+    expect(findAppSettingDefinition('appearance.chatAurora')).toMatchObject({
+      category: 'theme',
+      type: 'boolean',
+      source: 'local-storage',
+      storageKey: 'chat:auroraEnabled',
+      defaultValue: true,
+      apply: { kind: 'redux-action', action: 'userPreferences/setChatAuroraEnabled' },
+    });
+    expect(findAppSettingDefinition('appearance.shellTransparency')).toMatchObject({
+      category: 'theme',
+      type: 'boolean',
+      source: 'local-storage',
+      storageKey: 'appearance:shellTransparencyEnabled',
+      defaultValue: true,
+      apply: { kind: 'redux-action', action: 'userPreferences/setShellTransparencyEnabled' },
+    });
   });
 
   it('exposes theme preset IDs as enum values', () => {

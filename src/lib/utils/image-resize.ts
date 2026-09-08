@@ -21,10 +21,7 @@ export interface ResizedImage {
  * Fast-path: returns the original data unchanged when the image is already
  * JPEG and within the dimension limit.
  */
-export async function resizeImageForAgent(
-  base64: string,
-  mimeType: string,
-): Promise<ResizedImage> {
+export async function resizeImageForAgent(base64: string, mimeType: string): Promise<ResizedImage> {
   const originalSizeKb = Math.round((base64.length * 3) / 4 / 1024);
 
   // Load the image to inspect dimensions

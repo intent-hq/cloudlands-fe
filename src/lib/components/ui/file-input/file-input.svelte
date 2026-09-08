@@ -101,17 +101,14 @@
         ? 'border-border bg-card shadow-(--elevation-raised) hover:border-input'
         : 'border-transparent bg-muted/40 shadow-none hover:border-transparent',
       (disabled || busy) && 'bg-muted/40 opacity-60 hover:border-border',
-      invalid && 'border-destructive-foreground ring-1 ring-destructive-foreground/25',
+      invalid && 'border-danger ring-1 ring-danger/25',
     )}
   >
     <Button
       type="button"
       variant={variant === 'flat' ? 'ghost' : 'outline'}
       size="sm"
-      class={cn(
-        'shrink-0',
-        'aria-invalid:border-destructive-foreground aria-invalid:ring-destructive-foreground/25',
-      )}
+      class={cn('shrink-0', 'aria-invalid:border-danger aria-invalid:ring-danger/25')}
       {disabled}
       loading={busy}
       aria-controls={id}
@@ -129,7 +126,7 @@
     </span>
   </div>
   {#if error}
-    <p id={errorId} class="type-body mt-1.5 text-error-foreground" role="alert">
+    <p id={errorId} class="type-body mt-1.5 text-danger" role="alert">
       {error}
     </p>
   {/if}

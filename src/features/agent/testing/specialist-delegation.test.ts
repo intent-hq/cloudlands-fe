@@ -8,13 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import {
-  loadInstruction,
-  getSpecialists,
-  getSpecialist,
-  analyzePrompt,
-  validateSpecialistPrompt,
-} from './prompt-loader';
+import { getSpecialists, getSpecialist, validateSpecialistPrompt } from './prompt-loader';
 import {
   validateAgentActions,
   validateWaveExecution,
@@ -79,24 +73,6 @@ describe('Specialist Prompts', () => {
       const verifier = getSpecialist('verifier');
       const result = validateSpecialistPrompt('verifier', verifier!.defaultBehaviorPrompt);
       expect(result.valid).toBe(true);
-    });
-  });
-
-  describe('Prompt Metadata Analysis', () => {
-    it('should analyze task-loop instruction', () => {
-      const content = loadInstruction('task-loop');
-      const metadata = analyzePrompt(content, 'task-loop');
-
-      expect(metadata.id).toBe('task-loop');
-      expect(metadata.estimatedTokens).toBeGreaterThan(0);
-      expect(metadata.sections.length).toBeGreaterThan(0);
-    });
-
-    it('should detect tool instructions in prompts', () => {
-      const content = loadInstruction('task-loop');
-      const metadata = analyzePrompt(content, 'task-loop');
-
-      expect(metadata.hasToolInstructions).toBe(true);
     });
   });
 });

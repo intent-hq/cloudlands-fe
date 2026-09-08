@@ -6,13 +6,7 @@
  * local cache files or hardcoded install-path lists.
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // test-setup.ts globally mocks $shared/main/async-utils; this suite tests the
 // real module, so cancel that mock for this file.
@@ -38,10 +32,7 @@ vi.mock('../../features/auggie/main/auggie-path', () => ({
 }));
 
 // Import after mocking
-import {
-  findAuggieAsync,
-  existsAsync,
-} from '../main/async-utils';
+import { findAuggieAsync, existsAsync } from '../main/async-utils';
 
 describe('findAuggieAsync (daemon-backed delegation)', () => {
   beforeEach(() => {

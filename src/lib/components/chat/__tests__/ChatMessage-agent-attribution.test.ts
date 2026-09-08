@@ -276,6 +276,25 @@ describe('ChatMessage user message text rendering', () => {
     expect(spans.some((el) => el.textContent === 'see ')).toBe(true);
     expect(spans.some((el) => el.textContent === ' now')).toBe(true);
   });
+
+  it('opens an inline file mention at its captured line', async () => {
+    dispatchMock.mockClear();
+    render(ChatMessage, {
+      props: {
+        message: userTextMessage('see @src/a.ts:10 now'),
+        workspace: { id: 'ws-1' } as any,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'a.ts:10' }));
+
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceFile',
+        payload: ['ws-1', 'src/a.ts', expect.objectContaining({ line: 10 })],
+      }),
+    );
+  });
 });
 
 describe('ChatMessage agent-to-agent sender attribution', () => {
@@ -406,6 +425,27 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     }
     expect(mountedAvatar.getAttribute('data-specialist')).toBeNull();
     expect(mountedAvatar.getAttribute('data-provider')).toBe('codex');
+  });
+
+  it('renders the sender as running, not waiting, while a tool is executing mid-turn', async () => {
+    render(ChatMessage, {
+      props: {
+        message: userMessage({
+          type: 'agent_message',
+          fromAgentId: 'agent-sender-tool',
+          fromAgentName: 'Tool Builder',
+        }),
+      },
+    });
+
+    // Only the session drives the avatar state: an unresolved tool_use on the
+    // in-flight turn must resolve to running under the shared precedence.
+    agentSelectorHarness.set({
+      session: { status: 'active', isResponding: true, isWaitingOnTool: true },
+    });
+    await Promise.resolve();
+
+    expect(screen.getByTestId('agent-avatar').getAttribute('data-avatar-state')).toBe('running');
   });
 
   it.each([

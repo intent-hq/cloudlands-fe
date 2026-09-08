@@ -30,6 +30,7 @@
   import ActionKeyHud from '$features/hardware-console/actions/ActionKeyHud.svelte';
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
+  import DaemonUpdatingOverlay from '$features/daemon-status/DaemonUpdatingOverlay.svelte';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
   import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
@@ -91,6 +92,7 @@
   } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { bootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-slice';
   import { selectCurrentConnection } from '$store/renderer/slices/connections/connections-selectors';
+  import { selectShellTransparencyEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { connectionShellTint } from '$lib/utils/connection-accents';
   import {
     BOOT_ROUTE_HOLD_TIMEOUT_MS,
@@ -109,7 +111,11 @@
   import { onDestroy, onMount, untrack } from 'svelte';
 
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
-  import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
+  import {
+    preloadRestoredTabTypes,
+    registerAllTabTypes,
+  } from '$features/layout/tab-types/register-all';
+  import { selectPanelLayoutWorkspaces } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import RootQuakeTerminalOverlay from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
@@ -160,6 +166,8 @@
   const releaseNotes$ = selectReleaseNotes();
   const showCreateModal$ = selectShowCreateModal();
   const currentConnection$ = selectCurrentConnection();
+  const shellTransparencyEnabled$ = selectShellTransparencyEnabled();
+  const panelLayouts = selectPanelLayoutWorkspaces();
   const applicationShellTint = $derived(
     connectionShellTint($currentConnection$?.accent, $currentConnection$?.isLocal ?? true),
   );
@@ -167,6 +175,10 @@
   // Register all tab types early
   // This must happen before any panels are rendered
   registerAllTabTypes();
+
+  $effect(() => {
+    if (workspaceId) void preloadRestoredTabTypes($panelLayouts[workspaceId]);
+  });
 
   // Preload the diff highlighter early to avoid blocking when opening first diff
   // This runs during idle time and doesn't block the main thread
@@ -929,6 +941,7 @@
   <div
     class="panel-layout-container relative h-screen w-screen overflow-hidden bg-transparent text-foreground flex flex-col"
     style:background-image={applicationShellTint}
+    data-shell-opaque={!$shellTransparencyEnabled$ || undefined}
     aria-label={m.layout_appShell_shell_ariaLabel()}
     data-testid="app-ready"
   >
@@ -990,6 +1003,7 @@
   <StatsOverlay />
 
   <DaemonStoppedOverlay />
+  <DaemonUpdatingOverlay />
 
   <KeyboardShortcutsCheatSheet />
 

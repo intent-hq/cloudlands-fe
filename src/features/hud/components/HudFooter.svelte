@@ -178,7 +178,7 @@
     color: hsl(var(--ring));
   }
   .hud-stat-fail {
-    color: hsl(var(--error-foreground));
+    color: hsl(var(--danger));
   }
   .hud-stat-completed {
     color: hsl(var(--primary));

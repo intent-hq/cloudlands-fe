@@ -89,7 +89,7 @@
       } else {
         feedback = {
           message: m.modals_featureCode_invalidCode_feedback(),
-          color: 'text-error-foreground',
+          color: 'text-danger',
         };
       }
     } finally {

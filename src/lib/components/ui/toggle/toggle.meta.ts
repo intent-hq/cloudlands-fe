@@ -35,10 +35,10 @@ export const toggleCompatibilityModes = {
       { path: 'src/lib/components/settings/McpServersSettings.svelte', count: 1 },
       { path: 'src/lib/components/settings/NotificationSettings.svelte', count: 3 },
       { path: 'src/lib/components/settings/RtkSettings.svelte', count: 1 },
-      { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 1 },
+      { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 3 },
       { path: 'src/lib/components/settings/WorkspaceApiSettings.svelte', count: 1 },
     ],
-    staticUsageCount: 13,
+    staticUsageCount: 15,
     dynamicUsageCount: 0,
     removalGate:
       'Remove only when source-derived static and dynamic variant="indicator" usage counts both reach zero.',

@@ -5,13 +5,7 @@
  * to interact with the workspace.
  */
 
-import {
-  Tool,
-  ToolCall,
-  ToolResult,
-  ContentItem,
-  ToolInputSchema,
-} from './protocol';
+import { Tool, ToolCall, ToolResult, ContentItem, ToolInputSchema } from './protocol';
 
 /**
  * Base interface for MCP tools

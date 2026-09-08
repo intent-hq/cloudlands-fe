@@ -17,6 +17,7 @@ import {
   getProviderAuthVerdict,
   getProviderAuthVerdicts,
 } from '../../../shared/main/provider-auth-status';
+import type { ProviderAuthVerdict } from '../../../shared/provider-auth-status';
 import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { findBinaryStrict, getCommonNpmPaths } from '../../../shared/main/find-binary';
@@ -27,10 +28,11 @@ import { clearCortexCache, isCortexInstalled } from '../../cortex/main/cortex-re
 import { clearOpenCodeCache, isOpenCodeInstalled } from '../../opencode/main/opencode-resolver';
 import { clearPiCache, isPiInstalled } from '../../pi/main/pi-resolver';
 import { clearDroidCache, isDroidInstalled } from '../../droid/main/droid-resolver';
-import type {
-  NpxStatus,
-  ProviderAvailabilityResult,
-  ProviderStatus,
+import {
+  NPX_ONLY_PATH_OVERRIDE_PROVIDERS,
+  type NpxStatus,
+  type ProviderAvailabilityResult,
+  type ProviderStatus,
 } from '$shared/types/provider-availability';
 import { m } from '../../../shared/paraglide/messages.js';
 
@@ -72,22 +74,43 @@ async function isClaudeCliInstalled(): Promise<boolean> {
 }
 
 /**
+ * Whether the daemon will exec a `providers.paths["claude-code"]` override in
+ * place of the pinned npx adapter (intentd#1714). Discovery reports the
+ * npx-only provider `installed` from npx presence OR a valid override while
+ * `resolvedPath` stays the auto-detected npx — so `installed` with no
+ * resolved npx can only mean the override is in use. An invalid override
+ * contributes nothing on the daemon side, so it never suppresses the warning.
+ */
+function claudeCodeRunsViaOverride(
+  row: ProviderDiscoveryResponse['providers'][number] | undefined,
+): boolean {
+  return row?.installed === true && (row.resolvedPath ?? null) === null;
+}
+
+/**
  * Check if claude-code is available by checking if the claude CLI is installed.
- * The ACP adapter itself always runs via npx (intentd pins the package); when
- * the CLI is installed but npx is authoritatively missing, the status carries
- * an explicit warning so the UI can tell the user the adapter cannot run. A
- * FAILED npx probe rejects instead — it must not fabricate the warning.
+ * The ACP adapter runs via npx (intentd pins the package) unless a valid
+ * `providers.paths` override is configured; when the CLI is installed, npx is
+ * authoritatively missing, and the daemon reports no override in use, the
+ * status carries an explicit warning so the UI can tell the user the adapter
+ * cannot run. A FAILED npx probe or discovery RPC rejects instead — it must
+ * not fabricate (or guess away) the warning.
  */
 async function checkClaudeCodeAvailability(): Promise<ProviderStatus> {
   const installed = await isClaudeCliInstalled();
   const status: ProviderStatus = { available: installed };
-  const npxPath = installed
-    ? await findBinaryStrict('npx', {
-        commonPaths: getCommonNpmPaths('npx'),
-      })
-    : null;
-  if (installed && npxPath === null) {
-    status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
+  if (!installed) {
+    return status;
+  }
+  const npxPath = await findBinaryStrict('npx', {
+    commonPaths: getCommonNpmPaths('npx'),
+  });
+  if (npxPath === null) {
+    const discovery = await callProviderDiscovery();
+    const row = discovery?.providers.find((provider) => provider.id === 'claude-code');
+    if (!claudeCodeRunsViaOverride(row)) {
+      status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
+    }
   }
   return status;
 }
@@ -202,6 +225,10 @@ interface ProviderDiscoveryResponse {
     resolvedPath?: string | null;
     gatedOff?: string | null;
     hasNpxFallback: boolean;
+    /** True for providers launched via `npx <package>` (claude-code, pi). */
+    npxOnly?: boolean;
+    /** npx-only providers only: the pinned package spec (e.g. `pkg@1.2.3`). */
+    npxPackage?: string;
     /** Dual-binary providers only (unsloth): the required secondary CLI name. */
     secondaryCommand?: string;
     /** Dual-binary providers only: whether the secondary CLI resolved. */
@@ -226,6 +253,18 @@ interface ProviderDiscoveryResponse {
  */
 async function callProviderDiscovery(): Promise<ProviderDiscoveryResponse> {
   return getBackendClient().request<ProviderDiscoveryResponse>('host.providerDiscovery', {});
+}
+
+/**
+ * Copy a daemon auth verdict onto an available provider's status: the
+ * verdict flag plus the rendered identity line (`authDetails`) when the
+ * daemon sent one. A missing verdict reads as unknown.
+ */
+function applyAuthVerdict(status: ProviderStatus, verdict: ProviderAuthVerdict | undefined): void {
+  status.authenticated = verdict?.authenticated;
+  if (verdict?.authDetails !== undefined) {
+    status.authDetails = verdict.authDetails;
+  }
 }
 
 /**
@@ -326,6 +365,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     droidResult,
     grokResult,
     unslothResult,
+    antigravityResult,
     authVerdicts,
   ] = await Promise.all([
     makeProviderStatus('auggie', checkAuggieAvailability),
@@ -344,6 +384,9 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     // Unsloth rides the opencode binary (discovery reports it installed from
     // opencode presence); same fallback pattern as grok.
     makeProviderStatus('unsloth', checkUnslothAvailability),
+    // No local probe or npm fallback. The daemon resolves the configured
+    // official ACP executable, which is separate from the agy CLI.
+    makeProviderStatus('antigravity', async () => ({ available: false })),
     // Auth verdicts from the daemon's `host.providerAuthStatus` sweep
     // (intent-hq/intentd#339): the daemon owns the CLI/ACP probes, marker
     // parsing, and caching. Independent of discovery, so it rides in the
@@ -351,29 +394,37 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     getProviderAuthVerdicts(),
   ]);
 
-  // claude-code runs its ACP adapter exclusively via npx (intentd pins the
-  // package). On the discovery path the daemon reports "installed" from npx
-  // presence alone (npx-only provider), so re-gate availability on the claude
-  // CLI prerequisite: without the CLI the provider is unavailable regardless
-  // of npx, and with the CLI but no npx surface an explicit warning instead
-  // of a silently broken provider. The fallback path already handles both.
-  if (discoveryById.has('claude-code')) {
+  // claude-code runs its ACP adapter via npx (intentd pins the package) unless
+  // a valid `providers.paths` override is configured (intentd#1714). On the
+  // discovery path the daemon reports "installed" from npx presence or the
+  // override (npx-only provider), so re-gate availability on the claude CLI
+  // prerequisite: without the CLI the provider is unavailable regardless of
+  // npx, and with the CLI but no npx — and no override in use — surface an
+  // explicit warning instead of a silently broken provider. The fallback path
+  // already handles all of these.
+  const claudeCodeDisc = discoveryById.get('claude-code');
+  if (claudeCodeDisc) {
     if (!(await isClaudeCliInstalled())) {
       claudeCodeResult.available = false;
-    } else if (!claudeCodeResult.warning && npxStatus?.resolvedPath === null) {
+    } else if (
+      !claudeCodeResult.warning &&
+      npxStatus?.resolvedPath === null &&
+      !claudeCodeRunsViaOverride(claudeCodeDisc)
+    ) {
       claudeCodeResult.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
     }
   }
 
   // The wire's `null` (unknown/uninstalled) folds to `undefined` so no
   // indicator renders; verdicts attach only to providers that are available.
-  if (auggieResult.available) auggieResult.authenticated = authVerdicts['auggie'];
-  if (claudeCodeResult.available) claudeCodeResult.authenticated = authVerdicts['claude-code'];
-  if (codexResult.available) codexResult.authenticated = authVerdicts['codex'];
-  if (opencodeResult.available) opencodeResult.authenticated = authVerdicts['opencode'];
-  if (piResult.available) piResult.authenticated = authVerdicts['pi'];
-  if (droidResult.available) droidResult.authenticated = authVerdicts['droid'];
-  if (grokResult.available) grokResult.authenticated = authVerdicts['grok'];
+  if (auggieResult.available) applyAuthVerdict(auggieResult, authVerdicts['auggie']);
+  if (claudeCodeResult.available) applyAuthVerdict(claudeCodeResult, authVerdicts['claude-code']);
+  if (codexResult.available) applyAuthVerdict(codexResult, authVerdicts['codex']);
+  if (opencodeResult.available) applyAuthVerdict(opencodeResult, authVerdicts['opencode']);
+  if (piResult.available) applyAuthVerdict(piResult, authVerdicts['pi']);
+  if (droidResult.available) applyAuthVerdict(droidResult, authVerdicts['droid']);
+  if (grokResult.available) applyAuthVerdict(grokResult, authVerdicts['grok']);
+  if (antigravityResult.available) applyAuthVerdict(antigravityResult, authVerdicts['antigravity']);
   // Unsloth is local-only: the daemon's managed server generates its own API
   // key, there is no login surface, so available ⇒ authenticated.
   if (unslothResult.available) unslothResult.authenticated = true;
@@ -389,7 +440,8 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       piResult.available ||
       droidResult.available ||
       grokResult.available ||
-      unslothResult.available,
+      unslothResult.available ||
+      antigravityResult.available,
     providers: {
       auggie: auggieResult,
       claudeCode: claudeCodeResult,
@@ -401,6 +453,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       droid: droidResult,
       grok: grokResult,
       unsloth: unslothResult,
+      antigravity: antigravityResult,
     },
     // Absent catalog = unknown gating verdict; only a consulted catalog
     // yields an authoritative hidden list (empty = nothing hidden).
@@ -438,11 +491,14 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
  * `paths` covers every provider the daemon's discovery reported (null when
  * the binary did not resolve); `secondaryPaths` carries the secondary
  * binary's resolved path for dual-binary providers (today only unsloth's
- * `unsloth` CLI) when it resolved.
+ * `unsloth` CLI) when it resolved; `npxPackages` carries the pinned npx
+ * package spec for npx-only providers whose path override the daemon honors
+ * (their `paths` entry is the npx binary, not the adapter).
  */
 export interface ProviderPathsResult {
   paths: Record<string, string | null>;
   secondaryPaths: Record<string, string | null>;
+  npxPackages: Record<string, string>;
   /** npx status from the same discovery round-trip (PROTOCOL §5.14). */
   npx?: NpxStatus;
 }
@@ -468,13 +524,21 @@ export async function getProviderPaths(): Promise<ProviderPathsResult> {
   }
   const paths: Record<string, string | null> = {};
   const secondaryPaths: Record<string, string | null> = {};
+  const npxPackages: Record<string, string> = {};
   for (const provider of discovery?.providers ?? []) {
     paths[provider.id] = provider.resolvedPath ?? null;
     if (provider.secondaryCommand !== undefined) {
       secondaryPaths[provider.id] = provider.secondaryResolvedPath ?? null;
     }
+    if (
+      provider.npxOnly === true &&
+      provider.npxPackage &&
+      NPX_ONLY_PATH_OVERRIDE_PROVIDERS.has(provider.id)
+    ) {
+      npxPackages[provider.id] = provider.npxPackage;
+    }
   }
-  return { paths, secondaryPaths, npx: discovery?.npx };
+  return { paths, secondaryPaths, npxPackages, npx: discovery?.npx };
 }
 
 /**
@@ -511,13 +575,26 @@ export function setupProviderAvailabilityIPC(): void {
       try {
         let status: ProviderStatus;
         let authenticated: boolean | undefined;
+        let authDetails: string | undefined;
 
         // Auth verdicts come from the daemon (`host.providerAuthStatus`,
         // intent-hq/intentd#339). `force: true` bypasses the daemon's cache.
-        const checkAuth = (): Promise<boolean | undefined> =>
-          getProviderAuthVerdict(providerId, { force });
+        // The rendered identity line rides the same verdict (protocol 9.4).
+        const checkAuth = async (): Promise<boolean | undefined> => {
+          const verdict = await getProviderAuthVerdict(providerId, { force });
+          authDetails = verdict?.authDetails;
+          return verdict?.authenticated;
+        };
 
         switch (providerId) {
+          case 'antigravity': {
+            const discovery = await callProviderDiscovery();
+            const row = discovery?.providers.find((provider) => provider.id === providerId);
+            if (!discovery) throw new Error(m.providers_antigravity_discoveryUnavailable());
+            status = { available: row?.installed === true, hasNpxFallback: false };
+            if (status.available) authenticated = await checkAuth();
+            break;
+          }
           case 'auggie':
             status = await checkAuggieAvailability();
             if (status.available) {
@@ -594,6 +671,9 @@ export function setupProviderAvailabilityIPC(): void {
 
         if (status.available) {
           status.authenticated = status.authenticated ?? authenticated;
+          if (authDetails !== undefined) {
+            status.authDetails = authDetails;
+          }
         }
 
         return { success: true, providerId, data: status };

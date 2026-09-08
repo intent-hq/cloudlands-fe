@@ -52,6 +52,14 @@ import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
 import type { RecentUrl } from '$store/renderer/slices/browser/browser-types';
 import type {
+  BrowserActionEnvelope,
+  BrowserTab,
+  BrowserTabInput,
+  BrowserTabListing,
+  LiveClient,
+  WorkspaceBrowserClient,
+} from '$shared/types/browser-clients';
+import type {
   McpServerConfig,
   McpServerRuntimeStatus,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
@@ -59,15 +67,16 @@ import type { UserPreferencesState } from '$store/renderer/slices/user-preferenc
 import type { ProviderSettingsState } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 
 /**
- * The daemon-persisted subset of provider settings (`providers.active` /
- * `providers.enabled`, PROTOCOL §5.12). The remaining ProviderSettingsState
- * fields are registry snapshots hydrated from `providers.catalog`, never
- * persisted through this seam.
+ * The daemon-persisted subset of provider settings (`model.defaultProvider` /
+ * `providers.enabled`, PROTOCOL §5.12). `activeProviderId` carries the default
+ * provider — the provider leg of the default model triple (the deprecated
+ * `providers.active` key is no longer read or written). The remaining
+ * ProviderSettingsState fields are registry snapshots hydrated from
+ * `providers.catalog`, never persisted through this seam.
  */
-export type PersistedProviderSettings = Pick<
-  ProviderSettingsState,
-  'activeProviderId' | 'enabledProviders'
->;
+export type PersistedProviderSettings = Pick<ProviderSettingsState, 'enabledProviders'> & {
+  activeProviderId: string;
+};
 import type { SingleWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
 import type { BackgroundAgentSettingsState } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 import type { GitHubUser } from '$features/github-auth/types';
@@ -441,6 +450,20 @@ export interface WorkspacesClient {
    * that the bridge folds into the context slice.
    */
   updateContext(workspaceId: string, items: ContextItem[]): Promise<ContextItem[]>;
+  /**
+   * `workspace.getBrowserClient` (REV-2, PROTOCOL §5.1): the workspace's
+   * effective browser client — the persisted pin (`clientId` + `source:
+   * "workspace"`, else `source: "default"`) plus `resolved`, the client an
+   * agent `browser.exec` would reach right now (`null` when none).
+   */
+  getBrowserClient(workspaceId: string): Promise<WorkspaceBrowserClient>;
+  /**
+   * `workspace.setBrowserClient` (REV-2, PROTOCOL §5.1): persist (`clientId`)
+   * or clear (`null`) the per-workspace browser-client pin. The daemon emits
+   * `workspace:updated { changes: { browserClientId } }` and echoes the
+   * `getBrowserClient` shape.
+   */
+  setBrowserClient(workspaceId: string, clientId: string | null): Promise<WorkspaceBrowserClient>;
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe;
 }
 
@@ -709,8 +732,8 @@ export interface AgentsClient {
    * Dismiss the pending Agent Q&A question set (`agent.dismissQuestions`,
    * §5.5). The daemon persists `dismissedQuestionsMessageId` (the id of the
    * question-bearing assistant message) in session metadata — so the
-   * dismissal survives reload — emits `agent:updated`, and kicks the queue
-   * drain so messages held by the question hold resume. Idempotent:
+   * dismissal survives reload — and emits `agent:updated`, which clears the
+   * pending question set so the sticky wizard hides everywhere. Idempotent:
    * re-dismissing the same message succeeds. A nonexistent agent or a
    * workspace mismatch rejects (folded into `{ success: false, error }`).
    */
@@ -1781,7 +1804,7 @@ export interface SpecialistDef {
    * `list`/`get` when the resolved list is non-empty, omitted otherwise
    * (never `null`/`[]` on the wire); accepted in `create`/`edit` spec bodies.
    */
-  modelOptions?: { model: string; hint: string; reasoningEffort?: string }[];
+  modelOptions?: { provider?: string; model: string; hint: string; reasoningEffort?: string }[];
   /**
    * Reasoning-effort level for the specialist's model (additive, PROTOCOL
    * §5.11): one of the model's catalog `effortLevels`. Omitted when the
@@ -1997,6 +2020,47 @@ export interface VoiceClient {
 export interface BrowserClient {
   recentUrls(workspaceId: string): Promise<RecentUrl[]>;
   subscribe(handler: SubscriptionHandler<RecentUrl[]>): Unsubscribe;
+  /*
+   * Daemon tab registry (REV-2, `browser.*` tab methods). Tabs are
+   * workspace-bound rows keyed by `tabId`; the reporting host is the
+   * connection's hello'd `clientId`, never a wire parameter.
+   */
+  /** `browser.listTabs { workspaceId }` → the workspace's rows with host presence. */
+  listTabs(workspaceId: string): Promise<BrowserTabListing[]>;
+  /** `browser.upsertTab { workspaceId, tab }` (host only) → the stored row. */
+  upsertTab(workspaceId: string, tab: Omit<BrowserTabInput, 'workspaceId'>): Promise<BrowserTab>;
+  /** `browser.removeTab { tabId }` (host only): host-reported close. */
+  removeTab(tabId: string): Promise<{ ok: true }>;
+  /**
+   * `browser.syncTabs { tabs }` (host only): full snapshot of this host's
+   * tabs → `drop`, the tabIds the daemon rejected (stale / foreign rows) that
+   * the host must close locally.
+   */
+  syncTabs(tabs: BrowserTabInput[]): Promise<{ drop: string[] }>;
+  /**
+   * `browser.navigateTab { tabId, url }` (any client): routed to the tab's
+   * host → the `navigate` action's `{ action, success, result?, error? }` envelope.
+   */
+  navigateTab(tabId: string, url: string): Promise<BrowserActionEnvelope>;
+  /**
+   * `browser.closeTab { tabId, force? }` (any client). Without `force` the
+   * host must be connected (typed error otherwise, no mutation); `force`
+   * tombstones the row regardless of connectivity.
+   */
+  closeTab(tabId: string, options?: { force?: boolean }): Promise<{ ok: true }>;
+}
+
+/**
+ * Connected-clients domain (REV-2, PROTOCOL §5.17). `list` is the daemon's
+ * live logical-client registry; `ownClientId` is the identity THIS renderer's
+ * connection presents on `client.hello`, so later consumers can compute
+ * `isHost = hostClientId === ownClientId`.
+ */
+export interface ClientsClient {
+  /** `client.list` → every connected logical client. */
+  list(): Promise<LiveClient[]>;
+  /** The stable `clientId` the daemon confirmed for this connection. */
+  ownClientId(): Promise<string>;
 }
 
 /**
@@ -2036,8 +2100,57 @@ export interface GitHubRepoConfigResult {
   exists: boolean;
 }
 
+/** Normalized single-value PR state (the wire carries `state` + `merged` + `draft`). */
+export type GitHubPullRequestState = 'open' | 'closed' | 'merged' | 'draft';
+
+/**
+ * One pull request (`github.pulls.get`, §5.27) normalized for link previews:
+ * the wire's `state` + `merged` + `draft` collapse into a single `state`
+ * (merged → `'merged'`, draft → `'draft'`, else the wire state).
+ */
+export interface GitHubPullRequestDetails {
+  owner: string;
+  repo: string;
+  number: number;
+  title: string;
+  state: GitHubPullRequestState;
+  /** `user.login` of the PR author. */
+  author: string;
+  createdAt: string;
+  updatedAt: string;
+  url: string;
+  headRef: string;
+  baseRef: string;
+}
+
+/** One issue (`github.issues.get`, §5.27) normalized for link previews. */
+export interface GitHubIssueDetails {
+  owner: string;
+  repo: string;
+  number: number;
+  title: string;
+  state: 'open' | 'closed';
+  /** `user.login` of the issue author. */
+  author: string;
+  createdAt: string;
+  updatedAt: string;
+  url: string;
+}
+
 export interface IntegrationsClient {
   githubUser(): Promise<GitHubUser | null>;
+  /**
+   * One pull request by number (`github.pulls.get`, §5.27). THROWS on
+   * transport/daemon errors (e.g. "GitHub is not configured.") and when the
+   * daemon reports no such PR, so the link hover card renders an explicit
+   * URL-only fallback — never a fabricated card.
+   */
+  githubPullRequest(owner: string, repo: string, number: number): Promise<GitHubPullRequestDetails>;
+  /**
+   * One issue by number (`github.issues.get`, §5.27). Same THROWS contract as
+   * `githubPullRequest`.
+   */
+  githubIssue(owner: string, repo: string, number: number): Promise<GitHubIssueDetails>;
   /**
    * Remote branch names for a GitHub repo (`github.branches.list`, §5.27),
    * with the default branch from `github.repos.get` (best-effort). Unlike the
@@ -2092,6 +2205,17 @@ export interface ServerPairingInfo {
   path: string;
   localIps: string[];
   hostname: string;
+  /**
+   * Additive tailcat tunnel address (§5.2): present only when the tunnel is
+   * enabled and up; absent on older daemons or while the tunnel is down.
+   */
+  tcAddress?: string;
+  /**
+   * Additive bind-candidate enumeration: the machine's non-loopback IPv4
+   * addresses regardless of the current bind set (unlike `localIps`, which is
+   * bind-filtered). Absent on older daemons.
+   */
+  availableIps?: string[];
 }
 
 export interface ServerClient {
@@ -2111,6 +2235,17 @@ export interface EventQueryOptions {
   limit?: number;
 }
 
+/** Cursor options for the opt-in paginated `event.query` envelope. */
+export interface EventQueryPageOptions extends EventQueryOptions {
+  nextToken?: string;
+}
+
+/** One newest→oldest page returned by paginated `event.query`. */
+export interface EventQueryPage {
+  items: WorkspaceEvent[];
+  nextToken: string | null;
+}
+
 export interface EventsClient {
   /** Boot snapshot of the workspace event stream, oldest→newest. */
   list(workspaceId: string): Promise<WorkspaceEvent[]>;
@@ -2119,6 +2254,8 @@ export interface EventsClient {
    * wire order (newest→oldest); the daemon defaults `limit` to 50.
    */
   query(workspaceId: string, options?: EventQueryOptions): Promise<WorkspaceEvent[]>;
+  /** Paginated historical read; `nextToken` continues toward older events. */
+  queryPage(workspaceId: string, options?: EventQueryPageOptions): Promise<EventQueryPage>;
   subscribe(workspaceId: string, handler: SubscriptionHandler<WorkspaceEvent[]>): Unsubscribe;
 }
 
@@ -2134,6 +2271,8 @@ export interface DraftAttachment {
   type: string;
   label: string;
   description?: string;
+  /** Opaque text carried by content-backed context items such as selections. */
+  content?: string;
   path?: string;
   imageData?: string;
   imageMimeType?: string;
@@ -2200,4 +2339,5 @@ export interface AppClient {
   server: ServerClient;
   events: EventsClient;
   drafts: DraftsClient;
+  clients: ClientsClient;
 }

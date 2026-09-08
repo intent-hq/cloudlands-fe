@@ -81,9 +81,12 @@ export function createTakeoverController(reduced: () => boolean): HudTakeoverCon
     clearTimeout(phaseTimer);
     const deadline = nextTakeoverDeadline(next);
     if (deadline !== null) {
-      phaseTimer = setTimeout(() => {
-        apply(tickTakeoverQueue(queue, Date.now(), options()));
-      }, Math.max(0, deadline - Date.now()));
+      phaseTimer = setTimeout(
+        () => {
+          apply(tickTakeoverQueue(queue, Date.now(), options()));
+        },
+        Math.max(0, deadline - Date.now()),
+      );
     }
   }
 
@@ -138,7 +141,12 @@ export function createTakeoverController(reduced: () => boolean): HudTakeoverCon
     },
     enqueue(trigger) {
       apply(
-        enqueueTakeover(tickTakeoverQueue(queue, Date.now(), options()), trigger, Date.now(), options()),
+        enqueueTakeover(
+          tickTakeoverQueue(queue, Date.now(), options()),
+          trigger,
+          Date.now(),
+          options(),
+        ),
       );
     },
     openViewer(trigger) {

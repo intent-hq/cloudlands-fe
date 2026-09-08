@@ -110,7 +110,7 @@ export const setEnabled = createAction<[wsId: string, value: boolean]>('example/
 - If a slice exists only to define saga trigger actions and has no meaningful state, do not register a reducer for it in `src/store/renderer/reducer.ts`.
 - A saga can exist without a reducer entry in the state tree.
 - Keep the action creators and saga registration, but omit the empty reducer.
-- Current examples: `agent-events`, `git-events`, `settings-events`, `workspace-lifecycle`.
+- Current examples: `agent-events`, `git-events`, `settings-events`.
 
 ## 10. Workspace-Scoped State Pattern
 

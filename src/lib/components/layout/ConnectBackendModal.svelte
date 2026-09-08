@@ -25,6 +25,7 @@
    */
 
   import { Button } from '$lib/components/ui/button';
+  import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
   import { Checkbox } from '$lib/components/ui/checkbox';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
@@ -41,11 +42,17 @@
     setKeychainSyncEnabledRequested,
   } from '$store/renderer/slices/connections/connections-slice';
   import { selectKeychainSyncState } from '$store/renderer/slices/connections/connections-selectors';
-  import { DEFAULT_CONNECTION_ACCENT, type ConnectionAccent } from '$shared/types/connections';
+  import {
+    DEFAULT_CONNECTION_ACCENT,
+    type ConnectionAccent,
+    type DeviceIconChoice,
+  } from '$shared/types/connections';
   import {
     CONNECTION_ACCENT_CLASSES,
     connectionAccentOptions,
   } from '$lib/utils/connection-accents';
+  import { isPairingUri, parsePairingUri } from '$shared/utils/pairing-uri';
+  import { isTcAddress } from '$shared/tc-address';
   import { cn } from '$lib/utils';
 
   interface Props {
@@ -90,9 +97,15 @@
   let step = $state<Step>('details');
   let name = $state('');
   let accent = $state<ConnectionAccent>(DEFAULT_CONNECTION_ACCENT);
+  let deviceIcon = $state<DeviceIconChoice>('auto');
   let host = $state('');
   let port = $state(DEFAULT_WS_PORT);
   let token = $state('');
+  // tailcat tunnel address learned from a pasted pairing URI's `tc=` param
+  // (PROTOCOL §12.3) — the only pre-connect source; stored with the add so
+  // the very first connect can already race a tunnel candidate. Cleared when
+  // the host is edited by hand (the address belongs to the pasted backend).
+  let tcAddress = $state<string | null>(null);
   let detectHosts = $state(true);
   let saveToICloud = $state(true);
   let fingerprint = $state('');
@@ -132,14 +145,42 @@
     step = 'details';
     name = '';
     accent = defaultAccent;
+    deviceIcon = 'auto';
     host = '';
     port = DEFAULT_WS_PORT;
     token = '';
+    tcAddress = null;
     detectHosts = true;
     saveToICloud = true;
     fingerprint = '';
     busy = false;
     error = null;
+  }
+
+  /**
+   * Pasting a full pairing URI (`intent://pair?...`, PROTOCOL §5
+   * `pairing.getInfo`) into the host field fills host/port/token from its
+   * component params — and captures the optional `tc=` tunnel address, which
+   * has no manual-entry equivalent. Non-URI pastes fall through untouched.
+   */
+  function handleHostPaste(e: ClipboardEvent) {
+    const pasted = e.clipboardData?.getData('text') ?? '';
+    if (!isPairingUri(pasted)) return;
+    const parsed = parsePairingUri(pasted);
+    if (!parsed) return;
+    e.preventDefault();
+    if (parsed.hosts.length > 0) host = parsed.hosts[0];
+    if (parsed.port !== null) port = String(parsed.port);
+    if (parsed.token) token = parsed.token;
+    tcAddress = parsed.tcAddress;
+  }
+
+  function handleHostInput() {
+    // Hand-editing the host detaches it from the pasted pairing payload; the
+    // tunnel address must not be stored against a different backend. A host
+    // that IS a tc address (manual tunnel entry, PROTOCOL §12.3) re-attaches
+    // itself: the capture and every connect then dial through the tunnel.
+    tcAddress = isTcAddress(host) ? host.trim() : null;
   }
 
   function close() {
@@ -202,10 +243,12 @@
       const addAction = addConnectionRequested({
         label: name.trim(),
         accent,
+        deviceIcon,
         host: trimmedHost,
         port: portNumber,
         fingerprint,
         token: token.trim(),
+        ...(tcAddress ? { tcAddress } : {}),
         detectHosts,
         ...(syncExcluded ? { syncExcluded: true } : {}),
       });
@@ -221,7 +264,15 @@
       }
       const openAction = openConnectionRequested(connection.id);
       appStore.dispatch(openAction);
-      await openAction.promise;
+      const openResult = await openAction.promise;
+      if (openResult.status === 'secret-unavailable') {
+        // The device was stored but its token could not be read back (keychain
+        // locked or entry gone) — a resolved failure, not a success (#3783).
+        // Stay open so the outcome is visible; recovery lives in Devices settings.
+        error = m.modals_connect_secretUnavailable_error();
+        busy = false;
+        return;
+      }
       close();
     } catch (e) {
       error = toMessage(e);
@@ -383,6 +434,8 @@
             </div>
           </fieldset>
 
+          <DeviceIconPicker record={{ deviceIcon }} bind:value={deviceIcon} portal={true} />
+
           <div class="space-y-1">
             <label class="text-xs text-subtle" for="connect-host"
               >{m.modals_connect_host_label()}</label
@@ -396,6 +449,8 @@
               autocorrect="off"
               autocapitalize="off"
               spellcheck="false"
+              onpaste={handleHostPaste}
+              oninput={handleHostInput}
             />
           </div>
 
@@ -476,7 +531,7 @@
         {/if}
 
         {#if error}
-          <p class="text-xs text-error-foreground">{error}</p>
+          <p class="text-xs text-danger">{error}</p>
         {/if}
       </div>
 

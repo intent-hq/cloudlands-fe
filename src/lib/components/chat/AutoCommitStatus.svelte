@@ -74,7 +74,7 @@
                 })}
               </span>
             {:else}
-              <span class="text-error-foreground">{m.chat_autoCommitStatus_failed_label()}</span>
+              <span class="text-danger">{m.chat_autoCommitStatus_failed_label()}</span>
               <span class="text-subtle">
                 {m.chat_autoCommitStatus_hooksFailedAfter_label({
                   count: formatInteger(status.retryCount),

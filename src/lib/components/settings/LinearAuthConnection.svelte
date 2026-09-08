@@ -105,7 +105,7 @@
         {m.settings_connections_linear_description()}
       </p>
       {#if $error$}
-        <p class="text-xs text-error-foreground pl-6">{$error$}</p>
+        <p class="text-xs text-danger pl-6">{$error$}</p>
       {/if}
     </div>
 
@@ -123,7 +123,7 @@
         <span class="text-ghost">·</span>
         <button
           type="button"
-          class="text-muted-foreground hover:text-error-foreground cursor-pointer transition-colors"
+          class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
           onclick={handleLinearDisconnect}
           disabled={isDisconnectingLinear}
         >

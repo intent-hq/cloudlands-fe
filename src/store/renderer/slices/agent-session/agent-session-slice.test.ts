@@ -389,6 +389,22 @@ describe('agent-session-slice reducer', () => {
       expect(next.byAgentId['a1'].lastMessageId).toBe('m-2');
     });
 
+    it('applies an AgentLite hydration when only the wire messageCount changes', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { messageCount: 0 })),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1', { messageCount: 3 })),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].messages).toEqual([]);
+      expect(next.byAgentId['a1'].messageCount).toBe(3);
+    });
+
     it('applies an upsert when only hasUnread flips on an otherwise-equivalent session (marker convergence)', () => {
       const state = agentSessionReducer(
         initialState,
@@ -2466,6 +2482,40 @@ describe('agent-session-slice reducer', () => {
         isResponding: false,
         name: 'Restored Idle Snapshot',
       });
+    });
+
+    it('applies stale runtime-flag clears to selected rows in one mixed batch', () => {
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([
+          makeSession('stale', 'ws-1', { isStreaming: true, isProcessing: true }),
+          makeSession('live', 'ws-1', { isStreaming: true, isProcessing: true }),
+          makeSession('new', 'ws-1'),
+        ]),
+      );
+
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions(
+          [
+            makeSession('stale', 'ws-1', { isStreaming: false, isProcessing: false }),
+            makeSession('live', 'ws-1', { isStreaming: false, isProcessing: false }),
+            makeSession('new', 'ws-1', { name: 'Hydrated new' }),
+          ],
+          { staleRuntimeFlagClearAgentIds: ['stale'] },
+        ),
+      );
+
+      expect(state.byAgentId['stale']).toMatchObject({
+        isStreaming: false,
+        isProcessing: false,
+      });
+      expect(state.byAgentId['live']).toMatchObject({
+        isStreaming: true,
+        isProcessing: true,
+      });
+      expect(state.byAgentId['new'].name).toBe('Hydrated new');
+      expect(state.agentIdsByWorkspace['ws-1']).toEqual(['stale', 'live', 'new']);
     });
 
     it('still clears isProcessing via upsert once isStreaming was cleared first (safety timeout)', () => {

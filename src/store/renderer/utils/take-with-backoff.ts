@@ -1,6 +1,6 @@
-import { END, type Channel, type EventChannel, type Task } from "redux-saga";
-import type { NotUndefined } from "@redux-saga/types";
-import { call, cancel, delay, fork, take } from "typed-redux-saga";
+import { END, type Channel, type EventChannel, type Task } from 'redux-saga';
+import type { NotUndefined } from '@redux-saga/types';
+import { call, cancel, delay, fork, take } from 'typed-redux-saga';
 
 type TakeWithBackoffChannel<T extends NotUndefined> = Channel<T> | EventChannel<T>;
 

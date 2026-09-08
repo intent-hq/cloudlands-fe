@@ -124,9 +124,9 @@ class CdpHelpersTestHarness {
   }
 
   printResults(results: TestResult[]) {
-    console.log(`\n${  '='.repeat(60)}`);
+    console.log(`\n${'='.repeat(60)}`);
     console.log('TEST RESULTS');
-    console.log(`${'='.repeat(60)  }\n`);
+    console.log(`${'='.repeat(60)}\n`);
 
     const passed = results.filter((r) => r.passed).length;
     const failed = results.filter((r) => !r.passed).length;
@@ -141,9 +141,9 @@ class CdpHelpersTestHarness {
       }
     });
 
-    console.log(`\n${  '='.repeat(60)}`);
+    console.log(`\n${'='.repeat(60)}`);
     console.log(`Total: ${results.length} | Passed: ${passed} | Failed: ${failed}`);
-    console.log(`${'='.repeat(60)  }\n`);
+    console.log(`${'='.repeat(60)}\n`);
 
     return failed === 0;
   }

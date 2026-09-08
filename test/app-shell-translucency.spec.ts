@@ -195,3 +195,28 @@ test('keeps the semantic wash stable when Chromium exposes reduced transparency'
   });
   if (evidence.supported) expect(evidence.shell).toBe('rgba(255, 255, 255, 0.35)');
 });
+
+test('uses an opaque theme background without hiding the connection tint', async ({ page }) => {
+  for (const theme of ['light', 'dark'] as const) {
+    await page.setContent(fixture);
+    const evidence = await page.evaluate((nextTheme) => {
+      document.documentElement.className = nextTheme;
+      const shell = document.querySelector<HTMLElement>('[data-app-shell]')!;
+      shell.dataset.shellOpaque = '';
+      shell.style.backgroundImage = 'linear-gradient(rgb(255 0 0 / 0.1), rgb(255 0 0 / 0.1))';
+      const tokenProbe = document.createElement('div');
+      tokenProbe.style.backgroundColor = 'hsl(var(--background))';
+      document.body.append(tokenProbe);
+      const result = {
+        shellBackground: getComputedStyle(shell).backgroundColor,
+        themeBackground: getComputedStyle(tokenProbe).backgroundColor,
+        shellImage: getComputedStyle(shell).backgroundImage,
+      };
+      tokenProbe.remove();
+      return result;
+    }, theme);
+
+    expect(evidence.shellBackground, theme).toBe(evidence.themeBackground);
+    expect(evidence.shellImage, theme).not.toBe('none');
+  }
+});

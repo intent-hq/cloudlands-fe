@@ -1,7 +1,7 @@
 /**
  * Svelte action reporting a visible browser webview element's bounds (CSS px)
- * to the main process so agent-owned (viewport-emulated) tabs scale-to-fit
- * their panel (docs/protocol §5.9). Main ignores reports for unowned tabs.
+ * to the main process so fit viewports follow their panel and fixed
+ * viewports scale-to-fit (docs/protocol §5.9). Reports apply to every tab.
  *
  * Lives outside the component per the no-component-async-data-fetch
  * boundary — IPC stays in this module (offscreen-webview-action precedent).
@@ -15,11 +15,9 @@ const REPORT_DEBOUNCE_MS = 150;
 
 function report(tabId: string, width: number, height: number): void {
   if (!(width > 0) || !(height > 0)) return;
-  window.electronAPI
-    ?.invoke('browser:report-tab-bounds', { tabId, width, height })
-    .catch((err) => {
-      logger.debug('Failed to report tab bounds', { tabId, error: err });
-    });
+  window.electronAPI?.invoke('browser:report-tab-bounds', { tabId, width, height }).catch((err) => {
+    logger.debug('Failed to report tab bounds', { tabId, error: err });
+  });
 }
 
 /**

@@ -170,7 +170,9 @@ export function getFriendlyLabel(
         return {
           parts: makeParts(
             isAgent ? agentRef(actorName, event.actor?.id) : null,
-            isAgent ? m.log_friendlyLabels_renamedByAgent_middle() : m.log_friendlyLabels_renamed_before(),
+            isAgent
+              ? m.log_friendlyLabels_renamedByAgent_middle()
+              : m.log_friendlyLabels_renamed_before(),
             fileRef(oldName, oldPath),
             ' → ',
             fileRef(newName, newPath),
@@ -179,7 +181,10 @@ export function getFriendlyLabel(
         };
       }
       return {
-        parts: makeParts(agentRef(actorName, event.actor?.id), m.log_friendlyLabels_renamedFile_after()),
+        parts: makeParts(
+          agentRef(actorName, event.actor?.id),
+          m.log_friendlyLabels_renamedFile_after(),
+        ),
         verb: 'renamed',
       };
     }
@@ -191,9 +196,18 @@ export function getFriendlyLabel(
       const title = data?.title || m.log_friendlyLabels_untitledNote_label();
       const verb = event.type.split(':')[1];
       const notePhrases = {
-        created: { byAgent: m.log_friendlyLabels_createdByAgent_middle, standalone: m.log_friendlyLabels_created_before },
-        updated: { byAgent: m.log_friendlyLabels_updatedByAgent_middle, standalone: m.log_friendlyLabels_updated_before },
-        deleted: { byAgent: m.log_friendlyLabels_deletedByAgent_middle, standalone: m.log_friendlyLabels_deleted_before },
+        created: {
+          byAgent: m.log_friendlyLabels_createdByAgent_middle,
+          standalone: m.log_friendlyLabels_created_before,
+        },
+        updated: {
+          byAgent: m.log_friendlyLabels_updatedByAgent_middle,
+          standalone: m.log_friendlyLabels_updated_before,
+        },
+        deleted: {
+          byAgent: m.log_friendlyLabels_deletedByAgent_middle,
+          standalone: m.log_friendlyLabels_deleted_before,
+        },
       }[verb as 'created' | 'updated' | 'deleted'];
       return {
         parts: makeParts(
@@ -220,14 +234,21 @@ export function getFriendlyLabel(
 
     case 'agent:failed':
       return {
-        parts: [agentRef(actorName, event.actor?.id), m.log_friendlyLabels_encounteredError_after()],
+        parts: [
+          agentRef(actorName, event.actor?.id),
+          m.log_friendlyLabels_encounteredError_after(),
+        ],
         verb: 'failed',
       };
 
     case 'agent:tool:call': {
       const toolName = data?.toolName || data?.name || m.log_friendlyLabels_toolFallback_label();
       return {
-        parts: [agentRef(actorName, event.actor?.id), m.log_friendlyLabels_usedTool_middle(), textRef(toolName)],
+        parts: [
+          agentRef(actorName, event.actor?.id),
+          m.log_friendlyLabels_usedTool_middle(),
+          textRef(toolName),
+        ],
         verb: 'used',
       };
     }
@@ -301,7 +322,9 @@ export function getFriendlyLabel(
         return {
           parts: makeParts(
             isAgent ? agentRef(actorName, event.actor?.id) : null,
-            isAgent ? m.log_friendlyLabels_markedByAgent_middle() : m.log_friendlyLabels_marked_before(),
+            isAgent
+              ? m.log_friendlyLabels_markedByAgent_middle()
+              : m.log_friendlyLabels_marked_before(),
             noteRef(taskName, noteId),
             ` ${friendlyStatus.toLowerCase()}`,
           ),
@@ -333,7 +356,9 @@ export function getFriendlyLabel(
       return {
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
-          isAgent ? m.log_friendlyLabels_committedByAgent_middle() : m.log_friendlyLabels_committed_before(),
+          isAgent
+            ? m.log_friendlyLabels_committedByAgent_middle()
+            : m.log_friendlyLabels_committed_before(),
           truncated ? `"${truncated}"` : m.log_friendlyLabels_changesFallback_label(),
         ),
         verb: 'committed',
@@ -344,7 +369,9 @@ export function getFriendlyLabel(
       return {
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
-          isAgent ? m.log_friendlyLabels_pushedToByAgent_middle() : m.log_friendlyLabels_pushedTo_before(),
+          isAgent
+            ? m.log_friendlyLabels_pushedToByAgent_middle()
+            : m.log_friendlyLabels_pushedTo_before(),
           data?.branch ? branchRef(data.branch) : m.log_friendlyLabels_remoteFallback_label(),
         ),
         verb: 'pushed',
@@ -354,7 +381,9 @@ export function getFriendlyLabel(
       return {
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
-          isAgent ? m.log_friendlyLabels_pulledFromByAgent_middle() : m.log_friendlyLabels_pulledFrom_before(),
+          isAgent
+            ? m.log_friendlyLabels_pulledFromByAgent_middle()
+            : m.log_friendlyLabels_pulledFrom_before(),
           data?.branch ? branchRef(data.branch) : m.log_friendlyLabels_remoteFallback_label(),
         ),
         verb: 'pulled',
@@ -380,7 +409,9 @@ export function getFriendlyLabel(
       return {
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
-          isAgent ? m.log_friendlyLabels_startedByAgent_middle() : m.log_friendlyLabels_startedAgent_before(),
+          isAgent
+            ? m.log_friendlyLabels_startedByAgent_middle()
+            : m.log_friendlyLabels_startedAgent_before(),
           data?.url ? textRef(data.url) : m.log_friendlyLabels_devServerFallback_label(),
         ),
         verb: 'started',
@@ -391,7 +422,9 @@ export function getFriendlyLabel(
       return {
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
-          isAgent ? m.log_friendlyLabels_stoppedDevServer_after() : m.log_friendlyLabels_devServerStopped_label(),
+          isAgent
+            ? m.log_friendlyLabels_stoppedDevServer_after()
+            : m.log_friendlyLabels_devServerStopped_label(),
         ),
         verb: 'stopped',
       };
@@ -402,7 +435,9 @@ export function getFriendlyLabel(
       return {
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
-          isAgent ? m.log_friendlyLabels_openedBrowser_after() : m.log_friendlyLabels_openedBrowser_label(),
+          isAgent
+            ? m.log_friendlyLabels_openedBrowser_after()
+            : m.log_friendlyLabels_openedBrowser_label(),
           data?.url ? ` → ${data.url}` : null,
         ),
         verb: 'opened',
@@ -412,7 +447,9 @@ export function getFriendlyLabel(
       return {
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
-          isAgent ? m.log_friendlyLabels_tookScreenshot_after() : m.log_friendlyLabels_screenshotCaptured_label(),
+          isAgent
+            ? m.log_friendlyLabels_tookScreenshot_after()
+            : m.log_friendlyLabels_screenshotCaptured_label(),
         ),
         verb: 'captured',
       };

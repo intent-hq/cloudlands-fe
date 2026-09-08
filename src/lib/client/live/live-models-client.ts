@@ -18,23 +18,18 @@
  * Failures fold to an empty list so a boot-time transport hiccup leaves the
  * model picker with the seeder/static fallback rather than a broken state.
  */
-import type { AuggieModel } from "$features/auggie/auggie-models.client";
+import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import {
   wireModelsToProviderModels,
   type WireModelsListResult,
-} from "$shared/models/wire-model-info";
-import type {
-  AppClient,
-  ModelsClient,
-  SubscriptionHandler,
-  Unsubscribe,
-} from "../app-client";
-import { backendRequest } from "./backend-transport";
+} from '$shared/models/wire-model-info';
+import type { AppClient, ModelsClient, SubscriptionHandler, Unsubscribe } from '../app-client';
+import { backendRequest } from './backend-transport';
 
 export class LiveModelsClient implements ModelsClient {
   async list(): Promise<AuggieModel[]> {
     try {
-      const result = await backendRequest<WireModelsListResult>("models.list");
+      const result = await backendRequest<WireModelsListResult>('models.list');
       return wireModelsToProviderModels(result);
     } catch {
       return [];
@@ -56,7 +51,5 @@ export class LiveModelsClient implements ModelsClient {
 }
 
 // Tied to AppClient["models"] so the seam composition catches drift in CI.
-const _interfaceCheck: AppClient["models"] | undefined = undefined as
-  | LiveModelsClient
-  | undefined;
+const _interfaceCheck: AppClient['models'] | undefined = undefined as LiveModelsClient | undefined;
 void _interfaceCheck;

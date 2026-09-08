@@ -4,7 +4,7 @@
  */
 
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
-import type { PullRequestInfo } from '$shared/types';
+import type { PullRequestInfo, Workspace } from '$shared/types';
 import { PullRequestStatus } from '$shared/types';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import type {
@@ -123,10 +123,7 @@ export function getCommitsToUndoCount(allCommits: CommitInfo[], commitIndex: num
 }
 
 /** Get the number of unpushed (local) commits from index 0 to commitIndex (inclusive). */
-export function getLocalCommitsToUndoCount(
-  allCommits: CommitInfo[],
-  commitIndex: number,
-): number {
+export function getLocalCommitsToUndoCount(allCommits: CommitInfo[], commitIndex: number): number {
   if (allCommits.length === 0 || commitIndex < 0) return 0;
   const clampedIndex = Math.min(commitIndex, allCommits.length - 1);
   let count = 0;
@@ -179,8 +176,6 @@ export function getUndoTooltip(
       });
 }
 
-
-
 /** Get tooltip text for the undo commit button (local commits). */
 export function getUndoCommitTooltip(allCommits: CommitInfo[], commitIndex: number): string {
   const count = getLocalCommitsToUndoCount(allCommits, commitIndex);
@@ -207,11 +202,7 @@ export function isFileActive(
 }
 
 /** Check if a file is selected in the multi-select set. */
-export function isFileSelected(
-  path: string,
-  staged: boolean,
-  selectedFiles: Set<string>,
-): boolean {
+export function isFileSelected(path: string, staged: boolean, selectedFiles: Set<string>): boolean {
   const key = `${staged ? 'staged' : 'unstaged'}:${path}`;
   return selectedFiles.has(key);
 }
@@ -348,17 +339,44 @@ export function mapWorkspacePRs(
     });
   }
   if (activePR) {
-    return [{
-      number: activePR.number,
-      title: getDisplayTitle(activePR),
-      url: buildPrUrl(activePR.number, activePR.url),
-      htmlUrl: buildPrUrl(activePR.number, activePR.url),
-      status: toPRDisplayStatus(activePR.status),
-      createdAt: activePR.createdAt,
-      updatedAt: activePR.updatedAt,
-    }];
+    return [
+      {
+        number: activePR.number,
+        title: getDisplayTitle(activePR),
+        url: buildPrUrl(activePR.number, activePR.url),
+        htmlUrl: buildPrUrl(activePR.number, activePR.url),
+        status: toPRDisplayStatus(activePR.status),
+        createdAt: activePR.createdAt,
+        updatedAt: activePR.updatedAt,
+      },
+    ];
   }
   return [];
+}
+
+/**
+ * The still-supported legacy `Workspace.prNumber`/`prUrl` fields as a
+ * `PullRequestInfo`, or null when either is absent. Mirrors the fallback
+ * `selectWorkspaceActivePrSummary` applies, so a workspace hydrated with only
+ * the legacy fields keeps a route to its PR now that the Changes launcher
+ * dropdown is the sidebar's PR surface. Callers pass the result as the
+ * `activePR` fallback; `prStatus` is honored when the daemon sent it and the
+ * row otherwise reads as open, the only state the legacy link ever recorded.
+ */
+export function legacyWorkspacePullRequest(
+  workspace: Pick<Workspace, 'prNumber' | 'prUrl' | 'prStatus' | 'updatedAt'>,
+): PullRequestInfo | null {
+  const { prNumber, prUrl } = workspace;
+  if (prNumber === undefined || prNumber === null || !prUrl) return null;
+  return {
+    id: `legacy-pr-${prNumber}`, // i18n-ignore (synthetic identifier)
+    number: prNumber,
+    url: prUrl,
+    title: '',
+    status: workspace.prStatus ?? PullRequestStatus.Open,
+    createdAt: workspace.updatedAt,
+    updatedAt: workspace.updatedAt,
+  };
 }
 
 /** Display status for a monitored PR row (PROTOCOL §6.9): active monitors
@@ -424,8 +442,9 @@ export function mergeMonitoredPRs(
       htmlUrl: url,
       status: monitorDisplayStatus(monitor),
       // Monitor-row timestamps stand in for the PR's own (the snapshot does
-      // not carry them) so selectPrimaryPr's oldest-created / latest-updated
-      // ordering works when multiple monitored PRs compete.
+      // not carry them) so recency ordering (sortPRsByRecency, and the
+      // sidebar row's same-status tie-breaker in workspace-pr-presentation)
+      // works when multiple monitored PRs compete.
       createdAt: monitor.createdAt,
       updatedAt: monitor.updatedAt,
       monitorAgentId: monitor.agentId,
@@ -548,7 +567,8 @@ export function sectionPRs(
       // A root on the workspace repo (e.g. a subtree checkout) needs no repo
       // context; otherwise keep the full identity for row keys, as
       // mergeMonitoredPRs does for cross-repo monitors.
-      const sameRepo = workspaceRepoLower !== undefined && repo.toLowerCase() === workspaceRepoLower;
+      const sameRepo =
+        workspaceRepoLower !== undefined && repo.toLowerCase() === workspaceRepoLower;
       rootRows.push({
         number: pr.number,
         title: getDisplayTitle(pr),
@@ -654,31 +674,12 @@ function compareMissingLast(
 }
 
 /**
- * Pick the primary PR for single-PR surfaces (workspace card/row pill, the
- * summarized Changes card) from the combined branch-linked + monitored pool
- * (see {@link mergeMonitoredPRs}): the oldest unmerged (open/draft) PR
- * (`createdAt` asc, PR number asc as tiebreak); otherwise the latest merged
- * PR (`updatedAt` desc, PR number desc); otherwise the first remaining
- * (closed) row. Missing timestamps sort last within their bucket.
+ * Whether an open PR row sits in its host's merge queue. Only an open row can
+ * be queued — a stale `isInMergeQueue` on a draft/merged/closed snapshot is
+ * ignored — and the additive flag is presence-detected (absent = not queued).
  */
-export function selectPrimaryPr(prs: PRInfo[]): PRInfo | undefined {
-  const unmerged = prs.filter((pr) => pr.status === 'open' || pr.status === 'draft');
-  if (unmerged.length > 0) {
-    return [...unmerged].sort(
-      (a, b) =>
-        compareMissingLast(a.createdAt, b.createdAt, (x, y) => x.localeCompare(y)) ||
-        a.number - b.number,
-    )[0];
-  }
-  const merged = prs.filter((pr) => pr.status === 'merged');
-  if (merged.length > 0) {
-    return [...merged].sort(
-      (a, b) =>
-        compareMissingLast(a.updatedAt, b.updatedAt, (x, y) => y.localeCompare(x)) ||
-        b.number - a.number,
-    )[0];
-  }
-  return prs[0];
+export function isPRQueued(pr: Pick<PRInfo, 'status' | 'monitorSnapshot'>): boolean {
+  return pr.status === 'open' && pr.monitorSnapshot?.isInMergeQueue === true;
 }
 
 /**
@@ -694,7 +695,9 @@ export function getPRStatusTooltip(pr: PRInfo): string {
         ? m.workspace_prSection_closed_label()
         : pr.status === 'draft'
           ? m.workspace_prSection_statusDraft_label()
-          : m.workspace_prSection_statusOpen_label();
+          : isPRQueued(pr)
+            ? m.workspace_prSection_statusQueued_label()
+            : m.workspace_prSection_statusOpen_label();
   const lines: string[] = [stateLine];
   // Merged/closed rows no longer have merge requirements — the snapshot
   // detail lines would just be stale noise on a settled PR.

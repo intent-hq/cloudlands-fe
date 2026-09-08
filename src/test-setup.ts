@@ -3,10 +3,7 @@
  * Mocks Electron and other dependencies for testing
  */
 
-import {
-  vi,
-  afterEach,
-} from 'vitest';
+import { vi, afterEach } from 'vitest';
 import * as path from 'path';
 import { tmpdir } from 'os';
 
@@ -22,7 +19,7 @@ if (typeof window !== 'undefined') {
       _keyframes: Keyframe[] | PropertyIndexedKeyframes | null,
       options?: number | KeyframeAnimationOptions,
     ): Animation {
-      const duration = typeof options === 'number' ? options : options?.duration ?? 0;
+      const duration = typeof options === 'number' ? options : (options?.duration ?? 0);
       const animation = {
         currentTime: 0,
         effect: null,
@@ -52,11 +49,14 @@ if (typeof window !== 'undefined') {
       } as unknown as Animation;
 
       // Immediately call onfinish to complete the transition synchronously
-      setTimeout(() => {
-        if (animation.onfinish) {
-          animation.onfinish.call(animation, new Event('finish') as AnimationPlaybackEvent);
-        }
-      }, typeof duration === 'number' ? 0 : 0);
+      setTimeout(
+        () => {
+          if (animation.onfinish) {
+            animation.onfinish.call(animation, new Event('finish') as AnimationPlaybackEvent);
+          }
+        },
+        typeof duration === 'number' ? 0 : 0,
+      );
 
       return animation;
     };
@@ -190,14 +190,25 @@ vi.mock('electron', () => {
   const mockBrowserWindow = {
     getAllWindows: vi.fn(() => []),
     fromWebContents: vi.fn(() => null),
+    getFocusedWindow: vi.fn(() => null),
+  };
+
+  const mockDialog = {
+    showMessageBox: vi.fn(async () => ({ response: 0, checkboxChecked: false })),
   };
 
   return {
     __esModule: true,
-    default: { app: mockApp, ipcMain: mockIpcMain, BrowserWindow: mockBrowserWindow },
+    default: {
+      app: mockApp,
+      ipcMain: mockIpcMain,
+      BrowserWindow: mockBrowserWindow,
+      dialog: mockDialog,
+    },
     app: mockApp,
     ipcMain: mockIpcMain,
     BrowserWindow: mockBrowserWindow,
+    dialog: mockDialog,
   };
 });
 
@@ -219,7 +230,9 @@ vi.mock('$shared/main/ipc-debug-tracker', () => ({
 vi.mock('$features/protocol/main/protocol-adapter', () => ({
   protocolAdapter: {
     listWorkspaces: vi.fn().mockResolvedValue({ ok: true, data: [] }),
-    createNote: vi.fn().mockResolvedValue({ ok: true, data: { id: 'test-note-id', title: 'Test Note' } }),
+    createNote: vi
+      .fn()
+      .mockResolvedValue({ ok: true, data: { id: 'test-note-id', title: 'Test Note' } }),
     markAsTask: vi.fn().mockResolvedValue({ ok: true, data: {} }),
     assignAgentToTask: vi.fn().mockResolvedValue({ ok: true, data: {} }),
     getWorkspaceInfo: vi.fn().mockResolvedValue({ ok: true, data: null }),

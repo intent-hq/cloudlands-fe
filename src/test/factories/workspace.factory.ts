@@ -71,7 +71,7 @@ export function createTestDirectoryPath(): string {
 /**
  * Creates a mock workspace for testing
  */
-function createMockWorkspace(): Workspace {
+export function createMockWorkspace(overrides: Partial<Workspace> = {}): Workspace {
   const workspaceId = createTestWorkspaceId();
   const now = new Date().toISOString();
   return {
@@ -86,5 +86,6 @@ function createMockWorkspace(): Workspace {
     worktreePath: createTestDirectoryPath(),
     createdAt: now,
     updatedAt: now,
+    ...overrides,
   };
 }

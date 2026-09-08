@@ -6,6 +6,9 @@
  */
 
 import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { BrowserTabViewport } from '../../../../shared/ipc/workspace-command-payloads';
+
+export type { BrowserTabViewport } from '../../../../shared/ipc/workspace-command-payloads';
 
 /** Serializable icon descriptor understood by the renderer's icon adapter. */
 interface PanelTabIcon {
@@ -79,11 +82,20 @@ export interface PanelTab {
    */
   ownerAgentName?: string;
   /**
-   * Emulated viewport of an agent-owned browser tab (monorepo#2857); absent
-   * for unowned (native-sized) tabs. Persisted with the layout alongside
-   * `ownerAgentId` so the tab rehydrates at its actual size after restart,
-   * and kept live by owner-changed/resize notifications from main so the UI
-   * can surface the emulated size.
+   * The daemon tab registry's host for this browser tab (REV-2 §5.45): the
+   * logical client whose webview renders it. Set once the registry
+   * acknowledged the tab (own host) or when the tab was materialised from a
+   * registry row hosted elsewhere (a mirror — no live webview here). Absent
+   * on a tab the registry has not seen yet (legacy layouts, offline opens).
+   * A tab with a host persists geometry only; its URL, owner and emulated
+   * size live in the registry.
+   */
+  hostClientId?: string;
+  /** Persisted browser viewport mode. Absent legacy values default to fit. */
+  viewport?: BrowserTabViewport;
+  /**
+   * Last exact/fallback emulated size of an agent-owned browser tab. Fit mode
+   * uses this while hidden, and agent resize/open notifications keep it live.
    */
   emulatedSize?: { width: number; height: number };
   faviconUrl?: string;
@@ -177,6 +189,12 @@ export interface PanelRevealRequest {
   panelId: string;
   tabId: string | null;
   requestId: string;
+  /**
+   * Scroll-only reveal: the tab was activated without a focus intent, so the
+   * layout must not synthesize panel-content focus and the tab must not
+   * autofocus on mount, even when its panel is already the focused panel.
+   */
+  preserveFocus?: boolean;
 }
 
 export type PanelLayoutRestoreStatus = 'idle' | 'pending' | 'restored' | 'empty' | 'invalid';

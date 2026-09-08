@@ -6,11 +6,10 @@ export type PaletteState = {
   fileMru: Record<string, number>;
 };
 
-export type PaletteMruEntryType = "agent" | "note" | "change" | "terminal" | "file" | "browser";
+export type PaletteMruEntryType = 'agent' | 'note' | 'change' | 'terminal' | 'file' | 'browser';
 
 export type PaletteMruEntry = {
   type: PaletteMruEntryType;
   id: string;
   timestamp: number;
 };
-

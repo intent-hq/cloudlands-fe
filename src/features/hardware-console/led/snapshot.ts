@@ -119,6 +119,7 @@ function foregroundSessions(state: LedSnapshotState, workspaceId: string): Store
 
 const COMPLETE_DISPLAY_STATUSES: ReadonlySet<string> = new Set([
   'complete',
+  'pr_queued',
   'pr_ready',
   'pr_open',
   'pr_merged',

@@ -27,13 +27,7 @@
     rechecking?: boolean;
   }
 
-  let {
-    instructions,
-    command,
-    onRecheck,
-    onDismiss,
-    rechecking = false,
-  }: Props = $props();
+  let { instructions, command, onRecheck, onDismiss, rechecking = false }: Props = $props();
 
   async function copyCommand() {
     if (!command) return;
@@ -92,7 +86,9 @@
         disabled={rechecking}
         data-testid="auggie-instructions-recheck"
       >
-        {rechecking ? m.lib_auggieInstructions_checking_label() : m.lib_auggieInstructions_recheck_label()}
+        {rechecking
+          ? m.lib_auggieInstructions_checking_label()
+          : m.lib_auggieInstructions_recheck_label()}
       </button>
     </div>
   {/if}

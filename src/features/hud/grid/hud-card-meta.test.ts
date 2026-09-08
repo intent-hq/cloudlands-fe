@@ -13,7 +13,7 @@ import { mapEventToFeedEntry } from '../hud-feed-mapper';
 import type { WorkspaceEvent } from '$features/events/types';
 
 const WARNING = 'hsl(var(--warning))';
-const RED = 'hsl(var(--error-foreground))';
+const RED = 'hsl(var(--danger))';
 const GREEN = 'hsl(var(--primary))';
 const GREY = 'hsl(var(--muted-foreground) / 0.65)';
 const BLUE = 'hsl(var(--ring))';
@@ -92,6 +92,7 @@ describe('canonical HUD state→color mapping (drift pin)', () => {
     expect(cardStateColor('failed')).toBe(HUD_STATE_COLORS.failed);
     expect(cardStateColor('pr_open')).toBe(HUD_STATE_COLORS.pr);
     expect(cardStateColor('pr_ready')).toBe(HUD_STATE_COLORS.pr);
+    expect(cardStateColor('pr_queued')).toBe(HUD_STATE_COLORS.pr);
     expect(cardStateColor('pr_merged')).toBe(HUD_STATE_COLORS.prMerged);
     expect(cardStateColor('idle')).toBe(HUD_STATE_COLORS.idle);
     expect(cardStateColor('not_started')).toBe(HUD_STATE_COLORS.idle);

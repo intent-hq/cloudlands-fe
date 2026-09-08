@@ -183,11 +183,7 @@
                 </span>
                 {#if serverError && isEnabled}
                   <Tooltip content={serverError} side="right" delayDuration={200}>
-                    <Fa
-                      icon={faExclamationTriangle}
-                      size="xs"
-                      class="text-error-foreground shrink-0"
-                    />
+                    <Fa icon={faExclamationTriangle} size="xs" class="text-danger shrink-0" />
                   </Tooltip>
                 {/if}
               </div>

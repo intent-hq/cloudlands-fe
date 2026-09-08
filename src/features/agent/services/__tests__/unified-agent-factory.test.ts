@@ -465,10 +465,55 @@ describe('UnifiedAgentFactory', () => {
   });
 
   describe('active-provider availability guard (D1-B)', () => {
+    it('fails closed for implicit Antigravity when readiness lookup cannot resolve', async () => {
+      mockStoreState.current = {
+        ...mockStoreState.current,
+        model: { defaultProviderId: 'antigravity' },
+        agentAvailability: undefined,
+      };
+      expect(
+        (
+          await factory.createAgent(mockWorkspace, {
+            name: 'Test Agent',
+            workspaceId: mockWorkspace.id as any,
+          })
+        ).success,
+      ).toBe(false);
+      expect(
+        (
+          await factory.createAgent(mockWorkspace, {
+            name: 'Test Agent',
+            workspaceId: mockWorkspace.id as any,
+            provider: 'antigravity',
+          })
+        ).success,
+      ).toBe(true);
+    });
+    it.each([undefined, false, true])(
+      'requires confirmed Antigravity auth=%s for implicit launches even before discovery completes',
+      async (authenticated) => {
+        mockStoreState.current = {
+          ...mockStoreState.current,
+          providerSettings: { enabledProviders: { antigravity: true } },
+          model: { defaultProviderId: 'antigravity' },
+          agentAvailability: {
+            hasCheckedOnce: false,
+            providerStatusMap: { antigravity: { available: true, authenticated } },
+          },
+        };
+        const result = await factory.createAgent(mockWorkspace, {
+          name: 'Test Agent',
+          workspaceId: mockWorkspace.id as any,
+        });
+        expect(result.success).toBe(authenticated === true);
+      },
+    );
+
     it('refuses to create an agent when the active provider (implicit, no explicit config.provider) is confirmed unavailable', async () => {
       mockStoreState.current = {
         ...mockStoreState.current,
-        providerSettings: { activeProviderId: 'claude-code', enabledProviders: {} },
+        providerSettings: { enabledProviders: {} },
+        model: { defaultProviderId: 'claude-code' },
         agentAvailability: {
           hasCheckedOnce: true,
           providerStatusMap: { 'claude-code': { available: false } },
@@ -488,7 +533,8 @@ describe('UnifiedAgentFactory', () => {
     it('creates the agent normally when the active provider is available', async () => {
       mockStoreState.current = {
         ...mockStoreState.current,
-        providerSettings: { activeProviderId: 'claude-code', enabledProviders: {} },
+        providerSettings: { enabledProviders: {} },
+        model: { defaultProviderId: 'claude-code' },
         agentAvailability: {
           hasCheckedOnce: true,
           providerStatusMap: { 'claude-code': { available: true } },
@@ -506,7 +552,8 @@ describe('UnifiedAgentFactory', () => {
     it('does not gate an explicit config.provider on availability (caller intent honored)', async () => {
       mockStoreState.current = {
         ...mockStoreState.current,
-        providerSettings: { activeProviderId: 'claude-code', enabledProviders: {} },
+        providerSettings: { enabledProviders: {} },
+        model: { defaultProviderId: 'claude-code' },
         agentAvailability: {
           hasCheckedOnce: true,
           providerStatusMap: { 'claude-code': { available: false } },
@@ -525,7 +572,8 @@ describe('UnifiedAgentFactory', () => {
     it('does not refuse implicit creation while availability is still unknown (hasCheckedOnce false)', async () => {
       mockStoreState.current = {
         ...mockStoreState.current,
-        providerSettings: { activeProviderId: 'claude-code', enabledProviders: {} },
+        providerSettings: { enabledProviders: {} },
+        model: { defaultProviderId: 'claude-code' },
         agentAvailability: { hasCheckedOnce: false, providerStatusMap: {} },
       };
 

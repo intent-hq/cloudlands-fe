@@ -6,10 +6,7 @@
  * that is set in the renderer process by agent context utilities.
  */
 
-import {
-  ipcMain,
-  IpcMainInvokeEvent,
-} from 'electron';
+import { ipcMain, IpcMainInvokeEvent } from 'electron';
 import { getAgentContextRegistry } from './agent-context-registry';
 import { Logger } from '../../shared/logger';
 import { createSafeValidatedHandler } from '../../main/ipc-validation-middleware';

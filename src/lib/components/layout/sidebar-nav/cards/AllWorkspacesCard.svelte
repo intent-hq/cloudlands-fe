@@ -18,7 +18,6 @@
   import Header from '$lib/components/ui/Header.svelte';
   import Fa from 'svelte-fa';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
-  import { formatInteger } from '$lib/i18n/format';
 
   import {
     selectPinnedWorkspaceIds,
@@ -276,6 +275,7 @@
     not_started: () => m.layout_allCard_statusNoChanges_label(),
     in_progress: () => m.layout_allCard_statusInProgress_label(),
     complete: () => m.layout_allCard_statusComplete_label(),
+    pr_queued: () => m.layout_allCard_statusPrQueued_label(),
     pr_ready: () => m.layout_allCard_statusPrReady_label(),
     pr_open: () => m.layout_allCard_statusPrOpen_label(),
     pr_merged: () => m.layout_allCard_statusPrMerged_label(),
@@ -291,6 +291,7 @@
     'complete',
     'pr_open',
     'pr_ready',
+    'pr_queued',
     'pr_merged',
   ];
 
@@ -648,9 +649,6 @@
                     : '-rotate-90'}"
                 />
                 <Header size={4} class="min-w-0 flex-1 truncate">{group.label}</Header>
-                <span class="type-caption shrink-0 text-muted-foreground">
-                  {formatInteger(group.workspaces.length)}
-                </span>
               </button>
             </div>
             <div id={`status-group-${group.id}`} hidden={!isExpanded}>

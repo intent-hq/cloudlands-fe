@@ -4,7 +4,7 @@
  * Selectors for agent/file lock state accessed by workspace ID.
  */
 
-import { store } from "../../store";
+import { store } from '../../store';
 
 // ============================================================================
 // Derived selectors
@@ -24,4 +24,3 @@ export const selectLockedFilePaths = store.createSelector(
 
 // Shared empty record to avoid creating new objects on every selector call
 const emptyRecord: Record<string, true> = {};
-

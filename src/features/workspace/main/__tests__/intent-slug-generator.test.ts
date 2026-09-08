@@ -5,13 +5,7 @@
  * the actual LLM call requires a running model.
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // We need to test the internal parseSlugResponse function
 // Since it's not exported, we'll test through generateCompleteIntentSlug

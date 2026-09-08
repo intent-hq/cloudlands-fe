@@ -88,17 +88,13 @@ export async function makeBackgroundRequest(
   });
 
   try {
-    const result = (await getBackendClient().request(
-      'agent.completeOnce',
-      params,
-    )) as { text?: unknown } | undefined;
+    const result = (await getBackendClient().request('agent.completeOnce', params)) as
+      { text?: unknown } | undefined;
     const text = typeof result?.text === 'string' ? result.text.trim() : '';
     return { success: true, content: text };
   } catch (error) {
     const message =
-      error instanceof JsonRpcError || error instanceof Error
-        ? error.message
-        : String(error);
+      error instanceof JsonRpcError || error instanceof Error ? error.message : String(error);
     logger.error('Background request failed', error as Error);
     return { success: false, error: message };
   }

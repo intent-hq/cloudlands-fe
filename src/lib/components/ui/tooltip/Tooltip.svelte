@@ -58,7 +58,7 @@
   const variantStyles = {
     default: 'bg-popover text-popover-foreground border border-border',
     secondary: 'bg-secondary text-secondary-foreground border border-border',
-    destructive: 'bg-destructive text-destructive-foreground border border-border',
+    destructive: 'bg-danger text-danger-background border border-danger',
     outline: 'bg-popover text-popover-foreground border border-border',
   };
 

@@ -311,8 +311,12 @@
       {branchBaseCommitSha}
       {gitRootId}
       {gitRootPath}
-      onStageHunk={!gitRootId && change.stage === ChangeStage.Unstaged ? handleStageHunk : undefined}
-      onUnstageHunk={!gitRootId && change.stage === ChangeStage.Staged ? handleUnstageHunk : undefined}
+      onStageHunk={!gitRootId && change.stage === ChangeStage.Unstaged
+        ? handleStageHunk
+        : undefined}
+      onUnstageHunk={!gitRootId && change.stage === ChangeStage.Staged
+        ? handleUnstageHunk
+        : undefined}
     />
   {/key}
 {/if}

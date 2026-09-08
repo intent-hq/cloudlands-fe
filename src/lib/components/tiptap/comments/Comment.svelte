@@ -9,6 +9,7 @@
   import InitialsAvatar from './InitialsAvatar.svelte';
   import { faEdit, faCheck, faTimes } from '@fortawesome/free-solid-svg-icons';
   import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
+  import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
 
   import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
   import { updateCommentAction } from '$store/renderer/slices/comments/comments-slice';
@@ -87,6 +88,10 @@
   }: Props = $props();
 
   const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
+  const markdownWorkspaceId = $derived(workspace?.id ?? routeWorkspaceId);
+  // One cache-busting token per comment instance: re-rendering the same
+  // comment keeps its workspace image URLs stable.
+  const workspaceFileVersion = createWorkspaceFileVersion();
 
   function formatTimestamp(dateStr?: string) {
     if (!dateStr) return '';
@@ -121,7 +126,11 @@
     } else {
       internalIsEditing = true;
       const html = await Promise.resolve(
-        processMarkdownToHTML(comment.content || '', { allowEmpty: true }),
+        processMarkdownToHTML(comment.content || '', {
+          allowEmpty: true,
+          workspaceId: markdownWorkspaceId,
+          workspaceFileVersion,
+        }),
       );
       internalEditHTML = html || '';
     }
@@ -133,7 +142,10 @@
     } else {
       try {
         const html = internalEditEditor?.getHTML?.() ?? '';
-        const md = processHTMLToMarkdown(html, { preserveAnchors: false }).trim();
+        const md = processHTMLToMarkdown(html, {
+          preserveAnchors: false,
+          workspaceId: markdownWorkspaceId,
+        }).trim();
         if (!md) return cancelEdit();
         const v2 = selectCommentById.select(appStore.state, comment.id);
         if (v2) {
@@ -169,7 +181,13 @@
   $effect(() => {
     let destroyed = false;
     const content = comment.content || '';
-    Promise.resolve(processMarkdownToHTML(content, { allowEmpty: true })).then((h) => {
+    Promise.resolve(
+      processMarkdownToHTML(content, {
+        allowEmpty: true,
+        workspaceId: markdownWorkspaceId,
+        workspaceFileVersion,
+      }),
+    ).then((h) => {
       if (destroyed) return;
       commentHtml = h || '';
       try {

@@ -185,7 +185,7 @@
   <div class="flex-1 overflow-y-auto">
     <div class="max-w-4xl mx-auto p-6 space-y-6">
       {#if error}
-        <div class="flex items-start gap-2 p-3 bg-destructive/10 text-error-foreground rounded-lg">
+        <div class="flex items-start gap-2 p-3 bg-danger-background/10 text-danger rounded-lg">
           <Fa icon={faExclamationCircle} size="sm" class="mt-0.5" />
           <span class="text-sm">{error}</span>
         </div>

@@ -65,6 +65,9 @@ vi.mock('../json-rpc-client', () => {
     getStatus(): string {
       return 'disconnected';
     }
+    getConnectedVia(): null {
+      return null;
+    }
     getReconnectAttempts(): number {
       return 0;
     }

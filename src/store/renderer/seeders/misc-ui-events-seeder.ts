@@ -13,12 +13,16 @@ import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 // the affordance works from the very first render.
 registerMockIpcHandler('window:open-new', async (arg) => {
   const rawRoute = (arg as { route?: unknown } | undefined)?.route;
+  const rawRequestId = (arg as { requestId?: unknown } | undefined)?.requestId;
   const route = typeof rawRoute === 'string' && rawRoute.startsWith('/') ? rawRoute : '/';
+  const requestId =
+    typeof rawRequestId === 'string' && rawRequestId.length > 0 ? rawRequestId : undefined;
   const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
   if (bridge && typeof bridge.invoke === 'function') {
-    const response = (await bridge.invoke('window:open-new', { route })) as
-      | { success?: boolean; error?: string }
-      | undefined;
+    const response = (await bridge.invoke('window:open-new', {
+      route,
+      ...(requestId ? { requestId } : {}),
+    })) as { success?: boolean; error?: string } | undefined;
     if (!response?.success) {
       throw new Error(response?.error || 'Opening a new window is not available in this build');
     }
@@ -26,9 +30,7 @@ registerMockIpcHandler('window:open-new', async (arg) => {
   }
   const target = route.startsWith('/hud') ? 'intent-hud' : '_blank';
   const opened =
-    typeof window !== 'undefined'
-      ? window.open(`${window.location.origin}${route}`, target)
-      : null;
+    typeof window !== 'undefined' ? window.open(`${window.location.origin}${route}`, target) : null;
   if (!opened) {
     throw new Error('Opening a new window is not available in this build');
   }

@@ -21,6 +21,38 @@ export type RecentUrl = {
  */
 export type BrowserZoomAction = 'in' | 'out' | 'reset';
 
+export type BrowserElementRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type BrowserElement = {
+  selector: string;
+  domPath: string;
+  tagName: string;
+  id: string;
+  className: string;
+  textSnippet: string;
+  rect: BrowserElementRect;
+  pageUrl: string;
+  sourceRef?: string;
+};
+
+export type BrowserElementCaptureInput = {
+  tabId: string;
+  ownerAgentId?: string;
+  targetAgentId?: string;
+  pageUrl: string;
+  title: string;
+  viewport?: { width: number; height: number };
+  image: { data: string; mimeType: string };
+  element?: BrowserElement;
+};
+
+export type BrowserElementCapture = BrowserElementCaptureInput & { id: string };
+
 /**
  * Browser state scoped to a single workspace
  */
@@ -40,6 +72,8 @@ export type BrowserWorkspaceState = {
    * closing the workspace clears pending entries automatically.
    */
   pendingZoomByTabId: Record<string, BrowserZoomAction[]>;
+  /** Captures waiting to be attached to the workspace's next chat message. */
+  pendingElementCaptures: Record<string, BrowserElementCapture>;
 };
 
 /**

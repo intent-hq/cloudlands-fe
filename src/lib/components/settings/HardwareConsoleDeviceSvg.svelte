@@ -497,7 +497,9 @@
         data-icon={faMicrophone.iconName}
         aria-hidden="true"
         class={'pointer-events-none ' +
-          (selectedSlot === 4 || selectedSlot === 5 ? 'text-primary' : 'text-foreground/70 a11y-ignore')}
+          (selectedSlot === 4 || selectedSlot === 5
+            ? 'text-primary'
+            : 'text-foreground/70 a11y-ignore')}
       />
     {/if}
   </svg>

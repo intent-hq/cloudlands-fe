@@ -3,11 +3,7 @@
  *
  * Tests the Reingold-Tilford algorithm implementation for hierarchical tree layouts.
  */
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   computeTreeLayout,
   type HierarchyNode,

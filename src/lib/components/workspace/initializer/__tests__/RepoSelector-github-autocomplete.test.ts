@@ -40,9 +40,8 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
 });
 
@@ -77,22 +76,25 @@ vi.mock('$store/renderer/slices/github-repo-search/github-repo-search-selectors'
   selectGithubRepoSearchResults: mocks.selector(() => mocks.searchResults),
 }));
 
-vi.mock(
-  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
-  () => ({
-    selectWorkspaceInitializerDefaultParentPath: mocks.selector(() => ''),
-    selectWorkspaceInitializerRecentRepos: mocks.selector(() => mocks.recentRepos),
-    selectWorkspaceInitializerRemoteSetups: mocks.selector(() => []),
-  }),
-);
+vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerDefaultParentPath: mocks.selector(() => ''),
+  selectWorkspaceInitializerRecentRepos: mocks.selector(() => mocks.recentRepos),
+  selectWorkspaceInitializerRemoteSetups: mocks.selector(() => []),
+}));
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slice', () => ({
-  setWorkspaceInitializerDefaultParentPath: (path: string) => ({ type: 'wi/parent', payload: path }),
+  setWorkspaceInitializerDefaultParentPath: (path: string) => ({
+    type: 'wi/parent',
+    payload: path,
+  }),
   setWorkspaceInitializerLastSelectedRepo: (repo: unknown) => ({ type: 'wi/last', payload: repo }),
   setWorkspaceInitializerRecentRepos: (repos: unknown) => ({ type: 'wi/recent', payload: repos }),
   setWorkspaceInitializerRemoteSetups: (s: unknown) => ({ type: 'wi/remote', payload: s }),
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
-  replaceWorkspaceList: (workspaces: unknown) => ({ type: 'workspace/replace', payload: workspaces }),
+  replaceWorkspaceList: (workspaces: unknown) => ({
+    type: 'workspace/replace',
+    payload: workspaces,
+  }),
 }));
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { list: vi.fn(async () => ({ ok: true, data: [] })) },
@@ -371,9 +373,7 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
     const onchange = vi.fn();
     const { input } = await openGithubTab({ onchange });
 
-    expect(
-      screen.getByText('Sign in with GitHub to see repository suggestions'),
-    ).toBeTruthy();
+    expect(screen.getByText('Sign in with GitHub to see repository suggestions')).toBeTruthy();
     expect(suggestions()).toHaveLength(0);
 
     await fireEvent.input(input, { target: { value: 'someone/elsewhere' } });

@@ -2,11 +2,7 @@
  * Tests for Error Messages Module
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   formatErrorMessage,
   getUserFriendlyMessage,

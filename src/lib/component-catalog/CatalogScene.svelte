@@ -1,14 +1,27 @@
 <script lang="ts">
   import { tick, type Component } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { loadPreview, setActivePreview } from './preview-discovery';
   import { resolvePreviewState, type PreviewState } from './preview-definition';
   import { waitForCaptureStability } from './capture-stability';
+  import type { CatalogPreviewFit } from './catalog-preferences';
+
+  interface RenderedScene {
+    name: string;
+    state: PreviewState<Record<string, unknown>>;
+  }
 
   let {
     slug,
     requestedState,
     requestedWidth = 720,
-  }: { slug: string; requestedState?: string; requestedWidth?: number } = $props();
+    requestedFit,
+  }: {
+    slug: string;
+    requestedState?: string;
+    requestedWidth?: number;
+    requestedFit?: CatalogPreviewFit;
+  } = $props();
 
   let status = $state<'loading' | 'ready' | 'error'>('loading');
   let error = $state('');
@@ -16,7 +29,7 @@
   let stateName = $state('');
   let availableStates = $state<string[]>([]);
   let Preview = $state<Component<Record<string, unknown>> | null>(null);
-  let scene = $state<PreviewState<Record<string, unknown>> | null>(null);
+  let scenes = $state<RenderedScene[]>([]);
   let sceneElement = $state<HTMLElement>();
   let stabilityStatus = $state<'waiting' | 'stable' | 'error'>('waiting');
   let stabilityError = $state('');
@@ -39,19 +52,24 @@
     const nextSlug = slug;
     const nextState = requestedState;
     const nextWidth = width;
+    const nextFit = requestedFit;
     let cancelled = false;
-    let disposeSetup: (() => void) | undefined;
+    const disposeSetups: Array<() => void> = [];
     let setupDisposed = false;
     const stabilityController = new AbortController();
 
     const cleanupSetup = (): unknown => {
       if (setupDisposed) return;
       setupDisposed = true;
-      try {
-        disposeSetup?.();
-      } catch (cleanupError) {
-        return cleanupError;
+      let firstError: unknown;
+      for (let index = disposeSetups.length - 1; index >= 0; index -= 1) {
+        try {
+          disposeSetups[index]();
+        } catch (cleanupError) {
+          firstError ??= cleanupError;
+        }
       }
+      return firstError;
     };
 
     const failScene = (stage: 'import' | 'setup' | 'preparation', cause: unknown) => {
@@ -60,7 +78,7 @@
       status = 'error';
       stabilityStatus = 'error';
       Preview = null;
-      scene = null;
+      scenes = [];
       error = `Preview ${stage} failed: ${describeError(cause)}`;
       if (cleanupError) error += ` Cleanup failed: ${describeError(cleanupError)}`;
       setActivePreview(null);
@@ -72,7 +90,7 @@
     stateName = '';
     availableStates = [];
     Preview = null;
-    scene = null;
+    scenes = [];
     stabilityStatus = 'waiting';
     stabilityError = '';
     captureMotion = 'full';
@@ -98,31 +116,42 @@
 
       title = loaded.definition.title;
       availableStates = Object.keys(loaded.definition.states);
-      const resolved = resolvePreviewState(loaded.definition, nextState);
-      if (!resolved.ok) {
-        status = 'error';
-        stabilityStatus = 'error';
-        stateName = resolved.requestedState;
-        error = `Unknown state “${resolved.requestedState}”.`;
-        return;
+      const renderedScenes: RenderedScene[] = [];
+      if (nextState === 'all') {
+        stateName = 'all';
+        renderedScenes.push(
+          ...Object.entries(loaded.definition.states).map(([name, state]) => ({ name, state })),
+        );
+      } else {
+        const resolved = resolvePreviewState(loaded.definition, nextState);
+        if (!resolved.ok) {
+          status = 'error';
+          stabilityStatus = 'error';
+          stateName = resolved.requestedState;
+          error = `Unknown state “${resolved.requestedState}”.`;
+          return;
+        }
+        stateName = resolved.name;
+        renderedScenes.push({ name: resolved.name, state: resolved.state });
       }
-
-      stateName = resolved.name;
-      try {
-        disposeSetup = resolved.state.setup?.() || undefined;
-      } catch (setupError) {
-        failScene('setup', setupError);
-        return;
-      }
-      scene = resolved.state;
       Preview = loaded.component;
-      try {
-        await tick();
-      } catch (preparationError) {
-        failScene('preparation', preparationError);
-        return;
+      for (const rendered of renderedScenes) {
+        try {
+          const dispose = rendered.state.setup?.();
+          if (dispose) disposeSetups.push(dispose);
+        } catch (setupError) {
+          failScene('setup', setupError);
+          return;
+        }
+        scenes = [...scenes, rendered];
+        try {
+          await tick();
+        } catch (preparationError) {
+          failScene('preparation', preparationError);
+          return;
+        }
+        if (cancelled) return;
       }
-      if (cancelled) return;
 
       try {
         if (!sceneElement) throw new Error('Preview scene element is unavailable.');
@@ -133,7 +162,13 @@
         captureMotion = stability.reducedMotion ? 'reduced' : 'full';
         stabilityStatus = 'stable';
         status = 'ready';
-        setActivePreview({ slug: nextSlug, state: stateName, width: nextWidth, status: 'ready' });
+        setActivePreview({
+          slug: nextSlug,
+          state: stateName,
+          width: nextWidth,
+          status: 'ready',
+          ...(nextFit ? { fit: nextFit } : {}),
+        });
       } catch (preparationError) {
         if (cancelled || stabilityController.signal.aborted) return;
         const cleanupError = cleanupSetup();
@@ -153,6 +188,7 @@
 </script>
 
 <section
+  class:component-fit={requestedFit === 'component'}
   class="catalog-scene mx-auto grid max-w-full gap-4 p-4 sm:p-6 lg:p-10"
   data-testid="catalog-scene"
   data-preview-slug={slug}
@@ -163,35 +199,43 @@
   data-preview-stability={stabilityStatus}
   data-preview-stable={stabilityStatus === 'stable' ? 'true' : 'false'}
   data-preview-capture-motion={captureMotion}
+  data-preview-fit={requestedFit}
   bind:this={sceneElement}
 >
-  <header class="rounded-lg border border-border bg-card p-4">
-    <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Named preview</p>
-    <h1 class="mt-1 text-2xl font-medium tracking-tight">{title || slug}</h1>
-    {#if availableStates.length > 0}
-      <nav class="mt-3 flex flex-wrap gap-2" aria-label="Preview states">
-        {#each availableStates as name (name)}
+  {#if requestedFit !== 'component'}
+    <header class="rounded-lg border border-border bg-card p-4">
+      <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Named preview</p>
+      <h1 class="mt-1 text-2xl font-medium tracking-tight">{title || slug}</h1>
+      {#if availableStates.length > 0}
+        <nav class="mt-3 flex flex-wrap gap-2" aria-label="Preview states">
           <a
             class="rounded-md border border-border px-2 py-1 text-xs font-medium text-primary hover:bg-muted"
-            aria-current={name === stateName ? 'page' : undefined}
-            href={previewUrl(name)}>{name}</a
+            aria-current={stateName === 'all' ? 'page' : undefined}
+            href={previewUrl('all')}>{m.sandbox_catalogScene_allStates_label()}</a
           >
-        {/each}
-      </nav>
-      <nav class="mt-2 flex flex-wrap gap-2" aria-label="Preview widths">
-        {#each [320, 420, 960] as preset (preset)}
-          <a
-            class="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-            aria-current={preset === width ? 'page' : undefined}
-            href={previewUrl(stateName, preset)}>{preset}px</a
-          >
-        {/each}
-      </nav>
-    {/if}
-  </header>
+          {#each availableStates as name (name)}
+            <a
+              class="rounded-md border border-border px-2 py-1 text-xs font-medium text-primary hover:bg-muted"
+              aria-current={name === stateName ? 'page' : undefined}
+              href={previewUrl(name)}>{name}</a
+            >
+          {/each}
+        </nav>
+        <nav class="mt-2 flex flex-wrap gap-2" aria-label="Preview widths">
+          {#each [320, 420, 960] as preset (preset)}
+            <a
+              class="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+              aria-current={preset === width ? 'page' : undefined}
+              href={previewUrl(stateName, preset)}>{preset}px</a
+            >
+          {/each}
+        </nav>
+      {/if}
+    </header>
+  {/if}
 
   {#if status === 'error'}
-    <div class="rounded-lg border border-destructive bg-card p-4" role="alert">
+    <div class="rounded-lg border border-danger bg-card p-4" role="alert">
       <p class="font-medium">{error}</p>
       {#if availableStates.length > 0}
         <p class="mt-1 text-sm text-muted-foreground">
@@ -201,28 +245,55 @@
     </div>
   {:else}
     {#if stabilityStatus === 'error'}
-      <div class="rounded-lg border border-destructive bg-card p-4" role="alert">
+      <div class="rounded-lg border border-danger bg-card p-4" role="alert">
         <p class="font-medium">{stabilityError}</p>
       </div>
     {/if}
-    <div
-      class="preview-frame max-w-full overflow-auto rounded-lg border border-border bg-background p-6"
-    >
+    {#if Preview && scenes.length > 0}
       <div
-        class="preview-focus mx-auto max-w-full rounded-md border border-border bg-card p-6"
-        style:width={`${width}px`}
-        data-testid="catalog-scene-focus"
+        class="preview-scene-list grid gap-8"
+        data-preview-scene-list={stateName === 'all' ? 'all' : undefined}
       >
-        {#if Preview && scene}
-          <Preview {...scene.props} />
-        {/if}
+        {#each scenes as rendered (rendered.name)}
+          <article class="preview-article grid gap-3" data-preview-rendered-state={rendered.name}>
+            {#if stateName === 'all' && requestedFit !== 'component'}
+              <h2 class="text-lg font-medium">
+                {m.sandbox_catalogScene_stateHeading_title({ state: rendered.name })}
+              </h2>
+            {/if}
+            <div
+              class="preview-frame max-w-full overflow-auto rounded-lg border border-border bg-background p-6"
+            >
+              <div
+                class="preview-focus mx-auto max-w-full rounded-md border border-border bg-card p-6"
+                style:width={`${width}px`}
+                data-testid="catalog-scene-focus"
+              >
+                <Preview {...rendered.state.props} />
+              </div>
+            </div>
+          </article>
+        {/each}
       </div>
-    </div>
+    {/if}
   {/if}
 </section>
 
 <style>
   .catalog-scene {
     width: min(100%, 100rem);
+  }
+
+  .catalog-scene.component-fit {
+    width: max-content;
+    max-width: none;
+    gap: 0;
+    padding: 0;
+  }
+
+  .component-fit .preview-scene-list,
+  .component-fit .preview-article,
+  .component-fit .preview-frame {
+    display: contents;
   }
 </style>

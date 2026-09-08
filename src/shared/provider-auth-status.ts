@@ -18,6 +18,17 @@ export interface ProviderAuthStatusParams {
   force?: boolean;
 }
 
+/**
+ * Additive identity metadata a logged-in probe captured (protocol 9.4,
+ * intent-hq/intentd#1685). Present only when at least one field survived the
+ * daemon's trimming; pre-9.4 daemons never send it.
+ */
+export interface ProviderAuthIdentity {
+  email?: string;
+  orgName?: string;
+  subscriptionType?: string;
+}
+
 interface ProviderAuthStatusEntry {
   id: string;
   /**
@@ -25,10 +36,19 @@ interface ProviderAuthStatusEntry {
    * null = unknown (not installed, probe failed, or timed out).
    */
   authenticated: boolean | null;
+  identity?: ProviderAuthIdentity;
 }
 
 export interface ProviderAuthStatusResponse {
   providers: ProviderAuthStatusEntry[];
+}
+
+/** One provider's folded verdict: the auth flag plus the rendered identity line. */
+export interface ProviderAuthVerdict {
+  /** `undefined` for the wire's `null` (unknown). */
+  authenticated: boolean | undefined;
+  /** {@link formatProviderIdentity} of the wire identity, when it yields text. */
+  authDetails?: string;
 }
 
 /**
@@ -50,16 +70,52 @@ export function buildProviderAuthStatusParams(
 }
 
 /**
+ * Whether an org name is just the email itself or its email-derived default
+ * (Claude's "x@y.com's Organization", case-insensitive, straight or curly
+ * apostrophe) and therefore adds no signal next to the email. The possessive
+ * is required: "x@y.com Labs" or "x@y.com Organization" are real org names.
+ */
+function isEmailDerivedOrg(email: string, orgName: string): boolean {
+  const org = orgName.toLowerCase();
+  const address = email.toLowerCase();
+  if (!org.startsWith(address)) return false;
+  return /^(['’]s\s+organization)?$/.test(org.slice(address.length));
+}
+
+/**
+ * Render the identity line for `ProviderStatus.authDetails`: the email, plus
+ * the org name only when it carries signal beyond the email ("email · org").
+ * An email-derived default org collapses to the email alone; with no email
+ * the org name stands in. `undefined` when nothing renders. Fields arrive
+ * already trimmed with empties dropped (the daemon owns that), so they are
+ * used as sent.
+ */
+export function formatProviderIdentity(
+  identity: ProviderAuthIdentity | undefined,
+): string | undefined {
+  const { email, orgName } = identity ?? {};
+  if (email && orgName) {
+    return isEmailDerivedOrg(email, orgName) ? email : `${email} · ${orgName}`;
+  }
+  return email || orgName || undefined;
+}
+
+/**
  * Fold a response into an id → verdict map, mapping the wire `null`
  * ("unknown") to `undefined` so `ProviderStatus.authenticated` renders no
- * indicator for unknowns.
+ * indicator for unknowns. The optional wire `identity` is rendered via
+ * {@link formatProviderIdentity} into `authDetails`; entries without it (or
+ * from pre-9.4 daemons) carry no `authDetails` key.
  */
 export function toAuthVerdictMap(
   response: ProviderAuthStatusResponse | null | undefined,
-): Record<string, boolean | undefined> {
-  const map: Record<string, boolean | undefined> = {};
+): Record<string, ProviderAuthVerdict> {
+  const map: Record<string, ProviderAuthVerdict> = {};
   for (const entry of response?.providers ?? []) {
-    map[entry.id] = entry.authenticated ?? undefined;
+    const verdict: ProviderAuthVerdict = { authenticated: entry.authenticated ?? undefined };
+    const authDetails = formatProviderIdentity(entry.identity);
+    if (authDetails !== undefined) verdict.authDetails = authDetails;
+    map[entry.id] = verdict;
   }
   return map;
 }

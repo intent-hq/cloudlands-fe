@@ -40,4 +40,3 @@ export function normalizeStreamingState<T extends Partial<AgentSession>>(
   }
   return session;
 }
-

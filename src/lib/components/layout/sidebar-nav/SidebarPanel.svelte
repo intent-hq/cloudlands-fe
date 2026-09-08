@@ -6,13 +6,8 @@
   import SettingsCard from './cards/SettingsCard.svelte';
   import { onDestroy } from 'svelte';
   import Fa from 'svelte-fa';
-  import {
-    faChevronDown,
-    faXmark,
-    faEllipsisVertical,
-    faMagnifyingGlass,
-    faPlus,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faXmark, faMagnifyingGlass, faPlus } from '@fortawesome/free-solid-svg-icons';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import * as Menu from '$lib/components/ui/menu';
 
@@ -303,7 +298,7 @@
                with a draggable horizontal divider between them. -->
             <div class="panel-header shrink-0">
               <div class="min-w-0 flex-1">
-                <h2 class="panel-title text-ui font-semibold text-foreground truncate">
+                <h2 class="panel-title text-ui font-medium text-foreground truncate">
                   {m.layout_sidebarNav_allWorkspaces_title()}
                 </h2>
               </div>
@@ -340,7 +335,7 @@
                           aria-expanded={spacesOptionsOpen}
                           data-spaces-options-trigger
                         >
-                          <Fa icon={faEllipsisVertical} size="xs" />
+                          <KebabIcon class="size-3.5" />
                         </button>
                       </Tooltip>
                     {/snippet}
@@ -434,32 +429,12 @@
               : 'flex-1'}"
             data-combined-panel-chief
           >
-            <button
-              type="button"
-              class="mx-2 flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-sm px-1 text-left outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-              aria-expanded={!$isChiefCollapsed$}
-              aria-controls="combined-panel-chief-content"
-              data-chief-section-toggle
-              onclick={() => appStore.dispatch(toggleChiefCollapsed())}
-            >
-              <Fa
-                icon={faChevronDown}
-                size="xs"
-                class="shrink-0 text-muted-foreground transition-transform {$isChiefCollapsed$
-                  ? '-rotate-90'
-                  : ''}"
-              />
-              <span class="type-caption min-w-0 flex-1 truncate font-medium text-subtle">
-                {m.layout_chiefCard_title()}
-              </span>
-            </button>
-            <div
-              id="combined-panel-chief-content"
-              class="min-h-0 flex-1"
-              hidden={$isChiefCollapsed$}
-            >
-              <ChiefCard expanded={true} embedded={true} />
-            </div>
+            <ChiefCard
+              expanded={true}
+              embedded={true}
+              collapsed={$isChiefCollapsed$}
+              ontoggle={() => appStore.dispatch(toggleChiefCollapsed())}
+            />
           </div>
         </div>
       {:else}

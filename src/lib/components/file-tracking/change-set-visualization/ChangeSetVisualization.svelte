@@ -8,10 +8,7 @@
     VisualizationLine,
   } from './types';
   import { DEFAULT_CONFIG } from './types';
-  import {
-  changeToFileColumn,
-  chatChangeToFileColumn,
-} from './utils';
+  import { changeToFileColumn, chatChangeToFileColumn } from './utils';
   import FileColumn from './FileColumn.svelte';
   import LineHoverCard from './LineHoverCard.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
@@ -54,9 +51,7 @@
   // Generate a stable key for the current changes to detect actual data changes
   function generateChangesKey(): string {
     if (chatChanges && chatChanges.length > 0) {
-      return chatChanges
-        .map((c) => `${c.filePath}|${c.additions}|${c.deletions}`)
-        .join(';;');
+      return chatChanges.map((c) => `${c.filePath}|${c.additions}|${c.deletions}`).join(';;');
     }
     if (groups) {
       return groups

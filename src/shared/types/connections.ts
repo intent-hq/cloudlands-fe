@@ -71,6 +71,38 @@ export type ConnectionAccent = ConnectionAccentName | null;
 /** Deterministic fallback for records written before accent metadata existed. */
 export const DEFAULT_CONNECTION_ACCENT: ConnectionAccentName = 'blue';
 
+/** Stable device identifiers reported by daemon detection. */
+export const DETECTED_DEVICE_KINDS = [
+  'macMini',
+  'macStudio',
+  'laptop',
+  'desktop',
+  'server',
+  'cloudVm',
+] as const;
+
+export type DetectedDeviceKind = (typeof DETECTED_DEVICE_KINDS)[number];
+
+/** Playful icon identifiers available only as user overrides. */
+export const WILD_CARD_DEVICE_KINDS = [
+  'robot',
+  'rocket',
+  'flyingSaucer',
+  'ghost',
+  'cat',
+  'dog',
+  'gameController',
+  'coffee',
+  'planet',
+  'pottedPlant',
+] as const;
+
+/** Stable device identifiers accepted as user overrides. */
+export const DEVICE_KINDS = [...DETECTED_DEVICE_KINDS, ...WILD_CARD_DEVICE_KINDS] as const;
+
+export type DeviceKind = (typeof DEVICE_KINDS)[number];
+export type DeviceIconChoice = 'auto' | DeviceKind;
+
 /** Transient state derived only from an already-created backend client. */
 export type ConnectionOpenStatus = 'connecting' | 'connected' | 'disconnected' | 'not-open';
 
@@ -79,6 +111,18 @@ export function isConnectionAccent(value: unknown): value is ConnectionAccent {
     value === null ||
     (typeof value === 'string' && (CONNECTION_ACCENTS as readonly string[]).includes(value))
   );
+}
+
+export function isDeviceKind(value: unknown): value is DeviceKind {
+  return typeof value === 'string' && (DEVICE_KINDS as readonly string[]).includes(value);
+}
+
+export function isDetectedDeviceKind(value: unknown): value is DetectedDeviceKind {
+  return typeof value === 'string' && (DETECTED_DEVICE_KINDS as readonly string[]).includes(value);
+}
+
+export function isDeviceIconChoice(value: unknown): value is DeviceIconChoice {
+  return value === 'auto' || isDeviceKind(value);
 }
 
 // ============================================================================
@@ -99,6 +143,10 @@ export interface ConnectionRecord {
   label: string;
   /** Palette-backed remote identity accent; missing is legacy, `null` is explicitly blank. */
   accent?: ConnectionAccent;
+  /** Daemon-detected kind; `null` when the daemon omits or predates the field. */
+  detectedDeviceKind?: DetectedDeviceKind | null;
+  /** User-selected icon override; `auto` resolves from the detected kind. */
+  deviceIcon?: DeviceIconChoice;
   /** Remote host/IP; `null` for the local UDS entry. */
   host: string | null;
   /**
@@ -114,6 +162,15 @@ export interface ConnectionRecord {
   port: number | null;
   /** Pinned self-signed cert fingerprint, SHA-256 colon-hex (PROTOCOL §1.2); `null` for local. */
   fingerprint: string | null;
+  /**
+   * tc address of the remote daemon's tailcat tunnel endpoint (PROTOCOL §12.3;
+   * pairing URI `tc=` / `system.status.tcAddress`), captured at add time and
+   * refreshed after each successful connect. When present, every (re)connect
+   * adds a tunnel candidate to the host race so the backend stays reachable
+   * with no directly routable host. `null`/absent when the daemon has no
+   * tunnel configured (or predates the field). Never set for the local entry.
+   */
+  tcAddress?: string | null;
   /**
    * The remote machine's hostname (from `host.status`), captured on the first
    * successful connect so the menu can label a remote as `hostname (host:port)`
@@ -148,6 +205,13 @@ export interface ConnectionRecord {
    * equivalent to `false` (synced). Never set for the local entry.
    */
   syncExcluded?: boolean;
+  /**
+   * Whether the "detect all backend IPs" option (#1746) is on for this
+   * remote: post-connect `server.pairingInfo` refreshes of `hosts` are
+   * skipped when `false`. Optional so pre-existing fixtures/records remain
+   * valid — absent is equivalent to `true`. Never set for the local entry.
+   */
+  detectHosts?: boolean;
   /** True for the synthesized local sidecar entry. */
   isLocal: boolean;
   /** Present on list/broadcast payloads; never persisted. */
@@ -249,10 +313,18 @@ export interface AddConnectionParams {
   label: string;
   /** Absent callers receive {@link DEFAULT_CONNECTION_ACCENT}; `null` explicitly clears it. */
   accent?: ConnectionAccent;
+  detectedDeviceKind?: DetectedDeviceKind | null;
+  deviceIcon?: DeviceIconChoice;
   host: string;
   port: number;
   fingerprint: string;
   token: string;
+  /**
+   * tc address from the pairing URI's `tc=` parameter (PROTOCOL §12.3), when
+   * the daemon advertises a tailcat tunnel endpoint. Stored on the record so
+   * connects can race a tunnel candidate alongside the direct hosts.
+   */
+  tcAddress?: string;
   /**
    * "Detect all backend IPs" option (#1746), default ON. When enabled, the
    * connection refreshes its candidate-host list from the backend's
@@ -287,12 +359,22 @@ export interface UpdateConnectionParams {
   id: string;
   label: string;
   accent: ConnectionAccent;
+  detectedDeviceKind?: DetectedDeviceKind | null;
+  deviceIcon?: DeviceIconChoice;
   /** Optional for compatibility with presentation-only callers. */
   host?: string;
   /** Must be supplied together with `host`. */
   port?: number;
   /** Explicit user confirmation of a newly presented certificate. */
   confirmedFingerprint?: string;
+  /** Flip the "detect all backend IPs" option; omitted = unchanged. */
+  detectHosts?: boolean;
+  /**
+   * Flip the per-backend keychain-sync exclusion; omitted = unchanged.
+   * `true` tombstones the synced copy (the local record stays), `false`
+   * re-publishes the record on the next reconcile.
+   */
+  syncExcluded?: boolean;
 }
 
 /** Machine-readable validation outcomes; renderer copy is localized by status/reason. */

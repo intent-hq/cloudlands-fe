@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { Duplex } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { TUNNEL_RACE_HOST } from './backend-connection';
 import { JsonRpcError, mapErrorCode } from './json-rpc-errors';
 import { JsonRpcClient, ReverseRpcHandlerError } from './json-rpc-client';
 
@@ -416,6 +417,38 @@ describe('JsonRpcClient reconnect + heartbeat', () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(sockets).toHaveLength(3);
 
+    client.dispose();
+  });
+
+  it('records the race winner per connection and re-derives it on reconnect', async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    const seen: Array<ReturnType<JsonRpcClient['getConnectedVia']>> = [];
+    client.on('status', (status: string) => {
+      if (status === 'connected') seen.push(client.getConnectedVia());
+    });
+    client.start();
+
+    // Single-host dial: bare `connect` → the winner is unknown.
+    expect(client.getConnectedVia()).toBeNull();
+    sockets[0].emit('connect');
+    expect(client.getConnectedVia()).toBeNull();
+
+    // Reconnect through the tunnel: the race facade names its winner.
+    sockets[0].emit('close');
+    expect(client.getConnectedVia()).toBeNull();
+    await vi.advanceTimersByTimeAsync(100);
+    sockets[1].emit('connect', { host: TUNNEL_RACE_HOST, via: 'tunnel' });
+    expect(client.getConnectedVia()).toBe('tunnel');
+
+    // Reconnect again through a direct host: the marker flips back.
+    sockets[1].emit('close');
+    await vi.advanceTimersByTimeAsync(100);
+    sockets[2].emit('secureConnect', { host: '10.0.0.5', via: 'direct' });
+    expect(client.getConnectedVia()).toBe('direct');
+
+    // The `status → connected` broadcast already observes the fresh value.
+    expect(seen).toEqual([null, 'tunnel', 'direct']);
     client.dispose();
   });
 

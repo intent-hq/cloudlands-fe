@@ -66,8 +66,8 @@ describe('Switch', () => {
       props: { ariaLabel: 'Invalid notifications', invalid: true },
     });
     const control = getByRole('switch', { name: 'Invalid notifications' });
-    expect(control.className.split(/\s+/)).toContain('border-destructive-foreground');
-    expect(control.className.split(/\s+/)).toContain('ring-destructive-foreground/25');
+    expect(control.className.split(/\s+/)).toContain('border-danger');
+    expect(control.className.split(/\s+/)).toContain('ring-danger/25');
     for (const { label, ratio } of invalidControlContrastCases()) {
       expect(ratio, label).toBeGreaterThanOrEqual(3);
     }

@@ -3,11 +3,7 @@ import {
   hasUnifiedDiffHeaders,
   withSyntheticDiffHeaders,
 } from './diff-patch-utils';
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 describe('diff-patch-utils', () => {
   it('prepends synthetic headers to raw added and removed lines', () => {
@@ -26,13 +22,13 @@ describe('diff-patch-utils', () => {
 
   it('handles all additions without removals', () => {
     expect(withSyntheticDiffHeaders('+one\n+two')).toBe(
-      '--- a/file\n+++ b/file\n@@ -0,0 +1,2 @@\n+one\n+two'
+      '--- a/file\n+++ b/file\n@@ -0,0 +1,2 @@\n+one\n+two',
     );
   });
 
   it('handles all deletions without additions', () => {
     expect(withSyntheticDiffHeaders('-one\n-two')).toBe(
-      '--- a/file\n+++ b/file\n@@ -1,2 +0,0 @@\n-one\n-two'
+      '--- a/file\n+++ b/file\n@@ -1,2 +0,0 @@\n-one\n-two',
     );
   });
 
@@ -43,7 +39,7 @@ describe('diff-patch-utils', () => {
 
   it('normalizes CRLF line endings when synthesizing headers', () => {
     expect(withSyntheticDiffHeaders('-old\r\n+new\r\n')).toBe(
-      '--- a/file\n+++ b/file\n@@ -1,1 +1,1 @@\n-old\n+new\n'
+      '--- a/file\n+++ b/file\n@@ -1,1 +1,1 @@\n-old\n+new\n',
     );
   });
 
@@ -52,21 +48,23 @@ describe('diff-patch-utils', () => {
 
     expect(hasUnifiedDiffHeaders(diff)).toBe(false);
     expect(withSyntheticDiffHeaders(diff)).toBe(
-      '--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n--- removed body text\n+++ added body text\n @@ body marker'
+      '--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n--- removed body text\n+++ added body text\n @@ body marker',
     );
   });
 
   it('prepends a space to context lines without one', () => {
     expect(withSyntheticDiffHeaders('context\n already spaced')).toBe(
-      '--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n context\n already spaced'
+      '--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n context\n already spaced',
     );
   });
 
   it('preserves no-newline markers without counting them as content lines', () => {
     expect(
-      withSyntheticDiffHeaders('-old\n\\ No newline at end of file\n+new\n\\ No newline at end of file')
+      withSyntheticDiffHeaders(
+        '-old\n\\ No newline at end of file\n+new\n\\ No newline at end of file',
+      ),
     ).toBe(
-      '--- a/file\n+++ b/file\n@@ -1,1 +1,1 @@\n-old\n\\ No newline at end of file\n+new\n\\ No newline at end of file'
+      '--- a/file\n+++ b/file\n@@ -1,1 +1,1 @@\n-old\n\\ No newline at end of file\n+new\n\\ No newline at end of file',
     );
   });
 

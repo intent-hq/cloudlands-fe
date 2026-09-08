@@ -10,32 +10,27 @@
  * 3. All accepted events (post-dedup) are delivered to subscribers
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-} from "vitest";
-import type { WorkspaceEvent } from "../../types";
+import { describe, it, expect, beforeEach } from 'vitest';
+import type { WorkspaceEvent } from '../../types';
 import {
   workspaceEventsReducer,
   initialState,
   workspaceEventAccepted,
-} from "../../../../store/main/slices/workspace-events/workspace-events-slice";
+} from '../../../../store/main/slices/workspace-events/workspace-events-slice';
 import {
   selectRecentEvents,
   selectEventCount,
-} from "../../../../store/main/slices/workspace-events/workspace-events-selectors";
+} from '../../../../store/main/slices/workspace-events/workspace-events-selectors';
 import {
   MAX_RECENT_EVENTS,
   type WorkspaceEventsState,
-} from "../../../../store/main/slices/workspace-events/types";
+} from '../../../../store/main/slices/workspace-events/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const WS = "ws-test";
+const WS = 'ws-test';
 
 let counter = 0;
 
@@ -45,12 +40,12 @@ function makeEvent(overrides: Partial<WorkspaceEvent> = {}): WorkspaceEvent {
     id: `evt-${counter}`,
     workspaceId: WS,
     timestamp: new Date(2025, 0, 1, 0, 0, counter).toISOString(),
-    type: "file:changed",
-    actor: { type: "system", id: "sys-1", name: "System" },
+    type: 'file:changed',
+    actor: { type: 'system', id: 'sys-1', name: 'System' },
     data: {
       path: `/file-${counter}.ts`,
       relativePath: `file-${counter}.ts`,
-      action: "modify",
+      action: 'modify',
     },
     ...overrides,
   } as WorkspaceEvent;
@@ -74,10 +69,7 @@ function createTestStore() {
  * Given a Redux state snapshot and a mutable cursor map, returns only the events
  * that have been added since the cursor was last advanced.
  */
-function getNewEvents(
-  state: any,
-  lastSeenCount: Map<string, number>,
-): WorkspaceEvent[] {
+function getNewEvents(state: any, lastSeenCount: Map<string, number>): WorkspaceEvent[] {
   const wsSlice = state.workspaceEvents?.byWorkspaceId ?? {};
   const newEvents: WorkspaceEvent[] = [];
 
@@ -101,7 +93,7 @@ function getNewEvents(
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("Event subscription integration", () => {
+describe('Event subscription integration', () => {
   let store: ReturnType<typeof createTestStore>;
 
   beforeEach(() => {
@@ -109,7 +101,7 @@ describe("Event subscription integration", () => {
     store = createTestStore();
   });
 
-  it("live-only subscriber does not replay existing events", () => {
+  it('live-only subscriber does not replay existing events', () => {
     // Emit 5 events before subscription
     for (let i = 0; i < 5; i++) {
       store.dispatch(workspaceEventAccepted(makeEvent()));
@@ -129,10 +121,10 @@ describe("Event subscription integration", () => {
 
     expect(delivered).toHaveLength(3);
     // Verify they are the 3 newest events, not the original 5
-    expect(delivered.map((e) => e.id)).toEqual(["evt-6", "evt-7", "evt-8"]);
+    expect(delivered.map((e) => e.id)).toEqual(['evt-6', 'evt-7', 'evt-8']);
   });
 
-  it("delivery continues after MAX_RECENT_EVENTS buffer rollover", () => {
+  it('delivery continues after MAX_RECENT_EVENTS buffer rollover', () => {
     // Fill the buffer past its capacity
     for (let i = 0; i < MAX_RECENT_EVENTS + 50; i++) {
       store.dispatch(workspaceEventAccepted(makeEvent()));
@@ -157,12 +149,12 @@ describe("Event subscription integration", () => {
     expect(totalCount).toBe(MAX_RECENT_EVENTS + 70);
   });
 
-  it("all accepted events are delivered to subscribers", () => {
+  it('all accepted events are delivered to subscribers', () => {
     // Emit an initial event via workspaceEventAccepted (dedup already passed in saga)
     const sharedData = {
-      path: "/dup.ts",
-      relativePath: "dup.ts",
-      action: "modify",
+      path: '/dup.ts',
+      relativePath: 'dup.ts',
+      action: 'modify',
     };
     store.dispatch(
       workspaceEventAccepted(
@@ -181,7 +173,7 @@ describe("Event subscription integration", () => {
     store.dispatch(
       workspaceEventAccepted(
         makeEvent({
-          id: "accepted-2",
+          id: 'accepted-2',
           timestamp: new Date(2025, 0, 1, 0, 0, 1).toISOString(),
           data: sharedData,
         }),
@@ -196,4 +188,3 @@ describe("Event subscription integration", () => {
     expect(selectEventCount.select(store.getState(), WS)).toBe(2);
   });
 });
-

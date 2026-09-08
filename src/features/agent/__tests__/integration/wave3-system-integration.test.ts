@@ -5,14 +5,7 @@
  * including listener cleanup and concurrent operations.
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ListenerManager } from '../../../../shared/utils/listener-manager';
 import { EventEmitter } from '../../../../shared/event-emitter';
 
@@ -59,5 +52,4 @@ describe('Wave 3 System Integration', () => {
 
     expect(listenerManager.getListenerCount()).toBe(0);
   });
-
 });

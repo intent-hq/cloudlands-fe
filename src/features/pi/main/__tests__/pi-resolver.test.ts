@@ -3,14 +3,7 @@
  * the pi-mcp-adapter install/probe helpers.
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../../../shared/main/find-binary', () => ({
   findBinary: vi.fn(),
@@ -31,7 +24,6 @@ import {
   isPiMcpAdapterInstalled,
   installPiMcpAdapter,
 } from '../pi-resolver';
-
 
 describe('pi-resolver', () => {
   beforeEach(() => {
@@ -102,7 +94,6 @@ describe('pi-resolver', () => {
 // The pi registry row (id/command/canBeDisabled/isDefault) is compiled into
 // the intentd daemon and served via providers.catalog (PROTOCOL §5.38); its
 // shape is pinned by the daemon's own tests, not by FE snapshots.
-
 
 describe('isPiMcpAdapterInstalled (host.exec seam)', () => {
   const ORIGINAL_PI_AGENT_DIR = process.env.PI_CODING_AGENT_DIR;

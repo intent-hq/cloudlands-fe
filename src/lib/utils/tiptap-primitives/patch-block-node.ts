@@ -4,10 +4,7 @@
  * Custom TipTap node for patch/diff primitives
  */
 
-import {
-  Node,
-  mergeAttributes,
-} from '@tiptap/core';
+import { Node, mergeAttributes } from '@tiptap/core';
 import { SvelteNodeViewRenderer } from 'svelte-tiptap';
 import type { PatchPrimitive } from '../../../shared/types/notes-primitives';
 import PatchBlock from '../../components/notes/primitives/PatchBlock.svelte';
@@ -172,43 +169,43 @@ export const PatchBlockNode = Node.create<PatchBlockOptions>({
     return {
       insertPatchBlock:
         (primitive: PatchPrimitive) =>
-          ({ commands }) =>
-            commands.insertContent({
-              type: this.name,
-              attrs: {
-                id: primitive.id,
-                data: primitive,
-              },
-            }),
+        ({ commands }) =>
+          commands.insertContent({
+            type: this.name,
+            attrs: {
+              id: primitive.id,
+              data: primitive,
+            },
+          }),
 
       updatePatchBlock:
         (id: string, updates: Partial<PatchPrimitive>) =>
-          ({ state, dispatch }) => {
-            const { doc, tr } = state;
-            let found = false;
+        ({ state, dispatch }) => {
+          const { doc, tr } = state;
+          let found = false;
 
-            doc.descendants((node, pos) => {
-              if (node.type.name === this.name && node.attrs.id === id) {
-                const currentData = node.attrs.data as PatchPrimitive;
-                const updatedData = { ...currentData, ...updates };
+          doc.descendants((node, pos) => {
+            if (node.type.name === this.name && node.attrs.id === id) {
+              const currentData = node.attrs.data as PatchPrimitive;
+              const updatedData = { ...currentData, ...updates };
 
-                tr.setNodeMarkup(pos, undefined, {
-                  ...node.attrs,
-                  data: updatedData,
-                });
+              tr.setNodeMarkup(pos, undefined, {
+                ...node.attrs,
+                data: updatedData,
+              });
 
-                found = true;
-                return false; // Stop searching
-              }
-            });
-
-            if (found && dispatch) {
-              dispatch(tr);
-              return true;
+              found = true;
+              return false; // Stop searching
             }
+          });
 
-            return false;
-          },
+          if (found && dispatch) {
+            dispatch(tr);
+            return true;
+          }
+
+          return false;
+        },
     };
   },
 

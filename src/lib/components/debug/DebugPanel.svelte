@@ -316,7 +316,7 @@
           <button
             type="button"
             class="w-full h-7 px-2 rounded-md text-xs font-medium {isSimulatingCreation
-              ? 'bg-destructive hover:bg-destructive/90 text-white'
+              ? 'bg-danger hover:bg-danger/90 text-danger-background'
               : isOnCreationPage
                 ? 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
                 : 'bg-primary text-primary-foreground hover:bg-primary/90'} transition-colors flex items-center justify-center gap-1.5"
@@ -563,7 +563,7 @@
               <!-- i18n-ignore (dev-only debug UI) -->
               <p class="text-xs text-green-500">✓ Resume triggered successfully</p>
             {:else if backendResumeStatus === 'error'}
-              <p class="text-xs text-error-foreground">✗ {backendResumeError}</p>
+              <p class="text-xs text-danger">✗ {backendResumeError}</p>
             {/if}
           </div>
         </div>

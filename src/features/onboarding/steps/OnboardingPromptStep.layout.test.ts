@@ -214,6 +214,7 @@ describe('OnboardingPromptStep rendered metadata layout', () => {
       expect(
         (first.getByRole('button', { name: /Create workspace/ }) as HTMLButtonElement).disabled,
       ).toBe(true);
+      expect(first.getByText('Select a branch to continue')).toBeTruthy();
 
       await fireEvent.click(trigger);
       expect(onProjectChange).toHaveBeenCalledWith({ ...selection, branch: 'master' });
@@ -235,6 +236,25 @@ describe('OnboardingPromptStep rendered metadata layout', () => {
       expect(onSubmit).toHaveBeenCalledOnce();
     },
   );
+
+  it('enables create without a branch when the local folder needs git initialization', async () => {
+    const onSubmit = vi.fn();
+    const projectSelection = {
+      ...local,
+      branch: '',
+      initGit: true,
+    } as unknown as Props['projectSelection'];
+    const result = render(OnboardingPromptStep, {
+      props: props({ projectSelection, onSubmit }),
+    });
+
+    expect(result.queryByRole('button', { name: 'Select branch' })).toBeNull();
+    expect(result.getByText('New git repository will be initialized in this folder')).toBeTruthy();
+    const create = result.getByRole('button', { name: /Create workspace/ }) as HTMLButtonElement;
+    expect(create.disabled).toBe(false);
+    await fireEvent.click(create);
+    expect(onSubmit).toHaveBeenCalledOnce();
+  });
 });
 
 describe('OnboardingPromptStep folder drop (path references, local daemon only)', () => {
@@ -326,6 +346,23 @@ describe('OnboardingPromptStep folder drop (path references, local daemon only)'
     const names = pills(result.container).map((p) => p.dataset.name);
     expect(names).toContain('my-folder');
     expect(names).toContain('notes.txt');
+  });
+
+  it('re-dropping the same folder is a no-op (one pill, one staged item)', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
+    const result = render(OnboardingPromptStep, { props: props() });
+
+    const folder = new File(['x'], 'my-folder', { type: '' });
+    const dropEvent = () => makeItemsDropEvent([{ file: folder, isDirectory: true }]);
+    await fireEvent.drop(dropTarget(result.container), dropEvent());
+    await fireEvent.drop(dropTarget(result.container), dropEvent());
+
+    // One pill — a duplicate path-derived id would break keyed rendering
+    // and make one remove drop both pills.
+    await waitFor(() => {
+      expect(pills(result.container)).toHaveLength(1);
+    });
+    expect(pills(result.container)[0].dataset.name).toBe('my-folder');
   });
 
   it('skips the folder with an error toast when no absolute path is resolvable', async () => {

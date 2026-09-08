@@ -1,10 +1,6 @@
 <script lang="ts">
-  import type { ContentBlock, ToolUseBlock, Proposal, MessageRole } from '$shared/types';
-  import {
-    dedupeAgentVideoContentBlocks,
-    isProposal,
-    normalizeAgentVideoContentBlocks,
-  } from '$shared/types';
+  import type { ContentBlock, ToolUseBlock, MessageRole } from '$shared/types';
+  import { dedupeAgentVideoContentBlocks, normalizeAgentVideoContentBlocks } from '$shared/types';
   import {
     classifyToolResults,
     findToolResult,
@@ -16,7 +12,7 @@
   import { isHydrationPending, mergeHydratedContent } from './block-hydration';
   import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
-  import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
+  import { getProposalFromBlock } from '$shared/types/proposal-resource';
   import { isQuestionResourceBlock } from '$shared/types/question-resource';
   import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
@@ -37,6 +33,7 @@
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import ChatCliBlock from './ChatCliBlock.svelte';
   import ChatAgentActionBlock from './ChatAgentActionBlock.svelte';
+  import InlineProposal from './proposals/InlineProposal.svelte';
   import SetupScriptCard from './SetupScriptCard.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
   import ReasoningHistoryBlock from './ReasoningHistoryBlock.svelte';
@@ -66,7 +63,6 @@
   import {
     dedupeKeys,
     getResponseGroupBlockKeys,
-    getResponseGroupCurrentChildIndex,
     isNestedReasoningSectionBoundary,
     isNestedReasoningSectionStart,
     normalizeResponseGroups,
@@ -190,9 +186,7 @@
     // Collapse duplicate §7.1 resource blocks (daemon-attached canonical +
     // FE-lifted fallback for the same logical resource) so exactly one card
     // renders per resource, preferring the daemon-canonical variant.
-    // Agent Q&A questions are wizard-only and proposals are tray-only
-    // (PROTOCOL §5.5): neither ever renders in the transcript, in any
-    // state, so strip both up front.
+    // Agent Q&A questions are wizard-only and never render in the transcript.
     const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(hydratedContent, {
       isStreaming,
     });
@@ -202,7 +196,7 @@
         role,
         workspaceId,
       ),
-    ).filter((block) => !isQuestionResourceBlock(block) && getProposalFromBlock(block) === null);
+    ).filter((block) => !isQuestionResourceBlock(block));
 
     // DEBUG: Log content block types for tool call visibility debugging
     if (isStreaming) {
@@ -377,21 +371,6 @@
     );
   }
 
-  function getProposalFromBlock(block: ContentBlock): Proposal | null {
-    if (isProposal(block.proposal)) return block.proposal;
-    const candidate = {
-      kind: block.kind,
-      payload: block.payload ?? {},
-      preview: block.preview,
-      applyToolCallId: block.applyToolCallId,
-    };
-    if (isProposal(candidate)) return candidate;
-    // Standalone proposal-resource block (PROTOCOL §7.1): the daemon lifts a
-    // proposal-MIME resource item out of a completed tool's output into a
-    // top-level `{ type: "resource", resource: {…} }` block.
-    return getProposalFromResourceBlock(block);
-  }
-
   function addBulkProposalWorkspaceIds(block: ContentBlock, ids: Set<string>) {
     const proposal = getProposalFromBlock(block);
     if (proposal?.kind !== 'bulk-op') return;
@@ -419,9 +398,8 @@
     return ids;
   }
 
-  // Collected from the pre-strip content: proposal blocks never render in
-  // the transcript, but a bulk-op proposal's covered workspace cards stay
-  // suppressed so the prose does not duplicate the tray's list.
+  // Collect from the source content so a bulk-op proposal's covered workspace
+  // cards stay suppressed and do not duplicate the inline proposal's list.
   let bulkProposalWorkspaceIds = $derived.by(() =>
     collectBulkProposalWorkspaceIds(hydratedContent),
   );
@@ -432,13 +410,14 @@
     setupScript: { name: string; description: string; content: string } | null;
   };
 
-  // Cache for parsed text blocks - keyed by text content
+  // Cache for parsed text blocks - parsing also resolves workspace-relative media.
   let parsedTextCache = new Map<string, ParsedTextResult>();
   const MAX_CACHE_SIZE = 100;
 
   function parseTextBlock(text: string): ParsedTextResult {
+    const cacheKey = JSON.stringify([workspaceId ?? null, flatstr(text)]);
     // Check cache first
-    const cached = parsedTextCache.get(text);
+    const cached = parsedTextCache.get(cacheKey);
     if (cached) {
       return cached;
     }
@@ -448,13 +427,13 @@
     // Strip suggested prompts (they're rendered separately in ChatPanel)
     const { cleanedContent: contentWithoutSuggestions } = parseSuggestedPrompts(text);
     // Parse the content - this handles digests inline as 'digest' type blocks
-    const parsed = parseAgentMessage(contentWithoutSuggestions);
+    const parsed = parseAgentMessage(contentWithoutSuggestions, workspaceId);
     // Group parsed blocks to wrap group_start/group_end markers into GroupedBlock objects
     const grouped = groupParsedBlocks(parsed);
     const result = { blocks: grouped, setupScript };
 
     // Cache the result (flatten accumulated streaming text so the Map retains flat strings)
-    parsedTextCache.set(flatstr(text), result);
+    parsedTextCache.set(cacheKey, result);
 
     // Limit cache size (LRU-style: remove oldest entries)
     if (parsedTextCache.size > MAX_CACHE_SIZE) {
@@ -577,6 +556,7 @@
       return Boolean((contentBlock.data || contentBlock.dataTruncated) && contentBlock.mimeType);
     }
     if (contentBlock.type === 'video') return Boolean(contentBlock.source);
+    if (getProposalFromBlock(contentBlock)) return true;
     if (contentBlock.type === 'tool_result') {
       return isStandaloneToolResult(toolResultClassification, contentBlock);
     }
@@ -683,6 +663,9 @@
       label={parsedBlock.metadata.navLinkData.label}
       {workspaceId}
     />
+  {:else if parsedBlock.type === 'video' && parsedBlock.metadata?.videoData}
+    {@const video = parsedBlock.metadata.videoData}
+    <ChatVideoBlock source={video.source} name={video.name} poster={video.poster} />
   {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
     <ChatReferenceBlock
       reference={parsedBlock.metadata.referenceData}
@@ -732,7 +715,12 @@
   reasoningHistory = false,
   searchPath: string | undefined = undefined,
 )}
-  {#if isNavLinkBlock(block)}
+  {@const proposal = getProposalFromBlock(block)}
+  {#if proposal !== null}
+    {#if proposal && agentId && workspaceId && messageId}
+      <InlineProposal {agentId} {workspaceId} {messageId} {proposal} />
+    {/if}
+  {:else if isNavLinkBlock(block)}
     <div class="w-full">
       <NavLink target={block.target} label={block.label} {workspaceId} />
     </div>
@@ -908,7 +896,6 @@
   groupIndex: number,
   childBlock: ContentBlock,
   childIndex: number,
-  suppressSpacing: boolean = false,
   nested: boolean = true,
 )}
   {@const reasoningSectionStart = isNestedReasoningSectionStart(group, childIndex)}
@@ -918,16 +905,14 @@
     isVisibleGroupChild,
   )}
   <div
-    class="content-block content-block--{childBlock.type} {suppressSpacing
-      ? ''
-      : reasoningSectionBoundary
-        ? NESTED_REASONING_SECTION_SEAM_CLASS
-        : getOperationalClusterSpacingClass(
-            group.children,
-            childIndex,
-            isVisibleGroupChild,
-            group.isReasoningPhase,
-          )} {nested
+    class="content-block content-block--{childBlock.type} {reasoningSectionBoundary
+      ? NESTED_REASONING_SECTION_SEAM_CLASS
+      : getOperationalClusterSpacingClass(
+          group.children,
+          childIndex,
+          isVisibleGroupChild,
+          group.isReasoningPhase,
+        )} {nested
       ? isOperationalClusterBlock(childBlock)
         ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
         : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS
@@ -971,28 +956,10 @@
       {#if shouldRenderResponseGroupInline(group)}
         {#each group.children as childBlock, childIndex (childKeys[childIndex])}
           {#if isVisibleGroupChild(childBlock)}
-            {@render renderResponseGroupChild(
-              group,
-              blockIndex,
-              childBlock,
-              childIndex,
-              false,
-              false,
-            )}
+            {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex, false)}
           {/if}
         {/each}
       {:else}
-        {@const currentChildIndex = getResponseGroupCurrentChildIndex(group)}
-        {@const currentChildKey = currentChildIndex >= 0 ? childKeys[currentChildIndex] : undefined}
-        {#snippet currentChild()}
-          {@render renderResponseGroupChild(
-            group,
-            blockIndex,
-            group.children[currentChildIndex],
-            currentChildIndex,
-            true,
-          )}
-        {/snippet}
         <div
           class="content-block content-block--group {getOperationalClusterSpacingClass(
             groupedBlocks,
@@ -1010,8 +977,6 @@
             blocks={group.children.filter(isVisibleGroupChild)}
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}
-            currentChild={currentChildIndex >= 0 ? currentChild : undefined}
-            {currentChildKey}
             adjacentOperationalRow={isAdjacentOperationalClusterRow(
               groupedBlocks,
               blockIndex,

@@ -1,6 +1,6 @@
-declare module "@augmentcode/themis/utils/store/create-reducer" {
-  import type { UnknownAction } from "redux";
-  import type { StoreAction, StoreActionCreator } from "@augmentcode/themis/types";
+declare module '@augmentcode/themis/utils/store/create-reducer' {
+  import type { UnknownAction } from 'redux';
+  import type { StoreAction, StoreActionCreator } from '@augmentcode/themis/types';
 
   export type StoreReducer<S, A> = (state: S, action: A) => S;
 
@@ -16,7 +16,7 @@ declare module "@augmentcode/themis/utils/store/create-reducer" {
   export function createReducer<S>(initialState: S): CreatedReducer<S>;
 }
 
-declare module "@augmentcode/themis/utils/store/create-action" {
+declare module '@augmentcode/themis/utils/store/create-action' {
   export type StoreAction<PL = undefined> = {
     type: string;
     payload: PL;
@@ -69,7 +69,10 @@ declare module "@augmentcode/themis/utils/store/create-action" {
     actionType: string,
     payloadModifier: PayloadModifier<ARGS, ARGS>,
   ): StoreActionCreator<ARGS, ARGS>;
-  export function createAction(actionType: string, payloadModifier?: undefined): StoreActionCreator<[], undefined>;
+  export function createAction(
+    actionType: string,
+    payloadModifier?: undefined,
+  ): StoreActionCreator<[], undefined>;
   export function createAction<ARGS extends any[]>(
     actionType: string,
     payloadModifier?: undefined,
@@ -96,9 +99,9 @@ declare module "@augmentcode/themis/utils/store/create-action" {
   ): StoreAsyncActionCreator<ARGS, ARGS, R>;
 }
 
-declare module "@augmentcode/themis/utils/sagas/selector-channel-effects" {
-  import type { EventChannel, Task } from "redux-saga";
-  import type { StoreSelectorCallback, StoreSelectorEffect } from "@augmentcode/themis/types";
+declare module '@augmentcode/themis/utils/sagas/selector-channel-effects' {
+  import type { EventChannel, Task } from 'redux-saga';
+  import type { StoreSelectorCallback, StoreSelectorEffect } from '@augmentcode/themis/types';
 
   export type SelectorChannelSelector<R, ARGS extends any[] = [], TState = any> = {
     select: StoreSelectorCallback<R, ARGS, TState>;
@@ -110,7 +113,9 @@ declare module "@augmentcode/themis/utils/sagas/selector-channel-effects" {
     prevPayload: R | undefined | null;
   };
 
-  export type SelectorWorkerSaga<R> = (payload: SelectorChannelPayload<R>) => Generator<any, void, any>;
+  export type SelectorWorkerSaga<R> = (
+    payload: SelectorChannelPayload<R>,
+  ) => Generator<any, void, any>;
 
   export function createChannelFromSelector<R, ARGS extends any[]>(
     selector: SelectorChannelSelector<R, ARGS, any>,

@@ -42,13 +42,13 @@
   function getIconColor(type: string) {
     switch (type) {
       case 'error':
-        return 'text-destructive';
+        return 'text-danger';
       case 'warning':
         return 'text-warning';
       case 'info':
         return 'text-info';
       default:
-        return 'text-destructive';
+        return 'text-danger';
     }
   }
 </script>

@@ -25,13 +25,7 @@
     triggerProps?: Record<string, unknown>;
   }
 
-  let {
-    layoutRoot,
-    class: className,
-    size = 12,
-    onclick,
-    triggerProps,
-  }: Props = $props();
+  let { layoutRoot, class: className, size = 12, onclick, triggerProps }: Props = $props();
 
   function handleClick(event: MouseEvent) {
     (triggerProps?.onclick as ((event: MouseEvent) => void) | undefined)?.(event);
@@ -74,7 +68,7 @@
 
     let offset = 0;
     for (let i = 0; i < children.length; i++) {
-      const childSize = sizes[i] ?? (100 / children.length);
+      const childSize = sizes[i] ?? 100 / children.length;
 
       let childX = x;
       let childY = y;
@@ -89,7 +83,9 @@
         childHeight = (childSize / 100) * height;
       }
 
-      rects.push(...layoutToRects(children[i], childX, childY, childWidth, childHeight, `${path}-${i}`));
+      rects.push(
+        ...layoutToRects(children[i], childX, childY, childWidth, childHeight, `${path}-${i}`),
+      );
       offset += childSize;
     }
 
@@ -118,43 +114,38 @@
   onclick={handleClick}
   onkeydown={handleKeydown}
 >
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 100 100"
-    class="block overflow-visible"
-  >
-  <defs>
-    <!-- clip path for rounded corners on edges -->
-     <clipPath id="inner-content">
-      <rect x="0" y="0" width="100" height="100" rx="5" />
-    </clipPath>
-  </defs>
+  <svg width={size} height={size} viewBox="0 0 100 100" class="block overflow-visible">
+    <defs>
+      <!-- clip path for rounded corners on edges -->
+      <clipPath id="inner-content">
+        <rect x="0" y="0" width="100" height="100" rx="5" />
+      </clipPath>
+    </defs>
     <!-- Panel rectangles with CSS transitions -->
-     <g clip-path="url(#inner-content)">
-    {#each panelRects as rect (rect.id)}
-      {@const x = rect.x + gap}
-      {@const y = rect.y + gap}
-      {@const w = Math.max(0, rect.width - gap * 2)}
-      {@const h = Math.max(0, rect.height - gap * 2)}
-      {@const clampedX = Math.min(x, 100 - gap)}
-      {@const clampedY = Math.min(y, 100 - gap)}
-      {@const clampedW = Math.min(w, 100 - clampedX - gap)}
-      {@const clampedH = Math.min(h, 100 - clampedY - gap)}
-      <rect
-        class="minimap-rect"
-        x={clampedX}
-        y={clampedY}
-        width={Math.max(0, clampedW)}
-        height={Math.max(0, clampedH)}
-        stroke="currentColor"
-        stroke-width="0.9"
-        vector-effect="non-scaling-stroke"
-        fill="none"
-      />
-    {/each}
+    <g clip-path="url(#inner-content)">
+      {#each panelRects as rect (rect.id)}
+        {@const x = rect.x + gap}
+        {@const y = rect.y + gap}
+        {@const w = Math.max(0, rect.width - gap * 2)}
+        {@const h = Math.max(0, rect.height - gap * 2)}
+        {@const clampedX = Math.min(x, 100 - gap)}
+        {@const clampedY = Math.min(y, 100 - gap)}
+        {@const clampedW = Math.min(w, 100 - clampedX - gap)}
+        {@const clampedH = Math.min(h, 100 - clampedY - gap)}
+        <rect
+          class="minimap-rect"
+          x={clampedX}
+          y={clampedY}
+          width={Math.max(0, clampedW)}
+          height={Math.max(0, clampedH)}
+          stroke="currentColor"
+          stroke-width="0.9"
+          vector-effect="non-scaling-stroke"
+          fill="none"
+        />
+      {/each}
     </g>
-  <rect
+    <rect
       width="100%"
       height="100%"
       rx="10"

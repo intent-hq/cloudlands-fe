@@ -11,7 +11,11 @@
 import { webContents, ipcMain } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
-import { isBrowserEmulatedSize } from '../../../shared/ipc/workspace-command-payloads';
+import {
+  isBrowserEmulatedSize,
+  isBrowserTabViewport,
+  type BrowserTabViewport,
+} from '../../../shared/ipc/workspace-command-payloads';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 
 const logger = new Logger('EmbeddedBrowserCdp');
@@ -85,12 +89,21 @@ interface PanelBrowserTab {
    * recorded (those rehydrate at the default viewport).
    */
   emulatedSize?: { width: number; height: number };
+  /** Persisted viewport mode; absent legacy values default to fit. */
+  viewport?: BrowserTabViewport;
   /**
    * The tab is in the workspace's hidden set (monorepo#3045): alive and
    * CDP-addressable offscreen, but not mounted into any panel. Only
    * agent-owned tabs can be hidden; absent = visible.
    */
   hidden?: boolean;
+  /**
+   * The tab is its panel's active tab, i.e. the only one the panel can paint
+   * (a mounted-but-inactive tab renders nothing in the tabless UI). A layout
+   * fact, not a paint guarantee. Never set on hidden tabs; absent = not the
+   * active tab.
+   */
+  active?: boolean;
 }
 
 /**
@@ -161,6 +174,12 @@ class EmbeddedBrowserCdpService {
    * map from renderer replies after a restart.
    */
   private tabOwnership = new Map<string, TabOwnership>();
+
+  /** Per-tab viewport mode for owned and unowned tabs. */
+  private tabViewports = new Map<string, BrowserTabViewport>();
+
+  /** Tabs whose current webContents has received a device-metrics override. */
+  private tabsWithDeviceMetricsOverride = new Set<string>();
 
   /**
    * Agents whose owned tabs were destroyed via {@link clearAgentTabs}
@@ -349,6 +368,9 @@ class EmbeddedBrowserCdpService {
    */
   registerTab(tabId: string, webContentsId: number): void {
     logger.info('Registering browser tab', { tabId, webContentsId });
+    if (this.tabRegistry.get(tabId) !== webContentsId) {
+      this.tabsWithDeviceMetricsOverride.delete(tabId);
+    }
     this.tabRegistry.set(tabId, webContentsId);
 
     // Owned tabs are always emulated (docs/protocol §5.9): (re)apply the
@@ -377,6 +399,7 @@ class EmbeddedBrowserCdpService {
         logger.info('WebContents destroyed, cleaning up tab registry', { tabId, webContentsId });
         if (this.tabRegistry.get(tabId) === webContentsId) {
           this.tabRegistry.delete(tabId);
+          this.tabsWithDeviceMetricsOverride.delete(tabId);
           // Bounds belong to the destroyed webview element; a remount
           // re-reports them.
           this.tabViewBounds.delete(tabId);
@@ -440,12 +463,55 @@ class EmbeddedBrowserCdpService {
    * use {@link clearTabOwnership} on a genuine close (monorepo#2857).
    */
   unregisterTab(tabId: string): void {
+    this.tabsWithDeviceMetricsOverride.delete(tabId);
     const webContentsId = this.tabRegistry.get(tabId);
     if (webContentsId !== undefined) {
       logger.info('Unregistering browser tab', { tabId, webContentsId });
       this.detachDebugger(webContentsId);
       this.tabRegistry.delete(tabId);
     }
+  }
+
+  /** Open DevTools for a mounted tab and select the requested built-in panel. */
+  async openDevToolsPanel(tabId: string, panel: 'console' | 'sources' | 'elements'): Promise<void> {
+    const webContentsId = this.resolveTabId(tabId);
+    if (webContentsId === undefined) {
+      throw new Error(`Browser tab ${tabId} is not mounted`);
+    }
+    const wc = webContents.fromId(webContentsId);
+    if (!wc || wc.isDestroyed()) {
+      throw new Error(`WebContents ${webContentsId} not found or destroyed`);
+    }
+
+    const selectPanel = async () => {
+      const devTools = wc.devToolsWebContents;
+      if (!devTools || devTools.isDestroyed()) return;
+      await devTools.executeJavaScript(`DevToolsAPI.showPanel(${JSON.stringify(panel)})`);
+    };
+
+    wc.openDevTools();
+    if (wc.devToolsWebContents) {
+      try {
+        await selectPanel();
+      } catch (error) {
+        logger.warn('Failed to select DevTools panel; leaving plain DevTools open', {
+          tabId,
+          panel,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    wc.once('devtools-opened', () => {
+      void selectPanel().catch((error) => {
+        logger.warn('Failed to select DevTools panel; leaving plain DevTools open', {
+          tabId,
+          panel,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    });
   }
 
   /**
@@ -520,7 +586,9 @@ class EmbeddedBrowserCdpService {
       mounted: boolean;
       ownerAgentId?: string;
       emulatedSize?: { width: number; height: number };
+      viewport: BrowserTabViewport;
       hidden?: boolean;
+      active?: boolean;
     })[];
     stale: boolean;
   }> {
@@ -541,17 +609,20 @@ class EmbeddedBrowserCdpService {
     // Panel tabs only, marking whether each is backed by a live webview.
     // Each tab is annotated with its owner from the ownership registry
     // (rehydrated from the panel reply above) so agents can see which tabs
-    // they may manipulate (monorepo#2857), and with `hidden` when the tab
-    // sits in the workspace's hidden set (monorepo#3045).
+    // they may manipulate (monorepo#2857), with `hidden` when the tab sits
+    // in the workspace's hidden set (monorepo#3045), and with `active` when
+    // it is its panel's active tab.
     const tabs = panelTabs.map((panelTab) => {
       const ownership = this.tabOwnership.get(panelTab.tabId);
       const owner = ownership
         ? { ownerAgentId: ownership.ownerAgentId, emulatedSize: ownership.emulatedSize }
         : {};
       const hidden = panelTab.hidden === true ? { hidden: true } : {};
+      const active = panelTab.active === true ? { active: true } : {};
+      const viewport = this.tabViewports.get(panelTab.tabId) ?? { mode: 'fit' as const };
       const mounted = mountedTabs.find((t) => t.tabId === panelTab.tabId);
       if (mounted) {
-        return { ...mounted, mounted: true, ...owner, ...hidden };
+        return { ...mounted, mounted: true, ...owner, viewport, ...hidden, ...active };
       }
       return {
         tabId: panelTab.tabId,
@@ -559,8 +630,10 @@ class EmbeddedBrowserCdpService {
         url: panelTab.url,
         title: panelTab.title,
         mounted: false,
+        viewport,
         ...owner,
         ...hidden,
+        ...active,
       };
     });
     return { tabs, stale };
@@ -680,20 +753,23 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Reveal a hidden agent-owned tab into a panel (monorepo#3045). With
-   * `focus: false` (the default) the tab is mounted into a panel's tab list
-   * WITHOUT becoming active and without moving panel focus; `focus: true`
-   * reveals and activates. The renderer treats an already-visible tab as
-   * idempotent: a no-op for `focus: false`, activate-and-focus for
-   * `focus: true`.
+   * Activate an agent-owned tab in a visible panel (monorepo#3045). A hidden
+   * tab is revealed into a panel; a visible-but-inactive tab is brought to
+   * the front of its panel. With `focus: false` (the default) the tab becomes
+   * its panel's active tab (`displayed`) without moving panel/keyboard
+   * focus; `focus: true` activates and focuses the panel. Both are idempotent
+   * on an already-displayed tab (`focus: true` still focuses its panel).
    *
    * The reveal is confirmed against a fresh renderer tab list (the same
    * confirm-by-list discipline closeTab uses): only a fresh reply that lists
-   * the tab as not hidden counts. Existence/ownership validation lives in
-   * the action executor — this method only delivers and confirms.
+   * the tab as not hidden AND as its panel's active tab counts — a
+   * visible-but-inactive listing means the activation has not applied yet
+   * (or was lost), so returning success there would let an immediate
+   * screenshot fail. Existence/ownership validation lives in the action
+   * executor — this method only delivers and confirms.
    *
    * @returns void on success; throws when no window received the request or
-   *          the reveal could not be confirmed
+   *          the activation could not be confirmed
    */
   async showTab(tabId: string, workspaceId?: string, focus?: boolean): Promise<void> {
     if (!tabId) {
@@ -717,18 +793,21 @@ class EmbeddedBrowserCdpService {
     }
     logger.info('Sent show request for browser tab', { tabId, workspaceId, focus });
 
-    // Confirm the renderer revealed the tab: only a fresh (non-stale) reply
-    // listing the tab without the hidden marker counts.
+    // Confirm the renderer activated the tab: only a fresh (non-stale) reply
+    // listing the tab without the hidden marker and with the active marker
+    // counts.
     for (let attempt = 0; attempt < 3; attempt++) {
       const after = await this.requestPanelBrowserTabs(workspaceId);
       if (!after.stale) {
         const tab = after.tabs.find((t) => t.tabId === tabId);
-        if (tab && tab.hidden !== true) return;
+        if (tab && tab.hidden !== true && tab.active === true) return;
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    // i18n-ignore (agent-facing protocol error, not user-facing)
-    throw new Error(`Tab ${tabId} could not be shown (the UI did not confirm the reveal).`);
+    throw new Error(
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      `Tab ${tabId} could not be shown (the UI did not confirm the tab as its panel's active tab).`,
+    );
   }
 
   /**
@@ -1011,6 +1090,11 @@ class EmbeddedBrowserCdpService {
       ...(recorded !== undefined ? { requestedUrl: recorded } : {}),
       emulatedSize: size ?? previous?.emulatedSize ?? { ...DEFAULT_AGENT_VIEWPORT },
     });
+    if (size) {
+      this.tabViewports.set(tabId, { mode: 'custom', ...size });
+    } else if (!this.tabViewports.has(tabId)) {
+      this.tabViewports.set(tabId, { mode: 'fit' });
+    }
     // Owned tabs are always emulated (docs/protocol §5.9): apply the size
     // right away when the tab is mounted (claims/adoptions of live tabs);
     // unmounted tabs get it on their next registerTab.
@@ -1027,6 +1111,31 @@ class EmbeddedBrowserCdpService {
   /** A tab's emulated viewport size, when it is agent-owned. */
   getTabEmulatedSize(tabId: string): { width: number; height: number } | undefined {
     return this.tabOwnership.get(tabId)?.emulatedSize;
+  }
+
+  /** Set a tab's renderer-selected viewport mode and apply it immediately. */
+  setTabViewport(tabId: string, viewport: BrowserTabViewport): void {
+    this.tabViewports.set(tabId, { ...viewport });
+    const ownership = this.tabOwnership.get(tabId);
+    if (ownership && viewport.mode !== 'fit') {
+      ownership.emulatedSize = { width: viewport.width, height: viewport.height };
+    }
+    this.applyViewportEmulation(tabId);
+  }
+
+  /** Effective emulated size exposed by listTabs; undefined means native sizing. */
+  getTabEffectiveViewportSize(tabId: string): { width: number; height: number } | undefined {
+    const viewport = this.tabViewports.get(tabId) ?? { mode: 'fit' as const };
+    if (viewport.mode !== 'fit') return { width: viewport.width, height: viewport.height };
+    const ownership = this.tabOwnership.get(tabId);
+    if (!ownership) return undefined;
+    const bounds = this.tabViewBounds.get(tabId);
+    return bounds
+      ? {
+          width: Math.max(1, Math.round(bounds.width)),
+          height: Math.max(1, Math.round(bounds.height)),
+        }
+      : { ...ownership.emulatedSize };
   }
 
   /**
@@ -1048,6 +1157,7 @@ class EmbeddedBrowserCdpService {
     if (!ownership) return undefined;
     const size = { width, height: height ?? ownership.emulatedSize.height };
     ownership.emulatedSize = size;
+    this.tabViewports.set(tabId, { mode: 'custom', ...size });
     logger.info('Resized agent tab viewport', { tabId, ...size });
     this.applyViewportEmulation(tabId);
     return size;
@@ -1082,22 +1192,47 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Apply CDP device-metrics viewport emulation to an owned tab's mounted
-   * webContents (docs/protocol §5.9): the page lays out at the emulated
-   * size and the displayed image is scaled to fit the hosting webview
-   * element when the renderer has reported its bounds (capped at 1 — never
-   * upscaled). Owned tabs are always emulated; there is no reset-to-native
-   * path. Fire-and-forget: unmounted tabs are skipped (registerTab
+   * Apply CDP device-metrics viewport emulation to a mounted tab. Fit follows
+   * visible bounds for owned tabs and stays native for unowned tabs;
+   * preset/custom use exact dimensions with scale-to-fit. Fire-and-forget:
+   * unmounted tabs are skipped (registerTab
    * re-applies on mount) and CDP failures are logged, never thrown — sizing
    * must not fail the ownership bookkeeping that triggered it.
    */
   private applyViewportEmulation(tabId: string): void {
-    const size = this.tabOwnership.get(tabId)?.emulatedSize;
-    if (!size) return;
+    const ownership = this.tabOwnership.get(tabId);
+    const explicitViewport = this.tabViewports.get(tabId);
+    if (!ownership && !explicitViewport && !this.tabViewBounds.has(tabId)) return;
     const webContentsId = this.resolveTabId(tabId);
     if (webContentsId === undefined) return;
+    const viewport = explicitViewport ?? { mode: 'fit' as const };
+    if (viewport.mode === 'fit' && !ownership) {
+      if (!this.tabsWithDeviceMetricsOverride.has(tabId)) return;
+      void this.sendCommand(webContentsId, 'Emulation.clearDeviceMetricsOverride')
+        .then(() => this.tabsWithDeviceMetricsOverride.delete(tabId))
+        .catch((error) => {
+          logger.warn('Failed to clear viewport emulation', {
+            tabId,
+            webContentsId,
+            error: (error as Error).message,
+          });
+        });
+      return;
+    }
     const bounds = this.tabViewBounds.get(tabId);
-    const scale = bounds ? Math.min(1, bounds.width / size.width, bounds.height / size.height) : 1;
+    const size =
+      viewport.mode === 'fit'
+        ? bounds
+          ? {
+              width: Math.max(1, Math.round(bounds.width)),
+              height: Math.max(1, Math.round(bounds.height)),
+            }
+          : (ownership?.emulatedSize ?? DEFAULT_AGENT_VIEWPORT)
+        : { width: viewport.width, height: viewport.height };
+    const scale =
+      viewport.mode === 'fit' || !bounds
+        ? 1
+        : Math.min(1, bounds.width / size.width, bounds.height / size.height);
     void this.sendCommand(webContentsId, 'Emulation.setDeviceMetricsOverride', {
       width: size.width,
       height: size.height,
@@ -1105,15 +1240,24 @@ class EmbeddedBrowserCdpService {
       deviceScaleFactor: 0,
       mobile: false,
       scale,
-    }).catch((error) => {
-      logger.warn('Failed to apply viewport emulation', {
-        tabId,
-        webContentsId,
-        ...size,
-        scale,
-        error: (error as Error).message,
+    })
+      .then(() => {
+        if (this.tabRegistry.get(tabId) !== webContentsId) return;
+        this.tabsWithDeviceMetricsOverride.add(tabId);
+        const currentViewport = this.tabViewports.get(tabId) ?? { mode: 'fit' as const };
+        if (currentViewport.mode === 'fit' && !this.tabOwnership.has(tabId)) {
+          this.applyViewportEmulation(tabId);
+        }
+      })
+      .catch((error) => {
+        logger.warn('Failed to apply viewport emulation', {
+          tabId,
+          webContentsId,
+          ...size,
+          scale,
+          error: (error as Error).message,
+        });
       });
-    });
   }
 
   /**
@@ -1123,6 +1267,7 @@ class EmbeddedBrowserCdpService {
    */
   clearTabOwnership(tabId: string): void {
     this.tabOwnership.delete(tabId);
+    this.tabViewports.delete(tabId);
   }
 
   /**
@@ -1198,11 +1343,27 @@ class EmbeddedBrowserCdpService {
    */
   private hydrateOwnershipFromPanelTabs(tabs: PanelBrowserTab[]): void {
     for (const tab of tabs) {
-      if (typeof tab.ownerAgentId !== 'string' || tab.ownerAgentId.length === 0) continue;
+      const viewport = isBrowserTabViewport(tab.viewport)
+        ? tab.viewport.mode === 'fit'
+          ? ({ mode: 'fit' } as const)
+          : {
+              ...tab.viewport,
+              width: clampViewportDimension(tab.viewport.width),
+              height: clampViewportDimension(tab.viewport.height),
+            }
+        : ({ mode: 'fit' } as const);
+      this.tabViewports.set(tab.tabId, viewport);
+      if (typeof tab.ownerAgentId !== 'string' || tab.ownerAgentId.length === 0) {
+        this.applyViewportEmulation(tab.tabId);
+        continue;
+      }
       // A stale renderer reply may still list tabs of an agent whose
       // deletion already committed — never resurrect those (monorepo#2857).
       if (this.clearedAgentTombstones.has(tab.ownerAgentId)) continue;
-      if (this.tabOwnership.has(tab.tabId)) continue;
+      if (this.tabOwnership.has(tab.tabId)) {
+        this.applyViewportEmulation(tab.tabId);
+        continue;
+      }
       // The persisted layout file is user-editable on disk, so clamp the
       // restored size into the same bounds the live action schema enforces —
       // a corrupt/hand-edited value must not replay an extreme viewport
@@ -1272,6 +1433,7 @@ class EmbeddedBrowserCdpService {
       return;
     }
     const emulatedSize = this.tabOwnership.get(tabId)?.emulatedSize;
+    const viewport = this.tabViewports.get(tabId) ?? { mode: 'fit' as const };
     sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.TAB_OWNER_CHANGED, {
       tabId,
       workspaceId,
@@ -1280,6 +1442,7 @@ class EmbeddedBrowserCdpService {
       // tab without an agent-store lookup (monorepo#3438).
       ...(ownerAgentName === undefined ? {} : { ownerAgentName }),
       ...(emulatedSize === undefined ? {} : { emulatedSize: { ...emulatedSize } }),
+      viewport: { ...viewport },
     });
   }
 
@@ -1598,7 +1761,7 @@ class EmbeddedBrowserCdpService {
               reject(
                 new Error(
                   // i18n-ignore (agent-facing protocol error, not user-facing)
-                  `capturePage timed out after ${SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS}ms: the tab is not painting (its surface may be hidden or occluded).`,
+                  `capturePage timed out after ${SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS}ms: the tab is not painting. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
                 ),
               ),
             SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS,
@@ -1606,8 +1769,21 @@ class EmbeddedBrowserCdpService {
         }),
       ]);
       const size = image.getSize();
+      if (image.isEmpty?.() || size.width <= 0 || size.height <= 0) {
+        throw new Error(
+          // i18n-ignore (agent-facing operational diagnostic, not user-facing)
+          `webContents.capturePage returned an empty image (${size.width}x${size.height}): the tab surface has not painted. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
+        );
+      }
+      const jpeg = image.toJPEG(80);
+      if (jpeg.length === 0) {
+        throw new Error(
+          // i18n-ignore (agent-facing operational diagnostic, not user-facing)
+          `webContents.capturePage encoded an empty image (${size.width}x${size.height}): the tab surface has not painted. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
+        );
+      }
       return {
-        base64: image.toJPEG(80).toString('base64'),
+        base64: jpeg.toString('base64'),
         width: size.width,
         height: size.height,
       };
@@ -1691,6 +1867,13 @@ class EmbeddedBrowserCdpService {
     const width = visualW && visualW > 0 ? Math.min(layoutW, visualW) : layoutW;
     const height = visualH && visualH > 0 ? Math.min(layoutH, visualH) : layoutH;
 
+    if (width <= 0 || height <= 0) {
+      throw new Error(
+        // i18n-ignore (agent-facing operational diagnostic, not user-facing)
+        `Page.getLayoutMetrics returned an empty viewport (${width}x${height})`,
+      );
+    }
+
     const result = (await this.withScreenshotCdpTimeout(
       this.sendCommand(webContentsId, 'Page.captureScreenshot', {
         format: 'jpeg',
@@ -1705,6 +1888,13 @@ class EmbeddedBrowserCdpService {
       }),
       'Page.captureScreenshot',
     )) as { data: string };
+
+    if (!result.data) {
+      throw new Error(
+        // i18n-ignore (agent-facing operational diagnostic, not user-facing)
+        `Page.captureScreenshot returned an empty image (${width}x${height})`,
+      );
+    }
 
     return {
       base64: result.data,

@@ -8,10 +8,7 @@
  * fetch fails (and that issues never hit the wire).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  registerMockIpcHandler,
-  unregisterMockIpcHandler,
-} from '$shared/ipc-mock-router';
+import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
 
 vi.mock('$lib/utils/platform-capabilities', () => ({ isElectronPlatform: () => true }));
 

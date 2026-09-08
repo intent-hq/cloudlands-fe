@@ -5,17 +5,10 @@
   Helps users understand what might be wrong and diagnose issues.
 -->
 <script lang="ts">
-  import {
-  onMount,
-  onDestroy,
-} from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { safeSlide } from '$lib/utils/animations';
   import Fa from 'svelte-fa';
-  import {
-  faInfoCircle,
-  faChevronDown,
-  faChevronLeft,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faInfoCircle, faChevronDown, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils/cn';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -121,7 +114,9 @@
           <span class="text-amber-600/60 dark:text-amber-400/60"
             >{m.chat_longRunningDebug_sessionId_label()}</span
           >
-          <span class="truncate">{sessionId || m.chat_longRunningDebug_notActivated_fallback()}</span>
+          <span class="truncate"
+            >{sessionId || m.chat_longRunningDebug_notActivated_fallback()}</span
+          >
 
           <span class="text-amber-600/60 dark:text-amber-400/60"
             >{m.chat_longRunningDebug_messages_label()}</span

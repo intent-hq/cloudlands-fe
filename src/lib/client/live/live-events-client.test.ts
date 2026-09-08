@@ -78,6 +78,21 @@ describe('LiveEventsClient (PROTOCOL §5.10 event.query, fake transport)', () =>
     expect(await client.query('ws-1')).toEqual([]);
   });
 
+  it('queryPage requests the paginated envelope and forwards an older-page cursor', async () => {
+    mockedRequest.mockResolvedValueOnce({ items: wireEvents, nextToken: 'older-page' });
+    const client = new LiveEventsClient();
+
+    const page = await client.queryPage('ws-1', { limit: 100, nextToken: 'current-page' });
+
+    expect(mockedRequest).toHaveBeenCalledWith('event.query', {
+      workspaceId: 'ws-1',
+      limit: 100,
+      nextToken: 'current-page',
+      paginate: true,
+    });
+    expect(page).toEqual({ items: wireEvents, nextToken: 'older-page' });
+  });
+
   it('subscribe emits the initial snapshot once and returns an idle disposer', async () => {
     mockedRequest.mockResolvedValueOnce(wireEvents);
     const client = new LiveEventsClient();

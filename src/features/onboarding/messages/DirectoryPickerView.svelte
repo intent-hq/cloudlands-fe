@@ -408,7 +408,7 @@
               type="text"
               class={cn(
                 'min-w-0 flex-1 rounded border bg-background px-2 py-1 text-xs font-mono text-foreground outline-none',
-                pathError ? 'border-destructive/60' : 'border-border focus-visible:border-ring',
+                pathError ? 'border-danger/60' : 'border-border focus-visible:border-ring',
               )}
               aria-label={m.onboarding_dirPicker_path_ariaLabel()}
               aria-invalid={pathError ? true : undefined}
@@ -466,7 +466,7 @@
 
         {#if pathError}
           <div
-            class="shrink-0 border-b border-border bg-destructive/10 px-3 py-1.5 text-xs text-error-foreground"
+            class="shrink-0 border-b border-border bg-danger-background/10 px-3 py-1.5 text-xs text-danger"
             role="alert"
           >
             {pathError}
@@ -485,7 +485,7 @@
               <span>{m.onboarding_dirPicker_loading_label()}</span>
             </div>
           {:else if error}
-            <div class="px-5 py-10 text-sm text-error-foreground">
+            <div class="px-5 py-10 text-sm text-danger">
               <p class="mb-1 font-medium">{m.onboarding_dirPicker_readError_title()}</p>
               <p class="break-all text-xs text-muted-foreground">{error}</p>
             </div>
@@ -561,7 +561,7 @@
 
     {#if createError}
       <div
-        class="shrink-0 border-t border-border bg-destructive/10 px-3 py-1.5 text-xs text-error-foreground/90"
+        class="shrink-0 border-t border-border bg-danger-background/10 px-3 py-1.5 text-xs text-danger/90"
         role="alert"
       >
         {createError}
@@ -578,7 +578,7 @@
               type="text"
               class={cn(
                 'min-w-0 flex-1 rounded border bg-background px-2 py-1 text-sm text-foreground outline-none',
-                createError ? 'border-destructive/60' : 'border-border focus-visible:border-ring',
+                createError ? 'border-danger/60' : 'border-border focus-visible:border-ring',
               )}
               placeholder={m.onboarding_dirPicker_newFolderName_placeholder()}
               aria-label={m.onboarding_dirPicker_newFolderName_ariaLabel()}

@@ -6,14 +6,9 @@
    * Closes on Escape, backdrop click, or X button.
    * Keyboard accessible with focus trap and focus return.
    */
-  import { fade } from 'svelte/transition';
-  import { faXmark } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
-  import Portal from './Portal.svelte';
-  import Button from './button/button.svelte';
+  import MediaLightbox from './MediaLightbox.svelte';
   import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
   import ZoomPanViewport from '$lib/components/ui/ZoomPanViewport.svelte';
-  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -36,131 +31,42 @@
     showActionsMenu = false,
   }: Props = $props();
 
-  let closeButtonElement: HTMLButtonElement | null = $state(null);
-  let dialogElement: HTMLDivElement | null = $state(null);
   let zoomPanViewport: ZoomPanViewport | undefined = $state();
 
-  function close() {
-    open = false;
-    onClose?.();
-    // Return focus to the element that opened the lightbox
-    if (openerElement && openerElement.isConnected) {
-      openerElement.focus();
-    }
-  }
-
-  function handleBackdropClick(e: MouseEvent) {
-    // Close on backdrop clicks; clicks on the image or the zoom controls keep
-    // the lightbox open. (A drag-pan's trailing click is suppressed by
-    // ZoomPanViewport before it reaches this handler.)
-    const target = e.target instanceof Element ? e.target : null;
-    if (target?.closest('img, [role="toolbar"], button, input')) return;
-    close();
-  }
-
   function handleKeydown(e: KeyboardEvent) {
-    // Zoom keys (+/-/0): forward to the viewport unless it already handled
-    // the event itself (keydown bubbling up from inside the viewport)
-    if (!e.defaultPrevented && zoomPanViewport?.handleKeydown(e)) return;
-
-    // Manual focus trap: Tab and Shift+Tab cycle between focusable elements
-    if (e.key === 'Tab') {
-      if (!dialogElement) return;
-
-      const focusableElements = dialogElement.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      );
-      const focusableArray = Array.from(focusableElements);
-
-      if (focusableArray.length === 0) return;
-
-      const firstFocusable = focusableArray[0];
-      const lastFocusable = focusableArray[focusableArray.length - 1];
-      const activeElement = document.activeElement as HTMLElement;
-
-      if (e.shiftKey) {
-        // Shift+Tab: if on first element, wrap to last
-        if (activeElement === firstFocusable) {
-          e.preventDefault();
-          lastFocusable?.focus();
-        }
-      } else {
-        // Tab: if on last element, wrap to first
-        if (activeElement === lastFocusable) {
-          e.preventDefault();
-          firstFocusable?.focus();
-        }
-      }
-    }
+    if (!e.defaultPrevented) zoomPanViewport?.handleKeydown(e);
   }
-
-  // Escape layer: only the topmost overlay handles Escape
-  $effect(() => {
-    if (!open) return;
-    return pushEscapeLayer(close);
-  });
-
-  // Focus management: move focus into dialog on open
-  $effect(() => {
-    if (open && closeButtonElement) {
-      // Use requestAnimationFrame to ensure the Portal is fully mounted
-      requestAnimationFrame(() => {
-        closeButtonElement?.focus();
-      });
-    }
-  });
 </script>
 
-{#if open}
-  <Portal target="body" zIndex={1000}>
-    <!-- Backdrop. The inline pointer-events opt-in keeps the lightbox clickable
-         while a modal dialog's interaction lock sets pointer-events: none on body;
-         the marker attribute lets dialog-content ignore interactions in here. -->
-    <div
-      bind:this={dialogElement}
-      data-image-lightbox-root
-      class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1000] flex items-center justify-center cursor-zoom-out"
-      style="pointer-events: auto;"
-      onclick={handleBackdropClick}
-      onkeydown={handleKeydown}
-      role="dialog"
-      aria-modal="true"
-      aria-label={m.ui_imageLightbox_preview_ariaLabel()}
-      tabindex="-1"
-      transition:fade={{ duration: 200 }}
-    >
-      <!-- Close button -->
-      <Button
-        variant="ghost"
-        size="icon"
-        class="absolute top-4 right-4 z-[1002] text-white hover:bg-white/20"
-        onclick={close}
-        aria-label={m.ui_imageLightbox_close_ariaLabel()}
-        bind:ref={closeButtonElement}
-      >
-        <Fa icon={faXmark} size="lg" />
-      </Button>
+{#snippet actions()}
+  {#if showActionsMenu}
+    <ImageActionsMenu
+      {imageUrl}
+      {imageName}
+      triggerClass="h-9 w-9 bg-white/0 hover:bg-white/20"
+      contentClass="z-[1003]"
+    />
+  {/if}
+{/snippet}
 
-      {#if showActionsMenu}
-        <ImageActionsMenu
-          {imageUrl}
-          {imageName}
-          triggerClass="absolute top-4 right-16 z-[1002] h-9 w-9 bg-white/0 hover:bg-white/20"
-          contentClass="z-[1003]"
-        />
-      {/if}
-
-      <!-- Zoomable image viewport (keyed so zoom state resets on URL change) -->
-      {#key imageUrl}
-        <ZoomPanViewport bind:this={zoomPanViewport}>
-          <img
-            src={imageUrl}
-            alt={imageName}
-            class="max-w-[90vw] max-h-[90vh] object-contain"
-            draggable="false"
-          />
-        </ZoomPanViewport>
-      {/key}
-    </div>
-  </Portal>
-{/if}
+<MediaLightbox
+  bind:open
+  ariaLabel={m.ui_imageLightbox_preview_ariaLabel()}
+  closeLabel={m.ui_imageLightbox_close_ariaLabel()}
+  {onClose}
+  {openerElement}
+  {actions}
+  onKeydown={handleKeydown}
+>
+  {#key imageUrl}
+    <ZoomPanViewport bind:this={zoomPanViewport}>
+      <img
+        src={imageUrl}
+        alt={imageName}
+        class="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
+        draggable="false"
+        data-media-lightbox-content
+      />
+    </ZoomPanViewport>
+  {/key}
+</MediaLightbox>

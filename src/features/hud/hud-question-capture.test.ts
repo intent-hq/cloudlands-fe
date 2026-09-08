@@ -97,12 +97,17 @@ describe('extractQuestionsFromStreamEnd (PROTOCOL §7 / §7.1)', () => {
   it('returns [] for other event types, absent trailingBlocks, or missing identity', () => {
     expect(
       extractQuestionsFromStreamEnd(
-        streamEnd({ agentId: 'a', trailingBlocks: [questionBlock(QUESTION_PAYLOAD)] }, 'agent:idle'),
+        streamEnd(
+          { agentId: 'a', trailingBlocks: [questionBlock(QUESTION_PAYLOAD)] },
+          'agent:idle',
+        ),
       ),
     ).toEqual([]);
     expect(extractQuestionsFromStreamEnd(streamEnd({ agentId: 'agent-1' }))).toEqual([]);
     expect(
-      extractQuestionsFromStreamEnd(streamEnd({ trailingBlocks: [questionBlock(QUESTION_PAYLOAD)] })),
+      extractQuestionsFromStreamEnd(
+        streamEnd({ trailingBlocks: [questionBlock(QUESTION_PAYLOAD)] }),
+      ),
     ).toEqual([]);
   });
 });

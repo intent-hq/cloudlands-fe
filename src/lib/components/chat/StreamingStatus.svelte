@@ -138,10 +138,7 @@
       : null,
   );
   let thinkingVisible = $derived(
-    status === 'normal' &&
-      (isStreaming || isProcessing) &&
-      !hasPendingPermission &&
-      !stalledEvent,
+    status === 'normal' && (isStreaming || isProcessing) && !hasPendingPermission && !stalledEvent,
   );
   // Skips stalled events: an active stall has its own row, and a superseded
   // one must not leak its stale message into the returning thinking indicator.
@@ -299,7 +296,7 @@
             </span>
           {:else if status === 'error' && errorDisplay}
             <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span class="font-medium text-error-foreground" data-testid="error-title"
+              <span class="font-medium text-danger" data-testid="error-title"
                 >{errorDisplay.title}{#if failedAt}
                   <span
                     class="type-caption ml-1.5 leading-4 font-normal text-muted-foreground"
@@ -345,10 +342,7 @@
                     >
                   {/if}
                   {#if authGuidance}
-                    <div
-                      class="mt-1.5 flex flex-col gap-1"
-                      data-testid="error-auth-guidance"
-                    >
+                    <div class="mt-1.5 flex flex-col gap-1" data-testid="error-auth-guidance">
                       <span class="type-caption leading-4 text-muted-foreground"
                         >{m.settings_providers_runToLogIn_label()}</span
                       >

@@ -2,11 +2,8 @@
  * Comments V2 selectors.
  */
 
-import { store } from "../../store";
-import {
-  getItem,
-  getItems,
-} from "@augmentcode/themis/utils/collections/collection-utils";
+import { store } from '../../store';
+import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 
 /** All comments as an ordered array. */
 export const selectComments = store.createSelector((state) =>
@@ -23,4 +20,3 @@ export const selectSelectedComment = store.createSelector((state) => {
   const id = state.comments.selectedCommentId;
   return id ? getItem(state.comments.commentsById, id) : undefined;
 });
-

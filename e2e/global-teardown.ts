@@ -127,7 +127,10 @@ function generateSuiteSummary(results: any): string {
   }
 
   return results.suites
-    .map((suite: any) => `- **${suite.title}**: ${suite.passes}/${suite.tests} passed (${suite.duration}ms)`)
+    .map(
+      (suite: any) =>
+        `- **${suite.title}**: ${suite.passes}/${suite.tests} passed (${suite.duration}ms)`,
+    )
     .join('\n');
 }
 
@@ -137,7 +140,10 @@ function generateFailedTestsList(results: any): string {
   }
 
   return results.failures
-    .map((failure: any) => `- **${failure.title}**\n  - File: ${failure.file}\n  - Error: ${failure.error}`)
+    .map(
+      (failure: any) =>
+        `- **${failure.title}**\n  - File: ${failure.file}\n  - Error: ${failure.error}`,
+    )
     .join('\n\n');
 }
 

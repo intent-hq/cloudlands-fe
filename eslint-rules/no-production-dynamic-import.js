@@ -1,4 +1,5 @@
-const MESSAGE = 'Runtime dynamic imports are not allowed in production modules. Use a top-level static import instead.';
+const MESSAGE =
+  'Runtime dynamic imports are not allowed in production modules. Use a top-level static import instead.';
 
 function isDynamicImportCall(node) {
   return node.callee?.type === 'Import';

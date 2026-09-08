@@ -7,23 +7,7 @@
  */
 
 import { tabTypeRegistry } from './registry';
-
-// Tab Type Components
-import BrowserTabType from './BrowserTabType.svelte';
-import TerminalTabType from './TerminalTabType.svelte';
-import CodeReviewTabType from './CodeReviewTabType.svelte';
-import AgentOverviewTabType from './AgentOverviewTabType.svelte';
-import AgentTabType from './AgentTabType.svelte';
-import NoteTabType from './NoteTabType.svelte';
-import FileTabType from './FileTabType.svelte';
-import DiffTabType from './DiffTabType.svelte';
-import ChangesTabType from './ChangesTabType.svelte';
-import LocalChangesTabType from './LocalChangesTabType.svelte';
-import ChatChangesTabType from './ChatChangesTabType.svelte';
-import ActivityChangesTabType from './ActivityChangesTabType.svelte';
-import HookScriptTabType from './HookScriptTabType.svelte';
-import SettingsTabType from './SettingsTabType.svelte';
-import OverviewTabType from './OverviewTabType.svelte';
+import type { WorkspacePanelLayoutState } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
 // Icons
 import {
@@ -50,7 +34,7 @@ export function registerAllTabTypes(): void {
   // Browser tab
   tabTypeRegistry.register({
     type: 'browser',
-    component: BrowserTabType,
+    loadComponent: () => import('./BrowserTabType.svelte'),
     defaultWidthTier: 'wide',
     icon: faGlobe,
     get defaultTitle() {
@@ -66,7 +50,7 @@ export function registerAllTabTypes(): void {
   // Terminal tab
   tabTypeRegistry.register({
     type: 'terminal',
-    component: TerminalTabType,
+    loadComponent: () => import('./TerminalTabType.svelte'),
     defaultWidthTier: 'medium',
     icon: faTerminal,
     get defaultTitle() {
@@ -82,7 +66,7 @@ export function registerAllTabTypes(): void {
   // Code Review tab
   tabTypeRegistry.register({
     type: 'code-review',
-    component: CodeReviewTabType,
+    loadComponent: () => import('./CodeReviewTabType.svelte'),
     defaultWidthTier: 'wide',
     icon: faCodeCommit,
     get defaultTitle() {
@@ -97,7 +81,7 @@ export function registerAllTabTypes(): void {
   // Agent Overview tab
   tabTypeRegistry.register({
     type: 'agent-overview',
-    component: AgentOverviewTabType,
+    loadComponent: () => import('./AgentOverviewTabType.svelte'),
     defaultWidthTier: 'narrow',
     icon: faRobot,
     get defaultTitle() {
@@ -112,7 +96,7 @@ export function registerAllTabTypes(): void {
   // Agent tab
   tabTypeRegistry.register({
     type: 'agent',
-    component: AgentTabType,
+    loadComponent: () => import('./AgentTabType.svelte'),
     defaultWidthTier: 'chat',
     icon: faComment,
     get defaultTitle() {
@@ -128,7 +112,7 @@ export function registerAllTabTypes(): void {
   // Note tab
   tabTypeRegistry.register({
     type: 'note',
-    component: NoteTabType,
+    loadComponent: () => import('./NoteTabType.svelte'),
     defaultWidthTier: 'medium',
     icon: RESOURCE_ICON_BY_KIND.note,
     get defaultTitle() {
@@ -144,7 +128,7 @@ export function registerAllTabTypes(): void {
   // File tab
   tabTypeRegistry.register({
     type: 'file',
-    component: FileTabType,
+    loadComponent: () => import('./FileTabType.svelte'),
     defaultWidthTier: 'wide',
     icon: faFile,
     get defaultTitle() {
@@ -160,7 +144,7 @@ export function registerAllTabTypes(): void {
   // Diff tab
   tabTypeRegistry.register({
     type: 'diff',
-    component: DiffTabType,
+    loadComponent: () => import('./DiffTabType.svelte'),
     defaultWidthTier: 'wide',
     icon: faCodeBranch,
     get defaultTitle() {
@@ -176,7 +160,7 @@ export function registerAllTabTypes(): void {
   // Changes tab
   tabTypeRegistry.register({
     type: 'changes',
-    component: ChangesTabType,
+    loadComponent: () => import('./ChangesTabType.svelte'),
     defaultWidthTier: 'wide',
     icon: RESOURCE_ICON_BY_KIND.changes,
     get defaultTitle() {
@@ -192,7 +176,7 @@ export function registerAllTabTypes(): void {
   // Local Changes tab
   tabTypeRegistry.register({
     type: 'local-changes',
-    component: LocalChangesTabType,
+    loadComponent: () => import('./LocalChangesTabType.svelte'),
     defaultWidthTier: 'wide',
     icon: RESOURCE_ICON_BY_KIND.changes,
     get defaultTitle() {
@@ -208,7 +192,7 @@ export function registerAllTabTypes(): void {
   // Chat Changes tab
   tabTypeRegistry.register({
     type: 'chat-changes',
-    component: ChatChangesTabType,
+    loadComponent: () => import('./ChatChangesTabType.svelte'),
     defaultWidthTier: 'wide',
     icon: RESOURCE_ICON_BY_KIND.changes,
     get defaultTitle() {
@@ -223,7 +207,7 @@ export function registerAllTabTypes(): void {
   // Activity Changes tab
   tabTypeRegistry.register({
     type: 'activity-changes',
-    component: ActivityChangesTabType,
+    loadComponent: () => import('./ActivityChangesTabType.svelte'),
     defaultWidthTier: 'wide',
     icon: RESOURCE_ICON_BY_KIND.changes,
     get defaultTitle() {
@@ -237,7 +221,7 @@ export function registerAllTabTypes(): void {
 
   tabTypeRegistry.register({
     type: 'hook-script',
-    component: HookScriptTabType,
+    loadComponent: () => import('./HookScriptTabType.svelte'),
     defaultWidthTier: 'medium',
     icon: faCode,
     get defaultTitle() {
@@ -252,7 +236,7 @@ export function registerAllTabTypes(): void {
   // Settings tab
   tabTypeRegistry.register({
     type: 'settings',
-    component: SettingsTabType,
+    loadComponent: () => import('./SettingsTabType.svelte'),
     defaultWidthTier: 'narrow',
     icon: faGear,
     get defaultTitle() {
@@ -267,7 +251,7 @@ export function registerAllTabTypes(): void {
   // Overview tab
   tabTypeRegistry.register({
     type: 'overview',
-    component: OverviewTabType,
+    loadComponent: () => import('./OverviewTabType.svelte'),
     defaultWidthTier: 'narrow',
     icon: faHouse,
     get defaultTitle() {
@@ -278,4 +262,19 @@ export function registerAllTabTypes(): void {
     },
     renameable: false,
   });
+}
+
+/** Warm only the tabs that will be visible when a persisted layout appears. */
+export async function preloadRestoredTabTypes(
+  layout: Pick<WorkspacePanelLayoutState, 'panels' | 'restoreStatus'> | undefined,
+): Promise<void> {
+  if (layout?.restoreStatus !== 'restored') return;
+
+  const activeTypes = new Set(
+    Object.values(layout.panels).flatMap((panel) => {
+      const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId);
+      return activeTab ? [activeTab.type] : [];
+    }),
+  );
+  await Promise.allSettled([...activeTypes].map((type) => tabTypeRegistry.loadComponent(type)));
 }

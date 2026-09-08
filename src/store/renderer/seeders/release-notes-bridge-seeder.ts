@@ -10,18 +10,18 @@
  * Bridge-less builds (browser dev) fold to the shaped not-available failure,
  * which the client reads as "no notes" and the modal renders as its fallback.
  */
-import { RELEASE_NOTES_CHANNELS } from "$features/release-notes/types";
-import { registerMockIpcHandler } from "$shared/ipc-mock-router";
+import { RELEASE_NOTES_CHANNELS } from '$features/release-notes/types';
+import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 
 const NOT_AVAILABLE = {
   success: false,
-  error: { message: "Release notes are not available in this build" },
+  error: { message: 'Release notes are not available in this build' },
 } as const;
 
 function bridgeChannel(channel: string): void {
   registerMockIpcHandler(channel, async (payload?: unknown) => {
-    const bridge = typeof window !== "undefined" ? window.electronAPI : undefined;
-    if (bridge && typeof bridge.invoke === "function") {
+    const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
+    if (bridge && typeof bridge.invoke === 'function') {
       return bridge.invoke(channel, payload);
     }
     return NOT_AVAILABLE;

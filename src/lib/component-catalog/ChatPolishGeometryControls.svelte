@@ -136,10 +136,9 @@
     {formatChatPolishGeometry(geometry)}
   </output>
   <div class="save-actions">
-    <Button class="save-button" disabled={!hydrated || !dirty} onclick={save}>
-      Save tweaks
-    </Button>
-    <Button variant="outline" class="reset-button" onclick={reset}>Reset production defaults</Button>
+    <Button class="save-button" disabled={!hydrated || !dirty} onclick={save}>Save tweaks</Button>
+    <Button variant="outline" class="reset-button" onclick={reset}>Reset production defaults</Button
+    >
   </div>
   <p class:dirty class="save-feedback" role="status" aria-label="Save status" aria-live="polite">
     {feedback}

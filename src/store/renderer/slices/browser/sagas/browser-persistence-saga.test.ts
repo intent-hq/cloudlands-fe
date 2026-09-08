@@ -21,10 +21,7 @@ import {
   updateUrlMetadata,
 } from '../browser-slice';
 import type { RecentUrl } from '../browser-types';
-import {
-  browserPersistenceSaga,
-  hydrateBrowserWorkspaceWorker,
-} from './browser-persistence-saga';
+import { browserPersistenceSaga, hydrateBrowserWorkspaceWorker } from './browser-persistence-saga';
 
 const settle = async () => {
   await Promise.resolve();
@@ -114,10 +111,26 @@ describe('browserPersistenceSaga', () => {
         payload: [
           'ws-1',
           [
-            recent(0), recent(1), recent(2), recent(3), recent(4),
-            recent(5), recent(6), recent(7), recent(8), recent(9),
-            recent(10), recent(11), recent(12), recent(13), recent(14),
-            recent(15), recent(16), recent(17), recent(18), recent(19),
+            recent(0),
+            recent(1),
+            recent(2),
+            recent(3),
+            recent(4),
+            recent(5),
+            recent(6),
+            recent(7),
+            recent(8),
+            recent(9),
+            recent(10),
+            recent(11),
+            recent(12),
+            recent(13),
+            recent(14),
+            recent(15),
+            recent(16),
+            recent(17),
+            recent(18),
+            recent(19),
           ],
         ],
       },
@@ -126,11 +139,9 @@ describe('browserPersistenceSaga', () => {
 
   it('hydrates an empty list for missing, malformed, or failed storage', async () => {
     const dispatch = vi.fn();
-    storage.getJSON
-      .mockReturnValueOnce({ recentUrls: [recent(1)] })
-      .mockImplementationOnce(() => {
-        throw new Error('storage unavailable');
-      });
+    storage.getJSON.mockReturnValueOnce({ recentUrls: [recent(1)] }).mockImplementationOnce(() => {
+      throw new Error('storage unavailable');
+    });
     await runSaga(
       { dispatch, getState: state },
       hydrateBrowserWorkspaceWorker,
@@ -151,7 +162,9 @@ describe('browserPersistenceSaga', () => {
   it('persists the exact post-reducer list after all four mutation triggers', async () => {
     const channel = stdChannel();
     const task = runSaga({ channel, dispatch: vi.fn(), getState: state }, browserPersistenceSaga);
-    channel.put(addRecentUrl('ws-1', 'https://new.example', 'New', undefined, '2026-07-30T00:00:00Z'));
+    channel.put(
+      addRecentUrl('ws-1', 'https://new.example', 'New', undefined, '2026-07-30T00:00:00Z'),
+    );
     channel.put(updateUrlMetadata('ws-1', persisted[0].url, 'Updated', undefined));
     channel.put(removeRecentUrl('ws-1', persisted[0].url));
     channel.put(clearRecentUrls('ws-1'));

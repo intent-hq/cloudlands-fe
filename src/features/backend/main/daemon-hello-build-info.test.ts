@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  daemonHelloBuildKey,
-  extractDaemonHelloBuildInfo,
-} from './daemon-hello-build-info';
+import { daemonHelloBuildKey, extractDaemonHelloBuildInfo } from './daemon-hello-build-info';
 
 describe('extractDaemonHelloBuildInfo', () => {
   it('extracts version and buildCommit from a PROTOCOL §5.17 hello result', () => {
@@ -20,12 +17,12 @@ describe('extractDaemonHelloBuildInfo', () => {
       version: '0.42.0',
       buildCommit: null,
     });
-    expect(
-      extractDaemonHelloBuildInfo({ server: { version: '0.42.0', buildCommit: '' } }),
-    ).toEqual({ version: '0.42.0', buildCommit: null });
-    expect(
-      extractDaemonHelloBuildInfo({ server: { version: '0.42.0', buildCommit: 42 } }),
-    ).toEqual({ version: '0.42.0', buildCommit: null });
+    expect(extractDaemonHelloBuildInfo({ server: { version: '0.42.0', buildCommit: '' } })).toEqual(
+      { version: '0.42.0', buildCommit: null },
+    );
+    expect(extractDaemonHelloBuildInfo({ server: { version: '0.42.0', buildCommit: 42 } })).toEqual(
+      { version: '0.42.0', buildCommit: null },
+    );
   });
 
   it('returns null without a well-formed server.version', () => {

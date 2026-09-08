@@ -179,7 +179,7 @@
   function getLevelColor(level: string | undefined): string {
     if (!level) return '';
     const l = level.toLowerCase();
-    if (l === 'error' || l === 'fatal') return 'text-error-foreground';
+    if (l === 'error' || l === 'fatal') return 'text-danger';
     if (l === 'warning') return 'text-yellow-500';
     return 'text-subtle';
   }

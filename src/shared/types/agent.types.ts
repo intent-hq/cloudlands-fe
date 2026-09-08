@@ -5,6 +5,8 @@
  * These types ensure type safety across all agent-related operations.
  */
 
+import type { ModelTriple } from './model-triple';
+
 // Agent Status enum for use in code
 export enum AgentStatus {
   // Current values
@@ -24,7 +26,7 @@ export enum AgentStatus {
 
 /**
  * Valid agent type identifiers
- * These correspond to instruction files in src/features/agent/main/instructions/
+ * These are the agent-type identifiers the intentd daemon harness recognises.
  *
  * This is a string literal union type that provides compile-time validation
  * and IDE autocomplete for agent type IDs.
@@ -119,7 +121,7 @@ import type { AgentSession } from './agent-session';
  * Moved here from `agent-factory.ts` so that both renderer and main-process
  * code can reference the type without pulling in renderer-only modules.
  *
- * The backend builds the complete system prompt from agentType via InstructionService.
+ * The intentd daemon builds the complete system prompt from agentType.
  *
  * Agent naming follows the VS Code webview pattern:
  * - If `name` is provided, it's used (with sanitization)
@@ -143,8 +145,17 @@ export interface UnifiedAgentConfig {
 
   // Optional
   id?: string; // Allow passing in a pre-generated agent ID
+  // Bare model id on new paths (see ModelTriple in $shared/types/model-triple);
+  // legacy compound ids can still arrive from persisted pre-triple state — the
+  // agent-factory step 6.8 safety net filters cross-provider ones.
   model?: string;
   provider?: string; // Provider ID (e.g., 'auggie', 'claude-code', 'codex') - from activeProviderStore.activeProviderId
+  /**
+   * Reasoning-effort level for the model (the triple's optional third leg;
+   * provider-interpreted string, e.g. "low"/"medium"/"high"). Omitted ⇒ the
+   * model's default effort.
+   */
+  reasoningEffort?: ModelTriple['reasoningEffort'];
   systemPrompt?: string; // System prompt for the agent (built from agentType)
   initialMessage?: string;
   /**

@@ -9,8 +9,8 @@
 import type {
   TokenUsageByModel,
   TokenUsageTotals,
-} from "../../../../features/token-usage/token-usage-types";
-import { createEmptyTotals } from "../../../../features/token-usage/utils/token-usage-utils";
+} from '../../../../features/token-usage/token-usage-types';
+import { createEmptyTotals } from '../../../../features/token-usage/utils/token-usage-utils';
 
 /** Per-workspace token usage as mirrored in the renderer (wire shape + staleness). */
 export type WorkspaceTokenUsageState = {
@@ -42,4 +42,3 @@ export const emptyWorkspaceTokenUsageState: WorkspaceTokenUsageState = {
 export const initialState: TokenUsageState = {
   byWorkspaceId: {},
 };
-

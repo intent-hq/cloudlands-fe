@@ -1,9 +1,12 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
+  import DeviceIcon from '$lib/components/DeviceIcon.svelte';
+  import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
   import * as Menu from '$lib/components/ui/menu';
+  import { Switch } from '$lib/components/ui/switch';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
   import {
@@ -17,6 +20,7 @@
   import {
     DEFAULT_CONNECTION_ACCENT,
     type ConnectionAccent,
+    type DeviceIconChoice,
     type ConnectionOpenStatus,
     type ConnectionRecord,
     type ConnectionValidationBlockedResult,
@@ -25,17 +29,20 @@
   import { store as appStore } from '$store/renderer/store';
   import {
     selectConnectedIds,
+    selectKeychainSyncState,
     selectPinnedDaemonVersion,
   } from '$store/renderer/slices/connections/connections-selectors';
   import {
     openConnectionRequested,
     rotateConnectionSecretRequested,
+    setKeychainSyncEnabledRequested,
     testConnectionRequested,
     updateBackendRequested,
     updateConnectionRequested,
   } from '$store/renderer/slices/connections/connections-slice';
   import {
     faArrowsRotate,
+    faCopy,
     faEllipsisVertical,
     faPen,
     faPlug,
@@ -56,11 +63,22 @@
   let { device, panelMode, onOpenPanel, onClosePanel, onRequestRemove }: Props = $props();
   const pinnedVersion$ = selectPinnedDaemonVersion();
   const connectedIds$ = selectConnectedIds();
+  const syncState$ = selectKeychainSyncState();
   let name = $state('');
   let host = $state('');
   let port = $state('');
   let accent = $state<ConnectionAccent>(DEFAULT_CONNECTION_ACCENT);
+  let deviceIcon = $state<DeviceIconChoice>('auto');
+  let localDeviceIcon = $state<DeviceIconChoice>('auto');
   let secret = $state('');
+  let detectHosts = $state(true);
+  let pushToCloud = $state(true);
+  // Turning cloud push OFF removes the synced copy from the keychain (and
+  // the user's other devices), so the first Update after the flip asks for
+  // confirmation instead of submitting; `cloudRemovalConfirmed` lets the
+  // confirmed submit (and any fingerprint re-submit) proceed.
+  let cloudRemovalPending = $state(false);
+  let cloudRemovalConfirmed = $state(false);
   let busy = $state<'update' | 'test' | null>(null);
   let feedbackOperation = $state<'update' | 'test' | null>(null);
   let feedback = $state<{ kind: 'success' | 'error' | 'progress'; message: string } | null>(null);
@@ -80,6 +98,7 @@
   const savedAccent = $derived(
     device.accent === undefined ? DEFAULT_CONNECTION_ACCENT : device.accent,
   );
+  const savedDeviceIcon = $derived(device.deviceIcon ?? 'auto');
   const accentOptions = $derived(connectionAccentOptions(savedAccent));
   // Shared with the daemon-status menu: the local entry gets the fixed
   // "This machine (local)" label; for remotes the Name wins outright, with
@@ -97,11 +116,26 @@
     !Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535,
   );
   const editInvalid = $derived(nameInvalid || hostInvalid || portInvalid);
+  const savedDetectHosts = $derived(device.detectHosts !== false);
+  const savedPushToCloud = $derived(device.syncExcluded !== true);
+  // `supported` is the platform gate (macOS only) from main — the renderer
+  // never sniffs the platform itself; `enabled` is the machine-global pref
+  // that must be on for a re-included record to actually reach the keychain.
+  const syncSupported = $derived($syncState$?.supported ?? false);
+  const syncEnabled = $derived($syncState$?.enabled ?? false);
+  // Candidate hosts as the store reports them (primary first, then detected
+  // extras); records predating the field are equivalent to `[host]`.
+  const detectedHosts = $derived(
+    device.hosts && device.hosts.length > 0 ? device.hosts : device.host ? [device.host] : [],
+  );
   const editChanged = $derived(
     trimmedName !== device.label ||
       trimmedHost !== device.host ||
       portNumber !== device.port ||
-      accent !== savedAccent,
+      accent !== savedAccent ||
+      deviceIcon !== savedDeviceIcon ||
+      detectHosts !== savedDetectHosts ||
+      pushToCloud !== savedPushToCloud,
   );
   // Behind-pin marker: reflects the last captured daemonVersion, so it shows
   // even while disconnected. The i18n message prepends "v" — strip any
@@ -122,12 +156,21 @@
     host = device.host ?? '';
     port = device.port == null ? '' : String(device.port);
     accent = savedAccent;
+    deviceIcon = savedDeviceIcon;
     secret = '';
+    detectHosts = savedDetectHosts;
+    pushToCloud = savedPushToCloud;
+    cloudRemovalPending = false;
+    cloudRemovalConfirmed = false;
     busy = null;
     feedbackOperation = null;
     feedback = null;
     pendingFingerprint = null;
   }
+
+  $effect(() => {
+    localDeviceIcon = savedDeviceIcon;
+  });
 
   $effect(() => {
     const panelKey = panelMode ? `${device.id}:${panelMode}` : null;
@@ -242,14 +285,64 @@
       id: device.id,
       label: trimmedName,
       accent,
+      ...(deviceIcon !== savedDeviceIcon ? { deviceIcon } : {}),
       host: trimmedHost,
       port: portNumber,
       ...(confirmedFingerprint ? { confirmedFingerprint } : {}),
+      ...(detectHosts !== savedDetectHosts ? { detectHosts } : {}),
+      ...(pushToCloud !== savedPushToCloud ? { syncExcluded: !pushToCloud } : {}),
     };
+  }
+
+  async function updateLocalDeviceIcon(nextDeviceIcon: DeviceIconChoice) {
+    if (!device.isLocal || busy) return;
+    busy = 'update';
+    try {
+      const action = updateConnectionRequested({
+        id: device.id,
+        label: device.label,
+        accent: null,
+        deviceIcon: nextDeviceIcon,
+      });
+      appStore.dispatch(action);
+      await action.promise;
+    } catch {
+      localDeviceIcon = savedDeviceIcon;
+      const { toast } = await import('$lib/components/ui/toast');
+      toast.error(m.settings_devices_update_error());
+    } finally {
+      busy = null;
+    }
+  }
+
+  // Any change of the switch invalidates the removal prompt and an earlier
+  // confirmation: a failed submit must not carry consent into a later
+  // off-flip, and flipping back on dismisses the pending prompt.
+  function setPushToCloud(next: boolean) {
+    pushToCloud = next;
+    cloudRemovalPending = false;
+    cloudRemovalConfirmed = false;
+  }
+
+  function cancelCloudRemoval() {
+    setPushToCloud(savedPushToCloud);
+  }
+
+  function confirmCloudRemoval() {
+    cloudRemovalPending = false;
+    cloudRemovalConfirmed = true;
+    void updateDevice();
   }
 
   async function updateDevice(confirmedFingerprint?: string, confirmedSecretFingerprint?: string) {
     if (editInvalid || busy) return;
+    if (savedPushToCloud && !pushToCloud && !cloudRemovalConfirmed) {
+      cloudRemovalPending = true;
+      return;
+    }
+    // Captured up front: the connections broadcast can refresh `device`
+    // before the update promise settles.
+    const enableSyncAfterUpdate = !savedPushToCloud && pushToCloud && !syncEnabled;
     busy = 'update';
     feedbackOperation = 'update';
     feedback = { kind: 'progress', message: m.settings_devices_updating_label() };
@@ -287,6 +380,20 @@
       appStore.dispatch(action);
       const result = await action.promise;
       if (result.status === 'updated') {
+        if (enableSyncAfterUpdate) {
+          // Re-including a record only reaches the keychain once the
+          // machine-global sync pref is on; enable it after the update
+          // succeeded so a rejected edit leaves no machine-global side effect.
+          feedback = { kind: 'progress', message: m.settings_devices_enablingSync_label() };
+          try {
+            const syncAction = setKeychainSyncEnabledRequested(true);
+            appStore.dispatch(syncAction);
+            await syncAction.promise;
+          } catch {
+            feedback = { kind: 'error', message: m.settings_devices_enableSync_error() };
+            return;
+          }
+        }
         closePanel();
       } else if (result.status === 'secret-unavailable') {
         openEditForSecretRecovery();
@@ -343,6 +450,18 @@
     if (operation === 'update') void updateDevice(actual);
     else void updateDevice(undefined, actual);
   }
+
+  async function copyTcAddress() {
+    if (!device.tcAddress) return;
+    try {
+      await navigator.clipboard.writeText(device.tcAddress);
+      const { toast } = await import('$lib/components/ui/toast');
+      toast.success(m.settings_devices_tcAddress_copied());
+    } catch {
+      const { toast } = await import('$lib/components/ui/toast');
+      toast.error(m.settings_devices_tcAddress_copyError());
+    }
+  }
 </script>
 
 <article aria-labelledby={`device-${device.id}-name`} aria-busy={busy !== null}>
@@ -355,6 +474,7 @@
       role="status"
       aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
     ></span>
+    <DeviceIcon record={device} size={20} class="text-foreground" />
     <div class="min-w-0 flex-1">
       <div class="flex min-w-0 items-baseline gap-2">
         <p
@@ -381,6 +501,16 @@
         {/if}
       </div>
     </div>
+    {#if device.isLocal}
+      <DeviceIconPicker
+        record={device}
+        bind:value={localDeviceIcon}
+        disabled={busy !== null}
+        portal={true}
+        class="w-48 shrink-0"
+        onchange={(value) => void updateLocalDeviceIcon(value)}
+      />
+    {/if}
     <!-- The local row has no remote-only actions (Connect/Edit/Remove), so its
          menu only exists while the Update action is offered. -->
     {#if !device.isLocal || canUpdateDaemon}
@@ -450,7 +580,7 @@
   </div>
 
   {#if connectionError}
-    <p class="px-4 pb-3 text-sm text-error-foreground sm:px-5" role="alert">
+    <p class="px-4 pb-3 text-sm text-danger sm:px-5" role="alert">
       {m.settings_devices_connectFailed_error()}
     </p>
   {/if}
@@ -475,7 +605,7 @@
               disabled={busy !== null}
               aria-invalid={nameInvalid || undefined}
             />
-            {#if nameInvalid}<p class="text-xs text-error-foreground">
+            {#if nameInvalid}<p class="text-xs text-danger">
                 {m.settings_devices_nameRequired_error()}
               </p>{/if}
           </div>
@@ -488,7 +618,7 @@
                 disabled={busy !== null}
                 aria-invalid={hostInvalid || undefined}
               />
-              {#if hostInvalid}<p class="text-xs text-error-foreground">
+              {#if hostInvalid}<p class="text-xs text-danger">
                   {m.settings_devices_hostRequired_error()}
                 </p>{/if}
             </div>
@@ -502,7 +632,7 @@
                 disabled={busy !== null}
                 aria-invalid={portInvalid || undefined}
               />
-              {#if portInvalid}<p class="text-xs text-error-foreground">
+              {#if portInvalid}<p class="text-xs text-danger">
                   {m.settings_devices_portInvalid_error()}
                 </p>{/if}
             </div>
@@ -522,52 +652,158 @@
             />
           </div>
         </div>
-        <fieldset class="space-y-1" disabled={busy !== null}>
-          <legend class="text-sm font-medium text-foreground"
-            >{m.settings_devices_accent_label()}</legend
-          >
-          <div class="flex flex-wrap gap-1">
-            {#each accentOptions as option}
-              <Button
-                type="button"
-                variant="plain"
-                class={cn(
-                  'flex size-7 cursor-pointer items-center justify-center rounded-full border border-transparent bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                  option === accent
-                    ? option === null
-                      ? 'bg-muted/50'
-                      : undefined
-                    : 'hover:bg-muted/30',
-                )}
-                aria-label={option === null
-                  ? m.settings_devices_accentBlank_ariaLabel()
-                  : m.settings_devices_accentOption_ariaLabel({ color: accentLabel(option) })}
-                aria-pressed={option === accent}
-                onclick={() => (accent = option)}
-              >
-                {#if option === null}
-                  <span
-                    class="relative size-3.5 rounded-full border border-muted-foreground/60"
-                    aria-hidden="true"
-                  >
+        <div class="space-y-4">
+          <fieldset class="space-y-1" disabled={busy !== null}>
+            <legend class="text-sm font-medium text-foreground"
+              >{m.settings_devices_accent_label()}</legend
+            >
+            <div class="flex flex-wrap gap-1">
+              {#each accentOptions as option}
+                <Button
+                  type="button"
+                  variant="plain"
+                  class={cn(
+                    'flex size-7 cursor-pointer items-center justify-center rounded-full border border-transparent bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                    option === accent
+                      ? option === null
+                        ? 'bg-muted/50'
+                        : undefined
+                      : 'hover:bg-muted/30',
+                  )}
+                  aria-label={option === null
+                    ? m.settings_devices_accentBlank_ariaLabel()
+                    : m.settings_devices_accentOption_ariaLabel({ color: accentLabel(option) })}
+                  aria-pressed={option === accent}
+                  onclick={() => (accent = option)}
+                >
+                  {#if option === null}
                     <span
-                      class="absolute left-0.5 top-1/2 h-px w-2.5 -translate-y-1/2 rotate-45 bg-muted-foreground/60"
+                      class="relative size-3.5 rounded-full border border-muted-foreground/60"
+                      aria-hidden="true"
+                    >
+                      <span
+                        class="absolute left-0.5 top-1/2 h-px w-2.5 -translate-y-1/2 rotate-45 bg-muted-foreground/60"
+                      ></span>
+                    </span>
+                  {:else}
+                    <span
+                      class={cn('size-2.5 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
+                      style={option === accent ? selectedAccentStyle(option) : undefined}
+                      aria-hidden="true"
                     ></span>
-                  </span>
-                {:else}
-                  <span
-                    class={cn('size-2.5 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
-                    style={option === accent ? selectedAccentStyle(option) : undefined}
-                    aria-hidden="true"
-                  ></span>
-                {/if}
-              </Button>
-            {/each}
-          </div>
-        </fieldset>
+                  {/if}
+                </Button>
+              {/each}
+            </div>
+          </fieldset>
+          <DeviceIconPicker
+            record={device}
+            bind:value={deviceIcon}
+            disabled={busy !== null}
+            portal={true}
+            class="w-full"
+          />
+        </div>
       </div>
 
-      {#if pendingFingerprint}
+      <div class="grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
+        <!-- Read-only network facts: the candidate hosts the connect race
+             tries (refreshed from server.pairingInfo) and the tailcat tunnel
+             address when the daemon reports one. -->
+        <dl class="space-y-3 text-xs">
+          <div class="space-y-1">
+            <dt class="text-muted-foreground">
+              {m.settings_devices_detectedAddresses_label()}
+            </dt>
+            <dd>
+              <ul
+                class="space-y-0.5 font-mono text-foreground"
+                aria-label={m.settings_devices_detectedAddresses_label()}
+              >
+                {#each detectedHosts as candidate (candidate)}
+                  <li class="break-all">{candidate}</li>
+                {/each}
+              </ul>
+            </dd>
+          </div>
+          {#if device.tcAddress}
+            <div class="space-y-1">
+              <dt class="text-muted-foreground">{m.settings_devices_tunnelAddress_label()}</dt>
+              <dd class="flex items-center gap-1">
+                <code class="min-w-0 break-all font-mono text-foreground">{device.tcAddress}</code>
+                <button
+                  type="button"
+                  onclick={() => void copyTcAddress()}
+                  class="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
+                  aria-label={m.settings_devices_tcAddress_copy()}
+                >
+                  <Fa icon={faCopy} class="size-3" />
+                </button>
+              </dd>
+            </div>
+          {/if}
+        </dl>
+        <div class="space-y-3">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p id={`device-${device.id}-detect-hosts-label`} class="text-sm text-foreground">
+                {m.modals_connect_detectHosts_label()}
+              </p>
+              <p class="text-xs text-muted-foreground">
+                {m.modals_connect_detectHosts_description()}
+              </p>
+            </div>
+            <Switch
+              id={`device-${device.id}-detect-hosts`}
+              size="sm"
+              bind:checked={detectHosts}
+              disabled={busy !== null}
+              ariaLabelledby={`device-${device.id}-detect-hosts-label`}
+            />
+          </div>
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p id={`device-${device.id}-push-to-cloud-label`} class="text-sm text-foreground">
+                {m.settings_devices_pushToCloud_label()}
+              </p>
+              <p class="text-xs text-muted-foreground">
+                {syncSupported
+                  ? m.settings_devices_pushToCloud_description()
+                  : m.settings_backendSync_unsupported_description()}
+              </p>
+            </div>
+            <Switch
+              id={`device-${device.id}-push-to-cloud`}
+              size="sm"
+              bind:checked={() => pushToCloud, setPushToCloud}
+              disabled={busy !== null || !syncSupported}
+              ariaLabelledby={`device-${device.id}-push-to-cloud-label`}
+            />
+          </div>
+        </div>
+      </div>
+
+      {#if cloudRemovalPending}
+        <div
+          class="space-y-2 rounded-md border border-warning-foreground/30 bg-warning/10 p-3"
+          role="alert"
+        >
+          <p class="text-sm font-medium text-foreground">
+            {m.settings_devices_removeFromCloud_title()}
+          </p>
+          <p class="text-xs text-muted-foreground">
+            {m.settings_devices_removeFromCloud_description()}
+          </p>
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost-light" size="sm" onclick={cancelCloudRemoval}
+              >{m.settings_devices_cancel_label()}</Button
+            >
+            <Button variant="destructive" size="sm" onclick={confirmCloudRemoval}
+              >{m.settings_devices_removeFromCloud_confirm()}</Button
+            >
+          </div>
+        </div>
+      {:else if pendingFingerprint}
         <div
           class="space-y-2 rounded-md border border-warning-foreground/30 bg-warning/10 p-3"
           role="alert"
@@ -602,7 +838,7 @@
       {:else if feedback && feedbackOperation === 'update'}
         <p
           class={feedback.kind === 'error'
-            ? 'text-sm text-error-foreground'
+            ? 'text-sm text-danger'
             : feedback.kind === 'success'
               ? 'text-sm text-success-foreground'
               : 'text-sm text-muted-foreground'}
@@ -624,7 +860,7 @@
           {#if feedback && feedbackOperation === 'test'}
             <p
               class={feedback.kind === 'error'
-                ? 'text-right text-sm text-error-foreground'
+                ? 'text-right text-sm text-danger'
                 : feedback.kind === 'success'
                   ? 'text-right text-sm text-success'
                   : 'text-right text-sm text-muted-foreground'}

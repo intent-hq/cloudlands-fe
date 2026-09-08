@@ -5,11 +5,11 @@ declare module 'file-icon' {
 
   export function fileIconToBuffer(
     appNameOrBundleId: string,
-    options?: FileIconOptions
+    options?: FileIconOptions,
   ): Promise<Uint8Array>;
 
   export function fileIconToFile(
     appNameOrBundleId: string,
-    options?: FileIconOptions & { destination: string }
+    options?: FileIconOptions & { destination: string },
   ): Promise<void>;
 }

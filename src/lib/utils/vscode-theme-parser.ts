@@ -160,8 +160,8 @@ const VSCODE_TO_CSS_MAP: [string, string][] = [
   ['list.activeSelectionForeground', '--secondary-foreground'],
   // --muted is derived separately in buildCSSVariables to ensure
   // a perceptible lightness difference from --background.
-  ['errorForeground', '--destructive'],
-  ['button.secondaryForeground', '--destructive-foreground'],
+  ['errorForeground', '--danger'],
+  ['inputValidation.errorBackground', '--danger-background'],
 ];
 
 /**
@@ -262,6 +262,49 @@ function ensureContrast(foreground: string, background: string): string {
     if (contrastRatio(candidate, backgroundRGB) >= 4.55) return hexToHSL(rgbToHex(...candidate));
   }
   return hexToHSL(rgbToHex(...target));
+}
+
+/** Select one source-hue color that has the best joint contrast across all supplied surfaces. */
+function ensureContrastAgainstSurfaces(foreground: string, backgrounds: string[]): string {
+  const foregroundRGB = hslToRGB(foreground);
+  const backgroundRGBs = backgrounds.map(hslToRGB);
+  const minimumRatio = (candidate: [number, number, number]) =>
+    Math.min(...backgroundRGBs.map((background) => contrastRatio(candidate, background)));
+  const MIN_CONTRAST = 4.55;
+
+  if (minimumRatio(foregroundRGB) >= MIN_CONTRAST) return foreground;
+
+  const match = foreground.match(/^([\d.]+)\s+([\d.]+)%\s+([\d.]+)%$/);
+  if (!match) return foreground;
+
+  const hue = Number(match[1]);
+  let bestPassing: { value: string; distance: number } | undefined;
+  let bestFallback = { value: foreground, ratio: minimumRatio(foregroundRGB), distance: 0 };
+
+  for (let saturation = 0; saturation <= 100; saturation++) {
+    for (let lightness = 0; lightness <= 100; lightness++) {
+      const value = `${hue} ${saturation}% ${lightness}%`;
+      const candidate = hslToRGB(value);
+      const ratio = minimumRatio(candidate);
+      const distance = candidate.reduce(
+        (total, channel, index) => total + (channel - foregroundRGB[index]) ** 2,
+        0,
+      );
+
+      if (ratio >= MIN_CONTRAST) {
+        if (!bestPassing || distance < bestPassing.distance) {
+          bestPassing = { value, distance };
+        }
+      } else if (
+        ratio > bestFallback.ratio ||
+        (ratio === bestFallback.ratio && distance < bestFallback.distance)
+      ) {
+        bestFallback = { value, ratio, distance };
+      }
+    }
+  }
+
+  return bestPassing?.value ?? bestFallback.value;
 }
 
 /**
@@ -622,8 +665,8 @@ function buildCSSVariables(
         mutedForeground: '#b8b5c2',
         accent: '#182c25',
         accentForeground: '#7de3bd',
-        destructive: '#361010',
-        destructiveForeground: '#f38b8b',
+        danger: '#f38b8b',
+        dangerBackground: '#361010',
         border: '#4d4a52',
         input: '#121217',
         ring: '#6eddb4',
@@ -649,8 +692,8 @@ function buildCSSVariables(
         mutedForeground: '#474747',
         accent: '#e7f3ee',
         accentForeground: '#00663f',
-        destructive: '#fde7e7',
-        destructiveForeground: '#930b0b',
+        danger: '#930b0b',
+        dangerBackground: '#fde7e7',
         border: '#d9d9d9',
         input: '#e6e6e6',
         ring: '#006ac2',
@@ -680,8 +723,8 @@ function buildCSSVariables(
   result['--muted-foreground'] ??= value('mutedForeground');
   result['--accent'] ??= value('accent');
   result['--accent-foreground'] ??= value('accentForeground');
-  result['--destructive'] ??= value('destructive');
-  result['--destructive-foreground'] ??= value('destructiveForeground');
+  result['--danger'] ??= value('danger');
+  result['--danger-background'] ??= value('dangerBackground');
   result['--border'] ??= value('border');
   result['--input'] ??= value('input');
   result['--ring'] ??= value('ring');
@@ -709,7 +752,6 @@ function buildCSSVariables(
     ['--secondary-foreground', '--secondary'],
     ['--accent-foreground', '--accent'],
     ['--muted-foreground', '--muted'],
-    ['--destructive-foreground', '--destructive'],
     ['--info-foreground', '--info'],
     ['--success-foreground', '--success'],
     ['--warning-foreground', '--warning'],
@@ -718,6 +760,31 @@ function buildCSSVariables(
   ] as const;
   for (const [foreground, background] of pairs) {
     result[foreground] = ensureContrast(result[foreground], result[background]);
+  }
+  const dangerSurfaces = [
+    '--danger-background',
+    '--background',
+    '--card',
+    '--popover',
+    '--muted',
+    '--sidebar',
+  ] as const;
+  const dangerSource = result['--danger'];
+  result['--danger'] = ensureContrastAgainstSurfaces(
+    dangerSource,
+    dangerSurfaces.map((surface) => result[surface]),
+  );
+  const dangerRGB = hslToRGB(result['--danger']);
+  const hasLegibleDanger = dangerSurfaces.every(
+    (surface) => contrastRatio(dangerRGB, hslToRGB(result[surface])) >= 4.55,
+  );
+  if (!hasLegibleDanger) {
+    // A neutral supporting surface makes extreme mixed light/dark imports solvable.
+    result['--danger-background'] = result['--background'];
+    result['--danger'] = ensureContrastAgainstSurfaces(
+      dangerSource,
+      dangerSurfaces.map((surface) => result[surface]),
+    );
   }
   return result;
 }

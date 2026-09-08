@@ -71,9 +71,7 @@ describe('createRepoCacheWarmer', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     const request = vi
       .fn()
-      .mockRejectedValueOnce(
-        Object.assign(new Error('Method not found'), { code: -32601 }),
-      )
+      .mockRejectedValueOnce(Object.assign(new Error('Method not found'), { code: -32601 }))
       .mockRejectedValueOnce(
         Object.assign(new Error('warm already in flight'), {
           data: { code: 'warm-in-flight' },

@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { faComment } from '@fortawesome/free-solid-svg-icons';
   import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
   import AgentTabType from '$features/layout/tab-types/AgentTabType.svelte';
+  import InitialAgentChatTabType from './InitialAgentChatTabType.svelte';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
@@ -24,6 +25,7 @@
     reasoningSearchOnly = false,
     groupedOrphanSearchOnly = false,
     terminalStatusOnly = false,
+    setupCardOnly = false,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -33,7 +35,10 @@
     reasoningSearchOnly?: boolean;
     groupedOrphanSearchOnly?: boolean;
     terminalStatusOnly?: boolean;
+    setupCardOnly?: boolean;
   } = $props();
+  const setupCardFixture = untrack(() => setupCardOnly);
+  const reasoningSearchFixture = untrack(() => reasoningSearchOnly);
   const workspaceId = 'chat-panel-operational-geometry';
   const agentId = 'chat-panel-operational-agent';
   const timestamp = '2026-08-17T12:00:00.000Z';
@@ -506,18 +511,24 @@
     message('assistant-tool-message-streaming', 'assistant', toolOnlyContent('message-streaming')),
   ];
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
-  const messages = terminalStatusOnly
-    ? terminalStatusMessages
-    : groupedOrphanSearchOnly
-      ? groupedOrphanSearchMessages
-      : reasoningSearchOnly
-        ? reasoningSearchMessages
-        : seamOnly
-          ? seamMessages
-          : alignmentMessages;
+  const messages = setupCardFixture
+    ? []
+    : terminalStatusOnly
+      ? terminalStatusMessages
+      : groupedOrphanSearchOnly
+        ? groupedOrphanSearchMessages
+        : reasoningSearchOnly
+          ? reasoningSearchMessages
+          : seamOnly
+            ? seamMessages
+            : alignmentMessages;
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
   const fixtureIsStreaming =
-    !terminalStatusOnly && !reasoningSearchOnly && !groupedOrphanSearchOnly && !detachedStatus;
+    !setupCardFixture &&
+    !terminalStatusOnly &&
+    !reasoningSearchOnly &&
+    !groupedOrphanSearchOnly &&
+    !detachedStatus;
   const session = {
     id: agentId,
     workspaceId,
@@ -525,8 +536,10 @@
     status: 'active',
     isActive: true,
     isStreaming: fixtureIsStreaming,
-    isProcessing: !reasoningSearchOnly,
-    isResponding: !reasoningSearchOnly,
+    isProcessing: !setupCardFixture && !reasoningSearchFixture,
+    isResponding: !setupCardFixture && !reasoningSearchFixture,
+    isInitialAgent: setupCardFixture,
+    metadata: setupCardFixture ? { isInitialAgent: true } : undefined,
     messages,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -534,7 +547,7 @@
 
   tabTypeRegistry.register({
     type: 'agent',
-    component: AgentTabType,
+    component: setupCardFixture ? InitialAgentChatTabType : AgentTabType,
     icon: faComment,
     defaultTitle: 'Agent',
     categoryLabel: 'Agents',
@@ -546,6 +559,8 @@
     setWorkspaceEntity({
       id: workspaceId,
       title: 'Operational geometry',
+      repositoryName: setupCardFixture ? 'intent' : undefined,
+      repositoryPath: setupCardFixture ? '/tmp/intent' : undefined,
       branch: 'test',
       status: 'active',
       path: '/tmp/chat-panel-operational-geometry',

@@ -151,5 +151,4 @@ describe('AgentCard harness version context-menu item', () => {
     expect(await screen.findByText('Open')).toBeTruthy();
     expect(screen.queryByText(/^Harness v/)).toBeNull();
   });
-
 });

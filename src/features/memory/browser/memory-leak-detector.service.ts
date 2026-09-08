@@ -7,7 +7,6 @@ import { Logger } from '$lib/utils/logger';
 
 const logger = new Logger({ category: 'MemoryLeakDetector' });
 
- 
 type EventHandler = (...args: any[]) => void;
 
 interface TrackedResource {

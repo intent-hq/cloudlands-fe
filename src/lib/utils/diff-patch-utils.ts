@@ -1,4 +1,5 @@
-const UNIFIED_DIFF_HEADER_REGEX = /^---[ \t]+[^\r\n]+\r?\n\+\+\+[ \t]+[^\r\n]+\r?\n@@[ \t]+-\d+(?:,\d+)?[ \t]+\+\d+(?:,\d+)?[ \t]+@@/m;
+const UNIFIED_DIFF_HEADER_REGEX =
+  /^---[ \t]+[^\r\n]+\r?\n\+\+\+[ \t]+[^\r\n]+\r?\n@@[ \t]+-\d+(?:,\d+)?[ \t]+\+\d+(?:,\d+)?[ \t]+@@/m;
 const NO_NEWLINE_MARKER = '\\ No newline at end of file';
 
 export function hasUnifiedDiffHeaders(diff: string): boolean {

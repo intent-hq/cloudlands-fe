@@ -3,10 +3,7 @@ import { runSaga, stdChannel } from 'redux-saga';
 
 import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
-import {
-  connectionsListReceived,
-  connectionsReducer,
-} from '../../connections/connections-slice';
+import { connectionsListReceived, connectionsReducer } from '../../connections/connections-slice';
 import {
   markWorkspacePendingDeletion,
   removeWorkspaceEntity,
@@ -282,7 +279,7 @@ describe('workspaceTabReconciliationSaga', () => {
     await finish(harness);
   });
 
-  it('does not reconcile a re-hydrated strip against the previous backend\'s list', async () => {
+  it("does not reconcile a re-hydrated strip against the previous backend's list", async () => {
     const harness = createHarness();
     harness.dispatch(backendActive('local'));
     harness.dispatch(loadWorkspaceTabsState(persistedTabs(['ws-A'])));

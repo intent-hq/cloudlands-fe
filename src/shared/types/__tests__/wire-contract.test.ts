@@ -48,15 +48,15 @@ describe('PROTOCOL.md §7 ContentBlock wire contract', () => {
   });
 
   it('rejects a tool_use block that aliases `name` as `toolName` (§7 divergence)', () => {
-    expect(() =>
-      migrateFromLegacy({ type: 'tool_use', toolName: 'read_file', input: {} }),
-    ).toThrow(/toolName/);
+    expect(() => migrateFromLegacy({ type: 'tool_use', toolName: 'read_file', input: {} })).toThrow(
+      /toolName/,
+    );
   });
 
   it('rejects a tool_result block that aliases `tool_use_id` as `toolCallId` (§7 divergence)', () => {
-    expect(() =>
-      migrateFromLegacy({ type: 'tool_result', toolCallId: 'tc_1' }),
-    ).toThrow(/tool_use_id/);
+    expect(() => migrateFromLegacy({ type: 'tool_result', toolCallId: 'tc_1' })).toThrow(
+      /tool_use_id/,
+    );
   });
 
   it('rejects a tool_result block that aliases `is_error` as `isError` (§7 divergence)', () => {

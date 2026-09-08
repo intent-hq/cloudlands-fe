@@ -53,6 +53,8 @@ import {
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
+import type { BrowserElementCapture } from '$store/renderer/slices/browser/browser-types';
+import { browserCaptureToContextItems } from '$lib/components/chat/browser-capture-context';
 
 const WS = 'c6df5dce-f8c6-44fe-8a2d-227a8815f2af';
 const AGENT = 'agent-373f33d3-0a26-4b8b-9ecf-f114bfa47df4';
@@ -190,6 +192,45 @@ describe('agent-send wire contract (pending agent, first message)', () => {
       content: '',
       fileBlocks,
     });
+  }, 30000);
+
+  it('sends browser element context and its image reference on the protocol wire shape', async () => {
+    const capture: BrowserElementCapture & { viewport: { width: number; height: number } } = {
+      id: 'capture-1',
+      tabId: 'browser-1',
+      pageUrl: 'https://example.com/account',
+      title: 'Account',
+      image: { data: 'base64-png', mimeType: 'image/png' },
+      viewport: { width: 1440, height: 900 },
+      element: {
+        selector: 'button#save',
+        domPath: 'html > body > main > button#save',
+        tagName: 'BUTTON',
+        id: 'save',
+        className: 'primary',
+        textSnippet: 'Save changes',
+        rect: { x: 80, y: 120, width: 140, height: 36 },
+        pageUrl: 'https://example.com/account',
+        sourceRef: 'src/routes/account.svelte:42:3',
+      },
+    };
+    const [, context] = browserCaptureToContextItems(capture);
+    const content = `${context.content}\n\nFix this element`;
+    const imageBlocks = [
+      { type: 'image' as const, attachmentId: 'capture-image-attachment', mimeType: 'image/png' },
+    ];
+
+    await sendMessage(AGENT, content, workspace(), { imageBlocks });
+
+    const sendCall = backendRequestMock.mock.calls.find((call) => call[0] === 'agent.sendMessage')!;
+    expect(sendCall[1]).toMatchObject({
+      agentId: AGENT,
+      workspaceId: WS,
+      content,
+      imageBlocks,
+    });
+    expect(sendCall[1]).not.toHaveProperty('contextItems');
+    expect(sendCall[1]).not.toHaveProperty('workspaceContextStr');
   }, 30000);
 
   it('handles queued response (auto-queue race) by clearing streaming and seeding the queue', async () => {

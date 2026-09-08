@@ -1,6 +1,6 @@
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { DropdownOption } from '$lib/components/ui/dropdown';
-import { splitCompoundModelId } from '$shared/utils/compound-model-id';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import {
   selectEffectiveDefaultProviderId,
   selectNormalizedProviderId,
@@ -81,7 +81,7 @@ export function collapseCodexEffortModels(
   const groupIndexes = new Map<string, number>();
 
   for (const model of models) {
-    const { providerId, modelId } = splitCompoundModelId(model.value);
+    const { providerId, modelId } = splitLegacyCompoundId(model.value);
     if (providerId?.toLowerCase() !== 'codex') {
       collapsed.push(model);
       continue;
@@ -139,7 +139,7 @@ function formatCostTier(tier: number | undefined): string | undefined {
  * still serve it, so the picker filters it defensively.
  */
 export function isDefaultPseudoModelId(value: string): boolean {
-  return splitCompoundModelId(value).modelId.toLowerCase() === 'default';
+  return splitLegacyCompoundId(value).modelId.toLowerCase() === 'default';
 }
 
 /**
@@ -243,7 +243,7 @@ export function isProviderEnabled(enabledProviderIds: string[], providerId: stri
  * from different providers.
  */
 export function normalizeModelIdForMatch(modelId: string, bareProviderId?: string): string {
-  const { providerId: explicitProviderId, modelId: baseModelId } = splitCompoundModelId(modelId);
+  const { providerId: explicitProviderId, modelId: baseModelId } = splitLegacyCompoundId(modelId);
   const defaultProviderId = selectEffectiveDefaultProviderId.select(appStore.state);
   const providerId = explicitProviderId || bareProviderId || defaultProviderId;
   if (!providerId) return baseModelId;
@@ -286,7 +286,7 @@ export function findModelFallbackOption(
     const defaultProviderId = selectEffectiveDefaultProviderId.select(appStore.state);
     candidates = candidates.filter(
       (opt) =>
-        (splitCompoundModelId(opt.value).providerId ?? defaultProviderId) === restrictToProvider,
+        (splitLegacyCompoundId(opt.value).providerId ?? defaultProviderId) === restrictToProvider,
     );
   }
 

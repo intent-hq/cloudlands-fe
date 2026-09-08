@@ -8,8 +8,6 @@
  * - Error messages
  */
 
-
-
 export interface ParsedContent {
   type: 'text' | 'tool_use' | 'tool_result' | 'session_info' | 'error' | 'digest';
   content: string;
@@ -873,5 +871,4 @@ export class AuggieTextParser {
     }
     return null;
   }
-
 }

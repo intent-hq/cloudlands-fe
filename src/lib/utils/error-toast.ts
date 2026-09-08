@@ -123,7 +123,7 @@ function getWrapperBorderClass(type: string): string {
     case 'info':
       return '!border-info/50';
     default:
-      return '!border-destructive/50';
+      return '!border-danger/50';
   }
 }
 

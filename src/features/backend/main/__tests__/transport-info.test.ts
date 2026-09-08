@@ -255,6 +255,48 @@ describe('formatTransportInfo', () => {
     ).toEqual({ mode: 'external-ws', target: 'tcp:10.0.0.1:6000', pinnedVersion: '0.1.0' });
   });
 
+  it('reports connectedVia for a remote wss backend (tunnel win vs direct win)', () => {
+    const config = { transport: 'wss' as const, host: 'h', port: 443 };
+    expect(formatTransportInfo(config, '0.1.0', 'tunnel')).toEqual({
+      mode: 'external-ws',
+      target: 'wss:h:443',
+      connectedVia: 'tunnel',
+      pinnedVersion: '0.1.0',
+    });
+    expect(formatTransportInfo(config, null, 'direct')).toEqual({
+      mode: 'external-ws',
+      target: 'wss:h:443',
+      connectedVia: 'direct',
+    });
+  });
+
+  it('omits connectedVia for wss when the race winner is unknown (single-host dial, disconnected)', () => {
+    expect(formatTransportInfo({ transport: 'wss', host: 'h', port: 443 }, null, null)).toEqual({
+      mode: 'external-ws',
+      target: 'wss:h:443',
+    });
+    expect(
+      formatTransportInfo({ transport: 'wss', host: 'h', port: 443 }, null, undefined),
+    ).toEqual({ mode: 'external-ws', target: 'wss:h:443' });
+  });
+
+  it('never reports connectedVia for UDS, loopback ws, or the TCP stub', () => {
+    setConnectionMode('external');
+    expect(
+      formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' }, null, 'tunnel'),
+    ).not.toHaveProperty('connectedVia');
+    setConnectionMode('sidecar');
+    expect(
+      formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' }, null, 'tunnel'),
+    ).not.toHaveProperty('connectedVia');
+    expect(
+      formatTransportInfo({ transport: 'ws', wsUrl: 'ws://127.0.0.1:5181/ws' }, null, 'tunnel'),
+    ).not.toHaveProperty('connectedVia');
+    expect(
+      formatTransportInfo({ transport: 'tcp', host: '10.0.0.1', port: 6000 }, null, 'tunnel'),
+    ).not.toHaveProperty('connectedVia');
+  });
+
   it('omits pinnedVersion when the pin is null (missing/malformed pin file)', () => {
     expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' }, null)).toEqual({
       mode: 'sidecar-uds',

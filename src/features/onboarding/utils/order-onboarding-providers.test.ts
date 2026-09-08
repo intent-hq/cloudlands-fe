@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  getOnboardingProviderTier,
-  orderOnboardingProviders,
-} from './order-onboarding-providers';
+import { getOnboardingProviderTier, orderOnboardingProviders } from './order-onboarding-providers';
 
 const ids = (providers: { id: string }[]) => providers.map((p) => p.id);
 const providers = (...list: string[]) => list.map((id) => ({ id }));
@@ -58,11 +55,7 @@ describe('orderOnboardingProviders', () => {
 
   it('returns the input order unchanged before any status arrives (all tier 3)', () => {
     const shuffled = providers('codex', 'auggie', 'claude-code');
-    expect(ids(orderOnboardingProviders(shuffled, {}))).toEqual([
-      'codex',
-      'auggie',
-      'claude-code',
-    ]);
+    expect(ids(orderOnboardingProviders(shuffled, {}))).toEqual(['codex', 'auggie', 'claude-code']);
   });
 
   it('keeps tiers sticky during an in-flight refresh (loading flags are not an input)', () => {

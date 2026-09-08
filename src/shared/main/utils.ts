@@ -6,10 +6,7 @@
  * For client-safe utilities, use utils-client.ts
  */
 
-import {
-  homedir,
-  tmpdir,
-} from 'os';
+import { homedir, tmpdir } from 'os';
 
 // Re-export client-safe utilities
 export * from '../utils-client';

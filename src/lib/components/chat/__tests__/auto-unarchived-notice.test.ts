@@ -10,7 +10,8 @@ import type { AgentMessage } from '$shared/types';
 
 // Mock the Redux store to avoid initialization errors
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ state: {}, dispatch: vi.fn() });
 });
 
@@ -103,7 +104,9 @@ describe('getAutoUnarchivedNotice', () => {
     expect(getAutoUnarchivedNotice({})).toBeNull();
     expect(getAutoUnarchivedNotice({ role: 'system' })).toBeNull();
     expect(getAutoUnarchivedNotice({ role: 'system', metadata: { type: 'other' } })).toBeNull();
-    expect(getAutoUnarchivedNotice({ role: 'system', metadata: { type: 'model_changed' } })).toBeNull();
+    expect(
+      getAutoUnarchivedNotice({ role: 'system', metadata: { type: 'model_changed' } }),
+    ).toBeNull();
   });
 
   it('tolerates a missing or malformed reason', () => {

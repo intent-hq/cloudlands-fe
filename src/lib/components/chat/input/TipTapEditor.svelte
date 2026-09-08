@@ -9,6 +9,7 @@
   import Placeholder from '@tiptap/extension-placeholder';
   import Mention from '@tiptap/extension-mention';
   import Image from '@tiptap/extension-image';
+  import { NoteVideo } from '$lib/components/tiptap/NoteVideo';
   import {
     ContextMention,
     type ContextMentionAttributes,
@@ -767,6 +768,7 @@
               class: 'chat-inline-image',
             },
           }),
+          NoteVideo.configure({ workspaceId: workspace?.id }),
           MentionFromSpan.configure({
             HTMLAttributes: {
               class: 'mention-chip',

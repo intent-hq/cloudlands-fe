@@ -15,38 +15,54 @@
  *   node scripts/check-windows-compat.mjs src/ --ignore "e2e/**"
  */
 
-import fs from "fs";
-import path from "path";
-import { execSync } from "child_process";
+import fs from 'fs';
+import path from 'path';
+import { execSync } from 'child_process';
 
 // ─── Severity levels ───────────────────────────────────────────────────────────
 
 const SEVERITY = {
-  CRITICAL: { label: "🔴", name: "critical", exitCode: 1 },
-  WARNING: { label: "🟡", name: "warning", exitCode: 0 },
-  INFO: { label: "⚪", name: "info", exitCode: 0 },
+  CRITICAL: { label: '🔴', name: 'critical', exitCode: 1 },
+  WARNING: { label: '🟡', name: 'warning', exitCode: 0 },
+  INFO: { label: '⚪', name: 'info', exitCode: 0 },
 };
 
 // ─── Rule definitions ──────────────────────────────────────────────────────────
 
 const UNIX_COMMANDS = [
-  "pkill", "pgrep", "chmod", "ln", "sleep", "bash", "sh", "sed", "awk", "which",
-  "kill", "grep", "xargs", "cat", "tail", "head", "wc", "tee", "nohup", "lsof",
+  'pkill',
+  'pgrep',
+  'chmod',
+  'ln',
+  'sleep',
+  'bash',
+  'sh',
+  'sed',
+  'awk',
+  'which',
+  'kill',
+  'grep',
+  'xargs',
+  'cat',
+  'tail',
+  'head',
+  'wc',
+  'tee',
+  'nohup',
+  'lsof',
 ];
 
-const UNIX_COMMANDS_WITH_FLAGS = [
-  "mkdir -p", "cp ", "rm -rf", "rm -r",
-];
+const UNIX_COMMANDS_WITH_FLAGS = ['mkdir -p', 'cp ', 'rm -rf', 'rm -r'];
 
-const NPM_BINARIES = ["npm", "npx", "pnpm", "yarn"];
+const NPM_BINARIES = ['npm', 'npx', 'pnpm', 'yarn'];
 
 const RULES = [
   // ─── 🔴 Critical ──────────────────────────────────────────────────────────
   {
-    id: "unix-command",
+    id: 'unix-command',
     severity: SEVERITY.CRITICAL,
     description: "spawn/exec of Unix-only command (doesn't exist on Windows)",
-    fix: "Use cross-platform alternative or add platform guard",
+    fix: 'Use cross-platform alternative or add platform guard',
     skipInPlatformGuard: true,
     test(line, _ctx) {
       const spawnExecRe = /\b(?:spawn|exec|execSync|execFile|execFileSync)\s*\(\s*[`'"]/;
@@ -56,44 +72,66 @@ const RULES = [
         if (!templateRe.test(line)) return null;
       }
       for (const cmd of UNIX_COMMANDS) {
-        const re = new RegExp(`\\b(?:spawn|exec|execSync|execFile|execFileSync)\\s*\\(\\s*['"\`]${cmd}\\b`);
+        const re = new RegExp(
+          `\\b(?:spawn|exec|execSync|execFile|execFileSync)\\s*\\(\\s*['"\`]${cmd}\\b`,
+        );
         if (re.test(line)) return { matched: line.trim(), command: cmd };
       }
       for (const cmd of UNIX_COMMANDS_WITH_FLAGS) {
-        const re = new RegExp(`\\b(?:spawn|exec|execSync|execFile|execFileSync)\\s*\\(\\s*['"\`]${cmd.replace(/ /g, "\\s+")}`);
+        const re = new RegExp(
+          `\\b(?:spawn|exec|execSync|execFile|execFileSync)\\s*\\(\\s*['"\`]${cmd.replace(/ /g, '\\s+')}`,
+        );
         if (re.test(line)) return { matched: line.trim(), command: cmd.trim() };
       }
       return null;
     },
   },
   {
-    id: "dev-null",
+    id: 'dev-null',
     severity: SEVERITY.CRITICAL,
-    description: "/dev/null string literal in code",
+    description: '/dev/null string literal in code',
     fix: "Use `process.platform === 'win32' ? 'NUL' : '/dev/null'`",
     skipInPlatformGuard: true,
     test(line, ctx) {
       // Skip comments
-      const stripped = line.replace(/\/\/.*$/, "").replace(/\/\*.*?\*\//g, "");
+      const stripped = line.replace(/\/\/.*$/, '').replace(/\/\*.*?\*\//g, '');
       // Skip git diff format headers (--- /dev/null, +++ /dev/null)
       if (/^[+-]{3}\s+\/dev\/null/.test(stripped.trim())) return null;
       if (/---\s+\/dev\/null/.test(stripped) || /\+\+\+\s+\/dev\/null/.test(stripped)) return null;
       // Skip remote command patterns (SSH, find, grep, etc.) where /dev/null is used on remote host
-      const remotePatterns = /\b(ssh|find\s|grep\s|ls\s|df\s|head\s|tail\s|sha1sum|source\s+~\/|\$SHELL|command\s+-v|launchctl)\b/;
+      const remotePatterns =
+        /\b(ssh|find\s|grep\s|ls\s|df\s|head\s|tail\s|sha1sum|source\s+~\/|\$SHELL|command\s+-v|launchctl)\b/;
       if (/\/dev\/null/.test(stripped) && remotePatterns.test(stripped)) return null;
       // Category A: Skip SSH/remote files — commands run on remote Linux servers
-      if (ctx && ctx.filePath && /[/\\](ssh|remote-fs|remote-file-system)[/\\]|ssh-manager\./.test(ctx.filePath)) return null;
+      if (
+        ctx &&
+        ctx.filePath &&
+        /[/\\](ssh|remote-fs|remote-file-system)[/\\]|ssh-manager\./.test(ctx.filePath)
+      )
+        return null;
       // Category A: Skip lines near SSH execution context
       if (ctx && ctx.lines && ctx.lineNumber) {
         const idx = ctx.lineNumber - 1;
-        const nearby = [ctx.lines[idx - 2], ctx.lines[idx - 1], line, ctx.lines[idx + 1], ctx.lines[idx + 2]].filter(Boolean).join(" ");
-        if (/\b(sshManager|executeCommand|client\.exec\(|connection\.exec\()/.test(nearby)) return null;
+        const nearby = [
+          ctx.lines[idx - 2],
+          ctx.lines[idx - 1],
+          line,
+          ctx.lines[idx + 1],
+          ctx.lines[idx + 2],
+        ]
+          .filter(Boolean)
+          .join(' ');
+        if (/\b(sshManager|executeCommand|client\.exec\(|connection\.exec\()/.test(nearby))
+          return null;
       }
       // Category C1: Skip ternary guards that already check process.platform
       if (/process\.platform/.test(stripped)) return null;
       // Category C2: Skip lines using common platform guard variables
       if (/\b(isWindows|isWin32|IS_WINDOWS|isWin)\b/.test(stripped)) return null;
-      if (/['"`]\/dev\/null['"`]/.test(stripped) || /['"`][^'"`]*\/dev\/null[^'"`]*['"`]/.test(stripped)) {
+      if (
+        /['"`]\/dev\/null['"`]/.test(stripped) ||
+        /['"`][^'"`]*\/dev\/null[^'"`]*['"`]/.test(stripped)
+      ) {
         return { matched: line.trim() };
       }
       // Also catch unquoted /dev/null in template literals or assignments
@@ -104,7 +142,7 @@ const RULES = [
     },
   },
   {
-    id: "shell-fallback-unix",
+    id: 'shell-fallback-unix',
     severity: SEVERITY.CRITICAL,
     description: "Shell falls back to /bin/bash or /bin/sh (doesn't exist on Windows)",
     fix: "Use `process.platform === 'win32' ? true : (process.env.SHELL || '/bin/bash')`",
@@ -112,21 +150,40 @@ const RULES = [
     test(line, ctx) {
       if (/\/bin\/bash/.test(line) || /\/bin\/sh\b/.test(line)) {
         // Skip pure comments
-        const stripped = line.replace(/\/\/.*$/, "");
+        const stripped = line.replace(/\/\/.*$/, '');
         if (/\/bin\/bash/.test(stripped) || /\/bin\/sh\b/.test(stripped)) {
           // Skip ternary guards that already check process.platform
           if (/process\.platform/.test(stripped)) return null;
           // Category C2: Skip lines using common platform guard variables
           if (/\b(isWindows|isWin32|IS_WINDOWS|isWin)\b/.test(stripped)) return null;
           // Skip log/warn messages (just mentioning the path, not using it)
-          if (/\b(logger\.warn|logger\.info|logger\.debug|console\.log|console\.warn|console\.error)\b/.test(stripped)) return null;
+          if (
+            /\b(logger\.warn|logger\.info|logger\.debug|console\.log|console\.warn|console\.error)\b/.test(
+              stripped,
+            )
+          )
+            return null;
           // Category A: Skip SSH/remote files — commands run on remote Linux servers
-          if (ctx && ctx.filePath && /[/\\](ssh|remote-fs|remote-file-system)[/\\]|ssh-manager\./.test(ctx.filePath)) return null;
+          if (
+            ctx &&
+            ctx.filePath &&
+            /[/\\](ssh|remote-fs|remote-file-system)[/\\]|ssh-manager\./.test(ctx.filePath)
+          )
+            return null;
           // Category A: Skip lines near SSH execution context
           if (ctx && ctx.lines && ctx.lineNumber) {
             const idx = ctx.lineNumber - 1;
-            const nearby = [ctx.lines[idx - 2], ctx.lines[idx - 1], line, ctx.lines[idx + 1], ctx.lines[idx + 2]].filter(Boolean).join(" ");
-            if (/\b(sshManager|executeCommand|client\.exec\(|connection\.exec\()/.test(nearby)) return null;
+            const nearby = [
+              ctx.lines[idx - 2],
+              ctx.lines[idx - 1],
+              line,
+              ctx.lines[idx + 1],
+              ctx.lines[idx + 2],
+            ]
+              .filter(Boolean)
+              .join(' ');
+            if (/\b(sshManager|executeCommand|client\.exec\(|connection\.exec\()/.test(nearby))
+              return null;
           }
           return { matched: line.trim() };
         }
@@ -135,10 +192,10 @@ const RULES = [
     },
   },
   {
-    id: "npm-spawn-no-shell",
+    id: 'npm-spawn-no-shell',
     severity: SEVERITY.CRITICAL,
-    description: "spawn of npm/npx/pnpm/yarn without shell:true (these are .cmd on Windows)",
-    fix: "Add `shell: true` to spawn options, or use `cross-spawn`",
+    description: 'spawn of npm/npx/pnpm/yarn without shell:true (these are .cmd on Windows)',
+    fix: 'Add `shell: true` to spawn options, or use `cross-spawn`',
     skipInPlatformGuard: false,
     test(line, ctx) {
       for (const bin of NPM_BINARIES) {
@@ -161,10 +218,10 @@ const RULES = [
   },
   // ─── 🟡 Warning ───────────────────────────────────────────────────────────
   {
-    id: "missing-windowsHide",
+    id: 'missing-windowsHide',
     severity: SEVERITY.WARNING,
-    description: "spawn/exec call missing windowsHide: true",
-    fix: "Add `windowsHide: true` to options to prevent console window flash",
+    description: 'spawn/exec call missing windowsHide: true',
+    fix: 'Add `windowsHide: true` to options to prevent console window flash',
     skipInPlatformGuard: false,
     test(line, ctx) {
       const callRe = /\b(?:spawn|execSync|execFile|execFileSync|exec)\s*\(/;
@@ -174,14 +231,23 @@ const RULES = [
       if (/windowsHide/.test(line)) return null;
       // Skip .exec( — covers regex.exec(), connection.client.exec(), rpcClient.exec(), etc.
       // Real child_process exec() is always called as standalone exec(, not obj.exec(
-      if (/\.exec\s*\(/.test(line) && !/\b(?:spawn|execSync|execFile|execFileSync)\s*\(/.test(line)) return null;
+      if (/\.exec\s*\(/.test(line) && !/\b(?:spawn|execSync|execFile|execFileSync)\s*\(/.test(line))
+        return null;
       // Skip method definitions like "async exec(params: ExecParams)"
-      if (/\b(async\s+)?exec\s*\(/.test(line) && /\b(function|class|async|public|private|protected)\b/.test(line)) return null;
+      if (
+        /\b(async\s+)?exec\s*\(/.test(line) &&
+        /\b(function|class|async|public|private|protected)\b/.test(line)
+      )
+        return null;
       // Skip pty.spawn() calls — node-pty doesn't support windowsHide
       if (/pty\.spawn\s*\(/.test(line)) return null;
       // Skip method definitions with TypeScript type annotations (e.g., "spawn(prompt: string, ...)")
-      if (/spawn\s*\(/.test(line) && /spawn\s*\([^)]*:\s*(string|number|boolean|void)/.test(line) &&
-          !/spawn\s*\(\s*['"`]/.test(line)) return null;
+      if (
+        /spawn\s*\(/.test(line) &&
+        /spawn\s*\([^)]*:\s*(string|number|boolean|void)/.test(line) &&
+        !/spawn\s*\(\s*['"`]/.test(line)
+      )
+        return null;
       // Skip non-child_process method calls (e.g., "this.cortex!.spawn(...)")
       if (/this\.\w+[!?]?\.spawn\s*\(/.test(line)) return null;
       // Skip store/class exec methods (e.g., "exec(action: ...)")
@@ -198,7 +264,12 @@ const RULES = [
           for (let j = idx - 1; j >= Math.max(0, idx - 30); j--) {
             if (paramRe.test(ctx.lines[j])) return null;
             // Stop at function/class/method definition start
-            if (/^\s*(?:export\s+)?(?:async\s+)?(?:private\s+|public\s+|protected\s+)?(?:function|class)\b/.test(ctx.lines[j])) break;
+            if (
+              /^\s*(?:export\s+)?(?:async\s+)?(?:private\s+|public\s+|protected\s+)?(?:function|class)\b/.test(
+                ctx.lines[j],
+              )
+            )
+              break;
           }
         }
       }
@@ -218,7 +289,9 @@ const RULES = [
 
         // Check if spawn/exec uses a variable for options that has windowsHide defined earlier
         // e.g., spawn(cmd, args, spawnOpts) where spawnOpts = { ..., windowsHide: true }
-        const varMatch = line.match(/(?:spawn|execSync|execFile|execFileSync)\s*\([^,]+,\s*(?:[^,]+,\s*)?(\w+)\s*[,)]/);
+        const varMatch = line.match(
+          /(?:spawn|execSync|execFile|execFileSync)\s*\([^,]+,\s*(?:[^,]+,\s*)?(\w+)\s*[,)]/,
+        );
         if (varMatch) {
           const varName = varMatch[1];
           // Skip common non-variable-name matches
@@ -240,10 +313,10 @@ const RULES = [
     },
   },
   {
-    id: "user-env-no-fallback",
+    id: 'user-env-no-fallback',
     severity: SEVERITY.WARNING,
-    description: "process.env.USER without USERNAME fallback",
-    fix: "Use `process.env.USER || process.env.USERNAME` or `os.userInfo().username`",
+    description: 'process.env.USER without USERNAME fallback',
+    fix: 'Use `process.env.USER || process.env.USERNAME` or `os.userInfo().username`',
     skipInPlatformGuard: true,
     test(line) {
       if (!/process\.env\.USER\b/.test(line)) return null;
@@ -256,10 +329,10 @@ const RULES = [
     },
   },
   {
-    id: "home-env-no-fallback",
+    id: 'home-env-no-fallback',
     severity: SEVERITY.WARNING,
-    description: "process.env.HOME without USERPROFILE or os.homedir() fallback",
-    fix: "Use `process.env.HOME || process.env.USERPROFILE` or `os.homedir()`",
+    description: 'process.env.HOME without USERPROFILE or os.homedir() fallback',
+    fix: 'Use `process.env.HOME || process.env.USERPROFILE` or `os.homedir()`',
     skipInPlatformGuard: true,
     test(line) {
       if (!/process\.env\.HOME\b/.test(line)) return null;
@@ -270,10 +343,10 @@ const RULES = [
     },
   },
   {
-    id: "path-split-slash",
+    id: 'path-split-slash',
     severity: SEVERITY.WARNING,
     description: "Path split on '/' only — misses Windows backslash paths",
-    fix: "Use `.split(/[\\/\\\\]/)` or `path.sep`",
+    fix: 'Use `.split(/[\\/\\\\]/)` or `path.sep`',
     skipInPlatformGuard: false,
     test(line) {
       // Look for .split('/') that looks like path splitting
@@ -285,7 +358,8 @@ const RULES = [
       // Pattern 1: Detect display-only patterns — these extract display names from
       // paths that come from APIs/git/URLs which always use forward slashes.
       // Downgrade to INFO by returning a special flag.
-      const displayPatternRe = /\.split\s*\(\s*['"]\/['"]\s*\)\s*\.\s*(pop|slice|at|length|filter)\s*\(/;
+      const displayPatternRe =
+        /\.split\s*\(\s*['"]\/['"]\s*\)\s*\.\s*(pop|slice|at|length|filter)\s*\(/;
       const indexAccessRe = /\.split\s*\(\s*['"]\/['"]\s*\)\s*\[\s*\d+\s*\]/;
       const joinAfterSplitRe = /\.split\s*\(\s*['"]\/['"]\s*\)\s*\.\s*(join|map)\s*\(/;
       if (displayPatternRe.test(line) || indexAccessRe.test(line) || joinAfterSplitRe.test(line)) {
@@ -294,7 +368,8 @@ const RULES = [
       // Pattern 1b: Assignment patterns — `const parts = X.split('/')` or destructuring
       // `const [a, ...b] = X.split('/')`. These store split results for later use,
       // typically in UI/display code processing paths from git/APIs.
-      const assignSplitRe = /(?:const|let|var)\s+(?:\w+|\[[\w\s,\.]+\])\s*=\s*.*\.split\s*\(\s*['"]\/['"]\s*\)/;
+      const assignSplitRe =
+        /(?:const|let|var)\s+(?:\w+|\[[\w\s,\.]+\])\s*=\s*.*\.split\s*\(\s*['"]\/['"]\s*\)/;
       if (assignSplitRe.test(line)) {
         return { matched: line.trim(), displayOnly: true };
       }
@@ -313,14 +388,15 @@ const RULES = [
     },
   },
   {
-    id: "npm-scripts-unix",
+    id: 'npm-scripts-unix',
     severity: SEVERITY.WARNING,
-    description: "Unix-only command in package.json scripts section",
-    fix: "Use cross-platform alternatives (shx, cross-env, etc.) or platform-specific scripts",
+    description: 'Unix-only command in package.json scripts section',
+    fix: 'Use cross-platform alternatives (shx, cross-env, etc.) or platform-specific scripts',
     skipInPlatformGuard: false,
     // Special: only applies to package.json, handled in scanner
     test(line) {
-      const unixCmds = /\b(mkdir\s+-p|cp\s+|rm\s+-rf|rm\s+-r|bash\s+|\/bin\/sh|sleep\s+|chmod\s+|ln\s+-s)/;
+      const unixCmds =
+        /\b(mkdir\s+-p|cp\s+|rm\s+-rf|rm\s+-r|bash\s+|\/bin\/sh|sleep\s+|chmod\s+|ln\s+-s)/;
       if (unixCmds.test(line)) {
         return { matched: line.trim() };
       }
@@ -329,13 +405,13 @@ const RULES = [
     packageJsonOnly: true,
   },
   {
-    id: "hardcoded-unix-paths",
+    id: 'hardcoded-unix-paths',
     severity: SEVERITY.WARNING,
-    description: "Hardcoded Unix-specific path",
-    fix: "Use platform-aware path resolution or add platform guard",
+    description: 'Hardcoded Unix-specific path',
+    fix: 'Use platform-aware path resolution or add platform guard',
     skipInPlatformGuard: true,
     test(line) {
-      const stripped = line.replace(/\/\/.*$/, "").replace(/\/\*.*?\*\//g, "");
+      const stripped = line.replace(/\/\/.*$/, '').replace(/\/\*.*?\*\//g, '');
       const unixPaths = /['"`](\/usr\/|\/opt\/|\/tmp\/|\/home\/)/;
       if (unixPaths.test(stripped)) {
         return { matched: line.trim() };
@@ -345,9 +421,9 @@ const RULES = [
   },
   // ─── ⚪ Info ───────────────────────────────────────────────────────────────
   {
-    id: "signal-handling",
+    id: 'signal-handling',
     severity: SEVERITY.INFO,
-    description: "Signal that behaves differently on Windows",
+    description: 'Signal that behaves differently on Windows',
     fix: "SIGHUP doesn't exist on Windows; SIGTERM is equivalent to SIGKILL (no graceful shutdown)",
     skipInPlatformGuard: true,
     test(line) {
@@ -358,13 +434,16 @@ const RULES = [
     },
   },
   {
-    id: "path-delimiter",
+    id: 'path-delimiter',
     severity: SEVERITY.INFO,
     description: "PATH split on ':' instead of path.delimiter",
     fix: "Use `path.delimiter` (';' on Windows, ':' on Unix)",
     skipInPlatformGuard: false,
     test(line) {
-      if (/PATH.*\.split\s*\(\s*['"]:['"]\s*\)/.test(line) || /\.split\s*\(\s*['"]:['"]\s*\).*PATH/i.test(line)) {
+      if (
+        /PATH.*\.split\s*\(\s*['"]:['"]\s*\)/.test(line) ||
+        /\.split\s*\(\s*['"]:['"]\s*\).*PATH/i.test(line)
+      ) {
         return { matched: line.trim() };
       }
       // Also catch process.env.PATH?.split(':')
@@ -375,10 +454,10 @@ const RULES = [
     },
   },
   {
-    id: "fs-unix-apis",
+    id: 'fs-unix-apis',
     severity: SEVERITY.INFO,
-    description: "fs API with Unix-specific behavior (symlink, chmod, permission octals)",
-    fix: "fs.symlink needs admin on Windows; fs.chmod is limited; permission octals are ignored",
+    description: 'fs API with Unix-specific behavior (symlink, chmod, permission octals)',
+    fix: 'fs.symlink needs admin on Windows; fs.chmod is limited; permission octals are ignored',
     skipInPlatformGuard: true,
     test(line) {
       if (/\bfs\.(symlinkSync|symlink|chmodSync|chmod)\s*\(/.test(line)) {
@@ -387,7 +466,7 @@ const RULES = [
       // Permission octals like 0o755, 0o644
       if (/\b0o[0-7]{3}\b/.test(line)) {
         // Skip comments
-        const stripped = line.replace(/\/\/.*$/, "");
+        const stripped = line.replace(/\/\/.*$/, '');
         if (/\b0o[0-7]{3}\b/.test(stripped)) {
           return { matched: line.trim() };
         }
@@ -416,12 +495,16 @@ class PlatformGuardTracker {
   }
 
   processLine(line) {
-    const stripped = line.replace(/\/\/.*$/, "").replace(/\/\*.*?\*\//g, "");
+    const stripped = line.replace(/\/\/.*$/, '').replace(/\/\*.*?\*\//g, '');
 
     // Detect platform guard starts
     // Match both `if (process.platform === 'win32')` and `if (process.platform === 'win32' && ...)`
-    const win32Guard = /if\s*\(\s*process\.platform\s*===\s*['"]win32['"]/.test(stripped) && !(/else\s+if/.test(stripped));
-    const notWin32Guard = /if\s*\(\s*process\.platform\s*!==\s*['"]win32['"]/.test(stripped) && !(/else\s+if/.test(stripped));
+    const win32Guard =
+      /if\s*\(\s*process\.platform\s*===\s*['"]win32['"]/.test(stripped) &&
+      !/else\s+if/.test(stripped);
+    const notWin32Guard =
+      /if\s*\(\s*process\.platform\s*!==\s*['"]win32['"]/.test(stripped) &&
+      !/else\s+if/.test(stripped);
     const elseIfWin32 = /else\s+if\s*\(\s*process\.platform\s*===\s*['"]win32['"]/.test(stripped);
     const darwinGuard = /if\s*\(\s*process\.platform\s*===\s*['"]darwin['"]/.test(stripped);
     const linuxGuard = /if\s*\(\s*process\.platform\s*===\s*['"]linux['"]/.test(stripped);
@@ -449,21 +532,22 @@ class PlatformGuardTracker {
       const top = this.guardStack[this.guardStack.length - 1];
       // The closing brace before `else` will pop the guard at this depth,
       // so we record what type it was before brace counting removes it
-      this._pendingElseType = top.type === "win32" ? "non-win32" : top.type === "non-win32" ? "win32" : null;
+      this._pendingElseType =
+        top.type === 'win32' ? 'non-win32' : top.type === 'non-win32' ? 'win32' : null;
     }
 
     if (win32Guard || elseIfWin32 || varWin32Guard || varElseIfWin32) {
-      this.guardStack.push({ type: "win32", braceDepth: this.braceDepth });
+      this.guardStack.push({ type: 'win32', braceDepth: this.braceDepth });
     } else if (notWin32Guard || varNotWin32Guard) {
-      this.guardStack.push({ type: "non-win32", braceDepth: this.braceDepth });
+      this.guardStack.push({ type: 'non-win32', braceDepth: this.braceDepth });
     } else if (darwinGuard || linuxGuard || elseIfDarwin || elseIfLinux) {
-      this.guardStack.push({ type: "non-win32", braceDepth: this.braceDepth });
+      this.guardStack.push({ type: 'non-win32', braceDepth: this.braceDepth });
     }
 
     // Count braces
     for (const ch of stripped) {
-      if (ch === "{") this.braceDepth++;
-      if (ch === "}") {
+      if (ch === '{') this.braceDepth++;
+      if (ch === '}') {
         this.braceDepth--;
         // Pop guards that have ended
         while (
@@ -485,12 +569,12 @@ class PlatformGuardTracker {
 
   /** Returns true if current position is inside a win32 platform guard */
   isInWin32Guard() {
-    return this.guardStack.some((g) => g.type === "win32");
+    return this.guardStack.some((g) => g.type === 'win32');
   }
 
   /** Returns true if current position is inside a non-win32 platform guard */
   isInNonWin32Guard() {
-    return this.guardStack.some((g) => g.type === "non-win32");
+    return this.guardStack.some((g) => g.type === 'non-win32');
   }
 
   /** Returns true if current position is inside any platform guard */
@@ -501,23 +585,25 @@ class PlatformGuardTracker {
 
 // ─── File scanning ─────────────────────────────────────────────────────────────
 
-const SCANNABLE_EXTENSIONS = new Set([".ts", ".js", ".mjs", ".svelte"]);
-const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "dist-electron", "__pycache__"]);
+const SCANNABLE_EXTENSIONS = new Set(['.ts', '.js', '.mjs', '.svelte']);
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'dist-electron', '__pycache__']);
 
 function shouldScanFile(filePath) {
   const ext = path.extname(filePath);
   const base = path.basename(filePath);
-  if (base === "package.json") return true;
+  if (base === 'package.json') return true;
   return SCANNABLE_EXTENSIONS.has(ext);
 }
 
 function isTestFile(filePath) {
-  const normalized = filePath.replace(/\\/g, "/");
-  return /__tests__/.test(normalized) ||
+  const normalized = filePath.replace(/\\/g, '/');
+  return (
+    /__tests__/.test(normalized) ||
     /\.test\.(ts|js|tsx|jsx)$/.test(normalized) ||
     /\.spec\.(ts|js|tsx|jsx)$/.test(normalized) ||
     /[/\\]test-setup\.(ts|js)$/.test(normalized) ||
-    /[/\\]testing[/\\]/.test(normalized);
+    /[/\\]testing[/\\]/.test(normalized)
+  );
 }
 
 function collectFiles(target) {
@@ -549,13 +635,13 @@ function collectFilesRecursive(dir) {
 function getGitDiffFiles(staged = false) {
   try {
     const cmd = staged
-      ? "git diff --cached --name-only --diff-filter=ACMR"
-      : "git diff --name-only --diff-filter=ACMR HEAD";
-    const output = execSync(cmd, { encoding: "utf-8", windowsHide: true }).trim();
+      ? 'git diff --cached --name-only --diff-filter=ACMR'
+      : 'git diff --name-only --diff-filter=ACMR HEAD';
+    const output = execSync(cmd, { encoding: 'utf-8', windowsHide: true }).trim();
     if (!output) return [];
-    return output.split("\n").filter((f) => shouldScanFile(f));
+    return output.split('\n').filter((f) => shouldScanFile(f));
   } catch {
-    console.error("Error: Failed to run git diff. Are you in a git repository?");
+    console.error('Error: Failed to run git diff. Are you in a git repository?');
     process.exit(2);
   }
 }
@@ -564,7 +650,7 @@ function getGitDiffFiles(staged = false) {
 
 function extractScriptsSection(content) {
   // Returns array of { lineNumber, text } for lines inside "scripts": { ... }
-  const lines = content.split("\n");
+  const lines = content.split('\n');
   const results = [];
   let inScripts = false;
   let braceDepth = 0;
@@ -576,10 +662,10 @@ function extractScriptsSection(content) {
         inScripts = true;
         braceDepth = 1;
         // Count any closing braces on the same line
-        const afterOpen = line.slice(line.indexOf("{") + 1);
+        const afterOpen = line.slice(line.indexOf('{') + 1);
         for (const ch of afterOpen) {
-          if (ch === "{") braceDepth++;
-          if (ch === "}") braceDepth--;
+          if (ch === '{') braceDepth++;
+          if (ch === '}') braceDepth--;
         }
         if (braceDepth <= 0) inScripts = false;
         continue;
@@ -587,8 +673,8 @@ function extractScriptsSection(content) {
     } else {
       results.push({ lineNumber: i + 1, text: line });
       for (const ch of line) {
-        if (ch === "{") braceDepth++;
-        if (ch === "}") braceDepth--;
+        if (ch === '{') braceDepth++;
+        if (ch === '}') braceDepth--;
       }
       if (braceDepth <= 0) {
         inScripts = false;
@@ -598,16 +684,15 @@ function extractScriptsSection(content) {
   return results;
 }
 
-
 // ─── Core scanner ──────────────────────────────────────────────────────────────
 
 function scanFile(filePath, rules) {
   const findings = [];
-  const isPackageJson = path.basename(filePath) === "package.json";
+  const isPackageJson = path.basename(filePath) === 'package.json';
 
   let content;
   try {
-    content = fs.readFileSync(filePath, "utf-8");
+    content = fs.readFileSync(filePath, 'utf-8');
   } catch {
     return findings;
   }
@@ -636,7 +721,7 @@ function scanFile(filePath, rules) {
   }
 
   // Regular TS/JS/Svelte file scanning
-  const lines = content.split("\n");
+  const lines = content.split('\n');
   const nonPkgRules = rules.filter((r) => !r.packageJsonOnly);
 
   // ─── Pre-scan: detect platform guard variable names (Pattern 2) ───
@@ -644,7 +729,9 @@ function scanFile(filePath, rules) {
   for (const line of lines) {
     // Match: const isWindows = process.platform === 'win32'
     // Match: const isWindows = navigator.platform.startsWith('Win')
-    const m = line.match(/\b(?:const|let|var)\s+(isWindows|isWin32|IS_WINDOWS|isWin)\s*=\s*(?:process\.platform\s*===\s*['"]win32['"]|navigator\.platform\.startsWith\s*\(\s*['"]Win['"]\s*\))/);
+    const m = line.match(
+      /\b(?:const|let|var)\s+(isWindows|isWin32|IS_WINDOWS|isWin)\s*=\s*(?:process\.platform\s*===\s*['"]win32['"]|navigator\.platform\.startsWith\s*\(\s*['"]Win['"]\s*\))/,
+    );
     if (m) guardVarNames.push(m[1]);
   }
 
@@ -701,7 +788,7 @@ function scanFile(filePath, rules) {
     if (!ternaryMatch) continue;
     // Check if the ? is on this line or the next
     let questionLine = i;
-    if (!/\?/.test(lines[i].replace(/\/\/.*$/, ""))) {
+    if (!/\?/.test(lines[i].replace(/\/\/.*$/, ''))) {
       // Check next line for the ?
       if (i + 1 < lines.length && /^\s*\?/.test(lines[i + 1])) {
         questionLine = i + 1;
@@ -760,11 +847,14 @@ function scanFile(filePath, rules) {
     const bashName = m[1];
     const psName = bashName.replace(/_BASH$/, '_POWERSHELL');
     // Check if the corresponding _POWERSHELL constant exists in the file
-    const hasPowershell = lines.some(l => new RegExp(`\\b(?:const|let|var)\\s+${psName}\\s*=`).test(l));
+    const hasPowershell = lines.some((l) =>
+      new RegExp(`\\b(?:const|let|var)\\s+${psName}\\s*=`).test(l),
+    );
     if (!hasPowershell) continue;
     // Also check for a platform selection between them (e.g., process.platform === 'win32' ? PS : BASH)
-    const hasPlatformSelection = lines.some(l =>
-      /process\.platform/.test(l) && (new RegExp(psName).test(l) || new RegExp(bashName).test(l))
+    const hasPlatformSelection = lines.some(
+      (l) =>
+        /process\.platform/.test(l) && (new RegExp(psName).test(l) || new RegExp(bashName).test(l)),
     );
     if (!hasPlatformSelection) continue;
     // Find the range of the _BASH constant (from const to closing backtick/semicolon)
@@ -804,7 +894,10 @@ function scanFile(filePath, rules) {
     let endLine = i;
     for (let j = i; j < lines.length; j++) {
       for (const ch of lines[j]) {
-        if (ch === '{') { braceDepth++; started = true; }
+        if (ch === '{') {
+          braceDepth++;
+          started = true;
+        }
         if (ch === '}') braceDepth--;
       }
       if (started && braceDepth <= 0) {
@@ -837,7 +930,7 @@ function scanFile(filePath, rules) {
     }
     if (callSites.length === 0) continue;
     // Check if ALL call sites are inside non-win32 guards
-    const allCallersGuarded = callSites.every(lineIdx => lineGuardState[lineIdx]?.inNonWin32);
+    const allCallersGuarded = callSites.every((lineIdx) => lineGuardState[lineIdx]?.inNonWin32);
     if (allCallersGuarded) {
       for (let j = fn.startLine; j <= fn.endLine; j++) {
         callerGuardSkipLines.add(j);
@@ -855,11 +948,12 @@ function scanFile(filePath, rules) {
     let found = false;
     for (const varName of uniqueGuardVars) {
       const escapedVar = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      if (new RegExp(`\\b${escapedVar}\\s*\\??$`).test(lines[i].trim()) ||
-          new RegExp(`\\b${escapedVar}\\s*\\?`).test(lines[i])) {
+      if (
+        new RegExp(`\\b${escapedVar}\\s*\\??$`).test(lines[i].trim()) ||
+        new RegExp(`\\b${escapedVar}\\s*\\?`).test(lines[i])
+      ) {
         // Verify there's actually a ? (on this line or next)
-        if (/\?/.test(lines[i]) ||
-            (i + 1 < lines.length && /^\s*\?/.test(lines[i + 1]))) {
+        if (/\?/.test(lines[i]) || (i + 1 < lines.length && /^\s*\?/.test(lines[i + 1]))) {
           found = true;
           break;
         }
@@ -868,7 +962,7 @@ function scanFile(filePath, rules) {
     if (!found) continue;
     // Find the ? line
     let questionLine = i;
-    if (!/\?/.test(lines[i].replace(/\/\/.*$/, ""))) {
+    if (!/\?/.test(lines[i].replace(/\/\/.*$/, ''))) {
       if (i + 1 < lines.length && /^\s*\?/.test(lines[i + 1])) {
         questionLine = i + 1;
       } else {
@@ -889,7 +983,10 @@ function scanFile(filePath, rules) {
         if (ch === '(' || ch === '[' || ch === '{') depth++;
         if (ch === ')' || ch === ']' || ch === '}') {
           depth--;
-          if (depth < 0) { endLine = j; break; }
+          if (depth < 0) {
+            endLine = j;
+            break;
+          }
         }
         if (ch === '?' && j === questionLine && colonLine === -1) continue;
         if (ch === '?' && depth === 0) depth++;
@@ -962,11 +1059,19 @@ function scanFile(filePath, rules) {
   const ternaryAssignmentSkipLines = new Set();
   for (let i = 0; i < lines.length; i++) {
     // Look for variable assignment with platform ternary
-    const assignTernary = /(?:const|let|var)\s+\w+\s*(?::\s*\w+(?:\[\])?\s*)?=\s*$/.test(lines[i].trim());
+    const assignTernary = /(?:const|let|var)\s+\w+\s*(?::\s*\w+(?:\[\])?\s*)?=\s*$/.test(
+      lines[i].trim(),
+    );
     if (assignTernary && i + 1 < lines.length) {
       // Check if next line starts with process.platform
-      if (/^\s*process\.platform\s*===\s*['"](?:win32|darwin|linux)['"]\s*$/.test(lines[i + 1].trim()) ||
-          /^\s*process\.platform\s*===\s*['"](?:win32|darwin|linux)['"]\s*\?/.test(lines[i + 1].trim())) {
+      if (
+        /^\s*process\.platform\s*===\s*['"](?:win32|darwin|linux)['"]\s*$/.test(
+          lines[i + 1].trim(),
+        ) ||
+        /^\s*process\.platform\s*===\s*['"](?:win32|darwin|linux)['"]\s*\?/.test(
+          lines[i + 1].trim(),
+        )
+      ) {
         // This is a ternary assignment. Find the non-win32 branches.
         // Walk forward to find the structure
         let depth = 0;
@@ -980,7 +1085,10 @@ function scanFile(filePath, rules) {
             if (inTL) continue;
             if (ch === '(' || ch === '[' || ch === '{') depth++;
             if (ch === ')' || ch === ']' || ch === '}') depth--;
-            if (ch === ';' && depth <= 0) { endLine = j; break; }
+            if (ch === ';' && depth <= 0) {
+              endLine = j;
+              break;
+            }
           }
           if (endLine !== -1) break;
         }
@@ -991,7 +1099,10 @@ function scanFile(filePath, rules) {
           // Find the ? and the matching :
           let qLine = -1;
           for (let j = i + 1; j < Math.min(lines.length, i + 5); j++) {
-            if (/\?/.test(lines[j])) { qLine = j; break; }
+            if (/\?/.test(lines[j])) {
+              qLine = j;
+              break;
+            }
           }
           if (qLine !== -1) {
             // Find the matching : at depth 0
@@ -1026,7 +1137,7 @@ function scanFile(filePath, rules) {
 
     // Skip empty lines and pure comment lines for performance
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("//") || trimmed.startsWith("*")) continue;
+    if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('*')) continue;
 
     for (const rule of nonPkgRules) {
       // Skip rules that should be suppressed inside platform guards
@@ -1041,18 +1152,30 @@ function scanFile(filePath, rules) {
       if (result) {
         // ─── False positive filters (skip entirely) ───
         // Pattern 1: contentWindows pairing
-        if (contentWindowsSkipLines.has(i) &&
-            (rule.id === "shell-fallback-unix" || rule.id === "dev-null" || rule.id === "unix-command")) {
+        if (
+          contentWindowsSkipLines.has(i) &&
+          (rule.id === 'shell-fallback-unix' ||
+            rule.id === 'dev-null' ||
+            rule.id === 'unix-command')
+        ) {
           continue;
         }
         // Pattern 3: multi-line ternary platform selection
-        if (ternaryElseSkipLines.has(i) &&
-            (rule.id === "shell-fallback-unix" || rule.id === "dev-null" || rule.id === "unix-command")) {
+        if (
+          ternaryElseSkipLines.has(i) &&
+          (rule.id === 'shell-fallback-unix' ||
+            rule.id === 'dev-null' ||
+            rule.id === 'unix-command')
+        ) {
           continue;
         }
         // Pattern 4: paired _BASH/_POWERSHELL constants
-        if (bashConstSkipLines.has(i) &&
-            (rule.id === "shell-fallback-unix" || rule.id === "dev-null" || rule.id === "unix-command")) {
+        if (
+          bashConstSkipLines.has(i) &&
+          (rule.id === 'shell-fallback-unix' ||
+            rule.id === 'dev-null' ||
+            rule.id === 'unix-command')
+        ) {
           continue;
         }
         // Pattern 5: function-level caller guard
@@ -1060,17 +1183,24 @@ function scanFile(filePath, rules) {
           continue;
         }
         // Pattern 6: isWindows ternary in nearby lines
-        if (isWindowsTernarySkipLines.has(i) &&
-            (rule.id === "shell-fallback-unix" || rule.id === "dev-null" || rule.id === "unix-command")) {
+        if (
+          isWindowsTernarySkipLines.has(i) &&
+          (rule.id === 'shell-fallback-unix' ||
+            rule.id === 'dev-null' ||
+            rule.id === 'unix-command')
+        ) {
           continue;
         }
         // New Pattern 3: resolver-style paired arrays with win32 conditional
-        if (resolverPairedSkipLines.has(i) && rule.id === "hardcoded-unix-paths") {
+        if (resolverPairedSkipLines.has(i) && rule.id === 'hardcoded-unix-paths') {
           continue;
         }
         // New Pattern 4: PATH fallback values (process.env.PATH || '/usr/...')
-        if (rule.id === "hardcoded-unix-paths" &&
-            /process\.env\.PATH/.test(line) && /\|\|/.test(line)) {
+        if (
+          rule.id === 'hardcoded-unix-paths' &&
+          /process\.env\.PATH/.test(line) &&
+          /\|\|/.test(line)
+        ) {
           continue;
         }
         // New Pattern 6: ternary assignment platform guards
@@ -1078,37 +1208,59 @@ function scanFile(filePath, rules) {
           continue;
         }
         // Ternary platform guards also apply to hardcoded-unix-paths
-        if (ternaryElseSkipLines.has(i) && rule.id === "hardcoded-unix-paths") {
+        if (ternaryElseSkipLines.has(i) && rule.id === 'hardcoded-unix-paths') {
           continue;
         }
-        if (isWindowsTernarySkipLines.has(i) && rule.id === "hardcoded-unix-paths") {
+        if (isWindowsTernarySkipLines.has(i) && rule.id === 'hardcoded-unix-paths') {
           continue;
         }
         // SSH remote context: paths in SSH files are for remote Linux servers
-        if (rule.id === "hardcoded-unix-paths" && filePath &&
-            /[/\\](ssh|remote-fs|remote-file-system)[/\\]|ssh-manager\.|ssh-test-manager\./.test(filePath)) {
+        if (
+          rule.id === 'hardcoded-unix-paths' &&
+          filePath &&
+          /[/\\](ssh|remote-fs|remote-file-system)[/\\]|ssh-manager\.|ssh-test-manager\./.test(
+            filePath,
+          )
+        ) {
           continue;
         }
         // Placeholder/example paths in HTML attributes (placeholder="...", value="...")
-        if (rule.id === "hardcoded-unix-paths" &&
-            /(?:placeholder|value)\s*=\s*["']\/(?:home|tmp)\//.test(line)) {
+        if (
+          rule.id === 'hardcoded-unix-paths' &&
+          /(?:placeholder|value)\s*=\s*["']\/(?:home|tmp)\//.test(line)
+        ) {
           continue;
         }
         // Default values for SSH workspace paths (display-only defaults)
-        if (rule.id === "hardcoded-unix-paths" &&
-            /workspacePath\s*[:=]\s*['"]\/home\//.test(line)) {
+        if (
+          rule.id === 'hardcoded-unix-paths' &&
+          /workspacePath\s*[:=]\s*['"]\/home\//.test(line)
+        ) {
           continue;
         }
         // Tilde replacement for display normalization (e.g., filePath.replace(/^~/, '/home/user'))
-        if (rule.id === "hardcoded-unix-paths" &&
-            /\.replace\s*\(.*~.*,\s*['"]\/home\//.test(line)) {
+        if (
+          rule.id === 'hardcoded-unix-paths' &&
+          /\.replace\s*\(.*~.*,\s*['"]\/home\//.test(line)
+        ) {
           continue;
         }
         // /tmp/ paths in remote command contexts (SSH executeCommand, remote scripts)
-        if (rule.id === "hardcoded-unix-paths" && /\/tmp\//.test(line)) {
+        if (rule.id === 'hardcoded-unix-paths' && /\/tmp\//.test(line)) {
           // Check nearby lines for SSH/remote context
           const idx = i;
-          const nearby = [lines[idx - 5], lines[idx - 4], lines[idx - 3], lines[idx - 2], lines[idx - 1], line, lines[idx + 1], lines[idx + 2]].filter(Boolean).join(" ");
+          const nearby = [
+            lines[idx - 5],
+            lines[idx - 4],
+            lines[idx - 3],
+            lines[idx - 2],
+            lines[idx - 1],
+            line,
+            lines[idx + 1],
+            lines[idx + 2],
+          ]
+            .filter(Boolean)
+            .join(' ');
           if (/\b(sshManager|executeCommand|ssh|remote|connectionId|terminalId)\b/.test(nearby)) {
             continue;
           }
@@ -1116,7 +1268,7 @@ function scanFile(filePath, rules) {
         // Lines inside `else if (process.platform === 'linux')` or `else if (process.platform === 'darwin')`
         // blocks — the PlatformGuardTracker misses these due to brace-counting limitations with
         // `} else if` patterns. Check nearby lines for the platform guard.
-        if (rule.id === "hardcoded-unix-paths") {
+        if (rule.id === 'hardcoded-unix-paths') {
           const idx = i;
           // Look backwards up to 15 lines for a linux/darwin platform guard
           let inPlatformSpecificBlock = false;
@@ -1134,48 +1286,59 @@ function scanFile(filePath, rules) {
           }
         }
         // Functions with "Linux" or "macOS" in their name or nearby comments
-        if (rule.id === "hardcoded-unix-paths") {
+        if (rule.id === 'hardcoded-unix-paths') {
           const idx = i;
           // Look backwards for function definition or comment indicating platform-specific code
           for (let j = idx; j >= Math.max(0, idx - 30); j--) {
-            if (/(?:function|const|async)\s+\w*(?:Linux|MacOS|Macos|Darwin|Unix)\w*/.test(lines[j]) ||
-                /\/\*\*.*(?:Linux|macOS|Mac OS|darwin|Unix)/.test(lines[j]) ||
-                /^\s*\*\s+.*\b(?:Linux|macOS|Mac OS|darwin|Unix)\b/.test(lines[j]) ||
-                /\/\/.*(?:Linux|macOS|Mac OS|darwin|Unix)/.test(lines[j]) ||
-                /\b\w*(?:Linux|MacOS|Macos|Darwin|Unix)\w*\s*\(/.test(lines[j])) {
+            if (
+              /(?:function|const|async)\s+\w*(?:Linux|MacOS|Macos|Darwin|Unix)\w*/.test(lines[j]) ||
+              /\/\*\*.*(?:Linux|macOS|Mac OS|darwin|Unix)/.test(lines[j]) ||
+              /^\s*\*\s+.*\b(?:Linux|macOS|Mac OS|darwin|Unix)\b/.test(lines[j]) ||
+              /\/\/.*(?:Linux|macOS|Mac OS|darwin|Unix)/.test(lines[j]) ||
+              /\b\w*(?:Linux|MacOS|Macos|Darwin|Unix)\w*\s*\(/.test(lines[j])
+            ) {
               // Mark as platform-specific — will be downgraded to INFO below
               result._platformSpecificContext = true;
               break;
             }
             // Stop at function boundaries
-            if (/^\s*(?:export\s+)?(?:async\s+)?function\s+\w+/.test(lines[j]) && j < idx - 1) break;
+            if (/^\s*(?:export\s+)?(?:async\s+)?function\s+\w+/.test(lines[j]) && j < idx - 1)
+              break;
           }
         }
 
         // ─── Severity downgrades ───
         let severity = rule.severity;
         // Downgrade certain rules to INFO in test files (fixture data is low priority)
-        if (isTestFile(filePath) && (rule.id === "hardcoded-unix-paths" || rule.id === "dev-null" || rule.id === "shell-fallback-unix")) {
+        if (
+          isTestFile(filePath) &&
+          (rule.id === 'hardcoded-unix-paths' ||
+            rule.id === 'dev-null' ||
+            rule.id === 'shell-fallback-unix')
+        ) {
           severity = SEVERITY.INFO;
         }
         // New Pattern 7: home-env-no-fallback in test files → INFO
-        if (isTestFile(filePath) && rule.id === "home-env-no-fallback") {
+        if (isTestFile(filePath) && rule.id === 'home-env-no-fallback') {
           severity = SEVERITY.INFO;
         }
         // New Pattern 1: path-split-slash display patterns → INFO
-        if (rule.id === "path-split-slash" && result.displayOnly) {
+        if (rule.id === 'path-split-slash' && result.displayOnly) {
           severity = SEVERITY.INFO;
         }
         // New Pattern 5: homebrew paths → INFO
-        if (rule.id === "hardcoded-unix-paths" && /homebrew|\/opt\/homebrew/i.test(line)) {
+        if (rule.id === 'hardcoded-unix-paths' && /homebrew|\/opt\/homebrew/i.test(line)) {
           severity = SEVERITY.INFO;
         }
         // Platform-specific context (macOS/Linux function names, comments) → INFO
-        if (rule.id === "hardcoded-unix-paths" && result._platformSpecificContext) {
+        if (rule.id === 'hardcoded-unix-paths' && result._platformSpecificContext) {
           severity = SEVERITY.INFO;
         }
         // Symlink paths (/usr/local/bin/X) in assignment context — typically macOS/Linux CLI install
-        if (rule.id === "hardcoded-unix-paths" && /symlinkPath\s*=\s*['"]\/usr\/local\/bin\//.test(line)) {
+        if (
+          rule.id === 'hardcoded-unix-paths' &&
+          /symlinkPath\s*=\s*['"]\/usr\/local\/bin\//.test(line)
+        ) {
           severity = SEVERITY.INFO;
         }
         findings.push({
@@ -1202,50 +1365,50 @@ function formatFinding(finding) {
     `   Rule: ${finding.rule} — ${finding.description}`,
     `   Found: ${finding.found}`,
     `   Fix: ${finding.fix}`,
-  ].join("\n");
+  ].join('\n');
 }
 
 function formatSummary(findings) {
-  const critical = findings.filter((f) => f.severity.name === "critical").length;
-  const warning = findings.filter((f) => f.severity.name === "warning").length;
-  const info = findings.filter((f) => f.severity.name === "info").length;
+  const critical = findings.filter((f) => f.severity.name === 'critical').length;
+  const warning = findings.filter((f) => f.severity.name === 'warning').length;
+  const info = findings.filter((f) => f.severity.name === 'info').length;
   return [
-    "",
-    "─".repeat(60),
+    '',
+    '─'.repeat(60),
     `Summary: ${findings.length} finding(s)`,
     `  🔴 Critical: ${critical}`,
     `  🟡 Warning:  ${warning}`,
     `  ⚪ Info:     ${info}`,
-    "",
-  ].join("\n");
+    '',
+  ].join('\n');
 }
 
 function formatLimitations() {
   return [
-    "─".repeat(60),
-    "⚠️  Limitations — What this tool CANNOT detect:",
-    "",
-    "  1. Full platform guard detection requires AST analysis.",
-    "     This tool uses brace-counting heuristics which may miss",
-    "     complex guard patterns (ternaries, early returns, etc.).",
-    "",
+    '─'.repeat(60),
+    '⚠️  Limitations — What this tool CANNOT detect:',
+    '',
+    '  1. Full platform guard detection requires AST analysis.',
+    '     This tool uses brace-counting heuristics which may miss',
+    '     complex guard patterns (ternaries, early returns, etc.).',
+    '',
     "  2. Dynamic command strings — exec(userProvidedCommand) can't",
-    "     be checked statically.",
-    "",
-    "  3. Transitive dependency issues — if a library internally",
+    '     be checked statically.',
+    '',
+    '  3. Transitive dependency issues — if a library internally',
     "     uses Unix-only APIs, this tool can't detect it.",
-    "",
-    "  4. Shell script contents — .sh files referenced from code",
-    "     or package.json are not analyzed.",
-    "",
-    "  5. Binary existence on PATH — whether git, node, cortex etc.",
-    "     resolve correctly on Windows depends on installation.",
-    "",
+    '',
+    '  4. Shell script contents — .sh files referenced from code',
+    '     or package.json are not analyzed.',
+    '',
+    '  5. Binary existence on PATH — whether git, node, cortex etc.',
+    '     resolve correctly on Windows depends on installation.',
+    '',
     "  6. Runtime path construction — path.join(baseDir, 'path')",
-    "     is fine, but if baseDir comes from a config with hardcoded",
+    '     is fine, but if baseDir comes from a config with hardcoded',
     "     Unix paths, this tool can't see that.",
-    "─".repeat(60),
-  ].join("\n");
+    '─'.repeat(60),
+  ].join('\n');
 }
 
 // ─── Simple glob matching ──────────────────────────────────────────────────────
@@ -1253,16 +1416,18 @@ function formatLimitations() {
 function matchGlob(filePath, pattern) {
   // Simple glob: supports * and ** and ?
   // Convert glob to regex
-  const normalized = filePath.replace(/\\/g, "/");
+  const normalized = filePath.replace(/\\/g, '/');
   let regexStr = pattern
-    .replace(/\\/g, "/")
-    .replace(/[.+^${}()|[\]]/g, "\\$&")  // escape regex chars except * and ?
-    .replace(/\*\*/g, "{{GLOBSTAR}}")
-    .replace(/\*/g, "[^/]*")
-    .replace(/\?/g, "[^/]")
-    .replace(/\{\{GLOBSTAR\}\}/g, ".*");
-  return new RegExp(`^${regexStr}$`).test(normalized) ||
-    new RegExp(`(^|/)${regexStr}($|/)`).test(normalized);
+    .replace(/\\/g, '/')
+    .replace(/[.+^${}()|[\]]/g, '\\$&') // escape regex chars except * and ?
+    .replace(/\*\*/g, '{{GLOBSTAR}}')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\?/g, '[^/]')
+    .replace(/\{\{GLOBSTAR\}\}/g, '.*');
+  return (
+    new RegExp(`^${regexStr}$`).test(normalized) ||
+    new RegExp(`(^|/)${regexStr}($|/)`).test(normalized)
+  );
 }
 
 // ─── CLI parsing ───────────────────────────────────────────────────────────────
@@ -1316,33 +1481,33 @@ function parseArgs(argv) {
   while (i < argv.length) {
     const arg = argv[i];
     switch (arg) {
-      case "--help":
-      case "-h":
+      case '--help':
+      case '-h':
         args.help = true;
         break;
-      case "--git-diff":
+      case '--git-diff':
         args.gitDiff = true;
         break;
-      case "--git-staged":
+      case '--git-staged':
         args.gitStaged = true;
         break;
-      case "--json":
+      case '--json':
         args.json = true;
         break;
-      case "--severity":
+      case '--severity':
         i++;
         args.severity = argv[i];
         break;
-      case "--ignore":
+      case '--ignore':
         i++;
         args.ignorePatterns.push(argv[i]);
         break;
-      case "--exclude-rules":
+      case '--exclude-rules':
         i++;
-        args.excludeRules.push(...argv[i].split(",").map((s) => s.trim()));
+        args.excludeRules.push(...argv[i].split(',').map((s) => s.trim()));
         break;
       default:
-        if (!arg.startsWith("--")) {
+        if (!arg.startsWith('--')) {
           args.targets.push(arg);
         } else {
           console.error(`Unknown option: ${arg}`);
@@ -1394,9 +1559,9 @@ function main() {
 
   if (files.length === 0) {
     if (!args.json) {
-      console.log("No files to scan.");
+      console.log('No files to scan.');
     } else {
-      console.log("[]");
+      console.log('[]');
     }
     process.exit(0);
   }
@@ -1436,7 +1601,7 @@ function main() {
       fix: f.fix,
     }));
     console.log(JSON.stringify(jsonFindings, null, 2));
-    const hasCritical = allFindings.some((f) => f.severity.name === "critical");
+    const hasCritical = allFindings.some((f) => f.severity.name === 'critical');
     process.exit(hasCritical ? 1 : 0);
   }
 
@@ -1458,14 +1623,14 @@ function main() {
   // Print findings
   for (const finding of allFindings) {
     console.log(formatFinding(finding));
-    console.log("");
+    console.log('');
   }
 
   console.log(formatSummary(allFindings));
   console.log(`Scanned ${files.length} file(s).`);
   console.log(formatLimitations());
 
-  const hasCritical = allFindings.some((f) => f.severity.name === "critical");
+  const hasCritical = allFindings.some((f) => f.severity.name === 'critical');
   process.exit(hasCritical ? 1 : 0);
 }
 

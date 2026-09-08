@@ -4,13 +4,7 @@
  * Tests the testing framework itself to ensure it works correctly.
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { AgentTestHarness } from './agent-test-harness';
 import { AgentTestRunner } from './agent-test-runner';
 import {

@@ -116,7 +116,7 @@ on:
   schedule:
     # Hourly at :30 (backstop); each run is a seconds-long API check that
     # either squash-merges a green Release PR or exits quietly.
-    - cron: "30 * * * *"
+    - cron: '30 * * * *'
   push:
     # Any push to main is potentially release-worthy (fe change or sidecar
     # pin bump) and chains straight into a (polling) cut so it ships this
@@ -126,7 +126,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Log what would be merged without merging"
+        description: 'Log what would be merged without merging'
         required: false
         default: false
         type: boolean

@@ -33,7 +33,8 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({
     state: () => ({
       providerCatalog,
-      providerSettings: { activeProviderId: 'auggie', enabledProviders: { auggie: true } },
+      providerSettings: { enabledProviders: { auggie: true } },
+      model: { defaultProviderId: 'auggie' },
       providerModels: { byProviderId: {}, clearEpoch: 0 },
       hardwareConsole: { pttRecording: false, voiceTranscribing: false },
     }),
@@ -45,14 +46,18 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerHydrated: () => mocks.readable(true),
   selectCompactWorkspaceInitializerFormState: () => mocks.readable(null),
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(null),
-  selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(null),
+  // A remembered orchestration choice: the modal opens in team mode so the
+  // team card's picker is live from the start.
+  selectWorkspaceInitializerLastSubmittedAgent: () =>
+    mocks.readable({ selectedSpecialist: 'spec-writer', isTeamMode: true }),
   selectWorkspaceInitializerRecentRepos: () => mocks.readable([]),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(null),
 }));
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable('auggie'),
-  selectEnabledProviderIds: () => mocks.readable(['auggie']),
+  selectModelFetchProviderIds: () => mocks.readable(['auggie']),
+  selectIsProviderModelAccessAllowed: () => mocks.readable(true),
   selectAvailableEnabledProviderIds: () => mocks.readable(['auggie']),
 }));
 
@@ -330,8 +335,10 @@ describe('NewSpaceModal model-picker composition', () => {
     await fireEvent.click(pickerTrigger(team));
     const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
     await fireEvent.click(reasoningTrigger);
-    const listboxes = within(dialog).getAllByRole('listbox');
-    const reasoningListbox = listboxes[listboxes.length - 1];
+    const reasoningPopup = document.getElementById(
+      reasoningTrigger.getAttribute('aria-controls')!,
+    )!;
+    const reasoningListbox = within(reasoningPopup).getByRole('listbox');
     await fireEvent.pointerUp(within(reasoningListbox).getByRole('option', { name: 'High' }), {
       pointerType: 'mouse',
     });
@@ -435,11 +442,11 @@ describe('NewSpaceModal model-picker composition', () => {
     const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
     reasoningTrigger.focus();
     await fireEvent.keyDown(reasoningTrigger, { key: 'Enter' });
-    await waitFor(() => expect(within(dialog).getAllByRole('listbox')).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByRole('listbox')).toHaveLength(2));
     const persistedCount = persistedStates().length;
 
     await fireEvent.keyDown(reasoningTrigger, { key: 'ArrowDown' });
-    expect(within(dialog).getAllByRole('listbox')).toHaveLength(2);
+    expect(screen.getAllByRole('listbox')).toHaveLength(2);
     await fireEvent.keyDown(reasoningTrigger, { key: 'Escape' });
 
     await waitFor(() => {

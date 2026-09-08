@@ -1,6 +1,6 @@
 import { call, put, race, take, takeEvery } from 'typed-redux-saga';
 
-import { appClient } from '$lib/client';
+import { readAgentSession } from '$features/agent/agent-read-service';
 import { createLogger } from '$lib/utils/client-logger';
 import type { AgentSession } from '$shared/types';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
@@ -16,10 +16,7 @@ const logger = createLogger('AgentReadSaga');
 function* loadAgentSessionSaga(wsId: string, agentId: string) {
   if (yield* call(isAgentDeletionPending, agentId)) return;
   try {
-    const session: AgentSession | null = yield* call(
-      [appClient.agents, appClient.agents.get],
-      agentId,
-    );
+    const session: AgentSession | null = yield* call(readAgentSession, agentId);
     if (!session || String(session.workspaceId) !== wsId) return;
     // Skip rows carrying the daemon's delete-grace-window deadline (PROTOCOL
     // §5.5 `pendingDeleteAt`, v6.7+) — the deletion is pending daemon-side.

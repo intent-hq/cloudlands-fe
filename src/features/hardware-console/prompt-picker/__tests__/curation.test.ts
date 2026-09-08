@@ -78,9 +78,7 @@ describe('recordPromptUsage', () => {
       'hot',
       at(1),
     );
-    expect(next).toEqual([
-      { text: 'hot', count: COUNT_RESCALE_THRESHOLD / 2, lastUsedAt: at(1) },
-    ]);
+    expect(next).toEqual([{ text: 'hot', count: COUNT_RESCALE_THRESHOLD / 2, lastUsedAt: at(1) }]);
   });
 
   it('caps the tracked set by rank', () => {

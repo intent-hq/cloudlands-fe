@@ -2,7 +2,11 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ backendRequest: vi.fn(), warn: vi.fn(), setPath: vi.fn() }));
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.backendRequest,
+  onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
+}));
 vi.mock('$lib/utils/client-logger', () => ({ createLogger: () => ({ warn: mocks.warn }) }));
 vi.mock('$lib/utils/notification-sound', () => ({ setNotificationSoundPath: mocks.setPath }));
 
@@ -18,6 +22,10 @@ import {
   setVolume,
 } from '../user-preferences-slice';
 import { notificationSettingsSaga } from './notification-settings-saga';
+import {
+  __resetSettingsReadCacheForTests,
+  readSetting,
+} from '$lib/client/live/live-settings-client';
 
 function start() {
   const channel = stdChannel();
@@ -41,11 +49,38 @@ const expectedChanges = (soundPath: string, soundEnabled = false) => [
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  __resetSettingsReadCacheForTests();
   mocks.backendRequest.mockResolvedValue({ applied: [] });
 });
 afterEach(() => vi.useRealTimers());
 
 describe('notificationSettingsSaga', () => {
+  it('invalidates cached daemon settings after persisting a selected sound', async () => {
+    const definition = {
+      path: 'notifications.soundPath',
+      label: 'Notification sound path',
+      description: 'Desktop MP3 path',
+      category: 'notifications',
+      type: 'string',
+      defaultValue: '',
+    };
+    mocks.backendRequest.mockResolvedValueOnce({ definition, value: '/old.mp3' });
+    expect(await readSetting('notifications.soundPath')).toMatchObject({ value: '/old.mp3' });
+    const run = start();
+    try {
+      run.dispatch(setSoundPath('/new.mp3'));
+      await vi.advanceTimersByTimeAsync(100);
+      mocks.backendRequest.mockResolvedValueOnce({ definition, value: '/new.mp3' });
+      expect(await readSetting('notifications.soundPath')).toMatchObject({ value: '/new.mp3' });
+      expect(mocks.backendRequest).toHaveBeenLastCalledWith('settings.get', {
+        path: 'notifications.soundPath',
+      });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
   it('persists selection and clear without enabling sound; hydration and reset stay coherent', async () => {
     const run = start();
     try {

@@ -237,6 +237,12 @@
   let paneStackMenuOpen = $state(false);
   let panelActionsMenuOpen = $state({ tabBar: false, compact: false });
 
+  $effect(() => {
+    void activeTabId;
+    panelActionsMenuOpen.tabBar = false;
+    panelActionsMenuOpen.compact = false;
+  });
+
   // Tab rename state - tracks which tab is being renamed inline
   let renamingTabId = $state<string | null>(null);
   let renameInputRef = $state<HTMLInputElement | null>(null);
@@ -308,6 +314,8 @@
         return agent.name;
       }
     }
+    // A browser tab's title is canonical registry data; none yet shows the label.
+    if (tab.type === 'browser') return tab.title || m.layout_panelLayout_browser_fallback();
     // Fall back to the tab's stored title
     return tab.title;
   }
@@ -1182,7 +1190,7 @@
     bind:open={panelActionsMenuOpen[location]}
     align="end"
     side="bottom"
-    contentClass="panel-actions-menu-content w-max [&_[data-slot=menu-command-item]>kbd]:text-muted-foreground"
+    contentClass="panel-actions-menu-content w-72 [&_[data-slot=menu-command-item]>kbd]:text-muted-foreground"
   >
     <!-- i18n-ignore -->
     {#snippet trigger({ props }: { props: Record<string, unknown> })}
@@ -1275,52 +1283,54 @@
         />
       </div>
 
-      <Menu.Separator />
+      {#if $isWorkspaceHostLocal$ || activeTab?.type === 'browser'}
+        <Menu.Separator />
 
-      <div class="type-caption px-2 pb-0.5 pt-1.5 font-medium text-muted-foreground">
-        {m.settings_section_openIn()}
-      </div>
-      <div data-panel-actions-section="open-in">
-        {#if activeTab}
-          {@const externalTarget = getPanelExternalOpenTarget(
-            activeTab,
-            workspaceId,
-            $isWorkspaceHostLocal$,
-          )}
-          {#if externalTarget.kind === 'browser'}
-            <Menu.CommandItem
-              icon={faArrowUpRightFromSquare}
-              label={m.layout_panelTabBar_openInBrowser_label()}
-              onclick={() => {
-                openInExternalBrowser(activeTab);
-                close();
-              }}
-            />
-          {:else if externalTarget.kind === 'path'}
-            {#await import('$features/workspace/components/WorkspaceActionsMenu.svelte') then module}
-              {@const WorkspaceActionsMenu = module.default}
-              <WorkspaceActionsMenu
-                filePath={externalTarget.filePath}
-                workspaceId={externalTarget.workspaceId}
-                isDirectory={externalTarget.isDirectory}
-                isDiff={externalTarget.isDiff ?? false}
-                isWorkspaceRoot={externalTarget.isWorkspaceRoot ?? false}
-                workspaceFolderPath={externalTarget.workspaceFolderPath ?? ''}
-                showDeleteOption={false}
-                showArchiveOption={false}
-                showFileNameCopy={false}
-                onClose={close}
+        <div class="type-caption px-2 pb-0.5 pt-1.5 font-medium text-muted-foreground">
+          {m.settings_section_openIn()}
+        </div>
+        <div data-panel-actions-section="open-in">
+          {#if activeTab}
+            {@const externalTarget = getPanelExternalOpenTarget(
+              activeTab,
+              workspaceId,
+              $isWorkspaceHostLocal$,
+            )}
+            {#if externalTarget.kind === 'browser'}
+              <Menu.CommandItem
+                icon={faArrowUpRightFromSquare}
+                label={m.layout_panelTabBar_openInBrowser_label()}
+                onclick={() => {
+                  openInExternalBrowser(activeTab);
+                  close();
+                }}
               />
-            {/await}
-          {:else}
-            <Menu.CommandItem
-              icon={faArrowUpRightFromSquare}
-              label={m.ui_fileActions_noRepoPath_tooltip()}
-              disabled
-            />
+            {:else if externalTarget.kind === 'path'}
+              {#await import('$features/workspace/components/WorkspaceActionsMenu.svelte') then module}
+                {@const WorkspaceActionsMenu = module.default}
+                <WorkspaceActionsMenu
+                  filePath={externalTarget.filePath}
+                  workspaceId={externalTarget.workspaceId}
+                  isDirectory={externalTarget.isDirectory}
+                  isDiff={externalTarget.isDiff ?? false}
+                  isWorkspaceRoot={externalTarget.isWorkspaceRoot ?? false}
+                  workspaceFolderPath={externalTarget.workspaceFolderPath ?? ''}
+                  showDeleteOption={false}
+                  showArchiveOption={false}
+                  showFileNameCopy={false}
+                  onClose={close}
+                />
+              {/await}
+            {:else}
+              <Menu.CommandItem
+                icon={faArrowUpRightFromSquare}
+                label={m.ui_fileActions_noRepoPath_tooltip()}
+                disabled
+              />
+            {/if}
           {/if}
-        {/if}
-      </div>
+        </div>
+      {/if}
     {/snippet}
   </DropdownMenu>
 {/snippet}
@@ -1886,7 +1896,7 @@
       {#if activeTab.type === 'agent'}
         <!-- Agent headers keep the current avatar and editable name. -->
         <div
-          class="flex min-w-0 shrink items-center gap-2 overflow-hidden bg-card pl-1"
+          class="flex min-w-0 shrink items-center gap-2 bg-card pl-1"
           aria-label={m.layout_panelTabBar_activePane_ariaLabel({
             title: activeTabTitle,
             position: panePosition(activeTab.id),

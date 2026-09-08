@@ -42,7 +42,9 @@ type ProviderSettingsUpdate = {
 function* changesFor(update: ProviderSettingsUpdate) {
   const changes: AppSettingChange[] = [];
   if (update.activeProviderId !== undefined) {
-    changes.push({ path: 'providers.active', value: update.activeProviderId });
+    // Provider leg of the default model triple — `providers.active` is
+    // deprecated (unread by the daemon).
+    changes.push({ path: 'model.defaultProvider', value: update.activeProviderId });
   }
   if (update.enabledProviderDelta !== undefined) {
     const { providerId, enabled } = update.enabledProviderDelta;
@@ -99,8 +101,8 @@ function* queueSetProviderEnabledWorker(
 /**
  * Retry backoff for a provider-settings write that failed in transport.
  * During onboarding on a fresh install the daemon connection may still be
- * cycling, so dropping the write would leave `providers.active` stale on the
- * daemon — the onboarding model pick then resolves under the wrong provider
+ * cycling, so dropping the write would leave `model.defaultProvider` stale on
+ * the daemon — the onboarding model pick then resolves under the wrong provider
  * key after restart (intent-hq/monorepo#1924). Updates are partial patches
  * whose order matters, so the failed write is retried in place (never
  * superseded); the last delay repeats until the write lands.

@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Wire-contract tests for host-exec-stream.ts.
@@ -55,10 +49,7 @@ vi.mock('../../logger', () => ({
   },
 }));
 
-import {
-  cancelInflightHostExecStreamsForBackendSwitch,
-  hostExecStream,
-} from '../host-exec-stream';
+import { cancelInflightHostExecStreamsForBackendSwitch, hostExecStream } from '../host-exec-stream';
 
 /** Push a PROTOCOL-shaped `events.event` frame through the captured listener. */
 function emit(type: string, data: Record<string, unknown>): void {

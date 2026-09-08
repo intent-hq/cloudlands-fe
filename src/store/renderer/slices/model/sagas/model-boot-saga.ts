@@ -31,9 +31,8 @@ export function* loadModelsOnBootWorker() {
   try {
     let providerId = yield* selectActiveProviderId.effect();
     if (!providerId) {
-      const providerSettings: Awaited<
-        ReturnType<typeof appClient.settings.getProviderSettings>
-      > = yield* call([appClient.settings, appClient.settings.getProviderSettings]);
+      const providerSettings: Awaited<ReturnType<typeof appClient.settings.getProviderSettings>> =
+        yield* call([appClient.settings, appClient.settings.getProviderSettings]);
       providerId = providerSettings?.activeProviderId ?? '';
     }
     if (!providerId) return false;

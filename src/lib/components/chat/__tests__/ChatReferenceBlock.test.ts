@@ -170,9 +170,7 @@ describe('ChatReferenceBlock', () => {
 
     await fireEvent.click(screen.getByRole('button'), { metaKey: true });
 
-    expect(onOpenFile).toHaveBeenCalledWith(
-      expect.objectContaining({ openInAdjacentPanel: true }),
-    );
+    expect(onOpenFile).toHaveBeenCalledWith(expect.objectContaining({ openInAdjacentPanel: true }));
   });
 
   it('renders a non-clickable header when the reference has no file path', () => {

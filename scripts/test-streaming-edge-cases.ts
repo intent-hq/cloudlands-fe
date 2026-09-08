@@ -33,12 +33,19 @@ class StreamingEdgeCaseTester {
     logger.info('Testing for memory leaks in streaming handlers...');
 
     try {
-      const agentServicePath = path.join(__dirname, '../src/features/agent/utils/stream-handler-registry.ts');
+      const agentServicePath = path.join(
+        __dirname,
+        '../src/features/agent/utils/stream-handler-registry.ts',
+      );
       const content = fs.readFileSync(agentServicePath, 'utf-8');
 
       // Check for event listener cleanup
-      const hasRemoveEventListener = content.includes('removeEventListener') || content.includes('off(') || content.includes('offById');
-      const hasCleanup = content.includes('cleanup') || content.includes('destroy') || content.includes('dispose');
+      const hasRemoveEventListener =
+        content.includes('removeEventListener') ||
+        content.includes('off(') ||
+        content.includes('offById');
+      const hasCleanup =
+        content.includes('cleanup') || content.includes('destroy') || content.includes('dispose');
 
       if (!hasRemoveEventListener) {
         this.issues.push('No event listener cleanup found - potential memory leak');
@@ -64,7 +71,10 @@ class StreamingEdgeCaseTester {
     logger.info('Testing for race conditions in concurrent streams...');
 
     try {
-      const agentServicePath = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
+      const agentServicePath = path.join(
+        __dirname,
+        '../src/features/agent/agent-stream-lifecycle.ts',
+      );
       const content = fs.readFileSync(agentServicePath, 'utf-8');
 
       // Check if stream IDs are properly isolated
@@ -95,11 +105,15 @@ class StreamingEdgeCaseTester {
     logger.info('Testing for XSS vulnerabilities in message rendering...');
 
     try {
-      const markdownViewerPath = path.join(__dirname, '../src/lib/components/markdown/MarkdownViewer.svelte');
+      const markdownViewerPath = path.join(
+        __dirname,
+        '../src/lib/components/markdown/MarkdownViewer.svelte',
+      );
       const content = fs.readFileSync(markdownViewerPath, 'utf-8');
 
       // Check for HTML sanitization
-      const hasSanitization = content.includes('sanitize') || content.includes('DOMPurify') || content.includes('escape');
+      const hasSanitization =
+        content.includes('sanitize') || content.includes('DOMPurify') || content.includes('escape');
       const hasInnerHTML = content.includes('innerHTML') || content.includes('@html');
 
       if (hasInnerHTML && !hasSanitization) {
@@ -111,7 +125,8 @@ class StreamingEdgeCaseTester {
       const processorPath = path.join(__dirname, '../src/lib/utils/markdown-processor.ts');
       if (fs.existsSync(processorPath)) {
         const processorContent = fs.readFileSync(processorPath, 'utf-8');
-        const hasProcessorSanitization = processorContent.includes('sanitize') || processorContent.includes('DOMPurify');
+        const hasProcessorSanitization =
+          processorContent.includes('sanitize') || processorContent.includes('DOMPurify');
 
         if (!hasProcessorSanitization) {
           logger.warn('Markdown processor may not sanitize HTML');
@@ -165,7 +180,10 @@ class StreamingEdgeCaseTester {
     logger.info('Testing for potential infinite loops...');
 
     try {
-      const agentServicePath = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
+      const agentServicePath = path.join(
+        __dirname,
+        '../src/features/agent/agent-stream-lifecycle.ts',
+      );
       const content = fs.readFileSync(agentServicePath, 'utf-8');
 
       // Check for recursive calls without exit conditions
@@ -196,7 +214,10 @@ class StreamingEdgeCaseTester {
     logger.info('Testing for proper state cleanup on unmount...');
 
     try {
-      const streamingContentPath = path.join(__dirname, '../src/lib/components/chat/StreamingMessageContent.svelte');
+      const streamingContentPath = path.join(
+        __dirname,
+        '../src/lib/components/chat/StreamingMessageContent.svelte',
+      );
       const content = fs.readFileSync(streamingContentPath, 'utf-8');
 
       // Check for onDestroy or cleanup
@@ -223,12 +244,17 @@ class StreamingEdgeCaseTester {
     logger.info('Testing for proper null/undefined handling...');
 
     try {
-      const streamingContentPath = path.join(__dirname, '../src/lib/components/chat/StreamingMessageContent.svelte');
+      const streamingContentPath = path.join(
+        __dirname,
+        '../src/lib/components/chat/StreamingMessageContent.svelte',
+      );
       const content = fs.readFileSync(streamingContentPath, 'utf-8');
 
       // Check for null checks
-      const hasNullChecks = content.includes('?') || content.includes('||') || content.includes('??');
-      const hasDefaultValues = content.includes('= []') || content.includes('= {}') || content.includes("= ''");
+      const hasNullChecks =
+        content.includes('?') || content.includes('||') || content.includes('??');
+      const hasDefaultValues =
+        content.includes('= []') || content.includes('= {}') || content.includes("= ''");
 
       if (!hasNullChecks) {
         this.issues.push('No null safety operators found - could crash on null values');
@@ -254,11 +280,17 @@ class StreamingEdgeCaseTester {
     logger.info('Testing for proper message ordering...');
 
     try {
-      const agentServicePath = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
+      const agentServicePath = path.join(
+        __dirname,
+        '../src/features/agent/agent-stream-lifecycle.ts',
+      );
       const content = fs.readFileSync(agentServicePath, 'utf-8');
 
       // Check for ordering logic
-      const hasOrdering = content.includes('orderedItems') || content.includes('sequence') || content.includes('order');
+      const hasOrdering =
+        content.includes('orderedItems') ||
+        content.includes('sequence') ||
+        content.includes('order');
       const hasTimestamp = content.includes('timestamp') || content.includes('Date');
 
       if (!hasOrdering) {
@@ -285,7 +317,10 @@ class StreamingEdgeCaseTester {
     logger.info('Testing for duplicate message prevention...');
 
     try {
-      const agentServicePath = path.join(__dirname, '../src/store/renderer/slices/agent-session/sagas/agent-stream-saga.ts');
+      const agentServicePath = path.join(
+        __dirname,
+        '../src/store/renderer/slices/agent-session/sagas/agent-stream-saga.ts',
+      );
       const content = fs.readFileSync(agentServicePath, 'utf-8');
 
       // Check for duplicate prevention
@@ -314,7 +349,10 @@ class StreamingEdgeCaseTester {
     logger.info('Testing for proper scroll behavior...');
 
     try {
-      const markdownViewerPath = path.join(__dirname, '../src/lib/components/markdown/MarkdownViewer.svelte');
+      const markdownViewerPath = path.join(
+        __dirname,
+        '../src/lib/components/markdown/MarkdownViewer.svelte',
+      );
       const chatPanelPath = path.join(__dirname, '../src/lib/components/chat/ChatPanel.svelte');
 
       let hasScrollLogic = false;
@@ -400,7 +438,7 @@ class StreamingEdgeCaseTester {
     ];
 
     console.log('\n🔍 Running Edge Case Tests for Streaming\n');
-    console.log('=' .repeat(50));
+    console.log('='.repeat(50));
 
     for (const test of tests) {
       console.log(`\n📋 ${test.name}`);
@@ -417,10 +455,10 @@ class StreamingEdgeCaseTester {
     }
 
     // Summary
-    console.log(`\n${  '='.repeat(50)}`);
+    console.log(`\n${'='.repeat(50)}`);
     console.log('\n📊 Test Summary\n');
 
-    const passed = Array.from(this.results.values()).filter(r => r).length;
+    const passed = Array.from(this.results.values()).filter((r) => r).length;
     const total = this.results.size;
 
     console.log(`Total: ${total}`);
@@ -446,7 +484,7 @@ class StreamingEdgeCaseTester {
 
 // Run tests
 const tester = new StreamingEdgeCaseTester();
-tester.runAllTests().catch(error => {
+tester.runAllTests().catch((error) => {
   console.error('Test runner failed:', error);
   process.exit(1);
 });

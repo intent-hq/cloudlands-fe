@@ -383,7 +383,9 @@ describe('placeAttachmentViaTransport — chunked upload (>25MB remote)', () => 
     expect(isPlacementCancellation(error, aborter.signal)).toBe(true);
     const methods = backendRequestMock.mock.calls.map(([method]) => method);
     // Only chunk 0 was sent before the abort; the session was cleaned up.
-    expect(methods.filter((methodName) => methodName === 'file.attachmentUpload.chunk')).toHaveLength(1);
+    expect(
+      methods.filter((methodName) => methodName === 'file.attachmentUpload.chunk'),
+    ).toHaveLength(1);
     expect(methods).not.toContain('file.attachmentUpload.commit');
     expect(backendRequestMock).toHaveBeenCalledWith('file.attachmentUpload.abort', {
       uploadId: 'upload-1',

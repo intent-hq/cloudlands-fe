@@ -36,7 +36,11 @@
     >
       {userCode}
     </span>
-    <CopyButton text={userCode} size={compact ? 'xs' : 'sm'} label={m.lib_githubDeviceCode_copyCode_label()} />
+    <CopyButton
+      text={userCode}
+      size={compact ? 'xs' : 'sm'}
+      label={m.lib_githubDeviceCode_copyCode_label()}
+    />
   </div>
   <button
     type="button"

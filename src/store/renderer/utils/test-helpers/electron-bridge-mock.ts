@@ -19,11 +19,11 @@ import { vi } from 'vitest';
 export const invoke = vi.fn();
 
 /** Synchronous event listener — returns an unsubscribe function. */
- 
+
 export const listenSync = vi.fn((_event: string, _handler: (payload: any) => void) => () => {});
 
 /** Async event listener — resolves to an unsubscribe function. */
- 
+
 export const listen = vi.fn(async (_event: string, _handler: (payload: any) => void) => () => {});
 
 /** Returns `false` by default — most tests don't run in Electron. */
@@ -101,4 +101,3 @@ export const core = { invoke };
 
 /** Tauri-compatible `event` shim. */
 export const event = { listen, emit };
-

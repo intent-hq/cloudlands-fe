@@ -24,9 +24,7 @@ export interface IsOnboardingProviderVisibleInput {
   status?: { available?: boolean };
 }
 
-export function isOnboardingProviderVisible(
-  input: IsOnboardingProviderVisibleInput,
-): boolean {
+export function isOnboardingProviderVisible(input: IsOnboardingProviderVisibleInput): boolean {
   const { provider, isFeatureEnabled, status } = input;
   if (provider.requiresFeatureCode && !isFeatureEnabled(provider.requiresFeatureCode)) {
     return false;

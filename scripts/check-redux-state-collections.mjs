@@ -175,7 +175,13 @@ function splitTopLevel(text) {
     else if (c === ']') bracket--;
     else if (c === '<') angle++;
     else if (c === '>') angle = Math.max(0, angle - 1);
-    else if ((c === ';' || c === ',') && paren === 0 && brace === 0 && bracket === 0 && angle === 0) {
+    else if (
+      (c === ';' || c === ',') &&
+      paren === 0 &&
+      brace === 0 &&
+      bracket === 0 &&
+      angle === 0
+    ) {
       parts.push({ text: text.slice(start, i), start });
       start = i + 1;
     }
@@ -301,7 +307,10 @@ function findArrayTypeRefs(typeText) {
     const close = matchingClose(typeText, open, '<', '>');
     if (close === -1) continue;
     const elementType = typeText.slice(open + 1, close);
-    refs.push({ elementType, typeText: typeText.slice(match.index, close + 1).replace(/\s+/g, ' ') });
+    refs.push({
+      elementType,
+      typeText: typeText.slice(match.index, close + 1).replace(/\s+/g, ' '),
+    });
     genericRe.lastIndex = close + 1;
   }
   return refs;
@@ -310,7 +319,9 @@ function findArrayTypeRefs(typeText) {
 function memberNameAndType(memberText) {
   const trimmed = memberText.trim();
   if (!trimmed || trimmed.includes('=>')) return null;
-  const match = /^(?:readonly\s+)?(?:["']?([A-Za-z_$][\w$-]*)["']?)\??\s*:\s*([\s\S]+)$/.exec(trimmed);
+  const match = /^(?:readonly\s+)?(?:["']?([A-Za-z_$][\w$-]*)["']?)\??\s*:\s*([\s\S]+)$/.exec(
+    trimmed,
+  );
   if (!match) return null;
   return { name: match[1], type: match[2].trim() };
 }
@@ -319,9 +330,7 @@ function slicePrefixForPath(relPath) {
   const parts = relPath.split(/[\\/]/).filter(Boolean);
   const fileName = parts.pop() ?? '';
   const stem = fileName.replace(/\.(?:mjs|cjs|js|jsx|ts|tsx)$/, '');
-  const base = stem === 'types'
-    ? parts.at(-1) ?? ''
-    : stem.replace(/-(?:types|slice)$/, '');
+  const base = stem === 'types' ? (parts.at(-1) ?? '') : stem.replace(/-(?:types|slice)$/, '');
   if (!base) return '';
   return base
     .split('-')
@@ -341,7 +350,13 @@ function typeDeclarations(src) {
     if (between.includes(';')) continue;
     const close = matchingClose(src, brace, '{', '}');
     if (close === -1) continue;
-    out.push({ name: match[2], exported: Boolean(match[1]), bodyStart: brace, bodyEnd: close, src });
+    out.push({
+      name: match[2],
+      exported: Boolean(match[1]),
+      bodyStart: brace,
+      bodyEnd: close,
+      src,
+    });
     declRe.lastIndex = close + 1;
   }
   return out;
@@ -349,11 +364,7 @@ function typeDeclarations(src) {
 
 function isSlicePrefixedStateName(prefix, name) {
   if (!prefix) return false;
-  const candidates = new Set([
-    `${prefix}State`,
-    `${prefix}SliceState`,
-    `${prefix}WorkspaceState`,
-  ]);
+  const candidates = new Set([`${prefix}State`, `${prefix}SliceState`, `${prefix}WorkspaceState`]);
   if (prefix.endsWith('State')) candidates.add(prefix);
   return candidates.has(name);
 }
@@ -393,7 +404,8 @@ function collectSliceStateTypeNames(files) {
       }
     }
 
-    const constStateRe = /\b(?:export\s+)?const\s+(?:[A-Za-z_$][\w$]*(?:initialState|InitialState)|empty[A-Za-z0-9_$]*State|Empty[A-Za-z0-9_$]*State)\s*:\s*([A-Za-z_$][\w$]*State[A-Za-z0-9_$]*)\b/g;
+    const constStateRe =
+      /\b(?:export\s+)?const\s+(?:[A-Za-z_$][\w$]*(?:initialState|InitialState)|empty[A-Za-z0-9_$]*State|Empty[A-Za-z0-9_$]*State)\s*:\s*([A-Za-z_$][\w$]*State[A-Za-z0-9_$]*)\b/g;
     let constMatch;
     while ((constMatch = constStateRe.exec(stripped)) !== null) {
       names.add(constMatch[1]);
@@ -534,7 +546,8 @@ function scanObjectLiteral(src, bodyStart, bodyEnd, declarationName, path = []) 
 
 function findInitialStateViolations(src, sliceStateTypeNames) {
   const out = [];
-  const initRe = /\b(?:export\s+)?const\s+([A-Za-z_$][\w$]*(?:initialState|InitialState)|empty[A-Za-z0-9_$]*State|Empty[A-Za-z0-9_$]*State)\s*:\s*([A-Za-z_$][\w$]*State[A-Za-z0-9_$]*)\s*=\s*{/g;
+  const initRe =
+    /\b(?:export\s+)?const\s+([A-Za-z_$][\w$]*(?:initialState|InitialState)|empty[A-Za-z0-9_$]*State|Empty[A-Za-z0-9_$]*State)\s*:\s*([A-Za-z_$][\w$]*State[A-Za-z0-9_$]*)\s*=\s*{/g;
   let match;
   while ((match = initRe.exec(src)) !== null) {
     if (!sliceStateTypeNames.has(match[2])) continue;
@@ -649,12 +662,16 @@ async function main() {
 
   console.log('');
   if (baselineCount > 0) {
-    console.log(`${YELLOW}Baseline:${NC} ${baselineCount} existing violation(s) ignored for staged rollout.`);
+    console.log(
+      `${YELLOW}Baseline:${NC} ${baselineCount} existing violation(s) ignored for staged rollout.`,
+    );
   }
   if (total > 0) {
     console.log(`${RED}[Redux state entity arrays]${NC} — ${total} violation(s):`);
     console.log('  Store entity/object lists as Collection<T, K>, not Entity[] or Array<Entity>.');
-    console.log('  Import Collection/createCollection and update through collection utilities in reducers.');
+    console.log(
+      '  Import Collection/createCollection and update through collection utilities in reducers.',
+    );
     console.log('  Primitive arrays and ID arrays remain allowed.');
     console.log('  See src/store/renderer/AGENTS.md § "Use Collection, Not Arrays".');
     for (const line of lines) console.log(line);

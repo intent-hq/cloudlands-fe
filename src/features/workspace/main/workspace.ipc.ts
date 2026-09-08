@@ -15,7 +15,6 @@ import { protocolAdapter } from '../../protocol/main/protocol-adapter';
 import { Logger } from '../../../shared/logger';
 
 import { getWorkspacePath } from './workspace-path.service';
-import { InstructionService } from '../../agent/main/instruction-service';
 import { execFileAsync } from '../../../shared/git/git-env';
 import { getBackendClient, getBackendIdForIpcSender } from '../../backend/main/backend.ipc';
 import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
@@ -349,11 +348,11 @@ export function setupWorkspaceIPC(): void {
 
   // Open workspace
   //
-  // ⚠️  IMPORTANT: This handler has side effects beyond just "opening" the workspace:
-  // it warms caches. File-change monitoring is owned by the daemon; the FE-side
-  // change-detection stack has been removed. Script autoStart is owned by the
-  // daemon (`script.*`, PROTOCOL §5.8) — the legacy FE-side autoStart trigger
-  // has been removed.
+  // This handler has no FE-side side effects beyond opening the workspace: the
+  // legacy prompt-cache warming has been removed. File-change monitoring is owned
+  // by the daemon; the FE-side change-detection stack has been removed. Script
+  // autoStart is owned by the daemon (`script.*`, PROTOCOL §5.8) — the legacy
+  // FE-side autoStart trigger has been removed.
   //
   // The backend is IDEMPOTENT, so it's safe to call this multiple times for the
   // same workspace.
@@ -383,58 +382,15 @@ export function setupWorkspaceIPC(): void {
           // Attribution is owned by the daemon (§17.4 / §5.19); no FE-side
           // agent-writes cache to warm here.
 
-          // PERFORMANCE OPTIMIZATION: Start all background initialization without blocking
-          // The workspace is usable immediately - caches initialize in the
-          // background and will be ready by the time the user needs them.
-
           // Metadata watcher retired alongside the workspace disk-read path;
           // workspace metadata is served by the daemon (`workspace.get`).
 
-          const backgroundInitPromise = (async () => {
-            try {
-              const initStart = Date.now();
-
-              // Cache warming promise - pre-warm system prompt cache for faster agent creation
-              const cacheWarmingPromise = (async () => {
-                try {
-                  const worktreePath = workspace.worktreePath || workspace.repositoryPath;
-                  if (worktreePath) {
-                    const instructionService = InstructionService.getInstance();
-                    await instructionService.warmCache(worktreePath);
-                  }
-                } catch (error) {
-                  // Don't fail workspace open if cache warming fails
-                  logger.warn('Failed to warm system prompt cache', { error, workspaceId: id });
-                }
-              })();
-
-              await cacheWarmingPromise;
-
-              logger.info('[WorkspaceIPC] Background initialization complete', {
-                workspaceId: id,
-                totalDurationMs: Date.now() - initStart,
-              });
-            } catch (error) {
-              logger.error(
-                // i18n-ignore (developer log message)
-                '[WorkspaceIPC] Failed background initialization for workspace',
-                error as Error,
-                {
-                  workspaceId: id,
-                  errorMessage: (error as Error).message,
-                  errorStack: (error as Error).stack,
-                },
-              );
-            }
-          })();
+          // System prompts are assembled by the daemon harness; the FE no
+          // longer pre-warms a prompt cache on workspace open.
 
           // Spec-note seeding is owned by the daemon (`workspace.create` runs
           // `ensure_spec_note`); the FE no longer performs FS-level orphan
           // recovery on open.
-
-          // Fire and forget the background initialization
-          // Use void to explicitly indicate we're not awaiting this
-          void backgroundInitPromise;
 
           logger.info('[WorkspaceIPC] Workspace open returning immediately', {
             workspaceId: id,

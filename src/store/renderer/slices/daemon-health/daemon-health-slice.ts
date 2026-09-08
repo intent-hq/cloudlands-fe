@@ -11,6 +11,7 @@ import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   DaemonHealthState,
   DaemonHealthStats,
+  DaemonStatusCheckFailure,
   SidecarRunLog,
   SystemStatusWirePayload,
   UnslothStatusWirePayload,
@@ -36,9 +37,12 @@ export const initialState: DaemonHealthState = {
   hasEverConnected: false,
   sidecarSpawnPending: false,
   sidecarSpawnError: null,
+  daemonUpdateDisconnectedAt: null,
   sidecarRunLog: null,
   sidecarRunLogPending: false,
   sidecarRunLogError: null,
+  statusCheckFailure: null,
+  connectionGeneration: 0,
   unslothStatus: null,
   unslothPolling: false,
   unslothStopping: false,
@@ -60,6 +64,13 @@ export interface ConnectionStatusExtras {
   reason?: string;
   /** Reconnect attempts since the last successful connect (#1750). */
   reconnectAttempts?: number;
+  /**
+   * Epoch ms of the first drop main observed for this window's backend while
+   * a user-requested `system.requestUpdate` is outstanding — the disconnect
+   * is the daemon restarting. Main owns the value so every window of the
+   * backend shares one countdown deadline.
+   */
+  daemonUpdateDisconnectedAt?: number;
 }
 
 /**
@@ -83,16 +94,25 @@ export const heartbeatFailed = createAction('daemonHealth/heartbeatFailed');
 export const pollSystemStatus = createAction('daemonHealth/pollSystemStatus');
 
 /**
- * system.status poll succeeded.
+ * system.status poll succeeded. `connectionGeneration` is the value the
+ * poll captured when its request started; the reducer discards the result
+ * when a connection lifecycle change happened meanwhile.
  */
 export const systemStatusSuccess = createAction<
-  [payload: SystemStatusWirePayload, receivedAt: string]
+  [payload: SystemStatusWirePayload, receivedAt: string, connectionGeneration: number]
 >('daemonHealth/systemStatusSuccess');
 
 /**
- * system.status poll failed.
+ * system.status poll failed. Carries only the safe failure category and the
+ * time the check settled (#4439) — the saga classifies the error at the
+ * effect boundary and never forwards the raw error — plus the connection
+ * generation the poll started under. While connected this degrades health;
+ * a poll from a previous connection, or one that fails after a disconnect,
+ * changes nothing.
  */
-export const systemStatusFailure = createAction('daemonHealth/systemStatusFailure');
+export const systemStatusFailure = createAction<
+  [failure: Omit<DaemonStatusCheckFailure, 'consecutiveFailures'>, connectionGeneration: number]
+>('daemonHealth/systemStatusFailure');
 
 /**
  * User asked for the app-managed sidecar fallback from the daemon-loss UI
@@ -105,18 +125,14 @@ export const spawnSidecarRequested = createAction('daemonHealth/spawnSidecarRequ
  * Main spawns the sidecar (if needed) and opens/focuses the local backend's
  * windows; this window keeps its own backend and its overlay.
  */
-export const openLocalAndSpawnRequested = createAction(
-  'daemonHealth/openLocalAndSpawnRequested',
-);
+export const openLocalAndSpawnRequested = createAction('daemonHealth/openLocalAndSpawnRequested');
 
 /**
  * backend:open-local-and-spawn resolved ok. The initiating window stays bound
  * to its own (dead) backend, so no 'connected' backend:status event ever
  * reaches it to clear the pending flag — this action is that reset.
  */
-export const openLocalAndSpawnSucceeded = createAction(
-  'daemonHealth/openLocalAndSpawnSucceeded',
-);
+export const openLocalAndSpawnSucceeded = createAction('daemonHealth/openLocalAndSpawnSucceeded');
 
 /**
  * backend:spawn-sidecar failed (binary not found, spawn error). A successful
@@ -196,14 +212,29 @@ daemonHealthReducer.with(
       transport !== undefined &&
       (transport.mode !== state.transport?.mode || transport.target !== state.transport?.target);
     const hostLocality = transportChanged ? null : state.hostLocality;
+    // A repeated 'connected' for the same daemon (same mode/target) only
+    // refreshes transport metadata — it is not a new connection. Every other
+    // transition starts a new generation: any poll still in flight belongs to
+    // the previous connection and its result is discarded, so it is no longer
+    // "polling" for this one.
+    const sameConnection = status === 'connected' && state.health !== 'down' && !transportChanged;
+    const connectionGeneration = sameConnection
+      ? state.connectionGeneration
+      : state.connectionGeneration + 1;
+    const polling = sameConnection ? state.polling : false;
 
     if (status === 'connected') {
-      // Connection established — health moves to 'healthy'.
+      // Connection established — health moves to 'healthy'. A same-connection
+      // metadata refresh says nothing new about the daemon's health: a
+      // degraded connection stays degraded, with its failure context, until a
+      // valid check or a genuine reconnect.
       // Update transport info if present (additive) and clear any give-up /
       // pending-spawn state.
       return {
         ...state,
-        health: 'healthy',
+        connectionGeneration,
+        polling,
+        health: sameConnection ? state.health : 'healthy',
         // Stats belong to the daemon that reported them. Drop them on a
         // genuine daemon switch (mode/target changed) so selectors never
         // compare the OLD daemon's version against the NEW transport's pin
@@ -228,11 +259,15 @@ daemonHealthReducer.with(
         hasEverConnected: true,
         sidecarSpawnPending: false,
         sidecarSpawnError: null,
+        daemonUpdateDisconnectedAt: null,
         // The dialog dismisses on reconnect — drop the fetched run log with
         // it; it is stale by the next show.
         sidecarRunLog: null,
         sidecarRunLogPending: false,
         sidecarRunLogError: null,
+        // Failure context belongs to the previous connection — never leak it
+        // into this one.
+        statusCheckFailure: sameConnection ? state.statusCheckFailure : null,
       };
     } else if (status === 'disconnected' || status === 'connecting') {
       // Connection down or reconnecting — health moves to 'down'.
@@ -240,6 +275,8 @@ daemonHealthReducer.with(
       // Once sidecarGaveUp latches it stays set until the next successful connect.
       return {
         ...state,
+        connectionGeneration,
+        polling: false,
         health: 'down',
         transport: transport ?? state.transport,
         hostLocality,
@@ -258,6 +295,11 @@ daemonHealthReducer.with(
         // "Starting sidecar…".
         sidecarSpawnPending:
           extras?.sidecarGaveUp || extras?.sidecarStartupFailed ? false : state.sidecarSpawnPending,
+        // Main stamps the FIRST update-caused drop and repeats it on every
+        // push for the same restart; store what was received so the
+        // updating-overlay countdown is anchored to main's time, not ours.
+        daemonUpdateDisconnectedAt:
+          extras?.daemonUpdateDisconnectedAt ?? state.daemonUpdateDisconnectedAt,
       };
     }
     return state;
@@ -270,41 +312,68 @@ daemonHealthReducer.with(heartbeatFailed, (state) => {
 daemonHealthReducer.with(pollSystemStatus, (state) => {
   return { ...state, polling: true };
 });
-daemonHealthReducer.with(systemStatusSuccess, (state, { payload: [wirePayload, receivedAt] }) => {
-  // Extract stats payload, treating new fields as optional.
-  const stats: DaemonHealthStats = {
-    clients: wirePayload.clients,
-    agents: wirePayload.agents,
-    maxAgents: wirePayload.maxAgents,
-    listenMode: wirePayload.listenMode,
-    port: wirePayload.port ?? null,
-    version: wirePayload.version,
-    buildCommit: wirePayload.buildCommit,
-    protocolVersion: wirePayload.protocolVersion,
-    uptimeSeconds: wirePayload.uptimeSeconds,
-    cpuPercent: wirePayload.cpuPercent,
-    memoryBytes: wirePayload.memoryBytes,
-    workspacesDiskAvailableBytes: wirePayload.workspacesDiskAvailableBytes,
-    workspacesDiskTotalBytes: wirePayload.workspacesDiskTotalBytes,
-    hostname: wirePayload.hostname,
-    os: wirePayload.host.os,
-    arch: wirePayload.host.arch,
-    transport: state.stats?.transport ?? state.transport ?? undefined,
-  };
-  return {
-    ...state,
-    polling: false,
-    stats,
-    // Daemon-reported locality (§5.14) — authoritative for host-shell
-    // gating; falls back to the transport heuristic before the first poll.
-    hostLocality: wirePayload.host.locality ?? state.hostLocality,
-    lastUpdated: receivedAt,
-  };
-});
-daemonHealthReducer.with(systemStatusFailure, (state) => {
-  // Health may already be 'down' from connection loss; leave it as-is.
-  return { ...state, polling: false };
-});
+daemonHealthReducer.with(
+  systemStatusSuccess,
+  (state, { payload: [wirePayload, receivedAt, connectionGeneration] }) => {
+    // A poll that started under a previous connection lifecycle is stale
+    // regardless of what it reports — never let it touch this connection.
+    if (connectionGeneration !== state.connectionGeneration) return state;
+    // Extract stats payload, treating new fields as optional.
+    const stats: DaemonHealthStats = {
+      clients: wirePayload.clients,
+      agents: wirePayload.agents,
+      maxAgents: wirePayload.maxAgents,
+      listenMode: wirePayload.listenMode,
+      port: wirePayload.port ?? null,
+      version: wirePayload.version,
+      buildCommit: wirePayload.buildCommit,
+      protocolVersion: wirePayload.protocolVersion,
+      uptimeSeconds: wirePayload.uptimeSeconds,
+      cpuPercent: wirePayload.cpuPercent,
+      memoryBytes: wirePayload.memoryBytes,
+      workspacesDiskAvailableBytes: wirePayload.workspacesDiskAvailableBytes,
+      workspacesDiskTotalBytes: wirePayload.workspacesDiskTotalBytes,
+      hostname: wirePayload.hostname,
+      os: wirePayload.host.os,
+      arch: wirePayload.host.arch,
+      transport: state.stats?.transport ?? state.transport ?? undefined,
+    };
+    return {
+      ...state,
+      polling: false,
+      // A valid check recovers a degraded connection; only a status push
+      // ('connected') brings a down connection back.
+      health: state.health === 'degraded' ? 'healthy' : state.health,
+      statusCheckFailure: null,
+      stats,
+      // Daemon-reported locality (§5.14) — authoritative for host-shell
+      // gating; falls back to the transport heuristic before the first poll.
+      hostLocality: wirePayload.host.locality ?? state.hostLocality,
+      lastUpdated: receivedAt,
+    };
+  },
+);
+daemonHealthReducer.with(
+  systemStatusFailure,
+  (state, { payload: [failure, connectionGeneration] }) => {
+    // A failure from a previous connection lifecycle says nothing about this
+    // one — discard it before it can degrade a healthy reconnect.
+    if (connectionGeneration !== state.connectionGeneration) return state;
+    // Health may already be 'down' from connection loss; leave it as-is and
+    // record nothing — the disconnect is the explanation.
+    if (state.health === 'down') return { ...state, polling: false };
+    return {
+      ...state,
+      polling: false,
+      health: 'degraded',
+      statusCheckFailure: {
+        kind: failure.kind,
+        failedAt: failure.failedAt,
+        consecutiveFailures: (state.statusCheckFailure?.consecutiveFailures ?? 0) + 1,
+      },
+    };
+  },
+);
 daemonHealthReducer.with(spawnSidecarRequested, (state) => {
   return { ...state, sidecarSpawnPending: true, sidecarSpawnError: null };
 });

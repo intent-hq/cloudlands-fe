@@ -36,14 +36,11 @@ export async function testMcpConnection(
   logger.info('Testing MCP connection via daemon:', { url, serverName, hasHeaders: !!headers });
 
   try {
-    const result = await getBackendClient().request<McpConnectionTestResult>(
-      'mcp.testConnection',
-      {
-        url,
-        ...(headers ? { headers } : {}),
-        ...(serverName ? { serverName } : {}),
-      },
-    );
+    const result = await getBackendClient().request<McpConnectionTestResult>('mcp.testConnection', {
+      url,
+      ...(headers ? { headers } : {}),
+      ...(serverName ? { serverName } : {}),
+    });
     logger.debug('MCP connection test result:', { url, status: result.status });
     return result;
   } catch (error) {

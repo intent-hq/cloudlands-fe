@@ -42,8 +42,10 @@
   } from '$lib/components/chat/input/image-context-items';
   import { splitDroppedItems } from '$lib/utils/drop-split';
   import { isRemoteBackend } from '$lib/components/chat/input/attachment-placement';
+  import { shouldTreatAsNewRepo } from '$features/onboarding/utils/treat-as-new-repo';
+  import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
 
-  const COORDINATOR_SPECIALIST_ID = 'spec-writer';
+  const INITIAL_AGENT_SPECIALIST_ID = DEFAULT_NEW_WORKSPACE_SPECIALIST_ID;
 
   const logger = createLogger('OnboardingPromptStep');
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
@@ -82,13 +84,14 @@
      */
     hideSetupScriptControl?: boolean;
 
-    // Model picker (initial Coordinator agent)
-    /** User-picked model — undefined means use the Coordinator's auto-resolved default. */
+    // Model picker (initial Developer agent)
+    /** User-picked model — undefined means use the Developer's auto-resolved default. */
     selectedModel?: string | undefined;
     /** Whether the user explicitly overrode the model (vs the resolved default). */
     modelWasOverridden?: boolean;
-    /** Callback when the user picks a model. */
-    onModelChange?: (model: string) => void;
+    /** Callback when the user picks a model — `pick` carries the resolved
+     * bare model id + provider legs (see ModelPicker's onModelChange). */
+    onModelChange?: (model: string, pick?: { providerId: string; modelId: string }) => void;
 
     // Suggestions
     visibleSuggestions: string[];
@@ -176,10 +179,11 @@
   let onboardingFileInput: HTMLInputElement | null = $state(null);
   let richTextareaWrapper: HTMLDivElement | null = $state(null);
 
+  const treatAsNewRepo = $derived(
+    projectSelection ? shouldTreatAsNewRepo(projectSelection) : false,
+  );
   const hasResolvedBranch = $derived(
-    projectSelection?.type === 'new' ||
-      Boolean(projectSelection?.branch.trim()) ||
-      Boolean(selectedPRBranch.trim()),
+    treatAsNewRepo || Boolean(projectSelection?.branch.trim()) || Boolean(selectedPRBranch.trim()),
   );
 
   // Drag and drop state
@@ -192,8 +196,17 @@
   // (not a boolean) so overlapping conversions don't clear the gate early.
   let processingImageCount = $state(0);
   const isProcessingImages = $derived(processingImageCount > 0);
+  const createDisabledReason = $derived.by(() => {
+    if (!onboardingInputValue.trim()) return m.onboarding_promptStep_enterPrompt_description();
+    if (!hasResolvedBranch) return m.onboarding_promptStep_selectBranch_description();
+    if (isProcessingImages) return m.onboarding_promptStep_imagesProcessing_description();
+    if (hasBlockingAttachments(stagedContextItems)) {
+      return m.onboarding_promptStep_blockingAttachments_description();
+    }
+    return null;
+  });
 
-  // Daemon-resolved default-model preview for the Coordinator (PROTOCOL
+  // Daemon-resolved default-model preview for the Developer (PROTOCOL
   // §5.11): `specialist.list` with the onboarding provider context returns
   // additive `resolvedModel` fields computed by the same resolver a no-model
   // create uses, so the picker displays exactly what the daemon would pin.
@@ -232,10 +245,10 @@
     })();
   });
 
-  const coordinatorDefaultModel = $derived.by(() => {
+  const initialAgentDefaultModel = $derived.by(() => {
     const providerView = resolvedModelsByProvider[onboardingProvider];
-    if (providerView) return providerView[COORDINATOR_SPECIALIST_ID];
-    return $specialists$.find((s) => s.id === COORDINATOR_SPECIALIST_ID)?.resolvedModel;
+    if (providerView) return providerView[INITIAL_AGENT_SPECIALIST_ID];
+    return $specialists$.find((s) => s.id === INITIAL_AGENT_SPECIALIST_ID)?.resolvedModel;
   });
 
   // Expose the RichTextarea ref so the parent can call methods on it
@@ -248,7 +261,7 @@
    * default commit (monorepo#3044): the daemon resolvedModel preview when the
    * user never overrode it (undefined ⇒ "Provider default"), plus the provider
    * context it was resolved under so the caller can detect a mismatch with the
-   * create's resolved provider. Unlike the displayed `coordinatorDefaultModel`,
+   * create's resolved provider. Unlike the displayed `initialAgentDefaultModel`,
    * this never uses the `$specialists$` fallback — that view was resolved in
    * the daemon-default-provider context, so certifying it for
    * `onboardingProvider` could persist another provider's model when the user
@@ -259,7 +272,7 @@
     provider: string;
   } {
     return {
-      model: resolvedModelsByProvider[onboardingProvider]?.[COORDINATOR_SPECIALIST_ID],
+      model: resolvedModelsByProvider[onboardingProvider]?.[INITIAL_AGENT_SPECIALIST_ID],
       provider: onboardingProvider,
     };
   }
@@ -451,19 +464,16 @@
       toast.error(m.onboarding_promptStep_attachmentNoPath_error({ name: folder.name }));
       return;
     }
+    // Path-keyed like folder @-mentions, so two dropped folders sharing a
+    // basename stay distinct. Re-dropping the SAME folder is a no-op: the
+    // strip is keyed by item.id, so a duplicate id would break keyed
+    // rendering and make one remove drop both pills while both references
+    // still ride the submit.
+    const id = `staged-folder-${absolutePath}`;
+    if (stagedContextItems.some((item) => item.id === id)) return;
     // Windows-aware basename fallback ('\' or '/' separators).
     const label = folder.name || absolutePath.split(/[/\\]/).pop() || absolutePath;
-    stagedContextItems = [
-      ...stagedContextItems,
-      {
-        // Path-keyed like folder @-mentions, so two dropped folders sharing
-        // a basename stay distinct.
-        id: `staged-folder-${absolutePath}`,
-        type: 'folder',
-        label,
-        path: absolutePath,
-      },
-    ];
+    stagedContextItems = [...stagedContextItems, { id, type: 'folder', label, path: absolutePath }];
   }
 
   /**
@@ -722,7 +732,14 @@
 
     <div class="onboarding-metadata-stack flex w-full min-w-0 flex-col gap-2">
       <!-- Branch picker -->
-      {#if projectSelection?.type === 'local' && projectSelection?.repoPath}
+      {#if projectSelection?.type === 'local' && projectSelection?.repoPath && treatAsNewRepo}
+        <div
+          class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground"
+          in:fly={{ y: 10, duration: 200, easing: cubicOut }}
+        >
+          {m.onboarding_promptStep_initGit_description()}
+        </div>
+      {:else if projectSelection?.type === 'local' && projectSelection?.repoPath}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
@@ -838,7 +855,7 @@
         />
       {/if}
 
-      <!-- Model picker (initial Coordinator agent) -->
+      <!-- Model picker (initial Developer agent) -->
       <div
         class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm"
         in:fly={{ y: 10, duration: 200, easing: cubicOut }}
@@ -846,14 +863,14 @@
         <span class="shrink-0 text-muted-foreground"
           >{m.onboarding_promptStep_usingModel_before()}</span
         >
-        {#key coordinatorDefaultModel}
+        {#key initialAgentDefaultModel}
           <ModelPicker
             selectedModel={modelWasOverridden ? selectedModel : undefined}
             {onModelChange}
             variant="ghost"
             size="xs"
             triggerClass="max-w-full pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border text-sm"
-            defaultModelId={coordinatorDefaultModel}
+            defaultModelId={initialAgentDefaultModel}
             defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
             fallbackToCatalogDefault
             fallbackProviderId={onboardingProvider}
@@ -864,7 +881,7 @@
     </div>
 
     <!-- Use PR branch suggestion -->
-    {#if selectedPRBranch && projectSelection?.branch !== selectedPRBranch && projectSelection?.type !== 'new'}
+    {#if selectedPRBranch && projectSelection?.branch !== selectedPRBranch && !treatAsNewRepo}
       <div class="mt-1">
         <button
           class="flex items-center gap-2 mt-1 mb-1 px-1 text-sm text-primary hover:text-primary/80 cursor-pointer"
@@ -898,15 +915,12 @@
 
     <!-- Create button (blocked while the branch is unresolved, an image is
       still converting, or a staged pill is placing/failed) -->
-    <div class="onboarding-create-action flex items-center gap-3 pt-2">
+    <div class="onboarding-create-action flex flex-col items-start gap-2 pt-2">
       <Button
         class="group/button"
         size="xl"
         variant={!onboardingInputValue.trim() ? 'outline' : 'default'}
-        disabled={!onboardingInputValue.trim() ||
-          !hasResolvedBranch ||
-          isProcessingImages ||
-          hasBlockingAttachments(stagedContextItems)}
+        disabled={createDisabledReason !== null}
         onclick={handleSubmit}
       >
         {m.onboarding_promptStep_createWorkspace_label()}
@@ -919,6 +933,9 @@
           class="transform -translate-x-0.75 transition-all group-hover/button:translate-x-0 ml-1 opacity-50"
         />
       </Button>
+      {#if createDisabledReason}
+        <p class="text-xs text-muted-foreground">{createDisabledReason}</p>
+      {/if}
     </div>
   {/if}
 </div>

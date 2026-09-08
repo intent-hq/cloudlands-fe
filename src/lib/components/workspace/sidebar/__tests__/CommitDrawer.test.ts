@@ -1,15 +1,5 @@
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
-import {
-  render,
-  fireEvent,
-  waitFor,
-} from '@testing-library/svelte';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import type { TrackedChange } from '$features/file-tracking/types';
 import { ChangeStage } from '$features/file-tracking/types';
 import { warmImport } from '../../../../../test/warm-import';
@@ -38,7 +28,8 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ dispatch: mocks.dispatch });
 });
 
@@ -48,18 +39,35 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
 
 vi.mock('$store/renderer/slices/changes/changes-slice', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$store/renderer/slices/changes/changes-slice')>()),
-  setSidebarCommitWhenReady: vi.fn((...args: unknown[]) => ({ type: 'changes/setSidebarCommitWhenReady', payload: args })),
+  setSidebarCommitWhenReady: vi.fn((...args: unknown[]) => ({
+    type: 'changes/setSidebarCommitWhenReady',
+    payload: args,
+  })),
 }));
 
-vi.mock('$store/renderer/slices/background-agent-executor/background-agent-executor-selectors', () => ({
-  selectExecutorState: mocks.selector(() => mocks.executorState),
-}));
+vi.mock(
+  '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors',
+  () => ({
+    selectExecutorState: mocks.selector(() => mocks.executorState),
+  }),
+);
 
-vi.mock('$store/renderer/slices/background-agent-executor/background-agent-executor-slice', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$store/renderer/slices/background-agent-executor/background-agent-executor-slice')>()),
-  executeBackgroundAgent: vi.fn((...args: unknown[]) => ({ type: 'backgroundAgentExecutor/execute', payload: args })),
-  cancelExecution: vi.fn((...args: unknown[]) => ({ type: 'backgroundAgentExecutor/cancel', payload: args })),
-}));
+vi.mock(
+  '$store/renderer/slices/background-agent-executor/background-agent-executor-slice',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/background-agent-executor/background-agent-executor-slice')
+    >()),
+    executeBackgroundAgent: vi.fn((...args: unknown[]) => ({
+      type: 'backgroundAgentExecutor/execute',
+      payload: args,
+    })),
+    cancelExecution: vi.fn((...args: unknown[]) => ({
+      type: 'backgroundAgentExecutor/cancel',
+      payload: args,
+    })),
+  }),
+);
 
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { error: vi.fn(), success: vi.fn(), custom: vi.fn(), info: vi.fn() },
@@ -158,5 +166,4 @@ describe('CommitDrawer', () => {
       }),
     );
   });
-
 });

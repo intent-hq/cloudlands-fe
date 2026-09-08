@@ -2,11 +2,7 @@
  * Tests for Type Guards
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   isAgentSession,
   isAgentMessage,
@@ -24,10 +20,7 @@ import {
   isStreamingMessage,
   hasToolCalls,
 } from '../guards';
-import {
-  isWorkspaceDisplayStatus,
-  WORKSPACE_DISPLAY_STATUS_VALUES,
-} from '../../types';
+import { isWorkspaceDisplayStatus, WORKSPACE_DISPLAY_STATUS_VALUES } from '../../types';
 import type { AgentMessage } from '../agent-message';
 
 describe('Type Guards', () => {

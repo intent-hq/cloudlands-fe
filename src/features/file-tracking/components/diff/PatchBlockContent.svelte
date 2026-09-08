@@ -122,7 +122,7 @@
         <span class="type-body flex-1 truncate text-left font-medium text-foreground">{label}</span>
         <span class="type-caption shrink-0 tabular-nums">
           <span class="text-success">+{diffStats.addCount}</span>
-          <span class="ml-1 text-error-foreground">-{diffStats.removeCount}</span>
+          <span class="ml-1 text-danger">-{diffStats.removeCount}</span>
         </span>
         {#if isApplied}
           <span class="type-caption shrink-0 font-medium text-success">
