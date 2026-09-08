@@ -1246,6 +1246,7 @@ function routeGroupedReturnEdgesWithTarget(
   const paths = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')];
   const labels = [...svg.querySelectorAll<SVGGElement>('.edgeLabels > .edgeLabel')];
   paths.forEach((path, index) => {
+    if (path.dataset.nestedDecisionRoute) return;
     const identity = flowchartEdgeIdentity(path);
     const sourceOutdegree = identity
       ? paths.filter((candidate) => flowchartEdgeIdentity(candidate)?.source === identity.source)
@@ -1619,7 +1620,8 @@ export function snapFlowchartPorts(svg: SVGSVGElement) {
       path.dataset.decisionReturn ||
       path.dataset.clientRequestLane ||
       path.dataset.clusterHeaderClearance ||
-      path.dataset.compactGroupedRoute
+      path.dataset.compactGroupedRoute ||
+      path.dataset.nestedDecisionRoute
     )
       continue;
     const identity = flowchartEdgeIdentity(path);
@@ -1980,7 +1982,8 @@ function spreadCrowdedFlowchartPorts(svg: SVGSVGElement) {
       path.dataset.feedbackLane ||
       path.dataset.groupedReturnLane ||
       path.dataset.clientRequestLane ||
-      path.dataset.compactGroupedRoute
+      path.dataset.compactGroupedRoute ||
+      path.dataset.nestedDecisionRoute
     )
       continue;
     const identity = flowchartEdgeIdentity(path);
@@ -2066,6 +2069,7 @@ export function snapFlowchartDiamondPorts(svg: SVGSVGElement) {
   const paths = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')];
   const diamondAttachments = allocateDiamondAttachments(svg, paths);
   for (const path of paths) {
+    if (path.dataset.nestedDecisionRoute) continue;
     const identity = flowchartEdgeIdentity(path);
     const sourceNode = identity && flowchartNode(svg, identity.source);
     const targetNode = identity && flowchartNode(svg, identity.target);
@@ -2263,6 +2267,519 @@ function placeDecisionLabel(label: SVGGElement, path: SVGPathElement, start: Poi
   path.dataset.labelSegment = `${start.x},${start.y} ${end.x},${end.y}`;
 }
 
+type FlowchartRoute = {
+  path: SVGPathElement;
+  source: string;
+  target: string;
+  label?: SVGGElement;
+};
+
+function setFlowchartNodeCenter(node: SVGGElement, center: Point, referencePath: SVGPathElement) {
+  const shape = shapeForNode(node);
+  const current = shape && boundsInPathSpace(shape, referencePath);
+  const matrix = node.transform.baseVal.consolidate()?.matrix;
+  if (!current || !matrix) return;
+  node.setAttribute(
+    'transform',
+    `translate(${matrix.e + center.x - current.x - current.width / 2}, ${matrix.f + center.y - current.y - current.height / 2})`,
+  );
+}
+
+function reframeFlowchartClusters(
+  records: Array<{
+    cluster: SVGGElement;
+    rect: SVGRectElement;
+    label: SVGGElement;
+    frame: Bounds;
+    members: SVGGElement[];
+  }>,
+  referencePath: SVGPathElement,
+) {
+  const layouts = new Map<SVGGElement, Bounds>();
+  for (const record of records.toSorted(
+    (left, right) => left.frame.width * left.frame.height - right.frame.width * right.frame.height,
+  )) {
+    const children = records
+      .filter(
+        (candidate) =>
+          candidate !== record &&
+          candidate.frame.x >= record.frame.x &&
+          candidate.frame.y >= record.frame.y &&
+          candidate.frame.x + candidate.frame.width <= record.frame.x + record.frame.width &&
+          candidate.frame.y + candidate.frame.height <= record.frame.y + record.frame.height,
+      )
+      .flatMap(({ cluster }) => {
+        const bounds = layouts.get(cluster);
+        return bounds ? [bounds] : [];
+      });
+    const content = [
+      ...record.members.flatMap((node) => {
+        const shape = shapeForNode(node);
+        const bounds = shape && boundsInPathSpace(shape, referencePath);
+        return bounds ? [bounds] : [];
+      }),
+      ...children,
+    ];
+    if (!content.length) continue;
+    const headerHeight = Number(record.cluster.dataset.headerHeight) || 66;
+    const x = Math.min(...content.map((bounds) => bounds.x)) - 24;
+    const y = Math.min(...content.map((bounds) => bounds.y)) - headerHeight;
+    const right = Math.max(...content.map((bounds) => bounds.x + bounds.width)) + 24;
+    const bottom = Math.max(...content.map((bounds) => bounds.y + bounds.height)) + 24;
+    const frame = { x, y, width: right - x, height: bottom - y };
+    for (const [attribute, value] of Object.entries(frame)) {
+      record.rect.setAttribute(attribute, String(value));
+    }
+    const viewport = record.label.querySelector<SVGForeignObjectElement>('foreignObject');
+    if (viewport) {
+      viewport.setAttribute('x', '0');
+      viewport.setAttribute('y', '0');
+      viewport.setAttribute('width', String(Math.max(24, frame.width - 40)));
+      record.label.setAttribute('transform', `translate(${frame.x + 20}, ${frame.y + 20})`);
+    } else {
+      const title = record.label.getBBox();
+      record.label.setAttribute(
+        'transform',
+        `translate(${frame.x + frame.width / 2 - title.x - title.width / 2}, ${frame.y + 20 - title.y})`,
+      );
+    }
+    layouts.set(record.cluster, frame);
+  }
+}
+
+function routeNestedDecisionHierarchy(svg: SVGSVGElement, edges: FlowchartRoute[]) {
+  if (svg.querySelectorAll('g.cluster').length < 2) return false;
+  const referencePath = edges[0]?.path;
+  if (!referencePath) return false;
+  const nodeBounds = (node: SVGGElement | undefined) => {
+    const shape = node && shapeForNode(node);
+    return shape ? boundsInPathSpace(shape, referencePath) : null;
+  };
+  const topology = [...svg.querySelectorAll<SVGGElement>('g.node')].flatMap((decisionNode) => {
+    const decisionId = flowchartNodeId(decisionNode);
+    const shape = shapeForNode(decisionNode);
+    if (!shape || !isDiamondShape(shape)) return [];
+    const outgoing = edges.filter(
+      (edge) => edge.source === decisionId && edge.target !== decisionId,
+    );
+    const secondary = outgoing.find((edge) =>
+      edges.some(
+        (candidate) => candidate.source === edge.target && candidate.target === decisionId,
+      ),
+    )?.target;
+    if (!secondary) return [];
+    const merge = outgoing.find(
+      (edge) =>
+        edge.target !== secondary &&
+        edges.some(
+          (candidate) => candidate.source === secondary && candidate.target === edge.target,
+        ) &&
+        edges.some(
+          (candidate) => candidate.source === edge.target && candidate.target === edge.target,
+        ),
+    )?.target;
+    if (!merge) return [];
+    const ingressBySource = new Map<string, FlowchartRoute[]>();
+    for (const edge of edges.filter(
+      (edge) => edge.target === decisionId && edge.source !== secondary,
+    )) {
+      ingressBySource.set(edge.source, [...(ingressBySource.get(edge.source) ?? []), edge]);
+    }
+    const ingress = [...ingressBySource.values()].find((group) => group.length >= 2);
+    const branches = edges.filter((edge) => edge.source === decisionId && edge.target === merge);
+    const add = edges.find((edge) => edge.source === decisionId && edge.target === secondary);
+    const retry = edges.find((edge) => edge.source === secondary && edge.target === decisionId);
+    const done = edges.find((edge) => edge.source === secondary && edge.target === merge);
+    const loop = edges.find((edge) => edge.source === merge && edge.target === merge);
+    const downstream = edges.find((edge) => edge.source === merge && edge.target !== merge);
+    if (!ingress || branches.length < 2 || !add || !retry || !done || !loop || !downstream)
+      return [];
+    return [
+      { decisionId, secondary, merge, ingress, branches, add, retry, done, loop, downstream },
+    ];
+  })[0];
+  if (!topology) return false;
+
+  const intakeId = topology.ingress[0].source;
+  const registryId = topology.downstream.target;
+  const involvedIds = new Set([
+    topology.decisionId,
+    topology.secondary,
+    topology.merge,
+    intakeId,
+    registryId,
+  ]);
+  const allNodes = [...svg.querySelectorAll<SVGGElement>('g.node')];
+  const nodes = new Map(
+    allNodes
+      .filter((node) => involvedIds.has(flowchartNodeId(node)))
+      .map((node) => [flowchartNodeId(node), node]),
+  );
+  if (nodes.size !== involvedIds.size) return false;
+  const clusterRecords = [...svg.querySelectorAll<SVGGElement>('g.cluster')].flatMap((cluster) => {
+    const rect = cluster.querySelector<SVGRectElement>(':scope > rect');
+    const label = cluster.querySelector<SVGGElement>(':scope > g.cluster-label');
+    if (!rect || !label) return [];
+    const frame = boundsInPathSpace(rect, referencePath);
+    if (!frame) return [];
+    const members = allNodes.filter((node) => {
+      const bounds = nodeBounds(node);
+      if (!bounds) return false;
+      const center = pointAt(bounds, 0.5, 0.5);
+      return (
+        center.x >= frame.x &&
+        center.x <= frame.x + frame.width &&
+        center.y >= frame.y &&
+        center.y <= frame.y + frame.height
+      );
+    });
+    return [{ cluster, rect, label, frame, members }];
+  });
+  const innerCluster = clusterRecords
+    .filter((record) =>
+      record.members.some((node) => flowchartNodeId(node) === topology.decisionId),
+    )
+    .toSorted(
+      (left, right) =>
+        left.frame.width * left.frame.height - right.frame.width * right.frame.height,
+    )[0];
+  const outerCluster = innerCluster
+    ? clusterRecords
+        .filter(
+          (record) =>
+            record !== innerCluster &&
+            innerCluster.frame.x >= record.frame.x &&
+            innerCluster.frame.y >= record.frame.y &&
+            innerCluster.frame.x + innerCluster.frame.width <=
+              record.frame.x + record.frame.width &&
+            innerCluster.frame.y + innerCluster.frame.height <=
+              record.frame.y + record.frame.height,
+        )
+        .toSorted(
+          (left, right) =>
+            left.frame.width * left.frame.height - right.frame.width * right.frame.height,
+        )[0]
+    : undefined;
+  const addClusterMember = (record: (typeof clusterRecords)[number] | undefined, id: string) => {
+    const node = nodes.get(id);
+    if (record && node && !record.members.includes(node)) record.members.push(node);
+  };
+  addClusterMember(innerCluster, topology.decisionId);
+  addClusterMember(innerCluster, topology.secondary);
+  addClusterMember(outerCluster, intakeId);
+  addClusterMember(outerCluster, topology.merge);
+  const bounds = new Map(
+    [...nodes].flatMap(([id, node]) => {
+      const value = nodeBounds(node);
+      return value ? [[id, value] as const] : [];
+    }),
+  );
+  if (bounds.size !== nodes.size) return false;
+  const compact = edges.some(({ path }) => path.dataset.compactFlowchart === 'true');
+  const layout = compact ? 'compact' : 'wide';
+  const shouldPlaceNodes = svg.dataset.nestedDecisionLayout !== layout;
+  const intake = bounds.get(intakeId)!;
+  const decision = bounds.get(topology.decisionId)!;
+  const secondary = bounds.get(topology.secondary)!;
+  const merge = bounds.get(topology.merge)!;
+  const registry = bounds.get(registryId)!;
+  const centers = compact
+    ? (() => {
+        const x = pointAt(decision, 0.5, 0.5).x;
+        const y = pointAt(intake, 0.5, 0.5).y;
+        const step = Math.max(intake.height, decision.height, merge.height, registry.height) + 94;
+        return {
+          intake: { x, y },
+          decision: { x, y: y + step },
+          secondary: { x: x + secondary.width / 2, y: y + step * 1.5 },
+          merge: { x, y: y + step * 2 },
+          registry: { x, y: y + step * 3 },
+        };
+      })()
+    : (() => {
+        const y = pointAt(decision, 0.5, 0.5).y;
+        const intakeX = pointAt(intake, 0.5, 0.5).x;
+        const decisionX = intakeX + intake.width / 2 + decision.width / 2 + 116;
+        const mergeX = decisionX + decision.width / 2 + merge.width / 2 + 184;
+        return {
+          intake: { x: intakeX, y },
+          decision: { x: decisionX, y },
+          secondary: { x: (decisionX + mergeX) / 2 + 8, y: y + 95 },
+          merge: { x: mergeX, y },
+          registry: {
+            x: mergeX + merge.width / 2 + registry.width / 2 + 124,
+            y,
+          },
+        };
+      })();
+  if (shouldPlaceNodes) {
+    for (const [id, center] of [
+      [intakeId, centers.intake],
+      [topology.decisionId, centers.decision],
+      [topology.secondary, centers.secondary],
+      [topology.merge, centers.merge],
+      [registryId, centers.registry],
+    ] as const) {
+      setFlowchartNodeCenter(nodes.get(id)!, center, referencePath);
+    }
+    svg.dataset.nestedDecisionLayout = layout;
+  }
+  reframeFlowchartClusters(clusterRecords, referencePath);
+
+  const current = (id: string) => nodeBounds(nodes.get(id))!;
+  const i = current(intakeId);
+  const d = current(topology.decisionId);
+  const s = current(topology.secondary);
+  const m = current(topology.merge);
+  const r = current(registryId);
+  const [primaryIngress, metadataIngress] = topology.ingress;
+  const [primaryBranch, returnBranch] = topology.branches;
+  const routes: Array<{
+    edge: FlowchartRoute;
+    role: string;
+    points: Point[];
+    labelSegment?: number;
+    sourceSide?: CardinalSide;
+    targetSide?: CardinalSide;
+  }> = [];
+  if (compact) {
+    const outerLeft = Math.min(i.x, d.x, m.x, r.x) - 16;
+    const addLane = Math.max(d.x + d.width, s.x + s.width) + 12;
+    const outerRight = addLane + 20;
+    const ingressTarget = diamondBoundaryPort(d, 'top', -8);
+    const metadataTarget = diamondBoundaryPort(d, 'left', -8);
+    const retryTarget = diamondBoundaryPort(d, 'top', 8);
+    const branchSource = diamondBoundaryPort(d, 'bottom', -8);
+    const returnSource = diamondBoundaryPort(d, 'left', 8);
+    routes.push(
+      {
+        edge: primaryIngress,
+        role: 'primary-ingress',
+        points: [
+          pointAt(i, 0.5, 1),
+          { x: ingressTarget.x, y: pointAt(i, 0.5, 1).y },
+          ingressTarget,
+        ],
+        targetSide: 'top',
+      },
+      {
+        edge: metadataIngress,
+        role: 'metadata-return',
+        points: [
+          pointAt(i, 0, 0.55),
+          { x: outerLeft - 22, y: pointAt(i, 0, 0.55).y },
+          { x: outerLeft - 22, y: metadataTarget.y },
+          metadataTarget,
+        ],
+        labelSegment: 1,
+        targetSide: 'left',
+      },
+      {
+        edge: topology.add,
+        role: 'secondary-add',
+        points: [
+          diamondBoundaryPort(d, 'right', -8),
+          { x: addLane, y: diamondBoundaryPort(d, 'right', -8).y },
+          { x: addLane, y: pointAt(s, 1, 0.35).y },
+          pointAt(s, 1, 0.35),
+        ],
+        labelSegment: 1,
+        sourceSide: 'right',
+      },
+      {
+        edge: topology.retry,
+        role: 'secondary-retry',
+        points: [
+          pointAt(s, 1, 0.68),
+          { x: outerRight, y: pointAt(s, 1, 0.68).y },
+          { x: outerRight, y: d.y - 24 },
+          { x: retryTarget.x, y: d.y - 24 },
+          retryTarget,
+        ],
+        labelSegment: 1,
+        targetSide: 'top',
+      },
+      {
+        edge: primaryBranch,
+        role: 'primary-branch',
+        points: [
+          branchSource,
+          { x: branchSource.x, y: d.y + d.height + 12 },
+          { x: branchSource.x - 16, y: d.y + d.height + 12 },
+          { x: branchSource.x - 16, y: m.y - 12 },
+          { x: pointAt(m, 0.42, 0).x, y: m.y - 12 },
+          pointAt(m, 0.42, 0),
+        ],
+        labelSegment: 2,
+        sourceSide: 'bottom',
+      },
+      {
+        edge: returnBranch,
+        role: 'decision-return',
+        points: [
+          returnSource,
+          { x: outerLeft, y: returnSource.y },
+          { x: outerLeft, y: pointAt(m, 0, 0.65).y },
+          pointAt(m, 0, 0.65),
+        ],
+        labelSegment: 1,
+        sourceSide: 'left',
+      },
+      {
+        edge: topology.done,
+        role: 'secondary-done',
+        points: [
+          pointAt(s, 1, 0.65),
+          { x: s.x + s.width, y: pointAt(m, 1, 0.65).y },
+          pointAt(m, 1, 0.65),
+        ],
+        labelSegment: 0,
+      },
+      {
+        edge: topology.downstream,
+        role: 'primary-save',
+        points: [pointAt(m, 0.5, 1), pointAt(r, 0.5, 0)],
+      },
+    );
+  } else {
+    const metaY = Math.min(i.y, d.y) - 44;
+    const noY = s.y + s.height + 30;
+    const retryY = s.y + s.height + 72;
+    const ingressTarget = diamondBoundaryPort(d, 'left', -8);
+    const metadataTarget = diamondBoundaryPort(d, 'left', 8);
+    const branchSource = diamondBoundaryPort(d, 'right', -8);
+    const returnSource = diamondBoundaryPort(d, 'right', 8);
+    const addSource = diamondBoundaryPort(d, 'bottom', -10);
+    const retryTarget = diamondBoundaryPort(d, 'bottom', 10);
+    const branchTarget = pointAt(m, 0, 0.32);
+    const yesY = Math.min(branchSource.y, branchTarget.y) - 24;
+    routes.push(
+      {
+        edge: primaryIngress,
+        role: 'primary-ingress',
+        points: [{ x: i.x + i.width, y: ingressTarget.y }, ingressTarget],
+        targetSide: 'left',
+      },
+      {
+        edge: metadataIngress,
+        role: 'metadata-return',
+        points: [
+          pointAt(i, 0.5, 0),
+          { x: pointAt(i, 0.5, 0).x, y: metaY },
+          { x: d.x - 24, y: metaY },
+          { x: d.x - 24, y: metadataTarget.y },
+          metadataTarget,
+        ],
+        labelSegment: 1,
+        targetSide: 'left',
+      },
+      {
+        edge: topology.add,
+        role: 'secondary-add',
+        points: [addSource, { x: addSource.x, y: pointAt(s, 0, 0.38).y }, pointAt(s, 0, 0.38)],
+        labelSegment: 1,
+        sourceSide: 'bottom',
+      },
+      {
+        edge: topology.retry,
+        role: 'secondary-retry',
+        points: [
+          pointAt(s, 0.38, 1),
+          { x: pointAt(s, 0.38, 1).x, y: retryY },
+          { x: retryTarget.x, y: retryY },
+          retryTarget,
+        ],
+        labelSegment: 1,
+        targetSide: 'bottom',
+      },
+      {
+        edge: primaryBranch,
+        role: 'primary-branch',
+        points: [
+          branchSource,
+          { x: d.x + d.width + 24, y: branchSource.y },
+          { x: d.x + d.width + 24, y: yesY },
+          { x: m.x - 24, y: yesY },
+          { x: m.x - 24, y: branchTarget.y },
+          branchTarget,
+        ],
+        sourceSide: 'right',
+      },
+      {
+        edge: returnBranch,
+        role: 'decision-return',
+        points: [
+          returnSource,
+          { x: d.x + d.width + 24, y: returnSource.y },
+          { x: d.x + d.width + 24, y: noY },
+          { x: m.x - 12, y: noY },
+          { x: m.x - 12, y: pointAt(m, 0, 0.68).y },
+          pointAt(m, 0, 0.68),
+        ],
+        labelSegment: 2,
+        sourceSide: 'right',
+      },
+      {
+        edge: topology.done,
+        role: 'secondary-done',
+        points: [
+          pointAt(s, 1, 0.62),
+          { x: pointAt(m, 0.42, 1).x, y: pointAt(s, 1, 0.62).y },
+          pointAt(m, 0.42, 1),
+        ],
+      },
+      {
+        edge: topology.downstream,
+        role: 'primary-save',
+        points: [pointAt(m, 1, 0.64), { x: r.x, y: pointAt(m, 1, 0.64).y }],
+      },
+    );
+  }
+  routes.push({
+    edge: topology.loop,
+    role: 'compact-loop',
+    points: [
+      pointAt(m, 1, 0.16),
+      { x: m.x + m.width + 30, y: pointAt(m, 1, 0.16).y },
+      { x: m.x + m.width + 30, y: pointAt(m, 1, 0.4).y },
+      pointAt(m, 1, 0.4),
+    ],
+  });
+  for (const { edge, role, points: rawPoints, labelSegment, sourceSide, targetSide } of routes) {
+    const points = simplifyOrthogonalPoints(rawPoints);
+    for (const key of [
+      'feedbackLane',
+      'fanoutSource',
+      'groupedReturnLane',
+      'decisionBranch',
+      'decisionReturn',
+      'clusterHeaderClearance',
+      'compactGroupedRoute',
+    ]) {
+      delete edge.path.dataset[key];
+    }
+    edge.path.dataset.nestedDecisionRoute = role;
+    if (role === 'compact-loop') edge.path.dataset.selfLoop = 'right';
+    else delete edge.path.dataset.selfLoop;
+    if (sourceSide) edge.path.dataset.diamondSourceSide = sourceSide;
+    else delete edge.path.dataset.diamondSourceSide;
+    if (targetSide) edge.path.dataset.diamondTargetSide = targetSide;
+    else delete edge.path.dataset.diamondTargetSide;
+    edge.path.dataset.manhattanPoints = points.map(({ x, y }) => `${x},${y}`).join(' ');
+    edge.path.dataset.manhattanSegments = String(points.length - 1);
+    edge.path.dataset.terminalTarget = nodes.get(edge.target)?.id ?? '';
+    const terminal = points.at(-1)!;
+    const adjacent = points.at(-2)!;
+    edge.path.dataset.terminalDirection = `${terminal.x - adjacent.x},${terminal.y - adjacent.y}`;
+    edge.path.setAttribute(
+      'd',
+      points.map(({ x, y }, index) => `${index ? 'L' : 'M'}${x},${y}`).join(''),
+    );
+    placeFlowchartLabelOnRoute(edge.label, edge.path, points, labelSegment);
+  }
+  return true;
+}
+
 export function routeFlowchartDecisionBranches(svg: SVGSVGElement) {
   if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2') return;
   const labels = [...svg.querySelectorAll<SVGGElement>('.edgeLabels > .edgeLabel')];
@@ -2274,6 +2791,7 @@ export function routeFlowchartDecisionBranches(svg: SVGSVGElement) {
   );
   const referencePath = edges[0]?.path;
   if (!referencePath) return;
+  if (routeNestedDecisionHierarchy(svg, edges)) return;
   const nodeBounds = (node: SVGGElement | undefined) => {
     const shape = node && shapeForNode(node);
     return shape ? boundsInPathSpace(shape, referencePath) : null;
@@ -2814,7 +3332,7 @@ export function routeFlowchartAroundClusterHeaders(svg: SVGSVGElement) {
   if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2') return;
   const clusters = [...svg.querySelectorAll<SVGGElement>('g.cluster')];
   for (const path of svg.querySelectorAll<SVGPathElement>('.edgePaths path')) {
-    if (path.dataset.feedbackLane) continue;
+    if (path.dataset.feedbackLane || path.dataset.nestedDecisionRoute) continue;
     const fanoutIdentity = path.dataset.fanoutSource && flowchartEdgeIdentity(path);
     const fanoutSourceNode = fanoutIdentity && flowchartNode(svg, fanoutIdentity.source);
     const fanoutTargetNode = fanoutIdentity && flowchartNode(svg, fanoutIdentity.target);
@@ -3011,6 +3529,11 @@ export function positionCompactGroupedEdgeLabels(svg: SVGSVGElement) {
   const placed: Bounds[] = [];
   paths.forEach((path, index) => {
     const label = labels[index];
+    if (path.dataset.nestedDecisionRoute && label) {
+      const bounds = clientBoundsInPathSpace(label, path);
+      if (bounds) placed.push(bounds);
+      return;
+    }
     if (path.dataset.clientRequestLane === 'downward' && label) {
       const bounds = clientBoundsInPathSpace(label, path);
       if (bounds) placed.push(bounds);
@@ -3150,7 +3673,7 @@ export function positionCompactGroupedEdgeLabels(svg: SVGSVGElement) {
   });
   paths.forEach((path, index) => {
     const label = labels[index];
-    if (path.dataset.clientRequestLane === 'downward') return;
+    if (path.dataset.nestedDecisionRoute || path.dataset.clientRequestLane === 'downward') return;
     const centerText = label?.dataset.finalPathCenter;
     const pointText = path.dataset.manhattanPoints;
     if (!label?.textContent?.trim() || !pointText) return;

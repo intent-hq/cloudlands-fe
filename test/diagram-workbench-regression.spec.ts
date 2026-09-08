@@ -873,10 +873,20 @@ async function expectNestedReviewGeometry(page: Page, context: string, width: nu
         const bounds = path.getBoundingClientRect();
         if (landscape) {
           const terminalCenterY = (start.y + end.y) / 2;
-          return terminalCenterY - bounds.top > bounds.bottom - terminalCenterY ? 'upper' : 'lower';
+          const upperExtent = terminalCenterY - bounds.top;
+          const lowerExtent = bounds.bottom - terminalCenterY;
+          if (Math.abs(upperExtent - lowerExtent) <= 1) {
+            return end.y - start.y > 1 ? 'upper' : 'lower';
+          }
+          return upperExtent > lowerExtent ? 'upper' : 'lower';
         }
         const terminalCenterX = (start.x + end.x) / 2;
-        return terminalCenterX - bounds.left > bounds.right - terminalCenterX ? 'left' : 'right';
+        const leftExtent = terminalCenterX - bounds.left;
+        const rightExtent = bounds.right - terminalCenterX;
+        if (Math.abs(leftExtent - rightExtent) <= 1) {
+          return end.x - start.x > 1 ? 'left' : 'right';
+        }
+        return leftExtent > rightExtent ? 'left' : 'right';
       };
       const ports = (path: SVGPathElement) => {
         const start = screenPoint(path, 0);
@@ -978,9 +988,29 @@ async function expectNestedReviewGeometry(page: Page, context: string, width: nu
         intakeSides: new Set(intake.map(lane)).size,
         intakePorts: new Set(intake.map(ports)).size,
         intakeDashes: new Set(intake.map((path) => getComputedStyle(path).strokeDasharray)).size,
-        decisionSides: new Set(decision.map(lane)).size,
+        decisionLanes: new Set(
+          decision.map((path) => {
+            const points = path.dataset.manhattanPoints!.split(' ').map((value) => {
+              const [x, y] = value.split(',').map(Number);
+              return { x, y };
+            });
+            return landscape
+              ? Math.max(...points.map(({ y }) => y)).toFixed(1)
+              : Math.min(...points.map(({ x }) => x)).toFixed(1);
+          }),
+        ).size,
         decisionPorts: new Set(decision.map(ports)).size,
-        reciprocalSides: new Set(reciprocal.map(lane)).size,
+        reciprocalLanes: new Set(
+          reciprocal.map((path) => {
+            const points = path.dataset.manhattanPoints!.split(' ').map((value) => {
+              const [x, y] = value.split(',').map(Number);
+              return { x, y };
+            });
+            return landscape
+              ? Math.max(...points.map(({ y }) => y)).toFixed(1)
+              : Math.max(...points.map(({ x }) => x)).toFixed(1);
+          }),
+        ).size,
         reciprocalPorts: new Set(reciprocal.map(ports)).size,
       };
     }, width >= 960);
@@ -1014,9 +1044,9 @@ async function expectNestedReviewGeometry(page: Page, context: string, width: nu
   expect(geometry.intakeSides).toBe(2);
   expect(geometry.intakePorts).toBe(2);
   expect(geometry.intakeDashes).toBe(2);
-  expect(geometry.decisionSides).toBe(2);
+  expect(geometry.decisionLanes).toBe(2);
   expect(geometry.decisionPorts).toBe(2);
-  expect(geometry.reciprocalSides).toBe(2);
+  expect(geometry.reciprocalLanes).toBe(2);
   expect(geometry.reciprocalPorts).toBe(2);
 }
 
@@ -2166,7 +2196,7 @@ for (const appearance of [
   { name: 'Dark', mode: 'dark' as const, colorTheme: 'Default' },
   { name: 'Nord', mode: 'light' as const, colorTheme: 'Nord' },
 ]) {
-  for (const width of [320, 420, 960] as const) {
+  for (const width of [320, 420, 640, 960, 1280] as const) {
     test(`keeps state and nested routes clear in ${appearance.name} at ${width}px`, async ({
       page,
     }) => {
