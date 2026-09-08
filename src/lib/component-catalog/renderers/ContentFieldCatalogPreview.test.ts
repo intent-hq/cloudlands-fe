@@ -91,8 +91,8 @@ describe('ContentFieldCatalogPreview', () => {
       props: { componentId: 'loading-indicator', fixture: spinnerFixtures[0] },
     });
     expect(
-      Array.from(loadingIndicator.container.querySelectorAll('[data-loader-variant]')).map(
-        (row) => row.getAttribute('data-loader-variant'),
+      Array.from(loadingIndicator.container.querySelectorAll('[data-loader-variant]')).map((row) =>
+        row.getAttribute('data-loader-variant'),
       ),
     ).toEqual(['bloom', 'pulse', 'twist']);
     expect(

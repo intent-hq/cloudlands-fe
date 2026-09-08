@@ -331,11 +331,7 @@
         {/each}
       </div>
     </div>
-    <div
-      class="flex items-center gap-3"
-      data-catalog-rendered-state="paused"
-      data-loader-paused
-    >
+    <div class="flex items-center gap-3" data-catalog-rendered-state="paused" data-loader-paused>
       <IntentMarkLoader variant="bloom" size={16} playing={false} />
       <span class="type-caption text-muted-foreground"
         >Paused and reduced-motion frames keep the full mark at 16 px.</span
