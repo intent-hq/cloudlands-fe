@@ -116,6 +116,24 @@ test('reduced-motion changes snap the current hull tween after mount', async ({ 
   await expect(component.getByText('First region', { exact: true })).toBeVisible();
 });
 
+test('route hit targets follow focused region geometry', async ({ mount, page }) => {
+  await installRuntimeMediaMock(page);
+  const component = await mount(SemanticMapCanvasHost, { props: { routeFixture: true } });
+  const canvas = component.locator('canvas');
+
+  await canvas.click({ position: { x: 250, y: 180 } });
+  await page.evaluate(() =>
+    (
+      window as typeof window & {
+        __semanticMapRuntime: { setReducedMotion(value: boolean): void };
+      }
+    ).__semanticMapRuntime.setReducedMotion(true),
+  );
+  await canvas.click({ position: { x: 332, y: 257 } });
+
+  await expect(component.getByTestId('selected-route')).toHaveAttribute('data-selected', 'true');
+});
+
 test('visibility pauses and resumes a hull tween without a time jump', async ({ mount, page }) => {
   await installRuntimeMediaMock(page);
   const component = await mount(SemanticMapCanvasHost);

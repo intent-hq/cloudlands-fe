@@ -1,14 +1,20 @@
 <script lang="ts">
   import SemanticMapCanvas from '../SemanticMapCanvas.svelte';
-  import type { Manifest, MapActivity } from '../core/types';
+  import type { Manifest, MapActivity, Route } from '../core/types';
   import type { RegionGeometry } from '../layout/place';
   import type { SemanticMapSelection } from '../render/types';
 
   let {
     activityFixture = false,
+    routeFixture = false,
     width = 640,
     height = 360,
-  }: { activityFixture?: boolean; width?: number; height?: number } = $props();
+  }: {
+    activityFixture?: boolean;
+    routeFixture?: boolean;
+    width?: number;
+    height?: number;
+  } = $props();
 
   const manifest: Manifest = {
     version: 1,
@@ -95,14 +101,22 @@
     },
   ];
   const focus: RegionGeometry[] = rest.map((region) =>
-    region.id === 'first'
-      ? {
-          ...region,
-          hull: firstHull.map(([x, y]): [number, number] => [x + Math.max(0, x - 180) * 0.5, y]),
-        }
-      : region,
+    region.id === 'first' && routeFixture
+      ? { ...region, y: region.y + 120, hull: region.hull.map(([x, y]) => [x, y + 120]) }
+      : region.id === 'first'
+        ? {
+            ...region,
+            hull: firstHull.map(([x, y]): [number, number] => [x + Math.max(0, x - 180) * 0.5, y]),
+          }
+        : region,
   );
   const geometry = { rest, focus };
+  const route: Route | undefined = routeFixture
+    ? {
+        visits: ['first', 'second'],
+        transitions: [{ from: 'first', to: 'second', count: 1, evidence: ['src/example.ts'] }],
+      }
+    : undefined;
   const timeWindow = { start: '2026-09-06T10:00:00.000Z', end: '2026-09-06T10:20:00.000Z' };
 </script>
 
@@ -111,12 +125,14 @@
   {manifest}
   {geometry}
   {activities}
+  {route}
   {selection}
   filters={{}}
   {timeWindow}
   {width}
   {height}
   onSelectRegion={(regionIds) => (selection = { type: 'region', regionIds })}
+  onSelectRoute={() => (selection = { type: 'route' })}
   onClearSelection={() => (selection = null)}
 />
 <output
@@ -124,3 +140,4 @@
   data-region={selection?.type === 'region' ? selection.regionIds[0] : ''}
   >{selection?.type === 'region' ? selection.regionIds[0] : ''}</output
 >
+<output data-testid="selected-route" data-selected={selection?.type === 'route'}></output>

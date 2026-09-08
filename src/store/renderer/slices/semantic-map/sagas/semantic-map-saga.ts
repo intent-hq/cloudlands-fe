@@ -7,7 +7,12 @@ import {
   workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { applyNoteCreated, applyNoteUpdated } from '../../workspace-notes/workspace-notes-slice';
+import {
+  applyNoteCreated,
+  applyNoteDeleted,
+  applyNoteUpdated,
+  loadWorkspaceNotesSucceeded,
+} from '../../workspace-notes/workspace-notes-slice';
 import { selectSemanticMapState } from '../semantic-map-selectors';
 import {
   semanticMapActivityReceived,
@@ -33,6 +38,11 @@ type RouteContextAction =
   ReturnType<typeof semanticMapRouteRefreshRequested> | ReturnType<typeof workspaceUnmounted>;
 type GenerationCoordinator = Map<string, number>;
 type RequestGenerations<Action extends object> = WeakMap<Action, number>;
+type ManifestNoteAction =
+  | ReturnType<typeof applyNoteCreated>
+  | ReturnType<typeof applyNoteDeleted>
+  | ReturnType<typeof applyNoteUpdated>;
+type TaggedManifestNotes = Map<string, Set<string>>;
 
 function mapContext(
   generations: GenerationCoordinator,
@@ -84,19 +94,58 @@ function* readMapWorker(
         baselineActivityIds,
       ),
     );
+    const hydratedState = yield* selectSemanticMapState.effect(workspaceId);
+    if (hydratedState.selectedAgentId || hydratedState.selectedTaskNoteId) {
+      yield* put(semanticMapRouteRefreshRequested(workspaceId));
+    }
   } catch (error) {
     yield* put(semanticMapLoadFailed(workspaceId, generation));
     logger.warn('Semantic map hydration failed', { workspaceId, error });
   }
 }
 
+function rememberTaggedManifestNotes(
+  taggedManifestNotes: TaggedManifestNotes,
+  action: ReturnType<typeof loadWorkspaceNotesSucceeded>,
+): void {
+  const [workspaceIds, notesByWorkspace] = action.payload;
+  for (const workspaceId of workspaceIds) {
+    taggedManifestNotes.set(
+      workspaceId,
+      new Set(
+        (notesByWorkspace[workspaceId] ?? [])
+          .filter((note) => note.tags.includes('semantic-map'))
+          .map((note) => String(note.id)),
+      ),
+    );
+  }
+}
+
 function* refreshTaggedManifest(
-  action: ReturnType<typeof applyNoteCreated> | ReturnType<typeof applyNoteUpdated>,
+  taggedManifestNotes: TaggedManifestNotes,
+  action: ManifestNoteAction,
 ) {
   const [workspaceId, noteOrId, updatedNote] = action.payload;
   const note = action.type === applyNoteCreated.type ? noteOrId : updatedNote;
-  if (typeof note !== 'object' || note === null || !note.tags.includes('semantic-map')) return;
+  const noteId =
+    action.type === applyNoteCreated.type && typeof note === 'object' && note !== null
+      ? String(note.id)
+      : String(noteOrId);
+  const taggedNoteIds = taggedManifestNotes.get(workspaceId) ?? new Set<string>();
+  const wasTagged = taggedNoteIds.has(noteId);
+  const isTagged = typeof note === 'object' && note !== null && note.tags.includes('semantic-map');
+  if (isTagged) taggedNoteIds.add(noteId);
+  else taggedNoteIds.delete(noteId);
+  taggedManifestNotes.set(workspaceId, taggedNoteIds);
+  if (!wasTagged && !isTagged) return;
   yield* put(semanticMapRefreshRequested(workspaceId));
+}
+
+function forgetTaggedManifestNotes(
+  taggedManifestNotes: TaggedManifestNotes,
+  action: ReturnType<typeof workspaceUnmounted>,
+): void {
+  taggedManifestNotes.delete(action.payload[0]);
 }
 
 function* requestRouteRefresh(
@@ -165,6 +214,7 @@ function* clearWorkspace(action: ReturnType<typeof workspaceUnmounted>) {
 
 export function* semanticMapSaga() {
   const generations: GenerationCoordinator = new Map();
+  const taggedManifestNotes: TaggedManifestNotes = new Map();
   const mapRequests: RequestGenerations<MapReadAction> = new WeakMap();
   const routeRequests: RequestGenerations<ReturnType<typeof semanticMapRouteRefreshRequested>> =
     new WeakMap();
@@ -175,7 +225,12 @@ export function* semanticMapSaga() {
       readMapWorker,
       mapRequests,
     ),
-    takeEvery([applyNoteCreated, applyNoteUpdated], refreshTaggedManifest),
+    takeEvery(loadWorkspaceNotesSucceeded, rememberTaggedManifestNotes, taggedManifestNotes),
+    takeEvery(
+      [applyNoteCreated, applyNoteUpdated, applyNoteDeleted],
+      refreshTaggedManifest,
+      taggedManifestNotes,
+    ),
     takeEvery(
       [semanticMapSelectedAgentChanged, semanticMapSelectedTaskChanged],
       requestRouteRefresh,
@@ -188,6 +243,7 @@ export function* semanticMapSaga() {
       generations,
       routeRequests,
     ),
+    takeEvery(workspaceUnmounted, forgetTaggedManifestNotes, taggedManifestNotes),
     takeEvery(workspaceUnmounted, clearWorkspace),
   ]);
 }

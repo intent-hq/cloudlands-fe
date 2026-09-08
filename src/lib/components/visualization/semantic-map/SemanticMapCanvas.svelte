@@ -97,7 +97,7 @@
       activities,
       filters,
       timeWindow,
-      geometry: geometry.rest,
+      geometry: selection ? geometry.focus : geometry.rest,
       route,
       neutral: colors.mutedForeground,
       fileLabel: routeFileLabel,

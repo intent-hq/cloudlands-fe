@@ -23,7 +23,12 @@ import {
   workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { applyNoteCreated } from '../../workspace-notes/workspace-notes-slice';
+import {
+  applyNoteCreated,
+  applyNoteDeleted,
+  applyNoteUpdated,
+  loadWorkspaceNotesSucceeded,
+} from '../../workspace-notes/workspace-notes-slice';
 import {
   initialState,
   semanticMapActivityReceived,
@@ -226,6 +231,57 @@ describe('semanticMapSaga', () => {
 
     expect(harness.state().selectedRegionId).toBeNull();
     expect(getItems(harness.state().activities)).toEqual([reclassified]);
+    await harness.stop();
+  });
+
+  it('refreshes the selected route after manifest hydration', async () => {
+    const refreshedRoute = { visits: ['renderer-state'], transitions: [] };
+    mocks.route
+      .mockResolvedValueOnce(SEMANTIC_MAP_FIXTURE_ROUTE)
+      .mockResolvedValueOnce(refreshedRoute);
+    const harness = createHarness();
+    await settle();
+    harness.dispatch(workspaceMounted('ws-1'));
+    await settle();
+    harness.dispatch(semanticMapSelectedAgentChanged('ws-1', 'agent-1'));
+    await settle();
+
+    harness.dispatch(applyNoteCreated('ws-1', { id: 'manifest', tags: ['semantic-map'] } as never));
+    await settle();
+
+    expect(mocks.route).toHaveBeenNthCalledWith(2, 'ws-1', { agentId: 'agent-1' });
+    expect(harness.state().route).toEqual(refreshedRoute);
+    await harness.stop();
+  });
+
+  it('refreshes when a manifest is untagged or deleted without refreshing unrelated notes', async () => {
+    const harness = createHarness();
+    await settle();
+    harness.dispatch(workspaceMounted('ws-1'));
+    await settle();
+    harness.dispatch(
+      loadWorkspaceNotesSucceeded(['ws-1'], {
+        'ws-1': [
+          { id: 'manifest-1', tags: ['semantic-map'] } as never,
+          { id: 'manifest-2', tags: ['semantic-map'] } as never,
+          { id: 'ordinary', tags: [] } as never,
+        ],
+      }),
+    );
+    harness.dispatch(applyNoteUpdated('ws-1', 'ordinary', { id: 'ordinary', tags: [] } as never));
+    harness.dispatch(applyNoteDeleted('ws-1', 'ordinary'));
+    await settle();
+    expect(mocks.get).toHaveBeenCalledOnce();
+
+    harness.dispatch(
+      applyNoteUpdated('ws-1', 'manifest-1', { id: 'manifest-1', tags: [] } as never),
+    );
+    await settle();
+    expect(mocks.get).toHaveBeenCalledTimes(2);
+
+    harness.dispatch(applyNoteDeleted('ws-1', 'manifest-2'));
+    await settle();
+    expect(mocks.get).toHaveBeenCalledTimes(3);
     await harness.stop();
   });
 
