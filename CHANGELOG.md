@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.144.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.2...v2.144.3) (2026-09-08)
+
+
+### 🐛 Bug Fixes
+
+* preserve default models across provider catalog refreshes ([#2267](https://github.com/intent-hq/cloudlands-fe/issues/2267)) ([010afb6](https://github.com/intent-hq/cloudlands-fe/commit/010afb6836cdc70bf75198ef8f119cdc064c35d4))
+
 ## [2.144.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.1...v2.144.2) (2026-09-07)
 
 
