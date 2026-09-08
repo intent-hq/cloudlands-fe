@@ -41,12 +41,12 @@ export default defineConfig(async () => {
       globals: true,
       environment: 'jsdom',
       setupFiles: ['./src/test-setup.ts'],
-      // Node 24's child-process pool exits nondeterministically late in these
-      // 400+ file shards: the unstarted file varies and passes alone, while
-      // lowering the fork count makes every longer-lived fork disappear. The
-      // regular thread pool preserves per-file isolation and completed the
-      // same shard without dropped files or worker errors.
-      pool: 'threads',
+      // Node 24's V8 Sparkplug/GC regression (nodejs/node#62393) SIGSEGVs long
+      // test runs: forks surface it as dropped files, while threads crash the
+      // controller directly. Keep process isolation and disable only Sparkplug
+      // in workers until the pinned runtime contains the upstream fix.
+      pool: 'forks',
+      execArgv: ['--no-sparkplug'],
       // Cap workers at 50% of logical cores. Vitest defaults to one worker per
       // core; ~20 jsdom workers oversubscribe the CPU and, when the machine is
       // under external load (builds, other agents), heavy component suites blow
