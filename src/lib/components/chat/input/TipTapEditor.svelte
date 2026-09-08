@@ -905,6 +905,7 @@
             class: `tiptap-editor ${editorClassName}`,
             role: 'combobox',
             'aria-autocomplete': 'list',
+            'aria-label': placeholder,
             autocomplete: 'off',
             spellcheck: 'false',
             autocorrect: 'off',

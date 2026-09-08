@@ -102,6 +102,19 @@
   const cardClickable = $derived(
     ready || (!ready && !provider.statusLoading && !!provider.docsUrl),
   );
+  const cardLabel = $derived(
+    checking
+      ? m.workspaceCreation_providerCard_checking_ariaLabel({ name: provider.name })
+      : ready
+        ? selected
+          ? m.workspaceCreation_providerCard_selected_ariaLabel({ name: provider.name })
+          : m.workspaceCreation_providerCard_use_ariaLabel({ name: provider.name })
+        : authUnknown
+          ? m.providers_antigravity_authUnknown()
+          : needsLogin
+            ? m.workspaceCreation_providerCard_notLoggedIn_ariaLabel({ name: provider.name })
+            : m.workspaceCreation_providerCard_notInstalled_ariaLabel({ name: provider.name }),
+  );
 
   // Show npx hint when: provider has npx fallback, binary not installed, npx missing or too old
   const showNpxMissingHint = $derived(
@@ -131,41 +144,17 @@
       openExternalUrl(provider.docsUrl);
     }
   }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      handleCardClick();
-    }
-  }
 </script>
 
 <div class="overflow-hidden transition-all flex flex-col flex-1 min-w-66">
-  <!-- svelte-ignore a11y_no_static_element_interactions a11y_no_noninteractive_tabindex -->
   <div
     class={cn(
       'group/card relative w-full aspect-[3/4] flex flex-col justify-between p-7 text-left rounded-xl overflow-hidden transition-colors duration-500 border',
-      cardClickable ? 'cursor-pointer border-transparent' : 'cursor-default border-border',
+      cardClickable ? 'border-transparent' : 'border-border',
       (ready || needsAction) && 'border-border',
       installed && brand.isLight && 'text-slate-800',
       installed && !brand.isLight && 'text-white',
     )}
-    role={cardClickable ? 'button' : undefined}
-    tabindex={cardClickable ? 0 : undefined}
-    aria-pressed={ready ? selected : undefined}
-    onclick={handleCardClick}
-    onkeydown={handleKeydown}
-    aria-label={checking
-      ? m.workspaceCreation_providerCard_checking_ariaLabel({ name: provider.name })
-      : ready
-        ? selected
-          ? m.workspaceCreation_providerCard_selected_ariaLabel({ name: provider.name })
-          : m.workspaceCreation_providerCard_use_ariaLabel({ name: provider.name })
-        : authUnknown
-          ? m.providers_antigravity_authUnknown()
-          : needsLogin
-            ? m.workspaceCreation_providerCard_notLoggedIn_ariaLabel({ name: provider.name })
-            : m.workspaceCreation_providerCard_notInstalled_ariaLabel({ name: provider.name })}
   >
     <!-- Gradient overlay — always present, opacity animates on install -->
     <div
@@ -207,10 +196,13 @@
     <!-- Bottom area: name + status row -->
     <div class="relative z-10 flex flex-col">
       <div class="flex items-center gap-1.5 min-w-0 pb-1.5">
-        {#if provider.docsUrl}
+        {#if cardClickable}
           <button
-            onclick={(e) => openDocs(provider.docsUrl, e)}
-            class="font-medium text-lg truncate min-w-0 cursor-pointer"
+            type="button"
+            onclick={handleCardClick}
+            class="min-w-0 cursor-pointer truncate rounded-sm text-left text-lg font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current"
+            aria-label={cardLabel}
+            aria-pressed={ready ? selected : undefined}
           >
             {provider.name}
           </button>

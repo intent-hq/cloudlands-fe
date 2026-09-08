@@ -59,6 +59,7 @@
     class="p-2 rounded cursor-pointer transition-colors {className}"
     onclick={copyToClipboard}
     type="button"
+    aria-label={label}
   >
     {#if copied}
       <Fa icon={faCheck} {size} class="text-success" />

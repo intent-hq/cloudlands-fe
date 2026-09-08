@@ -293,38 +293,32 @@ describe('ProviderCard login guidance', () => {
 });
 
 describe('ProviderCard click affordance', () => {
-  const card = (root: HTMLElement) => root.querySelector('.group\\/card') as HTMLElement;
+  it('exposes ready card selection as a native button', async () => {
+    const props = { ...baseProps(), provider: readyProvider() };
+    const result = render(ProviderCard, { props });
 
-  it('marks ready cards as clickable: pointer cursor, role=button, tabindex=0', () => {
-    const { container } = render(ProviderCard, {
-      props: { ...baseProps(), provider: readyProvider() },
-    });
+    const action = result.getByRole('button', { name: 'Use Claude Code' });
+    expect(action.tagName).toBe('BUTTON');
+    expect(action.getAttribute('aria-pressed')).toBe('false');
 
-    const el = card(container);
-    expect(el.className).toContain('cursor-pointer');
-    expect(el.getAttribute('role')).toBe('button');
-    expect(el.getAttribute('tabindex')).toBe('0');
-    // Border must stay border-border for ready cards (no visual regression).
-    expect(el.className).toContain('border-border');
+    await fireEvent.click(action);
+    expect(props.onSelect).toHaveBeenCalledWith('claude-code');
   });
 
-  it('keeps loading cards non-interactive with the default cursor', () => {
-    const { container } = render(ProviderCard, {
+  it('does not expose a card action while provider status is loading', () => {
+    const result = render(ProviderCard, {
       props: {
         ...baseProps(),
         provider: { ...readyProvider(), statusLoading: true, available: false },
       },
     });
 
-    const el = card(container);
-    expect(el.className).toContain('cursor-default');
-    expect(el.getAttribute('role')).toBeNull();
-    expect(el.getAttribute('tabindex')).toBeNull();
+    expect(result.queryByRole('button', { name: 'Claude Code (checking…)' })).toBeNull();
+    expect(result.container.querySelector('[aria-pressed]')).toBeNull();
   });
 });
 
 describe('ProviderCard auggie link-out click behavior', () => {
-  const card = (root: HTMLElement) => root.querySelector('.group\\/card') as HTMLElement;
   const instructionsPanel = (root: HTMLElement) =>
     root.querySelector('[data-testid="auggie-instructions-panel"]');
 
@@ -355,13 +349,9 @@ describe('ProviderCard auggie link-out click behavior', () => {
       ...baseProps(),
       provider: auggieProvider({ available: false, authenticated: undefined }),
     };
-    const { container } = render(ProviderCard, { props });
+    const result = render(ProviderCard, { props });
 
-    const el = card(container);
-    expect(el.className).toContain('cursor-pointer');
-    expect(el.getAttribute('role')).toBe('button');
-
-    await fireEvent.click(el);
+    await fireEvent.click(result.getByRole('button', { name: 'Auggie (not installed)' }));
     await Promise.resolve();
 
     // Exact wire request: shell:openExternal with the { url } payload.
@@ -369,7 +359,7 @@ describe('ProviderCard auggie link-out click behavior', () => {
     expect(openExternal).toHaveBeenCalledWith({ url: AUGGIE_DOCS_URL });
     expect(props.onSelect).not.toHaveBeenCalled();
     // No inline instructions render anywhere in the card.
-    expect(instructionsPanel(container)).toBeNull();
+    expect(instructionsPanel(result.container)).toBeNull();
   });
 
   it('opens the docs URL when auggie is installed but not logged in', async () => {
@@ -377,22 +367,22 @@ describe('ProviderCard auggie link-out click behavior', () => {
       ...baseProps(),
       provider: auggieProvider({ authenticated: false, authDetails: undefined }),
     };
-    const { container } = render(ProviderCard, { props });
+    const result = render(ProviderCard, { props });
 
-    await fireEvent.click(card(container));
+    await fireEvent.click(result.getByRole('button', { name: 'Auggie (not logged in)' }));
     await Promise.resolve();
 
     expect(openExternal).toHaveBeenCalledTimes(1);
     expect(openExternal).toHaveBeenCalledWith({ url: AUGGIE_DOCS_URL });
     expect(props.onSelect).not.toHaveBeenCalled();
-    expect(instructionsPanel(container)).toBeNull();
+    expect(instructionsPanel(result.container)).toBeNull();
   });
 
   it('selects a ready auggie card instead of opening docs', async () => {
     const props = { ...baseProps(), provider: auggieProvider() };
-    const { container } = render(ProviderCard, { props });
+    const result = render(ProviderCard, { props });
 
-    await fireEvent.click(card(container));
+    await fireEvent.click(result.getByRole('button', { name: 'Use Auggie' }));
     await Promise.resolve();
 
     expect(props.onSelect).toHaveBeenCalledWith('auggie');
