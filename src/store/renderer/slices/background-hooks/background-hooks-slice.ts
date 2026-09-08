@@ -21,6 +21,8 @@ import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import type { BackgroundHook } from '$features/hooks/background-hooks-service';
 
+export type BackgroundHooksSnapshotStatus = 'loading' | 'ready' | 'failed';
+
 /** Per-workspace live hook state (all wire states; selectors filter). */
 interface BackgroundHooksWorkspaceState {
   hooks: Collection<BackgroundHook, 'hookId'>;
@@ -34,6 +36,7 @@ interface BackgroundHooksWorkspaceState {
    * deliveries) preserve it.
    */
   stale: boolean;
+  snapshotStatus: BackgroundHooksSnapshotStatus;
 }
 
 /** Root background-hooks state, keyed by workspace ID. */
@@ -44,6 +47,7 @@ export interface BackgroundHooksState {
 const emptyBackgroundHooksWorkspaceState: BackgroundHooksWorkspaceState = {
   hooks: createCollection<BackgroundHook, 'hookId'>('hookId'),
   stale: false,
+  snapshotStatus: 'loading',
 };
 
 export const initialState: BackgroundHooksState = {
@@ -76,6 +80,10 @@ export const backgroundHooksRefetchRequested = createAction<[workspaceId: string
   'backgroundHooks/refetchRequested',
 );
 
+export const backgroundHooksSnapshotFailed = createAction<[workspaceId: string]>(
+  'backgroundHooks/snapshotFailed',
+);
+
 /**
  * Service → reducer: full hook list after a seed or event fold.
  * `provisional: true` marks a non-authoritative write (an event fold on the
@@ -91,9 +99,8 @@ export const backgroundHooksUpdated =
 /**
  * Service → reducer: last subscriber released — RETAIN the cached list but
  * mark it stale so no consumer serves it as authoritative while
- * unsubscribed. Retention keeps the utility-footer delivered latch
- * (`selectBackgroundHooksSnapshotDelivered`) set across workspace switches;
- * the re-activation seed refreshes the rows in the background.
+ * unsubscribed. Retention prevents a warm reactivation from flashing empty;
+ * the reactivation seed refreshes the rows in the background.
  */
 export const backgroundHooksMarkedStale = createAction<[workspaceId: string]>(
   'backgroundHooks/markedStale',
@@ -118,8 +125,16 @@ backgroundHooksReducer.with(
     setWorkspaceState(state, workspaceId, {
       hooks: createCollection<BackgroundHook, 'hookId'>('hookId', hooks),
       stale: provisional === true ? (state.byWorkspaceId[workspaceId]?.stale ?? false) : false,
+      snapshotStatus:
+        provisional === true
+          ? (state.byWorkspaceId[workspaceId]?.snapshotStatus ?? 'loading')
+          : 'ready',
     }),
 );
+backgroundHooksReducer.with(backgroundHooksSnapshotFailed, (state, { payload: [workspaceId] }) => {
+  const entry = state.byWorkspaceId[workspaceId] ?? emptyBackgroundHooksWorkspaceState;
+  return setWorkspaceState(state, workspaceId, { ...entry, snapshotStatus: 'failed' });
+});
 backgroundHooksReducer.with(backgroundHooksMarkedStale, (state, { payload: [workspaceId] }) => {
   const entry = state.byWorkspaceId[workspaceId];
   if (!entry) return state;

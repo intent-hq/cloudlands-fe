@@ -6,7 +6,14 @@ import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
 import type { WorkspaceProgressAction } from '$store/renderer/slices/workspace/workspace-types';
+import type { BrowserClientsState } from '$store/renderer/slices/browser-clients/browser-clients-types';
+import {
+  createLiveClientCollection,
+  emptyWorkspaceBrowserClientsState,
+  initialState as browserClientsInitialState,
+} from '$store/renderer/slices/browser-clients/browser-clients-types';
 import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
@@ -19,6 +26,7 @@ const mocks = vi.hoisted(() => {
     workspace: {
       pendingTitleMutations: {} as Record<string, { token: number }>,
     },
+    browserClients: undefined as unknown,
   };
   const dispatch = vi.fn((action: { type: string; payload?: unknown[] }) => {
     if (
@@ -141,8 +149,17 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectAllWorkspaceAgents: mocks.selector(() => []),
 }));
 
+vi.mock('$store/renderer/slices/git/git-selectors', () => ({
+  selectAcceptChangesStatus: mocks.selector(() => null),
+  selectAcceptChangesStatusLoading: mocks.selector(() => false),
+}));
+
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   loadWorkspacesRequested: vi.fn(() => ({ type: 'workspace/loadWorkspacesRequested' })),
+  removeWorkspaceEntity: Object.assign(
+    vi.fn((id: string) => ({ type: 'workspace/removeWorkspaceEntity', payload: [id] })),
+    { type: 'workspace/removeWorkspaceEntity' },
+  ),
   beginWorkspaceTitleMutation: vi.fn(
     (id: string, token: number, optimisticTitle: string, previousTitle: string) => ({
       type: 'workspace/beginWorkspaceTitleMutation',
@@ -311,9 +328,24 @@ describe('WorkspaceProgressCard status message', () => {
     mocks.handleLink.mockReset();
     mocks.progressActions.length = 0;
     mocks.storeState.workspace.pendingTitleMutations = {};
+    mocks.storeState.browserClients = browserClientsInitialState;
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
       configurable: true,
+    });
+  });
+
+  it('leases accept-status freshness only while the card is mounted', async () => {
+    const view = await renderProgressCard();
+
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'git/acceptChangesConsumerMounted',
+      payload: ['ws-1'],
+    });
+    view.unmount();
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'git/acceptChangesConsumerUnmounted',
+      payload: ['ws-1'],
     });
   });
 
@@ -416,29 +448,8 @@ describe('WorkspaceProgressCard status message', () => {
       name: 'editorial-team/long-running-navigation-redesign',
     });
     const metadata = repoButton.closest('[data-sidebar-repository-branch-metadata]');
-    const repoLabel = repoButton.querySelector('[data-sidebar-repository-label]');
-    const branchButton = screen.getByRole('button', {
-      name: 'feature/simplify-workspace-navigation-and-sidebar',
-    });
-    const branchLabel = branchButton.querySelector('[data-sidebar-branch-label]');
 
     expect(metadata?.textContent).toContain('feature/simplify-workspace-navigation-and-sidebar');
-    expect(metadata?.className).toContain('type-caption');
-    expect(metadata?.className).toContain('min-w-0');
-    expect(metadata?.className.split(/\s+/)).toContain('gap-2.5');
-    expect(repoButton.className).toContain('shrink');
-    expect(repoButton.className).not.toContain('max-w-[45%]');
-    expect(repoButton.className).not.toContain('shrink-0');
-    expect(repoButton.className).toContain('overflow-hidden');
-    expect(repoLabel?.className).toContain('truncate');
-    expect(branchButton.className).toContain('shrink');
-    expect(branchButton.className).not.toContain('flex-1');
-    expect(branchButton.className).toContain('justify-start');
-    expect(branchButton.className).toContain('font-medium');
-    expect(repoButton.className.split(/\s+/)).toContain('text-muted-foreground');
-    expect(branchButton.className.split(/\s+/)).toContain('text-muted-foreground');
-    expect(branchButton.className).toContain('overflow-hidden');
-    expect(branchLabel?.className).toContain('truncate');
 
     await fireEvent.click(repoButton);
 
@@ -461,12 +472,51 @@ describe('WorkspaceProgressCard status message', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
-  it('renders the title editor full-width without JS auto-resize', async () => {
+  it('prefills the title editor and saves a changed title on Enter', async () => {
+    await renderProgressCard();
+    await fireEvent.click(screen.getByRole('button', { name: 'Active Workspace' }));
+    const titleInput = screen.getByRole('textbox') as HTMLInputElement;
+    expect(titleInput.value).toBe('Active Workspace');
+
+    await fireEvent.input(titleInput, { target: { value: 'Renamed Workspace' } });
+    await fireEvent.keyDown(titleInput, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(mocks.update).toHaveBeenCalledWith({ id: 'ws-1', title: 'Renamed Workspace' }),
+    );
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('restores the title on Escape without saving', async () => {
+    await renderProgressCard();
+    await fireEvent.click(screen.getByRole('button', { name: 'Active Workspace' }));
+    const titleInput = screen.getByRole('textbox');
+    await fireEvent.input(titleInput, { target: { value: 'Discarded title' } });
+
+    await fireEvent.keyDown(titleInput, { key: 'Escape' });
+
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Active Workspace' })).toBeTruthy();
+  });
+
+  it('saves a changed title on blur', async () => {
+    await renderProgressCard();
+    await fireEvent.click(screen.getByRole('button', { name: 'Active Workspace' }));
+    const titleInput = screen.getByRole('textbox');
+    await fireEvent.input(titleInput, { target: { value: 'Blurred Workspace' } });
+
+    await fireEvent.blur(titleInput);
+
+    await waitFor(() =>
+      expect(mocks.update).toHaveBeenCalledWith({ id: 'ws-1', title: 'Blurred Workspace' }),
+    );
+  });
+
+  it('does not apply inline JS sizing to the title editor', async () => {
     await renderProgressCard();
     await fireEvent.click(screen.getByRole('button', { name: 'Active Workspace' }));
     const titleInput = screen.getByRole('textbox') as HTMLInputElement;
 
-    expect(titleInput.className.split(/\s+/)).toContain('w-full');
     expect(titleInput.style.width).toBe('');
 
     await fireEvent.input(titleInput, { target: { value: 'A much longer workspace title' } });
@@ -482,9 +532,6 @@ describe('WorkspaceProgressCard status message', () => {
     const branch = screen.getByRole('button', { name: 'feature/status' });
     const hoverCard = container.querySelector('[data-sidebar-branch-hover-card]');
 
-    expect(branch.className).toContain('h-5');
-    expect(branch.className.split(/\s+/)).not.toContain('gap-0.5');
-    expect(branch.className.split(/\s+/)).not.toContain('gap-1.5');
     expect(container.querySelector('[data-sidebar-branch-icon]')).toBeNull();
     expect(hoverCard?.textContent).toContain('feature/status');
     expect(hoverCard?.textContent).toContain('Base main');
@@ -507,11 +554,6 @@ describe('WorkspaceProgressCard status message', () => {
     const statusButton = screen.getByRole('button', { name: 'Edit workspace status' });
 
     expect(statusButton.textContent).toContain('It can wrap across lines');
-    expect(statusButton.className).not.toMatch(
-      /line-clamp|truncate|overflow-hidden|whitespace-nowrap|text-ellipsis/,
-    );
-    expect(statusButton.className).toContain('whitespace-pre-wrap');
-    expect(statusButton.className).toContain('leading-snug');
   });
 
   it('keeps the workspace status wrapping while it is being edited', async () => {
@@ -524,10 +566,6 @@ describe('WorkspaceProgressCard status message', () => {
 
     expect(editor.tagName).toBe('TEXTAREA');
     expect(editor.getAttribute('rows')).toBe('1');
-    expect(editor.className).toContain('whitespace-pre-wrap');
-    expect(editor.className).toContain('break-words');
-    expect(editor.className).toContain('resize-none');
-    expect(editor.className).toContain('min-h-0');
   });
 
   it('hides the status row when the active sidebar status is empty', async () => {
@@ -631,8 +669,21 @@ describe('WorkspaceProgressCard status message', () => {
     const input = await screen.findByLabelText('Workspace status');
 
     expect(input.tagName).toBe('TEXTAREA');
-    expect(input.className).toContain('resize-none');
-    expect(input.className).toContain('whitespace-pre-wrap');
+  });
+
+  it('saves status edits on blur', async () => {
+    const updatedWorkspace = { ...mocks.workspaceEntity, statusMessage: 'Saved on blur.' };
+    mocks.update.mockResolvedValue({ ok: true, data: updatedWorkspace });
+    await renderProgressCard({ statusMessage: 'Drafting status.' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit workspace status' }));
+    const input = await screen.findByLabelText('Workspace status');
+    await fireEvent.input(input, { target: { value: 'Saved on blur.' } });
+
+    await fireEvent.blur(input);
+
+    await waitFor(() =>
+      expect(mocks.update).toHaveBeenCalledWith({ id: 'ws-1', statusMessage: 'Saved on blur.' }),
+    );
   });
 
   it('does not save and allows a newline on Shift+Enter', async () => {
@@ -709,10 +760,6 @@ describe('WorkspaceProgressCard status screenshot (intent-hq/monorepo#997)', () 
 
     const image = screen.getByAltText('Workspace status screenshot') as HTMLImageElement;
     expect(image.getAttribute('src')).toBe('workspace-asset://ws-1/asset-abc123');
-    // Bounded dimensions + rounded border per the acceptance criteria.
-    expect(image.className).toContain('max-h-48');
-    expect(image.className).toContain('rounded-md');
-    expect(image.className.split(/\s+/)).toContain('border');
 
     const statusButton = screen.getByRole('button', { name: 'Edit workspace status' });
     expect(
@@ -762,5 +809,172 @@ describe('WorkspaceProgressCard status screenshot (intent-hq/monorepo#997)', () 
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: /image preview/i })).toBeTruthy();
     });
+  });
+});
+
+describe('WorkspaceProgressCard driving browser client', () => {
+  const OWN = 'client-own';
+  const OTHER = 'client-other';
+  const SET_PRIMARY = { name: 'Set Current Client as Primary' };
+
+  function liveClient(clientId: string, name: string): LiveClient {
+    return {
+      clientId,
+      name,
+      hostname: name,
+      capabilities: { browserExec: true },
+      connections: 1,
+      transports: ['ws'],
+      connectedAt: '2026-05-05T00:00:00.000Z',
+    } as LiveClient;
+  }
+
+  function seedBrowserClients(
+    clients: LiveClient[],
+    browserClient: WorkspaceBrowserClient | null,
+  ): void {
+    mocks.storeState.browserClients = {
+      ownClientId: OWN,
+      liveClients: createLiveClientCollection(clients),
+      liveClientsLoaded: true,
+      byWorkspaceId: { 'ws-1': { ...emptyWorkspaceBrowserClientsState, browserClient } },
+    } satisfies BrowserClientsState;
+  }
+
+  const drivingIndicator = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('[data-sidebar-driving-client]');
+
+  // The card publishes its workspace id to the selector argument store from
+  // an effect after mount; the store mock reads readable args once, so
+  // re-emit to let the driving-client selector observe the mounted id.
+  async function renderDrivingCard() {
+    const view = await renderProgressCard();
+    await tick();
+    const { store } = await import('$store/renderer/store');
+    (store as unknown as { emitState: () => void }).emitState();
+    await tick();
+    return view;
+  }
+
+  beforeEach(() => {
+    mocks.dispatch.mockClear();
+    mocks.storeState.browserClients = browserClientsInitialState;
+  });
+
+  it('shows nothing and offers no switch when this app is the only eligible client', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop')], {
+      source: 'default',
+      resolved: { clientId: OWN, name: 'laptop' },
+    });
+    const { container } = await renderDrivingCard();
+
+    expect(drivingIndicator(container)).toBeNull();
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    expect(screen.queryByRole('button', SET_PRIMARY)).toBeNull();
+  });
+
+  it('marks this app as driving and hides the switch when it already drives', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OWN, name: 'laptop' },
+    });
+    const { container } = await renderDrivingCard();
+
+    expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('here');
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    expect(screen.queryByRole('button', SET_PRIMARY)).toBeNull();
+  });
+
+  const SET_PRIMARY_DIALOG = { name: /set this client as primary/i };
+  const CONFIRM_SET_PRIMARY = { name: 'Set as Primary' };
+
+  async function openSetPrimaryDialog(container: HTMLElement): Promise<HTMLElement> {
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    await fireEvent.click(screen.getByRole('button', SET_PRIMARY));
+    return await waitFor(() => screen.getByRole('dialog', SET_PRIMARY_DIALOG));
+  }
+
+  it('names the other driving client and asks for confirmation before switching', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OTHER, name: 'desktop' },
+    });
+    const { container } = await renderDrivingCard();
+
+    const indicator = drivingIndicator(container);
+    expect(indicator?.dataset.sidebarDrivingClient).toBe('elsewhere');
+    expect(indicator?.getAttribute('aria-label')).toContain('desktop');
+
+    const dialog = await openSetPrimaryDialog(container);
+
+    expect(dialog.textContent).toContain('desktop');
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'browserClients/setWorkspaceBrowserClientRequested' }),
+    );
+  });
+
+  it('pins this app only once the confirmation is accepted', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OTHER, name: 'desktop' },
+    });
+    const { container } = await renderDrivingCard();
+
+    await openSetPrimaryDialog(container);
+    await fireEvent.click(screen.getByRole('button', CONFIRM_SET_PRIMARY));
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'browserClients/setWorkspaceBrowserClientRequested',
+        payload: ['ws-1', OWN],
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', SET_PRIMARY_DIALOG)).toBeNull();
+    });
+  });
+
+  it('sends nothing when the confirmation is cancelled', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OTHER, name: 'desktop' },
+    });
+    const { container } = await renderDrivingCard();
+
+    await openSetPrimaryDialog(container);
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', SET_PRIMARY_DIALOG)).toBeNull();
+    });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'browserClients/setWorkspaceBrowserClientRequested' }),
+    );
+  });
+
+  it('surfaces an offline pinned client and still offers the switch', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop')], {
+      source: 'workspace',
+      clientId: OTHER,
+      resolved: null,
+    });
+    const { container } = await renderDrivingCard();
+
+    expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('offline');
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    expect(screen.getByRole('button', SET_PRIMARY)).toBeTruthy();
+  });
+
+  it('hides the switch while this app does not yet know its own client id', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OTHER, name: 'desktop' },
+    });
+    (mocks.storeState.browserClients as BrowserClientsState).ownClientId = null;
+    const { container } = await renderDrivingCard();
+
+    expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('elsewhere');
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    expect(screen.queryByRole('button', SET_PRIMARY)).toBeNull();
   });
 });

@@ -27,13 +27,9 @@
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import {
     type AvatarState,
-    getAvatarState,
+    getAvatarStateForSession,
   } from '$features/agent/components/agent-avatar/avatar-state';
-  import {
-    selectAgentIsResponding,
-    selectAgentIsWaiting,
-    selectAgentSessionsByIds,
-  } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectAgentSessionsByIds } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
   import { writable } from 'svelte/store';
   import {
@@ -372,26 +368,14 @@
       specialist?: 'spec-writer' | 'implementor' | 'verifier' | null;
     }> = [];
 
-    const reduxState = appStore.state;
-
     for (const agentId of assignedAgentIds) {
       const agent = agentSessionsById.get(agentId);
       if (!agent) continue;
 
-      const isWaiting = selectAgentIsWaiting.select(reduxState, agentId);
-      const isResponding = selectAgentIsResponding.select(reduxState, agentId);
-      const activelyWorking = isResponding && !isWaiting;
-
-      if (!activelyWorking) continue;
-
-      // Use centralized getAvatarState for consistent state calculation
-      const state = getAvatarState(
-        {
-          isStreaming: activelyWorking,
-          status: isWaiting ? 'waiting' : agent.status,
-        },
-        {},
-      );
+      // Shared precedence: a live turn with an unresolved tool is still running,
+      // so tool-executing agents stay visible here instead of dropping out.
+      const state = getAvatarStateForSession(agent);
+      if (state !== 'running') continue;
 
       // Get specialist from agent metadata
       const specialistId = agent.metadata?.specialist || agent.agentMetadata?.specialist;
@@ -491,7 +475,7 @@
             ondblclick={(e) => handleDoubleClick(note, e)}
             oncontextmenu={(e) => handleContextMenu(e, note)}
             class={cn(
-              'w-full transition-all duration-150 flex items-center group/note min-w-0',
+              'relative w-full transition-all duration-150 flex items-center group/note min-w-0',
               isDragging && 'opacity-50',
               isDragOver && 'border-t-2 border-accent',
             )}
@@ -500,7 +484,7 @@
               <!-- Inline edit mode - matches ListItem sm size styling with active state -->
               {@const leftIndent = depth * Math.round((indentSize * 16) / 22)}
               <div
-                class="flex items-center gap-2 py-0.5 px-2 rounded-md border border-border shadow-xs bg-background text-foreground"
+                class="relative z-10 flex items-center gap-2 rounded-md px-2 py-0.5 text-foreground"
                 style="margin-left: {leftIndent}px; width: calc(100% - {leftIndent}px);"
               >
                 {#if note?.metadata?.task?.status}
@@ -549,7 +533,7 @@
                   bind:value={editingValue}
                   onblur={saveEdit}
                   onkeydown={handleEditKeydown}
-                  class="flex-1 text-sm bg-transparent border-none outline-none ring-0 focus:ring-0 focus:outline-none focus-visible:ring-0 focus-visible:outline-none min-w-0"
+                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent text-sm outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
                   onclick={(e) => e.stopPropagation()}
                 />
               </div>
@@ -560,6 +544,7 @@
                 <ListItem
                   iconClass="text-ghost"
                   title={getNoteTitle(note)}
+                  titleClass="cursor-text"
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
@@ -623,6 +608,7 @@
                 <ListItem
                   iconClass="text-ghost"
                   title={getNoteTitle(note)}
+                  titleClass="cursor-text"
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
@@ -705,6 +691,7 @@
               <div class="relative flex-1 w-full flex items-center gap-1">
                 <ListItem
                   title={getNoteTitle(note)}
+                  titleClass="cursor-text"
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
@@ -752,6 +739,13 @@
                 {/if}
               </div>
             {/if}
+            <span
+              aria-hidden="true"
+              class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingNoteId ===
+              note.id
+                ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
+                : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+            ></span>
             {#if hasChildren}
               <button
                 type="button"
@@ -784,3 +778,9 @@
     onClickOutside={closeContextMenu}
   />
 {/if}
+
+<style>
+  input.inline-edit-input::selection {
+    background: hsl(var(--ring) / 0.3);
+  }
+</style>

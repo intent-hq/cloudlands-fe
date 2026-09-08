@@ -44,12 +44,15 @@ export function resolveDevName(args, frontendRoot, runGit) {
   const superprojectRoot = readGitOutput(
     runGit(['rev-parse', '--show-superproject-working-tree'], frontendRoot),
   );
-  if (!superprojectRoot) return '';
+  if (superprojectRoot) {
+    const superprojectBranch = readGitOutput(
+      runGit(['rev-parse', '--abbrev-ref', 'HEAD'], superprojectRoot),
+    );
+    if (superprojectBranch && superprojectBranch !== 'HEAD') return superprojectBranch;
+  }
 
-  const superprojectBranch = readGitOutput(
-    runGit(['rev-parse', '--abbrev-ref', 'HEAD'], superprojectRoot),
-  );
-  return superprojectBranch === 'HEAD' ? '' : superprojectBranch;
+  const shortSha = readGitOutput(runGit(['rev-parse', '--short', 'HEAD'], frontendRoot));
+  return shortSha === 'HEAD' ? '' : shortSha;
 }
 
 export function resolveDevLabel(devName, instanceNum) {

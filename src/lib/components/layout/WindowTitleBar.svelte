@@ -11,21 +11,16 @@
 
   import { page } from '$app/state';
   import { m } from '$shared/paraglide/messages.js';
-  import { onMount } from 'svelte';
-  import { SvelteMap } from 'svelte/reactivity';
-
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils';
   import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
+  import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
-  import { WorkspaceStatusEnum } from '$shared/types';
-  import { getLineStats, type LineStats } from '$features/file-tracking/file-tracking.client';
   import {
     selectZoomFactor,
     selectCounterScale,
@@ -38,8 +33,14 @@
   } from './titlebar-navigation';
   import {
     getCounterScaledTitlebarHeight,
+    getWorkspaceTabBorderMaskImage,
+    getWorkspaceTabLeadingInsetPx,
+    getWorkspaceTabScrollerMarginLeftPx,
     TITLEBAR_LEFT_DRAG_SURFACE_CLASS,
     WINDOW_TITLEBAR_HEIGHT_PX,
+    WORKSPACE_TAB_MOTION_DURATION_MS,
+    WORKSPACE_TAB_MOTION_EASING,
+    type WorkspaceTabBorderMaskBounds,
   } from './titlebar-geometry';
   import { formatNativeWindowTitle } from './native-window-title';
   import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
@@ -57,8 +58,9 @@
   }
 
   let { workspaceId }: Props = $props();
-  let activeTabBounds = $state<{ left: number; width: number } | null>(null);
+  let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
+  let prefersReducedMotion = $state(false);
   const routedWorkspaceId = $derived(
     page.url.pathname.startsWith('/workspace/') && page.params.id !== 'new'
       ? (page.params.id ?? null)
@@ -75,12 +77,14 @@
   const CONTROLS_GAP = 4; // gap-1 between titlebar control groups
   let fixedControlsEl = $state<HTMLDivElement | null>(null);
   let controlsBaseLeft = $state(0);
+  let fixedControlsTrailingInset = $state(0);
 
   $effect(() => {
     const el = fixedControlsEl;
     if (!el) return;
     const measure = () => {
       controlsBaseLeft = el.offsetLeft + el.offsetWidth + CONTROLS_GAP;
+      fixedControlsTrailingInset = Number.parseFloat(getComputedStyle(el).paddingRight) || 0;
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -90,11 +94,20 @@
 
   // Align the workspace controls (tabs) with the left panel's right edge
   // when a sidebar panel is open; tracks the panel width live.
+  const sidebarPanelOpen = $derived(Boolean($panelItem$));
+  const workspaceTabLeadingInsetPx = $derived(getWorkspaceTabLeadingInsetPx(sidebarPanelOpen));
+  const workspaceTabScrollerMarginLeftPx = $derived(
+    getWorkspaceTabScrollerMarginLeftPx(
+      workspaceTabLeadingInsetPx === getWorkspaceTabLeadingInsetPx(true),
+    ),
+  );
   const panelOffset = $derived(
-    $panelItem$ ? Math.max(0, $panelWidth$ + SIDEBAR_PANEL_LEFT_INSET - controlsBaseLeft) : 0,
+    sidebarPanelOpen
+      ? Math.max(0, $panelWidth$ + SIDEBAR_PANEL_LEFT_INSET - controlsBaseLeft)
+      : -fixedControlsTrailingInset,
   );
 
-  function handleActiveTabBoundsChange(bounds: { left: number; width: number } | null) {
+  function handleActiveTabBoundsChange(bounds: WorkspaceTabBorderMaskBounds | null) {
     activeTabBounds = bounds;
   }
 
@@ -117,49 +130,6 @@
     );
   });
 
-  // Reactivity versions for subscriptions
-  let activeStreamsVersion = $state(0);
-
-  // Cache for line stats
-  let lineStatsCache = new SvelteMap<string, LineStats>();
-
-  // Fetch line stats for workspaces with activity and current workspace
-  async function refreshLineStats() {
-    // Capture workspaceId at start to guard against async race
-    const capturedWorkspaceId = workspaceId;
-
-    // Fetch for current workspace
-    if (capturedWorkspaceId) {
-      try {
-        const stats = await getLineStats(capturedWorkspaceId);
-        // Guard: only update cache if workspaceId hasn't changed
-        if (workspaceId === capturedWorkspaceId) {
-          lineStatsCache.set(capturedWorkspaceId, stats);
-        }
-      } catch {
-        if (workspaceId === capturedWorkspaceId && !lineStatsCache.has(capturedWorkspaceId)) {
-          lineStatsCache.set(capturedWorkspaceId, { additions: 0, deletions: 0 });
-        }
-      }
-    }
-    // Fetch for activity workspaces
-    for (const { workspace: ws } of workspacesWithActivity) {
-      // Capture workspaceId before each await to guard against async race
-      const wsIdBeforeFetch = workspaceId;
-      try {
-        const stats = await getLineStats(ws.id);
-        // Guard: only update cache if workspaceId hasn't changed
-        if (workspaceId === wsIdBeforeFetch) {
-          lineStatsCache.set(ws.id, stats);
-        }
-      } catch {
-        if (workspaceId === wsIdBeforeFetch && !lineStatsCache.has(ws.id)) {
-          lineStatsCache.set(ws.id, { additions: 0, deletions: 0 });
-        }
-      }
-    }
-  }
-
   // Get workspace data
   const workspace = $derived(
     $workspaceItems.find((candidate) => candidate.id === workspaceId) ?? null,
@@ -179,53 +149,16 @@
   // Get focused tab info
   const focusedTab = $derived($focusedTab$ ?? null);
 
-  // Get workspaces with activity (streaming or unread) - excluding current workspace
-  const workspacesWithActivity = $derived.by(() => {
-    // Touch reactive versions
-    void activeStreamsVersion;
-
-    const allWorkspaces = $workspaceItems.filter(
-      (w) => w.status !== WorkspaceStatusEnum.Archived && w.id !== workspaceId,
-    );
-
-    return allWorkspaces
-      .map((ws) => {
-        const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
-        const streaming = streamingAgentIds.length > 0;
-        // BE-owned attention flag; streaming takes precedence over unread.
-        const hasUnread = !streaming && ws.attention === 'unread';
-
-        return { workspace: ws, streaming, hasUnread };
-      })
-      .filter(({ streaming, hasUnread }) => streaming || hasUnread)
-      .slice(0, 5); // Limit to 5 items to not crowd the title bar
-  });
-
-  let hasMounted = false;
-
   onMount(() => {
-    activeStreamsTracker.startPolling();
-    const unsubscribeStreams = activeStreamsTracker.subscribe(() => {
-      activeStreamsVersion++;
-      refreshLineStats(); // Refresh line stats when activity changes
-    });
-
-    // Initial fetch
-    refreshLineStats();
-    hasMounted = true;
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updateMotionPreference = () => (prefersReducedMotion = motionQuery.matches);
+    updateMotionPreference();
+    motionQuery.addEventListener('change', updateMotionPreference);
 
     return () => {
-      unsubscribeStreams();
+      motionQuery.removeEventListener('change', updateMotionPreference);
     };
   });
-
-  // Refresh line stats when workspaceId changes (but not on initial mount, which is handled by onMount)
-  $effect(() => {
-    if (workspaceId && hasMounted) {
-      refreshLineStats();
-    }
-  });
-
   // Build display text for the search bar - show focused tab title and workspace
   const displayText = $derived.by(() => {
     if (focusedTab?.title && workspace?.title) {
@@ -331,7 +264,11 @@
           onActiveTabBoundsChange={handleActiveTabBoundsChange}
           onActiveTabTrackingChange={handleActiveTabTrackingChange}
           activeWorkspaceId={routedWorkspaceId}
-          horizontalPositionTrackingKey={panelOffset}
+          leadingInsetPx={workspaceTabLeadingInsetPx}
+          scrollerMarginLeftPx={workspaceTabScrollerMarginLeftPx}
+          horizontalPositionTrackingKey={panelOffset +
+            workspaceTabLeadingInsetPx +
+            workspaceTabScrollerMarginLeftPx}
         />
         {#if !$onboardingActive$}
           <WorkspaceRepoLauncher />
@@ -359,11 +296,12 @@
     {#if activeTabBounds}
       <div
         class="pointer-events-none absolute -bottom-px z-[60] h-px bg-sidebar motion-reduce:transition-none"
-        style:left={`${activeTabBounds.left - 6}px`}
-        style:width={`${Math.max(0, activeTabBounds.width + 13)}px`}
-        style:transition={activeTabTracking
+        style:left={`${activeTabBounds.left}px`}
+        style:width={`${activeTabBounds.width}px`}
+        style:mask-image={getWorkspaceTabBorderMaskImage(activeTabBounds)}
+        style:transition={activeTabTracking || prefersReducedMotion
           ? 'none'
-          : 'left 200ms cubic-bezier(0.215, 0.61, 0.355, 1)'}
+          : `left ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}, width ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}`}
         data-active-tab-border-mask
         aria-hidden="true"
       ></div>

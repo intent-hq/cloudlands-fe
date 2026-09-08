@@ -2,17 +2,24 @@ import type { WorkspaceEvent } from '$features/events/types';
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
+import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { sanitizeWorkspaceEvent, sanitizeWorkspaceEventsList } from './workspace-events-sanitizer';
 
 // Buffer depth. The raw feed includes chatty machine events (agent:stream:*,
 // tool-call status patches, git-status ticks) that UI consumers filter out, so
 // the buffer must be deep enough that user-meaningful events survive the cap.
-// Keep in sync with BOOT_SNAPSHOT_LIMIT in live-events-client.ts.
 const MAX_EVENTS = 300;
 
 export type WorkspaceEventsWorkspaceState = {
   events: WorkspaceEvent[];
+  historyExpanded: boolean;
+  pendingLiveEventIds: string[] | null;
   loading: boolean;
+  error: string | null;
+  loadingOlder: boolean;
+  olderError: string | null;
+  nextToken: string | null;
+  endReached: boolean;
 };
 
 export type WorkspaceEventsState = {
@@ -21,7 +28,14 @@ export type WorkspaceEventsState = {
 
 export const emptyWorkspaceEventsState: WorkspaceEventsWorkspaceState = {
   events: [],
+  historyExpanded: false,
+  pendingLiveEventIds: null,
   loading: false,
+  error: null,
+  loadingOlder: false,
+  olderError: null,
+  nextToken: null,
+  endReached: false,
 };
 
 export const initialState: WorkspaceEventsState = {
@@ -30,6 +44,37 @@ export const initialState: WorkspaceEventsState = {
 
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceEventsState);
+
+type EventPageMerge = {
+  events: WorkspaceEvent[];
+  retainedPage: boolean;
+};
+
+function mergeEventPage(
+  existing: WorkspaceEvent[],
+  incoming: WorkspaceEvent[],
+  workspaceId: string,
+  limit: number | null = MAX_EVENTS,
+): EventPageMerge {
+  const safeEvents = sanitizeWorkspaceEventsList(incoming, workspaceId);
+  const seenIds = new Set<string>();
+  const merged = [...existing, ...safeEvents]
+    .filter((event) => {
+      if (seenIds.has(event.id)) return false;
+      seenIds.add(event.id);
+      return true;
+    })
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  const events = limit === null ? merged : merged.slice(-limit);
+  const retainedIds = new Set(events.map((event) => event.id));
+  return {
+    events,
+    retainedPage:
+      Array.isArray(incoming) &&
+      safeEvents.length === incoming.length &&
+      safeEvents.every((event) => retainedIds.has(event.id)),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Actions
@@ -41,12 +86,27 @@ export const eventReceived = createAction<[workspaceId: string, event: Workspace
 export const bulkEventsReceived = createAction<[workspaceId: string, events: WorkspaceEvent[]]>(
   'workspaceEvents/bulkEventsReceived',
 );
-export const eventsLoaded = createAction<[workspaceId: string, events: WorkspaceEvent[]]>(
-  'workspaceEvents/eventsLoaded',
+export const eventsLoaded = createAction<
+  [workspaceId: string, events: WorkspaceEvent[], nextToken?: string | null]
+>('workspaceEvents/eventsLoaded');
+export const eventsLoadFailed = createAction<[workspaceId: string, error: string]>(
+  'workspaceEvents/eventsLoadFailed',
+);
+export const eventsLoadStarted = createAction<[workspaceId: string]>(
+  'workspaceEvents/eventsLoadStarted',
 );
 export const eventsCleared = createAction<[workspaceId: string]>('workspaceEvents/eventsCleared');
 export const loadEventsRequested = createAction<[workspaceId: string]>(
   'workspaceEvents/loadEventsRequested',
+);
+export const loadOlderEventsRequested = createAction<[workspaceId: string]>(
+  'workspaceEvents/loadOlderEventsRequested',
+);
+export const olderEventsLoaded = createAction<
+  [workspaceId: string, events: WorkspaceEvent[], nextToken: string | null]
+>('workspaceEvents/olderEventsLoaded');
+export const olderEventsLoadFailed = createAction<[workspaceId: string, error: string]>(
+  'workspaceEvents/olderEventsLoadFailed',
 );
 export const setEventsLoading = createAction<[workspaceId: string, loading: boolean]>(
   'workspaceEvents/setEventsLoading',
@@ -74,8 +134,13 @@ workspaceEventsReducer.with(eventReceived, (state, { payload: [workspaceId, even
     const timeB = new Date(b.timestamp).getTime();
     return timeA - timeB;
   });
-  const nextEvents = combined.slice(-MAX_EVENTS);
-  return setWorkspaceState(state, workspaceId, { ...wsState, events: nextEvents });
+  const nextEvents = wsState.historyExpanded ? combined : combined.slice(-MAX_EVENTS);
+  return setWorkspaceState(state, workspaceId, {
+    ...wsState,
+    events: nextEvents,
+    pendingLiveEventIds:
+      wsState.pendingLiveEventIds === null ? null : [...wsState.pendingLiveEventIds, safeEvent.id],
+  });
 });
 workspaceEventsReducer.with(bulkEventsReceived, (state, { payload: [workspaceId, events] }) => {
   const safeEvents = sanitizeWorkspaceEventsList(events, workspaceId);
@@ -96,20 +161,112 @@ workspaceEventsReducer.with(bulkEventsReceived, (state, { payload: [workspaceId,
     const timeB = new Date(b.timestamp).getTime();
     return timeA - timeB;
   });
-  const nextEvents = combined.slice(-MAX_EVENTS);
-  return setWorkspaceState(state, workspaceId, { ...wsState, events: nextEvents });
-});
-workspaceEventsReducer.with(eventsLoaded, (state, { payload: [workspaceId, events] }) => {
-  const wsState = getWorkspaceState(state, workspaceId);
-  const safeEvents = sanitizeWorkspaceEventsList(events, workspaceId);
+  const nextEvents = wsState.historyExpanded ? combined : combined.slice(-MAX_EVENTS);
   return setWorkspaceState(state, workspaceId, {
     ...wsState,
-    events: safeEvents.slice(-MAX_EVENTS),
+    events: nextEvents,
+    pendingLiveEventIds:
+      wsState.pendingLiveEventIds === null
+        ? null
+        : [...wsState.pendingLiveEventIds, ...deduped.map((event) => event.id)],
+  });
+});
+workspaceEventsReducer.with(loadEventsRequested, (state, { payload: [workspaceId] }) => {
+  const wsState = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, {
+    ...wsState,
+    pendingLiveEventIds: wsState.pendingLiveEventIds ?? [],
+    loading: true,
+    error: null,
+    loadingOlder: false,
+    olderError: null,
+  });
+});
+workspaceEventsReducer.with(eventsLoadStarted, (state, { payload: [workspaceId] }) => {
+  const wsState = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, {
+    ...wsState,
+    pendingLiveEventIds: wsState.pendingLiveEventIds ?? [],
+    loading: true,
+  });
+});
+workspaceEventsReducer.with(
+  eventsLoaded,
+  (state, { payload: [workspaceId, events, nextToken = null] }) => {
+    const wsState = getWorkspaceState(state, workspaceId);
+    const pendingLiveEventIds = new Set(wsState.pendingLiveEventIds ?? []);
+    const pendingLiveEvents = wsState.events.filter((event) => pendingLiveEventIds.has(event.id));
+    const merged = mergeEventPage(pendingLiveEvents, events, workspaceId, null);
+    return setWorkspaceState(state, workspaceId, {
+      ...wsState,
+      events: merged.events,
+      historyExpanded: merged.events.length > MAX_EVENTS,
+      pendingLiveEventIds: null,
+      loading: false,
+      error: null,
+      loadingOlder: false,
+      olderError: null,
+      nextToken,
+      endReached: nextToken === null,
+    });
+  },
+);
+workspaceEventsReducer.with(eventsLoadFailed, (state, { payload: [workspaceId, error] }) => {
+  const wsState = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, {
+    ...wsState,
+    pendingLiveEventIds: null,
     loading: false,
+    error,
+  });
+});
+workspaceEventsReducer.with(loadOlderEventsRequested, (state, { payload: [workspaceId] }) => {
+  const wsState = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, {
+    ...wsState,
+    loadingOlder: true,
+    olderError: null,
+  });
+});
+workspaceEventsReducer.with(
+  olderEventsLoaded,
+  (state, { payload: [workspaceId, events, nextToken] }) => {
+    const wsState = getWorkspaceState(state, workspaceId);
+    const merged = mergeEventPage(wsState.events, events, workspaceId, null);
+    return setWorkspaceState(state, workspaceId, {
+      ...wsState,
+      events: merged.events,
+      historyExpanded: merged.retainedPage || wsState.historyExpanded,
+      loadingOlder: false,
+      olderError: null,
+      nextToken: merged.retainedPage ? nextToken : wsState.nextToken,
+      endReached: merged.retainedPage ? nextToken === null : wsState.endReached,
+    });
+  },
+);
+workspaceEventsReducer.with(olderEventsLoadFailed, (state, { payload: [workspaceId, error] }) => {
+  const wsState = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, {
+    ...wsState,
+    loadingOlder: false,
+    olderError: error,
   });
 });
 workspaceEventsReducer.with(eventsCleared, (state, { payload: [workspaceId] }) => {
   return clearWorkspaceState(state, workspaceId);
+});
+workspaceEventsReducer.with(workspaceUnmounted, (state, { payload: [workspaceId] }) => {
+  const wsState = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, {
+    ...wsState,
+    events: wsState.events.slice(-MAX_EVENTS),
+    historyExpanded: false,
+    pendingLiveEventIds: null,
+    loading: false,
+    loadingOlder: false,
+    nextToken: null,
+    endReached: false,
+  });
 });
 workspaceEventsReducer.with(setEventsLoading, (state, { payload: [workspaceId, loading] }) => {
   const wsState = getWorkspaceState(state, workspaceId);

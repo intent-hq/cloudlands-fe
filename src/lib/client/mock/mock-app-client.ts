@@ -36,7 +36,9 @@ type MigratedDomain =
   // had a mock fixture era, so it is likewise absent here.
   | 'providers'
   // `voice` was born live too (`voice.transcribe`, PROTOCOL §5.41).
-  | 'voice';
+  | 'voice'
+  // `clients` was born live (`client.list` + own-clientId probe, REV-2 §5.17).
+  | 'clients';
 
 /** Emit the snapshot once, then return an idle disposer. */
 function emitOnce<T>(handler: SubscriptionHandler<T>, snapshot: T): Unsubscribe {
@@ -163,6 +165,27 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     recentUrls: async (workspaceId) =>
       workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockRecentUrls : [],
     subscribe: (handler) => emitOnce(handler, fx.mockRecentUrls),
+    // REV-2 tab registry: no fixture era — an empty registry and accepted no-ops.
+    listTabs: async () => [],
+    upsertTab: async (workspaceId, tab) => ({
+      tabId: tab.tabId,
+      workspaceId,
+      hostClientId: 'mock-client',
+      url: tab.url,
+      // Like the daemon row, a cleared (`null` / omitted) optional is omitted.
+      ...(tab.requestedUrl != null ? { requestedUrl: tab.requestedUrl } : {}),
+      ...(tab.title != null ? { title: tab.title } : {}),
+      ...(tab.ownerAgentId != null ? { ownerAgentId: tab.ownerAgentId } : {}),
+      ...(tab.ownerAgentName != null ? { ownerAgentName: tab.ownerAgentName } : {}),
+      visibility: tab.visibility ?? 'visible',
+      ...(tab.emulatedSize != null ? { emulatedSize: tab.emulatedSize } : {}),
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    }),
+    removeTab: async () => ({ ok: true }),
+    syncTabs: async () => ({ drop: [] }),
+    navigateTab: async (_tabId, url) => ({ action: 'navigate', success: true, result: { url } }),
+    closeTab: async () => ({ ok: true }),
   };
 
   readonly integrations: AppClient['integrations'] = {
@@ -226,6 +249,23 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
       );
       matching.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
       return matching.slice(0, options.limit || 50);
+    },
+    queryPage: async (workspaceId, options = {}) => {
+      if (workspaceId !== String(fx.MOCK_WORKSPACE_ID)) return { items: [], nextToken: null };
+      const matching = fx.mockWorkspaceEvents
+        .filter(
+          (event) =>
+            (!options.eventType || event.type === options.eventType) &&
+            (!options.actorType || event.actor?.type === options.actorType) &&
+            (!options.actorId || event.actor?.id === options.actorId),
+        )
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      const start = Number.parseInt(options.nextToken ?? '0', 10) || 0;
+      const end = start + (options.limit || 50);
+      return {
+        items: matching.slice(start, end),
+        nextToken: end < matching.length ? String(end) : null,
+      };
     },
     subscribe: (workspaceId, handler) =>
       emitOnce(handler, workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockWorkspaceEvents : []),

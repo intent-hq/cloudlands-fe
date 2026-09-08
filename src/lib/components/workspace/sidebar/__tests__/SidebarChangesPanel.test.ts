@@ -713,6 +713,20 @@ describe('SidebarChangesPanel', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('Rendering', () => {
+    it('leases accept-status freshness only while the panel is mounted', async () => {
+      const view = await renderPanel();
+
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'git/acceptChangesConsumerMounted',
+        payload: ['ws-1'],
+      });
+      view.unmount();
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'git/acceptChangesConsumerUnmounted',
+        payload: ['ws-1'],
+      });
+    });
+
     it('refreshes Git status before broad Changes data with the explicit workspace ID', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       const { container } = await renderPanel();

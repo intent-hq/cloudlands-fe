@@ -22,7 +22,9 @@
    */
   import { untrack } from 'svelte';
   import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
+  import { selectOwnClientId } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { selectPanelLayoutWorkspaces } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { offscreenWebview } from './offscreen-webview-action';
   import {
     areOffscreenWebviewCachesEqual,
@@ -40,6 +42,7 @@
   let { excludedWorkspaceIds, maxWebviews = MAX_OFFSCREEN_WEBVIEWS }: Props = $props();
 
   const layouts$ = selectPanelLayoutWorkspaces();
+  const ownClientId$ = selectOwnClientId();
 
   function isKeepAliveUrl(url: string): boolean {
     try {
@@ -49,13 +52,25 @@
     }
   }
 
+  // Only the tab's host mounts a guest (REV-2 §5.45); a tab the registry
+  // homes on another client is a mirror here and never gets a webview.
+  function isHostedHere(tab: PanelTab, ownClientId: string | null): boolean {
+    return tab.hostClientId === undefined || tab.hostClientId === ownClientId;
+  }
+
   const candidates = $derived.by(() => {
     const out: OffscreenWebviewCandidate[] = [];
+    const ownClientId = $ownClientId$;
     for (const [workspaceId, layout] of Object.entries($layouts$)) {
       if (!excludedWorkspaceIds.has(workspaceId)) {
         for (const panel of Object.values(layout.panels)) {
           for (const tab of panel.tabs) {
-            if (tab.type !== 'browser' || !tab.browserUrl || !isKeepAliveUrl(tab.browserUrl)) {
+            if (
+              tab.type !== 'browser' ||
+              !tab.browserUrl ||
+              !isKeepAliveUrl(tab.browserUrl) ||
+              !isHostedHere(tab, ownClientId)
+            ) {
               continue;
             }
             // Agent-owned tabs stay mounted for the agent's lifetime:
@@ -75,7 +90,13 @@
       // since components must not import collection-utils.
       for (const id of layout.hiddenTabs?.ids ?? []) {
         const tab = layout.hiddenTabs.map[id];
-        if (!tab || tab.type !== 'browser' || !tab.browserUrl || !isKeepAliveUrl(tab.browserUrl)) {
+        if (
+          !tab ||
+          tab.type !== 'browser' ||
+          !tab.browserUrl ||
+          !isKeepAliveUrl(tab.browserUrl) ||
+          !isHostedHere(tab, ownClientId)
+        ) {
           continue;
         }
         out.push({ tabId: tab.id, workspaceId, url: tab.browserUrl, pinned: true });

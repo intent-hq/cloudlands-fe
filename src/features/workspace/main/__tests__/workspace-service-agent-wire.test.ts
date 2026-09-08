@@ -35,6 +35,7 @@ const requestMock = vi.hoisted(() =>
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: requestMock }),
+  onBackendReconnected: () => () => {},
 }));
 
 vi.mock('../../../../store/main/redux-store-bridge', () => ({

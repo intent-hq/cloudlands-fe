@@ -73,18 +73,15 @@ import {
   removeSession,
   removeWorkspaceSessions,
   updateSession,
+  upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { clearPanelLayout, openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   selectAwaitingSwitchBackSnapshot,
-  selectAwaitingUtilityFooter,
   selectChatLiveStreamPhase,
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
-import { setSubscriptionSnapshot } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
-import { backgroundHooksUpdated } from '$store/renderer/slices/background-hooks/background-hooks-slice';
-import { prMonitorsUpdated } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
 import {
   selectAgentMessages,
   selectAgentSession,
@@ -581,6 +578,28 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       'm-pre-1',
       'm-pre-2',
     ]);
+  });
+
+  it('waits for the post-reducer batch commit instead of a membership-only upsert', async () => {
+    const agentId = 'agent-sub-presession-batch';
+    const sub = openChat(agentId);
+    sub.handler({
+      ...transcript([makeMessage('m-pre-batch', 'ready')]),
+      fromSnapshot: true,
+    });
+
+    appStore.dispatch(upsertSession(makeSession(agentId)));
+    await Promise.resolve();
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toBeUndefined();
+    expect(selectAgentMessages.select(appStore.state, agentId)).toEqual([]);
+
+    appStore.dispatch(bulkUpsertSessions([makeSession(agentId)]));
+    await vi.waitFor(() => {
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
+    });
+    expect(
+      selectAgentMessages.select(appStore.state, agentId).map((message) => message.id),
+    ).toEqual(['m-pre-batch']);
   });
 
   it('replays the newest deferred delta after the pre-session snapshot on session upsert', async () => {
@@ -2908,156 +2927,6 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         // The superseding watcher's own bound elapses: the gate clears.
         await vi.advanceTimersByTimeAsync(600);
         expect(gateOf(agentId)).toBe(false);
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-  });
-
-  describe('utility-footer reveal gate (saga watcher)', () => {
-    const footerGateOf = (agentId: string) =>
-      selectAwaitingUtilityFooter.select(appStore.state, agentId);
-    const snapshotGateOf = (agentId: string) =>
-      selectAwaitingSwitchBackSnapshot.select(appStore.state, agentId);
-
-    /** Settle every footer data source for WS + agent (all three seeds). */
-    function settleFooterSources(agentId: string): void {
-      appStore.dispatch(
-        setSubscriptionSnapshot(WS, agentId, {
-          subscriptions: [],
-          delegationGroups: [],
-          agentStatuses: {},
-          waitingState: 'idle',
-        }),
-      );
-      appStore.dispatch(backgroundHooksUpdated(WS, []));
-      appStore.dispatch(prMonitorsUpdated(WS, []));
-    }
-
-    it('first open: the settle arms the gate and the watcher clears it once all footer sources settle', () => {
-      const agentId = 'agent-sub-footer-first-open';
-      seedSession(agentId);
-      openChat(agentId);
-      appStore.dispatch(markAgentAsViewed(agentId));
-      appStore.dispatch(transcriptHydrationStarted(agentId));
-      appStore.dispatch(transcriptHydrationSettled(agentId));
-      expect(footerGateOf(agentId)).toBe(true);
-
-      settleFooterSources(agentId);
-      expect(footerGateOf(agentId)).toBe(false);
-    });
-
-    it('first open: footer already settled when hydration settles clears in the same dispatch cascade', () => {
-      const agentId = 'agent-sub-footer-presettled';
-      seedSession(agentId);
-      openChat(agentId);
-      appStore.dispatch(markAgentAsViewed(agentId));
-      settleFooterSources(agentId);
-      appStore.dispatch(transcriptHydrationStarted(agentId));
-      appStore.dispatch(transcriptHydrationSettled(agentId));
-      // The watcher forked synchronously and observed readiness before any
-      // frame could paint the deferred skeleton.
-      expect(footerGateOf(agentId)).toBe(false);
-    });
-
-    it('first open: the bounded fallback clears a footer gate whose sources never settle', async () => {
-      vi.useFakeTimers();
-      try {
-        const agentId = 'agent-sub-footer-timeout';
-        seedSession(agentId, { workspaceId: 'ws-footer-never-settles' });
-        appStore.dispatch(initializeChatRequested(agentId, { wsId: 'ws-footer-never-settles' }));
-        appStore.dispatch(markAgentAsViewed(agentId));
-        appStore.dispatch(transcriptHydrationStarted(agentId));
-        appStore.dispatch(transcriptHydrationSettled(agentId));
-        expect(footerGateOf(agentId)).toBe(true);
-
-        await vi.advanceTimersByTimeAsync(SWITCH_BACK_REVEAL_WAIT_MS - 50);
-        expect(footerGateOf(agentId)).toBe(true);
-        await vi.advanceTimersByTimeAsync(100);
-        expect(footerGateOf(agentId)).toBe(false);
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it('switch-back: the reveal waits for BOTH the fresh snapshot and footer readiness', async () => {
-      const agentId = 'agent-sub-footer-swbk';
-      const otherId = 'agent-sub-footer-swbk-other';
-      seedSession(agentId);
-      seedSession(otherId);
-      const sub = openChat(agentId);
-      appStore.dispatch(markAgentAsViewed(agentId));
-      sub.handler({ ...transcript([makeMessage('m-fsb-1', 'hello')]), fromSnapshot: true });
-      appStore.dispatch(transcriptHydrationStarted(agentId));
-      appStore.dispatch(transcriptHydrationSettled(agentId));
-      settleFooterSources(agentId);
-      appStore.dispatch(markAgentAsViewed(otherId));
-      expect(footerGateOf(agentId)).toBe(false);
-
-      // Switch back: both gates arm, and the view switch dropped the
-      // agent's snapshotFetched latch — the cached subscriptions data
-      // cannot clear the footer gate; it waits for the FRESH view-time
-      // read (the workspace-scoped hooks/pr-monitor entries stay settled).
-      appStore.dispatch(markAgentAsViewed(agentId));
-      expect(footerGateOf(agentId)).toBe(true);
-      expect(snapshotGateOf(agentId)).toBe(true);
-
-      // The fresh agent.getSubscriptions read lands → footer gate clears.
-      appStore.dispatch(
-        setSubscriptionSnapshot(WS, agentId, {
-          subscriptions: [],
-          delegationGroups: [],
-          agentStatuses: {},
-          waitingState: 'idle',
-        }),
-      );
-      expect(footerGateOf(agentId)).toBe(false);
-
-      await vi.waitFor(() => {
-        expect(fakeSubscriptions.filter((s) => s.agentId === agentId)).toHaveLength(2);
-      });
-      const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentId)!;
-      reopened.handler({ ...transcript([makeMessage('m-fsb-2', 'fresh')]), fromSnapshot: true });
-      expect(snapshotGateOf(agentId)).toBe(false);
-    });
-
-    it('chief-workspace threads are exempt from the footer gate (no tab-keyed seeds exist)', () => {
-      const agentId = 'agent-sub-footer-chief';
-      seedSession(agentId, { workspaceId: CHIEF_WORKSPACE_ID });
-      appStore.dispatch(initializeChatRequested(agentId, { wsId: CHIEF_WORKSPACE_ID }));
-      appStore.dispatch(markAgentAsViewed(agentId));
-      appStore.dispatch(transcriptHydrationStarted(agentId));
-      appStore.dispatch(transcriptHydrationSettled(agentId));
-      // No footer source ever settled for the chief virtual workspace, yet
-      // the watcher clears the gate in the same dispatch cascade: chief is
-      // never currentTabId, so its hook/pr-monitor seeds cannot arrive
-      // pre-reveal and gating would only ever resolve via the 8s fallback.
-      expect(footerGateOf(agentId)).toBe(false);
-    });
-
-    it('switch-back: the shared bounded fallback clears BOTH gates when nothing settles', async () => {
-      vi.useFakeTimers();
-      try {
-        const wsId = 'ws-footer-swbk-timeout';
-        const agentId = 'agent-sub-footer-swbk-timeout';
-        const otherId = 'agent-sub-footer-swbk-timeout-other';
-        seedSession(agentId, { workspaceId: wsId });
-        seedSession(otherId, { workspaceId: wsId });
-        appStore.dispatch(initializeChatRequested(agentId, { wsId }));
-        const sub = fakeSubscriptions.find((s) => s.agentId === agentId)!;
-        appStore.dispatch(markAgentAsViewed(agentId));
-        sub.handler({ ...transcript([makeMessage('m-fsbt-1', 'hello')]), fromSnapshot: true });
-        appStore.dispatch(transcriptHydrationStarted(agentId));
-        appStore.dispatch(transcriptHydrationSettled(agentId));
-        appStore.dispatch(markAgentAsViewed(otherId));
-
-        appStore.dispatch(markAgentAsViewed(agentId));
-        expect(snapshotGateOf(agentId)).toBe(true);
-        expect(footerGateOf(agentId)).toBe(true);
-
-        await vi.advanceTimersByTimeAsync(SWITCH_BACK_REVEAL_WAIT_MS + 100);
-        expect(snapshotGateOf(agentId)).toBe(false);
-        expect(footerGateOf(agentId)).toBe(false);
       } finally {
         vi.useRealTimers();
       }

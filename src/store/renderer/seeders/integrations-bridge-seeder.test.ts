@@ -11,12 +11,30 @@
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+const githubLifecycle = vi.hoisted(() => ({
+  notification: undefined as
+    ((notification: { method: string; params?: unknown }) => void) | undefined,
+  reconnected: undefined as (() => void) | undefined,
+}));
+
 // FAKE transport only: the daemon bridge is mocked so no IPC ever fires.
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
+  onBackendNotification: vi.fn((handler) => {
+    githubLifecycle.notification = handler;
+    return () => {};
+  }),
+  onBackendReconnected: vi.fn((handler) => {
+    githubLifecycle.reconnected = handler;
+    return () => {};
+  }),
 }));
 
 import { backendRequest } from '$lib/client/live/backend-transport';
+import {
+  __resetGitHubAuthStatusForTests,
+  readGitHubAuthStatus,
+} from '$features/github-auth/renderer/github-auth-status.client';
 import { mockInvoke } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { GITHUB_AUTH_CHANNELS } from '$features/github-auth/constants';
@@ -24,6 +42,12 @@ import { LINEAR_AUTH_CHANNELS } from '$features/linear-auth/constants';
 import { SENTRY_AUTH_CHANNELS } from '$features/sentry-auth/constants';
 
 const mockedRequest = vi.mocked(backendRequest);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => (resolve = done));
+  return { promise, resolve };
+}
 
 /** PROTOCOL §5.27 wire GithubUser — derived identity only. */
 const WIRE_USER = {
@@ -38,7 +62,96 @@ describe('integrations-bridge-seeder', () => {
     await import('./integrations-bridge-seeder');
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    __resetGitHubAuthStatusForTests();
+    vi.clearAllMocks();
+  });
+
+  it('single-flights auth reads and refetches after auth events and reconnects', async () => {
+    const status = {
+      isConfigured: true,
+      oauthUrl: '',
+      configuredButNeedsUpdate: false,
+      updatedScopes: '',
+    };
+    mockedRequest.mockResolvedValue(status);
+
+    const [first, second] = await Promise.all([readGitHubAuthStatus(), readGitHubAuthStatus()]);
+    expect(first).toEqual(status);
+    expect(second).toEqual(status);
+    await readGitHubAuthStatus();
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+
+    githubLifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'github:auth-changed' } },
+    });
+    await readGitHubAuthStatus();
+    githubLifecycle.reconnected?.();
+    await readGitHubAuthStatus();
+
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+    expect(mockedRequest).toHaveBeenLastCalledWith('github.authStatus');
+  });
+
+  it('serves the newest auth status after two invalidations without concurrent reads', async () => {
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    let activeReads = 0;
+    let maxActiveReads = 0;
+    const track = (promise: Promise<unknown>) => {
+      activeReads += 1;
+      maxActiveReads = Math.max(maxActiveReads, activeReads);
+      return promise.finally(() => (activeReads -= 1));
+    };
+    mockedRequest
+      .mockImplementationOnce(() => track(first.promise))
+      .mockImplementationOnce(() => track(second.promise))
+      .mockImplementationOnce(() => track(Promise.resolve({ isConfigured: true })));
+
+    const initialRead = readGitHubAuthStatus();
+    githubLifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'github:auth-changed' } },
+    });
+    const middleRead = readGitHubAuthStatus();
+    first.resolve({ isConfigured: false });
+    await vi.waitFor(() => expect(mockedRequest).toHaveBeenCalledTimes(2));
+    githubLifecycle.notification?.({
+      method: 'events.event',
+      params: { event: { type: 'github:auth-changed' } },
+    });
+    const newestRead = readGitHubAuthStatus();
+    second.resolve({ isConfigured: false });
+
+    await initialRead;
+    await middleRead;
+    await expect(newestRead).resolves.toEqual({ isConfigured: true });
+    expect(maxActiveReads).toBe(1);
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('invalidates cached auth status after a successful revoke', async () => {
+    const configured = {
+      isConfigured: true,
+      oauthUrl: '',
+      configuredButNeedsUpdate: false,
+      updatedScopes: '',
+    };
+    const revoked = { ...configured, isConfigured: false };
+    mockedRequest
+      .mockResolvedValueOnce(configured)
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce(revoked);
+
+    await readGitHubAuthStatus();
+    await expect(mockInvoke(GITHUB_AUTH_CHANNELS.LOGOUT)).resolves.toEqual({ success: true });
+    await expect(readGitHubAuthStatus()).resolves.toEqual(revoked);
+
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'github.authStatus');
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'github.revoke');
+    expect(mockedRequest).toHaveBeenNthCalledWith(3, 'github.authStatus');
+  });
 
   describe('linear-auth:* → daemon linear.* (PROTOCOL §5.28 — { issues, nextToken } envelope)', () => {
     it('get-auth-state reports the linear.authStatus probe (env-key model: no oauth, no daemon auth)', async () => {

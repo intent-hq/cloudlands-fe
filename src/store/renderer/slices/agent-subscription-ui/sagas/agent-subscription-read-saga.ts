@@ -140,8 +140,7 @@ function* fetchSnapshotSaga(wsId: string, agentId: string) {
     return completed;
   } catch (error) {
     logger.error(`Failed to fetch agent subscriptions for ${key}`, error);
-    // Latch readiness anyway: a failed read renders the same as empty, and
-    // the utility-footer reveal gate must never wedge on subscription data.
+    // Preserve cached rows and let the footer surface this failure independently.
     yield* put(subscriptionSnapshotFetchFailed(wsId, agentId));
     return false;
   }

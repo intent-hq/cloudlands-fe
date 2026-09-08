@@ -450,6 +450,61 @@ describe('FileTabType Redux integration', () => {
     expect((await screen.findByTestId('header-state')).getAttribute('data-dirty')).toBe('false');
   });
 
+  it('opens markdown line targets in the source editor', async () => {
+    mockReduxState.files['README.md'] = {
+      localContent: '# Project',
+      originalContent: '# Project',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: false,
+      lastUpdated: 0,
+    };
+
+    renderFileTab({
+      ...fileTab,
+      id: 'tab-readme',
+      title: 'README.md',
+      filePath: 'README.md',
+      data: { line: 42, jumpTimestamp: 1 },
+    });
+
+    const editor = await screen.findByTestId('code-editor');
+    expect(editor.getAttribute('data-jump-to-line')).toBe('42');
+    expect(screen.queryByTestId('markdown-viewer')).toBeNull();
+  });
+
+  it('switches an open markdown preview to source for a new jump request', async () => {
+    mockReduxState.files['README.md'] = {
+      localContent: '# Project',
+      originalContent: '# Project',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: false,
+      lastUpdated: 0,
+    };
+    const markdownTab = {
+      ...fileTab,
+      id: 'tab-readme',
+      title: 'README.md',
+      filePath: 'README.md',
+    };
+    const view = renderFileTab(markdownTab);
+    expect(await screen.findByTestId('markdown-viewer')).toBeTruthy();
+
+    await view.rerender({
+      tab: { ...markdownTab, data: { line: 17, jumpTimestamp: 2 } },
+      workspaceId: 'ws-1',
+      isActive: true,
+      isPanelFocused: true,
+    });
+
+    const editor = await screen.findByTestId('code-editor');
+    expect(editor.getAttribute('data-jump-to-line')).toBe('17');
+    expect(screen.queryByTestId('markdown-viewer')).toBeNull();
+  });
+
   it('updates the read-only markdown preview for repeated external content while clean', async () => {
     mockReduxState.files['README.md'] = {
       localContent: '# Project',

@@ -8,6 +8,7 @@ export const catalogColorThemes = [
 
 export type CatalogTheme = (typeof catalogThemes)[number];
 export type CatalogColorTheme = 'default' | (typeof THEME_PRESET_MANIFEST)[number]['id'];
+export type CatalogPreviewFit = 'component';
 
 export interface CatalogPreferences {
   theme: CatalogTheme;
@@ -20,6 +21,7 @@ export interface CatalogUrlSettings {
   theme?: CatalogTheme;
   width?: number;
   reducedMotion?: boolean;
+  fit?: CatalogPreviewFit;
 }
 
 export const defaultCatalogPreferences: CatalogPreferences = {
@@ -35,6 +37,7 @@ export function parseCatalogUrlSettings(params: URLSearchParams): CatalogUrlSett
   const width = widthValue === null ? undefined : Number(widthValue);
   const motion = params.get('motion');
   const legacyReducedMotion = params.get('reducedMotion');
+  const fit = params.get('fit');
 
   return {
     state: state || undefined,
@@ -49,6 +52,7 @@ export function parseCatalogUrlSettings(params: URLSearchParams): CatalogUrlSett
         : motion === 'full' || legacyReducedMotion === 'false'
           ? false
           : undefined,
+    ...(fit === 'component' ? { fit: 'component' as const } : {}),
   };
 }
 

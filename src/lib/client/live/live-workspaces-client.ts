@@ -18,6 +18,10 @@ import type {
 } from '$shared/types';
 import type { TokenUsage } from '$features/token-usage/token-usage-types';
 import type { ContextItem } from '$features/context/types';
+import {
+  isWorkspaceBrowserClient,
+  type WorkspaceBrowserClient,
+} from '$shared/types/browser-clients';
 import type {
   MutationResult,
   SubscriptionHandler,
@@ -125,6 +129,14 @@ function isContextItem(item: unknown): item is ContextItem {
     typeof record.type === 'string' &&
     record.type.length > 0
   );
+}
+
+/** The `browserClient` envelope field must be the documented shape; anything else is a wire bug. */
+function requireBrowserClient(value: unknown, method: string): WorkspaceBrowserClient {
+  if (!isWorkspaceBrowserClient(value)) {
+    throw new Error(`Invalid ${method} response shape`);
+  }
+  return value;
 }
 
 export class LiveWorkspacesClient implements WorkspacesClient {
@@ -382,6 +394,30 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     });
     const next = Array.isArray(result?.items) ? result.items : [];
     return next.filter(isContextItem);
+  }
+
+  /** `workspace.getBrowserClient { workspaceId }` → `{ browserClient }` (REV-2). */
+  async getBrowserClient(workspaceId: string): Promise<WorkspaceBrowserClient> {
+    const result = await backendRequest<{ browserClient?: unknown }>('workspace.getBrowserClient', {
+      workspaceId,
+    });
+    return requireBrowserClient(result?.browserClient, 'workspace.getBrowserClient');
+  }
+
+  /**
+   * `workspace.setBrowserClient { workspaceId, clientId: string | null }` →
+   * `{ browserClient }` (REV-2). `null` clears the pin; the daemon rejects a
+   * `clientId` that never completed `client.hello` with -32602.
+   */
+  async setBrowserClient(
+    workspaceId: string,
+    clientId: string | null,
+  ): Promise<WorkspaceBrowserClient> {
+    const result = await backendRequest<{ browserClient?: unknown }>('workspace.setBrowserClient', {
+      workspaceId,
+      clientId,
+    });
+    return requireBrowserClient(result?.browserClient, 'workspace.setBrowserClient');
   }
 
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe {

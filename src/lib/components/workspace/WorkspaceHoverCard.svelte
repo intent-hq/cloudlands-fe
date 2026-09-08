@@ -37,7 +37,6 @@
 
   interface Props {
     workspace: Workspace | null;
-    lineStats?: { additions: number; deletions: number };
     isLoading?: boolean;
     activeAgentIds?: string[];
     loadAgentSessions?: boolean;
@@ -45,15 +44,11 @@
   }
   let {
     workspace,
-    lineStats,
     isLoading = false,
     activeAgentIds = [],
     loadAgentSessions = true,
     loadWorkspaceData = true,
   }: Props = $props();
-  $effect(() => {
-    void lineStats;
-  });
   const workspaceIdStore = writable('');
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const prMonitors$ = selectPrMonitors(workspaceIdStore);

@@ -77,7 +77,10 @@ import {
 import { meetsMinimumVersion } from '../../../shared/utils/version-compare';
 import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 import { resolveAppIconPath } from '../../../main/utils/resolve-app-icon';
-import { decorateWindowTitle } from '../../../main/utils/resolve-app-title';
+import {
+  decorateWindowTitle,
+  registerWindowTitleListener,
+} from '../../../main/utils/resolve-app-title';
 import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
@@ -359,6 +362,14 @@ app.on('browser-window-created', (_event, window) => {
   });
   window.on('leave-full-screen', () => {
     if (!window.isDestroyed()) window.webContents.send('window:fullscreen', false);
+  });
+  // Renderer DOM blur also fires when focus enters an embedded webview. Use
+  // BrowserWindow focus instead so the renderer tracks the native app window.
+  window.on('focus', () => {
+    if (!window.isDestroyed()) window.webContents.send('window:focus', true);
+  });
+  window.on('blur', () => {
+    if (!window.isDestroyed()) window.webContents.send('window:focus', false);
   });
 });
 
@@ -943,6 +954,7 @@ export function setupSystemIPC() {
       ...getWindowAppearanceOptions(isDarkMode),
       ...(iconPath && { icon: iconPath }),
     });
+    registerWindowTitleListener(newWindow);
     // The HUD inherits the opener's backend (its data reflects that backend);
     // only the local-only chief route stays pinned to the local backend.
     stampWindowWithBackend(newWindow, isChiefRoute ? LOCAL_CONNECTION_ID : openerBackendId);

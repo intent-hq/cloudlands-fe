@@ -37,21 +37,23 @@ describe('resolveDevName', () => {
     ]);
   });
 
-  it('returns no name for a detached standalone repository', () => {
+  it('uses the frontend short SHA for a detached standalone repository', () => {
     const runGit = vi
       .fn()
       .mockReturnValueOnce(success('HEAD\n'))
-      .mockReturnValueOnce(success('\n'));
-    expect(resolveDevName([], frontendRoot, runGit)).toBe('');
+      .mockReturnValueOnce(success('\n'))
+      .mockReturnValueOnce(success('abc1234\n'));
+    expect(resolveDevName([], frontendRoot, runGit)).toBe('abc1234');
   });
 
-  it('rejects a detached superproject HEAD', () => {
+  it('uses the frontend short SHA when the superproject is also detached', () => {
     const runGit = vi
       .fn()
       .mockReturnValueOnce(success('HEAD\n'))
       .mockReturnValueOnce(success('/workspace\n'))
-      .mockReturnValueOnce(success('HEAD\n'));
-    expect(resolveDevName([], frontendRoot, runGit)).toBe('');
+      .mockReturnValueOnce(success('HEAD\n'))
+      .mockReturnValueOnce(success('def5678\n'));
+    expect(resolveDevName([], frontendRoot, runGit)).toBe('def5678');
   });
 
   it('returns no name for blank frontend branch output', () => {
