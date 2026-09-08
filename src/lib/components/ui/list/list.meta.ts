@@ -22,6 +22,7 @@ export const listMetadata = parseUiComponentMetadata({
     'src/lib/components/workspace/WorkspaceAgentsList.svelte',
     'src/lib/components/workspace/sidebar/ContextPanel.svelte',
     'src/lib/components/workspace/sidebar/NotesPanel.svelte',
+    'src/routes/sandbox/recipes/+page.svelte',
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/list/list.test.ts',
