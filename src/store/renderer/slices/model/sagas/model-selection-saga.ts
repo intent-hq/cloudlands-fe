@@ -115,11 +115,9 @@ export function* persistSelectedModelsWorker(
           applied: yield* call([appClient.settings, appClient.settings.update], changes),
           revision: 0,
         };
-    if (atomicProviderId && hasRevisionClient && result.applied.length !== 2) {
-      yield* put(providerModelsPersistRejected({ ...sessionPicks }));
-      yield* put(activeProviderPersistRejected(atomicProviderId));
-      return 'rejected' satisfies PersistenceResult;
-    }
+    // A successful update acknowledges the batch. `applied` contains only
+    // changed paths, possibly including a daemon-resolved model.default;
+    // its length does not indicate rejection (structured errors do).
     if (hasRevisionClient) yield* put(settingsChangesReceived(result.applied, result.revision));
     return 'persisted' satisfies PersistenceResult;
   } catch (error) {

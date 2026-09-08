@@ -1881,7 +1881,7 @@ export interface SpecialistsClient {
 }
 
 export interface ModelsClient {
-  list(): Promise<AuggieModel[]>;
+  list(providerId?: string): Promise<AuggieModel[]>;
   subscribe(handler: SubscriptionHandler<AuggieModel[]>): Unsubscribe;
 }
 
