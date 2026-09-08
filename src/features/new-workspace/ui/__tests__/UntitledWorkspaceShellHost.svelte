@@ -13,9 +13,18 @@
   interface Props {
     pendingCapabilities?: boolean;
     providerMissing?: boolean;
+    setupPanelCollapsed?: boolean;
     offline?: boolean;
     remoteDaemonPathRejection?: string;
   }
+
+  let {
+    pendingCapabilities = false,
+    providerMissing = false,
+    setupPanelCollapsed = false,
+    offline = false,
+    remoteDaemonPathRejection,
+  }: Props = $props();
 
   const draft: WorkspaceDraft = {
     id: 'draft-shell-test',
@@ -27,19 +36,13 @@
     source: null,
     contextLinks: [],
     attachments: [],
-    config: {},
+    config: setupPanelCollapsed ? { setupPanelExpanded: false } : {},
     operationKey: 'operation-shell-test',
     delivery: { state: 'none' },
     createdAt: '2026-01-15T12:00:00.000Z',
     updatedAt: '2026-01-15T12:00:00.000Z',
   };
 
-  let {
-    pendingCapabilities = false,
-    providerMissing = false,
-    offline = false,
-    remoteDaemonPathRejection,
-  }: Props = $props();
   let controllerState = $state(buildState());
   let startCount = $state(0);
   let flushCount = $state(0);

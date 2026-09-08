@@ -113,9 +113,10 @@
       : presentation.progress?.setup?.error,
   );
   const setupPanelExpanded = $derived(
-    typeof controllerState.input.config.setupPanelExpanded === 'boolean'
-      ? controllerState.input.config.setupPanelExpanded
-      : source === null,
+    ['connect-provider', 'login-required', 'test-failed'].includes(coordinator.state) ||
+      (typeof controllerState.input.config.setupPanelExpanded === 'boolean'
+        ? controllerState.input.config.setupPanelExpanded
+        : source === null),
   );
   let sourcePickerOpen = $state(false);
   let sourcePickerMode = $state<SourcePickerMode>('github');

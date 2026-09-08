@@ -56,7 +56,7 @@ test.describe('new-workspace shell', () => {
 
   test('selects an inline provider when none is ready', async ({ mount }) => {
     const component = await mount(UntitledWorkspaceShellHost, {
-      props: { providerMissing: true },
+      props: { providerMissing: true, setupPanelCollapsed: true },
     });
 
     await expect(component.locator('[data-coordinator-state="connect-provider"]')).toBeVisible();
