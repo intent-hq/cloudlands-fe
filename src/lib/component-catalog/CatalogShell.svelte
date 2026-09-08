@@ -284,7 +284,6 @@
     grid-column: 2;
     grid-row: 1;
     min-width: 0;
-    overflow-x: clip;
   }
 
   .catalog-customize {
@@ -321,8 +320,7 @@
       grid-column: 2;
       grid-row: 1;
       width: 100%;
-      max-width: 680px;
-      margin-inline: auto;
+      min-width: 0;
       padding: 1.5rem 1.5rem 0;
     }
 

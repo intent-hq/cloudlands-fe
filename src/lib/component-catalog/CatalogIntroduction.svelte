@@ -47,13 +47,12 @@
   .introduction {
     display: grid;
     width: 100%;
-    max-width: 680px;
+    min-width: 0;
     gap: 3.5rem;
-    margin-inline: auto;
     padding: 7rem 1.5rem;
   }
 
-  header {
+  header > p:last-child {
     max-width: 34rem;
   }
 

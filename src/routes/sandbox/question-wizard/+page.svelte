@@ -30,7 +30,7 @@
     <h1>Question wizard</h1>
     <p>A deterministic multi-step showcase using the production question surface.</p>
   </header>
-  <section>
+  <section class="wizard-stage">
     <h2>Playground</h2>
     <QuestionWizard {questions} onComplete={() => (result = 'Answers submitted.')} />
   </section>
@@ -41,10 +41,14 @@
   .showcase-page {
     display: grid;
     width: 100%;
-    max-width: 680px;
+    min-width: 0;
     gap: 2rem;
-    margin-inline: auto;
     padding: 7rem 1.5rem;
+  }
+  .wizard-stage {
+    width: min(100%, 680px);
+    min-width: 0;
+    margin-inline: auto;
   }
   h1 {
     font-size: 1.75rem;

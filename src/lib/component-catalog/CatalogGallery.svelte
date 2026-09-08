@@ -53,9 +53,9 @@
   });
 </script>
 
-<section class="mx-auto min-w-0 max-w-[1680px]" data-testid="catalog-gallery">
+<section class="w-full min-w-0" data-testid="catalog-gallery">
   <header class="catalog-intro border-b border-border px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
-    <div class="max-w-3xl">
+    <div>
       <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         Interface library
       </p>

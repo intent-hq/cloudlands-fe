@@ -115,11 +115,11 @@
   >{/snippet}
 <svelte:head><title>Design system recipes</title></svelte:head>
 
-<div class="mx-auto max-w-5xl space-y-8 px-4 py-8 sm:px-6 lg:py-12">
-  <header class="max-w-3xl space-y-2">
+<div class="w-full min-w-0 space-y-8 px-4 py-8 sm:px-6 lg:py-12">
+  <header class="space-y-2">
     <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Design system</p>
     <h1 class="type-display">Recipe cookbook</h1>
-    <p class="text-muted-foreground">
+    <p class="max-w-3xl text-muted-foreground">
       Copy these pattern-first compositions before reaching for raw primitives.
     </p>
   </header>

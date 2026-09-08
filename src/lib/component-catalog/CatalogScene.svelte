@@ -307,6 +307,7 @@
 
 <style>
   .catalog-scene {
-    width: min(100%, 100rem);
+    width: 100%;
+    min-width: 0;
   }
 </style>

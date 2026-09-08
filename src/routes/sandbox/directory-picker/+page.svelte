@@ -57,7 +57,7 @@
   <title>{m.sandbox_directoryPicker_page_title()}</title>
 </svelte:head>
 
-<section class="mx-auto max-w-5xl space-y-6 p-6 lg:p-10">
+<section class="w-full min-w-0 space-y-6 p-6 lg:p-10">
   <div class="space-y-2">
     <p class="text-xs font-medium uppercase tracking-wide text-subtle">
       {m.sandbox_directoryPicker_componentSandbox_label()}

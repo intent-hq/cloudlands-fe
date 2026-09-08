@@ -135,9 +135,8 @@
   .system-page {
     display: grid;
     width: 100%;
-    max-width: 680px;
+    min-width: 0;
     gap: 3rem;
-    margin-inline: auto;
     padding: 7rem 1.5rem;
   }
   .system-page header h1 {

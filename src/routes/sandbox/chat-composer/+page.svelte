@@ -86,13 +86,12 @@
   .showcase-page {
     display: grid;
     width: 100%;
-    max-width: 760px;
+    min-width: 0;
     gap: 2rem;
-    margin-inline: auto;
     padding: 7rem 1.5rem;
   }
 
-  header {
+  header p {
     max-width: 34rem;
   }
 
@@ -110,6 +109,8 @@
   }
 
   .composer-stage {
-    width: 100%;
+    width: min(100%, 760px);
+    min-width: 0;
+    margin-inline: auto;
   }
 </style>

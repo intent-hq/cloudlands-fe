@@ -3975,7 +3975,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:accordion:
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -4052,7 +4052,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -4160,7 +4160,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -4280,7 +4280,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -4361,7 +4361,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -4442,7 +4442,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -4553,7 +4553,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -4672,7 +4672,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -4778,7 +4778,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -4897,7 +4897,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -5000,7 +5000,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -5106,7 +5106,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:badge:sema
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -5199,7 +5199,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:breadcrumb
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -5289,7 +5289,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:button:con
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -5368,7 +5368,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:button:int
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -5614,7 +5614,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:button-gro
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -5727,7 +5727,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:checkbox:c
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -5818,7 +5818,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:checkbox-g
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -5912,7 +5912,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:copy-input
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -6115,7 +6115,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:dialog:dia
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -6207,7 +6207,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:file-input
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -6373,7 +6373,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:input:inpu
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -6458,7 +6458,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:input-grou
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -6610,7 +6610,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:kbd:shortc
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -6690,7 +6690,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:label:labe
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -6786,7 +6786,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:list:edito
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -6958,7 +6958,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:menu:menu-
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -7030,7 +7030,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -7151,7 +7151,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -7229,7 +7229,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -7307,7 +7307,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -7398,7 +7398,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -7496,7 +7496,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -7602,7 +7602,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -7689,7 +7689,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -7772,7 +7772,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -7882,7 +7882,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:proximity-
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -7966,7 +7966,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:radio-grou
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -8059,7 +8059,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:scroll-are
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -8167,7 +8167,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:select:sel
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -8366,7 +8366,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:select:sel
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -8533,7 +8533,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:separator:
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -8613,7 +8613,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:sheet:shee
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -8691,7 +8691,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:skeleton:s
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -8773,7 +8773,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:slider:sli
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -8895,7 +8895,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:switch:swi
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -8975,7 +8975,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:table:tabl
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -9063,7 +9063,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:tabs:tabs-
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -9159,7 +9159,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:textarea:t
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -9244,7 +9244,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -9722,7 +9722,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toggle:tog
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">
@@ -9794,7 +9794,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toggle-gro
   ],
   "dom": "<body>
   <div>
-    <section class="catalog-detail lg:p-10 max-w-6xl mx-auto p-4 sm:p-6 svelte-<scope>">
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="border-b border-border entry-header svelte-<scope>">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-baseline">

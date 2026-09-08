@@ -199,10 +199,10 @@
 </script>
 
 <section id="foundations" class="scroll-mt-24 space-y-6" aria-labelledby="foundations-title">
-  <header class="max-w-3xl space-y-2">
+  <header class="space-y-2">
     <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Semantic system</p>
     <h2 id="foundations-title" class="text-2xl font-medium tracking-tight">Foundations</h2>
-    <p class="text-sm leading-relaxed text-muted-foreground">
+    <p class="max-w-3xl text-sm leading-relaxed text-muted-foreground">
       Live roles resolved from the active theme. These specimens reference the shared CSS variables
       directly, so theme and future token revisions flow through without copied physical values.
     </p>

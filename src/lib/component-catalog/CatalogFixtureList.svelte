@@ -97,7 +97,7 @@
 <section
   class={mode === 'gallery'
     ? 'catalog-entry scroll-mt-24 overflow-hidden rounded-lg border border-border bg-card'
-    : 'catalog-detail mx-auto max-w-6xl p-4 sm:p-6 lg:p-10'}
+    : 'catalog-detail w-full min-w-0 p-4 sm:p-6 lg:p-10'}
   class:chat-polish-detail={entry.slug === 'chat-polish' && mode === 'detail'}
   id={mode === 'gallery' ? `component-${entry.slug}` : undefined}
   data-catalog-gallery-entry={mode === 'gallery' ? entry.slug : undefined}
@@ -163,10 +163,6 @@
     gap: calc(var(--control-height-medium) / 2);
   }
 
-  .catalog-detail.chat-polish-detail {
-    max-width: 100rem;
-  }
-
   .entry-header {
     display: flex;
     flex-wrap: wrap;
@@ -185,7 +181,7 @@
   .fixture-grid {
     display: grid;
     min-width: 0;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
     gap: var(--catalog-row-gap);
     padding: var(--catalog-preview-padding);
   }
@@ -257,6 +253,8 @@
   }
 
   .fixture-preview {
+    min-width: 0;
+    overflow-x: auto;
     padding: var(--catalog-preview-padding);
     background-color: hsl(var(--background));
   }

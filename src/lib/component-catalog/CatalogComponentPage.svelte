@@ -142,9 +142,7 @@
     min-width: 0;
     grid-template-columns: minmax(0, 1fr);
     width: 100%;
-    max-width: 680px;
     gap: 2rem;
-    margin-inline: auto;
     padding: 7rem 1.5rem;
   }
 
@@ -198,10 +196,15 @@
   .fixture-preview,
   .section-preview {
     width: min(100%, var(--catalog-preview-width, 100%));
+    min-width: 0;
     min-height: 8rem;
     margin-inline: auto;
     padding: 1.5rem;
     background: hsl(var(--background));
+  }
+
+  .fixture-preview {
+    overflow-x: auto;
   }
 
   .section-preview {

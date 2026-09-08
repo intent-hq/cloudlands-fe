@@ -40,7 +40,7 @@
       {@const CatalogFixtureList = detail.component}
       <CatalogFixtureList entry={detail.entry} />
     {:else}
-      <section class="mx-auto max-w-3xl space-y-4 p-6 lg:p-10">
+      <section class="w-full min-w-0 space-y-4 p-6 lg:p-10">
         <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Catalog entry
         </p>
