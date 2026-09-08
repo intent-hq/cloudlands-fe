@@ -36,7 +36,7 @@
   });
 </script>
 
-<div class="grid gap-2" aria-label={m.newWorkspace_capabilities_ariaLabel()}>
+<div class="grid gap-2" role="group" aria-label={m.newWorkspace_capabilities_ariaLabel()}>
   {#each items.filter((item) => item.status === 'missing') as item (item.id)}
     <div
       class="type-caption flex items-start gap-2 py-2 text-muted-foreground"

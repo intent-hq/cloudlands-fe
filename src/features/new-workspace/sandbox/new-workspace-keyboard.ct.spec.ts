@@ -26,7 +26,7 @@ test('keyboard reaches the composer, source menu, and source picker', async ({ m
   const editor = component.locator('.tiptap-editor');
   await tabTo(page, editor);
   await expect(editor).toBeFocused();
-  const composerSurface = component.getByTestId('message-input').locator('.rich-input-container');
+  const composerSurface = component.getByTestId('message-input');
   expect(await composerSurface.evaluate((node) => getComputedStyle(node).boxShadow)).not.toBe(
     'none',
   );
@@ -36,9 +36,26 @@ test('keyboard reaches the composer, source menu, and source picker', async ({ m
   await expectVisibleFocus(actions);
   await page.keyboard.press('Enter');
   const newProject = page.getByRole('menuitem', { name: 'Start a new project' });
-  await expect(newProject).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await expect(newProject).toHaveAttribute('data-highlighted');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('textbox', { name: 'Folder name' })).toBeFocused();
+  const folderName = page.getByRole('textbox', { name: 'Folder name' });
+  await expect(folderName).toBeFocused();
+  await page.keyboard.type('keyboard-project');
+  const selectFolder = page.getByRole('button', { name: 'Select folder…' });
+  await tabTo(page, selectFolder);
+  await expectVisibleFocus(selectFolder);
+  await page.keyboard.press('Enter');
+
+  const start = component.getByTestId('draft-start');
+  await tabTo(page, start);
+  await expectVisibleFocus(start);
+  await page.keyboard.press('Enter');
+  await expect(component.getByTestId('controller-phase-status')).toContainText(
+    'Checking required capabilities',
+  );
 });
 
 test('setup options and recovery actions retain visible keyboard focus', async ({

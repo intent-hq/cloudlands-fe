@@ -641,25 +641,22 @@
 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
   <!-- Team orchestration card — hidden when the resolved set has no orchestrator -->
   {#if orchestrator}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="agent-card min-w-0 {isTeamMode
         ? 'border-input bg-accent/60'
         : 'border-border bg-card hover:bg-muted/50'}"
-      onclick={selectTeamMode}
-      onkeydown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          selectTeamMode();
-        }
-      }}
-      role="button"
-      tabindex="0"
-      aria-pressed={isTeamMode}
     >
-      <div class="text-sm font-medium text-foreground">
+      <button
+        type="button"
+        class="mode-trigger text-sm font-medium text-foreground"
+        aria-pressed={isTeamMode}
+        onclick={(event) => {
+          event.stopPropagation();
+          selectTeamMode();
+        }}
+      >
         {m.workspace_initialAgentPicker_teamMode_label()}
-      </div>
+      </button>
       <div class="flex items-center gap-1 py-1.5">
         <AgentAvatar
           agentId="blank"
@@ -685,8 +682,6 @@
       <div
         class="model-picker-row {isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
         inert={!isTeamMode}
-        onclick={(event) => event.stopPropagation()}
-        onkeydown={(event) => event.stopPropagation()}
       >
         <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_before()}</span>
         {#key teamModeModel}
@@ -715,34 +710,24 @@
   {/if}
 
   <!-- Single agent card -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="agent-card min-w-0 {!isTeamMode
       ? 'border-input bg-accent/60'
       : 'border-border bg-card hover:bg-muted/50'}"
-    onclick={selectSingleAgentMode}
-    onkeydown={(event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        selectSingleAgentMode();
-      }
-    }}
-    role="button"
-    tabindex="0"
-    aria-pressed={!isTeamMode}
   >
-    <div class="text-sm font-medium text-foreground">
-      {m.workspace_initialAgentPicker_singleAgent_label()}
-    </div>
-    <!-- Specialist selector dropdown -->
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="w-full"
-      onclick={(e) => {
-        if (!isTeamMode) e.stopPropagation();
+    <button
+      type="button"
+      class="mode-trigger text-sm font-medium text-foreground"
+      aria-pressed={!isTeamMode}
+      onclick={(event) => {
+        event.stopPropagation();
+        selectSingleAgentMode();
       }}
     >
+      {m.workspace_initialAgentPicker_singleAgent_label()}
+    </button>
+    <!-- Specialist selector dropdown -->
+    <div class="w-full">
       <DropdownMenu
         class="w-full"
         bind:open={specialistDropdownOpen}
@@ -757,7 +742,7 @@
             tabindex={isTeamMode ? -1 : 0}
             onclick={(e) => {
               if (isTeamMode) {
-                // First click selects single-agent mode — let it bubble to the parent card
+                selectSingleAgentMode();
                 return;
               }
               e.stopPropagation();
@@ -852,8 +837,6 @@
     <div
       class="model-picker-row {!isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
       inert={isTeamMode}
-      onclick={(event) => event.stopPropagation()}
-      onkeydown={(event) => event.stopPropagation()}
     >
       <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_before()}</span>
       {#key singleAgentModel}
@@ -892,7 +875,7 @@
     border-width: 1px;
     border-style: solid;
     border-radius: var(--radius-lg);
-    cursor: pointer;
+    cursor: default;
     text-align: left;
     transition:
       background-color var(--motion-fast),
@@ -900,10 +883,21 @@
       box-shadow var(--motion-fast);
   }
 
-  .agent-card:focus-visible {
+  .mode-trigger {
+    width: calc(100% + 0.75rem);
+    min-height: 2rem;
+    margin: -0.375rem;
+    padding: 0.375rem;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .mode-trigger:focus-visible {
     outline: none;
-    border-color: var(--color-foreground);
-    background: color-mix(in srgb, var(--color-accent) 72%, var(--color-card));
+    box-shadow: 0 0 0 2px var(--ring);
   }
 
   .model-picker-row {
@@ -965,7 +959,7 @@
   }
 
   @media (forced-colors: active) {
-    .agent-card:focus-visible,
+    .mode-trigger:focus-visible,
     .specialist-trigger:focus-visible {
       border-color: Highlight;
       background: Canvas;

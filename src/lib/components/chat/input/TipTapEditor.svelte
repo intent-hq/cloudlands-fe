@@ -903,6 +903,8 @@
         editorProps: {
           attributes: {
             class: `tiptap-editor ${editorClassName}`,
+            role: 'combobox',
+            'aria-autocomplete': 'list',
             autocomplete: 'off',
             spellcheck: 'false',
             autocorrect: 'off',
