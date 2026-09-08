@@ -301,7 +301,7 @@
     activeDiffMapPathForScroll,
     createDiffMapOpenAction,
     filterDiffMapChanges,
-    isDiffMapOpenModifier,
+    isDiffMapOpenGesture,
     scrollDiffMapHeaderIntoView,
   } from './chat-changes-diff-map';
 
@@ -1999,7 +1999,7 @@
     const change = findChangeForDiffMapPath(file.path);
     if (!change) return;
 
-    if (isDiffMapOpenModifier(event)) {
+    if (isDiffMapOpenGesture(event)) {
       openCurrentDiff(change.filePath, event);
       return;
     }

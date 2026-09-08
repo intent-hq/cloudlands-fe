@@ -28,6 +28,20 @@ afterEach(() => {
 });
 
 describe('ReviewSliceMap', () => {
+  it('opens once for the browser double-click event sequence', async () => {
+    const onOpen = vi.fn();
+    const { container } = render(ReviewSliceMap, {
+      props: { workspaceId: 'ws-1', document: tinyDiffMapFixture.document, onOpen },
+    });
+    await waitFor(() => expect(container.querySelectorAll('[data-diff-map-row]')).toHaveLength(3));
+    const row = container.querySelector<HTMLButtonElement>('[data-diff-map-row]')!;
+
+    await fireEvent.click(row, { detail: 1 });
+    await fireEvent.click(row, { detail: 2 });
+    await fireEvent.dblClick(row, { detail: 2 });
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
   it('sends exactly the paths selected through the map to ReviewSliceAction', async () => {
     const { container } = render(ReviewSliceMap, {
       props: {

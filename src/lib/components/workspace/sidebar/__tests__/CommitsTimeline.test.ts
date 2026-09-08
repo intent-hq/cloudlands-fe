@@ -502,6 +502,17 @@ describe('CommitsTimeline', () => {
       });
 
       reduxDispatch.mockClear();
+      await fireEvent.click(mapFile, { detail: 1 });
+      await fireEvent.click(mapFile, { detail: 2 });
+      await fireEvent.dblClick(mapFile, { detail: 2 });
+      await waitFor(() => {
+        const openActions = reduxDispatch.mock.calls.filter(
+          ([candidate]) => candidate?.type === 'workspaceNavigation/openWorkspaceDiff',
+        );
+        expect(openActions).toHaveLength(1);
+      });
+
+      reduxDispatch.mockClear();
       await fireEvent.click(container.querySelector('[data-testid="file-click"]')!);
       await waitFor(() => {
         const action = reduxDispatch.mock.calls.find(

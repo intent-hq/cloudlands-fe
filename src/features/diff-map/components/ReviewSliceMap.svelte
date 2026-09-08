@@ -16,6 +16,11 @@
 
   let { workspaceId, document, activePath, layers, rungOverride = 2, onOpen }: Props = $props();
   let selection = $state(new Set<string>());
+
+  function handleOpen(file: DiffMapFile, event: MouseEvent | KeyboardEvent) {
+    if (event.type === 'dblclick' || (event instanceof MouseEvent && event.detail > 1)) return;
+    onOpen(file, event);
+  }
 </script>
 
 <div class="flex size-full min-w-0 flex-col overflow-hidden rounded border border-border">
@@ -30,7 +35,7 @@
       {activePath}
       {rungOverride}
       filterable={false}
-      {onOpen}
+      onOpen={handleOpen}
     />
   </div>
 </div>

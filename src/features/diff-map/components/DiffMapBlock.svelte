@@ -20,6 +20,7 @@
     filter: string;
     pathFilter?: ReadonlySet<string>;
     layers?: DiffMapLayers;
+    onOpen: (file: DiffMapFile, event: MouseEvent | KeyboardEvent) => void;
     onActivate: (file: DiffMapFile, event: MouseEvent) => void;
     onKeydown: (file: DiffMapFile, event: KeyboardEvent) => void;
     onFocus: (file: DiffMapFile) => void;
@@ -37,6 +38,7 @@
     filter,
     pathFilter,
     layers,
+    onOpen,
     onActivate,
     onKeydown,
     onFocus,
@@ -103,6 +105,7 @@
           focused={file.path === focusedPath}
           matchesFilter={matches(row)}
           {layers}
+          {onOpen}
           {onActivate}
           {onKeydown}
           {onFocus}

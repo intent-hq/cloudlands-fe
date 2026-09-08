@@ -49,6 +49,20 @@ function selectedPaths(container: HTMLElement) {
 }
 
 describe('DiffMapRichBlock', () => {
+  it('opens once for the browser double-click event sequence', async () => {
+    const onOpen = vi.fn();
+    const { container } = render(DiffMapRichBlock, {
+      props: { document: annotatedDocument(), onOpen },
+    });
+    await waitFor(() => expect(mapRows(container)).toHaveLength(3));
+    const row = mapRows(container)[0];
+
+    await fireEvent.click(row, { detail: 1 });
+    await fireEvent.click(row, { detail: 2 });
+    await fireEvent.dblClick(row, { detail: 2 });
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
   it('unions enabled claims and removes only the toggled-off claim paths', async () => {
     const { container } = render(DiffMapRichBlock, {
       props: { document: annotatedDocument(), onOpen: vi.fn() },

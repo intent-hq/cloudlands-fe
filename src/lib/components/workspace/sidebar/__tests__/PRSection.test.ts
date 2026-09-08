@@ -596,6 +596,17 @@ describe('PRSection', () => {
       });
 
       mocks.dispatch.mockClear();
+      await fireEvent.click(mapFile, { detail: 1 });
+      await fireEvent.click(mapFile, { detail: 2 });
+      await fireEvent.dblClick(mapFile, { detail: 2 });
+      await waitFor(() => {
+        const openActions = mocks.dispatch.mock.calls.filter(
+          ([candidate]) => candidate?.type === 'workspaceNavigation/openWorkspaceDiff',
+        );
+        expect(openActions).toHaveLength(1);
+      });
+
+      mocks.dispatch.mockClear();
       await fireEvent.click(container.querySelector('[data-testid="file-click"]')!);
       await waitFor(() => {
         const action = mocks.dispatch.mock.calls.find(

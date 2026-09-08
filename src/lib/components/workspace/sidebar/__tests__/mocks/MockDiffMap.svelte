@@ -10,7 +10,11 @@
   data-rung={rungOverride}
 >
   {#each document.files as file (file.id)}
-    <button data-map-file={file.path} onclick={(event) => onOpen(file, event)}>
+    <button
+      data-map-file={file.path}
+      onclick={(event) => onOpen(file, event)}
+      ondblclick={(event) => onOpen(file, event)}
+    >
       {file.path}
     </button>
   {/each}

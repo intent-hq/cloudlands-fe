@@ -31,6 +31,7 @@ function renderRow(file: DiffMapFile, rung: 0 | 1 | 2 | 3 = 1) {
       selected: false,
       focused: true,
       matchesFilter: true,
+      onOpen: vi.fn(),
       onActivate: vi.fn(),
       onKeydown: vi.fn(),
       onFocus: vi.fn(),

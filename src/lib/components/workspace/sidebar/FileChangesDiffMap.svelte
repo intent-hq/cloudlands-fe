@@ -26,6 +26,11 @@
     testId,
     onOpen,
   }: Props = $props();
+
+  function handleOpen(file: DiffMapFile, event: MouseEvent | KeyboardEvent) {
+    if (event.type === 'dblclick' || (event instanceof MouseEvent && event.detail > 1)) return;
+    onOpen(file, event);
+  }
 </script>
 
 <div
@@ -64,7 +69,7 @@
         {activePath}
         rungOverride={2}
         filterable={false}
-        {onOpen}
+        onOpen={handleOpen}
       />
     </div>
   {:else}

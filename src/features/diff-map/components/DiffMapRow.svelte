@@ -24,6 +24,7 @@
     focused: boolean;
     matchesFilter: boolean;
     layers?: DiffMapLayers;
+    onOpen: (file: DiffMapFile, event: MouseEvent | KeyboardEvent) => void;
     onActivate: (file: DiffMapFile, event: MouseEvent) => void;
     onKeydown: (file: DiffMapFile, event: KeyboardEvent) => void;
     onFocus: (file: DiffMapFile) => void;
@@ -40,6 +41,7 @@
     focused,
     matchesFilter,
     layers,
+    onOpen,
     onActivate,
     onKeydown,
     onFocus,
@@ -166,6 +168,7 @@
   tabindex={focused ? 0 : -1}
   style={`left: ${row.x - blockX}px; top: ${row.y - blockY}px; width: ${row.w}px; height: ${row.h}px; opacity: ${matchesFilter ? 1 : 0.28}`}
   onclick={(event) => onActivate(file, event)}
+  ondblclick={(event) => onOpen(file, event)}
   onkeydown={(event) => onKeydown(file, event)}
   onfocus={() => onFocus(file)}
 >

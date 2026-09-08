@@ -41,6 +41,11 @@
     else next.add(id);
     enabledClaims = next;
   }
+
+  function handleOpen(file: DiffMapFile, event: MouseEvent | KeyboardEvent) {
+    if (event.type === 'dblclick' || (event instanceof MouseEvent && event.detail > 1)) return;
+    onOpen(file, event);
+  }
 </script>
 
 <div class="rich-diff-map ws-block-widget">
@@ -66,7 +71,13 @@
     </div>
   {/if}
   <div class="map">
-    <DiffMap {document} selection={highlightedPaths} {pathFilter} filterable={false} {onOpen} />
+    <DiffMap
+      {document}
+      selection={highlightedPaths}
+      {pathFilter}
+      filterable={false}
+      onOpen={handleOpen}
+    />
   </div>
 </div>
 

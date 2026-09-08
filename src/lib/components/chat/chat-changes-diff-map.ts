@@ -20,8 +20,11 @@ export function filterDiffMapChanges(changes: LocalFileChange[]): LocalFileChang
   );
 }
 
-export function isDiffMapOpenModifier(event: MouseEvent | KeyboardEvent): boolean {
-  return event.metaKey || event.ctrlKey;
+export function isDiffMapOpenGesture(event: MouseEvent | KeyboardEvent): boolean {
+  return (
+    (event instanceof MouseEvent && event.type === 'dblclick') ||
+    (event instanceof KeyboardEvent && (event.metaKey || event.ctrlKey))
+  );
 }
 
 export function createDiffMapOpenAction(
@@ -56,7 +59,7 @@ export function createDiffMapOpenAction(
   return openWorkspaceDiff(workspaceId, diffChange as unknown as TrackedChange, {
     changeId: `chat-change-${filePath}`,
     filePath,
-    openInAdjacentPanel: Boolean(event && isDiffMapOpenModifier(event)),
+    openInAdjacentPanel: Boolean(event && (event.metaKey || event.ctrlKey)),
     sourcePanelId: panelElement?.getAttribute('data-panel-id') ?? undefined,
     ...options,
   });

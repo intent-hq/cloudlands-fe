@@ -119,7 +119,7 @@ describe('DiffMap', () => {
     expect(rows(container)[0].querySelector('.status')?.textContent).toBe('A');
   });
 
-  it('opens a file from click and Enter with its full accessible path and stats', async () => {
+  it('opens a file from click, double-click, and Enter with its full accessible path and stats', async () => {
     const onOpen = vi.fn();
     const { container } = render(DiffMap, {
       props: { document: tinyDiffMapFixture.document, onOpen },
@@ -134,6 +134,12 @@ describe('DiffMap', () => {
     expect(onOpen).toHaveBeenLastCalledWith(
       tinyDiffMapFixture.document.files[0],
       expect.any(MouseEvent),
+    );
+
+    await fireEvent.dblClick(first);
+    expect(onOpen).toHaveBeenLastCalledWith(
+      tinyDiffMapFixture.document.files[0],
+      expect.objectContaining({ type: 'dblclick' }),
     );
 
     await fireEvent.keyDown(first, { key: 'Enter' });

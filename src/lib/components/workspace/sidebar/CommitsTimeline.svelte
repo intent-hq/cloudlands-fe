@@ -932,7 +932,12 @@
                     document={diffMapDocument}
                     activePath={activeFilePath ?? undefined}
                     filterable={false}
-                    onOpen={(file) => {
+                    onOpen={(file, event) => {
+                      if (
+                        event.type === 'dblclick' ||
+                        (event instanceof MouseEvent && event.detail > 1)
+                      )
+                        return;
                       handleCommitFileClick(file, commit.hash).catch((error) => {
                         logger.error('Error in handleCommitFileClick', { error });
                       });
@@ -1056,7 +1061,12 @@
                     document={diffMapDocument}
                     activePath={activeFilePath ?? undefined}
                     filterable={false}
-                    onOpen={(file) => {
+                    onOpen={(file, event) => {
+                      if (
+                        event.type === 'dblclick' ||
+                        (event instanceof MouseEvent && event.detail > 1)
+                      )
+                        return;
                       handleCommitFileClick(file, commit.hash).catch((error) => {
                         logger.error('Error in handleCommitFileClick', { error });
                       });

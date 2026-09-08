@@ -1,11 +1,25 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { Page } from '@playwright/test';
 import { hugeDiffMapFixture, typicalDiffMapFixture } from '../model/fixtures';
+import DiffMapOpenHarness from './DiffMapOpenHarness.svelte';
 import DiffMapPreview from './DiffMapPreview.svelte';
 
 async function nextResizeFrame(page: Page) {
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 }
+
+test('routes one sidebar open per single-click and double-click sequence', async ({ mount }) => {
+  const component = await mount(DiffMapOpenHarness, {
+    props: { document: typicalDiffMapFixture.document },
+  });
+  const row = component.locator('[data-diff-map-row]').first();
+
+  await row.click();
+  await expect(component.getByTestId('open-count')).toHaveText('1');
+
+  await row.dblclick();
+  await expect(component.getByTestId('open-count')).toHaveText('2');
+});
 
 test('reflows every block while narrowing and suppresses FLIP under reduced motion', async ({
   mount,

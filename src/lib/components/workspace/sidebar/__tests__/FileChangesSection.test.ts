@@ -301,6 +301,14 @@ describe('FileChangesSection', () => {
 
     expect(onOpenChange).toHaveBeenCalledWith(staged, expect.any(MouseEvent));
     expect(onFileClicked).toHaveBeenCalledWith('src/dual.ts', true);
+
+    onOpenChange.mockClear();
+    onFileClicked.mockClear();
+    await fireEvent.click(stagedFile, { detail: 1 });
+    await fireEvent.click(stagedFile, { detail: 2 });
+    await fireEvent.dblClick(stagedFile, { detail: 2 });
+    expect(onOpenChange).toHaveBeenCalledOnce();
+    expect(onFileClicked).toHaveBeenCalledOnce();
   });
 
   it('persists the selected map view across remounts', async () => {

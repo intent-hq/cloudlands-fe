@@ -1252,7 +1252,12 @@
                       document={diffMapDocument}
                       activePath={activeFilePath ?? undefined}
                       filterable={false}
-                      onOpen={(file) => {
+                      onOpen={(file, event) => {
+                        if (
+                          event.type === 'dblclick' ||
+                          (event instanceof MouseEvent && event.detail > 1)
+                        )
+                          return;
                         handlePRFileClick(file, pr.number).catch((error) => {
                           logger.error('Error in handlePRFileClick', { error });
                         });

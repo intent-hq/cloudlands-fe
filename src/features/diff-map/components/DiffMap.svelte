@@ -407,6 +407,7 @@
                 filter={filter.trim().toLocaleLowerCase()}
                 {pathFilter}
                 {layers}
+                {onOpen}
                 onActivate={activate}
                 onKeydown={navigate}
                 onFocus={(file) => {

@@ -4,7 +4,7 @@ import {
   activeDiffMapPathForScroll,
   createDiffMapOpenAction,
   filterDiffMapChanges,
-  isDiffMapOpenModifier,
+  isDiffMapOpenGesture,
   scrollDiffMapHeaderIntoView,
 } from '../chat-changes-diff-map';
 import type { WorkspaceId } from '$shared/types/branded-ids';
@@ -60,14 +60,14 @@ describe('ChatChangesPanel diff map', () => {
     expect(container.scrollTo).toHaveBeenCalledWith({ top: 90, behavior: 'auto' });
   });
 
-  it('builds the exact adjacent-panel open action for a modified map click', () => {
+  it('builds the exact adjacent-panel open action for a modified map double-click', () => {
     const panel = document.createElement('div');
     const button = document.createElement('button');
     panel.dataset.panelId = 'panel-1';
     panel.append(button);
     vi.spyOn(Date, 'now').mockReturnValue(1234);
     let action: ReturnType<typeof createDiffMapOpenAction> | undefined;
-    button.addEventListener('click', (event) => {
+    button.addEventListener('dblclick', (event) => {
       action = createDiffMapOpenAction(
         'workspace-1' as WorkspaceId,
         change('src/target.ts', 'modify', 'modified'),
@@ -75,7 +75,7 @@ describe('ChatChangesPanel diff map', () => {
       );
     });
 
-    button.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+    button.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, ctrlKey: true }));
 
     expect(action).toEqual({
       type: 'workspaceNavigation/openWorkspaceDiff',
@@ -100,10 +100,13 @@ describe('ChatChangesPanel diff map', () => {
     });
   });
 
-  it('only treats Ctrl or Cmd as map-open modifiers', () => {
-    expect(isDiffMapOpenModifier(new MouseEvent('click'))).toBe(false);
-    expect(isDiffMapOpenModifier(new MouseEvent('click', { ctrlKey: true }))).toBe(true);
-    expect(isDiffMapOpenModifier(new MouseEvent('click', { metaKey: true }))).toBe(true);
+  it('classifies double-click and modified keyboard events as map-open gestures', () => {
+    expect(isDiffMapOpenGesture(new MouseEvent('dblclick'))).toBe(true);
+    expect(isDiffMapOpenGesture(new KeyboardEvent('keydown', { ctrlKey: true }))).toBe(true);
+    expect(isDiffMapOpenGesture(new KeyboardEvent('keydown', { metaKey: true }))).toBe(true);
+    expect(isDiffMapOpenGesture(new MouseEvent('click'))).toBe(false);
+    expect(isDiffMapOpenGesture(new MouseEvent('click', { ctrlKey: true }))).toBe(false);
+    expect(isDiffMapOpenGesture(new MouseEvent('click', { metaKey: true }))).toBe(false);
   });
 
   it('moves the active map path as the diff scrolls without issuing a feedback scroll', () => {
