@@ -74,7 +74,7 @@
         type="search"
         aria-label={placeholder}
         {placeholder}
-        class="h-7 min-w-0 bg-transparent! py-0 pl-7 pr-7 text-xs shadow-none! placeholder:text-muted-foreground/60!"
+        class="h-7 min-w-0 bg-transparent! py-0 pl-7 pr-7 text-xs shadow-none! placeholder:text-muted-foreground!"
         noFocusStyle
         onblur={() => {
           if (!query) void close(false);
