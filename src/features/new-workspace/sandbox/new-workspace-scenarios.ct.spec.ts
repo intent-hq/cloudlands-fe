@@ -1,9 +1,51 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { Page } from '@playwright/test';
+import { createRequire } from 'node:module';
 import ScenarioContractHost from './ScenarioContractHost.svelte';
 import { NEW_WORKSPACE_SCENARIOS, type Scenario } from './scenarios';
 
 const consoleErrors = new WeakMap<Page, string[]>();
+const axePath = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
+
+interface AxeViolation {
+  id: string;
+  impact: string | null;
+  nodes: { target: string[] }[];
+}
+
+async function expectNoSeriousAxeViolations(page: Page, scenarioId: string): Promise<void> {
+  await page.addScriptTag({ path: axePath });
+  const violations = await page.evaluate(async () => {
+    const axe = (
+      window as unknown as {
+        axe: {
+          run: (
+            context: Document,
+            options: { resultTypes: string[] },
+          ) => Promise<{ violations: AxeViolation[] }>;
+        };
+      }
+    ).axe;
+    return (await axe.run(document, { resultTypes: ['violations'] })).violations;
+  });
+  const impactCounts = violations.reduce<Record<string, number>>((counts, violation) => {
+    const impact = violation.impact ?? 'unknown';
+    counts[impact] = (counts[impact] ?? 0) + 1;
+    return counts;
+  }, {});
+  const blocking = violations
+    .filter((violation) => violation.impact === 'serious' || violation.impact === 'critical')
+    .map((violation) => ({
+      id: violation.id,
+      impact: violation.impact,
+      targets: violation.nodes.map((node) => node.target),
+    }));
+
+  expect(
+    blocking,
+    `Serious/critical axe violations in ${scenarioId}; all impact counts: ${JSON.stringify(impactCounts)}`,
+  ).toEqual([]);
+}
 
 test.beforeEach(({ page }) => {
   const errors: string[] = [];
@@ -100,6 +142,7 @@ test.describe('new-workspace scenario contracts', () => {
         .poll(() => component.evaluate((node) => node.getAnimations({ subtree: true }).length))
         .toBe(0);
       await expect(component).toHaveAttribute('data-capture-stable', 'true');
+      await expectNoSeriousAxeViolations(page, scenario.id);
     });
   }
 });
