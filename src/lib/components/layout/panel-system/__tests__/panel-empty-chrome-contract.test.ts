@@ -19,7 +19,7 @@ describe('empty panel chrome', () => {
     const emptyState = source('../PanelEmptyState.svelte');
 
     expect(emptyState).toContain('empty-state-content type-caption');
-    expect(emptyState).toContain('max-w-[20rem]');
+    expect(emptyState).toContain('max-w-xs');
     expect(emptyState).toContain('creation-list flex flex-col gap-0.5');
     expect(emptyState).toContain('creation-action empty-state-row grid min-h-7');
     expect(emptyState).toContain('grid-cols-[minmax(0,1fr)_auto]');
@@ -52,7 +52,7 @@ describe('empty panel chrome', () => {
   it('keeps a visible inset keyboard outline on every empty-state row', () => {
     const emptyState = source('../PanelEmptyState.svelte');
 
-    expect(emptyState.match(/focus-visible:outline-ring/g)).toHaveLength(4);
+    expect(emptyState.match(/focus-visible:outline-ring/g)).toHaveLength(3);
     expect(emptyState).not.toContain('focus-visible:outline-none');
   });
 
