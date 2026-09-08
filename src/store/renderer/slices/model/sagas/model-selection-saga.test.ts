@@ -212,9 +212,20 @@ describe('modelSelectionSaga', () => {
       'codex',
     ).toPromise();
     expect(result).toBe('persisted');
-    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      { type: 'settings/changesReceived', payload: [applied, 8] },
-    ]);
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith({
+      type: 'settings/changesReceived',
+      payload: [
+        expect.arrayContaining([
+          { path: 'model.defaultProvider', value: 'codex' },
+          {
+            path: 'model.providerDefaults',
+            value: { auggie: 'sonnet4.5', codex: 'gpt-5' },
+          },
+          ...applied,
+        ]),
+        8,
+      ],
+    });
   });
 
   it('serializes writes and retains only the latest queued snapshot', async () => {
