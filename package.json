@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.141.0",
+  "version": "2.144.2",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -67,10 +67,12 @@
     "lint:reducer-determinism": "node scripts/check-reducer-nondeterminism.mjs src/store",
     "lint:renderer-side-effect-boundaries": "node scripts/check-renderer-side-effect-boundaries.mjs",
     "lint:saga-watcher-ownership": "node scripts/check-saga-watcher-ownership.mjs",
+    "lint:browser-address-normalization": "node scripts/check-browser-address-normalization.mjs",
     "lint:agent-architecture": "node scripts/check-workspace-event-dispatchers.mjs src/features/agent && node scripts/check-workspace-event-dispatchers.mjs src/features/mcp && node scripts/check-workspace-event-dispatchers.mjs src/store/main/slices/agent-subscriptions && pnpm run lint:reducer-determinism && pnpm run type-check:validate",
-    "validate:architecture": "pnpm run lint:agent-architecture && pnpm run lint:selector-active-workspace && pnpm run lint:redux-collections && pnpm run lint:renderer-side-effect-boundaries && pnpm run lint:saga-watcher-ownership",
+    "validate:architecture": "pnpm run lint:agent-architecture && pnpm run lint:selector-active-workspace && pnpm run lint:redux-collections && pnpm run lint:renderer-side-effect-boundaries && pnpm run lint:saga-watcher-ownership && pnpm run lint:browser-address-normalization && pnpm run test:ui-invariants",
     "test": "pnpm run test:unit && pnpm run test:integration && pnpm run test:playwright",
     "test:unit": "vitest run --config vitest.config.ts",
+    "test:ui-invariants": "node scripts/ui-invariant-suites.mjs",
     "test:unit:watch": "vitest",
     "test:playwright": "pnpm exec playwright test",
     "test:playwright:manual:catalog": "pnpm exec playwright test --config=playwright.manual.config.ts test/catalog-manual-review.capture.spec.ts",
@@ -205,7 +207,7 @@
     "@redux-saga/types": "1.4.1",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.70.3",
-    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/typography": "^0.5.20",
     "@testing-library/svelte": "^5.4.2",
@@ -295,7 +297,7 @@
     "typescript": "~6.0.3",
     "vite": "^6.4.3",
     "vitest": "^4.1.11",
-    "wait-on": "^8.0.1"
+    "wait-on": "^9.1.0"
   },
   "dependencies": {
     "@augmentcode/themis": "0.2.5",

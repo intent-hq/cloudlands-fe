@@ -114,8 +114,46 @@ describe('verification planning', () => {
       'prettier',
       'eslint',
       'vitest-related',
+      'vitest-ui-invariants',
       'tsc-renderer',
     ]);
+  });
+
+  it('runs the repo-wide UI invariant suites for renderer source changes', () => {
+    const root = fixtureRoot({
+      'src/features/example/Example.svelte': '<button />',
+      'src/features/example/main/status.ts': '',
+    });
+    const rendererPlan = createVerificationPlan(['src/features/example/Example.svelte'], {
+      root,
+      ctTests: [],
+    });
+    const uiInvariants = rendererPlan.checks.find((check) => check.id === 'vitest-ui-invariants');
+    expect(uiInvariants?.args).toEqual(['run', 'test:ui-invariants']);
+    expect(uiInvariants?.lockKind).toBeNull();
+
+    const mainPlan = createVerificationPlan(['src/features/example/main/status.ts'], {
+      root,
+      ctTests: [],
+    });
+    expect(mainPlan.checks.map((check) => check.id)).not.toContain('vitest-ui-invariants');
+  });
+
+  it('runs the repo-wide UI invariant suites for renderer stylesheet changes', () => {
+    const root = fixtureRoot({
+      'src/lib/styles/tokens.css': ':root { --color: red; }',
+    });
+    const existingPlan = createVerificationPlan(['src/lib/styles/tokens.css'], {
+      root,
+      ctTests: [],
+    });
+    expect(existingPlan.checks.map((check) => check.id)).toContain('vitest-ui-invariants');
+
+    const deletedPlan = createVerificationPlan(['src/lib/styles/removed.css'], {
+      root,
+      ctTests: [],
+    });
+    expect(deletedPlan.checks.map((check) => check.id)).toContain('vitest-ui-invariants');
   });
 
   it('selects a component test that directly imports a changed Svelte component', () => {
@@ -168,6 +206,7 @@ describe('verification planning', () => {
     expect(ids).toContain('tsc-main');
     expect(ids).toContain('tsc-preload');
     expect(ids).not.toContain('tsc-renderer');
+    expect(ids).not.toContain('vitest-ui-invariants');
   });
 
   it('checks all process boundaries for shared source', () => {

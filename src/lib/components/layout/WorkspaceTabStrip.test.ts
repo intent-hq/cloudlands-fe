@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
 import { m } from '$shared/paraglide/messages.js';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { tick } from 'svelte';
+import { flushSync, tick } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
 import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
 import { workspaceHoverCardIntentSession } from '$lib/components/workspace/utils/workspace-hover-card-intent';
@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   goto: vi.fn(() => Promise.resolve()),
   nextCurrentId: 'ws-2' as string | null,
   tabOrder: ['ws-1', 'ws-2', 'ws-3'] as string[],
+  tabOrderListeners: new Set<(order: string[]) => void>(),
   stateListeners: new Set<(state: unknown) => void>(),
   loadedWorkspaceIds: new Set<string>(),
   tabStatuses: {} as Record<string, WorkspaceTabStatus>,
@@ -50,9 +51,16 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectCurrentWorkspaceTabId: Object.assign(() => readable('ws-1'), {
     select: () => mocks.nextCurrentId,
   }),
-  selectWorkspaceTabOrder: Object.assign(() => readable(mocks.tabOrder), {
-    select: () => mocks.tabOrder,
-  }),
+  selectWorkspaceTabOrder: Object.assign(
+    () => ({
+      subscribe(run: (order: string[]) => void) {
+        mocks.tabOrderListeners.add(run);
+        run(mocks.tabOrder);
+        return () => mocks.tabOrderListeners.delete(run);
+      },
+    }),
+    { select: () => mocks.tabOrder },
+  ),
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: () =>
@@ -125,6 +133,12 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
+import WorkspaceTabStripTeardownHarness from './__tests__/mocks/WorkspaceTabStripTeardownHarness.svelte';
+
+function emitTabOrder(order: string[]) {
+  mocks.tabOrder = order;
+  mocks.tabOrderListeners.forEach((listener) => listener(order));
+}
 
 function makeRect(left: number, top = 20, width = 160, height = 32): DOMRect {
   return {
@@ -189,6 +203,7 @@ describe('WorkspaceTabStrip', () => {
     mocks.dispatch.mockClear();
     mocks.goto.mockClear();
     mocks.stateListeners.clear();
+    mocks.tabOrderListeners.clear();
     mocks.nextCurrentId = 'ws-2';
     mocks.tabOrder = ['ws-1', 'ws-2', 'ws-3'];
     mocks.dispatch.mockImplementation((action: { type?: string; payload?: unknown[] }) => {
@@ -749,6 +764,103 @@ describe('WorkspaceTabStrip', () => {
       left: 100,
       width: 160,
       fadeRight: { start: 476, end: 500 },
+    });
+  });
+
+  describe('parent effects flushed from teardown paths', () => {
+    let defaultMatchMedia: (query: string) => MediaQueryList;
+    let getAnimations: typeof Element.prototype.getAnimations;
+
+    beforeEach(() => {
+      const matchMedia = vi.mocked(window.matchMedia);
+      defaultMatchMedia = matchMedia.getMockImplementation()!;
+      matchMedia.mockImplementation((query) => ({
+        ...defaultMatchMedia(query),
+        matches: query.includes('prefers-reduced-motion'),
+      }));
+      getAnimations = Element.prototype.getAnimations;
+      Element.prototype.getAnimations = () => [];
+    });
+
+    afterEach(() => {
+      vi.mocked(window.matchMedia).mockImplementation(defaultMatchMedia);
+      Element.prototype.getAnimations = getAnimations;
+    });
+
+    function renderHarness(siblingGate: 'bounds-cleared' | 'tracking-idle') {
+      const errors: unknown[] = [];
+      const onProbeMounted = vi.fn();
+      const view = render(WorkspaceTabStripTeardownHarness, {
+        props: {
+          activeWorkspaceId: 'ws-1',
+          siblingGate,
+          onError: (error) => errors.push(error),
+          onProbeMounted,
+        },
+      });
+      const strip = screen.getByRole('tablist', {
+        name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
+      });
+      strip.getBoundingClientRect = () => makeRect(0, 20, 500);
+      setTabGeometry();
+      return { ...view, errors, onProbeMounted };
+    }
+
+    function expectSiblingMounted(container: HTMLElement, errors: unknown[]) {
+      expect(errors).toEqual([]);
+      expect(container.querySelector('[data-teardown-boundary-failed]')).toBeNull();
+      expect(container.querySelector('[data-teardown-effect-probe="true"]')).toBeTruthy();
+    }
+
+    it('mounts a sibling that depends on the cleared bounds when the active tab is removed', async () => {
+      const { component, container, errors, onProbeMounted } = renderHarness('bounds-cleared');
+      flushSync(() => component.update({ horizontalPositionTrackingKey: 1 }));
+      expect(container.querySelector('[data-active-tab-bounds="set"]')).toBeTruthy();
+      flushSync(() => component.update({ showSibling: true }));
+      expect(onProbeMounted).not.toHaveBeenCalled();
+
+      try {
+        flushSync(() => emitTabOrder(['ws-2', 'ws-3']));
+      } catch (error) {
+        errors.push(error);
+      }
+      await tick();
+
+      expectSiblingMounted(container, errors);
+      expect(onProbeMounted).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[data-active-tab-bounds="none"]')).toBeTruthy();
+      expect(renderedTabOrder()).toEqual(['ws-2', 'ws-3']);
+    });
+
+    it('mounts a sibling that depends on idle tracking only after a restarted tracking motion settles', async () => {
+      const frames: FrameRequestCallback[] = [];
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      const { component, container, errors, onProbeMounted } = renderHarness('tracking-idle');
+      flushSync(() => component.update({ horizontalPositionTrackingKey: 1 }));
+      expect(container.querySelector('[data-active-tab-tracking="true"]')).toBeTruthy();
+      flushSync(() => component.update({ showSibling: true }));
+      expect(onProbeMounted).not.toHaveBeenCalled();
+
+      try {
+        flushSync(() => component.update({ horizontalPositionTrackingKey: 2 }));
+      } catch (error) {
+        errors.push(error);
+      }
+      await tick();
+
+      expect(errors).toEqual([]);
+      expect(container.querySelector('[data-teardown-boundary-failed]')).toBeNull();
+      expect(container.querySelector('[data-active-tab-tracking="true"]')).toBeTruthy();
+      expect(container.querySelector('[data-teardown-effect-probe]')).toBeNull();
+
+      frames.at(-1)!(10_000);
+      await tick();
+
+      expectSiblingMounted(container, errors);
+      expect(container.querySelector('[data-active-tab-tracking="false"]')).toBeTruthy();
     });
   });
 

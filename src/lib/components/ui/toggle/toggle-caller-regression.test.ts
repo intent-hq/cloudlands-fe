@@ -1,4 +1,5 @@
 // @vitest-environment node
+// @ui-invariant
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';

@@ -62,6 +62,26 @@ describe('LiveModelsClient (fake transport)', () => {
     ]);
   });
 
+  it('requests and maps the explicitly scoped provider catalog', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      providerId: 'codex',
+      source: 'static',
+      models: [{ id: 'gpt-6-astra', name: 'Codex Astra', isDefault: true }],
+    });
+    expect(await new LiveModelsClient().list('codex')).toEqual([
+      { value: 'gpt-6-astra', label: 'Codex Astra', isDefault: true },
+    ]);
+    expect(mockedRequest).toHaveBeenCalledWith('models.list', { providerId: 'codex' });
+  });
+
+  it.each([undefined, 'auggie'])(
+    'does not attribute a reply from %s to Codex',
+    async (providerId) => {
+      mockedRequest.mockResolvedValueOnce({ providerId, models: [SONNET_ROW], source: 'auggie' });
+      expect(await new LiveModelsClient().list('codex')).toEqual([]);
+    },
+  );
+
   it('omits optional metadata that the wire row does not carry', async () => {
     mockedRequest.mockResolvedValueOnce({
       models: [{ id: 'haiku', name: 'Haiku', provider: 'auggie' }],
