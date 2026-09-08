@@ -43,6 +43,16 @@ describe('Select', () => {
     expect(document.activeElement).toBe(trigger);
   });
 
+  it('honours a consumer trigger id for external labels and listbox labelling', async () => {
+    render(SelectHarness, { props: { consumerId: 'fruit-select' } });
+    const trigger = screen.getByLabelText('Fruit');
+    expect(trigger.id).toBe('fruit-select');
+
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    const listbox = screen.getByRole('listbox', { name: 'Fruit' });
+    expect(listbox.getAttribute('aria-labelledby')).toBe('fruit-select');
+  });
+
   it('supports closed-state typeahead and controlled invalid/disabled states', async () => {
     const { unmount } = render(SelectHarness, { props: { invalid: true } });
     const trigger = screen.getByRole('button', { name: 'Choose fruit' });

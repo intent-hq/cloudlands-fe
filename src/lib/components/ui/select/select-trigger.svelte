@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getContext } from 'svelte';
+  import { getContext, untrack } from 'svelte';
   import { Select as SelectPrimitive } from 'bits-ui';
   import Fa from 'svelte-fa';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
@@ -17,6 +17,7 @@
     children,
     child,
     onclick,
+    id,
     ...restProps
   }: Props = $props();
 
@@ -24,8 +25,11 @@
     invalid: boolean;
     open: boolean;
     triggerId: string;
+    registerTriggerId: (id?: string) => void;
     listboxId: string;
   }>('canonical-select');
+  untrack(() => select.registerTriggerId(id));
+  $effect(() => select.registerTriggerId(id));
   const variantClasses = {
     default:
       'border border-border bg-transparent shadow-none hover:border-input hover:bg-hover px-3',

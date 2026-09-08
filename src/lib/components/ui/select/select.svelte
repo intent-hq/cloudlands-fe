@@ -3,6 +3,8 @@
   import { Select as SelectPrimitive } from 'bits-ui';
 
   const uid = $props.id();
+  const fallbackTriggerId = `${uid}-trigger`;
+  let triggerId = $state(fallbackTriggerId);
 
   interface SelectItemData {
     value: string;
@@ -39,7 +41,12 @@
   }: Props = $props();
 
   setContext('canonical-select', {
-    triggerId: `${uid}-trigger`,
+    get triggerId() {
+      return triggerId;
+    },
+    registerTriggerId(id?: string) {
+      triggerId = id ?? fallbackTriggerId;
+    },
     listboxId: `${uid}-listbox`,
     get value() {
       return value;
