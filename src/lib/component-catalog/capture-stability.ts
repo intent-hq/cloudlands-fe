@@ -3,6 +3,7 @@ import { shouldReduceMotion } from '$lib/utils/motion-preference';
 const DEFAULT_CAPTURE_STABILITY_TIMEOUT_MS = 5_000;
 
 export interface CaptureStabilityOptions {
+  readinessSelector?: string;
   signal?: AbortSignal;
   timeoutMs?: number;
 }
@@ -42,6 +43,34 @@ function raceWithAbort<T>(promise: PromiseLike<T>, signal: AbortSignal): Promise
         reject(error);
       },
     );
+  });
+}
+
+function waitForReadinessSelector(
+  root: HTMLElement,
+  selector: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (signal?.aborted) return Promise.reject(abortError());
+  const isReady = () => root.matches(selector) || Boolean(root.querySelector(selector));
+  if (isReady()) return Promise.resolve();
+
+  return new Promise<void>((resolve, reject) => {
+    const observer = new MutationObserver(() => {
+      if (!isReady()) return;
+      cleanup();
+      resolve();
+    });
+    const onAbort = () => {
+      cleanup();
+      reject(abortError());
+    };
+    const cleanup = () => {
+      observer.disconnect();
+      signal?.removeEventListener('abort', onAbort);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    observer.observe(root, { attributes: true, childList: true, subtree: true });
   });
 }
 
@@ -116,6 +145,9 @@ export async function waitForCaptureStability(
   root: HTMLElement,
   options: CaptureStabilityOptions = {},
 ): Promise<CaptureStabilityResult> {
+  if (options.readinessSelector) {
+    await waitForReadinessSelector(root, options.readinessSelector, options.signal);
+  }
   const timeoutMs = options.timeoutMs ?? DEFAULT_CAPTURE_STABILITY_TIMEOUT_MS;
   const controller = new AbortController();
   let timedOut = false;

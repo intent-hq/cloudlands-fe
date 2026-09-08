@@ -149,6 +149,7 @@
       try {
         if (!sceneElement) throw new Error('Preview scene element is unavailable.');
         const stability = await waitForCaptureStability(sceneElement, {
+          readinessSelector: loaded.definition.captureReadySelector,
           signal: stabilityController.signal,
         });
         if (cancelled) return;

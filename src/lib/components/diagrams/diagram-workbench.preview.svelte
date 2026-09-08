@@ -19,6 +19,7 @@
       return m.sandbox_diagramWorkbench_title();
     },
     defaultState: 'mermaid-flow',
+    captureReadySelector: '[data-diagram-workbench-ready="true"]',
     states: Object.fromEntries(
       Object.entries(DIAGRAM_WORKBENCH_CASES).map(([name, fixture]) => [
         name,

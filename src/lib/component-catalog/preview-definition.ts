@@ -12,6 +12,7 @@ export interface PreviewDefinition<Props> {
   title: string;
   defaultState: string;
   states: Record<string, PreviewState<Props>>;
+  captureReadySelector?: string;
 }
 
 export interface LoadedPreview {

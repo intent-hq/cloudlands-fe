@@ -84,6 +84,7 @@ describe('CatalogScene', () => {
       definition: {
         ...buttonPreview,
         id: 'diagram-workbench',
+        captureReadySelector: '[data-testid="catalog-scene"]',
       },
     });
     render(CatalogScene, {
@@ -99,6 +100,10 @@ describe('CatalogScene', () => {
     expect(screen.getByTestId('catalog-scene').classList).toContain('workbench-scene');
     expect(screen.getByTestId('catalog-scene-focus').classList).toContain('workbench-focus');
     expect(screen.getByTestId('catalog-scene-focus').style.width).toBe('min(100%, 420px)');
+    expect(mocks.waitForCaptureStability).toHaveBeenCalledWith(
+      screen.getByTestId('catalog-scene'),
+      expect.objectContaining({ readinessSelector: '[data-testid="catalog-scene"]' }),
+    );
   });
 
   it('renders every state in declaration order and publishes all-states readiness', async () => {

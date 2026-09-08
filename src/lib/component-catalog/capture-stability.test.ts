@@ -49,6 +49,26 @@ afterEach(() => {
 });
 
 describe('waitForCaptureStability', () => {
+  it('starts the stability budget after declared preview content is ready', async () => {
+    setFonts(Promise.resolve());
+    useTimerFrames();
+    const root = document.createElement('div');
+    const content = document.createElement('div');
+    content.dataset.captureReady = 'false';
+    root.append(content);
+
+    const stability = waitForCaptureStability(root, {
+      readinessSelector: '[data-capture-ready="true"]',
+      timeoutMs: 1_000,
+    });
+    await Promise.resolve();
+    expect(window.requestAnimationFrame).not.toHaveBeenCalled();
+
+    content.dataset.captureReady = 'true';
+    await expect(stability).resolves.toEqual({ imageCount: 0, reducedMotion: false });
+    expect(window.requestAnimationFrame).toHaveBeenCalledTimes(2);
+  });
+
   it('waits for fonts, images, reduced-motion styles, and two settled frames', async () => {
     const fonts = deferred<void>();
     setFonts(fonts.promise);
