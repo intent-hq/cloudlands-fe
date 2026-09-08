@@ -1,5 +1,6 @@
 import { cleanup, render } from '@testing-library/svelte';
-import { afterEach, describe, expect, it } from 'vitest';
+import { tick } from 'svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import GraphHullLayer from '../GraphHullLayer.svelte';
 import { deriveTaskHullMemberships } from '../graph-helpers';
 import type { AgentNode, GraphEdge, GraphNode, TaskNode } from '../types';
@@ -55,7 +56,19 @@ function positions(nodes: GraphNode[]): Map<string, { x: number; y: number }> {
   return new Map(nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+function useMotionPreference(reduced: boolean): void {
+  vi.spyOn(window, 'matchMedia').mockReturnValue({
+    matches: reduced,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  } as unknown as MediaQueryList);
+}
 
 describe('GraphHullLayer', () => {
   it('renders one hull per assigned task and none for an unassigned task', () => {
@@ -133,5 +146,115 @@ describe('GraphHullLayer', () => {
     expect(container.querySelector('[data-task-id="task:two"]')?.getAttribute('data-dimmed')).toBe(
       'true',
     );
+  });
+
+  it('keeps both fills mounted together until the shared hull outro completes', async () => {
+    useMotionPreference(false);
+    vi.useFakeTimers();
+    const nodes = [task('one'), agent('one')];
+    const view = render(GraphHullLayer, {
+      intro: false,
+      props: {
+        nodes,
+        memberships: deriveTaskHullMemberships(nodes, [assignment('one', 'one')]),
+        positions: positions(nodes),
+      },
+    });
+
+    await view.rerender({ nodes, memberships: [], positions: positions(nodes) });
+    const hull = view.container.querySelector('[data-task-id="task:one"]');
+    expect(hull?.parentElement?.querySelectorAll('path')).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(220);
+    await tick();
+    expect(view.container.querySelector('[data-task-id="task:one"]')).toBeNull();
+  });
+
+  it('morphs membership changes to settled geometry without scheduling settled frames', async () => {
+    useMotionPreference(false);
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const pendingFrames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 1;
+    const requestFrame = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback) => {
+        const id = nextFrame++;
+        pendingFrames.set(id, callback);
+        return id;
+      });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(
+      (id) => void pendingFrames.delete(id),
+    );
+    const initialNodes = [task('one'), agent('one')];
+    const view = render(GraphHullLayer, {
+      intro: false,
+      props: {
+        nodes: initialNodes,
+        memberships: deriveTaskHullMemberships(initialNodes, [assignment('one', 'one')]),
+        positions: positions(initialNodes),
+      },
+    });
+    await tick();
+    expect(requestFrame).not.toHaveBeenCalled();
+    const initialPath = view.container
+      .querySelector('[data-task-id="task:one"]')
+      ?.getAttribute('d');
+
+    const nextNodes = [task('one'), agent('one'), { ...agent('two'), x: 420, y: 180 }];
+    await view.rerender({
+      nodes: nextNodes,
+      memberships: deriveTaskHullMemberships(nextNodes, [
+        assignment('one', 'one'),
+        assignment('two', 'one'),
+      ]),
+      positions: positions(nextNodes),
+    });
+    await tick();
+    expect(pendingFrames.size).toBe(1);
+    expect(view.container.querySelector('[data-task-id="task:one"]')?.getAttribute('d')).toBe(
+      initialPath,
+    );
+
+    const callbacks = [...pendingFrames.values()];
+    pendingFrames.clear();
+    callbacks.forEach((callback) => callback(300));
+    const settledPath = view.container
+      .querySelector('[data-task-id="task:one"]')
+      ?.getAttribute('d');
+    expect(settledPath).not.toBe(initialPath);
+    expect(pendingFrames.size).toBe(0);
+  });
+
+  it('snaps reshape geometry without scheduling frames under reduced motion', async () => {
+    useMotionPreference(true);
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame');
+    const initialNodes = [task('one'), agent('one')];
+    const view = render(GraphHullLayer, {
+      intro: false,
+      props: {
+        nodes: initialNodes,
+        memberships: deriveTaskHullMemberships(initialNodes, [assignment('one', 'one')]),
+        positions: positions(initialNodes),
+      },
+    });
+    await tick();
+    const initialPath = view.container
+      .querySelector('[data-task-id="task:one"]')
+      ?.getAttribute('d');
+
+    const nextNodes = [task('one'), agent('one'), { ...agent('two'), x: 420, y: 180 }];
+    await view.rerender({
+      nodes: nextNodes,
+      memberships: deriveTaskHullMemberships(nextNodes, [
+        assignment('one', 'one'),
+        assignment('two', 'one'),
+      ]),
+      positions: positions(nextNodes),
+    });
+    await tick();
+
+    expect(view.container.querySelector('[data-task-id="task:one"]')?.getAttribute('d')).not.toBe(
+      initialPath,
+    );
+    expect(requestFrame).not.toHaveBeenCalled();
   });
 });

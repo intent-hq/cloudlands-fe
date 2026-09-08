@@ -1,11 +1,19 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { GRAPH_NODE_DIMENSIONS } from './constants';
   import type { TaskHullMembership } from './graph-helpers';
   import {
+    activityHullTransition,
+    activityMotion,
+    nodeEnterDelay,
+    playbackDuration,
+  } from './activity-motion';
+  import {
     HULL_FILL_OPACITIES,
+    interpolateHullMembers,
     paddedHull,
     smoothClosedHullPath,
-    type HullMember,
+    type KeyedHullMember,
   } from './hull-geometry';
   import type { GraphNode } from './types';
 
@@ -20,6 +28,7 @@
     positions: Map<string, Position>;
     focusNodeId?: string | null;
     spotlightNodeId?: string | null;
+    playbackSpeed?: number;
   }
 
   let {
@@ -28,23 +37,31 @@
     positions,
     focusNodeId = null,
     spotlightNodeId = null,
+    playbackSpeed = 1,
   }: Props = $props();
 
   const nodeById = $derived(new Map(nodes.map((node) => [node.id, node])));
   const activeFocusNodeId = $derived(focusNodeId ?? spotlightNodeId);
   const hullPaths = new Map<string, { main?: SVGPathElement; soft?: SVGPathElement }>();
+  const renderedMembers = new Map<string, KeyedHullMember[]>();
+  const previousMemberIds = new Map<string, string[]>();
+  const morphs = new Map<string, { from: KeyedHullMember[]; startedAt: number }>();
+  let currentPositions = new Map<string, Position>();
+  let morphFrame: number | null = null;
+  let motionEnabled = $state(true);
 
   function memberGeometry(
     group: TaskHullMembership,
     currentPositions: Map<string, Position>,
-  ): HullMember[] | null {
-    const members: HullMember[] = [];
+  ): KeyedHullMember[] | null {
+    const members: KeyedHullMember[] = [];
     for (const id of group.memberIds) {
       const node = nodeById.get(id);
       if (!node) return null;
       const position = currentPositions.get(id) ?? node;
       const dimensions = GRAPH_NODE_DIMENSIONS[node.type];
       members.push({
+        id,
         ...position,
         radius: Math.hypot(dimensions.width, dimensions.height) / 2,
       });
@@ -59,6 +76,93 @@
       soft: members ? smoothClosedHullPath(paddedHull(members, 25)) : null,
     };
   }
+
+  function sameMembers(left: string[] | undefined, right: string[]): boolean {
+    return left?.length === right.length && left.every((id, index) => id === right[index]);
+  }
+
+  function reshapeEnabled(): boolean {
+    return (
+      motionEnabled && !(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
+    );
+  }
+
+  function drawHull(group: TaskHullMembership, now: number): void {
+    const target = memberGeometry(group, currentPositions);
+    if (!target) {
+      morphs.delete(group.taskId);
+      return;
+    }
+    const morph = morphs.get(group.taskId);
+    let members = target;
+    if (morph) {
+      const anchor = target.find((member) => member.id === group.taskId) ?? target[0];
+      const progress = (now - morph.startedAt) / playbackDuration(300, playbackSpeed);
+      members = interpolateHullMembers(morph.from, target, anchor, progress);
+      if (progress >= 1) morphs.delete(group.taskId);
+    }
+    renderedMembers.set(group.taskId, members);
+    const elements = hullPaths.get(group.taskId);
+    elements?.main?.setAttribute('d', smoothClosedHullPath(paddedHull(members)) ?? '');
+    elements?.soft?.setAttribute('d', smoothClosedHullPath(paddedHull(members, 25)) ?? '');
+  }
+
+  function scheduleMorphFrame(): void {
+    if (morphFrame !== null || morphs.size === 0) return;
+    morphFrame = requestAnimationFrame((now) => {
+      morphFrame = null;
+      for (const group of memberships) drawHull(group, now);
+      scheduleMorphFrame();
+    });
+  }
+
+  function hullLayerMotion(element: SVGSVGElement) {
+    const motion = activityMotion(element);
+    const syncMotion = () => {
+      motionEnabled = element.dataset.motionEnabled !== 'false';
+    };
+    const observer = new MutationObserver(syncMotion);
+    observer.observe(element, { attributeFilter: ['data-motion-enabled'] });
+    syncMotion();
+    return {
+      destroy() {
+        observer.disconnect();
+        motion?.destroy?.();
+      },
+    };
+  }
+
+  $effect(() => {
+    currentPositions = positions;
+  });
+
+  $effect(() => {
+    const activeTaskIds = new Set(memberships.map((group) => group.taskId));
+    for (const group of memberships) {
+      const target = memberGeometry(group, currentPositions);
+      if (!target) continue;
+      const previousIds = previousMemberIds.get(group.taskId);
+      const changed = previousIds !== undefined && !sameMembers(previousIds, group.memberIds);
+      if (changed && reshapeEnabled()) {
+        morphs.set(group.taskId, {
+          from: renderedMembers.get(group.taskId) ?? target,
+          startedAt: performance.now(),
+        });
+      } else if (!morphs.has(group.taskId) || !reshapeEnabled()) {
+        morphs.delete(group.taskId);
+        renderedMembers.set(group.taskId, target);
+      }
+      previousMemberIds.set(group.taskId, [...group.memberIds]);
+      drawHull(group, performance.now());
+    }
+    for (const taskId of previousMemberIds.keys()) {
+      if (activeTaskIds.has(taskId)) continue;
+      previousMemberIds.delete(taskId);
+      renderedMembers.delete(taskId);
+      morphs.delete(taskId);
+    }
+    scheduleMorphFrame();
+  });
 
   function registerHullPath(
     element: SVGPathElement,
@@ -87,14 +191,16 @@
     };
   }
 
-  export function updatePositions(currentPositions: Map<string, Position>): void {
+  export function updatePositions(latestPositions: Map<string, Position>): void {
+    currentPositions = latestPositions;
     for (const group of memberships) {
-      const paths = pathsFor(group, currentPositions);
-      const elements = hullPaths.get(group.taskId);
-      elements?.main?.setAttribute('d', paths.main ?? '');
-      elements?.soft?.setAttribute('d', paths.soft ?? '');
+      drawHull(group, performance.now());
     }
   }
+
+  onDestroy(() => {
+    if (morphFrame !== null) cancelAnimationFrame(morphFrame);
+  });
 
   function containsFocus(group: TaskHullMembership): boolean {
     return activeFocusNodeId !== null && group.memberIds.includes(activeFocusNodeId);
@@ -118,28 +224,57 @@
 </script>
 
 <svg
+  use:hullLayerMotion
   class="hull-layer pointer-events-none absolute inset-0 h-full w-full overflow-visible"
   aria-hidden="true"
 >
   {#each memberships as group (group.taskId)}
     {@const paths = pathsFor(group, positions)}
-    <path
-      use:registerHullPath={{ taskId: group.taskId, kind: 'soft' }}
-      class="task-hull-softener task-hull-fill"
-      d={paths.soft ?? ''}
-      fill="var(--color-foreground)"
-      fill-opacity={fillOpacity(group) * HULL_FILL_OPACITIES.softenerRatio}
-    />
-    <path
-      use:registerHullPath={{ taskId: group.taskId, kind: 'main' }}
-      class="task-hull task-hull-fill"
-      d={paths.main ?? ''}
-      fill="var(--color-foreground)"
-      fill-opacity={fillOpacity(group)}
-      data-task-id={group.taskId}
-      data-working={isWorking(group)}
-      data-highlighted={containsFocus(group)}
-      data-dimmed={activeFocusNodeId !== null && !containsFocus(group)}
-    />
+    {@const taskIndex = nodes.findIndex((node) => node.id === group.taskId)}
+    <g
+      class="task-hull-shape"
+      in:activityHullTransition={{
+        delay: nodeEnterDelay(Math.max(0, taskIndex) + 1, playbackSpeed),
+        playbackSpeed,
+      }}
+      out:activityHullTransition={{ exit: true, playbackSpeed }}
+    >
+      <path
+        use:registerHullPath={{ taskId: group.taskId, kind: 'soft' }}
+        class="task-hull-softener task-hull-fill"
+        d={paths.soft ?? ''}
+        fill="var(--color-foreground)"
+        fill-opacity={fillOpacity(group) * HULL_FILL_OPACITIES.softenerRatio}
+      />
+      <path
+        use:registerHullPath={{ taskId: group.taskId, kind: 'main' }}
+        class="task-hull task-hull-fill"
+        d={paths.main ?? ''}
+        fill="var(--color-foreground)"
+        fill-opacity={fillOpacity(group)}
+        data-task-id={group.taskId}
+        data-working={isWorking(group)}
+        data-highlighted={containsFocus(group)}
+        data-dimmed={activeFocusNodeId !== null && !containsFocus(group)}
+      />
+    </g>
   {/each}
 </svg>
+
+<style>
+  .task-hull-shape {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .task-hull-fill {
+    transition: fill-opacity 200ms ease;
+  }
+  :global(.hull-layer[data-motion-enabled='false']) .task-hull-fill {
+    transition: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .task-hull-fill {
+      transition: none;
+    }
+  }
+</style>

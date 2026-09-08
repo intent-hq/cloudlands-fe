@@ -783,6 +783,7 @@
         nodes={visibleGraph.nodes}
         positions={latestPositions.current}
         {focusNodeId}
+        {playbackSpeed}
       />
       <GraphEdgeLayer
         bind:this={edgeLayer}

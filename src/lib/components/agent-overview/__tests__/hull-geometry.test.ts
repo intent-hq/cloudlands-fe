@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   HULL_FILL_OPACITIES,
   HULL_PADDING,
+  interpolateHullMembers,
   paddedHull,
   smoothClosedHullPath,
   type HullMember,
@@ -73,5 +74,21 @@ describe('task hull geometry', () => {
 
     expect(path).toMatch(/^M/);
     expect(path).toMatch(/Z$/);
+  });
+
+  it('grows joining members from and shrinks leaving members toward the task anchor', () => {
+    const anchor = { x: 0, y: 0 };
+    const task = { id: 'task', ...anchor, radius: 10 };
+    const leaving = { id: 'leaving', x: 20, y: 0, radius: 4 };
+    const joining = { id: 'joining', x: 40, y: 0, radius: 8 };
+
+    const start = interpolateHullMembers([task, leaving], [task, joining], anchor, 0);
+    const midpoint = interpolateHullMembers([task, leaving], [task, joining], anchor, 0.5);
+    const end = interpolateHullMembers([task, leaving], [task, joining], anchor, 1);
+
+    expect(start.find((member) => member.id === 'joining')).toMatchObject({ x: 0, radius: 0 });
+    expect(midpoint.find((member) => member.id === 'joining')).toMatchObject({ x: 20, radius: 4 });
+    expect(midpoint.find((member) => member.id === 'leaving')).toMatchObject({ x: 10, radius: 2 });
+    expect(end).toEqual([task, joining]);
   });
 });

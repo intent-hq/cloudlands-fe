@@ -145,6 +145,25 @@ export function activityNodeTransition(
   };
 }
 
+export function activityHullTransition(
+  node: Element,
+  { delay = 0, exit = false, playbackSpeed = 1 }: NodeTransitionParams = {},
+): TransitionConfig {
+  const reduced =
+    (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false) ||
+    node.closest('[data-motion-enabled="false"]') !== null;
+  if (reduced) {
+    return { delay: exit ? 0 : delay, duration: 140, css: (t) => `opacity: ${t}` };
+  }
+  return {
+    delay: exit ? 0 : delay,
+    duration: playbackDuration(exit ? 200 : 320, playbackSpeed),
+    easing: exit ? cubicIn : backOut,
+    css: (t) =>
+      `opacity: ${Math.min(1, Math.max(0, t))}; transform: scale(${exit ? 0.72 + t * 0.28 : 0.6 + t * 0.4})`,
+  };
+}
+
 export const writePulse: Action<HTMLElement, WritePulseParams> = (element, initial) => {
   let previousTimestamp: string | undefined;
   let nudgeAnimation: Animation | undefined;
