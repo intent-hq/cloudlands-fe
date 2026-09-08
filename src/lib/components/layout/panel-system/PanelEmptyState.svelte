@@ -190,6 +190,29 @@
   const reopenTabShortcut$ = effectiveShortcutReadable('navigation.reopen-tab');
   const toggleSidebarShortcut$ = effectiveShortcutReadable('panel.toggle-sidebar');
   const keyboardShortcutsShortcut$ = effectiveShortcutReadable('global.keyboard-shortcuts');
+  const recentRows = $derived([
+    {
+      id: 'reopen-latest',
+      label: m.layout_panelEmptyState_reopenLastClosed_label(),
+      shortcut: $reopenTabShortcut$,
+      icon: undefined,
+      onSelect: handleReopenLatest,
+      title: m.layout_panelEmptyState_reopenLastClosed_label(),
+      isUtility: true,
+    },
+    ...recentItems.map((item) => {
+      const label = getTabTitle(item.tab);
+      return {
+        id: `${item.tab.id}-${item.closedAt}`,
+        label,
+        shortcut: undefined,
+        icon: getTabIcon(item.tab.type),
+        onSelect: () => handleReopenItem(item.tab.id),
+        title: m.layout_panelEmptyState_reopen_tooltip({ title: label }),
+        isUtility: false,
+      };
+    }),
+  ]);
   const utilityActions = $derived([
     {
       key: $newPanelShortcut$,
@@ -224,7 +247,7 @@
   data-panel-empty-state
 >
   <section
-    class="empty-state-content type-caption min-w-0 w-full max-w-[20rem]"
+    class="empty-state-content type-caption min-w-0 w-full max-w-xs"
     aria-label={m.layout_panelEmptyState_createInEmptyPanel_ariaLabel()}
   >
     <div class="creation-list flex flex-col gap-0.5">
@@ -254,31 +277,31 @@
 
     {#if recentItems.length > 0}
       <div class="recent-list mt-5 flex flex-col gap-0.5">
-        <button
-          class="reopen-hint empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
-          onclick={handleReopenLatest}
-          title={m.layout_panelEmptyState_reopenLastClosed_label()}
-        >
-          <span class="min-w-0 truncate">{m.layout_panelEmptyState_reopenLastClosed_label()}</span>
-          <kbd
-            class="shortcut-key shrink-0 justify-self-end whitespace-nowrap text-right text-muted-foreground"
-          >
-            {formatShortcut($reopenTabShortcut$)}
-          </kbd>
-        </button>
-        {#each recentItems as item (item.tab.id + '-' + item.closedAt)}
-          {@const tabTitle = getTabTitle(item.tab)}
+        {#each recentRows as row (row.id)}
           <button
-            class="recent-item empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center px-2 py-1 text-left font-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
-            onclick={() => handleReopenItem(item.tab.id)}
-            title={m.layout_panelEmptyState_reopen_tooltip({ title: tabTitle })}
+            class:reopen-hint={row.isUtility}
+            class:recent-item={!row.isUtility}
+            class="empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
+            onclick={row.onSelect}
+            title={row.title}
           >
-            <span class="flex min-w-0 items-center gap-x-2">
-              <span class="flex shrink-0 items-center opacity-70" aria-hidden="true">
-                <Fa icon={getTabIcon(item.tab.type)} class="size-[1em]" />
+            {#if row.icon}
+              <span class="flex min-w-0 items-center gap-x-2">
+                <span class="flex shrink-0 items-center opacity-70" aria-hidden="true">
+                  <Fa icon={row.icon} class="size-[1em]" />
+                </span>
+                <span class="min-w-0 truncate">{row.label}</span>
               </span>
-              <span class="min-w-0 truncate">{tabTitle}</span>
-            </span>
+            {:else}
+              <span class="min-w-0 truncate">{row.label}</span>
+            {/if}
+            {#if row.shortcut}
+              <kbd
+                class="shortcut-key shrink-0 justify-self-end whitespace-nowrap text-right text-muted-foreground"
+              >
+                {formatShortcut(row.shortcut)}
+              </kbd>
+            {/if}
           </button>
         {/each}
       </div>
