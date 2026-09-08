@@ -286,14 +286,13 @@
           {#if isEditableEnum(row)}
             {@const definition = getRowDefinition(row)}
             {#if definition}
-              {@const labelId = `settings-change-${row.key}-label`}
-              <span id={labelId} class="sr-only">{row.label}</span>
+              <label class="sr-only" for={`settings-change-${row.key}`}>{row.label}</label>
               <div class="mt-2">
                 <Select.Root
                   value={selectedEnumValue(row)}
                   onchange={(value) => handleEnumEdit(row, value)}
                 >
-                  <Select.Trigger aria-labelledby={labelId} class="py-1.5">
+                  <Select.Trigger id={`settings-change-${row.key}`} class="py-1.5">
                     <span class="truncate"
                       >{enumValueLabel(definition, selectedEnumValue(row))}</span
                     >
