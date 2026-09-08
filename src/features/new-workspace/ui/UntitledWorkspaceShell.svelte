@@ -552,6 +552,10 @@
     container: chat-panel / inline-size;
   }
 
+  .conversation-composer :global(.rich-input-container:has(.tiptap-editor:focus-visible)) {
+    box-shadow: inset 0 0 0 2px var(--ring);
+  }
+
   .regular-chat-content-inset {
     padding-left: 1rem;
     padding-right: 1rem;

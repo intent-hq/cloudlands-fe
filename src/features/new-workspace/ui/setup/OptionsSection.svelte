@@ -62,7 +62,9 @@
 </script>
 
 <details class="group border-t border-border pt-3" data-testid="options-section">
-  <summary class="flex cursor-pointer list-none items-center justify-between py-1">
+  <summary
+    class="flex cursor-pointer list-none items-center justify-between rounded-sm py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+  >
     <span class="type-caption font-medium text-foreground"
       >{m.newWorkspace_setup_options_title()}</span
     >
@@ -80,7 +82,8 @@
           <button
             type="button"
             {disabled}
-            class="type-caption rounded-md px-2 py-1 {source.isolation === 'worktree'
+            class="type-caption rounded-md px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring {source.isolation ===
+            'worktree'
               ? 'bg-muted text-foreground'
               : 'text-muted-foreground'}"
             aria-pressed={source.isolation === 'worktree'}
@@ -90,7 +93,8 @@
           <button
             type="button"
             {disabled}
-            class="type-caption rounded-md px-2 py-1 {source.isolation === 'in-place'
+            class="type-caption rounded-md px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring {source.isolation ===
+            'in-place'
               ? 'bg-muted text-foreground'
               : 'text-muted-foreground'}"
             aria-pressed={source.isolation === 'in-place'}
