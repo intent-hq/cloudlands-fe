@@ -289,6 +289,22 @@ describe('semanticMapSaga', () => {
     await harness.stop();
   });
 
+  it('refreshes conservatively when deletion arrives after manifest tracking is cleared', async () => {
+    const harness = createHarness();
+    await settle();
+    harness.dispatch(workspaceMounted('ws-1'));
+    await settle();
+    expect(mocks.get).toHaveBeenCalledOnce();
+
+    harness.dispatch(workspaceUnmounted('ws-1'));
+    await settle();
+    harness.dispatch(applyNoteDeleted('ws-1', 'untracked'));
+    await settle();
+
+    expect(mocks.get).toHaveBeenCalledTimes(2);
+    await harness.stop();
+  });
+
   it('binds route results to the requested subject and mount generation', async () => {
     const firstRoute = deferred<typeof SEMANTIC_MAP_FIXTURE_ROUTE>();
     const secondRoute = {
