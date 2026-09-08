@@ -166,6 +166,93 @@ async function recordControlMotion(page: Page, rootId: string, direction: 'forwa
   };
 }
 
+async function recordReducedControlMotion(
+  page: Page,
+  rootId: string,
+  direction: 'forward' | 'backward',
+) {
+  const root = page.locator(`#${rootId}`);
+  const renderer = root.locator('.diagram-renderer');
+  const beforeState = await renderer.getAttribute('data-diagram-state');
+  await root.evaluate((element) => {
+    const sampledRoot = element as HTMLElement & {
+      reducedMotionObserver?: MutationObserver;
+      reducedMotionSamples?: Array<{ count: number; targets: string[] }>;
+    };
+    const diagram = element.querySelector<HTMLElement>('.diagram-renderer')!;
+    const sample = () => {
+      const finiteAnimations = diagram
+        .getAnimations({ subtree: true })
+        .filter((animation) =>
+          Number.isFinite(Number(animation.effect?.getComputedTiming().endTime)),
+        );
+      sampledRoot.reducedMotionSamples!.push({
+        count: finiteAnimations.length,
+        targets: finiteAnimations.map((animation) => {
+          const target = (animation.effect as KeyframeEffect | null)?.target as Element | null;
+          const name =
+            animation instanceof CSSTransition
+              ? `transition:${animation.transitionProperty}`
+              : animation instanceof CSSAnimation
+                ? `animation:${animation.animationName}`
+                : 'waapi';
+          const timing = animation.effect?.getTiming();
+          return target
+            ? `${name}:${target.tagName}.${target.getAttribute('class') ?? ''}:${timing?.duration}`
+            : name;
+        }),
+      });
+    };
+    sampledRoot.reducedMotionSamples = [];
+    sampledRoot.reducedMotionObserver = new MutationObserver(sample);
+    sampledRoot.reducedMotionObserver.observe(diagram, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+    });
+    sample();
+  });
+  await root
+    .getByRole('button', { name: direction === 'forward' ? 'Next step' : 'Previous step' })
+    .click();
+  await expect(renderer).toHaveAttribute('data-diagram-settled', 'true');
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  return root.evaluate((element, previousState) => {
+    const sampledRoot = element as HTMLElement & {
+      reducedMotionObserver?: MutationObserver;
+      reducedMotionSamples?: Array<{ count: number; targets: string[] }>;
+    };
+    const diagram = element.querySelector<HTMLElement>('.diagram-renderer')!;
+    const finiteAnimationCount = diagram
+      .getAnimations({ subtree: true })
+      .filter((animation) =>
+        Number.isFinite(Number(animation.effect?.getComputedTiming().endTime)),
+      ).length;
+    sampledRoot.reducedMotionSamples!.push({ count: finiteAnimationCount, targets: [] });
+    sampledRoot.reducedMotionObserver?.disconnect();
+    const result = {
+      beforeState: previousState,
+      state: diagram.dataset.diagramState,
+      selectedStep: Number(
+        element
+          .querySelector('[data-diagram-step-index][aria-current="step"]')
+          ?.getAttribute('data-diagram-step-index'),
+      ),
+      phase: diagram.dataset.diagramMotionPhase,
+      settled: diagram.dataset.diagramSettled === 'true',
+      finiteAnimationCounts: sampledRoot.reducedMotionSamples!,
+    };
+    delete sampledRoot.reducedMotionObserver;
+    delete sampledRoot.reducedMotionSamples;
+    return result;
+  }, beforeState);
+}
+
 async function recordTransition(page: Page, rootId: string, buttonName: string, probe: Probe) {
   return page.locator(`#${rootId}`).evaluate(
     async (root, { buttonName, probe }) => {
@@ -375,6 +462,7 @@ async function readStableSignature(page: Page, rootId: string) {
     };
     return {
       state: root.querySelector<HTMLElement>('.diagram-renderer')?.dataset.diagramState,
+      camera: getComputedStyle(root.querySelector<SVGSVGElement>('.diagram-svg-layer')!).transform,
       nodes: [...root.querySelectorAll<SVGForeignObjectElement>('[data-node-id]')]
         .map((node) => ({
           id: node.dataset.nodeId,
@@ -388,6 +476,16 @@ async function readStableSignature(page: Page, rootId: string) {
         .map((edge) => ({
           id: edge.dataset.edgeId,
           path: canonicalPath(edge.querySelector('path.edge-path')),
+        }))
+        .sort((left, right) => left.id!.localeCompare(right.id!)),
+      labels: [...root.querySelectorAll<SVGForeignObjectElement>('.edge-label-container')]
+        .map((label) => ({
+          id: label.dataset.edgeId,
+          x: label.getAttribute('x'),
+          y: label.getAttribute('y'),
+          width: label.getAttribute('width'),
+          height: label.getAttribute('height'),
+          text: label.textContent?.trim(),
         }))
         .sort((left, right) => left.id!.localeCompare(right.id!)),
       groups: [...root.querySelectorAll<SVGGElement>('[data-group-id]')]
@@ -404,6 +502,14 @@ async function readStableSignature(page: Page, rootId: string) {
         .sort((left, right) => left.id!.localeCompare(right.id!)),
     };
   });
+}
+
+async function allRoutesComplete(page: Page, rootId: string) {
+  return page
+    .locator(`#${rootId} .diagram-edge`)
+    .evaluateAll((edges) =>
+      edges.every((edge) => edge.getAttribute('data-edge-motion-progress') === '1'),
+    );
 }
 
 function expectFrameGeometry(frame: Frame) {
@@ -580,6 +686,52 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
       }
     }
   }
+});
+
+test('settles every stepped sandbox control without finite reduced-motion animations', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await openMotionFixture(page, 'custom-architecture', true);
+  await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'reduced');
+  await expect(page.locator('html')).toHaveClass(/catalog-reduced-motion/);
+
+  let transitionCount = 0;
+  for (const fixture of steppedFixtures) {
+    const signatures = [await readStableSignature(page, fixture.id)];
+    for (let index = 1; index < fixture.steps; index += 1) {
+      const transition = await recordReducedControlMotion(page, fixture.id, 'forward');
+      const settled = await readStableSignature(page, fixture.id);
+      transitionCount += 1;
+      expect(transition.state).not.toBe(transition.beforeState);
+      expect(transition).toMatchObject({ selectedStep: index, phase: 'settled', settled: true });
+      expect(
+        Math.max(...transition.finiteAnimationCounts.map((sample) => sample.count)),
+        JSON.stringify(transition.finiteAnimationCounts),
+      ).toBe(0);
+      expect(settled.nodes.length).toBeGreaterThan(0);
+      expect(await allRoutesComplete(page, fixture.id)).toBe(true);
+      signatures.push(settled);
+    }
+    for (let index = fixture.steps - 2; index >= 0; index -= 1) {
+      const transition = await recordReducedControlMotion(page, fixture.id, 'backward');
+      const settled = await readStableSignature(page, fixture.id);
+      transitionCount += 1;
+      expect(transition.state).not.toBe(transition.beforeState);
+      expect(transition).toMatchObject({ selectedStep: index, phase: 'settled', settled: true });
+      expect(
+        Math.max(...transition.finiteAnimationCounts.map((sample) => sample.count)),
+        JSON.stringify(transition.finiteAnimationCounts),
+      ).toBe(0);
+      expect(await allRoutesComplete(page, fixture.id)).toBe(true);
+      expect(settled).toEqual(signatures[index]);
+    }
+  }
+  expect(transitionCount).toBe(14);
+
+  await page.goto(`${baseUrl}/sandbox/button?state=default&motion=reduced`);
+  await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true');
+  await expect(page.locator('.diagram-renderer')).toHaveCount(0);
 });
 
 test('shows continuous Redux walkthrough motion when the system requests reduced motion', async ({

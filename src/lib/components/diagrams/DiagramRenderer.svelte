@@ -1598,6 +1598,12 @@
     animation: none;
   }
 
+  :global(.catalog-reduced-motion .diagram-renderer),
+  :global(.catalog-reduced-motion .diagram-renderer *) {
+    transition: none !important;
+    animation: none !important;
+  }
+
   :global(.catalog-reduced-motion .edge-label-entry) {
     opacity: 1;
   }
@@ -1610,6 +1616,12 @@
     :global(html:not(.catalog-full-motion)) .diagram-actions {
       transition: none;
       animation: none;
+    }
+
+    :global(html:not(.catalog-full-motion) .diagram-renderer),
+    :global(html:not(.catalog-full-motion) .diagram-renderer *) {
+      transition: none !important;
+      animation: none !important;
     }
 
     :global(html:not(.catalog-full-motion) .edge-label-entry) {
