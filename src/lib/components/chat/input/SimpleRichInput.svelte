@@ -161,6 +161,8 @@
     contentInsetClassName?: string;
     /** Override the action bar's important trailing-edge padding (defaults to `pr-1.5!`). */
     actionBarEndClassName?: string;
+    /** Optional local portal target for composer tooltips. */
+    tooltipPortalTarget?: Element | string;
     /** Daemon-backed queue rendered inside the composer's recessed queue region. */
     queueRegion?: Snippet;
     /** Optional first suggested prompt shown as a Tab-accepting ghost value. */
@@ -236,6 +238,7 @@
     editorClassName = 'px-2!',
     contentInsetClassName = undefined,
     actionBarEndClassName = 'pr-1.5!',
+    tooltipPortalTarget,
     queueRegion,
     placeholderSuggestion,
     externalDropTarget = false,
@@ -1787,7 +1790,11 @@
       </div>
 
       {#if micTranscribing}
-        <TooltipShortcut label={m.chat_richInput_micCancelTranscribing_label()} side="top">
+        <TooltipShortcut
+          label={m.chat_richInput_micCancelTranscribing_label()}
+          side="top"
+          portalTarget={tooltipPortalTarget}
+        >
           <Button
             variant="ghost-light"
             size="icon-sm"
@@ -1800,7 +1807,12 @@
           </Button>
         </TooltipShortcut>
       {:else if micRecording}
-        <TooltipShortcut label={m.chat_richInput_micStop_label()} shortcut="Escape" side="top">
+        <TooltipShortcut
+          label={m.chat_richInput_micStop_label()}
+          shortcut="Escape"
+          side="top"
+          portalTarget={tooltipPortalTarget}
+        >
           <Button
             variant="ghost-light"
             size="icon-sm"
@@ -1815,7 +1827,11 @@
           </Button>
         </TooltipShortcut>
       {:else if $effectiveVoiceEngine$ !== 'unavailable'}
-        <TooltipShortcut label={m.chat_richInput_micStart_label()} side="top">
+        <TooltipShortcut
+          label={m.chat_richInput_micStart_label()}
+          side="top"
+          portalTarget={tooltipPortalTarget}
+        >
           <Button
             variant="ghost-light"
             size="icon-sm"
@@ -1833,7 +1849,12 @@
 
       {#if editMode}
         <div class="absolute right-2 top-2">
-          <TooltipShortcut label={m.chat_richInput_cancel_label()} shortcut="Escape" side="top">
+          <TooltipShortcut
+            label={m.chat_richInput_cancel_label()}
+            shortcut="Escape"
+            side="top"
+            portalTarget={tooltipPortalTarget}
+          >
             <Button
               variant="ghost-light"
               size="icon-xs"
@@ -1849,6 +1870,7 @@
         label={buttonTooltipLabel}
         shortcut={buttonMode === 'stop' ? undefined : 'Enter'}
         side="top"
+        portalTarget={tooltipPortalTarget}
       >
         <Button
           variant="primary"

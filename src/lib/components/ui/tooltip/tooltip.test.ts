@@ -115,6 +115,7 @@ describe('Tooltip', () => {
     await fireEvent.focus(trigger);
 
     const tooltip = await screen.findByRole('tooltip', { name: /Open navigation/, hidden: true });
+    expect(screen.getByTestId('shortcut-tooltip').contains(tooltip)).toBe(true);
     const chips = tooltip.querySelectorAll('kbd[data-slot="shortcut-chip"]');
     expect(chips).toHaveLength(2);
     expect([...chips].map((chip) => chip.textContent)).toEqual(['Ctrl', 'K']);

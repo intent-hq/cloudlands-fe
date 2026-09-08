@@ -49,7 +49,12 @@
     <p>A deterministic showcase of the production rich editor and daemon-backed queue rows.</p>
   </header>
 
-  <section class="composer-stage" data-testid="chat-composer-showcase">
+  <section
+    id="chat-composer-overlays"
+    class="composer-stage"
+    aria-label="Chat composer preview"
+    data-testid="chat-composer-showcase"
+  >
     <SimpleRichInput
       bind:value
       bind:contextItems
@@ -59,6 +64,7 @@
       isResponding={isStreaming}
       editorClassName="w-full px-4! sm:px-6!"
       contentInsetClassName="w-full px-4 sm:px-6"
+      tooltipPortalTarget="#chat-composer-overlays"
       edgeDocked
       onsubmit={() => {}}
       onforcesubmit={() => {}}

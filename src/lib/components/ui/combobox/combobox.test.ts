@@ -167,7 +167,9 @@ describe('Combobox behavior', () => {
     const input = screen.getByRole('combobox', { name: 'Search people' });
     input.focus();
     await fireEvent.focus(input);
-    expect(screen.getByText('No options available')).toBeTruthy();
+    const emptyOption = screen.getByRole('option', { name: 'No options available' });
+    expect(emptyOption.getAttribute('aria-disabled')).toBe('true');
+    expect(emptyOption.getAttribute('aria-selected')).toBe('false');
     expect(container.contains(screen.getByRole('listbox'))).toBe(false);
   });
 

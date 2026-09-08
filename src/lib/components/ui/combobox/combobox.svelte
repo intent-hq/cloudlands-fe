@@ -334,7 +334,14 @@
                       </div>
                     {/if}
                     {#if !hasOptions && groups.length === 0 && !searching}
-                      <div class="type-body px-3 py-2 text-muted-foreground">{emptyText}</div>
+                      <div
+                        class="type-body px-3 py-2 text-muted-foreground"
+                        role="option"
+                        aria-disabled="true"
+                        aria-selected="false"
+                      >
+                        {emptyText}
+                      </div>
                     {/if}
                     {#each filteredGroups as group (group.key)}
                       <ComboboxPrimitive.Group>

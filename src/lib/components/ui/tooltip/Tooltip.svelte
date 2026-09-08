@@ -19,6 +19,7 @@
     disabled?: boolean;
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
+    portalTarget?: Element | string;
     class?: string;
     contentClass?: string;
     arrowClass?: string;
@@ -44,6 +45,7 @@
     disabled = false,
     open = $bindable(false),
     onOpenChange,
+    portalTarget,
     class: className = '',
     contentClass = '',
     arrowClass = '',
@@ -115,7 +117,7 @@
     </TooltipPrimitive.Trigger>
 
     {#if content && !disabled}
-      <TooltipPrimitive.Portal>
+      <TooltipPrimitive.Portal to={portalTarget}>
         <TooltipPrimitive.Content
           role="tooltip"
           {side}

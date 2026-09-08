@@ -13,6 +13,7 @@
     sideOffset?: number;
     delayDuration?: number;
     disabled?: boolean;
+    portalTarget?: Element | string;
     class?: string;
     contentClass?: string;
     /** Child elements to wrap with the tooltip trigger */
@@ -29,6 +30,7 @@
     sideOffset = 4,
     delayDuration = 500,
     disabled = false,
+    portalTarget,
     class: className = '',
     contentClass = '',
     children,
@@ -94,6 +96,7 @@
   {sideOffset}
   {delayDuration}
   {disabled}
+  {portalTarget}
   class={className}
   contentClass={cn('flex items-center gap-3', contentClass)}
 >

@@ -27,7 +27,12 @@
 </div>
 
 <div data-testid="shortcut-tooltip">
-  <Tooltip.TooltipShortcut label="Open navigation" shortcut="mod+k" delayDuration={0}>
+  <Tooltip.TooltipShortcut
+    label="Open navigation"
+    shortcut="mod+k"
+    delayDuration={0}
+    portalTarget="[data-testid='shortcut-tooltip']"
+  >
     <Button aria-label="Show shortcut help" variant="ghost">Shortcut help</Button>
   </Tooltip.TooltipShortcut>
 </div>
