@@ -1207,7 +1207,7 @@
 
   .pure-diff-container :global(.diff-search-highlight.diff-search-current) {
     background: hsl(30 100% 50% / 0.6);
-    outline: 2px solid hsl(30 100% 50%);
+    outline: 1px solid hsl(30 100% 50%);
   }
 
   /* === Sticky line numbers and gutter for horizontal scrolling === */

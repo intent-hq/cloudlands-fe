@@ -2242,7 +2242,7 @@
 
   /* Drag and drop visual feedback for images */
   :global(.tiptap-editor-wrapper.is-dragging) {
-    outline: 2px dashed hsl(var(--primary-ink));
+    outline: 1px dashed hsl(var(--primary-ink));
     outline-offset: -2px;
     background-color: hsl(var(--primary) / 0.05);
   }

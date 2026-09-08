@@ -219,7 +219,7 @@
     flex-direction: column;
     overflow: hidden;
     min-height: 0;
-    outline: 2px solid transparent;
+    outline: 1px solid transparent;
     outline-offset: -1px;
     cursor: pointer;
     padding: 0;

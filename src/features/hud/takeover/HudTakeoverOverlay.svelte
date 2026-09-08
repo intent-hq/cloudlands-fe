@@ -921,7 +921,7 @@
     flex-direction: column;
     padding: 7px 9px;
     gap: 3px;
-    outline: 2px solid transparent;
+    outline: 1px solid transparent;
     outline-offset: 3px;
   }
   .ov-cell-changed {

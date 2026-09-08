@@ -90,7 +90,7 @@
   }
 
   :global(.note-video-node.selected video) {
-    outline: 2px solid hsl(var(--ring));
+    outline: 1px solid hsl(var(--ring));
     outline-offset: 2px;
   }
 </style>

@@ -120,7 +120,7 @@
   }
 
   :global(.note-image-node.selected) img {
-    outline: 2px solid hsl(var(--ring));
+    outline: 1px solid hsl(var(--ring));
     outline-offset: 2px;
   }
 

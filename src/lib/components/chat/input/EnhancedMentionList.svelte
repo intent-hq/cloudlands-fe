@@ -552,7 +552,7 @@
   }
 
   .mention-item:focus-visible {
-    outline: 2px solid hsl(var(--primary-ink));
+    outline: 1px solid hsl(var(--primary-ink));
     outline-offset: 2px;
   }
 

@@ -380,7 +380,7 @@
 }
 
 .mention-chip:focus {
-  outline: 2px solid hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;
 }
 
@@ -400,7 +400,7 @@
 }
 
 .skill-command-chip.ProseMirror-selectednode {
-  outline: 2px solid hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;
 }
 
@@ -712,7 +712,7 @@ code:has(.is-file-path):hover {
 
 .tiptap-editor code:has(.is-file-path):focus,
 code:has(.is-file-path):focus {
-  outline: 2px solid hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;
 }
 
@@ -744,7 +744,7 @@ code.is-file-path:hover {
 
 .tiptap-editor code.is-file-path:focus,
 code.is-file-path:focus {
-  outline: 2px solid hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;
 }
 

@@ -473,7 +473,7 @@
   }
 
   :global(.task-agent-status.indicator:focus-visible) {
-    outline: 2px solid var(--color-ring);
+    outline: 1px solid var(--color-ring);
     outline-offset: 1px;
   }
 

@@ -417,7 +417,7 @@
           type="button"
           variant="ghost-light"
           size="icon-xs"
-          class="flex h-7 w-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          class="flex h-7 w-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring"
           aria-label={m.layout_chiefCard_title()}
           aria-expanded={!collapsed}
           aria-controls="combined-panel-chief-content"
