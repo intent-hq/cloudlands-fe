@@ -22,7 +22,7 @@
     GRAPH_ZOOM_EXTENT,
     MAX_VISIBLE_RESOURCES_PER_AGENT,
   } from './constants';
-  import type { AgentNode, FileNode, GraphNode, GraphState, NoteNode } from './types';
+  import type { AgentNode, FileNode, GraphEdge, GraphNode, GraphState, NoteNode } from './types';
   import { nodeEnterDelay } from './activity-motion';
   import type { PlaybackSpeed } from './playback';
   import { createTaskHullMembershipMemo } from './graph-helpers';
@@ -198,8 +198,11 @@
         return {
           id: `${edge.id}:${edge.timestamp}`,
           label: counterpart
-            ? `${edge.type.replaceAll('-', ' ')} · ${nodeDisplayName(counterpart)}`
-            : edge.type.replaceAll('-', ' '),
+            ? m.agentOverview_recentActivity_edgeWithName_label({
+                type: edgeTypeLabel(edge.type),
+                name: nodeDisplayName(counterpart),
+              })
+            : edgeTypeLabel(edge.type),
           timestamp: edge.timestamp,
         };
       });
@@ -265,6 +268,31 @@
     if (node.type === 'agent') return node.name;
     if (node.type === 'file') return node.fileName;
     return node.title;
+  }
+
+  function edgeTypeLabel(type: GraphEdge['type']): string {
+    switch (type) {
+      case 'delegation':
+        return m.agentOverview_recentActivity_delegation_label();
+      case 'task-assignment':
+        return m.agentOverview_recentActivity_taskAssignment_label();
+      case 'message':
+        return m.agentOverview_recentActivity_message_label();
+      case 'waiting-on':
+        return m.agentOverview_recentActivity_waitingOn_label();
+      case 'file-read':
+        return m.agentOverview_recentActivity_fileRead_label();
+      case 'file-write':
+        return m.agentOverview_recentActivity_fileWrite_label();
+      case 'note-read':
+        return m.agentOverview_recentActivity_noteRead_label();
+      case 'note-write':
+        return m.agentOverview_recentActivity_noteWrite_label();
+      case 'task-create':
+        return m.agentOverview_recentActivity_taskCreate_label();
+      case 'task-update':
+        return m.agentOverview_recentActivity_taskUpdate_label();
+    }
   }
 
   function assignedAgentCount(taskId: string): number {

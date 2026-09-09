@@ -40,6 +40,27 @@
     playbackSpeed = 1,
     ...events
   }: Props = $props();
+
+  function stateLabel(state: TaskNode['state']): string {
+    switch (state) {
+      case 'not_started':
+        return m.tiptap_taskStatus_notStarted_label();
+      case 'waiting':
+        return m.tiptap_taskStatus_waiting_label();
+      case 'discussion_needed':
+        return m.tiptap_taskStatus_discussionNeeded_label();
+      case 'blocked':
+        return m.tiptap_taskStatus_blocked_label();
+      case 'in_progress':
+        return m.tiptap_taskStatus_inProgress_label();
+      case 'review_required':
+        return m.tiptap_taskStatus_reviewRequired_label();
+      case 'complete':
+        return m.tiptap_taskStatus_complete_label();
+      case 'cancelled':
+        return m.tiptap_taskStatus_cancelled_label();
+    }
+  }
 </script>
 
 <button
@@ -74,7 +95,7 @@
     </span>
   {/if}
   <span class="node-meta" hidden={!isSelectionActive}>
-    {node.state.replaceAll('_', ' ')} ·
+    {stateLabel(node.state)} ·
     {agentCount === 1
       ? m.chat_toolDetails_agentCount_one({ count: agentCount })
       : m.chat_toolDetails_agentCount_many({ count: agentCount })}

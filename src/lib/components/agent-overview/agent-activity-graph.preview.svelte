@@ -1,5 +1,6 @@
 <script lang="ts" module>
   import { definePreview } from '$lib/component-catalog/preview-definition';
+  import { m } from '$shared/paraglide/messages.js';
   import {
     buildBusyGraph,
     buildConstellationGraph,
@@ -14,7 +15,9 @@
 
   export const preview = definePreview<{ graph: GraphState; replayEnd?: number }>({
     id: 'agent-activity-graph',
-    title: 'Agent activity graph',
+    get title() {
+      return m.sandbox_agentActivityGraph_title();
+    },
     defaultState: 'constellation',
     states: {
       constellation: { props: { graph: buildConstellationGraph() } },

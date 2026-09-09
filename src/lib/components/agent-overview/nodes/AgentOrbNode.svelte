@@ -2,6 +2,7 @@
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import { getAvatarState } from '$features/agent/components/agent-avatar/avatar-state';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import type { AgentNode } from '../types';
   import { activityMotion, activityNodeTransition } from '../activity-motion';
 
@@ -51,8 +52,23 @@
     ),
   );
 
-  const specialistLabel = $derived(node.specialist?.replaceAll('-', ' '));
+  const specialistLabel = $derived(node.specialist?.split('-').join(' '));
   const agentLabel = $derived(specialistLabel ? `${node.name} · ${specialistLabel}` : node.name);
+
+  function statusLabel(status: AgentNode['status']): string {
+    switch (status) {
+      case 'idle':
+        return m.agentOverview_hierarchyGraph_statusIdle_label();
+      case 'responding':
+        return m.agentOverview_hierarchyGraph_statusResponding_label();
+      case 'waiting':
+        return m.agentOverview_hierarchyGraph_statusWaiting_label();
+      case 'completed':
+        return m.agentOverview_hierarchyGraph_statusCompleted_label();
+      case 'failed':
+        return m.agentOverview_hierarchyGraph_statusFailed_label();
+    }
+  }
 </script>
 
 <button
@@ -97,7 +113,7 @@
     </span>
   {/if}
   <span class="node-meta" hidden={!isSelectionActive}>
-    {#if specialistLabel}<span>{specialistLabel} ·</span>{' '}{/if}{node.status} ·
+    {#if specialistLabel}<span>{specialistLabel} ·</span>{' '}{/if}{statusLabel(node.status)} ·
     <RelativeTime date={lastActivityAt ?? node.createdAt} compact />
   </span>
 </button>

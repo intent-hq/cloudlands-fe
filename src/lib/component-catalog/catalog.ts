@@ -27,14 +27,20 @@ export const catalogEntries: CatalogEntry[] = [
   ...componentEntries,
   {
     slug: 'agent-activity-graph',
-    name: 'Agent Activity Graph',
-    description: 'Live task constellations with agents, resources, and activity edges.',
+    get name() {
+      return m.sandbox_agentActivityGraph_title();
+    },
+    get description() {
+      return m.sandbox_agentActivityGraph_description();
+    },
     category: 'product',
     source: 'src/lib/components/agent-overview',
     fixtures: [
       {
         id: 'agent-activity-graph',
-        title: 'Agent activity graph',
+        get title() {
+          return m.sandbox_agentActivityGraph_title();
+        },
         states: ['constellation', 'busy', 'empty', 'single-agent', 'replay'],
         themes: ['light', 'dark'],
         viewport: 'desktop',

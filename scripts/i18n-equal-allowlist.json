@@ -1,6 +1,8 @@
 {
   "agentOverview_legend_communication_label": ["fr"],
   "agentOverview_legend_temporal_label": ["es"],
+  "agentOverview_recentActivity_edgeWithName_label": "*",
+  "agentOverview_recentActivity_message_label": ["fr"],
   "agentOverview_timeScrubber_live_label": ["de"],
   "agentOverview_toolbar_agents_label": ["fr"],
   "agentOverview_toolbar_messages_many": ["fr"],

@@ -150,7 +150,7 @@ describe('AgentOrbNode', () => {
     expect(view.container.querySelector('.specialist-caption')?.textContent).toContain(
       'frontend engineer',
     );
-    expect(metadata?.textContent).toContain('frontend engineer · responding');
+    expect(metadata?.textContent).toContain('frontend engineer · Responding');
     expect(metadata?.hidden).toBe(true);
     await view.rerender({
       node,
