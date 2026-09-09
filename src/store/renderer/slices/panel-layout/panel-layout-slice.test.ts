@@ -3635,16 +3635,50 @@ describe('panelLayoutReducer', () => {
           title: 'Browser',
           hostClientId: 'cli-laptop',
           viewport: { mode: 'fit' },
+          emulatedSize: { width: 1280, height: 800 },
         },
       ]);
-      const result = panelLayoutReducer(state, applyBrowserTabRegistryRow(WS, 'b1', row));
+      const result = panelLayoutReducer(
+        state,
+        applyBrowserTabRegistryRow(WS, 'b1', {
+          ...row,
+          emulatedSize: { width: 1280, height: 800 },
+        }),
+      );
 
       expect(result.byWorkspaceId[WS].panels.p1.tabs[0].viewport).toEqual({ mode: 'fit' });
       expect(result.byWorkspaceId[WS].panels.p1.tabs[0].emulatedSize).toEqual({
-        width: 390,
-        height: 844,
+        width: 1280,
+        height: 800,
       });
     });
+
+    it.each([
+      undefined,
+      { width: 1280, height: 800 },
+      { width: 390, height: 800 },
+      { width: 1280, height: 844 },
+    ])(
+      'applyBrowserTabRegistryRow switches Fit to Custom for a changed canonical size (retained %j)',
+      (emulatedSize) => {
+        const state = stateWithPanel('p1', [
+          {
+            id: 'b1',
+            type: 'browser',
+            title: 'Browser',
+            hostClientId: 'cli-laptop',
+            viewport: { mode: 'fit' },
+            emulatedSize,
+          },
+        ]);
+        const result = panelLayoutReducer(state, applyBrowserTabRegistryRow(WS, 'b1', row));
+
+        expect(result.byWorkspaceId[WS].panels.p1.tabs[0]).toMatchObject({
+          viewport: { mode: 'custom', width: 390, height: 844 },
+          emulatedSize: { width: 390, height: 844 },
+        });
+      },
+    );
 
     it('applyBrowserTabRegistryRow preserves a matching stored preset viewport', () => {
       const state = stateWithPanel('p1', [
