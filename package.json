@@ -302,7 +302,7 @@
     "wait-on": "^9.1.0"
   },
   "dependencies": {
-    "@augmentcode/themis": "0.2.5",
+    "@augmentcode/themis": "0.2.7",
     "body-parser": "^2.3.0",
     "chrome-remote-interface": "^0.34.0",
     "date-fns": "^4.4.0",
