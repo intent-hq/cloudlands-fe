@@ -3627,47 +3627,54 @@ describe('panelLayoutReducer', () => {
       });
     });
 
-    it('applyBrowserTabRegistryRow preserves the stored Fit viewport over a retained size', () => {
-      const state = stateWithPanel('p1', [
-        {
-          id: 'b1',
-          type: 'browser',
-          title: 'Browser',
-          hostClientId: 'cli-laptop',
-          viewport: { mode: 'fit' },
-          emulatedSize: { width: 1280, height: 800 },
-        },
-      ]);
-      const result = panelLayoutReducer(
-        state,
-        applyBrowserTabRegistryRow(WS, 'b1', {
-          ...row,
-          emulatedSize: { width: 1280, height: 800 },
-        }),
-      );
-
-      expect(result.byWorkspaceId[WS].panels.p1.tabs[0].viewport).toEqual({ mode: 'fit' });
-      expect(result.byWorkspaceId[WS].panels.p1.tabs[0].emulatedSize).toEqual({
-        width: 1280,
-        height: 800,
-      });
-    });
-
-    it.each([
-      undefined,
-      { width: 1280, height: 800 },
-      { width: 390, height: 800 },
-      { width: 1280, height: 844 },
-    ])(
-      'applyBrowserTabRegistryRow switches Fit to Custom for a changed canonical size (retained %j)',
-      (emulatedSize) => {
+    it.each([undefined, { mode: 'fit' } as const])(
+      'applyBrowserTabRegistryRow preserves explicit or legacy Fit over a retained size (viewport %j)',
+      (viewport) => {
         const state = stateWithPanel('p1', [
           {
             id: 'b1',
             type: 'browser',
             title: 'Browser',
             hostClientId: 'cli-laptop',
-            viewport: { mode: 'fit' },
+            viewport,
+            emulatedSize: { width: 1280, height: 800 },
+          },
+        ]);
+        const result = panelLayoutReducer(
+          state,
+          applyBrowserTabRegistryRow(WS, 'b1', {
+            ...row,
+            emulatedSize: { width: 1280, height: 800 },
+          }),
+        );
+
+        expect(result.byWorkspaceId[WS].panels.p1.tabs[0].viewport).toEqual(viewport);
+        expect(result.byWorkspaceId[WS].panels.p1.tabs[0].emulatedSize).toEqual({
+          width: 1280,
+          height: 800,
+        });
+      },
+    );
+
+    it.each(
+      [undefined, { mode: 'fit' } as const].flatMap((viewport) =>
+        [
+          undefined,
+          { width: 1280, height: 800 },
+          { width: 390, height: 800 },
+          { width: 1280, height: 844 },
+        ].map((emulatedSize) => ({ viewport, emulatedSize })),
+      ),
+    )(
+      'applyBrowserTabRegistryRow switches explicit or legacy Fit to Custom for a changed canonical size (%j)',
+      ({ viewport, emulatedSize }) => {
+        const state = stateWithPanel('p1', [
+          {
+            id: 'b1',
+            type: 'browser',
+            title: 'Browser',
+            hostClientId: 'cli-laptop',
+            viewport,
             emulatedSize,
           },
         ]);

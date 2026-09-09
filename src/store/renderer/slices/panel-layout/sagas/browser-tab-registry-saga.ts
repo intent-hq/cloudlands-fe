@@ -316,11 +316,9 @@ function toInput(wsId: string, { tab, visibility }: HostedTab): BrowserTabInput 
     // Fit, while preset/custom dimensions represent a fixed viewport. Use the
     // persisted mode rather than an owned Fit tab's retained offscreen size.
     emulatedSize:
-      tab.viewport?.mode === 'fit'
+      !tab.viewport || tab.viewport.mode === 'fit'
         ? null
-        : tab.viewport
-          ? { width: tab.viewport.width, height: tab.viewport.height }
-          : (tab.emulatedSize ?? null),
+        : { width: tab.viewport.width, height: tab.viewport.height },
   };
 }
 
