@@ -23,7 +23,6 @@ export const checkboxMetadata = {
     'src/lib/components/modals/TransferWorkspaceModal.svelte',
     'src/lib/components/notes/NotesPanel.svelte',
     'src/lib/components/patterns/settings/custom-controls.ts',
-    'src/lib/components/settings/ListenTargetSelector.svelte',
     'src/lib/components/tiptap/TaskItemNodeView.svelte',
     'src/lib/components/workspace/initializer/BranchSelector.svelte',
     'src/lib/components/workspace/initializer/RepoAndBranchPicker.svelte',
