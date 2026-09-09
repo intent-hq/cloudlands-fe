@@ -1,4 +1,9 @@
 import type { WorkspaceEvent } from '$features/events/types';
+import {
+  createCollection,
+  getItems,
+  type Collection,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
@@ -10,7 +15,7 @@ export const GRAPH_HISTORY_MAX_EVENTS = 5_000;
 type GraphHistoryStatus = 'idle' | 'loading' | 'complete' | 'error';
 
 export type GraphHistoryWorkspaceState = {
-  events: WorkspaceEvent[];
+  events: Collection<WorkspaceEvent, 'id'>;
   status: GraphHistoryStatus;
   nextToken: string | null;
   loadedAt: string | null;
@@ -21,7 +26,7 @@ export type AgentOverviewHistoryState = {
 };
 
 export const emptyGraphHistoryState: GraphHistoryWorkspaceState = {
-  events: [],
+  events: createCollection<WorkspaceEvent, 'id'>('id'),
   status: 'idle',
   nextToken: null,
   loadedAt: null,
@@ -62,19 +67,20 @@ export const graphHistoryLoadFailed = createAction<[workspaceId: string]>(
 );
 
 function mergeEvents(
-  current: WorkspaceEvent[],
+  current: Collection<WorkspaceEvent, 'id'>,
   incoming: WorkspaceEvent[],
   workspaceId: string,
-): WorkspaceEvent[] {
+): Collection<WorkspaceEvent, 'id'> {
   const byId = new Map(
-    current
+    getItems(current)
       .filter((event) => isValidGraphHistoryTimestamp(event.timestamp))
       .map((event) => [event.id, event]),
   );
   for (const event of sanitizeGraphHistoryEvents(incoming, workspaceId)) byId.set(event.id, event);
-  return [...byId.values()]
+  const sorted = [...byId.values()]
     .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp) || a.id.localeCompare(b.id))
     .slice(-GRAPH_HISTORY_MAX_EVENTS);
+  return createCollection<WorkspaceEvent, 'id'>('id', sorted);
 }
 
 export const agentOverviewHistoryReducer = createReducer<AgentOverviewHistoryState>(initialState);

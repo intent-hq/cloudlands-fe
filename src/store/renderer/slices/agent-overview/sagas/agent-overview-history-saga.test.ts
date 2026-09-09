@@ -2,6 +2,7 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { appClient } from '$lib/client';
 import type { WorkspaceEvent } from '$features/events/types';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import {
   agentOverviewHistoryReducer,
   graphHistoryLoadCompleted,
@@ -74,7 +75,7 @@ describe('agentOverviewHistorySaga', () => {
       status: 'complete',
       loadedAt: NOW,
     });
-    expect(run.getState().byWorkspaceId[WS].events.map((item) => item.id)).toEqual([
+    expect(getItems(run.getState().byWorkspaceId[WS].events).map((item) => item.id)).toEqual([
       'old',
       'shared',
       'new',
@@ -121,8 +122,8 @@ describe('agentOverviewHistorySaga', () => {
     expect(run.getState().byWorkspaceId[WS]).toMatchObject({
       status: 'error',
       nextToken: 'repeat',
-      events: [],
     });
+    expect(getItems(run.getState().byWorkspaceId[WS].events)).toEqual([]);
     run.task.cancel();
     await run.task.toPromise();
   });

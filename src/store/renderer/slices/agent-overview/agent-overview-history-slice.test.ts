@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkspaceEvent } from '$features/events/types';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
 import {
   GRAPH_HISTORY_MAX_EVENTS,
@@ -27,7 +28,8 @@ function event(id: string, minute: number): WorkspaceEvent {
 describe('agentOverviewHistoryReducer', () => {
   it('starts idle and records loading lifecycle metadata', () => {
     let state = agentOverviewHistoryReducer(initialState, graphHistoryLoadStarted(WS));
-    expect(state.byWorkspaceId[WS]).toMatchObject({ status: 'loading', events: [] });
+    expect(state.byWorkspaceId[WS]).toMatchObject({ status: 'loading' });
+    expect(getItems(state.byWorkspaceId[WS].events)).toEqual([]);
 
     state = agentOverviewHistoryReducer(state, graphHistoryLoadCompleted(WS, 'loaded-now'));
     expect(state.byWorkspaceId[WS]).toMatchObject({
@@ -52,7 +54,7 @@ describe('agentOverviewHistoryReducer', () => {
       ),
     );
 
-    expect(state.byWorkspaceId[WS].events.map((item) => item.id)).toEqual([
+    expect(getItems(state.byWorkspaceId[WS].events).map((item) => item.id)).toEqual([
       'oldest',
       'middle',
       'newest',
@@ -69,9 +71,10 @@ describe('agentOverviewHistoryReducer', () => {
     state = agentOverviewHistoryReducer(state, eventReceived(WS, event('event-4999', 6000)));
     state = agentOverviewHistoryReducer(state, eventReceived(WS, event('live', 6001)));
 
-    expect(state.byWorkspaceId[WS].events).toHaveLength(GRAPH_HISTORY_MAX_EVENTS);
-    expect(state.byWorkspaceId[WS].events[0].id).toBe('event-1');
-    expect(state.byWorkspaceId[WS].events.at(-1)?.id).toBe('live');
+    const events = getItems(state.byWorkspaceId[WS].events);
+    expect(events).toHaveLength(GRAPH_HISTORY_MAX_EVENTS);
+    expect(events[0].id).toBe('event-1');
+    expect(events.at(-1)?.id).toBe('live');
   });
 
   it('drops malformed timestamps while preserving valid chronological neighbours', () => {
@@ -92,6 +95,9 @@ describe('agentOverviewHistoryReducer', () => {
       eventReceived(WS, { ...event('invalid-live', 4), timestamp: '2026-01-01' }),
     );
 
-    expect(state.byWorkspaceId[WS].events.map((item) => item.id)).toEqual(['earlier', 'later']);
+    expect(getItems(state.byWorkspaceId[WS].events).map((item) => item.id)).toEqual([
+      'earlier',
+      'later',
+    ]);
   });
 });

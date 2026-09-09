@@ -58,9 +58,10 @@ function selectSourceEvents(state: StoreState, workspaceId: string): WorkspaceEv
   const workspaceEvents = (state.workspaceEvents.byWorkspaceId[workspaceId]?.events ?? []).filter(
     (event) => isValidGraphHistoryTimestamp(event.timestamp),
   );
-  const historyEvents = (
-    state.agentOverviewHistory.byWorkspaceId[workspaceId]?.events ?? []
-  ).filter((event) => isValidGraphHistoryTimestamp(event.timestamp));
+  const history = state.agentOverviewHistory.byWorkspaceId[workspaceId];
+  const historyEvents = history
+    ? getItems(history.events).filter((event) => isValidGraphHistoryTimestamp(event.timestamp))
+    : [];
   return historyEvents.length > 0 ? historyEvents : workspaceEvents;
 }
 

@@ -74,7 +74,7 @@ function makeOverviewState(
         historyEvents.length > 0
           ? {
               [WS]: {
-                events: historyEvents,
+                events: createCollection<WorkspaceEvent, 'id'>('id', historyEvents),
                 status: 'complete',
                 nextToken: null,
                 loadedAt: '2026-03-20T14:00:00.000Z',
