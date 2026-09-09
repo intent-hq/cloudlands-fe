@@ -40,6 +40,12 @@
     }, delayDuration);
   }
 
+  $effect(() => {
+    if (!disabled) return;
+    clearOpenTimer();
+    setOpen(false);
+  });
+
   function handleMouseLeave() {
     pointerWithin = false;
     clearOpenTimer();
@@ -86,7 +92,7 @@
   onfocusout={handleFocusOut}
 >
   {@render children?.()}
-  {#if open && content}
+  {#if !disabled && open && content}
     <div data-testid="workspace-tab-preview" role="tooltip">{@render content()}</div>
   {/if}
 </div>
