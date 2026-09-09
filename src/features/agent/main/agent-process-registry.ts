@@ -98,29 +98,6 @@ export function deregisterProcess(pid: number): void {
   }
 }
 
-function notifyPendingWorkCleared(pid: number): void {
-  const entry = registry.get(pid);
-  if (entry && !entry.isActive && !entry.hasPendingWork?.() && waitQueue.length > 0) {
-    const next = waitQueue.shift();
-    if (next) {
-      logger.info('Waking queued spawn request (pending work cleared)', {
-        pid,
-        queueLength: waitQueue.length,
-      });
-      next();
-    }
-  }
-}
-
-/** Find a process entry by agentId and notify that its pending work may have cleared. */
-export function notifyPendingWorkClearedForAgent(agentId: string): void {
-  for (const [pid, entry] of registry) {
-    if (entry.agentId === agentId) {
-      notifyPendingWorkCleared(pid);
-    }
-  }
-}
-
 /**
  * Evict idle processes in LRU order to reclaim memory.
  *

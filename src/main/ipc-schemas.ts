@@ -580,17 +580,6 @@ export const EventsUnsubscribeSchema = z.object({
   subscriptionId: z.string().min(1, 'Subscription ID is required'),
 });
 
-export const EventsGetLastEventSchema = z.object({
-  // Mirrors `EventsEmitSchema.event.type`: drift-resistant union pulled from
-  // `WorkspaceEventType`. Reserved-but-unused types (e.g. `file:created`) are
-  // still accepted as query inputs and simply return `null` if no such event
-  // has ever been recorded.
-  type: z.enum(WORKSPACE_EVENT_TYPE_LITERALS),
-  workspaceId: WorkspaceIdSchema.optional(),
-});
-
-export const EventsGetStatisticsSchema = z.object({});
-
 export const SystemWriteClipboardSchema = z.object({
   text: z.string(),
 });
