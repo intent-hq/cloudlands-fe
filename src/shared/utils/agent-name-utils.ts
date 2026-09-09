@@ -6,7 +6,6 @@
  * dictionaries (static data).
  */
 
-
 /**
  * Check if a name is a "generic" agent name (e.g., "New Agent", "Orchestrator", "Assistant").
  * Generic names are default/placeholder names that should be overridden by intentional names.

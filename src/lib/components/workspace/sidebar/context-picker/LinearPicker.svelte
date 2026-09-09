@@ -6,16 +6,13 @@
    * Handles authentication flow if not authenticated.
    */
   import {
-  linearAuthClient,
-  type LinearIssueResult,
-} from '$features/linear-auth/renderer/linear-auth.client';
+    linearAuthClient,
+    type LinearIssueResult,
+  } from '$features/linear-auth/renderer/linear-auth.client';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
-  import {
-  faSpinner,
-  faSearch,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faSpinner, faSearch } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
@@ -28,13 +25,18 @@
 
   interface Props {
     workspaceId: string;
-    onSelect: (item: { type: string; title: string; url: string; identifier: string; metadata?: Record<string, unknown> }) => void;
+    onSelect: (item: {
+      type: string;
+      title: string;
+      url: string;
+      identifier: string;
+      metadata?: Record<string, unknown>;
+    }) => void;
     onClose: () => void;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { workspaceId, onSelect, onClose }: Props = $props();
-
 
   let isAuthenticated = $state(false);
   let issues = $state<LinearIssueResult[]>([]);

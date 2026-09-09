@@ -81,7 +81,7 @@ interface SendMessageOptions {
   /**
    * Opaque per-message tag the original send carried (PROTOCOL §5.5), recorded
    * so "Try again" resends it: an untagged retry of a wizard answer would leave
-   * the daemon's question hold pending and re-surface the answered wizard.
+   * the daemon's pending question set unanswered and re-surface the sticky wizard.
    */
   messageMetadata?: Record<string, unknown>;
 }
@@ -284,19 +284,6 @@ export interface ChatAgentState {
    * the subscribe saga's bounded fallback timeout.
    */
   awaitingSwitchBackSnapshot?: boolean;
-  /**
-   * Utility-footer reveal gate: true while the transcript reveal is holding
-   * for the footer data sources (agent subscriptions, background hooks,
-   * monitored PRs) to settle their initial snapshots, so transcript and
-   * footer flip in the SAME paint. Armed by the first
-   * `transcriptHydrationSettled` (first open) and alongside
-   * `awaitingSwitchBackSnapshot` on `markAgentAsViewed` (switch-back);
-   * cleared by `chatUtilityFooterReady` (the subscribe saga observed
-   * `isUtilityFooterReady` flip true), by the subscription teardown
-   * (phase null), or by the saga's bounded fallback timeout — footer
-   * readiness must NEVER wedge the transcript reveal.
-   */
-  awaitingUtilityFooter?: boolean;
   /**
    * Lazily hydrated full content blocks, keyed `{messageId}|{blockId}`
    * (§5.5 slim projection → v7.2 `agent.getMessageBlock`). Read-through

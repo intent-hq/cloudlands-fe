@@ -6,11 +6,7 @@ import {
   playTakeoverTransitionCues,
   resetHudSoundServiceForTests,
 } from './hud-sound-player';
-import {
-  HUD_SOUND_DEFAULT_VOLUME,
-  setHudSoundEnabled,
-  setHudSoundVolume,
-} from './hud-sound-state';
+import { HUD_SOUND_DEFAULT_VOLUME, setHudSoundEnabled, setHudSoundVolume } from './hud-sound-state';
 
 class MockAudio {
   src: string;
@@ -123,9 +119,7 @@ describe('hud-sound-player', () => {
   it('swallows autoplay-policy rejections', async () => {
     setHudSoundEnabled(true);
     await playHudSoundCue('task-complete', loaders);
-    audioInstances[0].play.mockRejectedValueOnce(
-      new DOMException('blocked', 'NotAllowedError'),
-    );
+    audioInstances[0].play.mockRejectedValueOnce(new DOMException('blocked', 'NotAllowedError'));
     await expect(playHudSoundCue('task-complete', loaders)).resolves.toBeUndefined();
   });
 

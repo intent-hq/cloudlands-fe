@@ -2,14 +2,7 @@
  * Tool Service Tests
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ToolService } from '../main/tool.service';
 import type { ToolContext, ToolOperation } from '../main/types';
 import * as fs from 'fs/promises';
@@ -80,7 +73,7 @@ describe('ToolService', () => {
     // Clean up test directory
     try {
       await fs.rm(testDir, { recursive: true, force: true });
-    } catch  {
+    } catch {
       // Ignore cleanup errors
     }
   });

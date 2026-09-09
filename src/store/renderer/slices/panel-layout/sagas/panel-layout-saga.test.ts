@@ -47,6 +47,7 @@ import {
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  activateVisibleTab,
   clearPanelLayout,
   bootstrapNewWorkspaceLayout,
   closeActiveTab,
@@ -358,6 +359,7 @@ const persistActionCreators = [
   removeScript,
   reopenClosedTab,
   setActiveTab,
+  activateVisibleTab,
   selectNextTab,
   selectPreviousTab,
   reorderTabs,
@@ -566,44 +568,70 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(task);
   });
 
-  it('routes agent-driven content into the rightmost stack in the background', async () => {
-    let state: any = storeState();
-    state.panelLayout.byWorkspaceId[WS_1].columnCount = 2;
-    const channel = stdChannel();
-    const dispatch = vi.fn((action) => {
-      state = { ...state, panelLayout: panelLayoutReducer(state.panelLayout, action) };
-    });
-    const task = runSaga(
-      { channel, dispatch, getState: () => state },
-      watchRightmostColumnRequests,
-    );
+  // An agent-driven visible open activates the tab in the rightmost column
+  // (so it paints and can be captured) but never moves panel focus; the
+  // scroll-into-view reveal is dropped when this window does not display the
+  // workspace (jsdom's route is `/`) and kept when it does (monorepo#3045).
+  it.each([
+    ['not displayed', '/', true],
+    ['displayed', `/workspace/${WS_1}`, false],
+  ])(
+    'routes agent-driven content into the rightmost stack, activated without focus (%s)',
+    async (_label, route, revealDropped) => {
+      window.history.pushState({}, '', route);
+      let state: any = storeState();
+      state.panelLayout.byWorkspaceId[WS_1].columnCount = 2;
+      const focusedBefore = state.panelLayout.byWorkspaceId[WS_1].focusedPanelId;
+      const channel = stdChannel();
+      const dispatch = vi.fn((action) => {
+        state = { ...state, panelLayout: panelLayoutReducer(state.panelLayout, action) };
+      });
+      const task = runSaga(
+        { channel, dispatch, getState: () => state },
+        watchRightmostColumnRequests,
+      );
 
-    channel.put(
-      openTabInRightmostColumnRequested(
-        WS_1,
-        { type: 'browser', title: 'Browser', browserUrl: 'https://example.test' },
-        { newTabId: 'browser-1', agentDriven: true },
-        123,
-      ),
-    );
-    await settle();
+      try {
+        channel.put(
+          openTabInRightmostColumnRequested(
+            WS_1,
+            { type: 'browser', title: 'Browser', browserUrl: 'https://example.test' },
+            { newTabId: 'browser-1', agentDriven: true },
+            123,
+          ),
+        );
+        await settle();
 
-    expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
-      'panelLayout/reconcilePanelColumnCount',
-      'panelLayout/openTabInRightmostColumn',
-    ]);
-    expect(dispatch.mock.calls[1]?.[0]).toMatchObject({ payload: { background: true } });
-    const workspace = state.panelLayout.byWorkspaceId[WS_1];
-    const rightmostPanel =
-      workspace.panels[
-        workspace.root.type === 'split'
-          ? workspace.root.children.at(-1).panelId
-          : workspace.root.panelId
-      ];
-    expect(rightmostPanel.activeTabId).toBeNull();
-    expect(rightmostPanel.attentionTabIds).toEqual(['browser-1']);
-    await cancelSaga(task);
-  });
+        expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
+          'panelLayout/reconcilePanelColumnCount',
+          'panelLayout/openTabInRightmostColumn',
+          ...(revealDropped
+            ? ['panelLayout/consumePanelReveal', 'panelLayout/consumePendingFocus']
+            : []),
+        ]);
+        expect(dispatch.mock.calls[1]?.[0]).toMatchObject({ payload: { preserveFocus: true } });
+        const workspace = state.panelLayout.byWorkspaceId[WS_1];
+        const rightmostPanelId =
+          workspace.root.type === 'split'
+            ? workspace.root.children.at(-1).panelId
+            : workspace.root.panelId;
+        const rightmostPanel = workspace.panels[rightmostPanelId];
+        expect(rightmostPanel.activeTabId).toBe('browser-1');
+        expect(rightmostPanel.tabs.map((tab: { id: string }) => tab.id)).toContain('browser-1');
+        expect(rightmostPanel.attentionTabIds ?? []).not.toContain('browser-1');
+        expect(workspace.focusedPanelId).toBe(focusedBefore);
+        expect(workspace.pendingFocusTabId).toBeNull();
+        expect(workspace.pendingPanelReveal).toEqual(
+          revealDropped
+            ? null
+            : expect.objectContaining({ panelId: rightmostPanelId, tabId: 'browser-1' }),
+        );
+      } finally {
+        await cancelSaga(task);
+        window.history.pushState({}, '', '/');
+      }
+    },
+  );
 
   it.each([true, false])(
     'preserves the production bootstrap when coordinator=%s mounts before persistence',
@@ -1669,6 +1697,27 @@ describe('panelLayoutSaga', () => {
     },
   );
 
+  // showTab on a visible-but-inactive tab dispatches only activateVisibleTab,
+  // so the activation must persist and snapshot on its own or it is lost on
+  // relaunch until an unrelated layout action runs.
+  it('persists and snapshots an in-place tab activation (activateVisibleTab)', async () => {
+    mocks.getJSON.mockReturnValue(undefined);
+    const { channel, task } = startSaga();
+    await settle();
+    channel.put(activateVisibleTab(WS_1, 'tab-1'));
+    await settle();
+
+    expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, layout]]);
+    await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
+    await settle();
+    expect(mocks.saveHistory).toHaveBeenCalledWith(
+      WS_1,
+      expect.objectContaining({ workspaceId: WS_1, history: [snapshot] }),
+      LOCAL_CONNECTION_ID,
+    );
+    await cancelSaga(task);
+  });
+
   it('persists and snapshots a reopened panel column through one watcher', async () => {
     const { channel, task } = startSaga();
     await settle();
@@ -1807,6 +1856,72 @@ describe('panelLayoutSaga', () => {
     await settle();
 
     expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, layout]]);
+    await cancelSaga(task);
+  });
+
+  // REV-2 §5.45: a registry-hosted browser tab persists geometry only; its
+  // URL/owner/size are restored from the daemon and must not shadow it.
+  it('persists registry-hosted browser tabs without their registry-held fields', async () => {
+    const hosted = {
+      id: 'tab-hosted',
+      type: 'browser' as const,
+      title: 'Hosted',
+      closable: true,
+      browserUrl: 'http://a.test/',
+      browserRequestedUrl: 'http://localhost:1/',
+      ownerAgentId: 'agent-1',
+      ownerAgentName: 'Agent',
+      emulatedSize: { width: 800, height: 600 },
+      hostClientId: 'cli-desk',
+    };
+    const legacy = {
+      id: 'tab-legacy',
+      type: 'browser' as const,
+      title: 'Legacy',
+      closable: true,
+      browserUrl: 'http://legacy.test/',
+    };
+    const hiddenHosted = { ...hosted, id: 'tab-hidden' };
+    // A pre-migration store still carries the fields; the first write after
+    // restore drops them.
+    const panels = {
+      'panel-1': { id: 'panel-1', tabs: [hosted, legacy], activeTabId: hosted.id },
+    };
+    mocks.getJSON.mockReturnValue({ ...layout, panels, hiddenTabs: [hiddenHosted] });
+    const state = storeState();
+    state.panelLayout.byWorkspaceId[WS_1] = {
+      ...workspaceState(),
+      panels,
+      hiddenTabs: createCollection('id', [hiddenHosted]),
+    };
+    const { channel, task } = startSaga(state);
+    await settle();
+    channel.put(workspaceMounted(WS_1));
+    await settle();
+    channel.put({ type: focusPanel.type, payload: [WS_1, 'panel-1'] });
+    await settle();
+
+    expect(mocks.setJSON).toHaveBeenCalledTimes(1);
+    const stored = mocks.setJSON.mock.calls[0]?.[1] as WorkspacePanelLayout;
+    expect(stored.panels['panel-1'].tabs).toEqual([
+      {
+        id: 'tab-hosted',
+        type: 'browser',
+        title: 'Hosted',
+        closable: true,
+        hostClientId: 'cli-desk',
+      },
+      legacy,
+    ]);
+    expect(stored.hiddenTabs).toEqual([
+      {
+        id: 'tab-hidden',
+        type: 'browser',
+        title: 'Hosted',
+        closable: true,
+        hostClientId: 'cli-desk',
+      },
+    ]);
     await cancelSaga(task);
   });
 

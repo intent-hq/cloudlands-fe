@@ -34,9 +34,8 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
 });
 
@@ -71,22 +70,25 @@ vi.mock('$store/renderer/slices/github-repo-search/github-repo-search-selectors'
   selectGithubRepoSearchResults: mocks.selector(() => []),
 }));
 
-vi.mock(
-  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
-  () => ({
-    selectWorkspaceInitializerDefaultParentPath: mocks.selector(() => ''),
-    selectWorkspaceInitializerRecentRepos: mocks.selector(() => mocks.state.recentRepos),
-    selectWorkspaceInitializerRemoteSetups: mocks.selector(() => []),
-  }),
-);
+vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerDefaultParentPath: mocks.selector(() => ''),
+  selectWorkspaceInitializerRecentRepos: mocks.selector(() => mocks.state.recentRepos),
+  selectWorkspaceInitializerRemoteSetups: mocks.selector(() => []),
+}));
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slice', () => ({
-  setWorkspaceInitializerDefaultParentPath: (path: string) => ({ type: 'wi/parent', payload: path }),
+  setWorkspaceInitializerDefaultParentPath: (path: string) => ({
+    type: 'wi/parent',
+    payload: path,
+  }),
   setWorkspaceInitializerLastSelectedRepo: (repo: unknown) => ({ type: 'wi/last', payload: repo }),
   setWorkspaceInitializerRecentRepos: (repos: unknown) => ({ type: 'wi/recent', payload: repos }),
   setWorkspaceInitializerRemoteSetups: (s: unknown) => ({ type: 'wi/remote', payload: s }),
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
-  replaceWorkspaceList: (workspaces: unknown) => ({ type: 'workspace/replace', payload: workspaces }),
+  replaceWorkspaceList: (workspaces: unknown) => ({
+    type: 'workspace/replace',
+    payload: workspaces,
+  }),
 }));
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { list: vi.fn(async () => ({ ok: true, data: [] })) },
@@ -147,8 +149,7 @@ function tabButton(label: string): HTMLButtonElement {
   return button!;
 }
 
-const githubInput = () =>
-  screen.queryByPlaceholderText('owner/repo') as HTMLInputElement | null;
+const githubInput = () => screen.queryByPlaceholderText('owner/repo') as HTMLInputElement | null;
 
 describe('RepoSelector open tab derived from the value prop', () => {
   afterEach(() => {
@@ -226,9 +227,7 @@ describe('RepoSelector Recent list vs the open-time pre-fill', () => {
     await openDropdown({ value: 'octo/alpha' });
 
     expect(githubInput()?.value).toBe('octo/alpha');
-    await waitFor(() =>
-      expect(recentRepoLabels()).toEqual(['octo / alpha', 'octo / beta']),
-    );
+    await waitFor(() => expect(recentRepoLabels()).toEqual(['octo / alpha', 'octo / beta']));
   });
 
   it('still filters the Recent list when the user types', async () => {

@@ -1,5 +1,5 @@
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   DEFAULT_THEME_CUSTOMIZATION,
   DEFAULT_THEME_NAME,
@@ -8,7 +8,7 @@ import {
   type ThemeName,
   type ThemePreference,
   type ThemeState,
-} from "./theme-types";
+} from './theme-types';
 
 export const initialState: ThemeState = {
   name: DEFAULT_THEME_NAME,
@@ -17,20 +17,20 @@ export const initialState: ThemeState = {
   ...DEFAULT_THEME_CUSTOMIZATION,
 };
 
-export const setThemeName = createAction<[name: ThemeName]>("theme/setThemeName");
+export const setThemeName = createAction<[name: ThemeName]>('theme/setThemeName');
 export const setThemePreference = createAction<[preference: ThemePreference]>(
-  "theme/setThemePreference",
+  'theme/setThemePreference',
 );
 export const setThemeCustomization = createAction<[customization: ThemeCustomizationState]>(
-  "theme/setThemeCustomization",
+  'theme/setThemeCustomization',
 );
 export const requestThemePreferenceChange = createAction<[preference: ThemePreference]>(
-  "theme/requestThemePreferenceChange",
+  'theme/requestThemePreferenceChange',
 );
-export const selectThemePreset = createAction<[presetId: string]>("theme/selectThemePreset");
-export const clearThemeCustomization = createAction("theme/clearThemeCustomization");
-export const importCustomTheme = createAction<[json: unknown]>("theme/importCustomTheme");
-export const setThemeError = createAction<[error: string | null]>("theme/setThemeError");
+export const selectThemePreset = createAction<[presetId: string]>('theme/selectThemePreset');
+export const clearThemeCustomization = createAction('theme/clearThemeCustomization');
+export const importCustomTheme = createAction<[json: unknown]>('theme/importCustomTheme');
+export const setThemeError = createAction<[error: string | null]>('theme/setThemeError');
 
 function isSameThemeCustomization(
   state: ThemeState,
@@ -45,18 +45,18 @@ function isSameThemeCustomization(
 
 export const themeReducer = createReducer<ThemeState>(initialState);
 themeReducer.with(setThemeName, (state, { payload: [name] }) => {
-    if (state.name === name) return state;
-    return { ...state, name };
-  });
+  if (state.name === name) return state;
+  return { ...state, name };
+});
 themeReducer.with(setThemePreference, (state, { payload: [preference] }) => {
-    if (state.preference === preference) return state;
-    return { ...state, preference };
-  });
+  if (state.preference === preference) return state;
+  return { ...state, preference };
+});
 themeReducer.with(setThemeCustomization, (state, { payload: [customization] }) => {
-    if (isSameThemeCustomization(state, customization)) return state;
-    return { ...state, ...customization };
-  });
+  if (isSameThemeCustomization(state, customization)) return state;
+  return { ...state, ...customization };
+});
 themeReducer.with(setThemeError, (state, { payload: [error] }) => {
-    if (state.error === error) return state;
-    return { ...state, error };
-  });
+  if (state.error === error) return state;
+  return { ...state, error };
+});

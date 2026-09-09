@@ -37,9 +37,7 @@ function* loadGitStatusWorker(workspaceId: string): SagaGenerator<void> {
   }
 }
 
-type GitStatusReadAction =
-  | ReturnType<typeof loadGitStatus>
-  | ReturnType<typeof workspaceUnmounted>;
+type GitStatusReadAction = ReturnType<typeof loadGitStatus> | ReturnType<typeof workspaceUnmounted>;
 
 function workspaceReadContext(action: GitStatusReadAction) {
   const workspaceId = action.payload[0];
@@ -81,9 +79,7 @@ async function readSecondaryRoot(
   const statusPaths = statusResult.data.files.map((file) => file.path);
   const [details, unstagedDiffs, stagedDiffs] = await Promise.all([
     Promise.all(
-      commits.map((commit) =>
-        appClient.git.commitDetails(workspaceId, commit.hash, { gitRootId }),
-      ),
+      commits.map((commit) => appClient.git.commitDetails(workspaceId, commit.hash, { gitRootId })),
     ),
     statusPaths.length
       ? appClient.git.diffs(workspaceId, { paths: statusPaths, gitRootId }).catch((error) => {
@@ -101,7 +97,10 @@ async function readSecondaryRoot(
       : Promise.resolve([]),
   ]);
   const statsByStage = new Map<string, { additions: number; deletions: number }>();
-  for (const [staged, diffs] of [[false, unstagedDiffs], [true, stagedDiffs]] as const) {
+  for (const [staged, diffs] of [
+    [false, unstagedDiffs],
+    [true, stagedDiffs],
+  ] as const) {
     for (const diff of diffs) {
       let additions = 0;
       let deletions = 0;
@@ -141,13 +140,7 @@ function* loadSecondaryRootWorker(
   const workspaceVersion = versions.workspaces.get(workspaceId) ?? 0;
   yield* put(setSecondaryRootGitLoading(workspaceId, gitRootId));
   try {
-    const data = yield* call(
-      readSecondaryRoot,
-      workspaceId,
-      gitRootId,
-      registeredCommitSha,
-      limit,
-    );
+    const data = yield* call(readSecondaryRoot, workspaceId, gitRootId, registeredCommitSha, limit);
     if ((versions.workspaces.get(workspaceId) ?? 0) !== workspaceVersion) return;
     yield* put(setSecondaryRootGit(workspaceId, gitRootId, data));
   } catch (error) {
@@ -200,9 +193,7 @@ type SecondaryRootReadVersions = {
 };
 
 function secondaryRootContext(
-  action:
-    | ReturnType<typeof loadSecondaryRootGit>
-    | ReturnType<typeof loadSecondaryRootCommitFiles>,
+  action: ReturnType<typeof loadSecondaryRootGit> | ReturnType<typeof loadSecondaryRootCommitFiles>,
 ) {
   return `${action.payload[0]}:${action.payload[1]}`;
 }
@@ -257,10 +248,6 @@ export function* gitReadSaga() {
     loadSecondaryRootCommitFilesWorker,
     secondaryRootReadVersions,
   );
-  yield* takeEvery(
-    workspaceUnmounted,
-    invalidateSecondaryRootWorkspace,
-    secondaryRootReadVersions,
-  );
+  yield* takeEvery(workspaceUnmounted, invalidateSecondaryRootWorkspace, secondaryRootReadVersions);
   yield* join(watcher);
 }

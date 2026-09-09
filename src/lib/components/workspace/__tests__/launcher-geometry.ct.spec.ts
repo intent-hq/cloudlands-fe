@@ -151,13 +151,20 @@ for (const scenario of [
     expect(changesResource.width).toBeCloseTo(24, 1);
     expect(changesResource.height).toBeCloseTo(24, 1);
     const changesLabel = changesLauncher.locator('[data-sidebar-launcher-label]');
-    const prAction = changesLauncher.locator('[data-sidebar-pr-link]');
+    const prAction = changesLauncher.locator('[data-sidebar-pr-trigger]');
     await expect(prAction).toHaveCount(1);
     await expect(prAction.locator('svg')).toHaveCount(1);
-    await expect(prAction).toHaveAttribute(
+    await expect(prAction).toHaveAttribute('data-sidebar-pr-count', '1');
+    await expect(changesLauncher.locator('[data-sidebar-pr-link]')).toHaveCount(0);
+    await prAction.click();
+    const prLink = page.locator('[data-sidebar-pr-link]');
+    await expect(prLink).toHaveCount(1);
+    await expect(prLink).toHaveAttribute(
       'data-sidebar-pr-url',
       'https://github.com/intent-hq/repository-with-a-very-long-name/pull/1373',
     );
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-sidebar-pr-link]')).toHaveCount(0);
     const labelBounds = await changesLabel.boundingBox();
     const actionBounds = await prAction.boundingBox();
     expect((actionBounds!.x - (labelBounds!.x + labelBounds!.width)) / scenario.zoom).toBeCloseTo(

@@ -7,17 +7,17 @@
  * `subscribe()` → emit-once with the initial fetch, matching how other live
  * clients handle subscribe.
  */
-import type { ReleaseNotes } from "$store/renderer/slices/release-notes/release-notes-types";
-import type { AutoUpdateState } from "$store/renderer/slices/auto-update/auto-update-types";
-import type { SystemStatusState } from "$store/renderer/slices/system-status/system-status-slice";
+import type { ReleaseNotes } from '$store/renderer/slices/release-notes/release-notes-types';
+import type { AutoUpdateState } from '$store/renderer/slices/auto-update/auto-update-types';
+import type { SystemStatusState } from '$store/renderer/slices/system-status/system-status-slice';
 import type {
   SystemCapabilities,
   SystemClient,
   SubscriptionHandler,
   Unsubscribe,
-} from "../app-client";
-import { backendRequest } from "./backend-transport";
-import { autoUpdateClient } from "$features/auto-update/auto-update.client";
+} from '../app-client';
+import { backendRequest } from './backend-transport';
+import { autoUpdateClient } from '$features/auto-update/auto-update.client';
 
 export class LiveSystemClient implements SystemClient {
   /**
@@ -37,8 +37,8 @@ export class LiveSystemClient implements SystemClient {
    */
   async status(): Promise<SystemStatusState> {
     try {
-      const result = await backendRequest<SystemStatusState>("system.status");
-      if (!result || typeof result !== "object") {
+      const result = await backendRequest<SystemStatusState>('system.status');
+      if (!result || typeof result !== 'object') {
         return {
           nodeVersionOk: null,
           nodeVersion: undefined,
@@ -47,11 +47,14 @@ export class LiveSystemClient implements SystemClient {
         };
       }
       return {
-        nodeVersionOk: typeof result.nodeVersionOk === "boolean" ? result.nodeVersionOk : null,
-        nodeVersion: typeof result.nodeVersion === "string" ? result.nodeVersion : undefined,
-        auggieInstalled: typeof result.auggieInstalled === "boolean" ? result.auggieInstalled : false,
+        nodeVersionOk: typeof result.nodeVersionOk === 'boolean' ? result.nodeVersionOk : null,
+        nodeVersion: typeof result.nodeVersion === 'string' ? result.nodeVersion : undefined,
+        auggieInstalled:
+          typeof result.auggieInstalled === 'boolean' ? result.auggieInstalled : false,
         binaryInstallAvailable:
-          typeof result.binaryInstallAvailable === "boolean" ? result.binaryInstallAvailable : false,
+          typeof result.binaryInstallAvailable === 'boolean'
+            ? result.binaryInstallAvailable
+            : false,
       };
     } catch {
       return {
@@ -73,12 +76,12 @@ export class LiveSystemClient implements SystemClient {
    */
   async capabilities(): Promise<SystemCapabilities> {
     try {
-      const result = await backendRequest<SystemCapabilities>("system.capabilities");
-      if (!result || typeof result !== "object") {
+      const result = await backendRequest<SystemCapabilities>('system.capabilities');
+      if (!result || typeof result !== 'object') {
         return {};
       }
       return {
-        cowSupported: typeof result.cowSupported === "boolean" ? result.cowSupported : undefined,
+        cowSupported: typeof result.cowSupported === 'boolean' ? result.cowSupported : undefined,
       };
     } catch {
       return {};

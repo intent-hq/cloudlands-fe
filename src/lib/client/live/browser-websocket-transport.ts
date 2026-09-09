@@ -29,8 +29,9 @@ import {
 /**
  * Resolve the configured browser WebSocket URL. Runtime configuration wins;
  * the build-time environment fallback exists only for local development.
- * Returns `undefined` when unset, blank, or not a `ws://`/`wss://` URL so the
- * factory falls back to the Electron-IPC transport's degraded behavior.
+ * A single-leading-slash path resolves against the browser page origin. Returns
+ * `undefined` when unset, blank, or not a supported path/WS URL so the factory
+ * falls back to the Electron-IPC transport's degraded behavior.
  */
 export function resolveBrowserWsUrl(
   raw: unknown = (() => {
@@ -46,6 +47,17 @@ export function resolveBrowserWsUrl(
   if (typeof raw !== 'string') return undefined;
   const url = raw.trim();
   if (!url) return undefined;
+  if (url.startsWith('/') && !url.startsWith('//') && !url.includes('\\')) {
+    const location = globalThis.location;
+    if (location?.host && (location.protocol === 'http:' || location.protocol === 'https:')) {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${protocol}//${location.host}${url}`;
+    }
+    console.warn(
+      '[browser-websocket-transport] Ignoring same-origin WebSocket path without an HTTP page origin',
+    );
+    return undefined;
+  }
   let parsed: URL;
   try {
     parsed = new URL(url);

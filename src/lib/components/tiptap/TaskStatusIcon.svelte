@@ -13,10 +13,7 @@
 -->
 <script lang="ts">
   import type { TaskStatus } from '$shared/types';
-  import {
-  draw,
-  scale,
-} from 'svelte/transition';
+  import { draw, scale } from 'svelte/transition';
   import { m } from '$shared/paraglide/messages.js';
 
   type NormalizedTaskStatus = TaskStatus | 'unknown';
@@ -82,7 +79,9 @@
     cancelled: m.tiptap_taskStatus_cancelled_label,
     unknown: m.tiptap_taskStatus_unknown_label,
   };
-  let statusLabel = $derived((statusLabels[normalizedStatus] ?? m.tiptap_taskStatus_unknown_label)());
+  let statusLabel = $derived(
+    (statusLabels[normalizedStatus] ?? m.tiptap_taskStatus_unknown_label)(),
+  );
 </script>
 
 <button

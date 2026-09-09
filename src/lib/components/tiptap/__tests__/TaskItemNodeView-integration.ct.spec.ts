@@ -1,7 +1,4 @@
-import {
-  test,
-  expect,
-} from '@playwright/experimental-ct-svelte';
+import { test, expect } from '@playwright/experimental-ct-svelte';
 import TipTapEditorTestHarness from './TipTapEditorTestHarness.svelte';
 
 /**
@@ -113,9 +110,7 @@ test.describe('TaskItemNodeView Integration', () => {
     });
 
     const checkbox = () => component.locator('[role="checkbox"]').first();
-    const contentDiv = component
-      .locator('[data-type="taskItem"] [data-node-view-content]')
-      .first();
+    const contentDiv = component.locator('[data-type="taskItem"] [data-node-view-content]').first();
 
     // Verify initial text is present
     await expect(contentDiv).toContainText('Important task text that should not disappear');

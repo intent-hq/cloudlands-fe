@@ -378,7 +378,10 @@ export class NotificationService {
    * workspaces — `workspaceId` is deliberately omitted (§6.1) so completions
    * in workspaces without an open window/tab still notify.
    */
-  private async subscribeBackend(backendId: string, state: BackendSubscriptionState): Promise<void> {
+  private async subscribeBackend(
+    backendId: string,
+    state: BackendSubscriptionState,
+  ): Promise<void> {
     const epoch = state.epoch;
     try {
       const client = this.clientFor(backendId);
@@ -457,7 +460,10 @@ export class NotificationService {
    * (`agent.list`, workspace title) go to the EMITTING backend's client
    * (`backendId`, defaulting to local for direct callers/tests).
    */
-  async handleAgentIdle(event: AgentIdleEvent, backendId: string = LOCAL_CONNECTION_ID): Promise<void> {
+  async handleAgentIdle(
+    event: AgentIdleEvent,
+    backendId: string = LOCAL_CONNECTION_ID,
+  ): Promise<void> {
     try {
       const workspaceId = event.workspaceId;
       const client = this.clientFor(backendId);

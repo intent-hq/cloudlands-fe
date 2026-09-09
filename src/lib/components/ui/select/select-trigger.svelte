@@ -39,7 +39,7 @@
 <SelectPrimitive.Trigger
   {...restProps}
   class={cn(
-    'group type-body text-foreground flex h-(--control-height-medium) w-full min-w-0 cursor-pointer items-center justify-between gap-2 rounded-(--radius-medium) outline-none transition-[border-color,background-color,box-shadow] duration-(--motion-fast) focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 aria-invalid:border-destructive-foreground aria-invalid:ring-1 aria-invalid:ring-destructive-foreground/25 disabled:cursor-not-allowed disabled:bg-muted/40 disabled:opacity-60 disabled:hover:border-border motion-reduce:transition-none',
+    'group type-body text-foreground flex h-(--control-height-medium) w-full min-w-0 cursor-pointer items-center justify-between gap-2 rounded-(--radius-medium) outline-none transition-[border-color,background-color,box-shadow] duration-(--motion-fast) focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 aria-invalid:border-danger aria-invalid:ring-1 aria-invalid:ring-danger/25 disabled:cursor-not-allowed disabled:bg-muted/40 disabled:opacity-60 disabled:hover:border-border motion-reduce:transition-none',
     variantClasses[variant],
     className,
   )}

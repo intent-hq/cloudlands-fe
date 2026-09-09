@@ -3,15 +3,8 @@
  * listing itself lives in the shared provider-models client).
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import {
-  getModelIcon,
-  type AuggieModel,
-} from '../auggie-models.client';
+import { describe, it, expect } from 'vitest';
+import { getModelIcon, type AuggieModel } from '../auggie-models.client';
 
 describe('auggie-models', () => {
   describe('getModelIcon', () => {

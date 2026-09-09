@@ -55,6 +55,7 @@ vi.mock('$lib/utils/workspace-navigation', () => ({
 }));
 
 import EmbeddedBrowser from './EmbeddedBrowser.svelte';
+import { m } from '$shared/paraglide/messages.js';
 import { navigateToAgent } from '$lib/utils/workspace-navigation';
 import { toast } from '$lib/components/ui/toast';
 import { elementPickerScript } from './element-picker-script';
@@ -346,6 +347,27 @@ describe('EmbeddedBrowser', () => {
       expect(container.querySelector('input')).toBeNull();
     });
 
+    it('reports an unparsable address without navigating or recording it', async () => {
+      const { container, getByRole, queryByText } = renderPage();
+      const webview = container.querySelector('webview') as HTMLElement & {
+        loadURL: ReturnType<typeof vi.fn>;
+      };
+      webview.loadURL = vi.fn().mockResolvedValue(undefined);
+      mocks.dispatch.mockClear();
+      const invalidFormatMessage = m.browser_embedded_invalidUrlFormat_error();
+      expect(queryByText(invalidFormatMessage)).toBeNull();
+
+      await fireEvent.click(getByRole('button', { name: 'Edit browser address' }));
+      const input = getByRole('textbox', { name: 'Browser address' });
+      await fireEvent.input(input, { target: { value: 'not a url' } });
+      await fireEvent.submit(input.closest('form')!);
+
+      expect(queryByText(invalidFormatMessage)).not.toBeNull();
+      expect(webview.loadURL).not.toHaveBeenCalled();
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+      expect(container.querySelector('input')).toBeNull();
+    });
+
     it('discards an edited address on Escape or blur', async () => {
       const { getByRole, queryByRole } = renderPage();
       const edit = () => fireEvent.click(getByRole('button', { name: 'Edit browser address' }));
@@ -425,6 +447,38 @@ describe('EmbeddedBrowser', () => {
       expect(container.querySelector('[data-browser-page-favicon]')?.getAttribute('src')).toBe(
         'https://example.test/favicon.ico',
       );
+    });
+
+    it('exposes the page title and distinct hostname together', async () => {
+      const { container, getByRole } = renderPage({ url: 'https://app.example.com/dashboard' });
+      const titleEvent = new Event('page-title-updated');
+      Object.defineProperty(titleEvent, 'title', { value: 'Dashboard' });
+
+      container.querySelector('webview')!.dispatchEvent(titleEvent);
+
+      const identity = getByRole('button', { name: 'Edit browser address' });
+      await waitFor(() => expect(identity.textContent).toContain('Dashboard'));
+      expect(identity.textContent).toContain('app.example.com');
+    });
+
+    it('shows a hostname only once when the page has no title', () => {
+      const { getByRole, getAllByText } = renderPage({ url: 'http://127.0.0.1:5173' });
+
+      expect(getAllByText('127.0.0.1')).toHaveLength(1);
+      expect(getByRole('button', { name: 'Edit browser address' }).textContent?.trim()).toBe(
+        '127.0.0.1',
+      );
+    });
+
+    it('omits the hostname separator when the URL has no hostname', async () => {
+      const { container, getByRole } = renderPage({ url: 'file:///tmp/report.html' });
+      const titleEvent = new Event('page-title-updated');
+      Object.defineProperty(titleEvent, 'title', { value: 'Local report' });
+
+      container.querySelector('webview')!.dispatchEvent(titleEvent);
+
+      const identity = getByRole('button', { name: 'Edit browser address' });
+      await waitFor(() => expect(identity.textContent?.trim()).toBe('Local report'));
     });
 
     it('keeps the webview source current across full and in-page navigation', async () => {

@@ -10,31 +10,26 @@
  * subscription contract that replaced the old eventBus system.
  */
 
-import {
-  describe,
-  expect,
-  it,
-  beforeEach,
-} from "vitest";
-import type { WorkspaceEvent } from "../../../../../features/events/types";
+import { describe, expect, it, beforeEach } from 'vitest';
+import type { WorkspaceEvent } from '../../../../../features/events/types';
 import {
   workspaceEventsReducer,
   initialState,
   workspaceEventAccepted,
-} from "../workspace-events-slice";
+} from '../workspace-events-slice';
 import {
   selectRecentEvents,
   selectEventCount,
   selectEventsByType,
-} from "../workspace-events-selectors";
-import { MAX_RECENT_EVENTS } from "../types";
-import type { WorkspaceEventsState } from "../types";
+} from '../workspace-events-selectors';
+import { MAX_RECENT_EVENTS } from '../types';
+import type { WorkspaceEventsState } from '../types';
 
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
 
-const WS = "ws-integration";
+const WS = 'ws-integration';
 
 let counter = 0;
 
@@ -44,9 +39,9 @@ function makeEvent(overrides: Partial<WorkspaceEvent> = {}): WorkspaceEvent {
     id: `int-evt-${n}`,
     workspaceId: WS,
     timestamp: new Date(2025, 0, 1, 0, 0, n).toISOString(),
-    type: "file:changed",
-    actor: { type: "system", id: "sys-1", name: "System" },
-    data: { path: `/int-${n}.ts`, relativePath: `int-${n}.ts`, action: "modify" },
+    type: 'file:changed',
+    actor: { type: 'system', id: 'sys-1', name: 'System' },
+    data: { path: `/int-${n}.ts`, relativePath: `int-${n}.ts`, action: 'modify' },
     ...overrides,
   } as WorkspaceEvent;
 }
@@ -68,8 +63,8 @@ beforeEach(() => {
 // 1. Live-only subscribe vs historical replay
 // ===========================================================================
 
-describe("subscription semantics: live-only vs historical", () => {
-  it("a new subscriber sees all events already in the buffer (historical replay)", () => {
+describe('subscription semantics: live-only vs historical', () => {
+  it('a new subscriber sees all events already in the buffer (historical replay)', () => {
     // Emit several events before any "subscriber" reads
     let state = initialState;
     const events: WorkspaceEvent[] = [];
@@ -85,8 +80,8 @@ describe("subscription semantics: live-only vs historical", () => {
     expect(visible).toEqual(events);
   });
 
-  it("a subscriber only sees events from their workspace (workspace-scoped)", () => {
-    const OTHER_WS = "ws-other";
+  it('a subscriber only sees events from their workspace (workspace-scoped)', () => {
+    const OTHER_WS = 'ws-other';
     let state = initialState;
 
     // Emit to two workspaces
@@ -101,7 +96,7 @@ describe("subscription semantics: live-only vs historical", () => {
     expect(otherEvents).toHaveLength(1);
   });
 
-  it("live events appear immediately to selector reads after dispatch", () => {
+  it('live events appear immediately to selector reads after dispatch', () => {
     let state = initialState;
 
     // Before: empty
@@ -117,14 +112,14 @@ describe("subscription semantics: live-only vs historical", () => {
     expect(selectEventCount.select(asMainState(state), WS)).toBe(1);
   });
 
-  it("type-filtered subscriptions only see matching event types", () => {
+  it('type-filtered subscriptions only see matching event types', () => {
     let state = initialState;
-    state = reduce(workspaceEventAccepted(makeEvent({ type: "file:changed" })), state);
-    state = reduce(workspaceEventAccepted(makeEvent({ type: "agent:started" as any })), state);
-    state = reduce(workspaceEventAccepted(makeEvent({ type: "file:changed" })), state);
+    state = reduce(workspaceEventAccepted(makeEvent({ type: 'file:changed' })), state);
+    state = reduce(workspaceEventAccepted(makeEvent({ type: 'agent:started' as any })), state);
+    state = reduce(workspaceEventAccepted(makeEvent({ type: 'file:changed' })), state);
 
-    const fileEvents = selectEventsByType.select(asMainState(state), WS, "file:changed");
-    const agentEvents = selectEventsByType.select(asMainState(state), WS, "agent:started");
+    const fileEvents = selectEventsByType.select(asMainState(state), WS, 'file:changed');
+    const agentEvents = selectEventsByType.select(asMainState(state), WS, 'agent:started');
 
     expect(fileEvents).toHaveLength(2);
     expect(agentEvents).toHaveLength(1);
@@ -135,8 +130,8 @@ describe("subscription semantics: live-only vs historical", () => {
 // 2. MAX_RECENT_EVENTS buffer rollover
 // ===========================================================================
 
-describe("subscription semantics: buffer rollover at MAX_RECENT_EVENTS", () => {
-  it("buffer never exceeds MAX_RECENT_EVENTS", () => {
+describe('subscription semantics: buffer rollover at MAX_RECENT_EVENTS', () => {
+  it('buffer never exceeds MAX_RECENT_EVENTS', () => {
     let state = initialState;
     const total = MAX_RECENT_EVENTS + 50;
     for (let i = 0; i < total; i++) {
@@ -148,7 +143,7 @@ describe("subscription semantics: buffer rollover at MAX_RECENT_EVENTS", () => {
     expect(selectEventCount.select(asMainState(state), WS)).toBe(total);
   });
 
-  it("new events are still accepted and visible after rollover", () => {
+  it('new events are still accepted and visible after rollover', () => {
     let state = initialState;
     // Fill the buffer exactly
     for (let i = 0; i < MAX_RECENT_EVENTS; i++) {
@@ -157,7 +152,7 @@ describe("subscription semantics: buffer rollover at MAX_RECENT_EVENTS", () => {
     expect(selectRecentEvents.select(asMainState(state), WS)).toHaveLength(MAX_RECENT_EVENTS);
 
     // Add one more — should still be accepted
-    const overflow = makeEvent({ type: "git:commit" as any });
+    const overflow = makeEvent({ type: 'git:commit' as any });
     state = reduce(workspaceEventAccepted(overflow), state);
 
     const visible = selectRecentEvents.select(asMainState(state), WS);
@@ -168,7 +163,7 @@ describe("subscription semantics: buffer rollover at MAX_RECENT_EVENTS", () => {
     expect(selectEventCount.select(asMainState(state), WS)).toBe(MAX_RECENT_EVENTS + 1);
   });
 
-  it("oldest events are evicted first (FIFO)", () => {
+  it('oldest events are evicted first (FIFO)', () => {
     let state = initialState;
     const allEvents: WorkspaceEvent[] = [];
     const total = MAX_RECENT_EVENTS + 20;
@@ -193,13 +188,13 @@ describe("subscription semantics: buffer rollover at MAX_RECENT_EVENTS", () => {
 // 3. Duplicate event visibility to subscribers
 // ===========================================================================
 
-describe("subscription semantics: reducer accepts all workspaceEventAccepted events", () => {
+describe('subscription semantics: reducer accepts all workspaceEventAccepted events', () => {
   // Note: Dedup is now handled in the coordinating saga (dedup-cache.ts),
   // not the reducer. The reducer unconditionally buffers workspaceEventAccepted events.
   // Dedup cache tests are in workspace-events-saga.test.ts.
 
-  it("reducer buffers all accepted events regardless of content similarity", () => {
-    const sharedData = { path: "/dup.ts", relativePath: "dup.ts", action: "modify" };
+  it('reducer buffers all accepted events regardless of content similarity', () => {
+    const sharedData = { path: '/dup.ts', relativePath: 'dup.ts', action: 'modify' };
     const baseTs = new Date(2025, 5, 1, 12, 0, 0);
 
     const e1 = makeEvent({
@@ -207,7 +202,7 @@ describe("subscription semantics: reducer accepts all workspaceEventAccepted eve
       data: sharedData,
     });
     const e2 = makeEvent({
-      id: "dup-id-2",
+      id: 'dup-id-2',
       timestamp: new Date(baseTs.getTime() + 500).toISOString(),
       data: sharedData,
     });
@@ -221,17 +216,17 @@ describe("subscription semantics: reducer accepts all workspaceEventAccepted eve
     expect(selectEventCount.select(asMainState(state), WS)).toBe(2);
   });
 
-  it("events with different content keys at same timestamp are both visible", () => {
+  it('events with different content keys at same timestamp are both visible', () => {
     const ts = new Date(2025, 5, 1, 12, 0, 0).toISOString();
 
     const e1 = makeEvent({
       timestamp: ts,
-      data: { path: "/x.ts", relativePath: "x.ts", action: "modify" },
+      data: { path: '/x.ts', relativePath: 'x.ts', action: 'modify' },
     });
     const e2 = makeEvent({
-      id: "diff-key-2",
+      id: 'diff-key-2',
       timestamp: ts,
-      data: { path: "/y.ts", relativePath: "y.ts", action: "modify" },
+      data: { path: '/y.ts', relativePath: 'y.ts', action: 'modify' },
     });
 
     let state = reduce(workspaceEventAccepted(e1));
@@ -241,7 +236,7 @@ describe("subscription semantics: reducer accepts all workspaceEventAccepted eve
     expect(visible).toHaveLength(2);
   });
 
-  it("multiple accepted events all appear in buffer", () => {
+  it('multiple accepted events all appear in buffer', () => {
     let state = initialState;
     const events: WorkspaceEvent[] = [];
     for (let i = 0; i < 10; i++) {
@@ -258,4 +253,3 @@ describe("subscription semantics: reducer accepts all workspaceEventAccepted eve
     expect(visible).toEqual(events);
   });
 });
-

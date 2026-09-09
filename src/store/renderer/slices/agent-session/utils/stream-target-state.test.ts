@@ -49,9 +49,9 @@ describe('stream target state utilities', () => {
     it('prefers the exact in-flight match on the canonical assistantMessageId', () => {
       const stale = assistant({ id: 'msg_stale', appMessageId: undefined, isStreaming: true });
       const target = assistant({ id: 'msg_live', appMessageId: undefined, isStreaming: true });
-      expect(findStreamTargetAssistantMessage(session([stale, target]), undefined, 'msg_live')).toBe(
-        target,
-      );
+      expect(
+        findStreamTargetAssistantMessage(session([stale, target]), undefined, 'msg_live'),
+      ).toBe(target);
     });
 
     it('refuses a stale in-flight row bound to a DIFFERENT canonical id when only assistantMessageId is known', () => {
@@ -62,7 +62,11 @@ describe('stream target state utilities', () => {
     });
 
     it('still binds a local optimistic placeholder (non-canonical id) via the first-in-flight fallback', () => {
-      const optimistic = assistant({ id: 'local-uuid', appMessageId: undefined, isStreaming: true });
+      const optimistic = assistant({
+        id: 'local-uuid',
+        appMessageId: undefined,
+        isStreaming: true,
+      });
       expect(findStreamTargetAssistantMessage(session([optimistic]), undefined, 'msg_new')).toBe(
         optimistic,
       );

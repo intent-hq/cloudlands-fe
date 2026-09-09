@@ -15,7 +15,13 @@
  * `src/shared/ipc/quit-confirmation.ts`), enriched with the agent-owned
  * embedded browser tabs quitting would destroy — and shown whenever quitting
  * disrupts anything: responding agents OR agent-owned tabs (tabs alone
- * trigger the prompt too). The renderer round-trip is
+ * trigger the prompt too). Under REV-2 (PROTOCOL §5.9 / §5.45) a tab this
+ * app hosts only counts when its workspace's *driving client*
+ * (`workspace.getBrowserClient(...).resolved`) is this app's own clientId —
+ * an agent's tabs migrate to whichever client drives the workspace, so
+ * quitting a non-driving client destroys nothing the agent depends on. The
+ * lookup is fail-open per workspace: a failed or unsupported RPC keeps the
+ * tab counted. The renderer round-trip is
  * fail-open: when no window is available, the renderer never acknowledges the
  * show request within {@link RENDERER_ACK_TIMEOUT_MS}, or sending fails, the
  * flow falls back to the native message box (quit-dialog.ts) so quit is never
@@ -62,6 +68,10 @@ import type {
   QuitConfirmationShowPayload,
 } from '../shared/ipc/quit-confirmation';
 import { Logger } from '../shared/logger';
+import {
+  isWorkspaceBrowserClient,
+  type WorkspaceBrowserClient,
+} from '../shared/types/browser-clients';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { QuitConfirmationAckSchema, QuitConfirmationResponseSchema } from './ipc-schemas';
 import { createValidatedHandler } from './ipc-validation-middleware';
@@ -76,6 +86,7 @@ import {
   type RunningAgentsRpc,
 } from './running-agents';
 import { getMainWindow } from './state';
+import { getBackendIdForWindow } from './window-backend';
 
 const logger = new Logger('QuitConfirmation');
 
@@ -109,8 +120,27 @@ export interface QuitConfirmationDeps {
   listRespondingAgents(client: RunningAgentsRpc): Promise<RespondingAgent[]>;
   /** Best-effort responding agents on the startup/default backend, via a throwaway client. */
   listLocalRespondingAgents(): Promise<RespondingAgent[]>;
-  /** Agent-owned embedded browser tabs that quitting destroys (best effort). */
+  /** Agent-owned embedded browser tabs this app hosts (best effort). */
   listDisruptedBrowserTabs(): Promise<QuitBrowserTabSummary[]>;
+  /** This app's stable §5.17 clientId, as presented on `client.hello`. */
+  getOwnClientId(): Promise<string>;
+  /**
+   * Distinct backend ids of the live windows hosting `workspaceId` (active
+   * view or tab bar). Workspace ids are daemon-local, so this is the only
+   * evidence binding a hosted tab's workspace to the daemon it lives on.
+   */
+  getHostingBackendIds(workspaceId: string): Promise<string[]>;
+  /**
+   * `workspace.getBrowserClient { workspaceId }` on one pooled backend —
+   * which client drives the workspace's agent browser tabs right now. Throws
+   * on any transport/RPC failure (unknown workspace on that backend, daemon
+   * too old, disconnected); the caller treats a throw as "unknown" and keeps
+   * the tab counted.
+   */
+  getWorkspaceBrowserClient(
+    client: RunningAgentsRpc,
+    workspaceId: string,
+  ): Promise<WorkspaceBrowserClient>;
   /**
    * Renderer round-trip: show the modal in `parent` and resolve the user's
    * decision (true = proceed). Resolves null when the renderer path is
@@ -200,10 +230,42 @@ function defaultShowMessageBox(
  * did; tests inject this seam instead.
  */
 async function defaultListDisruptedBrowserTabs(): Promise<QuitBrowserTabSummary[]> {
-  const { embeddedBrowserCdp } = await import(
-    '../features/browser/main/embedded-browser-cdp-service'
-  );
+  const { embeddedBrowserCdp } =
+    await import('../features/browser/main/embedded-browser-cdp-service');
   return embeddedBrowserCdp.listAgentOwnedTabs();
+}
+
+/** Lazy import: client-identity pulls in the local-prefs store. */
+async function defaultGetOwnClientId(): Promise<string> {
+  const { getOrCreateClientId } = await import('../features/backend/main/client-identity');
+  return getOrCreateClientId();
+}
+
+async function defaultGetHostingBackendIds(workspaceId: string): Promise<string[]> {
+  // Lazy: system.ipc pulls in the backend IPC chain (see confirmQuitInner).
+  const { getWindowIdsForWorkspace } = await import('../features/system/main/system.ipc');
+  const ids = new Set<string>();
+  for (const windowId of getWindowIdsForWorkspace(workspaceId)) {
+    const window = BrowserWindow.fromId(windowId);
+    if (window && !window.isDestroyed()) ids.add(getBackendIdForWindow(window));
+  }
+  return [...ids];
+}
+
+async function defaultGetWorkspaceBrowserClient(
+  client: RunningAgentsRpc,
+  workspaceId: string,
+): Promise<WorkspaceBrowserClient> {
+  if (client.getStatus() !== 'connected') {
+    throw new Error('backend not connected');
+  }
+  const result = await client.request<{ browserClient?: unknown }>('workspace.getBrowserClient', {
+    workspaceId,
+  });
+  if (!isWorkspaceBrowserClient(result?.browserClient)) {
+    throw new Error('malformed workspace.getBrowserClient result');
+  }
+  return result.browserClient;
 }
 
 /** The renderer decision (or ack failure) for the request main is waiting on. */
@@ -330,15 +392,14 @@ async function defaultConfirmViaRenderer(
     ackTimer = setTimeout(() => resolve('timeout'), RENDERER_ACK_TIMEOUT_MS);
   });
   try {
-    const ackOutcome = await Promise.race([
-      acked.then(() => 'acked' as const),
-      ackTimeout,
-      gone,
-    ]);
+    const ackOutcome = await Promise.race([acked.then(() => 'acked' as const), ackTimeout, gone]);
     if (ackOutcome === 'gone') {
-      logger.warn('Renderer went away before acknowledging quit confirmation; using native dialog', {
-        requestId: payload.requestId,
-      });
+      logger.warn(
+        'Renderer went away before acknowledging quit confirmation; using native dialog',
+        {
+          requestId: payload.requestId,
+        },
+      );
       return null;
     }
     if (ackOutcome === 'timeout') {
@@ -409,17 +470,115 @@ function dedupeByAgentId(agents: RespondingAgent[]): RespondingAgent[] {
   });
 }
 
-/** Tab enumeration wrapper: any failure means "no tab data", never a throw. */
+/**
+ * Tab enumeration wrapper: any failure means "no tab data", never a throw.
+ * The hosted tabs are then narrowed to workspaces this app drives.
+ */
 async function listDisruptedTabsFailOpen(
   deps: QuitConfirmationDeps,
+  targets: QuitBackendTarget[],
 ): Promise<QuitBrowserTabSummary[]> {
   try {
-    return await deps.listDisruptedBrowserTabs();
+    const hostedTabs = await deps.listDisruptedBrowserTabs();
+    return await filterTabsOfDrivenWorkspaces(deps, targets, hostedTabs);
   } catch (error) {
     logger.warn('Browser tab enumeration failed during quit check; omitting tab data', {
       error: error instanceof Error ? error.message : String(error),
     });
     return [];
+  }
+}
+
+/**
+ * Keep only tabs whose workspace this app drives (PROTOCOL §5.9 resolution as
+ * reported by `workspace.getBrowserClient`). Fail-open per workspace: a tab
+ * with no workspaceId, no single hosting backend, a lookup that fails on the
+ * hosting backend, or an unavailable own clientId keeps the tab counted. Only
+ * a workspace that positively resolves to a *different* client drops its tabs.
+ */
+async function filterTabsOfDrivenWorkspaces(
+  deps: QuitConfirmationDeps,
+  targets: QuitBackendTarget[],
+  tabs: QuitBrowserTabSummary[],
+): Promise<QuitBrowserTabSummary[]> {
+  if (tabs.length === 0) return tabs;
+
+  let ownClientId: string;
+  try {
+    ownClientId = await deps.getOwnClientId();
+  } catch (error) {
+    logger.warn('Own clientId unavailable during quit check; counting every hosted tab', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return tabs;
+  }
+
+  const workspaceIds = [
+    ...new Set(tabs.flatMap((tab) => (tab.workspaceId ? [tab.workspaceId] : []))),
+  ];
+  const drivenByOther = new Set<string>();
+  await Promise.all(
+    workspaceIds.map(async (workspaceId) => {
+      const drivingClientId = await resolveDrivingClientId(deps, targets, workspaceId);
+      if (drivingClientId !== null && drivingClientId !== ownClientId) {
+        drivenByOther.add(workspaceId);
+      }
+    }),
+  );
+
+  const kept = tabs.filter((tab) => !tab.workspaceId || !drivenByOther.has(tab.workspaceId));
+  if (kept.length !== tabs.length) {
+    logger.info('Ignoring hosted tabs of workspaces another client drives', {
+      dropped: tabs.length - kept.length,
+      workspaceIds: [...drivenByOther],
+    });
+  }
+  return kept;
+}
+
+/**
+ * The driving clientId of `workspaceId`, asked only of the backend whose
+ * window hosts that workspace. Workspace ids are daemon-local (an import
+ * keeps the source id), so another pooled daemon answering for the same id
+ * is never authoritative. `null` means unknown — no or ambiguous hosting
+ * backend, no live pooled client for it, or the lookup failed — or that no
+ * client currently drives it (`resolved: null`); all keep the tab counted.
+ */
+async function resolveDrivingClientId(
+  deps: QuitConfirmationDeps,
+  targets: QuitBackendTarget[],
+  workspaceId: string,
+): Promise<string | null> {
+  let hostingBackendIds: string[];
+  try {
+    hostingBackendIds = await deps.getHostingBackendIds(workspaceId);
+  } catch (error) {
+    logger.debug('Hosting backend lookup failed during quit check', {
+      workspaceId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+  if (hostingBackendIds.length !== 1) {
+    logger.debug('No single hosting backend for workspace during quit check', {
+      workspaceId,
+      hostingBackendIds,
+    });
+    return null;
+  }
+  const [backendId] = hostingBackendIds;
+  const target = targets.find((candidate) => candidate.id === backendId);
+  if (!target) return null;
+  try {
+    const browserClient = await deps.getWorkspaceBrowserClient(target.client, workspaceId);
+    return browserClient.resolved?.clientId ?? null;
+  } catch (error) {
+    logger.debug('workspace.getBrowserClient failed during quit check', {
+      backendId,
+      workspaceId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
   }
 }
 
@@ -496,6 +655,9 @@ async function confirmQuitInner(overrides: Partial<QuitConfirmationDeps>): Promi
     listRespondingAgents,
     listLocalRespondingAgents: defaultListLocalRespondingAgents,
     listDisruptedBrowserTabs: defaultListDisruptedBrowserTabs,
+    getOwnClientId: defaultGetOwnClientId,
+    getHostingBackendIds: defaultGetHostingBackendIds,
+    getWorkspaceBrowserClient: defaultGetWorkspaceBrowserClient,
     confirmViaRenderer: defaultConfirmViaRenderer,
     buildQuitDialogOptions,
     buildTabsOnlyQuitDialogOptions,
@@ -517,7 +679,7 @@ async function confirmQuitInner(overrides: Partial<QuitConfirmationDeps>): Promi
       })),
     ),
     localProbeNeeded ? listLocalAgentsFailOpen(deps) : Promise.resolve<RespondingAgent[]>([]),
-    listDisruptedTabsFailOpen(deps),
+    listDisruptedTabsFailOpen(deps, targets),
   ]);
   const remoteAgents = targetAgents
     .filter((target) => target.id !== LOCAL_CONNECTION_ID)

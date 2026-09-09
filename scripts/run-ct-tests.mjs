@@ -80,9 +80,18 @@ if (forwarded[0] === '--print-playwright-version') {
 }
 console.error(`[run-ct-tests] using playwright@${cli.version} (${cli.cliPath})`);
 
+// Playwright's default transform cache is host-wide. Persistent CI runners
+// can reuse incomplete component metadata from another checkout, which leaves
+// valid Svelte hosts out of the generated component registry. Keep the cache
+// project-local while preserving an explicit override.
+const transformCacheDir =
+  process.env.PWTEST_CACHE_DIR?.trim() ||
+  path.join(repoRoot, 'node_modules', '.cache', 'playwright-transform');
+
 const child = spawn(process.execPath, [cli.cliPath, ...args], {
   cwd: repoRoot,
   stdio: 'inherit',
+  env: { ...process.env, PWTEST_CACHE_DIR: transformCacheDir },
 });
 child.on('error', (error) => {
   console.error(`[run-ct-tests] failed to spawn playwright: ${error.message}`);

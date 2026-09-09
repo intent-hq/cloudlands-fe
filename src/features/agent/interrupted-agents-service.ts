@@ -12,24 +12,24 @@
  * resolved by another window/client are pruned; when everything is resolved
  * the modal closes silently (the resolving window already toasted).
  */
-import { Logger } from "$shared/logger";
-import { onBackendReconnected, electronAPI } from "$lib/client/live/backend-transport";
-import type { InterruptedAgent } from "$lib/client/app-client";
-import { m } from "$shared/paraglide/messages.js";
+import { Logger } from '$shared/logger';
+import { onBackendReconnected, electronAPI } from '$lib/client/live/backend-transport';
+import type { InterruptedAgent } from '$lib/client/app-client';
+import { m } from '$shared/paraglide/messages.js';
 
 const BACKEND = {
-  STATUS: "backend:status",
-  NOTIFICATION: "backend:notification",
-  REQUEST: "backend:request",
-  SUBSCRIBE: "backend:subscribe",
-  UNSUBSCRIBE: "backend:unsubscribe",
-  GET_STATUS: "backend:get-status",
+  STATUS: 'backend:status',
+  NOTIFICATION: 'backend:notification',
+  REQUEST: 'backend:request',
+  SUBSCRIBE: 'backend:subscribe',
+  UNSUBSCRIBE: 'backend:unsubscribe',
+  GET_STATUS: 'backend:get-status',
 } as const;
 
 /** Resolves arrive in bursts (one agent:updated per resolved agent). */
 export const INTERRUPTED_RECONCILE_DEBOUNCE_MS = 400;
 
-const logger = new Logger("InterruptedAgentsService");
+const logger = new Logger('InterruptedAgentsService');
 
 /**
  * Handler invoked when interrupted agents should be shown to the user.
@@ -100,8 +100,8 @@ export async function resolveInterruptedAgents(
     if (abandonIds.length > 0) params.abandon = abandonIds;
 
     const result = await appClient.agents.resolveInterrupted(params);
-    logger.info("Resolved interrupted agents", { result });
-    import("svelte-sonner")
+    logger.info('Resolved interrupted agents', { result });
+    import('svelte-sonner')
       .then(({ toast }) => {
         const resumed = result.resumed.length;
         const abandoned = result.abandoned.length;
@@ -127,8 +127,8 @@ export async function resolveInterruptedAgents(
       })
       .catch(() => {});
   } catch (error) {
-    logger.error("Failed to resolve interrupted agents", { error });
-    import("svelte-sonner")
+    logger.error('Failed to resolve interrupted agents', { error });
+    import('svelte-sonner')
       .then(({ toast }) => {
         toast.error(
           abandonOnly
@@ -166,13 +166,13 @@ async function reconcileInterruptedAgents(): Promise<void> {
     const agents: InterruptedAgent[] = await installedAppClient.agents.listInterrupted();
     if (!openAgentIds) return; // Modal closed while the re-query was in flight.
     const survivors = agents.filter((agent) => openAgentIds!.has(agent.agentId));
-    logger.info("Reconciled interrupted agents after cross-window resolve", {
+    logger.info('Reconciled interrupted agents after cross-window resolve', {
       before: openAgentIds.size,
       after: survivors.length,
     });
     showInterruptedAgents(survivors);
   } catch (error) {
-    logger.error("Failed to reconcile interrupted agents", { error });
+    logger.error('Failed to reconcile interrupted agents', { error });
   }
 }
 
@@ -182,29 +182,29 @@ async function reconcileInterruptedAgents(): Promise<void> {
  */
 async function checkInterruptedAgents(appClient: any, epoch: number): Promise<void> {
   if (checkedEpochs.has(epoch)) {
-    logger.debug("Already checked interrupted agents for epoch", { epoch });
+    logger.debug('Already checked interrupted agents for epoch', { epoch });
     return;
   }
   checkedEpochs.add(epoch);
 
   try {
-    logger.debug("Checking for interrupted agents", { epoch });
+    logger.debug('Checking for interrupted agents', { epoch });
     const agents = await appClient.agents.listInterrupted();
     if (agents.length > 0) {
-      logger.info("Found interrupted agents", { count: agents.length, epoch });
+      logger.info('Found interrupted agents', { count: agents.length, epoch });
       showInterruptedAgents(agents);
     } else if (openAgentIds) {
       // Reconnect-epoch path with the modal open: the fresh (empty) list
       // replaces the stale one — everything was resolved during the outage.
-      logger.info("No interrupted agents on re-check; closing stale modal", { epoch });
+      logger.info('No interrupted agents on re-check; closing stale modal', { epoch });
       showInterruptedAgents([]);
     } else {
-      logger.debug("No interrupted agents found", { epoch });
+      logger.debug('No interrupted agents found', { epoch });
     }
   } catch (error) {
     // -32601 (method not found) is handled by LiveAgentsClient and returns
     // empty array, so any error here is unexpected.
-    logger.error("Failed to check interrupted agents", { error, epoch });
+    logger.error('Failed to check interrupted agents', { error, epoch });
   }
 }
 
@@ -224,7 +224,7 @@ export function installInterruptedAgentsService(
 
   const api = electronAPI();
   if (!api) {
-    logger.warn("No electron API available, interrupted-agents service disabled");
+    logger.warn('No electron API available, interrupted-agents service disabled');
     return () => {};
   }
 
@@ -238,18 +238,17 @@ export function installInterruptedAgentsService(
   void (async () => {
     try {
       const statusResult = (await api.invoke(BACKEND.GET_STATUS)) as
-        | { status?: string }
-        | undefined;
+        { status?: string } | undefined;
       if (disposed) return;
-      if (statusResult?.status === "connected") {
+      if (statusResult?.status === 'connected') {
         connectionEpoch += 1;
         const epoch = connectionEpoch;
-        logger.debug("Backend already connected on install (catch-up)", { epoch });
+        logger.debug('Backend already connected on install (catch-up)', { epoch });
         void checkInterruptedAgents(appClient, epoch);
       }
     } catch (error) {
       if (disposed) return;
-      logger.warn("Failed to query backend status on install", { error });
+      logger.warn('Failed to query backend status on install', { error });
     }
   })();
 
@@ -257,10 +256,10 @@ export function installInterruptedAgentsService(
   const initialListenerId = api.on(
     BACKEND.STATUS,
     (payload: { status?: string; reconnected?: boolean } | undefined) => {
-      if (payload?.status === "connected" && !payload.reconnected) {
+      if (payload?.status === 'connected' && !payload.reconnected) {
         connectionEpoch += 1;
         const epoch = connectionEpoch;
-        logger.debug("Backend connected (initial)", { epoch });
+        logger.debug('Backend connected (initial)', { epoch });
         void checkInterruptedAgents(appClient, epoch);
       }
     },
@@ -270,11 +269,11 @@ export function installInterruptedAgentsService(
   const offReconnect = onBackendReconnected(() => {
     connectionEpoch += 1;
     const epoch = connectionEpoch;
-    logger.debug("Backend reconnected", { epoch });
+    logger.debug('Backend reconnected', { epoch });
     void checkInterruptedAgents(appClient, epoch);
   });
 
-  logger.info("Interrupted-agents service installed");
+  logger.info('Interrupted-agents service installed');
 
   return () => {
     disposed = true;
@@ -285,6 +284,6 @@ export function installInterruptedAgentsService(
     openAgentIds = null;
     clearReconcileTimer();
     checkedEpochs.clear();
-    logger.info("Interrupted-agents service disposed");
+    logger.info('Interrupted-agents service disposed');
   };
 }

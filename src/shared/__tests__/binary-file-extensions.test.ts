@@ -5,15 +5,8 @@
  * binary buffers (null bytes, high non-printable ratio) and passes clean text.
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import {
-  detectBinaryContent,
-  isBinaryExtension,
-} from '../binary-file-extensions';
+import { describe, it, expect } from 'vitest';
+import { detectBinaryContent, isBinaryExtension } from '../binary-file-extensions';
 
 describe('isBinaryExtension', () => {
   it('should not treat .app file paths as binary by extension', () => {
@@ -106,4 +99,3 @@ describe('detectBinaryContent', () => {
     expect(detectBinaryContent(buf)).toBe(true);
   });
 });
-

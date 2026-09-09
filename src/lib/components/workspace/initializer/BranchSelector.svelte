@@ -1495,7 +1495,7 @@
           </button>
         {/if}
 
-        <div class="px-2 pb-1 pt-1 sticky -top-1 bg-background z-10">
+        <div class="px-2 pb-1 pt-1 sticky -top-1 bg-popover z-10">
           <div class="flex gap-2">
             <Input
               bind:this={searchInputElement}
@@ -1509,7 +1509,7 @@
                   selectBranch(searchValue);
                 }
               }}
-              class="flex-1 border-0 bg-sidebar"
+              class="flex-1 border-0 bg-background"
               noFocusStyle
             />
             <Button
@@ -1580,8 +1580,8 @@
             </div>
           {:else if githubAuthNeeded === 'no-access'}
             <!-- User is authenticated but doesn't have access -->
-            <div class="px-2 py-2 border-l-2 border-destructive bg-destructive/10">
-              <div class="text-sm text-error-foreground">
+            <div class="px-2 py-2 border-l-2 border-danger bg-danger-background/10">
+              <div class="text-sm text-danger">
                 {m.workspace_branchSelector_noAccess_error()}
               </div>
               <div class="text-sm text-subtle mt-1">
@@ -1589,8 +1589,8 @@
               </div>
             </div>
           {:else if error}
-            <div class="px-2 py-2 border-l-2 border-destructive bg-destructive/10">
-              <div class="text-sm text-error-foreground">{error}</div>
+            <div class="px-2 py-2 border-l-2 border-danger bg-danger-background/10">
+              <div class="text-sm text-danger">{error}</div>
               {#if repoType === 'github'}
                 <div class="text-sm text-subtle mt-1">
                   {m.workspace_branchSelector_typeManually_description()}
@@ -1816,7 +1816,7 @@
 
         <!-- Use current branch option (no isolated checkout) -->
         {#if typeof onSkipIsolationChange === 'function' && currentBranch}
-          <div class="px-2 pt-2 pb-3 border-t border-border sticky -bottom-1 bg-background">
+          <div class="px-2 pt-2 pb-3 border-t border-border sticky -bottom-1 bg-popover">
             <button
               onclick={() => {
                 const enabling = !skipIsolation;

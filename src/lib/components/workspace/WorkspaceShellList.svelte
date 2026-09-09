@@ -25,6 +25,7 @@
   } from '$store/renderer/slices/scripts/scripts-slice';
   import {
     selectActiveTerminalIdForWorkspace,
+    selectTerminalPlacement,
     selectTerminalsForWorkspace,
     selectWorkspaceTerminalState,
   } from '$store/renderer/slices/terminals/terminals-selectors';
@@ -32,6 +33,7 @@
     closeTerminalOverlay,
     openTerminalOverlay,
     selectScript,
+    setTerminalPlacement,
   } from '$store/renderer/slices/terminals/terminals-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -51,17 +53,35 @@
     ),
   );
 
-  function openTerminal(terminalId: string) {
+  function lastPlacement(id: string) {
+    return selectTerminalPlacement.select(appStore.state, workspaceId, id);
+  }
+
+  // Default click: reopen where the terminal/script was last shown.
+  function openTerminal(terminalId: string, title: string) {
+    if (lastPlacement(terminalId) === 'panel') openTerminalInPanel(terminalId, title);
+    else showTerminalInOverlay(terminalId);
+  }
+
+  function openScript(scriptId: string, title: string) {
+    if (lastPlacement(scriptId) === 'panel') openScriptInPanel(scriptId, title);
+    else showScriptInOverlay(scriptId);
+  }
+
+  // Explicit surface actions override the remembered placement (the
+  // `openTerminalOverlay` reducer records 'overlay' for the shown target).
+  function showTerminalInOverlay(terminalId: string) {
     appStore.dispatch(openTerminalOverlay(workspaceId, terminalId));
   }
 
-  function openScript(scriptId: string) {
+  function showScriptInOverlay(scriptId: string) {
     appStore.dispatch(selectScript(workspaceId, scriptId));
     appStore.dispatch(openTerminalOverlay(workspaceId));
   }
 
-  function openTerminalInPanel(terminalId: string, title: string, event: MouseEvent) {
-    event.stopPropagation();
+  // `openUserTab` activates an equivalent existing terminal/script tab
+  // instead of opening a duplicate (see panel-tab-identity).
+  function openTerminalInPanel(terminalId: string, title: string) {
     getPanelLayoutManager(workspaceId).openUserTab({
       type: 'terminal',
       title,
@@ -69,14 +89,14 @@
       workspaceId,
       closable: true,
     });
+    appStore.dispatch(setTerminalPlacement(workspaceId, terminalId, 'panel'));
     const state = selectWorkspaceTerminalState.select(appStore.state, workspaceId);
     if (state.isOpen && state.selectedScriptId === null && state.activeTerminalId === terminalId) {
       appStore.dispatch(closeTerminalOverlay(workspaceId));
     }
   }
 
-  function openScriptInPanel(scriptId: string, title: string, event: MouseEvent) {
-    event.stopPropagation();
+  function openScriptInPanel(scriptId: string, title: string) {
     getPanelLayoutManager(workspaceId).openUserTab({
       type: 'terminal',
       title,
@@ -84,6 +104,7 @@
       workspaceId,
       closable: true,
     });
+    appStore.dispatch(setTerminalPlacement(workspaceId, scriptId, 'panel'));
     const state = selectWorkspaceTerminalState.select(appStore.state, workspaceId);
     if (state.isOpen && state.selectedScriptId === scriptId) {
       appStore.dispatch(closeTerminalOverlay(workspaceId));
@@ -133,7 +154,7 @@
           <Button
             variant="plain"
             class="flex h-full min-w-0 flex-1 cursor-pointer items-center justify-start gap-2 p-0! text-left"
-            onclick={() => openTerminal(terminal.id)}
+            onclick={() => openTerminal(terminal.id, terminalName)}
           >
             <span
               class="size-1.5 shrink-0 rounded-full {active
@@ -151,7 +172,10 @@
               class="size-7"
               tooltip={m.workspace_shell_showInPanel_tooltip()}
               tooltipSide="left"
-              onclick={(event) => openTerminalInPanel(terminal.id, terminalName, event)}
+              onclick={(event) => {
+                event.stopPropagation();
+                openTerminalInPanel(terminal.id, terminalName);
+              }}
             >
               <Fa icon={faTableColumns} class="size-3" />
             </Button>
@@ -164,7 +188,7 @@
               tooltipSide="left"
               onclick={(event) => {
                 event.stopPropagation();
-                openTerminal(terminal.id);
+                showTerminalInOverlay(terminal.id);
               }}
             >
               <Fa icon={faChevronDown} class="size-3" />
@@ -200,7 +224,7 @@
           <Button
             variant="plain"
             class="flex h-full min-w-0 flex-1 cursor-pointer items-center justify-start gap-2 p-0! text-left"
-            onclick={() => openScript(script.id)}
+            onclick={() => openScript(script.id, script.name)}
           >
             <span
               class="size-1.5 shrink-0 rounded-full {live
@@ -221,7 +245,7 @@
             >
           </Button>
           <span
-            class="flex size-4 shrink-0 items-center justify-center text-destructive"
+            class="flex size-4 shrink-0 items-center justify-center text-danger"
             role={errorLabel ? 'alert' : undefined}
             aria-label={errorLabel}
             title={errorLabel}
@@ -239,7 +263,10 @@
               class="size-7"
               tooltip={m.workspace_shell_showInPanel_tooltip()}
               tooltipSide="left"
-              onclick={(event) => openScriptInPanel(script.id, script.name, event)}
+              onclick={(event) => {
+                event.stopPropagation();
+                openScriptInPanel(script.id, script.name);
+              }}
             >
               <Fa icon={faTableColumns} class="size-3" />
             </Button>
@@ -252,7 +279,7 @@
               tooltipSide="left"
               onclick={(event) => {
                 event.stopPropagation();
-                openScript(script.id);
+                showScriptInOverlay(script.id);
               }}
             >
               <Fa icon={faChevronDown} class="size-3" />
@@ -271,7 +298,7 @@
                 variant="ghost-light"
                 size="icon-xs"
                 iconOnly
-                class="size-7 shrink-0 text-destructive hover:text-destructive active:bg-accent/80"
+                class="size-7 shrink-0 text-danger hover:text-danger active:bg-accent/80"
                 disabled={operation?.pending ?? false}
                 aria-busy={operation?.pending && operation.action === 'stop' ? true : undefined}
                 aria-label={stopLabel}

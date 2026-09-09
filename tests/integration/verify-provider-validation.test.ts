@@ -40,14 +40,7 @@ describe('Provider Validation Verification', () => {
   });
 
   it('should reject invalid providers', async () => {
-    const invalidProviders = [
-      'unknown-provider',
-      'invalid',
-      'google',
-      'microsoft',
-      'aws',
-      '',
-    ];
+    const invalidProviders = ['unknown-provider', 'invalid', 'google', 'microsoft', 'aws', ''];
 
     for (const provider of invalidProviders) {
       await expect(

@@ -1,4 +1,9 @@
-import type { UpdateChannel, UpdateInfo, UpdateProgress, UpdateStatus } from "$features/auto-update/types";
+import type {
+  UpdateChannel,
+  UpdateInfo,
+  UpdateProgress,
+  UpdateStatus,
+} from '$features/auto-update/types';
 
 export type AutoUpdateState = {
   status: UpdateStatus;
@@ -11,4 +16,3 @@ export type AutoUpdateState = {
   /** Timestamp (ms) when the user dismissed the "downloaded" toast. Null = never dismissed. */
   downloadedToastDismissedAt: number | null;
 };
-

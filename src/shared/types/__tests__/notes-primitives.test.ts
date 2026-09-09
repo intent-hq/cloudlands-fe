@@ -2,11 +2,7 @@
  * Tests for note primitives types and validation
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   ReferencePrimitiveSchema,
   CliPrimitiveSchema,

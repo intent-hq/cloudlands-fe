@@ -561,8 +561,8 @@
 
   .error-message {
     padding: 0.5rem;
-    background: hsl(var(--destructive) / 0.1);
-    color: hsl(var(--destructive));
+    background: hsl(var(--danger-background) / 0.1);
+    color: hsl(var(--danger));
     border-radius: 0.5rem;
     font-size: 0.75rem;
     font-family: monospace;

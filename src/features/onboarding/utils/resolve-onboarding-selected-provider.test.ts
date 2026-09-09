@@ -2,6 +2,42 @@ import { describe, expect, it } from 'vitest';
 import { resolveOnboardingSelectedProvider } from './resolve-onboarding-selected-provider';
 
 describe('resolveOnboardingSelectedProvider', () => {
+  it('does not replace an explicit Antigravity selection when it becomes unusable', () => {
+    expect(
+      resolveOnboardingSelectedProvider({
+        activeProviderId: 'antigravity',
+        defaultProviderId: 'codex',
+        readyProviderIds: ['codex'],
+      }),
+    ).toBeUndefined();
+  });
+  it('does not select Antigravity solely because it is detected', () => {
+    expect(
+      resolveOnboardingSelectedProvider({
+        activeProviderId: '',
+        defaultProviderId: '',
+        readyProviderIds: ['antigravity'],
+      }),
+    ).toBeUndefined();
+    expect(
+      resolveOnboardingSelectedProvider({
+        activeProviderId: '',
+        defaultProviderId: '',
+        readyProviderIds: ['antigravity', 'codex'],
+      }),
+    ).toBe('codex');
+  });
+
+  it.each(['active', 'default'])('honors an explicit %s Antigravity preference', (preference) => {
+    expect(
+      resolveOnboardingSelectedProvider({
+        activeProviderId: preference === 'active' ? 'antigravity' : '',
+        defaultProviderId: preference === 'default' ? 'antigravity' : '',
+        readyProviderIds: ['codex', 'antigravity'],
+      }),
+    ).toBe('antigravity');
+  });
+
   it('returns undefined when no provider is ready', () => {
     expect(
       resolveOnboardingSelectedProvider({

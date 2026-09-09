@@ -53,10 +53,10 @@ describe('patchToContents', () => {
       '+++ b/file.txt',
       '@@ -1,5 +1,5 @@',
       ' line 1',
-      '',  // empty context line (no leading space)
+      '', // empty context line (no leading space)
       '-old line 3',
       '+new line 3',
-      '',  // empty context line (no leading space)
+      '', // empty context line (no leading space)
       ' line 5',
     ].join('\n');
 
@@ -67,14 +67,15 @@ describe('patchToContents', () => {
 
   it('handles empty context lines AND trailing newline correctly', () => {
     // Combines both: empty context lines in the middle + trailing newline
-    const patch = [
-      '@@ -1,4 +1,4 @@',
-      ' line 1',
-      '',  // empty context line
-      '-old',
-      '+new',
-      ' line 4',
-    ].join('\n') + '\n'; // trailing newline
+    const patch =
+      [
+        '@@ -1,4 +1,4 @@',
+        ' line 1',
+        '', // empty context line
+        '-old',
+        '+new',
+        ' line 4',
+      ].join('\n') + '\n'; // trailing newline
 
     const result = patchToContents(patch);
     expect(result.oldContent).toBe('line 1\n\nold\nline 4');
@@ -96,17 +97,16 @@ describe('patchToContents', () => {
     ].join('\n');
 
     const result = patchToContents(patch);
-    expect(result.oldContent).toBe('context A\nold A\ncontext A end\ncontext B\nold B\ncontext B end');
-    expect(result.newContent).toBe('context A\nnew A\ncontext A end\ncontext B\nnew B\ncontext B end');
+    expect(result.oldContent).toBe(
+      'context A\nold A\ncontext A end\ncontext B\nold B\ncontext B end',
+    );
+    expect(result.newContent).toBe(
+      'context A\nnew A\ncontext A end\ncontext B\nnew B\ncontext B end',
+    );
   });
 
   it('handles additions only (new file)', () => {
-    const patch = [
-      '@@ -0,0 +1,3 @@',
-      '+line 1',
-      '+line 2',
-      '+line 3',
-    ].join('\n');
+    const patch = ['@@ -0,0 +1,3 @@', '+line 1', '+line 2', '+line 3'].join('\n');
 
     const result = patchToContents(patch);
     expect(result.oldContent).toBe('');
@@ -114,12 +114,7 @@ describe('patchToContents', () => {
   });
 
   it('handles deletions only (deleted file)', () => {
-    const patch = [
-      '@@ -1,3 +0,0 @@',
-      '-line 1',
-      '-line 2',
-      '-line 3',
-    ].join('\n');
+    const patch = ['@@ -1,3 +0,0 @@', '-line 1', '-line 2', '-line 3'].join('\n');
 
     const result = patchToContents(patch);
     expect(result.oldContent).toBe('line 1\nline 2\nline 3');
@@ -141,13 +136,9 @@ describe('patchToContents', () => {
   });
 
   it('ignores lines before the first hunk header', () => {
-    const patch = [
-      'some random text',
-      'more random text',
-      '@@ -1,1 +1,1 @@',
-      '-old',
-      '+new',
-    ].join('\n');
+    const patch = ['some random text', 'more random text', '@@ -1,1 +1,1 @@', '-old', '+new'].join(
+      '\n',
+    );
 
     const result = patchToContents(patch);
     expect(result.oldContent).toBe('old');

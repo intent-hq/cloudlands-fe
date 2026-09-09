@@ -81,4 +81,3 @@ export const selectCollapsiblePanelCollapsed = store.createSelector<
 >((state, key) => {
   return state.uiLayout.collapsiblePanelCollapsed[key];
 });
-

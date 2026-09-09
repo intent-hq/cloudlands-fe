@@ -1,15 +1,8 @@
-import {
-  describe,
-  expect,
-  it,
-  vi,
-  beforeEach,
-  afterEach,
-} from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
   createStructuredCloneCheckerMiddleware,
   CHECK_INTERVAL_MS,
-} from "./structured-clone-checker";
+} from './structured-clone-checker';
 
 /**
  * Helper: dispatches an action through the middleware, simulating a state
@@ -19,7 +12,7 @@ function dispatchThrough(
   middleware: ReturnType<typeof createStructuredCloneCheckerMiddleware>,
   initialState: Record<string, unknown>,
   nextState: Record<string, unknown>,
-  action: { type: string } = { type: "test/action" },
+  action: { type: string } = { type: 'test/action' },
 ) {
   let current = initialState;
   const store = { getState: () => current, dispatch: vi.fn() };
@@ -35,7 +28,7 @@ function flush() {
   vi.advanceTimersByTime(CHECK_INTERVAL_MS);
 }
 
-describe("createStructuredCloneCheckerMiddleware", () => {
+describe('createStructuredCloneCheckerMiddleware', () => {
   let consoleError: ReturnType<typeof vi.spyOn>;
   let consoleWarn: ReturnType<typeof vi.spyOn>;
   let consoleGroup: ReturnType<typeof vi.spyOn>;
@@ -52,10 +45,10 @@ describe("createStructuredCloneCheckerMiddleware", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-    consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    consoleGroup = vi.spyOn(console, "group").mockImplementation(() => {});
-    consoleGroupEnd = vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+    consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    consoleGroup = vi.spyOn(console, 'group').mockImplementation(() => {});
+    consoleGroupEnd = vi.spyOn(console, 'groupEnd').mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -63,19 +56,23 @@ describe("createStructuredCloneCheckerMiddleware", () => {
     vi.restoreAllMocks();
   });
 
-  it("does not report primitives, plain objects, and arrays", () => {
+  it('does not report primitives, plain objects, and arrays', () => {
     const middleware = createStructuredCloneCheckerMiddleware();
 
-    dispatchThrough(middleware, { slice: {} }, {
-      slice: { str: "hello", num: 42, bool: true, nil: null, arr: [1, 2, 3], nested: { a: 1 } },
-    });
+    dispatchThrough(
+      middleware,
+      { slice: {} },
+      {
+        slice: { str: 'hello', num: 42, bool: true, nil: null, arr: [1, 2, 3], nested: { a: 1 } },
+      },
+    );
     flush();
 
     expect(consoleError).not.toHaveBeenCalled();
     expect(consoleWarn).not.toHaveBeenCalled();
   });
 
-  it("detects Date objects in state", () => {
+  it('detects Date objects in state', () => {
     const middleware = createStructuredCloneCheckerMiddleware();
 
     dispatchThrough(middleware, { slice: {} }, { slice: { createdAt: new Date() } });
@@ -83,11 +80,11 @@ describe("createStructuredCloneCheckerMiddleware", () => {
 
     expect(consoleError).toHaveBeenCalledOnce();
     const msgs = allMessages();
-    expect(msgs.some((m) => m.includes("Date"))).toBe(true);
-    expect(msgs.some((m) => m.includes("slice.createdAt"))).toBe(true);
+    expect(msgs.some((m) => m.includes('Date'))).toBe(true);
+    expect(msgs.some((m) => m.includes('slice.createdAt'))).toBe(true);
   });
 
-  it("detects Map and Set in state", () => {
+  it('detects Map and Set in state', () => {
     const middleware = createStructuredCloneCheckerMiddleware();
 
     dispatchThrough(middleware, { a: {}, b: {} }, { a: { m: new Map() }, b: { s: new Set() } });
@@ -95,11 +92,11 @@ describe("createStructuredCloneCheckerMiddleware", () => {
 
     expect(consoleError).toHaveBeenCalledOnce(); // single header
     const msgs = allMessages();
-    expect(msgs.some((m) => m.includes("Map"))).toBe(true);
-    expect(msgs.some((m) => m.includes("Set"))).toBe(true);
+    expect(msgs.some((m) => m.includes('Map'))).toBe(true);
+    expect(msgs.some((m) => m.includes('Set'))).toBe(true);
   });
 
-  it("detects functions in state", () => {
+  it('detects functions in state', () => {
     const middleware = createStructuredCloneCheckerMiddleware();
 
     dispatchThrough(middleware, { slice: {} }, { slice: { callback: () => {} } });
@@ -107,10 +104,10 @@ describe("createStructuredCloneCheckerMiddleware", () => {
 
     expect(consoleError).toHaveBeenCalledOnce();
     const msgs = allMessages();
-    expect(msgs.some((m) => m.includes("function"))).toBe(true);
+    expect(msgs.some((m) => m.includes('function'))).toBe(true);
   });
 
-  it("detects class instances in state", () => {
+  it('detects class instances in state', () => {
     class MyModel {
       value = 1;
     }
@@ -121,24 +118,24 @@ describe("createStructuredCloneCheckerMiddleware", () => {
 
     expect(consoleError).toHaveBeenCalledOnce();
     const msgs = allMessages();
-    expect(msgs.some((m) => m.includes("MyModel"))).toBe(true);
+    expect(msgs.some((m) => m.includes('MyModel'))).toBe(true);
   });
 
-  it("only walks changed slices (unchanged slices are skipped)", () => {
+  it('only walks changed slices (unchanged slices are skipped)', () => {
     const middleware = createStructuredCloneCheckerMiddleware();
     const sharedBadSlice = { bad: new Date() };
 
     dispatchThrough(
       middleware,
       { unchanged: sharedBadSlice, changed: {} },
-      { unchanged: sharedBadSlice, changed: { ok: "fine" } },
+      { unchanged: sharedBadSlice, changed: { ok: 'fine' } },
     );
     flush();
 
     expect(consoleError).not.toHaveBeenCalled();
   });
 
-  it("does not report the same path twice across flushes", () => {
+  it('does not report the same path twice across flushes', () => {
     const middleware = createStructuredCloneCheckerMiddleware();
 
     // First batch — should report
@@ -156,7 +153,7 @@ describe("createStructuredCloneCheckerMiddleware", () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
 
-  it("includes all action types from the batch", () => {
+  it('includes all action types from the batch', () => {
     const middleware = createStructuredCloneCheckerMiddleware();
 
     let state: Record<string, unknown> = { s: {} };
@@ -167,16 +164,16 @@ describe("createStructuredCloneCheckerMiddleware", () => {
       return a;
     });
 
-    chain(next)({ type: "first/action" });
-    chain(next)({ type: "second/action" });
+    chain(next)({ type: 'first/action' });
+    chain(next)({ type: 'second/action' });
     flush();
 
     const msgs = allMessages();
-    expect(msgs.some((m) => m.includes("first/action"))).toBe(true);
-    expect(msgs.some((m) => m.includes("second/action"))).toBe(true);
+    expect(msgs.some((m) => m.includes('first/action'))).toBe(true);
+    expect(msgs.some((m) => m.includes('second/action'))).toBe(true);
   });
 
-  it("does not flush until the timer fires", () => {
+  it('does not flush until the timer fires', () => {
     const middleware = createStructuredCloneCheckerMiddleware();
 
     dispatchThrough(middleware, { slice: {} }, { slice: { bad: new Date() } });
@@ -188,7 +185,7 @@ describe("createStructuredCloneCheckerMiddleware", () => {
     expect(consoleError).toHaveBeenCalledOnce();
   });
 
-  it("groups violations by slice", () => {
+  it('groups violations by slice', () => {
     const middleware = createStructuredCloneCheckerMiddleware();
 
     dispatchThrough(
@@ -205,12 +202,12 @@ describe("createStructuredCloneCheckerMiddleware", () => {
 
     // Violations logged via console.warn
     const warnCalls = consoleWarn.mock.calls.map((c) => c[0] as string);
-    expect(warnCalls.some((m) => m.includes("agents.cb") && m.includes("function"))).toBe(true);
-    expect(warnCalls.some((m) => m.includes("agents.d") && m.includes("Date"))).toBe(true);
-    expect(warnCalls.some((m) => m.includes("workspace.m") && m.includes("Map"))).toBe(true);
+    expect(warnCalls.some((m) => m.includes('agents.cb') && m.includes('function'))).toBe(true);
+    expect(warnCalls.some((m) => m.includes('agents.d') && m.includes('Date'))).toBe(true);
+    expect(warnCalls.some((m) => m.includes('workspace.m') && m.includes('Map'))).toBe(true);
   });
 
-  it("deduplicates actions with counts", () => {
+  it('deduplicates actions with counts', () => {
     const middleware = createStructuredCloneCheckerMiddleware();
 
     let state: Record<string, unknown> = { s: {} };
@@ -221,22 +218,22 @@ describe("createStructuredCloneCheckerMiddleware", () => {
       return a;
     });
 
-    chain(next)({ type: "agents/setAgent" });
-    chain(next)({ type: "agents/setAgent" });
-    chain(next)({ type: "agents/setAgent" });
-    chain(next)({ type: "workspace/update" });
+    chain(next)({ type: 'agents/setAgent' });
+    chain(next)({ type: 'agents/setAgent' });
+    chain(next)({ type: 'agents/setAgent' });
+    chain(next)({ type: 'workspace/update' });
     flush();
 
     const msgs = allMessages();
     // Should show count for repeated action
-    expect(msgs.some((m) => m.includes("agents/setAgent") && m.includes("×3"))).toBe(true);
+    expect(msgs.some((m) => m.includes('agents/setAgent') && m.includes('×3'))).toBe(true);
     // Single occurrence should NOT have a count
-    expect(msgs.some((m) => m.includes("workspace/update") && !m.includes("×"))).toBe(true);
+    expect(msgs.some((m) => m.includes('workspace/update') && !m.includes('×'))).toBe(true);
     // Header should mention total dispatches
-    expect(msgs.some((m) => m.includes("4 dispatches"))).toBe(true);
+    expect(msgs.some((m) => m.includes('4 dispatches'))).toBe(true);
   });
 
-  it("includes a copy-pasteable summary line", () => {
+  it('includes a copy-pasteable summary line', () => {
     const middleware = createStructuredCloneCheckerMiddleware();
 
     dispatchThrough(
@@ -247,16 +244,16 @@ describe("createStructuredCloneCheckerMiddleware", () => {
     flush();
 
     const warnCalls = consoleWarn.mock.calls.map((c) => c[0] as string);
-    const summary = warnCalls.find((m) => m.includes("Summary:"));
+    const summary = warnCalls.find((m) => m.includes('Summary:'));
     expect(summary).toBeDefined();
-    expect(summary).toContain("2 non-serializable values");
-    expect(summary).toContain("slices [agents, workspace]");
-    expect(summary).toContain("actions [test/action]");
-    expect(summary).toContain("agents.cb (function)");
-    expect(summary).toContain("workspace.m (Map)");
+    expect(summary).toContain('2 non-serializable values');
+    expect(summary).toContain('slices [agents, workspace]');
+    expect(summary).toContain('actions [test/action]');
+    expect(summary).toContain('agents.cb (function)');
+    expect(summary).toContain('workspace.m (Map)');
   });
 
-  it("uses console.group/groupEnd for collapsible sections", () => {
+  it('uses console.group/groupEnd for collapsible sections', () => {
     const middleware = createStructuredCloneCheckerMiddleware();
 
     dispatchThrough(middleware, { slice: {} }, { slice: { bad: new Date() } });
@@ -267,4 +264,3 @@ describe("createStructuredCloneCheckerMiddleware", () => {
     expect(consoleGroupEnd.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });
-

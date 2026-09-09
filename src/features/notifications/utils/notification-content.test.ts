@@ -65,8 +65,6 @@ describe('buildNotificationContent', () => {
   });
 
   it('chief body honors taskTitle', () => {
-    expect(buildNotificationContent({ isChief: true, taskTitle: 'T' }).body).toBe(
-      'Task completed',
-    );
+    expect(buildNotificationContent({ isChief: true, taskTitle: 'T' }).body).toBe('Task completed');
   });
 });

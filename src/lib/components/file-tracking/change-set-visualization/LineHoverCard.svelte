@@ -10,7 +10,6 @@
     position: HoverPosition;
   }
 
-
   let { fileColumn, lineIndex, line: _line, position }: Props = $props();
 
   const language = $derived(getLanguageFromPath(fileColumn.filePath));
@@ -159,7 +158,7 @@
     color: hsl(var(--foreground));
   }
   .code-content :global(.hljs-keyword) {
-    color: hsl(var(--destructive)) !important;
+    color: hsl(var(--danger)) !important;
   }
   .code-content :global(.hljs-string) {
     color: hsl(var(--primary)) !important;

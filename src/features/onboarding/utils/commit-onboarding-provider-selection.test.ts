@@ -36,6 +36,31 @@ import {
 import { resolveOnboardingSelectedProvider } from './resolve-onboarding-selected-provider';
 
 describe('commitOnboardingProviderSelection', () => {
+  it('does not commit a detected-only Antigravity provider, but commits its card click', () => {
+    const dispatch = vi.fn();
+    const selectedProviderId = resolveOnboardingSelectedProvider({
+      activeProviderId: '',
+      defaultProviderId: '',
+      readyProviderIds: ['antigravity'],
+    });
+    expect(
+      commitOnboardingProviderSelection({ selectedProviderId, activeProviderId: '', dispatch }),
+    ).toBeUndefined();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(
+      commitOnboardingProviderSelection({
+        selectedProviderId: 'antigravity',
+        activeProviderId: '',
+        recommitActive: true,
+        dispatch,
+      }),
+    ).toBe('antigravity');
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      setProviderEnabled({ providerId: 'antigravity', enabled: true }),
+      setActiveProvider('antigravity'),
+      reloadModelsForProvider(),
+    ]);
+  });
   it('dispatches the card-click sequence when the selection is not active', () => {
     const dispatch = vi.fn();
     const committed = commitOnboardingProviderSelection({

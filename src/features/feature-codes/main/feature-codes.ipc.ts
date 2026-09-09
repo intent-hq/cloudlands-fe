@@ -1,11 +1,6 @@
-import {
-  app,
-  ipcMain,
-} from 'electron';
+import { app, ipcMain } from 'electron';
 import { FEATURE_CODES_CHANNELS } from '../../../shared/ipc/channels';
 import { featureCodesService } from './feature-codes.service';
-
-
 
 export async function setupFeatureCodesIPC() {
   // Initialize the service once before registering handlers
@@ -38,4 +33,3 @@ export async function setupFeatureCodesIPC() {
     app.quit();
   });
 }
-

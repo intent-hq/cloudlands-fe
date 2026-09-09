@@ -6,12 +6,12 @@
  * populate the collection. The slice is automatically re-loaded on GitHub
  * auth changes and cleared on sign-out. Components never call IPC directly.
  */
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   createCollection,
   type Collection,
-} from "@augmentcode/themis/utils/collections/collection-utils";
+} from '@augmentcode/themis/utils/collections/collection-utils';
 
 /**
  * Normalized repo shape stored in the Collection. `id` is derived at the
@@ -26,36 +26,30 @@ export type GithubRepoItem = {
 };
 
 export type GithubReposState = {
-  repos: Collection<GithubRepoItem, "id">;
+  repos: Collection<GithubRepoItem, 'id'>;
   loading: boolean;
   loaded: boolean;
   error: string | null;
 };
 
 export const initialState: GithubReposState = {
-  repos: createCollection<GithubRepoItem, "id">("id"),
+  repos: createCollection<GithubRepoItem, 'id'>('id'),
   loading: false,
   loaded: false,
   error: null,
 };
 
 /** Trigger: load the authenticated user's GitHub repositories. */
-export const loadGithubRepos = createAction("githubRepos/load");
+export const loadGithubRepos = createAction('githubRepos/load');
 
 /** Mark the slice as loading (clears any previous error). */
-export const setGithubReposLoading = createAction(
-  "githubRepos/setLoading",
-);
+export const setGithubReposLoading = createAction('githubRepos/setLoading');
 
 /** Store a fresh list of repos. */
-export const setGithubRepos = createAction<[repos: GithubRepoItem[]]>(
-  "githubRepos/setRepos",
-);
+export const setGithubRepos = createAction<[repos: GithubRepoItem[]]>('githubRepos/setRepos');
 
 /** Surface a load error to the UI. */
-export const setGithubReposError = createAction<[error: string]>(
-  "githubRepos/setError",
-);
+export const setGithubReposError = createAction<[error: string]>('githubRepos/setError');
 
 export const githubReposReducer = createReducer<GithubReposState>(initialState);
 

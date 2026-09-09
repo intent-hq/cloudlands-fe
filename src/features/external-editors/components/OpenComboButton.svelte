@@ -380,7 +380,7 @@
             onclick={actions.length > 1 ? undefined : handlePrimaryClick}
             class="cursor-pointer"
             title={primaryTitle}
-            {...(actions.length > 1 ? props : {})}
+            {...actions.length > 1 ? props : {}}
           >
             {@render children()}
           </button>

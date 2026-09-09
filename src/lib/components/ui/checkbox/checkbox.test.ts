@@ -71,8 +71,8 @@ describe('Checkbox', () => {
       props: { ariaLabel: 'Invalid choice', invalid: true },
     });
     const checkbox = getByRole('checkbox', { name: 'Invalid choice' });
-    expect(checkbox.className.split(/\s+/)).toContain('border-destructive-foreground');
-    expect(checkbox.className.split(/\s+/)).toContain('ring-destructive-foreground/25');
+    expect(checkbox.className.split(/\s+/)).toContain('border-danger');
+    expect(checkbox.className.split(/\s+/)).toContain('ring-danger/25');
     for (const { label, ratio } of invalidControlContrastCases()) {
       expect(ratio, label).toBeGreaterThanOrEqual(3);
     }

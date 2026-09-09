@@ -143,7 +143,12 @@
   import {
     cancelWorkspaceInitializerOnboardingFormStateDebounce,
     debounceWorkspaceInitializerOnboardingFormState,
+    setWorkspaceInitializerLastSubmittedAgent,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+  import {
+    DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
+    getSpecialistById,
+  } from '$lib/constants/specialists';
   import {
     selectWorkspaceInitializerHydrated,
     selectWorkspaceInitializerOnboardingFormState,
@@ -536,6 +541,14 @@
   // retry create mints a fresh id, which rekeys the card and rebinds its
   // init-bound selector cleanly.
   let onboardingCreateProgressId = $state<string | null>(null);
+  // Initial agent shown on the setup card: the Developer specialist's id and
+  // localized name, refreshed from the resolved config at create time (both
+  // undefined when the resolved list lacks the Developer → General).
+  let setupSpecialistId = $state<string | undefined>(DEFAULT_NEW_WORKSPACE_SPECIALIST_ID);
+  let setupSpecialistName = $state<string | undefined>(
+    getSpecialistById(DEFAULT_NEW_WORKSPACE_SPECIALIST_ID)?.name ??
+      DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
+  );
 
   // Setup script state — session-local: the default is restored per repo
   // from the repo config / localStorage last-used, never from persisted
@@ -546,7 +559,7 @@
   let setupScriptNameSource = $state<SetupScriptNameSource>('custom');
   let isCustomSetupScript = $state(false);
 
-  // User-picked model (bare id) + its provider for the initial Coordinator
+  // User-picked model (bare id) + its provider for the initial Developer
   // agent (step 3 picker). undefined + false means the auto-resolved default
   // applies (behavior identical to before the picker existed).
   let onboardingSelectedModel = $state<string | undefined>(undefined);
@@ -688,6 +701,7 @@
     if (onboardingTestPromptRunning) return;
     const committed = agentGridRef?.commitSelection();
     const providerId = committed ?? onboardingGridSelectedProviderId;
+    if (!providerId) return;
     if (onboardingSendTestPrompt && onboardingTestPromptSupported && providerId) {
       onboardingTestPromptFailure = null;
       onboardingTestPromptRunning = true;
@@ -1247,12 +1261,17 @@
         model: effectiveModel,
         behaviorPrompt,
         specialistId,
+        specialistName,
       } = await resolveOnboardingModel(
         reduxState,
         onboardingModelWasOverridden && onboardingSelectedModel
           ? { model: onboardingSelectedModel, provider: onboardingSelectedProvider }
           : undefined,
       );
+      setupSpecialistId = specialistId ?? undefined;
+      setupSpecialistName = specialistName;
+      // General (null specialist) uses the modal's generic agent name.
+      const agentName = specialistName ?? m.workspace_fileChanges_agent_label();
 
       // The prompt-step picker is the authoritative source of the initial
       // default provider + default model (monorepo#3044): commit the resolved
@@ -1382,11 +1401,11 @@
         linearIssue,
         sentryIssue,
         initialAgent: {
-          name: 'Coordinator',
+          name: agentName,
           model: effectiveModel,
           prompt: hasStagedFiles ? undefined : prompt,
           agentType,
-          specialist: specialistId,
+          specialist: specialistId ?? undefined,
           behaviorPrompt,
           provider,
           contextReferences:
@@ -1395,7 +1414,7 @@
           metadata: {
             source: 'onboarding',
             isInitialAgent: true,
-            specialist: specialistId,
+            specialist: specialistId ?? undefined,
           },
         },
         progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
@@ -1434,12 +1453,28 @@
       if (agentId) {
         appStore.dispatch(setInitialAgentId(workspace.id, agentId));
       }
+      // Seed the New Workspace modal's remembered choice with the onboarding
+      // agent (single-agent Developer, or General when it was unavailable);
+      // the workspace-initializer saga persists it.
+      appStore.dispatch(
+        setWorkspaceInitializerLastSubmittedAgent({
+          selectedSpecialist: specialistId,
+          isTeamMode: false,
+          selectedModel: onboardingSelectedModel,
+          modelWasOverridden: onboardingModelWasOverridden,
+          selectedReasoningEffort: undefined,
+          selectedProvider: onboardingSelectedProvider,
+        }),
+      );
       appStore.dispatch(
         bootstrapNewWorkspaceLayout(
           workspace.id,
           agentId ?? null,
-          'Coordinator',
-          specialistId === 'spec-writer',
+          agentName,
+          // The Developer writes a spec before implementing (like the
+          // Coordinator did), so the spec-first layout is kept; a General
+          // agent does not.
+          specialistId !== null,
           undefined,
           // Daemon-persisted links are canonical; fall back to the request's
           // links when an older daemon does not echo them (PROTOCOL §5.1).
@@ -1637,7 +1672,8 @@
                 baseRef={projectSelection?.branch
                   ? `origin/${projectSelection.branch}`
                   : 'origin/main'}
-                specialistName="Coordinator"
+                specialistId={setupSpecialistId}
+                specialistName={setupSpecialistName}
                 {setupScriptStatus}
                 repoStatus={setupRepoStatus}
                 branchStatus={setupBranchStatus}
@@ -1831,7 +1867,7 @@
                           {#if onboardingTestPromptFailure}
                             <div
                               data-testid="onboarding-test-prompt-failure"
-                              class="mt-2 max-w-xl rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm"
+                              class="mt-2 max-w-xl rounded-md border border-danger/40 bg-danger-background/5 p-3 text-sm"
                             >
                               <p>{onboardingTestPromptFailure.message}</p>
                               {#if onboardingTestPromptFailure.loginCommandHint}

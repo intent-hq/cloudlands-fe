@@ -1,4 +1,4 @@
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 
 export type SystemStatusState = {
   nodeVersionOk: boolean | null;

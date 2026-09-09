@@ -11,11 +11,7 @@
   import { writable } from 'svelte/store';
 
   import { slide } from 'svelte/transition';
-  import {
-  faChevronDown,
-  faGlobe,
-  faPuzzlePiece,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faGlobe, faPuzzlePiece } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { navigateToFile } from '$lib/utils/workspace-navigation';
   import { store as appStore } from '$store/renderer/store';
@@ -78,7 +74,11 @@
       onclick={() => handleSkillClick(skill)}
     >
       <div class="size-3.5 rounded flex items-center justify-center shrink-0">
-        <Fa icon={isGlobal ? faGlobe : faPuzzlePiece} size="xs" class="text-muted-foreground opacity-70" />
+        <Fa
+          icon={isGlobal ? faGlobe : faPuzzlePiece}
+          size="xs"
+          class="text-muted-foreground opacity-70"
+        />
       </div>
       <div class="flex-1 min-w-0">
         <span class="text-sm truncate block text-foreground">
@@ -115,4 +115,3 @@
     {/if}
   </div>
 {/if}
-

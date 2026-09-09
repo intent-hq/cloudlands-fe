@@ -19,14 +19,28 @@ function entryForSlot(frame: ThStatusEntry[], slot: number): ThStatusEntry {
 
 describe('buildThStatusParams', () => {
   it('always emits a full frame with ids 0-5', () => {
-    const frame = buildThStatusParams(['idle', 'running', 'complete', 'attention', 'failed', 'unassigned']);
+    const frame = buildThStatusParams([
+      'idle',
+      'running',
+      'complete',
+      'attention',
+      'failed',
+      'unassigned',
+    ]);
     expect(frame).toHaveLength(AGENT_KEY_LED_COUNT);
     expect(frame.map((entry) => entry.id)).toEqual([0, 1, 2, 3, 4, 5]);
   });
 
   it('maps binding slots to physical LEDs: slots 1-4 = second row (ids 2-5), slots 5-6 = top row (ids 0-1)', () => {
     expect(SLOT_TO_LED_ID).toEqual([2, 3, 4, 5, 0, 1]);
-    const frame = buildThStatusParams(['running', 'unassigned', 'unassigned', 'unassigned', 'idle', 'unassigned']);
+    const frame = buildThStatusParams([
+      'running',
+      'unassigned',
+      'unassigned',
+      'unassigned',
+      'idle',
+      'unassigned',
+    ]);
     // Slot 0 (key "1", AG02) drives LED id 2.
     expect(frame.find((entry) => entry.id === 2)).toMatchObject({ e: LED_EFFECT_BREATH });
     // Slot 4 (key "5", AG00) drives LED id 0.

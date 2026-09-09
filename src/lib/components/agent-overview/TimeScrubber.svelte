@@ -208,7 +208,7 @@
     ></i>
     {#if secondsToNext !== null}
       <span
-        class="pointer-events-none absolute bottom-full mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-card px-1.5 py-0.5 text-[10px] text-muted-foreground shadow-sm"
+        class="next-event-caption pointer-events-none absolute bottom-full mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-card px-1.5 py-0.5 text-muted-foreground shadow-sm"
         style:left={`${captionLeft}%`}
         data-next-event-caption
         >{m.agentOverview_timeScrubber_nextEvent_label({ seconds: secondsToNext })}</span
@@ -238,6 +238,9 @@
 </div>
 
 <style>
+  .next-event-caption {
+    font-size: 10px;
+  }
   .dead-time-span {
     background-image: repeating-linear-gradient(
       135deg,

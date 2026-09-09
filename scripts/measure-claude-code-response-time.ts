@@ -27,18 +27,24 @@ async function measureResponseTime(model: string): Promise<TimingResult> {
     const startTime = performance.now();
     let receivedFirstToken = false;
 
-    const claude: ChildProcess = spawn('claude', [
-      '--print',
-      '--output-format', 'stream-json',
-      '--verbose',
-      '--model', model,
-      '--dangerously-skip-permissions',
-      PROMPT,
-    ], {
-      cwd: process.cwd(),
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env },
-    });
+    const claude: ChildProcess = spawn(
+      'claude',
+      [
+        '--print',
+        '--output-format',
+        'stream-json',
+        '--verbose',
+        '--model',
+        model,
+        '--dangerously-skip-permissions',
+        PROMPT,
+      ],
+      {
+        cwd: process.cwd(),
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env },
+      },
+    );
 
     if (!claude.stdout) {
       reject(new Error('Failed to spawn claude'));
@@ -68,8 +74,12 @@ async function measureResponseTime(model: string): Promise<TimingResult> {
         }
 
         // Look for assistant message with actual content (not error)
-        if (msg.type === 'assistant' && msg.message?.role === 'assistant' &&
-            msg.message?.content?.[0]?.text && !msg.message.content[0].text.includes('Error')) {
+        if (
+          msg.type === 'assistant' &&
+          msg.message?.role === 'assistant' &&
+          msg.message?.content?.[0]?.text &&
+          !msg.message.content[0].text.includes('Error')
+        ) {
           receivedFirstToken = true;
           const firstTokenTime = performance.now();
 
@@ -132,14 +142,14 @@ async function runBenchmark() {
       } catch (e: any) {
         console.log(`❌ ${e.message?.substring(0, 50) || e}`);
       }
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 500));
     }
 
     if (times.length > 0) {
       allResults.set(model, times);
     }
 
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, 1000));
   }
 
   // Print summary
@@ -150,8 +160,8 @@ async function runBenchmark() {
   console.log('│ Model         │ TTFT (avg ± std) │ Range            │ Runs    │');
   console.log('├───────────────┼──────────────────┼──────────────────┼─────────┤');
 
-  const sortedModels = [...allResults.entries()].sort((a, b) =>
-    calculateStats(a[1]).avg - calculateStats(b[1]).avg,
+  const sortedModels = [...allResults.entries()].sort(
+    (a, b) => calculateStats(a[1]).avg - calculateStats(b[1]).avg,
   );
 
   for (const [model, times] of sortedModels) {

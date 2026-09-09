@@ -26,7 +26,7 @@ export enum AgentStatus {
 
 /**
  * Valid agent type identifiers
- * These correspond to instruction files in src/features/agent/main/instructions/
+ * These are the agent-type identifiers the intentd daemon harness recognises.
  *
  * This is a string literal union type that provides compile-time validation
  * and IDE autocomplete for agent type IDs.
@@ -121,7 +121,7 @@ import type { AgentSession } from './agent-session';
  * Moved here from `agent-factory.ts` so that both renderer and main-process
  * code can reference the type without pulling in renderer-only modules.
  *
- * The backend builds the complete system prompt from agentType via InstructionService.
+ * The intentd daemon builds the complete system prompt from agentType.
  *
  * Agent naming follows the VS Code webview pattern:
  * - If `name` is provided, it's used (with sanitization)

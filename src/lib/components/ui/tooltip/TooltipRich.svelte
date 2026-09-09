@@ -116,11 +116,11 @@
       iconColor: 'text-warning',
     },
     error: {
-      bg: 'bg-destructive',
-      text: 'text-destructive-foreground',
-      border: 'border border-destructive-foreground/40',
+      bg: 'bg-danger',
+      text: 'text-danger-background',
+      border: 'border border-danger/40',
       icon: faCircleExclamation,
-      iconColor: 'text-destructive-foreground',
+      iconColor: 'text-danger-background',
     },
     custom: {
       bg: '',

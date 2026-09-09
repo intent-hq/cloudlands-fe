@@ -116,10 +116,10 @@
 
   {#if removeError}
     <div
-      class="flex items-center justify-between gap-3 rounded-md border border-error-foreground/30 bg-destructive/10 p-3"
+      class="flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
       role="alert"
     >
-      <p class="text-sm text-error-foreground">{removeError}</p>
+      <p class="text-sm text-danger">{removeError}</p>
       <Button variant="ghost" disabled={removing || !removeTarget} onclick={() => removeDevice()}>
         {m.settings_devices_retry_label()}
       </Button>

@@ -45,7 +45,7 @@ const VISUALS: Record<
   Pick<WorkspaceStatusPresentation, 'visual' | 'icon' | 'className'>
 > = {
   failed: { visual: 'icon', icon: faTriangleExclamation, className: 'text-foreground' },
-  blocked: { visual: 'icon', icon: faXmark, className: 'text-destructive' },
+  blocked: { visual: 'icon', icon: faXmark, className: 'text-danger' },
   needs_attention: { visual: 'icon', icon: faCircleQuestion, className: 'text-warning' },
   in_progress: {
     visual: 'dot',

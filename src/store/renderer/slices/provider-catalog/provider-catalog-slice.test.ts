@@ -136,10 +136,14 @@ describe('provider-catalog selectors', () => {
     // A stray legacy compound value in providerModels is inert here.
     expect(
       selectEffectiveDefaultProviderId.select(
-        storeWith(hydrated, {}, {
-          activeProviderId: 'pi',
-          providerModels: { pi: 'unsloth:some-model' },
-        }),
+        storeWith(
+          hydrated,
+          {},
+          {
+            activeProviderId: 'pi',
+            providerModels: { pi: 'unsloth:some-model' },
+          },
+        ),
       ),
     ).toBe('pi');
     // Nothing configured → '' (honestly unresolved). The catalog never
@@ -160,9 +164,7 @@ describe('provider-catalog selectors', () => {
       'unsloth',
     );
     // Nothing configured → no default row to fall back to (unresolved '').
-    expect(
-      selectProviderCatalogEntryOrDefault.select(storeWith(hydrated), 'nope'),
-    ).toBeUndefined();
+    expect(selectProviderCatalogEntryOrDefault.select(storeWith(hydrated), 'nope')).toBeUndefined();
     // A configured active provider redirects the fallback row.
     expect(
       selectProviderCatalogEntryOrDefault.select(
@@ -209,9 +211,9 @@ describe('provider-catalog selectors', () => {
     expect(selectProviderEnabledFromCatalog.select(storeWith(hydrated), 'auggie')).toBe(false);
     expect(selectProviderEnabledFromCatalog.select(storeWith(hydrated), 'pi')).toBe(false);
     // An explicit persisted entry always wins.
-    expect(
-      selectProviderEnabledFromCatalog.select(storeWith(hydrated, { pi: true }), 'pi'),
-    ).toBe(true);
+    expect(selectProviderEnabledFromCatalog.select(storeWith(hydrated, { pi: true }), 'pi')).toBe(
+      true,
+    );
     expect(
       selectProviderEnabledFromCatalog.select(storeWith(hydrated, { auggie: false }), 'auggie'),
     ).toBe(false);

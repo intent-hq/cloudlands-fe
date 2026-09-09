@@ -21,6 +21,6 @@ export const dismissSetupScriptBannerGlobally = createAction(
 
 export const setupScriptsReducer = createReducer<SetupScriptsState>(initialState);
 setupScriptsReducer.with(dismissSetupScriptBannerGlobally, (state) => ({
-    ...state,
-    isBannerDismissedGlobally: true,
-  }));
+  ...state,
+  isBannerDismissedGlobally: true,
+}));

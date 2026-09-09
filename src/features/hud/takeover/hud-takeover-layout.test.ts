@@ -616,7 +616,10 @@ describe('hud-takeover-layout', () => {
   });
 
   describe('takeoverEdgePulse (pure edge → visual-state mapping)', () => {
-    const task = (status: string, extra: Partial<HudTakeoverEdgeTask> = {}): HudTakeoverEdgeTask => ({
+    const task = (
+      status: string,
+      extra: Partial<HudTakeoverEdgeTask> = {},
+    ): HudTakeoverEdgeTask => ({
       id: 'x',
       status,
       ...extra,
@@ -668,7 +671,9 @@ describe('hud-takeover-layout', () => {
       ).toBeNull();
       // Dependency-free destinations never pulse, nor do unknown ones.
       expect(takeoverEdgePulse('dep', undefined, task('not_started'))).toBeNull();
-      expect(takeoverEdgePulse('dep', undefined, task('not_started', { dependsOn: [] }))).toBeNull();
+      expect(
+        takeoverEdgePulse('dep', undefined, task('not_started', { dependsOn: [] })),
+      ).toBeNull();
       expect(takeoverEdgePulse('dep', task('complete'), undefined)).toBeNull();
     });
 

@@ -1,10 +1,7 @@
 import type { AgentMessage } from '$shared/types';
 import { createFormatters } from '$shared/i18n/formatters';
 import { getLocale } from '$shared/paraglide/runtime.js';
-import {
-  renderContentBlock,
-  escapeHtml,
-} from './content-renderer';
+import { renderContentBlock, escapeHtml } from './content-renderer';
 import { getHtmlTemplate } from './html-template';
 
 // Bind to the live Paraglide locale so the exporter follows whichever process

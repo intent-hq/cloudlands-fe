@@ -16,13 +16,20 @@ import {
   workspaceCreateProgressReducer,
 } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
 import type { WorkspaceCreateProgressState } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-types';
+import type { Specialist } from '$lib/constants/specialists';
 
 const PID = '22222222-2222-4222-8222-222222222222';
 
 const mockStore = vi.hoisted(() => ({
   sliceState: null as unknown,
   emitState: () => {},
+  specialists: [] as unknown[],
 }));
+
+vi.mock('$store/renderer/slices/specialists/specialists-selectors', async () => {
+  const { readable } = await import('svelte/store');
+  return { selectSpecialists: () => readable(mockStore.specialists) };
+});
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
@@ -34,13 +41,15 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$features/external-editors/components/OpenComboButton.svelte', async () => ({
-  default: (await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte'))
-    .default,
+  default: (
+    await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte')
+  ).default,
 }));
 
 vi.mock('svelte-fa', async () => ({
-  default: (await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte'))
-    .default,
+  default: (
+    await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte')
+  ).default,
 }));
 
 vi.mock('svelte-sonner', () => ({
@@ -71,6 +80,51 @@ function renderCard(progressId?: string) {
     },
   });
 }
+
+describe('WorkspaceSetupCard specialist name resolution', () => {
+  const catalogDeveloper: Specialist = {
+    id: 'developer',
+    name: 'Project Dev',
+    description: 'Project override of the Developer',
+    defaultBehaviorPrompt: '',
+    source: 'project',
+  };
+
+  beforeEach(() => {
+    setSliceState(initialState);
+    mockStore.specialists = [];
+  });
+
+  function renderAgentStep(props: { specialistId?: string; specialistName?: string }) {
+    return render(WorkspaceSetupCard, {
+      props: {
+        repoName: 'my-repo',
+        repoStatus: 'done' as const,
+        branchStatus: 'done' as const,
+        agentStatus: 'done' as const,
+        ...props,
+      },
+    });
+  }
+
+  it('shows the live-catalog name for the id even when a different specialistName is passed', () => {
+    mockStore.specialists = [catalogDeveloper];
+    const result = renderAgentStep({ specialistId: 'developer', specialistName: 'Renamed Agent' });
+    expect(result.container.textContent).toContain('Project Dev');
+    expect(result.container.textContent).not.toContain('Renamed Agent');
+  });
+
+  it('falls back to the bundled name when the catalog lacks the id', () => {
+    const result = renderAgentStep({ specialistId: 'developer', specialistName: 'Renamed Agent' });
+    expect(result.container.textContent).toContain('Developer');
+    expect(result.container.textContent).not.toContain('Renamed Agent');
+  });
+
+  it('falls back to the specialistName prop when the id resolves nowhere', () => {
+    const result = renderAgentStep({ specialistId: 'custom-unknown', specialistName: 'My Custom' });
+    expect(result.container.textContent).toContain('My Custom');
+  });
+});
 
 describe('WorkspaceSetupCard live clone progress', () => {
   beforeEach(() => {

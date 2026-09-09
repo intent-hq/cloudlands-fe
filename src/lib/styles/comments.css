@@ -47,8 +47,8 @@
 }
 
 .comment-rejected {
-  background-color: hsl(var(--destructive) / 0.1);
-  border-bottom-color: hsl(var(--destructive) / 0.3);
+  background-color: hsl(var(--danger-background) / 0.1);
+  border-bottom-color: hsl(var(--danger) / 0.3);
   text-decoration: line-through;
   opacity: 0.7;
 }
@@ -66,8 +66,8 @@
 }
 
 .comment-type-change-request {
-  background-color: hsl(var(--destructive) / 0.15);
-  border-bottom-color: hsl(var(--destructive) / 0.4);
+  background-color: hsl(var(--danger-background) / 0.15);
+  border-bottom-color: hsl(var(--danger) / 0.4);
   border-bottom-width: 3px;
 }
 
@@ -308,8 +308,8 @@
 }
 
 .comment-type-icon.change-request {
-  background: hsl(var(--destructive) / 0.2);
-  color: hsl(var(--destructive));
+  background: hsl(var(--danger-background) / 0.2);
+  color: hsl(var(--danger));
 }
 
 .comment-type-icon.question {

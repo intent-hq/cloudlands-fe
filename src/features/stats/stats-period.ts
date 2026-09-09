@@ -14,9 +14,24 @@ export type StatsMode = UsageStatsPeriod;
 
 /** Mode toggle order per Spec D11: 24H first (label getters re-evaluate on locale change). */
 export const STATS_MODES: { mode: StatsMode; label: string }[] = [
-  { mode: '24h', get label() { return m.stats_period_mode24h_label(); } },
-  { mode: 'month', get label() { return m.stats_period_modeMonth_label(); } },
-  { mode: 'year', get label() { return m.stats_period_modeYear_label(); } },
+  {
+    mode: '24h',
+    get label() {
+      return m.stats_period_mode24h_label();
+    },
+  },
+  {
+    mode: 'month',
+    get label() {
+      return m.stats_period_modeMonth_label();
+    },
+  },
+  {
+    mode: 'year',
+    get label() {
+      return m.stats_period_modeYear_label();
+    },
+  },
 ];
 
 /** Date for a "YYYY-MM" key, or null when the key doesn't parse. */

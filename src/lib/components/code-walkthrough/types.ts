@@ -1,5 +1,3 @@
-
-
 export type AnnotationCategory = 'explanation' | 'context' | 'rationale' | 'warning' | 'highlight';
 
 export type AnnotationImportance = 'high' | 'medium' | 'low';

@@ -10,7 +10,7 @@
  * (intent-hq/monorepo#1697); there is no legacy `task:*`/`note:*`
  * events-driven refetch.
  */
-import type { NoteId, TaskStatus, WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
+import type { NoteId, TaskStatus, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import type {
   CreatePrerequisiteOptions,
   MarkAsTaskOptions,
@@ -21,23 +21,23 @@ import type {
   TaskUpdatePatch,
   TasksClient,
   Unsubscribe,
-} from "../app-client";
+} from '../app-client';
 import type {
   TaskAgentAssociation,
   TaskAgentAssociationsByTaskKey,
-} from "$store/renderer/slices/task-agent-associations/task-agent-associations-types";
-import { backendRequest } from "./backend-transport";
-import { createDeltaSubscription } from "./delta-subscription";
+} from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
+import { backendRequest } from './backend-transport';
+import { createDeltaSubscription } from './delta-subscription';
 import {
   newIdempotencyKey,
   rememberNoteWorkspace,
   resolveNoteWorkspaceId,
   runMutationWithId,
   subscribeWorkspaceIds,
-} from "./live-support";
-import { createLogger } from "$lib/utils/client-logger";
+} from './live-support';
+import { createLogger } from '$lib/utils/client-logger';
 
-const logger = createLogger("LiveTasksClient");
+const logger = createLogger('LiveTasksClient');
 
 /**
  * Carry a wire string-array field through only when it is a non-empty string
@@ -47,7 +47,7 @@ const logger = createLogger("LiveTasksClient");
  */
 function stringArray(field: string, value: unknown): string[] | undefined {
   if (!Array.isArray(value) || value.length === 0) return undefined;
-  if (!value.every((v) => typeof v === "string")) {
+  if (!value.every((v) => typeof v === 'string')) {
     logger.warn(`discarding malformed ${field}: expected string[], got non-string member`, {
       value,
     });
@@ -64,12 +64,11 @@ function stringArray(field: string, value: unknown): string[] | undefined {
  */
 function relationFields(
   source: Record<string, unknown>,
-): Pick<WorkspaceTask, "dependsOn" | "conflictsWith" | "unmetDependsOn"> {
-  const dependsOn = stringArray("dependsOn", source.dependsOn) as NoteId[] | undefined;
-  const conflictsWith = stringArray("conflictsWith", source.conflictsWith) as NoteId[] | undefined;
-  const unmetDependsOn = stringArray("unmetDependsOn", source.unmetDependsOn) as
-    | NoteId[]
-    | undefined;
+): Pick<WorkspaceTask, 'dependsOn' | 'conflictsWith' | 'unmetDependsOn'> {
+  const dependsOn = stringArray('dependsOn', source.dependsOn) as NoteId[] | undefined;
+  const conflictsWith = stringArray('conflictsWith', source.conflictsWith) as NoteId[] | undefined;
+  const unmetDependsOn = stringArray('unmetDependsOn', source.unmetDependsOn) as
+    NoteId[] | undefined;
   return {
     ...(dependsOn ? { dependsOn } : {}),
     ...(conflictsWith ? { conflictsWith } : {}),
@@ -82,8 +81,8 @@ function relationFields(
  * row has the boolean — an older daemon omits it and consumers keep their
  * legacy behavior on `undefined` (presence-detected like the relation fields).
  */
-function specLinkedField(source: Record<string, unknown>): Pick<WorkspaceTask, "specLinked"> {
-  return typeof source.specLinked === "boolean" ? { specLinked: source.specLinked } : {};
+function specLinkedField(source: Record<string, unknown>): Pick<WorkspaceTask, 'specLinked'> {
+  return typeof source.specLinked === 'boolean' ? { specLinked: source.specLinked } : {};
 }
 
 /** Map a raw daemon note to a `WorkspaceTask` when it carries task metadata. */
@@ -92,18 +91,18 @@ function noteToTask(raw: Record<string, unknown>): WorkspaceTask | null {
   const task = metadata?.task;
   if (!task) return null;
   return {
-    id: String(raw.id ?? ""),
-    title: String(raw.title ?? ""),
-    status: (typeof task.status === "string" ? task.status : "not_started") as TaskStatus,
+    id: String(raw.id ?? ''),
+    title: String(raw.title ?? ''),
+    status: (typeof task.status === 'string' ? task.status : 'not_started') as TaskStatus,
     updatedAt:
-      typeof raw.updatedAt === "string"
+      typeof raw.updatedAt === 'string'
         ? raw.updatedAt
-        : typeof raw.updated_at === "string"
+        : typeof raw.updated_at === 'string'
           ? raw.updated_at
           : undefined,
     // Optimistic-concurrency revision (§11.4-D): carried through when the daemon
     // returns it, left undefined otherwise (no behavior change → last-writer-wins).
-    ...(typeof raw.rev === "number" ? { rev: raw.rev } : {}),
+    ...(typeof raw.rev === 'number' ? { rev: raw.rev } : {}),
     ...relationFields(task as Record<string, unknown>),
     ...specLinkedField(task as Record<string, unknown>),
   };
@@ -118,18 +117,18 @@ function noteToTask(raw: Record<string, unknown>): WorkspaceTask | null {
 function normalizeTaskEntity(raw: Record<string, unknown>): WorkspaceTask | null {
   const viaNote = noteToTask(raw);
   if (viaNote) return viaNote;
-  if (typeof raw.status !== "string") return null;
+  if (typeof raw.status !== 'string') return null;
   return {
-    id: String(raw.id ?? ""),
-    title: String(raw.title ?? ""),
+    id: String(raw.id ?? ''),
+    title: String(raw.title ?? ''),
     status: raw.status as TaskStatus,
     updatedAt:
-      typeof raw.updatedAt === "string"
+      typeof raw.updatedAt === 'string'
         ? raw.updatedAt
-        : typeof raw.updated_at === "string"
+        : typeof raw.updated_at === 'string'
           ? raw.updated_at
           : undefined,
-    ...(typeof raw.rev === "number" ? { rev: raw.rev } : {}),
+    ...(typeof raw.rev === 'number' ? { rev: raw.rev } : {}),
     ...relationFields(raw),
     ...specLinkedField(raw),
   };
@@ -144,13 +143,13 @@ function normalizeTaskEntity(raw: Record<string, unknown>): WorkspaceTask | null
 function conflictToTask(raw: Record<string, unknown>): WorkspaceTask | null {
   const viaNote = noteToTask(raw);
   if (viaNote) return viaNote;
-  if (typeof raw.status === "string") {
+  if (typeof raw.status === 'string') {
     return {
-      id: String(raw.id ?? ""),
-      title: String(raw.title ?? ""),
+      id: String(raw.id ?? ''),
+      title: String(raw.title ?? ''),
       status: raw.status as TaskStatus,
-      ...(typeof raw.updatedAt === "string" ? { updatedAt: raw.updatedAt } : {}),
-      ...(typeof raw.rev === "number" ? { rev: raw.rev } : {}),
+      ...(typeof raw.updatedAt === 'string' ? { updatedAt: raw.updatedAt } : {}),
+      ...(typeof raw.rev === 'number' ? { rev: raw.rev } : {}),
     };
   }
   return null;
@@ -166,7 +165,7 @@ const EMPTY_STATS: WorkspaceTaskStats = { total: 0, completed: 0, inProgress: 0 
  * populated by the daemon (`taskKey ?? taskText` at link time).
  */
 function normalizeAgentLink(raw: unknown): TaskAgentAssociation | null {
-  if (!raw || typeof raw !== "object") return null;
+  if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   const noteId = r.noteId;
   const taskKey = r.taskKey;
@@ -174,11 +173,11 @@ function normalizeAgentLink(raw: unknown): TaskAgentAssociation | null {
   const agentId = r.agentId;
   const createdAt = r.createdAt;
   if (
-    typeof noteId !== "string" ||
-    typeof taskKey !== "string" ||
-    typeof taskText !== "string" ||
-    typeof agentId !== "string" ||
-    typeof createdAt !== "number"
+    typeof noteId !== 'string' ||
+    typeof taskKey !== 'string' ||
+    typeof taskText !== 'string' ||
+    typeof agentId !== 'string' ||
+    typeof createdAt !== 'number'
   ) {
     return null;
   }
@@ -192,12 +191,12 @@ function normalizeAgentLink(raw: unknown): TaskAgentAssociation | null {
  * defends the call site if a field is absent without re-deriving the rollup.
  */
 function normalizeStats(raw: unknown): WorkspaceTaskStats {
-  if (!raw || typeof raw !== "object") return { ...EMPTY_STATS };
+  if (!raw || typeof raw !== 'object') return { ...EMPTY_STATS };
   const r = raw as Record<string, unknown>;
   return {
-    total: typeof r.total === "number" ? r.total : 0,
-    completed: typeof r.completed === "number" ? r.completed : 0,
-    inProgress: typeof r.inProgress === "number" ? r.inProgress : 0,
+    total: typeof r.total === 'number' ? r.total : 0,
+    completed: typeof r.completed === 'number' ? r.completed : 0,
+    inProgress: typeof r.inProgress === 'number' ? r.inProgress : 0,
   };
 }
 
@@ -208,7 +207,7 @@ export class LiveTasksClient implements TasksClient {
    * by workspace so note-scoped mutations can resolve their owning workspace.
    */
   async list(workspaceId: string): Promise<{ tasks: WorkspaceTask[]; stats: WorkspaceTaskStats }> {
-    const result = await backendRequest<{ tasks?: unknown[]; stats?: unknown }>("task.list", {
+    const result = await backendRequest<{ tasks?: unknown[]; stats?: unknown }>('task.list', {
       workspaceId,
     });
     const rawTasks = Array.isArray(result?.tasks) ? result.tasks : [];
@@ -226,15 +225,15 @@ export class LiveTasksClient implements TasksClient {
     const workspaceId = await resolveNoteWorkspaceId(taskId);
     if (!workspaceId) return null;
     try {
-      const result = await backendRequest<{ note?: unknown } | unknown>("note.get", {
+      const result = await backendRequest<{ note?: unknown } | unknown>('note.get', {
         workspaceId,
         noteId: taskId,
       });
       const raw =
-        result && typeof result === "object" && "note" in result
+        result && typeof result === 'object' && 'note' in result
           ? (result as { note?: unknown }).note
           : result;
-      if (!raw || typeof raw !== "object") return null;
+      if (!raw || typeof raw !== 'object') return null;
       return noteToTask(raw as Record<string, unknown>);
     } catch {
       return null;
@@ -258,7 +257,7 @@ export class LiveTasksClient implements TasksClient {
     status: TaskCheckboxStatus,
     expectedVersion?: number,
   ): Promise<MutationResult> {
-    return this.runTaskMutation(noteId, "task.updateStatus", { taskText, status }, expectedVersion);
+    return this.runTaskMutation(noteId, 'task.updateStatus', { taskText, status }, expectedVersion);
   }
 
   async update(
@@ -269,7 +268,7 @@ export class LiveTasksClient implements TasksClient {
   ): Promise<MutationResult> {
     return this.runTaskMutation(
       noteId,
-      "task.update",
+      'task.update',
       {
         line,
         ...(patch.text !== undefined ? { text: patch.text } : {}),
@@ -285,7 +284,7 @@ export class LiveTasksClient implements TasksClient {
     status: TaskStatus,
     expectedVersion?: number,
   ): Promise<MutationResult> {
-    return this.runTaskMutation(noteId, "task.updateNoteStatus", { status }, expectedVersion);
+    return this.runTaskMutation(noteId, 'task.updateNoteStatus', { status }, expectedVersion);
   }
 
   async markAsTask(
@@ -296,7 +295,7 @@ export class LiveTasksClient implements TasksClient {
   ): Promise<MutationResult> {
     return this.runTaskMutation(
       noteId,
-      "task.markAsTask",
+      'task.markAsTask',
       {
         status,
         ...(options?.acceptanceCriteria !== undefined
@@ -304,9 +303,7 @@ export class LiveTasksClient implements TasksClient {
           : {}),
         ...(options?.effort !== undefined ? { effort: options.effort } : {}),
         ...(options?.dependsOn !== undefined ? { dependsOn: options.dependsOn } : {}),
-        ...(options?.conflictsWith !== undefined
-          ? { conflictsWith: options.conflictsWith }
-          : {}),
+        ...(options?.conflictsWith !== undefined ? { conflictsWith: options.conflictsWith } : {}),
       },
       expectedVersion,
     );
@@ -318,11 +315,9 @@ export class LiveTasksClient implements TasksClient {
    * `[]` is sent and clears it.
    */
   async setRelations(noteId: string, relations: SetRelationsParams): Promise<MutationResult> {
-    return this.runTaskMutation(noteId, "task.setRelations", {
+    return this.runTaskMutation(noteId, 'task.setRelations', {
       ...(relations.dependsOn !== undefined ? { dependsOn: relations.dependsOn } : {}),
-      ...(relations.conflictsWith !== undefined
-        ? { conflictsWith: relations.conflictsWith }
-        : {}),
+      ...(relations.conflictsWith !== undefined ? { conflictsWith: relations.conflictsWith } : {}),
     });
   }
 
@@ -331,7 +326,7 @@ export class LiveTasksClient implements TasksClient {
     agentId: string,
     expectedVersion?: number,
   ): Promise<MutationResult> {
-    return this.runTaskMutation(noteId, "task.assignAgent", { agentId }, expectedVersion);
+    return this.runTaskMutation(noteId, 'task.assignAgent', { agentId }, expectedVersion);
   }
 
   async createPrerequisite(
@@ -343,7 +338,7 @@ export class LiveTasksClient implements TasksClient {
     if (!workspaceId) {
       return { success: false, error: `Cannot resolve workspace for note ${dependentNoteId}` };
     }
-    return runMutationWithId("task.createPrerequisite", {
+    return runMutationWithId('task.createPrerequisite', {
       workspaceId,
       dependentNoteId,
       title,
@@ -363,15 +358,14 @@ export class LiveTasksClient implements TasksClient {
   async listAgentLinks(
     workspaceId: string,
   ): Promise<Record<string, TaskAgentAssociationsByTaskKey>> {
-    const result = await backendRequest<{ linksByNoteId?: unknown }>(
-      "task.listAgentLinks",
-      { workspaceId },
-    );
+    const result = await backendRequest<{ linksByNoteId?: unknown }>('task.listAgentLinks', {
+      workspaceId,
+    });
     const raw = result?.linksByNoteId;
-    if (!raw || typeof raw !== "object") return {};
+    if (!raw || typeof raw !== 'object') return {};
     const out: Record<string, TaskAgentAssociationsByTaskKey> = {};
     for (const [noteId, byKeyRaw] of Object.entries(raw as Record<string, unknown>)) {
-      if (!byKeyRaw || typeof byKeyRaw !== "object") continue;
+      if (!byKeyRaw || typeof byKeyRaw !== 'object') continue;
       const byKey: TaskAgentAssociationsByTaskKey = {};
       for (const [taskKey, rowRaw] of Object.entries(byKeyRaw as Record<string, unknown>)) {
         const assoc = normalizeAgentLink(rowRaw);
@@ -394,7 +388,7 @@ export class LiveTasksClient implements TasksClient {
     noteId: string,
     association: TaskAgentAssociation,
   ): Promise<TaskAgentAssociation> {
-    const result = await backendRequest<{ link?: unknown }>("task.linkAgent", {
+    const result = await backendRequest<{ link?: unknown }>('task.linkAgent', {
       workspaceId,
       noteId,
       taskText: association.taskText,
@@ -414,7 +408,7 @@ export class LiveTasksClient implements TasksClient {
    * so callers can distinguish a no-op removal from a real one.
    */
   async unlinkAgent(workspaceId: string, noteId: string, taskKey: string): Promise<boolean> {
-    const result = await backendRequest<{ removed?: unknown }>("task.unlinkAgent", {
+    const result = await backendRequest<{ removed?: unknown }>('task.unlinkAgent', {
       workspaceId,
       noteId,
       taskKey,
@@ -449,7 +443,7 @@ export class LiveTasksClient implements TasksClient {
     // authoritative `current` into a `WorkspaceTask` so the write service can
     // reload-to-latest (advancing the threaded rev) without touching daemon shapes.
     const current = result.conflict?.current;
-    if (current && typeof current === "object") {
+    if (current && typeof current === 'object') {
       const task = conflictToTask(current as Record<string, unknown>);
       if (task) return { ...result, conflict: { current: task } };
     }
@@ -471,20 +465,20 @@ export class LiveTasksClient implements TasksClient {
   subscribe(handler: SubscriptionHandler<WorkspaceTask[]>): Unsubscribe {
     return createDeltaSubscription<WorkspaceTask>({
       channel: {
-        subscribeMethod: "task.subscribe",
-        unsubscribeMethod: "task.unsubscribe",
+        subscribeMethod: 'task.subscribe',
+        unsubscribeMethod: 'task.unsubscribe',
         dynamic: {
           subscribeIds: subscribeWorkspaceIds,
           paramsForId: (id) => ({ workspaceId: id }),
         },
       },
-      getId: (raw) => String(raw.id ?? ""),
+      getId: (raw) => String(raw.id ?? ''),
       // Push-path entities are the daemon's task-filtered wire `Note` (§6.9),
       // which always carries `workspaceId` (camelCase serde) — remembered so
       // note-scoped task mutations can resolve their owning workspace.
       normalize: (raw) => {
         const task = normalizeTaskEntity(raw);
-        if (task?.id && typeof raw.workspaceId === "string" && raw.workspaceId) {
+        if (task?.id && typeof raw.workspaceId === 'string' && raw.workspaceId) {
           rememberNoteWorkspace(task.id, raw.workspaceId);
         }
         return task;

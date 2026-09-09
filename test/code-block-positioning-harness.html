@@ -173,7 +173,7 @@ ORDER BY type, created_at;`;
         }
         if (codeBlockIndex >= codeElements.length) {
           throw new Error(
-            `Code block index ${codeBlockIndex} out of range (found ${codeElements.length} blocks)`
+            `Code block index ${codeBlockIndex} out of range (found ${codeElements.length} blocks)`,
           );
         }
         const codeElement = codeElements[codeBlockIndex];
@@ -250,7 +250,7 @@ ORDER BY type, created_at;`;
           const startNode = findTextNodeForOffset(offsetMap, lineStart);
           const endNode = findTextNodeForOffset(
             offsetMap,
-            lineEnd > lineStart ? lineEnd - 1 : lineStart
+            lineEnd > lineStart ? lineEnd - 1 : lineStart,
           );
 
           if (startNode && endNode) {

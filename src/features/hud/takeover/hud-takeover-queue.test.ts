@@ -30,7 +30,10 @@ const T0 = 1_000_000;
 /** Most flow tests skip the pre-roll blink (covered by its own tests). */
 const NO_BLINK = { blink: false };
 
-function trigger(workspaceId: string, overrides: Partial<HudTakeoverTrigger> = {}): HudTakeoverTrigger {
+function trigger(
+  workspaceId: string,
+  overrides: Partial<HudTakeoverTrigger> = {},
+): HudTakeoverTrigger {
   return {
     workspaceId,
     kind: 'task_complete',
@@ -372,8 +375,7 @@ describe('hud-takeover-queue', () => {
 
     it('very long text clamps to the ceiling', () => {
       // base 2000 + 50×500 = 27000 > ceiling 12000.
-      expect(takeoverDwellMs(entryWith(['x'.repeat(500)])))
-        .toBe(HUD_TAKEOVER_DWELL_MAX_MS);
+      expect(takeoverDwellMs(entryWith(['x'.repeat(500)]))).toBe(HUD_TAKEOVER_DWELL_MAX_MS);
     });
 
     it('sums the text of every stacked banner (multi-trigger entries)', () => {
@@ -790,13 +792,23 @@ describe('hud-takeover-queue', () => {
     const dismissAt = T0 + HUD_TAKEOVER_OPEN_MS + 100;
     state = dismissTakeover(state, dismissAt);
     expect(state.phase).toBe('closing');
-    state = requestImmediateTakeover(state, trigger('ws-1', { kind: 'manual' }), dismissAt + 10, NO_BLINK);
+    state = requestImmediateTakeover(
+      state,
+      trigger('ws-1', { kind: 'manual' }),
+      dismissAt + 10,
+      NO_BLINK,
+    );
     expect(state.active?.workspaceId).toBe('ws-1');
     expect(state.pending.map((e) => [e.workspaceId, e.isViewer])).toEqual([['ws-1', true]]);
     // The displayed-workspace event trigger takes the queue-jump path: it
     // must NOT merge into the pending viewer — it gets its own non-viewer
     // entry inserted behind it (insertBehindLeadingViewers), cap-exempt.
-    state = enqueueTakeover(state, trigger('ws-1', { kind: 'task_complete' }), dismissAt + 20, NO_BLINK);
+    state = enqueueTakeover(
+      state,
+      trigger('ws-1', { kind: 'task_complete' }),
+      dismissAt + 20,
+      NO_BLINK,
+    );
     expect(state.pending.map((e) => [e.workspaceId, e.isViewer])).toEqual([
       ['ws-1', true],
       ['ws-1', false],

@@ -182,7 +182,7 @@
     <!-- Header -->
     <div class="px-6 py-4 border-b border-border flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <div class="text-error-foreground">
+        <div class="text-danger">
           <Fa icon={faExclamationTriangle} size="lg" />
         </div>
         <div>
@@ -211,7 +211,7 @@
       </Dialog.Description>
       {#if error}
         <div
-          class="bg-destructive/10 py-2.5 px-3.5 text-sm text-error-foreground whitespace-pre-wrap break-words max-h-32 overflow-auto"
+          class="bg-danger-background/10 py-2.5 px-3.5 text-sm text-danger whitespace-pre-wrap break-words max-h-32 overflow-auto"
         >
           {error}
         </div>

@@ -1,8 +1,5 @@
 import { logger } from '$lib/utils/client-logger';
-import {
-  mount,
-  unmount,
-} from 'svelte';
+import { mount, unmount } from 'svelte';
 import EnhancedMentionList from './EnhancedMentionList.svelte';
 
 class MentionSuggestionRenderer {
@@ -180,7 +177,10 @@ class MentionSuggestionRenderer {
     // If neither popup nor component exist, initialize everything (onStart was skipped
     // due to async item resolution timing, e.g. when typing "@a" quickly)
     if (!this.popup && !this.component) {
-      logger.info('[MentionSuggestionRenderer] Initializing popup and component in onUpdate (onStart was skipped)');
+      logger.info(
+        // i18n-ignore (developer log message)
+        '[MentionSuggestionRenderer] Initializing popup and component in onUpdate (onStart was skipped)',
+      );
       this.onStart(props);
       return;
     }

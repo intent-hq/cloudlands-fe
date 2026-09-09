@@ -19,7 +19,10 @@ const toolUse = (id: string, toolCallId: string, status: string): ContentBlock =
 
 describe('mergeStreamContentBlocks', () => {
   it('preserves subscription-owned text blocks a tool-only update does not carry (monorepo#2814)', () => {
-    const existing = [text(`${M}:0`, '<group:Researching>\nintro'), toolUse(`${M}:1`, 'toolu_01', 'started')];
+    const existing = [
+      text(`${M}:0`, '<group:Researching>\nintro'),
+      toolUse(`${M}:1`, 'toolu_01', 'started'),
+    ];
     const incoming = [toolUse(`${M}:1`, 'toolu_01', 'completed')];
     const merged = mergeStreamContentBlocks(existing, incoming);
     expect(merged).toHaveLength(2);
@@ -36,8 +39,12 @@ describe('mergeStreamContentBlocks', () => {
   });
 
   it('strong-matches tool_result by tool_use_id', () => {
-    const existing: ContentBlock[] = [{ type: 'tool_result', tool_use_id: 'toolu_01', output: 'old' }];
-    const incoming: ContentBlock[] = [{ type: 'tool_result', tool_use_id: 'toolu_01', output: 'new' }];
+    const existing: ContentBlock[] = [
+      { type: 'tool_result', tool_use_id: 'toolu_01', output: 'old' },
+    ];
+    const incoming: ContentBlock[] = [
+      { type: 'tool_result', tool_use_id: 'toolu_01', output: 'new' },
+    ];
     expect(mergeStreamContentBlocks(existing, incoming)).toEqual([
       { type: 'tool_result', tool_use_id: 'toolu_01', output: 'new' },
     ]);
@@ -45,7 +52,10 @@ describe('mergeStreamContentBlocks', () => {
 
   it('appends unmatched incoming blocks in incoming order', () => {
     const existing = [text(`${M}:0`, 'intro')];
-    const incoming = [toolUse(`${M}:1`, 'toolu_01', 'started'), toolUse(`${M}:3`, 'toolu_02', 'started')];
+    const incoming = [
+      toolUse(`${M}:1`, 'toolu_01', 'started'),
+      toolUse(`${M}:3`, 'toolu_02', 'started'),
+    ];
     const merged = mergeStreamContentBlocks(existing, incoming);
     expect(merged.map((b) => b.type)).toEqual(['text', 'tool_use', 'tool_use']);
     expect(merged[0]).toMatchObject({ text: 'intro' });
@@ -53,7 +63,10 @@ describe('mergeStreamContentBlocks', () => {
 
   it('degenerates to a replace when every existing block matches (firehose-only accumulator)', () => {
     const existing = [toolUse(`${M}:1`, 'toolu_01', 'started')];
-    const incoming = [toolUse(`${M}:1`, 'toolu_01', 'completed'), toolUse(`${M}:3`, 'toolu_02', 'started')];
+    const incoming = [
+      toolUse(`${M}:1`, 'toolu_01', 'completed'),
+      toolUse(`${M}:3`, 'toolu_02', 'started'),
+    ];
     expect(mergeStreamContentBlocks(existing, incoming)).toEqual(incoming);
   });
 
@@ -66,7 +79,9 @@ describe('mergeStreamContentBlocks', () => {
   it('ordinal fallback: an id-less legacy chunk pairs with its subscription-written block', () => {
     const existing = [text(`${M}:0`, 'partial')];
     const incoming = [text(undefined, 'partial plus more')];
-    expect(mergeStreamContentBlocks(existing, incoming)).toEqual([text(undefined, 'partial plus more')]);
+    expect(mergeStreamContentBlocks(existing, incoming)).toEqual([
+      text(undefined, 'partial plus more'),
+    ]);
   });
 
   it('two differing strong identities never cross-pair — both survive', () => {

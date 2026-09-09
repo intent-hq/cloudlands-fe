@@ -37,7 +37,9 @@ class RendererTerminalManager {
       // Pass `title` through untouched: the reducer falls back to the existing
       // daemon-provided name (e.g. "Setup Script") when no explicit title is
       // given, so hardcoding 'Terminal' here would clobber it.
-      appStore.dispatch(saveTerminalMetadataAction(workspaceId, terminalId, title, new Date().toISOString()));
+      appStore.dispatch(
+        saveTerminalMetadataAction(workspaceId, terminalId, title, new Date().toISOString()),
+      );
       logger.debug(`[RendererTerminalManager] Saved terminal metadata for ${terminalId}`);
     } catch (error) {
       logger.error('[RendererTerminalManager] Failed to save terminal metadata:', error);

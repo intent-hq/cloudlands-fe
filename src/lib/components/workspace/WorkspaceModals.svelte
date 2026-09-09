@@ -74,12 +74,12 @@
       {#if createAgentError}
         <div class="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
           <div class="flex items-start gap-2">
-            <span class="text-error-foreground text-lg">⚠️</span>
+            <span class="text-danger text-lg">⚠️</span>
             <div class="flex-1">
-              <p class="text-sm text-error-foreground font-medium mb-1">
+              <p class="text-sm text-danger font-medium mb-1">
                 {m.workspace_modals_createAgentFailed_error()}
               </p>
-              <p class="text-xs text-error-foreground">{createAgentError}</p>
+              <p class="text-xs text-danger">{createAgentError}</p>
 
               {#if showAuthHelper}
                 <div class="mt-3 p-3 bg-primary/10 border border-primary/30 rounded-lg">

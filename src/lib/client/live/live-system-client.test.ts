@@ -4,21 +4,21 @@
  * Asserts that the client invokes `system.status` with the correct wire request
  * and maps the PROTOCOL-shaped mock response to `SystemStatusState` faithfully.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LiveSystemClient } from "./live-system-client";
-import { IPC_CHANNELS } from "$shared/ipc-registry";
-import type { SystemStatusState } from "$store/renderer/slices/system-status/system-status-slice";
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { LiveSystemClient } from './live-system-client';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
+import type { SystemStatusState } from '$store/renderer/slices/system-status/system-status-slice';
 
 // Mock autoUpdateClient
-vi.mock("$features/auto-update/auto-update.client", () => ({
+vi.mock('$features/auto-update/auto-update.client', () => ({
   autoUpdateClient: {
     getState: vi.fn(),
   },
 }));
 
-import { autoUpdateClient } from "$features/auto-update/auto-update.client";
+import { autoUpdateClient } from '$features/auto-update/auto-update.client';
 
-describe("LiveSystemClient", () => {
+describe('LiveSystemClient', () => {
   let client: LiveSystemClient;
   let mockInvoke: ReturnType<typeof vi.fn>;
   let originalWindow: typeof globalThis.window;
@@ -29,7 +29,7 @@ describe("LiveSystemClient", () => {
     mockInvoke = vi.fn();
 
     // Mock window.electronAPI.invoke using vi.stubGlobal
-    vi.stubGlobal("window", {
+    vi.stubGlobal('window', {
       electronAPI: {
         invoke: mockInvoke,
         on: vi.fn(),
@@ -40,14 +40,14 @@ describe("LiveSystemClient", () => {
 
   afterEach(() => {
     // Restore original window to prevent leakage
-    vi.stubGlobal("window", originalWindow);
+    vi.stubGlobal('window', originalWindow);
   });
 
-  describe("status", () => {
-    it("invokes system.status via backend:request", async () => {
+  describe('status', () => {
+    it('invokes system.status via backend:request', async () => {
       const mockResponse: SystemStatusState = {
         nodeVersionOk: true,
-        nodeVersion: "v20.0.0",
+        nodeVersion: 'v20.0.0',
         auggieInstalled: true,
         binaryInstallAvailable: false,
       };
@@ -60,15 +60,15 @@ describe("LiveSystemClient", () => {
       await client.status();
 
       expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
-        method: "system.status",
+        method: 'system.status',
         params: undefined,
       });
     });
 
-    it("maps PROTOCOL-shaped response to SystemStatusState faithfully", async () => {
+    it('maps PROTOCOL-shaped response to SystemStatusState faithfully', async () => {
       const wireResponse = {
         nodeVersionOk: false,
-        nodeVersion: "v18.0.0",
+        nodeVersion: 'v18.0.0',
         auggieInstalled: true,
         binaryInstallAvailable: true,
       };
@@ -82,16 +82,16 @@ describe("LiveSystemClient", () => {
 
       expect(result).toEqual({
         nodeVersionOk: false,
-        nodeVersion: "v18.0.0",
+        nodeVersion: 'v18.0.0',
         auggieInstalled: true,
         binaryInstallAvailable: true,
       });
     });
 
-    it("returns default state on wire error", async () => {
+    it('returns default state on wire error', async () => {
       mockInvoke.mockResolvedValue({
         ok: false,
-        error: { code: "TRANSPORT_ERROR", message: "Connection failed" },
+        error: { code: 'TRANSPORT_ERROR', message: 'Connection failed' },
       });
 
       const result = await client.status();
@@ -104,7 +104,7 @@ describe("LiveSystemClient", () => {
       });
     });
 
-    it("returns default state when result is not an object", async () => {
+    it('returns default state when result is not an object', async () => {
       mockInvoke.mockResolvedValue({
         ok: true,
         result: null,
@@ -120,11 +120,11 @@ describe("LiveSystemClient", () => {
       });
     });
 
-    it("coerces missing or invalid fields to defaults", async () => {
+    it('coerces missing or invalid fields to defaults', async () => {
       mockInvoke.mockResolvedValue({
         ok: true,
         result: {
-          nodeVersionOk: "invalid",
+          nodeVersionOk: 'invalid',
           auggieInstalled: null,
         },
       });
@@ -140,19 +140,19 @@ describe("LiveSystemClient", () => {
     });
   });
 
-  describe("capabilities", () => {
-    it("invokes system.capabilities via backend:request", async () => {
+  describe('capabilities', () => {
+    it('invokes system.capabilities via backend:request', async () => {
       mockInvoke.mockResolvedValue({ ok: true, result: { cowSupported: true } });
 
       await client.capabilities();
 
       expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
-        method: "system.capabilities",
+        method: 'system.capabilities',
         params: undefined,
       });
     });
 
-    it("maps a PROTOCOL-shaped response with cowSupported", async () => {
+    it('maps a PROTOCOL-shaped response with cowSupported', async () => {
       mockInvoke.mockResolvedValue({ ok: true, result: { cowSupported: false } });
 
       const result = await client.capabilities();
@@ -160,7 +160,7 @@ describe("LiveSystemClient", () => {
       expect(result).toEqual({ cowSupported: false });
     });
 
-    it("leaves cowSupported undefined when the probe field is omitted (PROTOCOL §5.7)", async () => {
+    it('leaves cowSupported undefined when the probe field is omitted (PROTOCOL §5.7)', async () => {
       mockInvoke.mockResolvedValue({ ok: true, result: {} });
 
       const result = await client.capabilities();
@@ -168,10 +168,10 @@ describe("LiveSystemClient", () => {
       expect(result.cowSupported).toBeUndefined();
     });
 
-    it("returns {} on wire error", async () => {
+    it('returns {} on wire error', async () => {
       mockInvoke.mockResolvedValue({
         ok: false,
-        error: { code: "TRANSPORT_ERROR", message: "Connection failed" },
+        error: { code: 'TRANSPORT_ERROR', message: 'Connection failed' },
       });
 
       const result = await client.capabilities();
@@ -180,22 +180,22 @@ describe("LiveSystemClient", () => {
     });
   });
 
-  describe("releaseNotes", () => {
-    it("returns null (daemon does not manage release notes)", async () => {
+  describe('releaseNotes', () => {
+    it('returns null (daemon does not manage release notes)', async () => {
       const result = await client.releaseNotes();
       expect(result).toBeNull();
     });
   });
 
-  describe("autoUpdate", () => {
-    it("delegates to autoUpdateClient.getState and adds toast fields", async () => {
+  describe('autoUpdate', () => {
+    it('delegates to autoUpdateClient.getState and adds toast fields', async () => {
       const mockUpdateState = {
-        status: "idle" as const,
-        currentVersion: "0.5.0",
+        status: 'idle' as const,
+        currentVersion: '0.5.0',
         updateInfo: null,
         progress: null,
         error: null,
-        channel: "stable" as const,
+        channel: 'stable' as const,
       };
       vi.mocked(autoUpdateClient.getState).mockResolvedValue(mockUpdateState);
 
@@ -210,11 +210,11 @@ describe("LiveSystemClient", () => {
     });
   });
 
-  describe("subscribe", () => {
-    it("emits the initial status fetch result", async () => {
+  describe('subscribe', () => {
+    it('emits the initial status fetch result', async () => {
       const mockResponse: SystemStatusState = {
         nodeVersionOk: true,
-        nodeVersion: "v20.0.0",
+        nodeVersion: 'v20.0.0',
         auggieInstalled: true,
         binaryInstallAvailable: false,
       };
@@ -235,10 +235,10 @@ describe("LiveSystemClient", () => {
       unsubscribe();
     });
 
-    it("emits default state on fetch error", async () => {
+    it('emits default state on fetch error', async () => {
       mockInvoke.mockResolvedValue({
         ok: false,
-        error: { code: "ERROR", message: "Failed" },
+        error: { code: 'ERROR', message: 'Failed' },
       });
 
       const handler = vi.fn();

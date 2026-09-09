@@ -253,7 +253,7 @@
 
 <div class="space-y-4">
   {#if $error$}
-    <p class="text-xs text-error-foreground">{$error$}</p>
+    <p class="text-xs text-danger">{$error$}</p>
   {/if}
 
   {#if $isLoading$}
@@ -311,7 +311,7 @@
                   <span class="text-ghost">·</span>
                   <button
                     type="button"
-                    class="text-muted-foreground hover:text-error-foreground cursor-pointer transition-colors"
+                    class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
                     onclick={() => handleClearApiKey(target)}
                   >
                     {m.settings_voice_clearKey()}
@@ -410,7 +410,7 @@
               <p class="text-xs text-subtle pl-6">{m.settings_voice_osEngine_permissionNote()}</p>
             {/if}
             {#if !$osEngineAvailable$}
-              <p class="text-xs text-error-foreground pl-6">
+              <p class="text-xs text-danger pl-6">
                 {m.settings_voice_osEngine_helperMissing_description()}
               </p>
             {/if}
@@ -514,7 +514,7 @@
                 />
               </div>
               {#if maxTermsDraftError}
-                <p class="text-xs text-error-foreground">{maxTermsDraftError}</p>
+                <p class="text-xs text-danger">{maxTermsDraftError}</p>
               {/if}
             </div>
           {/if}
@@ -546,7 +546,7 @@
                 </button>
               </div>
               {#if vocabularyDraftError}
-                <p class="text-xs text-error-foreground">{vocabularyDraftError}</p>
+                <p class="text-xs text-danger">{vocabularyDraftError}</p>
               {/if}
               {#if $vocabulary$.length > 0}
                 <div class="flex flex-wrap gap-1.5">
@@ -557,7 +557,7 @@
                       {term}
                       <button
                         type="button"
-                        class="text-muted-foreground hover:text-error-foreground cursor-pointer transition-colors"
+                        class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
                         aria-label={m.settings_voice_vocabulary_remove_ariaLabel({ term })}
                         onclick={() => handleRemoveVocabularyTerm(term)}
                       >

@@ -67,11 +67,11 @@
       data-testid="hook-script-content-logs"
     >
       {#if hook?.lastError}
-        <span class="text-xs font-medium text-destructive"
+        <span class="text-xs font-medium text-danger"
           >{m.chat_backgroundHooks_modal_lastError_label()}</span
         >
         <pre
-          class="whitespace-pre-wrap break-all rounded bg-destructive/10 p-2 font-mono text-xs text-destructive">{hook.lastError}</pre>
+          class="whitespace-pre-wrap break-all rounded bg-danger-background/10 p-2 font-mono text-xs text-danger">{hook.lastError}</pre>
       {/if}
       {#if hook?.lastLogs}
         <pre

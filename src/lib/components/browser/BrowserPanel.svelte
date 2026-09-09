@@ -25,6 +25,7 @@
   import Button from '../ui/button/button.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { normalizeBrowserAddressInput } from './embedded-browser-url-validation';
 
   interface Props {
     workspaceId: string;
@@ -51,30 +52,9 @@
     }
   });
 
-  // Validate and normalize URL
-  function normalizeUrl(input: string): string | null {
-    let url = input.trim();
-    if (!url) return null;
-
-    // Only prepend a protocol if the input doesn't already have one (scheme://...).
-    // This avoids turning "file:///path" into "https://file:///path".
-    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) {
-      const isLocalhost =
-        url.includes('localhost') || url.includes('127.0.0.1') || url.includes('0.0.0.0');
-      url = (isLocalhost ? 'http://' : 'https://') + url;
-    }
-
-    try {
-      new URL(url);
-      return url;
-    } catch {
-      return null;
-    }
-  }
-
   // Handle URL submission
   function handleSubmit() {
-    const normalized = normalizeUrl(urlInput);
+    const normalized = normalizeBrowserAddressInput(urlInput);
     if (!normalized) {
       inputError = m.browser_panel_invalidUrl_error();
       return;
@@ -165,7 +145,7 @@
         bind:value={urlInput}
         onkeydown={handleKeydown}
         noFocusStyle
-        class={cn('h-8 pr-8 text-sm', inputError && 'border-destructive')}
+        class={cn('h-8 pr-8 text-sm', inputError && 'border-danger')}
       />
       <Button
         variant="ghost-light"
@@ -179,7 +159,7 @@
       </Button>
     </div>
     {#if inputError}
-      <p class="text-xs text-error-foreground mt-1">{inputError}</p>
+      <p class="text-xs text-danger mt-1">{inputError}</p>
     {/if}
   </div>
 
@@ -212,7 +192,7 @@
           />
           <button
             type="button"
-            class="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/url:opacity-100 p-1 text-muted-foreground hover:text-error-foreground transition-all cursor-pointer"
+            class="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/url:opacity-100 p-1 text-muted-foreground hover:text-danger transition-all cursor-pointer"
             onclick={(e) => handleDeleteUrl(e, entry.url)}
             title={m.browser_panel_remove_tooltip()}
           >

@@ -294,6 +294,7 @@ import { setupCortexIPC } from '../features/cortex/main/cortex.ipc';
 import { setupDroidIPC } from '../features/droid/main/droid.ipc';
 import { setupGrokIPC } from '../features/grok/main/grok.ipc';
 import { setupUnslothIPC } from '../features/unsloth/main/unsloth.ipc';
+import { setupAntigravityIPC } from '../features/antigravity/main/antigravity.ipc';
 import { setupFeatureCodesIPC } from '../features/feature-codes/main/feature-codes.ipc';
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
 import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
@@ -402,6 +403,7 @@ import {
   setupAppProtocolHandler,
   setupWorkspaceAssetProtocolHandler,
   setupWorkspaceFileProtocolHandler,
+  setupWorkspaceMediaBackendHinting,
 } from './protocol-handlers.js';
 
 const logger = new Logger('Main');
@@ -1479,6 +1481,10 @@ app.whenReady().then(async () => {
   // workspace-file:// is needed in both dev and production (workspace file images)
   setupWorkspaceFileProtocolHandler();
 
+  // Stamp the requesting window's backend onto workspace media requests so a
+  // workspace id shared across backends is served by the right daemon.
+  setupWorkspaceMediaBackendHinting();
+
   // Patch ipcMain to automatically track all handlers for cleanup
   // In production, ipcMain.handle may be non-writable (as set above). The cleanup manager
   // now skips when non-writable/non-configurable, so this call is safe/no-op there.
@@ -1534,6 +1540,7 @@ app.whenReady().then(async () => {
   setupDroidIPC(); // Needed for droid:get-models
   setupGrokIPC(); // Needed for grok:get-models
   setupUnslothIPC(); // Needed for unsloth:get-models
+  setupAntigravityIPC(); // Needed for antigravity:get-models
   setupFeatureCodesIPC(); // Feature codes for gating experimental features
   setupProviderAvailabilityIPC(); // Needed for providers:get-availability
   setupEventsIPC(); // Needed for events:query

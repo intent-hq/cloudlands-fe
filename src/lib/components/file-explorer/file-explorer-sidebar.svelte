@@ -157,7 +157,7 @@
                 <Fa icon={faSpinner} size="lg" class="w-6 h-6 animate-spin text-subtle" />
               </div>
             {:else if $feError$}
-              <div class="px-4 py-2 text-sm text-error-foreground">
+              <div class="px-4 py-2 text-sm text-danger">
                 {$feError$}
               </div>
             {:else if $rootNode$}

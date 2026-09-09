@@ -95,7 +95,8 @@ function statusFor(disabled: boolean): McpServerStatus {
 function validateName(name: string, existing: McpServerConfig[]): void {
   const trimmed = name?.trim();
   if (!trimmed) throw new Error(m.mcp_management_serverNameRequired_error());
-  if (!MCP_SERVER_NAME_REGEX.test(trimmed)) throw new Error(m.mcp_management_invalidServerName_error());
+  if (!MCP_SERVER_NAME_REGEX.test(trimmed))
+    throw new Error(m.mcp_management_invalidServerName_error());
   if (trimmed.length > MCP_SERVER_NAME_MAX_LENGTH) {
     throw new Error(m.mcp_management_serverNameTooLong_error({ max: MCP_SERVER_NAME_MAX_LENGTH }));
   }
@@ -114,19 +115,24 @@ function persistedServers(
   credentialInputs: CredentialInput[],
 ): McpServerConfig[] {
   const currentByName = new Map(current.map((server) => [server.name, server]));
-  const inputByName = new Map(credentialInputs.map(([config, previousName]) => [
-    config.name,
-    { config, previous: currentByName.get(previousName ?? config.name) },
-  ]));
+  const inputByName = new Map(
+    credentialInputs.map(([config, previousName]) => [
+      config.name,
+      { config, previous: currentByName.get(previousName ?? config.name) },
+    ]),
+  );
   return servers.map((source) => {
     const input = inputByName.get(source.name);
     const currentServer = currentByName.get(source.name);
-    const credentialSource: McpServerConfig | undefined = input ? {
-      name: source.name,
-      type: source.type,
-      env: input.config.env === undefined ? input.previous?.env : input.config.env,
-      headers: input.config.headers === undefined ? input.previous?.headers : input.config.headers,
-    } : currentServer;
+    const credentialSource: McpServerConfig | undefined = input
+      ? {
+          name: source.name,
+          type: source.type,
+          env: input.config.env === undefined ? input.previous?.env : input.config.env,
+          headers:
+            input.config.headers === undefined ? input.previous?.headers : input.config.headers,
+        }
+      : currentServer;
     const server = copyServerForWire(source, credentialSource);
     if (source.name in disabled) server.disabled = true;
     else delete server.disabled;
@@ -140,15 +146,18 @@ function* persist(
 ): SagaGenerator<void> {
   const disabled: Record<string, true> = yield* selectMcpDisabledServers.effect();
   try {
-    const current: Awaited<ReturnType<typeof appClient.settings.getMcpServers>> = yield* call(
-      [appClient.settings, appClient.settings.getMcpServers],
-    );
+    const current: Awaited<ReturnType<typeof appClient.settings.getMcpServers>> = yield* call([
+      appClient.settings,
+      appClient.settings.getMcpServers,
+    ]);
     const result: Awaited<ReturnType<typeof appClient.settings.setMcpServers>> = yield* call(
       [appClient.settings, appClient.settings.setMcpServers],
       persistedServers(servers, disabled, current, credentialInputs),
     );
     if (!result.success) {
-      yield* put(setError(toMcpErrorMessage(result.error, m.mcp_management_saveServersFailed_error())));
+      yield* put(
+        setError(toMcpErrorMessage(result.error, m.mcp_management_saveServersFailed_error())),
+      );
       return;
     }
     yield* fork(refreshDaemonIdsAndStatuses);
@@ -174,9 +183,10 @@ function* persist(
  */
 function* refreshDaemonIdsAndStatuses(): SagaGenerator<void> {
   try {
-    const response: Awaited<ReturnType<typeof appClient.settings.getMcpServers>> = yield* call(
-      [appClient.settings, appClient.settings.getMcpServers],
-    );
+    const response: Awaited<ReturnType<typeof appClient.settings.getMcpServers>> = yield* call([
+      appClient.settings,
+      appClient.settings.getMcpServers,
+    ]);
     const canonical = response.map(copyServerForState);
     const idByName = new Map(
       canonical.flatMap((server) => (server.id ? [[server.name, server.id] as const] : [])),
@@ -210,7 +220,9 @@ function* refreshDaemonIdsAndStatuses(): SagaGenerator<void> {
  */
 function* fetchDaemonStatuses(servers: McpServerConfig[]): SagaGenerator<void> {
   const nameById = new Map(
-    servers.flatMap((server) => (server.id && !server.disabled ? [[server.id, server.name] as const] : [])),
+    servers.flatMap((server) =>
+      server.id && !server.disabled ? [[server.id, server.name] as const] : [],
+    ),
   );
   if (nameById.size === 0) return;
   try {
@@ -245,9 +257,10 @@ function* load(): SagaGenerator<void> {
   if (current.length === 0) yield* put(setLoading(true));
   yield* put(setError(null));
   try {
-    const response: Awaited<ReturnType<typeof appClient.settings.getMcpServers>> = yield* call(
-      [appClient.settings, appClient.settings.getMcpServers],
-    );
+    const response: Awaited<ReturnType<typeof appClient.settings.getMcpServers>> = yield* call([
+      appClient.settings,
+      appClient.settings.getMcpServers,
+    ]);
     const servers = response.map(copyServerForState);
     const disabled: Record<string, true> = {};
     const statuses: Record<string, McpServerStatus> = {};
@@ -306,7 +319,10 @@ function* update(name: string, configInput: McpServerConfig): SagaGenerator<void
   if (index === -1) return;
   if (configInput.name !== name) {
     try {
-      validateName(configInput.name, servers.filter((server) => server.name !== name));
+      validateName(
+        configInput.name,
+        servers.filter((server) => server.name !== name),
+      );
     } catch (error) {
       yield* put(setError(toMcpErrorMessage(error, m.mcp_management_updateServerFailed_error())));
       return;
@@ -315,7 +331,8 @@ function* update(name: string, configInput: McpServerConfig): SagaGenerator<void
   }
   const config = copyServerForState(configInput);
   const next = servers.map((server, position) =>
-    position === index ? config : copyServerForState(server));
+    position === index ? config : copyServerForState(server),
+  );
   yield* put(setServers(next));
   yield* put(setServerStatus(config.name, statusFor(false)));
   const credentialInputs: CredentialInput[] = [[configInput, name]];
@@ -350,7 +367,11 @@ function* importJson(json: string): SagaGenerator<void> {
     }
     const enabled: boolean = yield* selectMcpEnabled.effect();
     if (!enabled) yield* put(setEnabled(true));
-    yield* call(persist, next, added.map((config): [McpServerConfig] => [config]));
+    yield* call(
+      persist,
+      next,
+      added.map((config): [McpServerConfig] => [config]),
+    );
   }
   yield* put(importFromJsonCompleted(added.length));
 }
@@ -416,12 +437,11 @@ function* toggleForWorkspace(
  */
 function* hydrateWorkspaceDisabled(workspaceId: string): SagaGenerator<void> {
   if (!workspaceId) return;
-  const names: Awaited<
-    ReturnType<typeof appClient.settings.getWorkspaceDisabledMcpServerNames>
-  > = yield* call(
-    [appClient.settings, appClient.settings.getWorkspaceDisabledMcpServerNames],
-    workspaceId,
-  );
+  const names: Awaited<ReturnType<typeof appClient.settings.getWorkspaceDisabledMcpServerNames>> =
+    yield* call(
+      [appClient.settings, appClient.settings.getWorkspaceDisabledMcpServerNames],
+      workspaceId,
+    );
   if (names === null) return;
   const disabled: Record<string, true> = {};
   for (const name of names) disabled[name] = true;
@@ -456,17 +476,21 @@ function* saveAdvanced(json: string): SagaGenerator<void> {
     try {
       validateName(config.name, []);
     } catch (error) {
-      yield* put(setAdvancedSaveStatus(
-        'error',
-        toMcpErrorMessage(error, m.mcp_management_invalidServerConfig_error()),
-      ));
+      yield* put(
+        setAdvancedSaveStatus(
+          'error',
+          toMcpErrorMessage(error, m.mcp_management_invalidServerConfig_error()),
+        ),
+      );
       return;
     }
     if (seen.has(config.name)) {
-      yield* put(setAdvancedSaveStatus(
-        'error',
-        m.mcp_management_duplicateServerName_error({ name: config.name }),
-      ));
+      yield* put(
+        setAdvancedSaveStatus(
+          'error',
+          m.mcp_management_duplicateServerName_error({ name: config.name }),
+        ),
+      );
       return;
     }
     seen.add(config.name);
@@ -487,17 +511,18 @@ function* saveAdvanced(json: string): SagaGenerator<void> {
       stateConfigs.map((config, index) => copyServerForWire(config, configs[index])),
     );
     if (!result.success) {
-      yield* put(setAdvancedSaveStatus(
-        'error',
-        toMcpErrorMessage(result.error, m.mcp_management_saveFailed_error()),
-      ));
+      yield* put(
+        setAdvancedSaveStatus(
+          'error',
+          toMcpErrorMessage(result.error, m.mcp_management_saveFailed_error()),
+        ),
+      );
       return;
     }
   } catch (error) {
-    yield* put(setAdvancedSaveStatus(
-      'error',
-      toMcpErrorMessage(error, m.mcp_management_saveFailed_error()),
-    ));
+    yield* put(
+      setAdvancedSaveStatus('error', toMcpErrorMessage(error, m.mcp_management_saveFailed_error())),
+    );
     return;
   }
   yield* put(setAdvancedSaveStatus('saved'));
@@ -511,9 +536,7 @@ function* resetAdvancedStatus(): SagaGenerator<void> {
   if (status === 'saved') yield* put(setAdvancedSaveStatus('idle'));
 }
 
-function* toggleEnabledWorker(
-  _action: ReturnType<typeof toggleEnabled>,
-): SagaGenerator<void> {
+function* toggleEnabledWorker(_action: ReturnType<typeof toggleEnabled>): SagaGenerator<void> {
   yield* call(toggleFeature);
 }
 
@@ -553,9 +576,7 @@ function* restartServerWorker(action: ReturnType<typeof restartServer>): SagaGen
   yield* call(restart, action.payload[0]);
 }
 
-function* saveAdvancedJsonWorker(
-  action: ReturnType<typeof saveAdvancedJson>,
-): SagaGenerator<void> {
+function* saveAdvancedJsonWorker(action: ReturnType<typeof saveAdvancedJson>): SagaGenerator<void> {
   yield* call(saveAdvanced, action.payload[0]);
 }
 

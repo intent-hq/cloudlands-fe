@@ -30,4 +30,3 @@ export type OpenAgentTabDetail = {
   availablePanelCanvasWidth?: number;
   adaptiveFirstChat?: boolean;
 };
-

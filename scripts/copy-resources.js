@@ -23,16 +23,12 @@ function copyRecursiveSync(src, dest, excludeDirs = []) {
     if (!fs.existsSync(dest)) {
       fs.mkdirSync(dest, { recursive: true });
     }
-    fs.readdirSync(src).forEach(childItemName => {
+    fs.readdirSync(src).forEach((childItemName) => {
       // Skip excluded directories
       if (excludeDirs.includes(childItemName)) {
         return;
       }
-      copyRecursiveSync(
-        path.join(src, childItemName),
-        path.join(dest, childItemName),
-        excludeDirs,
-      );
+      copyRecursiveSync(path.join(src, childItemName), path.join(dest, childItemName), excludeDirs);
     });
   } else {
     fs.copyFileSync(src, dest);

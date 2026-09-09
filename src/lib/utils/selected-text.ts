@@ -8,7 +8,10 @@ interface SelectedTextOptions {
 }
 
 function normalizeSelectedText(text: string, maxLength: number): string | null {
-  const normalized = text.replace(/\u00a0/g, ' ').replace(/[\t\r\n]+/g, ' ').trim();
+  const normalized = text
+    .replace(/\u00a0/g, ' ')
+    .replace(/[\t\r\n]+/g, ' ')
+    .trim();
   if (!normalized) return null;
   return normalized.slice(0, maxLength);
 }

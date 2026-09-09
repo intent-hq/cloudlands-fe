@@ -12,7 +12,9 @@ const RUNNING_SNAPSHOT: HardwareLedSnapshot = {
   ambient: { kind: 'running', runningCount: 1 },
 };
 
-function makeCaller(behavior: (method: string) => Promise<unknown> = () => Promise.resolve({ ok: 1 })) {
+function makeCaller(
+  behavior: (method: string) => Promise<unknown> = () => Promise.resolve({ ok: 1 }),
+) {
   const calls: { method: string; params: unknown }[] = [];
   return {
     calls,

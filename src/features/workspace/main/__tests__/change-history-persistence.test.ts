@@ -46,9 +46,8 @@ describe('change-history-persistence ↔ daemon settings.* (PROTOCOL.md §5.12)'
       path: 'workspace.changeHistory',
       value: { ws1: [{ files: [], timestamp: 't' }] },
     });
-    const { initChangeHistory, getChangeHistoryForWorkspace } = await import(
-      '../change-history-persistence'
-    );
+    const { initChangeHistory, getChangeHistoryForWorkspace } =
+      await import('../change-history-persistence');
     await initChangeHistory();
     expect(requestMock).toHaveBeenCalledWith('settings.get', {
       path: 'workspace.changeHistory',
@@ -58,9 +57,8 @@ describe('change-history-persistence ↔ daemon settings.* (PROTOCOL.md §5.12)'
   });
 
   it('setChangeHistoryForWorkspace pushes the updated map via settings.update { changes: [...] }', async () => {
-    const { initChangeHistory, setChangeHistoryForWorkspace } = await import(
-      '../change-history-persistence'
-    );
+    const { initChangeHistory, setChangeHistoryForWorkspace } =
+      await import('../change-history-persistence');
     await initChangeHistory();
     requestMock.mockClear();
     await setChangeHistoryForWorkspace('ws1', [{ files: [], timestamp: 't' } as any]);
@@ -80,9 +78,8 @@ describe('change-history-persistence ↔ daemon settings.* (PROTOCOL.md §5.12)'
       path: 'workspace.changeHistory',
       value: { ws1: [{ files: [], timestamp: 't' }] },
     });
-    const { initChangeHistory, setChangeHistoryForWorkspace, getAllChangeHistory } = await import(
-      '../change-history-persistence'
-    );
+    const { initChangeHistory, setChangeHistoryForWorkspace, getAllChangeHistory } =
+      await import('../change-history-persistence');
     await initChangeHistory();
     requestMock.mockClear();
     await setChangeHistoryForWorkspace('ws1', []);
@@ -94,9 +91,8 @@ describe('change-history-persistence ↔ daemon settings.* (PROTOCOL.md §5.12)'
   });
 
   it('bulkSetChangeHistory pushes multiple workspaces in a single settings.update', async () => {
-    const { initChangeHistory, bulkSetChangeHistory } = await import(
-      '../change-history-persistence'
-    );
+    const { initChangeHistory, bulkSetChangeHistory } =
+      await import('../change-history-persistence');
     await initChangeHistory();
     requestMock.mockClear();
     await bulkSetChangeHistory([

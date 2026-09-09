@@ -6,19 +6,13 @@
  * - What anchors actually exist in the editor
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('$store/renderer/store', async () => {
   const { createStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
-  const { commentsReducer, initialState } = await vi.importActual<typeof import('$store/renderer/slices/comments/comments-slice')>(
-    '$store/renderer/slices/comments/comments-slice'
-  );
+  const { commentsReducer, initialState } = await vi.importActual<
+    typeof import('$store/renderer/slices/comments/comments-slice')
+  >('$store/renderer/slices/comments/comments-slice');
   let state = { comments: initialState };
   const readable = <T>(getter: () => T) => ({
     subscribe: (listener: (value: T) => void) => {
@@ -35,15 +29,15 @@ vi.mock('$store/renderer/store', async () => {
     get state() {
       return state;
     },
-    createSelector: (selectorFunc: (state: any, ...args: any[]) => any) => Object.assign(
-      (...args: any[]) => readable(() => selectorFunc(mockStore.state, ...args)),
-      {
+    createSelector: (selectorFunc: (state: any, ...args: any[]) => any) =>
+      Object.assign((...args: any[]) => readable(() => selectorFunc(mockStore.state, ...args)), {
         select: selectorFunc,
         effect: (...args: any[]) => selectorFunc(mockStore.state, ...args),
-        withStore: (storeSource: { state?: unknown }) =>
-          (...args: any[]) => readable(() => selectorFunc(storeSource.state ?? mockStore.state, ...args)),
-      },
-    ),
+        withStore:
+          (storeSource: { state?: unknown }) =>
+          (...args: any[]) =>
+            readable(() => selectorFunc(storeSource.state ?? mockStore.state, ...args)),
+      }),
   };
 
   return createStoreMockModule(mockStore);
@@ -52,9 +46,7 @@ vi.mock('$store/renderer/store', async () => {
 import { Editor } from '@tiptap/core';
 import { CommentManagerV2 } from '../comment-manager-v2';
 import { store as appStore } from '$store/renderer/store';
-import {
-  loadCommentsAction,
-} from '$store/renderer/slices/comments/comments-slice';
+import { loadCommentsAction } from '$store/renderer/slices/comments/comments-slice';
 import {
   selectComments,
   selectCommentById,
@@ -319,7 +311,9 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
           pointId: 'point-comment:point',
         },
       });
-      appStore.dispatch(loadCommentsAction([...selectComments.select(appStore.state), pointComment]));
+      appStore.dispatch(
+        loadCommentsAction([...selectComments.select(appStore.state), pointComment]),
+      );
 
       editor.commands.insertContentAt(1, {
         type: 'commentAnchor',

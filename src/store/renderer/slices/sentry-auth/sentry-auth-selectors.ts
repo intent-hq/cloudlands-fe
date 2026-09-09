@@ -1,8 +1,7 @@
-import { store } from "../../store";
+import { store } from '../../store';
 /**
  * Sentry Auth Selectors
  */
-
 
 export const selectSentryIsAuthenticated = store.createSelector(
   (state) => state.sentryAuth.isAuthenticated,
@@ -16,7 +15,4 @@ export const selectSentryIsConnecting = store.createSelector(
   (state) => state.sentryAuth.isConnecting,
 );
 
-export const selectSentryError = store.createSelector(
-  (state) => state.sentryAuth.error,
-);
-
+export const selectSentryError = store.createSelector((state) => state.sentryAuth.error);

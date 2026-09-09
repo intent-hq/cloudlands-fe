@@ -25,10 +25,7 @@ import {
   bulkUpsertSessions,
   initialState as initialAgentSessionState,
 } from '../../agent-session/agent-session-slice';
-import {
-  closeTabsByAgentId,
-  destroyTabsByOwnerAgent,
-} from '../../panel-layout/panel-layout-slice';
+import { closeTabsByAgentId, destroyTabsByOwnerAgent } from '../../panel-layout/panel-layout-slice';
 import {
   clearPendingAgentDeletions,
   removePendingAgentDeletion,
@@ -190,50 +187,39 @@ describe('agentReadSaga', () => {
     await task.toPromise();
   });
 
-  it.each([
-    ['equal', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'],
-    ['invalid', 'older-invalid', 'newer-invalid'],
-  ])(
-    'does not let a superseded same-agent response overwrite newer metadata with %s timestamps',
-    async (_label, olderUpdatedAt, newerUpdatedAt) => {
-      let resolveOlder!: (value: AgentSession) => void;
-      mocks.get
-        .mockImplementationOnce(
-          () =>
-            new Promise((done) => {
-              resolveOlder = done;
-            }),
-        )
-        .mockResolvedValueOnce(session({ name: 'newer', updatedAt: newerUpdatedAt }));
-      const channel = stdChannel();
-      let agentSessions = initialAgentSessionState;
-      const dispatch = vi.fn((action) => {
-        agentSessions = agentSessionReducer(agentSessions, action);
-      });
-      const task = runSaga(
-        { channel, dispatch, getState: () => ({ agentSessions }) },
-        agentReadSaga,
-      );
+  it('shares one in-flight request between superseding same-agent callers', async () => {
+    let resolveShared!: (value: AgentSession) => void;
+    mocks.get.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolveShared = done;
+        }),
+    );
+    const channel = stdChannel();
+    let agentSessions = initialAgentSessionState;
+    const dispatch = vi.fn((action) => {
+      agentSessions = agentSessionReducer(agentSessions, action);
+    });
+    const task = runSaga({ channel, dispatch, getState: () => ({ agentSessions }) }, agentReadSaga);
 
-      channel.put(ensureAgentSessionLoaded(WS, AGENT));
-      channel.put(ensureAgentSessionLoaded(WS, AGENT));
-      await settle();
+    channel.put(ensureAgentSessionLoaded(WS, AGENT));
+    channel.put(ensureAgentSessionLoaded(WS, AGENT));
+    await settle();
 
-      expect(mocks.get).toHaveBeenCalledTimes(2);
-      expect(agentSessions.byAgentId[AGENT]?.name).toBe('newer');
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+    expect(agentSessions.byAgentId[AGENT]).toBeUndefined();
 
-      resolveOlder(session({ name: 'older', updatedAt: olderUpdatedAt }));
-      await settle();
+    resolveShared(session({ name: 'shared' }));
+    await settle();
 
-      const upserts = dispatch.mock.calls.filter(
-        ([action]) => action.type === bulkUpsertSessions.type,
-      );
-      expect(upserts).toHaveLength(1);
-      expect(agentSessions.byAgentId[AGENT]?.name).toBe('newer');
-      task.cancel();
-      await task.toPromise();
-    },
-  );
+    const upserts = dispatch.mock.calls.filter(
+      ([action]) => action.type === bulkUpsertSessions.type,
+    );
+    expect(upserts).toHaveLength(1);
+    expect(agentSessions.byAgentId[AGENT]?.name).toBe('shared');
+    task.cancel();
+    await task.toPromise();
+  });
 
   it('loads after a pending deletion clears', async () => {
     setPendingAgentDeletion({ wsId: WS, agentId: AGENT, snapshot: session(), timer: null });

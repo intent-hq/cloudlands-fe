@@ -22,10 +22,34 @@
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const typeOptions = [
-    { value: 'comment', get label() { return m.tiptap_commentDialog_typeComment_label(); }, icon: faCommentDots },
-    { value: 'suggestion', get label() { return m.tiptap_commentDialog_typeSuggestion_label(); }, icon: faCodePullRequest },
-    { value: 'change-request', get label() { return m.tiptap_commentDialog_typeChangeRequest_label(); }, icon: faSquarePen },
-    { value: 'question', get label() { return m.tiptap_commentDialog_typeQuestion_label(); }, icon: faCircleQuestion },
+    {
+      value: 'comment',
+      get label() {
+        return m.tiptap_commentDialog_typeComment_label();
+      },
+      icon: faCommentDots,
+    },
+    {
+      value: 'suggestion',
+      get label() {
+        return m.tiptap_commentDialog_typeSuggestion_label();
+      },
+      icon: faCodePullRequest,
+    },
+    {
+      value: 'change-request',
+      get label() {
+        return m.tiptap_commentDialog_typeChangeRequest_label();
+      },
+      icon: faSquarePen,
+    },
+    {
+      value: 'question',
+      get label() {
+        return m.tiptap_commentDialog_typeQuestion_label();
+      },
+      icon: faCircleQuestion,
+    },
   ];
 
   function handleSubmit() {
@@ -94,8 +118,7 @@
         placeholder={m.tiptap_commentDialog_content_placeholder()}
         onkeydown={handleKeyDown}
         class="w-full p-2 text-xs rounded bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-slate-600 resize-none border-0"
-        rows="3"
-      ></textarea>
+        rows="3"></textarea>
     </div>
 
     <!-- Actions -->
@@ -118,7 +141,11 @@
   </div>
 
   <!-- Backdrop - click outside to close -->
-  <button class="fixed inset-0 z-[14]" onclick={handleClose} aria-label={m.tiptap_commentDialog_close_ariaLabel()} type="button"
+  <button
+    class="fixed inset-0 z-[14]"
+    onclick={handleClose}
+    aria-label={m.tiptap_commentDialog_close_ariaLabel()}
+    type="button"
   ></button>
 </Portal>
 

@@ -59,10 +59,15 @@
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
+  import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
+  import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { checkPiMcpAdapterInstalled, installPiMcpAdapter } from '$features/pi/pi-models.client';
   import Button from '../ui/button/button.svelte';
   import DropdownMenu from '../ui/dropdown-menu.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import AntigravityConnect from '$features/antigravity/AntigravityConnect.svelte';
+  import { selectAntigravitySetupPolicy } from '$store/renderer/slices/antigravity-setup/antigravity-setup-selectors';
+  const antigravitySetupPolicy$ = selectAntigravitySetupPolicy();
 
   const logger = createLogger('ProviderSelector');
   const activeProviderId = selectActiveProviderId();
@@ -98,11 +103,18 @@
   let resolvedPaths = $state<Record<string, string>>({});
   // Secondary-binary resolved paths for dual-binary providers (unsloth CLI)
   let secondaryResolvedPaths = $state<Record<string, string>>({});
+  // Pinned npx package spec for npx-only providers (claude-code, pi), whose
+  // resolved path is the npx binary rather than the adapter itself.
+  let npxPackages = $state<Record<string, string>>({});
   // Path dropdowns are controlled from each provider's overflow menu.
   let pathConfigOpen = $state<Record<string, boolean>>({});
 
   // Provider metadata for docs URLs and auth requirements
   const PROVIDER_METADATA: Record<string, { docsUrl: string; requiresAuth: boolean }> = {
+    antigravity: {
+      docsUrl: 'https://antigravity.google/docs/ide/extensions/zed',
+      requiresAuth: true,
+    },
     auggie: { docsUrl: 'https://docs.augmentcode.com/cli/overview', requiresAuth: true },
     'claude-code': {
       docsUrl: 'https://code.claude.com/docs/en/quickstart#step-1-install-claude-code',
@@ -203,7 +215,7 @@
 
   function isProviderReadyForUse(providerId: string): boolean {
     if (!getProviderAvailable(providerId)) return false;
-    return getProviderAuthenticated(providerId) !== false;
+    return isProviderAuthenticationReady(providerId, getProviderAuthenticated(providerId));
   }
 
   // Reactive helper to check if a provider is enabled
@@ -218,6 +230,12 @@
   }
 
   function handleToggleProvider(providerId: string, enabled: boolean) {
+    if (
+      enabled &&
+      providerId === 'antigravity' &&
+      !selectAntigravitySetupPolicy.select(appStore.state).canEnable
+    )
+      return;
     if (!enabled) {
       const reason = $providerInUseReasons$[providerId];
       if (reason) {
@@ -289,6 +307,7 @@
         data?: {
           paths: Record<string, string | null>;
           secondaryPaths: Record<string, string | null>;
+          npxPackages?: Record<string, string>;
         };
       }>(PROVIDERS_CHANNELS.GET_PATHS);
       if (pathsResult?.success && pathsResult.data) {
@@ -302,6 +321,7 @@
           if (path) secondary[providerId] = path;
         }
         secondaryResolvedPaths = secondary;
+        npxPackages = pathsResult.data.npxPackages ?? {};
       }
     } catch (err) {
       logger.error('Failed to load provider paths', { error: err });
@@ -440,7 +460,7 @@
 <div class="flex flex-col gap-6">
   {#if checkError}
     <div class="flex items-center justify-between gap-4 rounded-xl bg-card px-6 py-4">
-      <p class="text-sm text-error-foreground">{checkError}</p>
+      <p class="text-sm text-danger">{checkError}</p>
       <button
         type="button"
         class="text-primary hover:text-primary/80 cursor-pointer transition-colors text-xs font-medium"
@@ -480,11 +500,16 @@
             {@const canManageEnablement = canManageProviderEnablement(provider.id)}
             {@const inUseReason = $providerInUseReasons$[provider.id] ?? null}
             {@const canDisable = canManageEnablement && !isActive && isEnabled}
-            {@const canEnable = canManageEnablement && !isActive && !isEnabled && isReady}
+            {@const canEnable =
+              canManageEnablement &&
+              !isActive &&
+              !isEnabled &&
+              isReady &&
+              (provider.id !== 'antigravity' || $antigravitySetupPolicy$.canEnable)}
             {@const needsLogin = provider.available && provider.authenticated === false}
-            {@const canLogIn = needsLogin && provider.loginDocsUrl}
+            {@const canLogIn = provider.id !== 'antigravity' && needsLogin && provider.loginDocsUrl}
             {@const canSetDefault = provider.available && !isActive && isReady}
-            {@const canInstall = !provider.available}
+            {@const canInstall = provider.id !== 'antigravity' && !provider.available}
             {@const hasPiAdapterWarning =
               !provider.statusPending &&
               provider.id === 'pi' &&
@@ -593,6 +618,7 @@
                           runtimeResolvedPath={provider.id === 'unsloth'
                             ? resolvedPaths[provider.id]
                             : undefined}
+                          npxPackage={npxPackages[provider.id]}
                           isInstalled={provider.available}
                           onPathChange={(path) => handlePathChange(provider.id, path)}
                           bind:open={pathConfigOpen[provider.id]}
@@ -826,6 +852,9 @@
                   </div>
                 </div>
               </div>
+              {#if provider.id === 'antigravity'}
+                <AntigravityConnect ready={isReady} />
+              {/if}
             </div>
           {/each}
         </div>
@@ -836,7 +865,9 @@
 
 {#snippet providerIcon(providerId: string)}
   <span class="w-7 text-subtle">
-    {#if providerId === 'auggie'}
+    {#if providerId === 'antigravity'}
+      <AgentProviderIcon {providerId} size={20} class="size-5" />
+    {:else if providerId === 'auggie'}
       <AuggieLogo width={22} />
     {:else if providerId === 'claude-code'}
       <svg class="size-5" viewBox="0 0 1200 1200" xmlns="http://www.w3.org/2000/svg">

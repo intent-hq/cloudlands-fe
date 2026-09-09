@@ -116,11 +116,13 @@ vi.mock('$lib/components/settings/NotificationSettings.svelte', async () => ({
 vi.mock('$lib/components/settings/RtkSettings.svelte', async () => ({
   default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
 }));
+// Devices-tab fixture carrier (Remote Access section).
 vi.mock('$lib/components/settings/WebSocketApiSettings.svelte', async () => ({
   default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
+// Advanced-tab fixture carrier.
 vi.mock('$lib/components/settings/AgentBackendSettings.svelte', async () => ({
-  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 
 import SettingsPage from '../+page.svelte';
@@ -529,6 +531,17 @@ describe('settings tab route and focus behavior', () => {
     },
   );
 
+  it('renders Remote Access on Devices only, not on Advanced', async () => {
+    const devices = renderSettings('/settings?tab=devices');
+    await waitFor(() => expect(devices.container.querySelector('#websocket-api')).not.toBeNull());
+
+    cleanup();
+
+    const advanced = renderSettings('/settings?tab=advanced');
+    await waitFor(() => expect(advanced.container.querySelector('#agent-backend')).not.toBeNull());
+    expect(advanced.container.querySelector('#websocket-api')).toBeNull();
+  });
+
   it('renders Agent Backend only on Advanced while the legacy Tools tab resolves to Setup', async () => {
     const advanced = renderSettings('/settings?tab=advanced');
     await waitFor(() => expect(advanced.container.querySelector('#agent-backend')).not.toBeNull());
@@ -564,6 +577,10 @@ describe('settings tab route and focus behavior', () => {
     ['/settings?tab=connections#voice', 'Input', 'voice'],
     ['/settings?tab=advanced#workspace-api', 'Advanced', 'workspace-api'],
     ['/settings?tab=system#workspace-api', 'Advanced', 'workspace-api'],
+    ['/settings#websocket-api', 'Devices', 'websocket-api'],
+    ['/settings#remote-access', 'Devices', 'websocket-api'],
+    // Legacy deep link from when the section lived on Advanced.
+    ['/settings?tab=advanced#websocket-api', 'Devices', 'websocket-api'],
     ['/settings?tab=agent-behavior#agent-features', 'Agent Behavior', 'agent-features'],
     ['/settings?tab=behavior#agent-features', 'Agent Behavior', 'agent-features'],
   ])('routes canonical and legacy URL %s to %s', async (url, category, sectionId) => {
@@ -628,21 +645,18 @@ describe('settings tab route and focus behavior', () => {
     expect(window.location.hash).toBe('#specialist-implementor');
   });
 
-  it('keeps Providers and Global Instructions default-model entry points on shared state', async () => {
+  it('renders the default model row under Providers only, not Agent Behavior', async () => {
     appStore.dispatch(hydrateDefaultProvider('codex'));
     appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'shared-fixture' }));
     renderSettings('/settings?tab=providers');
 
-    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('shared-fixture');
+    expect(document.getElementById('utility-default-model')).not.toBeNull();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Agent Behavior' }));
 
-    await screen.findByTestId('global-instructions-default-model-row');
+    expect((await screen.findByTestId('ai-behavior-view')).textContent).toContain('system-prompt');
+    expect(document.getElementById('utility-default-model')).toBeNull();
     expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('shared-fixture');
-
-    appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'updated-fixture' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Providers' }));
-    expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('updated-fixture');
   });
 
   it('activates a clicked sidebar item while preserving params and hash', async () => {
@@ -749,8 +763,9 @@ describe('settings back and footer behavior', () => {
 
 describe('settings hash target integration', () => {
   it.each([
-    ['default-model', 'quickActions.defaultModel', 'Agent Behavior', 'page'],
-    ['global-instructions', 'quickActions.defaultModel', 'Agent Behavior', 'page'],
+    ['default-model', 'utility-default-model', 'Providers', 'page'],
+    ['quickActions.defaultModel', 'utility-default-model', 'Providers', 'page'],
+    ['global-instructions', 'global-instructions', 'Agent Behavior', 'page'],
     ['utility-default-model', 'utility-default-model', 'Providers', 'page'],
     ['updates', 'updates', 'App Behavior', 'page'],
     ['open-in', 'open-in', 'App Behavior', 'page'],
@@ -760,6 +775,8 @@ describe('settings hash target integration', () => {
     ['mcp-servers', 'mcp-servers', 'Connections', 'page'],
     ['cli-optimization', 'cli-optimization', 'Setup', 'page'],
     ['workspace-api', 'workspace-api', 'Advanced', 'page'],
+    ['websocket-api', 'websocket-api', 'Devices', 'page'],
+    ['remote-access', 'websocket-api', 'Devices', 'page'],
     ['keyboard-shortcuts', 'keyboard-shortcuts', 'Input', 'page'],
     ['voice', 'voice', 'Input', 'page'],
     ['language', 'language', 'Display', 'page'],

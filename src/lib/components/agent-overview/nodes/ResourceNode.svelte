@@ -109,9 +109,7 @@
         <span class="absolute right-1 top-1"><Fa icon={faArrowUpRightFromSquare} size="xs" /></span>
       {/if}
     </span>
-    <span class="resource-label line-clamp-2 leading-[1.15]" style:opacity={labelOpacity}
-      >{label}</span
-    >
+    <span class="resource-label line-clamp-2" style:opacity={labelOpacity}>{label}</span>
     {#if focusState === 'focused'}
       <span class="node-meta" style:opacity={labelOpacity}>
         {#if node.type === 'file'}+{additions} −{deletions}{:else}{access}{/if} ·
@@ -152,6 +150,7 @@
     width: calc(112px / var(--zoom));
     max-width: calc(112px / var(--zoom));
     font-size: clamp(13px, calc(13px / var(--zoom)), 20.8px);
+    line-height: 1.15;
     overflow-wrap: anywhere;
     text-overflow: ellipsis;
   }

@@ -87,9 +87,8 @@ const ENFORCED_DIRS = [
   'src/features/debug-export',
   'src/lib/services',
   // agent feature: renderer services + browser/services/utils and the two
-  // user-facing main-process files. main/instructions/, main/instruction-service,
-  // specialists/rules-loader (agent prompt content), testing/ (harness), and
-  // agent-launch-core (prompt building) are intentionally not enforced.
+  // user-facing main-process files. testing/ (harness) and agent-launch-core
+  // (prompt building) are intentionally not enforced.
   'src/features/agent/browser',
   'src/features/agent/services',
   'src/features/agent/utils',
@@ -122,10 +121,10 @@ const ENFORCED_DIRS = [
   'src/features/opencode',
   'src/features/pi',
   'src/features/providers',
-  // remaining feature dirs (final flip). agent/main/instructions, agent/testing,
-  // agent/agent-launch-core, acp-official main/server + parsers/plans, and
-  // cortex/cortex-acp emit agent-facing prompt/wire content — intentionally
-  // not enforced.
+  'src/features/antigravity',
+  // remaining feature dirs (final flip). agent/testing, agent/agent-launch-core,
+  // acp-official main/server + parsers/plans, and cortex/cortex-acp emit
+  // agent-facing prompt/wire content — intentionally not enforced.
   'src/features/accept-changes',
   'src/features/auto-update',
   'src/features/backend',

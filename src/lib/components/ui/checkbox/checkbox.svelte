@@ -80,7 +80,7 @@
     'hover:border-input hover:bg-muted/50 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
     disabled && 'cursor-not-allowed bg-muted/40 opacity-60 hover:border-border',
     readonly && 'cursor-default',
-    invalid && 'border-destructive-foreground ring-1 ring-destructive-foreground/25',
+    invalid && 'border-danger ring-1 ring-danger/25',
     'data-[state=checked]:border-primary/60 data-[state=checked]:bg-accent data-[state=checked]:text-accent-foreground data-[state=indeterminate]:border-primary/60 data-[state=indeterminate]:bg-accent data-[state=indeterminate]:text-accent-foreground',
     sizeClasses[size],
     className,

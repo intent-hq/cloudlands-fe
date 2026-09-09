@@ -743,7 +743,7 @@
         variant="ghost"
         onclick={() => handleActionClick(action)}
         class="{menuItemClass} {action.variant === 'destructive'
-          ? 'hover:bg-destructive hover:text-destructive-foreground'
+          ? 'hover:bg-danger hover:text-danger-background'
           : ''}"
         size="sm"
       >
@@ -811,7 +811,7 @@
     <Button
       variant="ghost"
       onclick={handleDelete}
-      class="{menuItemClass} hover:bg-destructive hover:text-destructive-foreground"
+      class="{menuItemClass} hover:bg-danger hover:text-danger-background"
       size="sm"
     >
       <span class={iconSlotClass}>
@@ -830,7 +830,7 @@
       variant="ghost"
       onclick={handleDeleteFile}
       disabled={isDeletingFile}
-      class="{menuItemClass} hover:bg-destructive hover:text-destructive-foreground"
+      class="{menuItemClass} hover:bg-danger hover:text-danger-background"
       size="sm"
     >
       <span class={iconSlotClass}>

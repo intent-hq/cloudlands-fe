@@ -125,7 +125,9 @@ describe('LiveVoiceClient (fake transport)', () => {
 
   it('propagates transport/daemon errors (the flow surfaces them as toasts)', async () => {
     mockedRequest.mockRejectedValueOnce(
-      new Error('voice: no API key found for elevenlabs (set voice.elevenlabs.apiKey or ELEVENLABS_API_KEY)'),
+      new Error(
+        'voice: no API key found for elevenlabs (set voice.elevenlabs.apiKey or ELEVENLABS_API_KEY)',
+      ),
     );
     const client = new LiveVoiceClient();
 
@@ -146,7 +148,10 @@ describe('LiveVoiceClient (fake transport)', () => {
 
   it('getWorkspaceVocabulary propagates the not-found -32602 (unknown workspaceId)', async () => {
     mockedRequest.mockRejectedValueOnce(
-      Object.assign(new Error('workspace not found'), { code: -32602, data: { code: 'not-found' } }),
+      Object.assign(new Error('workspace not found'), {
+        code: -32602,
+        data: { code: 'not-found' },
+      }),
     );
     const client = new LiveVoiceClient();
 

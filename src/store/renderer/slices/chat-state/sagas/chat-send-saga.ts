@@ -82,12 +82,7 @@ type RetryAction = ReturnType<typeof agentSessionRetryLastMessageRequested>;
 type RetryModelAction = ReturnType<typeof agentSessionRetryWithModelRequested>;
 type RetryFromStalledAction = ReturnType<typeof agentSessionRetryFromStalledRequested>;
 type ChatCommand =
-  | SendAction
-  | RemoveAction
-  | StopAction
-  | RetryAction
-  | RetryModelAction
-  | RetryFromStalledAction;
+  SendAction | RemoveAction | StopAction | RetryAction | RetryModelAction | RetryFromStalledAction;
 
 const ORDINARY_CHAT_COMMANDS = [
   sendMessage,
@@ -541,11 +536,7 @@ function getCommandAgentId(action: ChatCommand): string {
     ? (action as SendAction).payload.agentId
     : (
         action as
-          | RemoveAction
-          | StopAction
-          | RetryAction
-          | RetryModelAction
-          | RetryFromStalledAction
+          RemoveAction | StopAction | RetryAction | RetryModelAction | RetryFromStalledAction
       ).payload[0];
 }
 

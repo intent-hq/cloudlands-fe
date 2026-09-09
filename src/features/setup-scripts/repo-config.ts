@@ -195,7 +195,11 @@ export function chooseDefaultSetupScript(options: {
     return { content: repoConfigScript, name: REPO_CONFIG_SCRIPT_NAME, source: 'repo-config' };
   }
   if (lastUsed) {
-    return { content: lastUsed.content, name: lastUsed.name, source: lastUsed.nameSource ?? 'named' };
+    return {
+      content: lastUsed.content,
+      name: lastUsed.name,
+      source: lastUsed.nameSource ?? 'named',
+    };
   }
   if (genericTemplate) {
     return { content: genericTemplate.content, name: genericTemplate.name, source: 'named' };

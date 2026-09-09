@@ -53,7 +53,7 @@ describe('markdown-processor inline workspace file images', () => {
       workspaceId: 'ws-abc',
     });
 
-    expect(html).toContain('src="workspace-file://ws-abc/docs/shot.png"');
+    expect(html).toMatch(/src="workspace-file:\/\/ws-abc\/docs\/shot\.png\?v=[A-Za-z0-9._-]+"/);
     expect(html).toContain('alt="shot"');
   });
 
@@ -62,7 +62,28 @@ describe('markdown-processor inline workspace file images', () => {
       workspaceId: 'ws-xyz',
     });
 
-    expect(html).toContain('src="workspace-file://ws-xyz/shot.webp"');
+    expect(html).toMatch(/src="workspace-file:\/\/ws-xyz\/shot\.webp\?v=[A-Za-z0-9._-]+"/);
+  });
+
+  it('cache-busts image URLs with a fresh token per render, even on a cache hit', async () => {
+    const md = '![shot](intent://local/file/regenerated.png)';
+    const first = await processMarkdownToHTML(md, { workspaceId: 'ws-abc' });
+    const second = await processMarkdownToHTML(md, { workspaceId: 'ws-abc' });
+    const srcOf = (html: string) => /src="([^"]*)"/.exec(html)![1];
+
+    expect(srcOf(first)).toMatch(/^workspace-file:\/\/ws-abc\/regenerated\.png\?v=/);
+    expect(srcOf(second)).toMatch(/^workspace-file:\/\/ws-abc\/regenerated\.png\?v=/);
+    expect(srcOf(first)).not.toBe(srcOf(second));
+  });
+
+  it('reuses an explicit workspaceFileVersion so re-renders keep identical image URLs', async () => {
+    const md = '![shot](intent://local/file/stable.png)';
+    const options = { workspaceId: 'ws-abc', workspaceFileVersion: 'render-1' };
+    const first = await processMarkdownToHTML(md, options);
+    const second = await processMarkdownToHTML(md, options);
+
+    expect(first).toContain('src="workspace-file://ws-abc/stable.png?v=render-1"');
+    expect(second).toBe(first);
   });
 
   it('does not rewrite cross-workspace long-form intent file image links', async () => {

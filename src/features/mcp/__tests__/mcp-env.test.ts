@@ -200,7 +200,11 @@ describe('redactMcpEnvForLogging', () => {
           args: ['--flag'],
           env: { USER_TOKEN: 'fake-token-value', PATH: '/usr/bin' }, // pragma: allowlist secret
         },
-        remote: { type: 'http', url: 'https://example.com', headers: { Authorization: 'Bearer fake' } }, // pragma: allowlist secret
+        remote: {
+          type: 'http',
+          url: 'https://example.com',
+          headers: { Authorization: 'Bearer fake' },
+        }, // pragma: allowlist secret
       },
     };
 

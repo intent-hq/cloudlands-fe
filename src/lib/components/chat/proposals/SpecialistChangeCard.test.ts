@@ -86,14 +86,18 @@ describe('SpecialistChangeCard', () => {
 
     expect(screen.getByText('Edit specialist: Review Buddy')).toBeTruthy();
     expect(screen.getByText('Review and edit the specialist fields before applying.')).toBeTruthy();
-    expect(container.textContent).toContain('Name: Reviewer → Review Buddy');
-    expect(container.textContent).toContain('Prompt: Old prompt → Review carefully.');
-    expect(screen.getByRole('button', { name: 'Discard' })).toBeTruthy();
+    expect(
+      container.querySelector('[data-proposal-before-after-row="name"]')?.textContent,
+    ).toContain('Reviewer → Review Buddy');
+    expect(
+      container.querySelector('[data-proposal-before-after-row="prompt"]')?.textContent,
+    ).toContain('Old prompt → Review carefully.');
+    expect(screen.getByRole('button', { name: 'Not now' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Save specialist' })).toBeTruthy();
     expect(container.textContent).not.toContain('specialist-edit');
-    expect(
-      screen.getByRole('heading', { name: 'Edit specialist: Review Buddy' }).className,
-    ).toContain('type-body');
+    expect(screen.getByRole('heading', { name: 'Update this specialist?' }).className).toContain(
+      'type-title',
+    );
     expect(container.innerHTML).not.toContain('text-subtle');
   });
 
@@ -134,7 +138,7 @@ describe('SpecialistChangeCard', () => {
     expect(status.textContent).toContain('Applying…');
     expect(status.getAttribute('aria-live')).toBe('polite');
     expect(screen.getByRole('button', { name: 'Applying…' }).hasAttribute('disabled')).toBe(true);
-    expect(screen.getByRole('button', { name: 'Discard' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Not now' }).hasAttribute('disabled')).toBe(true);
   });
 
   it('shows Retry only on failed lifecycle and retries apply', async () => {

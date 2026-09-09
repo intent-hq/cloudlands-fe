@@ -8,13 +8,7 @@
  * 4. Different agent types work correctly
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeAll,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 
 // AUDIT-P2-12b: agent creation now routes through `appClient.agents.create`
 // (→ daemon `agent.create`, PROTOCOL §5.5) instead of the legacy
@@ -42,7 +36,8 @@ vi.mock('$lib/electron-bridge', () => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({ workspaceAgents: { byWorkspaceId: {} } }),

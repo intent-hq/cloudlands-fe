@@ -122,6 +122,23 @@ async function writeJsonl(filePath: string, items: unknown[]): Promise<void> {
   await fs.writeFile(filePath, `${content}${items.length > 0 ? '\n' : ''}`, 'utf-8');
 }
 
+async function writeScreenshot(
+  outputDir: string,
+  screenshot: { base64: string; width: number; height: number },
+): Promise<string> {
+  const image = Buffer.from(screenshot.base64, 'base64');
+  if (image.length === 0) {
+    throw new Error(
+      // i18n-ignore (agent-facing operational diagnostic, not user-facing)
+      `Screenshot capture for ${outputDir} produced no JPEG bytes; screenshot.jpg was not written`,
+    );
+  }
+
+  const screenshotPath = path.join(outputDir, 'screenshot.jpg');
+  await fs.writeFile(screenshotPath, image);
+  return screenshotPath;
+}
+
 /**
  * Categorize MIME type into a simple category
  */
@@ -314,8 +331,9 @@ class BrowserCaptureService {
 
     // Capture screenshot
     const screenshot = await embeddedBrowserCdp.screenshot(tab.tabId);
-    const screenshotPath = path.join(outputDir, 'screenshot.jpg');
-    await fs.writeFile(screenshotPath, Buffer.from(screenshot.base64, 'base64'));
+    // The accessibility artifact may already exist if capture fails, but an empty
+    // screenshot is rejected before screenshot.jpg is created.
+    const screenshotPath = await writeScreenshot(outputDir, screenshot);
 
     // Write console/network if captured
     let consolePath: string | undefined;
@@ -514,10 +532,7 @@ class BrowserCaptureService {
 
     // Capture screenshot
     const screenshot = await embeddedBrowserCdp.screenshot(session.tabId);
-    await fs.writeFile(
-      path.join(stepDir, 'screenshot.jpg'),
-      Buffer.from(screenshot.base64, 'base64'),
-    );
+    await writeScreenshot(stepDir, screenshot);
 
     // Write step metadata
     const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);

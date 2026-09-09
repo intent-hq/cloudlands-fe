@@ -103,10 +103,7 @@ describe('Attribution Span Coalescer', () => {
 
     it('should merge entries with both-undefined authors', () => {
       const now = Date.now();
-      const entries = [
-        createEntry(1, 10, 20, now - 30 * 1000),
-        createEntry(2, 30, 20, now),
-      ];
+      const entries = [createEntry(1, 10, 20, now - 30 * 1000), createEntry(2, 30, 20, now)];
 
       const spans = coalesceAttributionSpans(entries, now);
 

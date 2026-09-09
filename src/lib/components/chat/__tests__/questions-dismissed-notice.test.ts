@@ -10,7 +10,8 @@ import type { AgentMessage } from '$shared/types';
 
 // Mock the Redux store to avoid initialization errors
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ state: {} });
 });
 

@@ -1,13 +1,5 @@
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import {
-  ChangeStage,
-  type TrackedChange,
-  type CommitInfo,
-} from '$features/file-tracking/types';
+import { describe, it, expect } from 'vitest';
+import { ChangeStage, type TrackedChange, type CommitInfo } from '$features/file-tracking/types';
 import type { AgentChangeGroup, PRInfo } from '$lib/components/file-tracking/accept-changes/types';
 import type { PullRequestInfo } from '$shared/types';
 import { PullRequestStatus } from '$shared/types';
@@ -32,6 +24,7 @@ import {
   aggregatePRFiles,
   computeTotalStats,
   mapWorkspacePRs,
+  legacyWorkspacePullRequest,
   mergeMonitoredPRs,
   orderPRSectionsForSelection,
   sortPRsByRecency,
@@ -125,11 +118,15 @@ describe('getBranchNameValidationError', () => {
   });
 
   it('rejects spaces', () => {
-    expect(getBranchNameValidationError('my branch')).toBe('Branch name contains invalid characters');
+    expect(getBranchNameValidationError('my branch')).toBe(
+      'Branch name contains invalid characters',
+    );
   });
 
   it('rejects tabs', () => {
-    expect(getBranchNameValidationError('feat\ttab')).toBe('Branch name contains invalid characters');
+    expect(getBranchNameValidationError('feat\ttab')).toBe(
+      'Branch name contains invalid characters',
+    );
   });
 
   it('rejects newlines', () => {
@@ -139,7 +136,9 @@ describe('getBranchNameValidationError', () => {
   });
 
   it('rejects backslash', () => {
-    expect(getBranchNameValidationError('feat\\bar')).toBe('Branch name contains invalid characters');
+    expect(getBranchNameValidationError('feat\\bar')).toBe(
+      'Branch name contains invalid characters',
+    );
   });
 
   it('rejects tilde', () => {
@@ -167,8 +166,12 @@ describe('getBranchNameValidationError', () => {
   });
 
   it('rejects at-brace sequence @{', () => {
-    expect(getBranchNameValidationError('feat@{')).toBe('Branch name cannot contain the sequence @{');
-    expect(getBranchNameValidationError('@{upstream}')).toBe('Branch name cannot contain the sequence @{');
+    expect(getBranchNameValidationError('feat@{')).toBe(
+      'Branch name cannot contain the sequence @{',
+    );
+    expect(getBranchNameValidationError('@{upstream}')).toBe(
+      'Branch name cannot contain the sequence @{',
+    );
   });
 
   it('rejects @ as entire branch name', () => {
@@ -190,9 +193,7 @@ describe('getBranchNameValidationError', () => {
   });
 
   it('rejects ending with .lock', () => {
-    expect(getBranchNameValidationError('branch.lock')).toBe(
-      "Branch name cannot end with '.lock'",
-    );
+    expect(getBranchNameValidationError('branch.lock')).toBe("Branch name cannot end with '.lock'");
   });
 
   it('rejects consecutive dots', () => {
@@ -200,15 +201,11 @@ describe('getBranchNameValidationError', () => {
   });
 
   it('rejects starting with slash', () => {
-    expect(getBranchNameValidationError('/branch')).toBe(
-      'Branch name cannot start or end with /',
-    );
+    expect(getBranchNameValidationError('/branch')).toBe('Branch name cannot start or end with /');
   });
 
   it('rejects ending with slash', () => {
-    expect(getBranchNameValidationError('branch/')).toBe(
-      'Branch name cannot start or end with /',
-    );
+    expect(getBranchNameValidationError('branch/')).toBe('Branch name cannot start or end with /');
   });
 
   it('rejects consecutive slashes', () => {
@@ -400,16 +397,12 @@ describe('getUndoTooltip', () => {
 describe('getUndoCommitTooltip', () => {
   it('singular local commit', () => {
     const commits = [makeCommit({ isPushed: false })];
-    expect(getUndoCommitTooltip(commits, 0)).toBe(
-      'Undo commit (bring changes back to staging)',
-    );
+    expect(getUndoCommitTooltip(commits, 0)).toBe('Undo commit (bring changes back to staging)');
   });
 
   it('plural local commits', () => {
     const commits = [makeCommit({ isPushed: false }), makeCommit({ isPushed: false })];
-    expect(getUndoCommitTooltip(commits, 1)).toBe(
-      'Undo 2 commits (bring changes back to staging)',
-    );
+    expect(getUndoCommitTooltip(commits, 1)).toBe('Undo 2 commits (bring changes back to staging)');
   });
 });
 
@@ -596,8 +589,6 @@ describe('toUIFileChange', () => {
   });
 });
 
-
-
 // ─── aggregatePRFiles ──────────────────────────────────────────────────────────
 
 describe('aggregatePRFiles', () => {
@@ -615,8 +606,16 @@ describe('aggregatePRFiles', () => {
 
   it('accumulates additions/deletions across commits for the same file', () => {
     const commits = [
-      makeCommit({ hash: 'a', files: [{ path: 'a.ts', additions: 5, deletions: 2 }], timestamp: 100 }),
-      makeCommit({ hash: 'b', files: [{ path: 'a.ts', additions: 3, deletions: 1 }], timestamp: 200 }),
+      makeCommit({
+        hash: 'a',
+        files: [{ path: 'a.ts', additions: 5, deletions: 2 }],
+        timestamp: 100,
+      }),
+      makeCommit({
+        hash: 'b',
+        files: [{ path: 'a.ts', additions: 3, deletions: 1 }],
+        timestamp: 200,
+      }),
     ];
     const result = aggregatePRFiles(commits);
     expect(result).toHaveLength(1);
@@ -625,13 +624,31 @@ describe('aggregatePRFiles', () => {
 
   it('handles multiple different files across commits', () => {
     const commits = [
-      makeCommit({ hash: 'a', files: [{ path: 'a.ts', additions: 1, deletions: 0 }], timestamp: 100 }),
-      makeCommit({ hash: 'b', files: [{ path: 'b.ts', additions: 2, deletions: 1 }], timestamp: 200 }),
+      makeCommit({
+        hash: 'a',
+        files: [{ path: 'a.ts', additions: 1, deletions: 0 }],
+        timestamp: 100,
+      }),
+      makeCommit({
+        hash: 'b',
+        files: [{ path: 'b.ts', additions: 2, deletions: 1 }],
+        timestamp: 200,
+      }),
     ];
     const result = aggregatePRFiles(commits);
     expect(result).toHaveLength(2);
-    expect(result.find((f) => f.path === 'a.ts')).toEqual({ path: 'a.ts', additions: 1, deletions: 0, staged: false });
-    expect(result.find((f) => f.path === 'b.ts')).toEqual({ path: 'b.ts', additions: 2, deletions: 1, staged: false });
+    expect(result.find((f) => f.path === 'a.ts')).toEqual({
+      path: 'a.ts',
+      additions: 1,
+      deletions: 0,
+      staged: false,
+    });
+    expect(result.find((f) => f.path === 'b.ts')).toEqual({
+      path: 'b.ts',
+      additions: 2,
+      deletions: 1,
+      staged: false,
+    });
   });
 
   it('handles commits with undefined files', () => {
@@ -660,11 +677,13 @@ describe('computeTotalStats', () => {
   });
 
   it('deduplicates paths across unstaged, staged, and commits', () => {
-    const unstaged = [makeTrackedChange({ relativePath: 'a.ts', stats: { additions: 1, deletions: 0 } })];
-    const staged = [makeTrackedChange({ relativePath: 'a.ts', stats: { additions: 2, deletions: 1 } })];
-    const commits = [
-      makeCommit({ files: [{ path: 'a.ts', additions: 3, deletions: 0 }] }),
+    const unstaged = [
+      makeTrackedChange({ relativePath: 'a.ts', stats: { additions: 1, deletions: 0 } }),
     ];
+    const staged = [
+      makeTrackedChange({ relativePath: 'a.ts', stats: { additions: 2, deletions: 1 } }),
+    ];
+    const commits = [makeCommit({ files: [{ path: 'a.ts', additions: 3, deletions: 0 }] })];
     const result = computeTotalStats(unstaged, staged, commits);
     expect(result.totalFilesChanged).toBe(1); // same file across all
     expect(result.totalAdditions).toBe(6); // 1+2+3
@@ -672,8 +691,12 @@ describe('computeTotalStats', () => {
   });
 
   it('counts unique files across sources', () => {
-    const unstaged = [makeTrackedChange({ relativePath: 'a.ts', stats: { additions: 1, deletions: 0 } })];
-    const staged = [makeTrackedChange({ relativePath: 'b.ts', stats: { additions: 1, deletions: 0 } })];
+    const unstaged = [
+      makeTrackedChange({ relativePath: 'a.ts', stats: { additions: 1, deletions: 0 } }),
+    ];
+    const staged = [
+      makeTrackedChange({ relativePath: 'b.ts', stats: { additions: 1, deletions: 0 } }),
+    ];
     const commits = [makeCommit({ files: [{ path: 'c.ts', additions: 1, deletions: 0 }] })];
     const result = computeTotalStats(unstaged, staged, commits);
     expect(result.totalFilesChanged).toBe(3);
@@ -771,6 +794,53 @@ describe('mapWorkspacePRs', () => {
   });
 });
 
+// ─── legacyWorkspacePullRequest ────────────────────────────────────────────────
+
+describe('legacyWorkspacePullRequest', () => {
+  const updatedAt = '2026-08-12T00:00:00.000Z';
+
+  it('surfaces a workspace hydrated with only the legacy prNumber/prUrl fields', () => {
+    const pr = legacyWorkspacePullRequest({
+      prNumber: 7,
+      prUrl: 'https://github.com/acme/widgets/pull/7',
+      updatedAt,
+    });
+    expect(pr).toMatchObject({
+      number: 7,
+      url: 'https://github.com/acme/widgets/pull/7',
+      status: PullRequestStatus.Open,
+      updatedAt,
+    });
+    expect(
+      mapWorkspacePRs(
+        undefined,
+        pr,
+        (n, fallback) => fallback ?? String(n),
+        (p) => p.title,
+      ),
+    ).toMatchObject([{ number: 7, url: 'https://github.com/acme/widgets/pull/7', status: 'open' }]);
+  });
+
+  it('honors a daemon-sent legacy prStatus', () => {
+    expect(
+      legacyWorkspacePullRequest({
+        prNumber: 7,
+        prUrl: 'https://github.com/acme/widgets/pull/7',
+        prStatus: PullRequestStatus.Merged,
+        updatedAt,
+      })?.status,
+    ).toBe(PullRequestStatus.Merged);
+  });
+
+  it('returns null when either legacy field is missing', () => {
+    expect(legacyWorkspacePullRequest({ prNumber: 7, updatedAt })).toBeNull();
+    expect(
+      legacyWorkspacePullRequest({ prUrl: 'https://github.com/acme/widgets/pull/7', updatedAt }),
+    ).toBeNull();
+    expect(legacyWorkspacePullRequest({ updatedAt })).toBeNull();
+  });
+});
+
 // ─── prRepoFromUrl ─────────────────────────────────────────────────────────────
 
 describe('prRepoFromUrl', () => {
@@ -837,11 +907,7 @@ describe('mergeMonitoredPRs', () => {
   });
 
   it('appends an unmatched same-repo monitor with agent attribution', () => {
-    const result = mergeMonitoredPRs(
-      [makeBasePR({ number: 7 })],
-      [makeMonitor()],
-      workspaceRepo,
-    );
+    const result = mergeMonitoredPRs([makeBasePR({ number: 7 })], [makeMonitor()], workspaceRepo);
     expect(result).toHaveLength(2);
     expect(result[1]).toMatchObject({
       number: 42,
@@ -903,7 +969,11 @@ describe('mergeMonitoredPRs', () => {
 
   it('attaches the monitor last snapshot to both appended and annotated rows', () => {
     const snapshot = makeSnapshot();
-    const appended = mergeMonitoredPRs([], [makeMonitor({ lastSnapshot: snapshot })], workspaceRepo);
+    const appended = mergeMonitoredPRs(
+      [],
+      [makeMonitor({ lastSnapshot: snapshot })],
+      workspaceRepo,
+    );
     expect(appended[0].monitorSnapshot).toBe(snapshot);
 
     const annotated = mergeMonitoredPRs(
@@ -929,11 +999,7 @@ describe('mergeMonitoredPRs', () => {
   });
 
   it('renders completed monitors without a snapshot verdict as closed (completion covers merged AND closed)', () => {
-    const result = mergeMonitoredPRs(
-      [],
-      [makeMonitor({ state: 'completed' })],
-      workspaceRepo,
-    );
+    const result = mergeMonitoredPRs([], [makeMonitor({ state: 'completed' })], workspaceRepo);
     expect(result).toHaveLength(1);
     expect(result[0].status).toBe('closed');
   });
@@ -1023,7 +1089,9 @@ describe('mergeMonitoredPRs', () => {
     expect(result[0].crossRepo).toBe('other/repo');
     expect(result[0].number).toBe(42);
     // Keys collide under prKey (crossRepo#number), so there must be exactly one row.
-    const keys = result.map((pr) => (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number)));
+    const keys = result.map((pr) =>
+      pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number),
+    );
     expect(new Set(keys).size).toBe(keys.length);
   });
 
@@ -1060,7 +1128,9 @@ describe('mergeMonitoredPRs', () => {
     const bareRow = result.find((pr) => pr.crossRepo === undefined);
     expect(crossRepoRow?.monitorAgentId).toBe('agent-1');
     expect(bareRow?.monitorAgentId).toBe('agent-2');
-    const keys = result.map((pr) => (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number)));
+    const keys = result.map((pr) =>
+      pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number),
+    );
     expect(new Set(keys).size).toBe(keys.length);
   });
 
@@ -1316,13 +1386,7 @@ describe('sectionPRs', () => {
   });
 
   it('dedupes the same PR appearing under two roots on the same repo', () => {
-    const result = sectionPRs(
-      [],
-      [],
-      workspaceRepo,
-      [makeRoot(), makeRoot()],
-      getTitle,
-    );
+    const result = sectionPRs([], [], workspaceRepo, [makeRoot(), makeRoot()], getTitle);
     expect(result.otherRoots).toHaveLength(1);
   });
 
@@ -1375,7 +1439,9 @@ describe('sectionPRs', () => {
       getTitle,
     );
     const all = [...result.own, ...result.otherRoots, ...result.otherTracked];
-    const keys = all.map((pr) => (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number)));
+    const keys = all.map((pr) =>
+      pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number),
+    );
     expect(new Set(keys).size).toBe(keys.length);
   });
 
@@ -1682,6 +1748,32 @@ describe('getPRStatusTooltip', () => {
     expect(getPRStatusTooltip(makePR({ status: 'closed' }))).toBe('Closed');
   });
 
+  it('says Queued instead of Open only for an open PR in the merge queue', () => {
+    const queued = getPRStatusTooltip(
+      makePR({ status: 'open', monitorSnapshot: makeSnapshot({ isInMergeQueue: true }) }),
+    );
+    expect(queued.split('\n')[0]).toBe('Queued');
+
+    const notQueued = getPRStatusTooltip(
+      makePR({ status: 'open', monitorSnapshot: makeSnapshot() }),
+    );
+    expect(notQueued.split('\n')[0]).toBe('Open');
+
+    expect(
+      getPRStatusTooltip(
+        makePR({ status: 'draft', monitorSnapshot: makeSnapshot({ isInMergeQueue: true }) }),
+      ).split('\n')[0],
+    ).toBe('Draft');
+    expect(
+      getPRStatusTooltip(
+        makePR({
+          status: 'merged',
+          monitorSnapshot: makeSnapshot({ state: 'merged', isInMergeQueue: true }),
+        }),
+      ),
+    ).toBe('Merged');
+  });
+
   it('adds a checks line only when the snapshot has checks', () => {
     const withChecks = getPRStatusTooltip(
       makePR({
@@ -1834,10 +1926,7 @@ describe('countOtherPrs', () => {
   });
 
   it('falls back to repo-qualified number when URLs are absent', () => {
-    const pool = [
-      makePoolPR({ url: '' }),
-      makePoolPR({ number: 7, url: '' }),
-    ];
+    const pool = [makePoolPR({ url: '' }), makePoolPR({ number: 7, url: '' })];
     const primary = makePoolPR({ url: '' });
     expect(countOtherPrs(pool, primary)).toBe(1);
   });
@@ -1900,10 +1989,12 @@ describe('monitorDisplayStatus', () => {
   }
 
   it('reads the last-snapshot state case-insensitively', () => {
-    expect(monitorDisplayStatus(makeMonitor({ lastSnapshot: makeSnapshot({ state: 'MERGED' }) })))
-      .toBe('merged');
-    expect(monitorDisplayStatus(makeMonitor({ lastSnapshot: makeSnapshot({ state: 'Closed' }) })))
-      .toBe('closed');
+    expect(
+      monitorDisplayStatus(makeMonitor({ lastSnapshot: makeSnapshot({ state: 'MERGED' }) })),
+    ).toBe('merged');
+    expect(
+      monitorDisplayStatus(makeMonitor({ lastSnapshot: makeSnapshot({ state: 'Closed' }) })),
+    ).toBe('closed');
   });
 
   it('reports draft from the snapshot flag', () => {
@@ -1947,9 +2038,9 @@ describe('monitorPillStatus', () => {
     expect(
       monitorPillStatus(makeMonitor({ lastSnapshot: makeSnapshot({ state: 'closed' }) })),
     ).toBe(PullRequestStatus.Closed);
-    expect(
-      monitorPillStatus(makeMonitor({ lastSnapshot: makeSnapshot({ isDraft: true }) })),
-    ).toBe(PullRequestStatus.Draft);
+    expect(monitorPillStatus(makeMonitor({ lastSnapshot: makeSnapshot({ isDraft: true }) }))).toBe(
+      PullRequestStatus.Draft,
+    );
     expect(monitorPillStatus(makeMonitor())).toBe(PullRequestStatus.Open);
   });
 });

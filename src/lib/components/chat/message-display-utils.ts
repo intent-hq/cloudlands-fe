@@ -33,7 +33,10 @@ export function shouldShowStoppedIndicator({
   const isStoppedReason = stopReason ? stoppedStopReasons.has(stopReason) : true;
   if (!isStoppedReason) return false;
 
-  if (suppressCoordinationStoppedIndicator && (!stopReason || coordinationStopReasons.has(stopReason))) {
+  if (
+    suppressCoordinationStoppedIndicator &&
+    (!stopReason || coordinationStopReasons.has(stopReason))
+  ) {
     return false;
   }
 

@@ -1,20 +1,17 @@
 <script lang="ts">
-  import {
-  onMount,
-  onDestroy,
-} from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
   import { Logger } from '../../shared/logger';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
-  faTriangleExclamation,
-  faRotateRight,
-  faArrowsRotate,
-  faCopy,
-  faCheck,
-} from '@fortawesome/free-solid-svg-icons';
+    faTriangleExclamation,
+    faRotateRight,
+    faArrowsRotate,
+    faCopy,
+    faCheck,
+  } from '@fortawesome/free-solid-svg-icons';
 
   interface Props {
     fallback?: string;
@@ -54,7 +51,7 @@
       hasError = true;
       errorMessage = initialError.message || '';
       errorDetails = initialError instanceof Error ? initialError : null;
-      errorInfo = initialError instanceof Error ? (initialError.stack || '') : '';
+      errorInfo = initialError instanceof Error ? initialError.stack || '' : '';
     }
   });
 
@@ -318,20 +315,13 @@
   <!-- Full viewport container with vertical centering -->
   <div class="min-h-full flex items-center justify-center p-6 bg-background">
     <!-- Centered content container with max width -->
-    <div
-      class="w-full max-w-md"
-      role="alert"
-      aria-live="assertive"
-    >
+    <div class="w-full max-w-md" role="alert" aria-live="assertive">
       <!-- Card container -->
       <div class="bg-card border border-border rounded-lg shadow-lg p-8">
         <!-- Vertically stacked content, all centered -->
         <div class="flex flex-col items-center text-center space-y-6">
-
           <!-- Warning Icon - Large and centered -->
-          <div
-            class="animate-in fade-in zoom-in duration-300 mt-5"
-          >
+          <div class="animate-in fade-in zoom-in duration-300 mt-5">
             <Fa icon={faTriangleExclamation} size={40} class="text-subtle" />
           </div>
 
@@ -360,40 +350,41 @@
           <!-- Show Details Button - Separate row if error info exists -->
           {#if errStack}
             <div class="w-full flex flex-col items-center">
-            <div class="relative mx-auto ">
-              <Button
-                variant="ghost"
-                size="sm"
-                class="text-foreground/60 hover:text-foreground"
-                onclick={() => (showDetails = !showDetails)}
-              >
-                {showDetails ? m.lib_errorBoundary_hideDetails_label() : m.lib_errorBoundary_showDetails_label()}
-              </Button>
+              <div class="relative mx-auto">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="text-foreground/60 hover:text-foreground"
+                  onclick={() => (showDetails = !showDetails)}
+                >
+                  {showDetails
+                    ? m.lib_errorBoundary_hideDetails_label()
+                    : m.lib_errorBoundary_showDetails_label()}
+                </Button>
 
-          {#if showDetails}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                class="absolute right-1 transform translate-x-full text-foreground/60 hover:text-foreground"
-                title={m.lib_errorBoundary_copyDetails_tooltip()}
-                onclick={() => handleCopyDetailsForSnippet(errMsg, errStack)}
-              >
-                <Fa icon={copyFeedback ? faCheck : faCopy} class="w-4 h-4" />
-              </Button>
+                {#if showDetails}
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    class="absolute right-1 transform translate-x-full text-foreground/60 hover:text-foreground"
+                    title={m.lib_errorBoundary_copyDetails_tooltip()}
+                    onclick={() => handleCopyDetailsForSnippet(errMsg, errStack)}
+                  >
+                    <Fa icon={copyFeedback ? faCheck : faCopy} class="w-4 h-4" />
+                  </Button>
+                {/if}
+              </div>
+
+              <!-- Stack Trace Details - Full width with proper overflow handling -->
+              {#if showDetails}
+                <div class="relative w-full pt-3" transition:slide={{ axis: 'y' }}>
+                  <div class="p-4 border border-border">
+                    <pre
+                      class="text-xs font-mono text-subtle leading-relaxed overflow-x-auto max-h-64 text-left whitespace-pre-wrap break-all">{errStack}</pre>
+                  </div>
+                </div>
               {/if}
             </div>
-
-          <!-- Stack Trace Details - Full width with proper overflow handling -->
-          {#if showDetails}
-            <div class="relative w-full pt-3" transition:slide={{ axis: 'y' }}>
-
-
-              <div class="p-4 border border-border">
-                <pre class="text-xs font-mono text-subtle leading-relaxed overflow-x-auto max-h-64 text-left whitespace-pre-wrap break-all">{errStack}</pre>
-              </div>
-            </div>
-          {/if}
-          </div>
           {/if}
         </div>
       </div>
@@ -401,19 +392,29 @@
   </div>
 {/snippet}
 
-<svelte:boundary onerror={(error: unknown) => {
-  const err = error instanceof Error ? error : new Error(String(error));
-  // Skip Monaco "Canceled" errors - benign cancellations during editor disposal/navigation
-  if (err.message === 'Canceled' || err.name === 'Canceled') return;
-  // Skip Svelte transition reset errors - benign race condition during {#each} reconciliation
-  // i18n-ignore (matches the browser's internal English error message)
-  if (err.message?.includes("Cannot read properties of undefined (reading 'reset')") && err.stack?.includes('transitions')) return;
-  logger.error(`[ErrorBoundary] Render error in ${componentName}:`, err);
-  if (onError) onError(err);
-}}>
+<svelte:boundary
+  onerror={(error: unknown) => {
+    const err = error instanceof Error ? error : new Error(String(error));
+    // Skip Monaco "Canceled" errors - benign cancellations during editor disposal/navigation
+    if (err.message === 'Canceled' || err.name === 'Canceled') return;
+    // Skip Svelte transition reset errors - benign race condition during {#each} reconciliation
+    // i18n-ignore (matches the browser's internal English error message)
+    if (
+      err.message?.includes("Cannot read properties of undefined (reading 'reset')") &&
+      err.stack?.includes('transitions')
+    )
+      return;
+    logger.error(`[ErrorBoundary] Render error in ${componentName}:`, err);
+    if (onError) onError(err);
+  }}
+>
   {#snippet failed(error: unknown, reset)}
     {@const err = error instanceof Error ? error : new Error(String(error))}
-    {@render errorDisplay(err.message || m.lib_errorBoundary_unexpected_error(), err.stack || '', reset)}
+    {@render errorDisplay(
+      err.message || m.lib_errorBoundary_unexpected_error(),
+      err.stack || '',
+      reset,
+    )}
   {/snippet}
 
   {#if hasError}

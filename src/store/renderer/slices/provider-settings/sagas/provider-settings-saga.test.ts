@@ -15,10 +15,7 @@ import {
   toggleProvider,
 } from '../provider-settings-slice';
 import { hydrateDefaultProvider } from '../../model/model-slice';
-import {
-  PROVIDER_SETTINGS_RETRY_DELAYS_MS,
-  providerSettingsSaga,
-} from './provider-settings-saga';
+import { PROVIDER_SETTINGS_RETRY_DELAYS_MS, providerSettingsSaga } from './provider-settings-saga';
 
 const settle = async () => {
   await Promise.resolve();
@@ -136,9 +133,7 @@ describe('providerSettingsSaga', () => {
   it('retries a transport-rejected write until it lands, then drains the queue in order', async () => {
     vi.useFakeTimers();
     try {
-      mocks.update
-        .mockRejectedValueOnce(new Error('settings unavailable'))
-        .mockResolvedValue([]);
+      mocks.update.mockRejectedValueOnce(new Error('settings unavailable')).mockResolvedValue([]);
       const channel = stdChannel();
       const task = runSaga(
         { channel, dispatch: vi.fn(), getState: () => state() },

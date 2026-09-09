@@ -330,9 +330,9 @@ describe('Strict Intake Utilities (AUDIT-P1-5)', () => {
   });
 
   it('migrateFromLegacy throws when tool_result block uses legacy `toolCallId` alias', () => {
-    expect(() =>
-      migrateFromLegacy({ type: 'tool_result', toolCallId: 't1' }),
-    ).toThrow(/tool_use_id/);
+    expect(() => migrateFromLegacy({ type: 'tool_result', toolCallId: 't1' })).toThrow(
+      /tool_use_id/,
+    );
   });
 
   it('migrateFromLegacy throws when tool_result block uses legacy `isError` alias', () => {

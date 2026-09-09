@@ -256,21 +256,13 @@
     <div class="flex min-w-0 flex-col gap-2" data-tool-detail-error>
       {#if errorText}
         <div class="flex min-w-0 items-start gap-2">
-          <Fa
-            icon={faExclamationTriangle}
-            size="xs"
-            class="text-error-foreground mt-0.5 shrink-0"
-          />
+          <Fa icon={faExclamationTriangle} size="xs" class="text-danger mt-0.5 shrink-0" />
           <pre
-            class="m-0 min-w-0 whitespace-pre-wrap break-words font-mono text-xs text-error-foreground">{errorText}</pre>
+            class="m-0 min-w-0 whitespace-pre-wrap break-words font-mono text-xs text-danger">{errorText}</pre>
         </div>
       {:else}
         <div class="flex min-w-0 items-start gap-2">
-          <Fa
-            icon={faExclamationTriangle}
-            size="xs"
-            class="text-error-foreground mt-0.5 shrink-0"
-          />
+          <Fa icon={faExclamationTriangle} size="xs" class="text-danger mt-0.5 shrink-0" />
           <span class="text-xs text-subtle">{m.chat_toolDetails_noErrorDetails_label()}</span>
         </div>
       {/if}
@@ -1048,13 +1040,9 @@
               {#if parsedResult.error}
                 <!-- Error -->
                 <div class="flex items-start gap-2 p-2">
-                  <Fa
-                    icon={faExclamationTriangle}
-                    size="xs"
-                    class="text-error-foreground mt-0.5 shrink-0"
-                  />
+                  <Fa icon={faExclamationTriangle} size="xs" class="text-danger mt-0.5 shrink-0" />
                   <pre
-                    class="m-0 whitespace-pre-wrap font-mono text-xs text-error-foreground">{parsedResult.error}</pre>
+                    class="m-0 whitespace-pre-wrap font-mono text-xs text-danger">{parsedResult.error}</pre>
                 </div>
               {/if}
               {#if parsedResult.content && !parsedResult.screenshotBase64 && !parsedResult.screenshotUrl && !parsedResult.browserTabs?.length && !parsedResult.evaluateResult && !parsedResult.accessibilityTree && !parsedResult.error}

@@ -15,9 +15,9 @@
  */
 import type { WorkspaceEvent } from '$features/events/types';
 import type {
-  EventQueryOptions,
   EventQueryPage,
   EventQueryPageOptions,
+  EventQueryOptions,
   EventsClient,
   SubscriptionHandler,
   Unsubscribe,

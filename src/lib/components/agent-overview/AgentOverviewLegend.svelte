@@ -127,7 +127,7 @@
       side="bottom"
       sideOffset={6}
       collisionPadding={8}
-      class="z-(--layer-popover) grid w-[min(38rem,calc(100vw-1rem))] grid-cols-2 gap-3 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-(--elevation-overlay) outline-none"
+      class="legend-popover z-(--layer-popover) grid grid-cols-2 gap-3 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-(--elevation-overlay) outline-none"
       data-agent-overview-legend
     >
       <section>
@@ -208,6 +208,9 @@
 </Popover.Root>
 
 <style>
+  :global(.legend-popover) {
+    width: min(38rem, calc(100vw - 1rem));
+  }
   .legend-item {
     display: grid;
     grid-template-columns: 3.5rem 1fr;

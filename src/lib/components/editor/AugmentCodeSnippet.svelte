@@ -15,7 +15,7 @@
       openInAdjacentPanel?: boolean;
       sourcePanelId?: string;
     }) => void;
-  }
+  };
 
   const {
     code = '',

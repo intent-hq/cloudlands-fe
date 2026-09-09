@@ -85,6 +85,7 @@
     selectNewlyCreatedNoteId,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
+  import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
   import { setupEditorListeners } from '$lib/utils/editor-listeners';
   import { updateCommentDecorations } from '$lib/components/tiptap/CommentDecorations';
   import { pruneTaskAgentAssociationsForNote } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
@@ -262,6 +263,11 @@
     /** Whether this panel is focused (has DOM focus within panel wrapper) */
     isPanelFocused?: boolean;
   } = $props();
+
+  // One cache-busting token per editor instance: every debounced external
+  // re-process keeps identical workspace image URLs instead of re-fetching
+  // each image from the daemon per agent edit burst.
+  const workspaceFileVersion = createWorkspaceFileVersion();
 
   // Note: _onAttachContent is received but not yet implemented - reserved for future attach content feature
 
@@ -1113,6 +1119,7 @@
       : await processMarkdownToHTML(goalContent, {
           preserveAnchors: true,
           workspaceId: editorWorkspaceId,
+          workspaceFileVersion,
         });
 
     if (isComponentDestroyed || editorWorkspaceId !== workspace?.id) return;
@@ -1186,6 +1193,7 @@
       const processedContent = await processMarkdownToHTML(goalContent, {
         preserveAnchors: true,
         workspaceId: editorWorkspaceId,
+        workspaceFileVersion,
       });
       if (editor && !editor.isDestroyed) {
         // Use requestIdleCallback to defer the heavy setContent call.
@@ -1502,6 +1510,7 @@
         processMarkdownToHTML(newContent, {
           preserveAnchors: true,
           workspaceId: conversionWorkspaceId,
+          workspaceFileVersion,
         }).then(async (newHtmlContent) => {
           if (!ownsConversion()) return;
 
@@ -1643,6 +1652,7 @@
       processHTMLToMarkdown,
       createTextSelection: TextSelection.create,
       logger,
+      workspaceFileVersion,
     });
   });
 

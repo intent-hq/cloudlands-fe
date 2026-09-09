@@ -7,11 +7,8 @@
    */
   import HudKeySlotSquare from '../components/HudKeySlotSquare.svelte';
 
-  let {
-    title,
-    repoRef,
-    keySlot,
-  }: { title: string; repoRef: string; keySlot: number | null } = $props();
+  let { title, repoRef, keySlot }: { title: string; repoRef: string; keySlot: number | null } =
+    $props();
 </script>
 
 <div class="ov-heading">

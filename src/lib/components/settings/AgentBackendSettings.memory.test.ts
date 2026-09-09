@@ -1,8 +1,8 @@
 /**
  * @vitest-environment jsdom
  *
- * Agent Backend memory bounds: `agents.memoryBudgetMb` and
- * `agents.idleReapMinutes`. Kept in its own file because these rows read the
+ * Agent Backend memory bounds: `agents.memoryBudgetMb`, `agents.idleReapMinutes`
+ * and `agents.acpNodeMaxOldSpaceMb`. Kept in its own file because these rows read the
  * catalog *definition* (the budget's maximum is the daemon's to supply), which
  * means mocking `settings.get` — the sibling suite deliberately exercises the
  * `settings.list` fallback instead.
@@ -33,6 +33,7 @@ vi.mock('svelte-fa', async () => {
 
 const MEMORY_BUDGET_PATH = 'agents.memoryBudgetMb';
 const IDLE_REAP_PATH = 'agents.idleReapMinutes';
+const ACP_HEAP_PATH = 'agents.acpNodeMaxOldSpaceMb';
 
 // Deliberately not a round power-of-two guess: this is the total-RAM bound a
 // 48 GB machine reports, and every assertion about the slider's ceiling reads
@@ -42,12 +43,26 @@ const TOTAL_RAM_MB = 49152;
 const BUDGET_LABEL = 'Agent memory budget';
 const REAP_STEPPER_LABEL = 'Idle reap minutes';
 const REAP_TOGGLE_LABEL = 'Reap idle agents';
+const HEAP_LABEL = 'ACP Node heap limit (MB)';
+
+// The daemon catalog bounds for the heap cap (PROTOCOL §5.12): read back from
+// the rendered field rather than restated, as with the budget above.
+const HEAP_MIN_MB = 1024;
+const HEAP_MAX_MB = 65536;
+const HEAP_DEFAULT_MB = 8192;
 
 type Entry = Record<string, unknown> | null;
 
+type HeapEntry = {
+  value: number | null;
+  min?: number;
+  max?: number;
+  defaultValue?: number;
+};
+
 /**
- * Wire up `settings.get`. `budget`/`reap` accept `null` to model a daemon that
- * does not report the path at all.
+ * Wire up `settings.get`. `budget`/`reap`/`heap` accept `null` to model a
+ * daemon that does not report the path at all.
  */
 function mockSettings({
   budget = { value: 0, max: TOTAL_RAM_MB } as { value: number; max?: number } | null,
@@ -56,9 +71,16 @@ function mockSettings({
     defaultValue?: number;
     max?: number;
   } | null,
+  heap = {
+    value: null,
+    min: HEAP_MIN_MB,
+    max: HEAP_MAX_MB,
+    defaultValue: HEAP_DEFAULT_MB,
+  } as HeapEntry | null,
 }: {
   budget?: { value: number; max?: number } | null;
   reap?: { value: number; defaultValue?: number; max?: number } | null;
+  heap?: HeapEntry | null;
 } = {}) {
   const entries: Record<string, Entry> = {
     'agents.maxConcurrent': { path: 'agents.maxConcurrent', value: 0, min: 0, max: 200 },
@@ -73,6 +95,7 @@ function mockSettings({
         }
       : null,
     [IDLE_REAP_PATH]: reap ? { path: IDLE_REAP_PATH, type: 'number', min: 0, ...reap } : null,
+    [ACP_HEAP_PATH]: heap ? { path: ACP_HEAP_PATH, type: 'number', ...heap } : null,
   };
   mocks.mockSettingsGet.mockImplementation(async (path: string) => entries[path] ?? null);
 }
@@ -329,6 +352,32 @@ describe('AgentBackendSettings — agent memory budget', () => {
 
     // The half-typed 300 survives; the field is not rewritten under the cursor.
     expect((screen.getByLabelText(BUDGET_LABEL) as HTMLInputElement).value).toBe('300');
+  });
+
+  it('shows the daemon-acknowledged value rather than what was sent', async () => {
+    mockSettings({ budget: { value: 1000, max: TOTAL_RAM_MB } });
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: MEMORY_BUDGET_PATH, value: 2000 }]);
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(BUDGET_LABEL))) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '2048' } });
+    await fireEvent.blur(input);
+
+    await waitFor(() =>
+      expect((screen.getByLabelText(BUDGET_LABEL) as HTMLInputElement).value).toBe('2000'),
+    );
+    expect((screen.getByRole('slider') as HTMLInputElement).value).toBe('2000');
+
+    // Re-entering the value the daemon did not honour must still be sent — the
+    // committed state is 2000 now, so 2048 is a change, not a no-op.
+    await fireEvent.input(input, { target: { value: '2048' } });
+    await fireEvent.blur(input);
+
+    await waitFor(() => expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(2));
+    expect(mocks.mockSettingsUpdate).toHaveBeenLastCalledWith([
+      { path: MEMORY_BUDGET_PATH, value: 2048 },
+    ]);
   });
 });
 
@@ -649,5 +698,288 @@ describe('AgentBackendSettings — idle reap minutes', () => {
       ).toBe('true'),
     );
     expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).value).toBe('10');
+  });
+
+  it('shows the daemon-acknowledged interval rather than what was sent', async () => {
+    mockSettings({ reap: { value: 10 } });
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: IDLE_REAP_PATH, value: 45 }]);
+
+    render(AgentBackendSettings);
+
+    const stepper = (await waitFor(() =>
+      screen.getByLabelText(REAP_STEPPER_LABEL),
+    )) as HTMLInputElement;
+    await fireEvent.input(stepper, { target: { value: '60' } });
+    await fireEvent.blur(stepper);
+
+    await waitFor(() =>
+      expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).value).toBe('45'),
+    );
+
+    // Re-entering the interval the daemon did not honour must still be sent —
+    // the committed state is 45 now, so 60 is a change, not a no-op.
+    await fireEvent.input(stepper, { target: { value: '60' } });
+    await fireEvent.blur(stepper);
+
+    await waitFor(() => expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(2));
+    expect(mocks.mockSettingsUpdate).toHaveBeenLastCalledWith([
+      { path: IDLE_REAP_PATH, value: 60 },
+    ]);
+  });
+});
+
+describe('AgentBackendSettings — ACP Node heap limit', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  function pendingUpdates() {
+    const pending: Array<() => void> = [];
+    mocks.mockSettingsUpdate.mockImplementation(
+      (changes: Array<{ path: string; value: number }>) =>
+        new Promise((resolve) =>
+          pending.push(() => resolve([{ path: changes[0].path, value: changes[0].value }])),
+        ),
+    );
+    return pending;
+  }
+
+  it('shows the catalog default as the effective cap while the config key is absent', async () => {
+    // The daemon reports `value: null` until the key is written; the field must
+    // show what spawns actually use — the catalog default — never a blank.
+    mockSettings({
+      heap: { value: null, min: HEAP_MIN_MB, max: HEAP_MAX_MB, defaultValue: 12288 },
+    });
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(HEAP_LABEL))) as HTMLInputElement;
+    expect(input.value).toBe('12288');
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('takes the field bounds from the catalog definition rather than built-in constants', async () => {
+    mockSettings({ heap: { value: 4096, min: 2048, max: 32768, defaultValue: HEAP_DEFAULT_MB } });
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(HEAP_LABEL))) as HTMLInputElement;
+    expect(input.value).toBe('4096');
+    expect(input.min).toBe('2048');
+    expect(input.max).toBe('32768');
+  });
+
+  it('falls back to the documented 1024–65536 range when the definition omits bounds', async () => {
+    mockSettings({ heap: { value: 4096 } });
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(HEAP_LABEL))) as HTMLInputElement;
+    expect(input.min).toBe(String(HEAP_MIN_MB));
+    expect(input.max).toBe(String(HEAP_MAX_MB));
+  });
+
+  it('persists a typed cap with the exact settings.update payload', async () => {
+    mockSettings();
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: ACP_HEAP_PATH, value: 16384 }]);
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(HEAP_LABEL))) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '16384' } });
+    await fireEvent.blur(input);
+
+    await waitFor(() =>
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: ACP_HEAP_PATH, value: 16384 },
+      ]),
+    );
+    await waitFor(() =>
+      expect((screen.getByLabelText(HEAP_LABEL) as HTMLInputElement).value).toBe('16384'),
+    );
+  });
+
+  it('commits on Enter as well as on blur', async () => {
+    mockSettings();
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: ACP_HEAP_PATH, value: 16384 }]);
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(HEAP_LABEL))) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '16384' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: ACP_HEAP_PATH, value: 16384 },
+      ]),
+    );
+  });
+
+  it('clamps a typed value into the catalog range before writing it', async () => {
+    mockSettings();
+    mocks.mockSettingsUpdate.mockImplementation(
+      async (changes: Array<{ path: string; value: number }>) => changes,
+    );
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(HEAP_LABEL))) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '999999' } });
+    await fireEvent.blur(input);
+    await waitFor(() =>
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: ACP_HEAP_PATH, value: HEAP_MAX_MB },
+      ]),
+    );
+
+    await fireEvent.input(input, { target: { value: '512' } });
+    await fireEvent.blur(input);
+    await waitFor(() =>
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: ACP_HEAP_PATH, value: HEAP_MIN_MB },
+      ]),
+    );
+  });
+
+  it('restores the effective cap and writes nothing when the input is not a number', async () => {
+    mockSettings({ heap: { value: 4096, min: HEAP_MIN_MB, max: HEAP_MAX_MB } });
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(HEAP_LABEL))) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: 'abc' } });
+    await fireEvent.blur(input);
+
+    await waitFor(() =>
+      expect((screen.getByLabelText(HEAP_LABEL) as HTMLInputElement).value).toBe('4096'),
+    );
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('does not write when the committed value is unchanged', async () => {
+    mockSettings({ heap: { value: 4096, min: HEAP_MIN_MB, max: HEAP_MAX_MB } });
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(HEAP_LABEL))) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: ' 4096 ' } });
+    await fireEvent.blur(input);
+
+    await waitFor(() =>
+      expect((screen.getByLabelText(HEAP_LABEL) as HTMLInputElement).value).toBe('4096'),
+    );
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('restores the committed value and reports the failure when the save is rejected', async () => {
+    mockSettings({ heap: { value: 4096, min: HEAP_MIN_MB, max: HEAP_MAX_MB } });
+    mocks.mockSettingsUpdate.mockRejectedValue(new Error('Network error'));
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(HEAP_LABEL))) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '16384' } });
+    await fireEvent.blur(input);
+
+    await waitFor(() =>
+      expect((screen.getByLabelText(HEAP_LABEL) as HTMLInputElement).value).toBe('4096'),
+    );
+    expect(screen.getByText(/Failed to save/i)).toBeTruthy();
+  });
+
+  it('keeps the previous value when the daemon acknowledges without applying the path', async () => {
+    mockSettings({ heap: { value: 4096, min: HEAP_MIN_MB, max: HEAP_MAX_MB } });
+    mocks.mockSettingsUpdate.mockResolvedValue([]);
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(HEAP_LABEL))) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '16384' } });
+    await fireEvent.blur(input);
+
+    await waitFor(() =>
+      expect((screen.getByLabelText(HEAP_LABEL) as HTMLInputElement).value).toBe('4096'),
+    );
+  });
+
+  it('shows the daemon-acknowledged value rather than what was sent', async () => {
+    mockSettings();
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: ACP_HEAP_PATH, value: 20000 }]);
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(HEAP_LABEL))) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '20480' } });
+    await fireEvent.blur(input);
+
+    await waitFor(() =>
+      expect((screen.getByLabelText(HEAP_LABEL) as HTMLInputElement).value).toBe('20000'),
+    );
+
+    // Re-entering the value the daemon did not honour must still be sent — the
+    // committed state is 20000 now, so 20480 is a change, not a no-op.
+    await fireEvent.input(input, { target: { value: '20480' } });
+    await fireEvent.blur(input);
+
+    await waitFor(() => expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(2));
+    expect(mocks.mockSettingsUpdate).toHaveBeenLastCalledWith([
+      { path: ACP_HEAP_PATH, value: 20480 },
+    ]);
+  });
+
+  it('shows a configured cap outside the catalog range instead of clamping it down', async () => {
+    const configuredMb = 100000;
+    mockSettings({ heap: { value: configuredMb, min: HEAP_MIN_MB, max: HEAP_MAX_MB } });
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(HEAP_LABEL))) as HTMLInputElement;
+    expect(input.value).toBe(String(configuredMb));
+    expect(input.max).toBe(String(configuredMb));
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('never has two writes for the same setting in flight at once', async () => {
+    mockSettings({ heap: { value: 4096, min: HEAP_MIN_MB, max: HEAP_MAX_MB } });
+    const pending = pendingUpdates();
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(HEAP_LABEL))) as HTMLInputElement;
+    for (const value of ['8192', '12288', '16384']) {
+      await fireEvent.input(input, { target: { value } });
+      await fireEvent.blur(input);
+    }
+
+    expect(pending).toHaveLength(1);
+    expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(1, [
+      { path: ACP_HEAP_PATH, value: 8192 },
+    ]);
+
+    pending[0]();
+    await waitFor(() => expect(pending).toHaveLength(2));
+    expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(2);
+    expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(2, [
+      { path: ACP_HEAP_PATH, value: 16384 },
+    ]);
+
+    pending[1]();
+    await waitFor(() =>
+      expect((screen.getByLabelText(HEAP_LABEL) as HTMLInputElement).value).toBe('16384'),
+    );
+  });
+
+  it('hides the row entirely when the daemon does not report the setting', async () => {
+    mockSettings({ heap: null });
+
+    render(AgentBackendSettings);
+
+    await waitFor(() => expect(screen.getByLabelText(BUDGET_LABEL)).toBeTruthy());
+    expect(screen.queryByLabelText(HEAP_LABEL)).toBeNull();
   });
 });

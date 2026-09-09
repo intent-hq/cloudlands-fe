@@ -73,15 +73,14 @@ test('supports click, keyboard, focus, reduced motion, and a live collapsed coun
   await expect(rows).toHaveCount(0);
 });
 
-test('preserves the held hint and edit, remove, and send-now callbacks', async ({ mount }) => {
+test('preserves the edit, remove, and send-now callbacks', async ({ mount }) => {
   const component = await mount(QueuedMessageGeometryHost, {
-    props: { width: 360, zoom: 1, messageCount: 1, heldForQuestions: true },
+    props: { width: 360, zoom: 1, messageCount: 1 },
   });
   const row = component.getByTestId('queued-message-row');
   const actions = component.getByTestId('queued-message-actions').getByRole('button');
   const lastAction = component.getByTestId('queued-message-last-action');
 
-  await expect(component.getByTestId('queued-messages-held-hint')).toBeVisible();
   await expect(actions).toHaveCount(3);
   await row.hover();
 

@@ -9,11 +9,7 @@
   import { NodeViewWrapper } from '$lib/utils/tiptap/svelte-node-view';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
-  import {
-  faClipboard,
-  faICursor,
-  faXmark,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faClipboard, faICursor, faXmark } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -72,7 +68,9 @@
             : 'bg-muted/60 text-foreground/80 hover:bg-muted hover:text-foreground'}"
         >
           <Fa icon={faClipboard} size="xs" class="shrink-0 opacity-40" />
-          <span class="whitespace-nowrap">{m.tiptap_pasteChip_pastedLines_label({ count: formatInteger(lineCount) })}</span>
+          <span class="whitespace-nowrap"
+            >{m.tiptap_pasteChip_pastedLines_label({ count: formatInteger(lineCount) })}</span
+          >
         </span>
       {/snippet}
 
@@ -83,7 +81,9 @@
             <span class="text-ui font-medium text-muted-foreground uppercase tracking-wide"
               >{m.tiptap_pasteChip_pastedText_label()}</span
             >
-            <span class="text-ui text-subtle">· {m.tiptap_pasteChip_lines_label({ count: formatInteger(lineCount) })}</span>
+            <span class="text-ui text-subtle"
+              >· {m.tiptap_pasteChip_lines_label({ count: formatInteger(lineCount) })}</span
+            >
           </div>
           <div
             class="text-xs text-subtle whitespace-pre-wrap break-words leading-relaxed line-clamp-[12]"
@@ -95,30 +95,30 @@
     </TooltipRich>
 
     <div class="absolute right-0.5 flex items-center">
-    <!-- Expand to raw text button -->
-    <Button
-      variant="ghost-light"
-      size="icon-xs"
-      onclick={handleExpand}
-      class="expand-btn px-0.5! w-auto! hover:z-20 text-muted-foreground hover:text-foreground!
+      <!-- Expand to raw text button -->
+      <Button
+        variant="ghost-light"
+        size="icon-xs"
+        onclick={handleExpand}
+        class="expand-btn px-0.5! w-auto! hover:z-20 text-muted-foreground hover:text-foreground!
         {selected ? '' : ''}"
-      aria-label={m.tiptap_pasteChip_expand_label()}
-      tooltip={m.tiptap_pasteChip_expand_label()}
-    >
-      <Fa icon={faICursor} size={10} class="" />
-    </Button>
+        aria-label={m.tiptap_pasteChip_expand_label()}
+        tooltip={m.tiptap_pasteChip_expand_label()}
+      >
+        <Fa icon={faICursor} size={10} class="" />
+      </Button>
 
-    <!-- Delete button -->
-    <Button
-      variant="ghost-light"
-      size="icon-xs"
-      onclick={handleDelete}
-      class="delete-btn px-0.5! -ml-px w-auto! hover:z-20 text-muted-foreground hover:text-foreground!
+      <!-- Delete button -->
+      <Button
+        variant="ghost-light"
+        size="icon-xs"
+        onclick={handleDelete}
+        class="delete-btn px-0.5! -ml-px w-auto! hover:z-20 text-muted-foreground hover:text-foreground!
         {selected ? '' : ''}"
-      aria-label={m.tiptap_pasteChip_remove_ariaLabel()}
-    >
-      <Fa icon={faXmark} size={10} class="" />
-    </Button>
+        aria-label={m.tiptap_pasteChip_remove_ariaLabel()}
+      >
+        <Fa icon={faXmark} size={10} class="" />
+      </Button>
     </div>
   </span>
 </NodeViewWrapper>

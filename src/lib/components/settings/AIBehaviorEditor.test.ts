@@ -1,7 +1,8 @@
 /**
  * @vitest-environment jsdom
  *
- * Covers the Agents-tab "Default model" picker: it must delegate entirely to
+ * Covers the Providers → Defaults "Default model" row
+ * (`DefaultAgentModelSettings`): it must delegate entirely to
  * `selectSelectedModel` / `ModelPicker` and never fabricate a model (e.g.
  * opus4.7) when the active provider is unavailable — see spec "Fix:
  * Augment/Auggie leaks as default provider & model".
@@ -140,14 +141,26 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
   selectActiveProviderId: () => mocks.readable('auggie'),
 }));
 
-vi.mock('$store/renderer/slices/provider-settings/provider-settings-slice', () => ({
-  setActiveProvider: (id: string) => ({
-    type: 'providerSettings/setActiveProvider',
-    payload: [id],
+vi.mock(
+  '$store/renderer/slices/provider-settings/provider-settings-slice',
+  async (importOriginal) => ({
+    // Keep the real action creators/reducer (e.g. `setAtomicDefaultModel`,
+    // `activeProviderPersistRejected`) so the model-slice reducer this file
+    // exercises directly in the monorepo#4102 reproduction test below stays
+    // wired to its actual dependencies; only `setActiveProvider` is
+    // overridden for the dispatch-shape assertions elsewhere in this file.
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/provider-settings/provider-settings-slice')
+    >()),
+    setActiveProvider: (id: string) => ({
+      type: 'providerSettings/setActiveProvider',
+      payload: [id],
+    }),
   }),
-}));
+);
 
-vi.mock('$store/renderer/slices/model/model-slice', () => ({
+vi.mock('$store/renderer/slices/model/model-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/model/model-slice')>()),
   reloadModelsForProvider: () => ({ type: 'model/reloadModelsForProvider', payload: [] }),
   setDefaultReasoningEffort: (effort: string) => ({
     type: 'model/setDefaultReasoningEffort',
@@ -221,7 +234,13 @@ vi.mock('svelte-fa', async () => ({
   default: (await import('../workspace/initializer/__tests__/mocks/MockComponent.svelte')).default,
 }));
 
+import {
+  initialState as modelInitialState,
+  modelReducer,
+} from '$store/renderer/slices/model/model-slice';
+import { setAtomicDefaultModel } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import AIBehaviorEditor from './AIBehaviorEditor.svelte';
+import DefaultAgentModelSettings from './DefaultAgentModelSettings.svelte';
 
 describe('AIBehaviorEditor workspace ownership', () => {
   const projectSpecialist = {
@@ -314,7 +333,36 @@ describe('AIBehaviorEditor workspace ownership', () => {
   });
 });
 
-describe('AIBehaviorEditor Default model picker', () => {
+describe('AIBehaviorEditor global instructions layout', () => {
+  afterEach(() => {
+    cleanup();
+    mocks.fileSpecialists$.set([]);
+  });
+
+  it('renders no default model picker in the system-prompt view', async () => {
+    // A pinned specialist would surface "Reset all to default" if the editor
+    // still hosted it, so the absence assertion below is meaningful.
+    mocks.fileSpecialists$.set([
+      {
+        id: 'custom-reviewer',
+        name: 'Reviewer',
+        description: 'Reviews tasks',
+        codingAgent: 'codex',
+        model: 'codex:gpt-5.3-codex',
+        behaviorPrompt: 'Review carefully',
+        source: 'user',
+      },
+    ]);
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    await within(screen.getByTestId('all-agents-prompt-column')).findByRole('textbox');
+    expect(screen.queryByTestId('picker-selected')).toBeNull();
+    expect(screen.queryByTestId('all-agents-defaults-column')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reset all to default' })).toBeNull();
+  });
+});
+
+describe('DefaultAgentModelSettings Default model picker', () => {
   afterEach(() => {
     cleanup();
     selectedModel$.set('');
@@ -322,7 +370,7 @@ describe('AIBehaviorEditor Default model picker', () => {
 
   it('never shows a fabricated opus4.7/Auggie model when nothing is resolvable', () => {
     selectedModel$.set('');
-    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+    render(DefaultAgentModelSettings);
 
     expect(screen.getByTestId('picker-selected').textContent).toBe('');
     expect(screen.queryByText(/opus4\.7/)).toBeNull();
@@ -330,13 +378,55 @@ describe('AIBehaviorEditor Default model picker', () => {
 
   it('passes through a resolved model for an available provider unchanged', () => {
     selectedModel$.set('claude-code:sonnet4.5');
-    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+    render(DefaultAgentModelSettings);
 
     expect(screen.getByTestId('picker-selected').textContent).toBe('claude-code:sonnet4.5');
   });
+
+  it('persists a cross-provider default pick through the atomic write and a Providers page remount (monorepo#4102 recurrence)', async () => {
+    // v2.139.1 regression: picking Codex/Astra as the default model, then
+    // leaving and returning to Providers, showed Auggie/Opus4.8 again.
+    selectedModel$.set('auggie:opus4.8');
+    render(DefaultAgentModelSettings);
+
+    await fireEvent.click(screen.getByTestId('pick-cross-provider-model'));
+
+    // ModelPicker's own `updateGlobalDefault` dispatch (`selectModel`, mocked
+    // away here) is the SOLE owner of persisting the provider+model default
+    // via the atomic `model.defaultProvider` + `model.providerDefaults`
+    // write. A redundant `setActiveProvider` dispatch here raced a second,
+    // non-atomic `model.defaultProvider` write from provider-settings-saga
+    // against that atomic write and corrupted the persisted default.
+    expect(mocks.dispatched.some((a) => a.type === 'providerSettings/setActiveProvider')).toBe(
+      false,
+    );
+    expect(mocks.dispatched.some((a) => a.type === 'model/reloadModelsForProvider')).toBe(false);
+
+    // Drive the REAL (unmocked) production reducer through the exact action
+    // the picker's `updateGlobalDefault` dispatch resolves to
+    // (`model-selection-saga` persists a cross-provider pick as one
+    // `setAtomicDefaultModel` action — see model-selection-saga.test.ts's
+    // "persists a cross-provider default as one revision-bearing atomic
+    // batch"), so this assertion exercises the actual persistence contract
+    // rather than a value poked directly into the mocked selector.
+    const modelState = modelReducer(
+      modelInitialState,
+      setAtomicDefaultModel({ providerId: 'codex', model: 'cross-provider-model' }),
+    );
+    expect(modelState.defaultProviderId).toBe('codex');
+    expect(modelState.providerModels.codex).toBe('cross-provider-model');
+
+    // Leave and return to Providers with that persisted state hydrated
+    // (`selectSelectedModel` reading `providerModels`/`defaultProviderId`).
+    selectedModel$.set('codex:cross-provider-model');
+    cleanup();
+    render(DefaultAgentModelSettings);
+
+    expect(screen.getByTestId('picker-selected').textContent).toBe('codex:cross-provider-model');
+  });
 });
 
-describe('AIBehaviorEditor default model reasoning', () => {
+describe('DefaultAgentModelSettings default model reasoning', () => {
   const DEFAULT_MODEL = 'codex:gpt-5.3-codex';
 
   afterEach(() => {
@@ -354,7 +444,7 @@ describe('AIBehaviorEditor default model reasoning', () => {
   it('enables controlled reasoning and passes the persisted effort to ModelPicker', () => {
     selectedModel$.set(DEFAULT_MODEL);
     mocks.defaultEffort$.set('high');
-    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+    render(DefaultAgentModelSettings);
 
     expect(screen.getByTestId('picker-show-reasoning').textContent).toBe('true');
     expect(screen.getByTestId('picker-reasoning').textContent).toBe('high');
@@ -362,7 +452,7 @@ describe('AIBehaviorEditor default model reasoning', () => {
 
   it('dispatches the picked level and clears it back to empty on Default', async () => {
     selectedModel$.set(DEFAULT_MODEL);
-    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+    render(DefaultAgentModelSettings);
 
     await fireEvent.click(screen.getByTestId('pick-reasoning'));
     expect(lastEffortDispatch()).toEqual({
@@ -382,7 +472,7 @@ describe('AIBehaviorEditor default model reasoning', () => {
     mocks.catalogModels.value = [DEFAULT_MODEL, 'user-picked-model'];
     selectedModel$.set(DEFAULT_MODEL);
     mocks.defaultEffort$.set('high');
-    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+    render(DefaultAgentModelSettings);
 
     // MockModelPicker picks 'user-picked-model', which has no effortLevels.
     await fireEvent.click(screen.getByTestId('pick-model'));
@@ -401,7 +491,7 @@ describe('AIBehaviorEditor default model reasoning', () => {
     mocks.catalogModels.value = [DEFAULT_MODEL, 'user-picked-model'];
     selectedModel$.set(DEFAULT_MODEL);
     mocks.defaultEffort$.set('high');
-    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+    render(DefaultAgentModelSettings);
 
     await fireEvent.click(screen.getByTestId('pick-model'));
 
@@ -417,7 +507,7 @@ describe('AIBehaviorEditor default model reasoning', () => {
     mocks.catalogModels.value = [DEFAULT_MODEL];
     selectedModel$.set(DEFAULT_MODEL);
     mocks.defaultEffort$.set('high');
-    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+    render(DefaultAgentModelSettings);
 
     await fireEvent.click(screen.getByTestId('pick-model'));
 
@@ -425,22 +515,12 @@ describe('AIBehaviorEditor default model reasoning', () => {
   });
 });
 
-describe('AIBehaviorEditor actions', () => {
-  const specialist = {
-    id: 'implementor',
-    name: 'Implementor',
-    description: 'Implements tasks',
-    defaultBehaviorPrompt: 'bundled prompt',
-  };
-
+describe('DefaultAgentModelSettings reset all to default', () => {
   afterEach(() => {
     cleanup();
-    mocks.specialists$.set([]);
     mocks.fileSpecialists$.set([]);
-    mocks.fileSpecialist.value = undefined;
-    mocks.effectivePrompt.value = '';
-    mocks.hasOverrides.value = false;
-    mocks.specialistFilePath.value = undefined;
+    mocks.workspace = undefined;
+    mocks.workspaceSelectCalls.length = 0;
     mocks.dispatched.length = 0;
   });
 
@@ -456,10 +536,10 @@ describe('AIBehaviorEditor actions', () => {
         source: 'user',
       },
     ]);
-    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+    render(DefaultAgentModelSettings, { testId: 'default-model-row' });
 
-    const defaultsColumn = screen.getByTestId('all-agents-defaults-column');
-    const reset = within(defaultsColumn).getByRole('button', { name: 'Reset all to default' });
+    const row = screen.getByTestId('default-model-row');
+    const reset = within(row).getByRole('button', { name: 'Reset all to default' });
 
     await fireEvent.click(reset);
     expect(mocks.dispatched.at(-1)).toEqual({
@@ -482,6 +562,36 @@ describe('AIBehaviorEditor actions', () => {
     });
   });
 
+  it('sends the explicit workspace path when resetting a project specialist', async () => {
+    mocks.workspace = { path: '/projects/example' };
+    mocks.fileSpecialists$.set([
+      {
+        id: 'project-reviewer',
+        name: 'Reviewer',
+        description: 'Reviews tasks',
+        model: 'codex:gpt-5.3-codex',
+        behaviorPrompt: 'Review carefully',
+        source: 'project',
+      },
+    ]);
+    render(DefaultAgentModelSettings, { workspaceId: 'workspace-project' });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Reset all to default' }));
+
+    expect(mocks.workspaceSelectCalls).toEqual(['workspace-project']);
+    expect(mocks.dispatched.at(-1)).toEqual({
+      type: 'specialists/saveFileSpecialist',
+      payload: [
+        expect.objectContaining({
+          id: 'project-reviewer',
+          model: undefined,
+          scope: 'project',
+          workspacePath: '/projects/example',
+        }),
+      ],
+    });
+  });
+
   it('hides Reset all to default when every specialist inherits', () => {
     mocks.fileSpecialists$.set([
       {
@@ -493,9 +603,29 @@ describe('AIBehaviorEditor actions', () => {
       },
     ]);
 
-    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+    render(DefaultAgentModelSettings);
 
     expect(screen.queryByRole('button', { name: 'Reset all to default' })).toBeNull();
+  });
+});
+
+describe('AIBehaviorEditor actions', () => {
+  const specialist = {
+    id: 'implementor',
+    name: 'Implementor',
+    description: 'Implements tasks',
+    defaultBehaviorPrompt: 'bundled prompt',
+  };
+
+  afterEach(() => {
+    cleanup();
+    mocks.specialists$.set([]);
+    mocks.fileSpecialists$.set([]);
+    mocks.fileSpecialist.value = undefined;
+    mocks.effectivePrompt.value = '';
+    mocks.hasOverrides.value = false;
+    mocks.specialistFilePath.value = undefined;
+    mocks.dispatched.length = 0;
   });
 
   it('undoes unsaved global instructions', async () => {

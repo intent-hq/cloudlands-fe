@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
-   * Destructive confirmation shown before the proposal tray's Dismiss is
-   * performed. Dismissal is persistent (the host dispatches
+   * Destructive confirmation shown before an inline proposal card's Dismiss
+   * action. Dismissal is persistent (the host dispatches
    * `agent.resolveProposal` outcome 'dismissed', PROTOCOL §5.5, which
    * survives reload), so the copy warns that the proposal is dismissed
    * without applying and won't pend again. Cancel / Escape / backdrop close

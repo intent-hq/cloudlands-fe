@@ -495,12 +495,12 @@
               </div>
             </div>
           {:else if $error$}
-            <div class="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+            <div class="mb-4 rounded-lg border border-danger/30 bg-danger-background/5 p-4">
               <div class="space-y-1">
                 <p class="text-sm font-medium text-foreground">
                   {m.settings_mcpServers_loadError()}
                 </p>
-                <p class="text-sm text-destructive">{$error$}</p>
+                <p class="text-sm text-danger">{$error$}</p>
               </div>
 
               <div class="mt-3 rounded-md border border-border bg-background/70 p-3">
@@ -602,7 +602,7 @@
                       {/each}
 
                       {#if installError}
-                        <p class="text-xs text-error-foreground mb-2">{installError}</p>
+                        <p class="text-xs text-danger mb-2">{installError}</p>
                       {/if}
 
                       <div class="flex gap-2 mt-3">
@@ -721,7 +721,7 @@
                     >{m.settings_mcpServers_savedIndicator()}</span
                   >
                 {:else if $advancedSaveStatus$ === 'error'}
-                  <span class="text-xs text-error-foreground"
+                  <span class="text-xs text-danger"
                     >✗ {$advancedSaveError$ || m.settings_mcpServers_saveFailed()}</span
                   >
                 {:else if $advancedSaveStatus$ === 'saving'}

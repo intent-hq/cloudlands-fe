@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 
-const { layoutsStore, dispatchMock } = vi.hoisted(() => {
+const { layoutsStore, ownClientIdStore, dispatchMock } = vi.hoisted(() => {
   // Minimal svelte-store-contract writable (vi.hoisted runs before imports).
   function miniWritable<T>(initial: T) {
     let value = initial;
@@ -29,12 +29,17 @@ const { layoutsStore, dispatchMock } = vi.hoisted(() => {
   }
   return {
     layoutsStore: miniWritable<Record<string, unknown>>({}),
+    ownClientIdStore: miniWritable<string | null>('cli-own'),
     dispatchMock: vi.fn(),
   };
 });
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectPanelLayoutWorkspaces: () => layoutsStore,
+}));
+
+vi.mock('$store/renderer/slices/browser-clients/browser-clients-selectors', () => ({
+  selectOwnClientId: () => ownClientIdStore,
 }));
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
@@ -50,7 +55,7 @@ vi.mock('$store/renderer/store', () => ({
 
 import OffscreenWebviewHost from './OffscreenWebviewHost.svelte';
 
-function browserLayout(tabs: Array<{ id: string; url?: string }>) {
+function browserLayout(tabs: Array<{ id: string; url?: string; hostClientId?: string }>) {
   return {
     panels: {
       'panel-1': {
@@ -61,6 +66,7 @@ function browserLayout(tabs: Array<{ id: string; url?: string }>) {
           title: tab.id,
           closable: true,
           browserUrl: tab.url ?? `https://example.test/${tab.id}`,
+          ...(tab.hostClientId === undefined ? {} : { hostClientId: tab.hostClientId }),
         })),
         activeTabId: tabs[0]?.id ?? null,
       },
@@ -79,6 +85,7 @@ describe('OffscreenWebviewHost', () => {
 
   beforeEach(() => {
     layoutsStore.set({});
+    ownClientIdStore.set('cli-own');
     dispatchMock.mockClear();
     invokeMock.mockClear();
     (window as unknown as { electronAPI: { invoke: typeof invokeMock } }).electronAPI = {
@@ -104,13 +111,40 @@ describe('OffscreenWebviewHost', () => {
     expect(webview?.getAttribute('src')).toBe('https://example.test/tab-bg');
   });
 
+  it('mounts only tabs hosted by this client; mirrors mount once the host moves here', async () => {
+    layoutsStore.set({
+      'ws-bg': browserLayout([
+        { id: 'tab-own', hostClientId: 'cli-own' },
+        { id: 'tab-mirror', hostClientId: 'cli-other' },
+        { id: 'tab-legacy' },
+      ]),
+    });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container).sort()).toEqual(['tab-legacy', 'tab-own']));
+
+    layoutsStore.set({
+      'ws-bg': browserLayout([
+        { id: 'tab-own', hostClientId: 'cli-own' },
+        { id: 'tab-mirror', hostClientId: 'cli-own' },
+        { id: 'tab-legacy' },
+      ]),
+    });
+    await waitFor(() =>
+      expect(mountedTabIds(container).sort()).toEqual(['tab-legacy', 'tab-mirror', 'tab-own']),
+    );
+  });
+
   it('registers a mounted webview for CDP on dom-ready', async () => {
     layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
     const { container } = render(OffscreenWebviewHost, {
       props: { excludedWorkspaceIds: new Set() },
     });
     await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
-    const webview = container.querySelector('[data-offscreen-webview-tab="tab-bg"]') as HTMLElement & {
+    const webview = container.querySelector(
+      '[data-offscreen-webview-tab="tab-bg"]',
+    ) as HTMLElement & {
       getWebContentsId?: () => number;
     };
     webview.getWebContentsId = () => 77;
@@ -132,7 +166,9 @@ describe('OffscreenWebviewHost', () => {
       props: { excludedWorkspaceIds: new Set() },
     });
     await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
-    const webview = container.querySelector('[data-offscreen-webview-tab="tab-bg"]') as HTMLElement & {
+    const webview = container.querySelector(
+      '[data-offscreen-webview-tab="tab-bg"]',
+    ) as HTMLElement & {
       getWebContentsId?: () => number;
     };
     const registerCalls = () =>
@@ -164,7 +200,9 @@ describe('OffscreenWebviewHost', () => {
       props: { excludedWorkspaceIds: new Set() },
     });
     await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
-    const webview = container.querySelector('[data-offscreen-webview-tab="tab-bg"]') as HTMLElement & {
+    const webview = container.querySelector(
+      '[data-offscreen-webview-tab="tab-bg"]',
+    ) as HTMLElement & {
       getWebContentsId?: () => number;
     };
     const registerCalls = () =>
@@ -219,9 +257,7 @@ describe('OffscreenWebviewHost', () => {
     const { container, rerender } = render(OffscreenWebviewHost, {
       props: { excludedWorkspaceIds: new Set() },
     });
-    await waitFor(() =>
-      expect(mountedTabIds(container).sort()).toEqual(['tab-a', 'tab-b']),
-    );
+    await waitFor(() => expect(mountedTabIds(container).sort()).toEqual(['tab-a', 'tab-b']));
 
     // ws-a becomes the displayed workspace.
     await rerender({ excludedWorkspaceIds: new Set(['ws-a']) });

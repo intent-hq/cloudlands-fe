@@ -1,10 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  createCache,
-  clearAllCaches,
-  SWEEP_INTERVAL_MS,
-  type Cache,
-} from '../cache';
+import { createCache, clearAllCaches, SWEEP_INTERVAL_MS, type Cache } from '../cache';
 
 describe('cache', () => {
   const created: Cache<unknown, unknown>[] = [];
@@ -207,4 +202,3 @@ describe('cache', () => {
     });
   });
 });
-

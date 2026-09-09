@@ -18,10 +18,7 @@ import { QUIT_CONFIRMATION_CHANNELS } from '$shared/ipc/channels';
 import { mockInvoke, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { registerQuitConfirmationBridge } from './quit-confirmation-bridge-seeder';
 
-const INVOKE_CHANNELS = [
-  QUIT_CONFIRMATION_CHANNELS.ACK,
-  QUIT_CONFIRMATION_CHANNELS.RESPONSE,
-];
+const INVOKE_CHANNELS = [QUIT_CONFIRMATION_CHANNELS.ACK, QUIT_CONFIRMATION_CHANNELS.RESPONSE];
 
 const originalElectronAPI = (window as any).electronAPI;
 

@@ -38,7 +38,7 @@ const PLATFORM_PACKAGES = [];
 function main() {
   console.log('🔍 Ensuring cross-architecture native dependencies...\n');
 
-  const hostArch = process.arch;   // e.g. 'arm64'
+  const hostArch = process.arch; // e.g. 'arm64'
   const hostPlatform = process.platform; // e.g. 'darwin'
 
   let installed = 0;
@@ -55,9 +55,7 @@ function main() {
       if (platform !== hostPlatform) continue; // only install for current OS
 
       for (const arch of spec.arches) {
-        const pkgName = spec.nameTemplate
-          .replace('{platform}', platform)
-          .replace('{arch}', arch);
+        const pkgName = spec.nameTemplate.replace('{platform}', platform).replace('{arch}', arch);
 
         // Check if it already exists in node_modules
         const pkgDir = path.join(ROOT, 'node_modules', ...pkgName.split('/'));
@@ -69,9 +67,12 @@ function main() {
         // Also check pnpm's .pnpm store (it may be there but not hoisted)
         const pnpmName = pkgName.replace('/', '+');
         const pnpmDir = path.join(
-          ROOT, 'node_modules', '.pnpm',
+          ROOT,
+          'node_modules',
+          '.pnpm',
           `${pnpmName}@${version}`,
-          'node_modules', ...pkgName.split('/')
+          'node_modules',
+          ...pkgName.split('/'),
         );
         if (fs.existsSync(pnpmDir)) {
           // Create a symlink/directory so electron-builder can find it
@@ -88,12 +89,12 @@ function main() {
         console.log(`  📦 ${pkgName}@${version} — downloading...`);
         const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'native-dep-'));
         try {
-          execSync(
-            `npm pack ${pkgName}@${version} --pack-destination="${tmpDir}"`,
-            { stdio: 'pipe', timeout: 60000 }
-          );
+          execSync(`npm pack ${pkgName}@${version} --pack-destination="${tmpDir}"`, {
+            stdio: 'pipe',
+            timeout: 60000,
+          });
 
-          const tarballs = fs.readdirSync(tmpDir).filter(f => f.endsWith('.tgz'));
+          const tarballs = fs.readdirSync(tmpDir).filter((f) => f.endsWith('.tgz'));
           if (tarballs.length === 0) {
             throw new Error(`npm pack produced no tarball for ${pkgName}`);
           }
@@ -104,11 +105,11 @@ function main() {
 
           execSync(
             `tar -xzf "${path.join(tmpDir, tarballs[0])}" --strip-components=1 -C "${pkgDir}"`,
-            { stdio: 'pipe', timeout: 30000 }
+            { stdio: 'pipe', timeout: 30000 },
           );
 
           // Verify the .node file exists
-          const nodeFiles = fs.readdirSync(pkgDir).filter(f => f.endsWith('.node'));
+          const nodeFiles = fs.readdirSync(pkgDir).filter((f) => f.endsWith('.node'));
           if (nodeFiles.length > 0) {
             console.log(`  ✅ ${pkgName} — installed (${nodeFiles.join(', ')})`);
           } else {
@@ -160,4 +161,3 @@ function copyDirSync(src, dest) {
 }
 
 main();
-

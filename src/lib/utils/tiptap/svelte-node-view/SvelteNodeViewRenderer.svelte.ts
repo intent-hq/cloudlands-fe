@@ -7,11 +7,7 @@
  * @see https://github.com/sibiraj-s/svelte-tiptap
  */
 
-import {
-  NodeView,
-  Editor,
-  getRenderedAttributes,
-} from '@tiptap/core';
+import { NodeView, Editor, getRenderedAttributes } from '@tiptap/core';
 import type {
   NodeViewRenderer,
   NodeViewProps,
@@ -20,12 +16,7 @@ import type {
 } from '@tiptap/core';
 import type { Decoration, DecorationSource } from '@tiptap/pm/view';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
-import {
-  type Component,
-  getAllContexts,
-  mount,
-  unmount,
-} from 'svelte';
+import { type Component, getAllContexts, mount, unmount } from 'svelte';
 import { SvelteMap } from 'svelte/reactivity';
 
 import { NODE_VIEW_CONTEXT_KEY } from './context';

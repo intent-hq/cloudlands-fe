@@ -4,11 +4,7 @@
  * Tests for IPC type contracts and validation
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { AgentIpc, WorkspaceIpc, FileIpc, TerminalIpc, IpcResponse } from '../contracts';
 import {
   AgentCancelSubscriptionsRequestSchema,
@@ -26,10 +22,7 @@ import {
   validateIpcRequest,
   tryValidateIpcRequest,
 } from '../request-validation';
-import {
-  AgentId,
-  WorkspaceId,
-} from '../../types/branded-ids';
+import { AgentId, WorkspaceId } from '../../types/branded-ids';
 
 describe('IPC Contracts', () => {
   describe('Agent IPC Contracts', () => {

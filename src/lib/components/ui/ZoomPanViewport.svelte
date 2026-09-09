@@ -49,9 +49,7 @@
   let dragDistance = 0;
   let suppressNextClick = false;
 
-  const zoomPercent = $derived(
-    formatNumber(scale, { style: 'percent', maximumFractionDigits: 0 })
-  );
+  const zoomPercent = $derived(formatNumber(scale, { style: 'percent', maximumFractionDigits: 0 }));
 
   function clampScale(value: number): number {
     return Math.min(maxZoom, Math.max(minZoom, value));

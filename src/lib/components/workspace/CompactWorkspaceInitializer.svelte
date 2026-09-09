@@ -63,7 +63,11 @@
     selectSpecialists,
     selectEffectiveBehaviorPrompt,
     selectOrchestratorSpecialist,
+    selectCustomSpecialistsLoaded,
+    selectFileSpecialistsLoaded,
   } from '$store/renderer/slices/specialists/specialists-selectors';
+  import { refetchSpecialistsRequested } from '$store/renderer/slices/specialists/specialists-slice';
+  import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
   import { createLogger } from '$lib/utils/client-logger';
   import {
     getGitErrorMessage,
@@ -160,6 +164,7 @@
 
   // Constants
   const PREFILL_KEY = 'workspace-prefill';
+  const UNKNOWN_SPECIALIST_ERROR_PREFIX = 'unknown specialist:'; // i18n-ignore (daemon error prefix)
 
   function hasWorkspacePrefillData(): boolean {
     try {
@@ -441,7 +446,9 @@
   }
 
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
-  const orchestrator$ = selectOrchestratorSpecialist();
+  const specialists$ = selectSpecialists();
+  const customSpecialistsLoaded$ = selectCustomSpecialistsLoaded();
+  const fileSpecialistsLoaded$ = selectFileSpecialistsLoaded();
   const compactFormState$ = selectCompactWorkspaceInitializerFormState();
   const lastSelectedRepo$ = selectWorkspaceInitializerLastSelectedRepo();
   const lastSubmittedAgent$ = selectWorkspaceInitializerLastSubmittedAgent();
@@ -473,13 +480,20 @@
   // NOTE: selectedSpecialist can be null (meaning "General / no specialist").
   // We check !== undefined instead of using ?? because null is a valid value
   // and ?? treats null as nullish, which would incorrectly fall through to the
-  // orchestrator default.
+  // first-launch default.
+  // First-launch default: single-agent Developer when the resolved specialist
+  // set carries it, else General (null).
+  const defaultSingleAgentSpecialist: string | null = $specialists$.some(
+    ({ id }) => id === DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
+  )
+    ? DEFAULT_NEW_WORKSPACE_SPECIALIST_ID
+    : null;
   let selectedSpecialist = $state<string | null>(
     savedState?.selectedSpecialist !== undefined
       ? savedState.selectedSpecialist
       : lastSubmittedAgent?.selectedSpecialist !== undefined
         ? lastSubmittedAgent.selectedSpecialist
-        : ($orchestrator$?.id ?? null),
+        : defaultSingleAgentSpecialist,
   );
   // Validate saved model against current provider - stale models from a different provider
   // (e.g., a claude-code pick when active provider is now 'opencode') should be discarded
@@ -512,10 +526,17 @@
       ? (savedState?.selectedReasoningEffort ?? lastSubmittedAgent?.selectedReasoningEffort)
       : undefined,
   );
-  // Track if team mode is selected (the orchestrator specialist coordinates)
+  // Track if team mode is selected (the orchestrator specialist coordinates).
+  // Defaults to single-agent mode on first launch; a remembered choice wins.
   let isTeamMode = $state<boolean>(
-    savedState?.isTeamMode ?? lastSubmittedAgent?.isTeamMode ?? $orchestrator$ !== null,
+    savedState?.isTeamMode ?? lastSubmittedAgent?.isTeamMode ?? false,
   );
+
+  function resetUnavailableSpecialist(): void {
+    selectedSpecialist = isTeamMode
+      ? (selectOrchestratorSpecialist.select(appStore.state)?.id ?? null)
+      : null;
+  }
   // Track which provider the user selected for the initial agent
   // Priority: active provider store takes precedence since it's the user's
   // explicit choice, else the settings-derived effective default. '' when
@@ -795,6 +816,20 @@
     }
   });
 
+  // A specialist can disappear while this form is closed. Only discard a
+  // persisted selection after both custom/file rosters are authoritative;
+  // the bundled-only startup fallback cannot prove a custom id disappeared.
+  $effect(() => {
+    if (
+      $customSpecialistsLoaded$ &&
+      $fileSpecialistsLoaded$ &&
+      selectedSpecialist &&
+      !$specialists$.some(({ id }) => id === selectedSpecialist)
+    ) {
+      resetUnavailableSpecialist();
+    }
+  });
+
   // Track previous workspace info for inserting @ mention after mount
   let pendingPreviousWorkspace: { id: string; title: string } | null = $state(null);
 
@@ -808,6 +843,7 @@
   // Preload Linear and Sentry issues as soon as this component mounts
   // so they're ready when the user expands the form
   onMount(() => {
+    appStore.dispatch(refetchSpecialistsRequested());
     logger.debug('Preloading issues on mount');
     preloadIssues();
 
@@ -2247,10 +2283,16 @@
       clearForm();
       oncreate?.();
     } catch (err) {
-      error =
-        err instanceof Error
-          ? getGitErrorMessage(err.message)
-          : m.workspace_compactInitializer_createFailed_error();
+      if (err instanceof Error && err.message.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {
+        appStore.dispatch(refetchSpecialistsRequested());
+        resetUnavailableSpecialist();
+        error = m.workspace_compactInitializer_specialistUnavailable_error();
+      } else {
+        error =
+          err instanceof Error
+            ? getGitErrorMessage(err.message)
+            : m.workspace_compactInitializer_createFailed_error();
+      }
     } finally {
       isCreating = false;
       // The create settled (success, failure, or early return) — drop the
@@ -3071,7 +3113,7 @@
               tooltipSide="top"
               aria-label={m.chat_richInput_micStop_label()}
               aria-pressed="true"
-              class="text-error-foreground animate-pulse"
+              class="text-danger animate-pulse"
               data-testid="initializer-mic-button"
             >
               <Fa icon={faMicrophone} size="xs" />
@@ -3108,7 +3150,7 @@
               tooltipSide="top"
             >
               {#if isEnhancing}
-                <Fa icon={faStop} size="xs" class="text-error-foreground" />
+                <Fa icon={faStop} size="xs" class="text-danger" />
               {:else}
                 <Fa icon={faMagicWandSparkles} size="xs" />
               {/if}
@@ -3144,13 +3186,13 @@
       <!-- Git not installed banner -->
       {#if gitAvailable === false}
         <div
-          class="mx-0 mb-3 px-4 py-3 bg-destructive/10 border border-destructive/30 rounded-md text-sm"
+          class="mx-0 mb-3 px-4 py-3 bg-danger-background/10 border border-danger/30 rounded-md text-sm"
           transition:slide={{ axis: 'y', duration: 200 }}
         >
           <div class="flex items-start gap-3">
-            <Fa icon={faExclamationTriangle} class="text-error-foreground mt-0.5 shrink-0" />
+            <Fa icon={faExclamationTriangle} class="text-danger mt-0.5 shrink-0" />
             <div>
-              <p class="font-medium text-error-foreground">
+              <p class="font-medium text-danger">
                 {m.workspace_compactInitializer_gitNotInstalled_label()}
               </p>
               <p class="text-subtle mt-1">
@@ -3265,7 +3307,7 @@
       <!-- Error message -->
       {#if error}
         <div
-          class="mt-3 mb-3 px-4.5 py-2 text-sm bg-destructive text-destructive-foreground"
+          class="mt-3 mb-3 px-4.5 py-2 text-sm bg-danger-background text-danger"
           transition:slide={{ axis: 'y', duration: 200 }}
         >
           {error}

@@ -141,7 +141,7 @@
       </Button>
     </div>
     {#if urlError}
-      <p class="text-xs text-error-foreground">{urlError}</p>
+      <p class="text-xs text-danger">{urlError}</p>
     {/if}
   </div>
 

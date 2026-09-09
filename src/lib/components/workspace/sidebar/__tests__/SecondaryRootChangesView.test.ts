@@ -1,10 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, waitFor, fireEvent } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
 import type { WorkspaceGitRootEntry } from '$store/renderer/slices/git-roots/git-roots-selectors';
@@ -14,10 +8,7 @@ type RootGitTestState = {
   status: GitStatus | null;
   commits: CommitInfo[];
   nextToken?: string;
-  commitFiles: Record<
-    string,
-    Array<{ path: string; additions: number; deletions: number }> | null
-  >;
+  commitFiles: Record<string, Array<{ path: string; additions: number; deletions: number }> | null>;
   loading: boolean;
   error: string | null;
 };
@@ -430,7 +421,12 @@ describe('SecondaryRootChangesView', () => {
     mocks.getStatus.mockResolvedValue({ ok: true, data: status });
     mocks.getHistory.mockResolvedValue({
       ok: true,
-      data: { items: [makeCommit('aaaa111', 'feat: transient detail miss'), makeCommit('bound111', 'boundary')] },
+      data: {
+        items: [
+          makeCommit('aaaa111', 'feat: transient detail miss'),
+          makeCommit('bound111', 'boundary'),
+        ],
+      },
     });
     mocks.commitDetails.mockImplementation(async (_wsId, hash) =>
       hash === 'aaaa111' ? null : { files: [], fileDetails: [] },
@@ -438,16 +434,16 @@ describe('SecondaryRootChangesView', () => {
 
     const { getByTestId } = await renderView(makeEntry('main', 'root-9', 'bound111'));
     await waitFor(() =>
-      expect(getByTestId('secondary-root-all-changes').textContent).toContain('1 file changed in Workspace'),
+      expect(getByTestId('secondary-root-all-changes').textContent).toContain(
+        '1 file changed in Workspace',
+      ),
     );
   });
 
   it('keeps an empty root in the no-changes state without a summary affordance', async () => {
     mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
 
-    const { container, queryByTestId } = await renderView(
-      makeEntry('main', 'root-9', 'bound111'),
-    );
+    const { container, queryByTestId } = await renderView(makeEntry('main', 'root-9', 'bound111'));
 
     await waitFor(() => expect(container.textContent).toContain('No changes'));
     expect(queryByTestId('secondary-root-all-changes')).toBeNull();
@@ -463,9 +459,7 @@ describe('SecondaryRootChangesView', () => {
     ];
     mocks.getStatus.mockResolvedValueOnce({ ok: true, data: initial });
     mocks.getStatus.mockResolvedValueOnce({ ok: true, data: refreshed });
-    const { getByTestId, getByTitle } = await renderView(
-      makeEntry('main', 'root-9', 'bound111'),
-    );
+    const { getByTestId, getByTitle } = await renderView(makeEntry('main', 'root-9', 'bound111'));
     await waitFor(() =>
       expect(getByTestId('secondary-root-all-changes').textContent).toContain(
         '1 file changed in Workspace',
@@ -501,9 +495,7 @@ describe('SecondaryRootChangesView', () => {
     mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
     mocks.getHistory.mockResolvedValue({ ok: false, error: 'daemon error' });
     const { container } = await renderView(makeEntry('main'));
-    await waitFor(() =>
-      expect(container.textContent).toContain('Failed to load git root state'),
-    );
+    await waitFor(() => expect(container.textContent).toContain('Failed to load git root state'));
     expect(container.textContent).not.toContain('No commits');
   });
 
@@ -637,9 +629,7 @@ describe('SecondaryRootChangesView', () => {
       ok: true,
       data: { items: [makeCommit('aaaa111', 'feat: one')] },
     });
-    const { container, queryByTestId } = await renderView(
-      makeEntry('main', 'root-1', 'gone9999'),
-    );
+    const { container, queryByTestId } = await renderView(makeEntry('main', 'root-1', 'gone9999'));
 
     await waitFor(() => expect(container.textContent).toContain('feat: one'));
     expect(queryByTestId('secondary-root-boundary-toggle')).toBeNull();
@@ -658,9 +648,7 @@ describe('SecondaryRootChangesView', () => {
         items: [makeCommit('bound111', 'chore: at registration')],
       },
     });
-    const { container, queryByTestId } = await renderView(
-      makeEntry('main', 'root-1', 'bound111'),
-    );
+    const { container, queryByTestId } = await renderView(makeEntry('main', 'root-1', 'bound111'));
 
     // The boundary page is loaded eagerly so the summary cannot expose a
     // partial or pre-registration count.
@@ -692,12 +680,13 @@ describe('SecondaryRootChangesView', () => {
     mocks.getHistory.mockResolvedValueOnce({
       ok: true,
       data: {
-        items: [makeCommit('bbbb222', 'fix: two'), makeCommit('bound111', 'chore: at registration')],
+        items: [
+          makeCommit('bbbb222', 'fix: two'),
+          makeCommit('bound111', 'chore: at registration'),
+        ],
       },
     });
-    const { container, getByTestId } = await renderView(
-      makeEntry('main', 'root-1', 'bound111'),
-    );
+    const { container, getByTestId } = await renderView(makeEntry('main', 'root-1', 'bound111'));
 
     // Duplicate hash filtered on append (a duplicate key would crash the
     // keyed {#each}); the boundary from the appended page still applies.
@@ -714,7 +703,9 @@ describe('SecondaryRootChangesView', () => {
       data: {
         items: [
           makeCommit('aaaa111', 'feat: human commit'),
-          makeCommit('bbbb222', 'feat: agent commit', { agentId: 'agent-1' } as Partial<CommitInfo>),
+          makeCommit('bbbb222', 'feat: agent commit', {
+            agentId: 'agent-1',
+          } as Partial<CommitInfo>),
         ],
       },
     });
@@ -869,9 +860,7 @@ describe('SecondaryRootChangesView', () => {
       fileDetails: [{ path: 'src/stale.ts', additions: 9, deletions: 9 }],
     });
     await waitFor(() =>
-      expect(queryAllByTestId('file-row')[0]?.getAttribute('data-file-path')).toBe(
-        'src/fresh.ts',
-      ),
+      expect(queryAllByTestId('file-row')[0]?.getAttribute('data-file-path')).toBe('src/fresh.ts'),
     );
   });
 });

@@ -10,6 +10,7 @@ import {
   extractReasoningHistory,
   extractStandaloneReasoningTitle,
 } from './reasoning-heading';
+import { getProposalFromBlock } from '$shared/types/proposal-resource';
 
 // This provider phase arrives in the same parsed content_group shape as normal
 // named groups. Keep the compatibility match narrow so authored group names
@@ -110,6 +111,39 @@ function pairAdjacentReasoningGroup(
   };
 }
 
+export function hoistProposalBlocksFromResponseGroups(
+  blocks: readonly RenderContentBlock[],
+): RenderContentBlock[] {
+  const hoisted: RenderContentBlock[] = [];
+
+  for (const block of blocks) {
+    if (block.type !== 'content_group') {
+      hoisted.push(block);
+      continue;
+    }
+
+    let segmentStart = 0;
+    for (let index = 0; index < block.children.length; index += 1) {
+      const child = block.children[index];
+      if (!getProposalFromBlock(child)) continue;
+
+      if (segmentStart < index) {
+        hoisted.push({ ...block, children: block.children.slice(segmentStart, index) });
+      }
+      hoisted.push(child);
+      segmentStart = index + 1;
+    }
+
+    if (segmentStart === 0) {
+      hoisted.push(block);
+    } else if (segmentStart < block.children.length) {
+      hoisted.push({ ...block, children: block.children.slice(segmentStart) });
+    }
+  }
+
+  return hoisted;
+}
+
 export function normalizeResponseGroups(
   blocks: readonly RenderContentBlock[],
   isStreaming = false,
@@ -145,7 +179,7 @@ export function normalizeResponseGroups(
     const standalone = normalizeStandaloneReasoning(block, index === activeBlockIndex);
     if (standalone) normalized.push(standalone);
   }
-  return normalized;
+  return hoistProposalBlocksFromResponseGroups(normalized);
 }
 
 export function shouldRenderResponseGroupInline(

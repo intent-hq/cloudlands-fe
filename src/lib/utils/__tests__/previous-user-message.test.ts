@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { AgentMessage, MessageMetadata } from '$shared/types';
-import {
-  findPreviousUserMessage,
-  isAutomatedChatMessage,
-} from '$lib/utils/previous-user-message';
+import { findPreviousUserMessage, isAutomatedChatMessage } from '$lib/utils/previous-user-message';
 
 // PROTOCOL §5.5-shaped transcript rows: id/role/timestamp always present,
 // content carried in contentBlocks (canonical `text` field).
@@ -30,7 +27,9 @@ describe('isAutomatedChatMessage', () => {
 
   it('flags messages with a string metadata.type as automated', () => {
     expect(
-      isAutomatedChatMessage(msg('m1', 'user', '[WORKSPACE EVENTS] x', { type: 'event_notification' })),
+      isAutomatedChatMessage(
+        msg('m1', 'user', '[WORKSPACE EVENTS] x', { type: 'event_notification' }),
+      ),
     ).toBe(true);
     expect(isAutomatedChatMessage(msg('m2', 'user', 'wake', { type: 'pr_monitor_wake' }))).toBe(
       true,
@@ -40,7 +39,10 @@ describe('isAutomatedChatMessage', () => {
   it('keeps question_answers user-authored despite its tag', () => {
     expect(
       isAutomatedChatMessage(
-        msg('m1', 'user', 'answers', { type: 'question_answers', answeredQuestionsMessageId: 'q1' }),
+        msg('m1', 'user', 'answers', {
+          type: 'question_answers',
+          answeredQuestionsMessageId: 'q1',
+        }),
       ),
     ).toBe(false);
   });

@@ -1,12 +1,5 @@
 import { buffers } from 'redux-saga';
-import {
-  actionChannel,
-  call,
-  flush,
-  put,
-  take,
-  type SagaGenerator,
-} from 'typed-redux-saga';
+import { actionChannel, call, flush, put, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';
 import {
@@ -14,7 +7,7 @@ import {
   streamTurnCorrelation,
 } from '$lib/utils/stream-lifecycle-telemetry';
 import { hasStandingChatSubscription } from '$features/agent/utils/chat-subscription-registry';
-import type { AgentMessage, AgentSession } from '$shared/types';
+import type { AgentMessage, AgentSession, MessageMetadata } from '$shared/types';
 import { streamCompleted, streamTimedOut } from '../../chat-state/chat-state-slice';
 import { selectChatAgentState } from '../../chat-state/chat-state-selectors';
 import {
@@ -34,16 +27,33 @@ const logger = createLogger('AgentStreamSaga');
 function isStreamUpdateAction(
   action: unknown,
 ): action is ReturnType<typeof agentStreamUpdateReceived> {
-  return !!action && typeof action === 'object' && 'type' in action &&
-    action.type === agentStreamUpdateReceived.type;
+  return (
+    !!action &&
+    typeof action === 'object' &&
+    'type' in action &&
+    action.type === agentStreamUpdateReceived.type
+  );
 }
 
+/**
+ * Interrupted-row metadata for a terminal `complete` carrying
+ * `stopReason: "interrupted"` (PROTOCOL §7.2): the `interrupted` marker plus
+ * the wire's `interruptReason` / `interruptedBy` when present, so the live
+ * Stopped label resolves to the same reason-specific variant the persisted
+ * row renders after a reload. Absent wire fields stay absent — never `null`.
+ */
 function interruptedMetadata(
   payload: AgentStreamUpdatePayload,
-): { interrupted: true; stopReason: string } | undefined {
-  return payload.eventType === 'complete' && payload.stopReason === 'interrupted'
-    ? { interrupted: true, stopReason: payload.stopReason }
-    : undefined;
+):
+  | Pick<MessageMetadata, 'interrupted' | 'stopReason' | 'interruptReason' | 'interruptedBy'>
+  | undefined {
+  if (payload.eventType !== 'complete' || payload.stopReason !== 'interrupted') return undefined;
+  return {
+    interrupted: true,
+    stopReason: payload.stopReason,
+    ...(payload.interruptReason ? { interruptReason: payload.interruptReason } : {}),
+    ...(payload.interruptedBy ? { interruptedBy: payload.interruptedBy } : {}),
+  };
 }
 
 /**
@@ -52,9 +62,7 @@ function interruptedMetadata(
  * (PROTOCOL §7.3 — refusal / max_tokens / max_turn_requests notice). Mirrors
  * what the daemon persists on the row, so live and reloaded transcripts agree.
  */
-function finalizedMetadata(
-  payload: AgentStreamUpdatePayload,
-): Record<string, unknown> | undefined {
+function finalizedMetadata(payload: AgentStreamUpdatePayload): Record<string, unknown> | undefined {
   const interrupted = interruptedMetadata(payload);
   const finishReason =
     payload.eventType === 'complete' && payload.finishReason
@@ -135,7 +143,9 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
 
   if (eventType === 'error' || eventType === 'timeout') {
     if (existing) {
-      yield* put(updateMessage(agentId, existing.id, { isStreaming: false, streamingComplete: true }));
+      yield* put(
+        updateMessage(agentId, existing.id, { isStreaming: false, streamingComplete: true }),
+      );
     }
     yield* call(clearSessionStreaming, agentId, eventType);
     yield* reportAppliedStoreState(payload, 'update-applied');
@@ -188,7 +198,9 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
   }
 
   if (nextBlocks && nextBlocks !== existing.contentBlocks) {
-    yield* put(updateMessage(agentId, existing.id, { contentBlocks: nextBlocks, isStreaming: true }));
+    yield* put(
+      updateMessage(agentId, existing.id, { contentBlocks: nextBlocks, isStreaming: true }),
+    );
     yield* reportAppliedStoreState(payload, 'update-applied');
     return;
   }

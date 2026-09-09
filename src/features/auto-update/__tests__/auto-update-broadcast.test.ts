@@ -131,11 +131,11 @@ describe('broadcastToRenderers', () => {
 describe('auto-update send-site source guard', () => {
   const SRC_ROOT = path.resolve(fileURLToPath(import.meta.url), '../../../..');
 
-  it.each([
-    'features/auto-update/main/auto-update.service.ts',
-    'main/index.ts',
-  ])('%s has no direct auto-update webContents.send site', async (relPath) => {
-    const content = await fs.readFile(path.join(SRC_ROOT, relPath), 'utf8');
-    expect(content).not.toMatch(/webContents\.send\(\s*['"]auto-update:/);
-  });
+  it.each(['features/auto-update/main/auto-update.service.ts', 'main/index.ts'])(
+    '%s has no direct auto-update webContents.send site',
+    async (relPath) => {
+      const content = await fs.readFile(path.join(SRC_ROOT, relPath), 'utf8');
+      expect(content).not.toMatch(/webContents\.send\(\s*['"]auto-update:/);
+    },
+  );
 });

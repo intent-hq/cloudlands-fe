@@ -14,7 +14,7 @@ const TEST_HTML_PATH = path.join(__dirname, 'diff-viewer-test.html');
 const TEST_URL = `file://${TEST_HTML_PATH}`;
 
 async function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function testDiffViewer() {
@@ -126,7 +126,10 @@ async function testDiffViewer() {
       `,
       returnByValue: true,
     });
-    console.log('Hide Unchanged Regions:', JSON.stringify(hideUnchangedCheck.result.value, null, 2));
+    console.log(
+      'Hide Unchanged Regions:',
+      JSON.stringify(hideUnchangedCheck.result.value, null, 2),
+    );
 
     // Test 5: Get editor options
     console.log('\n📊 Test 5: Check Editor Options');
@@ -164,7 +167,6 @@ async function testDiffViewer() {
       console.log('   Close Chrome to exit this script');
       await new Promise(() => {});
     }
-
   } catch (error) {
     console.error('❌ Error:', error);
     process.exit(1);

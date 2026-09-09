@@ -421,7 +421,12 @@ export interface RaceConnectInfo {
   via: ConnectedVia;
 }
 
-/** Overall bound on the multi-host race; matches the capture timeout. */
+/**
+ * Overall bound on the multi-host race; matches the capture timeout. The
+ * tunnel candidate additionally bounds its own connect at
+ * `TUNNEL_CONNECT_TIMEOUT_MS` (`tailcat-tunnel.ts`) so a black-holed tunnel
+ * cannot hold the race open this long on its own.
+ */
 const RACE_TIMEOUT_MS = 10_000;
 
 /** Pseudo-host label for the tunnel candidate in race logs/events. */

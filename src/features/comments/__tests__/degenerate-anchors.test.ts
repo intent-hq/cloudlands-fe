@@ -2,11 +2,7 @@
  * Tests for degenerate anchor detection and removal
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   scanForProblematicAnchors,
   removeDegenerateAnchors,

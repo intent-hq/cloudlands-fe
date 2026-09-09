@@ -8,7 +8,13 @@
     placeholder?: string;
   }
 
-  let { value, language, lineNumbers: _lineNumbers, readOnly: _readOnly, placeholder }: Props = $props();
+  let {
+    value,
+    language,
+    lineNumbers: _lineNumbers,
+    readOnly: _readOnly,
+    placeholder,
+  }: Props = $props();
 </script>
 
 <div class="mock-code-editor" data-language={language}>

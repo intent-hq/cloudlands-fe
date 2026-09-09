@@ -1,9 +1,6 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import {
-  faPlus,
-  faMinus,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faPlus, faMinus } from '@fortawesome/free-solid-svg-icons';
   import AnimatedNumber from '$lib/components/ui/AnimatedNumber.svelte';
   import { formatInteger } from '$lib/i18n/format';
 
@@ -64,9 +61,9 @@
           <Fa icon={faPlus} size={iconSize === 10 ? 'xs' : iconSize === 12 ? 'xs' : 'sm'} />
         {/if}
         <span
-          >+{#if animated}<AnimatedNumber
-              value={additions}
-            />{:else}{formatInteger(additions)}{/if}</span
+          >+{#if animated}<AnimatedNumber value={additions} />{:else}{formatInteger(
+              additions,
+            )}{/if}</span
         >
       </span>
     {/if}
@@ -81,9 +78,9 @@
           <Fa icon={faMinus} size={iconSize === 10 ? 'xs' : iconSize === 12 ? 'xs' : 'sm'} />
         {/if}
         <span
-          >-{#if animated}<AnimatedNumber
-              value={deletions}
-            />{:else}{formatInteger(deletions)}{/if}</span
+          >-{#if animated}<AnimatedNumber value={deletions} />{:else}{formatInteger(
+              deletions,
+            )}{/if}</span
         >
       </span>
     {/if}

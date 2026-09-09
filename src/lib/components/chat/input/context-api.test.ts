@@ -64,7 +64,13 @@ describe('context-api', () => {
       mockBackendRequest.mockResolvedValueOnce({
         requestId: 'srch-2',
         matches: [
-          { symbol: 'MyClass', kind: 'class', file: 'src/my-class.ts', line: 12, preview: 'class MyClass {' },
+          {
+            symbol: 'MyClass',
+            kind: 'class',
+            file: 'src/my-class.ts',
+            line: 12,
+            preview: 'class MyClass {',
+          },
         ],
       });
 
@@ -93,8 +99,6 @@ describe('context-api', () => {
       expect(results).toEqual([]);
     });
   });
-
-
 
   describe('dead note readers', () => {
     it('no longer exports the legacy notes:* readers', () => {

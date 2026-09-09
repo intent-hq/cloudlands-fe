@@ -14,12 +14,15 @@ vi.mock('$lib/components/ui/toast', () => ({
   toast: { warning: mocks.toastWarning, error: mocks.toastError },
 }));
 
+import { BackendError } from '$lib/client/live/backend-transport-types';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   connectionStatusChanged,
+  daemonHealthReducer,
   fetchSidecarRunLogRequested,
   fetchSidecarRunLogSucceeded,
   heartbeatFailed,
+  initialState,
   openLocalAndSpawnRequested,
   openLocalAndSpawnSucceeded,
   pollUnslothStatus,
@@ -28,8 +31,13 @@ import {
   stopUnslothFailed,
   stopUnslothRequested,
   systemStatusFailure,
+  systemStatusSuccess,
 } from '../daemon-health-slice';
-import type { SystemStatusWirePayload } from '../daemon-health-types';
+import type {
+  BackendTransportInfo,
+  DaemonHealthState,
+  SystemStatusWirePayload,
+} from '../daemon-health-types';
 import { daemonHealthSaga, pollSystemStatusSaga } from './daemon-health-saga';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
@@ -67,6 +75,39 @@ function startHealthSaga() {
     daemonHealthSaga,
   );
   return { input, dispatched, task };
+}
+
+/**
+ * Same wiring as `startHealthSaga`, but every dispatched action also runs
+ * through the production reducer so race regressions observe real state.
+ */
+function startHealthSagaWithReducer() {
+  const input = stdChannel();
+  let state = { daemonHealth: initialState };
+  const dispatch = (action: unknown) => {
+    state = { daemonHealth: daemonHealthReducer(state.daemonHealth, action as never) };
+    input.put(action as never);
+    return action;
+  };
+  const task = runSaga({ channel: input, dispatch, getState: () => state }, daemonHealthSaga);
+  return { task, getState: (): DaemonHealthState => state.daemonHealth };
+}
+
+interface DeferredPoll {
+  resolve: (value: SystemStatusWirePayload) => void;
+  reject: (error: unknown) => void;
+}
+
+/** Every system.status request becomes a manually settled promise. */
+function deferSystemStatusPolls() {
+  const polls: DeferredPoll[] = [];
+  mocks.backendRequest.mockImplementation((method: string) => {
+    if (method !== 'system.status') return Promise.resolve({ running: false });
+    return new Promise<SystemStatusWirePayload>((resolve, reject) => {
+      polls.push({ resolve, reject });
+    });
+  });
+  return polls;
 }
 
 function statusActions(dispatched: unknown[]) {
@@ -452,6 +493,31 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
+  it('forwards daemonUpdateDisconnectedAt from the status payload into the action extras', async () => {
+    const transport = { mode: 'external-uds' as const, target: '/tmp/intentd.sock' };
+    const disconnectedAt = new Date('2026-09-04T10:00:00.000Z').getTime();
+    const { dispatched, task } = startHealthSaga();
+    await settle();
+    statusHandler!({
+      status: 'disconnected',
+      transport,
+      daemonUpdateDisconnectedAt: disconnectedAt,
+    });
+    await settle();
+
+    const actions = statusActions(dispatched) as Array<{
+      payload: [string, unknown, { daemonUpdateDisconnectedAt?: number } | undefined];
+    }>;
+    const disconnected = actions.find(({ payload: [status] }) => status === 'disconnected');
+    expect(disconnected).toBeDefined();
+    expect(disconnected!.payload[2]?.daemonUpdateDisconnectedAt).toBe(disconnectedAt);
+    // The boot snapshot carried no marker: nothing is invented for it.
+    const connected = actions.find(({ payload: [status] }) => status === 'connected');
+    expect(connected!.payload[2]?.daemonUpdateDisconnectedAt).toBeUndefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('backs off repeated disconnected churn with exponential timing', async () => {
     const transport = { mode: 'external-uds' as const, target: '/tmp/intentd.sock' };
     invoke.mockImplementation((channel: string) => {
@@ -711,16 +777,326 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
-  it('dispatches failure then degradation when a poll fails while healthy', async () => {
-    mocks.backendRequest.mockRejectedValue(new Error('timeout'));
-    const dispatched: unknown[] = [];
-    await runSaga(
-      {
-        dispatch: (action) => dispatched.push(action),
-        getState: () => ({ daemonHealth: { health: 'healthy' } }),
-      },
-      pollSystemStatusSaga,
-    ).toPromise();
-    expect(dispatched).toEqual([systemStatusFailure(), heartbeatFailed()]);
+  describe('poll ↔ connection lifecycle binding (#4439)', () => {
+    const udsTransport: BackendTransportInfo = {
+      mode: 'external-uds',
+      target: '/tmp/intentd.sock',
+    };
+    // Remote WebSocket as main reports it: `external-ws` with the sanitized URL
+    // (userinfo and query already stripped by formatTransportInfo).
+    const remoteWsTransport: BackendTransportInfo = {
+      mode: 'external-ws',
+      target: 'ws://127.0.0.1:5181/ws',
+    };
+    const oldPayload: SystemStatusWirePayload = {
+      ...statusPayload,
+      hostname: 'old-daemon',
+      host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
+    };
+    const newPayload: SystemStatusWirePayload = {
+      ...statusPayload,
+      hostname: 'new-daemon',
+      host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
+    };
+
+    /** Boot to a healthy connection A with its first poll still pending. */
+    async function bootWithPendingPoll(transport = udsTransport) {
+      invoke.mockImplementation(async (channel: string) => {
+        if (channel === BACKEND.GET_STATUS) return { status: 'connected', transport };
+        return undefined;
+      });
+      const polls = deferSystemStatusPolls();
+      const harness = startHealthSagaWithReducer();
+      await settle();
+      expect(harness.getState().health).toBe('healthy');
+      expect(polls).toHaveLength(1);
+      return { ...harness, polls };
+    }
+
+    it('boots with a single poll bound to the first known connection', async () => {
+      const { task, polls, getState } = await bootWithPendingPoll();
+      polls[0].resolve(oldPayload);
+      await settle();
+      expect(mocks.backendRequest).toHaveBeenCalledTimes(1);
+      expect(getState().stats?.hostname).toBe('old-daemon');
+      expect(getState().lastUpdated).not.toBeNull();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('discards a pre-disconnect poll that rejects after the reconnect — B stays healthy', async () => {
+      const { task, polls, getState } = await bootWithPendingPoll();
+      statusHandler!({ status: 'disconnected', transport: udsTransport });
+      statusHandler!({ status: 'connected', transport: udsTransport });
+      await settle();
+      expect(getState().health).toBe('healthy');
+
+      polls[0].reject(new BackendError({ code: 'TIMEOUT', message: 'timed out' }));
+      await settle();
+      expect(getState().health).toBe('healthy');
+      expect(getState().statusCheckFailure).toBeNull();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('discards a pre-disconnect poll that rejects after reconnecting through connecting', async () => {
+      const { task, polls, getState } = await bootWithPendingPoll();
+      statusHandler!({ status: 'disconnected', transport: udsTransport });
+      statusHandler!({ status: 'connecting', transport: udsTransport });
+      statusHandler!({ status: 'connected', transport: udsTransport });
+      await settle();
+
+      polls[0].reject(new Error('socket closed'));
+      await settle();
+      expect(getState().health).toBe('healthy');
+      expect(getState().statusCheckFailure).toBeNull();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('discards a late success while down — no stats, freshness, or health leak', async () => {
+      const { task, polls, getState } = await bootWithPendingPoll();
+      statusHandler!({ status: 'disconnected', transport: udsTransport });
+      await settle();
+      const down = getState();
+      expect(down.health).toBe('down');
+
+      polls[0].resolve(oldPayload);
+      await settle();
+      expect(getState()).toBe(down);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('discards a pre-switch poll that resolves after a direct transport switch', async () => {
+      const { task, polls, getState } = await bootWithPendingPoll();
+      statusHandler!({ status: 'connected', transport: remoteWsTransport });
+      await settle();
+      expect(getState().stats).toBeNull();
+      expect(getState().transport).toEqual(remoteWsTransport);
+
+      polls[0].resolve(oldPayload);
+      await settle();
+      expect(getState().stats).toBeNull();
+      expect(getState().lastUpdated).toBeNull();
+      expect(getState().hostLocality).toBeNull();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('re-polls the new connection right away when the switch interrupted a poll, and the old result cannot overwrite the fresh snapshot', async () => {
+      const { task, polls, getState } = await bootWithPendingPoll();
+      statusHandler!({ status: 'connected', transport: remoteWsTransport });
+      await settle();
+      expect(polls).toHaveLength(2);
+
+      polls[1].resolve(newPayload);
+      await settle();
+      expect(getState().stats?.hostname).toBe('new-daemon');
+      expect(getState().stats?.transport).toEqual(remoteWsTransport);
+      expect(getState().hostLocality).toBe('remote');
+      const fresh = getState();
+
+      polls[0].resolve(oldPayload);
+      await settle();
+      expect(getState()).toBe(fresh);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('still polls on cadence when the boot snapshot rejects and no status is ever pushed', async () => {
+      invoke.mockImplementation(async (channel: string) => {
+        if (channel === BACKEND.GET_STATUS) throw new Error('main not ready');
+        return undefined;
+      });
+      const polls = deferSystemStatusPolls();
+      const { task, getState } = startHealthSagaWithReducer();
+      await settle();
+      expect(polls).toHaveLength(1);
+      expect(getState().health).toBe('down');
+
+      polls[0].resolve(oldPayload);
+      await settle();
+      expect(getState().stats?.hostname).toBe('old-daemon');
+      expect(getState().health).toBe('down');
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(polls).toHaveLength(2);
+      polls[1].resolve(oldPayload);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(polls).toHaveLength(3);
+
+      statusHandler!({ status: 'connected', transport: udsTransport });
+      await settle();
+      expect(getState().health).toBe('healthy');
+      expect(polls).toHaveLength(4);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('treats repeated same-connection connected notifications as metadata — one request, valid result applied', async () => {
+      const { task, polls, getState } = await bootWithPendingPoll();
+      const before = getState().connectionGeneration;
+      statusHandler!({
+        status: 'connected',
+        transport: { ...udsTransport, updateSupported: true },
+      });
+      statusHandler!({
+        status: 'connected',
+        transport: { ...udsTransport, updateSupported: true },
+      });
+      statusHandler!({
+        status: 'connected',
+        transport: { ...udsTransport, updateSupported: true },
+      });
+      await settle();
+      expect(polls).toHaveLength(1);
+      expect(mocks.backendRequest).toHaveBeenCalledTimes(1);
+      expect(getState().connectionGeneration).toBe(before);
+      expect(getState().transport).toEqual({ ...udsTransport, updateSupported: true });
+
+      polls[0].resolve(oldPayload);
+      await settle();
+      expect(getState().stats?.hostname).toBe('old-daemon');
+      expect(getState().stats?.transport).toEqual({ ...udsTransport, updateSupported: true });
+      expect(getState().lastUpdated).not.toBeNull();
+      expect(getState().polling).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(polls).toHaveLength(2);
+      polls[1].reject(new BackendError({ code: 'TIMEOUT', message: 'timed out' }));
+      await settle();
+      expect(getState().health).toBe('degraded');
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(polls).toHaveLength(3);
+      polls[2].resolve(oldPayload);
+      await settle();
+      expect(getState().health).toBe('healthy');
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('keeps same-connection degrade → recovery and the poll cadence intact', async () => {
+      const { task, polls, getState } = await bootWithPendingPoll();
+      polls[0].reject(new BackendError({ code: 'TIMEOUT', message: 'timed out' }));
+      await settle();
+      expect(getState().health).toBe('degraded');
+      expect(getState().statusCheckFailure?.kind).toBe('timeout');
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(polls).toHaveLength(2);
+      polls[1].resolve(oldPayload);
+      await settle();
+      expect(getState().health).toBe('healthy');
+      expect(getState().statusCheckFailure).toBeNull();
+      expect(getState().stats?.hostname).toBe('old-daemon');
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(polls).toHaveLength(3);
+      task.cancel();
+      await task.toPromise();
+    });
+  });
+
+  describe('pollSystemStatusSaga failure context (#4439)', () => {
+    const generation = 3;
+
+    async function runPoll() {
+      const dispatched: unknown[] = [];
+      await runSaga(
+        {
+          dispatch: (action) => dispatched.push(action),
+          getState: () => ({
+            daemonHealth: { health: 'healthy', connectionGeneration: generation },
+          }),
+        },
+        pollSystemStatusSaga,
+      ).toPromise();
+      return dispatched;
+    }
+
+    beforeEach(() => {
+      vi.setSystemTime(new Date('2026-09-05T10:00:00.000Z'));
+    });
+
+    it('sends the unchanged system.status request', async () => {
+      mocks.backendRequest.mockResolvedValue(statusPayload);
+      await runPoll();
+      expect(mocks.backendRequest).toHaveBeenCalledWith('system.status');
+    });
+
+    it('stamps a success with the connection generation captured before the request', async () => {
+      mocks.backendRequest.mockResolvedValue(statusPayload);
+      expect(await runPoll()).toEqual([
+        systemStatusSuccess(statusPayload, '2026-09-05T10:00:00.000Z', generation),
+      ]);
+    });
+
+    it('reports a generic status-check failure with the failure time', async () => {
+      mocks.backendRequest.mockRejectedValue(
+        new BackendError({ code: 'TRANSPORT_ERROR', message: 'socket closed at /tmp/x.sock' }),
+      );
+      expect(await runPoll()).toEqual([
+        systemStatusFailure(
+          { kind: 'status-check-failed', failedAt: '2026-09-05T10:00:00.000Z' },
+          generation,
+        ),
+      ]);
+    });
+
+    it('classifies a transport-tagged timeout as a timeout', async () => {
+      mocks.backendRequest.mockRejectedValue(
+        new BackendError({ code: 'TIMEOUT', message: 'JSON-RPC request timed out: system.status' }),
+      );
+      expect(await runPoll()).toEqual([
+        systemStatusFailure({ kind: 'timeout', failedAt: '2026-09-05T10:00:00.000Z' }, generation),
+      ]);
+    });
+
+    it('never guesses a timeout from an untagged error message', async () => {
+      mocks.backendRequest.mockRejectedValue(
+        new Error('JSON-RPC request timed out: system.status'),
+      );
+      expect(await runPoll()).toEqual([
+        systemStatusFailure(
+          { kind: 'status-check-failed', failedAt: '2026-09-05T10:00:00.000Z' },
+          generation,
+        ),
+      ]);
+    });
+
+    it('never puts the raw error or its message into the dispatched action', async () => {
+      // Synthetic sentinel shaped like a real transport failure that leaks a
+      // connection URL with a token. The dispatched action must be exactly
+      // the safe payload — every raw field is asserted absent by its value.
+      const rawMessage =
+        'connect ECONNREFUSED ws://user:pw@127.0.0.1:5181/ws?token=synthetic-sentinel-0f9e8d7c';
+      const raw = new BackendError({
+        code: 'TRANSPORT_ERROR',
+        message: rawMessage,
+        data: { socketPath: '/tmp/synthetic-sentinel.sock' },
+      });
+      mocks.backendRequest.mockRejectedValue(raw);
+      const dispatched = await runPoll();
+      expect(dispatched).toEqual([
+        systemStatusFailure(
+          { kind: 'status-check-failed', failedAt: '2026-09-05T10:00:00.000Z' },
+          generation,
+        ),
+      ]);
+      const serialized = JSON.stringify(dispatched);
+      expect(serialized).not.toContain(rawMessage);
+      expect(serialized).not.toContain('synthetic-sentinel');
+      expect(serialized).not.toContain(raw.code);
+      expect(serialized).not.toContain(raw.name);
+    });
+
+    it('does not dispatch a separate heartbeat degradation — the failure action carries it', async () => {
+      mocks.backendRequest.mockRejectedValue(new Error('boom'));
+      const dispatched = await runPoll();
+      expect(
+        dispatched.some((action) => (action as { type?: string }).type === heartbeatFailed.type),
+      ).toBe(false);
+    });
   });
 });

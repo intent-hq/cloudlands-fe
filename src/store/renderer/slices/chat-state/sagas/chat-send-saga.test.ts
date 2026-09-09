@@ -157,7 +157,8 @@ function harness(
     dispatch,
     task,
     setChat: (
-      action: ReturnType<typeof chatLastAttemptedMessageSet> | ReturnType<typeof streamStatusReceived>,
+      action:
+        ReturnType<typeof chatLastAttemptedMessageSet> | ReturnType<typeof streamStatusReceived>,
     ) => {
       chatState = chatStateReducer(chatState, action);
     },

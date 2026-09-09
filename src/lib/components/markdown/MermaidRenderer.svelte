@@ -393,7 +393,7 @@
   .mermaid-error {
     padding: 0.5rem;
     font-size: 0.75rem;
-    color: hsl(var(--destructive));
+    color: hsl(var(--danger));
   }
 
   .error-message {

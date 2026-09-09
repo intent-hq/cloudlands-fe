@@ -202,7 +202,7 @@
   <div
     class="flex items-center gap-1.5 px-2 py-0.5 rounded text-xs whitespace-nowrap group shrink-0 {placementStatus ===
     'failed'
-      ? 'bg-destructive/10 text-error-foreground border border-destructive/40'
+      ? 'bg-danger-background/10 text-danger border border-danger/40'
       : 'bg-muted/70 text-subtle'} {className}"
     in:scale={{ duration: 200, start: 0.9, easing: cubicOut }}
     out:fade={{ duration: 150 }}

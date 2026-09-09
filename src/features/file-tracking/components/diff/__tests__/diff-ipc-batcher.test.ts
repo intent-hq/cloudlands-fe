@@ -168,12 +168,10 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       files: { '/workspace/packages/sub/src/a.ts': 'new a' },
     });
 
-    const promise = batchedGitDiff(
-      'ws-1',
-      false,
-      '/workspace/packages/sub/src/a.ts',
-      { gitRootId: 'root-9', gitRootPath: '/workspace/packages/sub' },
-    );
+    const promise = batchedGitDiff('ws-1', false, '/workspace/packages/sub/src/a.ts', {
+      gitRootId: 'root-9',
+      gitRootPath: '/workspace/packages/sub',
+    });
     await vi.runAllTimersAsync();
 
     await expect(promise).resolves.toMatchObject({ file: 'src/a.ts' });

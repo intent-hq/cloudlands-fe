@@ -156,7 +156,7 @@
           class="type-body flex items-center gap-3 rounded-md px-3 py-2 transition-colors
                  disabled:opacity-50 disabled:cursor-not-allowed
                  {option.destructive
-            ? 'bg-muted text-muted-foreground hover:bg-destructive hover:text-destructive-foreground'
+            ? 'bg-muted text-muted-foreground hover:bg-danger hover:text-danger-background'
             : 'bg-primary/10 text-foreground hover:bg-primary hover:text-primary-foreground'}"
           onclick={() => handleSelectOption(option.id)}
           disabled={isProcessing}

@@ -8,7 +8,6 @@
 
   import { closeAll } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { store as appStore } from '$store/renderer/store';
-
 </script>
 
 <button

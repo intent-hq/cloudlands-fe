@@ -4,7 +4,9 @@ import { renderTaskBlocksAsReadableMarkdown } from './tiptap-task-block-extensio
 import { normalizeAnchorPositions } from './anchor-normalization';
 import { sanitizeMarkdownHTML } from './html-sanitizer';
 import {
+  createWorkspaceFileVersion,
   rewriteIntentFileImageSrcs,
+  stampWorkspaceFileImageVersions,
   workspaceFileImageUrlToIntentFileUrl,
   workspaceFileMediaUrlToIntentFileUrl,
 } from './workspace-file-image';
@@ -12,6 +14,7 @@ import { toPromptToken } from '$lib/services/mentions/format';
 import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
 import type { MarkdownWorkerResponse } from './markdown-worker';
 import { decodeDiffContent } from './diff-patch-utils';
+import { parseFilePathLineSuffix } from '$shared/utils/link-helpers';
 
 const logger = new Logger('MarkdownProcessor');
 const primitivesSerializer = new NotesPrimitivesSerializer();
@@ -464,6 +467,15 @@ export async function processMarkdownToHTML(
     workspaceId?: string;
     /** Render Mermaid and diff fences as visible source instead of TipTap node placeholders */
     renderRichFencesAsCode?: boolean;
+    /**
+     * Cache-busting token appended as `?v=` to rewritten workspace-file image
+     * URLs. Defaults to a fresh token per call so a regenerated file renders
+     * its current bytes. Long-lived callers that re-process the same document
+     * (editors, comments, streaming viewers) should pass one token per
+     * instance (`createWorkspaceFileVersion()` at init) so re-processing keeps
+     * identical image URLs instead of re-fetching every image per update.
+     */
+    workspaceFileVersion?: string;
   } = {},
 ): Promise<string> {
   const {
@@ -474,7 +486,14 @@ export async function processMarkdownToHTML(
     taskBlockRenderMode = 'placeholder',
     workspaceId,
     renderRichFencesAsCode = false,
+    workspaceFileVersion,
   } = options;
+
+  // Applied after the cache so cached HTML stays version-free and reusable.
+  const stampVersions = (html: string): string =>
+    html.includes('workspace-file://')
+      ? stampWorkspaceFileImageVersions(html, workspaceFileVersion ?? createWorkspaceFileVersion())
+      : html;
 
   // Handle empty content
   if (!content || content.trim() === '') {
@@ -502,7 +521,7 @@ export async function processMarkdownToHTML(
   const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}|${workspaceId ?? ''}|${renderRichFencesAsCode}`;
   const cached = getCachedMarkdown(cacheKey);
   if (cached !== null) {
-    return cached;
+    return stampVersions(cached);
   }
 
   try {
@@ -617,7 +636,7 @@ export async function processMarkdownToHTML(
 
     // Cache the result before returning
     setCachedMarkdown(cacheKey, htmlOut);
-    return htmlOut;
+    return stampVersions(htmlOut);
   } catch (error) {
     logger.error('[markdown-processor] Failed to parse markdown:', error as Error);
     // Callers inject the result with {@html}, so the fallback must be sanitized too.
@@ -703,18 +722,19 @@ function injectMentionSpans(html: string): string {
 
   const noteRe = /@note\/([A-Za-z0-9\-_]+)/g;
   const rulesRe = /@\.augment\/rules\/[^\s<>()'\"]+/g;
-  const fileRe = /@\/[^\s<>()'\"]+/g; // '@/absolute/path' until whitespace or delimiter
+  const fileRe = /@\/[^\s<>()'\"]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?/g; // '@/absolute/path' until whitespace or delimiter
   // Match @path/to/file.ext (relative paths with at least one slash and a file extension)
-  const relativeFileRe = /@([A-Za-z0-9._-]+\/[^\s<>()'\"]+\.[A-Za-z0-9]+)/g;
+  const relativeFileRe =
+    /@([A-Za-z0-9._-]+\/[^\s<>()'\"]+\.[A-Za-z0-9]+)(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?/g;
   const personaRe = /@auggie\-personality\-[\w\-]+/g;
-  const simpleFileNameRe = /@([A-Za-z0-9._-]+\.[A-Za-z0-9._-]+)/g;
+  const simpleFileNameRe = /@([A-Za-z0-9._-]+\.[A-Za-z0-9._-]+)(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?/g;
   // Heuristic: bare filenames (no leading @) for common file extensions, outside code/pre
   const bareFileNameRe =
-    /\b([A-Za-z0-9][A-Za-z0-9._-]+\.(?:json|js|ts|tsx|jsx|md|mdx|yaml|yml|svelte|html|css|scss|py|go|rs|rb|java|kt|swift|m|mm|hpp|h|hh|c|cc|cpp|sh|toml|lock|ini|conf|txt|csv|sql))\b/g;
+    /\b([A-Za-z0-9][A-Za-z0-9._-]+\.(?:json|js|ts|tsx|jsx|md|mdx|yaml|yml|svelte|html|css|scss|py|go|rs|rb|java|kt|swift|m|mm|hpp|h|hh|c|cc|cpp|sh|toml|lock|ini|conf|txt|csv|sql))\b(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?/g;
   // Heuristic: bare paths (dir/subdir/file.ext without @ prefix) for common file extensions
   // Must have at least one slash to distinguish from bare filenames
   const barePathRe =
-    /\b([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+\.(?:json|js|ts|tsx|jsx|md|mdx|yaml|yml|svelte|html|css|scss|py|go|rs|rb|java|kt|swift|m|mm|hpp|h|hh|c|cc|cpp|sh|toml|lock|ini|conf|txt|csv|sql))\b/g;
+    /\b([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+\.(?:json|js|ts|tsx|jsx|md|mdx|yaml|yml|svelte|html|css|scss|py|go|rs|rb|java|kt|swift|m|mm|hpp|h|hh|c|cc|cpp|sh|toml|lock|ini|conf|txt|csv|sql))\b(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?/g;
   // Match absolute paths to workspace notes: /path/intent/xxx/.workspace/notes/yyy.json (also legacy .workspaces)
   const workspaceNotePathRe =
     /\/[^\s<>()'\"]*(?:intent|\.workspaces)\/[a-f0-9-]+\/\.workspace\/notes\/([a-f0-9-]+)\.json/g;
@@ -806,51 +826,74 @@ function injectMentionSpans(html: string): string {
         const label = path.split('/').pop() || path;
         frag.appendChild(createMentionSpan({ type: 'rule', id: path, label, meta: { path } }));
       } else if (m.type === 'file') {
-        const fullPath = m.value.slice(1);
+        const target = m.value.slice(1);
+        const { path: fullPath, line } = parseFilePathLineSuffix(target);
         // Use full path as label so users can distinguish files with the same name
         frag.appendChild(
-          createMentionSpan({ type: 'file', id: fullPath, label: fullPath, meta: { fullPath } }),
+          createMentionSpan({
+            type: 'file',
+            id: fullPath,
+            label: target,
+            meta: { fullPath, ...(line !== undefined ? { line } : {}) },
+          }),
         );
       } else if (m.type === 'relative-file') {
         // Handle @path/to/file.ext (relative paths)
         // Also clean up any stray @ symbols in path segments (from previous corruption)
-        const rawPath = m.groups?.[0] || m.value.slice(1);
-        const fullPath = rawPath
+        const target = m.value
+          .slice(1)
           .split('/')
           .map((seg) => (seg.startsWith('@') ? seg.slice(1) : seg))
           .join('/');
+        const { path: fullPath, line } = parseFilePathLineSuffix(target);
         // Use full path as label so users can distinguish files with the same name
         frag.appendChild(
-          createMentionSpan({ type: 'file', id: fullPath, label: fullPath, meta: { fullPath } }),
+          createMentionSpan({
+            type: 'file',
+            id: fullPath,
+            label: target,
+            meta: { fullPath, ...(line !== undefined ? { line } : {}) },
+          }),
         );
       } else if (m.type === 'simple-file') {
         // Strip any leading @ from the filename (cleanup from previous corruption)
-        const rawFilename = m.groups?.[0] || m.value.slice(1);
-        const filename = rawFilename.startsWith('@') ? rawFilename.slice(1) : rawFilename;
+        const target = m.value.slice(1);
+        const { path: filename, line } = parseFilePathLineSuffix(target);
         frag.appendChild(
-          createMentionSpan({ type: 'file', id: filename, label: filename, meta: { filename } }),
+          createMentionSpan({
+            type: 'file',
+            id: filename,
+            label: target,
+            meta: { filename, ...(line !== undefined ? { line } : {}) },
+          }),
         );
       } else if (m.type === 'bare-file') {
         // Strip any leading @ from the filename (cleanup from previous corruption)
-        const rawFilename = m.groups?.[0] || '';
-        const filename = rawFilename.startsWith('@') ? rawFilename.slice(1) : rawFilename;
+        const target = m.value;
+        const { path: filename, line } = parseFilePathLineSuffix(target);
         if (filename) {
           frag.appendChild(
-            createMentionSpan({ type: 'file', id: filename, label: filename, meta: { filename } }),
+            createMentionSpan({
+              type: 'file',
+              id: filename,
+              label: target,
+              meta: { filename, ...(line !== undefined ? { line } : {}) },
+            }),
           );
         } else {
           pushText(m.end);
         }
       } else if (m.type === 'bare-path') {
         // Handle bare paths like dir/subdir/file.ext (paths without @ prefix)
-        const fullPath = m.groups?.[0] || m.value;
+        const target = m.value;
+        const { path: fullPath, line } = parseFilePathLineSuffix(target);
         if (fullPath) {
           frag.appendChild(
             createMentionSpan({
               type: 'file',
               id: fullPath,
-              label: fullPath,
-              meta: { fullPath },
+              label: target,
+              meta: { fullPath, ...(line !== undefined ? { line } : {}) },
             }),
           );
         } else {

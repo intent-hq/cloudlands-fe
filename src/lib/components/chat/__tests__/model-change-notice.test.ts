@@ -6,17 +6,13 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
-import {
-  formatModelChangeLabel,
-  getModelChangeNotice,
-} from '../model-change-notice';
+import { formatModelChangeLabel, getModelChangeNotice } from '../model-change-notice';
 
 let mockStoreState: Record<string, unknown> = {};
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ state: () => mockStoreState });
 });
 

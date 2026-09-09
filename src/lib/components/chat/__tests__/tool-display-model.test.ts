@@ -147,7 +147,9 @@ describe('compact tool display model', () => {
 
   it('preserves newlines when sanitizing multiline tool text', () => {
     const command = 'cd repo && \\\n  API_KEY=abc123 pnpm test\n';
-    expect(sanitizeMultilineToolText(command)).toBe('cd repo && \\\n  API_KEY=[redacted] pnpm test');
+    expect(sanitizeMultilineToolText(command)).toBe(
+      'cd repo && \\\n  API_KEY=[redacted] pnpm test',
+    );
   });
 
   it('redacts secrets while preserving non-secret provenance', () => {

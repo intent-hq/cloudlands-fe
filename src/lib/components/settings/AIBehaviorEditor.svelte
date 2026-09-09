@@ -36,12 +36,7 @@
   import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
-  import DefaultAgentModelSettings from './DefaultAgentModelSettings.svelte';
   import SpecialistModelOptions from './SpecialistModelOptions.svelte';
-  import {
-    hasExplicitModelPin,
-    buildResetToInheritPayloads,
-  } from './utils/reset-specialists-to-inherit';
   import { isRedundantBuiltInOverride } from './utils/builtin-override-redundancy';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
@@ -84,10 +79,6 @@
     const { providerId, modelId } = splitLegacyCompoundId(compoundModelId);
     return { providerId: providerId ?? $defaultProviderId$, modelId };
   }
-
-  // Show the reset-all button when any specialist pins an explicit
-  // frontmatter model instead of inheriting.
-  const anySpecialistHasExplicitModel = $derived(hasExplicitModelPin($fileSpecialists$));
 
   function getCurrentWorkspacePath(): string | undefined {
     if (!routeWorkspaceId) return undefined;
@@ -672,28 +663,6 @@
     newPrompt = m.settings_aiBehavior_newPromptTemplate();
     onDiscard?.();
   }
-
-  /**
-   * Clear the explicit model pin from every file specialist that
-   * has one so they all inherit the global default. Built-ins without an
-   * override file already inherit — no file is created for them. Built-in
-   * overrides that become identical to the bundled defaults once the pin
-   * is cleared are deleted instead of rewritten (monorepo#1450).
-   */
-  function resetAllSpecialistsToInherit() {
-    const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
-    const { saves, deletes } = buildResetToInheritPayloads(
-      $fileSpecialists$,
-      bundledSpecialists,
-      getCurrentWorkspacePath,
-    );
-    for (const payload of saves) {
-      appStore.dispatch(saveFileSpecialist(payload));
-    }
-    for (const ref of deletes) {
-      appStore.dispatch(deleteFileSpecialistAction(ref));
-    }
-  }
 </script>
 
 <div
@@ -706,29 +675,16 @@
   {#if activeView.type === 'system-prompt'}
     <div
       data-testid="all-agents-editor-layout"
-      class="grid min-w-0 grid-cols-1 gap-8 xl:h-full xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] xl:items-stretch"
+      class="flex min-w-0 flex-col gap-4 xl:h-full xl:min-h-0 xl:flex-1"
     >
+      <p class="text-sm text-muted-foreground">
+        {m.settings_agentRules_description()}
+      </p>
       <div
         data-testid="all-agents-prompt-column"
-        class="min-h-0 min-w-0 h-full xl:flex xl:flex-col"
+        class="min-h-0 min-w-0 w-full xl:flex xl:flex-1 xl:flex-col"
       >
         <AgentRulesEditor class="xl:min-h-0 xl:flex-1" />
-      </div>
-
-      <div data-testid="all-agents-defaults-column" class="flex min-w-0 flex-col gap-6">
-        <p class="text-sm text-muted-foreground">
-          {m.settings_agentRules_description()}
-        </p>
-        <DefaultAgentModelSettings testId="all-agents-default-model-row" />
-        {#if anySpecialistHasExplicitModel}
-          <button
-            type="button"
-            onclick={resetAllSpecialistsToInherit}
-            class="self-start text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          >
-            {m.settings_aiBehavior_resetAllSpecialists()}
-          </button>
-        {/if}
       </div>
     </div>
 
@@ -890,7 +846,7 @@
             <button
               type="button"
               onclick={deleteSpecialist}
-              class="text-xs text-muted-foreground hover:text-error-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
+              class="text-xs text-muted-foreground hover:text-danger transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <Fa icon={faTrash} class="w-3 h-3" />
               {m.settings_aiBehavior_deleteSpecialist()}
@@ -921,11 +877,11 @@
             placeholder={m.settings_aiBehavior_newPrompt_placeholder()}
             class="min-h-72 w-full grow resize-none rounded-lg border border-border bg-background p-3 text-sm
               focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 xl:min-h-0
-              {newPromptIsOverLimit ? 'border-destructive' : ''}"></textarea>
+              {newPromptIsOverLimit ? 'border-danger' : ''}"></textarea>
           {#if newPromptIsApproachingLimit || newPromptIsOverLimit}
             <div
               class="flex shrink-0 items-center justify-end text-xs {newPromptIsOverLimit
-                ? 'text-destructive'
+                ? 'text-danger'
                 : 'text-warning'}"
             >
               <span>

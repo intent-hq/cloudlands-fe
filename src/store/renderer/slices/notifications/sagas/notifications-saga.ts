@@ -6,6 +6,7 @@ import { handleNotificationNavigate } from '$features/notifications/notification
 import { playNotificationSoundPerSettings } from '$features/notifications/notification-sound-gate';
 import { buildNotificationContent } from '$features/notifications/utils/notification-content';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { readSetting } from '$lib/client/live/live-settings-client';
 import { isElectron } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { getPlatform } from '$lib/utils/platform-capabilities';
@@ -153,11 +154,11 @@ function* handleWebIdle(event: AgentIdleEvent, activeWorkspaceId: string | null)
     let soundOnlyWhenUnfocused = fallbackSoundOnly ?? true;
     try {
       const [enabledResult, soundResult] = yield* all([
-        call(backendRequest, 'settings.get', { path: 'notifications.enabled' }),
-        call(backendRequest, 'settings.get', { path: 'notifications.soundOnlyWhenUnfocused' }),
+        call(readSetting, 'notifications.enabled'),
+        call(readSetting, 'notifications.soundOnlyWhenUnfocused'),
       ]);
-      const enabledValue = (enabledResult as { value?: unknown } | null)?.value;
-      const soundValue = (soundResult as { value?: unknown } | null)?.value;
+      const enabledValue = enabledResult?.value;
+      const soundValue = soundResult?.value;
       if (typeof enabledValue === 'boolean') enabled = enabledValue;
       if (typeof soundValue === 'boolean') soundOnlyWhenUnfocused = soundValue;
     } catch (error) {

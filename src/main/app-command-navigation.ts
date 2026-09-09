@@ -27,9 +27,7 @@ export type AppCommandHistoryDirection = 'back' | 'forward';
  * Map an `app-command` command name to a history direction.
  * Returns null for every command other than the two browser history ones.
  */
-export function historyDirectionForAppCommand(
-  command: string,
-): AppCommandHistoryDirection | null {
+export function historyDirectionForAppCommand(command: string): AppCommandHistoryDirection | null {
   if (command === 'browser-backward') return 'back';
   if (command === 'browser-forward') return 'forward';
   return null;

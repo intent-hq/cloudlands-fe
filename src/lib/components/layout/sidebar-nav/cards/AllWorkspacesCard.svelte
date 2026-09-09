@@ -18,7 +18,6 @@
   import Header from '$lib/components/ui/Header.svelte';
   import Fa from 'svelte-fa';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
-  import { formatInteger } from '$lib/i18n/format';
 
   import {
     selectPinnedWorkspaceIds,
@@ -650,9 +649,6 @@
                     : '-rotate-90'}"
                 />
                 <Header size={4} class="min-w-0 flex-1 truncate">{group.label}</Header>
-                <span class="type-caption shrink-0 text-muted-foreground">
-                  {formatInteger(group.workspaces.length)}
-                </span>
               </button>
             </div>
             <div id={`status-group-${group.id}`} hidden={!isExpanded}>

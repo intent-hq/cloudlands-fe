@@ -123,7 +123,7 @@
       >
       <div>
         <Checkbox required ariaLabel="Required checkbox" ariaDescribedby="checkbox-error" />
-        <p id="checkbox-error" class="type-caption text-error-foreground">Selection required</p>
+        <p id="checkbox-error" class="type-caption text-danger">Selection required</p>
       </div>
     </div>
   {:else if componentId === 'switch'}
@@ -137,7 +137,7 @@
       >
       <div>
         <Switch required ariaLabel="Required switch" ariaDescribedby="switch-error" />
-        <p id="switch-error" class="type-caption text-error-foreground">Setting required</p>
+        <p id="switch-error" class="type-caption text-danger">Setting required</p>
       </div>
     </div>
   {:else if componentId === 'toggle'}

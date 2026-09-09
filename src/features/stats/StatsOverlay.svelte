@@ -199,7 +199,9 @@
                   {/if}
                 </button>
               {:else}
-                <div class="px-[9px] py-1.5 text-xs stats-muted">{m.stats_overlay_noData_label()}</div>
+                <div class="px-[9px] py-1.5 text-xs stats-muted">
+                  {m.stats_overlay_noData_label()}
+                </div>
               {/each}
             </div>
           {/if}
@@ -250,7 +252,8 @@
     onclick={(event) => exportCard(event.currentTarget, card)}
     aria-label={m.stats_overlay_exportCard_ariaLabel({ card })}
   >
-    <Fa icon={faDownload} size={11} /> {m.stats_overlay_png_label()}
+    <Fa icon={faDownload} size={11} />
+    {m.stats_overlay_png_label()}
   </button>
 {/snippet}
 

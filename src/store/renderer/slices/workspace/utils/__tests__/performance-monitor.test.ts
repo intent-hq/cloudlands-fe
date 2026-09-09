@@ -27,7 +27,10 @@ describe('PerformanceMonitor', () => {
 
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
       const id = ++nextRafId;
-      rafTimers.set(id, setTimeout(() => callback(performance.now()), 16));
+      rafTimers.set(
+        id,
+        setTimeout(() => callback(performance.now()), 16),
+      );
       return id;
     });
     vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {

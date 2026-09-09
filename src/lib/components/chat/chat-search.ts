@@ -14,10 +14,7 @@ interface ChatSearchBlock {
   disclosurePath: string[];
   text: string;
 }
-import {
-  normalizeResponseGroups,
-  shouldRenderResponseGroupInline,
-} from './response-group-blocks';
+import { normalizeResponseGroups, shouldRenderResponseGroupInline } from './response-group-blocks';
 import {
   classifyToolResults,
   getStandaloneToolResultPresentation,

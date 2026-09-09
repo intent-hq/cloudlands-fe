@@ -34,10 +34,16 @@ describe('sentryAuthSaga', () => {
 
   it('connects with exact arguments and strips wire-only project fields', async () => {
     mocks.saveConfig.mockResolvedValue({ success: true, organizationName: 'Acme Inc' });
-    mocks.fetchProjects.mockResolvedValue([{
-      id: '1', slug: 'web', name: 'Web', platform: 'javascript', isMember: true,
-      dateCreated: 'wire-only',
-    }]);
+    mocks.fetchProjects.mockResolvedValue([
+      {
+        id: '1',
+        slug: 'web',
+        name: 'Web',
+        platform: 'javascript',
+        isMember: true,
+        dateCreated: 'wire-only',
+      },
+    ]);
     const run = harness();
     run.channel.put(connectSentry('acme', 'sentry-test-token'));
     await settle();
@@ -49,9 +55,20 @@ describe('sentryAuthSaga', () => {
       { type: 'sentryAuth/setConnecting', payload: [true] },
       { type: 'sentryAuth/setConnected', payload: { organization: 'acme' } },
       { type: 'sentryAuth/setLoadingProjects', payload: [true] },
-      { type: 'sentryAuth/setProjects', payload: [[{
-        id: '1', slug: 'web', name: 'Web', platform: 'javascript', isMember: true,
-      }]] },
+      {
+        type: 'sentryAuth/setProjects',
+        payload: [
+          [
+            {
+              id: '1',
+              slug: 'web',
+              name: 'Web',
+              platform: 'javascript',
+              isMember: true,
+            },
+          ],
+        ],
+      },
       { type: 'sentryAuth/setLoadingProjects', payload: [false] },
     ]);
     run.task.cancel();
@@ -75,11 +92,14 @@ describe('sentryAuthSaga', () => {
     expect(mocks.getAuthState.mock.calls).toEqual([[]]);
     expect(mocks.logout.mock.calls).toEqual([[]]);
     expect(run.dispatched).toEqual([
-      { type: 'sentryAuth/setAuthState', payload: {
-        isAuthenticated: true,
-        organization: 'acme',
-        error: null,
-      } },
+      {
+        type: 'sentryAuth/setAuthState',
+        payload: {
+          isAuthenticated: true,
+          organization: 'acme',
+          error: null,
+        },
+      },
       { type: 'sentryAuth/setLoggedOut', payload: [] },
     ]);
     run.task.cancel();
@@ -124,7 +144,11 @@ describe('sentryAuthSaga', () => {
   it('runs overlapping connects independently like the middleware', async () => {
     let resolveFirst!: (value: { success: false; error: string }) => void;
     mocks.saveConfig
-      .mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
       .mockResolvedValueOnce({ success: true });
     mocks.fetchProjects.mockResolvedValue([]);
     const run = harness();

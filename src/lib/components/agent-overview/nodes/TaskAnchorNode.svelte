@@ -67,7 +67,7 @@
           <TaskStatusIcon status={node.state} size={16} />
         {/key}
       </span>
-      <span class="task-title min-w-0 line-clamp-2 leading-[1.2]">{node.title}</span>
+      <span class="task-title min-w-0 line-clamp-2">{node.title}</span>
     </span>
     {#if focusState === 'focused'}
       <span class="node-meta">
@@ -102,6 +102,7 @@
   }
   .task-title {
     font-size: clamp(17px, calc(17px / var(--zoom)), 40px);
+    line-height: 1.2;
     paint-order: stroke fill;
     -webkit-text-stroke: calc(2px / var(--zoom)) var(--color-background);
   }
@@ -127,7 +128,7 @@
     background: var(--color-warning);
   }
   .task-anchor[data-task-state='blocked'] .task-status-dot {
-    background: var(--color-destructive);
+    background: var(--color-danger);
   }
   .task-anchor[data-task-state='in_progress'] .task-status-dot {
     background: var(--color-info);

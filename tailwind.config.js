@@ -18,11 +18,8 @@ export default {
           DEFAULT: 'hsl(var(--secondary) / <alpha-value>)',
           foreground: 'hsl(var(--secondary-foreground) / <alpha-value>)',
         },
-        destructive: {
-          DEFAULT: 'hsl(var(--destructive) / <alpha-value>)',
-          foreground: 'hsl(var(--destructive-foreground) / <alpha-value>)',
-        },
-        'error-foreground': 'hsl(var(--error-foreground) / <alpha-value>)',
+        danger: 'hsl(var(--danger) / <alpha-value>)',
+        'danger-background': 'hsl(var(--danger-background) / <alpha-value>)',
         muted: {
           DEFAULT: 'hsl(var(--muted) / <alpha-value>)',
           foreground: 'hsl(var(--muted-foreground) / <alpha-value>)',

@@ -1,11 +1,8 @@
-import { store } from "../../store";
-import {
-  getItems,
-  type Collection,
-} from "@augmentcode/themis/utils/collections/collection-utils";
-import { selectIsDaemonLocal } from "../daemon-health/daemon-health-selectors";
-import { selectIsWorkspaceHostLocal } from "../workspace/workspace-selectors";
-import type { InstalledEditor, OpenAction } from "./external-editors-slice";
+import { store } from '../../store';
+import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { selectIsDaemonLocal } from '../daemon-health/daemon-health-selectors';
+import { selectIsWorkspaceHostLocal } from '../workspace/workspace-selectors';
+import type { InstalledEditor, OpenAction } from './external-editors-slice';
 
 /** Select the selected open action */
 export const selectOpenAction = store.createSelector((state): OpenAction => {
@@ -14,37 +11,33 @@ export const selectOpenAction = store.createSelector((state): OpenAction => {
 
 /** Select installed editors collection */
 const selectInstalledEditorsCollection = store.createSelector(
-  (state): Collection<InstalledEditor, "id"> => {
+  (state): Collection<InstalledEditor, 'id'> => {
     return state.externalEditors.editors;
-  }
+  },
 );
 
 /** Select all installed editors */
-export const selectInstalledEditors = store.createSelector(
-  (state): InstalledEditor[] => {
-    const editors = getItems(selectInstalledEditorsCollection.select(state));
-    const order = state.externalEditors.editorOrder ?? [];
-    if (!order.length) return editors;
-    const byId = new Map(editors.map((editor) => [editor.id, editor]));
-    const ordered = order.flatMap((id) => {
-      const editor = byId.get(id);
-      return editor ? [editor] : [];
-    });
-    const orderedIds = new Set(order);
-    return [...ordered, ...editors.filter(({ id }) => !orderedIds.has(id))];
-  }
-);
+export const selectInstalledEditors = store.createSelector((state): InstalledEditor[] => {
+  const editors = getItems(selectInstalledEditorsCollection.select(state));
+  const order = state.externalEditors.editorOrder ?? [];
+  if (!order.length) return editors;
+  const byId = new Map(editors.map((editor) => [editor.id, editor]));
+  const ordered = order.flatMap((id) => {
+    const editor = byId.get(id);
+    return editor ? [editor] : [];
+  });
+  const orderedIds = new Set(order);
+  return [...ordered, ...editors.filter(({ id }) => !orderedIds.has(id))];
+});
 
 export const selectEditorOrder = store.createSelector(
   (state): string[] => state.externalEditors.editorOrder ?? [],
 );
 
 /** Select loading state */
-export const selectInstalledEditorsLoading = store.createSelector(
-  (state): boolean => {
-    return state.externalEditors.loading;
-  }
-);
+export const selectInstalledEditorsLoading = store.createSelector((state): boolean => {
+  return state.externalEditors.loading;
+});
 
 /** Select the last fetched timestamp */
 export const selectLastFetched = store.createSelector((state): number => {

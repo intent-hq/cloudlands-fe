@@ -144,7 +144,7 @@ const customScenario = createCustomScenario(
   {
     description: 'Custom test scenario',
     timeout: 5000,
-  }
+  },
 );
 ```
 

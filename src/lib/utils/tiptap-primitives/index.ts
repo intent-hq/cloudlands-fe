@@ -16,5 +16,3 @@ export function decodeBase64Unicode(base64: string): string {
 }
 
 // Helper to get all node extensions
-
-

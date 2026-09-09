@@ -429,6 +429,8 @@ jobs:
         run: pnpm run generate:ipc-channels
       - name: Generate i18n messages
         run: pnpm run generate:i18n
+      - name: Prettier check
+        run: pnpm run format:check
       - name: Svelte check
         run: pnpm run check
       - name: Type check (renderer)
@@ -991,7 +993,17 @@ jobs:
     # naturally — a red fail-safe backstop even if the close workflow is
     # disabled, delayed, or fails.
     if: always()
-    needs: [release-fast-path, pr-title, conflict-markers, checks, build-web, test, test-integration, test-ct]
+    needs:
+      [
+        release-fast-path,
+        pr-title,
+        conflict-markers,
+        checks,
+        build-web,
+        test,
+        test-integration,
+        test-ct,
+      ]
     steps:
       - name: Check results
         env:

@@ -56,7 +56,7 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
   },
   {
     pattern:
-      /panel-layout-slice\.ts#(?:initializeLayout|openTab|openTabInAdjacentOrSplit|openTabInRightmostColumn|closeTab|closeActiveTab|reopenClosedPanelColumn|reopenClosedTab|setActiveTab|moveTabToPanel|moveTabToSplit|moveTabToSplitLevel|closeOtherTabs|closeTabsToRight|closeAllTabs|closeAllOthersEverywhere|splitPanel|closePanel|resetLayout|goBack|goForward)$/,
+      /panel-layout-slice\.ts#(?:initializeLayout|openTab|openTabInAdjacentOrSplit|openTabInRightmostColumn|closeTab|closeActiveTab|reopenClosedPanelColumn|reopenClosedTab|setActiveTab|activateVisibleTab|moveTabToPanel|moveTabToSplit|moveTabToSplitLevel|closeOtherTabs|closeTabsToRight|closeAllTabs|closeAllOthersEverywhere|splitPanel|closePanel|resetLayout|goBack|goForward)$/,
     rationale:
       'layout persistence, delayed history, and unread boundaries intentionally observe the same actions',
   },
@@ -68,6 +68,10 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
   {
     pattern: /workspace-slice\.ts#(?:setWorkspaceEntity|setWorkspaceHasLoaded)$/,
     rationale: 'key-pin persistence and deferred first-open layout seeding are independent',
+  },
+  {
+    pattern: /workspace-slice\.ts#removeWorkspaceEntity$/,
+    rationale: 'key-pin persistence and browser-client resolution lane teardown are independent',
   },
   {
     pattern: /user-preferences-slice\.ts#setPanelColumnCount$/,

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { derived, get, readable, writable } from 'svelte/store';
 
 const mockModelState = vi.hoisted(() => ({
@@ -198,7 +199,12 @@ const mockAgentSession$ = writable<
 >(undefined);
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
-  selectEnabledProviderIds: () => enabledProviderIds$,
+  selectModelFetchProviderIds: () =>
+    derived(
+      [hasCheckedOnce$, enabledProviderIds$, availableEnabledProviderIds$],
+      ([checked, enabled, available]) => (checked ? available : enabled),
+    ),
+  selectIsProviderModelAccessAllowed: () => readable(true),
   selectAvailableEnabledProviderIds: () => availableEnabledProviderIds$,
 }));
 
@@ -781,6 +787,45 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(applyReasoningEffortMock).not.toHaveBeenCalled();
   });
 
+  it('ignores a second effort commit while the first is in flight without disabling the trigger', async () => {
+    let resolveChange!: (applied: boolean) => void;
+    const onReasoningChange = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveChange = resolve;
+        }),
+    );
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        showReasoning: true,
+        reasoningEffort: 'medium',
+        onReasoningChange,
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    const selectTrigger = (await screen.findByTestId('effort-picker-trigger')) as HTMLButtonElement;
+    await waitFor(() => expect(selectTrigger.disabled).toBe(false));
+    await selectEffort(await openEffortSelect(), 'High');
+    await waitFor(() => expect(onReasoningChange).toHaveBeenCalledWith('high'));
+
+    // The in-flight window is announced, not enforced through the HTML
+    // `disabled` attribute, so the focused trigger keeps focus (intent#4159).
+    await waitFor(() => expect(selectTrigger.getAttribute('aria-busy')).toBe('true'));
+    expect(selectTrigger.disabled).toBe(false);
+
+    await selectEffort(await openEffortSelect(), 'Max');
+    await waitFor(() => expect(selectTrigger.textContent?.trim()).toBe('Medium'));
+    expect(onReasoningChange).toHaveBeenCalledTimes(1);
+
+    resolveChange(true);
+    await waitFor(() => expect(selectTrigger.hasAttribute('aria-busy')).toBe(false));
+    expect(onReasoningChange).toHaveBeenCalledTimes(1);
+  });
+
   it('displays an unsupported controlled effort as Auto without mutating it', async () => {
     const onReasoningChange = vi.fn();
     render(ModelPicker, {
@@ -835,30 +880,6 @@ describe('ModelPicker combined reasoning mode', () => {
 
     await fireEvent.keyDown(selectTrigger, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
-  });
-
-  it('keeps the chat popover height stable while allowing the model list to scroll', async () => {
-    render(ModelPicker, {
-      props: {
-        selectedModel: 'codex:gpt-5.6-sol',
-        agentId: 'agent-1',
-        workspaceId: 'ws-1',
-        showReasoning: true,
-        portal: false,
-      },
-    });
-
-    await fireEvent.click(screen.getByRole('button'));
-
-    const popover = screen.getByRole('listbox');
-    expect(popover.className).toContain('w-85');
-    expect(popover.className).toContain('min-h-90');
-    expect(popover.className).toContain('max-h-90');
-    expect(popover.className).not.toContain(' h-[min(');
-    expect(popover.querySelector('[data-scroll-container]')?.className).toContain('flex-1');
-    expect(popover.querySelector('[data-scroll-container]')?.className).toContain(
-      'overflow-y-auto',
-    );
   });
 
   it('closes the open menu when the trigger is clicked again', async () => {
@@ -1245,6 +1266,20 @@ describe('ModelPicker multi-provider mode', () => {
       expect(getModelsForProvider).toHaveBeenCalledWith('auggie');
       expect(getModelsForProvider).toHaveBeenCalledWith('claude-code');
     });
+  });
+
+  it('cancels the debounced provider fetch when unmounted', async () => {
+    vi.useFakeTimers();
+    try {
+      const view = render(ModelPicker, { props: { selectedModel: 'gpt5.4' } });
+      await tick();
+      view.unmount();
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(getModelsForProviderForLoadingState).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('renders the active provider models while another provider is still loading', async () => {
@@ -3073,6 +3108,23 @@ describe('ModelPicker specialist inherit state (default-option plumbing)', () =>
 });
 
 describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
+  it('uses live Antigravity labels and preserves exact compound ids without effort controls', async () => {
+    enabledProviderIds$.set(['antigravity']);
+    activeProviderId$.set('antigravity');
+    const model = { value: 'antigravity:gemini-3.7-flash-high', label: 'Gemini 3.7 Flash (High)' };
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models: [model] });
+    const onModelChange = vi.fn();
+    render(ModelPicker, { props: { selectedModel: undefined, onModelChange, portal: false } });
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Gemini 3.7 Flash \(High\)/ }));
+    await waitFor(() =>
+      expect(onModelChange).toHaveBeenCalledWith('antigravity:gemini-3.7-flash-high', {
+        providerId: 'antigravity',
+        modelId: 'gemini-3.7-flash-high',
+      }),
+    );
+    expect(screen.queryByRole('slider')).toBeNull();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mockModelState.selectedModel = 'sonnet4.6';

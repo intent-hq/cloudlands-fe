@@ -372,7 +372,8 @@
       tooltip={m.agentOverview_zoom_hint_tooltip()}
       onclick={() => requestZoom('reset')}
     >
-      <span class="text-[10px] tabular-nums" aria-live="polite">{formatInteger(zoomPercent)}%</span>
+      <span class="zoom-percent tabular-nums" aria-live="polite">{formatInteger(zoomPercent)}%</span
+      >
     </Button>
     <Button
       size="icon-lg"
@@ -443,6 +444,9 @@
   .stats-pill button[aria-pressed='false'] {
     background: var(--color-muted);
     color: var(--color-foreground);
+  }
+  .zoom-percent {
+    font-size: 10px;
   }
   @container agent-overview (max-width: 559px) {
     .desktop-toolbar,

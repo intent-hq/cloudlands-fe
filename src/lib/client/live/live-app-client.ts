@@ -13,33 +13,35 @@
  * `sentry.*`, PROTOCOL §5.27–5.29); `scripts` (`script.*`, PROTOCOL §5.8);
  * `setupScripts` (`workspace.*SetupScript` / `detectProjectType`, PROTOCOL §5.25);
  * `events` (`event.query`, PROTOCOL §5.10); `models` (`models.list`, PROTOCOL §5.30);
- * `skills` (`skill.list`, PROTOCOL §5.34); `system`, `browser`, `chat` (INT-14).
+ * `skills` (`skill.list`, PROTOCOL §5.34); `system`, `browser`, `chat` (INT-14);
+ * `clients` (`client.list` + own-clientId hello probe, PROTOCOL §5.17 / REV-2).
  */
-import type { AppClient } from "../app-client";
-import { LiveAgentsClient } from "./live-agents-client";
-import { LiveBrowserClient } from "./live-browser-client";
-import { LiveChatClient } from "./live-chat-client";
-import { LiveCommentsClient } from "./live-comments-client";
-import { LiveDraftsClient } from "./live-drafts-client";
-import { LiveEventsClient } from "./live-events-client";
-import { LiveFilesClient } from "./live-files-client";
-import { LiveGitClient } from "./live-git-client";
-import { LiveIntegrationsClient } from "./live-integrations-client";
-import { LiveModelsClient } from "./live-models-client";
-import { LiveNotesClient } from "./live-notes-client";
-import { LiveProvidersClient } from "./live-providers-client";
-import { LiveScriptsClient } from "./live-scripts-client";
-import { LiveSettingsClient } from "./live-settings-client";
-import { LiveSetupScriptsClient } from "./live-setup-scripts-client";
-import { LiveSkillsClient } from "./live-skills-client";
-import { LiveSpecialistsClient } from "./live-specialists-client";
-import { LiveStatsClient } from "./live-stats-client";
-import { LiveVoiceClient } from "./live-voice-client";
-import { LiveSystemClient } from "./live-system-client";
-import { LiveServerClient } from "./live-server-client";
-import { LiveTasksClient } from "./live-tasks-client";
-import { LiveTerminalsClient } from "./live-terminals-client";
-import { LiveWorkspacesClient } from "./live-workspaces-client";
+import type { AppClient } from '../app-client';
+import { LiveAgentsClient } from './live-agents-client';
+import { LiveBrowserClient } from './live-browser-client';
+import { LiveChatClient } from './live-chat-client';
+import { LiveClientsClient } from './live-clients-client';
+import { LiveCommentsClient } from './live-comments-client';
+import { LiveDraftsClient } from './live-drafts-client';
+import { LiveEventsClient } from './live-events-client';
+import { LiveFilesClient } from './live-files-client';
+import { LiveGitClient } from './live-git-client';
+import { LiveIntegrationsClient } from './live-integrations-client';
+import { LiveModelsClient } from './live-models-client';
+import { LiveNotesClient } from './live-notes-client';
+import { LiveProvidersClient } from './live-providers-client';
+import { LiveScriptsClient } from './live-scripts-client';
+import { LiveSettingsClient } from './live-settings-client';
+import { LiveSetupScriptsClient } from './live-setup-scripts-client';
+import { LiveSkillsClient } from './live-skills-client';
+import { LiveSpecialistsClient } from './live-specialists-client';
+import { LiveStatsClient } from './live-stats-client';
+import { LiveVoiceClient } from './live-voice-client';
+import { LiveSystemClient } from './live-system-client';
+import { LiveServerClient } from './live-server-client';
+import { LiveTasksClient } from './live-tasks-client';
+import { LiveTerminalsClient } from './live-terminals-client';
+import { LiveWorkspacesClient } from './live-workspaces-client';
 
 export class LiveAppClient implements AppClient {
   // All domains are now live.
@@ -68,4 +70,5 @@ export class LiveAppClient implements AppClient {
   readonly system = new LiveSystemClient();
   readonly server = new LiveServerClient();
   readonly drafts = new LiveDraftsClient();
+  readonly clients = new LiveClientsClient();
 }

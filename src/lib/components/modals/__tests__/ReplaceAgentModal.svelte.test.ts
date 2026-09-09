@@ -42,7 +42,10 @@ describe('ReplaceAgentModal', () => {
 
     expect(await screen.findByRole('dialog', { name: m.modals_replaceAgent_title() })).toBeTruthy();
     expect(getTextarea().value).toBe(
-      buildReplaceAgentHandoffMessage({ agentName: 'Backend Coordinator', specialist: 'implementor' }),
+      buildReplaceAgentHandoffMessage({
+        agentName: 'Backend Coordinator',
+        specialist: 'implementor',
+      }),
     );
   });
 

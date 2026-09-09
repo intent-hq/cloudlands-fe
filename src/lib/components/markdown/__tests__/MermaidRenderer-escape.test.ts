@@ -3,20 +3,8 @@
  * stack. Migrated from a manual `document` keydown listener; the layer is
  * only registered while the fullscreen overlay is open.
  */
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  afterEach,
-} from 'vitest';
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  cleanup,
-} from '@testing-library/svelte';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 
 vi.mock('mermaid', () => ({
   default: {
@@ -29,8 +17,7 @@ vi.mock('mermaid', () => ({
 vi.mock('@mermaid-js/layout-elk', () => ({ default: [] }));
 
 vi.mock('$store/renderer/slices/theme/theme-selectors', async () => {
-  const { createAppStoreMock } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
   const store = createAppStoreMock({ state: {} });
   return { selectIsDarkTheme: store.createSelector(() => false) };
 });

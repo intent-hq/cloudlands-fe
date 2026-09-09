@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_OUTPUT_CHARS, MAX_OUTPUT_CHUNKS, appendScriptOutput, clearScriptOperations, emptyWorkspaceState, removeScript, restartScriptRequested, scriptOperationFailed, scriptOperationSucceeded, scriptsReducer, setScriptsData, startScriptRequested, stopScriptRequested, updateRuntimeState, upsertScript } from './scripts-slice';
+import {
+  MAX_OUTPUT_CHARS,
+  MAX_OUTPUT_CHUNKS,
+  appendScriptOutput,
+  clearScriptOperations,
+  emptyWorkspaceState,
+  removeScript,
+  restartScriptRequested,
+  scriptOperationFailed,
+  scriptOperationSucceeded,
+  scriptsReducer,
+  setScriptsData,
+  startScriptRequested,
+  stopScriptRequested,
+  updateRuntimeState,
+  upsertScript,
+} from './scripts-slice';
 import type {
   ScriptOutputChunk,
   ScriptRuntimeState,

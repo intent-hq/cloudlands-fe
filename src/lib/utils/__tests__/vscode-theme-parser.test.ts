@@ -5,6 +5,43 @@
 import { describe, it, expect } from 'vitest';
 import { hexToHSL, isHexDark, parseVSCodeTheme, stripJSONC } from '../vscode-theme-parser';
 
+function contrastRatio(first: string, second: string): number {
+  const toRGB = (value: string): [number, number, number] => {
+    const [hue, saturationPercent, lightnessPercent] = value.match(/[\d.]+/g)?.map(Number) ?? [];
+    const saturation = saturationPercent / 100;
+    const lightness = lightnessPercent / 100;
+    const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+    const x = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+    const offset = lightness - chroma / 2;
+    const channels =
+      hue < 60
+        ? [chroma, x, 0]
+        : hue < 120
+          ? [x, chroma, 0]
+          : hue < 180
+            ? [0, chroma, x]
+            : hue < 240
+              ? [0, x, chroma]
+              : hue < 300
+                ? [x, 0, chroma]
+                : [chroma, 0, x];
+    return channels.map((channel) => Math.round((channel + offset) * 255)) as [
+      number,
+      number,
+      number,
+    ];
+  };
+  const luminance = (value: string) => {
+    const channels = toRGB(value).map((channel) => {
+      const normalized = channel / 255;
+      return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  };
+  const [darker, lighter] = [luminance(first), luminance(second)].sort((a, b) => a - b);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 // ── hexToHSL ───────────────────────────────────────────────────────────────
 
 describe('hexToHSL', () => {
@@ -252,9 +289,84 @@ describe('parseVSCodeTheme', () => {
     expect(result.cssVariables['--ring']).toBeDefined();
   });
 
-  it('maps errorForeground to --destructive', () => {
+  it('maps errorForeground to the danger foreground role', () => {
     const result = parseVSCodeTheme(MINIMAL_DARK_THEME);
-    expect(result.cssVariables['--destructive']).toBeDefined();
+    expect(result.cssVariables['--danger']).toBe(
+      hexToHSL(MINIMAL_DARK_THEME.colors.errorForeground),
+    );
+    expect(result.cssVariables['--danger-background']).toBeDefined();
+    expect(result.cssVariables).not.toHaveProperty('--destructive');
+    expect(result.cssVariables).not.toHaveProperty('--destructive-foreground');
+    expect(result.cssVariables).not.toHaveProperty('--error-foreground');
+  });
+
+  it('does not use the secondary button foreground as the danger background', () => {
+    const result = parseVSCodeTheme({
+      type: 'light',
+      colors: {
+        'editor.background': '#ffffff',
+        errorForeground: '#930b0b',
+        'button.secondaryForeground': '#00ff00',
+      },
+    });
+    expect(result.cssVariables['--danger-background']).toBe(hexToHSL('#fde7e7'));
+  });
+
+  it('keeps one danger color readable across mixed dark and light surfaces', () => {
+    const result = parseVSCodeTheme({
+      type: 'dark',
+      colors: {
+        'editor.background': '#000000',
+        'editor.foreground': '#ffffff',
+        'editorWidget.background': '#000000',
+        'dropdown.background': '#ffffff',
+        'sideBar.background': '#ffffff',
+        'tab.inactiveBackground': '#ffffff',
+        errorForeground: '#ff0000',
+        'inputValidation.errorBackground': '#000000',
+      },
+    });
+    const danger = result.cssVariables['--danger'];
+
+    expect(danger.split(' ')[0]).toBe('0');
+    for (const surface of [
+      '--danger-background',
+      '--background',
+      '--card',
+      '--popover',
+      '--muted',
+      '--sidebar',
+    ]) {
+      expect(contrastRatio(danger, result.cssVariables[surface]), surface).toBeGreaterThanOrEqual(
+        4.55,
+      );
+    }
+  });
+
+  it('repairs the danger surface when sparse imported surfaces prevent joint contrast', () => {
+    const result = parseVSCodeTheme({
+      type: 'light',
+      colors: {
+        'editor.background': '#ffffff',
+        'editor.foreground': '#111111',
+        'sideBar.background': '#000000',
+      },
+    });
+    const danger = result.cssVariables['--danger'];
+
+    expect(result.cssVariables['--danger-background']).toBe(result.cssVariables['--background']);
+    for (const surface of [
+      '--danger-background',
+      '--background',
+      '--card',
+      '--popover',
+      '--muted',
+      '--sidebar',
+    ]) {
+      expect(contrastRatio(danger, result.cssVariables[surface]), surface).toBeGreaterThanOrEqual(
+        4.55,
+      );
+    }
   });
 
   it('first match wins for duplicate CSS variable targets', () => {
@@ -277,6 +389,8 @@ describe('parseVSCodeTheme', () => {
     });
     expect(result.cssVariables['--background']).toBe(hexToHSL('#1e1e2e'));
     expect(result.cssVariables['--foreground']).toBeDefined();
+    expect(result.cssVariables['--danger']).toBeDefined();
+    expect(result.cssVariables['--danger-background']).toBeDefined();
     expect(result.cssVariables['--success']).toBeDefined();
     expect(result.cssVariables['--warning']).toBeDefined();
   });

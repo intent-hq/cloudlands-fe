@@ -11,25 +11,27 @@
  * The staged binary is signed by the afterPack hook (scripts/sign-sidecar.js)
  * alongside the intentd sidecar, before the app seal is created.
  */
-const { execFileSync } = require("child_process");
-const fs = require("fs");
-const path = require("path");
+const { execFileSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
-const FE_DIR = path.resolve(__dirname, "..");
-const sourceFile = path.join(FE_DIR, "resources/speech/transcribe.swift");
-const infoPlist = path.join(FE_DIR, "resources/speech/helper-info.plist");
-const destDir = path.join(FE_DIR, "resources/speech-helper");
-const destBin = path.join(destDir, "intent-speech-helper");
+const FE_DIR = path.resolve(__dirname, '..');
+const sourceFile = path.join(FE_DIR, 'resources/speech/transcribe.swift');
+const infoPlist = path.join(FE_DIR, 'resources/speech/helper-info.plist');
+const destDir = path.join(FE_DIR, 'resources/speech-helper');
+const destBin = path.join(destDir, 'intent-speech-helper');
 
-if (process.platform !== "darwin") {
-  console.log("Skipping speech helper build (macOS only).");
+if (process.platform !== 'darwin') {
+  console.log('Skipping speech helper build (macOS only).');
   process.exit(0);
 }
 
 try {
-  execFileSync("xcrun", ["--find", "swiftc"], { stdio: "ignore" });
+  execFileSync('xcrun', ['--find', 'swiftc'], { stdio: 'ignore' });
 } catch {
-  console.warn("Warning: swiftc not found — speech helper not built. OS dictation will be unavailable.");
+  console.warn(
+    'Warning: swiftc not found — speech helper not built. OS dictation will be unavailable.',
+  );
   process.exit(0);
 }
 
@@ -48,28 +50,28 @@ console.log(`Compiling ${sourceFile} -> ${destBin}`);
 // The embedded Info.plist carries NSSpeechRecognitionUsageDescription —
 // SFSpeechRecognizer authorization aborts without it (see helper-info.plist).
 execFileSync(
-  "xcrun",
+  'xcrun',
   [
-    "swiftc",
-    "-O",
-    "-o",
+    'swiftc',
+    '-O',
+    '-o',
     destBin,
     sourceFile,
-    "-Xlinker",
-    "-sectcreate",
-    "-Xlinker",
-    "__TEXT",
-    "-Xlinker",
-    "__info_plist",
-    "-Xlinker",
+    '-Xlinker',
+    '-sectcreate',
+    '-Xlinker',
+    '__TEXT',
+    '-Xlinker',
+    '__info_plist',
+    '-Xlinker',
     infoPlist,
   ],
-  { stdio: "inherit" },
+  { stdio: 'inherit' },
 );
 // Re-sign ad-hoc so the code signature covers the embedded Info.plist
 // (TCC reads the usage description through the signature's plist slot; the
 // default linker-signed signature records "Info.plist entries=0"). Release
 // packaging replaces this with the Developer ID signature in the afterPack
 // hook (scripts/sign-sidecar.js).
-execFileSync("codesign", ["-f", "-s", "-", destBin], { stdio: "inherit" });
-console.log("Speech helper built.");
+execFileSync('codesign', ['-f', '-s', '-', destBin], { stdio: 'inherit' });
+console.log('Speech helper built.');

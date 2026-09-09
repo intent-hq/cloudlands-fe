@@ -7,7 +7,6 @@
   import { selectLineWrapping } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { store as appStore } from '$store/renderer/store';
 
-
   interface Props {
     workspaceId: string;
     noteId: string;
@@ -98,11 +97,7 @@
     if (pendingRawSave === target) pendingRawSave = null;
     if (!target.workspaceId || !target.noteId || target.content === target.lastSavedContent) return;
 
-    const note = selectNoteById.select(
-      appStore.state,
-      target.workspaceId,
-      target.noteId,
-    );
+    const note = selectNoteById.select(appStore.state, target.workspaceId, target.noteId);
     if (!note) return;
 
     if (target.workspaceId === workspaceId && target.noteId === noteId) {

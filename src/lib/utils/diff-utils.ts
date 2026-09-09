@@ -1,5 +1,3 @@
-
-
 /**
  * Convert a unified diff patch string into old and new content strings.
  * This is useful when you have a stored patch and need to reconstruct

@@ -213,13 +213,77 @@ describe('connections-store', () => {
     });
   });
 
+  it('persists device icon choices for remote and local records without syncing the local override', async () => {
+    const store = await import('../connections-store');
+    const remote = await store.add({ ...sampleConn, deviceIcon: 'rocket' });
+    expect(remote).toMatchObject({ detectedDeviceKind: null, deviceIcon: 'rocket' });
+
+    const local = await store.updateMetadata(store.LOCAL_CONNECTION_ID, {
+      label: 'ignored',
+      accent: null,
+      deviceIcon: 'cat',
+    });
+    expect(local).toMatchObject({ detectedDeviceKind: null, deviceIcon: 'cat' });
+    expect((await store.listSyncRecords())[0].deviceIcon).toBe('rocket');
+    expect(JSON.stringify(await store.listSyncRecords())).not.toContain('localDeviceIcon');
+
+    await store.__drainWriteChainForTesting();
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../connections-store');
+    expect((await reloaded.list())[0].deviceIcon).toBe('cat');
+  });
+
+  it('rejects override-only kinds as detected metadata while keeping them valid as icons', async () => {
+    const store = await import('../connections-store');
+    const { ConnectionsAddSchema } = await import('../../../../main/ipc-schemas');
+    const rec = await store.add({ ...sampleConn, deviceIcon: 'robot' });
+    expect(rec.deviceIcon).toBe('robot');
+    expect(ConnectionsAddSchema.safeParse({ ...sampleConn, deviceIcon: 'robot' }).success).toBe(
+      true,
+    );
+    expect(
+      ConnectionsAddSchema.safeParse({ ...sampleConn, detectedDeviceKind: 'robot' }).success,
+    ).toBe(false);
+
+    await expect(
+      store.add({ ...sampleConn, detectedDeviceKind: 'robot' as never }),
+    ).rejects.toThrow(/detected device kind/i);
+    await expect(
+      store.updateMetadata(rec.id, {
+        label: rec.label,
+        accent: rec.accent ?? 'blue',
+        detectedDeviceKind: 'robot' as never,
+      }),
+    ).rejects.toThrow(/detected device kind/i);
+  });
+
+  it('drops override-only detected kinds when hydrating remote and local records', async () => {
+    const store = await import('../connections-store');
+    await store.add({ ...sampleConn, detectedDeviceKind: 'macStudio' });
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    parsed.connections[0].detectedDeviceKind = 'robot';
+    parsed.localDetectedDeviceKind = 'robot';
+    await fs.writeFile(file, JSON.stringify(parsed), 'utf8');
+
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../connections-store');
+    expect(await reloaded.list()).toEqual([
+      expect.objectContaining({ id: reloaded.LOCAL_CONNECTION_ID, detectedDeviceKind: null }),
+      expect.objectContaining({ detectedDeviceKind: null }),
+    ]);
+  });
+
   it('updateMetadata rejects local, unknown, blank-name, and invalid-accent updates', async () => {
     const store = await import('../connections-store');
     const rec = await store.add(sampleConn);
 
     await expect(
       store.updateMetadata(store.LOCAL_CONNECTION_ID, { label: 'Local', accent: 'blue' }),
-    ).rejects.toThrow(/local/i);
+    ).rejects.toThrow('Only deviceIcon can be updated on the local connection');
     await expect(
       store.updateMetadata('missing', { label: 'Missing', accent: 'blue' }),
     ).rejects.toThrow(/unknown/i);
@@ -310,6 +374,28 @@ describe('connections-store', () => {
         expect.objectContaining({ host: '10.0.0.42' }),
       ]),
     );
+  });
+
+  it('keeps a supplied detected kind across an address edit and clears it when omitted', async () => {
+    const store = await import('../connections-store');
+    const original = await store.add({ ...sampleConn, detectedDeviceKind: 'server' });
+
+    const kept = await store.updateMetadata(original.id, {
+      label: original.label,
+      accent: original.accent,
+      host: '10.0.0.42',
+      port: 9443,
+      detectedDeviceKind: 'macStudio',
+    });
+    expect(kept.detectedDeviceKind).toBe('macStudio');
+
+    const cleared = await store.updateMetadata(original.id, {
+      label: original.label,
+      accent: original.accent,
+      host: '10.0.0.43',
+      port: 9443,
+    });
+    expect(cleared.detectedDeviceKind).toBeNull();
   });
 
   it('deduplicates an updated live identity and preserves the edited record as active', async () => {
@@ -455,6 +541,21 @@ describe('connections-store', () => {
 
     // The stored token was replaced.
     expect(await store.getDecryptedToken(original.id)).toBe('fresh-token');
+  });
+
+  it('re-pair keeps a supplied detected kind and clears it only when omitted', async () => {
+    const store = await import('../connections-store');
+    const original = await store.add({ ...sampleConn, detectedDeviceKind: 'server' });
+
+    const detected = await store.add({
+      ...sampleConn,
+      fingerprint: 'DD:EE:FF',
+      detectedDeviceKind: 'macStudio',
+    });
+    expect(detected).toMatchObject({ id: original.id, detectedDeviceKind: 'macStudio' });
+
+    const cleared = await store.add({ ...sampleConn, fingerprint: '11:22:33' });
+    expect(cleared).toMatchObject({ id: original.id, detectedDeviceKind: null });
   });
 
   it('collapses pre-existing host:port duplicates on add (keeps the first, drops the rest)', async () => {
@@ -723,6 +824,37 @@ describe('connections-store', () => {
     const reloaded = await import('../connections-store');
     const remote = (await reloaded.list()).find((c) => c.id === rec.id);
     expect(remote?.hostname).toBe('studio.local');
+  });
+
+  it('setDetectedDeviceKind persists and syncs a clock bump, then clears on fingerprint change', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      const store = await import('../connections-store');
+      const rec = await store.add({ ...sampleConn, deviceIcon: 'dog' });
+      const before = (await store.listSyncRecords())[0].updatedAt;
+
+      expect(await store.setDetectedDeviceKind(rec.id, 'macStudio')).toBe(true);
+      const detected = (await store.listSyncRecords())[0];
+      expect(detected).toMatchObject({ detectedDeviceKind: 'macStudio', deviceIcon: 'dog' });
+      expect(detected.updatedAt).toBeGreaterThan(before);
+      expect(await store.setDetectedDeviceKind(rec.id, 'macStudio')).toBe(false);
+
+      const replaced = await store.replaceSecret(rec.id, 'rotated', 'DD:EE:FF');
+      expect(replaced).toMatchObject({ detectedDeviceKind: null, deviceIcon: 'dog' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('persists the local detected kind without putting the local record in keychain sync', async () => {
+    const store = await import('../connections-store');
+    expect(await store.setDetectedDeviceKind(store.LOCAL_CONNECTION_ID, 'laptop')).toBe(true);
+    expect((await store.list())[0]).toMatchObject({
+      detectedDeviceKind: 'laptop',
+      deviceIcon: 'auto',
+    });
+    expect(await store.listSyncRecords()).toEqual([]);
   });
 
   it('setHostname trims whitespace and ignores an empty hostname (keeps host:port fallback)', async () => {

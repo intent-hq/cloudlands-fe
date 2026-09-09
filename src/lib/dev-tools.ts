@@ -213,14 +213,20 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
         try {
           const { appStore } = require('$store/renderer/store');
           return appStore.state.autoUpdate;
-        } catch { return null; }
+        } catch {
+          return null;
+        }
       },
       simulateSetState: (partial: Record<string, unknown>) => {
         try {
           const { appStore } = require('$store/renderer/store');
-          const { simulateSetState } = require('$store/renderer/slices/auto-update/auto-update-slice');
+          const {
+            simulateSetState,
+          } = require('$store/renderer/slices/auto-update/auto-update-slice');
           appStore.dispatch(simulateSetState(partial));
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       },
     },
   };

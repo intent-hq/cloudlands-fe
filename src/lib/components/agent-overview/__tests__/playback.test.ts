@@ -31,13 +31,7 @@ describe('timeline playback', () => {
     let reachedEnd = false;
 
     for (let elapsed = 0; elapsed < TARGET_PLAYBACK_DURATION_MS; elapsed += 1_000) {
-      ({ cursorMs, reachedEnd } = advancePlaybackCursor(
-        cursorMs,
-        1_000,
-        1,
-        span,
-        rate,
-      ));
+      ({ cursorMs, reachedEnd } = advancePlaybackCursor(cursorMs, 1_000, 1, span, rate));
     }
 
     expect(rate).toBe(180);

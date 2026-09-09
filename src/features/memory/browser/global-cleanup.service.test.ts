@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockMemoryLeakDetector = {
   dispose: vi.fn(),
@@ -19,7 +12,6 @@ const mockComponentDisposalManager = {
 
 vi.mock('$lib/utils/logger', () => ({
   Logger: class {
-
     constructor(_config?: unknown) {}
     debug = vi.fn();
     info = vi.fn();
@@ -85,7 +77,9 @@ describe('globalCleanupService visibility lifecycle', () => {
     const beforeUnloadListener = addWindowListenerSpy.mock.calls.find(
       ([event]) => event === 'beforeunload',
     )?.[1];
-    const unloadListener = addWindowListenerSpy.mock.calls.find(([event]) => event === 'unload')?.[1];
+    const unloadListener = addWindowListenerSpy.mock.calls.find(
+      ([event]) => event === 'unload',
+    )?.[1];
 
     globalCleanupService.dispose();
 

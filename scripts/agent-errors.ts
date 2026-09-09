@@ -123,8 +123,8 @@ function cmdList(args: string[]) {
   const source = typeof flags.source === 'string' ? flags.source.toLowerCase() : undefined;
 
   let errors = loadErrors();
-  if (level) errors = errors.filter(e => (e.level || 'error').toLowerCase() === level);
-  if (source) errors = errors.filter(e => (e.source || '').toLowerCase() === source);
+  if (level) errors = errors.filter((e) => (e.level || 'error').toLowerCase() === level);
+  if (source) errors = errors.filter((e) => (e.source || '').toLowerCase() === source);
 
   if (errors.length === 0) {
     console.log('✅ No tracked errors found for the given filters.');
@@ -132,7 +132,7 @@ function cmdList(args: string[]) {
   }
 
   const subset = errors.slice(-count).reverse();
-  subset.forEach(e => console.log(formatLine(e)));
+  subset.forEach((e) => console.log(formatLine(e)));
 }
 
 function cmdGet(id: string) {
@@ -141,7 +141,7 @@ function cmdGet(id: string) {
     process.exit(1);
   }
   const errors = loadErrors();
-  const found = errors.find(e => e.id === id);
+  const found = errors.find((e) => e.id === id);
   if (!found) {
     console.error(`Error not found: ${id}`);
     process.exit(1);

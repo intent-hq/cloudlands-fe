@@ -125,16 +125,20 @@ describe('workspace sidebar bottom launchers', () => {
     expect(browserLauncher).toContain('data-sidebar-running-url={browserTarget.url}');
   });
 
-  it('keeps View PR under workspace status and the scoped Files action without Sync', () => {
+  it('routes PR access through the Changes launcher dropdown, not the workspace status', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
     const progress = source('../sidebar/WorkspaceProgressCard.svelte');
+    const prDropdown = source('../sidebar/SidebarPrDropdown.svelte');
+    const prList = source('../sidebar/SidebarPrList.svelte');
 
     expect(sidebar).not.toContain('data-sidebar-changes-pr');
-    expect(progress).toContain('data-workspace-view-pr');
-    expect(progress).toContain('handleLink(action.url, { workspaceId: WorkspaceId(workspaceId) })');
-    expect(progress.indexOf('{#if viewPullRequestAction}')).toBeGreaterThan(
-      progress.indexOf('{#if isEditingStatusMessage || currentStatusMessage}'),
-    );
+    expect(sidebar).toContain('<SidebarPrDropdown rows={workspacePrRows} {workspaceId}');
+    expect(prDropdown).toContain('data-sidebar-pr-trigger');
+    expect(prDropdown).toContain('<SidebarPrList {rows} onSelect={(pr) => openPr(pr, close)} />');
+    expect(prList).toContain('data-sidebar-pr-link');
+    expect(prDropdown).toContain('handleLink(pr.url, { workspaceId: WorkspaceId(workspaceId) })');
+    expect(progress).not.toContain('data-workspace-view-pr');
+    expect(progress).not.toContain('viewPullRequestAction');
     expect(sidebar).not.toContain('data-sidebar-changes-sync');
     expect(sidebar).toContain(
       'filePath={$fileExplorerWorkspacePath}\n                          {workspaceId}',

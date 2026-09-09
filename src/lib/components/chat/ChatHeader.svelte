@@ -227,7 +227,7 @@
       </button>
 
       <button
-        class="p-2 bg-transparent border-none text-muted-foreground cursor-pointer rounded-md transition-all duration-200 hover:bg-muted hover:text-error-foreground"
+        class="p-2 bg-transparent border-none text-muted-foreground cursor-pointer rounded-md transition-all duration-200 hover:bg-muted hover:text-danger"
         onclick={onDelete}
         title={m.chat_chatHeader_deleteChat_title()}
       >

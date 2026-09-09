@@ -81,9 +81,9 @@
       </p>
     {/if}
     {#if loadFailed}
-      <p class="text-xs text-destructive mt-0.5">{m.settings_backendSync_loadError()}</p>
+      <p class="text-xs text-danger mt-0.5">{m.settings_backendSync_loadError()}</p>
     {:else if saveFailed}
-      <p class="text-xs text-destructive mt-0.5">{m.settings_backendSync_saveError()}</p>
+      <p class="text-xs text-danger mt-0.5">{m.settings_backendSync_saveError()}</p>
     {/if}
     {#if supported && enabled}
       {#if status === null}

@@ -1,8 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 import {
   computeMessageContentHash,
@@ -392,7 +388,10 @@ describe('message-dedup utility', () => {
   });
 
   it('rejects stale shorter session snapshots outside stream reducers', () => {
-    const currentMessages = [makeAssistant('msg_user', 'prompt', { role: 'user' }), makeAssistant('msg_reply', 'complete')];
+    const currentMessages = [
+      makeAssistant('msg_user', 'prompt', { role: 'user' }),
+      makeAssistant('msg_reply', 'complete'),
+    ];
 
     const result = mergeAgentSessionMessagesWithPolicy({
       currentMessages,

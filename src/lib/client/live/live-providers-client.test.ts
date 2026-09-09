@@ -8,55 +8,55 @@
  * (c) divergent payloads and transport failures THROW — the FE never silently
  * absorbs a wire mismatch (fix-site is the BE or PROTOCOL.md).
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { IPC_CHANNELS } from "$shared/ipc-registry";
-import type { ProviderCatalogResult } from "$shared/provider-catalog";
-import { LiveProvidersClient } from "./live-providers-client";
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
+import type { ProviderCatalogResult } from '$shared/provider-catalog';
+import { LiveProvidersClient } from './live-providers-client';
 
 /** PROTOCOL §5.38-shaped response — registry order has unsloth before pi. */
 const CATALOG: ProviderCatalogResult = {
   providers: [
     {
-      id: "auggie",
-      displayName: "Augment Auggie",
-      shortName: "Auggie",
-      command: "auggie",
+      id: 'auggie',
+      displayName: 'Augment Auggie',
+      shortName: 'Auggie',
+      command: 'auggie',
       canBeDisabled: true,
-      loginCommandHint: "auggie login",
-      authErrorPatterns: ["authentication required", "auggie login"],
+      loginCommandHint: 'auggie login',
+      authErrorPatterns: ['authentication required', 'auggie login'],
       visible: true,
     },
     {
-      id: "unsloth",
-      displayName: "Unsloth",
-      shortName: "Unsloth",
-      command: "opencode",
+      id: 'unsloth',
+      displayName: 'Unsloth',
+      shortName: 'Unsloth',
+      command: 'opencode',
       canBeDisabled: true,
-      loginDocsUrl: "https://docs.unsloth.ai",
+      loginDocsUrl: 'https://docs.unsloth.ai',
       visible: true,
     },
     {
-      id: "pi",
-      displayName: "Pi",
-      shortName: "Pi",
-      command: "pi-acp",
+      id: 'pi',
+      displayName: 'Pi',
+      shortName: 'Pi',
+      command: 'pi-acp',
       canBeDisabled: true,
-      loginDocsUrl: "https://pi.dev/docs/latest/quickstart",
+      loginDocsUrl: 'https://pi.dev/docs/latest/quickstart',
       visible: true,
     },
     {
-      id: "mock",
-      displayName: "Mock (E2E)",
-      shortName: "Mock",
-      command: "node",
+      id: 'mock',
+      displayName: 'Mock (E2E)',
+      shortName: 'Mock',
+      command: 'node',
       canBeDisabled: true,
-      requiresEnvVar: "MOCK_AGENT_SCRIPT_PATH",
+      requiresEnvVar: 'MOCK_AGENT_SCRIPT_PATH',
       visible: false,
     },
   ],
 };
 
-describe("LiveProvidersClient", () => {
+describe('LiveProvidersClient', () => {
   let client: LiveProvidersClient;
   let mockInvoke: ReturnType<typeof vi.fn>;
   let originalWindow: typeof globalThis.window;
@@ -65,7 +65,7 @@ describe("LiveProvidersClient", () => {
     originalWindow = globalThis.window;
     client = new LiveProvidersClient();
     mockInvoke = vi.fn();
-    vi.stubGlobal("window", {
+    vi.stubGlobal('window', {
       electronAPI: {
         invoke: mockInvoke,
         on: vi.fn(),
@@ -75,21 +75,21 @@ describe("LiveProvidersClient", () => {
   });
 
   afterEach(() => {
-    vi.stubGlobal("window", originalWindow);
+    vi.stubGlobal('window', originalWindow);
   });
 
-  it("invokes providers.catalog with empty params via backend:request (§5.38)", async () => {
+  it('invokes providers.catalog with empty params via backend:request (§5.38)', async () => {
     mockInvoke.mockResolvedValue({ ok: true, result: CATALOG });
 
     await client.catalog();
 
     expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
-      method: "providers.catalog",
+      method: 'providers.catalog',
       params: {},
     });
   });
 
-  it("passes a PROTOCOL-shaped catalog through verbatim, preserving registry order", async () => {
+  it('passes a PROTOCOL-shaped catalog through verbatim, preserving registry order', async () => {
     mockInvoke.mockResolvedValue({ ok: true, result: CATALOG });
 
     const result = await client.catalog();
@@ -97,38 +97,38 @@ describe("LiveProvidersClient", () => {
     expect(result).toEqual(CATALOG);
     // Registry order (unsloth before pi) survives — clients must key by id,
     // but the order is carried through faithfully for informational use.
-    expect(result.providers.map((p) => p.id)).toEqual(["auggie", "unsloth", "pi", "mock"]);
+    expect(result.providers.map((p) => p.id)).toEqual(['auggie', 'unsloth', 'pi', 'mock']);
     // Optional fields are present-by-presence: absent when unset.
     expect(result.providers[1].loginCommandHint).toBeUndefined();
     expect(result.providers[3].visible).toBe(false);
   });
 
-  it("throws on a payload that diverges from the §5.38 shape (never silently absorbed)", async () => {
+  it('throws on a payload that diverges from the §5.38 shape (never silently absorbed)', async () => {
     mockInvoke.mockResolvedValue({
       ok: true,
       result: {
-        providers: [{ id: "auggie", displayName: "Augment Auggie" }],
+        providers: [{ id: 'auggie', displayName: 'Augment Auggie' }],
       },
     });
 
     await expect(client.catalog()).rejects.toThrow();
   });
 
-  it("preserves unknown additive fields (PROTOCOL compatibility policy: detect by presence)", async () => {
+  it('preserves unknown additive fields (PROTOCOL compatibility policy: detect by presence)', async () => {
     const withExtra = {
-      providers: [{ ...CATALOG.providers[0], futureField: "x" }],
+      providers: [{ ...CATALOG.providers[0], futureField: 'x' }],
     };
     mockInvoke.mockResolvedValue({ ok: true, result: withExtra });
 
     const result = await client.catalog();
 
-    expect((result.providers[0] as Record<string, unknown>).futureField).toBe("x");
+    expect((result.providers[0] as Record<string, unknown>).futureField).toBe('x');
   });
 
-  it("throws on transport failure so the seeder keeps the previous catalog", async () => {
+  it('throws on transport failure so the seeder keeps the previous catalog', async () => {
     mockInvoke.mockResolvedValue({
       ok: false,
-      error: { code: "TRANSPORT_ERROR", message: "uds boom" },
+      error: { code: 'TRANSPORT_ERROR', message: 'uds boom' },
     });
 
     await expect(client.catalog()).rejects.toThrow();

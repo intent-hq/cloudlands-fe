@@ -1,5 +1,5 @@
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 
 // ============================================================================
 // Types
@@ -30,11 +30,11 @@ export const initialState: FeatureCodesState = {
 
 /** Store the active feature IDs fetched from the main process */
 export const setActiveFeatures = createAction<[features: string[]]>(
-  "featureCodes/setActiveFeatures"
+  'featureCodes/setActiveFeatures',
 );
 
 /** Toggle the feature code dialog open state */
-export const toggleFeatureCodeDialog = createAction("featureCodes/toggleFeatureCodeDialog");
+export const toggleFeatureCodeDialog = createAction('featureCodes/toggleFeatureCodeDialog');
 
 // ============================================================================
 // Reducer

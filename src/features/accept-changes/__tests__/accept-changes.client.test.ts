@@ -314,6 +314,4 @@ describe('AcceptChangesClient (accept-changes.* over backendRequest)', () => {
     const failed = await AcceptChangesClient.resetToTrunk(WS);
     expect(failed).toEqual({ success: false, steps: [], error: 'daemon unavailable' });
   });
-
-
 });

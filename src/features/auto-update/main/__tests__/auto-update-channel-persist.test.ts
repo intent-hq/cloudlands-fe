@@ -80,14 +80,16 @@ describe('AutoUpdateService channel persistence', () => {
 
       // Poll for the local-prefs.json file to be written
       const prefsPath = path.join(testUserDataPath, 'local-prefs.json');
-      await expect.poll(
-        async () => {
-          const prefsContent = await fs.readFile(prefsPath, 'utf8');
-          const prefs = JSON.parse(prefsContent);
-          return prefs.updateChannel;
-        },
-        { timeout: 2000, interval: 50 },
-      ).toBe(channel);
+      await expect
+        .poll(
+          async () => {
+            const prefsContent = await fs.readFile(prefsPath, 'utf8');
+            const prefs = JSON.parse(prefsContent);
+            return prefs.updateChannel;
+          },
+          { timeout: 2000, interval: 50 },
+        )
+        .toBe(channel);
     },
   );
 
@@ -130,13 +132,15 @@ describe('AutoUpdateService channel persistence', () => {
     await autoUpdateService.initialize();
 
     expect(autoUpdateService.getState().channel).toBe('beta');
-    await expect.poll(
-      async () => {
-        const prefs = JSON.parse(await fs.readFile(prefsPath, 'utf8'));
-        return [prefs.updateChannel, 'betaUpdatesEnabled' in prefs];
-      },
-      { timeout: 2000, interval: 50 },
-    ).toEqual(['beta', false]);
+    await expect
+      .poll(
+        async () => {
+          const prefs = JSON.parse(await fs.readFile(prefsPath, 'utf8'));
+          return [prefs.updateChannel, 'betaUpdatesEnabled' in prefs];
+        },
+        { timeout: 2000, interval: 50 },
+      )
+      .toEqual(['beta', false]);
   });
 
   it('migrates legacy betaUpdatesEnabled=false to updateChannel=stable and removes the old key', async () => {
@@ -147,13 +151,15 @@ describe('AutoUpdateService channel persistence', () => {
     await autoUpdateService.initialize();
 
     expect(autoUpdateService.getState().channel).toBe('stable');
-    await expect.poll(
-      async () => {
-        const prefs = JSON.parse(await fs.readFile(prefsPath, 'utf8'));
-        return [prefs.updateChannel, 'betaUpdatesEnabled' in prefs];
-      },
-      { timeout: 2000, interval: 50 },
-    ).toEqual(['stable', false]);
+    await expect
+      .poll(
+        async () => {
+          const prefs = JSON.parse(await fs.readFile(prefsPath, 'utf8'));
+          return [prefs.updateChannel, 'betaUpdatesEnabled' in prefs];
+        },
+        { timeout: 2000, interval: 50 },
+      )
+      .toEqual(['stable', false]);
   });
 
   it('prefers updateChannel over a lingering legacy betaUpdatesEnabled key', async () => {

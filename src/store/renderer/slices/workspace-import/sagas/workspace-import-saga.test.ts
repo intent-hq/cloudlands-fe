@@ -75,13 +75,14 @@ describe('workspaceImportSaga', () => {
     stubBridge();
     mocks.invoke.mockResolvedValue({ success: true });
     // Settled success screen: the reducer drops importStartRequested here.
-    let seed = workspaceImportReducer(
-      initialState,
-      importStartRequested({ reuseLastFile: false }),
-    );
+    let seed = workspaceImportReducer(initialState, importStartRequested({ reuseLastFile: false }));
     seed = workspaceImportReducer(
       seed,
-      importRunSucceeded({ workspaceId: 'ws-1', workspaceTitle: 'My Space', interruptedAgents: [] }),
+      importRunSucceeded({
+        workspaceId: 'ws-1',
+        workspaceTitle: 'My Space',
+        interruptedAgents: [],
+      }),
     );
     const h = harness(seed);
 
@@ -158,13 +159,14 @@ describe('workspaceImportSaga', () => {
   it('open-workspace navigates to the imported workspace and closes', async () => {
     stubBridge();
     mocks.navigate.mockResolvedValue(undefined);
-    let seed = workspaceImportReducer(
-      initialState,
-      importStartRequested({ reuseLastFile: false }),
-    );
+    let seed = workspaceImportReducer(initialState, importStartRequested({ reuseLastFile: false }));
     seed = workspaceImportReducer(
       seed,
-      importRunSucceeded({ workspaceId: 'ws-1', workspaceTitle: 'My Space', interruptedAgents: [] }),
+      importRunSucceeded({
+        workspaceId: 'ws-1',
+        workspaceTitle: 'My Space',
+        interruptedAgents: [],
+      }),
     );
     const h = harness(seed);
 

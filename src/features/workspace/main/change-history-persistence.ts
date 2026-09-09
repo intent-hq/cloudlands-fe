@@ -94,9 +94,7 @@ async function ensureInitialized(): Promise<void> {
  * Get diff chunks for a single workspace from the in-memory cache.
  * Waits for initialization if it's in progress.
  */
-export async function getChangeHistoryForWorkspace(
-  workspaceId: string,
-): Promise<DiffChunk[]> {
+export async function getChangeHistoryForWorkspace(workspaceId: string): Promise<DiffChunk[]> {
   await ensureInitialized();
   const entry = cache[workspaceId];
   return Array.isArray(entry) ? entry : [];

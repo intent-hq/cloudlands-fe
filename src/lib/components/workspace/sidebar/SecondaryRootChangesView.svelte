@@ -204,7 +204,7 @@
       <Skeleton class="h-5 w-3/4 rounded" />
     </div>
   {:else if loadError}
-    <p class="text-xs text-error-foreground">
+    <p class="text-xs text-danger">
       {m.workspace_sidebarChanges_rootLoadFailed_error()}
     </p>
   {:else}
