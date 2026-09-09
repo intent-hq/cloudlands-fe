@@ -2597,73 +2597,153 @@ test('animates diagram state entries and exposes a deterministic settled signal'
   page,
 }) => {
   await page.goto(
-    `${baseUrl}/sandbox/diagram-workbench?state=custom-architecture&theme=light&width=960&motion=full`,
+    `${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&theme=light&width=960&motion=full`,
   );
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
     timeout: 30_000,
   });
-  const root = page.locator('#custom-architecture');
+  const root = page.locator('#custom-walkthrough');
   const motion = await root.evaluate(async (section) => {
     const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     const read = () => {
-      const node = [...section.querySelectorAll<HTMLElement>('.diagram-node-html')].find(
-        (element) => element.textContent?.includes('Intent daemon'),
-      )!.parentElement!;
-      const edgePath = section.querySelector<SVGPathElement>(
-        '.diagram-edge[data-edge-id="a2"] path.edge-path',
+      const node = (id: string) =>
+        section.querySelector<SVGForeignObjectElement>(`[data-node-id="${id}"]`);
+      const edge = (id: string) =>
+        section.querySelector<SVGGElement>(`.diagram-edge[data-edge-id="${id}"]`);
+      const label = (id: string) =>
+        section.querySelector<SVGForeignObjectElement>(
+          `.edge-label-container[data-edge-id="${id}"]`,
+        );
+      const opacity = (element: Element | null) =>
+        element ? Number(getComputedStyle(element).opacity) : null;
+      const routeOpacity = (id: string) => opacity(edge(id)?.parentElement ?? null);
+      const edgePath = edge('w4')?.querySelector<SVGPathElement>('path.edge-path') ?? null;
+      const visibleDetachedEdges = [...section.querySelectorAll<SVGGElement>('.diagram-edge')]
+        .filter((element) => (opacity(element.parentElement) ?? 0) > 0.01)
+        .filter((element) => {
+          const source = node(element.dataset.edgeFrom!);
+          const target = node(element.dataset.edgeTo!);
+          return opacity(source) === null || opacity(source)! <= 0.01 || opacity(target)! <= 0.01;
+        })
+        .map((element) => element.dataset.edgeId);
+      const cameraRunning = [
+        ...section.querySelectorAll<SVGElement>('.diagram-svg-layer, .diagram-geometry-motion'),
+      ].some((element) =>
+        element
+          .getAnimations({ subtree: false })
+          .some((animation) => animation.playState === 'running'),
       );
+      const enteringNode = node('daemon');
       return {
-        opacity: Number(getComputedStyle(node).opacity),
-        transform: getComputedStyle(node).transform,
+        state: section.querySelector<HTMLElement>('.diagram-renderer')!.dataset.diagramState,
         settled: section.querySelector<HTMLElement>('.diagram-renderer')!.dataset.diagramSettled,
+        cameraRunning,
+        sharedRedux: opacity(node('redux')),
+        sharedChat: opacity(node('chat')),
+        departingNode: opacity(node('user')),
+        departingRoute: routeOpacity('w1'),
+        departingLabel: opacity(label('w1')),
+        enteringNode: opacity(enteringNode),
+        enteringRoute: routeOpacity('w4'),
+        enteringLabel: opacity(label('w4')),
+        enteringTransform: enteringNode ? getComputedStyle(enteringNode).transform : null,
+        visibleDetachedEdges,
         edgeDrawIn: Boolean(edgePath?.closest('.edge-draw-in')),
         edgeAnimation: edgePath ? getComputedStyle(edgePath).animationName : null,
         edgeDashOffset: edgePath ? getComputedStyle(edgePath).strokeDashoffset : null,
       };
     };
+    const frames = [read()];
+    const observer = new MutationObserver(() => frames.push(read()));
+    observer.observe(section, { attributes: true, childList: true, subtree: true });
     section
-      .querySelector<HTMLButtonElement>('button[aria-label="State 2: 2. Follow the data"]')!
+      .querySelector<HTMLButtonElement>('button[aria-label="State 2: 2. Follow execution"]')!
       .click();
-    await Promise.resolve();
-    const initial = read();
     const deadline = performance.now() + 2_000;
-    let middle = initial;
-    while (!(
-      middle.settled === 'false' &&
-      middle.opacity > initial.opacity &&
-      middle.opacity < 1
-    )) {
-      if (performance.now() > deadline) throw new Error('Diagram entry had no midpoint frame');
-      await nextFrame();
-      middle = read();
-    }
-    while (read().settled !== 'true') {
+    while (frames.at(-1)!.settled !== 'true' || frames.length === 1) {
       if (performance.now() > deadline) throw new Error('Diagram entry did not settle');
       await nextFrame();
+      frames.push(read());
     }
+    observer.disconnect();
     const final = read();
     await nextFrame();
-    return { initial, middle, final, nextPaint: read() };
+    return { frames, final, nextPaint: read() };
   });
-  expect(motion.initial.opacity).toBeLessThan(1);
-  expect(motion.initial.settled).toBe('false');
-  expect(motion.middle.opacity).toBeGreaterThanOrEqual(motion.initial.opacity);
-  expect(motion.final.opacity).toBe(1);
-  expect(motion.final.transform).toBe('none');
+  const firstMovingFrame = motion.frames.findIndex(
+    (frame) => frame.cameraRunning && frame.departingNode === 1 && frame.enteringNode === null,
+  );
+  const firstExitingFrame = motion.frames.findIndex(
+    (frame) =>
+      frame.departingNode !== null &&
+      frame.departingNode > 0.01 &&
+      frame.departingNode < 0.99 &&
+      frame.enteringNode === null,
+  );
+  const firstEnteringNode = motion.frames.findIndex(
+    (frame) => frame.enteringNode !== null && frame.enteringNode > 0.01,
+  );
+  const firstEnteringRoute = motion.frames.findIndex(
+    (frame) => frame.enteringRoute !== null && frame.enteringRoute > 0.01,
+  );
+  const firstEnteringLabel = motion.frames.findIndex(
+    (frame) => frame.enteringLabel !== null && frame.enteringLabel > 0.01,
+  );
+  expect(motion.frames[0]).toMatchObject({
+    state: 'request',
+    settled: 'true',
+    departingNode: 1,
+    enteringNode: null,
+    enteringRoute: null,
+    enteringLabel: null,
+  });
+  expect(firstMovingFrame).toBeGreaterThan(0);
+  expect(firstExitingFrame).toBeGreaterThan(firstMovingFrame);
+  expect(firstEnteringNode).toBeGreaterThan(firstExitingFrame);
+  expect(firstEnteringRoute).toBeGreaterThan(firstEnteringNode);
+  expect(firstEnteringLabel).toBeGreaterThan(firstEnteringRoute);
+  expect(motion.frames[firstEnteringNode]).toMatchObject({
+    departingNode: null,
+    departingRoute: null,
+    departingLabel: null,
+  });
+  expect(motion.frames[firstEnteringRoute].enteringNode).toBe(1);
+  expect(
+    motion.frames.every(
+      (frame) =>
+        frame.sharedRedux !== null &&
+        frame.sharedRedux > 0.5 &&
+        frame.sharedChat !== null &&
+        frame.sharedChat > 0.5,
+    ),
+  ).toBe(true);
+  expect(motion.frames.every((frame) => frame.visibleDetachedEdges.length === 0)).toBe(true);
+  expect(motion.final).toMatchObject({
+    state: 'execute',
+    settled: 'true',
+    departingNode: null,
+    departingRoute: null,
+    departingLabel: null,
+    enteringNode: 1,
+    enteringRoute: 1,
+    enteringLabel: 1,
+  });
+  expect(motion.final.enteringTransform).toBe('none');
   expect(motion.final.edgeDrawIn).toBe(false);
   expect(motion.final.edgeAnimation).toBe('none');
   expect(motion.final.edgeDashOffset).toBe('0px');
   expect(motion.nextPaint).toEqual(motion.final);
 
-  await openState(page, 'custom-architecture', 960, 'light');
-  const reducedRoot = page.locator('#custom-architecture');
-  await reducedRoot.getByRole('button', { name: 'State 2: 2. Follow the data' }).click();
+  await openState(page, 'custom-walkthrough', 960, 'light');
+  const reducedRoot = page.locator('#custom-walkthrough');
+  await reducedRoot.getByRole('button', { name: 'State 2: 2. Follow execution' }).click();
   const reducedDaemon = reducedRoot
-    .locator('.diagram-node-html', { hasText: 'Intent daemon' })
+    .locator('.diagram-node-html', { hasText: 'Daemon' })
     .locator('..');
   await expect(reducedDaemon).toHaveCSS('opacity', '1');
   await expect(reducedDaemon).toHaveCSS('transform', 'none');
-  await expect(reducedRoot.locator('.diagram-edge[data-edge-id="a2"] path')).toHaveCSS(
+  await expect(reducedRoot.locator('[data-node-id="user"]')).toHaveCount(0);
+  await expect(reducedRoot.locator('.diagram-edge[data-edge-id="w4"] path')).toHaveCSS(
     'animation-name',
     'none',
   );
@@ -2671,4 +2751,16 @@ test('animates diagram state entries and exposes a deterministic settled signal'
     'data-diagram-settled',
     'true',
   );
+  expect(
+    await reducedRoot
+      .locator('.diagram-renderer')
+      .evaluate(
+        (diagram) =>
+          diagram
+            .getAnimations({ subtree: true })
+            .filter((animation) =>
+              Number.isFinite(Number(animation.effect?.getComputedTiming().endTime)),
+            ).length,
+      ),
+  ).toBe(0);
 });

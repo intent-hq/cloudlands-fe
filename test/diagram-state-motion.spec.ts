@@ -34,6 +34,7 @@ type Frame = {
   node: { x: number; y: number; width: number; height: number; opacity: number } | null;
   enteringOpacity: number | null;
   group: { x: number; y: number; width: number; height: number } | null;
+  groupAnimationDurations: number[];
   path: string;
   progress: number;
   sourceDistance: number;
@@ -345,6 +346,10 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
           ? root.querySelector<SVGRectElement>(`[data-group-id="${probe.groupId}"] .group-bg`)
           : null;
         const groupBounds = group?.getBoundingClientRect();
+        const groupAnimationDurations =
+          group
+            ?.getAnimations({ subtree: false })
+            .map((animation) => Number(animation.effect?.getTiming().duration)) ?? [];
         const label = root.querySelector<SVGForeignObjectElement>(
           `.edge-label-container[data-edge-id="${probe.edgeId}"]`,
         );
@@ -422,6 +427,7 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
                 height: groupBounds.height,
               }
             : null,
+          groupAnimationDurations,
           path: path.getAttribute('d') ?? '',
           progress: Number(edgeGroup.dataset.edgeMotionProgress),
           sourceDistance: sideDistance(start, source),
@@ -998,15 +1004,10 @@ test('coordinates architecture and ownership state motion through settled frames
           isBetween(sample.node.y, architecture23.start.node!.y, architecture23.settled.node!.y)),
     ),
   ).toBe(true);
+  expect(architecture23.start.group!.height).not.toBe(architecture23.settled.group!.height);
   expect(
-    architecture23.samples.some(
-      (frame) =>
-        frame.group !== null &&
-        isBetween(
-          frame.group.height,
-          architecture23.start.group!.height,
-          architecture23.settled.group!.height,
-        ),
+    [architecture23.afterClick, ...architecture23.samples].some((frame) =>
+      frame.groupAnimationDurations.some((duration) => duration >= 200 && duration <= 240),
     ),
   ).toBe(true);
   expect(
