@@ -154,11 +154,13 @@ describe('Dropdown portal positioning', () => {
     await fireEvent.click(trigger!);
 
     await waitFor(() => {
-      const listbox = document.body.querySelector('[role="listbox"]') as HTMLDivElement | null;
-      expect(listbox).toBeTruthy();
-      expect(listbox?.style.position).toBe('fixed');
-      expect(listbox?.style.bottom).toBeTruthy();
-      expect(listbox?.style.top).toBe('');
+      const content = document.body.querySelector(
+        '[data-slot="dropdown-content"]',
+      ) as HTMLDivElement | null;
+      expect(content).toBeTruthy();
+      expect(content?.style.position).toBe('fixed');
+      expect(content?.style.bottom).toBeTruthy();
+      expect(content?.style.top).toBe('');
     });
   });
 
@@ -185,19 +187,19 @@ describe('Dropdown portal positioning', () => {
     root.getBoundingClientRect = vi.fn(() => rect(120, 500, 120, 28));
 
     await fireEvent.click(trigger);
-    const listbox = await screen.findByRole('listbox');
-    expect(listbox.dataset.collisionAware).toBe('true');
-    expect(listbox.dataset.side).toBe('top');
-    expect(listbox.style.maxHeight).toBe('360px');
-    expect(listbox.style.bottom).toBe('32px');
-    expect(boundary.contains(listbox)).toBe(true);
+    const content = container.querySelector<HTMLElement>('[data-slot="dropdown-content"]')!;
+    expect(content.dataset.collisionAware).toBe('true');
+    expect(content.dataset.side).toBe('top');
+    expect(content.style.maxHeight).toBe('360px');
+    expect(content.style.bottom).toBe('32px');
+    expect(boundary.contains(content)).toBe(true);
 
     trigger.getBoundingClientRect = vi.fn(() => rect(120, 90, 120, 28));
     root.getBoundingClientRect = vi.fn(() => rect(120, 90, 120, 28));
     await fireEvent(window, new Event('resize'));
-    expect(listbox.dataset.side).toBe('bottom');
-    expect(listbox.style.top).toBe('32px');
-    expect(listbox.style.maxHeight).toBe('360px');
+    expect(content.dataset.side).toBe('bottom');
+    expect(content.style.top).toBe('32px');
+    expect(content.style.maxHeight).toBe('360px');
 
     const search = screen.getByRole('searchbox', { name: 'Search options' });
     await fireEvent.keyDown(search, { key: 'End' });
@@ -259,9 +261,19 @@ describe('Dropdown compatibility modes', () => {
         onopenchange,
       },
     });
-    await fireEvent.click(container.querySelector('button')!);
+    const trigger = container.querySelector('button')!;
+    await fireEvent.click(trigger);
     const search = await screen.findByRole('searchbox', { name: 'Search options' });
-    await fireEvent.input(search, { target: { value: 'Second' } });
+    const listbox = screen.getByRole('listbox');
+    expect(search.getAttribute('aria-controls')).toBe(listbox.id);
+    expect(listbox.getAttribute('aria-labelledby')).toBe(trigger.id);
+    expect(listbox.contains(search)).toBe(false);
+
+    await fireEvent.input(search, { target: { value: 'a' } });
+    await fireEvent.keyDown(search, { key: 'ArrowDown' });
+    expect(search.getAttribute('aria-activedescendant')).toBe(
+      screen.getByRole('option', { name: /Beta/ }).id,
+    );
     await fireEvent.keyDown(search, { key: 'Enter' });
     expect(onchange).toHaveBeenCalledWith('b', undefined);
     expect(onopenchange).toHaveBeenNthCalledWith(1, true);
@@ -282,7 +294,7 @@ describe('Dropdown compatibility modes', () => {
     await fireEvent.click(container.querySelector('button')!);
     const listbox = await screen.findByRole('listbox');
     const options = screen.getAllByRole('option');
-    const optionContainer = listbox.querySelector<HTMLElement>('[data-scroll-container]')!;
+    const optionContainer = listbox;
     const activeIndex = optionContainer.querySelector<HTMLElement>(
       '[data-slot="menu-list-highlight"]',
     )!;

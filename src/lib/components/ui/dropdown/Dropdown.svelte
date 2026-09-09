@@ -20,6 +20,8 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
 
+  const uid = $props.id();
+
   interface Props {
     /** Current value - string for single, string[] for multiple */
     value?: string | string[];
@@ -122,6 +124,8 @@
   let inlineSide = $state<'top' | 'bottom'>('bottom');
   let containerRef = $state.raw<HTMLDivElement | null>(null);
   let inputRef = $state.raw<HTMLInputElement | null>(null);
+  const triggerId = `${uid}-trigger`;
+  const listboxId = `${uid}-listbox`;
 
   // Keyboard navigation state
   let highlightedIndex = $state(-1);
@@ -586,6 +590,7 @@
   <!-- Trigger -->
   <Button
     bind:ref={triggerRef}
+    id={triggerId}
     type="button"
     onclick={handleTriggerClick}
     onkeydown={handleKeyDown}
@@ -599,6 +604,7 @@
     )}
     aria-haspopup="listbox"
     aria-expanded={open}
+    aria-controls={open ? listboxId : undefined}
     active={open}
     variant={buttonVariant}
     size={buttonSize}
@@ -628,9 +634,7 @@
       style={collisionBoundary ? inlineStyle : undefined}
       data-side={collisionBoundary ? inlineSide : undefined}
       data-collision-aware={collisionBoundary ? 'true' : undefined}
-      role="listbox"
-      tabindex="-1"
-      onkeydown={handleKeyDown}
+      data-slot="dropdown-content"
     >
       {@render dropdownContent(Boolean(collisionBoundary))}
     </div>
@@ -647,9 +651,7 @@
       class={cn(menuOverlay(), 'w-max flex flex-col', contentClass)}
       style={portalStyle}
       data-side={inlineSide}
-      role="listbox"
-      tabindex="-1"
-      onkeydown={handleKeyDown}
+      data-slot="dropdown-content"
     >
       {@render dropdownContent(true)}
     </div>
@@ -674,8 +676,9 @@
         {placeholder}
         role="searchbox"
         aria-label={m.ui_dropdown_search_ariaLabel()}
+        aria-controls={listboxId}
         aria-activedescendant={highlightedIndex >= 0
-          ? `dropdown-option-${highlightedIndex}`
+          ? `${uid}-option-${highlightedIndex}`
           : undefined}
         value={searchValue}
         oninput={(e) => (searchValue = e.currentTarget.value)}
@@ -695,7 +698,12 @@
 
   <!-- Options -->
   <div
+    id={listboxId}
     data-scroll-container
+    role="listbox"
+    aria-labelledby={triggerId}
+    tabindex="-1"
+    onkeydown={handleKeyDown}
     class={cn(
       isPortal || fillContentHeight ? 'flex-1 min-h-0' : 'max-h-[300px]',
       'overflow-y-auto p-1',
@@ -787,7 +795,7 @@
       <Button
         variant="plain"
         type="button"
-        id={optionIndex >= 0 ? `dropdown-option-${optionIndex}` : undefined}
+        id={optionIndex >= 0 ? `${uid}-option-${optionIndex}` : undefined}
         onclick={(e) => handleSelect(option, e)}
         disabled={option.disabled}
         data-highlighted={isHighlighted ? 'true' : undefined}
