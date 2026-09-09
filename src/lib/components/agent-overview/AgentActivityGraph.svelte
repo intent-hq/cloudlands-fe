@@ -22,6 +22,7 @@
   import type { PlaybackSpeed } from './playback';
   import { createTaskHullMembershipMemo } from './graph-helpers';
   import { createGraphRenderIndexMemo } from './graph-render-index';
+  import { containedFitScale } from './graph-fit';
 
   export interface GraphLayers {
     agents?: boolean;
@@ -112,7 +113,6 @@
 
   const FIT_FALLBACK_INSETS: FitInsets = { top: 56, right: 24, bottom: 72, left: 24 };
   const FIT_CHROME_GAP = 8;
-  const SMALL_GRAPH_FIT_FLOOR = 0.7;
   const TASK_LABEL_VISIBLE_SCALE = 0.3;
   const MINIMUM_VIEWPORT_FILL = 0.4;
   const RESIZE_FIT_DEBOUNCE_MS = 120;
@@ -462,19 +462,17 @@
     const insets = measuredFitInsets();
     const availableWidth = Math.max(1, width - insets.left - insets.right);
     const availableHeight = Math.max(1, height - insets.top - insets.bottom);
-    const naturalScale = Math.min(
-      availableWidth / Math.max(1, bounds.width),
-      availableHeight / Math.max(1, bounds.height),
-    );
     const maximumScale = GRAPH_ZOOM_EXTENT[1];
+    const naturalScale = containedFitScale(bounds, availableWidth, availableHeight, maximumScale);
     const minimumScale = Math.min(
       maximumScale,
       Math.max(GRAPH_ZOOM_EXTENT[0], naturalScale * MINIMUM_VIEWPORT_FILL),
     );
     zoomBehavior.scaleExtent([minimumScale, maximumScale]);
-    const fitFloor =
-      visibleGraph.nodes.length <= 40 ? SMALL_GRAPH_FIT_FLOOR : TASK_LABEL_VISIBLE_SCALE;
-    const scale = Math.min(maximumScale, Math.max(minimumScale, fitFloor, naturalScale));
+    const scale =
+      visibleGraph.nodes.length > 40
+        ? Math.max(TASK_LABEL_VISIBLE_SCALE, naturalScale)
+        : naturalScale;
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerY = (bounds.minY + bounds.maxY) / 2;
     const viewportCenterX = insets.left + availableWidth / 2;

@@ -109,7 +109,7 @@
         <span class="absolute right-1 top-1"><Fa icon={faArrowUpRightFromSquare} size="xs" /></span>
       {/if}
     </span>
-    <span class="resource-label line-clamp-2 w-full leading-[1.15]" style:opacity={labelOpacity}
+    <span class="resource-label line-clamp-2 leading-[1.15]" style:opacity={labelOpacity}
       >{label}</span
     >
     {#if focusState === 'focused'}
@@ -149,7 +149,11 @@
     animation: resource-cooldown linear forwards;
   }
   .resource-label {
+    width: calc(112px / var(--zoom));
+    max-width: calc(112px / var(--zoom));
     font-size: clamp(13px, calc(13px / var(--zoom)), 20.8px);
+    overflow-wrap: anywhere;
+    text-overflow: ellipsis;
   }
   .node-meta {
     max-width: 100%;

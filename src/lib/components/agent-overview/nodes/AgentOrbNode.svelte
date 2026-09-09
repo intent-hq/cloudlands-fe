@@ -58,7 +58,7 @@
   in:activityNodeTransition={{ delay: enterDelay, playbackSpeed }}
   out:activityNodeTransition={{ exit: true, playbackSpeed }}
   type="button"
-  class="agent-orb flex h-22 w-28 touch-none flex-col items-center gap-1 text-center text-foreground transition-opacity focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+  class="agent-orb flex h-auto min-h-22 w-28 touch-none flex-col items-center gap-1 text-center text-foreground transition-opacity focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
   data-graph-node
   data-node-id={node.id}
   data-active={isActive}
@@ -88,7 +88,9 @@
     class:font-semibold={isActive}>{node.name}</span
   >
   {#if specialistLabel && zoomBand === 'full'}
-    <span class="specialist-caption type-caption max-w-full truncate text-muted-foreground">
+    <span
+      class="specialist-caption type-caption max-w-full shrink-0 truncate text-muted-foreground"
+    >
       {specialistLabel}
     </span>
   {/if}
