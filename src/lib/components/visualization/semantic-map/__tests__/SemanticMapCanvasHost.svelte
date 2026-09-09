@@ -86,6 +86,15 @@
                   kind: 'edit' as const,
                   ts: '2026-09-06T10:19:59.600Z',
                 },
+                {
+                  id: 'shared-read',
+                  agentId: 'reading',
+                  agentName: 'Reading',
+                  regionId: 'second',
+                  path: 'src/shared-read.ts',
+                  kind: 'read' as const,
+                  ts: '2026-09-06T10:19:59.650Z',
+                },
               ]
             : []),
         ]

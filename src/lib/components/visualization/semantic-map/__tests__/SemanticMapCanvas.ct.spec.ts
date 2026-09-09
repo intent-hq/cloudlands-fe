@@ -184,18 +184,57 @@ test('agent comparison preserves a region pin and opens the latest diff', async 
   const canvas = component.locator('canvas');
 
   await canvas.click({ position: { x: 180, y: 180 } });
-  await canvas.click({ position: { x: 180, y: 128 } });
-  await canvas.click({ position: { x: 470, y: 146 }, modifiers: ['Shift'] });
+  await component.locator('[data-semantic-map-avatar="reading"]').first().click();
+  await component
+    .locator('[data-semantic-map-avatar="thinking"]')
+    .first()
+    .click({ modifiers: ['Shift'] });
 
   await expect(component.getByTestId('selected-agent')).toHaveAttribute(
     'data-agent',
     'reading,thinking',
   );
-  await expect(application).toHaveAttribute('data-semantic-map-shared-regions', 'first');
+  await expect(application).toHaveAttribute('data-semantic-map-shared-regions', 'first,second');
   await expect(application).toHaveAttribute('data-semantic-map-focus-mode', 'files');
 
-  await canvas.dblclick({ position: { x: 470, y: 146 } });
+  await component.locator('[data-semantic-map-avatar="thinking"]').first().dblclick();
   await expect(component.getByTestId('opened-diff')).toHaveText('src/edit.ts');
+});
+
+test('agent avatars are reachable, stack by region, and track zoom and DPR', async ({
+  mount,
+  page,
+}) => {
+  await installRuntimeMediaMock(page);
+  const component = await mount(SemanticMapCanvasHost, { props: { activityFixture: true } });
+  const canvas = component.locator('canvas');
+  const reading = component.getByRole('button', { name: 'Reading, idle in First.' });
+  const tooling = component.getByRole('button', { name: 'Tooling, working in First.' });
+
+  await expect(component.locator('[data-semantic-map-avatar-overlay]')).toBeVisible();
+  await expect(component.locator('[data-agent-avatar-stack]')).toHaveCount(1);
+  await reading.focus();
+  await expect(reading).toBeFocused();
+  await reading.click();
+  await expect(reading).toHaveAttribute('data-semantic-map-avatar-selected', 'true');
+  await tooling.click({ modifiers: ['Shift'] });
+  await expect(component.getByTestId('selected-agent')).toHaveAttribute(
+    'data-agent',
+    'reading,tooling',
+  );
+
+  const beforeZoom = await reading.boundingBox();
+  await canvas.hover({ position: { x: 320, y: 180 } });
+  await canvas.dispatchEvent('wheel', { deltaY: -300 });
+  await expect.poll(async () => (await reading.boundingBox())?.x).not.toBe(beforeZoom?.x);
+  const beforeDpr = await reading.boundingBox();
+  await page.evaluate(() =>
+    (
+      window as typeof window & { __semanticMapRuntime: { setDpr(value: number): void } }
+    ).__semanticMapRuntime.setDpr(2),
+  );
+  await expect.poll(async () => (await reading.boundingBox())?.x).toBe(beforeDpr?.x);
+  await expect.poll(async () => (await reading.boundingBox())?.y).toBe(beforeDpr?.y);
 });
 
 test('visibility pauses and resumes a hull tween without a time jump', async ({ mount, page }) => {

@@ -313,7 +313,7 @@ describe('semantic map render scene', () => {
     expect(scene.badges.some(({ id }) => id === 'outside')).toBe(false);
   });
 
-  it('fans collocated badges and derives every hue from agent identity', () => {
+  it('keeps collocated agents on one region anchor and derives every hue from identity', () => {
     const activities: MapActivity[] = Array.from({ length: 9 }, (_, index) => ({
       id: `activity-${index}`,
       agentId: `agent-${index}`,
@@ -335,7 +335,30 @@ describe('semantic map render scene', () => {
     expect(scene.badges.map(({ id, color }) => [id, color])).toEqual(
       activities.map(({ agentId }) => [agentId, getAgentColorsWithSeed(agentId ?? '', false)[0]]),
     );
-    expect(new Set(scene.badges.map(({ x, y }) => `${x}:${y}`)).size).toBe(9);
+    expect(
+      scene.badges.every(({ regionId, x, y }) => regionId === 'one' && x === 100 && y === 100),
+    ).toBe(true);
+  });
+
+  it('keeps the map surface contract flat and routes agent presence through real avatars', () => {
+    const canvasSource = readFileSync(
+      resolve(
+        process.cwd(),
+        'src/lib/components/visualization/semantic-map/SemanticMapCanvas.svelte',
+      ),
+      'utf8',
+    );
+    const overlaySource = readFileSync(
+      resolve(
+        process.cwd(),
+        'src/lib/components/visualization/semantic-map/SemanticMapAgentOverlay.svelte',
+      ),
+      'utf8',
+    );
+
+    expect(canvasSource).not.toMatch(/createPattern|hatch|surface-hatch/i);
+    expect(overlaySource).toContain('<AgentAvatarWithState');
+    expect(overlaySource).toContain('<AgentAvatarStack');
   });
 
   it.each([false, true])(

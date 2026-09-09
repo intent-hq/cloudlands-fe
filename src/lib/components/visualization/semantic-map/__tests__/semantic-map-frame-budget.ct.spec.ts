@@ -10,7 +10,6 @@ test('three-agent 32x replay meets the 1440px frame budget', async ({ mount, pag
   await expect(canvas).toHaveAttribute('data-semantic-map-width', '1440');
   await expect(canvas).toHaveAttribute('data-semantic-map-height', '900');
   await expect(canvas).toHaveAttribute('data-semantic-map-agent-count', '3');
-
   await component.getByRole('button', { name: '32×' }).click();
   await component.getByRole('button', { name: 'Paused' }).click();
   const metrics = await canvas.evaluate(

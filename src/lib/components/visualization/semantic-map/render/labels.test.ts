@@ -49,7 +49,7 @@ function expectCollisionFree(result: ReturnType<typeof layout>): void {
       expect(boxesOverlap(result.boxes[left], result.boxes[right])).toBe(false);
     }
   }
-  expect(result.badges).toHaveLength(SCRIPT_AGENTS.length);
+  expect(result.avatars).toHaveLength(SCRIPT_AGENTS.length);
 }
 
 function hullContainsPoint(hull: [number, number][], x: number, y: number): boolean {
@@ -95,18 +95,54 @@ it('keeps every focus label collision-free at 320px', () => {
   expectCollisionFree(layout('focus', 320, 620));
 });
 
-it('places every badge before narrow viewport labels and never overlaps badges', () => {
+it('places every avatar before narrow viewport labels and never overlaps avatars', () => {
   const result = layout('replay', 320, 620);
-  expect(result.badges).toHaveLength(SCRIPT_AGENTS.length);
-  expect(result.boxes.slice(0, result.badges.length).every(({ kind }) => kind === 'badge')).toBe(
+  expect(result.avatars).toHaveLength(SCRIPT_AGENTS.length);
+  expect(result.boxes.slice(0, result.avatars.length).every(({ kind }) => kind === 'avatar')).toBe(
     true,
   );
-  for (let left = 0; left < result.badges.length; left += 1) {
-    for (let right = left + 1; right < result.badges.length; right += 1) {
-      expect(boxesOverlap(result.badges[left].box, result.badges[right].box)).toBe(false);
+  for (let left = 0; left < result.avatars.length; left += 1) {
+    for (let right = left + 1; right < result.avatars.length; right += 1) {
+      expect(boxesOverlap(result.avatars[left].box, result.avatars[right].box)).toBe(false);
     }
   }
   expect(result.regions.length).toBeLessThanOrEqual(3);
+});
+
+it('groups agents in the same region into one avatar-stack anchor', () => {
+  const result = layoutSceneLabels({
+    regions: [],
+    regionLabels: new Map(),
+    edges: [],
+    badges: [
+      {
+        id: 'a',
+        name: 'A',
+        regionId: 'shared',
+        kind: 'edit',
+        x: 100,
+        y: 100,
+        color: '#111',
+        thinking: false,
+      },
+      {
+        id: 'b',
+        name: 'B',
+        regionId: 'shared',
+        kind: 'tool',
+        x: 100,
+        y: 100,
+        color: '#222',
+        thinking: false,
+      },
+    ],
+    width: 300,
+    height: 200,
+  });
+
+  expect(result.avatars).toHaveLength(1);
+  expect(result.avatars[0].badges.map(({ id }) => id)).toEqual(['a', 'b']);
+  expect(result.avatars[0].box.width).toBe(42);
 });
 
 it('contains every 420px label within its own hull', () => {

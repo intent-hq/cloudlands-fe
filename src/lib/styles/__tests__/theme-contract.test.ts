@@ -587,6 +587,15 @@ describe('theme color contract', () => {
     );
   });
 
+  it('keeps semantic map surfaces independent of hatch tokens', () => {
+    const mapRoot = path.resolve(process.cwd(), 'src/lib/components/visualization/semantic-map');
+    const sources = ['SemanticMapCanvas.svelte', 'render/comparison.ts', 'render/scene.ts'].map(
+      (file) => fs.readFileSync(path.join(mapRoot, file), 'utf8'),
+    );
+
+    expect(sources.join('\n')).not.toMatch(/--[\w-]*hatch[\w-]*/);
+  });
+
   it('uses distinct black elevation shadows for light and dark surfaces', () => {
     const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
     const lightRaised = tokenValue(css, 'theme-light-elevation-raised');

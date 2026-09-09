@@ -20,7 +20,6 @@ import type {
 const READ_DURATION_MS = 2_000;
 const MOVE_DURATION_MS = 1_000;
 const TOOL_DURATION_MS = 1_200;
-const BADGE_RADIUS = 13;
 const DEFAULT_TRAIL_LENGTH = 4;
 export const HEAT_BAND_ALPHA: Readonly<Record<HeatBand, number>> = {
   0: 0,
@@ -295,26 +294,6 @@ export function buildFocusContent(input: {
   return { regionId: region.id, mode: children.length > 0 ? 'subregions' : 'files', items };
 }
 
-function fanBadges(badges: AgentBadge[], regionIdByAgent: Map<string, string>): void {
-  const groups = new Map<string, AgentBadge[]>();
-  for (const badge of badges) {
-    const regionId = regionIdByAgent.get(badge.id);
-    if (!regionId) continue;
-    const group = groups.get(regionId) ?? [];
-    group.push(badge);
-    groups.set(regionId, group);
-  }
-  for (const group of groups.values()) {
-    if (group.length === 1) continue;
-    group.forEach((badge, index) => {
-      const angle = -Math.PI / 2 + (index / Math.max(1, group.length - 1)) * Math.PI;
-      const distance = BADGE_RADIUS + group.length * 2;
-      badge.x += Math.cos(angle) * distance;
-      badge.y += Math.sin(angle) * distance;
-    });
-  }
-}
-
 function buildBadges(
   activities: MapActivity[],
   geometry: Map<string, RegionGeometry>,
@@ -339,6 +318,7 @@ function buildBadges(
     const badge: AgentBadge = {
       id,
       name: nameByAgent.get(id) ?? id,
+      regionId: region?.id,
       kind: latest.kind,
       x: region?.x ?? 28 + unplaced++ * 34,
       y: region?.y ?? 28,
@@ -348,7 +328,6 @@ function buildBadges(
     if (latest.kind === 'tool') badge.toolAgeMs = Math.max(0, end - timestamp(latest.ts));
     return badge;
   });
-  fanBadges(badges, latestRegionByAgent);
   return badges;
 }
 

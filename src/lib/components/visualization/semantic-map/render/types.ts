@@ -98,6 +98,7 @@ export interface FocusContent {
 export interface AgentBadge {
   id: string;
   name: string;
+  regionId?: string;
   kind: MapActivityKind;
   x: number;
   y: number;

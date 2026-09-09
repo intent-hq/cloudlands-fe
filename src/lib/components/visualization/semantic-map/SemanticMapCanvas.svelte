@@ -7,7 +7,7 @@
   import { capFocusGeometry, lerpGeometry } from './layout/interpolate';
   import type { RegionGeometry } from './layout/place';
   import { CanvasPathCache, traceHull } from './render/canvas';
-  import { comparisonTextColor, drawComparisonRoutes } from './render/comparison';
+  import { drawComparisonRoutes } from './render/comparison';
   import { drawSharedRegionHighlight, latestEvidenceAction } from './render/comparison';
   import { drawFocusContent, drawFocusedResponsibility } from './render/focus';
   import { layoutSceneLabels, type LabelLayout, type PlacedLabel } from './render/labels';
@@ -25,11 +25,11 @@
   import type {
     ActivityMark,
     ActivityTick,
-    AgentBadge,
     AgentTrail,
     RouteEdge,
     SemanticMapCanvasProps,
   } from './render/types';
+  import SemanticMapAgentOverlay from './SemanticMapAgentOverlay.svelte';
   let {
     manifest,
     geometry,
@@ -52,8 +52,7 @@
   const TWEEN_DURATION_MS = 300;
   const READ_DURATION_MS = 2_000;
   const MOVE_DURATION_MS = 1_000;
-  const TOOL_DURATION_MS = 1_200;
-  const BADGE_RADIUS = 13;
+  const AVATAR_HIT_RADIUS = 14;
   const MINIMAP_FADE_DURATION_MS = 180;
   const applicationAttributes = { role: 'application', tabindex: 0 } as const;
   type KeyboardLayer = 'agents' | 'crossings' | 'regions';
@@ -102,8 +101,13 @@
   let tweening = false;
   const pathCache = new CanvasPathCache();
   const minimapPathCache = new CanvasPathCache();
-  let labelLayout: LabelLayout = { regions: [], edges: [], pips: [], badges: [], boxes: [] };
-  let hatchPattern: CanvasPattern | null = null;
+  let labelLayout = $state.raw<LabelLayout>({
+    regions: [],
+    edges: [],
+    pips: [],
+    avatars: [],
+    boxes: [],
+  });
   let animationFrame: number | null = null;
   let sceneStartedAt = 0;
   let pauseStartedAt: number | null = null;
@@ -189,6 +193,30 @@
     keyboardEdgeIndex === null ? undefined : scene.edges[keyboardEdgeIndex],
   );
   const sharedRegions = $derived(new Set(sharedRegionIds(scene.activities, [...selectedAgentIds])));
+  const regionLabels = $derived(
+    new Map(manifest.regions.map(({ id, label }) => [id, label] as const)),
+  );
+  const avatarBadges = $derived.by(() => {
+    if (sharedRegions.size === 0) return scene.badges;
+    const rendered = [...scene.badges];
+    const geometryById = new Map(
+      (selection ? focusGeometry : geometry.rest).map((item) => [item.id, item]),
+    );
+    for (const regionId of sharedRegions) {
+      const region = geometryById.get(regionId);
+      if (!region) continue;
+      for (const agentId of selectedAgentIds) {
+        const badge = scene.badges.find(({ id }) => id === agentId);
+        if (
+          !badge ||
+          rendered.some(({ id, regionId: current }) => id === agentId && current === regionId)
+        )
+          continue;
+        rendered.push({ ...badge, regionId, x: region.x, y: region.y });
+      }
+    }
+    return rendered;
+  });
   const agentSummaries = $derived.by(() =>
     scene.badges.map((badge) => {
       const agentActivities = scene.activities.filter(({ agentId }) => agentId === badge.id);
@@ -287,7 +315,6 @@
       mutedForeground: cssValue(style, '--color-muted-foreground', '#71717a'),
       accent: cssValue(style, '--color-primary', '#8b5cf6'),
     };
-    createHatchPattern();
   }
 
   function resolveReducedMotion(): void {
@@ -301,29 +328,6 @@
     scheduleDraw();
   }
 
-  function createHatchPattern(): void {
-    const context = canvas?.getContext('2d');
-    if (!context) return;
-    const period = 10;
-    const tile = document.createElement('canvas');
-    tile.width = Math.round(period * pixelRatio);
-    tile.height = Math.round(period * pixelRatio);
-    const tileContext = tile.getContext('2d');
-    if (!tileContext) return;
-    tileContext.scale(pixelRatio, pixelRatio);
-    tileContext.strokeStyle = colors.border;
-    tileContext.lineWidth = 1;
-    tileContext.beginPath();
-    tileContext.moveTo(-1, period - 1);
-    tileContext.lineTo(period - 1, -1);
-    tileContext.moveTo(4, period + 4);
-    tileContext.lineTo(period + 4, 4);
-    tileContext.stroke();
-    const pattern = context.createPattern(tile, 'repeat');
-    pattern?.setTransform(new DOMMatrix().scale(1 / pixelRatio));
-    hatchPattern = pattern;
-  }
-
   function syncCanvasBackingStore(): void {
     if (!canvas) return;
     pixelRatio = window.devicePixelRatio || 1;
@@ -331,7 +335,6 @@
     canvas.height = Math.round(height * pixelRatio);
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
-    createHatchPattern();
     scheduleDraw();
   }
 
@@ -355,9 +358,9 @@
     minimapPathCache.update(geometry.rest, []);
     labelLayout = layoutSceneLabels({
       regions: next,
-      regionLabels: new Map(manifest.regions.map(({ id, label }) => [id, label])),
+      regionLabels,
       edges: scene.edges,
-      badges: scene.badges,
+      badges: avatarBadges,
       width,
       height,
       scale: transform.scale,
@@ -405,7 +408,7 @@
     const regionAlpha = isUnsorted ? 0.46 : 1;
     ctx.save();
     ctx.globalAlpha = regionAlpha;
-    ctx.fillStyle = selectedRegionIds.has(region.id) ? colors.surface : colors.background;
+    ctx.fillStyle = selectedRegionIds.has(region.id) ? colors.surface : colors.muted;
     if (cachedPath) {
       ctx.fill(path);
     } else {
@@ -419,11 +422,6 @@
       ctx.fillStyle = colors.foreground;
       cachedPath ? ctx.fill(path) : ctx.fill();
     }
-    if (hatchPattern && !selectedRegionIds.has(region.id) && !sharedRegions.has(region.id)) {
-      ctx.globalAlpha = regionAlpha;
-      ctx.fillStyle = hatchPattern;
-      cachedPath ? ctx.fill(path) : ctx.fill();
-    }
     ctx.globalAlpha = regionAlpha;
     ctx.strokeStyle = highlighted ? colors.accent : colors.border;
     ctx.lineWidth = (highlighted ? 2 : 1) / transform.scale;
@@ -433,8 +431,6 @@
       drawSharedRegionHighlight(
         ctx,
         drawablePath,
-        scene.badges,
-        selectedAgentIds,
         transform.scale,
         colors.foreground,
         !selectedRegionIds.has(region.id),
@@ -624,86 +620,6 @@
     ctx.restore();
   }
 
-  function drawToolPulse(ctx: CanvasRenderingContext2D, badge: AgentBadge, elapsed: number): void {
-    const age = (badge.toolAgeMs ?? Infinity) + elapsed;
-    if (age >= TOOL_DURATION_MS) return;
-    const progress = age / TOOL_DURATION_MS;
-    const radius = 6 + progress * 6;
-    ctx.save();
-    ctx.translate(badge.x + BADGE_RADIUS, badge.y - BADGE_RADIUS);
-    ctx.rotate(Math.PI / 4);
-    ctx.globalAlpha = 1 - progress;
-    ctx.strokeStyle = badge.color;
-    ctx.lineWidth = 2 / transform.scale;
-    ctx.strokeRect(-radius / 2, -radius / 2, radius, radius);
-    ctx.restore();
-  }
-
-  function drawBadgeActivityCue(ctx: CanvasRenderingContext2D, badge: AgentBadge): void {
-    ctx.save();
-    ctx.strokeStyle = badge.color;
-    ctx.fillStyle = colors.surface;
-    ctx.lineWidth = 2 / transform.scale;
-    if (badge.thinking) {
-      ctx.setLineDash([3 / transform.scale, 2 / transform.scale]);
-      ctx.beginPath();
-      ctx.arc(badge.x, badge.y, (BADGE_RADIUS + 4) / transform.scale, 0, Math.PI * 2);
-      ctx.stroke();
-    } else if (badge.toolAgeMs !== undefined) {
-      ctx.translate(
-        badge.x + BADGE_RADIUS / transform.scale,
-        badge.y - BADGE_RADIUS / transform.scale,
-      );
-      ctx.rotate(Math.PI / 4);
-      const size = 7 / transform.scale;
-      ctx.fillRect(-size / 2, -size / 2, size, size);
-      ctx.strokeRect(-size / 2, -size / 2, size, size);
-    }
-    ctx.restore();
-  }
-
-  function drawBadge(
-    ctx: CanvasRenderingContext2D,
-    badge: AgentBadge,
-    now: number,
-    elapsed: number,
-  ): void {
-    const breathing = badge.thinking && !reducedMotion ? 1 + Math.sin(now / 420) * 0.08 : 1;
-    const selected = selectedAgentIds.has(badge.id);
-    ctx.save();
-    ctx.fillStyle = badge.color;
-    ctx.strokeStyle = colors.foreground;
-    ctx.lineWidth = 4 / transform.scale;
-    ctx.beginPath();
-    ctx.arc(badge.x, badge.y, (BADGE_RADIUS * breathing) / transform.scale, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.strokeStyle = selected || hoveredBadgeId === badge.id ? colors.accent : colors.foreground;
-    ctx.lineWidth = 2 / transform.scale;
-    ctx.stroke();
-    ctx.fillStyle = comparisonTextColor(badge.color);
-    ctx.font = `600 ${12 / transform.scale}px ${uiFont}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(badge.name.slice(0, 1).toUpperCase(), badge.x, badge.y);
-    ctx.restore();
-    if (keyboardBadgeId === badge.id) {
-      ctx.save();
-      ctx.strokeStyle = colors.background;
-      ctx.lineWidth = 6 / transform.scale;
-      ctx.beginPath();
-      ctx.arc(badge.x, badge.y, (BADGE_RADIUS + 5) / transform.scale, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.strokeStyle = colors.accent;
-      ctx.lineWidth = 2 / transform.scale;
-      ctx.setLineDash([3 / transform.scale, 3 / transform.scale]);
-      ctx.stroke();
-      ctx.restore();
-    }
-    drawBadgeActivityCue(ctx, badge);
-    if (!reducedMotion) drawToolPulse(ctx, badge, elapsed);
-  }
-
   function drawMinimap(
     ctx: CanvasRenderingContext2D,
     rect: NonNullable<typeof minimapRect>,
@@ -781,7 +697,6 @@
     labelLayout.regions.forEach((label) => drawRegionLabel(ctx, label));
     drawRouteLabels(ctx);
     scene.ticks.forEach((tick) => drawTick(ctx, tick));
-    labelLayout.badges.forEach((badge) => drawBadge(ctx, badge, now, elapsed));
     ctx.restore();
     if (minimapRect) drawMinimap(ctx, minimapRect, now);
     ctx.restore();
@@ -793,14 +708,11 @@
       (!reducedMotion &&
         showMinimap &&
         performance.now() - minimapShownAt < MINIMAP_FADE_DURATION_MS) ||
-      (!reducedMotion && scene.badges.some((badge) => badge.thinking)) ||
       scene.marks.some((mark) =>
         mark.kind === 'read'
           ? mark.ageMs + elapsed < READ_DURATION_MS
           : mark.kind === 'move' && mark.ageMs + elapsed < MOVE_DURATION_MS,
-      ) ||
-      (!reducedMotion &&
-        scene.badges.some((badge) => (badge.toolAgeMs ?? Infinity) + elapsed < TOOL_DURATION_MS))
+      )
     );
   }
 
@@ -846,10 +758,13 @@
   function updateHover(screenX: number, screenY: number): void {
     const world = screenToWorld(screenX, screenY);
     hoveredBadgeId =
-      labelLayout.badges.find(
-        (badge) =>
-          Math.hypot(badge.x - world.x, badge.y - world.y) <= BADGE_RADIUS / transform.scale,
-      )?.id ?? null;
+      labelLayout.avatars
+        .flatMap((anchor) => anchor.badges.map((badge) => ({ badge, anchor })))
+        .find(
+          ({ anchor }) =>
+            Math.hypot(anchor.x - world.x, anchor.y - world.y) <=
+            AVATAR_HIT_RADIUS / transform.scale,
+        )?.badge.id ?? null;
     hoveredEdgeIndex = hoveredBadgeId
       ? null
       : scene.edges.findIndex((edge) => hitRouteEdge(edge, world.x, world.y, 7 / transform.scale));
@@ -998,6 +913,7 @@
   }
 
   function handleKeydown(event: KeyboardEvent): void {
+    if (event.target !== container) return;
     if (event.key === 'Escape') {
       clearKeyboardFocus();
       onClearSelection?.();
@@ -1044,6 +960,7 @@
 
   $effect(() => {
     void scene;
+    void avatarBadges;
     sceneStartedAt = pauseStartedAt ?? performance.now();
     refreshRenderCaches(targetGeometry);
     scheduleDraw();
@@ -1157,6 +1074,15 @@
     ondblclick={handleDoubleClick}
     onwheel={handleWheel}
   ></canvas>
+
+  <SemanticMapAgentOverlay
+    anchors={labelLayout.avatars}
+    {regionLabels}
+    {transform}
+    {selectedAgentIds}
+    {onSelectAgent}
+    onOpenEvidence={(agentId) => openLatestEvidence(agentId)}
+  />
 
   {#if hoveredRegion}
     <div

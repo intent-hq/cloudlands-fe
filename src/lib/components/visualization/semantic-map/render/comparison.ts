@@ -1,7 +1,7 @@
 import type { MapActivity } from '../core/types';
 import { drawQuadraticPath } from './canvas';
 import { routeEdgePresentation } from './scene';
-import type { AgentBadge, RouteEdge, SemanticMapSelection } from './types';
+import type { RouteEdge, SemanticMapSelection } from './types';
 
 interface ComparisonRouteOptions {
   selection: SemanticMapSelection;
@@ -14,19 +14,7 @@ interface ComparisonRouteOptions {
   foreground: string;
 }
 
-export const SHARED_REGION_FILL_ALPHA = 0.14;
-
-function relativeLuminance(hex: string): number {
-  const channels = hex.match(/[0-9a-f]{2}/gi)?.map((value) => parseInt(value, 16) / 255);
-  if (!channels || channels.length !== 3) return 0;
-  return channels
-    .map((value) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4))
-    .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
-}
-
-export function comparisonTextColor(background: string): '#000000' | '#ffffff' {
-  return relativeLuminance(background) >= 0.175 ? '#000000' : '#ffffff';
-}
+export const SHARED_REGION_FILL_ALPHA = 0.08;
 
 function strokeRoute(
   ctx: CanvasRenderingContext2D,
@@ -98,34 +86,23 @@ export function drawComparisonRoutes(
 export function drawSharedRegionHighlight(
   ctx: CanvasRenderingContext2D,
   path: Path2D | undefined,
-  badges: AgentBadge[],
-  selectedAgentIds: ReadonlySet<string>,
   scale: number,
   foreground: string,
   fill: boolean,
 ): void {
-  const selected = badges.filter(({ id }) => selectedAgentIds.has(id)).slice(0, 2);
   ctx.save();
   if (fill) {
-    selected.forEach(({ color }) => {
-      ctx.globalAlpha = SHARED_REGION_FILL_ALPHA;
-      ctx.fillStyle = color;
-      if (path) ctx.fill(path);
-      else ctx.fill();
-    });
+    ctx.globalAlpha = SHARED_REGION_FILL_ALPHA;
+    ctx.fillStyle = foreground;
+    if (path) ctx.fill(path);
+    else ctx.fill();
   }
   ctx.globalAlpha = 1;
   ctx.setLineDash([]);
   ctx.strokeStyle = foreground;
-  ctx.lineWidth = 8 / scale;
+  ctx.lineWidth = 2 / scale;
   if (path) ctx.stroke(path);
   else ctx.stroke();
-  selected.forEach(({ color }, index) => {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = (6 - index * 3) / scale;
-    if (path) ctx.stroke(path);
-    else ctx.stroke();
-  });
   ctx.restore();
 }
 

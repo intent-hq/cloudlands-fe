@@ -2,7 +2,8 @@ import type { RegionGeometry } from '../layout/place';
 import type { AgentBadge, RouteEdge } from './types';
 
 const GAP = 4;
-const BADGE_SIZE = 30;
+const AVATAR_SIZE = 24;
+const AVATAR_OVERLAP = 6;
 const REGION_LABEL_MIN_FONT_SIZE = 12;
 const REGION_LABEL_MAX_FONT_SIZE = 16;
 const REGION_LABEL_MIN_OPACITY = 0.82;
@@ -11,7 +12,7 @@ const NARROW_REGION_LABEL_WIDTH = 96;
 
 export interface LabelBox {
   id: string;
-  kind: 'region' | 'edge' | 'pip' | 'badge';
+  kind: 'region' | 'edge' | 'pip' | 'avatar';
   x: number;
   y: number;
   width: number;
@@ -29,8 +30,17 @@ export interface LabelLayout {
   regions: PlacedLabel[];
   edges: PlacedLabel[];
   pips: PlacedLabel[];
-  badges: Array<AgentBadge & { box: LabelBox }>;
+  avatars: AvatarAnchor[];
   boxes: LabelBox[];
+}
+
+export interface AvatarAnchor {
+  id: string;
+  regionId?: string;
+  badges: AgentBadge[];
+  x: number;
+  y: number;
+  box: LabelBox;
 }
 
 export interface LabelFocusState {
@@ -201,20 +211,27 @@ function regionCandidates(
   ];
 }
 
-function badgeCandidates(
-  badge: AgentBadge,
+function avatarCandidates(
+  anchor: Pick<AvatarAnchor, 'x' | 'y'>,
   scale: number,
-  viewport: { width: number; height: number },
 ): Array<readonly [number, number]> {
-  const step = 34 / scale;
+  const step = (AVATAR_SIZE + GAP) / scale;
   const result: Array<readonly [number, number]> = [];
   for (const radius of [step, step * 1.55, step * 2.1]) {
     for (const angle of [-Math.PI / 2, 0, Math.PI / 2, Math.PI, -Math.PI / 4, Math.PI / 4]) {
-      result.push([badge.x + Math.cos(angle) * radius, badge.y + Math.sin(angle) * radius]);
+      result.push([anchor.x + Math.cos(angle) * radius, anchor.y + Math.sin(angle) * radius]);
     }
   }
-  const halfSize = BADGE_SIZE / scale / 2;
-  const gridStep = (BADGE_SIZE + GAP) / scale;
+  return result;
+}
+
+function avatarFallbackCandidates(
+  anchor: Pick<AvatarAnchor, 'x' | 'y'>,
+  scale: number,
+  viewport: { width: number; height: number },
+): Array<readonly [number, number]> {
+  const halfSize = AVATAR_SIZE / scale / 2;
+  const gridStep = (AVATAR_SIZE + GAP) / scale;
   const fallback: Array<readonly [number, number]> = [];
   for (let y = halfSize + GAP; y <= viewport.height - halfSize - GAP; y += gridStep) {
     for (let x = halfSize + GAP; x <= viewport.width - halfSize - GAP; x += gridStep) {
@@ -223,9 +240,27 @@ function badgeCandidates(
   }
   fallback.sort(
     ([leftX, leftY], [rightX, rightY]) =>
-      Math.hypot(leftX - badge.x, leftY - badge.y) - Math.hypot(rightX - badge.x, rightY - badge.y),
+      Math.hypot(leftX - anchor.x, leftY - anchor.y) -
+      Math.hypot(rightX - anchor.x, rightY - anchor.y),
   );
-  return [...result, ...fallback];
+  return fallback;
+}
+
+function groupAvatarAnchors(badges: AgentBadge[]): Array<Omit<AvatarAnchor, 'box'>> {
+  const groups = new Map<string, AgentBadge[]>();
+  for (const badge of badges) {
+    const id = badge.regionId ? `region:${badge.regionId}` : `agent:${badge.id}`;
+    const group = groups.get(id) ?? [];
+    group.push(badge);
+    groups.set(id, group);
+  }
+  return [...groups].map(([id, group]) => ({
+    id,
+    regionId: group[0].regionId,
+    badges: group,
+    x: group[0].x,
+    y: group[0].y,
+  }));
 }
 
 function visibleRegions(input: {
@@ -264,25 +299,30 @@ export function layoutSceneLabels(input: {
   const focusState = {
     maximumBudget: Math.max(0, ...input.regions.map(({ budget }) => budget)),
   };
-  const badges = input.badges.map((badge, index) => {
-    const placed = place(
-      { id: badge.id, kind: 'badge', width: BADGE_SIZE / scale, height: BADGE_SIZE / scale },
-      badgeCandidates(badge, scale, viewport),
-      occupied,
-      viewport,
-    );
+  const avatars = groupAvatarAnchors(input.badges).map((anchor, index) => {
+    const stackWidth =
+      AVATAR_SIZE + Math.max(0, anchor.badges.length - 1) * (AVATAR_SIZE - AVATAR_OVERLAP);
+    const boxShape = {
+      id: anchor.id,
+      kind: 'avatar' as const,
+      width: stackWidth / scale,
+      height: AVATAR_SIZE / scale,
+    };
+    const placed =
+      place(boxShape, avatarCandidates(anchor, scale), occupied, viewport) ??
+      place(boxShape, avatarFallbackCandidates(anchor, scale, viewport), occupied, viewport);
     const box =
       placed ??
       ({
-        id: badge.id,
-        kind: 'badge',
-        x: BADGE_SIZE / scale / 2 + GAP,
-        y: BADGE_SIZE / scale / 2 + GAP + (index * (BADGE_SIZE + GAP)) / scale,
-        width: BADGE_SIZE / scale,
-        height: BADGE_SIZE / scale,
+        id: anchor.id,
+        kind: 'avatar',
+        x: stackWidth / scale / 2 + GAP,
+        y: AVATAR_SIZE / scale / 2 + GAP + (index * (AVATAR_SIZE + GAP)) / scale,
+        width: stackWidth / scale,
+        height: AVATAR_SIZE / scale,
       } satisfies LabelBox);
     if (!placed) occupied.push(box);
-    return { ...badge, x: box.x, y: box.y, box };
+    return { ...anchor, x: box.x, y: box.y, box };
   });
   const pips = input.edges.map((edge, index) => {
     const fontSize = 12 / scale;
@@ -373,5 +413,5 @@ export function layoutSceneLabels(input: {
     );
     return box ? [{ ...box, text: edge.label, fontSize, opacity: 1, lines }] : [];
   });
-  return { regions, edges, pips, badges, boxes: occupied };
+  return { regions, edges, pips, avatars, boxes: occupied };
 }
