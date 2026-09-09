@@ -420,7 +420,7 @@ export class TunnelManager {
       // yet: drop it now. Waiting would let a replacement be adopted first,
       // making the late close callback skip handleTunnelDrop (this.ws no
       // longer matches) and leak the old streams' frames onto the new socket.
-      this.handleTunnelDrop();
+      this.handleTunnelDrop('replaced non-open socket');
     }
     const config = this.getConfig();
     if (!config) {
@@ -515,7 +515,7 @@ export class TunnelManager {
             done = true;
             failCandidate(new Error('tunnel closed before opening'));
           }
-          if (this.ws === ws) this.handleTunnelDrop();
+          if (this.ws === ws) this.handleTunnelDrop('socket closed');
         });
         ws.on('message', (data: unknown, isBinary: boolean) => {
           if (this.ws === ws) this.handleMessage(data, isBinary);
@@ -930,12 +930,7 @@ export class TunnelManager {
           forwards: this.forwards.size,
           streams: this.streams.size,
         });
-        this.handleTunnelDrop();
-        try {
-          ws.terminate();
-        } catch {
-          // The manager state was already reset; ignore transport teardown errors.
-        }
+        this.resetUnhealthyTunnel(ws, 'heartbeat timeout');
       }, this.heartbeatTimeoutMs);
       this.heartbeatDeadlineTimer.unref?.();
       try {
@@ -945,12 +940,7 @@ export class TunnelManager {
           generation: this.tunnelGeneration,
           error: error instanceof Error ? error.message : String(error),
         });
-        this.handleTunnelDrop();
-        try {
-          ws.terminate();
-        } catch {
-          // ignore transport teardown errors
-        }
+        this.resetUnhealthyTunnel(ws, 'heartbeat ping failed');
       }
     }, this.heartbeatIntervalMs);
     this.heartbeatTimer.unref?.();
@@ -979,13 +969,37 @@ export class TunnelManager {
     this.heartbeatSentAtMs = null;
   }
 
+  private resetUnhealthyTunnel(ws: TunnelSocketLike, reason: string): void {
+    if (this.ws !== ws) return;
+    this.handleTunnelDrop(reason);
+    try {
+      ws.terminate();
+    } catch {
+      // The manager state was already reset; ignore transport teardown errors.
+    }
+    // A browser navigation whose TCP stream was destroyed may retry with a new
+    // connection immediately. Warm the replacement now so that retry does not
+    // have to discover and establish the tunnel itself. This cannot replay a
+    // partially completed HTTP request; browser-level reload remains separate.
+    if (!this.disposed && this.forwards.size > 0) {
+      void this.ensureTunnel().catch((error: unknown) => {
+        logger.warn('eager tunnel reconnect failed', {
+          reason,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+  }
+
   /**
    * The tunnel socket closed: destroy in-flight streams but keep every
    * forward (and its local listener/port) registered — the next accepted
    * local connection reconnects the tunnel lazily.
    */
-  private handleTunnelDrop(): void {
+  private handleTunnelDrop(reason: string): void {
     logger.warn('tunnel dropped; destroying in-flight streams, keeping forwards', {
+      reason,
+      generation: this.tunnelGeneration,
       forwards: this.forwards.size,
       streams: this.streams.size,
     });

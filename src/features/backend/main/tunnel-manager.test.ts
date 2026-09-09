@@ -636,7 +636,7 @@ describe('TunnelManager', () => {
     });
   });
 
-  it('resets a nominally open stalled tunnel after a missed heartbeat and reconnects lazily', async () => {
+  it('resets a nominally open stalled tunnel and eagerly reconnects after a missed heartbeat', async () => {
     const { server, port } = await startEchoServer();
     onCleanup(() => server.close());
     const { manager, created } = makeManager({
@@ -656,12 +656,17 @@ describe('TunnelManager', () => {
     // path stops answering pings — the half-open shape reported in #4615.
     created[0].autoPong = false;
     const activeClosed = waitForClose(active);
-    await waitFor(() => created[0].readyState === 3);
+    await waitFor(
+      () =>
+        created[0].readyState === 3 &&
+        created.length === 2 &&
+        manager.getDiagnostics().state === 'connected',
+    );
     await activeClosed;
 
     expect(manager.getDiagnostics()).toMatchObject({
-      state: 'disconnected',
-      generation: 1,
+      state: 'connected',
+      generation: 2,
       forwards: [{ remotePort: port, localPort, streams: 0 }],
       streams: [],
       heartbeat: { enabled: true, awaitingPong: false },
@@ -674,7 +679,6 @@ describe('TunnelManager', () => {
     revived.write(after);
     expect((await receivedAfter).equals(after)).toBe(true);
     expect(created).toHaveLength(2);
-    expect(manager.getDiagnostics()).toMatchObject({ state: 'connected', generation: 2 });
   });
 
   it('times out one stalled OPEN without disturbing healthy streams on the shared tunnel', async () => {
