@@ -42,6 +42,7 @@
   import { getActivityLabelParts, type StructuredLabel } from '$features/events/activity-labels';
   import { getEventAgentId } from './utils';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { Button } from '$lib/components/ui/button';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
@@ -444,55 +445,57 @@
             ) > 60000}
           {@const clickable = isEventClickable(event)}
 
-          <button
-            type="button"
-            class="relative group flex items-start gap-2 py-1 w-full text-left transition-colors z-10 outline-none {clickable
-              ? 'cursor-pointer'
-              : 'cursor-default'}"
-            onclick={() => handleEventClick(event)}
-            disabled={!clickable}
-            transition:slide={{ axis: 'y', tier: 'moderate' }}
-          >
-            <!-- Icon or Agent Avatar - use h-[1.2rem] to match text line-height for vertical centering -->
-            <div class="relative flex items-center justify-center w-3.5 h-[1.2rem] shrink-0">
-              {#if eventAgentId}
-                <div class="flex items-center justify-center bg-sidebar">
-                  <AgentAvatar size={14} agentId={eventAgentId} />
-                </div>
-              {:else}
-                <div class="flex items-center justify-center w-3 rounded-sm bg-sidebar">
-                  <Fa {icon} class="text-ui {statusColor}" />
-                </div>
-              {/if}
-            </div>
+          <div transition:slide={{ axis: 'y', tier: 'moderate' }}>
+            <Button
+              type="button"
+              variant="plain"
+              class="h-auto! rounded-none! relative group flex items-start gap-2 py-1! w-full text-left transition-colors z-10 outline-none {clickable
+                ? 'cursor-pointer'
+                : 'cursor-default'}"
+              onclick={() => handleEventClick(event)}
+              disabled={!clickable}
+            >
+              <!-- Icon or Agent Avatar - use h-[1.2rem] to match text line-height for vertical centering -->
+              <div class="relative flex items-center justify-center w-3.5 h-[1.2rem] shrink-0">
+                {#if eventAgentId}
+                  <div class="flex items-center justify-center bg-sidebar">
+                    <AgentAvatar size={14} agentId={eventAgentId} />
+                  </div>
+                {:else}
+                  <div class="flex items-center justify-center w-3 rounded-sm bg-sidebar">
+                    <Fa {icon} class="text-ui {statusColor}" />
+                  </div>
+                {/if}
+              </div>
 
-            <!-- Content -->
-            <div class="flex-1 min-w-0 flex items-baseline gap-1">
-              <span
-                class="text-ui leading-[1.2rem] truncate text-subtle {clickable
-                  ? 'group-hover:text-foreground'
-                  : ''} transition-colors"
-              >
-                {#each labelParts as part}{#if part.emphasis}<span
-                      class="font-semibold text-foreground">{part.text}</span
-                    >{:else}{part.text}{/if}{/each}
-              </span>
-              {#if changes}
-                <LineChangesBadge
-                  additions={changes.additions}
-                  deletions={changes.deletions}
-                  size="xs"
-                />
-              {/if}
-            </div>
+              <!-- Content -->
+              <div class="flex-1 min-w-0 flex items-baseline gap-1">
+                <span
+                  class="text-ui leading-[1.2rem] truncate text-subtle {clickable
+                    ? 'group-hover:text-foreground'
+                    : ''} transition-colors"
+                >
+                  {#each labelParts as part}{#if part.emphasis}<span
+                        class="font-semibold text-foreground">{part.text}</span
+                      >{:else}{part.text}{/if}{/each}
+                </span>
+                {#if changes}
+                  <LineChangesBadge
+                    additions={changes.additions}
+                    deletions={changes.deletions}
+                    size="xs"
+                  />
+                {/if}
+              </div>
 
-            <!-- Timestamp -->
-            {#if showTimestamp}
-              <span class="text-ui text-subtle shrink-0">
-                <RelativeTime date={new Date(event.timestamp)} compact />
-              </span>
-            {/if}
-          </button>
+              <!-- Timestamp -->
+              {#if showTimestamp}
+                <span class="text-ui text-subtle shrink-0">
+                  <RelativeTime date={new Date(event.timestamp)} compact />
+                </span>
+              {/if}
+            </Button>
+          </div>
         {/each}
       </div>
     </div>

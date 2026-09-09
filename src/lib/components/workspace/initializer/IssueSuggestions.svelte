@@ -1995,25 +1995,27 @@
 
           <!-- Sentry issues -->
           {#each visibleSentryIssues as issue (issue.id)}
-            <button
-              type="button"
-              onclick={() => handleSentryIssueClick(issue)}
-              class="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
-              transition:slide={{ tier: 'moderate' }}
-            >
-              <SentryIcon class="w-3.5 h-3.5 text-ghost shrink-0 opacity-50" />
-              <span class="text-sm truncate flex-1 text-foreground/80 group-hover:text-foreground"
-                >{issue.title}</span
+            <div transition:slide={{ tier: 'moderate' }}>
+              <Button
+                type="button"
+                variant="plain"
+                onclick={() => handleSentryIssueClick(issue)}
+                class="h-auto! w-full px-3! py-2! flex items-center gap-2 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
               >
-              {#if sentryProjects.length > 1 && !selectedSentryProject}
-                <span class="text-xs text-subtle shrink-0">{issue.projectName}</span>
-              {/if}
-              {#if issue.lastSeen}
-                <span class="text-xs text-subtle shrink-0"
-                  >{formatRelativeTime(issue.lastSeen)}</span
+                <SentryIcon class="w-3.5 h-3.5 text-ghost shrink-0 opacity-50" />
+                <span class="text-sm truncate flex-1 text-foreground/80 group-hover:text-foreground"
+                  >{issue.title}</span
                 >
-              {/if}
-            </button>
+                {#if sentryProjects.length > 1 && !selectedSentryProject}
+                  <span class="text-xs text-subtle shrink-0">{issue.projectName}</span>
+                {/if}
+                {#if issue.lastSeen}
+                  <span class="text-xs text-subtle shrink-0"
+                    >{formatRelativeTime(issue.lastSeen)}</span
+                  >
+                {/if}
+              </Button>
+            </div>
           {/each}
 
           <!-- GitHub issues -->

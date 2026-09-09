@@ -236,19 +236,21 @@
     </div>
   {:else}
     <!-- Initial prompt state -->
-    <button
-      type="button"
-      class="w-full py-2 px-2 flex items-center gap-2 hover:bg-muted/50 transition-colors cursor-pointer text-left"
-      onclick={handleConnect}
-      transition:slide={{ axis: 'y', tier: 'moderate' }}
-    >
-      <div class="flex items-center justify-center">
-        <GitHubIcon size={16} class="text-ghost" />
-      </div>
-      <div class="flex-1 min-w-0">
-        <p class="text-xs font-medium text-subtle">{message}</p>
-        <p class="text-xs text-subtle">{m.lib_githubAuth_enables_description()}</p>
-      </div>
-    </button>
+    <div transition:slide={{ axis: 'y', tier: 'moderate' }}>
+      <Button
+        type="button"
+        variant="plain"
+        class="h-auto! w-full px-2! py-2! flex items-center gap-2 hover:bg-muted/50 transition-colors cursor-pointer text-left"
+        onclick={handleConnect}
+      >
+        <div class="flex items-center justify-center">
+          <GitHubIcon size={16} class="text-ghost" />
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-xs font-medium text-subtle">{message}</p>
+          <p class="text-xs text-subtle">{m.lib_githubAuth_enables_description()}</p>
+        </div>
+      </Button>
+    </div>
   {/if}
 </div>

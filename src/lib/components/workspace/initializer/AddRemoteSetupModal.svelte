@@ -1,11 +1,12 @@
 <script lang="ts">
   import Button from '$lib/components/ui/button/button.svelte';
+  import * as Dialog from '$lib/components/ui/dialog';
   import Input from '$lib/components/ui/input/input.svelte';
   import Label from '$lib/components/ui/label/label.svelte';
   import { RadioGroup, RadioGroupItem } from '$lib/components/ui/radio-group';
   import Fa from 'svelte-fa';
   import { faXmark, faServer, faKey } from '@fortawesome/free-solid-svg-icons';
-  import { fade, scale } from '$lib/motion';
+  import { scale } from '$lib/motion';
   import { createLogger } from '$lib/utils/client-logger';
   import { portal } from '$lib/actions/portal';
   import { m } from '$shared/paraglide/messages.js';
@@ -114,13 +115,9 @@
 {#if isOpen}
   <div class="fixed inset-0 z-[9999] flex items-center justify-center" use:portal={'body'}>
     <!-- Backdrop -->
-    <button
-      type="button"
-      class="absolute inset-0 bg-black/50 cursor-default"
-      onclick={handleClose}
-      aria-label={m.workspace_addRemoteSetupModal_close_ariaLabel()}
-      transition:fade={{ tier: 'moderate' }}
-    ></button>
+    <Dialog.Root open={true}>
+      <Dialog.Overlay contained class="z-auto cursor-default" onclick={handleClose} />
+    </Dialog.Root>
 
     <!-- Modal -->
     <div
