@@ -730,7 +730,7 @@
        (plus the parent's gap-1) keeps 8px of clearance before the "+".
        The 2px bottom padding contains the dropped active-tab flares inside
        the scrollport; the matching negative margin preserves the strip's
-       existing 32px titlebar footprint while preventing vertical overflow.
+       36px titlebar footprint while preventing vertical overflow.
        data-app-region-clip: tabs scrolled out of this container must not carve
        no-drag holes in the titlebar drag strip (unclipped-geometry carving,
        intent-hq/monorepo#2400; rules in app.css). -->
@@ -762,7 +762,7 @@
         class="min-w-0 shrink-0"
         data-workspace-tab-motion={workspaceId}
         style:width={isDragged ? `${dragSession?.origin.width ?? 160}px` : undefined}
-        style:height={isDragged ? `${dragSession?.origin.height ?? 32}px` : undefined}
+        style:height={isDragged ? `${dragSession?.origin.height ?? 36}px` : undefined}
         animate:flip={{
           duration: isDragged || prefersReducedMotion() ? 0 : spring.moderate.settleMs,
           easing: spring.moderate.exit.easing,
@@ -784,7 +784,7 @@
           {/if}
           <div
             class={cn(
-              'group/workspace-tab flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color] motion-reduce:transition-none',
+              'group/workspace-tab flex h-(--control-height-medium) w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color] motion-reduce:transition-none',
               isCurrent
                 ? 'rounded-t-md border-border border-b-0 bg-sidebar text-foreground shadow-none'
                 : 'rounded-md border-transparent text-muted-foreground hover:bg-sidebar/50 hover:text-foreground',
@@ -923,7 +923,7 @@
         {:else}
           <div
             class={cn(
-              'group/workspace-tab relative flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,opacity,transform] motion-reduce:transition-none',
+              'group/workspace-tab relative flex h-(--control-height-medium) w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,opacity,transform] motion-reduce:transition-none',
               isCurrent
                 ? 'rounded-t-md border-border border-b-0 bg-sidebar text-foreground shadow-none'
                 : 'rounded-md border-transparent text-muted-foreground',

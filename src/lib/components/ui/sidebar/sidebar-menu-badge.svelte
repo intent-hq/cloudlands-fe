@@ -33,7 +33,7 @@
     className,
   )}
   {...restProps}
-  style:font-variation-settings={lit ? "'wght' 600" : "'wght' 400"}
+  style:font-variation-settings={lit ? "'wght' 500" : "'wght' 400"}
 >
   {@render children?.()}
 </div>

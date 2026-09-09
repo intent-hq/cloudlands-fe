@@ -385,11 +385,7 @@
                             label={option.label}
                             disabled={option.disabled || !optionMatchesQuery(option)}
                             data-menu-item
-                            class={cn(
-                              menuItem(),
-                              'min-h-(--control-height-compact) p-1.5',
-                              option.class,
-                            )}
+                            class={cn(menuItem(), 'p-1.5', option.class)}
                             child={optionChild}
                           />
                         {/each}

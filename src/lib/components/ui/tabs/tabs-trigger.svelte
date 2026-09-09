@@ -47,9 +47,9 @@
   data-variant={context.variant}
   data-proximity-active={proximityActive || undefined}
   class={cn(
-    'type-caption relative z-10 inline-flex cursor-pointer items-center justify-center rounded-(--radius-small) border border-transparent bg-transparent font-medium text-muted-foreground transition-[color,font-weight] duration-spring-fast ease-spring-fast disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
+    'type-caption relative z-10 inline-flex cursor-pointer items-center justify-center rounded-(--radius-pill) border border-transparent bg-transparent text-muted-foreground transition-[color,font-weight] duration-spring-fast ease-spring-fast disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
     context.size === 'compact' ? 'h-6 px-2' : 'h-(--control-height-medium) px-3',
-    (selected || proximityActive) && 'font-semibold text-foreground',
+    (selected || proximityActive) && '[--text-caption-weight:500] text-foreground',
     className,
   )}
   {...restProps as any}

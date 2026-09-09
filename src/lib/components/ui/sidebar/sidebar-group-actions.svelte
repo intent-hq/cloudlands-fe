@@ -17,7 +17,10 @@
   bind:this={ref}
   data-slot="sidebar-group-actions"
   data-sidebar="group-actions"
-  class={cn('absolute right-3.5 top-2 z-10 flex h-8 items-center gap-1', className)}
+  class={cn(
+    'absolute right-3.5 top-2 z-10 flex h-(--control-height-medium) items-center gap-1',
+    className,
+  )}
   {...restProps}
 >
   {@render children?.()}

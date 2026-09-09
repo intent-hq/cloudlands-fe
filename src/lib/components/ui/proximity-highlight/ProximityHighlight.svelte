@@ -73,7 +73,7 @@
   {#each mergeSplit.groups as group (group.id)}
     <div
       class={cn('absolute', selectedClass)}
-      style="border-radius: var(--radius-small)"
+      style="border-radius: var(--radius-row)"
       use:springRect={{ rect: group.rect, tier: 'moderate' }}
       out:fade={{ tier: 'moderate' }}
     ></div>
@@ -83,7 +83,7 @@
     {#if activeRect}
       <div
         class={cn('absolute', hoverClass)}
-        style="border-radius: var(--radius-small)"
+        style="border-radius: var(--radius-row)"
         use:springRect={{ rect: activeRect, tier: 'fast' }}
         out:fade={{ tier: 'fast' }}
       ></div>

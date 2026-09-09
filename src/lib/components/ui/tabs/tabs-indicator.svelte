@@ -39,7 +39,7 @@
     aria-hidden="true"
     data-tabs-indicator
     class="pointer-events-none absolute left-0 top-0 bg-selected shadow-(--elevation-raised)"
-    style="border-radius: var(--radius-small)"
+    style="border-radius: var(--radius-pill)"
     use:springRect={selectedRect}
   ></div>
 {/if}

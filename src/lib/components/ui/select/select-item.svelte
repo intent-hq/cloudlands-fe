@@ -24,7 +24,7 @@
   label={label ?? value}
   {disabled}
   data-menu-item
-  class={cn(menuItem(), 'min-h-(--control-height-compact) px-2 py-1.5 text-xs', className)}
+  class={cn(menuItem(), 'px-2 py-1.5', className)}
 >
   <div class="min-w-0 flex-1 truncate">{@render children?.()}</div>
   <span

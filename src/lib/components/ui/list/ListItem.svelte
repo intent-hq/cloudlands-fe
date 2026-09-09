@@ -103,18 +103,18 @@
   // Size configurations
   const sizeConfig = {
     sm: {
-      padding: 'min-h-7 px-2 py-0.5',
+      padding: 'min-h-(--control-height-compact) px-2 py-0.5',
       basePaddingX: 8, // px value for inline style
       iconSize: '12',
-      titleSize: 'type-body',
+      titleSize: 'type-caption',
       subtitleSize: 'type-caption',
       gap: 'gap-2',
     },
     md: {
-      padding: 'min-h-8 px-2 py-1.5',
+      padding: 'min-h-(--control-height-medium) px-2 py-1.5',
       basePaddingX: 8, // px value for inline style
       iconSize: '14',
-      titleSize: 'type-body',
+      titleSize: 'type-caption',
       subtitleSize: 'type-caption',
       gap: 'gap-2',
     },
@@ -172,7 +172,7 @@
     aria-labelledby={ariaLabelledby ?? (ariaLabel ? undefined : contentId)}
     class={cn(
       // Base styles
-      'relative col-start-1 row-start-1 flex h-full w-full min-w-0 cursor-pointer items-center justify-start rounded-md border border-transparent bg-transparent text-left font-inherit text-foreground transition-colors duration-spring-fast ease-spring-fast',
+      'relative col-start-1 row-start-1 flex h-full w-full min-w-0 cursor-pointer items-center justify-start rounded-(--radius-row) border border-transparent bg-transparent text-left font-inherit text-foreground transition-colors duration-spring-fast ease-spring-fast',
       '[&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_[data-slot=button-content]]:justify-start',
       'focus-visible:-outline-offset-1',
       'motion-reduce:transition-none',
@@ -244,8 +244,8 @@
         <div
           class={cn(
             config.titleSize,
-            'max-w-full min-w-0 shrink truncate font-medium leading-5',
-            selected || active,
+            'max-w-full min-w-0 shrink truncate leading-5',
+            (selected || active) && '[--text-caption-weight:500]',
             titleClass,
           )}
         >

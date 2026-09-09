@@ -20,7 +20,7 @@
 
   const mergedProps = $derived({
     class: cn(
-      'group/group-label text-muted-foreground flex h-8 w-full shrink-0 items-center justify-start gap-2 rounded-md px-2 text-xs font-normal transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none focus-visible:outline focus-visible:-outline-offset-1 [&>svg]:size-4 [&>svg]:shrink-0',
+      'group/group-label text-muted-foreground flex h-(--control-height-medium) w-full shrink-0 items-center justify-start gap-2 rounded-md px-2 text-xs font-normal transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none focus-visible:outline focus-visible:-outline-offset-1 [&>svg]:size-4 [&>svg]:shrink-0',
       group && group.actionCount > 0 && 'pr-(--group-actions-pad)',
       className,
     ),

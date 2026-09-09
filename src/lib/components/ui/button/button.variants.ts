@@ -29,7 +29,7 @@ export const buttonCompatibilityAliases = [
 ] as const;
 
 export const buttonVariants = tv({
-  base: 'type-caption group/button relative isolate inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-(--radius-medium) border border-transparent bg-transparent font-medium transition-[color,opacity] duration-spring-fast ease-spring-fast disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-invalid:ring-1 aria-invalid:ring-danger motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0',
+  base: 'type-caption group/button relative isolate inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-(--radius-medium) border border-transparent bg-transparent font-normal transition-[color,opacity] duration-spring-fast ease-spring-fast disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-invalid:ring-1 aria-invalid:ring-danger motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0',
   variants: {
     variant: {
       primary: 'text-primary-foreground',

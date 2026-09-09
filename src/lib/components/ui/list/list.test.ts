@@ -32,7 +32,7 @@ describe('List', () => {
     const active = getByRole('button', { name: /Active row/ });
     const selectedRow = selected.closest('[data-slot="list-item-row"]');
     expect(list?.className).toContain('gap-px');
-    expect(selected.className).toContain('rounded-md');
+    expect(selected.className).toContain('rounded-(--radius-row)');
     expect(selected.className).toContain('border-transparent');
     expect(selected.className).toContain('justify-start');
     expect(selected.className).toContain('[&_[data-slot=button-content]]:w-full');
@@ -45,8 +45,11 @@ describe('List', () => {
     expect(selected.style.paddingRight).toBe('8px');
     expect(selected.style.marginLeft).toBe('');
     expect(selected.style.width).toBe('');
-    expect(selectedRow?.querySelector('.type-body')).not.toBeNull();
-    expect(selectedRow?.querySelector('.type-caption')).not.toBeNull();
+    const title = [...(selectedRow?.querySelectorAll('.type-caption') ?? [])].find((element) =>
+      element.textContent?.includes('A long list title'),
+    );
+    expect(title).not.toBeNull();
+    expect(title?.classList.contains('[--text-caption-weight:500]')).toBe(true);
     selected.focus();
     await fireEvent.keyDown(selected, { key: 'Enter' });
     expect(document.activeElement).toBe(selected);

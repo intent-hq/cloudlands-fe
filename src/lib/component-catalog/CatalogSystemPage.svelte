@@ -12,7 +12,7 @@
   ] as const;
   const sizes = [
     ['Compact', '--control-height-small', '28px'],
-    ['Default', '--control-height-medium', '32px'],
+    ['Default', '--control-height-medium', '36px'],
     ['Large', '--control-height-large', '36px'],
   ] as const;
   const SURFACE_LEVELS = ([1, 2, 3, 4, 5, 6, 7, 8] as const).map((level) => ({

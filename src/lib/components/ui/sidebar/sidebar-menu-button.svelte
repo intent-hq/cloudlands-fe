@@ -10,8 +10,8 @@
           'border border-border bg-background shadow-(--elevation-raised) data-[proximity-active=true]:border-sidebar-accent',
       },
       size: {
-        default: 'type-body h-8',
-        sm: 'h-7 text-xs',
+        default: 'type-caption h-(--control-height-medium)',
+        sm: 'type-caption h-(--control-height-compact)',
         lg: 'type-body group-data-[collapsible=icon]:p-0! h-12',
       },
     },
@@ -168,7 +168,7 @@
         <span class="inline-grid min-w-0 flex-1 text-left">
           <span
             class="invisible col-start-1 row-start-1 truncate"
-            style="font-variation-settings: 'wght' 600"
+            style="font-variation-settings: 'wght' 500"
             aria-hidden="true">{label}</span
           >
           <span
@@ -176,7 +176,7 @@
               'text-muted-foreground col-start-1 row-start-1 truncate transition-[color,font-variation-settings] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
               lit && 'text-foreground',
             )}
-            style:font-variation-settings={effectiveActive ? "'wght' 600" : "'wght' 400"}
+            style:font-variation-settings={effectiveActive ? "'wght' 500" : "'wght' 400"}
             >{label}</span
           >
         </span>
@@ -186,7 +186,7 @@
           class={cn(
             'text-muted-foreground flex min-w-0 flex-1 items-center gap-2 truncate transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none',
             lit && 'text-foreground',
-            effectiveActive && 'font-semibold',
+            effectiveActive && 'font-medium',
           )}>{@render children?.()}</span
         >
       {/if}

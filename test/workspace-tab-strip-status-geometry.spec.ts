@@ -341,7 +341,7 @@ async function expectNormalActiveShape(
   expect(radii.trailing).toBe(radii.leading);
   await expect(tab.locator('[data-workspace-tab-leading-flare]')).toHaveCount(1);
   await expect(tab.locator('[data-workspace-tab-trailing-flare]')).toHaveCount(1);
-  if (assertHeight) expect((await box(tab)).height).toBeCloseTo(32 * zoom, 0);
+  if (assertHeight) expect((await box(tab)).height).toBeCloseTo(36 * zoom, 0);
   return radii;
 }
 

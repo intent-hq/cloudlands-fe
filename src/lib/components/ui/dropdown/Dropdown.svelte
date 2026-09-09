@@ -804,12 +804,8 @@
         disabled={option.disabled}
         data-highlighted={isHighlighted ? 'true' : undefined}
         data-menu-item
-        style="scroll-margin-top: 32px"
-        class={cn(
-          menuItem(),
-          'min-h-(--control-height-compact) gap-1.5 overflow-hidden px-2 py-1.5 text-xs',
-          option.class,
-        )}
+        style="scroll-margin-top: var(--control-height-medium)"
+        class={cn(menuItem(), 'gap-1.5 overflow-hidden px-2 py-1.5', option.class)}
         role={option.type === 'submenu' ? 'menuitem' : 'option'}
         aria-selected={option.type !== 'submenu' ? isSelected(option.value) : undefined}
         aria-haspopup={option.type === 'submenu' ? 'menu' : undefined}

@@ -1,7 +1,7 @@
 import { tv } from 'tailwind-variants';
 
 export const menuItem = tv({
-  base: 'group/menu-item type-body relative z-10 flex min-h-7 w-full min-w-0 cursor-default select-none items-center gap-2 rounded-md border-none bg-transparent px-2 py-1 text-left outline-none transition-[color,font-weight] duration-spring-fast ease-spring-fast focus:text-foreground data-[highlighted]:font-semibold data-[selected]:font-semibold data-[state=checked]:font-semibold data-[state=open]:font-semibold data-[disabled]:pointer-events-none data-[disabled]:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 motion-reduce:transition-none',
+  base: 'group/menu-item type-caption relative z-10 flex min-h-(--control-height-medium) w-full min-w-0 cursor-default select-none items-center gap-2 rounded-(--radius-row) border-none bg-transparent px-2 py-1 text-left outline-none transition-[color,font-weight] duration-spring-fast ease-spring-fast focus:text-foreground data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] data-[disabled]:pointer-events-none data-[disabled]:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 motion-reduce:transition-none',
   variants: {
     inset: { true: 'pl-8' },
   },

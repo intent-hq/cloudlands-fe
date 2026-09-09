@@ -266,7 +266,7 @@
             data-slot="list-view-item"
             data-list-index={index}
             data-highlighted={hover?.activeIndex === index || undefined}
-            class="group/collection-row relative z-10 min-w-0 rounded-(--radius-small) focus-visible:-outline-offset-1"
+            class="group/collection-row relative z-10 min-w-0 rounded-(--radius-row) focus-visible:-outline-offset-1"
             role={selectable ? 'option' : 'listitem'}
             aria-selected={selectable ? selectedSet.has(key) : undefined}
             tabindex={index === activeIndex ? 0 : -1}

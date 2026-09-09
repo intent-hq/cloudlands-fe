@@ -65,7 +65,7 @@
   const mergedProps = $derived({
     class: cn(
       'relative z-10 flex w-full min-w-0 cursor-pointer select-none items-center gap-2 overflow-hidden rounded-md pl-2 pr-(--row-gutter) text-left outline-none transition-[padding] duration-spring-fast ease-spring-fast group-hover/menu-sub-item:pr-(--row-gutter-hover) group-focus-within/menu-sub-item:pr-(--row-gutter-hover) motion-reduce:transition-none disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50',
-      size === 'sm' || contextualSize === 'compact' ? 'h-6 text-xs' : 'type-body h-7',
+      size === 'sm' || contextualSize === 'compact' ? 'h-6 text-xs' : 'type-caption h-7',
       'group-data-[collapsible=icon]:hidden',
       className,
     ),
@@ -106,7 +106,7 @@
       <span class="inline-grid min-w-0 flex-1 text-left">
         <span
           class="invisible col-start-1 row-start-1 truncate"
-          style="font-variation-settings: 'wght' 600"
+          style="font-variation-settings: 'wght' 500"
           aria-hidden="true">{label}</span
         >
         <span
@@ -114,7 +114,7 @@
             'text-muted-foreground col-start-1 row-start-1 truncate transition-[color,font-variation-settings] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
             lit && 'text-foreground',
           )}
-          style:font-variation-settings={isActive ? "'wght' 600" : "'wght' 400"}>{label}</span
+          style:font-variation-settings={isActive ? "'wght' 500" : "'wght' 400"}>{label}</span
         >
       </span>
       {@render children?.()}
@@ -123,7 +123,7 @@
         class={cn(
           'text-muted-foreground flex min-w-0 flex-1 items-center gap-2 truncate transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none',
           lit && 'text-foreground',
-          isActive && 'font-semibold',
+          isActive && 'font-medium',
         )}>{@render children?.()}</span
       >
     {/if}
