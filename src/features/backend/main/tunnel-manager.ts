@@ -202,8 +202,10 @@ export interface TunnelSocketLike {
   /** Bytes queued but not yet handed to the OS — the backpressure signal. */
   readonly bufferedAmount: number;
   send(data: Buffer): void;
+  ping(): void;
   terminate(): void;
   on(event: 'open' | 'close', listener: () => void): unknown;
+  on(event: 'pong', listener: () => void): unknown;
   on(event: 'error', listener: (error: Error) => void): unknown;
   on(event: 'message', listener: (data: unknown, isBinary: boolean) => void): unknown;
 }
@@ -225,12 +227,18 @@ export interface TunnelManagerOptions {
   backpressureHighWaterMark?: number;
   /** Cadence of the `bufferedAmount` drain poll while paused. Default 20ms. */
   backpressurePollMs?: number;
+  /** Client-side WebSocket ping cadence. `0` disables it. Default 30s. */
+  heartbeatIntervalMs?: number;
+  /** Deadline for the pong answering a client heartbeat. Default 10s. */
+  heartbeatTimeoutMs?: number;
 }
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 const DEFAULT_OPEN_TIMEOUT_MS = 15_000;
 const DEFAULT_BACKPRESSURE_HIGH_WATER = 1024 * 1024;
 const DEFAULT_BACKPRESSURE_POLL_MS = 20;
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
+const DEFAULT_HEARTBEAT_TIMEOUT_MS = 10_000;
 
 /** One local forwarded port: an ephemeral loopback listener bound to a remote port. */
 interface ForwardState {
@@ -250,6 +258,25 @@ interface StreamState {
   /** The daemon already ended this stream (`OPEN_ERR`/`CLOSE`) — send no `CLOSE` back. */
   remoteClosed: boolean;
   openTimer: NodeJS.Timeout | null;
+  createdAtMs: number;
+}
+
+/** Read-only lifecycle state for support diagnostics and focused health checks. */
+export interface TunnelDiagnostics {
+  state: 'connecting' | 'connected' | 'disconnected' | 'disposed';
+  generation: number;
+  forwards: Array<{ remotePort: number; localPort: number; streams: number }>;
+  streams: Array<{
+    streamId: number;
+    remotePort: number;
+    state: 'opening' | 'open';
+    ageMs: number;
+  }>;
+  heartbeat: {
+    enabled: boolean;
+    awaitingPong: boolean;
+    lastPongAtMs: number | null;
+  };
 }
 
 /**
@@ -345,6 +372,8 @@ export class TunnelManager {
   private readonly openTimeoutMs: number;
   private readonly backpressureHighWaterMark: number;
   private readonly backpressurePollMs: number;
+  private readonly heartbeatIntervalMs: number;
+  private readonly heartbeatTimeoutMs: number;
 
   private ws: TunnelSocketLike | null = null;
   private connectPromise: Promise<void> | null = null;
@@ -355,6 +384,11 @@ export class TunnelManager {
   private readonly streams = new Map<number, StreamState>();
   private readonly pausedForBackpressure = new Set<net.Socket>();
   private backpressureTimer: NodeJS.Timeout | null = null;
+  private heartbeatTimer: NodeJS.Timeout | null = null;
+  private heartbeatDeadlineTimer: NodeJS.Timeout | null = null;
+  private heartbeatSentAtMs: number | null = null;
+  private lastPongAtMs: number | null = null;
+  private tunnelGeneration = 0;
   private nextStreamId = 1;
   private disposed = false;
 
@@ -366,6 +400,8 @@ export class TunnelManager {
     this.backpressureHighWaterMark =
       options.backpressureHighWaterMark ?? DEFAULT_BACKPRESSURE_HIGH_WATER;
     this.backpressurePollMs = options.backpressurePollMs ?? DEFAULT_BACKPRESSURE_POLL_MS;
+    this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+    this.heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS;
   }
 
   /**
@@ -458,6 +494,13 @@ export class TunnelManager {
             if (other !== ws) terminateQuietly(other);
           }
           this.ws = ws;
+          this.tunnelGeneration += 1;
+          this.startHeartbeat(ws);
+          logger.info('tunnel connected', {
+            generation: this.tunnelGeneration,
+            candidates: candidates.length,
+            reconnect: this.tunnelGeneration > 1,
+          });
           resolve();
         });
         ws.on('error', (error: Error) => {
@@ -476,6 +519,9 @@ export class TunnelManager {
         });
         ws.on('message', (data: unknown, isBinary: boolean) => {
           if (this.ws === ws) this.handleMessage(data, isBinary);
+        });
+        ws.on('pong', () => {
+          if (this.ws === ws) this.handleHeartbeatPong();
         });
       }
     });
@@ -516,6 +562,38 @@ export class TunnelManager {
       remotePort,
       localPort,
     }));
+  }
+
+  /** Snapshot connection, heartbeat, forward, and per-stream lifecycle state. */
+  getDiagnostics(): TunnelDiagnostics {
+    const now = Date.now();
+    const state = this.disposed
+      ? 'disposed'
+      : this.ws?.readyState === WS_OPEN
+        ? 'connected'
+        : this.connectPromise
+          ? 'connecting'
+          : 'disconnected';
+    return {
+      state,
+      generation: this.tunnelGeneration,
+      forwards: [...this.forwards.values()].map((forward) => ({
+        remotePort: forward.remotePort,
+        localPort: forward.localPort,
+        streams: forward.streams.size,
+      })),
+      streams: [...this.streams.values()].map((stream) => ({
+        streamId: stream.streamId,
+        remotePort: stream.forward.remotePort,
+        state: stream.opened ? 'open' : 'opening',
+        ageMs: Math.max(0, now - stream.createdAtMs),
+      })),
+      heartbeat: {
+        enabled: this.heartbeatIntervalMs > 0,
+        awaitingPong: this.heartbeatDeadlineTimer !== null,
+        lastPongAtMs: this.lastPongAtMs,
+      },
+    };
   }
 
   /**
@@ -639,9 +717,16 @@ export class TunnelManager {
       opened: false,
       remoteClosed: false,
       openTimer: null,
+      createdAtMs: Date.now(),
     };
     this.streams.set(streamId, stream);
     forward.streams.add(stream);
+    logger.debug('stream opening', {
+      generation: this.tunnelGeneration,
+      streamId,
+      remotePort: forward.remotePort,
+      activeStreams: this.streams.size,
+    });
     socket.setNoDelay(true);
     // Hold local bytes until the daemon confirms the remote connect.
     socket.pause();
@@ -704,6 +789,12 @@ export class TunnelManager {
         stream.opened = true;
         if (stream.openTimer) clearTimeout(stream.openTimer);
         stream.openTimer = null;
+        logger.debug('stream opened', {
+          generation: this.tunnelGeneration,
+          streamId: frame.streamId,
+          remotePort: stream.forward.remotePort,
+          openLatencyMs: Date.now() - stream.createdAtMs,
+        });
         if (!stream.socket.destroyed && !this.pausedForBackpressure.has(stream.socket)) {
           stream.socket.resume();
         }
@@ -778,6 +869,14 @@ export class TunnelManager {
     if (stream.openTimer) clearTimeout(stream.openTimer);
     stream.openTimer = null;
     this.pausedForBackpressure.delete(stream.socket);
+    logger.debug('stream ended', {
+      generation: this.tunnelGeneration,
+      streamId: stream.streamId,
+      remotePort: stream.forward.remotePort,
+      opened: stream.opened,
+      lifetimeMs: Date.now() - stream.createdAtMs,
+      remainingStreams: this.streams.size,
+    });
     if (options.sendClose) this.sendFrame({ type: 'close', streamId: stream.streamId });
     if (!stream.socket.destroyed) stream.socket.destroy();
   }
@@ -816,6 +915,70 @@ export class TunnelManager {
     this.backpressureTimer.unref?.();
   }
 
+  private startHeartbeat(ws: TunnelSocketLike): void {
+    this.stopHeartbeat();
+    this.lastPongAtMs = null;
+    if (this.heartbeatIntervalMs <= 0) return;
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws !== ws || ws.readyState !== WS_OPEN || this.heartbeatDeadlineTimer) return;
+      this.heartbeatSentAtMs = Date.now();
+      this.heartbeatDeadlineTimer = setTimeout(() => {
+        if (this.ws !== ws) return;
+        logger.warn('tunnel heartbeat timed out; resetting shared transport', {
+          generation: this.tunnelGeneration,
+          timeoutMs: this.heartbeatTimeoutMs,
+          forwards: this.forwards.size,
+          streams: this.streams.size,
+        });
+        this.handleTunnelDrop();
+        try {
+          ws.terminate();
+        } catch {
+          // The manager state was already reset; ignore transport teardown errors.
+        }
+      }, this.heartbeatTimeoutMs);
+      this.heartbeatDeadlineTimer.unref?.();
+      try {
+        ws.ping();
+      } catch (error) {
+        logger.warn('tunnel heartbeat ping failed', {
+          generation: this.tunnelGeneration,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        this.handleTunnelDrop();
+        try {
+          ws.terminate();
+        } catch {
+          // ignore transport teardown errors
+        }
+      }
+    }, this.heartbeatIntervalMs);
+    this.heartbeatTimer.unref?.();
+  }
+
+  private handleHeartbeatPong(): void {
+    const now = Date.now();
+    const latencyMs = this.heartbeatSentAtMs === null ? null : now - this.heartbeatSentAtMs;
+    this.lastPongAtMs = now;
+    if (this.heartbeatDeadlineTimer) clearTimeout(this.heartbeatDeadlineTimer);
+    this.heartbeatDeadlineTimer = null;
+    this.heartbeatSentAtMs = null;
+    logger.debug('tunnel heartbeat healthy', {
+      generation: this.tunnelGeneration,
+      latencyMs,
+      forwards: this.forwards.size,
+      streams: this.streams.size,
+    });
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    if (this.heartbeatDeadlineTimer) clearTimeout(this.heartbeatDeadlineTimer);
+    this.heartbeatTimer = null;
+    this.heartbeatDeadlineTimer = null;
+    this.heartbeatSentAtMs = null;
+  }
+
   /**
    * The tunnel socket closed: destroy in-flight streams but keep every
    * forward (and its local listener/port) registered — the next accepted
@@ -826,6 +989,7 @@ export class TunnelManager {
       forwards: this.forwards.size,
       streams: this.streams.size,
     });
+    this.stopHeartbeat();
     this.ws = null;
     for (const stream of [...this.streams.values()]) {
       this.endStream(stream, { sendClose: false });
@@ -836,6 +1000,7 @@ export class TunnelManager {
   }
 
   private teardownForwards(): void {
+    this.stopHeartbeat();
     for (const stream of this.streams.values()) {
       if (stream.openTimer) clearTimeout(stream.openTimer);
       stream.openTimer = null;
