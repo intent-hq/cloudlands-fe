@@ -77,6 +77,74 @@ const MOCK_WORKSPACES = [
   },
 ];
 
+interface MockSetting {
+  path: string;
+  label: string;
+  description: string;
+  category: string;
+  type: 'boolean' | 'object';
+  defaultValue: unknown;
+  value: unknown;
+  origin?: 'default';
+}
+
+const MOCK_SETTINGS: MockSetting[] = [
+  {
+    path: 'workspaceInitializer.state',
+    label: 'Workspace initializer state',
+    description: 'Browser-preview workspace initializer state.',
+    category: 'workspace',
+    type: 'object',
+    defaultValue: {},
+    value: { hydrated: true },
+  },
+  {
+    path: 'hardwareConsole.state',
+    label: 'Hardware console state',
+    description: 'Browser-preview hardware console state.',
+    category: 'hardwareConsole',
+    type: 'object',
+    defaultValue: {},
+    value: {},
+  },
+  {
+    path: 'rtk.enabled',
+    label: 'RTK enabled',
+    description: 'Use RTK compressed command output.',
+    category: 'tools',
+    type: 'boolean',
+    defaultValue: false,
+    value: false,
+    origin: 'default',
+  },
+];
+
+let mockSettingsRevision = 0;
+
+function mockSettingsGet(path: unknown): unknown {
+  const setting = MOCK_SETTINGS.find((entry) => entry.path === path);
+  if (!setting) {
+    return mockError('INVALID_PARAMS', -32602, `Browser mock: setting "${String(path)}" not found`);
+  }
+  const { value, origin, ...definition } = setting;
+  return {
+    path: setting.path,
+    value,
+    definition,
+    ...(origin ? { origin } : {}),
+    revision: mockSettingsRevision,
+  };
+}
+
+function unavailableTools(names: unknown): Record<string, { available: false }> {
+  if (!Array.isArray(names)) return {};
+  return Object.fromEntries(
+    names
+      .filter((name): name is string => typeof name === 'string')
+      .map((name) => [name, { available: false }]),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Backend transport channels (`backend:*`)
 // ---------------------------------------------------------------------------
@@ -169,7 +237,36 @@ function mockBackendMethodResult(method: string, params?: Record<string, unknown
     return { commits: [], boundarySha: null, nextToken: null };
   }
   if (method === 'repo.list') return { repos: [] };
-  if (method === 'settings.list') return { settings: [] };
+  if (method === 'settings.list') {
+    return { settings: MOCK_SETTINGS, revision: mockSettingsRevision };
+  }
+  if (method === 'settings.get') return mockSettingsGet(params?.path);
+  if (method === 'settings.update') {
+    const changes = Array.isArray(params?.changes) ? params.changes : [];
+    const applied: Array<{ path: string; value: unknown; origin?: 'default' }> = [];
+    for (const change of changes) {
+      if (typeof change !== 'object' || change === null) continue;
+      const { path, value } = change as { path?: unknown; value?: unknown };
+      const setting = MOCK_SETTINGS.find((entry) => entry.path === path);
+      if (!setting) continue;
+      setting.value = value;
+      applied.push({
+        path: setting.path,
+        value,
+        ...(setting.origin ? { origin: setting.origin } : {}),
+      });
+    }
+    if (applied.length > 0) mockSettingsRevision += 1;
+    return { applied, revision: mockSettingsRevision };
+  }
+  if (method === 'host.checkAuggie' || method === 'host.findBinary') {
+    return { available: false };
+  }
+  if (method === 'host.toolAvailability') {
+    return { tools: unavailableTools(params?.tools) };
+  }
+  if (method === 'host.providerAuthStatus') return { providers: [] };
+  if (method === 'host.providerDiscovery') return { providers: [] };
   if (method === 'agent.list') return { agents: [], retiredCount: 0 };
   if (method === 'agent.listInterrupted') return { agents: [] };
   if (method === 'models.list') return { models: [] };
