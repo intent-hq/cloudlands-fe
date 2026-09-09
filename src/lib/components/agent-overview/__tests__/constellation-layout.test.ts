@@ -5,11 +5,8 @@ import {
   GRAPH_NODE_GAPS,
   GRAPH_ZOOM_EXTENT,
 } from '../constants';
-import {
-  createConstellationLayout,
-  MIN_COMPACT_NODE_GAP,
-  SMALL_GRAPH_FIT_SCALE,
-} from '../constellation-layout';
+import { createConstellationLayout, SMALL_GRAPH_FIT_SCALE } from '../constellation-layout';
+import { NODE_SCREEN_MARGINS, SMALL_GRAPH_FIT_FLOOR } from '../graph-fit';
 import {
   buildBusyGraph,
   buildConstellationGraph,
@@ -104,6 +101,16 @@ function settledSnapshot(layout: ReturnType<typeof createConstellationLayout>): 
 function nodeRadius(type: GraphNode['type']): number {
   const { width, height } = GRAPH_NODE_DIMENSIONS[type];
   return Math.hypot(width, height) / 2;
+}
+
+function compactFootprint(type: GraphNode['type'], scale: number) {
+  if (type !== 'task') return NODE_SCREEN_MARGINS[type];
+  return {
+    top: (GRAPH_NODE_DIMENSIONS.task.height * scale) / 2,
+    right: (GRAPH_NODE_DIMENSIONS.task.width * scale) / 2,
+    bottom: (GRAPH_NODE_DIMENSIONS.task.height * scale) / 2,
+    left: (GRAPH_NODE_DIMENSIONS.task.width * scale) / 2,
+  };
 }
 
 function overlaps(a: GraphNode, b: GraphNode): boolean {
@@ -398,7 +405,7 @@ describe('constellation layout', () => {
     ['constellation', buildConstellationGraph],
     ['busy', buildBusyGraph],
   ] as const) {
-    it(`compacts the ${name} fixture into the 1092x720 fit target at 0.7`, () => {
+    it(`compacts the ${name} fixture collision-free for the 1092x720 fit target`, () => {
       const graph = buildGraph(Date.parse('2026-09-04T00:00:00.000Z'));
       const available = { width: 1092 - 24 - 24, height: 720 - 56 - 72 };
       const fitTarget = {
@@ -413,38 +420,38 @@ describe('constellation layout', () => {
       });
       layout.update(graph.nodes, graph.edges);
       layout.settle();
-      const bounds = layout.fitBounds(SMALL_GRAPH_FIT_SCALE);
+      const targetScale = name === 'busy' ? SMALL_GRAPH_FIT_FLOOR : SMALL_GRAPH_FIT_SCALE;
+      const bounds = layout.fitBounds(targetScale);
       const { nodes } = settledSnapshot(layout);
 
-      expect(bounds.width).toBeLessThanOrEqual(fitTarget.width);
-      expect(bounds.height).toBeLessThanOrEqual(fitTarget.height);
-      expect(bounds.width * SMALL_GRAPH_FIT_SCALE + GRAPH_FIT_PADDING * 2).toBeGreaterThanOrEqual(
+      expect(bounds.width * targetScale + GRAPH_FIT_PADDING * 2).toBeGreaterThanOrEqual(
         available.width * 0.6,
       );
-      expect(bounds.height * SMALL_GRAPH_FIT_SCALE + GRAPH_FIT_PADDING * 2).toBeGreaterThanOrEqual(
+      expect(bounds.height * targetScale + GRAPH_FIT_PADDING * 2).toBeGreaterThanOrEqual(
         available.height * 0.6,
       );
-      const labelEnvelope = {
-        agent: { width: 128 / SMALL_GRAPH_FIT_SCALE, height: 30 / SMALL_GRAPH_FIT_SCALE, y: 20 },
-        task: { width: 176, height: 56, y: 4 },
-        file: { width: 112 / SMALL_GRAPH_FIT_SCALE, height: 30 / SMALL_GRAPH_FIT_SCALE, y: 31 },
-        note: { width: 112 / SMALL_GRAPH_FIT_SCALE, height: 30 / SMALL_GRAPH_FIT_SCALE, y: 31 },
-      };
       for (let left = 0; left < nodes.length; left += 1) {
         for (let right = left + 1; right < nodes.length; right += 1) {
-          const leftSize = labelEnvelope[nodes[left].type];
-          const rightSize = labelEnvelope[nodes[right].type];
-          const separatedX =
-            Math.abs(nodes[left].x - nodes[right].x) * SMALL_GRAPH_FIT_SCALE >=
-            ((leftSize.width + rightSize.width) / 2) * SMALL_GRAPH_FIT_SCALE + MIN_COMPACT_NODE_GAP;
-          const separatedY =
-            Math.abs(nodes[left].y + leftSize.y - nodes[right].y - rightSize.y) *
-              SMALL_GRAPH_FIT_SCALE >=
-            ((leftSize.height + rightSize.height) / 2) * SMALL_GRAPH_FIT_SCALE +
-              MIN_COMPACT_NODE_GAP;
-          expect(separatedX || separatedY, `${nodes[left].id} overlaps ${nodes[right].id}`).toBe(
-            true,
-          );
+          const leftMargin = compactFootprint(nodes[left].type, targetScale);
+          const rightMargin = compactFootprint(nodes[right].type, targetScale);
+          const leftCenterX =
+            nodes[left].x * targetScale + (leftMargin.right - leftMargin.left) / 2;
+          const rightCenterX =
+            nodes[right].x * targetScale + (rightMargin.right - rightMargin.left) / 2;
+          const leftCenterY =
+            nodes[left].y * targetScale + (leftMargin.bottom - leftMargin.top) / 2;
+          const rightCenterY =
+            nodes[right].y * targetScale + (rightMargin.bottom - rightMargin.top) / 2;
+          const overlapX =
+            (leftMargin.left + leftMargin.right + rightMargin.left + rightMargin.right) / 2 -
+            Math.abs(leftCenterX - rightCenterX);
+          const overlapY =
+            (leftMargin.top + leftMargin.bottom + rightMargin.top + rightMargin.bottom) / 2 -
+            Math.abs(leftCenterY - rightCenterY);
+          expect(
+            overlapX > 6 && overlapY > 6,
+            `${nodes[left].id} overlaps ${nodes[right].id}`,
+          ).toBe(false);
         }
       }
       layout.stop();

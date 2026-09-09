@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { GRAPH_FIT_PADDING } from '../constants';
-import { anchorFitBounds, containedFitScale } from '../graph-fit';
+import {
+  anchorFitBounds,
+  containedFitScale,
+  SMALL_GRAPH_FIT_FLOOR,
+  smallGraphFitScale,
+} from '../graph-fit';
 import type { AgentNode } from '../types';
 
 describe('graph fit', () => {
@@ -35,5 +40,12 @@ describe('graph fit', () => {
 
     expect(afterZoom).toEqual(beforeZoom);
     expect(beforeZoom.width * 0.7).toBeCloseTo(128);
+  });
+
+  it('lets a small graph yield below its preferred fit scale without crossing the floor', () => {
+    expect(smallGraphFitScale(0.64, 0.7, true)).toBe(0.64);
+    expect(smallGraphFitScale(0.55, 0.7, true)).toBe(SMALL_GRAPH_FIT_FLOOR);
+    expect(smallGraphFitScale(0.64, 0.7, false)).toBe(0.7);
+    expect(smallGraphFitScale(0.78, 0.7, false)).toBe(0.78);
   });
 });

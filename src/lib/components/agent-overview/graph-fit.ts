@@ -10,6 +10,8 @@ export interface FitBounds {
   height: number;
 }
 
+export const SMALL_GRAPH_FIT_FLOOR = 0.6;
+
 interface GraphPosition {
   x: number;
   y: number;
@@ -88,4 +90,29 @@ export function containedAnchorFitScale(
     else upper = candidate;
   }
   return lower;
+}
+
+/** Keep a small graph at its preferred scale when possible, yielding only to a fixed floor. */
+export function smallGraphFitScale(
+  containedScale: number,
+  preferredScale: number,
+  fallbackNeeded: boolean,
+): number {
+  if (!fallbackNeeded || containedScale >= preferredScale) {
+    return Math.max(preferredScale, containedScale);
+  }
+  return Math.max(SMALL_GRAPH_FIT_FLOOR, Math.min(preferredScale, containedScale));
+}
+
+export function smallGraphNeedsFitFallback(
+  nodes: GraphNode[],
+  availableWidth: number,
+  availableHeight: number,
+  gap: number,
+): boolean {
+  const footprintArea = nodes.reduce((total, node) => {
+    const margin = NODE_SCREEN_MARGINS[node.type];
+    return total + (margin.left + margin.right + gap) * (margin.top + margin.bottom + gap);
+  }, 0);
+  return footprintArea > Math.max(1, availableWidth) * Math.max(1, availableHeight);
 }

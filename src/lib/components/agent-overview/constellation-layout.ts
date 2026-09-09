@@ -10,7 +10,12 @@ import {
   type SimulationLinkDatum,
 } from 'd3';
 import { GRAPH_NODE_DIMENSIONS, GRAPH_NODE_GAPS } from './constants';
-import { anchorFitBounds, NODE_SCREEN_MARGINS } from './graph-fit';
+import {
+  anchorFitBounds,
+  NODE_SCREEN_MARGINS,
+  SMALL_GRAPH_FIT_FLOOR,
+  smallGraphNeedsFitFallback,
+} from './graph-fit';
 import type { GraphEdge, GraphNode } from './types';
 
 export interface ConstellationLayoutConfig {
@@ -88,55 +93,86 @@ interface CollisionEnvelope {
   offsetY?: number;
 }
 
-const COMPACT_NODE_DIMENSIONS: Record<GraphNode['type'], CollisionEnvelope> = {
-  agent: { width: 128 / SMALL_GRAPH_FIT_SCALE, height: 90 },
-  task: { width: GRAPH_NODE_DIMENSIONS.task.width, height: 56, offsetY: 4 },
-  file: { width: 112 / SMALL_GRAPH_FIT_SCALE, height: 96, offsetY: 4 },
-  note: { width: 112 / SMALL_GRAPH_FIT_SCALE, height: 96, offsetY: 4 },
-};
-const COMPACT_LABEL_DIMENSIONS: Record<GraphNode['type'], CollisionEnvelope> = {
-  agent: { width: 128 / SMALL_GRAPH_FIT_SCALE, height: 30 / SMALL_GRAPH_FIT_SCALE, offsetY: 20 },
-  task: { width: GRAPH_NODE_DIMENSIONS.task.width, height: 56, offsetY: 4 },
-  file: { width: 112 / SMALL_GRAPH_FIT_SCALE, height: 30 / SMALL_GRAPH_FIT_SCALE, offsetY: 31 },
-  note: { width: 112 / SMALL_GRAPH_FIT_SCALE, height: 30 / SMALL_GRAPH_FIT_SCALE, offsetY: 31 },
-};
+function compactNodeDimensions(scale: number): Record<GraphNode['type'], CollisionEnvelope> {
+  const dimensions = Object.fromEntries(
+    Object.entries(NODE_SCREEN_MARGINS).map(([type, margin]) => [
+      type,
+      {
+        width: (margin.left + margin.right) / scale,
+        height: (margin.top + margin.bottom) / scale,
+        offsetX: (margin.right - margin.left) / (2 * scale),
+        offsetY: (margin.bottom - margin.top) / (2 * scale),
+      },
+    ]),
+  ) as Record<GraphNode['type'], CollisionEnvelope>;
+  dimensions.task = {
+    width: GRAPH_NODE_DIMENSIONS.task.width,
+    height: GRAPH_NODE_DIMENSIONS.task.height,
+  };
+  return dimensions;
+}
 function rectangleCollisionForce(
   dimensions: Record<GraphNode['type'], CollisionEnvelope>,
   gap: number,
+  boundary?: { target: { width: number; height: number }; center: Point; scale: number },
 ): Force<GraphNode, undefined> {
   let nodes: GraphNode[] = [];
   const force = (() => {
-    for (let leftIndex = 0; leftIndex < nodes.length; leftIndex += 1) {
-      const left = nodes[leftIndex];
-      const leftSize = dimensions[left.type];
-      for (let rightIndex = leftIndex + 1; rightIndex < nodes.length; rightIndex += 1) {
-        const right = nodes[rightIndex];
-        const rightSize = dimensions[right.type];
-        const dx =
-          right.x +
-          right.vx +
-          (rightSize.offsetX ?? 0) -
-          left.x -
-          left.vx -
-          (leftSize.offsetX ?? 0);
-        const dy =
-          right.y +
-          right.vy +
-          (rightSize.offsetY ?? 0) -
-          left.y -
-          left.vy -
-          (leftSize.offsetY ?? 0);
-        const overlapX = (leftSize.width + rightSize.width) / 2 + gap - Math.abs(dx);
-        const overlapY = (leftSize.height + rightSize.height) / 2 + gap - Math.abs(dy);
-        if (overlapX <= 0 || overlapY <= 0) continue;
-        if (overlapX < overlapY) {
-          const shift = overlapX * 0.8 * (dx < 0 ? -1 : 1);
-          left.vx -= shift;
-          right.vx += shift;
-        } else {
-          const shift = overlapY * 0.8 * (dy < 0 ? -1 : 1);
-          left.vy -= shift;
-          right.vy += shift;
+    const velocityRetention = 1 - SIMULATION_VELOCITY_DECAY;
+    const targetWidth = boundary
+      ? (boundary.target.width * SMALL_GRAPH_FIT_SCALE) / boundary.scale
+      : 0;
+    const targetHeight = boundary
+      ? (boundary.target.height * SMALL_GRAPH_FIT_SCALE) / boundary.scale
+      : 0;
+    for (let iteration = 0; iteration < 40; iteration += 1) {
+      if (boundary) {
+        for (const node of nodes) {
+          const margin = NODE_SCREEN_MARGINS[node.type];
+          const minX = boundary.center.x - targetWidth / 2 + margin.left / boundary.scale;
+          const maxX = boundary.center.x + targetWidth / 2 - margin.right / boundary.scale;
+          const minY = boundary.center.y - targetHeight / 2 + margin.top / boundary.scale;
+          const maxY = boundary.center.y + targetHeight / 2 - margin.bottom / boundary.scale;
+          const nextX = node.x + node.vx * velocityRetention;
+          const nextY = node.y + node.vy * velocityRetention;
+          if (nextX < minX) node.vx += (minX - nextX) / velocityRetention;
+          else if (nextX > maxX) node.vx += (maxX - nextX) / velocityRetention;
+          if (nextY < minY) node.vy += (minY - nextY) / velocityRetention;
+          else if (nextY > maxY) node.vy += (maxY - nextY) / velocityRetention;
+        }
+      }
+      for (let leftIndex = 0; leftIndex < nodes.length; leftIndex += 1) {
+        const left = nodes[leftIndex];
+        const leftSize = dimensions[left.type];
+        for (let rightIndex = leftIndex + 1; rightIndex < nodes.length; rightIndex += 1) {
+          const right = nodes[rightIndex];
+          const rightSize = dimensions[right.type];
+          const dx =
+            right.x +
+            right.vx * velocityRetention +
+            (rightSize.offsetX ?? 0) -
+            left.x -
+            left.vx * velocityRetention -
+            (leftSize.offsetX ?? 0);
+          const dy =
+            right.y +
+            right.vy * velocityRetention +
+            (rightSize.offsetY ?? 0) -
+            left.y -
+            left.vy * velocityRetention -
+            (leftSize.offsetY ?? 0);
+          const overlapX = (leftSize.width + rightSize.width) / 2 + gap - Math.abs(dx);
+          const overlapY = (leftSize.height + rightSize.height) / 2 + gap - Math.abs(dy);
+          if (overlapX <= 0 || overlapY <= 0) continue;
+          if (overlapX < overlapY) {
+            const shift = (overlapX / (4 * velocityRetention)) * (dx < 0 ? -1 : 1);
+            left.vx -= shift;
+            right.vx += shift;
+          } else {
+            const shift = (overlapY / (4 * velocityRetention)) * (dy < 0 ? -1 : 1);
+            left.vy -= shift;
+            right.vy += shift;
+          }
         }
       }
     }
@@ -145,29 +181,15 @@ function rectangleCollisionForce(
   return force;
 }
 
-function compactBoundaryForce(
-  target: { width: number; height: number },
-  center: Point,
-): Force<GraphNode, undefined> {
-  let nodes: GraphNode[] = [];
-  const force = (() => {
-    for (const node of nodes) {
-      const margin = NODE_SCREEN_MARGINS[node.type];
-      const minX = center.x - target.width / 2 + margin.left / SMALL_GRAPH_FIT_SCALE;
-      const maxX = center.x + target.width / 2 - margin.right / SMALL_GRAPH_FIT_SCALE;
-      const minY = center.y - target.height / 2 + margin.top / SMALL_GRAPH_FIT_SCALE;
-      const maxY = center.y + target.height / 2 - margin.bottom / SMALL_GRAPH_FIT_SCALE;
-      const nextX = node.x + node.vx;
-      const nextY = node.y + node.vy;
-      const velocityRetention = 1 - SIMULATION_VELOCITY_DECAY;
-      if (nextX < minX) node.vx += (minX - nextX) / velocityRetention;
-      else if (nextX > maxX) node.vx += (maxX - nextX) / velocityRetention;
-      if (nextY < minY) node.vy += (minY - nextY) / velocityRetention;
-      else if (nextY > maxY) node.vy += (maxY - nextY) / velocityRetention;
-    }
-  }) as Force<GraphNode, undefined>;
-  force.initialize = (nextNodes) => (nodes = nextNodes);
-  return force;
+function compactFitScale(nodes: GraphNode[], target: { width: number; height: number }): number {
+  return smallGraphNeedsFitFallback(
+    nodes,
+    target.width * SMALL_GRAPH_FIT_SCALE,
+    target.height * SMALL_GRAPH_FIT_SCALE,
+    MIN_COMPACT_NODE_GAP,
+  )
+    ? SMALL_GRAPH_FIT_FLOOR
+    : SMALL_GRAPH_FIT_SCALE;
 }
 
 function edgeType(edge: GraphEdge): string {
@@ -278,7 +300,7 @@ export function createConstellationLayout({
     compact: boolean;
   } {
     const compact = nodeCount <= 40 && viewport.fitTarget !== undefined;
-    if (!compact) {
+    if (!compact || !viewport.fitTarget) {
       const orbitX = viewport.width * TASK_ORBIT_WIDTH_RATIO;
       return {
         taskAgentDistance: TASK_AGENT_DISTANCE,
@@ -289,7 +311,12 @@ export function createConstellationLayout({
         compact,
       };
     }
-    const target = viewport.fitTarget!;
+    const fitTarget = viewport.fitTarget;
+    const scale = compactFitScale(currentNodes, fitTarget);
+    const target = {
+      width: (fitTarget.width * SMALL_GRAPH_FIT_SCALE) / scale,
+      height: (fitTarget.height * SMALL_GRAPH_FIT_SCALE) / scale,
+    };
     const nestedBudget = Math.max(
       MIN_COMPACT_TASK_AGENT_DISTANCE + MIN_COMPACT_RESOURCE_DISTANCE,
       target.height / 2 - MIN_COMPACT_ORBIT_Y - COMPACT_SCREEN_MARGINS_Y - COMPACT_LAYOUT_SLACK,
@@ -590,29 +617,23 @@ export function createConstellationLayout({
 
   function configureForces(edges: GraphEdge[]): void {
     const { compact } = compactGeometry(currentNodes.length);
+    const compactScale =
+      compact && viewport.fitTarget
+        ? compactFitScale(currentNodes, viewport.fitTarget)
+        : SMALL_GRAPH_FIT_SCALE;
+    const compactDimensions = compactNodeDimensions(compactScale);
     desiredPositions = computeDesiredPositions(currentNodes, edges);
     simulation
       .nodes(currentNodes)
       .force(
         'collision',
         compact
-          ? rectangleCollisionForce(
-              COMPACT_NODE_DIMENSIONS,
-              (MIN_COMPACT_NODE_GAP + 1) / SMALL_GRAPH_FIT_SCALE,
-            )
+          ? null
           : forceCollide<GraphNode>((node) => NODE_RADII[node.type] + GRAPH_NODE_GAPS.collision)
               .strength(1)
               .iterations(4),
       )
-      .force(
-        'label-collision',
-        compact
-          ? rectangleCollisionForce(
-              COMPACT_LABEL_DIMENSIONS,
-              (MIN_COMPACT_NODE_GAP + 1) / SMALL_GRAPH_FIT_SCALE,
-            )
-          : null,
-      )
+      .force('label-collision', null)
       .force(
         'x',
         forceX<GraphNode>((node) => desiredPositions.get(node.id)?.x ?? center.x).strength(
@@ -637,9 +658,21 @@ export function createConstellationLayout({
       );
     simulation.force(
       'compact-boundary',
-      compact && viewport.fitTarget ? compactBoundaryForce(viewport.fitTarget, center) : null,
+      compact && viewport.fitTarget
+        ? rectangleCollisionForce(compactDimensions, (MIN_COMPACT_NODE_GAP + 1) / compactScale, {
+            target: viewport.fitTarget,
+            center,
+            scale: compactScale,
+          })
+        : null,
     );
     configureLinkForce(edges);
+    if (compact) {
+      simulation.force(
+        'collision',
+        rectangleCollisionForce(compactDimensions, (MIN_COMPACT_NODE_GAP + 1) / compactScale),
+      );
+    }
   }
 
   function update(nodes: GraphNode[], edges: GraphEdge[]): void {

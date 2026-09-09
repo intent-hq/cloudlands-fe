@@ -7,6 +7,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import {
     createConstellationLayout,
+    MIN_COMPACT_NODE_GAP,
     SMALL_GRAPH_FIT_SCALE,
     type ConstellationLayout,
   } from './constellation-layout';
@@ -26,7 +27,12 @@
   import type { PlaybackSpeed } from './playback';
   import { createTaskHullMembershipMemo } from './graph-helpers';
   import { createGraphRenderIndexMemo } from './graph-render-index';
-  import { anchorFitBounds, containedAnchorFitScale } from './graph-fit';
+  import {
+    anchorFitBounds,
+    containedAnchorFitScale,
+    smallGraphFitScale,
+    smallGraphNeedsFitFallback,
+  } from './graph-fit';
 
   export interface GraphLayers {
     agents?: boolean;
@@ -472,7 +478,16 @@
       maximumScale,
       nodes.length > 40
         ? Math.max(TASK_LABEL_VISIBLE_SCALE, naturalScale)
-        : Math.max(SMALL_GRAPH_FIT_SCALE, naturalScale),
+        : smallGraphFitScale(
+            naturalScale,
+            SMALL_GRAPH_FIT_SCALE,
+            smallGraphNeedsFitFallback(
+              nodes,
+              availableWidth - GRAPH_FIT_PADDING * 2,
+              availableHeight - GRAPH_FIT_PADDING * 2,
+              MIN_COMPACT_NODE_GAP,
+            ),
+          ),
     );
     const bounds = anchorFitBounds(nodes, latestPositions.current, scale);
     const centerX = (bounds.minX + bounds.maxX) / 2;
