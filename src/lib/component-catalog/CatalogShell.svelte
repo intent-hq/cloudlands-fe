@@ -9,6 +9,7 @@
     readCatalogPreferences,
     writeCatalogPreferences,
     type CatalogColorTheme,
+    type CatalogMotion,
     type CatalogTheme,
   } from './catalog-preferences';
   import { installPreviewBrowserApi } from './preview-discovery';
@@ -16,8 +17,9 @@
   let { activeSlug, children }: { activeSlug?: string; children?: Snippet } = $props();
   let theme = $state<CatalogTheme>(defaultCatalogPreferences.theme);
   let colorTheme = $state<CatalogColorTheme>(defaultCatalogPreferences.colorTheme);
-  let reducedMotion = $state(defaultCatalogPreferences.reducedMotion);
+  let motion = $state<CatalogMotion>(defaultCatalogPreferences.motion);
   let systemDark = $state(false);
+  let systemReducedMotion = $state(false);
   let hydrated = $state(false);
   let initialRootDark = false;
   let initialRootLight = false;
@@ -26,6 +28,9 @@
   let initialRootStyle: string | null = null;
 
   const resolvedTheme = $derived(theme === 'system' ? (systemDark ? 'dark' : 'light') : theme);
+  const reducedMotion = $derived(
+    motion === 'reduced' || (motion === 'system' && systemReducedMotion),
+  );
 
   onMount(() => {
     const root = document.documentElement;
@@ -38,16 +43,21 @@
     const urlSettings = parseCatalogUrlSettings(new URLSearchParams(window.location.search));
     theme = urlSettings.theme ?? saved.theme;
     colorTheme = saved.colorTheme;
-    reducedMotion = urlSettings.reducedMotion ?? saved.reducedMotion;
+    motion = urlSettings.motion ?? saved.motion;
     const removePreviewBrowserApi = installPreviewBrowserApi(window);
 
     const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const motionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
     const updateSystemTheme = () => (systemDark = media.matches);
+    const updateSystemMotion = () => (systemReducedMotion = motionMedia.matches);
     updateSystemTheme();
+    updateSystemMotion();
     media.addEventListener('change', updateSystemTheme);
+    motionMedia.addEventListener('change', updateSystemMotion);
     hydrated = true;
     return () => {
       media.removeEventListener('change', updateSystemTheme);
+      motionMedia.removeEventListener('change', updateSystemMotion);
       removePreviewBrowserApi();
       root.classList.toggle('dark', initialRootDark);
       root.classList.toggle('light', initialRootLight);
@@ -60,7 +70,7 @@
 
   $effect(() => {
     if (!hydrated) return;
-    writeCatalogPreferences(localStorage, { theme, colorTheme, reducedMotion });
+    writeCatalogPreferences(localStorage, { theme, colorTheme, motion });
     const root = document.documentElement;
     if (initialRootStyle === null) root.removeAttribute('style');
     else root.setAttribute('style', initialRootStyle);
@@ -74,13 +84,14 @@
     root.style.colorScheme = resolvedTheme;
     root.classList.toggle('dark', resolvedTheme === 'dark');
     root.classList.toggle('light', resolvedTheme === 'light');
-    root.classList.toggle('catalog-reduced-motion', reducedMotion);
-    root.classList.toggle('catalog-full-motion', !reducedMotion);
+    root.classList.toggle('catalog-reduced-motion', motion === 'reduced');
+    root.classList.toggle('catalog-full-motion', motion === 'full');
 
     if (activeSlug) {
       const url = new URL(window.location.href);
       url.searchParams.set('theme', theme);
-      url.searchParams.set('motion', reducedMotion ? 'reduced' : 'full');
+      if (motion === 'system') url.searchParams.delete('motion');
+      else url.searchParams.set('motion', motion);
       window.history.replaceState(window.history.state, '', url);
     }
   });
@@ -92,6 +103,7 @@
   data-catalog-theme={theme}
   data-catalog-color-theme={colorTheme}
   data-catalog-motion={reducedMotion ? 'reduced' : 'full'}
+  data-catalog-motion-preference={motion}
 >
   <div class="min-h-screen w-full min-w-0">
     <header class="catalog-topbar sticky top-0 border-b border-border bg-card/95 backdrop-blur">
@@ -108,7 +120,7 @@
             >
           {/if}
         </div>
-        <CatalogControls bind:theme bind:colorTheme {resolvedTheme} bind:reducedMotion />
+        <CatalogControls bind:theme bind:colorTheme {resolvedTheme} bind:motion />
       </div>
     </header>
     <main class="min-w-0 overflow-x-clip">{@render children?.()}</main>
@@ -178,5 +190,16 @@
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(html:not(.catalog-full-motion) *),
+    :global(html:not(.catalog-full-motion) *::before),
+    :global(html:not(.catalog-full-motion) *::after) {
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+    }
   }
 </style>

@@ -63,6 +63,15 @@ async function openMotionFixture(page: Page, state: string, reduced = false) {
   await expect(scene).toHaveAttribute('data-preview-ready', 'true', { timeout: 30_000 });
 }
 
+async function openSystemMotionFixture(page: Page, state: string, reduced: boolean) {
+  await page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' });
+  const url = `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960`;
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
+    timeout: 30_000,
+  });
+}
+
 async function recordControlMotion(page: Page, rootId: string, direction: 'forward' | 'backward') {
   const root = page.locator(`#${rootId}`);
   const baseline = await root.evaluate((element) => ({
@@ -114,6 +123,30 @@ async function recordControlMotion(page: Page, rootId: string, direction: 'forwa
                 .map((animation) => Number(animation.effect?.getTiming().duration)),
             ),
           );
+        const opacityRecord = (selector: string, parent = false) =>
+          Object.fromEntries(
+            [...element.querySelectorAll<HTMLElement>(selector)].map((node) => [
+              node.dataset.nodeId ?? node.dataset.groupId ?? node.dataset.edgeId,
+              Number(getComputedStyle(parent ? node.parentElement! : node).opacity),
+            ]),
+          );
+        const detachedEdges = [...element.querySelectorAll<SVGGElement>('.diagram-edge')]
+          .filter((edge) => Number(getComputedStyle(edge.parentElement!).opacity) > 0.01)
+          .filter((edge) => {
+            const source = element.querySelector<SVGForeignObjectElement>(
+              `[data-node-id="${edge.dataset.edgeFrom}"]`,
+            );
+            const target = element.querySelector<SVGForeignObjectElement>(
+              `[data-node-id="${edge.dataset.edgeTo}"]`,
+            );
+            return (
+              !source ||
+              !target ||
+              Number(getComputedStyle(source).opacity) <= 0.01 ||
+              Number(getComputedStyle(target).opacity) <= 0.01
+            );
+          })
+          .map((edge) => edge.dataset.edgeId);
         const nodes = entered('[data-node-id]', before.nodeIds, 'nodeId');
         const groups = entered('[data-group-id]', before.groupIds, 'groupId').map(
           (group) => group.parentElement!,
@@ -145,6 +178,11 @@ async function recordControlMotion(page: Page, rootId: string, direction: 'forwa
           entryOpacities: [nodes, groups, routes, labels].map(maximumOpacity),
           entryDelays: [nodes, groups, routes, labels].map(maximumDelay),
           entryDurations: [nodes, groups, routes, labels].map(maximumDuration),
+          nodeOpacities: opacityRecord('[data-node-id]'),
+          groupOpacities: opacityRecord('[data-group-id]', true),
+          edgeOpacities: opacityRecord('.diagram-edge', true),
+          labelOpacities: opacityRecord('.edge-label-container'),
+          detachedEdges,
           routeProgress: [...element.querySelectorAll<SVGGElement>('.diagram-edge')].map((edge) =>
             Number(edge.dataset.edgeMotionProgress),
           ),
@@ -611,6 +649,87 @@ function expectCameraInterpolation(transition: Awaited<ReturnType<typeof recordT
   expect(cameraProgress(transition.before, midpoint, transition.settled)).toBeLessThan(0.8);
 }
 
+test('animates real clicks by default without a motion query', async ({ page }) => {
+  await openSystemMotionFixture(page, 'custom-walkthrough', false);
+  const shell = page.getByTestId('catalog-shell');
+  await expect(shell).toHaveAttribute('data-catalog-motion-preference', 'system');
+  await expect(shell).toHaveAttribute('data-catalog-motion', 'full');
+  expect(new URL(page.url()).searchParams.has('motion')).toBe(false);
+  await expect(page.locator('html')).not.toHaveClass(/catalog-(?:full|reduced)-motion/);
+
+  const transition = await recordControlMotion(page, 'custom-walkthrough', 'forward');
+  expect(transition.frames[0]).toMatchObject({ phase: 'camera', settled: false });
+  expect(
+    transition.frames.some(
+      (frame) => frame.cameraAnimationCount > 0 && frame.cameraDurations.some((value) => value > 0),
+    ),
+  ).toBe(true);
+  expect(transition.frames.some((frame) => frame.phase === 'scene')).toBe(true);
+  expect(transition.frames.at(-1)).toMatchObject({ phase: 'settled', settled: true });
+});
+
+test('honors reduced system motion by default without a motion query', async ({ page }) => {
+  await openSystemMotionFixture(page, 'custom-walkthrough', true);
+  const shell = page.getByTestId('catalog-shell');
+  await expect(shell).toHaveAttribute('data-catalog-motion-preference', 'system');
+  await expect(shell).toHaveAttribute('data-catalog-motion', 'reduced');
+  expect(new URL(page.url()).searchParams.has('motion')).toBe(false);
+  await expect(page.locator('html')).not.toHaveClass(/catalog-(?:full|reduced)-motion/);
+
+  const transition = await recordReducedControlMotion(page, 'custom-walkthrough', 'forward');
+  expect(transition).toMatchObject({ selectedStep: 1, phase: 'settled', settled: true });
+  expect(Math.max(...transition.finiteAnimationCounts.map(({ count }) => count))).toBe(0);
+});
+
+test('persists accessible full and reduced motion choices across stepped fixtures', async ({
+  page,
+}) => {
+  await openSystemMotionFixture(page, 'custom-walkthrough', true);
+  await page.getByRole('radio', { name: 'Full', exact: true }).click();
+  await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'full');
+  await expect(page.locator('html')).toHaveClass(/catalog-full-motion/);
+  expect(new URL(page.url()).searchParams.get('motion')).toBe('full');
+  expect(
+    await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('component-catalog-preferences') ?? '{}'),
+    ),
+  ).toMatchObject({ motion: 'full' });
+  const fullTransition = await recordControlMotion(page, 'custom-walkthrough', 'forward');
+  expect(fullTransition.frames[0]).toMatchObject({ phase: 'camera', settled: false });
+
+  await page.goto(
+    `${baseUrl}/sandbox/diagram-workbench?state=custom-architecture&theme=light&width=960`,
+  );
+  await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
+    timeout: 30_000,
+  });
+  await expect(page.getByRole('radio', { name: 'Full', exact: true })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await page.getByRole('radio', { name: 'Reduced', exact: true }).click();
+  await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'reduced');
+  await expect(page.locator('html')).toHaveClass(/catalog-reduced-motion/);
+  expect(new URL(page.url()).searchParams.get('motion')).toBe('reduced');
+  const reducedTransition = await recordReducedControlMotion(
+    page,
+    'custom-architecture',
+    'forward',
+  );
+  expect(Math.max(...reducedTransition.finiteAnimationCounts.map(({ count }) => count))).toBe(0);
+
+  await page.goto(
+    `${baseUrl}/sandbox/diagram-workbench?state=custom-delivery-walkthrough&theme=light&width=960`,
+  );
+  await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
+    timeout: 30_000,
+  });
+  await expect(page.getByRole('radio', { name: 'Reduced', exact: true })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+});
+
 test('keeps explicit full motion active for every stepped sandbox control', async ({ page }) => {
   test.setTimeout(180_000);
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -648,6 +767,7 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
         ).toBe(true);
         const sceneIndex = transition.frames.findIndex((frame) => frame.phase === 'scene');
         expect(sceneIndex).toBeGreaterThan(0);
+        const exitIndex = transition.frames.findIndex((frame) => frame.phase === 'exit');
         expect(
           Math.max(
             ...transition.frames.slice(0, sceneIndex).flatMap((frame) => frame.entryOpacities),
@@ -658,6 +778,69 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
           settled: true,
           phase: 'settled',
         });
+        expect(
+          transition.frames.every((frame) => frame.detachedEdges.length === 0),
+          JSON.stringify({
+            fixture: fixture.id,
+            direction,
+            index,
+            detached: transition.frames
+              .filter((frame) => frame.detachedEdges.length > 0)
+              .map((frame) => ({ phase: frame.phase, edges: frame.detachedEdges })),
+          }),
+        ).toBe(true);
+
+        const settledFrame = transition.frames.at(-1)!;
+        const lifecycleKeys = [
+          'nodeOpacities',
+          'groupOpacities',
+          'edgeOpacities',
+          'labelOpacities',
+        ] as const;
+        const hasDepartingContent = lifecycleKeys.some((key) =>
+          Object.keys(transition.frames[0][key]).some((id) => !(id in settledFrame[key])),
+        );
+        if (hasDepartingContent) {
+          expect(exitIndex).toBeGreaterThan(0);
+          expect(sceneIndex).toBeGreaterThan(exitIndex);
+        }
+        const lifecycle = (
+          key: 'nodeOpacities' | 'groupOpacities' | 'edgeOpacities' | 'labelOpacities',
+        ) => {
+          const beforeIds = Object.keys(transition.frames[0][key]);
+          const afterIds = Object.keys(settledFrame[key]);
+          const departingIds = beforeIds.filter((id) => !afterIds.includes(id));
+          const enteringIds = afterIds.filter((id) => !beforeIds.includes(id));
+          const sharedIds = beforeIds.filter((id) => afterIds.includes(id));
+          const firstEnteringFrame = transition.frames.findIndex((frame) =>
+            enteringIds.some((id) => (frame[key][id] ?? 0) > 0.01),
+          );
+          const hasIntermediateExit = transition.frames.some((frame) =>
+            departingIds.some((id) => {
+              const opacity = frame[key][id];
+              return opacity !== undefined && opacity > 0.01 && opacity < 0.99;
+            }),
+          );
+          if (firstEnteringFrame >= 0) {
+            expect(
+              departingIds.every(
+                (id) => (transition.frames[firstEnteringFrame][key][id] ?? 0) <= 0.01,
+              ),
+              JSON.stringify({ fixture: fixture.id, direction, index, key }),
+            ).toBe(true);
+          }
+          for (const frame of transition.frames) {
+            for (const id of sharedIds) expect(frame[key][id]).toBeGreaterThan(0.5);
+          }
+          return hasIntermediateExit;
+        };
+        const intermediateExits = lifecycleKeys.map((key) => lifecycle(key));
+        if (hasDepartingContent) {
+          expect(
+            intermediateExits.some(Boolean),
+            JSON.stringify({ fixture: fixture.id, direction, index }),
+          ).toBe(true);
+        }
 
         const firstVisible = (category: number) =>
           transition.frames.findIndex(

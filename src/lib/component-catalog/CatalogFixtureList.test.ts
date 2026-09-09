@@ -24,7 +24,11 @@ describe('CatalogFixtureList real previews', () => {
     document.documentElement.classList.add('light');
     const { unmount } = render(CatalogShell);
     await fireEvent.click(screen.getByRole('radio', { name: 'Dark' }));
-    await fireEvent.click(screen.getByRole('switch', { name: 'Reduce motion' }));
+    await fireEvent.click(
+      within(screen.getByRole('group', { name: 'Motion' })).getByRole('radio', {
+        name: 'Reduced',
+      }),
+    );
 
     await waitFor(() => {
       expect(document.documentElement.classList.contains('dark')).toBe(true);

@@ -1,10 +1,11 @@
 <script lang="ts">
   import { Select } from '$lib/components/ui/select';
-  import { Switch } from '$lib/components/ui/switch';
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { themePresets } from '$lib/utils/theme-presets';
+  import { m } from '$shared/paraglide/messages.js';
   import {
     catalogColorThemes,
+    type CatalogMotion,
     type CatalogColorTheme,
     type CatalogTheme,
   } from './catalog-preferences';
@@ -13,14 +14,14 @@
     theme?: CatalogTheme;
     colorTheme?: CatalogColorTheme;
     resolvedTheme?: 'light' | 'dark';
-    reducedMotion?: boolean;
+    motion?: CatalogMotion;
   }
 
   let {
     theme = $bindable('system'),
     colorTheme = $bindable('default'),
     resolvedTheme = 'light',
-    reducedMotion = $bindable(false),
+    motion = $bindable('system'),
   }: Props = $props();
 
   const themeOptions = [
@@ -90,10 +91,26 @@
     </output>
   </div>
 
-  <label class="motion-control" data-testid="catalog-motion-control">
-    <Switch bind:checked={reducedMotion} size="sm" ariaLabel="Reduce motion" />
-    <span>Reduce motion</span>
-  </label>
+  <div class="control-set" data-testid="catalog-motion-control">
+    <span id="catalog-motion-label" class="control-label">{m.sandbox_catalog_motion_label()}</span>
+    <ToggleGroup.Root
+      type="single"
+      bind:value={motion}
+      size="sm"
+      aria-labelledby="catalog-motion-label"
+      data-catalog-control="motion"
+    >
+      <ToggleGroup.Item value="system" class="control-choice">
+        {m.sandbox_catalog_motionSystem_label()}
+      </ToggleGroup.Item>
+      <ToggleGroup.Item value="full" class="control-choice">
+        {m.sandbox_catalog_motionFull_label()}
+      </ToggleGroup.Item>
+      <ToggleGroup.Item value="reduced" class="control-choice">
+        {m.sandbox_catalog_motionReduced_label()}
+      </ToggleGroup.Item>
+    </ToggleGroup.Root>
+  </div>
 </div>
 
 <style>
@@ -105,16 +122,14 @@
     gap: calc(var(--control-height-compact) / 2);
   }
 
-  .control-set,
-  .motion-control {
+  .control-set {
     display: flex;
     flex: none;
     align-items: center;
     gap: calc(var(--control-height-compact) / 4);
   }
 
-  .control-label,
-  .motion-control {
+  .control-label {
     font-size: var(--text-caption-size);
     color: hsl(var(--muted-foreground));
   }

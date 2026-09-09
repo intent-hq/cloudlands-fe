@@ -7,7 +7,13 @@
    */
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import { compactEdgeLabelMaxWidth, computeLayout, measureEdgeLabel } from './layout-engine';
-  import type { ComputedLayout, NodeStyleConfig } from './types';
+  import type {
+    ComputedEdge,
+    ComputedGroup,
+    ComputedLayout,
+    ComputedNode,
+    NodeStyleConfig,
+  } from './types';
   import { DEFAULT_NODE_STYLE } from './types';
   import DiagramNodeHTML from './DiagramNodeHTML.svelte';
   import DiagramEdge from './DiagramEdge.svelte';
@@ -22,7 +28,7 @@
   import { flushSync, onDestroy, onMount, tick } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { shouldReduceMotion } from '$lib/utils/motion-preference';
-  import { cameraMotionKeyframes } from './diagram-motion';
+  import { cameraMotionKeyframes, partitionSceneIds } from './diagram-motion';
 
   interface Props {
     diagram: DiagramPrimitive;
@@ -119,22 +125,31 @@
   // Track state changes for animations
   let stateJustChanged = $state(false);
   let previousVisibleEdgeIds = $state<string[]>([]);
+  let enteringNodeIds = $state<string[]>([]);
+  let enteringGroupIds = $state<string[]>([]);
+  let enteringEdgeIds = $state<string[]>([]);
+  let departingNodes = $state<ComputedNode[]>([]);
+  let departingGroups = $state<ComputedGroup[]>([]);
+  let departingEdges = $state<ComputedEdge[]>([]);
+  let departingLabelPositions = $state(new Map<string, EdgeLabelPosition>());
+  let retainDepartingScene = $state(false);
+  let revealEnteringScene = $state(true);
   const movingEdgeIds = new Set<string>();
   let rendererEl = $state<HTMLDivElement>();
   let diagramSettled = $state(true);
   let settlementRevision = 0;
   let settlementFrame: number | undefined;
   let transitionRevision = 0;
-  let motionPhase = $state<'settled' | 'camera' | 'scene'>('settled');
+  let motionPhase = $state<'settled' | 'camera' | 'exit' | 'scene'>('settled');
   let cameraAnimation: Animation | undefined;
 
   const CAMERA_MOTION_MS = 320;
   const CAMERA_MOTION_EASING = 'cubic-bezier(0.65, 0, 0.35, 1)';
   const SCENE_ENTRY_MS = 180;
-  const ROUTE_ENTRY_DELAY_MS = CAMERA_MOTION_MS + SCENE_ENTRY_MS;
+  const ROUTE_ENTRY_DELAY_MS = SCENE_ENTRY_MS;
   const ROUTE_ENTRY_MS = 180;
   const LABEL_ENTRY_DELAY_MS = ROUTE_ENTRY_DELAY_MS + ROUTE_ENTRY_MS;
-  const EXIT_DELAY_MS = LABEL_ENTRY_DELAY_MS + 140;
+  const EXIT_MS = 120;
 
   function captureCameraTransform() {
     const camera = rendererEl?.querySelector<SVGSVGElement>('.diagram-svg-layer');
@@ -165,24 +180,28 @@
     });
   }
 
-  async function completeCameraStage(revision: number, stateId: string) {
+  async function waitForVisualAnimations(revision: number) {
     await tick();
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    if (revision !== transitionRevision || !rendererEl) return;
-    const camera = rendererEl.querySelector<SVGSVGElement>('.diagram-svg-layer');
-    const geometry = rendererEl.querySelector<SVGGElement>(
-      '.diagram-svg-layer > .diagram-geometry-motion',
-    );
-    const animations = [camera, geometry].flatMap((element) =>
-      (element?.getAnimations({ subtree: false }) ?? []).filter((animation) => {
-        const endTime = Number(animation.effect?.getComputedTiming().endTime);
-        return Number.isFinite(endTime) && animation.playState !== 'finished';
-      }),
-    );
+    if (revision !== transitionRevision) return false;
+    const animations = activeFiniteAnimations();
     await Promise.allSettled(animations.map((animation) => animation.finished));
-    if (revision !== transitionRevision) return;
+    return revision === transitionRevision;
+  }
+
+  async function completeTransitionStages(revision: number, stateId: string) {
+    if (!(await waitForVisualAnimations(revision))) return;
+    motionPhase = 'exit';
+    retainDepartingScene = false;
+    flushSync();
+    if (!(await waitForVisualAnimations(revision))) return;
+    departingNodes = [];
+    departingGroups = [];
+    departingEdges = [];
+    departingLabelPositions = new Map();
     presentedStateId = stateId;
     motionPhase = 'scene';
+    revealEnteringScene = true;
   }
 
   function motionSnapshot() {
@@ -265,6 +284,7 @@
     if (settlementFrame !== undefined) cancelAnimationFrame(settlementFrame);
     cameraAnimation?.cancel();
     cameraAnimation = undefined;
+    movingEdgeIds.clear();
   });
 
   // Hover state for highlighting connected nodes/edges
@@ -598,6 +618,40 @@
     return positions;
   });
 
+  let renderedNodes = $derived.by(() => {
+    const entering = new Set(enteringNodeIds);
+    const target = revealEnteringScene
+      ? visibleNodes
+      : visibleNodes.filter((node) => !entering.has(node.id));
+    if (!retainDepartingScene) return target;
+    const targetIds = new Set(target.map((node) => node.id));
+    return [...target, ...departingNodes.filter((node) => !targetIds.has(node.id))];
+  });
+  let renderedGroups = $derived.by(() => {
+    const entering = new Set(enteringGroupIds);
+    const target = revealEnteringScene
+      ? visibleGroups
+      : visibleGroups.filter((group) => !entering.has(group.id));
+    if (!retainDepartingScene) return target;
+    const targetIds = new Set(target.map((group) => group.id));
+    return [...target, ...departingGroups.filter((group) => !targetIds.has(group.id))];
+  });
+  let renderedEdges = $derived.by(() => {
+    const entering = new Set(enteringEdgeIds);
+    const target = revealEnteringScene
+      ? visibleEdges
+      : visibleEdges.filter((edge) => !entering.has(edge.id));
+    if (!retainDepartingScene) return target;
+    const targetIds = new Set(target.map((edge) => edge.id));
+    return [...target, ...departingEdges.filter((edge) => !targetIds.has(edge.id))];
+  });
+  let renderedLabelPositions = $derived.by(() => {
+    if (!retainDepartingScene) return edgeLabelPositions;
+    const positions = new Map(departingLabelPositions);
+    for (const [edgeId, position] of edgeLabelPositions) positions.set(edgeId, position);
+    return positions;
+  });
+
   // Visible groups logic:
   // 1. If state explicitly defines visibleGroups, use that
   // 2. If state has highlightedNodes, only show groups containing highlighted nodes
@@ -919,16 +973,71 @@
     const previousCameraTransform = captureCameraTransform();
     transitionRevision += 1;
     const revision = transitionRevision;
-    previousVisibleEdgeIds = visibleEdgeIds;
-    stateJustChanged = motionDuration(1) > 0;
-    motionPhase = stateJustChanged ? 'camera' : 'scene';
+    const sourceNodes = renderedNodes;
+    const sourceGroups = renderedGroups;
+    const sourceEdges = renderedEdges;
+    const sourceLabelPositions = new Map(renderedLabelPositions);
+    previousVisibleEdgeIds = sourceEdges.map((edge) => edge.id);
+    const hasMotion = motionDuration(1) > 0;
+    stateJustChanged = hasMotion;
+    motionPhase = hasMotion ? 'camera' : 'scene';
     beginDiagramSettlement();
-    if (stateJustChanged) flushSync();
+    if (hasMotion) {
+      revealEnteringScene = false;
+      retainDepartingScene = true;
+      enteringNodeIds = diagram.model.nodes
+        .map((node) => node.id)
+        .filter((id) => !sourceNodes.some((node) => node.id === id));
+      enteringGroupIds = (diagram.model.groups ?? [])
+        .map((group) => group.id)
+        .filter((id) => !sourceGroups.some((group) => group.id === id));
+      enteringEdgeIds = diagram.model.edges
+        .map((edge) => edge.id)
+        .filter((id) => !sourceEdges.some((edge) => edge.id === id));
+      departingNodes = sourceNodes;
+      departingGroups = sourceGroups;
+      departingEdges = sourceEdges;
+      departingLabelPositions = sourceLabelPositions;
+    }
     currentStateId = stateId;
     flushSync();
+    if (hasMotion) {
+      const nodePartition = partitionSceneIds(
+        sourceNodes.map((node) => node.id),
+        visibleNodes.map((node) => node.id),
+      );
+      const groupPartition = partitionSceneIds(
+        sourceGroups.map((group) => group.id),
+        visibleGroups.map((group) => group.id),
+      );
+      const edgePartition = partitionSceneIds(
+        sourceEdges.map((edge) => edge.id),
+        visibleEdges.map((edge) => edge.id),
+      );
+      enteringNodeIds = nodePartition.entering;
+      enteringGroupIds = groupPartition.entering;
+      enteringEdgeIds = edgePartition.entering;
+      departingNodes = sourceNodes.filter((node) => nodePartition.departing.includes(node.id));
+      departingGroups = sourceGroups.filter((group) => groupPartition.departing.includes(group.id));
+      departingEdges = sourceEdges.filter((edge) => edgePartition.departing.includes(edge.id));
+      departingLabelPositions = new Map(
+        [...sourceLabelPositions].filter(([edgeId]) => edgePartition.departing.includes(edgeId)),
+      );
+      flushSync();
+    } else {
+      retainDepartingScene = false;
+      revealEnteringScene = true;
+      enteringNodeIds = [];
+      enteringGroupIds = [];
+      enteringEdgeIds = [];
+      departingNodes = [];
+      departingGroups = [];
+      departingEdges = [];
+      departingLabelPositions = new Map();
+      presentedStateId = stateId;
+    }
     animateCameraStage(previousCameraTransform);
-    if (stateJustChanged) void completeCameraStage(revision, stateId);
-    else presentedStateId = stateId;
+    if (hasMotion) void completeTransitionStages(revision, stateId);
 
     // Notify parent so consumers (e.g. TipTap DiagramBlock) can persist the selected step
     onUpdate?.({ currentStateId: stateId });
@@ -1184,14 +1293,14 @@
             style:transform={svgTransform}
           >
             <!-- Groups (background) -->
-            {#if visibleGroups}
-              {#each visibleGroups as group (group.id)}
+            {#if renderedGroups}
+              {#each renderedGroups as group (group.id)}
                 <g
                   in:fade={{
-                    delay: motionDuration(CAMERA_MOTION_MS),
+                    delay: 0,
                     duration: motionDuration(SCENE_ENTRY_MS),
                   }}
-                  out:fade={{ delay: motionDuration(EXIT_DELAY_MS), duration: motionDuration(120) }}
+                  out:fade={{ duration: motionDuration(EXIT_MS) }}
                 >
                   <DiagramGroup
                     {group}
@@ -1203,7 +1312,7 @@
             {/if}
 
             <!-- Edges -->
-            {#each visibleEdges as edge (edge.id)}
+            {#each renderedEdges as edge (edge.id)}
               {@const isEdgeDimmed =
                 (hoveredNodeId !== null && !connectedEdgeIds.has(edge.id)) ||
                 (hoveredGroupId !== null && !groupEdgeIds.has(edge.id)) ||
@@ -1219,7 +1328,7 @@
                   delay: motionDuration(ROUTE_ENTRY_DELAY_MS),
                   duration: motionDuration(ROUTE_ENTRY_MS),
                 }}
-                out:fade={{ delay: motionDuration(EXIT_DELAY_MS), duration: motionDuration(120) }}
+                out:fade={{ duration: motionDuration(EXIT_MS) }}
               >
                 <DiagramEdge
                   {edge}
@@ -1227,16 +1336,16 @@
                   highlighted={isEdgeHighlighted}
                   markerScope={diagram.id}
                   terminalGap={arrowTerminalGap}
-                  motionDelay={stateJustChanged ? motionDuration(ROUTE_ENTRY_DELAY_MS) : 0}
+                  motionDelay={isNewEdge ? motionDuration(ROUTE_ENTRY_DELAY_MS) : 0}
                   onmotionchange={handleEdgeMotion}
                 />
               </g>
             {/each}
 
             <!-- Edge labels (HTML via foreignObject) -->
-            {#each visibleEdges as edge (edge.id)}
-              {#if edge.label && edgeLabelPositions.has(edge.id)}
-                {@const labelPos = edgeLabelPositions.get(edge.id)!}
+            {#each renderedEdges as edge (edge.id)}
+              {#if edge.label && renderedLabelPositions.has(edge.id)}
+                {@const labelPos = renderedLabelPositions.get(edge.id)!}
                 {@const isNewLabel = newEdgeIds.has(edge.id)}
                 {@const isDimmed =
                   (hoveredNodeId !== null && !connectedEdgeIds.has(edge.id)) ||
@@ -1256,7 +1365,7 @@
                   data-edge-id={edge.id}
                   data-semantic-style={edge.semanticStyle ?? 'default'}
                   data-truncated={labelPos.truncated}
-                  out:fade={{ delay: motionDuration(EXIT_DELAY_MS), duration: motionDuration(120) }}
+                  out:fade={{ duration: motionDuration(EXIT_MS) }}
                 >
                   {#if labelPos.truncated}
                     <Tooltip content={edge.label} side="top" class="edge-label-tooltip">
@@ -1276,7 +1385,7 @@
             {/each}
 
             <!-- HTML nodes via foreignObject -->
-            {#each visibleNodes as node (node.id)}
+            {#each renderedNodes as node (node.id)}
               {@const isNodeDimmed =
                 (hoveredNodeId !== null && !connectedNodeIds.has(node.id)) ||
                 (hoveredGroupId !== null && !groupNodeIds.has(node.id)) ||
@@ -1293,11 +1402,11 @@
                 height={node.height}
                 class="diagram-geometry-motion"
                 in:fade={{
-                  delay: stateJustChanged ? motionDuration(CAMERA_MOTION_MS) : 0,
+                  delay: 0,
                   duration: stateJustChanged ? motionDuration(SCENE_ENTRY_MS) : 0,
                   easing: cubicOut,
                 }}
-                out:fade={{ delay: motionDuration(EXIT_DELAY_MS), duration: motionDuration(120) }}
+                out:fade={{ duration: motionDuration(EXIT_MS) }}
               >
                 <DiagramNodeHTML
                   {node}
@@ -1332,9 +1441,9 @@
   .diagram-renderer {
     --diagram-camera-duration: 320ms;
     --diagram-camera-easing: cubic-bezier(0.65, 0, 0.35, 1);
-    --diagram-scene-entry-delay: 320ms;
-    --diagram-route-entry-delay: 500ms;
-    --diagram-label-entry-delay: 680ms;
+    --diagram-scene-entry-delay: 0ms;
+    --diagram-route-entry-delay: 180ms;
+    --diagram-label-entry-delay: 360ms;
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -1503,21 +1612,19 @@
   .stateful-diagram.camera-stage :global(.diagram-geometry-motion) {
     transition:
       transform var(--diagram-camera-duration) var(--diagram-camera-easing),
-      x 220ms cubic-bezier(0.16, 1, 0.3, 1) var(--diagram-scene-entry-delay),
-      y 220ms cubic-bezier(0.16, 1, 0.3, 1) var(--diagram-scene-entry-delay),
-      width 220ms cubic-bezier(0.16, 1, 0.3, 1) var(--diagram-scene-entry-delay),
-      height 220ms cubic-bezier(0.16, 1, 0.3, 1) var(--diagram-scene-entry-delay),
+      x 220ms cubic-bezier(0.16, 1, 0.3, 1),
+      y 220ms cubic-bezier(0.16, 1, 0.3, 1),
+      width 220ms cubic-bezier(0.16, 1, 0.3, 1),
+      height 220ms cubic-bezier(0.16, 1, 0.3, 1),
       opacity 180ms ease-out;
   }
 
   .stateful-diagram.camera-stage :global(.group-bg) {
-    transition-delay:
-      var(--diagram-scene-entry-delay), var(--diagram-scene-entry-delay),
-      var(--diagram-scene-entry-delay), var(--diagram-scene-entry-delay), 0ms, 0ms, 0ms;
+    transition-delay: 0ms;
   }
 
   .stateful-diagram.camera-stage :global(.group-label) {
-    transition-delay: var(--diagram-scene-entry-delay), var(--diagram-scene-entry-delay), 0ms;
+    transition-delay: 0ms;
   }
 
   :global(.edge-label-dimmed) {

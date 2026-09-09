@@ -210,7 +210,13 @@
   );
 </script>
 
-<g class={edgeClass} data-edge-id={edge.id} data-edge-motion-progress={motionProgress}>
+<g
+  class={edgeClass}
+  data-edge-id={edge.id}
+  data-edge-from={edge.from}
+  data-edge-to={edge.to}
+  data-edge-motion-progress={motionProgress}
+>
   <!-- Edge path -->
   <path
     d={displayedPath}

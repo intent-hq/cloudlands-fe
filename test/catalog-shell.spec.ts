@@ -777,10 +777,9 @@ async function setCatalogTheme(page: Page, theme: 'light' | 'dark') {
 }
 
 async function setReducedMotion(page: Page, enabled: boolean) {
-  const control = page.getByRole('switch', { name: 'Reduce motion' });
-  const checked = (await control.getAttribute('aria-checked')) === 'true';
-  if (checked !== enabled) await control.click();
-  await expect(control).toHaveAttribute('aria-checked', String(enabled));
+  const control = page.getByRole('radio', { name: enabled ? 'Reduced' : 'Full', exact: true });
+  if ((await control.getAttribute('aria-checked')) !== 'true') await control.click();
+  await expect(control).toHaveAttribute('aria-checked', 'true');
 }
 
 function maxDurationMs(value: string): number {
