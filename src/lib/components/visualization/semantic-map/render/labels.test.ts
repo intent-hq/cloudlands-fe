@@ -28,6 +28,7 @@ function layout(state: 'route' | 'focus' | 'replay', width: number, height: numb
     timeWindow: { start: SCRIPT_START, end },
     geometry,
     route,
+    dark: false,
     neutral: '#777',
     fileLabel: (count) => `${count} files`,
   });

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getAgentColorsWithSeed } from '$lib/utils/agent-colors';
 import type { MapActivity } from '../core/types';
 import type { RegionGeometry } from '../layout/place';
 import { buildRouteEdges, buildScene, filterActivities, hitRouteEdge } from './scene';
@@ -107,6 +108,7 @@ describe('semantic map render scene', () => {
         end: '9999-12-31T23:59:59.999Z',
       },
       geometry,
+      dark: false,
       neutral: '#neutral',
       fileLabel: (count) => `${count}`,
     });
@@ -136,6 +138,7 @@ describe('semantic map render scene', () => {
       filters: {},
       timeWindow: window,
       geometry,
+      dark: false,
       neutral: '#neutral',
       fileLabel: (count) => `${count}`,
     });
@@ -148,7 +151,7 @@ describe('semantic map render scene', () => {
     expect(scene.badges.some(({ id }) => id === 'outside')).toBe(false);
   });
 
-  it('fans collocated badges and uses at most eight agent hues', () => {
+  it('fans collocated badges and derives every hue from agent identity', () => {
     const activities: MapActivity[] = Array.from({ length: 9 }, (_, index) => ({
       id: `activity-${index}`,
       agentId: `agent-${index}`,
@@ -162,14 +165,37 @@ describe('semantic map render scene', () => {
       filters: {},
       timeWindow: window,
       geometry,
+      dark: false,
       neutral: '#neutral',
       fileLabel: (count) => `${count}`,
     });
 
-    expect(new Set(scene.badges.slice(0, 8).map(({ color }) => color)).size).toBe(8);
-    expect(scene.badges[8].color).toBe('#neutral');
+    expect(scene.badges.map(({ id, color }) => [id, color])).toEqual(
+      activities.map(({ agentId }) => [agentId, getAgentColorsWithSeed(agentId ?? '', false)[0]]),
+    );
     expect(new Set(scene.badges.map(({ x, y }) => `${x}:${y}`)).size).toBe(9);
   });
+
+  it.each([false, true])(
+    'keeps visible agent colors stable when another agent is hidden (dark: %s)',
+    (dark) => {
+      const sceneInput = {
+        activities,
+        timeWindow: window,
+        geometry,
+        dark,
+        neutral: '#neutral',
+        fileLabel: (count: number) => `${count}`,
+      };
+      const before = buildScene({ ...sceneInput, filters: {} });
+      const after = buildScene({ ...sceneInput, filters: { agentIds: ['b'] } });
+      const expected = getAgentColorsWithSeed('b', dark)[0];
+
+      expect(before.badges.find(({ id }) => id === 'b')?.color).toBe(expected);
+      expect(after.badges.find(({ id }) => id === 'b')?.color).toBe(expected);
+      expect(after.marks.every(({ color }) => color === expected)).toBe(true);
+    },
+  );
 
   it('infers move travel from the agent previous region', () => {
     const activities: MapActivity[] = [
@@ -193,6 +219,7 @@ describe('semantic map render scene', () => {
       filters: {},
       timeWindow: window,
       geometry,
+      dark: false,
       neutral: '#neutral',
       fileLabel: (count) => `${count}`,
     });

@@ -9,6 +9,7 @@
   import { placeRegions } from '$lib/components/visualization/semantic-map/layout/place';
   import { Button } from '$lib/components/ui/button';
   import { formatInteger } from '$lib/i18n/format';
+  import { getAgentColorsWithSeed } from '$lib/utils/agent-colors';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -264,8 +265,20 @@
                 : 'outline'}
               aria-pressed={$mapState.agentFilter.length === 0 ||
                 $mapState.agentFilter.includes(agent.id)}
-              onclick={() => toggleAgentFilter(agent.id)}>{agent.name}</Button
+              onclick={() => toggleAgentFilter(agent.id)}
             >
+              <span aria-hidden="true" data-agent-color-swatch>
+                <span
+                  class="block size-2.5 shrink-0 rounded-full dark:hidden"
+                  style:background-color={getAgentColorsWithSeed(agent.id)[0]}
+                ></span>
+                <span
+                  class="hidden size-2.5 shrink-0 rounded-full dark:block"
+                  style:background-color={getAgentColorsWithSeed(agent.id, true)[0]}
+                ></span>
+              </span>
+              {agent.name}
+            </Button>
           {/each}
         </fieldset>
       {/if}

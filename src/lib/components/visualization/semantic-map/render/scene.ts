@@ -1,4 +1,4 @@
-import { agentColorPalette } from '$lib/utils/agent-colors';
+import { getAgentColorsWithSeed } from '$lib/utils/agent-colors';
 import type { MapActivity, Route } from '../core/types';
 import type { RegionGeometry } from '../layout/place';
 import type {
@@ -14,7 +14,6 @@ const READ_DURATION_MS = 2_000;
 const MOVE_DURATION_MS = 1_000;
 const TOOL_DURATION_MS = 1_200;
 const BADGE_RADIUS = 13;
-const AGENT_HUE_LIMIT = 8;
 
 function timestamp(value: string): number {
   return Date.parse(value);
@@ -68,6 +67,7 @@ function buildMarks(
   end: number,
   duration: number,
   colors: Map<string, string>,
+  neutral: string,
 ): { marks: ActivityMark[]; heatByRegion: Record<string, number> } {
   const marks: ActivityMark[] = [];
   const heatByRegion: Record<string, number> = {};
@@ -79,7 +79,7 @@ function buildMarks(
     const ageMs = Math.max(0, end - timestamp(activity.ts));
     const alpha = Math.max(0.12, 1 - ageMs / duration);
     const agentId = activity.agentId ?? '';
-    const color = colors.get(agentId) ?? agentColorPalette[AGENT_HUE_LIMIT];
+    const color = colors.get(agentId) ?? neutral;
     const [x, y] = markPosition(activity, region);
     const from = previousRegion.get(agentId);
     previousRegion.set(agentId, region);
@@ -101,12 +101,11 @@ function buildMarks(
   return { marks, heatByRegion };
 }
 
-function agentColors(activities: MapActivity[], neutral: string): Map<string, string> {
+function agentColors(activities: MapActivity[], dark: boolean): Map<string, string> {
   const result = new Map<string, string>();
   for (const activity of activities) {
     if (!activity.agentId || result.has(activity.agentId)) continue;
-    const index = result.size;
-    result.set(activity.agentId, index < AGENT_HUE_LIMIT ? agentColorPalette[index] : neutral);
+    result.set(activity.agentId, getAgentColorsWithSeed(activity.agentId, dark)[0]);
   }
   return result;
 }
@@ -136,6 +135,7 @@ function buildBadges(
   geometry: Map<string, RegionGeometry>,
   end: number,
   colors: Map<string, string>,
+  neutral: string,
 ): AgentBadge[] {
   const latestByAgent = new Map<string, MapActivity>();
   const latestRegionByAgent = new Map<string, string>();
@@ -157,7 +157,7 @@ function buildBadges(
       kind: latest.kind,
       x: region?.x ?? 28 + unplaced++ * 34,
       y: region?.y ?? 28,
-      color: colors.get(id) ?? agentColorPalette[AGENT_HUE_LIMIT],
+      color: colors.get(id) ?? neutral,
       thinking: latest.kind === 'thinking',
     };
     if (latest.kind === 'tool') badge.toolAgeMs = Math.max(0, end - timestamp(latest.ts));
@@ -206,6 +206,7 @@ export function buildScene(input: {
   timeWindow: SemanticMapTimeWindow;
   geometry: RegionGeometry[];
   route?: Route;
+  dark: boolean;
   neutral: string;
   fileLabel: (count: number) => string;
 }): SemanticMapScene {
@@ -214,9 +215,16 @@ export function buildScene(input: {
   const referenceTime = input.timeWindow.end.startsWith('9999-') ? Date.now() : windowEnd;
   const duration = Math.max(1, referenceTime - timestamp(input.timeWindow.start));
   const geometry = geometryIndex(input.geometry);
-  const colors = agentColors(activities, input.neutral);
-  const { marks, heatByRegion } = buildMarks(activities, geometry, referenceTime, duration, colors);
-  const badges = buildBadges(activities, geometry, referenceTime, colors);
+  const colors = agentColors(activities, input.dark);
+  const { marks, heatByRegion } = buildMarks(
+    activities,
+    geometry,
+    referenceTime,
+    duration,
+    colors,
+    input.neutral,
+  );
+  const badges = buildBadges(activities, geometry, referenceTime, colors, input.neutral);
   return {
     activities,
     marks,

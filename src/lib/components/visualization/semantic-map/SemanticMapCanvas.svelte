@@ -68,6 +68,7 @@
     mutedForeground: '#71717a',
     accent: '#8b5cf6',
   });
+  let darkMode = $state(false);
 
   let reducedMotion = false;
   let currentGeometry: RegionGeometry[] = geometry.rest;
@@ -99,6 +100,7 @@
       timeWindow,
       geometry: selection ? geometry.focus : geometry.rest,
       route,
+      dark: darkMode,
       neutral: colors.mutedForeground,
       fileLabel: routeFileLabel,
     }),
@@ -155,6 +157,7 @@
   function resolveColors(): void {
     if (!container) return;
     const style = getComputedStyle(container);
+    darkMode = style.colorScheme === 'dark';
     uiFont = cssValue(style, '--font-ui', 'sans-serif');
     badgeForeground = `hsl(${cssValue(style, '--agent-avatar-foreground', '0 0% 0%')})`;
     colors = {

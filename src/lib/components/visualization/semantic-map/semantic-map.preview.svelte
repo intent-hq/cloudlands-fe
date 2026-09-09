@@ -55,6 +55,7 @@
   import { formatInteger } from '$lib/i18n/format';
   import { Button } from '$lib/components/ui/button';
   import { Slider } from '$lib/components/ui/slider';
+  import { getAgentColorsWithSeed } from '$lib/utils/agent-colors';
   import SemanticMapCanvas from './SemanticMapCanvas.svelte';
   import SemanticMapDetail, { type SemanticMapDetailSelection } from './SemanticMapDetail.svelte';
   import manifestJson from './fixtures/intent-manifest.json';
@@ -267,8 +268,20 @@
           size="sm"
           variant={selectedAgentIds.includes(agent.id) ? 'secondary' : 'outline'}
           aria-pressed={selectedAgentIds.includes(agent.id)}
-          onclick={() => toggleAgent(agent.id)}>{agent.name}</Button
+          onclick={() => toggleAgent(agent.id)}
         >
+          <span aria-hidden="true" data-agent-color-swatch>
+            <span
+              class="block size-2.5 shrink-0 rounded-full dark:hidden"
+              style:background-color={getAgentColorsWithSeed(agent.id)[0]}
+            ></span>
+            <span
+              class="hidden size-2.5 shrink-0 rounded-full dark:block"
+              style:background-color={getAgentColorsWithSeed(agent.id, true)[0]}
+            ></span>
+          </span>
+          {agent.name}
+        </Button>
       {/each}
     </fieldset>
     <fieldset class="flex flex-wrap items-center gap-2">
