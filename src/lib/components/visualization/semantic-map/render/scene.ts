@@ -17,12 +17,12 @@ const READ_DURATION_MS = 2_000;
 const MOVE_DURATION_MS = 1_000;
 const TOOL_DURATION_MS = 1_200;
 const BADGE_RADIUS = 13;
-export const DEFAULT_TRAIL_LENGTH = 4;
+const DEFAULT_TRAIL_LENGTH = 4;
 export const HEAT_BAND_ALPHA: Readonly<Record<HeatBand, number>> = {
   0: 0,
-  1: 0.46,
-  2: 0.54,
-  3: 0.62,
+  1: 0.07,
+  2: 0.14,
+  3: 0.21,
 };
 
 function timestamp(value: string): number {

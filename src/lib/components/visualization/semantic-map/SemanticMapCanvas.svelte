@@ -200,8 +200,6 @@
     const tileContext = tile.getContext('2d');
     if (!tileContext) return;
     tileContext.scale(pixelRatio, pixelRatio);
-    tileContext.fillStyle = colors.background;
-    tileContext.fillRect(0, 0, period, period);
     tileContext.strokeStyle = colors.border;
     tileContext.lineWidth = 1;
     tileContext.beginPath();
@@ -285,29 +283,34 @@
       hoveredRegionId === region.id ||
       keyboardRegionId === region.id ||
       selectedRegionIds.has(region.id);
+    const cachedPath = path && !tweening;
+    const regionAlpha = isUnsorted ? 0.46 : 1;
     ctx.save();
-    ctx.globalAlpha = isUnsorted ? 0.46 : 1;
-    ctx.fillStyle = selectedRegionIds.has(region.id)
-      ? colors.surface
-      : (hatchPattern ?? colors.muted);
-    ctx.strokeStyle = highlighted ? colors.accent : colors.border;
-    ctx.lineWidth = (highlighted ? 2 : 1) / transform.scale;
-    ctx.setLineDash(isUnsorted ? [6 / transform.scale, 5 / transform.scale] : []);
-    if (path && !tweening) {
+    ctx.globalAlpha = regionAlpha;
+    ctx.fillStyle = selectedRegionIds.has(region.id) ? colors.surface : colors.background;
+    if (cachedPath) {
       ctx.fill(path);
-      ctx.stroke(path);
     } else {
       ctx.beginPath();
       traceHull(ctx, region.hull);
       ctx.fill();
-      ctx.stroke();
     }
     const heatBand = scene.heatByRegion[region.id] ?? 0;
     if (heatBand > 0) {
-      ctx.globalAlpha = HEAT_BAND_ALPHA[heatBand];
+      ctx.globalAlpha = regionAlpha * HEAT_BAND_ALPHA[heatBand];
       ctx.fillStyle = colors.foreground;
-      path && !tweening ? ctx.fill(path) : ctx.fill();
+      cachedPath ? ctx.fill(path) : ctx.fill();
     }
+    if (hatchPattern && (!selectedRegionIds.has(region.id) || heatBand > 0)) {
+      ctx.globalAlpha = regionAlpha;
+      ctx.fillStyle = hatchPattern;
+      cachedPath ? ctx.fill(path) : ctx.fill();
+    }
+    ctx.globalAlpha = regionAlpha;
+    ctx.strokeStyle = highlighted ? colors.accent : colors.border;
+    ctx.lineWidth = (highlighted ? 2 : 1) / transform.scale;
+    ctx.setLineDash(isUnsorted ? [6 / transform.scale, 5 / transform.scale] : []);
+    cachedPath ? ctx.stroke(path) : ctx.stroke();
     ctx.restore();
   }
 
@@ -842,10 +845,12 @@
   <span class="sr-only" aria-live="polite">{selectionDescription}</span>
   <ul class="sr-only" aria-label={m.semanticMap_panel_filterKinds_label()}>
     {#each scene.marks as mark, index (index)}
-      <li>{activityKindLabel(mark.kind)}</li>
+      <li aria-label={activityKindLabel(mark.kind)}>{activityKindLabel(mark.kind)}</li>
     {/each}
     {#each scene.badges as badge (badge.id)}
-      <li>{badge.name}: {activityKindLabel(badge.kind)}</li>
+      <li aria-label={`${badge.name}: ${activityKindLabel(badge.kind)}`}>
+        {badge.name}: {activityKindLabel(badge.kind)}
+      </li>
     {/each}
   </ul>
   <canvas

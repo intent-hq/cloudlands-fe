@@ -1,8 +1,53 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getAgentColorsWithSeed } from '$lib/utils/agent-colors';
 import type { MapActivity } from '../core/types';
 import type { RegionGeometry } from '../layout/place';
-import { buildRouteEdges, buildScene, filterActivities, hitRouteEdge, quantizeHeat } from './scene';
+import {
+  buildRouteEdges,
+  buildScene,
+  filterActivities,
+  HEAT_BAND_ALPHA,
+  hitRouteEdge,
+  quantizeHeat,
+} from './scene';
+
+function themeRgb(css: string, mode: 'light' | 'dark', role: string): [number, number, number] {
+  const match = css.match(
+    new RegExp(`--theme-${mode}-${role}:\\s*([\\d.]+) ([\\d.]+)% ([\\d.]+)%;`),
+  );
+  if (!match) throw new Error(`Missing ${mode} ${role} token`);
+  const [hue, saturation, lightness] = match.slice(1).map(Number);
+  const s = saturation / 100;
+  const l = lightness / 100;
+  const chroma = (1 - Math.abs(2 * l - 1)) * s;
+  const x = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const offset = l - chroma / 2;
+  const channels =
+    hue < 60
+      ? [chroma, x, 0]
+      : hue < 120
+        ? [x, chroma, 0]
+        : hue < 180
+          ? [0, chroma, x]
+          : hue < 240
+            ? [0, x, chroma]
+            : hue < 300
+              ? [x, 0, chroma]
+              : [chroma, 0, x];
+  return channels.map((channel) => (channel + offset) * 255) as [number, number, number];
+}
+
+function contrastRatio(first: number[], second: number[]): number {
+  const luminance = (channels: number[]) =>
+    channels
+      .map((channel) => channel / 255)
+      .map((channel) => (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4))
+      .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+  const values = [luminance(first), luminance(second)].sort((left, right) => right - left);
+  return (values[0] + 0.05) / (values[1] + 0.05);
+}
 
 const geometry: RegionGeometry[] = [
   {
@@ -91,6 +136,21 @@ describe('semantic map render scene', () => {
   it('quantizes mutation counts into three stable heat bands', () => {
     expect([0, 1, 2, 3, 4, 12].map(quantizeHeat)).toEqual([0, 1, 2, 2, 3, 3]);
   });
+
+  it.each(['light', 'dark'] as const)(
+    'keeps the %s region label readable on the hottest heat tint',
+    (mode) => {
+      const css = readFileSync(resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      const foreground = themeRgb(css, mode, 'foreground');
+      const background = themeRgb(css, mode, 'background');
+      const alpha = HEAT_BAND_ALPHA[3];
+      const heatTint = background.map(
+        (channel, index) => channel * (1 - alpha) + foreground[index] * alpha,
+      );
+
+      expect(contrastRatio(foreground, heatTint)).toBeGreaterThanOrEqual(4.5);
+    },
+  );
 
   it('keeps mutation evidence as an edge tick for the full window', () => {
     const scene = buildScene({

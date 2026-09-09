@@ -59,7 +59,7 @@ export interface ActivityTick {
   color: string;
 }
 
-export interface AgentTrailPoint {
+interface AgentTrailPoint {
   x: number;
   y: number;
   alpha: number;
