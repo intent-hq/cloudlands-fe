@@ -18,6 +18,15 @@
     state: SemanticMapPreviewState;
   }
 
+  export const SEMANTIC_MAP_PREVIEW_COMPACT_BREAKPOINT = '48rem';
+
+  export function resolveSemanticMapPreviewCanvasWidth(
+    measuredWidth: number,
+    requestedWidth = 0,
+  ): number {
+    return Math.max(1, Math.floor(requestedWidth || measuredWidth));
+  }
+
   const previewState = (state: SemanticMapPreviewState) => ({ props: { state } });
 
   export const preview = definePreview<SemanticMapPreviewProps>({
@@ -69,7 +78,7 @@
     return Number.isInteger(value) && value >= 240 && value <= maximum ? value : fallback;
   }
 
-  const canvasWidth = queryDimension('w', 1200, 1600);
+  const requestedCanvasWidth = queryDimension('w', 0, 1600);
   const height = queryDimension('h', 620, 1200);
   const script = createSemanticMapScript();
   const baseManifest = manifestJson as Manifest;
@@ -86,6 +95,7 @@
   const initialMinute =
     initialMode === 'busy' ? 8 : initialMode === 'replay' ? 14 : SCRIPT_DURATION_MINUTES;
   let currentMinute = $state(initialMinute);
+  let measuredCanvasWidth = $state(1);
   let timeWindowMinutes = $state(SCRIPT_DURATION_MINUTES);
   let speed = $state<1 | 8 | 32>(8);
   let playing = $state(initialMode === 'busy');
@@ -163,6 +173,9 @@
       : [...script.activities, ...unsortedActivities].filter(
           ({ ts }) => Date.parse(ts) <= currentTime,
         ),
+  );
+  const canvasWidth = $derived(
+    resolveSemanticMapPreviewCanvasWidth(measuredCanvasWidth, requestedCanvasWidth),
   );
   const route = $derived(routeAgentId ? script.routes[routeAgentId] : undefined);
   const geometry = $derived.by(() => ({
@@ -242,7 +255,7 @@
   });
 </script>
 
-<section class="grid gap-4" data-semantic-map-preview data-semantic-map-state={mode}>
+<section class="preview-root grid gap-4" data-semantic-map-preview data-semantic-map-state={mode}>
   <div
     class="flex flex-wrap items-start gap-x-8 gap-y-3 rounded-lg border border-border bg-card p-3 text-sm"
   >
@@ -315,24 +328,36 @@
   </div>
 
   <div
-    class="grid min-w-0 grid-cols-[minmax(0,1fr)_18rem] overflow-hidden rounded-lg border border-border bg-background"
+    class="preview-layout grid min-w-0 grid-cols-[minmax(0,1fr)_18rem] overflow-hidden rounded-lg border border-border bg-background"
+    data-semantic-map-layout
+    data-compact-breakpoint={SEMANTIC_MAP_PREVIEW_COMPACT_BREAKPOINT}
   >
-    <SemanticMapCanvas
-      {manifest}
-      {geometry}
-      {activities}
-      {route}
-      {selection}
-      {filters}
-      {timeWindow}
-      width={canvasWidth}
-      {height}
-      onSelectRegion={selectRegion}
-      onSelectAgent={selectAgent}
-      onSelectRoute={selectRoute}
-      onClearSelection={clearSelection}
-    />
-    <aside class="overflow-y-auto border-l border-border p-4" style="height: {height}px">
+    <div
+      class="preview-canvas min-w-0 overflow-hidden"
+      data-semantic-map-canvas-panel
+      bind:clientWidth={measuredCanvasWidth}
+    >
+      <SemanticMapCanvas
+        {manifest}
+        {geometry}
+        {activities}
+        {route}
+        {selection}
+        {filters}
+        {timeWindow}
+        width={canvasWidth}
+        {height}
+        onSelectRegion={selectRegion}
+        onSelectAgent={selectAgent}
+        onSelectRoute={selectRoute}
+        onClearSelection={clearSelection}
+      />
+    </div>
+    <aside
+      class="preview-detail overflow-y-auto border-l border-border bg-background p-4"
+      data-semantic-map-detail-panel
+      style="height: {height}px"
+    >
       <SemanticMapDetail
         {manifest}
         {activities}
@@ -348,3 +373,21 @@
     </aside>
   </div>
 </section>
+
+<style>
+  .preview-root {
+    container-type: inline-size;
+  }
+
+  @container (max-width: 47.99rem) {
+    .preview-layout {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto auto;
+    }
+
+    .preview-detail {
+      border-top: 1px solid var(--color-border);
+      border-left: 0;
+    }
+  }
+</style>

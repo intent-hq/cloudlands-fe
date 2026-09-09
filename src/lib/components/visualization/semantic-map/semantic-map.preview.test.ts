@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import manifestJson from './fixtures/intent-manifest.json';
-import { preview } from './semantic-map.preview.svelte';
+import {
+  preview,
+  resolveSemanticMapPreviewCanvasWidth,
+  SEMANTIC_MAP_PREVIEW_COMPACT_BREAKPOINT,
+} from './semantic-map.preview.svelte';
 
 describe('semantic map preview', () => {
   it('registers every reviewable URL state', () => {
@@ -27,5 +31,12 @@ describe('semantic map preview', () => {
       0.86, 0.58,
     ]);
     expect(manifestJson.crossings).toHaveLength(13);
+  });
+
+  it('uses the host compact breakpoint and container-measured canvas width', () => {
+    expect(SEMANTIC_MAP_PREVIEW_COMPACT_BREAKPOINT).toBe('48rem');
+    expect(resolveSemanticMapPreviewCanvasWidth(672)).toBe(672);
+    expect(resolveSemanticMapPreviewCanvasWidth(0)).toBe(1);
+    expect(resolveSemanticMapPreviewCanvasWidth(672, 1440)).toBe(1440);
   });
 });
