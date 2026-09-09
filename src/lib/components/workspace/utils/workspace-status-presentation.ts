@@ -46,7 +46,7 @@ const VISUALS: Record<
 > = {
   failed: { visual: 'icon', icon: faTriangleExclamation, className: 'text-foreground' },
   blocked: { visual: 'icon', icon: faXmark, className: 'text-danger' },
-  needs_attention: { visual: 'icon', icon: faCircleQuestion, className: 'text-warning' },
+  needs_attention: { visual: 'icon', icon: faCircleQuestion, className: 'text-warning-ink' },
   in_progress: {
     visual: 'dot',
     icon: null,

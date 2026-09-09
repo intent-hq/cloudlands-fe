@@ -83,7 +83,7 @@
         </p>
       </div>
       <div
-        class="type-caption mx-3 mt-3 rounded-(--radius-small) border border-warning/40 bg-warning/10 px-3 py-2 text-warning"
+        class="type-caption mx-3 mt-3 rounded-(--radius-small) border border-warning/40 bg-warning/10 px-3 py-2 text-warning-ink"
         role="note"
         aria-label="Proposal warning"
         data-catalog-rendered-state="warning"

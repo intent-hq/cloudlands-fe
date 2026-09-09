@@ -30,6 +30,7 @@ const COLOR_ROLES = [
   'success',
   'success-foreground',
   'warning',
+  'warning-ink',
   'warning-foreground',
   'sidebar',
   'sidebar-foreground',
@@ -117,6 +118,7 @@ const PRESERVED_SEMANTIC_SOURCE = {
   'theme-light-success-foreground': '0 0% 100%',
   'theme-light-warning': '42 91% 54%',
   'theme-light-warning-foreground': '154 44% 14%',
+  'theme-light-warning-ink': 'var(--theme-light-warning-foreground)',
   'theme-light-agent-avatar-surface-completed': '145 14% 88%',
   'theme-light-agent-avatar-foreground-completed': '154 32% 24%',
   'theme-light-agent-avatar-surface-attention': '30.785 100% 62.549%',
@@ -136,6 +138,7 @@ const PRESERVED_SEMANTIC_SOURCE = {
   'theme-dark-success-foreground': '154 25% 9%',
   'theme-dark-warning': '42 91% 63%',
   'theme-dark-warning-foreground': '154 25% 9%',
+  'theme-dark-warning-ink': 'var(--theme-dark-warning)',
   'theme-dark-agent-avatar-surface-completed': '145 14% 24%',
   'theme-dark-agent-avatar-foreground-completed': '135 20% 86%',
   'theme-dark-agent-avatar-surface-attention': '31 100% 70%',
@@ -177,16 +180,28 @@ function parseHsl(value: string): [number, number, number] {
   ];
 }
 
-function contrast(first: string, second: string): number {
-  const luminance = (value: string) => {
-    const channels = parseHsl(value).map((channel) => {
+function contrastChannels(first: number[], second: number[]): number {
+  const luminance = (channels: number[]) => {
+    const linear = channels.map((channel) => {
       const normalized = channel / 255;
       return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
     });
-    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
   };
   const values = [luminance(first), luminance(second)].sort((a, b) => b - a);
   return (values[0] + 0.05) / (values[1] + 0.05);
+}
+
+function contrast(first: string, second: string): number {
+  return contrastChannels(parseHsl(first), parseHsl(second));
+}
+
+function blend(foreground: string, background: string, opacity: number): number[] {
+  const foregroundRGB = parseHsl(foreground);
+  const backgroundRGB = parseHsl(background);
+  return backgroundRGB.map(
+    (channel, index) => channel * (1 - opacity) + foregroundRGB[index] * opacity,
+  );
 }
 
 function tokenValues(css: string, mode: 'light' | 'dark'): Record<string, string> {
@@ -258,6 +273,27 @@ describe('theme color contract', () => {
         expect(
           contrast(values['primary-ink'], values[surface]),
           `primary-ink on ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    },
+  );
+
+  it.each(['light', 'dark'] as const)(
+    'keeps %s warning ink readable on neutral surfaces',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      const values = tokenValues(css, mode);
+      for (const surface of ['background', 'card'] as const) {
+        expect(
+          contrast(values['warning-ink'], values[surface]),
+          `warning-ink on ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+        expect(
+          contrastChannels(
+            parseHsl(values['warning-ink']),
+            blend(values.warning, values[surface], 0.1),
+          ),
+          `warning-ink on soft ${surface}`,
         ).toBeGreaterThanOrEqual(4.5);
       }
     },

@@ -342,7 +342,7 @@
           placeholder={m.layout_activeCard_search_placeholder()}
           aria-label={m.layout_activeCard_search_placeholder()}
           bind:value={searchQuery}
-          class="w-full rounded-md border border-input bg-background/30 px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-ring focus:outline-none"
+          class="w-full rounded-md border border-input bg-background/30 px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
         />
       </div>
     {/if}

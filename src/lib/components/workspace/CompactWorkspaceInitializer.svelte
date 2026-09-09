@@ -3181,9 +3181,9 @@
           transition:slide={{ axis: 'y', tier: 'moderate' }}
         >
           <div class="flex items-start gap-3">
-            <Fa icon={faExclamationTriangle} class="text-warning-foreground mt-0.5 shrink-0" />
+            <Fa icon={faExclamationTriangle} class="text-warning-ink mt-0.5 shrink-0" />
             <div>
-              <p class="font-medium text-warning-foreground">
+              <p class="font-medium text-warning-ink">
                 {m.workspace_compactInitializer_gitCheckUnknown_label()}
               </p>
               <p class="text-subtle mt-1">

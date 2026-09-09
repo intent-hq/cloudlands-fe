@@ -88,20 +88,15 @@
       </div>{/if}
     <div class="min-w-0 flex-1 space-y-1 break-words">
       {#if htmlFor}
-        <Label id={labelId} for={htmlFor} class={cn('block font-medium', disabled && 'opacity-60')}
-          >{label}</Label
-        >
+        <Label id={labelId} for={htmlFor} class="block font-medium">{label}</Label>
       {:else}
-        <div
-          id={labelId}
-          class={cn('type-body font-medium text-foreground', disabled && 'opacity-60')}
-        >
+        <div id={labelId} class="type-body font-medium text-foreground">
           {label}
         </div>
       {/if}
       {#if description || descriptionContent}<p
           id={descriptionId}
-          class={cn('type-body text-muted-foreground', disabled && 'opacity-60')}
+          class="type-body text-muted-foreground"
         >
           {#if descriptionContent}
             {@render descriptionContent()}
@@ -113,11 +108,7 @@
         <p id={errorId} class="type-body text-danger" role="alert">{error}</p>
       {:else if status}
         <p
-          class={cn(
-            'type-body',
-            statusTone === 'subtle' ? 'text-ghost' : 'text-info',
-            disabled && 'opacity-60',
-          )}
+          class={cn('type-body', statusTone === 'subtle' ? 'text-ghost' : 'text-info')}
           role="status"
         >
           {status}

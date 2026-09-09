@@ -54,7 +54,7 @@
         return {
           icon: faCircle,
           tooltip: m.ui_saveIndicator_clickToSave_tooltip(),
-          class: 'text-warning',
+          class: 'text-warning-ink',
         };
       case 'saved':
       default:

@@ -56,7 +56,7 @@
   onclick={handleClick}
   class="inline-flex items-center gap-1.5 min-w-0 max-w-full rounded px-2 py-0.5 text-left cursor-pointer transition-colors {variant ===
   'conflict'
-    ? 'bg-warning/10 text-warning hover:bg-warning/20'
+    ? 'bg-warning/10 text-warning-ink hover:bg-warning/20'
     : unmet
       ? 'bg-muted text-subtle hover:bg-muted/80'
       : 'bg-muted/30 text-subtle hover:bg-muted/60'}"

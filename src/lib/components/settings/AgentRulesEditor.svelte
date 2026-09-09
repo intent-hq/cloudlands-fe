@@ -274,7 +274,7 @@
     </div>
   {:else if isApproachingLimit}
     <div
-      class="flex items-center gap-2 p-3 bg-warning/10 border border-warning/30 rounded-md text-warning shrink-0"
+      class="flex items-center gap-2 p-3 bg-warning/10 border border-warning/30 rounded-md text-warning-ink shrink-0"
     >
       <Fa icon={faTriangleExclamation} class="w-4 h-4 flex-shrink-0" />
       <span class="text-sm">
@@ -320,7 +320,7 @@
       <div
         class="flex items-center justify-end shrink-0 {isOverLimit
           ? 'text-danger'
-          : 'text-warning'}"
+          : 'text-warning-ink'}"
       >
         <span>
           {m.settings_autoSave_limitUsed({
@@ -345,11 +345,6 @@
   .agent-rules-textarea :global(textarea::placeholder) {
     opacity: 0.4;
     font-style: italic;
-  }
-
-  /* Warning color fallback if not defined in theme */
-  .text-warning {
-    color: hsl(38, 92%, 50%);
   }
 
   .bg-warning\/10 {

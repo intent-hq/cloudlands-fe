@@ -334,7 +334,7 @@
       <Input
         type="text"
         bind:value={scriptName}
-        class="flex-1 text-xs bg-transparent border-0 outline-none focus:outline-none text-foreground/80 placeholder:text-muted-foreground/40"
+        class="flex-1 text-xs bg-transparent border-0 outline-none focus:outline-none text-foreground/80 placeholder:text-muted-foreground"
         placeholder={m.terminal_setupBanner_name_placeholder()}
       />
     </div>

@@ -296,7 +296,7 @@
         </Button>
       {/if}
     </div>
-    {#if !valid}<p class="type-caption text-warning-foreground">
+    {#if !valid}<p class="type-caption text-warning-ink">
         {m.settings_agentFeatures_prMonitorDebounce_invalid()}
       </p>{/if}
   </div>
@@ -330,7 +330,7 @@
         </Button>
       {/if}
     </div>
-    {#if !valid}<p class="type-caption text-warning-foreground">
+    {#if !valid}<p class="type-caption text-warning-ink">
         {m.settings_agentFeatures_maxTopLevelAgents_invalid()}
       </p>{/if}
   </div>

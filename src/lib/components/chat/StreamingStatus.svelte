@@ -231,8 +231,8 @@
     <span role="status" class="sr-only" data-testid="stalled-announcement"
       >{m.chat_streamingStatus_stalledAnnouncement_label()}</span
     >
-    <Fa icon={faExclamationTriangle} class="shrink-0 text-warning/70" />
-    <span class="min-w-0 flex-1 truncate text-warning" data-testid="stalled-message"
+    <Fa icon={faExclamationTriangle} class="shrink-0 text-warning-ink" />
+    <span class="min-w-0 flex-1 truncate text-warning-ink" data-testid="stalled-message"
       >{m.chat_streamingStatus_stalled_label({ duration: stalledElapsed ?? '' })}</span
     >
     {#if onStalledRetry}
@@ -281,8 +281,8 @@
       <div class="flex items-start gap-2">
         <div class="flex min-w-0 flex-1 items-start gap-2">
           {#if status === 'model-unavailable' && modelUnavailable}
-            <Fa icon={faExclamationTriangle} class="shrink-0 text-warning/70" />
-            <span class="text-warning">
+            <Fa icon={faExclamationTriangle} class="shrink-0 text-warning-ink" />
+            <span class="text-warning-ink">
               {m.chat_streamingStatus_modelUnavailable_before()}
               <code class="px-1 py-0.5 bg-muted rounded text-ui"
                 >{modelUnavailable.failedModel}</code

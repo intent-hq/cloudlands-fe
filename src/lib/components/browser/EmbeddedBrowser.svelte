@@ -1254,7 +1254,7 @@
               {m.browser_embedded_selfLoadBlocked_description()}
             {/if}
           </p>
-          <p class="text-xs mt-2 opacity-50 max-w-md break-all">{url}</p>
+          <p class="text-xs mt-2 max-w-md break-all text-muted-foreground">{url}</p>
         </div>
       </div>
     {:else}

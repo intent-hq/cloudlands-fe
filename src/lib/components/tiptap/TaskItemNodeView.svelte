@@ -516,7 +516,7 @@
               {/snippet}
               <span
                 data-task-row-conflict
-                class="inline-flex items-center gap-1 rounded-full bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning"
+                class="inline-flex items-center gap-1 rounded-full bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning-ink"
                 contenteditable="false"
               >
                 <Fa icon={faTriangleExclamation} size="xs" />
@@ -535,7 +535,7 @@
                 convertToInlineTask();
               }}
             >
-              <Fa icon={faLinkSlash} class="text-warning" />
+              <Fa icon={faLinkSlash} class="text-warning-ink" />
             </Button>
           {/if}
           {#if !effectiveAgentId && !effectiveChecked}

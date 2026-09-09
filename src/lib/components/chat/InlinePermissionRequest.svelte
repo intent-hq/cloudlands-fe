@@ -173,7 +173,7 @@
           {/if}
           <span class="flex-1 text-left">{option.label}</span>
           {#if option.description}
-            <span class="type-caption opacity-60">{option.description}</span>
+            <span class="type-caption text-muted-foreground">{option.description}</span>
           {/if}
         </Button>
       {/each}

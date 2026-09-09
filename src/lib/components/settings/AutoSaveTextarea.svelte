@@ -63,7 +63,7 @@
       <div
         class="flex items-center justify-end text-xs shrink-0 {isOverLimit
           ? 'text-danger'
-          : 'text-warning'}"
+          : 'text-warning-ink'}"
       >
         <span>
           {m.settings_autoSave_limitUsed({
@@ -84,10 +84,5 @@
     height: 100%;
     resize: none;
     overflow-y: auto;
-  }
-
-  /* Warning color fallback if not defined in theme */
-  .text-warning {
-    color: hsl(38, 92%, 50%);
   }
 </style>

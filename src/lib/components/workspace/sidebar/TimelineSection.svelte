@@ -37,7 +37,7 @@
     <Header size={6}>
       {title}
       {#if subtitle}
-        <span class="inline-block ml-0.5 opacity-60 font-normal">/ {subtitle}</span>
+        <span class="inline-block ml-0.5 font-normal text-muted-foreground">/ {subtitle}</span>
       {/if}
     </Header>
     {#if action}

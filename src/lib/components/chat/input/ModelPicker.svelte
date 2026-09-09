@@ -2032,10 +2032,7 @@
       {#if showModelWarning && warningMessage}
         <div class="px-3 py-2.5 border-b border-border bg-warning/5">
           <div class="flex items-start gap-2" role="alert">
-            <Fa
-              icon={faTriangleExclamation}
-              class="h-3.5 w-3.5 text-warning-foreground mt-0.5 shrink-0"
-            />
+            <Fa icon={faTriangleExclamation} class="h-3.5 w-3.5 text-warning-ink mt-0.5 shrink-0" />
             <div class="min-w-0">
               <div class="text-xs font-medium text-foreground leading-tight">
                 {warningMessage.title}

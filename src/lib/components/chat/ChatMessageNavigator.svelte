@@ -251,7 +251,7 @@
             aria-activedescendant={activeOptionId}
             autocomplete="off"
             placeholder={m.chat_messageNavigator_search_placeholder()}
-            class="type-caption h-(--control-height-medium) w-full min-w-0 shrink-0 rounded-(--radius-small) border border-border bg-card px-[var(--space-2)] text-foreground caret-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:shadow-[inset_0_0_0_1px_var(--ring)]"
+            class="type-caption h-(--control-height-medium) w-full min-w-0 shrink-0 rounded-(--radius-small) border border-border bg-card px-[var(--space-2)] text-foreground caret-foreground outline-none placeholder:text-muted-foreground focus-visible:shadow-[inset_0_0_0_1px_var(--ring)]"
             data-testid="chat-message-navigator-search"
           />
           <!-- Persistent live region: announcements only fire for content

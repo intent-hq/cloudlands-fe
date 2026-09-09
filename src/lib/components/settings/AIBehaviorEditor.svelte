@@ -882,7 +882,7 @@
             <div
               class="flex shrink-0 items-center justify-end text-xs {newPromptIsOverLimit
                 ? 'text-danger'
-                : 'text-warning'}"
+                : 'text-warning-ink'}"
             >
               <span>
                 {m.settings_autoSave_limitUsed({
@@ -994,10 +994,5 @@
       height: 100%;
       min-height: 0;
     }
-  }
-
-  /* Warning color fallback */
-  .text-warning {
-    color: hsl(38, 92%, 50%);
   }
 </style>

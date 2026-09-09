@@ -1720,7 +1720,7 @@
                       <Fa icon={faFile} class="w-3 h-3" />
                       <span class="truncate" style="max-width: 150px;">{fileBlock.fileName}</span>
                       {#if secondary}
-                        <span class="opacity-60 shrink-0">{secondary}</span>
+                        <span class="shrink-0">{secondary}</span>
                       {/if}
                     </Button>
                   {/each}

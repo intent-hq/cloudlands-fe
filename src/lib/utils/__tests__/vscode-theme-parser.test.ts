@@ -393,6 +393,7 @@ describe('parseVSCodeTheme', () => {
     expect(result.cssVariables['--danger-background']).toBeDefined();
     expect(result.cssVariables['--success']).toBeDefined();
     expect(result.cssVariables['--warning']).toBeDefined();
+    expect(result.cssVariables['--warning-ink']).toBeDefined();
   });
 
   it('preserves decorative borders while normalizing input and focus boundaries', () => {

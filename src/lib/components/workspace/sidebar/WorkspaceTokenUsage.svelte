@@ -222,7 +222,10 @@
     >
       {summaryText}
       {#if isUpdating}
-        <span class="italic opacity-60" aria-label={m.workspace_tokenUsage_updating_ariaLabel()}>
+        <span
+          class="italic text-muted-foreground"
+          aria-label={m.workspace_tokenUsage_updating_ariaLabel()}
+        >
           {m.workspace_tokenUsage_updating_label()}</span
         >
       {/if}

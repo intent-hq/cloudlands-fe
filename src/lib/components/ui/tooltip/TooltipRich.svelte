@@ -111,10 +111,10 @@
     },
     warning: {
       bg: 'bg-warning/10',
-      text: 'text-warning',
+      text: 'text-warning-ink',
       border: 'border border-warning/40',
       icon: faTriangleExclamation,
-      iconColor: 'text-warning',
+      iconColor: 'text-warning-ink',
     },
     error: {
       bg: 'bg-danger',

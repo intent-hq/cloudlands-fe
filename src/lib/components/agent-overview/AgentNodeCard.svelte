@@ -97,7 +97,7 @@
         compact
         class="text-ui leading-none {$attentionRequest$.kind === 'blocker'
           ? 'text-danger'
-          : 'text-warning'}"
+          : 'text-warning-ink'}"
       />
     {/if}
     <!-- {#if specialist}

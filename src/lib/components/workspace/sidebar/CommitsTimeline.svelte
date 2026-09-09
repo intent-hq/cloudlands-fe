@@ -962,7 +962,7 @@
 
   <!-- Older commits (dimmed, below boundary) -->
   {#if olderCommits.length > 0}
-    <div class="space-y-0.5 opacity-60 hover:opacity-100 transition-opacity">
+    <div class="space-y-0.5 text-muted-foreground">
       {#each olderCommits as commit (commit.hash)}
         {@const isExpanded = expandedCommits.has(commit.hash)}
         {@const commitFiles = getCommitFiles(commit)}

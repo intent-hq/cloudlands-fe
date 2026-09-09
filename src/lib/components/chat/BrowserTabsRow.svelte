@@ -223,8 +223,11 @@
                     : 'bg-muted-foreground/40'}"
                 aria-hidden="true"
               ></span>
-              <span class="min-w-0 flex-1 {entry.hidden ? 'opacity-60' : ''}">
-                <span class="block truncate" title={entry.tab.title}>{entry.tab.title}</span>
+              <span class="min-w-0 flex-1">
+                <span
+                  class="block truncate {entry.hidden ? 'text-muted-foreground' : ''}"
+                  title={entry.tab.title}>{entry.tab.title}</span
+                >
                 <span class="block truncate text-xs text-subtle" title={entry.tab.browserUrl ?? ''}>
                   {entry.tab.browserUrl || m.browser_embedded_noUrl_label()}
                 </span>

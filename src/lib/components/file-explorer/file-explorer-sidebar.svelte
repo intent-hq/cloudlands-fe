@@ -174,7 +174,7 @@
 
                 <Sidebar.MenuItem>
                   <Sidebar.MenuButton
-                    class="w-full {isIgnored ? 'opacity-50' : ''}"
+                    class="w-full {isIgnored ? 'text-muted-foreground' : ''}"
                     isActive={selectedFile === node.path}
                     onclick={() => selectFile(node)}
                     style={`padding-left: ${depth * 12 + 8}px`}

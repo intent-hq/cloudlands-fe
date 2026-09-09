@@ -106,7 +106,7 @@
           : 'rotate-90'}"
       />
       <span>{m.workspace_skills_title()}</span>
-      <span class="ml-auto text-ui opacity-60">{$skills$.length}</span>
+      <span class="ml-auto text-ui text-muted-foreground">{$skills$.length}</span>
     </Button>
 
     {#if isExpanded}

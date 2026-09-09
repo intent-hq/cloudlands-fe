@@ -632,7 +632,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         disabled={isGenerating}
         class={cn(
           'w-48 h-6 px-2 text-xs rounded border border-border bg-background',
-          'placeholder:text-muted-foreground/50',
+          'placeholder:text-muted-foreground',
           'focus:outline-none focus:ring-1 focus:ring-primary-ink/50',
           'disabled:opacity-50',
         )}

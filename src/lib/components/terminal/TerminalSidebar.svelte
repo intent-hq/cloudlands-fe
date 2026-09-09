@@ -947,7 +947,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
           {#if isAgentDetecting && $_scriptDetectAgentId$}
             <Button
               type="button"
-              class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 rounded text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer shrink-0"
+              class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
               onclick={(e) => {
                 e.stopPropagation();
                 const wsId = $activeWorkspace?.id;
@@ -1044,13 +1044,13 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               type="text"
               bind:value={newName}
               placeholder={m.terminal_quakeOverlay_name_placeholder()}
-              class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary-ink/50 focus:bg-background text-foreground placeholder:text-muted-foreground/50 transition-colors"
+              class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary-ink/50 focus:bg-background text-foreground placeholder:text-muted-foreground transition-colors"
             />
             <Input
               type="text"
               bind:value={newCommand}
               placeholder={m.terminal_sidebar_command_placeholder()}
-              class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary-ink/50 focus:bg-background text-foreground placeholder:text-muted-foreground/50 font-mono transition-colors"
+              class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary-ink/50 focus:bg-background text-foreground placeholder:text-muted-foreground font-mono transition-colors"
             />
             <div class="flex items-center gap-1.5 justify-end">
               <Button variant="ghost-light" size="xs" onclick={() => (showAddForm = false)}>

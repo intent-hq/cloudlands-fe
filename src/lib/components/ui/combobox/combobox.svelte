@@ -278,7 +278,7 @@
     oninput={handleInput}
     data-size={resolvedSize}
     class={cn(
-      'type-caption text-foreground placeholder:text-muted-foreground/70 w-full min-w-0 rounded-(--radius-medium) border px-3',
+      'type-caption text-foreground placeholder:text-muted-foreground w-full min-w-0 rounded-(--radius-medium) border px-3',
       textEntryControlClasses,
       textEntryHeight(resolvedSize),
       invalid && 'border-danger ring-1 ring-danger/25',

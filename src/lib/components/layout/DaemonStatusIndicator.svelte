@@ -622,7 +622,7 @@
                         so expose the warning as the icon's accessible name.
                       -->
                           <span
-                            class="text-warning"
+                            class="text-warning-ink"
                             role="img"
                             aria-label={m.layout_daemonStatus_workspaceDiskLow_tooltip()}
                           >

@@ -878,7 +878,7 @@
                 data-workspace-tab-hover-trigger
               >
                 <span
-                  class={cn('min-w-0 flex-1 truncate', isArchived && 'opacity-60')}
+                  class={cn('min-w-0 flex-1 truncate', isArchived && 'text-muted-foreground')}
                   data-workspace-tab-title>{workspaceTitle}</span
                 >
                 <span

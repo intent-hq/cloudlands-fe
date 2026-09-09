@@ -445,7 +445,7 @@
   <!-- Preview when collapsed -->
   {#if isFileCollapsed && previewLines.length > 0}
     <div class="border-t border-border" transition:slide={{ tier: 'moderate' }}>
-      <div class="font-mono text-xs leading-relaxed opacity-60">
+      <div class="font-mono text-xs leading-relaxed text-muted-foreground">
         {#each previewLines as { line, hunkIndex, lineIndex } (`preview-${hunkIndex}-${lineIndex}`)}
           <div class="flex {getLineBgClass(line)}">
             <div

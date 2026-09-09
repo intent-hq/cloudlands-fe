@@ -141,7 +141,7 @@
       />
       <!-- <Fa icon={faPlug} size="xs" class="opacity-70" /> -->
       <span>{m.workspace_mcpServers_title()}</span>
-      <span class="ml-auto text-ui opacity-60"
+      <span class="ml-auto text-ui text-muted-foreground"
         >{m.workspace_mcpServers_enabledCount_label({
           count: formatInteger(enabledServerCount),
         })}</span

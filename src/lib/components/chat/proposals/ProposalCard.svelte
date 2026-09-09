@@ -1108,7 +1108,7 @@
           </div>
 
           {#if proposal.preview.warnings?.length}
-            <div class="type-caption text-warning">
+            <div class="type-caption text-warning-ink">
               {#each proposal.preview.warnings as warning}
                 <div>⚠ {warning}</div>
               {/each}
@@ -1152,7 +1152,7 @@
                     : m.chat_proposalCard_createWorkspace_label()}
             </span>
             {#if isSiblingWorkspaceCreate ? showWorkspaceShortcutHint : !isApplying && !isFailed}
-              <span class="opacity-50">{shortcutModifier}+↵</span>
+              <span>{shortcutModifier}+↵</span>
             {/if}
           </Button>
         </div>
@@ -1370,7 +1370,7 @@
         {/if}
 
         {#if proposal.preview.warnings?.length}
-          <div class="type-caption text-warning">
+          <div class="type-caption text-warning-ink">
             {#each proposal.preview.warnings as warning}
               <div>⚠ {warning}</div>
             {/each}

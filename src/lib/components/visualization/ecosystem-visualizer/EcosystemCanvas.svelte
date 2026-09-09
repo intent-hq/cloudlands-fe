@@ -1387,7 +1387,7 @@
             ? m.ecosystem_canvas_showFileTypes_tooltip()
             : m.ecosystem_canvas_highlightChanges_tooltip()}
         >
-          <span class="opacity-60"
+          <span
             >{showChangesMode
               ? m.ecosystem_canvas_highlightingChanged_label()
               : m.ecosystem_canvas_highlightChanged_label()}</span

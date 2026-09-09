@@ -90,7 +90,7 @@
   let showAllRecents = $state(false);
   let expandedRepositoryKeys = $state(new Set<string>());
   const searchInputClasses =
-    'box-border w-full min-w-0 rounded-md border border-border bg-background/30 px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/40 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-0';
+    'box-border w-full min-w-0 rounded-md border border-border bg-background/30 px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-0';
   const excludedWorkspaceIdSet = $derived(new Set(excludedWorkspaceIds));
 
   // Reset highlight when search query or view mode changes

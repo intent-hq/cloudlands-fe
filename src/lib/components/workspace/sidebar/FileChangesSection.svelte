@@ -689,7 +689,11 @@
                       <Fa icon={faLock} class="text-subtle shrink-0" size={10} />
                     </Tooltip>
                   {/if}
-                  <span class="text-ui opacity-50 truncate flex-1 {isLocked ? 'opacity-40' : ''}">
+                  <span
+                    class="text-ui flex-1 truncate text-muted-foreground {isLocked
+                      ? 'opacity-40'
+                      : ''}"
+                  >
                     {getAgentDisplayName(group)}
                   </span>
                   {#if group.agentId}
@@ -903,7 +907,7 @@
                   class="group/row flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-1 -mx-1"
                   onclick={() => toggleAgentGroup(group.agentId)}
                 >
-                  <span class="text-ui opacity-50 truncate flex-1">
+                  <span class="text-ui flex-1 truncate text-muted-foreground">
                     {getAgentDisplayName(group)}
                   </span>
 

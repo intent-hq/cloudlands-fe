@@ -246,6 +246,15 @@ function hslToRGB(value: string): [number, number, number] {
   ];
 }
 
+function blendHSL(foreground: string, background: string, opacity: number): string {
+  const foregroundRGB = hslToRGB(foreground);
+  const backgroundRGB = hslToRGB(background);
+  const blended = backgroundRGB.map(
+    (channel, index) => channel * (1 - opacity) + foregroundRGB[index] * opacity,
+  ) as [number, number, number];
+  return hexToHSL(rgbToHex(...blended));
+}
+
 function ensureContrast(foreground: string, background: string): string {
   const foregroundRGB = hslToRGB(foreground);
   const backgroundRGB = hslToRGB(background);
@@ -789,6 +798,12 @@ function buildCSSVariables(
   result['--primary-ink'] = ensureContrastAgainstSurfaces(result['--primary'], [
     result['--background'],
     result['--card'],
+  ]);
+  const warning = result['--warning'];
+  const warningBases = [result['--background'], result['--card']];
+  result['--warning-ink'] = ensureContrastAgainstSurfaces(warning, [
+    ...warningBases,
+    ...warningBases.map((surface) => blendHSL(warning, surface, 0.1)),
   ]);
   return result;
 }

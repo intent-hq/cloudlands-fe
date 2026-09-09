@@ -25,6 +25,7 @@
   --color-success: hsl(var(--success));
   --color-success-foreground: hsl(var(--success-foreground));
   --color-warning: hsl(var(--warning));
+  --color-warning-ink: hsl(var(--warning-ink));
   --color-warning-foreground: hsl(var(--warning-foreground));
   --color-sidebar: hsl(var(--sidebar));
   --color-sidebar-foreground: hsl(var(--sidebar-foreground));
@@ -102,6 +103,7 @@
   --theme-light-success-foreground: 0 0% 100%;
   --theme-light-warning: 42 91% 54%;
   --theme-light-warning-foreground: 154 44% 14%;
+  --theme-light-warning-ink: var(--theme-light-warning-foreground);
   --theme-light-sidebar: 0 0% 96%;
   --theme-light-sidebar-foreground: 0 0% 0%;
   --theme-light-sidebar-accent: 20 4.7619047619% 87.6470588235%;
@@ -144,6 +146,7 @@
   --theme-dark-success-foreground: 154 25% 9%;
   --theme-dark-warning: 42 91% 63%;
   --theme-dark-warning-foreground: 154 25% 9%;
+  --theme-dark-warning-ink: var(--theme-dark-warning);
   --theme-dark-sidebar: 0 0% 14.9019607843%;
   --theme-dark-sidebar-foreground: 0 0% 100%;
   --theme-dark-sidebar-accent: 60 0.826446281% 23.7254901961%;
@@ -294,6 +297,7 @@
   --theme-success-foreground: var(--theme-light-success-foreground);
   --theme-warning: var(--theme-light-warning);
   --theme-warning-foreground: var(--theme-light-warning-foreground);
+  --theme-warning-ink: var(--theme-light-warning-ink);
   --theme-sidebar: var(--theme-light-sidebar);
   --theme-sidebar-foreground: var(--theme-light-sidebar-foreground);
   --theme-sidebar-accent: var(--theme-light-sidebar-accent);
@@ -362,6 +366,7 @@
   --success-foreground: var(--theme-success-foreground);
   --warning: var(--theme-warning);
   --warning-foreground: var(--theme-warning-foreground);
+  --warning-ink: var(--theme-warning-ink);
   --sidebar: var(--theme-sidebar);
   --sidebar-foreground: var(--theme-sidebar-foreground);
   --sidebar-accent: var(--theme-sidebar-accent);
@@ -600,6 +605,7 @@
   --theme-success-foreground: var(--theme-dark-success-foreground);
   --theme-warning: var(--theme-dark-warning);
   --theme-warning-foreground: var(--theme-dark-warning-foreground);
+  --theme-warning-ink: var(--theme-dark-warning-ink);
   --theme-sidebar: var(--theme-dark-sidebar);
   --theme-sidebar-foreground: var(--theme-dark-sidebar-foreground);
   --theme-sidebar-accent: var(--theme-dark-sidebar-accent);

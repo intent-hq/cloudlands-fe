@@ -1174,7 +1174,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="flex items-center transition-colors duration-150 {isIgnored
-                ? 'opacity-50'
+                ? 'text-muted-foreground'
                 : ''}"
               class:folder-drop-target={isDropTarget}
               class:inside-drop-target={isInsideDropTarget}

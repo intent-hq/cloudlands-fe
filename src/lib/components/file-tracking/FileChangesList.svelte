@@ -273,7 +273,7 @@
           title={pathInfo.filename}
           titleClass="max-w-[calc(100%_-_2rem)]"
           subtitle={pathInfo.directory}
-          subtitleClass="text-xs opacity-60"
+          subtitleClass="text-xs text-muted-foreground"
           active={selectedChangeId === change.id}
           onclick={() => onFileClick?.(change)}
           class="relative group/row"

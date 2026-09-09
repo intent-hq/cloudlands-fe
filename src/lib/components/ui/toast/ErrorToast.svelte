@@ -44,7 +44,7 @@
       case 'error':
         return 'text-danger';
       case 'warning':
-        return 'text-warning';
+        return 'text-warning-ink';
       case 'info':
         return 'text-info';
       default:

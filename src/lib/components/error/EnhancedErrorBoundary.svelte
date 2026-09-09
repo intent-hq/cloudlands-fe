@@ -229,7 +229,7 @@
               class="w-14 h-14 rounded-full bg-warning/15 flex items-center justify-center ring-1 ring-warning/20 animate-in fade-in zoom-in duration-300"
             >
               {#if isRecovering}
-                <IntentMarkLoader size={40} class="text-warning" />
+                <IntentMarkLoader size={40} class="text-warning-ink" />
               {:else}
                 <Fa icon={faTriangleExclamation} class="w-10 h-10 text-subtle" />
               {/if}

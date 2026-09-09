@@ -546,7 +546,7 @@
                     <span
                       class="text-sm {provider.available || provider.statusPending
                         ? 'text-foreground'
-                        : 'text-muted-foreground opacity-60'}"
+                        : 'text-muted-foreground'}"
                     >
                       {provider.name}
                     </span>

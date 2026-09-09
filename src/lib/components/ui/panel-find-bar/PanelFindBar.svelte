@@ -149,7 +149,7 @@
       disabled={disabled || inputDisabled}
       class={cn(
         'h-6 w-36 border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:outline focus-visible:-outline-offset-1',
-        'placeholder:text-muted-foreground/60',
+        'placeholder:text-muted-foreground',
         inputClass,
       )}
       aria-label={searchAriaLabel}

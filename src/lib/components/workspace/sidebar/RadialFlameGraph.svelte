@@ -253,7 +253,7 @@
 
   <div class="absolute bottom-0 left-1/2 -translate-x-1/2 text-center pointer-events-none">
     <div class="text-2xl font-light leading-none text-foreground">
-      {percentDone}<span class="opacity-30 text-lg ml-0.5">%</span>
+      {percentDone}<span class="ml-0.5 text-lg text-muted-foreground">%</span>
     </div>
     <div class="text-xs text-subtle mt-0.5">{progressText}</div>
   </div>

@@ -62,9 +62,9 @@
               class="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground/20"
               aria-hidden="true"
             ></span>
-            <span class="min-w-0 flex-1 opacity-60">
+            <span class="min-w-0 flex-1">
               <span
-                class="block truncate text-sm font-medium text-foreground"
+                class="block truncate text-sm font-medium text-muted-foreground"
                 title={entry.tab.title}>{entry.tab.title}</span
               >
               <span

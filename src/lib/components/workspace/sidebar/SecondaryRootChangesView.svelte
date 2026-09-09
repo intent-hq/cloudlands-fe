@@ -268,11 +268,7 @@
             aria-label={m.workspace_sidebarChanges_rootShowOlder_ariaLabel()}
             onclick={() => (olderExpanded = !olderExpanded)}
           >
-            <div
-              class="relative flex items-center gap-2 pr-3 w-fit bg-sidebar mr-auto py-1.5 z-10 group-hover/boundary:opacity-100 {olderExpanded
-                ? 'opacity-100'
-                : 'opacity-60'}"
-            >
+            <div class="relative z-10 mr-auto flex w-fit items-center gap-2 bg-sidebar py-1.5 pr-3">
               <span class="flex items-center gap-1.5 text-ui text-subtle bg-sidebar select-none">
                 {m.workspace_sidebarChanges_rootRegistered_label()}
                 <Fa
@@ -287,10 +283,7 @@
 
           {#if olderExpanded}
             <!-- Older commits (dimmed, at/below the registration boundary) -->
-            <ul
-              class="flex flex-col opacity-60 hover:opacity-100 transition-opacity"
-              data-testid="secondary-root-older-commits"
-            >
+            <ul class="flex flex-col" data-testid="secondary-root-older-commits">
               {#each olderCommits as commit (commit.hash)}
                 {@render commitRow(commit)}
               {/each}

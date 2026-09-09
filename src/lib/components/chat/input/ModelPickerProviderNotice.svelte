@@ -76,12 +76,9 @@
   >
     <div class="flex items-start gap-2">
       {#if variant === 'progress'}
-        <IntentMarkLoader size={14} class="text-warning-foreground mt-0.5 shrink-0" />
+        <IntentMarkLoader size={14} class="text-warning-ink mt-0.5 shrink-0" />
       {:else}
-        <Fa
-          icon={faTriangleExclamation}
-          class="h-3.5 w-3.5 text-warning-foreground mt-0.5 shrink-0"
-        />
+        <Fa icon={faTriangleExclamation} class="h-3.5 w-3.5 text-warning-ink mt-0.5 shrink-0" />
       {/if}
       <div class="min-w-0 leading-snug">
         <div class="font-medium">{title}</div>

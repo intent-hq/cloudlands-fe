@@ -148,7 +148,7 @@
   const badgeVariantStyles = {
     default: 'bg-muted text-subtle',
     success: 'bg-success/20 text-success',
-    warning: 'bg-warning/20 text-warning',
+    warning: 'bg-warning/20 text-warning-ink',
     error: 'bg-danger-background/10 text-danger',
     info: 'bg-info/20 text-info',
   };

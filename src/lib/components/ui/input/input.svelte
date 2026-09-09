@@ -77,7 +77,7 @@
     data-slot={dataSlot}
     data-size={resolvedSize}
     class={cn(
-      'type-caption text-foreground selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground/70 flex w-full min-w-0 rounded-(--radius-medium) border px-3 file:mr-3 file:border-0 file:bg-transparent file:font-medium file:text-foreground',
+      'type-caption text-foreground selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground flex w-full min-w-0 rounded-(--radius-medium) border px-3 file:mr-3 file:border-0 file:bg-transparent file:font-medium file:text-foreground',
       textEntryControlClasses,
       textEntryHeight(resolvedSize),
       noFocusStyle && textEntryFocusResetClasses,
@@ -98,7 +98,7 @@
     data-slot={dataSlot}
     data-size={resolvedSize}
     class={cn(
-      'type-caption text-foreground selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground/70 flex w-full min-w-0 rounded-(--radius-medium) border px-3 py-1',
+      'type-caption text-foreground selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground flex w-full min-w-0 rounded-(--radius-medium) border px-3 py-1',
       textEntryControlClasses,
       textEntryHeight(resolvedSize),
       noFocusStyle && textEntryFocusResetClasses,

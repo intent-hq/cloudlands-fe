@@ -91,7 +91,7 @@
   aria-describedby={describedBy}
   aria-invalid={invalid}
   class={cn(
-    'type-caption text-foreground placeholder:text-muted-foreground/70 flex w-full rounded-(--radius-medium) border px-3',
+    'type-caption text-foreground placeholder:text-muted-foreground flex w-full rounded-(--radius-medium) border px-3',
     textEntryControlClasses,
     resolvedSize === 'compact' ? 'py-1.5' : 'py-2',
     shouldAutoResize ? 'resize-none overflow-hidden' : 'min-h-20',

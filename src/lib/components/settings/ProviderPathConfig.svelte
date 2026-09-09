@@ -212,8 +212,8 @@
             {/if}
           </p>
           <code
-            class="mt-0.5 block px-1 py-0.5 bg-muted/50 rounded break-all {overridden
-              ? 'opacity-60'
+            class="mt-0.5 block rounded bg-muted/50 px-1 py-0.5 break-all {overridden
+              ? 'text-muted-foreground'
               : ''}">{path}</code
           >
         </div>

@@ -1544,7 +1544,7 @@
           type="text"
           bind:value={searchQuery}
           placeholder={getSearchPlaceholder(activeSource)}
-          class="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 focus:ring-0 focus:outline-none"
+          class="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground focus:ring-0 focus:outline-none"
         />
         <!-- Refreshing indicator -->
         {#if isRefreshing}
@@ -2300,7 +2300,7 @@
                 {#if $sentryError$}
                   <p class="text-xs text-danger">{$sentryError$}</p>
                 {/if}
-                <p class="text-xs text-subtle opacity-50">
+                <p class="text-xs text-muted-foreground">
                   {m.workspace_issueSuggestions_createTokenAt_label()}
                   <Button
                     type="button"

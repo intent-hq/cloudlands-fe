@@ -601,7 +601,7 @@
                 <div class="col-span-full row-span-full flex min-w-0 flex-1 items-center gap-2">
                   {#if message.requeuedAfterFailure}
                     <div
-                      class="type-caption flex shrink-0 items-center gap-1 text-warning"
+                      class="type-caption flex shrink-0 items-center gap-1 text-warning-ink"
                       title={m.chat_queuedMessages_failedWillRetry_label()}
                     >
                       <div aria-hidden="true">

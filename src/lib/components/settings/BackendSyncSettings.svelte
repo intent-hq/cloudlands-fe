@@ -91,10 +91,10 @@
       {:else if status.state === 'active'}
         <p class="text-xs text-success mt-1">{m.settings_backendSync_status_active()}</p>
         {#if status.errorCount}
-          <p class="text-xs text-warning mt-0.5">{m.settings_backendSync_status_degraded()}</p>
+          <p class="text-xs text-warning-ink mt-0.5">{m.settings_backendSync_status_degraded()}</p>
         {/if}
       {:else}
-        <p class="text-xs text-warning mt-1">
+        <p class="text-xs text-warning-ink mt-1">
           {m.settings_backendSync_status_unavailable()}
         </p>
         {#if status.message}

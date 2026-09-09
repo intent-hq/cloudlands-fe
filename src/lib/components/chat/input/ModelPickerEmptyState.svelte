@@ -33,10 +33,7 @@
 >
   {#if hasNoAvailableProvider}
     <div class="flex items-start gap-2.5 px-3 py-3" role="status">
-      <Fa
-        icon={faExclamationTriangle}
-        class="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning-foreground"
-      />
+      <Fa icon={faExclamationTriangle} class="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning-ink" />
       <div class="min-w-0">
         <div class="type-body font-medium text-foreground">
           {m.chat_modelPicker_noProviderAvailable_title()}
