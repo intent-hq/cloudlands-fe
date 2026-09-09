@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.144.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.4...v2.144.5) (2026-09-09)
+
+
+### 🐛 Bug Fixes
+
+* **diff:** Stack diffs in narrow panels and update Pierre ([#2270](https://github.com/intent-hq/cloudlands-fe/issues/2270)) ([1f700b4](https://github.com/intent-hq/cloudlands-fe/commit/1f700b445e905cb39d37164e5c9b7269613d247b))
+
 ## [2.144.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.3...v2.144.4) (2026-09-09)
 
 
