@@ -330,11 +330,11 @@
             >
               <span aria-hidden="true" data-agent-color-swatch>
                 <span
-                  class="block size-2.5 shrink-0 rounded-full dark:hidden"
+                  class="block size-2.5 shrink-0 rounded-full ring-1 ring-foreground dark:hidden"
                   style:background-color={getAgentColorsWithSeed(agent.id)[0]}
                 ></span>
                 <span
-                  class="hidden size-2.5 shrink-0 rounded-full dark:block"
+                  class="hidden size-2.5 shrink-0 rounded-full ring-1 ring-foreground dark:block"
                   style:background-color={getAgentColorsWithSeed(agent.id, true)[0]}
                 ></span>
               </span>
@@ -390,11 +390,16 @@
             aria-pressed={$mapState.selectedAgentIds.includes(agent.id)}
             onclick={() => selectAgent(agent.id, true)}
           >
-            <span
-              class="size-2.5 shrink-0 rounded-full"
-              aria-hidden="true"
-              style:background-color={getAgentColorsWithSeed(agent.id)[0]}
-            ></span>
+            <span aria-hidden="true" data-agent-color-swatch>
+              <span
+                class="block size-2.5 shrink-0 rounded-full ring-1 ring-foreground dark:hidden"
+                style:background-color={getAgentColorsWithSeed(agent.id)[0]}
+              ></span>
+              <span
+                class="hidden size-2.5 shrink-0 rounded-full ring-1 ring-foreground dark:block"
+                style:background-color={getAgentColorsWithSeed(agent.id, true)[0]}
+              ></span>
+            </span>
             {agent.name}
           </Button>
         {/each}

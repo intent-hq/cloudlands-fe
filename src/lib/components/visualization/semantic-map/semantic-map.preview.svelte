@@ -199,14 +199,26 @@
     kind: kind as MapActivityKind,
     ts: new Date(Date.parse(SCRIPT_START) + (15 + index) * 60_000).toISOString(),
   }));
+  const comparisonActivities: MapActivity[] = ['event-stream', 'transport-rpc'].map(
+    (regionId, index) => ({
+      id: `semantic-map-shared-${index}`,
+      regionId,
+      agentId: SCRIPT_AGENTS[1].id,
+      agentName: SCRIPT_AGENTS[1].name,
+      kind: 'read',
+      ts: new Date(Date.parse(SCRIPT_START) + (11 + index) * 60_000).toISOString(),
+    }),
+  );
   const activities = $derived(
     mode === 'rest' || mode === 'focus-region-idle'
       ? []
       : mode === 'focus-region'
         ? focusEvidenceActivities.filter(({ ts }) => Date.parse(ts) <= currentTime)
-        : [...script.activities, ...unsortedActivities].filter(
-            ({ ts }) => Date.parse(ts) <= currentTime,
-          ),
+        : [
+            ...script.activities,
+            ...unsortedActivities,
+            ...(mode === 'compare-agents' ? comparisonActivities : []),
+          ].filter(({ ts }) => Date.parse(ts) <= currentTime),
   );
   const canvasWidth = $derived(
     resolveSemanticMapPreviewCanvasWidth(measuredCanvasWidth, requestedCanvasWidth),
@@ -361,11 +373,11 @@
         >
           <span aria-hidden="true" data-agent-color-swatch>
             <span
-              class="block size-2.5 shrink-0 rounded-full dark:hidden"
+              class="block size-2.5 shrink-0 rounded-full ring-1 ring-foreground dark:hidden"
               style:background-color={getAgentColorsWithSeed(agent.id)[0]}
             ></span>
             <span
-              class="hidden size-2.5 shrink-0 rounded-full dark:block"
+              class="hidden size-2.5 shrink-0 rounded-full ring-1 ring-foreground dark:block"
               style:background-color={getAgentColorsWithSeed(agent.id, true)[0]}
             ></span>
           </span>

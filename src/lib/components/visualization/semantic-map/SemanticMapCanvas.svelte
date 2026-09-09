@@ -7,11 +7,8 @@
   import { capFocusGeometry, lerpGeometry } from './layout/interpolate';
   import type { RegionGeometry } from './layout/place';
   import { CanvasPathCache, traceHull } from './render/canvas';
-  import {
-    drawComparisonRoutes,
-    drawSharedRegionOutline,
-    latestEvidenceAction,
-  } from './render/comparison';
+  import { comparisonTextColor, drawComparisonRoutes } from './render/comparison';
+  import { drawSharedRegionHighlight, latestEvidenceAction } from './render/comparison';
   import { drawFocusContent, drawFocusedResponsibility } from './render/focus';
   import { layoutSceneLabels, type LabelLayout, type PlacedLabel } from './render/labels';
   import { jumpToMinimapPoint, resolveMinimapRect } from './render/minimap';
@@ -33,7 +30,6 @@
     RouteEdge,
     SemanticMapCanvasProps,
   } from './render/types';
-
   let {
     manifest,
     geometry,
@@ -51,7 +47,6 @@
     onOpenDiff,
     onClearSelection,
   }: SemanticMapCanvasProps = $props();
-
   const MIN_SCALE = 0.5;
   const MAX_SCALE = 4;
   const TWEEN_DURATION_MS = 300;
@@ -277,14 +272,11 @@
   }
 
   let uiFont = 'sans-serif';
-  let badgeForeground = '#18181b';
-
   function resolveColors(): void {
     if (!container) return;
     const style = getComputedStyle(container);
     darkMode = style.colorScheme === 'dark';
     uiFont = cssValue(style, '--font-ui', 'sans-serif');
-    badgeForeground = `hsl(${cssValue(style, '--agent-avatar-foreground', '0 0% 0%')})`;
     colors = {
       background: cssValue(style, '--color-background', '#ffffff'),
       surface: cssValue(style, '--color-card', '#ffffff'),
@@ -427,7 +419,7 @@
       ctx.fillStyle = colors.foreground;
       cachedPath ? ctx.fill(path) : ctx.fill();
     }
-    if (hatchPattern && !selectedRegionIds.has(region.id)) {
+    if (hatchPattern && !selectedRegionIds.has(region.id) && !sharedRegions.has(region.id)) {
       ctx.globalAlpha = regionAlpha;
       ctx.fillStyle = hatchPattern;
       cachedPath ? ctx.fill(path) : ctx.fill();
@@ -438,7 +430,15 @@
     ctx.setLineDash(isUnsorted ? [6 / transform.scale, 5 / transform.scale] : []);
     cachedPath ? ctx.stroke(path) : ctx.stroke();
     if (sharedRegions.has(region.id)) {
-      drawSharedRegionOutline(ctx, drawablePath, scene.badges, selectedAgentIds, transform.scale);
+      drawSharedRegionHighlight(
+        ctx,
+        drawablePath,
+        scene.badges,
+        selectedAgentIds,
+        transform.scale,
+        colors.foreground,
+        !selectedRegionIds.has(region.id),
+      );
     }
     if (keyboardRegionId === region.id) {
       ctx.setLineDash([]);
@@ -527,6 +527,7 @@
       scale: transform.scale,
       accent: colors.accent,
       background: colors.background,
+      foreground: colors.foreground,
     });
   }
 
@@ -671,13 +672,16 @@
     const selected = selectedAgentIds.has(badge.id);
     ctx.save();
     ctx.fillStyle = badge.color;
-    ctx.strokeStyle = selected || hoveredBadgeId === badge.id ? colors.accent : colors.background;
-    ctx.lineWidth = (selected || hoveredBadgeId === badge.id ? 3 : 2) / transform.scale;
+    ctx.strokeStyle = colors.foreground;
+    ctx.lineWidth = 4 / transform.scale;
     ctx.beginPath();
     ctx.arc(badge.x, badge.y, (BADGE_RADIUS * breathing) / transform.scale, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = badgeForeground;
+    ctx.strokeStyle = selected || hoveredBadgeId === badge.id ? colors.accent : colors.foreground;
+    ctx.lineWidth = 2 / transform.scale;
+    ctx.stroke();
+    ctx.fillStyle = comparisonTextColor(badge.color);
     ctx.font = `600 ${12 / transform.scale}px ${uiFont}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
