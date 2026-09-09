@@ -83,9 +83,6 @@
 
 <style>
   .task-anchor {
-    --agent-overview-font-serif: 'Source Serif 4 Variable', Georgia, serif;
-
-    font-family: var(--agent-overview-font-serif);
     transition:
       opacity 120ms ease,
       filter 120ms ease;
@@ -103,9 +100,8 @@
   }
   .task-title {
     font-size: clamp(17px, calc(17px / var(--zoom)), 40px);
+    font-weight: 600;
     line-height: 1.2;
-    paint-order: stroke fill;
-    -webkit-text-stroke: calc(2px / var(--zoom)) var(--color-background);
   }
   .task-anchor[data-selection-active='true'] .task-label {
     opacity: 1;
