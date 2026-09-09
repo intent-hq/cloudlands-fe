@@ -27,10 +27,6 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('../../../agent/main/agent-process-registry', () => ({
-  notifyPendingWorkClearedForAgent: vi.fn(),
-}));
-
 import { EVENTS_CHANNELS } from '../../../../shared/ipc/channels';
 import { cleanupEventsIPC, setupEventsIPC } from '../events.ipc';
 import {
