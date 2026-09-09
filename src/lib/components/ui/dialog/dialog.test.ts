@@ -10,6 +10,14 @@ afterEach(cleanup);
 describe('Dialog', () => {
   it('publishes validated fixtures and measurable legacy replacement gates', () => {
     expect(dialogMetadata.fixtures[0]?.states).toContain('open');
+    expect(dialogMetadata.fixtures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'dialog-open-state',
+          states: expect.arrayContaining(['open-on-mount', 'focus-return']),
+        }),
+      ]),
+    );
     expect(legacyOverlayDeprecations).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ replacement: '$lib/components/ui/sheet' }),

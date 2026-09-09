@@ -26,4 +26,12 @@ export const dialogFixtures = [
     viewport: 'both',
     reducedMotion: true,
   },
+  {
+    id: 'dialog-open-state',
+    title: 'Dialog open state',
+    states: ['open-on-mount', 'focused', 'escape-dismiss', 'focus-return'],
+    themes: ['light', 'dark'],
+    viewport: 'both',
+    reducedMotion: true,
+  },
 ] satisfies UiComponentFixture[];

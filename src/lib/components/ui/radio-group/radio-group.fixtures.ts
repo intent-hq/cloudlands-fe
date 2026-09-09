@@ -20,4 +20,11 @@ export const radioGroupFixtures = [
     viewport: 'both',
     reducedMotion: true,
   },
+  {
+    id: 'radio-group-one-line-row',
+    title: 'One-line radio group rows',
+    states: ['one-line', '36px-row', 'selected', 'keyboard-roving'],
+    themes: ['light', 'dark'],
+    viewport: 'both',
+  },
 ] satisfies UiComponentFixture[];

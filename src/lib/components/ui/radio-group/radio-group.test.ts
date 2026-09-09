@@ -38,5 +38,13 @@ describe('RadioGroup', () => {
         'keyboard-roving',
       ]),
     );
+    expect(radioGroupMetadata.fixtures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'radio-group-one-line-row',
+          states: expect.arrayContaining(['one-line', '36px-row', 'selected']),
+        }),
+      ]),
+    );
   });
 });

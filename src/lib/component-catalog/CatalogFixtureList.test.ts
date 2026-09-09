@@ -99,6 +99,26 @@ describe('CatalogFixtureList real previews', () => {
     toggleGroupRender.unmount();
   });
 
+  it('renders one-line Radio and selected Checkbox group row fixtures', () => {
+    const radioRender = renderEntry('radio-group');
+    const oneLineRadios = screen.getByRole('radiogroup', { name: 'One-line delivery speed' });
+    expect(within(oneLineRadios).getAllByRole('radio')).toHaveLength(3);
+    expect(
+      within(oneLineRadios).getByRole('radio', { name: 'Standard' }).getAttribute('aria-checked'),
+    ).toBe('true');
+    expect(oneLineRadios.textContent).not.toContain('Balanced delivery');
+    radioRender.unmount();
+
+    const checkboxRender = renderEntry('checkbox-group');
+    const selectedRows = screen.getByRole('group', { name: 'One-line notifications' });
+    expect(within(selectedRows).getAllByRole('checkbox')).toHaveLength(3);
+    expect(
+      within(selectedRows).getByRole('checkbox', { name: 'Alerts' }).getAttribute('aria-checked'),
+    ).toBe('true');
+    expect(selectedRows.textContent).not.toContain('Important changes');
+    checkboxRender.unmount();
+  });
+
   it('renders truthful Combobox open, multi-select, size, and long-list states', () => {
     const { container } = renderEntry('combobox');
 
@@ -180,6 +200,48 @@ describe('CatalogFixtureList real previews', () => {
       expect(screen.queryByRole('dialog', { name: 'Catalog dialog' })).toBeNull(),
     );
     expect(container.querySelector('[data-catalog-portal-target="dialog"]')).not.toBeNull();
+  });
+
+  it('mounts Dialog and Tooltip capture fixtures open and preserves trigger focus on close', async () => {
+    const dialogRender = renderEntry('dialog');
+    const dialogTrigger = screen.getByRole('button', { name: 'Open-state dialog trigger' });
+    await waitFor(() =>
+      expect(screen.getByRole('dialog', { name: 'Catalog dialog open state' })).toBeTruthy(),
+    );
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Catalog dialog open state' })).toBeNull(),
+    );
+    expect(document.activeElement).toBe(dialogTrigger);
+    dialogRender.unmount();
+
+    const originalResizeObserver = window.ResizeObserver;
+    window.ResizeObserver = class ResizeObserverMock {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+    const tooltipRender = renderEntry('tooltip');
+    const tooltipFixture = tooltipRender.container.querySelector(
+      '[data-catalog-fixture-id="tooltip-open-state"]',
+    );
+    if (!(tooltipFixture instanceof HTMLElement)) throw new Error('Tooltip fixture did not render');
+    const tooltipPreview = within(tooltipFixture);
+    const tooltipTrigger = tooltipPreview.getByRole('button', {
+      name: 'Open-state tooltip trigger',
+    });
+    await waitFor(() => expect(tooltipPreview.getByRole('tooltip', { hidden: true })).toBeTruthy());
+    expect(document.activeElement).toBe(tooltipTrigger);
+    await fireEvent.keyDown(tooltipTrigger, { key: 'Escape' });
+    await waitFor(() => expect(tooltipPreview.queryByRole('tooltip', { hidden: true })).toBeNull());
+    expect(document.activeElement).toBe(tooltipTrigger);
+    tooltipRender.unmount();
+    window.ResizeObserver = originalResizeObserver;
+  });
+
+  it('renders all thirteen Toast catalog states', () => {
+    const { container } = renderEntry('toast');
+    expect(container.querySelectorAll('[data-toast-preview]')).toHaveLength(13);
   });
 
   it('operates the canonical Menu, Sheet, and Accordion previews', async () => {

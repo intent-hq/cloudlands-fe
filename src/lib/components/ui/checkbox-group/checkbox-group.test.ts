@@ -34,5 +34,13 @@ describe('CheckboxGroup', () => {
     expect(checkboxGroupMetadata.fixtures[0].states).toEqual(
       expect.arrayContaining(['contiguous-selected', 'split-selected', 'proximity-hover']),
     );
+    expect(checkboxGroupMetadata.fixtures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'checkbox-group-selected-row',
+          states: expect.arrayContaining(['one-line', '36px-row', 'selected-row']),
+        }),
+      ]),
+    );
   });
 });

@@ -21,4 +21,11 @@ export const checkboxGroupFixtures = [
     viewport: 'both',
     reducedMotion: true,
   },
+  {
+    id: 'checkbox-group-selected-row',
+    title: 'Checkbox group selected row',
+    states: ['one-line', '36px-row', 'selected-row', 'keyboard-roving'],
+    themes: ['light', 'dark'],
+    viewport: 'both',
+  },
 ] satisfies UiComponentFixture[];

@@ -23,6 +23,17 @@ afterEach(() => {
 });
 
 describe('Tooltip', () => {
+  it('publishes a deterministic open-state catalog fixture', () => {
+    expect(tooltipApi.tooltipMetadata.fixtures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'tooltip-open-state',
+          states: expect.arrayContaining(['open-on-mount', 'trigger-focus-preserved']),
+        }),
+      ]),
+    );
+  });
+
   it('opens from keyboard focus, uses a portal, and dismisses with Escape without moving focus', async () => {
     const { container } = render(TooltipHarness);
     const trigger = screen.getByRole('button', { name: 'Show keyboard help' });

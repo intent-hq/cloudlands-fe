@@ -28,4 +28,12 @@ export const tooltipFixtures = [
     viewport: 'both',
     reducedMotion: true,
   },
+  {
+    id: 'tooltip-open-state',
+    title: 'Tooltip open state',
+    states: ['open-on-mount', 'portal', 'arrow', 'escape-dismiss', 'trigger-focus-preserved'],
+    themes: ['light', 'dark'],
+    viewport: 'both',
+    reducedMotion: true,
+  },
 ] satisfies UiComponentFixture[];
