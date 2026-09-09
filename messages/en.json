@@ -4088,6 +4088,7 @@
   "agentOverview_hierarchyGraph_statusFailed_label": "Failed",
   "agentOverview_hierarchyGraph_statusIdle_label": "Idle",
   "agentOverview_hierarchyGraph_fitToView_tooltip": "Fit to view",
+  "agentOverview_nodeDetail_fitCluster_label": "Fit cluster",
   "agentOverview_toolbar_controls_ariaLabel": "Graph controls",
   "agentOverview_toolbar_legend_label": "Legend",
   "agentOverview_toolbar_agents_label": "Agents",

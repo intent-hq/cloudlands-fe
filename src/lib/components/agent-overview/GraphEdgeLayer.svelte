@@ -255,17 +255,22 @@
     to: GraphPosition,
     node: GraphNode | undefined,
     extra: number,
+    assignment: boolean,
   ): GraphPosition {
     if (!node) return from;
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
+    const labelCenter = assignment && node.type === 'task' ? { x: from.x, y: from.y - 2 } : from;
+    const dx = to.x - labelCenter.x;
+    const dy = to.y - labelCenter.y;
     if (dx === 0 && dy === 0) return from;
-    const dimensions = GRAPH_NODE_DIMENSIONS[node.type];
+    const dimensions =
+      assignment && node.type === 'task'
+        ? { width: GRAPH_NODE_DIMENSIONS.task.width, height: 44 }
+        : GRAPH_NODE_DIMENSIONS[node.type];
     const scale = Math.min(
       (dimensions.width / 2 + extra) / Math.max(Math.abs(dx), 0.001),
       (dimensions.height / 2 + extra) / Math.max(Math.abs(dy), 0.001),
     );
-    return { x: from.x + dx * scale, y: from.y + dy * scale };
+    return { x: labelCenter.x + dx * scale, y: labelCenter.y + dy * scale };
   }
 
   function endpointsFor(
@@ -279,12 +284,14 @@
         target,
         nodeById.get(pair.aId),
         pair.directions.has('b-to-a') ? 5 : 3,
+        pair.type === 'task-assignment',
       ),
       target: endpoint(
         target,
         source,
         nodeById.get(pair.bId),
         pair.directions.has('a-to-b') ? 5 : 3,
+        pair.type === 'task-assignment',
       ),
     };
   }

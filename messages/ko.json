@@ -4087,6 +4087,7 @@
   "agentOverview_hierarchyGraph_statusFailed_label": "실패",
   "agentOverview_hierarchyGraph_statusIdle_label": "유휴",
   "agentOverview_hierarchyGraph_fitToView_tooltip": "화면에 맞추기",
+  "agentOverview_nodeDetail_fitCluster_label": "클러스터에 맞추기",
   "agentOverview_toolbar_controls_ariaLabel": "그래프 컨트롤",
   "agentOverview_toolbar_legend_label": "범례",
   "agentOverview_toolbar_agents_label": "에이전트",

@@ -8,6 +8,7 @@
   import { createConstellationLayout, type ConstellationLayout } from './constellation-layout';
   import GraphEdgeLayer, { type GraphPosition } from './GraphEdgeLayer.svelte';
   import GraphHullLayer from './GraphHullLayer.svelte';
+  import GraphNodeDetailCard, { type GraphNodeRecentEvent } from './GraphNodeDetailCard.svelte';
   import AgentOrbNode from './nodes/AgentOrbNode.svelte';
   import ResourceNode from './nodes/ResourceNode.svelte';
   import TaskAnchorNode from './nodes/TaskAnchorNode.svelte';
@@ -165,9 +166,28 @@
   const memoizedRenderIndex = createGraphRenderIndexMemo();
   const renderIndex = $derived(memoizedRenderIndex(visibleGraph.nodes, visibleGraph.edges));
   const visibleNodeById = $derived(new Map(visibleGraph.nodes.map((node) => [node.id, node])));
+  const selectedNode = $derived(selectedNodeId ? visibleNodeById.get(selectedNodeId) : undefined);
+  const selectedNodeEvents = $derived.by<GraphNodeRecentEvent[]>(() => {
+    if (!selectedNodeId) return [];
+    return visibleGraph.edges
+      .filter((edge) => edge.sourceId === selectedNodeId || edge.targetId === selectedNodeId)
+      .toSorted((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
+      .slice(0, 6)
+      .map((edge) => {
+        const counterpartId = edge.sourceId === selectedNodeId ? edge.targetId : edge.sourceId;
+        const counterpart = visibleNodeById.get(counterpartId);
+        return {
+          id: `${edge.id}:${edge.timestamp}`,
+          label: counterpart
+            ? `${edge.type.replaceAll('-', ' ')} · ${nodeDisplayName(counterpart)}`
+            : edge.type.replaceAll('-', ' '),
+          timestamp: edge.timestamp,
+        };
+      });
+  });
 
   const activeHoverNodeId = $derived(hoveredNodeId === dismissedHoverNodeId ? null : hoveredNodeId);
-  const focusNodeId = $derived(activeHoverNodeId ?? selectedNodeId ?? keyboardNodeId);
+  const focusNodeId = $derived(selectedNodeId ?? activeHoverNodeId ?? keyboardNodeId);
   const focusIds = $derived.by(() => {
     if (!focusNodeId) return null;
     const ids = new Set([focusNodeId]);
@@ -220,6 +240,20 @@
   function resourceTimestamp(node: GraphNode | undefined): number {
     if (!node || (node.type !== 'file' && node.type !== 'note')) return 0;
     return Date.parse(node.lastActionTimestamp) || 0;
+  }
+
+  function nodeDisplayName(node: GraphNode): string {
+    if (node.type === 'agent') return node.name;
+    if (node.type === 'file') return node.fileName;
+    return node.title;
+  }
+
+  function assignedAgentCount(taskId: string): number {
+    return new Set(
+      visibleGraph.edges
+        .filter((edge) => edge.type === 'task-assignment' && edge.targetId === taskId)
+        .map((edge) => edge.sourceId),
+    ).size;
   }
 
   function parentIdFor(nodeId: string): string | null {
@@ -469,7 +503,7 @@
   function handleNodeDoubleClick(node: GraphNode, event: MouseEvent): void {
     event.preventDefault();
     event.stopPropagation();
-    if (node.type === 'task') fitTaskCluster(node.id);
+    if (node.type === 'task') fitNodeCluster(node.id);
     else openNode(node, event);
   }
 
@@ -480,18 +514,24 @@
     else onFileClick(node.path, event);
   }
 
-  function fitTaskCluster(taskId: string): void {
-    const included = new Set([taskId]);
-    const agentIds = visibleGraph.nodes
-      .filter((node) => node.type === 'agent' && parentIdFor(node.id) === taskId)
-      .map((node) => node.id);
-    agentIds.forEach((id) => included.add(id));
-    for (const node of visibleGraph.nodes) {
-      if (
-        (node.type === 'file' || node.type === 'note') &&
-        agentIds.includes(parentIdFor(node.id) ?? '')
-      ) {
-        included.add(node.id);
+  function fitNodeCluster(nodeId: string): void {
+    const included = new Set([nodeId]);
+    for (const edge of visibleGraph.edges) {
+      if (edge.sourceId === nodeId) included.add(edge.targetId);
+      if (edge.targetId === nodeId) included.add(edge.sourceId);
+    }
+    const selected = visibleNodeById.get(nodeId);
+    if (selected?.type === 'task') {
+      const agentIds = visibleGraph.nodes
+        .filter((node) => node.type === 'agent' && parentIdFor(node.id) === nodeId)
+        .map((node) => node.id);
+      for (const node of visibleGraph.nodes) {
+        if (
+          (node.type === 'file' || node.type === 'note') &&
+          agentIds.includes(parentIdFor(node.id) ?? '')
+        ) {
+          included.add(node.id);
+        }
       }
     }
     const nodes = visibleGraph.nodes.filter((node) => included.has(node.id));
@@ -661,7 +701,10 @@
     );
     if (reduced || !target || target.dataset.motionEnabled === 'false') return;
     target.animate(
-      [{ borderColor: 'var(--color-foreground)' }, { borderColor: 'var(--color-foreground)' }],
+      [
+        { boxShadow: '0 0 0 4px color-mix(in srgb, var(--color-foreground) 28%, transparent)' },
+        { boxShadow: '0 0 0 0 transparent' },
+      ],
       { duration: 180, easing: 'ease-out' },
     );
   }
@@ -837,6 +880,7 @@
             <TaskAnchorNode
               {node}
               {...activity}
+              agentCount={assignedAgentCount(node.id)}
               enterDelay={nodeEnterDelay(index, playbackSpeed)}
               {playbackSpeed}
               focusState={focusStateFor(node.id)}
@@ -887,6 +931,15 @@
         </div>
       {/each}
     </div>
+
+    {#if selectedNode}
+      <GraphNodeDetailCard
+        node={selectedNode}
+        events={selectedNodeEvents}
+        onOpen={(event) => openNode(selectedNode, event)}
+        onFitCluster={() => fitNodeCluster(selectedNode.id)}
+      />
+    {/if}
 
     {#if showFitControl}
       <Button

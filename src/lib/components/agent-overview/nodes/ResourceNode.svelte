@@ -3,12 +3,13 @@
   import { faArrowUpRightFromSquare, faFile } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { m } from '$shared/paraglide/messages.js';
+  import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import type { FileNode, NoteNode } from '../types';
   import {
     activityMotion,
     activityNodeTransition,
-    resourceBrightness,
     resourceCooldownRemaining,
+    resourceOpacity,
     writePulse,
   } from '../activity-motion';
 
@@ -62,7 +63,7 @@
       ? m.agentOverview_resourceNode_external_ariaLabel({ name: node.fileName, path: node.path })
       : undefined,
   );
-  const brightness = $derived(resourceBrightness(node.lastActionTimestamp));
+  const opacity = $derived(resourceOpacity(node.lastActionTimestamp, focusState === 'dimmed'));
   const cooldownRemaining = $derived(resourceCooldownRemaining(node.lastActionTimestamp));
 </script>
 
@@ -79,7 +80,7 @@
   in:activityNodeTransition={{ delay: enterDelay, playbackSpeed }}
   out:activityNodeTransition={{ exit: true, playbackSpeed }}
   type="button"
-  class="resource-node flex h-auto min-h-22 w-18 touch-none flex-col items-center gap-1.5 text-center text-muted-foreground transition-opacity hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-ring"
+  class="resource-node relative flex h-auto min-h-22 w-18 touch-none flex-col items-center gap-1.5 text-center text-muted-foreground transition-opacity hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
   data-graph-node
   data-node-id={node.id}
   data-external={node.type === 'file' && node.isExternal}
@@ -91,7 +92,7 @@
   {tabindex}
   title={tooltip}
   aria-label={ariaLabel ?? label}
-  style:opacity={brightness}
+  style:opacity
   style:animation-duration={`${cooldownRemaining}ms`}
   {...events}
 >
@@ -107,6 +108,12 @@
       {/if}
     </span>
     <span class="resource-label line-clamp-2 w-full leading-[1.15]">{label}</span>
+    {#if focusState === 'focused'}
+      <span class="node-meta">
+        {#if node.type === 'file'}+{additions} −{deletions}{:else}{access}{/if} ·
+        <RelativeTime date={lastActivityAt ?? node.lastActionTimestamp} compact />
+      </span>
+    {/if}
   {:else}
     <span class="flex h-14 w-11 shrink-0 items-center justify-center" aria-hidden="true">
       <span class="resource-dot"></span>
@@ -123,8 +130,9 @@
       color 120ms ease,
       filter 120ms ease;
   }
-  .resource-node[data-focus-state='dimmed'] {
-    filter: opacity(0.28);
+  .resource-node[data-focus-state='focused'] {
+    outline: 2px solid var(--color-foreground);
+    outline-offset: 4px;
   }
   .resource-card,
   .resource-label {
@@ -134,6 +142,13 @@
   }
   .resource-label {
     font-size: clamp(13px, calc(13px / var(--zoom)), 20.8px);
+  }
+  .node-meta {
+    max-width: 100%;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 11px;
+    line-height: 1.1;
+    white-space: nowrap;
   }
   .resource-dot {
     width: calc(6px / var(--zoom));
@@ -161,7 +176,7 @@
   }
   @keyframes resource-cooldown {
     to {
-      opacity: 0.35;
+      opacity: 0.4;
     }
   }
 </style>

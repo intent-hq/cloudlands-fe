@@ -4087,6 +4087,7 @@
   "agentOverview_hierarchyGraph_statusFailed_label": "失敗",
   "agentOverview_hierarchyGraph_statusIdle_label": "空閒",
   "agentOverview_hierarchyGraph_fitToView_tooltip": "適應檢視",
+  "agentOverview_nodeDetail_fitCluster_label": "適應群組",
   "agentOverview_toolbar_controls_ariaLabel": "圖形控制項",
   "agentOverview_toolbar_legend_label": "圖例",
   "agentOverview_toolbar_agents_label": "智慧體",

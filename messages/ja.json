@@ -4087,6 +4087,7 @@
   "agentOverview_hierarchyGraph_statusFailed_label": "失敗",
   "agentOverview_hierarchyGraph_statusIdle_label": "アイドル",
   "agentOverview_hierarchyGraph_fitToView_tooltip": "全体表示",
+  "agentOverview_nodeDetail_fitCluster_label": "クラスターに合わせる",
   "agentOverview_toolbar_controls_ariaLabel": "グラフのコントロール",
   "agentOverview_toolbar_legend_label": "凡例",
   "agentOverview_toolbar_agents_label": "エージェント",

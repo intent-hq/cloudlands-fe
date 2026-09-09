@@ -4,6 +4,7 @@ import { backOut, cubicIn } from 'svelte/easing';
 import { ACTIVE_EDGE_WINDOW_MS, EDGE_ANIMATION } from './constants';
 
 const RESOURCE_COOLDOWN_MS = 10 * 60 * 1000;
+const RESOURCE_OPACITY_FLOOR = 0.4;
 const observed = new Map<Element, boolean>();
 let observer: IntersectionObserver | undefined;
 let media: MediaQueryList | undefined;
@@ -117,9 +118,17 @@ export function messageParticleLimit(playbackSpeed = 1): number {
 
 export function resourceBrightness(timestamp: string, now = Date.now()): number {
   const touchedAt = Date.parse(timestamp);
-  if (!Number.isFinite(touchedAt)) return 0.35;
+  if (!Number.isFinite(touchedAt)) return RESOURCE_OPACITY_FLOOR;
   const age = Math.max(0, now - touchedAt);
-  return 0.35 + 0.65 * Math.max(0, 1 - age / RESOURCE_COOLDOWN_MS);
+  return (
+    RESOURCE_OPACITY_FLOOR +
+    (1 - RESOURCE_OPACITY_FLOOR) * Math.max(0, 1 - age / RESOURCE_COOLDOWN_MS)
+  );
+}
+
+export function resourceOpacity(timestamp: string, dimmed: boolean, now = Date.now()): number {
+  const brightness = resourceBrightness(timestamp, now);
+  return dimmed ? Math.max(RESOURCE_OPACITY_FLOOR, brightness * 0.28) : brightness;
 }
 
 export function resourceCooldownRemaining(timestamp: string, now = Date.now()): number {

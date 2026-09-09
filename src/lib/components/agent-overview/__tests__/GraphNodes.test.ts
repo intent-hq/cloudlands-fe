@@ -17,7 +17,18 @@ import TaskAnchorNode from '../nodes/TaskAnchorNode.svelte';
 const timestamp = '2026-09-04T00:00:00.000Z';
 const physics = { x: 0, y: 0, vx: 0, vy: 0 } as const;
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+function useReducedMotion(): void {
+  vi.spyOn(window, 'matchMedia').mockReturnValue({
+    matches: true,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  } as unknown as MediaQueryList);
+}
 
 describe('TaskAnchorNode', () => {
   it('exposes task state and forwards activation', async () => {
@@ -32,12 +43,20 @@ describe('TaskAnchorNode', () => {
       dependsOn: [],
     };
     render(TaskAnchorNode, {
-      props: { node, focusState: 'focused', isActive: true, tabindex: -1, onclick },
+      props: {
+        node,
+        focusState: 'focused',
+        isActive: true,
+        agentCount: 2,
+        tabindex: -1,
+        onclick,
+      },
     });
 
     const button = screen.getByRole('button', { name: 'Ship activity graph' });
     expect(button.getAttribute('data-task-state')).toBe('review_required');
     expect(button.getAttribute('data-focus-state')).toBe('focused');
+    expect(button.querySelector('.node-meta')?.textContent).toContain('2 agents');
     expect(button.tabIndex).toBe(-1);
     await fireEvent.click(button);
     expect(onclick).toHaveBeenCalledOnce();
@@ -109,6 +128,54 @@ describe('AgentOrbNode', () => {
     const label = screen.getByText(node.name);
     expect(getComputedStyle(label).opacity).not.toBe('0');
   });
+
+  it('shows specialist and activity metadata when focused', () => {
+    const node: AgentNode = {
+      ...physics,
+      id: 'agent:builder',
+      type: 'agent',
+      agentId: 'builder',
+      name: 'Graph builder',
+      specialist: 'frontend-engineer',
+      isCoordinator: false,
+      status: 'responding',
+      createdAt: timestamp,
+    };
+    const { container } = render(AgentOrbNode, {
+      props: { node, focusState: 'focused', isActive: true, lastActivityAt: timestamp },
+    });
+
+    expect(container.querySelector('.specialist-caption')?.textContent).toContain(
+      'frontend engineer',
+    );
+    expect(container.querySelector('.node-meta')?.textContent).toContain(
+      'frontend engineer · responding',
+    );
+    expect(container.querySelector('.agent-avatar-wrapper')?.getAttribute('style')).toContain(
+      'animation-delay',
+    );
+  });
+
+  it('keeps working and waiting distinguishable when motion is reduced', () => {
+    useReducedMotion();
+    const working = render(AgentOrbNode, {
+      props: {
+        node: { ...agentNode('working'), status: 'responding' },
+        isActive: true,
+      },
+    });
+    const waiting = render(AgentOrbNode, {
+      props: { node: { ...agentNode('waiting'), status: 'waiting' } },
+    });
+
+    const workingRing = working.container.querySelector<HTMLElement>('.agent-avatar-wrapper')!;
+    const waitingRing = waiting.container.querySelector<HTMLElement>('.agent-avatar-wrapper')!;
+    expect(
+      working.container.querySelector('[data-graph-node]')?.getAttribute('data-motion-enabled'),
+    ).toBe('false');
+    expect(workingRing.getAttribute('data-static-ring')).toBe('working');
+    expect(waitingRing.getAttribute('data-static-ring')).toBe('waiting');
+  });
 });
 
 describe('ResourceNode', () => {
@@ -173,4 +240,32 @@ describe('ResourceNode', () => {
     expect(screen.getByText(node.title)).toBeTruthy();
     expect(button.querySelector('.resource-dot')).toBeNull();
   });
+
+  it('does not compound resource cooldown and neighbourhood dimming below 0.4', () => {
+    const node: NoteNode = {
+      ...physics,
+      id: 'note:spec',
+      type: 'note',
+      noteId: 'spec',
+      title: 'Implementation spec',
+      lastAction: 'read',
+      lastActionTimestamp: timestamp,
+    };
+    render(ResourceNode, { props: { node, access: 'read', focusState: 'dimmed' } });
+
+    expect(screen.getByRole('button', { name: node.title }).style.opacity).toBe('0.4');
+  });
 });
+
+function agentNode(id: string): AgentNode {
+  return {
+    ...physics,
+    id: `agent:${id}`,
+    type: 'agent',
+    agentId: id,
+    name: id,
+    isCoordinator: false,
+    status: 'idle',
+    createdAt: timestamp,
+  };
+}

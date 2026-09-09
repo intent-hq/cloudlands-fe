@@ -189,12 +189,17 @@ describe('AgentActivityGraph', () => {
     await fireEvent.click(agentButton);
     expect(agentButton.getAttribute('data-focus-state')).toBe('focused');
     expect(onAgentClick).not.toHaveBeenCalled();
+    const agentDetail = screen.getByRole('complementary', { name: 'Agent One' });
+    expect(agentDetail).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Fit cluster' })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    expect(onAgentClick).toHaveBeenCalledWith('one', expect.any(MouseEvent));
 
     await fireEvent.dblClick(agentButton);
     taskButton.focus();
     await fireEvent.keyDown(taskButton, { key: 'Enter' });
 
-    expect(onAgentClick).toHaveBeenCalledWith('one', expect.any(MouseEvent));
+    expect(onAgentClick).toHaveBeenCalledTimes(2);
     expect(onTaskClick).toHaveBeenCalledWith('one', expect.any(KeyboardEvent));
   });
 
@@ -475,6 +480,25 @@ describe('AgentActivityGraph', () => {
         terminal.getAttribute('data-direction'),
       ),
     ).toEqual(['b-to-a', 'a-to-b']);
+  });
+
+  it('ends assignment edges at the task label boundary', () => {
+    const { container } = render(GraphEdgeLayer, {
+      props: {
+        edges: [assignment()],
+        nodes: [agent(), task()],
+        positions: new Map([
+          ['agent:one', { x: 100, y: 100 }],
+          ['task:one', { x: 300, y: 100 }],
+        ]),
+      },
+    });
+
+    const terminal = container.querySelector<SVGCircleElement>(
+      '.edge-terminal[data-direction="a-to-b"]',
+    );
+    expect(Number(terminal?.getAttribute('cx'))).toBeLessThan(300);
+    expect(Number(terminal?.getAttribute('cx'))).toBeGreaterThanOrEqual(207);
   });
 
   it('adds traveling highlights only to working, recent delegation, and waiting edges', () => {

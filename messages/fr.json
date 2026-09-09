@@ -4087,6 +4087,7 @@
   "agentOverview_hierarchyGraph_statusFailed_label": "Échec",
   "agentOverview_hierarchyGraph_statusIdle_label": "Inactif",
   "agentOverview_hierarchyGraph_fitToView_tooltip": "Ajuster à la vue",
+  "agentOverview_nodeDetail_fitCluster_label": "Ajuster le groupe",
   "agentOverview_toolbar_controls_ariaLabel": "Commandes du graphique",
   "agentOverview_toolbar_legend_label": "Légende",
   "agentOverview_toolbar_agents_label": "Agents",

@@ -8,6 +8,7 @@ import {
   playbackDuration,
   resourceBrightness,
   resourceCooldownRemaining,
+  resourceOpacity,
 } from '../activity-motion';
 
 function useReducedMotion(reduced: boolean): void {
@@ -39,12 +40,14 @@ describe('activity motion', () => {
     expect(messageParticleLimit(8)).toBe(3);
   });
 
-  it('dims resources over ten minutes', () => {
+  it('dims resources over ten minutes without compounding below the contrast floor', () => {
     const touchedAt = '2026-09-04T00:00:00.000Z';
     const start = Date.parse(touchedAt);
     expect(resourceBrightness(touchedAt, start)).toBe(1);
-    expect(resourceBrightness(touchedAt, start + 5 * 60 * 1000)).toBeCloseTo(0.675);
-    expect(resourceBrightness(touchedAt, start + 10 * 60 * 1000)).toBe(0.35);
+    expect(resourceBrightness(touchedAt, start + 5 * 60 * 1000)).toBeCloseTo(0.7);
+    expect(resourceBrightness(touchedAt, start + 10 * 60 * 1000)).toBe(0.4);
+    expect(resourceOpacity(touchedAt, true, start)).toBe(0.4);
+    expect(resourceOpacity(touchedAt, true, start + 10 * 60 * 1000)).toBe(0.4);
     expect(resourceCooldownRemaining(touchedAt, start + 5 * 60 * 1000)).toBe(5 * 60 * 1000);
   });
 

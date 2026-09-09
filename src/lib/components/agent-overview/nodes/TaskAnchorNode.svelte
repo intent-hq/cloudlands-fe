@@ -1,5 +1,6 @@
 <script lang="ts">
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import type { TaskNode } from '../types';
   import { activityMotion, activityNodeTransition } from '../activity-motion';
 
@@ -10,6 +11,7 @@
     tabindex?: number;
     isActive?: boolean;
     lastActivityAt?: string;
+    agentCount?: number;
     enterDelay?: number;
     playbackSpeed?: number;
     onclick?: (event: MouseEvent) => void;
@@ -31,6 +33,7 @@
     tabindex = 0,
     isActive = false,
     lastActivityAt,
+    agentCount = 0,
     enterDelay = 0,
     playbackSpeed = 1,
     ...events
@@ -42,7 +45,7 @@
   in:activityNodeTransition={{ delay: enterDelay, playbackSpeed }}
   out:activityNodeTransition={{ exit: true, playbackSpeed }}
   type="button"
-  class="task-anchor relative flex h-12 w-44 touch-none items-start text-left text-foreground transition-opacity focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-ring"
+  class="task-anchor relative flex h-12 w-44 touch-none flex-col items-start text-left text-foreground transition-opacity focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
   data-graph-node
   data-node-id={node.id}
   data-active={isActive}
@@ -50,6 +53,7 @@
   data-last-activity-at={lastActivityAt}
   data-focus-state={focusState}
   data-zoom-band={zoomBand}
+  aria-label={node.title}
   {tabindex}
   title={zoomBand === 'far' /* i18n-ignore (semantic zoom code token) */ ? node.title : undefined}
   {...events}
@@ -65,6 +69,14 @@
       </span>
       <span class="task-title min-w-0 line-clamp-2 leading-[1.2]">{node.title}</span>
     </span>
+    {#if focusState === 'focused'}
+      <span class="node-meta">
+        {node.state.replaceAll('_', ' ')} ·
+        {agentCount === 1
+          ? m.chat_toolDetails_agentCount_one({ count: agentCount })
+          : m.chat_toolDetails_agentCount_many({ count: agentCount })}
+      </span>
+    {/if}
   {/if}
 </button>
 
@@ -80,6 +92,10 @@
   .task-anchor[data-focus-state='dimmed'] {
     filter: opacity(0.28);
   }
+  .task-anchor[data-focus-state='focused'] {
+    outline: 2px solid var(--color-foreground);
+    outline-offset: 4px;
+  }
   .task-label {
     opacity: clamp(0.58, calc((var(--zoom) - 0.3) * 3.34), 1);
     transition: opacity 120ms linear;
@@ -91,6 +107,14 @@
   }
   .task-anchor[data-focus-state='focused'] .task-label {
     opacity: 1;
+  }
+  .node-meta {
+    max-width: 100%;
+    padding-inline: 0.375rem;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 11px;
+    line-height: 1.1;
+    white-space: nowrap;
   }
   .task-status-dot {
     width: calc(4px / var(--zoom));
