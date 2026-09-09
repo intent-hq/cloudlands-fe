@@ -1,10 +1,9 @@
 <script lang="ts">
-  import Fa from 'svelte-fa';
-  import { faExclamationCircle } from '@fortawesome/free-solid-svg-icons';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import MicroKeySlotSquare from '$features/hardware-console/components/MicroKeySlotSquare.svelte';
   import ToastCloseButton from './ToastCloseButton.svelte';
+  import ToastGlyph from './ToastGlyph.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -46,15 +45,14 @@
     onSwitchTo,
     onClose,
   }: Props = $props();
+
+  let metadata = $derived(contextLine?.replace(' — ', ' / '));
 </script>
 
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
      the destructive border tint is passed as a wrapper class by the service. -->
-<div class="relative flex w-full min-w-0 items-start gap-3">
-  <!-- Icon -->
-  <div class="flex-shrink-0 mt-0.5 text-danger">
-    <Fa icon={faExclamationCircle} class="w-5 h-5" />
-  </div>
+<div class="relative flex w-full min-w-0 items-start gap-3 pr-10" data-toast-layout="agent-failure">
+  <ToastGlyph variant="error" />
 
   <!-- Content -->
   <div class="flex-1 min-w-0">
@@ -62,9 +60,9 @@
       {#if keySlot != null}
         <MicroKeySlotSquare slot={keySlot} />
       {/if}
-      <p class="min-w-0 break-words text-sm font-medium text-foreground">{title}</p>
+      <p class="toast-title min-w-0 break-words">{title}</p>
     </div>
-    <p class="text-sm text-muted-foreground line-clamp-2 mt-0.5 break-words">{errorSummary}</p>
+    <p class="toast-description line-clamp-2 break-words">{errorSummary}</p>
 
     {#if loginCommandHint}
       <div class="mt-1.5 flex min-w-0 flex-col gap-1" data-testid="toast-auth-guidance">
@@ -87,8 +85,11 @@
       </div>
     {/if}
 
-    {#if contextLine}
-      <p class="text-xs text-muted-foreground truncate mt-1.5 min-w-0">{contextLine}</p>
+    {#if metadata}
+      <p class="toast-metadata min-w-0 truncate">
+        <span class="toast-metadata-dot" aria-hidden="true"></span>
+        {metadata}
+      </p>
     {/if}
 
     {#if retryNote}
@@ -96,11 +97,17 @@
     {/if}
 
     <!-- Action buttons -->
-    <div class="flex flex-wrap items-center gap-2 mt-3">
-      <Button variant="outline" size="sm" disabled={retrying} onclick={onRetry}>
+    <div class="toast-actions">
+      <Button
+        variant="outline"
+        size="default"
+        class="toast-action"
+        disabled={retrying}
+        onclick={onRetry}
+      >
         {retrying ? m.ui_agentFailureToast_retrying_label() : retryLabel}
       </Button>
-      <Button variant="ghost" size="sm" onclick={onSwitchTo}>
+      <Button variant="ghost" size="default" class="toast-action" onclick={onSwitchTo}>
         {m.agent_failureToast_switchTo_label()}
       </Button>
     </div>
@@ -117,5 +124,54 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  .toast-title {
+    color: hsl(var(--foreground));
+    font-size: 1rem;
+    font-weight: 500;
+    line-height: 1.35;
+  }
+
+  .toast-description {
+    margin-top: 0.25rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.9375rem;
+    line-height: 1.4;
+  }
+
+  .toast-metadata {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.625rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.8125rem;
+  }
+
+  .toast-metadata-dot {
+    width: 0.375rem;
+    height: 0.375rem;
+    flex: 0 0 auto;
+    border-radius: var(--radius-full);
+    background: hsl(var(--info));
+  }
+
+  .toast-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  :global(.toast-action) {
+    border-radius: var(--radius-medium);
+  }
+
+  :global(.toast-action:focus-visible) {
+    outline: 1px solid hsl(var(--focus-ring));
+    outline-offset: 2px;
+    box-shadow: none;
   }
 </style>

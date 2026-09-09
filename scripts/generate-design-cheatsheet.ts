@@ -119,7 +119,7 @@ ${buttonAliases}
 - \`sidebar/sidebar-menu-button.svelte\` retains its native button because it is the menu-button control primitive and owns the row recipe, roving focus, active state, and tooltip trigger contract.
 - \`sidebar/sidebar-menu-action.svelte\` uses \`Button\`; it is an action inside the sidebar row primitive rather than the control primitive itself.
 - \`sidebar/sidebar-group-action.svelte\` uses \`Button\`; it is an action inside the sidebar group primitive rather than the control primitive itself.
-- \`toast/ToastCloseButton.svelte\` uses \`Button\`; it is a close action whose floating-circle geometry layers on the shared action and focus contract.
+- \`toast/ToastCloseButton.svelte\` uses \`Button\`; it is an inset 40px ghost close action layered on the shared focus contract.
 - \`tooltip/TooltipRich.svelte\` uses \`Button\` for its optional close action; the tooltip owns content and positioning, not a distinct button contract.
 - \`badge/badge.svelte\` uses \`Button\` for its remove action; the badge owns status presentation, not a distinct button contract.
 

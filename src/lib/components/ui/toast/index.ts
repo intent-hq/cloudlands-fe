@@ -5,6 +5,8 @@ export { default as AgentFailureToast } from './AgentFailureToast.svelte';
 export { default as ErrorToast } from './ErrorToast.svelte';
 export { default as Toast } from './Toast.svelte';
 export { default as ToastCloseButton } from './ToastCloseButton.svelte';
+export { default as ToastGlyph } from './ToastGlyph.svelte';
+export { default as ToastUndoAction } from './ToastUndoAction.svelte';
 export { default as UpdateToast } from './UpdateToast.svelte';
 export {
   withToastCountdown,

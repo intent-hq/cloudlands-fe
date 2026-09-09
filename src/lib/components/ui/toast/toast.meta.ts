@@ -18,6 +18,8 @@ export const toastMetadata = parseUiComponentMetadata({
     'TOAST_COUNTDOWN_NO_HOVER_PAUSE_CLASS',
     'Toast',
     'ToastCloseButton',
+    'ToastGlyph',
+    'ToastUndoAction',
     'ToastComponent',
     'UpdateToast',
     'UpdateToastComponent',

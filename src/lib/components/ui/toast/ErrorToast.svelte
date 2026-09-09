@@ -1,14 +1,9 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import Fa from 'svelte-fa';
-  import {
-    faExclamationCircle,
-    faTriangleExclamation,
-    faCircleInfo,
-  } from '@fortawesome/free-solid-svg-icons';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
   import type { AppError } from '$lib/utils/error-handler.svelte';
   import ToastCloseButton from './ToastCloseButton.svelte';
+  import ToastGlyph from './ToastGlyph.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -26,54 +21,44 @@
     dispatch('closeToast');
   }
 
-  function getIcon(type: string) {
+  function getGlyph(type: string): 'error' | 'warning' | 'info' {
     switch (type) {
-      case 'error':
-        return faExclamationCircle;
       case 'warning':
-        return faTriangleExclamation;
+        return 'warning';
       case 'info':
-        return faCircleInfo;
+        return 'info';
       default:
-        return faExclamationCircle;
-    }
-  }
-
-  function getIconColor(type: string) {
-    switch (type) {
-      case 'error':
-        return 'text-danger';
-      case 'warning':
-        return 'text-warning-ink';
-      case 'info':
-        return 'text-info';
-      default:
-        return 'text-danger';
+        return 'error';
     }
   }
 </script>
 
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
      the severity border tint is passed as a wrapper class by error-toast.ts. -->
-<div class="relative flex w-full min-w-0 items-start gap-3">
-  <!-- Icon -->
-  <div class="flex-shrink-0 mt-0.5 {getIconColor(error.type)}">
-    <Fa icon={getIcon(error.type)} class="w-5 h-5" />
-  </div>
+<div
+  class="relative flex w-full min-w-0 items-start gap-3 pr-10"
+  data-toast-layout="application-error"
+>
+  <ToastGlyph variant={getGlyph(error.type)} />
 
   <!-- Content -->
   <div class="flex-1 min-w-0">
-    <p class="text-sm font-medium text-foreground line-clamp-2 break-words">{error.message}</p>
+    <p class="toast-title line-clamp-2 break-words">{error.title}</p>
+    <p class="toast-description line-clamp-2 break-words">{error.message}</p>
 
     <!-- Action buttons -->
-    <div class="flex flex-wrap items-center gap-2 mt-3">
-      <Button variant="outline" size="sm" onclick={onCopy}>{m.ui_errorToast_copy_label()}</Button>
-      <Button variant="outline" size="sm" onclick={onDebug}>{m.ui_errorToast_debug_label()}</Button>
+    <div class="toast-actions">
       {#if error.recoverable && onRetry}
-        <Button variant="outline" size="sm" onclick={onRetry}
+        <Button variant="outline" size="default" class="toast-action" onclick={onRetry}
           >{m.ui_errorToast_retry_label()}</Button
         >
       {/if}
+      <Button variant="outline" size="default" class="toast-action" onclick={onDebug}
+        >{m.ui_errorToast_debug_label()}</Button
+      >
+      <Button variant="ghost" size="default" class="toast-action" onclick={onCopy}
+        >{m.ui_errorToast_copy_label()}</Button
+      >
     </div>
   </div>
 
@@ -88,5 +73,37 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  .toast-title {
+    color: hsl(var(--foreground));
+    font-size: 1rem;
+    font-weight: 500;
+    line-height: 1.35;
+  }
+
+  .toast-description {
+    margin-top: 0.25rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.9375rem;
+    line-height: 1.4;
+  }
+
+  .toast-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  :global(.toast-action) {
+    border-radius: var(--radius-medium);
+  }
+
+  :global(.toast-action:focus-visible) {
+    outline: 1px solid hsl(var(--focus-ring));
+    outline-offset: 2px;
+    box-shadow: none;
   }
 </style>

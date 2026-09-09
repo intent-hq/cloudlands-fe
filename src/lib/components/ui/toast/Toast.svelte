@@ -3,12 +3,12 @@
   import { writable } from 'svelte/store';
   import { Toaster as Sonner, toast, type ToasterProps } from 'svelte-sonner';
   import { Button } from '$lib/components/ui/button';
+  import ToastGlyph from './ToastGlyph.svelte';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import {
     clampSurface,
     setSurface,
-    SURFACE_SHADOW_VALUE,
     SURFACE_VALUE,
     surfaceClasses,
     useSurface,
@@ -59,16 +59,42 @@
       attributeFilter: ['class'],
     });
     const updateVisibleToastCount = () => {
-      visibleToastCount = regionElement.querySelectorAll(
-        '[data-sonner-toast][data-visible="true"]:not([data-removed="true"])',
-      ).length;
+      const visibleToasts = Array.from(
+        regionElement.querySelectorAll<HTMLElement>(
+          '[data-sonner-toast][data-visible="true"]:not([data-removed="true"])',
+        ),
+      );
+      visibleToastCount = visibleToasts.length;
+
+      for (const toastElement of visibleToasts) {
+        const closeButton = toastElement.querySelector<HTMLElement>(':scope > [data-close-button]');
+        if (closeButton && toastElement.lastElementChild !== closeButton) {
+          toastElement.append(closeButton);
+        }
+
+        const isFront = toastElement.dataset.front === 'true';
+        const existingCount = toastElement.querySelector<HTMLElement>(
+          ':scope > [data-toast-stack-count]',
+        );
+        if (!isFront || visibleToasts.length < 2) {
+          existingCount?.remove();
+          continue;
+        }
+
+        const stackCount = existingCount ?? document.createElement('span');
+        stackCount.dataset.toastStackCount = '';
+        stackCount.className = 'toast-stack-count';
+        const countLabel = m.ui_toast_stackMore_label({ count: visibleToasts.length - 1 });
+        if (stackCount.textContent !== countLabel) stackCount.textContent = countLabel;
+        if (!existingCount) toastElement.insertBefore(stackCount, closeButton ?? null);
+      }
     };
     const observer = new MutationObserver(updateVisibleToastCount);
     observer.observe(document.body, {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['data-visible', 'data-removed'],
+      attributeFilter: ['data-visible', 'data-removed', 'data-front'],
     });
     updateVisibleToastCount();
     return () => {
@@ -91,15 +117,14 @@
      MutationObserver selector and the Clear-all `aria-controls` anchor on this
      div instead.
 
-     `expand` keeps stacked toasts at their own height with content visible —
-     a UX decision kept through the 1.2.1 upgrade (which fixed heights ordering
-     so --front-toast-height now tracks the front toast). -->
+     Sonner's collapsed stack stays enabled so prior cards remain visible as
+     progressively smaller peeks until hover or keyboard interaction expands it. -->
 <div
   bind:this={regionElement}
   id={regionId}
   class:toast-static={staticPosition}
   data-surface-level={surface}
-  style="--toast-surface: {SURFACE_VALUE[surface]}; --toast-shadow: {SURFACE_SHADOW_VALUE[surface]}"
+  style="--toast-surface: {SURFACE_VALUE[surface]}"
 >
   <Sonner
     id={toasterId}
@@ -113,7 +138,7 @@
     toastOptions={{
       classes: {
         toast: `group toast w-full min-w-0 max-w-full group-[.toaster]:text-foreground ${surfaceClasses(surface)}`,
-        description: 'group-[.toast]:text-subtle text-sm',
+        description: 'group-[.toast]:text-subtle',
         actionButton: 'toast-action-button',
         cancelButton:
           'group-[.toast]:bg-transparent group-[.toast]:text-foreground group-[.toast]:border group-[.toast]:border-border group-[.toast]:hover:bg-muted group-[.toast]:px-4 group-[.toast]:py-2 group-[.toast]:text-sm group-[.toast]:font-semibold',
@@ -124,14 +149,19 @@
     closeButton
     duration={10000}
     gap={8}
-    expand
-  />
+  >
+    {#snippet successIcon()}<ToastGlyph variant="success" />{/snippet}
+    {#snippet errorIcon()}<ToastGlyph variant="error" />{/snippet}
+    {#snippet warningIcon()}<ToastGlyph variant="warning" />{/snippet}
+    {#snippet infoIcon()}<ToastGlyph variant="info" />{/snippet}
+    {#snippet loadingIcon()}<ToastGlyph variant="loading" />{/snippet}
+  </Sonner>
 </div>
 
 {#if showClearAll}
   <Button
-    variant="outline"
-    size="sm"
+    variant="ghost"
+    size="lg"
     class={staticPosition ? 'toast-clear-all toast-clear-all-static' : 'toast-clear-all'}
     onclick={clearVisibleToasts}
     aria-controls={regionId}
@@ -156,15 +186,12 @@
     inset: auto !important;
     transform: none !important;
     width: 100% !important;
-    height: auto !important;
+    height: calc(var(--front-toast-height) + 1rem) !important;
+    padding-top: 1rem !important;
   }
 
   .toast-static :global([data-sonner-toast]) {
-    position: relative !important;
-    inset: auto !important;
-    transform: none !important;
-    opacity: 1 !important;
-    height: auto !important;
+    width: 100% !important;
   }
 
   :global([data-sonner-toast]) {
@@ -178,15 +205,16 @@
        classes (e.g. !border-danger/50 on custom toasts) override it.
        This also relies on these :global styles staying UNLAYERED: moving them
        into a cascade layer would change the fallback chain for default toasts. */
-    border: 0 !important;
+    border: 1px solid hsl(var(--foreground) / 0.05) !important;
     border-radius: var(--radius-large) !important;
-    backdrop-filter: blur(8px);
     width: var(--app-toast-width) !important;
     min-width: 0;
     max-width: 100%;
-    padding: 1rem 1.25rem;
-    align-items: flex-start !important;
-    box-shadow: var(--toast-shadow);
+    min-height: 3.125rem;
+    padding: 0.875rem 1rem;
+    align-items: center !important;
+    gap: 0.75rem !important;
+    box-shadow: var(--elevation-overlay);
   }
 
   :global([data-sonner-toast][data-swiping='false']) {
@@ -206,13 +234,35 @@
   }
 
   :global([data-sonner-toast] [data-icon]) {
-    margin-top: 2px;
+    width: 1.25rem !important;
+    height: 1.25rem !important;
+    margin: 0 !important;
+  }
+
+  :global([data-sonner-toast] [data-title]) {
+    color: hsl(var(--foreground)) !important;
+    font-size: 1rem;
+    font-weight: 500 !important;
+    line-height: 1.35 !important;
   }
 
   :global([data-sonner-toast] [data-description]) {
     color: hsl(var(--muted-foreground)) !important;
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
+    line-height: 1.4 !important;
     margin-top: 0.25rem;
+  }
+
+  :global([data-sonner-toast][data-type='loading'] [data-content]) {
+    flex-direction: row !important;
+    align-items: baseline;
+    gap: 0 !important;
+  }
+
+  :global([data-sonner-toast][data-type='loading'] [data-description]) {
+    margin-top: 0;
+    margin-left: 0.25rem;
+    font-size: 0.875rem;
   }
 
   :global([data-sonner-toast] [data-content]),
@@ -225,7 +275,7 @@
   /* Sonner owns this button element, so mirror Button's inset surface recipe. */
   :global([data-sonner-toast] button[data-button]) {
     font-size: 0.875rem !important;
-    height: var(--control-height-compact) !important;
+    min-height: var(--control-height-medium) !important;
     font-weight: 500 !important;
     padding: 0 0.625rem !important;
     position: relative;
@@ -244,6 +294,7 @@
   :global([data-sonner-toast] button[data-button]:focus-visible) {
     outline: 1px solid hsl(var(--focus-ring));
     outline-offset: 2px;
+    box-shadow: none !important;
   }
 
   :global([data-sonner-toast] button[data-button]::before) {
@@ -275,36 +326,69 @@
     box-shadow: 0 0 0 0 hsl(var(--border));
   }
 
-  :global([data-sonner-toast] [data-icon]) {
-    width: 1.25rem;
-    height: 1.25rem;
-  }
-
   /* Close button styling */
   :global([data-sonner-toast] [data-close-button]) {
     color: hsl(var(--muted-foreground)) !important;
-    border-color: hsl(var(--border)) !important;
-    background: hsl(var(--toast-surface)) !important;
+    width: 2.5rem !important;
+    height: 2.5rem !important;
+    top: 50% !important;
+    right: 0.5rem !important;
+    left: auto !important;
+    border: 0 !important;
+    border-radius: var(--radius-medium) !important;
+    background: transparent !important;
+    transform: translateY(-50%) !important;
+  }
+
+  :global([data-sonner-toast] [data-close-button]:hover) {
+    background: var(--hover) !important;
+  }
+
+  :global([data-sonner-toast] [data-close-button]:focus-visible) {
+    outline: 1px solid hsl(var(--focus-ring));
+    outline-offset: 2px;
+    box-shadow: none !important;
   }
 
   :global([data-sonner-toaster][dir='ltr']) {
     --toast-close-button-start: unset;
     --toast-close-button-end: 0;
-    --toast-close-button-transform: translate(35%, -35%);
+    --toast-close-button-transform: translateY(-50%);
+  }
+
+  :global(.toast-stack-count) {
+    margin-left: auto;
+    margin-right: 2.5rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.875rem;
+    white-space: nowrap;
+  }
+
+  :global([data-sonner-toast][data-expanded='false'][data-front='false'][data-visible='true']) {
+    filter: saturate(0.8) brightness(0.96);
   }
 
   :global(.toast-clear-all) {
     position: fixed;
-    left: 2rem;
+    left: calc(2rem + var(--app-toast-width));
     bottom: 2rem;
     z-index: 1000000000;
-    box-shadow: var(--elevation-raised);
+    transform: translateX(-100%);
+    color: hsl(var(--muted-foreground));
   }
 
   :global(.toast-clear-all.toast-clear-all-static) {
     position: relative;
     inset: auto;
     margin-top: 0.5rem;
+    margin-left: auto;
+    transform: none;
+  }
+
+  :global(.toast-clear-all:focus-visible) {
+    outline: 1px solid hsl(var(--focus-ring));
+    outline-offset: 2px;
+    box-shadow: none;
   }
 
   @media (max-width: 600px) {
@@ -316,30 +400,6 @@
 
   :global(.sonner-loading-bar) {
     background-color: hsl(var(--muted-foreground) / 0.3);
-  }
-
-  /* Warning toasts — card surface with a warning accent (border + icon).
-     Background, text, description, close button, and action buttons fall
-     through to the base [data-sonner-toast] rules above, which are
-     theme-aware and legible in both light and dark themes. */
-  :global([data-sonner-toast][data-type='warning']) {
-    --toast-warning-accent: var(--warning);
-    border-color: hsl(var(--toast-warning-accent)) !important;
-  }
-
-  /* In light theme the raw --warning token (42 91% 54%) is only ~1.8:1
-     against the white card surface — below the 3:1 non-text minimum. Use a
-     darker shade of the same hue for the accent (42 91% 35% ≈ 3.8:1);
-     dark theme keeps the token (~12:1 against the dark card). Toast-local
-     on purpose: other --warning consumers are unaffected. */
-  :global(
-    [data-sonner-toaster][data-sonner-theme='light'] [data-sonner-toast][data-type='warning']
-  ) {
-    --toast-warning-accent: 42 91% 35%;
-  }
-
-  :global([data-sonner-toast][data-type='warning'] [data-icon]) {
-    color: hsl(var(--toast-warning-accent));
   }
 
   /* Countdown progress bar — opt-in via withToastCountdown() (see
@@ -356,7 +416,7 @@
     background-repeat: no-repeat;
     background-position: left bottom;
     /* Pre-animation value; also the static reduced-motion rendering. */
-    background-size: 100% 2px;
+    background-size: 100% 3px;
     animation: toast-countdown-shrink var(--toast-countdown-duration, 10000ms) linear forwards;
   }
 
@@ -364,7 +424,19 @@
      The [data-sonner-toaster] prefix ties specificity (0,4,0) with the base
      rule above (whose :not() argument counts); later source order wins. */
   :global([data-sonner-toaster] [data-sonner-toast][data-type='warning'].toast-countdown) {
-    --toast-countdown-color: hsl(var(--toast-warning-accent) / 0.6);
+    --toast-countdown-color: hsl(var(--warning));
+  }
+
+  :global([data-sonner-toast][data-type='warning'].toast-countdown button[data-button]::after) {
+    padding: 0.125rem 0.375rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-small);
+    margin-left: 0.375rem;
+    background: var(--hover);
+    color: hsl(var(--muted-foreground));
+    content: '⌘Z';
+    font-size: 0.6875rem;
+    line-height: 1;
   }
 
   /* Sonner pauses its dismiss timer while the toaster is hovered (its
@@ -399,10 +471,10 @@
 
   @keyframes -global-toast-countdown-shrink {
     from {
-      background-size: 100% 2px;
+      background-size: 100% 3px;
     }
     to {
-      background-size: 0% 2px;
+      background-size: 0% 3px;
     }
   }
 </style>

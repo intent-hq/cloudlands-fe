@@ -84,7 +84,6 @@ function showError(error: string | NotifyError, options: NotifyOptions = {}): No
   const customOptions = withPolicy('error', options);
   return toast.custom(NotifyErrorToast, {
     ...customOptions,
-    class: customOptions.class ? `${customOptions.class} !border-danger/50` : '!border-danger/50',
     componentProps: normalized as ComponentProps<typeof NotifyErrorToast>,
   });
 }

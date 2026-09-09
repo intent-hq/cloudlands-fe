@@ -14,7 +14,6 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import {
     faCakeCandles,
-    faDownload,
     faRotateRight,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
@@ -36,6 +35,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber, formatInteger } from '$lib/i18n/format';
   import ToastCloseButton from './ToastCloseButton.svelte';
+  import ToastGlyph from './ToastGlyph.svelte';
   import { Button } from '$lib/components/ui/button';
   import type { UpdateInfo, UpdateProgress, UpdateStatus } from '$features/auto-update/types';
 
@@ -45,6 +45,8 @@
     progress?: UpdateProgress | null;
     currentVersion?: string;
     error?: string | null;
+    availableDescription?: string;
+    remainingSeconds?: number;
   }
 
   interface Props {
@@ -88,6 +90,12 @@
   let currentVersion = $derived(previewState?.currentVersion ?? $currentVersion$);
   let updateError = $derived(previewState?.error ?? $error$);
   let progressPercent = $derived(progress ? Math.round(progress.percent) : 0);
+  let remainingSeconds = $derived(
+    previewState?.remainingSeconds ??
+      (progress && progress.bytesPerSecond > 0
+        ? Math.max(0, Math.ceil((progress.total - progress.transferred) / progress.bytesPerSecond))
+        : null),
+  );
 
   // Format bytes per second
   function formatSpeed(bytesPerSecond: number): string {
@@ -126,12 +134,15 @@
   });
 </script>
 
-<div class="update-toast">
+<div
+  class="update-toast"
+  class:has-close={status === 'downloaded' || status === 'downloading' || status === 'error'}
+>
   {#if status === 'downloaded' || status === 'downloading' || status === 'error'}
     <ToastCloseButton onclick={handleClose} ariaLabel={m.ui_updateToast_close_ariaLabel()} />
   {/if}
   {#if status === 'checking'}
-    <div class="flex items-center gap-3">
+    <div class="toast-row">
       <div class="icon checking">
         <IntentMarkLoader size={16} />
       </div>
@@ -140,42 +151,49 @@
       </div>
     </div>
   {:else if status === 'available'}
-    <div class="flex items-center gap-3">
-      <div class="icon downloading">
-        <Fa icon={faDownload} class="animate-pulse" />
-      </div>
+    <div class="toast-row">
+      <ToastGlyph variant="update" />
       <div class="text flex-1">
         <div class="title">
           {m.ui_updateToast_available_label({ version: updateInfo?.version || '' })}
         </div>
-        <div class="description">{m.ui_updateToast_readyToDownload_description()}</div>
+        <div class="description">
+          {previewState?.availableDescription ?? m.ui_updateToast_readyToDownload_description()}
+        </div>
       </div>
-      <Button variant="primary" size="sm" onclick={handleDownload}>
-        <Fa icon={faDownload} class="mr-1" />
+      <Button
+        variant="primary"
+        size="default"
+        class="toast-action ml-auto"
+        onclick={handleDownload}
+      >
         {m.ui_updateToast_download_label()}
       </Button>
     </div>
   {:else if status === 'downloading'}
-    <div class="flex flex-col gap-2">
-      <div class="flex items-center gap-3">
-        <div class="icon downloading">
-          <Fa icon={faDownload} />
-        </div>
-        <div class="text flex-1">
+    <div class="toast-downloading">
+      <div class="toast-row items-start">
+        <ToastGlyph variant="update" />
+        <div class="text min-w-0 flex-1">
           <div class="title">
             {m.ui_updateToast_downloading_label({ version: updateInfo?.version || '' })}
           </div>
           <div class="description">
-            {progressPercent}%{progress ? ` · ${formatSpeed(progress.bytesPerSecond)}` : ''}
+            {#if progress}{formatSpeed(progress.bytesPerSecond)}{/if}{#if remainingSeconds != null}
+              · {m.ui_updateToast_remainingSeconds_label({
+                seconds: formatInteger(remainingSeconds),
+              })}
+            {/if}
           </div>
         </div>
+        <span class="toast-progress-label">{formatInteger(progressPercent)}%</span>
       </div>
       <div class="progress-bar">
         <div class="progress-fill" style="width: {progressPercent}%"></div>
       </div>
     </div>
   {:else if status === 'downloaded'}
-    <div class="flex items-center gap-3">
+    <div class="toast-row">
       <div
         class="icon-celebrate"
         in:springIn={{ tier: 'slow', y: 30, scale: 1 }}
@@ -189,13 +207,13 @@
           {m.ui_updateToast_readyToInstall_description({ version: updateInfo?.version ?? '' })}
         </div>
       </div>
-      <Button variant="primary" size="sm" onclick={handleInstall}>
+      <Button variant="primary" size="default" class="toast-action" onclick={handleInstall}>
         <Fa icon={faRotateRight} class="mr-1" />
         {m.ui_updateToast_install_label()}
       </Button>
     </div>
   {:else if status === 'not-available'}
-    <div class="flex items-center gap-3">
+    <div class="toast-row">
       <div class="icon-celebrate">
         <Fa icon={faCakeCandles} size="2x" />
       </div>
@@ -207,7 +225,7 @@
       </div>
     </div>
   {:else if status === 'error'}
-    <div class="flex items-center gap-3">
+    <div class="toast-row">
       <div class="icon error">
         <Fa icon={faTriangleExclamation} />
       </div>
@@ -229,6 +247,22 @@
     overflow: visible;
   }
 
+  .update-toast.has-close {
+    padding-right: 2.5rem;
+  }
+
+  .toast-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .toast-downloading {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
   .icon {
     display: flex;
     align-items: center;
@@ -242,11 +276,6 @@
   .icon.checking {
     background: hsl(var(--primary) / 0.1);
     color: hsl(var(--primary-ink));
-  }
-
-  .icon.downloading {
-    background: hsl(217 91% 60% / 0.1);
-    color: hsl(217 91% 60%);
   }
 
   .icon-celebrate {
@@ -269,31 +298,50 @@
   }
 
   .title {
-    font-weight: 600;
-    font-size: 0.875rem;
+    font-weight: 500;
+    font-size: 1rem;
+    line-height: 1.35;
     color: hsl(var(--foreground));
     overflow-wrap: anywhere;
   }
 
   .description {
-    font-size: 0.75rem;
+    font-size: 0.9375rem;
+    line-height: 1.4;
     color: hsl(var(--muted-foreground));
-    margin-top: 0.125rem;
+    margin-top: 0.25rem;
     overflow-wrap: anywhere;
   }
 
   .progress-bar {
     height: 4px;
     background: hsl(var(--muted));
-    border-radius: 0;
+    border-radius: var(--radius-full);
     overflow: hidden;
+    margin-left: 2rem;
   }
 
   .progress-fill {
     height: 100%;
-    background: hsl(217 91% 60%);
-    border-radius: 0;
+    background: hsl(var(--ring));
+    border-radius: var(--radius-full);
     transition: width var(--spring-moderate) var(--spring-moderate-ease);
+  }
+
+  .toast-progress-label {
+    color: hsl(var(--muted-foreground));
+    font-size: 0.875rem;
+    line-height: 1.4;
+  }
+
+  :global(.toast-action) {
+    border-radius: var(--radius-medium);
+  }
+
+  :global(.toast-action:focus-visible) {
+    outline: 1px solid hsl(var(--focus-ring));
+    outline-offset: 2px;
+    box-shadow: none;
   }
 
   @media (prefers-reduced-motion: reduce) {

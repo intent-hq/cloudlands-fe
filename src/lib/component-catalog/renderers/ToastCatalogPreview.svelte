@@ -9,6 +9,7 @@
     type ExternalToast,
     TOAST_COUNTDOWN_CLASS,
     Toast,
+    ToastUndoAction,
     UpdateToast,
     toast,
   } from '$lib/components/ui/toast';
@@ -39,11 +40,21 @@
     releaseDate: '2026-09-07',
     releaseNotes: 'Catalog preview',
   };
-  const updateAvailable = { status: 'available' as const, updateInfo };
+  const updateAvailable = {
+    status: 'available' as const,
+    updateInfo,
+    availableDescription: 'Ready to install · 84 MB',
+  };
   const updateDownloading = {
     status: 'downloading' as const,
     updateInfo,
-    progress: { percent: 62, bytesPerSecond: 2_400_000, transferred: 62, total: 100 },
+    progress: {
+      percent: 62,
+      bytesPerSecond: 2_400_000,
+      transferred: 62_000_000,
+      total: 95_600_000,
+    },
+    remainingSeconds: 14,
   };
   const staticToastIds: Array<string | number> = [];
   let stackToastIds = $state<Array<string | number>>([]);
@@ -59,17 +70,19 @@
 
   function seedStaticPreviews() {
     staticToastIds.push(
-      toast.success('Workspace saved successfully', options('success', 'toast-catalog-success')),
+      toast.success('Workspace saved', options('success', 'toast-catalog-success')),
       toast.error('Could not save workspace', options('error', 'toast-catalog-error')),
       toast.warning('Connection is unstable', options('warning', 'toast-catalog-warning')),
       toast.info('A newer workspace snapshot is available', options('info', 'toast-catalog-info')),
-      toast.loading('Synchronizing workspace', options('loading', 'toast-catalog-loading')),
+      toast.loading(
+        'Synchronizing workspace',
+        options('loading', 'toast-catalog-loading', { description: '· 12 of 40 files' }),
+      ),
       toast.custom(
         NotifyErrorToast,
         options('notify-error', 'toast-catalog-notify-error', {
-          class: '!border-danger/50',
           componentProps: {
-            message: 'Request failed with technical details',
+            message: 'Request failed',
             details: 'JSON-RPC -32000\nThe daemon rejected the request.',
           },
         }),
@@ -81,8 +94,8 @@
             error: {
               id: 'catalog-error',
               type: 'error',
-              title: 'Workspace error',
-              message: 'The workspace could not be opened.',
+              title: 'The workspace could not be opened',
+              message: 'The local index is corrupted or locked by another process.',
               timestamp: new Date('2026-09-07T00:00:00Z'),
               recoverable: true,
             },
@@ -136,13 +149,14 @@
         options('undoable', 'toast-catalog-undoable', {
           class: TOAST_COUNTDOWN_CLASS,
           style: '--toast-countdown-duration: 10000ms; animation-play-state: paused',
-          action: { label: 'Undo', onClick: noOp },
+          action: ToastUndoAction,
         }),
       ),
     );
     stackToastIds = [
-      toast.success('First completed task', options('stack', 'toast-catalog-stack-success')),
-      toast.info('Second task is ready', options('stack', 'toast-catalog-stack-info')),
+      toast.success('First completed task', options('stack', 'toast-catalog-stack-first')),
+      toast.warning('Archived task restored', options('stack', 'toast-catalog-stack-second')),
+      toast.info('Second task is ready', options('stack', 'toast-catalog-stack-front')),
     ];
     staticToastIds.push(...stackToastIds);
   }
@@ -175,7 +189,7 @@
   data-catalog-renderer-fixture={fixture.id}
   data-catalog-rendered-state={fixture.states.join(' ')}
 >
-  <div class="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">
+  <div class="toast-preview-grid">
     {#each previewRegions as [region, label]}
       <section class="grid min-w-0 content-start gap-2" data-toast-preview={region}>
         <h3 class="text-xs font-medium text-muted-foreground">{label}</h3>
@@ -279,3 +293,12 @@
     </div>
   </section>
 </div>
+
+<style>
+  .toast-preview-grid {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: repeat(auto-fit, minmax(min(24rem, 100%), 1fr));
+    gap: 1rem;
+  }
+</style>

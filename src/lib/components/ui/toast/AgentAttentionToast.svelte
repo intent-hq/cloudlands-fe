@@ -1,10 +1,9 @@
 <script lang="ts">
-  import Fa from 'svelte-fa';
-  import { faComments, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
   import MicroKeySlotSquare from '$features/hardware-console/components/MicroKeySlotSquare.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import ToastCloseButton from './ToastCloseButton.svelte';
+  import ToastGlyph from './ToastGlyph.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -27,11 +26,11 @@
 
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
      the kind-flavored border tint is passed as a wrapper class by the service. -->
-<div class="relative flex w-full min-w-0 items-start gap-3">
-  <!-- Icon -->
-  <div class="flex-shrink-0 mt-0.5 {kind === 'blocker' ? 'text-danger' : 'text-primary-ink'}">
-    <Fa icon={kind === 'blocker' ? faTriangleExclamation : faComments} class="w-5 h-5" />
-  </div>
+<div
+  class="relative flex w-full min-w-0 items-start gap-3 pr-10"
+  data-toast-layout="agent-attention"
+>
+  <ToastGlyph variant={kind === 'blocker' ? 'warning' : 'discussion'} />
 
   <!-- Content -->
   <div class="flex-1 min-w-0">
@@ -39,19 +38,22 @@
       {#if keySlot != null}
         <MicroKeySlotSquare slot={keySlot} />
       {/if}
-      <p class="min-w-0 break-words text-sm font-medium text-foreground">
+      <p class="toast-title min-w-0 break-words">
         {title}
         {#if timestamp}
-          <RelativeTime date={timestamp} class="text-xs font-normal text-muted-foreground ml-1" />
+          <RelativeTime date={timestamp} class="ml-1 text-xs font-normal text-muted-foreground" />
         {/if}
       </p>
     </div>
-    <p class="text-sm text-muted-foreground line-clamp-3 mt-0.5 break-words">{reason}</p>
+    <p class="toast-description line-clamp-3 break-words">{reason}</p>
 
     <!-- Action buttons -->
-    <div class="flex flex-wrap items-center gap-2 mt-3">
-      <Button variant="outline" size="sm" onclick={onSwitchTo}>
+    <div class="toast-actions">
+      <Button variant="primary" size="default" class="toast-action" onclick={onSwitchTo}>
         {m.agent_attentionToast_switchTo_label()}
+      </Button>
+      <Button variant="ghost" size="default" class="toast-action" onclick={onClose}>
+        {m.agent_attentionToast_later_label()}
       </Button>
     </div>
   </div>
@@ -67,5 +69,37 @@
     line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  .toast-title {
+    color: hsl(var(--foreground));
+    font-size: 1rem;
+    font-weight: 500;
+    line-height: 1.35;
+  }
+
+  .toast-description {
+    margin-top: 0.25rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.9375rem;
+    line-height: 1.4;
+  }
+
+  .toast-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  :global(.toast-action) {
+    border-radius: var(--radius-medium);
+  }
+
+  :global(.toast-action:focus-visible) {
+    outline: 1px solid hsl(var(--focus-ring));
+    outline-offset: 2px;
+    box-shadow: none;
   }
 </style>

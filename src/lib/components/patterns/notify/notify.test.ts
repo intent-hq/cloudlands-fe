@@ -61,6 +61,7 @@ describe('notify', () => {
       props: { message: 'Save failed', details: 'RPC -32000\nrequest id: 42' },
     });
 
+    expect(document.querySelector('[data-toast-glyph="error"]')).toBeTruthy();
     const disclosure = screen.getByText(/Technical details/);
     const details = disclosure.closest('details') as HTMLDetailsElement;
     expect(details.open).toBe(false);
