@@ -23,7 +23,7 @@
 >
   {#if componentId === 'settings-page-shell'}
     <SettingsPageShell
-      title="Application settings"
+      title={fixture.title}
       description="Configure appearance, notifications, providers, and workspace behavior from one focused surface with a deliberately long description that remains readable."
       backHref={fixture.id === 'busy-shell' ? '#catalog-settings-shell' : undefined}
       backLabel="Back to workspace"
@@ -46,8 +46,8 @@
       {/snippet}
       <div class="min-h-128" data-testid="catalog-settings-long-content">
         <SettingsSection
-          id="catalog-general"
-          title="General"
+          id={`catalog-${fixture.id}-general`}
+          title={`${fixture.title} general`}
           description="Common application behavior."
         >
           <SettingsFieldRow

@@ -4,13 +4,18 @@
 
   let {
     ref = $bindable(null),
+    as: element = 'main',
     class: className,
     children,
     ...restProps
-  }: WithElementRef<HTMLAttributes<HTMLElement>> = $props();
+  }: WithElementRef<HTMLAttributes<HTMLElement>> & {
+    /** Use a non-landmark element only when an enclosing surface already owns the main landmark. */
+    as?: 'main' | 'div';
+  } = $props();
 </script>
 
-<main
+<svelte:element
+  this={element}
   bind:this={ref}
   data-slot="sidebar-inset"
   class={cn(
@@ -21,4 +26,4 @@
   {...restProps}
 >
   {@render children?.()}
-</main>
+</svelte:element>

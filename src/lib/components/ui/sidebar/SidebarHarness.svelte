@@ -9,12 +9,14 @@
     rail = true,
     side = 'left',
     fixtureState = 'default',
+    insetAs = 'main',
   }: {
     open?: boolean;
     peek?: 'none' | 'hover' | 'click';
     variant?: 'sidebar' | 'floating' | 'inset';
     rail?: boolean;
     side?: 'left' | 'right';
+    insetAs?: 'main' | 'div';
     fixtureState?:
       | 'default'
       | 'floating'
@@ -175,7 +177,7 @@
       </Sidebar.Footer>
     {/if}
   </Sidebar.Root>
-  <Sidebar.Inset class="min-w-0 overflow-hidden p-6 pt-12">
+  <Sidebar.Inset as={insetAs} class="min-w-0 overflow-hidden p-6 pt-12">
     <Sidebar.Trigger class="absolute right-3 top-3" />
     <div class="max-w-md space-y-2">
       <h2 class="type-title">{m.workspace_multiSelectSidebar_overviewTab_label()}</h2>

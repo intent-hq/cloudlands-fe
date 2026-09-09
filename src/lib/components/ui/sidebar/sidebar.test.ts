@@ -49,6 +49,16 @@ afterEach(() => {
 });
 
 describe('Sidebar', () => {
+  it('keeps the product inset as main while allowing embedded previews to avoid nested landmarks', () => {
+    stubMatchMedia(false);
+    const product = render(SidebarHarness);
+    expect(product.container.querySelector('[data-slot="sidebar-inset"]')?.tagName).toBe('MAIN');
+    product.unmount();
+
+    const preview = render(SidebarHarness, { props: { insetAs: 'div' } });
+    expect(preview.container.querySelector('[data-slot="sidebar-inset"]')?.tagName).toBe('DIV');
+  });
+
   it('toggles collapsed desktop state through the public trigger and keyboard shortcut', async () => {
     stubMatchMedia(false);
     const { container } = render(SidebarHarness);

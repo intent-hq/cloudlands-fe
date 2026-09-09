@@ -15,6 +15,7 @@
 
   let { componentId, fixture }: NavigationHelpCatalogRendererProps = $props();
   let tooltipOpen = $state(false);
+  let tooltipPortalTarget = $state<HTMLDivElement>();
 
   onMount(() => {
     if (componentId !== 'tooltip') return;
@@ -72,7 +73,11 @@
       <ShortcutChip class="min-w-16">Page Down</ShortcutChip>
     </div>
   {:else if componentId === 'tooltip'}
-    <div class="pb-10" data-catalog-rendered-state="open portal arrow reduced-motion">
+    <div
+      bind:this={tooltipPortalTarget}
+      class="pb-10"
+      data-catalog-rendered-state="open portal arrow reduced-motion"
+    >
       <Tooltip.Provider delayDuration={0}>
         <Tooltip.Root
           bind:open={tooltipOpen}
@@ -84,7 +89,9 @@
               <Button {...props} variant="outline" size="sm">Keyboard help</Button>
             {/snippet}
           </Tooltip.Trigger>
-          <Tooltip.Content side="bottom">Press Command K to open navigation.</Tooltip.Content>
+          <Tooltip.Content side="bottom" portalTarget={tooltipPortalTarget}>
+            Press Command K to open navigation.
+          </Tooltip.Content>
         </Tooltip.Root>
       </Tooltip.Provider>
     </div>
@@ -104,7 +111,7 @@
     <div
       data-catalog-rendered-state="default floating inset nested actions-and-badges collapsed peek-hover resizing reduced-motion"
     >
-      <Sidebar.Harness />
+      <Sidebar.Harness insetAs="div" />
     </div>
   {:else if componentId === 'scroll-area'}
     <div

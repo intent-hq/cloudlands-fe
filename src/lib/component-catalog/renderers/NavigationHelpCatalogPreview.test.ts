@@ -60,13 +60,15 @@ describe('NavigationHelpCatalogPreview', () => {
       openTooltip = callback;
       return 1;
     });
-    render(NavigationHelpCatalogPreview, { props: { componentId: 'tooltip', fixture } });
+    const tooltipPreview = render(NavigationHelpCatalogPreview, {
+      props: { componentId: 'tooltip', fixture },
+    });
     expect(screen.getByRole('button', { name: 'Keyboard help' })).not.toBeNull();
     expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
     openTooltip?.(0);
-    expect((await screen.findByRole('tooltip', { hidden: true })).textContent).toContain(
-      'Press Command K',
-    );
+    const tooltip = await screen.findByRole('tooltip', { hidden: true });
+    expect(tooltip.textContent).toContain('Press Command K');
+    expect(tooltipPreview.container.contains(tooltip)).toBe(true);
   });
 
   it('renders semantic Kbd shortcut states through the public primitive', () => {
@@ -90,6 +92,7 @@ describe('NavigationHelpCatalogPreview', () => {
       props: { componentId: 'sidebar', fixture },
     });
     const sidebar = container.querySelector('[data-slot="sidebar"][data-state]');
+    expect(container.querySelector('[data-slot="sidebar-inset"]')?.tagName).toBe('DIV');
     expect(sidebar?.getAttribute('data-state')).toBe('collapsed');
     expect(screen.getByRole('button', { name: 'Overview' }).getAttribute('data-active')).toBe(
       'true',

@@ -87,6 +87,12 @@ describe('ContentFieldCatalogPreview', () => {
     expect(separator.getByRole('separator').getAttribute('data-orientation')).toBe('vertical');
     cleanup();
 
+    const skeleton = render(ContentFieldCatalogPreview, {
+      props: { componentId: 'skeleton', fixture: skeletonFixtures[0] },
+    });
+    expect(skeleton.getByRole('status', { name: 'Loading preview' })).toBeTruthy();
+    cleanup();
+
     const loadingIndicator = render(ContentFieldCatalogPreview, {
       props: { componentId: 'loading-indicator', fixture: spinnerFixtures[0] },
     });

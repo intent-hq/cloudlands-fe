@@ -11,16 +11,18 @@
     side = 'top',
     children,
     arrowClasses,
+    portalTarget,
     ...restProps
   }: TooltipPrimitive.ContentProps & {
     arrowClasses?: string;
+    portalTarget?: Element | string;
   } = $props();
 
   const surface = clampSurface(useSurface() + 2);
   setSurface(surface);
 </script>
 
-<TooltipPrimitive.Portal>
+<TooltipPrimitive.Portal to={portalTarget}>
   <TooltipPrimitive.Content
     bind:ref
     role="tooltip"

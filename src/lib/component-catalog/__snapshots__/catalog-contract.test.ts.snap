@@ -8721,7 +8721,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:skeleton:s
               "both"
           <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="skeleton-state-matrix" data-catalog-preview="skeleton">
             <div class="gap-4 grid grid-cols-1 max-w-2xl min-w-0 overflow-hidden w-full" data-catalog-renderer-fixture="skeleton-state-matrix">
-              <div aria-label="Loading preview" class="gap-3 grid" data-catalog-rendered-state="default line card shimmer compact zoom-200 light dark reduced-motion">
+              <div aria-label="Loading preview" class="gap-3 grid" data-catalog-rendered-state="default line card shimmer compact zoom-200 light dark reduced-motion" role="status">
                 <div class="bg-hover h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
                 <div class="bg-hover h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-3/4" data-slot="skeleton">
                 <div class="bg-hover h-20 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">

@@ -58,13 +58,6 @@ const intentionalAxeAllowlist: Record<string, ReadonlyArray<{ rule: string; reas
         'The state matrix intentionally renders repeated copies of the same settings navigation landmark.',
     },
   ],
-  'primitive:skeleton:skeleton-state-matrix': [
-    {
-      rule: 'aria-prohibited-attr',
-      reason:
-        'The fixture intentionally labels a decorative skeleton while checking its loading-state contract.',
-    },
-  ],
 };
 const axeRules = {
   // jsdom cannot calculate visual contrast for isolated fixtures.

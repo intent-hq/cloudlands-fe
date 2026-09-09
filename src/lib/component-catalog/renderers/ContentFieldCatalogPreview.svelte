@@ -300,6 +300,7 @@
   {:else if componentId === 'skeleton'}
     <div
       class="grid gap-3"
+      role="status"
       aria-label="Loading preview"
       data-catalog-rendered-state="default line card shimmer compact zoom-200 light dark reduced-motion"
     >

@@ -244,9 +244,10 @@ describe('CatalogFixtureList real previews', () => {
 
   it('mounts each canonical Settings presentation pattern', () => {
     const page = renderEntry('settings-page-shell');
-    expect(screen.getAllByRole('heading', { level: 1, name: 'Application settings' }).length).toBe(
-      2,
-    );
+    expect(screen.getByRole('region', { name: 'Editorial Settings shell' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Busy Settings shell' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Editorial Settings shell general' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Busy Settings shell general' })).toBeTruthy();
     page.unmount();
     const section = renderEntry('settings-section');
     expect(screen.getByRole('region', { name: 'Notifications' })).toBeTruthy();
