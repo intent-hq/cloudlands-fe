@@ -178,7 +178,7 @@
         <div class="space-y-3 text-xs text-muted-foreground">
           {#each edgeGroups as group}
             <div>
-              <p class="mb-1 font-semibold text-foreground/80">{group.label}</p>
+              <p class="mb-1 font-semibold text-foreground">{group.label}</p>
               <div class="grid grid-cols-2 gap-2">
                 {#each group.edges as [type, label]}
                   {@const style = EDGE_STYLES[type]}

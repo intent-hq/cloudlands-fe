@@ -446,7 +446,7 @@
     color: var(--color-foreground);
   }
   .zoom-percent {
-    font-size: 10px;
+    font-size: 11px;
   }
   @container agent-overview (max-width: 559px) {
     .desktop-toolbar,

@@ -239,7 +239,7 @@
 
 <style>
   .next-event-caption {
-    font-size: 10px;
+    font-size: 11px;
   }
   .dead-time-span {
     background-image: repeating-linear-gradient(
