@@ -234,10 +234,18 @@ describe('AgentActivityGraph', () => {
     const taskButton = screen.getByRole('button', { name: /Task One/ });
     const fileButton = screen.getByRole('button', { name: /file-1\.ts/ });
     const unrelatedButton = screen.getByRole('button', { name: /Agent two/ });
+    const metadata = agentButton.querySelector<HTMLElement>('.node-meta');
 
     await fireEvent.mouseEnter(agentButton);
+    expect(agentButton.getAttribute('data-focus-state')).toBe('focused');
+    expect(agentButton.getAttribute('data-selection-active')).toBe('false');
+    expect(metadata?.hidden).toBe(true);
+    expect(unrelatedButton.getAttribute('data-focus-state')).toBe('dimmed');
     await fireEvent.click(agentButton);
     expect(agentButton.getAttribute('data-focus-state')).toBe('focused');
+    expect(agentButton.getAttribute('data-selection-active')).toBe('true');
+    expect(agentButton.querySelector('.node-meta')).toBe(metadata);
+    expect(metadata?.hidden).toBe(false);
     expect(taskButton.getAttribute('data-focus-state')).toBe('neighbour');
     expect(fileButton.getAttribute('data-focus-state')).toBe('neighbour');
     expect(unrelatedButton.getAttribute('data-focus-state')).toBe('dimmed');

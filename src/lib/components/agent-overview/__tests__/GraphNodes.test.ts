@@ -46,6 +46,7 @@ describe('TaskAnchorNode', () => {
       props: {
         node,
         focusState: 'focused',
+        isSelectionActive: true,
         isActive: true,
         agentCount: 2,
         tabindex: -1,
@@ -79,7 +80,7 @@ describe('TaskAnchorNode', () => {
     expect(button.querySelector('.task-status-dot')).toBeTruthy();
     expect(screen.queryByText(node.title)).toBeNull();
 
-    await view.rerender({ node, zoomBand: 'far', focusState: 'focused' });
+    await view.rerender({ node, zoomBand: 'far', isSelectionActive: true });
     expect(screen.getByText(node.title)).toBeTruthy();
     expect(button.querySelector('.task-status-dot')).toBeNull();
   });
@@ -129,7 +130,7 @@ describe('AgentOrbNode', () => {
     expect(getComputedStyle(label).opacity).not.toBe('0');
   });
 
-  it('shows specialist and activity metadata when focused', () => {
+  it('keeps specialist and activity metadata mounted and reveals it when selected', async () => {
     const node: AgentNode = {
       ...physics,
       id: 'agent:builder',
@@ -141,17 +142,26 @@ describe('AgentOrbNode', () => {
       status: 'responding',
       createdAt: timestamp,
     };
-    const { container } = render(AgentOrbNode, {
+    const view = render(AgentOrbNode, {
       props: { node, focusState: 'focused', isActive: true, lastActivityAt: timestamp },
     });
+    const metadata = view.container.querySelector<HTMLElement>('.node-meta');
 
-    expect(container.querySelector('.specialist-caption')?.textContent).toContain(
+    expect(view.container.querySelector('.specialist-caption')?.textContent).toContain(
       'frontend engineer',
     );
-    expect(container.querySelector('.node-meta')?.textContent).toContain(
-      'frontend engineer · responding',
-    );
-    expect(container.querySelector('.agent-avatar-wrapper')?.getAttribute('style')).toContain(
+    expect(metadata?.textContent).toContain('frontend engineer · responding');
+    expect(metadata?.hidden).toBe(true);
+    await view.rerender({
+      node,
+      focusState: 'focused',
+      isSelectionActive: true,
+      isActive: true,
+      lastActivityAt: timestamp,
+    });
+    expect(view.container.querySelector('.node-meta')).toBe(metadata);
+    expect(metadata?.hidden).toBe(false);
+    expect(view.container.querySelector('.agent-avatar-wrapper')?.getAttribute('style')).toContain(
       'animation-delay',
     );
   });
@@ -236,7 +246,7 @@ describe('ResourceNode', () => {
     expect(button.querySelector('.resource-dot')).toBeTruthy();
     expect(screen.queryByText(node.title)).toBeNull();
 
-    await view.rerender({ node, access: 'read', zoomBand: 'mid', focusState: 'focused' });
+    await view.rerender({ node, access: 'read', zoomBand: 'mid', isSelectionActive: true });
     expect(screen.getByText(node.title)).toBeTruthy();
     expect(button.querySelector('.resource-dot')).toBeNull();
   });

@@ -305,6 +305,10 @@
     return focusIds.has(nodeId) ? 'neighbour' : 'dimmed';
   }
 
+  function selectionActiveFor(nodeId: string): boolean {
+    return nodeId === (selectedNodeId ?? keyboardNodeId);
+  }
+
   function publishPositions(nodes: GraphNode[], alpha = 1): void {
     pendingPositions = new Map(nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
     if (frame !== null) return;
@@ -1000,6 +1004,7 @@
               enterDelay={nodeEnterDelay(index, playbackSpeed)}
               {playbackSpeed}
               focusState={focusStateFor(node.id)}
+              isSelectionActive={selectionActiveFor(node.id)}
               {zoomBand}
               tabindex={node.id === (keyboardNodeId ?? focusOrder[0]?.id) ? 0 : -1}
               {...nodeEvents(node)}
@@ -1011,6 +1016,7 @@
               enterDelay={nodeEnterDelay(index, playbackSpeed)}
               {playbackSpeed}
               focusState={focusStateFor(node.id)}
+              isSelectionActive={selectionActiveFor(node.id)}
               {zoomBand}
               tabindex={node.id === (keyboardNodeId ?? focusOrder[0]?.id) ? 0 : -1}
               {...nodeEvents(node)}
@@ -1039,6 +1045,7 @@
               enterDelay={nodeEnterDelay(index, playbackSpeed)}
               {playbackSpeed}
               focusState={focusStateFor(node.id)}
+              isSelectionActive={selectionActiveFor(node.id)}
               {zoomBand}
               tabindex={node.id === (keyboardNodeId ?? focusOrder[0]?.id) ? 0 : -1}
               {...nodeEvents(node)}

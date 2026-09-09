@@ -7,6 +7,7 @@
   interface Props {
     node: TaskNode;
     focusState?: 'focused' | 'neighbour' | 'dimmed' | 'none';
+    isSelectionActive?: boolean;
     zoomBand?: 'full' | 'mid' | 'far';
     tabindex?: number;
     isActive?: boolean;
@@ -29,6 +30,7 @@
   let {
     node,
     focusState = 'none',
+    isSelectionActive = false,
     zoomBand = 'full',
     tabindex = 0,
     isActive = false,
@@ -45,20 +47,21 @@
   in:activityNodeTransition={{ delay: enterDelay, playbackSpeed }}
   out:activityNodeTransition={{ exit: true, playbackSpeed }}
   type="button"
-  class="task-anchor relative flex h-12 w-44 touch-none flex-col items-start text-left text-foreground transition-opacity focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+  class="task-anchor relative flex h-12 w-44 cursor-pointer touch-none flex-col items-start rounded-md text-left text-foreground transition-opacity focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
   data-graph-node
   data-node-id={node.id}
   data-active={isActive}
   data-task-state={node.state}
   data-last-activity-at={lastActivityAt}
   data-focus-state={focusState}
+  data-selection-active={isSelectionActive}
   data-zoom-band={zoomBand}
   aria-label={node.title}
   {tabindex}
   title={zoomBand === 'far' /* i18n-ignore (semantic zoom code token) */ ? node.title : undefined}
   {...events}
 >
-  {#if zoomBand === 'far' && focusState !== 'focused'}
+  {#if zoomBand === 'far' && !isSelectionActive}
     <span class="task-status-dot" aria-hidden="true"></span>
   {:else}
     <span class="task-label inline-flex max-w-full items-start gap-1.5 px-1.5 py-0.5">
@@ -69,15 +72,13 @@
       </span>
       <span class="task-title min-w-0 line-clamp-2">{node.title}</span>
     </span>
-    {#if focusState === 'focused'}
-      <span class="node-meta">
-        {node.state.replaceAll('_', ' ')} ·
-        {agentCount === 1
-          ? m.chat_toolDetails_agentCount_one({ count: agentCount })
-          : m.chat_toolDetails_agentCount_many({ count: agentCount })}
-      </span>
-    {/if}
   {/if}
+  <span class="node-meta" hidden={!isSelectionActive}>
+    {node.state.replaceAll('_', ' ')} ·
+    {agentCount === 1
+      ? m.chat_toolDetails_agentCount_one({ count: agentCount })
+      : m.chat_toolDetails_agentCount_many({ count: agentCount })}
+  </span>
 </button>
 
 <style>
@@ -92,8 +93,8 @@
   .task-anchor[data-focus-state='dimmed'] {
     filter: opacity(0.28);
   }
-  .task-anchor[data-focus-state='focused'] {
-    outline: 2px solid var(--color-foreground);
+  .task-anchor[data-selection-active='true'] {
+    outline: 1.5px solid var(--color-ring);
     outline-offset: 4px;
   }
   .task-label {
@@ -106,16 +107,24 @@
     paint-order: stroke fill;
     -webkit-text-stroke: calc(2px / var(--zoom)) var(--color-background);
   }
-  .task-anchor[data-focus-state='focused'] .task-label {
+  .task-anchor[data-selection-active='true'] .task-label {
     opacity: 1;
   }
   .node-meta {
+    position: absolute;
+    top: calc(100% + 0.25rem);
+    left: 50%;
+    visibility: hidden;
     max-width: 100%;
     padding-inline: 0.375rem;
     font-family: ui-sans-serif, system-ui, sans-serif;
     font-size: 11px;
     line-height: 1.1;
+    transform: translateX(-50%);
     white-space: nowrap;
+  }
+  .task-anchor[data-selection-active='true'] .node-meta {
+    visibility: visible;
   }
   .task-status-dot {
     width: calc(4px / var(--zoom));

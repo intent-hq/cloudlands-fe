@@ -17,6 +17,7 @@
   interface Props {
     node: FileNode | NoteNode;
     focusState?: 'focused' | 'neighbour' | 'dimmed' | 'none';
+    isSelectionActive?: boolean;
     zoomBand?: 'full' | 'mid' | 'far';
     tabindex?: number;
     access: 'read' | 'write';
@@ -43,6 +44,7 @@
   let {
     node,
     focusState = 'none',
+    isSelectionActive = false,
     zoomBand = 'full',
     tabindex = 0,
     access,
@@ -82,7 +84,7 @@
   in:activityNodeTransition={{ delay: enterDelay, playbackSpeed }}
   out:activityNodeTransition={{ exit: true, playbackSpeed }}
   type="button"
-  class="resource-node relative flex h-auto min-h-22 w-18 touch-none flex-col items-center gap-1.5 text-center text-muted-foreground transition-opacity hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+  class="resource-node relative flex h-auto min-h-22 w-18 cursor-pointer touch-none flex-col items-center gap-1.5 rounded-md text-center text-muted-foreground transition-opacity focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
   data-graph-node
   data-node-id={node.id}
   data-external={node.type === 'file' && node.isExternal}
@@ -90,13 +92,14 @@
   data-access={access}
   data-last-activity-at={lastActivityAt}
   data-focus-state={focusState}
+  data-selection-active={isSelectionActive}
   data-zoom-band={zoomBand}
   {tabindex}
   title={tooltip}
   aria-label={ariaLabel ?? label}
   {...events}
 >
-  {#if zoomBand === 'full' || focusState === 'focused'}
+  {#if zoomBand === 'full' || isSelectionActive}
     <span
       class="resource-card relative flex h-14 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-background text-subtle"
       class:border-dashed={node.type === 'file' && node.isExternal}
@@ -110,18 +113,16 @@
       {/if}
     </span>
     <span class="resource-label line-clamp-2" style:opacity={labelOpacity}>{label}</span>
-    {#if focusState === 'focused'}
-      <span class="node-meta" style:opacity={labelOpacity}>
-        {#if node.type === 'file'}+{additions} −{deletions}{:else}{access}{/if} ·
-        <RelativeTime date={lastActivityAt ?? node.lastActionTimestamp} compact />
-      </span>
-    {/if}
   {:else}
     <span class="flex h-14 w-11 shrink-0 items-center justify-center" aria-hidden="true">
       <span class="resource-dot" style:opacity style:animation-duration={`${cooldownRemaining}ms`}
       ></span>
     </span>
   {/if}
+  <span class="node-meta" style:opacity={labelOpacity} hidden={!isSelectionActive}>
+    {#if node.type === 'file'}+{additions} −{deletions}{:else}{access}{/if} ·
+    <RelativeTime date={lastActivityAt ?? node.lastActionTimestamp} compact />
+  </span>
 </button>
 
 <style>
@@ -131,8 +132,8 @@
       color 120ms ease,
       filter 120ms ease;
   }
-  .resource-node[data-focus-state='focused'] {
-    outline: 2px solid var(--color-foreground);
+  .resource-node[data-selection-active='true'] {
+    outline: 1.5px solid var(--color-ring);
     outline-offset: 4px;
   }
   .resource-card,
@@ -155,11 +156,19 @@
     text-overflow: ellipsis;
   }
   .node-meta {
+    position: absolute;
+    top: calc(100% + 0.25rem);
+    left: 50%;
+    visibility: hidden;
     max-width: 100%;
     font-family: ui-sans-serif, system-ui, sans-serif;
     font-size: 11px;
     line-height: 1.1;
+    transform: translateX(-50%);
     white-space: nowrap;
+  }
+  .resource-node[data-selection-active='true'] .node-meta {
+    visibility: visible;
   }
   .resource-dot {
     width: calc(6px / var(--zoom));
@@ -167,8 +176,7 @@
     border-radius: 9999px;
     background: var(--color-muted-foreground);
   }
-  .resource-node[data-active='true'] .resource-card,
-  .resource-node:hover .resource-card {
+  .resource-node[data-active='true'] .resource-card {
     border-color: var(--color-muted-foreground);
   }
   .resource-node[data-active='true'] {

@@ -8,6 +8,7 @@
   interface Props {
     node: AgentNode;
     focusState?: 'focused' | 'neighbour' | 'dimmed' | 'none';
+    isSelectionActive?: boolean;
     zoomBand?: 'full' | 'mid' | 'far';
     tabindex?: number;
     isActive?: boolean;
@@ -29,6 +30,7 @@
   let {
     node,
     focusState = 'none',
+    isSelectionActive = false,
     zoomBand = 'full',
     tabindex = 0,
     isActive = false,
@@ -58,13 +60,14 @@
   in:activityNodeTransition={{ delay: enterDelay, playbackSpeed }}
   out:activityNodeTransition={{ exit: true, playbackSpeed }}
   type="button"
-  class="agent-orb flex h-auto min-h-22 w-28 touch-none flex-col items-center gap-1 text-center text-foreground transition-opacity focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+  class="agent-orb flex h-auto min-h-22 w-28 cursor-pointer touch-none flex-col items-center gap-1 text-center text-foreground transition-opacity focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
   data-graph-node
   data-node-id={node.id}
   data-active={isActive}
   data-last-activity-at={lastActivityAt}
   data-agent-status={node.status}
   data-focus-state={focusState}
+  data-selection-active={isSelectionActive}
   data-zoom-band={zoomBand}
   {tabindex}
   title={agentLabel}
@@ -93,12 +96,10 @@
       {specialistLabel}
     </span>
   {/if}
-  {#if focusState === 'focused'}
-    <span class="node-meta">
-      {#if specialistLabel}<span>{specialistLabel} ·</span>{' '}{/if}{node.status} ·
-      <RelativeTime date={lastActivityAt ?? node.createdAt} compact />
-    </span>
-  {/if}
+  <span class="node-meta" hidden={!isSelectionActive}>
+    {#if specialistLabel}<span>{specialistLabel} ·</span>{' '}{/if}{node.status} ·
+    <RelativeTime date={lastActivityAt ?? node.createdAt} compact />
+  </span>
 </button>
 
 <style>
@@ -112,9 +113,18 @@
   .agent-orb[data-focus-state='dimmed'] {
     filter: opacity(0.28);
   }
-  .agent-orb[data-focus-state='focused'] {
-    outline: 2px solid var(--color-foreground);
-    outline-offset: 4px;
+  .agent-avatar-wrapper {
+    position: relative;
+    display: inline-flex;
+    border-radius: 9999px;
+  }
+  .agent-orb[data-selection-active='true'] .agent-avatar-wrapper::after {
+    position: absolute;
+    inset: -4px;
+    border: 1.5px solid var(--color-ring);
+    border-radius: inherit;
+    pointer-events: none;
+    content: '';
   }
   .agent-name {
     width: calc(128px / var(--zoom));
@@ -126,7 +136,7 @@
     opacity: clamp(0.58, calc((var(--zoom) - 0.3) * 3.34), 1);
     transition: opacity 120ms linear;
   }
-  .agent-orb[data-focus-state='focused'] .agent-name {
+  .agent-orb[data-selection-active='true'] .agent-name {
     opacity: 1;
   }
   .agent-orb[data-agent-status='waiting'] .agent-avatar-wrapper {
@@ -135,7 +145,7 @@
   .agent-orb[data-active='true'] .agent-avatar-wrapper {
     animation: working-breathe 2.4s ease-in-out infinite;
   }
-  .agent-orb[data-focus-state='focused'] .agent-avatar-wrapper,
+  .agent-orb[data-selection-active='true'] .agent-avatar-wrapper,
   .agent-orb[data-motion-enabled='false'] .agent-avatar-wrapper {
     animation: none;
   }
@@ -151,11 +161,19 @@
     outline-offset: 2px;
   }
   .node-meta {
+    position: absolute;
+    top: calc(100% + 0.25rem);
+    left: 50%;
+    visibility: hidden;
     max-width: 100%;
     font-family: ui-sans-serif, system-ui, sans-serif;
     font-size: 11px;
     line-height: 1.1;
+    transform: translateX(-50%);
     white-space: nowrap;
+  }
+  .agent-orb[data-selection-active='true'] .node-meta {
+    visibility: visible;
   }
   @keyframes waiting-pulse {
     50% {
