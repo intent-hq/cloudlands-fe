@@ -106,6 +106,8 @@ Existing callers may retain these names, but new code must use the canonical rep
 
 ${buttonAliases}
 
+- **Geometry escape hatch:** use \`wrapContent={false}\` only for full-card interactive containers whose flex or grid layout requires slotted regions to remain direct button children.
+
 ${sections.join('\n')}\n`;
   return format(markdown, { parser: 'markdown' });
 }
