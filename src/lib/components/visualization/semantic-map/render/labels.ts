@@ -176,6 +176,8 @@ function regionCandidates(
   width: number,
   height: number,
 ): Array<readonly [number, number]> {
+  const anchorX = region.labelX ?? region.x;
+  const anchorY = region.labelY ?? region.y;
   const horizontalStep = width * 0.55;
   const verticalOffsets = [
     0,
@@ -191,10 +193,10 @@ function regionCandidates(
     height * 2,
   ];
   return [
-    ...verticalOffsets.map((offset) => [region.x, region.y + offset] as const),
+    ...verticalOffsets.map((offset) => [anchorX, anchorY + offset] as const),
     ...verticalOffsets.flatMap((offset) => [
-      [region.x - horizontalStep, region.y + offset] as const,
-      [region.x + horizontalStep, region.y + offset] as const,
+      [anchorX - horizontalStep, anchorY + offset] as const,
+      [anchorX + horizontalStep, anchorY + offset] as const,
     ]),
   ];
 }
@@ -312,7 +314,7 @@ export function layoutSceneLabels(input: {
     const height = lines.length * (fontSize + 3) + 4;
     const candidates = input.focusContentRegionIds?.has(region.id)
       ? [
-          [region.x, region.y - region.radius * 0.45] as const,
+          [region.labelX ?? region.x, (region.labelY ?? region.y) - region.radius * 0.45] as const,
           ...regionCandidates(region, width, height),
         ]
       : regionCandidates(region, width, height);

@@ -4,16 +4,42 @@ function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+const INTERPOLATED_HULL_POINT_COUNT = 96;
+
+function resampleHull(hull: [number, number][], count: number): [number, number][] {
+  if (hull.length === 0) return [];
+  const lengths = hull.map(([x, y], index) => {
+    const [nextX, nextY] = hull[(index + 1) % hull.length];
+    return Math.hypot(nextX - x, nextY - y);
+  });
+  const perimeter = lengths.reduce((sum, length) => sum + length, 0);
+  if (perimeter === 0) return Array.from({ length: count }, () => [...hull[0]]);
+  let edge = 0;
+  let edgeStart = 0;
+  return Array.from({ length: count }, (_, index) => {
+    const distance = (index * perimeter) / count;
+    while (edge < lengths.length - 1 && edgeStart + lengths[edge] < distance) {
+      edgeStart += lengths[edge++];
+    }
+    const from = hull[edge];
+    const to = hull[(edge + 1) % hull.length];
+    const progress = lengths[edge] === 0 ? 0 : (distance - edgeStart) / lengths[edge];
+    return [lerp(from[0], to[0], progress), lerp(from[1], to[1], progress)];
+  });
+}
+
 function interpolateHull(
   a: [number, number][],
   b: [number, number][],
   t: number,
 ): [number, number][] {
-  const count = Math.max(a.length, b.length);
-  if (count === 0) return [];
+  if (a.length === 0 && b.length === 0) return [];
+  const count = INTERPOLATED_HULL_POINT_COUNT;
+  const fromHull = resampleHull(a.length ? a : b, count);
+  const toHull = resampleHull(b.length ? b : a, count);
   return Array.from({ length: count }, (_, index) => {
-    const from = a[Math.floor((index * a.length) / count)] ?? b[index % b.length];
-    const to = b[Math.floor((index * b.length) / count)] ?? a[index % a.length];
+    const from = fromHull[index];
+    const to = toHull[index];
     return [lerp(from[0], to[0], t), lerp(from[1], to[1], t)];
   });
 }
@@ -26,6 +52,8 @@ export function lerpGeometry(a: RegionGeometry, b: RegionGeometry, t: number): R
     id: b.id,
     x: lerp(a.x, b.x, progress),
     y: lerp(a.y, b.y, progress),
+    labelX: lerp(a.labelX ?? a.x, b.labelX ?? b.x, progress),
+    labelY: lerp(a.labelY ?? a.y, b.labelY ?? b.y, progress),
     radius: lerp(a.radius, b.radius, progress),
     budget: lerp(a.budget, b.budget, progress),
     hull: interpolateHull(a.hull, b.hull, progress),

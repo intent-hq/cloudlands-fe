@@ -104,7 +104,7 @@ test('keyboard navigation follows spatial order and reaches agents and crossings
   await expect(component.getByTestId('selected-route')).toHaveAttribute('data-selected', 'false');
 });
 
-test('pointer targets follow the organic hull instead of its old bounding circle', async ({
+test('pointer targets follow the tessellated hull instead of its old bounding circle', async ({
   mount,
   page,
 }) => {
