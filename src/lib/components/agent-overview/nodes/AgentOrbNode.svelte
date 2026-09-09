@@ -94,11 +94,12 @@
     filter: opacity(0.28);
   }
   .agent-name {
-    transition: opacity 120ms ease;
+    font-size: clamp(13px, calc(13px / var(--zoom)), 31.5px);
+    opacity: clamp(0.58, calc((var(--zoom) - 0.3) * 3.34), 1);
+    transition: opacity 120ms linear;
   }
-  .agent-orb[data-zoom-band='mid'] .agent-name,
-  .agent-orb[data-zoom-band='far'] .agent-name {
-    opacity: 0;
+  .agent-orb[data-focus-state='focused'] .agent-name {
+    opacity: 1;
   }
   .agent-orb[data-agent-status='waiting'] {
     animation: waiting-pulse 2.8s ease-in-out infinite;

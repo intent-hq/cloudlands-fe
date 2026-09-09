@@ -79,7 +79,7 @@
   in:activityNodeTransition={{ delay: enterDelay, playbackSpeed }}
   out:activityNodeTransition={{ exit: true, playbackSpeed }}
   type="button"
-  class="resource-node flex h-22 w-18 touch-none flex-col items-center gap-1.5 text-center text-muted-foreground transition-opacity hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-ring"
+  class="resource-node flex h-auto min-h-22 w-18 touch-none flex-col items-center gap-1.5 text-center text-muted-foreground transition-opacity hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-ring"
   data-graph-node
   data-node-id={node.id}
   data-external={node.type === 'file' && node.isExternal}
@@ -90,22 +90,28 @@
   data-zoom-band={zoomBand}
   {tabindex}
   title={tooltip}
-  aria-label={ariaLabel}
+  aria-label={ariaLabel ?? label}
   style:opacity={brightness}
   style:animation-duration={`${cooldownRemaining}ms`}
   {...events}
 >
-  <span
-    class="resource-card relative flex h-14 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-background text-subtle"
-    class:border-dashed={node.type === 'file' && node.isExternal}
-    aria-hidden="true"
-  >
-    <Fa icon={node.type === 'file' ? faFile : faNote} size="xs" />
-    {#if node.type === 'file' && node.isExternal}
-      <span class="absolute right-1 top-1"><Fa icon={faArrowUpRightFromSquare} size="xs" /></span>
-    {/if}
-  </span>
-  <span class="resource-label line-clamp-2 w-full text-xs leading-[1.15]">{label}</span>
+  {#if zoomBand === 'full' || focusState === 'focused'}
+    <span
+      class="resource-card relative flex h-14 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-background text-subtle"
+      class:border-dashed={node.type === 'file' && node.isExternal}
+      aria-hidden="true"
+    >
+      <Fa icon={node.type === 'file' ? faFile : faNote} size="xs" />
+      {#if node.type === 'file' && node.isExternal}
+        <span class="absolute right-1 top-1"><Fa icon={faArrowUpRightFromSquare} size="xs" /></span>
+      {/if}
+    </span>
+    <span class="resource-label line-clamp-2 w-full leading-[1.15]">{label}</span>
+  {:else}
+    <span class="flex h-14 w-11 shrink-0 items-center justify-center" aria-hidden="true">
+      <span class="resource-dot"></span>
+    </span>
+  {/if}
 </button>
 
 <style>
@@ -126,16 +132,14 @@
       opacity 120ms ease,
       scale 120ms ease;
   }
-  .resource-node[data-zoom-band='mid'] .resource-label,
-  .resource-node[data-zoom-band='far'] .resource-label,
-  .resource-node[data-zoom-band='mid'] .resource-card > :global(*),
-  .resource-node[data-zoom-band='far'] .resource-card > :global(*) {
-    opacity: 0;
+  .resource-label {
+    font-size: clamp(13px, calc(13px / var(--zoom)), 20.8px);
   }
-  .resource-node[data-zoom-band='mid'] .resource-card,
-  .resource-node[data-zoom-band='far'] .resource-card {
+  .resource-dot {
+    width: calc(6px / var(--zoom));
+    height: calc(6px / var(--zoom));
     border-radius: 9999px;
-    scale: 0.22;
+    background: var(--color-muted-foreground);
   }
   .resource-node[data-active='true'] .resource-card,
   .resource-node:hover .resource-card {

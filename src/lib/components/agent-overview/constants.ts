@@ -111,10 +111,10 @@ export const EDGE_STYLES = {
     opacity: 0.66,
   },
   'task-assignment': {
-    stroke: 'var(--color-border)',
+    stroke: 'var(--color-muted-foreground)',
     strokeWidth: 1,
     strokeDasharray: 'none',
-    opacity: 0.72,
+    opacity: 0.45,
   },
   message: {
     stroke: 'var(--color-muted-foreground)',
@@ -129,16 +129,16 @@ export const EDGE_STYLES = {
     opacity: 0.64,
   },
   'file-read': {
-    stroke: 'var(--color-border)',
+    stroke: 'var(--color-muted-foreground)',
     strokeWidth: 0.75,
     strokeDasharray: '2 3',
-    opacity: 0.38,
+    opacity: 0.3,
   },
   'note-read': {
-    stroke: 'var(--color-border)',
+    stroke: 'var(--color-muted-foreground)',
     strokeWidth: 0.75,
     strokeDasharray: '2 3',
-    opacity: 0.38,
+    opacity: 0.3,
   },
   'file-write': {
     stroke: 'var(--color-muted-foreground)',

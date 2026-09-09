@@ -31,6 +31,7 @@
   import { onMount, untrack } from 'svelte';
   import AgentActivityGraph from './AgentActivityGraph.svelte';
   import type { GraphOpenEvent } from './AgentActivityGraph.svelte';
+  import AgentOverviewLegend from './AgentOverviewLegend.svelte';
   import TimeScrubber from './TimeScrubber.svelte';
   import {
     advancePlaybackCursor,
@@ -39,7 +40,6 @@
     type PlaybackSpeed,
   } from './playback';
   import { buildReplayGraph } from './__fixtures__/agent-activity-graph.fixtures';
-  import { m } from '$shared/paraglide/messages.js';
 
   let { graph, replayEnd }: { graph: GraphState; replayEnd?: number } = $props();
   let mode = $state<PlaybackMode>('live');
@@ -108,13 +108,9 @@
 </script>
 
 <div class="relative h-180 min-h-150 w-full overflow-hidden rounded-md" data-graph-preview>
-  <span
-    class="pointer-events-none absolute right-4 top-4 z-10 flex items-center gap-2 text-xs font-medium text-muted-foreground"
-    data-external-file-legend
-  >
-    <i class="h-5 w-4 rounded-sm border border-dashed border-muted-foreground"></i>
-    {m.agentOverview_toolbar_externalFile_label()}
-  </span>
+  <div class="absolute right-4 top-4 z-10" data-graph-preview-legend>
+    <AgentOverviewLegend />
+  </div>
   <AgentActivityGraph
     graph={displayedGraph}
     layers={{ files: true, notes: true, messages: true }}

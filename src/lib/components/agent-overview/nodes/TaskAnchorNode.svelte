@@ -51,16 +51,21 @@
   data-focus-state={focusState}
   data-zoom-band={zoomBand}
   {tabindex}
+  title={zoomBand === 'far' /* i18n-ignore (semantic zoom code token) */ ? node.title : undefined}
   {...events}
 >
-  <span class="task-label inline-flex max-w-full items-start gap-1.5 rounded-md px-1.5 py-0.5">
-    <span class="mt-px shrink-0" inert>
-      {#key node.state}
-        <TaskStatusIcon status={node.state} size={16} />
-      {/key}
+  {#if zoomBand === 'far' && focusState !== 'focused'}
+    <span class="task-status-dot" aria-hidden="true"></span>
+  {:else}
+    <span class="task-label inline-flex max-w-full items-start gap-1.5 px-1.5 py-0.5">
+      <span class="mt-px shrink-0" inert>
+        {#key node.state}
+          <TaskStatusIcon status={node.state} size={16} />
+        {/key}
+      </span>
+      <span class="task-title min-w-0 line-clamp-2 leading-[1.2]">{node.title}</span>
     </span>
-    <span class="task-title min-w-0 line-clamp-2 type-title leading-[1.2]">{node.title}</span>
-  </span>
+  {/if}
 </button>
 
 <style>
@@ -76,11 +81,38 @@
     filter: opacity(0.28);
   }
   .task-label {
-    background: color-mix(in srgb, var(--color-background) 94%, transparent);
-    transition: opacity 120ms ease;
+    opacity: clamp(0.58, calc((var(--zoom) - 0.3) * 3.34), 1);
+    transition: opacity 120ms linear;
   }
-  .task-anchor[data-zoom-band='far'] .task-label {
-    opacity: 0;
+  .task-title {
+    font-size: clamp(17px, calc(17px / var(--zoom)), 40px);
+    paint-order: stroke fill;
+    -webkit-text-stroke: calc(2px / var(--zoom)) var(--color-background);
+  }
+  .task-anchor[data-focus-state='focused'] .task-label {
+    opacity: 1;
+  }
+  .task-status-dot {
+    width: calc(4px / var(--zoom));
+    height: calc(4px / var(--zoom));
+    margin: auto;
+    border-radius: 9999px;
+    background: var(--color-muted-foreground);
+  }
+  .task-anchor[data-task-state='discussion_needed'] .task-status-dot {
+    background: var(--color-warning);
+  }
+  .task-anchor[data-task-state='blocked'] .task-status-dot {
+    background: var(--color-destructive);
+  }
+  .task-anchor[data-task-state='in_progress'] .task-status-dot {
+    background: var(--color-info);
+  }
+  .task-anchor[data-task-state='review_required'] .task-status-dot {
+    background: var(--color-muted-foreground);
+  }
+  .task-anchor[data-task-state='complete'] .task-status-dot {
+    background: var(--color-success);
   }
   .task-anchor[data-motion-enabled='false'] {
     animation: none;

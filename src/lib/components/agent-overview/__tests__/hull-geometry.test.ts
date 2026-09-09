@@ -3,14 +3,16 @@ import { describe, expect, it } from 'vitest';
 import {
   HULL_FILL_OPACITIES,
   HULL_PADDING,
+  TWO_MEMBER_HULL_PADDING,
   interpolateHullMembers,
   paddedHull,
   smoothClosedHullPath,
+  taskHullPadding,
   type HullMember,
 } from '../hull-geometry';
 
-function paddedMemberPoints(member: HullMember): [number, number][] {
-  const radius = member.radius + HULL_PADDING;
+function paddedMemberPoints(member: HullMember, padding = HULL_PADDING): [number, number][] {
+  const radius = member.radius + padding;
   return Array.from({ length: 32 }, (_, index) => {
     const angle = (index / 32) * Math.PI * 2;
     return [member.x + Math.cos(angle) * radius, member.y + Math.sin(angle) * radius];
@@ -18,13 +20,13 @@ function paddedMemberPoints(member: HullMember): [number, number][] {
 }
 
 describe('task hull geometry', () => {
-  it('keeps both stacked fills at the quiet half-opacity levels', () => {
+  it('keeps working, idle, focused, and dimmed fills perceptibly distinct', () => {
     expect(HULL_FILL_OPACITIES).toEqual({
-      dimmed: 0.006,
-      focusedWorking: 0.05,
-      focusedIdle: 0.0375,
-      working: 0.04,
-      idle: 0.0275,
+      dimmed: 0.012,
+      focusedWorking: 0.12,
+      focusedIdle: 0.06,
+      working: 0.09,
+      idle: 0.035,
       softenerRatio: 0.34,
     });
   });
@@ -56,10 +58,12 @@ describe('task hull geometry', () => {
       { x: 60, y: 90, radius: 20 },
       { x: 180, y: 90, radius: 28 },
     ];
-    const hull = paddedHull(members);
+    const padding = taskHullPadding(members.length, 25);
+    const hull = paddedHull(members, padding);
 
+    expect(padding).toBe(TWO_MEMBER_HULL_PADDING);
     expect(hull).not.toBeNull();
-    for (const point of members.flatMap(paddedMemberPoints)) {
+    for (const point of members.flatMap((member) => paddedMemberPoints(member, padding))) {
       expect(polygonContains(hull!, point)).toBe(true);
     }
   });

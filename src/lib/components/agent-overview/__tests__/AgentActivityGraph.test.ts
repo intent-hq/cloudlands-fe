@@ -278,6 +278,7 @@ describe('AgentActivityGraph', () => {
     await waitForFit(scene);
     const initialZoom = (viewport as HTMLElement & { __zoom: { x: number; y: number; k: number } })
       .__zoom;
+    expect(Number(scene.style.getPropertyValue('--zoom'))).toBeCloseTo(initialZoom.k);
 
     await fireEvent.wheel(viewport, { deltaX: 24, deltaY: 80, clientX: 400, clientY: 300 });
     const pannedZoom = (viewport as HTMLElement & { __zoom: { x: number; y: number; k: number } })
@@ -292,9 +293,14 @@ describe('AgentActivityGraph', () => {
       clientY: 300,
     });
     await waitFor(() => expect(scene.getAttribute('data-zoom-band')).toBe('far'));
+    const farZoom = (viewport as HTMLElement & { __zoom: { k: number } }).__zoom.k;
+    expect(Number(scene.style.getPropertyValue('--zoom'))).toBeCloseTo(farZoom);
     expect(screen.getByRole('button', { name: /Agent One/ }).getAttribute('data-zoom-band')).toBe(
       'far',
     );
+    expect(
+      screen.getByRole('button', { name: /Task One/ }).querySelector('.task-status-dot'),
+    ).toBeTruthy();
   });
 
   it('caps resources per agent and expands the remainder', async () => {
@@ -304,9 +310,8 @@ describe('AgentActivityGraph', () => {
     expect(screen.queryByRole('button', { name: /file-1\.ts/ })).toBeNull();
     expect(screen.getByRole('button', { name: /file-7\.ts/ })).toBeTruthy();
 
-    await fireEvent.click(
-      screen.getByRole('button', { name: 'Show 1 more resources for Agent One' }),
-    );
+    const expander = screen.getByRole('button', { name: 'Show 1 more resources for Agent One' });
+    await fireEvent.click(expander);
 
     expect(screen.getByRole('button', { name: /file-1\.ts/ })).toBeTruthy();
   });
@@ -416,12 +421,15 @@ describe('AgentActivityGraph', () => {
     expect(pathsFor(first.container)).toHaveLength(1);
     expect(pathsFor(first.container).every((path) => path?.includes(' C '))).toBe(true);
     expect(first.container.querySelector('.edge-path')?.getAttribute('stroke-width')).toBe('0.75');
-    expect(first.container.querySelector('.edge-path')?.hasAttribute('stroke-dasharray')).toBe(
-      false,
+    expect(first.container.querySelector('.edge-path')?.getAttribute('stroke-dasharray')).toBe(
+      '2 3',
     );
     expect(first.container.querySelector('.edge-path')?.getAttribute('data-edge-count')).toBe('2');
     expect(first.container.querySelectorAll('.edge-terminal')).toHaveLength(1);
-    expect(first.container.querySelector('.edge-terminal')?.getAttribute('r')).toBe('2.25');
+    expect(first.container.querySelector('.edge-terminal')?.getAttribute('r')).toBe('3');
+    expect(first.container.querySelector('.edge-path')?.getAttribute('vector-effect')).toBe(
+      'non-scaling-stroke',
+    );
     expect(first.container.querySelector('.edge-arrow')).toBeNull();
   });
 
@@ -457,7 +465,11 @@ describe('AgentActivityGraph', () => {
       },
     });
 
-    expect(container.querySelectorAll('.edge-path')).toHaveLength(1);
+    expect(container.querySelectorAll('.edge-path')).toHaveLength(2);
+    const directedPaths = Array.from(container.querySelectorAll('.edge-path'), (path) =>
+      path.getAttribute('d'),
+    );
+    expect(new Set(directedPaths).size).toBe(2);
     expect(
       Array.from(container.querySelectorAll('.edge-terminal'), (terminal) =>
         terminal.getAttribute('data-direction'),

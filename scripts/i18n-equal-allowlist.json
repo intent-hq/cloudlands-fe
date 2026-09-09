@@ -1,6 +1,10 @@
 {
+  "agentOverview_legend_communication_label": ["fr"],
+  "agentOverview_legend_temporal_label": ["es"],
   "agentOverview_timeScrubber_live_label": ["de"],
   "agentOverview_toolbar_agents_label": ["fr"],
+  "agentOverview_toolbar_messages_many": ["fr"],
+  "agentOverview_toolbar_messages_one": ["fr"],
   "agentOverview_toolbar_messages_label": ["fr"],
   "agentOverview_toolbar_notes_label": ["fr"],
   "agent_failureToast_agentWorkspace_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],

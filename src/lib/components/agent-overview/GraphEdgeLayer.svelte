@@ -46,7 +46,13 @@
   let motionEnabled = $state(true);
   const seenMessageEvents = new Set<string>();
   type GeometryPart =
-    'main' | 'highlight' | 'gradient' | 'backward-terminal' | 'forward-terminal' | 'label';
+    | 'main-forward'
+    | 'main-reverse'
+    | 'highlight'
+    | 'gradient'
+    | 'backward-terminal'
+    | 'forward-terminal'
+    | 'label';
   const pairGeometry = new Map<string, Map<GeometryPart, SVGElement>>();
   const messageMotions = new Map<string, SVGAnimateMotionElement>();
   const edgeCurves = new Map<string, number>();
@@ -94,15 +100,25 @@
 
   function edgeLayerMotion(element: SVGSVGElement) {
     const motion = activityMotion(element);
+    const scene = element.closest<HTMLElement>('.graph-scene');
     const syncMotion = () => {
       motionEnabled = element.dataset.motionEnabled !== 'false';
     };
-    const observer = new MutationObserver(syncMotion);
-    observer.observe(element, { attributeFilter: ['data-motion-enabled'] });
+    const syncLabelScale = () => {
+      const match = scene?.style.transform.match(/scale\(([^)]+)\)/);
+      const scale = Number(match?.[1] ?? 1);
+      element.style.setProperty('--edge-label-scale', String(scale > 0 ? 1 / scale : 1));
+    };
+    const motionObserver = new MutationObserver(syncMotion);
+    const scaleObserver = new MutationObserver(syncLabelScale);
+    motionObserver.observe(element, { attributeFilter: ['data-motion-enabled'] });
+    if (scene) scaleObserver.observe(scene, { attributes: true, attributeFilter: ['style'] });
     syncMotion();
+    syncLabelScale();
     return {
       destroy() {
-        observer.disconnect();
+        motionObserver.disconnect();
+        scaleObserver.disconnect();
         motion?.destroy?.();
       },
     };
@@ -153,10 +169,11 @@
 
   function opacityFor(pair: MergedEdgePair): number {
     const style = EDGE_STYLES[pair.type] ?? EDGE_STYLES.default;
-    if (!activeFocusNodeId) return Math.max(0.52, style.opacity);
+    const structuralFloor = pair.type === 'delegation' || pair.type === 'task-assignment' ? 0.6 : 0;
+    if (!activeFocusNodeId) return Math.max(structuralFloor, style.opacity);
     return pair.aId === activeFocusNodeId || pair.bId === activeFocusNodeId
-      ? Math.min(1, style.opacity + 0.28)
-      : 0.12;
+      ? Math.max(structuralFloor, Math.min(1, style.opacity + 0.28))
+      : Math.max(structuralFloor, 0.12);
   }
 
   function isHighlighted(pair: MergedEdgePair): boolean {
@@ -272,7 +289,7 @@
     };
   }
 
-  function edgeCurve(pairKey: string): number {
+  function edgeCurveDirection(pairKey: string): number {
     const cached = edgeCurves.get(pairKey);
     if (cached !== undefined) return cached;
     let hash = 2166136261;
@@ -280,7 +297,7 @@
       hash ^= pairKey.charCodeAt(index);
       hash = Math.imul(hash, 16777619);
     }
-    const curve = (hash >>> 0) % 2 === 0 ? -0.05 : 0.05;
+    const curve = (hash >>> 0) % 2 === 0 ? -1 : 1;
     edgeCurves.set(pairKey, curve);
     return curve;
   }
@@ -289,6 +306,7 @@
     pairKey: string,
     source: GraphPosition,
     target: GraphPosition,
+    bidirectional: boolean,
   ): { forward: string; reverse: string } {
     const dx = target.x - source.x;
     const dy = target.y - source.y;
@@ -297,21 +315,37 @@
       const path = `M ${source.x} ${source.y}`;
       return { forward: path, reverse: path };
     }
-    const offset = distance * edgeCurve(pairKey);
-    const perpendicularX = (-dy / distance) * offset;
-    const perpendicularY = (dx / distance) * offset;
-    const first = {
-      x: source.x + dx / 3 + perpendicularX,
-      y: source.y + dy / 3 + perpendicularY,
+    const direction = edgeCurveDirection(pairKey);
+    const bow = bidirectional ? 0.03 : 0.05;
+    const controlPoints = (offsetDirection: number) => {
+      const offset = distance * bow * direction * offsetDirection;
+      const perpendicularX = (-dy / distance) * offset;
+      const perpendicularY = (dx / distance) * offset;
+      return [
+        { x: source.x + dx / 3 + perpendicularX, y: source.y + dy / 3 + perpendicularY },
+        {
+          x: source.x + (dx * 2) / 3 + perpendicularX,
+          y: source.y + (dy * 2) / 3 + perpendicularY,
+        },
+      ] as const;
     };
-    const second = {
-      x: source.x + (dx * 2) / 3 + perpendicularX,
-      y: source.y + (dy * 2) / 3 + perpendicularY,
-    };
+    const forward = controlPoints(1);
+    const reverse = controlPoints(bidirectional ? -1 : 1);
     return {
-      forward: `M ${source.x} ${source.y} C ${first.x} ${first.y}, ${second.x} ${second.y}, ${target.x} ${target.y}`,
-      reverse: `M ${target.x} ${target.y} C ${second.x} ${second.y}, ${first.x} ${first.y}, ${source.x} ${source.y}`,
+      forward: `M ${source.x} ${source.y} C ${forward[0].x} ${forward[0].y}, ${forward[1].x} ${forward[1].y}, ${target.x} ${target.y}`,
+      reverse: `M ${target.x} ${target.y} C ${reverse[1].x} ${reverse[1].y}, ${reverse[0].x} ${reverse[0].y}, ${source.x} ${source.y}`,
     };
+  }
+
+  function directedPathsFor(pair: MergedEdgePair, paths: { forward: string; reverse: string }) {
+    return [
+      ...(pair.directions.has('a-to-b')
+        ? [{ direction: 'a-to-b' as const, path: paths.forward, part: 'main-forward' as const }]
+        : []),
+      ...(pair.directions.has('b-to-a')
+        ? [{ direction: 'b-to-a' as const, path: paths.reverse, part: 'main-reverse' as const }]
+        : []),
+    ];
   }
 
   export function updatePositions(currentPositions: Map<string, GraphPosition>): void {
@@ -321,8 +355,14 @@
       const elements = pairGeometry.get(pair.key);
       if (!source || !target || !elements) continue;
       const endpoints = endpointsFor(pair, source, target);
-      const paths = pathsForPair(pair.key, endpoints.source, endpoints.target);
-      elements.get('main')?.setAttribute('d', paths.forward);
+      const paths = pathsForPair(
+        pair.key,
+        endpoints.source,
+        endpoints.target,
+        pair.directions.size === 2,
+      );
+      elements.get('main-forward')?.setAttribute('d', paths.forward);
+      elements.get('main-reverse')?.setAttribute('d', paths.reverse);
 
       const highlight = highlightFor(pair);
       const direction = highlight ? directionFor(highlight.edge, pair) : 'a-to-b';
@@ -356,7 +396,12 @@
       const target = currentPositions.get(pair.bId);
       if (!source || !target) continue;
       const endpoints = endpointsFor(pair, source, target);
-      const paths = pathsForPair(pair.key, endpoints.source, endpoints.target);
+      const paths = pathsForPair(
+        pair.key,
+        endpoints.source,
+        endpoints.target,
+        pair.directions.size === 2,
+      );
       const path = directionFor(edge, pair) === 'a-to-b' ? paths.forward : paths.reverse;
       messageMotions.get(messageEventKey(edge))?.setAttribute('path', path);
     }
@@ -386,7 +431,12 @@
     {@const stroke = prominent ? 'var(--color-foreground)' : style.stroke}
     {#if source && target}
       {@const endpoints = endpointsFor(pair, source, target)}
-      {@const paths = pathsForPair(pair.key, endpoints.source, endpoints.target)}
+      {@const paths = pathsForPair(
+        pair.key,
+        endpoints.source,
+        endpoints.target,
+        pair.directions.size === 2,
+      )}
       {@const representativeEdge =
         latestMember(pair, (edge) => edge.type === pair.type) ?? pair.latestEdge}
       {@const labelEdge = latestMember(
@@ -420,26 +470,31 @@
           </linearGradient>
         </defs>
       {/if}
-      <path
-        use:registerPairGeometry={{ pairKey: pair.key, part: 'main' }}
-        class="edge-path"
-        d={paths.forward}
-        pathLength="1"
-        fill="none"
-        {stroke}
-        stroke-width={prominent ? 1.5 : style.strokeWidth}
-        stroke-linecap="round"
-        opacity={edgeOpacity}
-        style:animation-duration={`${drawDuration}ms`}
-        data-edge-id={representativeEdge.id}
-        data-pair-key={pair.key}
-        data-edge-count={pair.members.length}
-        data-edge-type={pair.type}
-        data-active={pair.isActive}
-        data-highlighted={highlighted}
-        data-dimmed={dimmed}
-        data-last-activity-at={pair.timestamp}
-      />
+      {#each directedPathsFor(pair, paths) as directedPath (directedPath.direction)}
+        <path
+          use:registerPairGeometry={{ pairKey: pair.key, part: directedPath.part }}
+          class="edge-path"
+          d={directedPath.path}
+          pathLength="1"
+          fill="none"
+          {stroke}
+          stroke-width={prominent ? 1.5 : style.strokeWidth}
+          stroke-dasharray={style.strokeDasharray === 'none' ? undefined : style.strokeDasharray}
+          stroke-linecap="round"
+          vector-effect="non-scaling-stroke"
+          opacity={edgeOpacity}
+          style:animation-duration={`${drawDuration}ms`}
+          data-edge-id={representativeEdge.id}
+          data-pair-key={pair.key}
+          data-edge-count={pair.members.length}
+          data-edge-type={pair.type}
+          data-direction={directedPath.direction}
+          data-active={pair.isActive}
+          data-highlighted={highlighted}
+          data-dimmed={dimmed}
+          data-last-activity-at={pair.timestamp}
+        />
+      {/each}
       {#if highlight && motionEnabled}
         {#key `${pair.key}:${highlight.edge.timestamp}:${highlight.kind}`}
           <path
@@ -454,6 +509,7 @@
             stroke={`url(#${gradientId})`}
             stroke-width={(prominent ? 1.5 : style.strokeWidth) + 0.5}
             stroke-linecap="round"
+            vector-effect="non-scaling-stroke"
             opacity={dimmed ? edgeOpacity : 1}
             style:animation-duration={highlightDuration(highlight.kind)}
             style:animation-delay={`${drawDuration}ms`}
@@ -471,8 +527,9 @@
           class="edge-terminal"
           cx={endpoints.source.x}
           cy={endpoints.source.y}
-          r="2.25"
+          r="3"
           fill={stroke}
+          vector-effect="non-scaling-stroke"
           opacity={terminalOpacity}
           data-direction="b-to-a"
           style:animation-delay={`${Math.max(0, drawDuration - 80)}ms`}
@@ -484,8 +541,9 @@
           class="edge-terminal"
           cx={endpoints.target.x}
           cy={endpoints.target.y}
-          r="2.25"
+          r="3"
           fill={stroke}
+          vector-effect="non-scaling-stroke"
           opacity={terminalOpacity}
           data-direction="a-to-b"
           style:animation-delay={`${Math.max(0, drawDuration - 80)}ms`}
@@ -495,25 +553,30 @@
         {@const labelWidth = 12 + label.length * 6}
         <g
           use:registerPairGeometry={{ pairKey: pair.key, part: 'label' }}
+          class="edge-count-label"
           transform={`translate(${(endpoints.source.x + endpoints.target.x) / 2} ${(endpoints.source.y + endpoints.target.y) / 2})`}
           opacity={Math.min(1, opacityFor(pair) + 0.18)}
+          data-highlighted={highlighted}
         >
-          <rect
-            x={-labelWidth / 2}
-            y="-8"
-            width={labelWidth}
-            height="16"
-            rx="8"
-            fill="var(--color-card)"
-            stroke="var(--color-border)"
-            stroke-width="1"
-          />
-          <text
-            text-anchor="middle"
-            dominant-baseline="central"
-            fill="var(--color-muted-foreground)"
-            font-size="10">{label}</text
-          >
+          <g class="edge-count-label-content">
+            <rect
+              x={-labelWidth / 2}
+              y="-8"
+              width={labelWidth}
+              height="16"
+              rx="8"
+              fill="var(--color-card)"
+              stroke="var(--color-border)"
+              stroke-width="1"
+              vector-effect="non-scaling-stroke"
+            />
+            <text
+              text-anchor="middle"
+              dominant-baseline="central"
+              fill="var(--color-muted-foreground)"
+              font-size="10">{label}</text
+            >
+          </g>
         </g>
       {/if}
     {/if}
@@ -524,7 +587,12 @@
     {@const target = pair ? (positions.get(pair.bId) ?? nodeById.get(pair.bId)) : undefined}
     {#if pair && source && target}
       {@const endpoints = endpointsFor(pair, source, target)}
-      {@const paths = pathsForPair(pair.key, endpoints.source, endpoints.target)}
+      {@const paths = pathsForPair(
+        pair.key,
+        endpoints.source,
+        endpoints.target,
+        pair.directions.size === 2,
+      )}
       {@const messagePath = directionFor(edge, pair) === 'a-to-b' ? paths.forward : paths.reverse}
       <g
         class="message-pill"
@@ -584,6 +652,11 @@
   }
   .edge-terminal {
     animation: edge-terminal-in 120ms ease-out both;
+  }
+  .edge-count-label-content {
+    transform: scale(var(--edge-label-scale, 1));
+    transform-box: fill-box;
+    transform-origin: center;
   }
   :global(.edge-layer[data-motion-enabled='false']) :is(.edge-highlight, .message-pill) {
     display: none;

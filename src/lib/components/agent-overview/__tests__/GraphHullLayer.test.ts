@@ -90,8 +90,9 @@ describe('GraphHullLayer', () => {
     expect(container.querySelectorAll('.task-hull-softener')).toHaveLength(1);
     for (const fill of container.querySelectorAll('.task-hull-fill')) {
       expect(fill.getAttribute('fill')).toBe('var(--color-foreground)');
-      expect(fill.hasAttribute('stroke')).toBe(false);
     }
+    expect(container.querySelector('.task-hull-softener')?.hasAttribute('stroke')).toBe(false);
+    expect(container.querySelector('.task-hull')?.getAttribute('stroke')).toBe('none');
   });
 
   it('renders an agent in every task group it is assigned to', () => {
@@ -143,6 +144,12 @@ describe('GraphHullLayer', () => {
     expect(
       container.querySelector('[data-task-id="task:one"]')?.getAttribute('data-highlighted'),
     ).toBe('true');
+    expect(container.querySelector('[data-task-id="task:one"]')?.getAttribute('stroke-width')).toBe(
+      '0.75',
+    );
+    expect(
+      container.querySelector('[data-task-id="task:one"]')?.getAttribute('vector-effect'),
+    ).toBe('non-scaling-stroke');
     expect(container.querySelector('[data-task-id="task:two"]')?.getAttribute('data-dimmed')).toBe(
       'true',
     );

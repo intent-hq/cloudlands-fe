@@ -24,10 +24,14 @@
   import { createGraphRenderIndexMemo } from './graph-render-index';
 
   export interface GraphLayers {
+    agents?: boolean;
+    tasks?: boolean;
     files: boolean;
     notes: boolean;
     messages: boolean;
   }
+
+  export type GraphZoomAction = 'in' | 'out' | 'reset';
 
   export type GraphOpenEvent = MouseEvent | KeyboardEvent;
 
@@ -39,7 +43,10 @@
     onFileClick: (path: string, event: GraphOpenEvent) => void;
     layers: GraphLayers;
     fitRequest?: number;
+    zoomRequest?: { id: number; action: GraphZoomAction };
+    onZoomChange?: (scale: number) => void;
     showFitControl?: boolean;
+    showEmptyState?: boolean;
     playbackSpeed?: PlaybackSpeed;
   }
 
@@ -51,7 +58,10 @@
     onFileClick,
     layers,
     fitRequest = 0,
+    zoomRequest,
+    onZoomChange,
     showFitControl = true,
+    showEmptyState = true,
     playbackSpeed = 1,
   }: Props = $props();
   let container: HTMLDivElement;
@@ -99,7 +109,11 @@
 
   const visibleGraph = $derived.by(() => {
     const baseNodes = graph.nodes.filter(
-      (node) => (node.type !== 'file' || layers.files) && (node.type !== 'note' || layers.notes),
+      (node) =>
+        (node.type !== 'agent' || layers.agents !== false) &&
+        (node.type !== 'task' || layers.tasks !== false) &&
+        (node.type !== 'file' || layers.files) &&
+        (node.type !== 'note' || layers.notes),
     );
     const nodeById = new Map(baseNodes.map((node) => [node.id, node]));
     const resourceEdges = graph.edges.filter(
@@ -163,8 +177,10 @@
     }
     return ids;
   });
+  const renderedAgentLabelPx = $derived(zoomScale * Math.max(13, Math.min(13 / zoomScale, 31.5)));
+  const renderedTaskLabelPx = $derived(zoomScale * Math.max(17, Math.min(17 / zoomScale, 40)));
   const zoomBand = $derived<ZoomBand>(
-    zoomScale >= 0.6 ? 'full' : zoomScale >= 0.35 ? 'mid' : 'far',
+    renderedAgentLabelPx >= 11 ? 'full' : renderedTaskLabelPx >= 12 ? 'mid' : 'far',
   );
 
   const focusOrder = $derived.by(() => {
@@ -316,6 +332,13 @@
 
   function fitToView(): void {
     applyFit(false);
+  }
+
+  function applyZoomRequest(action: GraphZoomAction): void {
+    if (!zoomBehavior || !container) return;
+    const selection = select(container).interrupt('graph-fit').interrupt('graph-focus');
+    if (action === 'reset') selection.call(zoomBehavior.scaleTo, 1);
+    else selection.call(zoomBehavior.scaleBy, action === 'in' ? 1.25 : 0.8);
   }
 
   function applyFit(coalesce: boolean): void {
@@ -679,6 +702,10 @@
   });
 
   $effect(() => {
+    if (zoomRequest?.id && layout) applyZoomRequest(zoomRequest.action);
+  });
+
+  $effect(() => {
     const ids = new Set(visibleGraph.nodes.map((node) => node.id));
     if (selectedNodeId && !ids.has(selectedNodeId)) selectedNodeId = null;
     if (keyboardNodeId && !ids.has(keyboardNodeId)) keyboardNodeId = null;
@@ -714,6 +741,7 @@
           select(container).interrupt('graph-focus');
         }
         zoomScale = event.transform.k;
+        onZoomChange?.(zoomScale);
         if (scene) {
           scene.style.transform = `translate(${event.transform.x}px, ${event.transform.y}px) scale(${event.transform.k})`;
         }
@@ -765,17 +793,20 @@
   data-agent-activity-graph
 >
   {#if !hasPrimaryNodes}
-    <div class="absolute inset-0 flex items-center justify-center text-center text-subtle">
-      <div>
-        <p class="text-lg font-medium">{m.agentOverview_hierarchyGraph_noAgents_title()}</p>
-        <p class="mt-1 text-sm">{m.agentOverview_hierarchyGraph_noAgents_description()}</p>
+    {#if showEmptyState}
+      <div class="absolute inset-0 flex items-center justify-center text-center text-subtle">
+        <div>
+          <p class="text-lg font-medium">{m.agentOverview_hierarchyGraph_noAgents_title()}</p>
+          <p class="mt-1 text-sm">{m.agentOverview_hierarchyGraph_noAgents_description()}</p>
+        </div>
       </div>
-    </div>
+    {/if}
   {:else}
     <div
       bind:this={scene}
       class="graph-scene absolute inset-0 origin-top-left will-change-transform"
       data-zoom-band={zoomBand}
+      style:--zoom={zoomScale}
     >
       <GraphHullLayer
         bind:this={hullLayer}
@@ -824,12 +855,12 @@
               tabindex={node.id === (keyboardNodeId ?? focusOrder[0]?.id) ? 0 : -1}
               {...nodeEvents(node)}
             />
-            {#if visibleGraph.collapsedByAgent.has(node.id)}
+            {#if visibleGraph.collapsedByAgent.has(node.id) && zoomBand !== 'far'}
               <Button
                 type="button"
-                variant="default"
+                variant="ghost-light"
                 size="xs"
-                class="absolute left-1/2 top-full mt-1 h-6 -translate-x-1/2 rounded-full text-xs text-muted-foreground"
+                class="absolute left-1/2 top-full mt-1 h-5 min-w-5 -translate-x-1/2 rounded-full px-1.5 type-caption text-muted-foreground"
                 aria-label={m.agentOverview_resourceExpander_showMore_ariaLabel({
                   count: visibleGraph.collapsedByAgent.get(node.id) ?? 0,
                   agent: node.name,

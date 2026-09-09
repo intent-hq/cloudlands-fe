@@ -13,12 +13,13 @@ export interface KeyedHullMember extends HullMember {
 }
 
 export const HULL_PADDING = 18;
+export const TWO_MEMBER_HULL_PADDING = 16;
 export const HULL_FILL_OPACITIES = {
-  dimmed: 0.006,
-  focusedWorking: 0.05,
-  focusedIdle: 0.0375,
-  working: 0.04,
-  idle: 0.0275,
+  dimmed: 0.012,
+  focusedWorking: 0.12,
+  focusedIdle: 0.06,
+  working: 0.09,
+  idle: 0.035,
   softenerRatio: 0.34,
 } as const;
 const HULL_SAMPLES = 16;
@@ -34,6 +35,10 @@ function paddedCircle(member: HullMember, padding: number): HullPoint[] {
     member.x + direction.x * radius,
     member.y + direction.y * radius,
   ]);
+}
+
+export function taskHullPadding(memberCount: number, padding = HULL_PADDING): number {
+  return memberCount === 2 ? Math.min(padding, TWO_MEMBER_HULL_PADDING) : padding;
 }
 
 /** Returns a convex outline around circularly padded graph members. */

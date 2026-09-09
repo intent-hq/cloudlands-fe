@@ -42,6 +42,28 @@ describe('TaskAnchorNode', () => {
     await fireEvent.click(button);
     expect(onclick).toHaveBeenCalledOnce();
   });
+
+  it('keeps a status mark in the far band and restores the title when focused', async () => {
+    const node: TaskNode = {
+      ...physics,
+      id: 'task:ship',
+      type: 'task',
+      taskId: 'ship',
+      title: 'Ship activity graph',
+      state: 'in_progress',
+      dependsOn: [],
+    };
+    const view = render(TaskAnchorNode, { props: { node, zoomBand: 'far' } });
+    const button = screen.getByRole('button', { name: node.title });
+
+    expect(button.title).toBe(node.title);
+    expect(button.querySelector('.task-status-dot')).toBeTruthy();
+    expect(screen.queryByText(node.title)).toBeNull();
+
+    await view.rerender({ node, zoomBand: 'far', focusState: 'focused' });
+    expect(screen.getByText(node.title)).toBeTruthy();
+    expect(button.querySelector('.task-status-dot')).toBeNull();
+  });
 });
 
 describe('AgentOrbNode', () => {
@@ -69,6 +91,23 @@ describe('AgentOrbNode', () => {
     );
     await fireEvent.click(button);
     expect(onclick).toHaveBeenCalledOnce();
+  });
+
+  it('keeps its counter-scaled name rendered outside the full zoom band', () => {
+    const node: AgentNode = {
+      ...physics,
+      id: 'agent:builder',
+      type: 'agent',
+      agentId: 'builder',
+      name: 'Graph builder',
+      isCoordinator: false,
+      status: 'idle',
+      createdAt: timestamp,
+    };
+    render(AgentOrbNode, { props: { node, zoomBand: 'mid' } });
+
+    const label = screen.getByText(node.name);
+    expect(getComputedStyle(label).opacity).not.toBe('0');
   });
 });
 
@@ -112,5 +151,26 @@ describe('ResourceNode', () => {
     const button = screen.getByRole('button', { name: 'Implementation spec' });
     expect(button.getAttribute('data-external')).toBe('false');
     expect(button.getAttribute('data-access')).toBe('read');
+  });
+
+  it('uses a fixed screen-space dot in mid zoom and restores the label when focused', async () => {
+    const node: NoteNode = {
+      ...physics,
+      id: 'note:spec',
+      type: 'note',
+      noteId: 'spec',
+      title: 'Implementation spec',
+      lastAction: 'read',
+      lastActionTimestamp: timestamp,
+    };
+    const view = render(ResourceNode, { props: { node, access: 'read', zoomBand: 'mid' } });
+    const button = screen.getByRole('button', { name: node.title });
+
+    expect(button.querySelector('.resource-dot')).toBeTruthy();
+    expect(screen.queryByText(node.title)).toBeNull();
+
+    await view.rerender({ node, access: 'read', zoomBand: 'mid', focusState: 'focused' });
+    expect(screen.getByText(node.title)).toBeTruthy();
+    expect(button.querySelector('.resource-dot')).toBeNull();
   });
 });

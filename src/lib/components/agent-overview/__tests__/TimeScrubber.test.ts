@@ -33,14 +33,22 @@ describe('TimeScrubber', () => {
       },
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: /play/i }));
+    expect(screen.getByRole('toolbar', { name: 'Playback' })).toBeTruthy();
+    expect(
+      screen.getByRole('slider', { name: 'Playback position' }).getAttribute('aria-valuetext'),
+    ).toBe('12:01:00 AM');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Play replay' }));
     await view.rerender({ isPlaying: true });
-    await fireEvent.click(screen.getByRole('button', { name: /pause/i }));
-    await fireEvent.click(screen.getByRole('button', { name: '1×' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Pause replay' }));
+    const speedSelect = screen.getByRole('button', { name: 'Playback speed' });
+    await fireEvent.keyDown(speedSelect, { key: 'Enter' });
+    await fireEvent.keyDown(speedSelect, { key: 'ArrowDown' });
+    await fireEvent.keyDown(speedSelect, { key: 'Enter' });
     await fireEvent.input(screen.getByRole('slider'), {
       target: { value: String(Date.parse(start) + 30_000) },
     });
-    await fireEvent.click(screen.getByRole('button', { name: 'Live' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Jump to live' }));
 
     expect(onTogglePlay).toHaveBeenCalledTimes(2);
     expect(onSpeedChange).toHaveBeenCalledWith(2);

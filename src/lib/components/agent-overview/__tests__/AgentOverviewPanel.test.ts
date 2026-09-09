@@ -210,15 +210,23 @@ describe('AgentOverviewPanel', () => {
     );
     expect(screen.getByText('No agents yet')).toBeTruthy();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Live' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Jump to live' }));
     expect(screen.getByRole('button', { name: /Agent One/ })).toBeTruthy();
   });
 
   it('renders graph stats and keeps layer toggles in component state', async () => {
     renderPanel();
 
-    expect(screen.getByText('1 agent active · 1 task · 1 file')).toBeTruthy();
-    expect(screen.getByText('Legend')).toBeTruthy();
+    expect(
+      screen.getAllByRole('button', { name: '1 agent' })[0]?.getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(screen.getAllByRole('button', { name: '1 task' })[0]?.getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(screen.getAllByRole('button', { name: '1 file' })[0]?.getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Legend' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /one\.ts/ })).toBeTruthy();
     expect(mocks.dispatch).toHaveBeenCalledWith(loadEventsRequested('workspace-one'));
     expect(mocks.dispatch).toHaveBeenCalledWith(loadGraphHistoryRequested('workspace-one'));
@@ -228,6 +236,22 @@ describe('AgentOverviewPanel', () => {
 
     expect(filesToggle.getAttribute('aria-pressed')).toBe('false');
     expect(screen.queryByRole('button', { name: /one\.ts/ })).toBeNull();
+  });
+
+  it('exposes the grouped graph legend and dismisses it with Escape', async () => {
+    renderPanel();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Legend' }));
+    const legend = screen.getByRole('dialog', { name: 'Legend' });
+    expect(screen.getByRole('heading', { name: 'Nodes' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Edges' })).toBeTruthy();
+    for (const group of ['Structural', 'Resource', 'Communication', 'Temporal']) {
+      expect(screen.getByText(group)).toBeTruthy();
+    }
+
+    await fireEvent.keyDown(legend, { key: 'Escape' });
+    await tick();
+    expect(screen.queryByRole('dialog', { name: 'Legend' })).toBeNull();
   });
 
   it('routes agent, task, note, and file open gestures through panel navigation actions', async () => {
@@ -279,7 +303,7 @@ describe('AgentOverviewPanel', () => {
     renderPanel({ ...graph, maxTime: end, eventTimes: [timestamp, middle, end] });
     callbacks.length = 0;
 
-    await fireEvent.click(screen.getByRole('button', { name: /play/i }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Play replay' }));
     await tick();
     expect(mocks.selectGraphStateAt.select).toHaveBeenCalledOnce();
 
