@@ -153,7 +153,7 @@ describe('waitForCaptureStability', () => {
     expect(window.requestAnimationFrame).toHaveBeenCalledTimes(4);
   });
 
-  it('publishes each stable generation and returns to waiting on marker removal', async () => {
+  it('orders waiting and stable generations, rejects stale settlement, and cleans up', async () => {
     setFonts(Promise.resolve());
     const frames = useManualFrames();
     const root = document.createElement('div');
@@ -162,8 +162,7 @@ describe('waitForCaptureStability', () => {
     marker.dataset.generation = '1';
     root.append(marker);
     const controller = new AbortController();
-    const waiting: number[] = [];
-    const stable: number[] = [];
+    const events: string[] = [];
     const watching = watchCaptureStability(
       root,
       {
@@ -176,24 +175,31 @@ describe('waitForCaptureStability', () => {
         timeoutMs: 1_000,
       },
       {
-        onWaiting: (generation) => waiting.push(generation),
-        onStable: (_result, generation) => stable.push(generation),
+        onWaiting: (generation) => events.push(`waiting:${generation}`),
+        onStable: (_result, generation) => events.push(`stable:${generation}`),
       },
     );
     await frames.next();
     await frames.next();
-    expect({ waiting, stable }).toEqual({ waiting: [1], stable: [1] });
+    expect(events).toEqual(['waiting:1', 'stable:1']);
 
     marker.dataset.ready = 'false';
-    await vi.waitFor(() => expect(waiting).toEqual([1, 2]));
+    await vi.waitFor(() => expect(events).toEqual(['waiting:1', 'stable:1', 'waiting:2']));
     marker.dataset.generation = '2';
     marker.dataset.ready = 'true';
     await frames.next();
+    marker.dataset.generation = '3';
     await frames.next();
-    expect(stable).toEqual([1, 2]);
+    expect(events).toEqual(['waiting:1', 'stable:1', 'waiting:2']);
+    await frames.next();
+    await frames.next();
+    expect(events).toEqual(['waiting:1', 'stable:1', 'waiting:2', 'stable:2']);
 
     controller.abort();
     await expect(watching).rejects.toMatchObject({ name: 'AbortError' });
+    marker.dataset.ready = 'false';
+    await Promise.resolve();
+    expect(events).toEqual(['waiting:1', 'stable:1', 'waiting:2', 'stable:2']);
   });
 
   it('disconnects the readiness observer when a delayed marker wait is cancelled', async () => {

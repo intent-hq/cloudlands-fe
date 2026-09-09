@@ -6,6 +6,22 @@ import {
 
 const baseUrl = process.env.UI_PREVIEW_BASE_URL;
 
+interface ReadinessSnapshot {
+  sceneReady: string | null;
+  sceneStable: string | null;
+  sceneStatus: string | null;
+  workbenchReady: string | null;
+  workbenchGeneration: string | null;
+  unsettledRendererCount: number;
+}
+
+interface ReadinessObservation {
+  history: ReadinessSnapshot[];
+  observer: MutationObserver;
+}
+
+type ReadinessWindow = Window & { __readinessObservation?: ReadinessObservation };
+
 test.skip(!baseUrl, 'Set UI_PREVIEW_BASE_URL to the running diagram preview server.');
 test.describe.configure({ mode: 'serial', timeout: 120_000 });
 
@@ -20,6 +36,95 @@ async function openSandbox(page: Page, query: string) {
     { timeout: 90_000 },
   );
   await expect(page.locator('.mermaid-svg > svg:not([data-layout-settled="true"])')).toHaveCount(0);
+}
+
+async function beginReadinessObservation(page: Page) {
+  await page.evaluate(() => {
+    const scene = document.querySelector<HTMLElement>('[data-testid="catalog-scene"]');
+    const workbench = document.querySelector<HTMLElement>('[data-diagram-workbench]');
+    if (!scene || !workbench) throw new Error('Readiness observation targets are unavailable.');
+    const readinessWindow = window as ReadinessWindow;
+    readinessWindow.__readinessObservation?.observer.disconnect();
+    const history: ReadinessSnapshot[] = [];
+    const record = () => {
+      const currentWorkbench = scene.querySelector<HTMLElement>('[data-diagram-workbench]');
+      const snapshot: ReadinessSnapshot = {
+        sceneReady: scene.dataset.previewReady ?? null,
+        sceneStable: scene.dataset.previewStable ?? null,
+        sceneStatus: scene.dataset.previewStatus ?? null,
+        workbenchReady: currentWorkbench?.dataset.diagramWorkbenchReady ?? null,
+        workbenchGeneration: currentWorkbench?.dataset.diagramWorkbenchGeneration ?? null,
+        unsettledRendererCount: [
+          ...(currentWorkbench?.querySelectorAll<HTMLElement>(
+            '.diagram-renderer, .mermaid-renderer',
+          ) ?? []),
+        ].filter(
+          (renderer) =>
+            renderer.dataset.diagramSettled === 'false' ||
+            renderer.dataset.renderSettled === 'false',
+        ).length,
+      };
+      if (JSON.stringify(history.at(-1)) !== JSON.stringify(snapshot)) history.push(snapshot);
+    };
+    const observer = new MutationObserver(record);
+    observer.observe(scene, {
+      attributes: true,
+      attributeFilter: [
+        'data-preview-ready',
+        'data-preview-stable',
+        'data-preview-status',
+        'data-diagram-settled',
+        'data-diagram-workbench-ready',
+        'data-diagram-workbench-generation',
+      ],
+      childList: true,
+      subtree: true,
+    });
+    readinessWindow.__readinessObservation = { history, observer };
+    record();
+  });
+}
+
+async function readReadinessHistory(page: Page): Promise<ReadinessSnapshot[]> {
+  return page.evaluate(() => (window as ReadinessWindow).__readinessObservation?.history ?? []);
+}
+
+async function endReadinessObservation(page: Page): Promise<ReadinessSnapshot[]> {
+  return page.evaluate(() => {
+    const readinessWindow = window as ReadinessWindow;
+    const observation = readinessWindow.__readinessObservation;
+    observation?.observer.disconnect();
+    delete readinessWindow.__readinessObservation;
+    return observation?.history ?? [];
+  });
+}
+
+function hasCompleteReadinessCycle(history: ReadinessSnapshot[]): boolean {
+  const rendererWaiting = history.findIndex(({ unsettledRendererCount }) =>
+    Boolean(unsettledRendererCount),
+  );
+  if (rendererWaiting < 0) return false;
+  const workbenchWaiting = history.findIndex(
+    ({ workbenchReady }, index) => index >= rendererWaiting && workbenchReady === 'false',
+  );
+  if (workbenchWaiting < 0) return false;
+  const sceneWaiting = history.findIndex(
+    ({ sceneReady, sceneStable, sceneStatus }, index) =>
+      index >= workbenchWaiting &&
+      sceneReady === 'false' &&
+      sceneStable === 'false' &&
+      sceneStatus === 'loading',
+  );
+  if (sceneWaiting < 0) return false;
+  return history.some(
+    ({ sceneReady, sceneStable, sceneStatus, workbenchReady, unsettledRendererCount }, index) =>
+      index > sceneWaiting &&
+      sceneReady === 'true' &&
+      sceneStable === 'true' &&
+      sceneStatus === 'ready' &&
+      workbenchReady === 'true' &&
+      unsettledRendererCount === 0,
+  );
 }
 
 test('renders every registered diagram case together without the dense review shell', async ({
@@ -534,6 +639,7 @@ test('keeps 30 consecutive 640px readiness generations active and stable', async
     }));
 
   for (let cycle = 1; cycle <= 30; cycle += 1) {
+    await beginReadinessObservation(page);
     const priorWorkbenchGeneration = Number(
       await workbench.getAttribute('data-diagram-workbench-generation'),
     );
@@ -558,7 +664,11 @@ test('keeps 30 consecutive 640px readiness generations active and stable', async
         .first()
         .evaluate((button) => (button as HTMLButtonElement).click());
     }
-    await expect(scene).toHaveAttribute('data-preview-ready', 'false');
+    await expect
+      .poll(async () => hasCompleteReadinessCycle(await readReadinessHistory(page)), {
+        message: `Readiness cycle ${cycle} did not publish its complete lifecycle`,
+      })
+      .toBe(true);
     await expect(scene).toHaveAttribute('data-preview-ready', 'true', { timeout: 90_000 });
     await expect(scene).toHaveAttribute('data-preview-stable', 'true');
     await expect(scene).toHaveAttribute('data-preview-width', '640');
@@ -588,6 +698,7 @@ test('keeps 30 consecutive 640px readiness generations active and stable', async
           ready === 'true' && active === settled && active === layout,
       ),
     ).toBe(true);
+    await endReadinessObservation(page);
   }
 
   await expect
