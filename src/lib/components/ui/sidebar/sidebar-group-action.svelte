@@ -43,7 +43,13 @@
 {#if child}
   {@render child({ props: mergedProps })}
 {:else}
-  <Button bind:ref variant="ghost" size="icon-compact" {...mergedProps as ButtonProps}>
+  <Button
+    bind:ref
+    variant="ghost"
+    size="icon-compact"
+    {...mergedProps as ButtonProps}
+    aria-label={mergedProps['aria-label']}
+  >
     {@render children?.()}
   </Button>
 {/if}
