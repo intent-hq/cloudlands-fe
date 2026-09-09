@@ -5157,9 +5157,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:badge:sema
                   "With icon"
                 <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-primary duration-spring-fast ease-spring-fast font-medium gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-full shrink-0 text-primary-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-removable="true" data-slot="badge">
                   "Removable"
-                  <button aria-label="Remove badge" class="-mr-1 active:bg-active bg-transparent duration-spring-fast ease-spring-fast hover:bg-hover inline-flex items-center justify-center motion-reduce:transition-none rounded-full size-4 text-current transition-colors" data-slot="badge-remove" type="button">
-                    <span aria-hidden="true">
-                      "×"
+                  <div>
+                    <button aria-label="Remove badge" class="-mr-1 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-transparent cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast font-medium gap-1.5 group/button hover:bg-hover inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-full shrink-0 size-4 text-current transition-colors type-caption whitespace-nowrap" data-slot="badge-remove" type="button">
+                      <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <span aria-hidden="true">
+                            "×"
                 <a class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-primary duration-spring-fast ease-spring-fast font-medium gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-full shrink-0 text-primary-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge" href="#badge-preview">
                   "Focusable badge link"
                 <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:bg-active [a&]:hover:bg-hover aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-muted duration-spring-fast ease-spring-fast font-medium gap-1 h-5 inline-flex items-center justify-center max-w-full motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-full shrink-0 text-foreground transition-[background-color,color,box-shadow,filter] truncate type-caption w-fit whitespace-nowrap" data-slot="badge">
@@ -5759,27 +5763,27 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:checkbox:c
             <div class="flex flex-wrap gap-3 items-center max-w-full min-w-0" data-catalog-renderer-fixture="checkbox-state-matrix">
               <div class="gap-3 grid" data-catalog-rendered-state="unchecked checked mixed disabled required-invalid">
                 <label class="flex gap-2 items-center">
-                  <button aria-checked="false" aria-label="Catalog checkbox" aria-readonly="false" aria-required="false" class="active:bg-active after:-inset-1.5 after:absolute after:content-[''] bg-card border-[1.5px] border-border checkbox-root cursor-pointer data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary data-[state=checked]:text-primary-foreground data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:hover:bg-primary data-[state=indeterminate]:text-primary-foreground duration-spring-fast ease-spring-fast h-4 hover:bg-hover hover:border-input inline-flex items-center justify-center motion-reduce:transition-none relative rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 transition-[border-color,background-color,box-shadow,opacity] w-4" data-checkbox-root="" data-state="unchecked" id="" role="checkbox" type="button">
+                  <button aria-checked="false" aria-label="Catalog checkbox" aria-readonly="false" aria-required="false" class="active:bg-active after:-inset-1.5 after:absolute after:content-[''] bg-card border-[1.5px] border-border checkbox-root cursor-pointer data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary data-[state=checked]:text-primary-foreground data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:hover:bg-primary data-[state=indeterminate]:text-primary-foreground duration-spring-fast ease-spring-fast focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:ring-0 focus-visible:shadow-none h-4 hover:bg-hover hover:border-input inline-flex items-center justify-center motion-reduce:transition-none relative rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 transition-[border-color,background-color,box-shadow,opacity] w-4" data-checkbox-root="" data-state="unchecked" id="" role="checkbox" type="button">
                     <svg aria-hidden="true" class="checkbox-mark size-[75%] svelte-<scope>">
                       <path class="svelte-<scope>">
                   "Interactive"
                 <label class="flex gap-2 items-center">
-                  <button aria-checked="true" aria-label="Checked checkbox" aria-readonly="false" aria-required="false" class="active:bg-active after:-inset-1.5 after:absolute after:content-[''] bg-card border-[1.5px] border-border checkbox-root cursor-pointer data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary data-[state=checked]:text-primary-foreground data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:hover:bg-primary data-[state=indeterminate]:text-primary-foreground duration-spring-fast ease-spring-fast h-4 hover:bg-hover hover:border-input inline-flex items-center justify-center motion-reduce:transition-none relative rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 transition-[border-color,background-color,box-shadow,opacity] w-4" data-checkbox-root="" data-state="checked" id="" role="checkbox" type="button">
+                  <button aria-checked="true" aria-label="Checked checkbox" aria-readonly="false" aria-required="false" class="active:bg-active after:-inset-1.5 after:absolute after:content-[''] bg-card border-[1.5px] border-border checkbox-root cursor-pointer data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary data-[state=checked]:text-primary-foreground data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:hover:bg-primary data-[state=indeterminate]:text-primary-foreground duration-spring-fast ease-spring-fast focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:ring-0 focus-visible:shadow-none h-4 hover:bg-hover hover:border-input inline-flex items-center justify-center motion-reduce:transition-none relative rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 transition-[border-color,background-color,box-shadow,opacity] w-4" data-checkbox-root="" data-state="checked" id="" role="checkbox" type="button">
                     <svg aria-hidden="true" class="checkbox-mark size-[75%] svelte-<scope>">
                       <path class="drawn svelte-<scope>">
                   "Checked"
                 <label class="flex gap-2 items-center">
-                  <button aria-checked="mixed" aria-label="Mixed checkbox" aria-readonly="false" aria-required="false" class="active:bg-active after:-inset-1.5 after:absolute after:content-[''] bg-card border-[1.5px] border-border checkbox-root cursor-pointer data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary data-[state=checked]:text-primary-foreground data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:hover:bg-primary data-[state=indeterminate]:text-primary-foreground duration-spring-fast ease-spring-fast h-4 hover:bg-hover hover:border-input inline-flex items-center justify-center motion-reduce:transition-none relative rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 transition-[border-color,background-color,box-shadow,opacity] w-4" data-checkbox-root="" data-state="indeterminate" id="" role="checkbox" type="button">
+                  <button aria-checked="mixed" aria-label="Mixed checkbox" aria-readonly="false" aria-required="false" class="active:bg-active after:-inset-1.5 after:absolute after:content-[''] bg-card border-[1.5px] border-border checkbox-root cursor-pointer data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary data-[state=checked]:text-primary-foreground data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:hover:bg-primary data-[state=indeterminate]:text-primary-foreground duration-spring-fast ease-spring-fast focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:ring-0 focus-visible:shadow-none h-4 hover:bg-hover hover:border-input inline-flex items-center justify-center motion-reduce:transition-none relative rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 transition-[border-color,background-color,box-shadow,opacity] w-4" data-checkbox-root="" data-state="indeterminate" id="" role="checkbox" type="button">
                     <svg aria-hidden="true" class="checkbox-mark size-[75%] svelte-<scope>">
                       <path class="checkbox-line svelte-<scope>">
                   "Mixed"
                 <label class="flex gap-2 items-center">
-                  <button aria-checked="false" aria-label="Disabled checkbox" aria-readonly="false" aria-required="false" class="active:bg-active after:-inset-1.5 after:absolute after:content-[''] bg-muted/40 border-[1.5px] border-border checkbox-root cursor-not-allowed data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary data-[state=checked]:text-primary-foreground data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:hover:bg-primary data-[state=indeterminate]:text-primary-foreground duration-spring-fast ease-spring-fast h-4 hover:bg-hover hover:border-border inline-flex items-center justify-center motion-reduce:transition-none opacity-60 relative rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 transition-[border-color,background-color,box-shadow,opacity] w-4" data-checkbox-root="" data-disabled="" data-state="unchecked" disabled="" id="" role="checkbox" type="button">
+                  <button aria-checked="false" aria-label="Disabled checkbox" aria-readonly="false" aria-required="false" class="active:bg-active after:-inset-1.5 after:absolute after:content-[''] bg-muted/40 border-[1.5px] border-border checkbox-root cursor-not-allowed data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary data-[state=checked]:text-primary-foreground data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:hover:bg-primary data-[state=indeterminate]:text-primary-foreground duration-spring-fast ease-spring-fast focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:ring-0 focus-visible:shadow-none h-4 hover:bg-hover hover:border-border inline-flex items-center justify-center motion-reduce:transition-none opacity-60 relative rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 transition-[border-color,background-color,box-shadow,opacity] w-4" data-checkbox-root="" data-disabled="" data-state="unchecked" disabled="" id="" role="checkbox" type="button">
                     <svg aria-hidden="true" class="checkbox-mark size-[75%] svelte-<scope>">
                       <path class="svelte-<scope>">
                   "Disabled"
                 <div>
-                  <button aria-checked="false" aria-describedby="checkbox-error" aria-label="Required checkbox" aria-readonly="false" aria-required="true" class="active:bg-active after:-inset-1.5 after:absolute after:content-[''] bg-card border-[1.5px] border-border checkbox-root cursor-pointer data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary data-[state=checked]:text-primary-foreground data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:hover:bg-primary data-[state=indeterminate]:text-primary-foreground duration-spring-fast ease-spring-fast h-4 hover:bg-hover hover:border-input inline-flex items-center justify-center motion-reduce:transition-none relative rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 transition-[border-color,background-color,box-shadow,opacity] w-4" data-checkbox-root="" data-state="unchecked" id="" role="checkbox" type="button">
+                  <button aria-checked="false" aria-describedby="checkbox-error" aria-label="Required checkbox" aria-readonly="false" aria-required="true" class="active:bg-active after:-inset-1.5 after:absolute after:content-[''] bg-card border-[1.5px] border-border checkbox-root cursor-pointer data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary data-[state=checked]:text-primary-foreground data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:hover:bg-primary data-[state=indeterminate]:text-primary-foreground duration-spring-fast ease-spring-fast focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:ring-0 focus-visible:shadow-none h-4 hover:bg-hover hover:border-input inline-flex items-center justify-center motion-reduce:transition-none relative rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 transition-[border-color,background-color,box-shadow,opacity] w-4" data-checkbox-root="" data-state="unchecked" id="" role="checkbox" type="button">
                     <svg aria-hidden="true" class="checkbox-mark size-[75%] svelte-<scope>">
                       <path class="svelte-<scope>">
                   <p class="text-danger type-caption" id="checkbox-error">
@@ -6204,6 +6208,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:file-input
     "no-overflow",
     "form-reset",
     "parent-reset",
+    "hidden-host",
   ],
   "dom": "<body>
   <div>
@@ -6236,11 +6241,11 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:file-input
             <span class="bg-muted border border-border px-2 py-0.5 rounded-full text-muted-foreground text-xs">
               "both"
           <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="file-input-state-matrix" data-catalog-preview="file-input">
-            <div class="min-w-0" data-catalog-rendered-state="default rest hover focus disabled invalid error loading busy long-content compact light dark keyboard-focus reduced-motion accept multiple multi-filename lifted-surface focus-within zoom-200 no-overflow form-reset parent-reset" data-catalog-renderer-fixture="file-input-state-matrix">
+            <div class="min-w-0" data-catalog-rendered-state="default rest hover focus disabled invalid error loading busy long-content compact light dark keyboard-focus reduced-motion accept multiple multi-filename lifted-surface focus-within zoom-200 no-overflow form-reset parent-reset hidden-host" data-catalog-renderer-fixture="file-input-state-matrix">
               <div class="gap-4 grid">
                 <form class="gap-3 grid" data-slot="form" data-testid="catalog-file-form">
                   <fieldset class="contents">
-                    <div class="min-w-0" data-slot="file-input" data-variant="default">
+                    <div class="min-w-0" data-host-mode="surface" data-slot="file-input" data-variant="default">
                       <input aria-hidden="true" class="sr-only" id="catalog-theme-file" tabindex="-1" type="file">
                       <div class="bg-hover border-0 border-border data-[disabled=true]:bg-transparent data-[disabled=true]:hover:bg-transparent data-[disabled=true]:opacity-60 data-[disabled=true]:pointer-events-none data-[invalid=true]:border-danger data-[state=focus]:bg-card data-[state=focus]:shadow-[inset_0_0_0_1px_var(--ring)] data-[state=hover]:bg-hover duration-(--spring-fast) flex focus-within:bg-card focus-within:outline-none focus-within:ring-0 focus-within:shadow-[inset_0_0_0_1px_var(--ring)] gap-2 h-(--control-height-medium) hover:bg-card items-center min-w-0 motion-reduce:transition-none outline-none p-1 rounded-(--radius-medium) shadow-none transition-[background-color,border-color,box-shadow,color]" data-size="default" data-slot="file-input-surface">
                         <div>
@@ -6264,7 +6269,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:file-input
                           <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                             <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                               "Reset from parent"
-                <div class="min-w-0" data-slot="file-input" data-variant="default">
+                <div class="min-w-0" data-host-mode="surface" data-slot="file-input" data-variant="default">
                   <input aria-hidden="true" class="sr-only" id="catalog-hover-file" tabindex="-1" type="file">
                   <div class="bg-hover border-0 border-border data-[disabled=true]:bg-transparent data-[disabled=true]:hover:bg-transparent data-[disabled=true]:opacity-60 data-[disabled=true]:pointer-events-none data-[invalid=true]:border-danger data-[state=focus]:bg-card data-[state=focus]:shadow-[inset_0_0_0_1px_var(--ring)] data-[state=hover]:bg-hover duration-(--spring-fast) flex focus-within:bg-card focus-within:outline-none focus-within:ring-0 focus-within:shadow-[inset_0_0_0_1px_var(--ring)] gap-2 h-(--control-height-medium) hover:bg-card items-center min-w-0 motion-reduce:transition-none outline-none p-1 rounded-(--radius-medium) shadow-none transition-[background-color,border-color,box-shadow,color]" data-size="default" data-slot="file-input-surface" data-state="hover">
                     <div>
@@ -6275,7 +6280,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:file-input
                             "Hover file input"
                     <span aria-live="polite" class="flex-1 min-w-0 text-muted-foreground truncate type-body" role="status">
                       "No file selected"
-                <div class="min-w-0" data-slot="file-input" data-variant="default">
+                <div class="min-w-0" data-host-mode="surface" data-slot="file-input" data-variant="default">
                   <input aria-hidden="true" class="sr-only" id="catalog-focus-file" tabindex="-1" type="file">
                   <div class="bg-hover border-0 border-border data-[disabled=true]:bg-transparent data-[disabled=true]:hover:bg-transparent data-[disabled=true]:opacity-60 data-[disabled=true]:pointer-events-none data-[invalid=true]:border-danger data-[state=focus]:bg-card data-[state=focus]:shadow-[inset_0_0_0_1px_var(--ring)] data-[state=hover]:bg-hover duration-(--spring-fast) flex focus-within:bg-card focus-within:outline-none focus-within:ring-0 focus-within:shadow-[inset_0_0_0_1px_var(--ring)] gap-2 h-(--control-height-medium) hover:bg-card items-center min-w-0 motion-reduce:transition-none outline-none p-1 rounded-(--radius-medium) shadow-none transition-[background-color,border-color,box-shadow,color]" data-size="default" data-slot="file-input-surface" data-state="focus">
                     <div>
@@ -6286,7 +6291,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:file-input
                             "Focused file input"
                     <span aria-live="polite" class="flex-1 min-w-0 text-muted-foreground truncate type-body" role="status">
                       "No file selected"
-                <div class="min-w-0" data-invalid="true" data-slot="file-input" data-variant="default">
+                <div class="min-w-0" data-host-mode="surface" data-invalid="true" data-slot="file-input" data-variant="default">
                   <input aria-describedby="catalog-invalid-file-error" aria-hidden="true" aria-invalid="true" class="sr-only" id="catalog-invalid-file" tabindex="-1" type="file">
                   <div class="bg-hover border-0 border-border data-[disabled=true]:bg-transparent data-[disabled=true]:hover:bg-transparent data-[disabled=true]:opacity-60 data-[disabled=true]:pointer-events-none data-[invalid=true]:border-danger data-[state=focus]:bg-card data-[state=focus]:shadow-[inset_0_0_0_1px_var(--ring)] data-[state=hover]:bg-hover duration-(--spring-fast) flex focus-within:bg-card focus-within:outline-none focus-within:ring-0 focus-within:shadow-[inset_0_0_0_1px_var(--ring)] gap-2 h-(--control-height-medium) hover:bg-card items-center min-w-0 motion-reduce:transition-none outline-none p-1 ring-1 ring-danger/25 rounded-(--radius-medium) shadow-none transition-[background-color,border-color,box-shadow,color]" data-size="default" data-slot="file-input-surface">
                     <div>
@@ -6299,7 +6304,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:file-input
                       "A-very-long-localized-filename-that-must-truncate-without-overflow.json"
                   <p class="motion-reduce:transition-none mt-1.5 pl-0.5 text-danger type-body" data-slot="input-message" data-tone="error" id="catalog-invalid-file-error" role="alert">
                     "The selected file must contain a valid theme."
-                <div aria-disabled="true" class="min-w-0" data-slot="file-input" data-variant="default">
+                <div aria-disabled="true" class="min-w-0" data-host-mode="surface" data-slot="file-input" data-variant="default">
                   <input aria-hidden="true" class="sr-only" disabled="" id="catalog-disabled-file" tabindex="-1" type="file">
                   <div class="bg-hover border-0 border-border data-[disabled=true]:bg-transparent data-[disabled=true]:hover:bg-transparent data-[disabled=true]:opacity-60 data-[disabled=true]:pointer-events-none data-[invalid=true]:border-danger data-[state=focus]:bg-card data-[state=focus]:shadow-[inset_0_0_0_1px_var(--ring)] data-[state=hover]:bg-hover duration-(--spring-fast) flex focus-within:bg-card focus-within:outline-none focus-within:ring-0 focus-within:shadow-[inset_0_0_0_1px_var(--ring)] gap-2 h-(--control-height-medium) hover:bg-card items-center min-w-0 motion-reduce:transition-none opacity-60 outline-none p-1 pointer-events-none rounded-(--radius-medium) shadow-none transition-[background-color,border-color,box-shadow,color]" data-size="default" data-slot="file-input-surface">
                     <div>
@@ -6310,7 +6315,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:file-input
                             "Choose disabled file"
                     <span aria-live="polite" class="flex-1 min-w-0 text-muted-foreground truncate type-body" role="status">
                       "No file selected"
-                <div aria-busy="true" aria-disabled="true" class="min-w-0" data-slot="file-input" data-variant="default">
+                <div aria-busy="true" aria-disabled="true" class="min-w-0" data-host-mode="surface" data-slot="file-input" data-variant="default">
                   <input aria-hidden="true" class="sr-only" disabled="" id="catalog-busy-file" tabindex="-1" type="file">
                   <div class="bg-hover border-0 border-border data-[disabled=true]:bg-transparent data-[disabled=true]:hover:bg-transparent data-[disabled=true]:opacity-60 data-[disabled=true]:pointer-events-none data-[invalid=true]:border-danger data-[state=focus]:bg-card data-[state=focus]:shadow-[inset_0_0_0_1px_var(--ring)] data-[state=hover]:bg-hover duration-(--spring-fast) flex focus-within:bg-card focus-within:outline-none focus-within:ring-0 focus-within:shadow-[inset_0_0_0_1px_var(--ring)] gap-2 h-(--control-height-medium) hover:bg-card items-center min-w-0 motion-reduce:transition-none opacity-60 outline-none p-1 pointer-events-none rounded-(--radius-medium) shadow-none transition-[background-color,border-color,box-shadow,color]" data-size="default" data-slot="file-input-surface">
                     <div>
@@ -6337,7 +6342,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:file-input
                 <dt>
                   "States"
                 <dd class="mt-1 text-foreground">
-                  "default, rest, hover, focus, disabled, invalid, error, loading, busy, long-content, compact, light, dark, keyboard-focus, reduced-motion, accept, multiple, multi-filename, lifted-surface, focus-within, zoom-200, no-overflow, form-reset, parent-reset"
+                  "default, rest, hover, focus, disabled, invalid, error, loading, busy, long-content, compact, light, dark, keyboard-focus, reduced-motion, accept, multiple, multi-filename, lifted-surface, focus-within, zoom-200, no-overflow, form-reset, parent-reset, hidden-host"
               <div>
                 <dt>
                   "Themes"
@@ -8763,6 +8768,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:slider:sli
     "step-pips",
     "semantic-track",
     "semantic-thumb",
+    "transparent-overlay-track",
     "compact",
     "light",
     "dark",
@@ -8802,29 +8808,29 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:slider:sli
             <span class="bg-muted border border-border px-2 py-0.5 rounded-full text-muted-foreground text-xs">
               "both"
           <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="slider-state-matrix" data-catalog-preview="slider">
-            <div class="min-w-0" data-catalog-rendered-state="default disabled invalid keyboard-focus arrow-keys home-end hover-preview hover-tooltip drag-tooltip-hidden synchronous-drag spring-settle inline-value-edit discrete-steps step-pips semantic-track semantic-thumb compact light dark reduced-motion zoom-200 no-overflow capture-hover-drag-200ms" data-catalog-renderer-fixture="slider-state-matrix">
+            <div class="min-w-0" data-catalog-rendered-state="default disabled invalid keyboard-focus arrow-keys home-end hover-preview hover-tooltip drag-tooltip-hidden synchronous-drag spring-settle inline-value-edit discrete-steps step-pips semantic-track semantic-thumb transparent-overlay-track compact light dark reduced-motion zoom-200 no-overflow capture-hover-drag-200ms" data-catalog-renderer-fixture="slider-state-matrix">
               <div class="gap-5 grid max-w-md" data-slider-capture-delay-ms="200">
                 <div class="gap-1 grid text-sm">
                   <span class="text-muted-foreground">
                     "Default"
-                  <div class="flex flex-row gap-2 items-center min-w-24 overflow-visible select-none svelte-<scope> touch-none w-full" data-slot="slider-root">
+                  <div class="flex flex-row gap-2 items-center min-w-24 overflow-visible select-none svelte-<scope> touch-none w-full" data-appearance="default" data-slot="slider-root">
                     <div class="flex-1 min-w-0 overflow-visible relative">
-                      <input aria-label="Catalog volume" aria-valuenow="45" aria-valuetext="45" class="absolute aria-invalid:accent-danger aria-invalid:ring-1 aria-invalid:ring-danger/25 cursor-ew-resize h-9 inset-0 opacity-0 peer pointer-events-none svelte-<scope> w-full z-20" data-capture-interaction="hover-drag" data-slot="slider" type="range">
+                      <input aria-label="Catalog volume" aria-valuenow="45" aria-valuetext="45" class="absolute aria-invalid:accent-danger aria-invalid:ring-1 aria-invalid:ring-danger/25 cursor-ew-resize h-9 inset-0 opacity-0 outline-none peer pointer-events-none svelte-<scope> w-full z-20" data-capture-interaction="hover-drag" data-slot="slider" type="range">
                       <div class="cursor-ew-resize h-9 overflow-visible relative slider-hit-area svelte-<scope> w-full" data-slot="slider-track" role="presentation">
-                        <span aria-hidden="true" class="absolute bg-transparent border border-border h-[18px] inset-x-px overflow-hidden rounded-full top-[9px]" data-slot="slider-track-background">
+                        <span aria-hidden="true" class="absolute bg-transparent border border-border h-[18px] inset-x-px overflow-hidden rounded-full svelte-<scope> top-[9px]" data-slot="slider-track-background">
                         <span aria-hidden="true" class="absolute bg-selected/50 dark:bg-accent/40 h-[18px] left-px rounded-full svelte-<scope> top-[9px]" data-slot="slider-fill">
-                        <span aria-hidden="true" class="absolute bg-accent/40 duration-spring-fast ease-spring-fast h-[18px] motion-reduce:transition-none opacity-0 pointer-events-none rounded-full top-[9px] transition-opacity" data-slot="slider-preview">
+                        <span aria-hidden="true" class="absolute bg-accent/40 duration-spring-fast ease-spring-fast h-[18px] motion-reduce:transition-none opacity-0 pointer-events-none rounded-full svelte-<scope> top-[9px] transition-opacity" data-slot="slider-preview">
                         <span aria-hidden="true" class="-translate-y-1/2 absolute bg-background border border-border pointer-events-none rounded-full shadow-(--elevation-raised) svelte-<scope> top-1/2 z-20" data-slot="slider-thumb">
                 <div class="gap-1 grid text-sm">
                   <span class="text-muted-foreground">
                     "Inline value"
-                  <div class="flex flex-row gap-2 items-center min-w-24 overflow-visible select-none svelte-<scope> touch-none w-full" data-slot="slider-root">
+                  <div class="flex flex-row gap-2 items-center min-w-24 overflow-visible select-none svelte-<scope> touch-none w-full" data-appearance="default" data-slot="slider-root">
                     <div class="flex-1 min-w-0 overflow-visible relative">
-                      <input aria-label="Catalog volume with value" aria-valuenow="62" aria-valuetext="62" class="absolute aria-invalid:accent-danger aria-invalid:ring-1 aria-invalid:ring-danger/25 cursor-ew-resize h-9 inset-0 opacity-0 peer pointer-events-none svelte-<scope> w-full z-20" data-slot="slider" type="range">
+                      <input aria-label="Catalog volume with value" aria-valuenow="62" aria-valuetext="62" class="absolute aria-invalid:accent-danger aria-invalid:ring-1 aria-invalid:ring-danger/25 cursor-ew-resize h-9 inset-0 opacity-0 outline-none peer pointer-events-none svelte-<scope> w-full z-20" data-slot="slider" type="range">
                       <div class="cursor-ew-resize h-9 overflow-visible relative slider-hit-area svelte-<scope> w-full" data-slot="slider-track" role="presentation">
-                        <span aria-hidden="true" class="absolute bg-transparent border border-border h-[18px] inset-x-px overflow-hidden rounded-full top-[9px]" data-slot="slider-track-background">
+                        <span aria-hidden="true" class="absolute bg-transparent border border-border h-[18px] inset-x-px overflow-hidden rounded-full svelte-<scope> top-[9px]" data-slot="slider-track-background">
                         <span aria-hidden="true" class="absolute bg-selected/50 dark:bg-accent/40 h-[18px] left-px rounded-full svelte-<scope> top-[9px]" data-slot="slider-fill">
-                        <span aria-hidden="true" class="absolute bg-accent/40 duration-spring-fast ease-spring-fast h-[18px] motion-reduce:transition-none opacity-0 pointer-events-none rounded-full top-[9px] transition-opacity" data-slot="slider-preview">
+                        <span aria-hidden="true" class="absolute bg-accent/40 duration-spring-fast ease-spring-fast h-[18px] motion-reduce:transition-none opacity-0 pointer-events-none rounded-full svelte-<scope> top-[9px] transition-opacity" data-slot="slider-preview">
                         <span aria-hidden="true" class="-translate-y-1/2 absolute bg-background border border-border pointer-events-none rounded-full shadow-(--elevation-raised) svelte-<scope> top-1/2 z-20" data-slot="slider-thumb">
                     <span class="inline-grid leading-none shrink-0 tabular-nums text-[13px] text-muted-foreground" data-slot="slider-value">
                       <button class="cursor-text rounded-(--shape-input-radius) select-none text-inherit" type="button">
@@ -8832,13 +8838,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:slider:sli
                 <div class="gap-1 grid text-sm">
                   <span class="text-muted-foreground">
                     "Discrete steps"
-                  <div class="flex flex-row gap-2 items-center min-w-24 overflow-visible select-none svelte-<scope> touch-none w-full" data-slot="slider-root">
+                  <div class="flex flex-row gap-2 items-center min-w-24 overflow-visible select-none svelte-<scope> touch-none w-full" data-appearance="default" data-slot="slider-root">
                     <div class="flex-1 min-w-0 overflow-visible relative">
-                      <input aria-label="Catalog stepped volume" aria-valuenow="40" aria-valuetext="40%" class="absolute aria-invalid:accent-danger aria-invalid:ring-1 aria-invalid:ring-danger/25 cursor-ew-resize h-9 inset-0 opacity-0 peer pointer-events-none svelte-<scope> w-full z-20" data-slot="slider" type="range">
+                      <input aria-label="Catalog stepped volume" aria-valuenow="40" aria-valuetext="40%" class="absolute aria-invalid:accent-danger aria-invalid:ring-1 aria-invalid:ring-danger/25 cursor-ew-resize h-9 inset-0 opacity-0 outline-none peer pointer-events-none svelte-<scope> w-full z-20" data-slot="slider" type="range">
                       <div class="cursor-ew-resize h-9 overflow-visible relative slider-hit-area svelte-<scope> w-full" data-slot="slider-track" role="presentation">
-                        <span aria-hidden="true" class="absolute bg-transparent border border-border h-[18px] inset-x-px overflow-hidden rounded-full top-[9px]" data-slot="slider-track-background">
+                        <span aria-hidden="true" class="absolute bg-transparent border border-border h-[18px] inset-x-px overflow-hidden rounded-full svelte-<scope> top-[9px]" data-slot="slider-track-background">
                         <span aria-hidden="true" class="absolute bg-selected/50 dark:bg-accent/40 h-[18px] left-px rounded-full svelte-<scope> top-[9px]" data-slot="slider-fill">
-                        <span aria-hidden="true" class="absolute bg-accent/40 duration-spring-fast ease-spring-fast h-[18px] motion-reduce:transition-none opacity-0 pointer-events-none rounded-full top-[9px] transition-opacity" data-slot="slider-preview">
+                        <span aria-hidden="true" class="absolute bg-accent/40 duration-spring-fast ease-spring-fast h-[18px] motion-reduce:transition-none opacity-0 pointer-events-none rounded-full svelte-<scope> top-[9px] transition-opacity" data-slot="slider-preview">
                         <span aria-hidden="true" class="-translate-x-1/2 -translate-y-1/2 absolute bg-muted-foreground/30 pointer-events-none rounded-full size-1 top-1/2 z-10" data-slot="slider-pip">
                         <span aria-hidden="true" class="-translate-x-1/2 -translate-y-1/2 absolute bg-muted-foreground/30 pointer-events-none rounded-full size-1 top-1/2 z-10" data-slot="slider-pip">
                         <span aria-hidden="true" class="-translate-x-1/2 -translate-y-1/2 absolute bg-muted-foreground/30 pointer-events-none rounded-full size-1 top-1/2 z-10" data-slot="slider-pip">
@@ -8851,13 +8857,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:slider:sli
                 <div class="gap-1 grid text-sm">
                   <span class="text-muted-foreground">
                     "Disabled"
-                  <div class="flex flex-row gap-2 items-center min-w-24 opacity-50 overflow-visible pointer-events-none select-none svelte-<scope> touch-none w-full" data-disabled="true" data-slot="slider-root">
+                  <div class="flex flex-row gap-2 items-center min-w-24 opacity-50 overflow-visible pointer-events-none select-none svelte-<scope> touch-none w-full" data-appearance="default" data-disabled="true" data-slot="slider-root">
                     <div class="flex-1 min-w-0 overflow-visible relative">
-                      <input aria-label="Disabled catalog volume" aria-valuenow="25" aria-valuetext="25" class="absolute aria-invalid:accent-danger aria-invalid:ring-1 aria-invalid:ring-danger/25 cursor-ew-resize h-9 inset-0 opacity-0 peer pointer-events-none svelte-<scope> w-full z-20" data-slot="slider" disabled="" type="range">
+                      <input aria-label="Disabled catalog volume" aria-valuenow="25" aria-valuetext="25" class="absolute aria-invalid:accent-danger aria-invalid:ring-1 aria-invalid:ring-danger/25 cursor-ew-resize h-9 inset-0 opacity-0 outline-none peer pointer-events-none svelte-<scope> w-full z-20" data-slot="slider" disabled="" type="range">
                       <div class="cursor-ew-resize h-9 overflow-visible relative slider-hit-area svelte-<scope> w-full" data-slot="slider-track" role="presentation">
-                        <span aria-hidden="true" class="absolute bg-transparent border border-border h-[18px] inset-x-px overflow-hidden rounded-full top-[9px]" data-slot="slider-track-background">
+                        <span aria-hidden="true" class="absolute bg-transparent border border-border h-[18px] inset-x-px overflow-hidden rounded-full svelte-<scope> top-[9px]" data-slot="slider-track-background">
                         <span aria-hidden="true" class="absolute bg-selected/50 dark:bg-accent/40 h-[18px] left-px rounded-full svelte-<scope> top-[9px]" data-slot="slider-fill">
-                        <span aria-hidden="true" class="absolute bg-accent/40 duration-spring-fast ease-spring-fast h-[18px] motion-reduce:transition-none opacity-0 pointer-events-none rounded-full top-[9px] transition-opacity" data-slot="slider-preview">
+                        <span aria-hidden="true" class="absolute bg-accent/40 duration-spring-fast ease-spring-fast h-[18px] motion-reduce:transition-none opacity-0 pointer-events-none rounded-full svelte-<scope> top-[9px] transition-opacity" data-slot="slider-preview">
                         <span aria-hidden="true" class="-translate-y-1/2 absolute bg-background border border-border pointer-events-none rounded-full shadow-(--elevation-raised) svelte-<scope> top-1/2 z-20" data-slot="slider-thumb">
                 <output aria-label="Catalog slider value" class="sr-only">
                   "45"
@@ -8869,7 +8875,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:slider:sli
                 <dt>
                   "States"
                 <dd class="mt-1 text-foreground">
-                  "default, disabled, invalid, keyboard-focus, arrow-keys, home-end, hover-preview, hover-tooltip, drag-tooltip-hidden, synchronous-drag, spring-settle, inline-value-edit, discrete-steps, step-pips, semantic-track, semantic-thumb, compact, light, dark, reduced-motion, zoom-200, no-overflow, capture-hover-drag-200ms"
+                  "default, disabled, invalid, keyboard-focus, arrow-keys, home-end, hover-preview, hover-tooltip, drag-tooltip-hidden, synchronous-drag, spring-settle, inline-value-edit, discrete-steps, step-pips, semantic-track, semantic-thumb, transparent-overlay-track, compact, light, dark, reduced-motion, zoom-200, no-overflow, capture-hover-drag-200ms"
               <div>
                 <dt>
                   "Themes"
@@ -9424,10 +9430,14 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                                     <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                         "Retry"
-                            <button aria-label="Close" class="svelte-<scope> toast-close-btn" type="button">
-                              <svg>
-                                <line>
-                                <line>
+                            <div>
+                              <button aria-label="Close" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-transparent cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-medium gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    <svg>
+                                      <line>
+                                      <line>
                 <section class="content-start gap-2 grid min-w-0" data-toast-preview="agent-failure">
                   <h3 class="font-medium text-muted-foreground text-xs">
                     "Agent failure"
@@ -9461,10 +9471,14 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                                     <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                         "Switch To"
-                            <button aria-label="Close" class="svelte-<scope> toast-close-btn" type="button">
-                              <svg>
-                                <line>
-                                <line>
+                            <div>
+                              <button aria-label="Close" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-transparent cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-medium gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    <svg>
+                                      <line>
+                                      <line>
                 <section class="content-start gap-2 grid min-w-0" data-toast-preview="agent-attention">
                   <h3 class="font-medium text-muted-foreground text-xs">
                     "Agent attention"
@@ -9490,10 +9504,14 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                                     <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                         "Switch To"
-                            <button aria-label="Dismiss attention request" class="svelte-<scope> toast-close-btn" type="button">
-                              <svg>
-                                <line>
-                                <line>
+                            <div>
+                              <button aria-label="Dismiss attention request" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-transparent cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-medium gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    <svg>
+                                      <line>
+                                      <line>
                 <section class="content-start gap-2 grid min-w-0" data-toast-preview="update-available">
                   <h3 class="font-medium text-muted-foreground text-xs">
                     "Update available"
@@ -9529,10 +9547,14 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                       <ol class="group toaster" data-sonner-theme="light" data-sonner-toaster="true" data-x-position="left" data-y-position="bottom" tabindex="-1">
                         <li aria-atomic="true" aria-live="polite" class="bg-surface-3 group group-[.toaster]:text-foreground max-w-full min-w-0 shadow-surface-3 toast w-full" data-dismissible="true" data-expanded="true" data-front="true" data-index="0" data-invert="false" data-mounted="true" data-promise="false" data-removed="false" data-rich-colors="false" data-sonner-toast="" data-styled="false" data-swipe-out="false" data-swiped="false" data-swiping="false" data-type="default" data-visible="true" data-x-position="left" data-y-position="bottom" tabindex="0">
                           <div class="svelte-<scope> update-toast">
-                            <button aria-label="Close" class="svelte-<scope> toast-close-btn" type="button">
-                              <svg>
-                                <line>
-                                <line>
+                            <div>
+                              <button aria-label="Close" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-transparent cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-medium gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    <svg>
+                                      <line>
+                                      <line>
                             <div class="flex flex-col gap-2">
                               <div class="flex gap-3 items-center">
                                 <div class="downloading icon svelte-<scope>">
