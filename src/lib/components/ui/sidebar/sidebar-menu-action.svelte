@@ -62,8 +62,8 @@
     bind:ref
     variant="ghost"
     size="icon-compact"
-    {...mergedProps as unknown as ButtonProps}
     aria-label={mergedProps['aria-label']}
+    {...mergedProps as unknown as ButtonProps}
   >
     {@render children?.()}
   </Button>

@@ -47,8 +47,8 @@
     bind:ref
     variant="ghost"
     size="icon-compact"
-    {...mergedProps as ButtonProps}
     aria-label={mergedProps['aria-label']}
+    {...mergedProps as ButtonProps}
   >
     {@render children?.()}
   </Button>
