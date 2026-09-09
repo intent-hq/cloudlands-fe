@@ -35,6 +35,8 @@ test('browser header owns the agent chip and address hover stays transparent', a
   const address = component.getByRole('button', { name: 'Edit browser address' });
   await address.hover();
   await expect(address).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await page.evaluate(() => document.fonts.ready);
+  await component.screenshot({ path: testInfo.outputPath('embedded-browser-header-wide.png') });
   await address.click();
   const input = component.getByRole('textbox', { name: 'Browser address' });
   await expect(input).toBeFocused();
