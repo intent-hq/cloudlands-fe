@@ -1651,7 +1651,7 @@
                     <Button
                       type="button"
                       variant="plain"
-                      class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary-ink rounded {isAttachmentHydrationLoading(
+                      class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 rounded {isAttachmentHydrationLoading(
                         imageBlock.id,
                       )
                         ? 'animate-pulse'

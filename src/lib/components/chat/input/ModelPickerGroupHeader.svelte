@@ -43,10 +43,7 @@
       <Button
         variant="ghost-light"
         size="xs"
-        class={cn(
-          'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:opacity-100',
-          refreshing && 'opacity-50! cursor-not-allowed',
-        )}
+        class={cn('focus-visible:opacity-100', refreshing && 'opacity-50! cursor-not-allowed')}
         onclick={(e) => {
           e.stopPropagation();
           onRefresh(group.key);

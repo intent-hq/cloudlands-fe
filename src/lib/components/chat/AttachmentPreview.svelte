@@ -169,7 +169,7 @@
       variant="plain"
       bind:ref={thumbnailButtonElement}
       type="button"
-      class="w-16 h-16 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-primary-ink"
+      class="w-16 h-16 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
       onclick={openLightbox}
       onkeydown={handleThumbnailKeydown}
       aria-label={m.chat_attachmentPreview_viewFullSize_ariaLabel({ name })}

@@ -450,7 +450,7 @@
         <Button
           type="button"
           variant="plain"
-          class="inline-flex shrink-0 p-0 border-0 bg-transparent cursor-pointer align-text-bottom rounded-sm focus:outline-none focus:ring-1 focus:ring-primary-ink"
+          class="inline-flex shrink-0 p-0 border-0 bg-transparent cursor-pointer align-text-bottom rounded-sm"
           data-testid="queued-image-thumbnail"
           onclick={(e) => {
             e.stopPropagation();
@@ -514,7 +514,7 @@
     <Button
       type="button"
       variant="plain"
-      class="type-caption flex w-full cursor-pointer items-center rounded-(--radius-medium) border-0 bg-transparent px-2.5 py-0 text-left text-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      class="type-caption flex w-full cursor-pointer items-center rounded-(--radius-medium) border-0 bg-transparent px-2.5 py-0 text-left text-subtle"
       aria-expanded={expanded}
       aria-controls={contentId}
       data-testid="queued-messages-disclosure"
@@ -570,7 +570,7 @@
                     onkeydown={handleKeydown}
                     onblur={handleEditBlur}
                     rows={1}
-                    class="type-caption min-w-0 flex-1 resize-none overflow-hidden rounded bg-transparent py-0! font-normal! text-foreground focus:outline-none! focus:ring-0!"
+                    class="type-caption min-w-0 flex-1 resize-none overflow-hidden rounded bg-transparent py-0! font-normal! text-foreground"
                     autocorrect="off"
                     autocapitalize="off"
                     spellcheck="false"
@@ -614,7 +614,7 @@
                   {@render fileChips(message)}
                   <Button
                     variant="plain"
-                    class="min-w-0 flex-1 cursor-default justify-start text-left font-normal! outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    class="min-w-0 flex-1 cursor-default justify-start text-left font-normal!"
                     data-testid="queued-message-content"
                     data-mode="display"
                     aria-label={message.content}

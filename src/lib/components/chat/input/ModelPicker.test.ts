@@ -1614,8 +1614,6 @@ describe('ModelPicker multi-provider mode', () => {
     expect(container).toBeTruthy();
     expect(container.querySelector('[data-icon="lock"]')).toBeNull();
     expect(screen.getByRole('button').className).toContain('border-border!');
-    expect(screen.getByRole('button').className).toContain('focus-visible:border-ring!');
-    expect(screen.getByRole('button').className).toContain('focus-visible:ring-ring/40');
   });
 
   it('shows default model text when no model is explicitly selected', () => {

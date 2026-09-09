@@ -69,7 +69,7 @@
     bind:ref={textareaRef}
     bind:value={text}
     onkeydown={handleKeyDown}
-    class="w-full min-h-10 max-h-48 px-3 py-2.5 text-sm leading-normal text-foreground bg-background border border-border rounded-lg resize-none overflow-y-auto focus:outline-none focus:border-primary-ink focus:ring-2 focus:ring-primary-ink/20"
+    class="w-full min-h-10 max-h-48 px-3 py-2.5 text-sm leading-normal text-foreground bg-background border border-border rounded-lg resize-none overflow-y-auto focus:border-primary-ink"
     rows={1}
     placeholder={m.chat_chatMessage_edit_placeholder()}
     autocorrect="off"

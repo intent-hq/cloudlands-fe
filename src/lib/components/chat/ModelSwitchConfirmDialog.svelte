@@ -38,7 +38,6 @@
   }: Props = $props();
 
   let confirmButtonRef: HTMLButtonElement | null = $state(null);
-  let confirmHasFocus = $state(false);
 
   function handleOpenAutoFocus(event: Event) {
     event.preventDefault();
@@ -83,14 +82,7 @@
       <Button variant="ghost-light" onclick={() => onCancel?.()}>
         {m.chat_modelSwitchDialog_cancel_label()}
       </Button>
-      <Button
-        variant="default"
-        bind:ref={confirmButtonRef}
-        class={confirmHasFocus ? 'ring-ring/50 ring-[3px]' : undefined}
-        onfocus={() => (confirmHasFocus = true)}
-        onblur={() => (confirmHasFocus = false)}
-        onclick={() => onConfirm?.()}
-      >
+      <Button variant="default" bind:ref={confirmButtonRef} onclick={() => onConfirm?.()}>
         {isProviderChange
           ? m.chat_modelSwitchDialog_switchProvider_label()
           : m.chat_modelSwitchDialog_switchModel_label()}

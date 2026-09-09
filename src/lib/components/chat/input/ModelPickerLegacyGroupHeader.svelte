@@ -32,7 +32,7 @@
 <Button
   variant="ghost-light"
   class={cn(
-    'group type-caption h-auto w-full justify-start rounded-none border-x-0 border-b-0 border-t border-border px-3 pb-1.5 pt-2.5 font-medium text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring aria-disabled:opacity-100',
+    'group type-caption h-auto w-full justify-start rounded-none border-x-0 border-b-0 border-t border-border px-3 pb-1.5 pt-2.5 font-medium text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground aria-disabled:opacity-100',
     groupIndex > 0 && 'mt-1.5',
     disabled && 'cursor-default hover:bg-transparent hover:text-muted-foreground',
   )}

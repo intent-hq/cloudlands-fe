@@ -1594,7 +1594,7 @@
         trapFocus={false}
         onOpenAutoFocus={preserveEditorFocus}
         onCloseAutoFocus={preserveEditorFocus}
-        class="z-(--layer-popover) w-72 max-w-full outline-none"
+        class="z-(--layer-popover) w-72 max-w-full"
         data-testid="slash-skill-menu"
       >
         <SlashSkillSuggestionList
@@ -1647,6 +1647,11 @@
     overflow-wrap: break-word;
     word-wrap: break-word;
     word-break: break-word;
+  }
+
+  .tiptap-container :global(.tiptap-editor:focus-visible) {
+    outline: 1px solid hsl(var(--focus-ring));
+    outline-offset: -1px;
   }
 
   .tiptap-container :global(.tiptap-editor p) {

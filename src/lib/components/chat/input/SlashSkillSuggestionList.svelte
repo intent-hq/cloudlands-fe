@@ -131,7 +131,7 @@
             variant="ghost"
             size="sm"
             labelClass="type-body"
-            class={`slash-skill-option h-auto w-full justify-start rounded-none border-0 bg-transparent px-2 py-1.5 text-left text-inherit shadow-none hover:border-0 hover:text-inherit focus-visible:border-0 focus-visible:ring-0 active:border-0 ${selectedIndex === index ? 'active' : ''}`}
+            class={`slash-skill-option h-auto w-full justify-start rounded-none border-0 bg-transparent px-2 py-1.5 text-left text-inherit shadow-none hover:border-0 hover:text-inherit focus-visible:border-0 active:border-0 ${selectedIndex === index ? 'active' : ''}`}
             role="option"
             aria-label={item.name}
             aria-selected={selectedIndex === index}

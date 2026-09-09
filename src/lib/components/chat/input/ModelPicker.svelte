@@ -1899,8 +1899,7 @@
     headerClass={providerTabsEnabled ? 'bg-popover! border-b!' : 'border-b-0!'}
     triggerClass={cn(
       'max-w-full',
-      (variant === 'outline' || variant === 'default') &&
-        'w-full justify-between border-border! focus-visible:border-ring! focus-visible:ring-2 focus-visible:ring-ring/40',
+      (variant === 'outline' || variant === 'default') && 'w-full justify-between border-border!',
       triggerClass,
     )}
     contentClass={cn(

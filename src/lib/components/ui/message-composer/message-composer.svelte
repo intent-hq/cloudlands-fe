@@ -107,11 +107,9 @@
   const edgeShadow = $derived(
     ringState === 'drag'
       ? '0 0 0 1px hsl(var(--focus-ring)), var(--shadow-surface-2)'
-      : ringState === 'focus'
-        ? '0 0 0 1px hsl(var(--foreground) / 0.2), var(--shadow-surface-2)'
-        : ringState === 'hover'
-          ? '0 0 0 1px hsl(var(--border)), var(--shadow-surface-2)'
-          : undefined,
+      : ringState === 'hover'
+        ? '0 0 0 1px hsl(var(--border)), var(--shadow-surface-2)'
+        : undefined,
   );
   const rootStyle = $derived(
     [edgeShadow ? `box-shadow:${edgeShadow}` : '', typeof style === 'string' ? style : '']
@@ -536,9 +534,8 @@
           aria-activedescendant={activeSuggestion === null
             ? undefined
             : `${suggestionListId}-${activeSuggestion}`}
-          noFocusStyle
           class={cn(
-            'min-h-0! resize-none border-0 bg-transparent px-2 py-2 shadow-none outline-none placeholder:text-muted-foreground',
+            'min-h-0! resize-none border-0 bg-transparent px-2 py-2 shadow-none placeholder:text-muted-foreground',
             compact ? 'px-1.5 py-1.5 text-[13px] leading-[18px]' : 'text-sm leading-5',
             textareaProps?.class,
           )}

@@ -50,7 +50,6 @@
           class={cn(
             'type-caption mt-2 flex items-center gap-1.5 rounded-md px-2 py-1 font-medium',
             'bg-muted hover:bg-muted/80 text-foreground transition-colors',
-            'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
           )}
           onclick={onOpenProviderSettings}
         >
@@ -98,7 +97,6 @@
         class={cn(
           'type-caption flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium',
           'bg-muted hover:bg-muted/80 text-foreground transition-colors',
-          'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
         )}
         onclick={onRetry}
       >
@@ -115,7 +113,6 @@
         class={cn(
           'type-caption flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium',
           'bg-muted hover:bg-muted/80 text-foreground transition-colors',
-          'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
         )}
         onclick={onRetry}
       >

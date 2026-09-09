@@ -502,11 +502,8 @@ describe('QuestionWizard', () => {
     const confirm = screen.getByRole('button', { name: 'Dismiss questions' });
     await waitFor(() => expect(document.activeElement).toBe(confirm));
     expect(document.activeElement).not.toBe(cancel);
-    expect(confirm.className).toContain('ring-[3px]');
 
     cancel.focus();
-    await waitFor(() => expect(confirm.className).not.toContain('ring-[3px]'));
-
     await fireEvent.click(cancel);
     await waitFor(() => expect(document.activeElement).toBe(dismissTrigger));
   });

@@ -547,9 +547,7 @@
                     'relative mt-1 cursor-text rounded-(--radius-small) transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none',
                     compact ? '-mx-2.5 px-2.5 py-2' : '-mx-3 px-3 py-2.5',
                     multiline ? 'min-h-[76px]' : compact ? 'min-h-8' : 'min-h-10',
-                    otherText.length > 0
-                      ? 'bg-active'
-                      : 'hover:bg-hover focus-within:bg-card focus-within:ring-1 focus-within:ring-border focus-within:ring-inset',
+                    otherText.length > 0 ? 'bg-active' : 'hover:bg-hover focus-within:bg-card',
                   )}
                   onpointerdown={(event) => {
                     if (event.target !== otherInput) otherInput?.focus();
@@ -559,7 +557,6 @@
                     bind:ref={otherInput}
                     rows={1}
                     value={otherText}
-                    noFocusStyle
                     placeholder={question.freeTextPlaceholder ?? DEFAULT_FREE_TEXT_PLACEHOLDER}
                     aria-labelledby={titleId}
                     aria-describedby={freeTextError ? errorId : undefined}
@@ -578,7 +575,7 @@
                       }
                     }}
                     class={cn(
-                      'block min-h-0! w-full resize-none overflow-hidden rounded-none border-0 bg-transparent p-0 text-foreground shadow-none outline-none placeholder:text-muted-foreground',
+                      'block min-h-0! w-full resize-none overflow-hidden rounded-none border-0 bg-transparent p-0 text-foreground shadow-none placeholder:text-muted-foreground',
                       compact ? 'text-[12px]' : 'text-[13px]',
                     )}
                   />
@@ -622,7 +619,7 @@
                         ? 0
                         : -1}
                       class={cn(
-                        'group/question-row relative z-10 flex cursor-pointer select-none focus-visible:outline focus-visible:-outline-offset-1',
+                        'group/question-row relative z-10 flex cursor-pointer select-none',
                         chipPosition === 'left' ? 'gap-2 pl-1.5 pr-3' : 'gap-3 pr-1.5 pl-3',
                         question.layout === 'stacked' ? 'items-start' : 'items-center',
                         question.layout === 'stacked'
@@ -758,7 +755,7 @@
                       data-chip-position={question.chipPosition ?? 'right'}
                       data-state={otherText.length > 0 ? 'checked' : 'unchecked'}
                       class={cn(
-                        'relative z-10 flex cursor-text items-center rounded-(--radius-small) outline-none',
+                        'relative z-10 flex cursor-text items-center rounded-(--radius-small)',
                         question.chipPosition === 'left'
                           ? 'gap-2 pl-1.5 pr-3'
                           : 'gap-3 pr-1.5 pl-3',
@@ -781,7 +778,6 @@
                         bind:ref={otherInput}
                         rows={1}
                         value={otherText}
-                        noFocusStyle
                         placeholder={question.otherPlaceholder ?? DEFAULT_OTHER_PLACEHOLDER}
                         aria-label={question.otherPlaceholder ?? DEFAULT_OTHER_ARIA_LABEL}
                         {disabled}
@@ -794,7 +790,7 @@
                         }}
                         onclick={(event) => event.stopPropagation()}
                         class={cn(
-                          'min-h-0! min-w-0 flex-1 resize-none overflow-hidden rounded-none border-0 bg-transparent p-0 leading-snug text-foreground shadow-none outline-none placeholder:text-muted-foreground',
+                          'min-h-0! min-w-0 flex-1 resize-none overflow-hidden rounded-none border-0 bg-transparent p-0 leading-snug text-foreground shadow-none placeholder:text-muted-foreground',
                           compact ? 'text-[12px]' : 'text-[13px]',
                         )}
                       />
