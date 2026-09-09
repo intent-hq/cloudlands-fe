@@ -899,7 +899,7 @@
     min-height: 2rem;
     margin: -0.375rem;
     padding: 0.375rem;
-    border: 0;
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     background: transparent;
     cursor: pointer;
@@ -908,7 +908,8 @@
 
   .mode-trigger:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px var(--ring);
+    border-color: var(--color-foreground);
+    background: var(--color-muted);
   }
 
   .model-picker-row {
