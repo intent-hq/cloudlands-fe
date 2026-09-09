@@ -612,11 +612,11 @@
                 </div>
               {/each}
               {#if !searchQuery.trim() && repositoryGroup.group.workspaces.length > REPOSITORY_WORKSPACE_LIMIT}
-                <div class="flex min-w-0 justify-end px-2 pb-1">
+                <div class="flex min-w-0 px-2 pb-1" class:pl-7={!!repositoryGroup.group.owner}>
                   <Button
                     variant="plain"
                     type="button"
-                    class="repository-group-toggle h-auto min-h-7 w-fit max-w-full shrink appearance-none justify-end overflow-hidden border-0 bg-transparent px-1! py-1! text-right font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground active:bg-transparent focus-visible:bg-transparent focus-visible:text-foreground focus-visible:underline focus-visible:outline-none focus-visible:ring-0!"
+                    class="repository-group-toggle h-auto min-h-7 w-fit max-w-full shrink appearance-none justify-start overflow-hidden border-0 bg-transparent px-0! py-1! text-left font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground active:bg-transparent focus-visible:bg-transparent focus-visible:text-foreground focus-visible:underline focus-visible:outline-none focus-visible:ring-0!"
                     aria-expanded={repositoryGroup.isExpanded}
                     data-repository-group-toggle
                     onclick={() => toggleRepositoryGroup(repositoryGroup.key)}
@@ -627,11 +627,6 @@
                         ? m.layout_allCard_showLess_label()
                         : m.layout_allCard_showMore_label()}
                     </span>
-                    <Fa
-                      icon={faChevronDown}
-                      size="xs"
-                      class={repositoryGroup.isExpanded ? 'rotate-180' : ''}
-                    />
                   </Button>
                 </div>
               {/if}
