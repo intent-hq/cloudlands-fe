@@ -85,7 +85,6 @@
     [160, 160],
   ];
   const rest: RegionGeometry[] = [
-    { id: 'first', x: 180, y: 180, radius: 70, budget: 1, hull: firstHull },
     {
       id: 'second',
       x: 470,
@@ -99,6 +98,7 @@
         [410, 220],
       ],
     },
+    { id: 'first', x: 180, y: 180, radius: 70, budget: 1, hull: firstHull },
   ];
   const focus: RegionGeometry[] = rest.map((region) =>
     region.id === 'first' && routeFixture
@@ -132,6 +132,7 @@
   {width}
   {height}
   onSelectRegion={(regionIds) => (selection = { type: 'region', regionIds })}
+  onSelectAgent={(agentId) => (selection = { type: 'agent', agentId })}
   onSelectRoute={() => (selection = { type: 'route' })}
   onClearSelection={() => (selection = null)}
 />
@@ -141,3 +142,7 @@
   >{selection?.type === 'region' ? selection.regionIds[0] : ''}</output
 >
 <output data-testid="selected-route" data-selected={selection?.type === 'route'}></output>
+<output
+  data-testid="selected-agent"
+  data-agent={selection?.type === 'agent' ? selection.agentId : ''}
+></output>

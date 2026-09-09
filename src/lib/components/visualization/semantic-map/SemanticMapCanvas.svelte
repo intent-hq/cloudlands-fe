@@ -8,6 +8,7 @@
   import type { RegionGeometry } from './layout/place';
   import { CanvasPathCache, drawQuadraticPath, traceHull } from './render/canvas';
   import { layoutSceneLabels, type LabelLayout, type PlacedLabel } from './render/labels';
+  import { moveSpatialFocus, type SpatialArrowKey, type SpatialTarget } from './render/navigation';
   import { buildScene, HEAT_BAND_ALPHA, hitRouteEdge } from './render/scene';
   import type {
     ActivityMark,
@@ -46,6 +47,7 @@
   const MINIMAP_MARGIN = 16;
   const applicationAttributes = { role: 'application', tabindex: 0 } as const;
   const showMinimap = $derived(width >= 768 && height >= 240);
+  type KeyboardLayer = 'agents' | 'crossings' | 'regions';
 
   interface CanvasColors {
     background: string;
@@ -62,7 +64,10 @@
   let hoveredRegionId: string | null = $state(null);
   let hoveredEdgeIndex: number | null = $state(null);
   let hoveredBadgeId: string | null = $state(null);
+  let keyboardLayer: KeyboardLayer = $state('regions');
   let keyboardRegionId: string | null = $state(null);
+  let keyboardBadgeId: string | null = $state(null);
+  let keyboardEdgeIndex: number | null = $state(null);
   let pointer = $state({ x: 0, y: 0 });
   let panning = $state(false);
   let transform = $state({ x: 0, y: 0, scale: 1 });
@@ -118,9 +123,51 @@
   );
   const hoveredBadge = $derived(scene.badges.find(({ id }) => id === hoveredBadgeId));
   const keyboardRegion = $derived(manifest.regions.find(({ id }) => id === keyboardRegionId));
+  const keyboardBadge = $derived(scene.badges.find(({ id }) => id === keyboardBadgeId));
+  const keyboardEdge = $derived(
+    keyboardEdgeIndex === null ? undefined : scene.edges[keyboardEdgeIndex],
+  );
+  const agentSummaries = $derived.by(() =>
+    scene.badges.map((badge) => {
+      const agentActivities = scene.activities.filter(({ agentId }) => agentId === badge.id);
+      const latest = agentActivities.at(-1);
+      const latestRegionActivity = agentActivities.findLast(({ regionId }) => !!regionId);
+      const region = manifest.regions.find(({ id }) => id === latestRegionActivity?.regionId);
+      const count = agentActivities.filter(({ kind }) => kind === 'edit').length;
+      const params = {
+        name: badge.name,
+        activity: activitySummaryLabel(latest?.kind ?? badge.kind),
+        count: formatInteger(count),
+      };
+      return {
+        id: badge.id,
+        text: region
+          ? count === 1
+            ? m.semanticMap_canvas_agentSummaryInRegion_one({ ...params, region: region.label })
+            : m.semanticMap_canvas_agentSummaryInRegion_many({ ...params, region: region.label })
+          : count === 1
+            ? m.semanticMap_canvas_agentSummary_one(params)
+            : m.semanticMap_canvas_agentSummary_many(params),
+      };
+    }),
+  );
   const selectionDescription = $derived.by(() => {
+    if (
+      keyboardRegion &&
+      selection?.type === 'region' &&
+      selection.regionIds.includes(keyboardRegion.id)
+    )
+      return m.semanticMap_canvas_regionSelected_description({ label: keyboardRegion.label });
+    if (keyboardBadge && selection?.type === 'agent' && selection.agentId === keyboardBadge.id)
+      return m.semanticMap_canvas_agentSelected_description({ name: keyboardBadge.name });
+    if (keyboardEdge && selection?.type === 'route')
+      return m.semanticMap_canvas_crossingSelected_description({ label: keyboardEdge.label });
     if (keyboardRegion)
       return m.semanticMap_canvas_regionFocused_description({ label: keyboardRegion.label });
+    if (keyboardBadge)
+      return m.semanticMap_canvas_agentFocused_description({ name: keyboardBadge.name });
+    if (keyboardEdge)
+      return m.semanticMap_canvas_crossingFocused_description({ label: keyboardEdge.label });
     if (selection?.type === 'region') {
       const label = manifest.regions.find(({ id }) => id === selection.regionIds[0])?.label;
       return label
@@ -142,15 +189,15 @@
       : m.semanticMap_canvas_routeFiles_many({ count: formatInteger(count) });
   }
 
-  function activityKindLabel(kind: MapActivityKind): string {
+  function activitySummaryLabel(kind: MapActivityKind): string {
     return {
-      read: m.semanticMap_sandbox_read_label(),
-      edit: m.semanticMap_sandbox_edit_label(),
-      tool: m.semanticMap_sandbox_tool_label(),
-      thinking: m.semanticMap_sandbox_thinking_label(),
-      create: m.semanticMap_detail_create_label(),
-      delete: m.semanticMap_detail_delete_label(),
-      move: m.semanticMap_detail_move_label(),
+      read: m.semanticMap_canvas_activityReading_label(),
+      edit: m.semanticMap_canvas_activityEditing_label(),
+      tool: m.semanticMap_canvas_activityUsingTools_label(),
+      thinking: m.semanticMap_canvas_activityThinking_label(),
+      create: m.semanticMap_canvas_activityCreating_label(),
+      delete: m.semanticMap_canvas_activityDeleting_label(),
+      move: m.semanticMap_canvas_activityMoving_label(),
     }[kind];
   }
 
@@ -285,10 +332,7 @@
     path: Path2D | undefined,
   ): void {
     const isUnsorted = region.id.toLowerCase() === 'unsorted'; // i18n-ignore (wire identifier)
-    const highlighted =
-      hoveredRegionId === region.id ||
-      keyboardRegionId === region.id ||
-      selectedRegionIds.has(region.id);
+    const highlighted = hoveredRegionId === region.id || selectedRegionIds.has(region.id);
     const cachedPath = path && !tweening;
     const regionAlpha = isUnsorted ? 0.46 : 1;
     ctx.save();
@@ -317,6 +361,16 @@
     ctx.lineWidth = (highlighted ? 2 : 1) / transform.scale;
     ctx.setLineDash(isUnsorted ? [6 / transform.scale, 5 / transform.scale] : []);
     cachedPath ? ctx.stroke(path) : ctx.stroke();
+    if (keyboardRegionId === region.id) {
+      ctx.setLineDash([]);
+      ctx.strokeStyle = colors.background;
+      ctx.lineWidth = 7 / transform.scale;
+      cachedPath ? ctx.stroke(path) : ctx.stroke();
+      ctx.strokeStyle = colors.accent;
+      ctx.lineWidth = 2 / transform.scale;
+      ctx.setLineDash([3 / transform.scale, 3 / transform.scale]);
+      cachedPath ? ctx.stroke(path) : ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -399,6 +453,17 @@
       else {
         drawQuadraticPath(ctx, edge);
         ctx.stroke();
+      }
+      if (keyboardEdgeIndex === index) {
+        ctx.globalAlpha = 1;
+        ctx.setLineDash([]);
+        ctx.strokeStyle = colors.background;
+        ctx.lineWidth = 8 / transform.scale;
+        path ? ctx.stroke(path) : (drawQuadraticPath(ctx, edge), ctx.stroke());
+        ctx.strokeStyle = colors.accent;
+        ctx.lineWidth = 2 / transform.scale;
+        ctx.setLineDash([4 / transform.scale, 3 / transform.scale]);
+        path ? ctx.stroke(path) : (drawQuadraticPath(ctx, edge), ctx.stroke());
       }
       ctx.restore();
     });
@@ -530,6 +595,19 @@
     ctx.textBaseline = 'middle';
     ctx.fillText(badge.name.slice(0, 1).toUpperCase(), badge.x, badge.y);
     ctx.restore();
+    if (keyboardBadgeId === badge.id) {
+      ctx.save();
+      ctx.strokeStyle = colors.background;
+      ctx.lineWidth = 6 / transform.scale;
+      ctx.beginPath();
+      ctx.arc(badge.x, badge.y, (BADGE_RADIUS + 5) / transform.scale, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = colors.accent;
+      ctx.lineWidth = 2 / transform.scale;
+      ctx.setLineDash([3 / transform.scale, 3 / transform.scale]);
+      ctx.stroke();
+      ctx.restore();
+    }
     drawBadgeActivityCue(ctx, badge);
     if (!reducedMotion) drawToolPulse(ctx, badge, elapsed);
   }
@@ -714,6 +792,7 @@
     canvas?.releasePointerCapture(event.pointerId);
     dragPointerId = null;
     if (!panning && dragDistance <= 3) {
+      clearKeyboardFocus();
       if (hoveredBadgeId) onSelectAgent?.(hoveredBadgeId);
       else if (hoveredEdgeIndex !== null) onSelectRoute?.();
       else if (hoveredRegionId) onSelectRegion?.([hoveredRegionId]);
@@ -740,28 +819,66 @@
     };
   }
 
+  function availableKeyboardLayers(): KeyboardLayer[] {
+    return [
+      'regions',
+      ...(scene.badges.length > 0 ? (['agents'] as const) : []),
+      ...(scene.edges.length > 0 ? (['crossings'] as const) : []),
+    ];
+  }
+
+  function edgeTarget(edge: RouteEdge, index: number): SpatialTarget {
+    return {
+      id: String(index),
+      x: edge.startX * 0.25 + edge.controlX * 0.5 + edge.endX * 0.25,
+      y: edge.startY * 0.25 + edge.controlY * 0.5 + edge.endY * 0.25,
+    };
+  }
+
+  function focusInLayer(layer: KeyboardLayer, key: SpatialArrowKey): void {
+    if (layer === 'regions') {
+      keyboardRegionId = moveSpatialFocus(geometry.rest, keyboardRegionId, key);
+    } else if (layer === 'agents') {
+      keyboardBadgeId = moveSpatialFocus(scene.badges, keyboardBadgeId, key);
+    } else {
+      const next = moveSpatialFocus(scene.edges.map(edgeTarget), String(keyboardEdgeIndex), key);
+      keyboardEdgeIndex = next === null ? null : Number(next);
+    }
+  }
+
+  function clearKeyboardFocus(): void {
+    keyboardRegionId = null;
+    keyboardBadgeId = null;
+    keyboardEdgeIndex = null;
+  }
+
   function handleKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape') {
-      keyboardRegionId = null;
+      clearKeyboardFocus();
       onClearSelection?.();
       return;
     }
-    if (event.key.startsWith('Arrow') && geometry.rest.length > 0) {
+    if (event.key === 'Tab') {
+      const layers = availableKeyboardLayers();
+      const current = layers.indexOf(keyboardLayer);
+      const next = current + (event.shiftKey ? -1 : 1);
+      if (next < 0 || next >= layers.length) return;
       event.preventDefault();
-      const current = geometry.rest.findIndex(({ id }) => id === keyboardRegionId);
-      const direction = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
-      const index =
-        current < 0
-          ? direction < 0
-            ? geometry.rest.length - 1
-            : 0
-          : (current + direction + geometry.rest.length) % geometry.rest.length;
-      keyboardRegionId = geometry.rest[index].id;
+      clearKeyboardFocus();
+      keyboardLayer = layers[next];
+      focusInLayer(keyboardLayer, event.shiftKey ? 'ArrowLeft' : 'ArrowRight');
       return;
     }
-    if (event.key === 'Enter' && keyboardRegionId) {
+    if (event.key.startsWith('Arrow')) {
       event.preventDefault();
-      onSelectRegion?.([keyboardRegionId]);
+      focusInLayer(keyboardLayer, event.key as SpatialArrowKey);
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (keyboardLayer === 'regions' && keyboardRegionId) onSelectRegion?.([keyboardRegionId]);
+      else if (keyboardLayer === 'agents' && keyboardBadgeId) onSelectAgent?.(keyboardBadgeId);
+      else if (keyboardLayer === 'crossings' && keyboardEdgeIndex !== null) onSelectRoute?.();
     }
   }
 
@@ -790,6 +907,8 @@
     void hoveredEdgeIndex;
     void hoveredBadgeId;
     void keyboardRegionId;
+    void keyboardBadgeId;
+    void keyboardEdgeIndex;
     refreshRenderCaches(targetGeometry);
     scheduleDraw();
   });
@@ -847,16 +966,12 @@
   data-semantic-map-height={height}
   data-semantic-map-agent-count={scene.badges.length}
   data-semantic-map-minimap={showMinimap ? 'visible' : 'hidden'}
+  data-semantic-map-keyboard-layer={keyboardLayer}
 >
   <span class="sr-only" aria-live="polite">{selectionDescription}</span>
-  <ul class="sr-only" aria-label={m.semanticMap_panel_filterKinds_label()}>
-    {#each scene.marks as mark, index (index)}
-      <li aria-label={activityKindLabel(mark.kind)}>{activityKindLabel(mark.kind)}</li>
-    {/each}
-    {#each scene.badges as badge (badge.id)}
-      <li aria-label={`${badge.name}: ${activityKindLabel(badge.kind)}`}>
-        {badge.name}: {activityKindLabel(badge.kind)}
-      </li>
+  <ul class="sr-only" aria-label={m.semanticMap_panel_filterAgents_label()}>
+    {#each agentSummaries as summary (summary.id)}
+      <li>{summary.text}</li>
     {/each}
   </ul>
   <canvas

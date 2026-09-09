@@ -59,13 +59,16 @@ async function installRuntimeMediaMock(page: Page) {
   });
 }
 
-test('the application wrapper owns focus and region keyboard navigation', async ({
+test('keyboard navigation follows spatial order and reaches agents and crossings', async ({
   mount,
   page,
 }) => {
-  const component = await mount(SemanticMapCanvasHost);
+  const component = await mount(SemanticMapCanvasHost, {
+    props: { activityFixture: true, routeFixture: true },
+  });
   const application = component.getByRole('application');
   const selected = component.getByTestId('selected-region');
+  const announcement = application.locator('[aria-live="polite"]');
 
   await component.getByTestId('before-map').focus();
   await page.keyboard.press('Tab');
@@ -75,13 +78,30 @@ test('the application wrapper owns focus and region keyboard navigation', async 
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Enter');
   await expect(selected).toHaveAttribute('data-region', 'first');
+  await expect(announcement).toHaveText('First region selected.');
 
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Enter');
   await expect(selected).toHaveAttribute('data-region', 'second');
 
   await page.keyboard.press('Escape');
+  await page.keyboard.press('Tab');
+  await expect(application).toHaveAttribute('data-semantic-map-keyboard-layer', 'agents');
+  await expect(announcement).toHaveText('Reading agent focused.');
+  await page.keyboard.press('Enter');
+  await expect(component.getByTestId('selected-agent')).toHaveAttribute('data-agent', 'reading');
+  await expect(announcement).toHaveText('Reading agent selected.');
+
+  await page.keyboard.press('Tab');
+  await expect(application).toHaveAttribute('data-semantic-map-keyboard-layer', 'crossings');
+  await expect(announcement).toHaveText('1 file crossing focused.');
+  await page.keyboard.press('Enter');
+  await expect(component.getByTestId('selected-route')).toHaveAttribute('data-selected', 'true');
+  await expect(announcement).toHaveText('1 file crossing selected.');
+
+  await page.keyboard.press('Escape');
   await expect(selected).toHaveAttribute('data-region', '');
+  await expect(component.getByTestId('selected-route')).toHaveAttribute('data-selected', 'false');
 });
 
 test('pointer targets follow the organic hull instead of its old bounding circle', async ({

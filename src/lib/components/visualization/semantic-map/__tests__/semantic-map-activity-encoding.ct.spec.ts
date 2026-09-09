@@ -7,14 +7,13 @@ test('reduced motion preserves distinct read, edit, tool, and thinking encodings
 }) => {
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
   const component = await mount(SemanticMapCanvasHost, { props: { activityFixture: true } });
-  const activity = component.getByRole('list', { name: 'Activity' });
+  const agents = component.getByRole('list', { name: 'Agents' });
 
-  await expect(activity.getByRole('listitem', { name: 'Read', exact: true })).toBeAttached();
-  await expect(activity.getByRole('listitem', { name: 'Edit', exact: true })).toBeAttached();
   await expect(
-    activity.getByRole('listitem', { name: 'Tooling: Tool', exact: true }),
+    agents.getByText('Reading: reading in First, 0 edits in window.', { exact: true }),
   ).toBeAttached();
   await expect(
-    activity.getByRole('listitem', { name: 'Thinking: Thinking', exact: true }),
+    agents.getByText('Thinking: thinking in Second, 1 edit in window.', { exact: true }),
   ).toBeAttached();
+  await expect(agents.getByRole('listitem')).toHaveCount(3);
 });
