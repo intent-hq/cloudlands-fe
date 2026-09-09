@@ -9,6 +9,7 @@
     activityMotion,
     activityNodeTransition,
     resourceCooldownRemaining,
+    resourceLabelOpacity,
     resourceOpacity,
     writePulse,
   } from '../activity-motion';
@@ -64,6 +65,7 @@
       : undefined,
   );
   const opacity = $derived(resourceOpacity(node.lastActionTimestamp, focusState === 'dimmed'));
+  const labelOpacity = $derived(resourceLabelOpacity(focusState === 'dimmed'));
   const cooldownRemaining = $derived(resourceCooldownRemaining(node.lastActionTimestamp));
 </script>
 
@@ -92,14 +94,14 @@
   {tabindex}
   title={tooltip}
   aria-label={ariaLabel ?? label}
-  style:opacity
-  style:animation-duration={`${cooldownRemaining}ms`}
   {...events}
 >
   {#if zoomBand === 'full' || focusState === 'focused'}
     <span
       class="resource-card relative flex h-14 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-background text-subtle"
       class:border-dashed={node.type === 'file' && node.isExternal}
+      style:opacity
+      style:animation-duration={`${cooldownRemaining}ms`}
       aria-hidden="true"
     >
       <Fa icon={node.type === 'file' ? faFile : faNote} size="xs" />
@@ -107,25 +109,26 @@
         <span class="absolute right-1 top-1"><Fa icon={faArrowUpRightFromSquare} size="xs" /></span>
       {/if}
     </span>
-    <span class="resource-label line-clamp-2 w-full leading-[1.15]">{label}</span>
+    <span class="resource-label line-clamp-2 w-full leading-[1.15]" style:opacity={labelOpacity}
+      >{label}</span
+    >
     {#if focusState === 'focused'}
-      <span class="node-meta">
+      <span class="node-meta" style:opacity={labelOpacity}>
         {#if node.type === 'file'}+{additions} −{deletions}{:else}{access}{/if} ·
         <RelativeTime date={lastActivityAt ?? node.lastActionTimestamp} compact />
       </span>
     {/if}
   {:else}
     <span class="flex h-14 w-11 shrink-0 items-center justify-center" aria-hidden="true">
-      <span class="resource-dot"></span>
+      <span class="resource-dot" style:opacity style:animation-duration={`${cooldownRemaining}ms`}
+      ></span>
     </span>
   {/if}
 </button>
 
 <style>
   .resource-node {
-    animation: resource-cooldown linear forwards;
     transition:
-      opacity 600ms linear,
       border-color 180ms ease,
       color 120ms ease,
       filter 120ms ease;
@@ -135,10 +138,15 @@
     outline-offset: 4px;
   }
   .resource-card,
-  .resource-label {
+  .resource-label,
+  .resource-dot {
     transition:
       opacity 120ms ease,
       scale 120ms ease;
+  }
+  .resource-card,
+  .resource-dot {
+    animation: resource-cooldown linear forwards;
   }
   .resource-label {
     font-size: clamp(13px, calc(13px / var(--zoom)), 20.8px);
@@ -164,13 +172,19 @@
     color: var(--color-foreground);
     font-weight: 500;
   }
-  .resource-node[data-motion-enabled='false'] {
+  .resource-node[data-motion-enabled='false'] .resource-card,
+  .resource-node[data-motion-enabled='false'] .resource-dot {
     animation-play-state: paused;
+  }
+  .resource-node[data-motion-enabled='false'] {
     transition: none;
   }
   @media (prefers-reduced-motion: reduce) {
-    .resource-node {
+    .resource-card,
+    .resource-dot {
       animation: none;
+    }
+    .resource-node {
       transition: none;
     }
   }

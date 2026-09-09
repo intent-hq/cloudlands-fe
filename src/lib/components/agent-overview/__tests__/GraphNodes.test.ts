@@ -241,7 +241,7 @@ describe('ResourceNode', () => {
     expect(button.querySelector('.resource-dot')).toBeNull();
   });
 
-  it('does not compound resource cooldown and neighbourhood dimming below 0.4', () => {
+  it('fades the resource glyph without lowering its dimmed label below the contrast floor', () => {
     const node: NoteNode = {
       ...physics,
       id: 'note:spec',
@@ -253,7 +253,10 @@ describe('ResourceNode', () => {
     };
     render(ResourceNode, { props: { node, access: 'read', focusState: 'dimmed' } });
 
-    expect(screen.getByRole('button', { name: node.title }).style.opacity).toBe('0.4');
+    const button = screen.getByRole('button', { name: node.title });
+    expect(button.style.opacity).toBe('');
+    expect(button.querySelector<HTMLElement>('.resource-card')?.style.opacity).toBe('0.4');
+    expect(button.querySelector<HTMLElement>('.resource-label')?.style.opacity).toBe('0.75');
   });
 });
 

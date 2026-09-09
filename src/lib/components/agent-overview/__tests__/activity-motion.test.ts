@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   activityHullTransition,
@@ -8,8 +10,49 @@ import {
   playbackDuration,
   resourceBrightness,
   resourceCooldownRemaining,
+  resourceLabelOpacity,
   resourceOpacity,
 } from '../activity-motion';
+
+type Rgb = [number, number, number];
+
+function themeColor(css: string, mode: 'light' | 'dark', role: string): Rgb {
+  const match = css.match(
+    new RegExp(`--theme-${mode}-${role}:\\s*([\\d.]+)\\s+([\\d.]+)%\\s+([\\d.]+)%`),
+  );
+  if (!match) throw new Error(`Missing ${mode} ${role} token`);
+  const [hue, saturation, lightness] = match.slice(1).map(Number);
+  const s = saturation / 100;
+  const l = lightness / 100;
+  const chroma = (1 - Math.abs(2 * l - 1)) * s;
+  const x = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const offset = l - chroma / 2;
+  const channels =
+    hue < 60
+      ? [chroma, x, 0]
+      : hue < 120
+        ? [x, chroma, 0]
+        : hue < 180
+          ? [0, chroma, x]
+          : hue < 240
+            ? [0, x, chroma]
+            : hue < 300
+              ? [x, 0, chroma]
+              : [chroma, 0, x];
+  return channels.map((channel) => (channel + offset) * 255) as Rgb;
+}
+
+function contrastRatio(foreground: Rgb, background: Rgb): number {
+  const luminance = (rgb: Rgb) =>
+    rgb
+      .map((channel) => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      })
+      .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+  const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+  return (values[0] + 0.05) / (values[1] + 0.05);
+}
 
 function useReducedMotion(reduced: boolean): void {
   vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: reduced } as MediaQueryList);
@@ -50,6 +93,21 @@ describe('activity motion', () => {
     expect(resourceOpacity(touchedAt, true, start + 10 * 60 * 1000)).toBe(0.4);
     expect(resourceCooldownRemaining(touchedAt, start + 5 * 60 * 1000)).toBe(5 * 60 * 1000);
   });
+
+  it.each(['light', 'dark'] as const)(
+    'keeps cooled and dimmed resource labels readable in %s mode',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      const foreground = themeColor(css, mode, 'muted-foreground');
+      const background = themeColor(css, mode, 'background');
+      const opacity = resourceLabelOpacity(true);
+      const effective = foreground.map(
+        (channel, index) => channel * opacity + background[index] * (1 - opacity),
+      ) as Rgb;
+
+      expect(contrastRatio(effective, background)).toBeGreaterThanOrEqual(4.5);
+    },
+  );
 
   it('scales hulls in and out with playback-aware transition timing', () => {
     useReducedMotion(false);

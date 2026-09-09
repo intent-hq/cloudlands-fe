@@ -5,6 +5,7 @@ import { ACTIVE_EDGE_WINDOW_MS, EDGE_ANIMATION } from './constants';
 
 const RESOURCE_COOLDOWN_MS = 10 * 60 * 1000;
 const RESOURCE_OPACITY_FLOOR = 0.4;
+const RESOURCE_LABEL_OPACITY_FLOOR = 0.75;
 const observed = new Map<Element, boolean>();
 let observer: IntersectionObserver | undefined;
 let media: MediaQueryList | undefined;
@@ -129,6 +130,10 @@ export function resourceBrightness(timestamp: string, now = Date.now()): number 
 export function resourceOpacity(timestamp: string, dimmed: boolean, now = Date.now()): number {
   const brightness = resourceBrightness(timestamp, now);
   return dimmed ? Math.max(RESOURCE_OPACITY_FLOOR, brightness * 0.28) : brightness;
+}
+
+export function resourceLabelOpacity(dimmed: boolean): number {
+  return dimmed ? RESOURCE_LABEL_OPACITY_FLOOR : 1;
 }
 
 export function resourceCooldownRemaining(timestamp: string, now = Date.now()): number {
