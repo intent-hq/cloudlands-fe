@@ -12,6 +12,7 @@
   let {
     ref = $bindable(null),
     class: className,
+    'aria-label': ariaLabel,
     children,
     child,
     ...restProps
@@ -36,6 +37,7 @@
     ),
     'data-slot': 'sidebar-group-action',
     'data-sidebar': 'group-action',
+    'aria-label': ariaLabel,
     ...restProps,
   });
 </script>
@@ -47,7 +49,7 @@
     bind:ref
     variant="ghost"
     size="icon-compact"
-    aria-label={mergedProps['aria-label']}
+    aria-label={ariaLabel}
     {...mergedProps as ButtonProps}
   >
     {@render children?.()}

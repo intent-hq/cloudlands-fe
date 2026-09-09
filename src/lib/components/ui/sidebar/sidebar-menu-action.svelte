@@ -8,6 +8,7 @@
   let {
     ref = $bindable(null),
     class: className,
+    'aria-label': ariaLabel,
     showOnHover = false,
     children,
     child,
@@ -47,6 +48,7 @@
     'data-slot': 'sidebar-menu-action',
     'data-sidebar': 'menu-action',
     'data-show-on-hover': effectiveShowOnHover,
+    'aria-label': ariaLabel,
     onclick: (event: MouseEvent & { currentTarget: HTMLButtonElement }) => {
       event.stopPropagation();
       onclick?.(event);
@@ -62,7 +64,7 @@
     bind:ref
     variant="ghost"
     size="icon-compact"
-    aria-label={mergedProps['aria-label']}
+    aria-label={ariaLabel}
     {...mergedProps as unknown as ButtonProps}
   >
     {@render children?.()}
