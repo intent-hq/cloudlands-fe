@@ -75,7 +75,7 @@
     data-highlight-id={`specialist-${specialist.id}`}
     data-settings-agent-row
     aria-current={isSelected({ type: 'specialist', id: specialist.id }) ? 'true' : undefined}
-    class="flex h-auto w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg !px-2.5 !py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
+    class="flex h-auto w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg !px-2.5 !py-2 text-left text-sm transition-colors
       {isSelected({ type: 'specialist', id: specialist.id })
       ? 'bg-muted font-medium text-foreground shadow-xs'
       : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
@@ -126,7 +126,7 @@
   data-highlight-id="create-specialist"
   data-settings-agent-row
   aria-current={isSelected({ type: 'create-specialist' }) ? 'true' : undefined}
-  class="flex h-auto w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg !px-2.5 !py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
+  class="flex h-auto w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg !px-2.5 !py-2 text-left text-sm transition-colors
     {isSelected({ type: 'create-specialist' })
     ? 'bg-muted font-medium text-foreground shadow-xs'
     : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
