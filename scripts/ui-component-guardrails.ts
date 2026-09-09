@@ -49,5 +49,5 @@ export const uiComponentGuardrails = {
     screen: 9,
     settingsForm: 1,
   },
-  rawControls: { button: 26, input: 3, select: 0, textarea: 0 },
+  rawControls: { button: 0, input: 0, select: 0, textarea: 0 },
 } as const;

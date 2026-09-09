@@ -39,12 +39,12 @@ describe('design-system rule guidance', () => {
 svelteTester.run('no-raw-controls', noRawControls, {
   valid: [
     {
-      code: '<input type="file" />',
-      filename: projectFile('src/features/onboarding/steps/OnboardingPromptStep.svelte'),
-    },
-    {
       code: '<button>Primitive host</button>',
       filename: projectFile('src/lib/components/ui/button/button.svelte'),
+    },
+    {
+      code: '<button>Sidebar primitive host</button>',
+      filename: projectFile('src/lib/components/ui/sidebar/sidebar-menu-button.svelte'),
     },
   ],
   invalid: [
@@ -55,6 +55,16 @@ svelteTester.run('no-raw-controls', noRawControls, {
         { message: 'Use `Button` instead — /sandbox/button' },
         { message: 'Use `Input` instead — /sandbox/input' },
       ],
+    },
+    {
+      code: '<input type="file" />',
+      filename: projectFile('src/features/onboarding/steps/OnboardingPromptStep.svelte'),
+      errors: [{ message: 'Use `Input` instead — /sandbox/input' }],
+    },
+    {
+      code: '<button>Consumer action</button>',
+      filename: projectFile('src/lib/components/ui/sidebar/sidebar-group-action.svelte'),
+      errors: [{ message: 'Use `Button` instead — /sandbox/button' }],
     },
   ],
 });

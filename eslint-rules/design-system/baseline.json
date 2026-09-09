@@ -307,42 +307,5 @@
       "reason": "Directory picker owns a BE-driven browser body and custom Escape-layer contract that FormDialog does not expose",
       "files": ["src/features/onboarding/messages/DirectoryPickerModal.svelte"]
     }
-  ],
-  "no-raw-controls": [
-    {
-      "owner": "design-system",
-      "reason": "Badge is the canonical removable-badge primitive and owns its native remove button",
-      "files": ["src/lib/components/ui/badge/badge.svelte"]
-    },
-    {
-      "owner": "design-system",
-      "reason": "SidebarGroupAction is the canonical sidebar group action primitive and owns its native button",
-      "files": ["src/lib/components/ui/sidebar/sidebar-group-action.svelte"]
-    },
-    {
-      "owner": "design-system",
-      "reason": "SidebarMenuAction is the canonical sidebar menu action primitive and owns its native button",
-      "files": ["src/lib/components/ui/sidebar/sidebar-menu-action.svelte"]
-    },
-    {
-      "owner": "design-system",
-      "reason": "SidebarMenuButton is the canonical sidebar menu button primitive and owns its native button",
-      "files": ["src/lib/components/ui/sidebar/sidebar-menu-button.svelte"]
-    },
-    {
-      "owner": "design-system",
-      "reason": "SidebarRail is the canonical sidebar resize and toggle affordance and owns its native button",
-      "files": ["src/lib/components/ui/sidebar/sidebar-rail.svelte"]
-    },
-    {
-      "owner": "design-system",
-      "reason": "ToastCloseButton is the canonical custom-toast close primitive and owns its native button",
-      "files": ["src/lib/components/ui/toast/ToastCloseButton.svelte"]
-    },
-    {
-      "owner": "design-system",
-      "reason": "TooltipRich is the canonical rich-tooltip primitive and owns its optional native close button",
-      "files": ["src/lib/components/ui/tooltip/TooltipRich.svelte"]
-    }
   ]
 }

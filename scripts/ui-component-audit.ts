@@ -19,28 +19,31 @@ const sortText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const RAW_ELEMENT_TAGS = ['button', 'input', 'select', 'textarea'] as const;
 const RAW_ELEMENT_POLICY = 'scripts/ui-component-raw-element-allowlist.json';
 const RAW_ELEMENT_APPROVED_ROOTS = [
-  'button',
-  'input',
-  'select',
-  'textarea',
-  'checkbox',
-  'switch',
-  'toggle',
-  'toggle-group',
-  'menu',
-  'dialog',
-  'sheet',
-  'combobox',
-  'file-input',
-  'slider',
-].map((family) => `src/lib/components/ui/${family}/`);
+  ...[
+    'button',
+    'input',
+    'select',
+    'textarea',
+    'checkbox',
+    'switch',
+    'toggle',
+    'toggle-group',
+    'menu',
+    'dialog',
+    'sheet',
+    'combobox',
+    'file-input',
+    'slider',
+  ].map((family) => `src/lib/components/ui/${family}/`),
+  'src/lib/components/ui/sidebar/sidebar-rail.svelte',
+  'src/lib/components/ui/sidebar/sidebar-menu-button.svelte',
+];
 
 type RawElementTag = (typeof RAW_ELEMENT_TAGS)[number];
 type RawElementCounts = Record<RawElementTag, { files: number; elements: number }>;
 
 interface RawElementPolicy {
   ceilings: Record<string, Record<RawElementTag, number>>;
-  exceptions: Array<{ file: string; elements: RawElementTag[]; owner: string; reason: string }>;
 }
 
 type PatternAdoptionKind = keyof typeof uiComponentGuardrails.patternAdoption;
@@ -188,12 +191,8 @@ function emptyRawElementCounts(): RawElementCounts {
 function loadRawElementPolicy(root: string): RawElementPolicy {
   const policyFile = path.join(root, RAW_ELEMENT_POLICY);
   const parsed = JSON.parse(fs.readFileSync(policyFile, 'utf8')) as Partial<RawElementPolicy>;
-  if (
-    !parsed.ceilings ||
-    typeof parsed.ceilings !== 'object' ||
-    !Array.isArray(parsed.exceptions)
-  ) {
-    throw new Error(`${RAW_ELEMENT_POLICY}: expected ceilings and exceptions`);
+  if (!parsed.ceilings || typeof parsed.ceilings !== 'object') {
+    throw new Error(`${RAW_ELEMENT_POLICY}: expected ceilings`);
   }
   for (const [directory, ceilings] of Object.entries(parsed.ceilings)) {
     if (!directory.startsWith('src/') || !ceilings || typeof ceilings !== 'object') {
@@ -207,23 +206,6 @@ function loadRawElementPolicy(root: string): RawElementPolicy {
       }
     }
   }
-  for (const exception of parsed.exceptions) {
-    if (
-      !exception ||
-      typeof exception.file !== 'string' ||
-      !exception.file.startsWith('src/') ||
-      !exception.file.endsWith('.svelte') ||
-      !Array.isArray(exception.elements) ||
-      !exception.elements.length ||
-      exception.elements.some((tag) => !RAW_ELEMENT_TAGS.includes(tag)) ||
-      typeof exception.owner !== 'string' ||
-      !exception.owner.trim() ||
-      typeof exception.reason !== 'string' ||
-      !exception.reason.trim()
-    ) {
-      throw new Error(`${RAW_ELEMENT_POLICY}: invalid exception ${JSON.stringify(exception)}`);
-    }
-  }
   return parsed as RawElementPolicy;
 }
 
@@ -232,22 +214,12 @@ export interface RawElementAudit {
     string,
     Record<RawElementTag, { files: number; elements: number; ceiling: number | null }>
   >;
-  exceptions: number;
   failures: string[];
 }
 
 export function buildRawElementAudit(root = projectRoot): RawElementAudit {
   const policy = loadRawElementPolicy(root);
-  const exceptions = new Map<string, Set<RawElementTag>>();
   const failures: string[] = [];
-  for (const exception of policy.exceptions) {
-    const tags = exceptions.get(exception.file) ?? new Set<RawElementTag>();
-    for (const tag of exception.elements) {
-      if (tags.has(tag)) failures.push(`${exception.file}: duplicate <${tag}> exception`);
-      tags.add(tag);
-    }
-    exceptions.set(exception.file, tags);
-  }
 
   const counts = new Map<string, RawElementCounts>();
   const files = walk(path.join(root, 'src')).filter(productionSvelteSource);
@@ -259,25 +231,11 @@ export function buildRawElementAudit(root = projectRoot): RawElementAudit {
     const source = fs.readFileSync(absolute, 'utf8');
     for (const tag of RAW_ELEMENT_TAGS) {
       const matches = [...source.matchAll(new RegExp(`<${tag}(?=[\\s/>])`, 'g'))].length;
-      if (!matches || exceptions.get(file)?.has(tag)) continue;
+      if (!matches) continue;
       directoryCounts[tag].files += 1;
       directoryCounts[tag].elements += matches;
     }
     counts.set(directory, directoryCounts);
-  }
-
-  for (const [file, tags] of exceptions) {
-    const absolute = path.join(root, file);
-    if (!fs.existsSync(absolute)) {
-      failures.push(`${file}: allowlisted file is missing`);
-      continue;
-    }
-    const source = fs.readFileSync(absolute, 'utf8');
-    for (const tag of tags) {
-      if (!new RegExp(`<${tag}(?=[\\s/>])`, 'g').test(source)) {
-        failures.push(`${file}: stale <${tag}> exception; remove it from ${RAW_ELEMENT_POLICY}`);
-      }
-    }
   }
 
   const directories: RawElementAudit['directories'] = {};
@@ -302,7 +260,6 @@ export function buildRawElementAudit(root = projectRoot): RawElementAudit {
   }
   return {
     directories,
-    exceptions: policy.exceptions.length,
     failures: [...new Set(failures)].sort(sortText),
   };
 }

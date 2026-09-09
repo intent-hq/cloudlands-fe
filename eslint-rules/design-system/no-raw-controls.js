@@ -1,14 +1,4 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { isWithin, packageRoot, relativeFilename, svelteElementName } from './common.js';
-
-const policy = JSON.parse(
-  fs.readFileSync(path.join(packageRoot, 'scripts/ui-component-raw-element-allowlist.json')),
-);
-const exceptions = new Map();
-for (const entry of policy.exceptions) {
-  exceptions.set(entry.file, new Set(entry.elements));
-}
+import { isWithin, relativeFilename, svelteElementName } from './common.js';
 
 const replacements = {
   button: 'Button',
@@ -17,21 +7,25 @@ const replacements = {
   textarea: 'Textarea',
 };
 const approvedRoots = [
-  'button',
-  'input',
-  'select',
-  'textarea',
-  'checkbox',
-  'switch',
-  'toggle',
-  'toggle-group',
-  'menu',
-  'dialog',
-  'sheet',
-  'combobox',
-  'file-input',
-  'slider',
-].map((family) => `src/lib/components/ui/${family}`);
+  ...[
+    'button',
+    'input',
+    'select',
+    'textarea',
+    'checkbox',
+    'switch',
+    'toggle',
+    'toggle-group',
+    'menu',
+    'dialog',
+    'sheet',
+    'combobox',
+    'file-input',
+    'slider',
+  ].map((family) => `src/lib/components/ui/${family}`),
+  'src/lib/components/ui/sidebar/sidebar-rail.svelte',
+  'src/lib/components/ui/sidebar/sidebar-menu-button.svelte',
+];
 
 function isProductionSvelteSource(filename) {
   const internalRoute =
@@ -63,7 +57,6 @@ export default {
         const tag = svelteElementName(node);
         if (!replacements[tag] || node.kind !== 'html') return;
         if (approvedRoots.some((root) => isWithin(filename, root))) return;
-        if (exceptions.get(filename)?.has(tag)) return;
         context.report({
           node,
           messageId: 'rawControl',

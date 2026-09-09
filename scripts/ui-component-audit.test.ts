@@ -160,17 +160,14 @@ describe('UI component inventory gate', () => {
         string,
         Record<string, { files: number; elements: number; ceiling: number }>
       >;
-      exceptions: number;
       failures: string[];
     };
 
     expect(Object.keys(report.directories)).toEqual(['src/features', 'src/lib', 'src/routes']);
-    expect(report.exceptions).toBeGreaterThan(0);
     expect(report.failures).toEqual([]);
     for (const controls of Object.values(report.directories)) {
       for (const counts of Object.values(controls)) {
-        expect(counts.files).toBeLessThanOrEqual(counts.ceiling);
-        expect(counts.elements).toBeGreaterThanOrEqual(counts.files);
+        expect(counts).toEqual({ files: 0, elements: 0, ceiling: 0 });
       }
     }
   });
@@ -185,17 +182,10 @@ describe('UI component inventory gate', () => {
         'src/features/example/Attachment.svelte': '<input type="file" />',
         'scripts/ui-component-raw-element-allowlist.json': JSON.stringify({
           ceilings: {
-            'src/features': { button: 0, input: 1, select: 0, textarea: 0 },
+            'src/features': { button: 0, input: 0, select: 0, textarea: 0 },
             'src/lib': { button: 0, input: 0, select: 0, textarea: 0 },
           },
-          exceptions: [
-            {
-              file: 'src/features/example/Attachment.svelte',
-              elements: ['input'],
-              owner: 'example',
-              reason: 'Hidden native file picker host',
-            },
-          ],
+          exceptions: [],
         }),
       };
       for (const [file, source] of Object.entries(files)) {
@@ -208,7 +198,7 @@ describe('UI component inventory gate', () => {
       expect(report.exitCode).toBe(0);
       expect(JSON.parse(report.stdout).directories['src/features']).toMatchObject({
         button: { files: 1, elements: 2, ceiling: 0 },
-        input: { files: 1, elements: 1, ceiling: 1 },
+        input: { files: 2, elements: 2, ceiling: 0 },
       });
 
       const result = runUiComponentAudit('check', directory);

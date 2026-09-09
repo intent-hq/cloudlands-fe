@@ -87,6 +87,11 @@ Pattern-first routing for product UI. Open the catalog URL in \`pnpm run dev:ui\
 - **Import:** \`IntentMarkLoader\` from \`$lib/components/ui/indicators\`
 - **Use:** IntentMarkLoader is the only indeterminate indicator. It inherits \`currentColor\`; use bloom by default, and pulse or twist only for an explicit status-derived variant. Use the Screen pattern's \`LoadingState\` for structured loading shells.
 
+## Raw markup
+
+- **Zero rule:** Production code outside approved primitive implementations contains zero raw \`button\`, \`input\`, \`select\`, or \`textarea\` controls. Use the public design-system primitive instead; there are no file exceptions.
+- **Approved-root criterion:** A file may host a raw control only when that file is itself the control primitive: it renders the native element and owns its recipe and focus contract. A file that merely uses a control is not an approved root.
+
 ## Button
 
 - **Import:** \`${buttonMetadata.publicImport}\`

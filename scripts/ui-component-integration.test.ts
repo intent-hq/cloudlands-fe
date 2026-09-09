@@ -211,9 +211,14 @@ describe('Gate C structural ratchets', () => {
   });
 
   it('ratchets raw controls outside approved primitive implementations', () => {
+    const policy = JSON.parse(
+      readFileSync(path.join(root, 'scripts/ui-component-raw-element-allowlist.json'), 'utf8'),
+    ) as { exceptions: unknown[] };
     const counts = countRawUiControls(root);
-    for (const tag of ['button', 'input', 'select', 'textarea'] as const) {
-      expect(counts[tag], tag).toBeLessThanOrEqual(uiComponentGuardrails.rawControls[tag]);
-    }
+    const zeroControls = { button: 0, input: 0, select: 0, textarea: 0 };
+
+    expect(policy.exceptions).toEqual([]);
+    expect(uiComponentGuardrails.rawControls).toEqual(zeroControls);
+    expect(counts).toEqual(zeroControls);
   });
 });
