@@ -44,6 +44,7 @@
   import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
+  import { Button } from '$lib/components/ui/button';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { hashContent } from './diff-content-hash.js';
   import { m } from '$shared/paraglide/messages.js';
@@ -1105,7 +1106,12 @@
   {:else if collapsible && previewLines > 0}
     <!-- Preview when collapsed -->
     <div class="pure-diff-preview">
-      <button type="button" class="pure-diff-preview-button" onclick={toggleCollapse}>
+      <Button
+        variant="ghost-light"
+        size="compact"
+        class="pure-diff-preview-button h-auto!"
+        onclick={toggleCollapse}
+      >
         {m.ui_diffViewer_expand_label({
           additions:
             stats.additions === 1
@@ -1116,7 +1122,7 @@
               ? m.ui_diffViewer_deletions_one()
               : m.ui_diffViewer_deletions_many({ count: formatInteger(stats.deletions) }),
         })}
-      </button>
+      </Button>
     </div>
   {/if}
 </div>

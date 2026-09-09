@@ -94,9 +94,11 @@
     <!-- Header row -->
     <div class="flex min-h-9 items-center gap-2 px-3 py-1.5">
       {#if linkedAgentId}
-        <button
-          type="button"
-          class="shrink-0 rounded-sm transition-opacity hover:opacity-80"
+        <Button
+          variant="plain"
+          size="icon-compact"
+          iconOnly
+          class="size-4! shrink-0 rounded-sm! transition-opacity hover:opacity-80"
           onclick={(event) => {
             if (!workspaceId) return;
             appStore.dispatch(
@@ -109,11 +111,14 @@
           title={m.ui_patchBlock_viewAgent_tooltip()}
         >
           <AgentAvatar agentId={linkedAgentId} variant="compact" />
-        </button>
+        </Button>
       {/if}
-      <button
-        type="button"
-        class="flex min-w-0 flex-1 items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
+      <Button
+        variant="plain"
+        size="compact"
+        class="h-auto! min-w-0 flex-1 shrink items-center justify-start gap-2 px-0! py-0! text-muted-foreground transition-colors hover:text-foreground"
+        truncateLabel={false}
+        labelClass="flex min-w-0 flex-1 items-center gap-2"
         onclick={toggleExpanded}
       >
         {#if !linkedAgentId}
@@ -129,7 +134,7 @@
             {m.ui_patchBlock_applied_label()}
           </span>
         {/if}
-      </button>
+      </Button>
       {#if showActionButton}
         <Button
           variant="ghost-light"

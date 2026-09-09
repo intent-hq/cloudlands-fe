@@ -43,6 +43,7 @@
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import FileViewer from '$lib/components/editor/FileViewer.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
   import ViewSettingsDropdown from '../components/ViewSettingsDropdown.svelte';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
@@ -584,13 +585,14 @@
           <ul class="flex flex-col items-center gap-1">
             {#each fileNotFoundCandidates as candidate (candidate)}
               <li>
-                <button
-                  type="button"
-                  class="text-xs font-mono text-primary-ink cursor-pointer hover:underline"
+                <Button
+                  variant="link"
+                  size="compact"
+                  class="h-auto p-0 font-mono text-xs"
                   onclick={() => openNotFoundCandidate(candidate)}
                 >
                   {candidate}
-                </button>
+                </Button>
               </li>
             {/each}
           </ul>
