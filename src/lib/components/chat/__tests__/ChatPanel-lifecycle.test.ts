@@ -853,8 +853,14 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.getByTestId('composer-aurora-host')).toBeTruthy();
   });
 
-  it('bounds production resource ownership across retained A → B → C → D switches', async () => {
-    const workspaceIds = ['workspace-a', 'workspace-b', 'workspace-c', 'workspace-d'];
+  it('bounds production resource ownership across a four-workspace working set and eviction', async () => {
+    const workspaceIds = [
+      'workspace-a',
+      'workspace-b',
+      'workspace-c',
+      'workspace-d',
+      'workspace-e',
+    ];
     OwnershipResizeObserver.live.clear();
     OwnershipIntersectionObserver.live.clear();
     vi.stubGlobal('ResizeObserver', OwnershipResizeObserver);
@@ -951,8 +957,12 @@ describe('ChatPanel mounted lifecycle', () => {
       const activePlusOneOwnership = ownership();
 
       await switchTo('workspace-c');
-      expect(surfaceCount()).toBe(2);
-      expect(ownership()).toEqual(activePlusOneOwnership);
+      expect(surfaceCount()).toBe(3);
+      await switchTo('workspace-d');
+      expect(surfaceCount()).toBe(4);
+      const fullWorkingSetOwnership = ownership();
+      // Retained DOM must not keep background transcript subscriptions active.
+      expect(fullWorkingSetOwnership.chatSubscriptionLeases).toBe(1);
 
       const activeEditor = view.container.querySelector<HTMLInputElement>(
         '[data-retained-workspace-active="true"] [data-testid="mock-rich-input-editor"]',
@@ -961,24 +971,25 @@ describe('ChatPanel mounted lifecycle', () => {
       await fireEvent.input(activeEditor!, { target: { value: 'flush before eviction' } });
       await tick();
       expect(ownership().timerDelays.length).toBeGreaterThan(
-        activePlusOneOwnership.timerDelays.length,
+        fullWorkingSetOwnership.timerDelays.length,
       );
 
-      await switchTo('workspace-d');
-      expect(surfaceCount()).toBe(2);
-      expect(ownership()).toEqual(activePlusOneOwnership);
+      await switchTo('workspace-e');
+      expect(surfaceCount()).toBe(4);
+      expect(ownership()).toEqual(fullWorkingSetOwnership);
+      expect(chatInterestLeaseCount('agent-workspace-a')).toBe(0);
       expect(mocks.draftSet).toHaveBeenCalledWith(
-        'workspace-c',
-        'agent-workspace-c',
+        'workspace-d',
+        'agent-workspace-d',
         'flush before eviction',
         undefined,
       );
 
-      await switchTo('workspace-d', ['workspace-a', 'workspace-b', 'workspace-d']);
+      await switchTo('workspace-e', ['workspace-e']);
       expect(surfaceCount()).toBe(1);
       expect(ownership()).toEqual(singleSurfaceOwnership);
 
-      await switchTo('workspace-a', ['workspace-a', 'workspace-b', 'workspace-d']);
+      await switchTo('workspace-a', ['workspace-a', 'workspace-b', 'workspace-e']);
       expect(surfaceCount()).toBe(2);
       expect(ownership()).toEqual(activePlusOneOwnership);
 

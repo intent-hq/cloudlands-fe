@@ -6,10 +6,10 @@ import {
   reconcileWorkspaceSurfaces,
 } from './workspace-surface-retention';
 
-const workspaceIds = ['workspace-a', 'workspace-b', 'workspace-c'];
+const workspaceIds = ['workspace-a', 'workspace-b', 'workspace-c', 'workspace-d', 'workspace-e'];
 
 describe('workspace surface retention', () => {
-  it('retains A through A → B → A while bounding the live surfaces to two', () => {
+  it('retains A through A → B → A without mounting unvisited workspaces', () => {
     let state = createWorkspaceSurfaceRetentionState();
     state = reconcileWorkspaceSurfaces(state, input('workspace-a'));
     const initialGeneration = generation(state, 'workspace-a');
@@ -25,21 +25,62 @@ describe('workspace surface retention', () => {
     expect(generation(state, 'workspace-a')).toBe(initialGeneration);
   });
 
-  it('evicts the least recently active surface and remounts it on a cold return', () => {
+  it('keeps a four-workspace working set warm and evicts by most recent activation', () => {
     let state = createWorkspaceSurfaceRetentionState();
     state = reconcileWorkspaceSurfaces(state, input('workspace-a'));
     const initialGeneration = generation(state, 'workspace-a');
     state = reconcileWorkspaceSurfaces(state, input('workspace-b'));
+    const evictedGeneration = generation(state, 'workspace-b');
     state = reconcileWorkspaceSurfaces(state, input('workspace-c'));
-
-    expect(state.surfaces.map(({ workspaceId }) => workspaceId)).toEqual([
-      'workspace-b',
-      'workspace-c',
-    ]);
+    state = reconcileWorkspaceSurfaces(state, input('workspace-d'));
+    expect(state.surfaces).toHaveLength(4);
 
     state = reconcileWorkspaceSurfaces(state, input('workspace-a'));
-    expect(state.surfaces).toHaveLength(2);
-    expect(generation(state, 'workspace-a')).not.toBe(initialGeneration);
+    expect(generation(state, 'workspace-a')).toBe(initialGeneration);
+    state = reconcileWorkspaceSurfaces(state, input('workspace-e'));
+    expect(state.surfaces.map(({ workspaceId }) => workspaceId)).toEqual([
+      'workspace-a',
+      'workspace-c',
+      'workspace-d',
+      'workspace-e',
+    ]);
+
+    state = reconcileWorkspaceSurfaces(state, input('workspace-b'));
+    expect(state.surfaces).toHaveLength(4);
+    expect(generation(state, 'workspace-b')).not.toBe(evictedGeneration);
+    expect(state.surfaces.some(({ workspaceId }) => workspaceId === 'workspace-c')).toBe(false);
+  });
+
+  it('does not churn state when the same workspace remains active', () => {
+    const state = reconcileWorkspaceSurfaces(
+      createWorkspaceSurfaceRetentionState(),
+      input('workspace-a'),
+    );
+    expect(reconcileWorkspaceSurfaces(state, input('workspace-a'))).toBe(state);
+  });
+
+  it('preserves the same DOM across repeated multi-workspace switching', async () => {
+    const view = render(RetentionHarness, { props: input('workspace-a') });
+    const content = new Map<string, HTMLElement>();
+    for (const workspaceId of workspaceIds.slice(0, 4)) {
+      await view.rerender(input(workspaceId));
+      content.set(workspaceId, view.getByRole('button', { name: workspaceId }));
+    }
+
+    for (let cycle = 0; cycle < 3; cycle++) {
+      for (const workspaceId of workspaceIds.slice(0, 4)) {
+        await view.rerender(input(workspaceId));
+        expect(view.getByRole('button', { name: workspaceId })).toBe(content.get(workspaceId));
+        expect(view.getAllByRole('button')).toHaveLength(1);
+        expect(view.container.querySelectorAll('[data-retained-workspace-surface]')).toHaveLength(
+          4,
+        );
+      }
+    }
+
+    await view.rerender({ ...input('workspace-d'), openWorkspaceIds: ['workspace-d'] });
+    expect(view.container.querySelectorAll('[data-retained-workspace-surface]')).toHaveLength(1);
+    expect(view.getByRole('button', { name: 'workspace-d' })).toBe(content.get('workspace-d'));
   });
 
   it('releases closed and deleted inactive surfaces and renews an evicted active surface', () => {
