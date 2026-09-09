@@ -40,12 +40,6 @@
     }, delayDuration);
   }
 
-  $effect(() => {
-    if (!disabled) return;
-    clearOpenTimer();
-    setOpen(false);
-  });
-
   function handleMouseLeave() {
     pointerWithin = false;
     clearOpenTimer();
