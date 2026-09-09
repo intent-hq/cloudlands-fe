@@ -41,7 +41,10 @@ import {
   windowCloseListeners,
 } from '../renderer-subscription-registry';
 import type { WorkspaceEvent } from '../../types';
-import { agentSubscriptionState, resetAgentSubscriptionState } from '../agent-subscription-state.service';
+import {
+  agentSubscriptionState,
+  resetAgentSubscriptionState,
+} from '../agent-subscription-state.service';
 import type { AgentSubscriptionRecord } from '../../../../store/main/slices/agent-subscriptions/types';
 
 function makeWindow(closedListeners: Array<() => void> = []) {
