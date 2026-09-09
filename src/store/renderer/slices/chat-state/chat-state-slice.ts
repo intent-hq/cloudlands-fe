@@ -26,7 +26,10 @@ import {
   agentStreamUpdateReceived,
   type AgentStreamUpdatePayload,
 } from '../workspace-agents/workspace-agents-stream-slice';
-import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceChatStateReclaimed,
+  workspaceDeleted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
 import { markAgentAsViewed } from '../unread-tracking/unread-tracking-slice';
 import {
@@ -1394,6 +1397,32 @@ chatStateReducer.with(
     });
   },
 );
+chatStateReducer.with(workspaceChatStateReclaimed, (state, { payload: [, agentIds] }) => {
+  if (agentIds.length === 0) return state;
+  let changed = false;
+  const byAgentId = { ...state.byAgentId };
+  for (const agentId of agentIds) {
+    const agent = byAgentId[agentId];
+    if (!agent) continue;
+    const hasRetryPayload =
+      agent.lastAttemptedMessage !== null || Object.keys(agent.queuedRetryRecords).length > 0;
+    if (hasRetryPayload) {
+      byAgentId[agentId] = {
+        ...emptyChatAgentState,
+        agentId,
+        error: agent.error,
+        failureCorrelation: agent.failureCorrelation,
+        lastAttemptedMessage: agent.lastAttemptedMessage,
+        queuedRetryRecords: agent.queuedRetryRecords,
+        modelUnavailable: agent.modelUnavailable,
+      };
+    } else {
+      delete byAgentId[agentId];
+    }
+    changed = true;
+  }
+  return changed ? { ...state, byAgentId } : state;
+});
 chatStateReducer.with(workspaceDeleted, (state, { payload: [, agentIds] }) => {
   if (agentIds.length === 0) return state;
   let changed = false;

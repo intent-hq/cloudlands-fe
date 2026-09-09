@@ -1806,6 +1806,40 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('does not write retired-agent state after workspace unmount cancels the load', async () => {
+    let resolveList!: (value: AgentSession[]) => void;
+    mocks.agents.list.mockReturnValueOnce(
+      new Promise<AgentSession[]>((resolve) => {
+        resolveList = resolve;
+      }),
+    );
+    const run = start();
+
+    run.channel.put(fetchRetiredAgentsRequested(WS));
+    await settle();
+    expect(run.actions).toEqual([
+      { type: 'workspaceAgents/setIsLoadingRetiredAgents', payload: [WS, true] },
+    ]);
+
+    run.actions.length = 0;
+    run.channel.put(workspaceUnmounted(WS));
+    await settle();
+    resolveList([agent('agent-late', { retiredAt: '2026-08-10T00:00:00.000Z' })]);
+    await settle();
+
+    expect(run.actions).toEqual([]);
+
+    run.channel.put(fetchRetiredAgentsRequested(WS));
+    await settle();
+    expect(run.actions).toEqual([
+      { type: 'workspaceAgents/setIsLoadingRetiredAgents', payload: [WS, true] },
+      { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
+      { type: 'workspaceAgents/setRetiredAgentsLoaded', payload: [WS, true] },
+      { type: 'workspaceAgents/setIsLoadingRetiredAgents', payload: [WS, false] },
+    ]);
+    await stop(run.task);
+  });
+
   it('skips the retired load when the rows are already hydrated', async () => {
     const current = state();
     current.workspaceAgents.byWorkspaceId = {

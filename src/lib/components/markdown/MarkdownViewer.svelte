@@ -121,180 +121,176 @@
     return 'simple';
   });
 
-  // Track static content element for click handling
-  let staticContentElement: HTMLElement | null = $state(null);
-
   let processedContent = $state('');
-  let lastProcessedContent = '';
-  // The rendered HTML also depends on workspaceId (short-form intent://local/file/
-  // image links resolve against it), so it participates in the memoization guard
-  let lastProcessedWorkspaceId: string | undefined;
-  let lastRenderRichFencesAsCode = false;
+  type RenderMode = 'video' | 'streaming' | 'simple' | 'static';
+  type RenderRequest = {
+    generation: number;
+    markdown: string;
+    mode: RenderMode;
+    contextKey: string;
+    parseKey: string;
+    streaming: boolean;
+    workspaceId: string | undefined;
+    taskBlockRenderMode: 'placeholder' | 'content';
+    renderRichFencesAsCode: boolean;
+  };
 
-  // PERF: Track streaming state to throttle re-renders during streaming
-  let isCurrentlyStreaming = false;
-  let streamingContentElement: HTMLElement | null = $state(null);
+  const STREAMING_THROTTLE_MS = 150;
+  let generation = 0;
+  let destroyed = false;
+  let currentRequest: RenderRequest | null = null;
+  let pendingRequest: RenderRequest | null = null;
+  let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastParseStartedAt = Number.NEGATIVE_INFINITY;
+  let lastCommittedParseKey: string | null = null;
+  let lastScheduledMode: RenderMode | null = null;
+  let latestContextKey = '';
+  let latestMarkdown = '';
 
-  // PERF: Create throttled update function once (not per streaming session)
-  const STREAMING_THROTTLE_MS = 150; // Slightly higher throttle during streaming for better perf
-  let lastUpdateTime = 0;
-  let pendingUpdateRafId: number | null = null;
-  let pendingContent: string | null = null;
-
-  // Process markdown to HTML for the static render path
-  async function updateContentFull(markdown: string) {
-    // Skip if content hasn't actually changed
-    if (
-      markdown === lastProcessedContent &&
-      workspaceId === lastProcessedWorkspaceId &&
-      renderRichFencesAsCode === lastRenderRichFencesAsCode
-    ) {
-      return;
-    }
-
-    if (!markdown) {
-      processedContent = '';
-      lastProcessedContent = '';
-      lastProcessedWorkspaceId = workspaceId;
-      lastRenderRichFencesAsCode = renderRichFencesAsCode;
-      return;
-    }
-
-    try {
-      const html = await processMarkdownToHTML(markdown, {
-        allowEmpty: true,
-        skipIfHTML: false,
-        preserveAnchors: true,
-        taskBlockRenderMode,
-        workspaceId,
-        renderRichFencesAsCode,
-        workspaceFileVersion,
-      });
-      processedContent = html;
-      lastProcessedContent = markdown;
-      lastProcessedWorkspaceId = workspaceId;
-      lastRenderRichFencesAsCode = renderRichFencesAsCode;
-      // Note: Scroll management is handled by the parent component via followBottom action
-    } catch (error) {
-      logger.error('Failed to process markdown:', error);
-      // Escape HTML for safety — processedContent is injected with {@html}
-      const escaped = markdown.replace(
-        /[&<>"']/g,
-        (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m] || m,
-      );
-      processedContent = `<p>${escaped}</p>`;
-      lastProcessedContent = markdown;
-      lastProcessedWorkspaceId = workspaceId;
-    }
+  function escapeMarkdown(markdown: string): string {
+    const escaped = markdown.replace(
+      /[&<>"']/g,
+      (character) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character] ||
+        character,
+    );
+    return `<p>${escaped}</p>`;
   }
 
-  // PERF: Lightweight streaming update - writes innerHTML directly
-  async function updateContentStreaming(markdown: string) {
-    // Skip if content hasn't actually changed
-    if (
-      markdown === lastProcessedContent &&
-      workspaceId === lastProcessedWorkspaceId &&
-      renderRichFencesAsCode === lastRenderRichFencesAsCode
-    ) {
-      return;
-    }
-
-    if (!markdown) {
-      lastProcessedContent = '';
-      lastProcessedWorkspaceId = workspaceId;
-      lastRenderRichFencesAsCode = renderRichFencesAsCode;
-      if (streamingContentElement) {
-        streamingContentElement.innerHTML = '';
-      }
-      return;
-    }
-
-    try {
-      const html = await processMarkdownToHTML(markdown, {
-        allowEmpty: true,
-        skipIfHTML: false,
-        preserveAnchors: true,
-        taskBlockRenderMode,
-        workspaceId,
-        renderRichFencesAsCode,
-        workspaceFileVersion,
-      });
-      lastProcessedContent = markdown;
-      lastProcessedWorkspaceId = workspaceId;
-      lastRenderRichFencesAsCode = renderRichFencesAsCode;
-      processedContent = html;
-
-      // PERF: During streaming, update innerHTML directly to avoid re-rendering
-      // the whole {@html} block on every throttled tick
-      if (streamingContentElement) {
-        streamingContentElement.innerHTML = html;
-      }
-    } catch (error) {
-      logger.error('Failed to process streaming markdown:', error);
-      if (streamingContentElement) {
-        // Escape HTML for safety
-        const escaped = markdown.replace(
-          /[&<>"']/g,
-          (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m] || m,
-        );
-        streamingContentElement.innerHTML = `<p>${escaped}</p>`;
-      }
-      lastProcessedContent = markdown;
-      lastProcessedWorkspaceId = workspaceId;
-    }
+  function clearPendingTimer(): void {
+    if (pendingTimer === null) return;
+    clearTimeout(pendingTimer);
+    pendingTimer = null;
   }
 
-  // PERF: Throttled update with RAF batching
-  function scheduleStreamingUpdate(markdown: string) {
-    pendingContent = markdown;
+  function startPendingRequest(): void {
+    if (destroyed || currentRequest || !pendingRequest) return;
+    clearPendingTimer();
 
-    const now = performance.now();
-    const timeSinceLastUpdate = now - lastUpdateTime;
+    const request = pendingRequest;
+    pendingRequest = null;
+    currentRequest = request;
+    lastParseStartedAt = performance.now();
 
-    // If enough time has passed, update immediately
-    if (timeSinceLastUpdate >= STREAMING_THROTTLE_MS) {
-      lastUpdateTime = now;
-      updateContentStreaming(markdown);
-      pendingContent = null;
-    } else if (pendingUpdateRafId === null) {
-      // Schedule update for after throttle period
-      pendingUpdateRafId = requestAnimationFrame(() => {
-        pendingUpdateRafId = null;
-        if (pendingContent !== null) {
-          lastUpdateTime = performance.now();
-          updateContentStreaming(pendingContent);
-          pendingContent = null;
+    void processMarkdownToHTML(request.markdown, {
+      allowEmpty: true,
+      skipIfHTML: false,
+      preserveAnchors: true,
+      taskBlockRenderMode: request.taskBlockRenderMode,
+      workspaceId: request.workspaceId,
+      renderRichFencesAsCode: request.renderRichFencesAsCode,
+      workspaceFileVersion,
+    })
+      .catch((error) => {
+        logger.error('Failed to process markdown:', error);
+        return escapeMarkdown(request.markdown);
+      })
+      .then((html) => {
+        const isCurrentStreamingPrefix =
+          request.mode === 'streaming' &&
+          request.contextKey === latestContextKey &&
+          latestMarkdown.startsWith(request.markdown);
+        if (!destroyed && (request.generation === generation || isCurrentStreamingPrefix)) {
+          processedContent = html;
+          lastCommittedParseKey = request.parseKey;
         }
+      })
+      .finally(() => {
+        if (currentRequest === request) currentRequest = null;
+        planPendingRequest();
       });
-    }
-    // If RAF is already scheduled, the pending update will be used
   }
 
-  // Cleanup pending updates
-  function cancelPendingUpdates() {
-    if (pendingUpdateRafId !== null) {
-      cancelAnimationFrame(pendingUpdateRafId);
-      pendingUpdateRafId = null;
+  function planPendingRequest(): void {
+    if (destroyed || currentRequest || !pendingRequest) return;
+    if (!pendingRequest.streaming) {
+      startPendingRequest();
+      return;
     }
-    pendingContent = null;
+
+    const remaining = STREAMING_THROTTLE_MS - (performance.now() - lastParseStartedAt);
+    if (remaining <= 0) {
+      startPendingRequest();
+    } else if (pendingTimer === null) {
+      pendingTimer = setTimeout(() => {
+        pendingTimer = null;
+        startPendingRequest();
+      }, remaining);
+    }
   }
 
-  // Update content when prop changes
-  $effect(() => {
-    const wasStreaming = isCurrentlyStreaming;
-    isCurrentlyStreaming = isStreaming;
+  function scheduleRender(markdown: string, mode: RenderMode): void {
+    const previousMode = lastScheduledMode;
+    lastScheduledMode = mode;
+    generation += 1;
+    const contextKey = JSON.stringify([
+      mode,
+      workspaceId,
+      taskBlockRenderMode,
+      renderRichFencesAsCode,
+    ]);
+    latestContextKey = contextKey;
+    latestMarkdown = markdown;
+    const parseKey = JSON.stringify([
+      markdown,
+      workspaceId,
+      taskBlockRenderMode,
+      renderRichFencesAsCode,
+    ]);
+    const request: RenderRequest = {
+      generation,
+      markdown,
+      mode,
+      contextKey,
+      parseKey,
+      streaming: mode === 'streaming',
+      workspaceId,
+      taskBlockRenderMode,
+      renderRichFencesAsCode,
+    };
 
-    if (isStreaming) {
-      // Use throttled streaming update
-      scheduleStreamingUpdate(markdownContent);
-    } else {
-      // Clean up pending updates when streaming ends
-      if (wasStreaming) {
-        cancelPendingUpdates();
+    if (mode === 'video' || mode === 'simple' || !markdown) {
+      pendingRequest = null;
+      clearPendingTimer();
+      if (mode === 'simple' && markdown) {
+        processedContent = escapeMarkdown(markdown);
+        lastCommittedParseKey = null;
+      } else if (mode === 'streaming' && !markdown) {
+        processedContent = '';
+        lastCommittedParseKey = null;
       }
-      // Direct update when not streaming
-      updateContentFull(markdownContent);
+      return;
     }
+
+    if (lastCommittedParseKey === parseKey) {
+      pendingRequest = null;
+      clearPendingTimer();
+      return;
+    }
+
+    if (previousMode === 'video') {
+      processedContent = escapeMarkdown(markdown);
+      lastCommittedParseKey = null;
+    }
+
+    if (currentRequest?.parseKey === parseKey) {
+      currentRequest.generation = generation;
+      pendingRequest = null;
+      clearPendingTimer();
+      return;
+    }
+
+    pendingRequest = request;
+    planPendingRequest();
+  }
+
+  $effect(() => {
+    const mode: RenderMode = hasVideoSegments
+      ? 'video'
+      : isStreaming
+        ? 'streaming'
+        : contentComplexity;
+    scheduleRender(markdownContent, mode);
   });
 
   // Lightbox state for inline workspace-file images
@@ -538,8 +534,10 @@
   }
 
   onDestroy(() => {
-    // Clean up pending streaming updates
-    cancelPendingUpdates();
+    destroyed = true;
+    generation += 1;
+    pendingRequest = null;
+    clearPendingTimer();
   });
 </script>
 
@@ -590,7 +588,6 @@
     role="group"
     class="markdown-viewer streaming-content {className}"
     class:chat-image-thumbnails={chatImageThumbnails}
-    bind:this={streamingContentElement}
     use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
@@ -614,7 +611,6 @@
     role="group"
     class="markdown-viewer static-content {className}"
     class:chat-image-thumbnails={chatImageThumbnails}
-    bind:this={staticContentElement}
     use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}

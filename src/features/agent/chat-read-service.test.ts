@@ -47,6 +47,7 @@ import {
   removePendingAgentDeletion,
   setPendingAgentDeletion,
 } from './utils/pending-agent-deletions';
+import { chatInterestLeaseCount, clearAllChatInterestLeases } from './utils/chat-interest-leases';
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
 
 const agentsApi = appClient.agents as unknown as Record<string, ReturnType<typeof vi.fn>>;
@@ -89,6 +90,7 @@ describe('chatReadService (fake seam, real store)', () => {
   afterEach(() => {
     vi.clearAllMocks();
     clearPendingAgentDeletions();
+    clearAllChatInterestLeases();
     agentsApi.get.mockResolvedValue(null as never);
     agentsApi.getConversation.mockResolvedValue(conversation([]) as never);
   });
@@ -104,6 +106,45 @@ describe('chatReadService (fake seam, real store)', () => {
     expect(agentsApi.get).toHaveBeenCalledWith(AGENT);
     expect(agentsApi.getConversation).toHaveBeenCalledWith(AGENT, 50, undefined);
     expect(selectAgentMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual(['m1']);
+  });
+
+  it('holds a chat-interest lease until an in-flight hydration settles', async () => {
+    let resolveSession!: (session: AgentSession | null) => void;
+    agentsApi.get.mockImplementationOnce(
+      () =>
+        new Promise<AgentSession | null>((resolve) => {
+          resolveSession = resolve;
+        }),
+    );
+
+    const hydration = loadChatTranscript(AGENT);
+    expect(chatInterestLeaseCount(AGENT)).toBe(1);
+
+    resolveSession(null);
+    await hydration;
+    expect(chatInterestLeaseCount(AGENT)).toBe(0);
+  });
+
+  it('keeps chat interest leased across a coalesced trailing hydration', async () => {
+    let resolveFirst!: (session: AgentSession | null) => void;
+    agentsApi.get
+      .mockImplementationOnce(
+        () =>
+          new Promise<AgentSession | null>((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(null as never);
+
+    const leading = loadChatTranscript(AGENT);
+    const trailing = loadChatTranscript(AGENT);
+    expect(chatInterestLeaseCount(AGENT)).toBe(2);
+
+    resolveFirst(null);
+    await leading;
+    expect(chatInterestLeaseCount(AGENT)).toBeGreaterThan(0);
+    await trailing;
+    expect(chatInterestLeaseCount(AGENT)).toBe(0);
   });
 
   it('preserves the seq-0 user message when hydrating a real transcript', async () => {

@@ -69,6 +69,7 @@
     shouldRenderResponseGroupInline,
   } from './response-group-blocks';
   import { chatSearchBlockPath } from './chat-search';
+  import { LiveBlockCache } from './live-block-cache';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
@@ -410,18 +411,11 @@
     setupScript: { name: string; description: string; content: string } | null;
   };
 
-  // Cache for parsed text blocks - parsing also resolves workspace-relative media.
-  let parsedTextCache = new Map<string, ParsedTextResult>();
-  const MAX_CACHE_SIZE = 100;
+  // Parsing resolves workspace-relative media, so cache entries include the workspace.
+  // Reconciliation keeps only the text blocks that are useful to the current render.
+  const parsedTextCache = new LiveBlockCache<string, string | null, ParsedTextResult>();
 
   function parseTextBlock(text: string): ParsedTextResult {
-    const cacheKey = JSON.stringify([workspaceId ?? null, flatstr(text)]);
-    // Check cache first
-    const cached = parsedTextCache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
     // Extract setup script if present
     const setupScript = AuggieTextParser.extractSetupScript(text);
     // Strip suggested prompts (they're rendered separately in ChatPanel)
@@ -430,52 +424,55 @@
     const parsed = parseAgentMessage(contentWithoutSuggestions, workspaceId);
     // Group parsed blocks to wrap group_start/group_end markers into GroupedBlock objects
     const grouped = groupParsedBlocks(parsed);
-    const result = { blocks: grouped, setupScript };
+    return { blocks: grouped, setupScript };
+  }
 
-    // Cache the result (flatten accumulated streaming text so the Map retains flat strings)
-    parsedTextCache.set(cacheKey, result);
-
-    // Limit cache size (LRU-style: remove oldest entries)
-    if (parsedTextCache.size > MAX_CACHE_SIZE) {
-      const firstKey = parsedTextCache.keys().next().value;
-      if (firstKey !== undefined) {
-        parsedTextCache.delete(firstKey);
-      }
-    }
-
-    return result;
+  function getTextCacheKey(block: ContentBlock, renderKey: string): string {
+    return block.id ? `id:${block.id}` : `position:${renderKey}`;
   }
 
   // Pre-compute parsed results for all text blocks to avoid parsing in template
   // This runs once when blocks change, not on every render
   // Keys are "blockIndex" for top-level text blocks and "blockIndex-childIndex" for children inside groups
   let parsedTextBlocks = $derived.by(() => {
-    const results = new Map<string, ParsedTextResult>();
+    const inputs: Array<{
+      key: string;
+      renderKey: string;
+      input: string;
+      context: string | null;
+    }> = [];
+
+    function addTextBlock(block: ContentBlock, renderKey: string) {
+      const textContent = block.text || (block as any).content || '';
+      if (!textContent) return;
+      inputs.push({
+        key: getTextCacheKey(block, renderKey),
+        renderKey,
+        input: flatstr(textContent),
+        context: workspaceId ?? null,
+      });
+    }
+
     groupedBlocks.forEach((block, index) => {
       if (block.type === 'text') {
-        const textContent = (block as ContentBlock).text || (block as any).content || '';
-        if (textContent) {
-          const parsed = parseTextBlock(textContent);
-          results.set(String(index), {
-            ...parsed,
-            blocks: filterWorkspaceCardsCoveredByIds(parsed.blocks, bulkProposalWorkspaceIds),
-          });
-        }
+        addTextBlock(block as ContentBlock, String(index));
       } else if (block.type === 'content_group') {
         const group = block as ContentBlockGroup;
         group.children.forEach((child, childIndex) => {
-          if (child.type === 'text') {
-            const textContent = child.text || (child as any).content || '';
-            if (textContent) {
-              const parsed = parseTextBlock(textContent);
-              results.set(`${index}-${childIndex}`, {
-                ...parsed,
-                blocks: filterWorkspaceCardsCoveredByIds(parsed.blocks, bulkProposalWorkspaceIds),
-              });
-            }
-          }
+          if (child.type === 'text') addTextBlock(child, `${index}-${childIndex}`);
         });
       }
+    });
+
+    const parsedByCacheKey = parsedTextCache.reconcile(inputs, (text) => parseTextBlock(text));
+    const results = new Map<string, ParsedTextResult>();
+    inputs.forEach(({ key, renderKey }) => {
+      const parsed = parsedByCacheKey.get(key);
+      if (!parsed) return;
+      results.set(renderKey, {
+        ...parsed,
+        blocks: filterWorkspaceCardsCoveredByIds(parsed.blocks, bulkProposalWorkspaceIds),
+      });
     });
     return results;
   });
