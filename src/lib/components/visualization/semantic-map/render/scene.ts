@@ -9,6 +9,7 @@ import type {
   HeatBand,
   RouteEdge,
   SemanticMapFilters,
+  SemanticMapSelection,
   SemanticMapScene,
   SemanticMapTimeWindow,
 } from './types';
@@ -279,22 +280,56 @@ export function buildRouteEdges(
     const dy = to.y - from.y;
     const bend = (index % 2 === 0 ? 1 : -1) * Math.min(42, Math.hypot(dx, dy) * 0.12);
     const length = Math.max(1, Math.hypot(dx, dy));
+    const controlX = (from.x + to.x) / 2 - (dy / length) * bend;
+    const controlY = (from.y + to.y) / 2 + (dx / length) * bend;
+    const pointAt = (t: number) => {
+      const inverse = 1 - t;
+      return {
+        x: inverse * inverse * from.x + 2 * inverse * t * controlX + t * t * to.x,
+        y: inverse * inverse * from.y + 2 * inverse * t * controlY + t * t * to.y,
+      };
+    };
+    const midpoint = pointAt(0.5);
+    const arrow = pointAt(0.84);
+    const arrowTangentX = 2 * 0.16 * (controlX - from.x) + 2 * 0.84 * (to.x - controlX);
+    const arrowTangentY = 2 * 0.16 * (controlY - from.y) + 2 * 0.84 * (to.y - controlY);
     return [
       {
         from: transition.from,
         to: transition.to,
         startX: from.x,
         startY: from.y,
-        controlX: (from.x + to.x) / 2 - (dy / length) * bend,
-        controlY: (from.y + to.y) / 2 + (dx / length) * bend,
+        controlX,
+        controlY,
         endX: to.x,
         endY: to.y,
+        midpointX: midpoint.x,
+        midpointY: midpoint.y,
+        arrowX: arrow.x,
+        arrowY: arrow.y,
+        arrowAngle: Math.atan2(arrowTangentY, arrowTangentX),
+        step: index + 1,
         count: transition.count,
         label: transition.label ?? fileLabel(transition.evidence.length),
         evidence: transition.evidence,
       },
     ];
   });
+}
+
+export function routeEdgePresentation(
+  index: number,
+  selection: SemanticMapSelection,
+  hoveredEdgeIndex: number | null,
+): { accented: boolean; opacity: number } {
+  if (selection?.type === 'route' && selection.transitionIndex !== undefined) {
+    return index === selection.transitionIndex
+      ? { accented: true, opacity: 1 }
+      : { accented: false, opacity: 0.24 };
+  }
+  const accented =
+    hoveredEdgeIndex === index || selection?.type === 'route' || selection?.type === 'agent';
+  return { accented, opacity: accented ? 0.9 : 0.62 };
 }
 
 export function buildScene(input: {

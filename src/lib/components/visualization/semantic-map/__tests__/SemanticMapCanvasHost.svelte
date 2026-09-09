@@ -133,7 +133,7 @@
   {height}
   onSelectRegion={(regionIds) => (selection = { type: 'region', regionIds })}
   onSelectAgent={(agentId) => (selection = { type: 'agent', agentId })}
-  onSelectRoute={() => (selection = { type: 'route' })}
+  onSelectRoute={(transitionIndex) => (selection = { type: 'route', transitionIndex })}
   onClearSelection={() => (selection = null)}
 />
 <output
@@ -141,7 +141,11 @@
   data-region={selection?.type === 'region' ? selection.regionIds[0] : ''}
   >{selection?.type === 'region' ? selection.regionIds[0] : ''}</output
 >
-<output data-testid="selected-route" data-selected={selection?.type === 'route'}></output>
+<output
+  data-testid="selected-route"
+  data-selected={selection?.type === 'route'}
+  data-transition-index={selection?.type === 'route' ? selection.transitionIndex : undefined}
+></output>
 <output
   data-testid="selected-agent"
   data-agent={selection?.type === 'agent' ? selection.agentId : ''}

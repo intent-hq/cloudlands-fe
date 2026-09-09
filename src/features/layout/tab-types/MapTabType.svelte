@@ -68,8 +68,19 @@
 
   const selectedTask = $derived($tasks.find(({ id }) => id === $mapState.selectedTaskNoteId));
   const selectedAgent = $derived($agents.find(({ id }) => id === $mapState.selectedAgentId));
+  const selectedCrossingIndex = $derived.by(() => {
+    if (detailOverride?.type !== 'crossing') return null;
+    const crossing = detailOverride;
+    if (crossing.agentId !== $mapState.selectedAgentId) return null;
+    const index = $mapState.route?.transitions.findIndex(
+      ({ from, to }) => from === crossing.from && to === crossing.to,
+    );
+    return index === undefined || index < 0 ? null : index;
+  });
   const selection = $derived(
-    $mapState.selectedAgentId
+    selectedCrossingIndex !== null
+      ? { type: 'route' as const, transitionIndex: selectedCrossingIndex }
+      : $mapState.selectedAgentId
       ? { type: 'agent' as const, agentId: $mapState.selectedAgentId }
       : $mapState.selectedRegionId
         ? { type: 'region' as const, regionIds: [$mapState.selectedRegionId] }
@@ -79,14 +90,9 @@
   );
   const detailSelection = $derived.by<SemanticMapDetailSelection>(() => {
     if (detailOverride?.type === 'crossing') {
-      const crossing = detailOverride;
-      if (crossing.agentId !== $mapState.selectedAgentId) return null;
-      const transitionIndex = $mapState.route?.transitions.findIndex(
-        ({ from, to }) => from === crossing.from && to === crossing.to,
-      );
-      return transitionIndex === undefined || transitionIndex < 0
+      return selectedCrossingIndex === null
         ? null
-        : { type: 'crossing', transitionIndex };
+        : { type: 'crossing', transitionIndex: selectedCrossingIndex };
     }
     return (
       detailOverride ??
@@ -423,10 +429,7 @@
         height={Math.max(1, canvasHeight - 24)}
         onSelectRegion={(regionIds) => selectRegion(regionIds[0] ?? null)}
         onSelectAgent={selectAgent}
-        onSelectRoute={() => {
-          detailOverride = { type: 'route' };
-          detailsExpanded = true;
-        }}
+        onSelectRoute={selectCrossing}
         onClearSelection={clearSelection}
       />
     {/if}

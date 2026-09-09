@@ -9,7 +9,12 @@
   import { CanvasPathCache, drawQuadraticPath, traceHull } from './render/canvas';
   import { layoutSceneLabels, type LabelLayout, type PlacedLabel } from './render/labels';
   import { moveSpatialFocus, type SpatialArrowKey, type SpatialTarget } from './render/navigation';
-  import { buildScene, HEAT_BAND_ALPHA, hitRouteEdge } from './render/scene';
+  import {
+    buildScene,
+    HEAT_BAND_ALPHA,
+    hitRouteEdge,
+    routeEdgePresentation,
+  } from './render/scene';
   import type {
     ActivityMark,
     ActivityTick,
@@ -52,6 +57,7 @@
   interface CanvasColors {
     background: string;
     surface: string;
+    popover: string;
     muted: string;
     border: string;
     foreground: string;
@@ -74,6 +80,7 @@
   let colors = $state<CanvasColors>({
     background: '#ffffff',
     surface: '#ffffff',
+    popover: '#ffffff',
     muted: '#f4f4f5',
     border: '#d4d4d8',
     foreground: '#18181b',
@@ -90,7 +97,7 @@
   let tweening = false;
   const pathCache = new CanvasPathCache();
   const minimapPathCache = new CanvasPathCache();
-  let labelLayout: LabelLayout = { regions: [], edges: [], counts: [], badges: [], boxes: [] };
+  let labelLayout: LabelLayout = { regions: [], edges: [], pips: [], badges: [], boxes: [] };
   let hatchPattern: CanvasPattern | null = null;
   let animationFrame: number | null = null;
   let sceneStartedAt = 0;
@@ -160,7 +167,11 @@
       return m.semanticMap_canvas_regionSelected_description({ label: keyboardRegion.label });
     if (keyboardBadge && selection?.type === 'agent' && selection.agentId === keyboardBadge.id)
       return m.semanticMap_canvas_agentSelected_description({ name: keyboardBadge.name });
-    if (keyboardEdge && selection?.type === 'route')
+    if (
+      keyboardEdge &&
+      selection?.type === 'route' &&
+      (selection.transitionIndex === undefined || selection.transitionIndex === keyboardEdgeIndex)
+    )
       return m.semanticMap_canvas_crossingSelected_description({ label: keyboardEdge.label });
     if (keyboardRegion)
       return m.semanticMap_canvas_regionFocused_description({ label: keyboardRegion.label });
@@ -217,6 +228,7 @@
     colors = {
       background: cssValue(style, '--color-background', '#ffffff'),
       surface: cssValue(style, '--color-card', '#ffffff'),
+      popover: cssValue(style, '--color-popover', '#ffffff'),
       muted: cssValue(style, '--color-muted', '#f4f4f5'),
       border: cssValue(style, '--color-border', '#d4d4d8'),
       foreground: cssValue(style, '--color-foreground', '#18181b'),
@@ -441,12 +453,11 @@
 
   function drawRoute(ctx: CanvasRenderingContext2D, edges: RouteEdge[]): void {
     edges.forEach((edge, index) => {
-      const highlighted =
-        hoveredEdgeIndex === index || selection?.type === 'route' || selection?.type === 'agent';
+      const presentation = routeEdgePresentation(index, selection, hoveredEdgeIndex);
       ctx.save();
-      ctx.strokeStyle = highlighted ? colors.accent : colors.mutedForeground;
-      ctx.fillStyle = highlighted ? colors.accent : colors.mutedForeground;
-      ctx.globalAlpha = highlighted ? 0.9 : 0.62;
+      ctx.strokeStyle = presentation.accented ? colors.accent : colors.mutedForeground;
+      ctx.fillStyle = presentation.accented ? colors.accent : colors.mutedForeground;
+      ctx.globalAlpha = presentation.opacity;
       ctx.lineWidth = (1.5 + Math.sqrt(Math.max(1, edge.count))) / transform.scale;
       const path = pathCache.routes[index];
       if (path) ctx.stroke(path);
@@ -454,6 +465,17 @@
         drawQuadraticPath(ctx, edge);
         ctx.stroke();
       }
+      const arrowSize = 7 / transform.scale;
+      ctx.translate(edge.arrowX, edge.arrowY);
+      ctx.rotate(edge.arrowAngle);
+      ctx.beginPath();
+      ctx.moveTo(arrowSize, 0);
+      ctx.lineTo(-arrowSize, arrowSize * 0.62);
+      ctx.lineTo(-arrowSize, -arrowSize * 0.62);
+      ctx.closePath();
+      ctx.fill();
+      ctx.rotate(-edge.arrowAngle);
+      ctx.translate(-edge.arrowX, -edge.arrowY);
       if (keyboardEdgeIndex === index) {
         ctx.globalAlpha = 1;
         ctx.setLineDash([]);
@@ -470,15 +492,21 @@
   }
 
   function drawRouteLabels(ctx: CanvasRenderingContext2D): void {
-    for (const label of [...labelLayout.edges, ...labelLayout.counts]) {
+    for (const label of labelLayout.edges) {
       ctx.save();
-      ctx.fillStyle = colors.background;
-      ctx.fillRect(
+      ctx.fillStyle = colors.popover;
+      ctx.strokeStyle = colors.border;
+      ctx.lineWidth = 1 / transform.scale;
+      ctx.beginPath();
+      ctx.roundRect(
         label.x - label.width / 2,
         label.y - label.height / 2,
         label.width,
         label.height,
+        5 / transform.scale,
       );
+      ctx.fill();
+      ctx.stroke();
       ctx.fillStyle = colors.accent;
       ctx.font = `${label.fontSize}px ${uiFont}`;
       ctx.textAlign = 'center';
@@ -492,6 +520,25 @@
           label.width,
         );
       }
+      ctx.restore();
+    }
+    for (const label of labelLayout.pips) {
+      const index = Number(label.id.slice('pip-'.length));
+      const presentation = routeEdgePresentation(index, selection, hoveredEdgeIndex);
+      ctx.save();
+      ctx.globalAlpha = presentation.opacity;
+      ctx.fillStyle = colors.popover;
+      ctx.strokeStyle = presentation.accented ? colors.accent : colors.mutedForeground;
+      ctx.lineWidth = 2 / transform.scale;
+      ctx.beginPath();
+      ctx.arc(label.x, label.y, label.width / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = colors.foreground;
+      ctx.font = `600 ${label.fontSize}px ${uiFont}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label.text, label.x, label.y);
       ctx.restore();
     }
   }
@@ -794,7 +841,7 @@
     if (!panning && dragDistance <= 3) {
       clearKeyboardFocus();
       if (hoveredBadgeId) onSelectAgent?.(hoveredBadgeId);
-      else if (hoveredEdgeIndex !== null) onSelectRoute?.();
+      else if (hoveredEdgeIndex !== null) onSelectRoute?.(hoveredEdgeIndex);
       else if (hoveredRegionId) onSelectRegion?.([hoveredRegionId]);
       else onClearSelection?.();
     }
@@ -878,7 +925,8 @@
       event.preventDefault();
       if (keyboardLayer === 'regions' && keyboardRegionId) onSelectRegion?.([keyboardRegionId]);
       else if (keyboardLayer === 'agents' && keyboardBadgeId) onSelectAgent?.(keyboardBadgeId);
-      else if (keyboardLayer === 'crossings' && keyboardEdgeIndex !== null) onSelectRoute?.();
+      else if (keyboardLayer === 'crossings' && keyboardEdgeIndex !== null)
+        onSelectRoute?.(keyboardEdgeIndex);
     }
   }
 
@@ -1012,6 +1060,9 @@
       )}px;"
     >
       <div class="font-medium text-foreground">{hoveredEdge.label}</div>
+      <div class="mt-1 text-muted-foreground">
+        {m.semanticMap_detail_crossingCount_label({ count: formatInteger(hoveredEdge.count) })}
+      </div>
       {#each hoveredEdge.evidence as path (path)}
         <div class="mt-1 truncate font-mono text-muted-foreground">{path}</div>
       {/each}

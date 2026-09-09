@@ -115,9 +115,11 @@
       ? { type: 'agent', agentId: SCRIPT_AGENTS[0].id }
       : initialMode === 'focus-region' || initialMode === 'detail-region'
         ? { type: 'region', regionIds: ['renderer-ui'] }
-        : initialMode === 'detail-route' || initialMode === 'detail-crossing'
+        : initialMode === 'detail-route'
           ? { type: 'route' }
-          : null,
+          : initialMode === 'detail-crossing'
+            ? { type: 'route', transitionIndex: 0 }
+            : null,
   );
   let detailSelection = $state<SemanticMapDetailSelection>(
     initialMode === 'detail-region'
@@ -221,9 +223,9 @@
     detailHistory = [];
   }
 
-  function selectRoute(): void {
-    selection = { type: 'route' };
-    detailSelection = { type: 'route' };
+  function selectRoute(transitionIndex: number): void {
+    selection = { type: 'route', transitionIndex };
+    detailSelection = { type: 'crossing', transitionIndex };
     detailHistory = [];
   }
 
@@ -237,10 +239,15 @@
   function selectDetail(next: Exclude<SemanticMapDetailSelection, null>): void {
     detailHistory = detailSelection ? [...detailHistory, detailSelection] : detailHistory;
     detailSelection = next;
+    if (next.type === 'crossing') selection = { type: 'route', transitionIndex: next.transitionIndex };
   }
 
   function navigateDetailBack(): void {
-    detailSelection = detailHistory.at(-1) ?? null;
+    const previous = detailHistory.at(-1) ?? null;
+    detailSelection = previous;
+    if (previous?.type === 'route') selection = { type: 'route' };
+    else if (previous?.type === 'crossing')
+      selection = { type: 'route', transitionIndex: previous.transitionIndex };
     detailHistory = detailHistory.slice(0, -1);
   }
 

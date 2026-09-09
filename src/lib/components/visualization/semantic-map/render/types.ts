@@ -4,7 +4,7 @@ import type { RegionGeometry } from '../layout/place';
 export type SemanticMapSelection =
   | { type: 'region'; regionIds: string[] }
   | { type: 'agent'; agentId: string }
-  | { type: 'route' }
+  | { type: 'route'; transitionIndex?: number }
   | null;
 
 export interface SemanticMapFilters {
@@ -34,7 +34,7 @@ export interface SemanticMapCanvasProps {
   height: number;
   onSelectRegion?: (regionIds: string[]) => void;
   onSelectAgent?: (agentId: string) => void;
-  onSelectRoute?: () => void;
+  onSelectRoute?: (transitionIndex: number) => void;
   onClearSelection?: () => void;
 }
 
@@ -91,6 +91,12 @@ export interface RouteEdge {
   controlY: number;
   endX: number;
   endY: number;
+  midpointX: number;
+  midpointY: number;
+  arrowX: number;
+  arrowY: number;
+  arrowAngle: number;
+  step: number;
   count: number;
   label: string;
   evidence: string[];

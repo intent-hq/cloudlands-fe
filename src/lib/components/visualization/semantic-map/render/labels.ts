@@ -11,7 +11,7 @@ const NARROW_REGION_LABEL_WIDTH = 96;
 
 export interface LabelBox {
   id: string;
-  kind: 'region' | 'edge' | 'count' | 'badge';
+  kind: 'region' | 'edge' | 'pip' | 'badge';
   x: number;
   y: number;
   width: number;
@@ -28,7 +28,7 @@ export interface PlacedLabel extends LabelBox {
 export interface LabelLayout {
   regions: PlacedLabel[];
   edges: PlacedLabel[];
-  counts: PlacedLabel[];
+  pips: PlacedLabel[];
   badges: Array<AgentBadge & { box: LabelBox }>;
   boxes: LabelBox[];
 }
@@ -269,6 +269,20 @@ export function layoutSceneLabels(input: {
     if (!placed) occupied.push(box);
     return { ...badge, x: box.x, y: box.y, box };
   });
+  const pips = input.edges.map((edge, index) => {
+    const fontSize = 12 / scale;
+    const size = 20 / scale;
+    const box = {
+      id: `pip-${index}`,
+      kind: 'pip' as const,
+      x: edge.midpointX,
+      y: edge.midpointY,
+      width: size,
+      height: size,
+    };
+    occupied.push(box);
+    return { ...box, text: String(edge.step), fontSize, opacity: 1 };
+  });
   const regions = visibleRegions(input).flatMap((region) => {
     const text = input.regionLabels.get(region.id);
     if (!text) return [];
@@ -309,8 +323,8 @@ export function layoutSceneLabels(input: {
       {
         id: `edge-${index}`,
         kind: 'edge',
-        width: Math.max(...lines.map((line) => estimateWidth(line, fontSize))),
-        height: lines.length * (fontSize + 3 / scale) + 4 / scale,
+        width: Math.max(...lines.map((line) => estimateWidth(line, fontSize))) + 16 / scale,
+        height: lines.length * (fontSize + 3 / scale) + 10 / scale,
       },
       edgeCandidates(edge, 14 / scale),
       occupied,
@@ -318,21 +332,5 @@ export function layoutSceneLabels(input: {
     );
     return box ? [{ ...box, text: edge.label, fontSize, opacity: 1, lines }] : [];
   });
-  const counts = input.edges.flatMap((edge, index) => {
-    const fontSize = 12 / scale;
-    const text = `${edge.count}×`;
-    const box = place(
-      {
-        id: `count-${index}`,
-        kind: 'count',
-        width: estimateWidth(text, fontSize),
-        height: fontSize + 4 / scale,
-      },
-      edgeCandidates(edge, 30 / scale),
-      occupied,
-      viewport,
-    );
-    return box ? [{ ...box, text, fontSize, opacity: 1 }] : [];
-  });
-  return { regions, edges, counts, badges, boxes: occupied };
+  return { regions, edges, pips, badges, boxes: occupied };
 }

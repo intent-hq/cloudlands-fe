@@ -80,10 +80,11 @@ describe.each([
       if (state === 'route') {
         const transitionCount = script.routes[SCRIPT_AGENTS[0].id].transitions.length;
         expect(first.edges.length).toBeLessThanOrEqual(transitionCount);
-        expect(first.counts.length).toBeLessThanOrEqual(transitionCount);
+        expect(first.pips.map(({ text }) => text)).toEqual(
+          Array.from({ length: transitionCount }, (_, index) => String(index + 1)),
+        );
         if (width >= 640) {
           expect(first.edges).toHaveLength(transitionCount);
-          expect(first.counts).toHaveLength(transitionCount);
         }
       }
     },

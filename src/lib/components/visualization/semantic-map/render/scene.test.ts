@@ -11,6 +11,7 @@ import {
   HEAT_BAND_ALPHA,
   hitRouteEdge,
   quantizeHeat,
+  routeEdgePresentation,
 } from './scene';
 
 function themeRgb(css: string, mode: 'light' | 'dark', role: string): [number, number, number] {
@@ -403,8 +404,21 @@ describe('semantic map render scene', () => {
     );
 
     expect(edges.map(({ label }) => label)).toEqual(['Declared', '1 files']);
+    expect(edges.map(({ step }) => step)).toEqual([1, 2]);
+    expect(edges[0]).toMatchObject({ midpointX: 200, midpointY: 112 });
+    expect(Number.isFinite(edges[0].arrowAngle)).toBe(true);
     expect(edges[0].evidence).toEqual(['a.ts', 'b.ts']);
     expect(hitRouteEdge(edges[0], 200, 112, 8)).toBe(true);
     expect(hitRouteEdge(edges[0], 200, 180, 8)).toBe(false);
+  });
+
+  it('accents only the selected crossing and dims every other route edge', () => {
+    const selection = { type: 'route' as const, transitionIndex: 1 };
+    expect(routeEdgePresentation(1, selection, null)).toEqual({ accented: true, opacity: 1 });
+    expect(routeEdgePresentation(0, selection, 0)).toEqual({ accented: false, opacity: 0.24 });
+    expect(routeEdgePresentation(0, { type: 'route' }, null)).toEqual({
+      accented: true,
+      opacity: 0.9,
+    });
   });
 });
