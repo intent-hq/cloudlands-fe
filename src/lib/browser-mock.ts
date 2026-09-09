@@ -156,6 +156,7 @@ function unavailableTools(names: unknown): Record<string, { available: false }> 
 // `{ success, data }` shape below is only for the non-backend IPC channels.
 
 let subscriptionIdCounter = 0;
+let terminalIdCounter = 0;
 
 /** §5.13 `daemonBootId` is a per-boot UUID; a page load is the mock's boot. */
 const MOCK_DAEMON_BOOT_ID = crypto.randomUUID();
@@ -223,6 +224,19 @@ function mockBackendMethodResult(method: string, params?: Record<string, unknown
   if (method === 'terminal.list') {
     return { terminals: [], daemonBootId: MOCK_DAEMON_BOOT_ID };
   }
+  // §5.13 interactive terminal surface. Browser previews do not spawn a real
+  // PTY, but the adapter still exercises the daemon-shaped happy path.
+  if (method === 'terminal.create') {
+    return { terminalId: `browser-mock-terminal-${++terminalIdCounter}` };
+  }
+  if (method === 'terminal.write' || method === 'terminal.resize' || method === 'terminal.kill') {
+    return { ok: true };
+  }
+  if (method === 'terminal.getBuffer') {
+    return { terminalId: String(params?.terminalId ?? ''), data: '' };
+  }
+  // §5.9 plaintext convenience read; the mock PTY intentionally emits nothing.
+  if (method === 'terminal.readOutput') return '';
   // Other empty-safe reads hit during workspace open (audit, monorepo#2605).
   if (method === 'agent.listActive') return { streams: [] };
   if (method === 'prMonitor.list') return { monitors: [] };

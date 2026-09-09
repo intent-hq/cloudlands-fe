@@ -510,6 +510,40 @@ describe('browser-mock backend:* transport envelope', () => {
     expect(commits.result).toEqual({ commits: [], boundarySha: null, nextToken: null });
   });
 
+  it('serves the protocol-shaped terminal happy path through the live client', async () => {
+    const invokeSpy = vi.spyOn(api, 'invoke');
+    const { LiveAppClient } = await import('./client');
+    const terminals = new LiveAppClient().terminals;
+
+    const created = await terminals.create({ workspaceId: 'mock-ws-1', cols: 80, rows: 24 });
+    expect(created).toEqual({ success: true, id: 'browser-mock-terminal-1' });
+    const terminalId = created.id!;
+
+    await expect(terminals.write(terminalId, 'ls\n')).resolves.toEqual({ success: true });
+    await expect(terminals.resize(terminalId, 100, 30)).resolves.toEqual({ success: true });
+    await expect(terminals.getBuffer(terminalId)).resolves.toBe('');
+    await expect(terminals.output('mock-ws-1', terminalId)).resolves.toBe('');
+    await expect(terminals.kill(terminalId)).resolves.toEqual({ success: true });
+
+    expect(invokeSpy.mock.calls).toEqual([
+      [
+        'backend:request',
+        { method: 'terminal.create', params: { workspaceId: 'mock-ws-1', cols: 80, rows: 24 } },
+      ],
+      ['backend:request', { method: 'terminal.write', params: { terminalId, data: 'bHMK' } }],
+      [
+        'backend:request',
+        { method: 'terminal.resize', params: { terminalId, cols: 100, rows: 30 } },
+      ],
+      ['backend:request', { method: 'terminal.getBuffer', params: { terminalId } }],
+      [
+        'backend:request',
+        { method: 'terminal.readOutput', params: { workspaceId: 'mock-ws-1', terminalId } },
+      ],
+      ['backend:request', { method: 'terminal.kill', params: { terminalId } }],
+    ]);
+  });
+
   it('resolves workspaces.get through the live client (workspace open path)', async () => {
     const { LiveAppClient } = await import('./client');
     const client = new LiveAppClient();
