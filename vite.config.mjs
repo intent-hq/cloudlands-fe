@@ -239,21 +239,6 @@ const devHealthProbeSilencer = () => ({
   },
 });
 
-const devIntentdRuntimeConfig = () => ({
-  name: 'dev-intentd-runtime-config',
-  apply: 'serve',
-  configureServer(server) {
-    server.middlewares.use('/runtime-config.js', (_req, res) => {
-      res.statusCode = 200;
-      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-      res.setHeader('Cache-Control', 'no-store');
-      res.end(
-        "globalThis.__INTENT_RUNTIME_CONFIG__ = Object.freeze({ intentdWsUrl: (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/intentd-ws' });\n",
-      );
-    });
-  },
-});
-
 // Custom plugin to exclude Node.js-only files from browser bundle
 const excludeNodeModules = () => ({
   name: 'exclude-node-modules',
@@ -323,11 +308,8 @@ export default defineConfig(({ command, mode, isPreview }) => {
 
   const webDefines = {};
   const isProductionWebBuild = isWebBuild && mode === 'production';
-  const hasDevIntentdWsProxy =
-    command === 'serve' && isWebBuild && Boolean(env.INTENTD_WS_PROXY_TARGET);
   const browserWsUrl = env.VITE_INTENTD_WS_URL || (useIntentdBridge ? '/intentd/ws' : '');
-  const hasBuildTimeBrowserWsUrl =
-    !isProductionWebBuild && Boolean(browserWsUrl || hasDevIntentdWsProxy);
+  const hasBuildTimeBrowserWsUrl = !isProductionWebBuild && Boolean(browserWsUrl);
   if (isWebBuild && !hasBuildTimeBrowserWsUrl && env.VITE_ENABLE_BROWSER_MOCK === undefined) {
     // Production web builds are gated out of the browser mock by default
     // (hooks.client.ts only loads it in DEV or under an explicit opt-in).
@@ -395,7 +377,6 @@ export default defineConfig(({ command, mode, isPreview }) => {
             outputStructure: 'locale-modules',
           }),
       devHealthProbeSilencer(),
-      hasDevIntentdWsProxy && devIntentdRuntimeConfig(),
       intentdBridgeRequested && intentdBridgePlugin(),
       preventSvelteKitRegenHMR(),
       sveltekit(),
@@ -479,17 +460,6 @@ export default defineConfig(({ command, mode, isPreview }) => {
       host: '127.0.0.1',
 
       cors: true,
-
-      proxy: hasDevIntentdWsProxy
-        ? {
-            '/intentd-ws': {
-              target: env.INTENTD_WS_PROXY_TARGET,
-              ws: true,
-              changeOrigin: false,
-              rewrite: (path) => path.replace(/^\/intentd-ws/, '/ws'),
-            },
-          }
-        : undefined,
 
       // Pre-transform the primary SvelteKit entry paths before announcing sandbox readiness.
       // This avoids sending the first tunneled browser through a cold transform waterfall.
