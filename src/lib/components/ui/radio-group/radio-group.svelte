@@ -6,6 +6,7 @@
   import { setContext, type Snippet } from 'svelte';
   import type { HTMLAttributes } from 'svelte/elements';
   import { RADIO_GROUP_CONTEXT, type RadioGroupContext } from './context';
+  import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
 
   interface Props extends HTMLAttributes<HTMLDivElement> {
     value?: string;
@@ -67,6 +68,7 @@
   orientation={layout === 'inline' ? 'horizontal' : 'vertical'}
   class={cn(
     'relative isolate flex w-72 max-w-full gap-0 select-none',
+    OPTION_LIST_CONTAINER_CLASS,
     layout === 'inline' ? 'flex-row items-stretch' : 'flex-col',
     className,
   )}

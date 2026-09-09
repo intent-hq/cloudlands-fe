@@ -10,9 +10,13 @@
   import {
     clampSurface,
     setSurface,
-    surfaceClasses,
+    SURFACE_BG,
     useSurface,
   } from '$lib/components/ui/surface-context';
+  import {
+    OPTION_LIST_CONTAINER_CLASS,
+    OPTION_LIST_END_SLOT_CLASS,
+  } from '$lib/styles/option-list-row';
   import { useSize, type UiSize } from '$lib/components/ui/size-context';
   import { textEntryControlClasses, textEntryHeight } from '../text-entry';
 
@@ -292,7 +296,7 @@
       data-surface-level={surface}
       class={cn(
         menuOverlay(),
-        surfaceClasses(surface),
+        SURFACE_BG[surface],
         'w-(--bits-combobox-anchor-width) max-h-72 rounded-(--radius-medium)',
         contentClass,
       )}
@@ -313,7 +317,9 @@
                 {#if headerAction}<div class="ml-auto">{@render headerAction()}</div>{/if}
               </div>
             {/if}
-            <ComboboxPrimitive.Viewport class="max-h-72 overscroll-contain overflow-y-auto p-1">
+            <ComboboxPrimitive.Viewport
+              class="{OPTION_LIST_CONTAINER_CLASS} max-h-72 overscroll-contain overflow-y-auto"
+            >
               {#snippet child({ props: viewportProps })}
                 <div
                   {...viewportProps}
@@ -374,7 +380,10 @@
                               {/if}
                               <span
                                 data-slot="combobox-item-check"
-                                class="text-primary-ink shrink-0 font-medium opacity-0 group-data-[selected]:opacity-100"
+                                class={cn(
+                                  OPTION_LIST_END_SLOT_CLASS,
+                                  'text-primary-ink font-medium opacity-0 group-data-[selected]:opacity-100',
+                                )}
                                 aria-hidden="true">✓</span
                               >
                               {#if optionActions}{@render optionActions(option)}{/if}
@@ -385,7 +394,7 @@
                             label={option.label}
                             disabled={option.disabled || !optionMatchesQuery(option)}
                             data-menu-item
-                            class={cn(menuItem(), 'p-1.5', option.class)}
+                            class={cn(menuItem(), option.class)}
                             child={optionChild}
                           />
                         {/each}

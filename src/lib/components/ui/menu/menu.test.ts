@@ -244,7 +244,7 @@ describe('Menu metadata and compatibility', () => {
     expect(menu.className).toContain('border-border');
     expect(menu.className).toContain('overflow-y-auto');
     expect(menu.className).toContain('rounded-md');
-    expect(menu.className).toContain('shadow-surface-3');
+    expect(menu.className).toContain('shadow-(--elevation-overlay)');
     expect(menu.getAttribute('data-surface-level')).toBe('3');
     expect(apple.className).toContain('min-h-(--control-height-medium)');
     expect(apple.className).toContain('rounded-(--radius-row)');

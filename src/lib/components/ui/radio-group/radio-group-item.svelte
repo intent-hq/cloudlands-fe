@@ -4,6 +4,7 @@
   import { getContext, untrack, type Snippet } from 'svelte';
   import type { HTMLButtonAttributes } from 'svelte/elements';
   import { RADIO_GROUP_CONTEXT, type RadioGroupContext } from './context';
+  import { OPTION_LIST_ROW_CLASS } from '$lib/styles/option-list-row';
 
   interface Props extends HTMLButtonAttributes {
     value: string;
@@ -48,7 +49,8 @@
   data-choice-index={index}
   onfocus={handleFocus}
   class={cn(
-    'type-caption relative z-10 flex min-h-(--control-height-medium) min-w-0 cursor-pointer items-center gap-2 rounded-(--radius-row) border border-transparent bg-transparent px-2 py-1.5 text-left text-muted-foreground transition-[color,font-weight] duration-spring-fast ease-spring-fast hover:[--text-caption-weight:500] disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
+    OPTION_LIST_ROW_CLASS,
+    'relative z-10 flex min-w-0 cursor-pointer items-center gap-2 border border-transparent bg-transparent text-left text-muted-foreground transition-[color,font-weight] duration-spring-fast ease-spring-fast hover:[--text-caption-weight:500] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-focus-ring focus-visible:shadow-none disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
     selected && '[--text-caption-weight:500] text-foreground',
     className,
   )}

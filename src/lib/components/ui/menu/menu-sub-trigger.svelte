@@ -2,6 +2,7 @@
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
   import { cn } from '$lib/utils.js';
   import { menuItem } from './menu-recipes';
+  import { OPTION_LIST_END_SLOT_CLASS } from '$lib/styles/option-list-row';
 
   let {
     ref = $bindable(null),
@@ -19,5 +20,5 @@
   {...restProps}
 >
   {@render children?.()}
-  <span class="ml-auto" aria-hidden="true">›</span>
+  <span data-slot="menu-sub-chevron" class={OPTION_LIST_END_SLOT_CLASS} aria-hidden="true">›</span>
 </MenuPrimitive.SubTrigger>

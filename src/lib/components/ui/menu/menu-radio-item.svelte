@@ -4,6 +4,7 @@
   import { cn } from '$lib/utils.js';
   import type { WithoutChildrenOrChild } from '$lib/utils.js';
   import { menuItem } from './menu-recipes';
+  import { OPTION_LIST_END_SLOT_CLASS } from '$lib/styles/option-list-row';
 
   let {
     ref = $bindable(null),
@@ -16,13 +17,14 @@
 </script>
 
 {#snippet radioContent({ checked }: { checked: boolean })}
+  {@render children?.()}
   <span
-    class="absolute left-2 flex size-4 items-center justify-center text-primary-ink"
+    data-slot="menu-item-indicator"
+    class={cn(OPTION_LIST_END_SLOT_CLASS, 'text-primary-ink')}
     aria-hidden="true"
   >
     {checked ? '●' : ''}
   </span>
-  {@render children?.()}
 {/snippet}
 
 <MenuPrimitive.RadioItem
@@ -30,6 +32,6 @@
   children={radioContent}
   data-slot="menu-radio-item"
   data-menu-item
-  class={cn(menuItem({ inset: true }), className)}
+  class={cn(menuItem(), className)}
   {...restProps}
 />

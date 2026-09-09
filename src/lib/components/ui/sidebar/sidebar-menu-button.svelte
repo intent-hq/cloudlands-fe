@@ -1,8 +1,9 @@
 <script lang="ts" module>
   import { tv, type VariantProps } from 'tailwind-variants';
+  import { OPTION_LIST_ROW_CLASS } from '$lib/styles/option-list-row';
 
   export const sidebarMenuButtonVariants = tv({
-    base: 'peer/menu-button relative z-10 flex w-full cursor-pointer select-none items-center gap-2 overflow-hidden rounded-md pl-2 pr-(--row-gutter) text-left transition-[padding] duration-spring-fast ease-spring-fast focus-visible:outline focus-visible:-outline-offset-1 group-hover/menu-item:pr-(--row-gutter-hover) group-focus-within/menu-item:pr-(--row-gutter-hover) motion-reduce:transition-none disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0',
+    base: 'peer/menu-button relative z-10 flex w-full cursor-pointer select-none items-center gap-2 overflow-hidden rounded-md pl-2 pr-(--row-gutter) text-left transition-[padding] duration-spring-fast ease-spring-fast focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-focus-ring focus-visible:shadow-none group-hover/menu-item:pr-(--row-gutter-hover) group-focus-within/menu-item:pr-(--row-gutter-hover) motion-reduce:transition-none disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0',
     variants: {
       variant: {
         default: '',
@@ -10,7 +11,7 @@
           'border border-border bg-background shadow-(--elevation-raised) data-[proximity-active=true]:border-sidebar-accent',
       },
       size: {
-        default: 'type-caption h-(--control-height-medium)',
+        default: OPTION_LIST_ROW_CLASS,
         sm: 'type-caption h-(--control-height-compact)',
         lg: 'type-body group-data-[collapsible=icon]:p-0! h-12',
       },

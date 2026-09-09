@@ -6,9 +6,10 @@
   import {
     clampSurface,
     setSurface,
-    surfaceClasses,
+    SURFACE_BG,
     useSurface,
   } from '$lib/components/ui/surface-context';
+  import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
 
   const uid = $props.id();
 
@@ -36,8 +37,9 @@
   const contentClass = $derived(
     cn(
       menuOverlay(),
-      surfaceClasses(surface),
-      'min-w-40 overflow-y-auto overscroll-contain p-1',
+      SURFACE_BG[surface],
+      OPTION_LIST_CONTAINER_CLASS,
+      'min-w-40 overflow-y-auto overscroll-contain',
       className,
     ),
   );

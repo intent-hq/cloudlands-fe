@@ -72,6 +72,7 @@ Pattern-first routing for product UI. Open the catalog URL in \`pnpm run dev:ui\
 - **Import:** \`SurfaceProvider\`, \`surfaceClasses\`, and \`surfaceHoverClasses\` from \`$lib/components/ui\`.
 - **Ladder:** \`bg-surface-1\` through \`bg-surface-8\` pair with \`shadow-surface-1\` through \`shadow-surface-8\`.
 - **Overlays:** render at two levels above their substrate, capped at level 8, and provide that level to nested content.
+- **Overlay recipe:** \`.overlay-surface\` uses the 8px medium radius and two-layer \`--elevation-overlay\`; its boundary is 0px in light themes and a 1px semantic border in dark themes.
 - **States:** use \`bg-hover\`, \`bg-active\`, \`bg-selected\`, and \`bg-danger-background\` rather than physical colors.
 
 ## Motion
@@ -122,6 +123,14 @@ ${buttonAliases}
 - \`toast/ToastCloseButton.svelte\` uses \`Button\`; it is an inset 40px ghost close action layered on the shared focus contract.
 - \`tooltip/TooltipRich.svelte\` uses \`Button\` for its optional close action; the tooltip owns content and positioning, not a distinct button contract.
 - \`badge/badge.svelte\` uses \`Button\` for its remove action; the badge owns status presentation, not a distinct button contract.
+
+## Option and list rows
+
+- **Recipe:** Menu, Select, Combobox, Radio Group, and Sidebar share a 36px default row, 8px item radius, 8px horizontal item padding, and a 4px container inset.
+- **States:** option labels are 13px / 400 at rest and 500 when selected; hover and selected layers use the measured inset item bounds.
+- **End slot:** checks, indicators, and chevrons use one aligned 16px end slot inside the item padding.
+- **Popups:** option popups use semantic surface backgrounds with the overlay elevation; preserve viewport collision handling, scrolling, and focus restoration.
+- **Focus:** keep the 1px solid outline, non-zero offset, and no-shadow focus tuple. Do not reduce disabled or muted contrast.
 
 ${sections.join('\n')}\n`;
   return format(markdown, { parser: 'markdown' });

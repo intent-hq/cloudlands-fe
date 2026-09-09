@@ -5,6 +5,7 @@
   import { cn, type WithElementRef } from '$lib/utils.js';
   import type { HTMLAttributes } from 'svelte/elements';
   import Highlight from './sidebar-menu-highlight.svelte';
+  import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import {
     setSidebarMenuContext,
     setSidebarMenuLevelContext,
@@ -139,7 +140,11 @@
     bind:this={ref}
     data-slot="sidebar-menu"
     data-sidebar="menu"
-    class={cn('relative flex w-full min-w-0 select-none flex-col gap-0.5', className)}
+    class={cn(
+      OPTION_LIST_CONTAINER_CLASS,
+      'relative flex w-full min-w-0 select-none flex-col gap-0.5',
+      className,
+    )}
     onfocusin={handleFocus}
     onfocusout={handleBlur}
     onpointerdown={() => (focusIndex = null)}

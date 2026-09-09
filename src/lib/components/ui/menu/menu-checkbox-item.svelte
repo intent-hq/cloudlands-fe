@@ -4,6 +4,7 @@
   import { cn } from '$lib/utils.js';
   import type { WithoutChildrenOrChild } from '$lib/utils.js';
   import { menuItem } from './menu-recipes';
+  import { OPTION_LIST_END_SLOT_CLASS } from '$lib/styles/option-list-row';
 
   let {
     ref = $bindable(null),
@@ -23,14 +24,15 @@
   bind:indeterminate
   data-slot="menu-checkbox-item"
   data-menu-item
-  class={cn(menuItem({ inset: true }), className)}
+  class={cn(menuItem(), className)}
   {...restProps}
 >
+  {@render children?.()}
   <span
-    class="absolute left-2 flex size-4 items-center justify-center text-primary-ink"
+    data-slot="menu-item-indicator"
+    class={cn(OPTION_LIST_END_SLOT_CLASS, 'text-primary-ink')}
     aria-hidden="true"
   >
     {indeterminate ? '−' : checked ? '✓' : ''}
   </span>
-  {@render children?.()}
 </MenuPrimitive.CheckboxItem>

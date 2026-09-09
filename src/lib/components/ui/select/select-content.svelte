@@ -7,9 +7,10 @@
   import {
     clampSurface,
     setSurface,
-    surfaceClasses,
+    SURFACE_BG,
     useSurface,
   } from '$lib/components/ui/surface-context';
+  import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
 
   let {
     wrapperId,
@@ -46,7 +47,7 @@
     sideOffset={4}
     class={cn(
       menuOverlay(),
-      surfaceClasses(surface),
+      SURFACE_BG[surface],
       'w-(--bits-select-anchor-width) max-h-60 rounded-(--radius-medium)',
       className,
     )}
@@ -57,7 +58,7 @@
       <div {...wrapperProps} {...wrapperId ? { id: wrapperId } : {}}>
         <div {...contentProps}>
           <SelectPrimitive.Viewport
-            class="relative min-h-0 flex-1 overflow-y-auto py-1 {wrapperClass}"
+            class="{OPTION_LIST_CONTAINER_CLASS} relative min-h-0 flex-1 overflow-y-auto {wrapperClass}"
           >
             {#snippet child({ props: viewportProps })}
               <div
