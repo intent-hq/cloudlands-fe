@@ -25,7 +25,10 @@
     semanticMapTimeWindowChanged,
   } from '$store/renderer/slices/semantic-map/semantic-map-slice';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
-  import { selectWorkspaceTaskDisplayList } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
+  import {
+    selectWorkspaceTaskDisplayList,
+    selectWorkspaceTaskProgress,
+  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { selectFileTrackingChanges } from '$store/renderer/slices/changes/changes-selectors';
   import {
     openWorkspaceDiff,
@@ -54,10 +57,12 @@
   const filteredActivities = selectFilteredSemanticMapActivities(workspaceId);
   const agents = selectAllWorkspaceAgents(workspaceId);
   const tasks = selectWorkspaceTaskDisplayList(workspaceId);
+  const taskProgress = selectWorkspaceTaskProgress(workspaceId);
   const trackedChanges = selectFileTrackingChanges(workspaceId);
   let canvasWidth = $state(1);
   let canvasHeight = $state(1);
   let detailOverride = $state<StableDetailSelection>(null);
+  let detailHistory = $state<StableDetailSelection[]>([]);
   let filtersExpanded = $state(false);
   let detailsExpanded = $state(false);
 
@@ -195,29 +200,44 @@
       to: transition.to,
       agentId: $mapState.selectedAgentId,
     };
+    detailHistory = [];
     detailsExpanded = true;
+  }
+
+  function selectDetailFile(path: string): void {
+    detailHistory = detailOverride ? [...detailHistory, detailOverride] : detailHistory;
+    detailOverride = { type: 'file', path };
+  }
+
+  function navigateDetailBack(): void {
+    detailOverride = detailHistory.at(-1) ?? null;
+    detailHistory = detailHistory.slice(0, -1);
   }
 
   function selectAgent(agentId: string | null): void {
     detailOverride = null;
+    detailHistory = [];
     detailsExpanded = agentId !== null;
     appStore.dispatch(semanticMapSelectedAgentChanged(workspaceId, agentId));
   }
 
   function selectRegion(regionId: string | null): void {
     detailOverride = null;
+    detailHistory = [];
     detailsExpanded = regionId !== null;
     appStore.dispatch(semanticMapSelectedRegionChanged(workspaceId, regionId));
   }
 
   function selectTask(taskNoteId: string): void {
     detailOverride = null;
+    detailHistory = [];
     detailsExpanded = true;
     appStore.dispatch(semanticMapSelectedTaskChanged(workspaceId, taskNoteId));
   }
 
   function clearSelection(): void {
     detailOverride = null;
+    detailHistory = [];
     appStore.dispatch(semanticMapSelectedRegionChanged(workspaceId, null));
   }
 
@@ -324,7 +344,10 @@
         onSelect={({ agentId }) => selectAgent(agentId)}
       />
       <h2 class="mb-2 mt-4 text-sm font-semibold">
-        {m.workspace_flameGraph_tasksComplete_label({ completed: 0, total: $tasks.length })}
+        {m.workspace_flameGraph_tasksComplete_label({
+          completed: formatInteger($taskProgress.completed),
+          total: formatInteger($taskProgress.total),
+        })}
       </h2>
       <div class="flex flex-col gap-1">
         {#each $tasks as task (task.id)}
@@ -435,9 +458,10 @@
           fileChanges={detailFileChanges}
           {routeSubjectLabel}
           onSelectCrossing={selectCrossing}
-          onSelectFile={(path) => (detailOverride = { type: 'file', path })}
+          onSelectFile={selectDetailFile}
           onOpenFile={(path) => appStore.dispatch(openWorkspaceFile(workspaceId, path))}
           onOpenDiff={openDiff}
+          onNavigateBack={navigateDetailBack}
         />
       {/if}
     </div>

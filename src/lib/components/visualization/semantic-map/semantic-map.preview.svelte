@@ -130,6 +130,9 @@
             ? { type: 'crossing', transitionIndex: 0 }
             : null,
   );
+  let detailHistory = $state<SemanticMapDetailSelection[]>(
+    initialMode === 'detail-crossing' ? [{ type: 'route' }] : [],
+  );
   const detailAgents = SCRIPT_AGENTS.map(({ id, name }, index) => ({
     id,
     name,
@@ -208,23 +211,37 @@
     routeAgentId = null;
     selection = { type: 'region', regionIds };
     detailSelection = { type: 'region', regionId: regionIds[0] };
+    detailHistory = [];
   }
 
   function selectAgent(agentId: string): void {
     routeAgentId = agentId;
     selection = { type: 'agent', agentId };
     detailSelection = { type: 'agent', agentId };
+    detailHistory = [];
   }
 
   function selectRoute(): void {
     selection = { type: 'route' };
     detailSelection = { type: 'route' };
+    detailHistory = [];
   }
 
   function clearSelection(): void {
     routeAgentId = null;
     selection = null;
     detailSelection = null;
+    detailHistory = [];
+  }
+
+  function selectDetail(next: Exclude<SemanticMapDetailSelection, null>): void {
+    detailHistory = detailSelection ? [...detailHistory, detailSelection] : detailHistory;
+    detailSelection = next;
+  }
+
+  function navigateDetailBack(): void {
+    detailSelection = detailHistory.at(-1) ?? null;
+    detailHistory = detailHistory.slice(0, -1);
   }
 
   function kindLabel(kind: (typeof kinds)[number]): string {
@@ -379,9 +396,9 @@
         agents={detailAgents}
         fileChanges={detailFileChanges}
         routeSubjectLabel={SCRIPT_AGENTS.find(({ id }) => id === routeAgentId)?.name}
-        onSelectCrossing={(transitionIndex) =>
-          (detailSelection = { type: 'crossing', transitionIndex })}
-        onSelectFile={(path) => (detailSelection = { type: 'file', path })}
+        onSelectCrossing={(transitionIndex) => selectDetail({ type: 'crossing', transitionIndex })}
+        onSelectFile={(path) => selectDetail({ type: 'file', path })}
+        onNavigateBack={navigateDetailBack}
       />
     </aside>
   </div>

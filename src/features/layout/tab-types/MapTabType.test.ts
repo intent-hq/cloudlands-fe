@@ -1,28 +1,31 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { createMockSelector, dispatchMock, emitSelectors, mapState } = vi.hoisted(() => {
-  const listeners = new Set<() => void>();
-  const readable = (getter: () => unknown) => ({
-    subscribe(listener: (value: unknown) => void) {
-      listener(getter());
-      const notify = () => listener(getter());
-      listeners.add(notify);
-      return () => listeners.delete(notify);
-    },
-  });
-  const createMockSelector = (getter: () => unknown) => {
-    const selector = Object.assign(() => readable(getter), {
-      select: getter,
-      effect: () => undefined,
+const { createMockSelector, dispatchMock, emitSelectors, mapState, taskProgress } = vi.hoisted(
+  () => {
+    const listeners = new Set<() => void>();
+    const readable = (getter: () => unknown) => ({
+      subscribe(listener: (value: unknown) => void) {
+        listener(getter());
+        const notify = () => listener(getter());
+        listeners.add(notify);
+        return () => listeners.delete(notify);
+      },
     });
-    return selector;
-  };
-  const dispatchMock = vi.fn();
-  const emitSelectors = () => listeners.forEach((listener) => listener());
-  const mapState = { current: {} as Record<string, unknown> };
-  return { createMockSelector, dispatchMock, emitSelectors, mapState };
-});
+    const createMockSelector = (getter: () => unknown) => {
+      const selector = Object.assign(() => readable(getter), {
+        select: getter,
+        effect: () => undefined,
+      });
+      return selector;
+    };
+    const dispatchMock = vi.fn();
+    const emitSelectors = () => listeners.forEach((listener) => listener());
+    const mapState = { current: {} as Record<string, unknown> };
+    const taskProgress = { current: { total: 0, completed: 0, inProgress: 0 } };
+    return { createMockSelector, dispatchMock, emitSelectors, mapState, taskProgress };
+  },
+);
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -40,6 +43,7 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
 }));
 vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
   selectWorkspaceTaskDisplayList: createMockSelector(() => []),
+  selectWorkspaceTaskProgress: createMockSelector(() => taskProgress.current),
 }));
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectFileTrackingChanges: createMockSelector(() => []),
@@ -92,6 +96,7 @@ describe('MapTabType hydration states', () => {
       kindFilter: [],
       agentFilter: [],
     };
+    taskProgress.current = { total: 0, completed: 0, inProgress: 0 };
     dispatchMock.mockClear();
   });
   afterEach(() => {
@@ -127,6 +132,17 @@ describe('MapTabType hydration states', () => {
     expect(hint.getAttribute('data-map-source')).toBe('structural');
     expect(hint.textContent).toContain(m.semanticMap_panel_structuralHint_description());
     expect(hint.textContent).not.toContain(m.semanticMap_canvas_selectionNone_description());
+  });
+
+  it('renders canonical task progress from the task store', () => {
+    taskProgress.current = { total: 5, completed: 2, inProgress: 1 };
+    renderMapTab();
+
+    expect(
+      screen.getByRole('heading', {
+        name: m.workspace_flameGraph_tasksComplete_label({ completed: '2', total: '5' }),
+      }),
+    ).toBeTruthy();
   });
 
   it('passes default live activity to the canvas and dispatches accessible filters', async () => {

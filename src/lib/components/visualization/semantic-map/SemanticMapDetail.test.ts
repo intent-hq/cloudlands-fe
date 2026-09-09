@@ -1,5 +1,6 @@
 import { fireEvent, render } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
+import { m } from '$shared/paraglide/messages.js';
 import manifestJson from './fixtures/intent-manifest.json';
 import SemanticMapDetail from './SemanticMapDetail.svelte';
 import { createSemanticMapScript, SCRIPT_AGENTS } from './semantic-map-script';
@@ -62,18 +63,22 @@ describe('SemanticMapDetail', () => {
 
   it('shows declared crossing evidence and selects its file', async () => {
     const onSelectFile = vi.fn();
+    const onNavigateBack = vi.fn();
     const view = render(SemanticMapDetail, {
       manifest,
       activities: script.activities,
       route,
       selection: { type: 'crossing', transitionIndex: 0 },
       onSelectFile,
+      onNavigateBack,
     });
 
     expect(view.getByRole('heading', { name: route.transitions[0].label })).toBeTruthy();
     const evidence = view.getByRole('button', { name: route.transitions[0].evidence[0] });
     await fireEvent.click(evidence);
     expect(onSelectFile).toHaveBeenCalledWith(route.transitions[0].evidence[0]);
+    await fireEvent.click(view.getByRole('button', { name: m.ui_navButtons_goBack_tooltip() }));
+    expect(onNavigateBack).toHaveBeenCalledOnce();
   });
 
   it('opens tracked file and diff views from file evidence', async () => {
@@ -89,6 +94,8 @@ describe('SemanticMapDetail', () => {
       onOpenDiff,
     });
 
+    expect(view.getByRole('heading', { name: path.slice(path.lastIndexOf('/') + 1) })).toBeTruthy();
+    expect(view.getByText(path.slice(0, path.lastIndexOf('/')))).toBeTruthy();
     const buttons = view.getAllByRole('button');
     await fireEvent.click(buttons[0]);
     await fireEvent.click(buttons[1]);

@@ -33,6 +33,7 @@
     onSelectFile?: (path: string) => void;
     onOpenFile?: (path: string) => void;
     onOpenDiff?: (path: string) => void;
+    onNavigateBack?: () => void;
   }
 </script>
 
@@ -40,6 +41,8 @@
   import { formatInteger, formatTime } from '$lib/i18n/format';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
+  import Fa from 'svelte-fa';
+  import { faChevronLeft } from '@fortawesome/free-solid-svg-icons';
   import type { MapActivityKind, RouteTransition } from './core/types';
 
   let {
@@ -54,6 +57,7 @@
     onSelectFile,
     onOpenFile,
     onOpenDiff,
+    onNavigateBack,
   }: SemanticMapDetailProps = $props();
 
   const selectedRegion = $derived(
@@ -121,6 +125,15 @@
     return transition.label ?? `${regionLabel(transition.from)} → ${regionLabel(transition.to)}`;
   }
 
+  function fileName(path: string): string {
+    return path.slice(path.lastIndexOf('/') + 1) || path;
+  }
+
+  function fileDirectory(path: string): string {
+    const lastSlash = path.lastIndexOf('/');
+    return lastSlash > 0 ? path.slice(0, lastSlash) : '';
+  }
+
   function activityKindLabel(kind: MapActivityKind): string {
     switch (kind) {
       case 'read':
@@ -167,9 +180,22 @@
   data-semantic-map-detail
   data-selection={selection?.type ?? 'empty'}
 >
+  {#if onNavigateBack && (selection?.type === 'crossing' || selection?.type === 'file')}
+    <Button
+      type="button"
+      size="icon-xs"
+      variant="plain"
+      class="self-start"
+      aria-label={m.ui_navButtons_goBack_tooltip()}
+      tooltip={m.ui_navButtons_goBack_tooltip()}
+      onclick={onNavigateBack}
+    >
+      <Fa icon={faChevronLeft} size="xs" />
+    </Button>
+  {/if}
   {#if selectedRegion}
     <header>
-      <h2 class="font-serif text-lg font-semibold">{selectedRegion.label}</h2>
+      <h2 class="detail-heading text-lg font-semibold">{selectedRegion.label}</h2>
       <p class="mt-2 leading-relaxed text-muted-foreground">{selectedRegion.responsibility}</p>
     </header>
     {#if regionChildren.length > 0}
@@ -198,9 +224,20 @@
                   <li>
                     <Button
                       variant="link"
-                      class="h-auto justify-start whitespace-normal rounded-none border-0 px-0 py-0.5 text-left font-mono !text-xs !font-normal !leading-relaxed !tracking-normal underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
+                      class="h-auto min-w-0 max-w-full flex-col items-start justify-start rounded-none border-0 px-0 py-0.5 text-left font-mono !text-xs !font-normal !leading-relaxed !tracking-normal underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
                       type="button"
-                      onclick={() => onOpenFile?.(path)}>{path}</Button
+                      aria-label={path}
+                      title={path}
+                      onclick={() => onOpenFile?.(path)}
+                    >
+                      <span class="max-w-full break-all font-medium text-foreground"
+                        >{fileName(path)}</span
+                      >
+                      {#if fileDirectory(path)}
+                        <span class="max-w-full truncate text-muted-foreground"
+                          >{fileDirectory(path)}</span
+                        >
+                      {/if}</Button
                     >
                   </li>
                 {/each}
@@ -214,7 +251,9 @@
     </section>
   {:else if selection?.type === 'agent'}
     <header>
-      <h2 class="font-serif text-lg font-semibold">{selectedAgent?.name ?? selection.agentId}</h2>
+      <h2 class="detail-heading text-lg font-semibold">
+        {selectedAgent?.name ?? selection.agentId}
+      </h2>
       {#if selectedAgent}
         <p class="mt-1 text-muted-foreground">{statusLabel(selectedAgent.status)}</p>
       {/if}
@@ -232,9 +271,20 @@
                 >{formatTime(activity.ts)}</time
               >
             </div>
-            <p class="truncate text-xs text-muted-foreground">
-              {activity.path ?? (activity.regionId ? regionLabel(activity.regionId) : '')}
-            </p>
+            {#if activity.path}
+              <p class="break-all text-xs font-medium text-foreground" title={activity.path}>
+                {fileName(activity.path)}
+              </p>
+              {#if fileDirectory(activity.path)}
+                <p class="truncate text-xs text-muted-foreground" title={activity.path}>
+                  {fileDirectory(activity.path)}
+                </p>
+              {/if}
+            {:else}
+              <p class="truncate text-xs text-muted-foreground">
+                {activity.regionId ? regionLabel(activity.regionId) : ''}
+              </p>
+            {/if}
           </li>
         {/each}
       </ul>
@@ -270,7 +320,7 @@
       <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {m.semanticMap_detail_route_label()}
       </p>
-      {#if routeSubjectLabel}<h2 class="mt-1 font-serif text-lg font-semibold">
+      {#if routeSubjectLabel}<h2 class="detail-heading mt-1 text-lg font-semibold">
           {routeSubjectLabel}
         </h2>{/if}
     </header>
@@ -302,7 +352,9 @@
       <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {m.semanticMap_detail_crossing_label()}
       </p>
-      <h2 class="mt-1 font-serif text-lg font-semibold">{transitionLabel(selectedTransition)}</h2>
+      <h2 class="detail-heading mt-1 text-lg font-semibold">
+        {transitionLabel(selectedTransition)}
+      </h2>
       <p class="mt-1 text-muted-foreground">
         {regionLabel(selectedTransition.from)} → {regionLabel(selectedTransition.to)}
       </p>
@@ -317,8 +369,15 @@
             <Button
               type="button"
               variant="link"
-              class="h-auto justify-start whitespace-normal rounded-none border-0 px-0 py-0.5 text-left font-mono !text-xs !font-normal !leading-relaxed !tracking-normal underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
-              onclick={() => onSelectFile?.(path)}>{path}</Button
+              class="h-auto min-w-0 max-w-full flex-col items-start justify-start rounded-none border-0 px-0 py-0.5 text-left font-mono !text-xs !font-normal !leading-relaxed !tracking-normal underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
+              aria-label={path}
+              title={path}
+              onclick={() => onSelectFile?.(path)}
+            >
+              <span class="max-w-full break-all font-medium text-foreground">{fileName(path)}</span>
+              {#if fileDirectory(path)}
+                <span class="max-w-full truncate text-muted-foreground">{fileDirectory(path)}</span>
+              {/if}</Button
             >
           </li>
         {/each}
@@ -340,7 +399,14 @@
     {/if}
   {:else if selection?.type === 'file'}
     <header>
-      <h2 class="break-all font-mono text-sm font-semibold">{selection.path}</h2>
+      <h2 class="break-all font-mono text-sm font-semibold" title={selection.path}>
+        {fileName(selection.path)}
+      </h2>
+      {#if fileDirectory(selection.path)}
+        <p class="truncate font-mono text-xs text-muted-foreground" title={selection.path}>
+          {fileDirectory(selection.path)}
+        </p>
+      {/if}
     </header>
     {#if selectedFileActivities[0]?.agentName || selectedFileActivities[0]?.agentId}
       <p>
@@ -371,3 +437,12 @@
     </div>
   {/if}
 </div>
+
+<style>
+  .detail-heading {
+    font-family:
+      'Source Serif 4 Variable', 'Source Serif 4', 'Source Serif Pro', 'Iowan Old Style',
+      'Palatino Linotype', Palatino, Georgia, serif;
+    font-optical-sizing: auto;
+  }
+</style>
