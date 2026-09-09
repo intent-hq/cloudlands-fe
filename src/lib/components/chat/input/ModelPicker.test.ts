@@ -670,7 +670,9 @@ describe('ModelPicker combined reasoning mode', () => {
 
     await fireEvent.click(trigger);
 
-    const popover = screen.getByRole('listbox');
+    const listbox = screen.getByRole('listbox');
+    const popover = listbox.closest('[data-slot="dropdown-content"]') as HTMLElement;
+    expect(popover).toBeTruthy();
     expect(popover.className).toContain('bg-background!');
     expect(popover.className).toContain('[&_[role=searchbox]]:border-b!');
     expect(popover.className).toContain('[&_[role=searchbox]]:border-solid!');

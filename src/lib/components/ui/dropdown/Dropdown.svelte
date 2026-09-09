@@ -621,6 +621,7 @@
 
   <!-- Content (inline, no portal) -->
   {#if open && !portal}
+    <!-- svelte-ignore a11y_no_static_element_interactions (keyboard boundary for nested popup controls) -->
     <div
       bind:this={inlineContentRef}
       in:springIn={menuOverlayTransition.enter}
@@ -635,6 +636,7 @@
       data-side={collisionBoundary ? inlineSide : undefined}
       data-collision-aware={collisionBoundary ? 'true' : undefined}
       data-slot="dropdown-content"
+      onkeydown={handleKeyDown}
     >
       {@render dropdownContent(Boolean(collisionBoundary))}
     </div>
@@ -644,6 +646,7 @@
 <!-- Portal content (renders outside overflow:hidden containers) -->
 {#if open && portal}
   <Portal zIndex={100}>
+    <!-- svelte-ignore a11y_no_static_element_interactions (keyboard boundary for nested popup controls) -->
     <div
       bind:this={portalContentRef}
       in:springIn={menuOverlayTransition.enter}
@@ -652,6 +655,7 @@
       style={portalStyle}
       data-side={inlineSide}
       data-slot="dropdown-content"
+      onkeydown={handleKeyDown}
     >
       {@render dropdownContent(true)}
     </div>
