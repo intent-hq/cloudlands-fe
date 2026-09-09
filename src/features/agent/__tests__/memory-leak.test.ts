@@ -336,5 +336,4 @@ describe('Memory Leak Prevention', () => {
       expect(disposables[2].dispose).toHaveBeenCalled();
     });
   });
-
 });
