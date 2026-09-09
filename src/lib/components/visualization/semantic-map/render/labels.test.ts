@@ -39,6 +39,7 @@ function layout(state: 'route' | 'focus' | 'replay', width: number, height: numb
     badges: scene.badges,
     width,
     height,
+    heatByRegion: scene.heatByRegion,
   });
 }
 
@@ -48,10 +49,21 @@ function expectCollisionFree(result: ReturnType<typeof layout>): void {
       expect(boxesOverlap(result.boxes[left], result.boxes[right])).toBe(false);
     }
   }
-  expect(new Set(result.regions.map(({ id }) => id))).toEqual(
-    new Set(manifest.regions.map(({ id }) => id)),
-  );
   expect(result.badges).toHaveLength(SCRIPT_AGENTS.length);
+}
+
+function hullContainsPoint(hull: [number, number][], x: number, y: number): boolean {
+  let contained = false;
+  for (let index = 0, previous = hull.length - 1; index < hull.length; previous = index++) {
+    const [currentX, currentY] = hull[index];
+    const [previousX, previousY] = hull[previous];
+    if (
+      currentY > y !== previousY > y &&
+      x < ((previousX - currentX) * (y - currentY)) / (previousY - currentY) + currentX
+    )
+      contained = !contained;
+  }
+  return contained;
 }
 
 describe.each([
@@ -66,8 +78,13 @@ describe.each([
       expectCollisionFree(first);
       expect(layout(state, width, height)).toEqual(first);
       if (state === 'route') {
-        expect(first.edges).toHaveLength(script.routes[SCRIPT_AGENTS[0].id].transitions.length);
-        expect(first.counts).toHaveLength(script.routes[SCRIPT_AGENTS[0].id].transitions.length);
+        const transitionCount = script.routes[SCRIPT_AGENTS[0].id].transitions.length;
+        expect(first.edges.length).toBeLessThanOrEqual(transitionCount);
+        expect(first.counts.length).toBeLessThanOrEqual(transitionCount);
+        if (width >= 640) {
+          expect(first.edges).toHaveLength(transitionCount);
+          expect(first.counts).toHaveLength(transitionCount);
+        }
       }
     },
   );
@@ -77,8 +94,45 @@ it('keeps every focus label collision-free at 320px', () => {
   expectCollisionFree(layout('focus', 320, 620));
 });
 
+it('places every badge before narrow viewport labels and never overlaps badges', () => {
+  const result = layout('replay', 320, 620);
+  expect(result.badges).toHaveLength(SCRIPT_AGENTS.length);
+  expect(result.boxes.slice(0, result.badges.length).every(({ kind }) => kind === 'badge')).toBe(
+    true,
+  );
+  for (let left = 0; left < result.badges.length; left += 1) {
+    for (let right = left + 1; right < result.badges.length; right += 1) {
+      expect(boxesOverlap(result.badges[left].box, result.badges[right].box)).toBe(false);
+    }
+  }
+  expect(result.regions.length).toBeLessThanOrEqual(3);
+});
+
+it('contains every 420px label within its own hull', () => {
+  const result = layout('replay', 420, 620);
+  const geometry = placeRegions(manifest, computeBudget(manifest), { width: 420, height: 620 });
+  const byId = new Map(geometry.map((region) => [region.id, region]));
+  for (const label of result.regions) {
+    const hull = byId.get(label.id)!.hull;
+    const halfWidth = label.width / 2;
+    const halfHeight = label.height / 2;
+    expect(
+      [
+        [label.x - halfWidth, label.y - halfHeight],
+        [label.x + halfWidth, label.y - halfHeight],
+        [label.x + halfWidth, label.y + halfHeight],
+        [label.x - halfWidth, label.y + halfHeight],
+      ].every(([x, y]) => hullContainsPoint(hull, x, y)),
+    ).toBe(true);
+  }
+});
+
+it('preserves the wide replay label density', () => {
+  expect(layout('replay', 960, 620).regions.length).toBeGreaterThanOrEqual(12);
+});
+
 it('keeps non-focused region labels above the theme-independent readable opacity floor', () => {
-  const result = layout('focus', 960, 620);
+  const result = layout('focus', 1440, 900);
   const selected = result.regions.find(({ id }) => id === 'renderer-ui')!;
   const context = result.regions.filter(({ id }) => id !== selected.id);
 

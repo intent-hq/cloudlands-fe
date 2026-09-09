@@ -250,6 +250,12 @@
       width,
       height,
       scale: transform.scale,
+      heatByRegion: scene.heatByRegion,
+      revealedRegionIds: new Set([
+        ...(selection?.type === 'region' ? selection.regionIds : []),
+        ...(hoveredRegionId ? [hoveredRegionId] : []),
+        ...(keyboardRegionId ? [keyboardRegionId] : []),
+      ]),
     });
   }
 
@@ -339,7 +345,7 @@
   function drawTick(ctx: CanvasRenderingContext2D, tick: ActivityTick): void {
     const label = formatInteger(tick.count);
     ctx.save();
-    ctx.font = `600 ${10 / transform.scale}px ${uiFont}`;
+    ctx.font = `600 ${12 / transform.scale}px ${uiFont}`;
     const width = Math.max(
       18 / transform.scale,
       ctx.measureText(label).width + 9 / transform.scale,
@@ -519,7 +525,7 @@
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = badgeForeground;
-    ctx.font = `600 ${10 / transform.scale}px ${uiFont}`;
+    ctx.font = `600 ${12 / transform.scale}px ${uiFont}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(badge.name.slice(0, 1).toUpperCase(), badge.x, badge.y);

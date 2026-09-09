@@ -3,9 +3,11 @@ import type { AgentBadge, RouteEdge } from './types';
 
 const GAP = 4;
 const BADGE_SIZE = 30;
-const REGION_LABEL_MIN_FONT_SIZE = 13;
+const REGION_LABEL_MIN_FONT_SIZE = 12;
 const REGION_LABEL_MAX_FONT_SIZE = 16;
 const REGION_LABEL_MIN_OPACITY = 0.82;
+const ALL_REGION_LABELS_MIN_WIDTH = 640;
+const NARROW_REGION_LABEL_WIDTH = 96;
 
 export interface LabelBox {
   id: string;
@@ -81,16 +83,45 @@ function inside(box: LabelBox, width: number, height: number): boolean {
   );
 }
 
+function hullContainsPoint(hull: [number, number][], x: number, y: number): boolean {
+  let contained = false;
+  for (let index = 0, previous = hull.length - 1; index < hull.length; previous = index++) {
+    const currentPoint = hull[index];
+    const previousPoint = hull[previous];
+    const crossesRay =
+      currentPoint[1] > y !== previousPoint[1] > y &&
+      x <
+        ((previousPoint[0] - currentPoint[0]) * (y - currentPoint[1])) /
+          (previousPoint[1] - currentPoint[1]) +
+          currentPoint[0];
+    if (crossesRay) contained = !contained;
+  }
+  return contained;
+}
+
+function containedByHull(box: LabelBox, hull: [number, number][]): boolean {
+  const halfWidth = box.width / 2;
+  const halfHeight = box.height / 2;
+  return [
+    [box.x - halfWidth, box.y - halfHeight],
+    [box.x + halfWidth, box.y - halfHeight],
+    [box.x + halfWidth, box.y + halfHeight],
+    [box.x - halfWidth, box.y + halfHeight],
+  ].every(([x, y]) => hullContainsPoint(hull, x, y));
+}
+
 function place(
   base: Omit<LabelBox, 'x' | 'y'>,
   candidates: Array<readonly [number, number]>,
   occupied: LabelBox[],
   viewport: { width: number; height: number },
+  fits: (box: LabelBox) => boolean = () => true,
 ): LabelBox | undefined {
   for (const [x, y] of candidates) {
     const box = { ...base, x, y };
     if (
       inside(box, viewport.width, viewport.height) &&
+      fits(box) &&
       !occupied.some((item) => overlaps(box, item))
     ) {
       occupied.push(box);
@@ -137,7 +168,11 @@ function regionCandidates(
   ];
 }
 
-function badgeCandidates(badge: AgentBadge, scale: number): Array<readonly [number, number]> {
+function badgeCandidates(
+  badge: AgentBadge,
+  scale: number,
+  viewport: { width: number; height: number },
+): Array<readonly [number, number]> {
   const step = 34 / scale;
   const result: Array<readonly [number, number]> = [];
   for (const radius of [step, step * 1.55, step * 2.1]) {
@@ -145,7 +180,36 @@ function badgeCandidates(badge: AgentBadge, scale: number): Array<readonly [numb
       result.push([badge.x + Math.cos(angle) * radius, badge.y + Math.sin(angle) * radius]);
     }
   }
-  return result;
+  const halfSize = BADGE_SIZE / scale / 2;
+  const gridStep = (BADGE_SIZE + GAP) / scale;
+  const fallback: Array<readonly [number, number]> = [];
+  for (let y = halfSize + GAP; y <= viewport.height - halfSize - GAP; y += gridStep) {
+    for (let x = halfSize + GAP; x <= viewport.width - halfSize - GAP; x += gridStep) {
+      fallback.push([x, y]);
+    }
+  }
+  fallback.sort(
+    ([leftX, leftY], [rightX, rightY]) =>
+      Math.hypot(leftX - badge.x, leftY - badge.y) - Math.hypot(rightX - badge.x, rightY - badge.y),
+  );
+  return [...result, ...fallback];
+}
+
+function visibleRegions(input: {
+  regions: RegionGeometry[];
+  width: number;
+  heatByRegion?: Readonly<Record<string, number>>;
+  revealedRegionIds?: ReadonlySet<string>;
+}): RegionGeometry[] {
+  if (input.width >= ALL_REGION_LABELS_MIN_WIDTH) return input.regions;
+  const limit = Math.max(3, Math.floor(input.width / NARROW_REGION_LABEL_WIDTH));
+  const maximumBudget = Math.max(0, ...input.regions.map(({ budget }) => budget));
+  const ranked = [...input.regions].sort((left, right) => {
+    const leftPriority = left.budget + (input.heatByRegion?.[left.id] ?? 0) * maximumBudget;
+    const rightPriority = right.budget + (input.heatByRegion?.[right.id] ?? 0) * maximumBudget;
+    return rightPriority - leftPriority || left.id.localeCompare(right.id);
+  });
+  return ranked.filter((region, index) => index < limit || input.revealedRegionIds?.has(region.id));
 }
 
 export function layoutSceneLabels(input: {
@@ -156,6 +220,8 @@ export function layoutSceneLabels(input: {
   width: number;
   height: number;
   scale?: number;
+  heatByRegion?: Readonly<Record<string, number>>;
+  revealedRegionIds?: ReadonlySet<string>;
 }): LabelLayout {
   const scale = input.scale ?? 1;
   const viewport = { width: input.width, height: input.height };
@@ -163,14 +229,38 @@ export function layoutSceneLabels(input: {
   const focusState = {
     maximumBudget: Math.max(0, ...input.regions.map(({ budget }) => budget)),
   };
-  const regions = input.regions.flatMap((region) => {
+  const badges = input.badges.map((badge, index) => {
+    const placed = place(
+      { id: badge.id, kind: 'badge', width: BADGE_SIZE / scale, height: BADGE_SIZE / scale },
+      badgeCandidates(badge, scale, viewport),
+      occupied,
+      viewport,
+    );
+    const box =
+      placed ??
+      ({
+        id: badge.id,
+        kind: 'badge',
+        x: BADGE_SIZE / scale / 2 + GAP,
+        y: BADGE_SIZE / scale / 2 + GAP + (index * (BADGE_SIZE + GAP)) / scale,
+        width: BADGE_SIZE / scale,
+        height: BADGE_SIZE / scale,
+      } satisfies LabelBox);
+    if (!placed) occupied.push(box);
+    return { ...badge, x: box.x, y: box.y, box };
+  });
+  const regions = visibleRegions(input).flatMap((region) => {
     const text = input.regionLabels.get(region.id);
     if (!text) return [];
     const fontSize = Math.max(
       REGION_LABEL_MIN_FONT_SIZE,
       Math.min(REGION_LABEL_MAX_FONT_SIZE, region.radius * 0.15),
     );
-    const lines = wrapLabel(text, 22);
+    const maxCharacters = Math.max(
+      8,
+      Math.min(22, Math.floor((region.radius * 1.2) / (fontSize * 0.56))),
+    );
+    const lines = wrapLabel(text, maxCharacters);
     const width = Math.max(...lines.map((line) => estimateWidth(line, fontSize)));
     const height = lines.length * (fontSize + 3) + 4;
     const box = place(
@@ -178,6 +268,7 @@ export function layoutSceneLabels(input: {
       regionCandidates(region, width, height),
       occupied,
       viewport,
+      (candidate) => containedByHull(candidate, region.hull),
     );
     return box
       ? [
@@ -208,7 +299,7 @@ export function layoutSceneLabels(input: {
     return box ? [{ ...box, text: edge.label, fontSize, opacity: 1, lines }] : [];
   });
   const counts = input.edges.flatMap((edge, index) => {
-    const fontSize = 11 / scale;
+    const fontSize = 12 / scale;
     const text = `${edge.count}×`;
     const box = place(
       {
@@ -222,15 +313,6 @@ export function layoutSceneLabels(input: {
       viewport,
     );
     return box ? [{ ...box, text, fontSize, opacity: 1 }] : [];
-  });
-  const badges = input.badges.flatMap((badge) => {
-    const box = place(
-      { id: badge.id, kind: 'badge', width: BADGE_SIZE / scale, height: BADGE_SIZE / scale },
-      badgeCandidates(badge, scale),
-      occupied,
-      viewport,
-    );
-    return box ? [{ ...badge, x: box.x, y: box.y, box }] : [];
   });
   return { regions, edges, counts, badges, boxes: occupied };
 }
