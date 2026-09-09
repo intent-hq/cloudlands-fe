@@ -31,3 +31,26 @@ export function lerpGeometry(a: RegionGeometry, b: RegionGeometry, t: number): R
     hull: interpolateHull(a.hull, b.hull, progress),
   };
 }
+
+export function capFocusGeometry(
+  rest: RegionGeometry[],
+  focus: RegionGeometry[],
+  focusedRegionIds: ReadonlySet<string>,
+  maximumScale = 1.6,
+): RegionGeometry[] {
+  const restById = new Map(rest.map((region) => [region.id, region]));
+  let progress = 1;
+  for (const target of focus) {
+    if (!focusedRegionIds.has(target.id)) continue;
+    const start = restById.get(target.id);
+    if (!start || target.radius <= start.radius * maximumScale) continue;
+    progress = Math.min(
+      progress,
+      (start.radius * maximumScale - start.radius) / (target.radius - start.radius),
+    );
+  }
+  return focus.map((target) => {
+    const start = restById.get(target.id);
+    return start ? lerpGeometry(start, target, progress) : target;
+  });
+}

@@ -4,13 +4,21 @@
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { MapActivityKind } from './core/types';
-  import { lerpGeometry } from './layout/interpolate';
+  import { capFocusGeometry, lerpGeometry } from './layout/interpolate';
   import type { RegionGeometry } from './layout/place';
   import { CanvasPathCache, drawQuadraticPath, traceHull } from './render/canvas';
+  import { drawFocusContent, drawFocusedResponsibility } from './render/focus';
   import { layoutSceneLabels, type LabelLayout, type PlacedLabel } from './render/labels';
   import { jumpToMinimapPoint, resolveMinimapRect } from './render/minimap';
   import { moveSpatialFocus, type SpatialArrowKey, type SpatialTarget } from './render/navigation';
-  import { buildScene, HEAT_BAND_ALPHA, hitRouteEdge, routeEdgePresentation } from './render/scene';
+  import {
+    buildFocusContent,
+    buildScene,
+    filterActivities,
+    HEAT_BAND_ALPHA,
+    hitRouteEdge,
+    routeEdgePresentation,
+  } from './render/scene';
   import type {
     ActivityMark,
     ActivityTick,
@@ -107,9 +115,27 @@
   const selectedRegionIds = $derived(
     selection?.type === 'region' ? new Set(selection.regionIds) : new Set<string>(),
   );
+  const focusedActivityRegionIds = $derived.by(() => {
+    const ids = new Set(selectedRegionIds);
+    for (const region of manifest.regions) {
+      if (region.parent && selectedRegionIds.has(region.parent)) ids.add(region.id);
+    }
+    return ids;
+  });
+  const hasFocusedActivity = $derived(
+    selection?.type === 'region' &&
+      filterActivities(activities, filters, timeWindow).some(
+        ({ regionId }) => !!regionId && focusedActivityRegionIds.has(regionId),
+      ),
+  );
+  const focusGeometry = $derived(
+    selection?.type === 'region' && !hasFocusedActivity
+      ? capFocusGeometry(geometry.rest, geometry.focus, selectedRegionIds)
+      : geometry.focus,
+  );
   const focusedHull = $derived(
     selection?.type === 'region'
-      ? geometry.focus.find(({ id }) => selection.regionIds.includes(id))?.hull
+      ? focusGeometry.find(({ id }) => selection.regionIds.includes(id))?.hull
       : undefined,
   );
   const minimapRect = $derived(resolveMinimapRect({ width, height }, transform, focusedHull));
@@ -119,12 +145,29 @@
       activities,
       filters,
       timeWindow,
-      geometry: selection ? geometry.focus : geometry.rest,
+      geometry: selection ? focusGeometry : geometry.rest,
       route,
       dark: darkMode,
       neutral: colors.mutedForeground,
       fileLabel: routeFileLabel,
     }),
+  );
+  const focusContent = $derived(
+    selection?.type === 'region' && hasFocusedActivity
+      ? buildFocusContent({
+          activities: scene.activities,
+          manifest,
+          geometry: focusGeometry,
+          focusedRegionIds: selectedRegionIds,
+          dark: darkMode,
+          neutral: colors.mutedForeground,
+        })
+      : null,
+  );
+  const focusedResponsibility = $derived(
+    selection?.type === 'region' && !hasFocusedActivity
+      ? manifest.regions.find(({ id }) => selectedRegionIds.has(id))?.responsibility
+      : undefined,
   );
   const hoveredRegion = $derived(manifest.regions.find(({ id }) => id === hoveredRegionId));
   const hoveredEdge = $derived(
@@ -312,6 +355,9 @@
       height,
       scale: transform.scale,
       heatByRegion: scene.heatByRegion,
+      focusedRegionIds: selectedRegionIds,
+      focusContentRegionIds:
+        focusContent || focusedResponsibility ? selectedRegionIds : new Set<string>(),
       revealedRegionIds: new Set([
         ...(selection?.type === 'region' ? selection.regionIds : []),
         ...(hoveredRegionId ? [hoveredRegionId] : []),
@@ -365,7 +411,7 @@
       ctx.fillStyle = colors.foreground;
       cachedPath ? ctx.fill(path) : ctx.fill();
     }
-    if (hatchPattern && (!selectedRegionIds.has(region.id) || heatBand > 0)) {
+    if (hatchPattern && !selectedRegionIds.has(region.id)) {
       ctx.globalAlpha = regionAlpha;
       ctx.fillStyle = hatchPattern;
       cachedPath ? ctx.fill(path) : ctx.fill();
@@ -715,6 +761,26 @@
     drawTrails(ctx, scene.trails);
     drawRoute(ctx, scene.edges);
     scene.marks.forEach((mark) => drawMark(ctx, mark, elapsed));
+    if (!tweening && focusContent) {
+      drawFocusContent(
+        ctx,
+        focusContent,
+        focusGeometry.find(({ id }) => id === focusContent.regionId),
+        transform.scale,
+        uiFont,
+        colors,
+      );
+    }
+    if (!tweening && focusedResponsibility) {
+      drawFocusedResponsibility(
+        ctx,
+        focusedResponsibility,
+        focusGeometry.find(({ id }) => selectedRegionIds.has(id)),
+        transform.scale,
+        uiFont,
+        colors.mutedForeground,
+      );
+    }
     labelLayout.regions.forEach((label) => drawRegionLabel(ctx, label));
     drawRouteLabels(ctx);
     scene.ticks.forEach((tick) => drawTick(ctx, tick));
@@ -957,7 +1023,7 @@
 
   $effect(() => {
     if (!canvas) return;
-    const next = selection ? geometry.focus : geometry.rest;
+    const next = selection ? focusGeometry : geometry.rest;
     startGeometryTween(next);
   });
 
@@ -1045,6 +1111,9 @@
   data-semantic-map-pan-x={transform.x}
   data-semantic-map-pan-y={transform.y}
   data-semantic-map-scale={transform.scale}
+  data-semantic-map-focus-mode={focusContent?.mode ??
+    (focusedResponsibility ? 'responsibility' : 'none')}
+  data-semantic-map-focus-evidence-count={focusContent?.items.length ?? 0}
   data-semantic-map-keyboard-layer={keyboardLayer}
 >
   <span class="sr-only" aria-live="polite">{selectionDescription}</span>

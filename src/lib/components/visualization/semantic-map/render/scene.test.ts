@@ -6,6 +6,7 @@ import type { MapActivity } from '../core/types';
 import type { RegionGeometry } from '../layout/place';
 import {
   buildRouteEdges,
+  buildFocusContent,
   buildScene,
   filterActivities,
   HEAT_BAND_ALPHA,
@@ -387,6 +388,66 @@ describe('semantic map render scene', () => {
     expect(scene.marks.find(({ kind }) => kind === 'move')).toMatchObject({
       fromX: 100,
       fromY: 100,
+    });
+  });
+
+  it('lays out unique touched files inside a focused hull with agent colors and kind glyph data', () => {
+    const focus = buildFocusContent({
+      activities: [
+        { ...activities[0], path: 'src/first.ts' },
+        { ...activities[1], path: 'src/first.ts' },
+        { ...activities[2], regionId: 'one', path: 'src/second.ts' },
+      ],
+      manifest: {
+        version: 1,
+        regions: [
+          { id: 'one', label: 'One', responsibility: 'One', anchor: [0.5, 0.5], paths: [] },
+        ],
+      },
+      geometry,
+      focusedRegionIds: new Set(['one']),
+      dark: false,
+      neutral: '#neutral',
+    });
+
+    expect(focus?.mode).toBe('files');
+    expect(focus?.items.map(({ label, kind }) => [label, kind])).toEqual([
+      ['first.ts', 'edit'],
+      ['second.ts', 'edit'],
+    ]);
+    expect(focus?.items.every(({ color }) => color !== '#neutral')).toBe(true);
+    expect(focus?.items.every(({ x, y }) => x >= 50 && x <= 150 && y >= 50 && y <= 150)).toBe(true);
+  });
+
+  it('groups child-region evidence as inner hull content', () => {
+    const focus = buildFocusContent({
+      activities: [
+        { ...activities[0], regionId: 'child' },
+        { ...activities[1], regionId: 'child' },
+      ],
+      manifest: {
+        version: 1,
+        regions: [
+          { id: 'one', label: 'One', responsibility: 'One', anchor: [0.5, 0.5], paths: [] },
+          {
+            id: 'child',
+            parent: 'one',
+            label: 'Child',
+            responsibility: 'Child',
+            anchor: [0.5, 0.5],
+            paths: [],
+          },
+        ],
+      },
+      geometry,
+      focusedRegionIds: new Set(['one']),
+      dark: false,
+      neutral: '#neutral',
+    });
+
+    expect(focus).toMatchObject({
+      mode: 'subregions',
+      items: [{ id: 'child', label: 'Child', count: 2 }],
     });
   });
 

@@ -7,6 +7,7 @@
     | 'busy'
     | 'route'
     | 'focus-region'
+    | 'focus-region-idle'
     | 'replay'
     | 'unsorted-heavy'
     | 'detail-region'
@@ -40,6 +41,7 @@
       busy: previewState('busy'),
       route: previewState('route'),
       'focus-region': previewState('focus-region'),
+      'focus-region-idle': previewState('focus-region-idle'),
       replay: previewState('replay'),
       'unsorted-heavy': previewState('unsorted-heavy'),
       'detail-region': previewState('detail-region'),
@@ -62,7 +64,7 @@
   import manifestJson from './fixtures/intent-manifest.json';
   import { computeBudget } from './layout/budget';
   import { placeRegions } from './layout/place';
-  import type { Manifest, MapActivityKind } from './core/types';
+  import type { Manifest, MapActivity, MapActivityKind } from './core/types';
   import type { SemanticMapSelection } from './render/types';
   import {
     createSemanticMapScript,
@@ -114,7 +116,9 @@
   let selection = $state<SemanticMapSelection>(
     initialMode === 'route' || initialMode === 'detail-agent'
       ? { type: 'agent', agentId: SCRIPT_AGENTS[0].id }
-      : initialMode === 'focus-region' || initialMode === 'detail-region'
+      : initialMode === 'focus-region' ||
+          initialMode === 'focus-region-idle' ||
+          initialMode === 'detail-region'
         ? { type: 'region', regionIds: ['renderer-ui'] }
         : initialMode === 'detail-route'
           ? { type: 'route' }
@@ -174,12 +178,29 @@
         }))
       : [],
   );
+  const focusEvidenceActivities: MapActivity[] = [
+    ['focus-canvas', 'SemanticMapCanvas.svelte', 'edit', 'agent-renderer', 'Quinn'],
+    ['focus-scene', 'render/scene.ts', 'read', 'agent-renderer', 'Quinn'],
+    ['focus-labels', 'render/labels.ts', 'edit', 'agent-research', 'Sol'],
+    ['focus-layout', 'layout/place.ts', 'read', 'agent-daemon', 'Mina'],
+    ['focus-preview', 'semantic-map.preview.svelte', 'tool', 'agent-research', 'Sol'],
+  ].map(([id, path, kind, agentId, agentName], index) => ({
+    id,
+    regionId: 'renderer-ui',
+    agentId,
+    agentName,
+    path: `packages/cloudlands-fe/src/lib/components/visualization/semantic-map/${path}`,
+    kind: kind as MapActivityKind,
+    ts: new Date(Date.parse(SCRIPT_START) + (15 + index) * 60_000).toISOString(),
+  }));
   const activities = $derived(
-    mode === 'rest'
+    mode === 'rest' || mode === 'focus-region-idle'
       ? []
-      : [...script.activities, ...unsortedActivities].filter(
-          ({ ts }) => Date.parse(ts) <= currentTime,
-        ),
+      : mode === 'focus-region'
+        ? focusEvidenceActivities.filter(({ ts }) => Date.parse(ts) <= currentTime)
+        : [...script.activities, ...unsortedActivities].filter(
+            ({ ts }) => Date.parse(ts) <= currentTime,
+          ),
   );
   const canvasWidth = $derived(
     resolveSemanticMapPreviewCanvasWidth(measuredCanvasWidth, requestedCanvasWidth),

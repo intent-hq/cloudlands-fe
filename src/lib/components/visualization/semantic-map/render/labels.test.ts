@@ -148,6 +148,50 @@ it('keeps non-focused region labels above the theme-independent readable opacity
   expect(context.some(({ opacity }) => opacity < selected.opacity)).toBe(true);
 });
 
+it('abbreviates a focused sibling only when the full label cannot stay inside its hull', () => {
+  const result = layoutSceneLabels({
+    regions: [
+      {
+        id: 'focus',
+        x: 280,
+        y: 100,
+        radius: 60,
+        budget: 0.7,
+        hull: [
+          [220, 40],
+          [340, 40],
+          [340, 160],
+          [220, 160],
+        ],
+      },
+      {
+        id: 'sibling',
+        x: 80,
+        y: 100,
+        radius: 14,
+        budget: 0.03,
+        hull: [
+          [66, 86],
+          [94, 86],
+          [94, 114],
+          [66, 114],
+        ],
+      },
+    ],
+    regionLabels: new Map([
+      ['focus', 'Focused region'],
+      ['sibling', 'Release coordination'],
+    ]),
+    edges: [],
+    badges: [],
+    width: 400,
+    height: 200,
+    focusedRegionIds: new Set(['focus']),
+  });
+
+  expect(result.regions.find(({ id }) => id === 'sibling')?.text).toBe('RC');
+});
+
 it('bounds label emphasis while preserving the context floor', () => {
   const focusState = { maximumBudget: 0.7 };
   expect(labelEmphasis({ budget: 0.7 }, focusState)).toBe(1);

@@ -1,11 +1,13 @@
 import { getAgentColorsWithSeed } from '$lib/utils/agent-colors';
-import type { MapActivity, Route } from '../core/types';
+import type { Manifest, MapActivity, Route } from '../core/types';
 import type { RegionGeometry } from '../layout/place';
 import type {
   ActivityMark,
   ActivityTick,
   AgentBadge,
   AgentTrail,
+  FocusContent,
+  FocusEvidenceItem,
   HeatBand,
   RouteEdge,
   SemanticMapFilters,
@@ -206,6 +208,90 @@ function agentColors(activities: MapActivity[], dark: boolean): Map<string, stri
     result.set(activity.agentId, getAgentColorsWithSeed(activity.agentId, dark)[0]);
   }
   return result;
+}
+
+function hullContainsPoint(hull: [number, number][], x: number, y: number): boolean {
+  let contained = false;
+  for (let index = 0, previous = hull.length - 1; index < hull.length; previous = index++) {
+    const [currentX, currentY] = hull[index];
+    const [previousX, previousY] = hull[previous];
+    if (
+      currentY > y !== previousY > y &&
+      x < ((previousX - currentX) * (y - currentY)) / (previousY - currentY) + currentX
+    )
+      contained = !contained;
+  }
+  return contained;
+}
+
+function evidenceLabel(activity: MapActivity): string {
+  if (!activity.path) return activity.agentName ?? activity.agentId ?? activity.kind;
+  const name = activity.path.split('/').at(-1) ?? activity.path;
+  if (name.length <= 18) return name;
+  return `${name.slice(0, 8)}…${name.slice(-8)}`;
+}
+
+function focusItemPositions(region: RegionGeometry, count: number): Array<[number, number]> {
+  const columns = Math.min(3, Math.ceil(Math.sqrt(count)));
+  const rows = Math.ceil(count / columns);
+  const horizontalStep = Math.min(108, (region.radius * 1.25) / Math.max(1, columns));
+  const verticalStep = Math.min(62, (region.radius * 0.9) / Math.max(1, rows));
+  const positions: Array<[number, number]> = [];
+  for (let index = 0; index < count; index += 1) {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const x = region.x + (column - (columns - 1) / 2) * horizontalStep;
+    const y = region.y + region.radius * 0.3 + (row - (rows - 1) / 2) * verticalStep;
+    positions.push(hullContainsPoint(region.hull, x, y) ? [x, y] : [region.x, region.y]);
+  }
+  return positions;
+}
+
+export function buildFocusContent(input: {
+  activities: MapActivity[];
+  manifest: Manifest;
+  geometry: RegionGeometry[];
+  focusedRegionIds: ReadonlySet<string>;
+  dark: boolean;
+  neutral: string;
+}): FocusContent | null {
+  const region = input.geometry.find(({ id }) => input.focusedRegionIds.has(id));
+  if (!region) return null;
+  const children = input.manifest.regions.filter(({ parent }) => parent === region.id);
+  const relevantIds = new Set([region.id, ...children.map(({ id }) => id)]);
+  const activities = input.activities.filter(
+    (activity) => !!activity.regionId && relevantIds.has(activity.regionId),
+  );
+  if (activities.length === 0) return null;
+  const colors = agentColors(activities, input.dark);
+  const childById = new Map(children.map((child) => [child.id, child]));
+  const evidenceActivities = activities.some(({ path }) => !!path)
+    ? activities.filter(({ path }) => !!path)
+    : activities;
+  const latestByKey = new Map<string, MapActivity>();
+  for (const activity of evidenceActivities) {
+    const key =
+      children.length > 0 && activity.regionId && childById.has(activity.regionId)
+        ? activity.regionId
+        : (activity.path ?? activity.id);
+    latestByKey.set(key, activity);
+  }
+  const entries = [...latestByKey].slice(-9);
+  const positions = focusItemPositions(region, entries.length);
+  const items: FocusEvidenceItem[] = entries.map(([key, activity], index) => {
+    const child = childById.get(key);
+    return {
+      id: key,
+      label: child?.label ?? evidenceLabel(activity),
+      kind: activity.kind,
+      color: colors.get(activity.agentId ?? '') ?? input.neutral,
+      x: positions[index][0],
+      y: positions[index][1],
+      path: activity.path,
+      count: child ? activities.filter(({ regionId }) => regionId === child.id).length : undefined,
+    };
+  });
+  return { regionId: region.id, mode: children.length > 0 ? 'subregions' : 'files', items };
 }
 
 function fanBadges(badges: AgentBadge[], regionIdByAgent: Map<string, string>): void {

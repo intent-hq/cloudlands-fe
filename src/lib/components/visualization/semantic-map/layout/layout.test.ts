@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Manifest, Route } from '../core/types';
 import { computeBudget, FOCUS_BUDGET_SHARE, LABELED_PEBBLE_BUDGET } from './budget';
-import { lerpGeometry } from './interpolate';
+import { capFocusGeometry, lerpGeometry } from './interpolate';
 import { FOCUS_CONTEXT_MIN_RADIUS, placeRegions } from './place';
 
 const manifest: Manifest = {
@@ -126,5 +126,20 @@ describe('semantic map region placement', () => {
     expect(midpoint.radius).toBeCloseTo((start.radius + end.radius) / 2);
     expect(lerpGeometry(start, end, 0)).toEqual(start);
     expect(lerpGeometry(start, end, 1)).toEqual(end);
+  });
+
+  it('caps an idle focus at 1.6 times its rest radius without drifting from interpolation', () => {
+    const rest = placeRegions(manifest, computeBudget(manifest), viewport);
+    const focus = placeRegions(manifest, computeBudget(manifest, { regionIds: ['one'] }), viewport);
+    const capped = capFocusGeometry(rest, focus, new Set(['one']));
+    const start = rest.find(({ id }) => id === 'one')!;
+    const target = focus.find(({ id }) => id === 'one')!;
+    const result = capped.find(({ id }) => id === 'one')!;
+
+    expect(result.radius / start.radius).toBeCloseTo(1.6);
+    expect(result.x).toBeGreaterThanOrEqual(Math.min(start.x, target.x));
+    expect(result.x).toBeLessThanOrEqual(Math.max(start.x, target.x));
+    expect(result.y).toBeGreaterThanOrEqual(Math.min(start.y, target.y));
+    expect(result.y).toBeLessThanOrEqual(Math.max(start.y, target.y));
   });
 });

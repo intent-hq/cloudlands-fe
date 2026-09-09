@@ -154,6 +154,28 @@ test('route hit targets follow focused region geometry', async ({ mount, page })
   await expect(component.getByTestId('selected-route')).toHaveAttribute('data-selected', 'true');
 });
 
+test('an active focused region exposes its evidence layout', async ({ mount }) => {
+  const component = await mount(SemanticMapCanvasHost, { props: { activityFixture: true } });
+  await component.locator('canvas').click({ position: { x: 250, y: 180 } });
+  await expect(component.getByRole('application')).toHaveAttribute(
+    'data-semantic-map-focus-mode',
+    'files',
+  );
+  await expect(component.getByRole('application')).toHaveAttribute(
+    'data-semantic-map-focus-evidence-count',
+    '2',
+  );
+});
+
+test('an idle focused region exposes its responsibility', async ({ mount }) => {
+  const component = await mount(SemanticMapCanvasHost);
+  await component.locator('canvas').click({ position: { x: 250, y: 180 } });
+  await expect(component.getByRole('application')).toHaveAttribute(
+    'data-semantic-map-focus-mode',
+    'responsibility',
+  );
+});
+
 test('visibility pauses and resumes a hull tween without a time jump', async ({ mount, page }) => {
   await installRuntimeMediaMock(page);
   const component = await mount(SemanticMapCanvasHost);

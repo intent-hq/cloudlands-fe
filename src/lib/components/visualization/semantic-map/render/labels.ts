@@ -65,6 +65,17 @@ function wrapLabel(text: string, maxCharacters: number): string[] {
   return lines;
 }
 
+function abbreviateLabel(text: string): string {
+  const words = text.split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word));
+  if (words.length >= 2)
+    return words
+      .slice(0, 2)
+      .map((word) => word[0])
+      .join('')
+      .toUpperCase();
+  return text.slice(0, 2).toUpperCase();
+}
+
 export function labelEmphasis(
   region: Pick<RegionGeometry, 'budget'>,
   focusState: LabelFocusState,
@@ -242,6 +253,8 @@ export function layoutSceneLabels(input: {
   scale?: number;
   heatByRegion?: Readonly<Record<string, number>>;
   revealedRegionIds?: ReadonlySet<string>;
+  focusedRegionIds?: ReadonlySet<string>;
+  focusContentRegionIds?: ReadonlySet<string>;
 }): LabelLayout {
   const scale = input.scale ?? 1;
   const viewport = { width: input.width, height: input.height };
@@ -297,21 +310,47 @@ export function layoutSceneLabels(input: {
     const lines = wrapLabel(text, maxCharacters);
     const width = Math.max(...lines.map((line) => estimateWidth(line, fontSize)));
     const height = lines.length * (fontSize + 3) + 4;
-    const box = place(
+    const candidates = input.focusContentRegionIds?.has(region.id)
+      ? [
+          [region.x, region.y - region.radius * 0.45] as const,
+          ...regionCandidates(region, width, height),
+        ]
+      : regionCandidates(region, width, height);
+    let box = place(
       { id: region.id, kind: 'region', width, height },
-      regionCandidates(region, width, height),
+      candidates,
       occupied,
       viewport,
       (candidate) => labelContainedByHull(candidate, region.hull, lines, fontSize),
     );
+    let displayedText = text;
+    let displayedLines = lines;
+    if (input.focusedRegionIds?.size && !input.focusedRegionIds.has(region.id) && !box) {
+      displayedText = abbreviateLabel(text);
+      displayedLines = [displayedText];
+      const abbreviatedWidth = estimateWidth(displayedText, fontSize);
+      const abbreviatedHeight = fontSize + 4;
+      box = place(
+        {
+          id: region.id,
+          kind: 'region',
+          width: abbreviatedWidth,
+          height: abbreviatedHeight,
+        },
+        regionCandidates(region, abbreviatedWidth, abbreviatedHeight),
+        occupied,
+        viewport,
+        (candidate) => labelContainedByHull(candidate, region.hull, displayedLines, fontSize),
+      );
+    }
     return box
       ? [
           {
             ...box,
-            text,
+            text: displayedText,
             fontSize,
             opacity: labelEmphasis(region, focusState),
-            lines,
+            lines: displayedLines,
           },
         ]
       : [];

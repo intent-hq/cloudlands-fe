@@ -71,6 +71,23 @@ export interface AgentTrail {
   points: AgentTrailPoint[];
 }
 
+export interface FocusEvidenceItem {
+  id: string;
+  label: string;
+  kind: MapActivityKind;
+  color: string;
+  x: number;
+  y: number;
+  path?: string;
+  count?: number;
+}
+
+export interface FocusContent {
+  regionId: string;
+  mode: 'files' | 'subregions';
+  items: FocusEvidenceItem[];
+}
+
 export interface AgentBadge {
   id: string;
   name: string;

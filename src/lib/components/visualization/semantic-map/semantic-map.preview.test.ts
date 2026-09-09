@@ -15,6 +15,7 @@ describe('semantic map preview', () => {
       'busy',
       'route',
       'focus-region',
+      'focus-region-idle',
       'replay',
       'unsorted-heavy',
       'detail-region',
