@@ -6,7 +6,7 @@ const BADGE_SIZE = 30;
 const REGION_LABEL_MIN_FONT_SIZE = 12;
 const REGION_LABEL_MAX_FONT_SIZE = 16;
 const REGION_LABEL_MIN_OPACITY = 0.82;
-const ALL_REGION_LABELS_MIN_WIDTH = 640;
+const ALL_REGION_LABELS_MIN_WIDTH = 600;
 const NARROW_REGION_LABEL_WIDTH = 96;
 
 export interface LabelBox {
@@ -99,15 +99,23 @@ function hullContainsPoint(hull: [number, number][], x: number, y: number): bool
   return contained;
 }
 
-function containedByHull(box: LabelBox, hull: [number, number][]): boolean {
-  const halfWidth = box.width / 2;
-  const halfHeight = box.height / 2;
-  return [
-    [box.x - halfWidth, box.y - halfHeight],
-    [box.x + halfWidth, box.y - halfHeight],
-    [box.x + halfWidth, box.y + halfHeight],
-    [box.x - halfWidth, box.y + halfHeight],
-  ].every(([x, y]) => hullContainsPoint(hull, x, y));
+function labelContainedByHull(
+  box: LabelBox,
+  hull: [number, number][],
+  lines: string[],
+  fontSize: number,
+): boolean {
+  return lines.every((line, index) => {
+    const halfWidth = estimateWidth(line, fontSize) / 2;
+    const halfHeight = fontSize / 2;
+    const y = box.y + (index - (lines.length - 1) / 2) * (fontSize + 3);
+    return [
+      [box.x - halfWidth, y - halfHeight],
+      [box.x + halfWidth, y - halfHeight],
+      [box.x + halfWidth, y + halfHeight],
+      [box.x - halfWidth, y + halfHeight],
+    ].every(([x, pointY]) => hullContainsPoint(hull, x, pointY));
+  });
 }
 
 function place(
@@ -158,7 +166,19 @@ function regionCandidates(
   height: number,
 ): Array<readonly [number, number]> {
   const horizontalStep = width * 0.55;
-  const verticalOffsets = [0, -height, height, -height * 2, height * 2];
+  const verticalOffsets = [
+    0,
+    GAP,
+    -GAP,
+    GAP * 2,
+    -GAP * 2,
+    GAP * 3,
+    -GAP * 3,
+    -height,
+    height,
+    -height * 2,
+    height * 2,
+  ];
   return [
     ...verticalOffsets.map((offset) => [region.x, region.y + offset] as const),
     ...verticalOffsets.flatMap((offset) => [
@@ -268,7 +288,7 @@ export function layoutSceneLabels(input: {
       regionCandidates(region, width, height),
       occupied,
       viewport,
-      (candidate) => containedByHull(candidate, region.hull),
+      (candidate) => labelContainedByHull(candidate, region.hull, lines, fontSize),
     );
     return box
       ? [

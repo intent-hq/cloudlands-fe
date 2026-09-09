@@ -114,21 +114,27 @@ it('contains every 420px label within its own hull', () => {
   const byId = new Map(geometry.map((region) => [region.id, region]));
   for (const label of result.regions) {
     const hull = byId.get(label.id)!.hull;
-    const halfWidth = label.width / 2;
-    const halfHeight = label.height / 2;
-    expect(
-      [
-        [label.x - halfWidth, label.y - halfHeight],
-        [label.x + halfWidth, label.y - halfHeight],
-        [label.x + halfWidth, label.y + halfHeight],
-        [label.x - halfWidth, label.y + halfHeight],
-      ].every(([x, y]) => hullContainsPoint(hull, x, y)),
-    ).toBe(true);
+    const lines = label.lines ?? [label.text];
+    for (const [index, line] of lines.entries()) {
+      const halfWidth = Math.max(label.fontSize, line.length * label.fontSize * 0.56) / 2;
+      const halfHeight = label.fontSize / 2;
+      const y = label.y + (index - (lines.length - 1) / 2) * (label.fontSize + 3);
+      expect(
+        [
+          [label.x - halfWidth, y - halfHeight],
+          [label.x + halfWidth, y - halfHeight],
+          [label.x + halfWidth, y + halfHeight],
+          [label.x - halfWidth, y + halfHeight],
+        ].every(([x, pointY]) => hullContainsPoint(hull, x, pointY)),
+      ).toBe(true);
+    }
   }
 });
 
-it('preserves the wide replay label density', () => {
-  expect(layout('replay', 960, 620).regions.length).toBeGreaterThanOrEqual(12);
+it('places every label when the split wide layout has room for them', () => {
+  expect(new Set(layout('replay', 620, 620).regions.map(({ id }) => id))).toEqual(
+    new Set(manifest.regions.map(({ id }) => id)),
+  );
 });
 
 it('keeps non-focused region labels above the theme-independent readable opacity floor', () => {
