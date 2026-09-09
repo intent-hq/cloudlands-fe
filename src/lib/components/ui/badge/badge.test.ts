@@ -87,7 +87,16 @@ describe('Badge', () => {
       expect(classes).toContain(`bg-${background}`);
       expect(classes).toContain(`text-${foreground}`);
       expect(classes.some((className) => /^border(?:-|$)/.test(className))).toBe(false);
-      expect(classes).toEqual(expect.arrayContaining(['h-5', 'px-2', 'py-0.5', 'gap-1']));
+      expect(classes).toEqual(
+        expect.arrayContaining([
+          'h-5',
+          'px-2',
+          'py-0.5',
+          'gap-1',
+          'rounded-(--radius-medium)',
+          'font-normal',
+        ]),
+      );
     }
 
     const css = readFileSync(resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
@@ -115,8 +124,12 @@ describe('Badge', () => {
     const badge = getByTestId('removable-badge');
     expect(badge.querySelector('[data-slot="badge-dot"]')).not.toBeNull();
     expect(getByLabelText('Shield icon')).toBeTruthy();
+    const remove = getByLabelText('Remove status');
+    expect(remove.className).toContain('size-4');
+    expect(remove.className).toContain('rounded-full');
+    expect(remove.className).toContain('border-0');
 
-    await fireEvent.click(getByLabelText('Remove status'));
+    await fireEvent.click(remove);
     await waitFor(() => expect(screen.getByLabelText('Badge removed').textContent).toBe('true'));
     expect(screen.queryByTestId('removable-badge')).toBeNull();
   });

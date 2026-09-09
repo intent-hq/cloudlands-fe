@@ -4,7 +4,7 @@ import { tv, type VariantProps } from 'tailwind-variants';
 import type { WithElementRef } from '$lib/utils.js';
 
 export const badgeVariants = tv({
-  base: 'type-caption inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 py-0.5 font-medium transition-[background-color,color,box-shadow,filter] duration-spring-fast ease-spring-fast aria-invalid:ring-2 aria-invalid:ring-danger/25 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:size-3',
+  base: 'type-caption inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-(--radius-medium) px-2 py-0.5 font-normal transition-[background-color,color,box-shadow,filter] duration-spring-fast ease-spring-fast aria-invalid:ring-2 aria-invalid:ring-danger/25 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:size-3',
   variants: {
     variant: {
       default:

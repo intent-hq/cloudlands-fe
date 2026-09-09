@@ -12,6 +12,11 @@ describe('ToggleGroup', () => {
     const { getByRole, getByTestId } = render(ToggleGroupHarness);
     const list = getByRole('radio', { name: 'List view' });
     const tree = getByRole('radio', { name: 'Tree view' });
+    const group = list.parentElement;
+    expect(group?.className).toContain('border-0');
+    expect(group?.className.split(/\s+/)).not.toContain('p-0.5');
+    expect(list.className).toContain('border-0');
+    expect(list.className).toContain('rounded-(--radius-medium)');
     expect(list.getAttribute('aria-checked')).toBe('true');
     await fireEvent.click(tree);
     expect(tree.getAttribute('aria-checked')).toBe('true');

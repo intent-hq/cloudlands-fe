@@ -51,7 +51,7 @@
   {title}
   {onclick}
   class={cn(
-    'type-caption inline-flex cursor-pointer items-center justify-center rounded-(--radius-medium) border border-border bg-transparent font-medium text-muted-foreground shadow-(--elevation-raised) transition-[background-color,color,box-shadow] duration-spring-fast ease-spring-fast hover:bg-hover active:bg-active disabled:pointer-events-none disabled:opacity-50 data-[state=on]:bg-selected data-[state=on]:text-foreground data-[state=on]:hover:bg-active motion-reduce:transition-none',
+    'type-caption inline-flex cursor-pointer items-center justify-center rounded-(--radius-medium) border-0 bg-transparent font-normal text-muted-foreground shadow-(--elevation-raised) transition-[background-color,color,box-shadow,font-weight] duration-spring-fast ease-spring-fast hover:bg-hover active:bg-active disabled:pointer-events-none disabled:opacity-50 data-[state=on]:bg-selected data-[state=on]:[--text-caption-weight:500] data-[state=on]:text-foreground data-[state=on]:hover:bg-active motion-reduce:transition-none',
     sizeClasses[size],
     className,
   )}

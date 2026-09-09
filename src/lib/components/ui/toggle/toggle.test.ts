@@ -14,6 +14,9 @@ describe('Toggle', () => {
       props: { ariaLabel: 'Pin item', pressed: false, onChange },
     });
     const toggle = getByRole('button', { name: 'Pin item' });
+    expect(toggle.className).toContain('border-0');
+    expect(toggle.className).toContain('font-normal');
+    expect(toggle.className).toContain('data-[state=on]:[--text-caption-weight:500]');
     expect(toggle.getAttribute('aria-pressed')).toBe('false');
     expect(toggle.getAttribute('role')).not.toBe('switch');
     await fireEvent.click(toggle);

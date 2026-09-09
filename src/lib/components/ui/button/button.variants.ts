@@ -29,14 +29,14 @@ export const buttonCompatibilityAliases = [
 ] as const;
 
 export const buttonVariants = tv({
-  base: 'type-caption group/button relative isolate inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-(--radius-medium) border border-transparent bg-transparent font-normal transition-[color,opacity] duration-spring-fast ease-spring-fast disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-invalid:ring-1 aria-invalid:ring-danger motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0',
+  base: 'type-caption group/button relative isolate inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-(--radius-medium) border-0 bg-transparent font-normal transition-[color,opacity] duration-spring-fast ease-spring-fast disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-invalid:ring-1 aria-invalid:ring-danger motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0',
   variants: {
     variant: {
       primary: 'text-primary-foreground',
       default: 'text-primary-foreground',
       destructive: 'bg-danger text-danger-background',
-      outline: 'text-foreground',
-      tertiary: 'text-foreground',
+      outline: 'border border-border text-foreground',
+      tertiary: 'border border-border text-foreground',
       secondary: 'text-secondary-foreground',
       ghost: 'text-foreground',
       'ghost-light': 'text-muted-foreground hover:text-foreground',
@@ -44,7 +44,7 @@ export const buttonVariants = tv({
         'text-muted-foreground underline decoration-border underline-offset-3 hover:text-foreground',
       plain: 'text-inherit !px-0 !py-0 font-inherit',
       link: 'text-primary-ink underline-offset-4 hover:underline',
-      neumorphic: 'text-foreground',
+      neumorphic: 'border border-border text-foreground',
     },
     size: {
       default: 'h-(--control-height-medium) px-4 [--button-icon-padding:0.75rem]',
@@ -82,12 +82,10 @@ export const buttonSurfaceVariants: Record<ConcreteButtonVariant, string> = {
     'bg-secondary shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
   destructive:
     'bg-danger shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
-  outline:
-    'bg-transparent shadow-[0_0_0_1px_var(--color-border),inset_0_0_0_0_var(--color-border)] group-hover/button:bg-hover group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--color-border),inset_0_0_0_1px_var(--color-border)]',
-  tertiary:
-    'bg-transparent shadow-[0_0_0_1px_var(--color-border),inset_0_0_0_0_var(--color-border)] group-hover/button:bg-hover group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--color-border),inset_0_0_0_1px_var(--color-border)]',
+  outline: 'bg-transparent shadow-none group-hover/button:bg-hover group-active/button:bg-active',
+  tertiary: 'bg-transparent shadow-none group-hover/button:bg-hover group-active/button:bg-active',
   neumorphic:
-    'bg-transparent shadow-[0_0_0_1px_var(--color-border),inset_0_0_0_0_var(--color-border)] group-hover/button:bg-hover group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--color-border),inset_0_0_0_1px_var(--color-border)]',
+    'bg-transparent shadow-none group-hover/button:bg-hover group-active/button:bg-active',
   ghost:
     'bg-transparent shadow-[0_0_0_1px_transparent] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)]',
   'ghost-light':
@@ -103,12 +101,9 @@ export const activeButtonSurfaceVariants: Record<ConcreteButtonVariant, string> 
   default: 'bg-primary brightness-90 shadow-none',
   secondary: 'bg-secondary brightness-90 shadow-none',
   destructive: 'bg-danger brightness-90 shadow-none',
-  outline:
-    'bg-active shadow-[0_0_0_1px_var(--color-border),inset_0_0_0_0_var(--color-border)] group-active/button:shadow-[0_0_0_0_var(--color-border),inset_0_0_0_1px_var(--color-border)]',
-  tertiary:
-    'bg-active shadow-[0_0_0_1px_var(--color-border),inset_0_0_0_0_var(--color-border)] group-active/button:shadow-[0_0_0_0_var(--color-border),inset_0_0_0_1px_var(--color-border)]',
-  neumorphic:
-    'bg-active shadow-[0_0_0_1px_var(--color-border),inset_0_0_0_0_var(--color-border)] group-active/button:shadow-[0_0_0_0_var(--color-border),inset_0_0_0_1px_var(--color-border)]',
+  outline: 'bg-active shadow-none',
+  tertiary: 'bg-active shadow-none',
+  neumorphic: 'bg-active shadow-none',
   ghost:
     'bg-active shadow-[0_0_0_1px_var(--active)] group-active/button:shadow-[0_0_0_0_var(--active)]',
   'ghost-light':

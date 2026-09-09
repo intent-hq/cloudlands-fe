@@ -124,6 +124,14 @@ ${buttonAliases}
 - \`tooltip/TooltipRich.svelte\` uses \`Button\` for its optional close action; the tooltip owns content and positioning, not a distinct button contract.
 - \`badge/badge.svelte\` uses \`Button\` for its remove action; the badge owns status presentation, not a distinct button contract.
 
+## Button, Tabs, Toggle, and Badge recipes
+
+- **Borders:** Filled and ghost Buttons, resting Tabs, default Toggles, Toggle Groups, and Badge bodies are borderless. Use the Button \`outline\` variant or another explicit outline/input recipe when a 1px boundary is required.
+- **Segmented Tabs:** Use a 36px rail and selected pill, an 8px radius, 12px horizontal trigger padding, and a 6px icon gap.
+- **Labels:** Resting control and Badge labels use regular weight; selected Tabs and Toggles use medium weight.
+- **Badge:** Badge bodies use an 8px radius. Removable badges retain a 16px circular end slot for the close control.
+- **Focus:** Preserve the shared 1px solid outline, non-zero offset, and no-shadow focus tuple on every interactive control.
+
 ## Option and list rows
 
 - **Recipe:** Menu, Select, Combobox, Radio Group, and Sidebar share a 36px default row, 8px item radius, 8px horizontal item padding, and a 4px container inset.

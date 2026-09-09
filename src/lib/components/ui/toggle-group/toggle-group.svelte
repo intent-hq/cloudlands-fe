@@ -10,12 +10,12 @@
   import { TOGGLE_GROUP_CONTEXT, type ToggleGroupContext } from './context';
 
   const toggleGroupVariants = tv({
-    base: 'relative isolate inline-flex items-center justify-center gap-px rounded-(--radius-medium) border border-border bg-card p-0.5',
+    base: 'relative isolate inline-flex items-center justify-center gap-0.5 rounded-(--radius-medium) border-0 bg-card',
     variants: {
       variant: {
         default: 'shadow-(--elevation-raised)',
-        outline: 'shadow-none',
-        flat: 'border-transparent bg-muted/40 shadow-none',
+        outline: 'border border-border shadow-none',
+        flat: 'bg-muted/40 shadow-none',
       },
       size: {
         default: '',

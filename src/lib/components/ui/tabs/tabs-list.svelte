@@ -28,8 +28,8 @@
   class={cn(
     'relative isolate inline-flex max-w-full items-center gap-0.5 select-none',
     context.variant === 'default'
-      ? 'rounded-(--radius-medium) bg-muted p-0.5'
-      : 'max-w-full overflow-x-auto px-1 py-0.5',
+      ? 'rounded-(--radius-medium) bg-muted'
+      : 'max-w-full overflow-x-auto px-1',
     className,
   )}
   {...restProps as any}

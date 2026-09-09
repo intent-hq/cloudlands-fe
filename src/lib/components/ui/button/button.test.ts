@@ -38,6 +38,7 @@ describe('Button', () => {
     expect(buttonVariants({ size: 'lg' })).toContain('h-(--control-height-large)');
     expect(buttonVariants({ size: 'default' })).toContain('px-4');
     expect(buttonVariants()).toContain('rounded-(--radius-medium)');
+    expect(buttonVariants()).toContain('border-0');
     expect(buttonVariants()).toContain('font-normal');
     expect(buttonVariants()).not.toContain('outline-none');
     expect(buttonVariants()).not.toContain('focus-visible:ring');
@@ -89,6 +90,18 @@ describe('Button', () => {
     expect(destructiveButton).toContain('text-danger-background');
     expect(buttonSurfaceVariants.destructive).toContain('bg-danger');
     expect(buttonSurfaceVariants.neumorphic).toBe(buttonSurfaceVariants.outline);
+  });
+
+  it('keeps filled and ghost controls borderless while outline controls retain 1px', () => {
+    for (const variant of ['default', 'primary', 'secondary', 'destructive', 'ghost'] as const) {
+      const classes = buttonVariants({ variant }).split(/\s+/);
+      expect(classes).toContain('border-0');
+      expect(classes).not.toContain('border');
+    }
+
+    const outline = buttonVariants({ variant: 'outline' }).split(/\s+/);
+    expect(outline).toEqual(expect.arrayContaining(['border', 'border-border']));
+    expect(buttonSurfaceVariants.outline).toContain('shadow-none');
   });
 
   it('renders press-collapse, forced-active, icon, loading, and contextual-size states', () => {

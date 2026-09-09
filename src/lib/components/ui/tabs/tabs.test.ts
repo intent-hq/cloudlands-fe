@@ -26,12 +26,12 @@ describe('Tabs', () => {
   });
 
   it('retargets one moderate indicator spring while it is in flight', () => {
-    const springs = createTabsIndicatorSprings({ top: 0, left: 0, width: 80, height: 32 });
-    expect(retargetTabsIndicator(springs, { top: 0, left: 84, width: 72, height: 32 })).toBe(
+    const springs = createTabsIndicatorSprings({ top: 0, left: 0, width: 80, height: 36 });
+    expect(retargetTabsIndicator(springs, { top: 0, left: 84, width: 72, height: 36 })).toBe(
       springs,
     );
     expect(springs.left.target).toBe(84);
-    expect(retargetTabsIndicator(springs, { top: 0, left: 160, width: 96, height: 32 })).toBe(
+    expect(retargetTabsIndicator(springs, { top: 0, left: 160, width: 96, height: 36 })).toBe(
       springs,
     );
     expect(springs.left.target).toBe(160);
@@ -49,29 +49,29 @@ describe('Tabs', () => {
     {
       compact: false,
       subtle: false,
-      listPadding: 'p-0.5',
+      listPadding: null,
       triggerHeight: 'h-(--control-height-medium)',
       outerHeight: 36,
     },
     {
       compact: true,
       subtle: false,
-      listPadding: 'p-0.5',
-      triggerHeight: 'h-6',
+      listPadding: null,
+      triggerHeight: 'h-(--control-height-compact)',
       outerHeight: 28,
     },
     {
       compact: false,
       subtle: true,
-      listPadding: 'py-0.5',
+      listPadding: 'px-1',
       triggerHeight: 'h-(--control-height-medium)',
       outerHeight: 36,
     },
     {
       compact: true,
       subtle: true,
-      listPadding: 'py-0.5',
-      triggerHeight: 'h-6',
+      listPadding: 'px-1',
+      triggerHeight: 'h-(--control-height-compact)',
       outerHeight: 28,
     },
   ])(
@@ -81,8 +81,13 @@ describe('Tabs', () => {
       const list = getByRole('tablist', { name: 'Project sections' });
       const overview = getByRole('tab', { name: 'Overview' });
 
-      expect(list.className).toContain(listPadding);
+      if (listPadding) expect(list.className).toContain(listPadding);
+      else expect(list.className).not.toMatch(/\bp-[^x]/);
       expect(overview.className).toContain(triggerHeight);
+      expect(overview.className).toContain('border-0');
+      expect(overview.className).toContain('rounded-(--radius-medium)');
+      expect(overview.className).toContain('px-3');
+      expect(overview.className).toContain('gap-1.5');
     },
   );
 
