@@ -18,7 +18,8 @@ const virtualModules: Record<string, string> = {
     export const resolveEmptyWindowDestination = () => '/';`,
   '$lib/components/ui/tooltip': `
     import Tooltip from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceTooltipRich.svelte';
-    export const TooltipRich = Tooltip;`,
+    export const TooltipRich = Tooltip;
+    export const TooltipShortcut = Tooltip;`,
   '$lib/components/workspace/WorkspaceHoverCard.svelte': `
     export { default } from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceHoverCard.svelte';`,
   '$lib/components/workspace/utils/workspace-tab-status-presentation': `
@@ -94,12 +95,17 @@ const virtualModules: Record<string, string> = {
       workspace_statusIcon_prMerged_label: () => 'PR merged',
     };`,
   '@fortawesome/free-solid-svg-icons': `
+    export const faArrowRight = { iconName: 'arrow-right' };
+    export const faCheck = { iconName: 'check' };
+    export const faChevronRight = { iconName: 'chevron-right' };
     export const faCircleCheck = { iconName: 'circle-check' };
     export const faCircleQuestion = { iconName: 'circle-question' };
     export const faClock = { iconName: 'clock' };
     export const faCodeMerge = { iconName: 'code-merge' };
     export const faCodePullRequest = { iconName: 'code-pull-request' };
     export const faEllipsis = { iconName: 'ellipsis' };
+    export const faHourglassHalf = { iconName: 'hourglass-half' };
+    export const faLayerGroup = { iconName: 'layer-group' };
     export const faTriangleExclamation = { iconName: 'triangle-exclamation' };
     export const faXmark = { iconName: 'xmark' };`,
 };
@@ -301,6 +307,19 @@ async function box(locator: Locator) {
 
 async function settle(page: Page) {
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+}
+
+async function tabFocusTuple(tab: Locator) {
+  return tab.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      outlineWidth: style.outlineWidth,
+      outlineStyle: style.outlineStyle,
+      outlineOffset: style.outlineOffset,
+      boxShadow: style.boxShadow,
+      focusVisible: node.matches(':focus-visible'),
+    };
+  });
 }
 
 async function expectNormalActiveShape(
@@ -732,6 +751,25 @@ test('Escape-cancelled real pointer drag suppresses its browser click', async ({
     ),
   ).toEqual([{ type: 'open', payload: ['inactive'] }]);
 });
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`uses the shared 1px focus outline in the ${theme} theme`, async ({ page }) => {
+    await mountStrip(page, { viewport: 900, zoom: 1, reduced: true, theme });
+    const tab = page.locator('[data-workspace-tab="active"] [role="tab"]');
+
+    await tab.focus();
+    await expect(tab).toBeFocused();
+    const focus = await tabFocusTuple(tab);
+
+    expect(focus).toMatchObject({
+      outlineWidth: '1px',
+      outlineStyle: 'solid',
+      boxShadow: 'none',
+      focusVisible: true,
+    });
+    expect(Number.parseFloat(focus.outlineOffset)).not.toBe(0);
+  });
+}
 
 test('drag keeps one horizontal real tab and drops it at the invisible reserved slot', async ({
   page,

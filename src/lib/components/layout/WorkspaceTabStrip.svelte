@@ -109,6 +109,7 @@
   let proposedTabOrder = $state<string[] | null>(null);
   let suppressClickWorkspaceId: string | null = null;
   const renderedTabOrder = $derived(proposedTabOrder ?? $workspaceTabOrder$);
+  const ownedTabIds = $derived(renderedTabOrder.map(workspaceTabDomId).join(' '));
   let reorderAnnouncement = $state('');
   let activeStreamsVersion = $state(0);
   let stripElement = $state<HTMLDivElement | null>(null);
@@ -707,9 +708,20 @@
     }
     void openWorkspace(workspaceId, event.detail === 0);
   }
+
+  function workspaceTabDomId(workspaceId: string) {
+    return `workspace-tab-${workspaceId}`;
+  }
 </script>
 
 {#if $workspaceTabOrder$.length > 0}
+  <div
+    class="sr-only"
+    aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
+    aria-owns={ownedTabIds}
+    role="tablist"
+    data-workspace-tab-list
+  ></div>
   <!-- pl-7 keeps the active tab's 12px corner-flare SVG inside the padding box
        and gives the first tab 24px of clearance after the -ml-1 strip offset.
        The right margin is conditional: -mr-2.5 keeps the "+" launcher tight
@@ -725,14 +737,12 @@
   <div
     bind:this={stripElement}
     data-workspace-tab-scroller
+    role="presentation"
     class={cn(
       'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto overflow-y-hidden pl-7 pr-3 -ml-1 scrollbar-none',
       isOverflowing ? 'mr-1' : '-mr-2.5',
       draggedWorkspaceId && 'cursor-grabbing',
     )}
-    aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
-    role="tablist"
-    tabindex="-1"
     style:padding-bottom="2px"
     style:margin-bottom="-2px"
     data-workspace-tab-strip
@@ -856,9 +866,10 @@
               {/snippet}
               <Button
                 bind:ref={tabButtons[workspaceId]}
+                id={workspaceTabDomId(workspaceId)}
                 variant="plain"
                 type="button"
-                class="flex h-full w-full min-w-0 touch-none cursor-pointer select-none items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 !pl-3 !pr-1 text-left text-xs font-medium outline-none! focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
+                class="flex h-full w-full min-w-0 touch-none cursor-pointer select-none items-center gap-1 truncate rounded-[inherit] border-0 pl-3 pr-1 !pl-3 !pr-1 text-left text-xs font-medium focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
                 onclick={(event) => handleTabClick(event, workspaceId)}
                 onkeydown={(event) => handleTabKeydown(event, workspaceId)}
                 onfocusin={() => pointerOpenEligibleWorkspaceHoverCardIds.delete(workspaceId)}
@@ -892,6 +903,9 @@
               </Button>
             </TooltipRich>
             <Button
+              variant="plain"
+              size="icon-compact"
+              iconOnly
               type="button"
               class={cn(
                 'absolute right-1 z-10 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-subtle outline-none! transition-opacity hover:bg-muted hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:text-foreground focus-visible:opacity-100 forced-colors:focus-visible:text-[HighlightText]',
@@ -955,9 +969,10 @@
             {/if}
             <Button
               bind:ref={tabButtons[workspaceId]}
+              id={workspaceTabDomId(workspaceId)}
               variant="plain"
               type="button"
-              class="absolute -inset-px flex h-auto w-auto min-w-0 cursor-pointer items-center rounded-[inherit] px-3 pr-8 !px-3 !pr-8 text-left outline-none! forced-colors:focus-visible:text-[HighlightText]"
+              class="absolute -inset-px flex h-auto w-auto min-w-0 cursor-pointer items-center rounded-[inherit] border-0 px-3 pr-8 !px-3 !pr-8 text-left forced-colors:focus-visible:text-[HighlightText]"
               onclick={(event) => void openWorkspace(workspaceId, event.detail === 0)}
               onkeydown={(event) => handleTabKeydown(event, workspaceId)}
               role="tab"
@@ -974,6 +989,9 @@
               ></span>
             </Button>
             <Button
+              variant="plain"
+              size="icon-compact"
+              iconOnly
               type="button"
               class="absolute right-1 z-10 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-subtle opacity-70 outline-none! hover:bg-muted hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
               onclick={(event) => closeWorkspace(workspaceId, event)}
@@ -986,8 +1004,8 @@
         {/if}
       </div>
     {/each}
-    <span class="sr-only" aria-live="polite">{reorderAnnouncement}</span>
   </div>
+  <span class="sr-only" aria-live="polite">{reorderAnnouncement}</span>
 {/if}
 
 {#if tabContextMenu}

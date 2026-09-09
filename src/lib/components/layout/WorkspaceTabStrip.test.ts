@@ -157,6 +157,10 @@ function tabButton(source: HTMLElement) {
   return source.querySelector<HTMLElement>('[role="tab"]')!;
 }
 
+function tabScroller() {
+  return document.querySelector<HTMLElement>('[data-workspace-tab-scroller]')!;
+}
+
 async function enterTabTooltip(tooltipRoot: HTMLElement) {
   await fireEvent.mouseEnter(tooltipRoot.closest<HTMLElement>('[data-workspace-tab]')!);
   await fireEvent.mouseEnter(tooltipRoot);
@@ -453,14 +457,12 @@ describe('WorkspaceTabStrip', () => {
     const view = render(WorkspaceTabStrip);
 
     try {
-      const tablist = screen.getByRole('tablist', {
-        name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-      });
-      expect(tablist.className).toContain('pl-7');
-      expect(tablist.className).toContain('pr-3');
-      expect(tablist.className).toContain('-ml-1');
-      expect(tablist.className).not.toContain('-ml-3');
-      expect(tablist.className).toContain('-mr-2.5');
+      const scroller = tabScroller();
+      expect(scroller.className).toContain('pl-7');
+      expect(scroller.className).toContain('pr-3');
+      expect(scroller.className).toContain('-ml-1');
+      expect(scroller.className).not.toContain('-ml-3');
+      expect(scroller.className).toContain('-mr-2.5');
       expect(screen.getAllByRole('tab')).toHaveLength(3);
       const alpha = screen.getByRole('tab', { name: /Alpha/ });
       expect(alpha.getAttribute('aria-selected')).toBe('true');
@@ -665,9 +667,7 @@ describe('WorkspaceTabStrip', () => {
       props: { activeWorkspaceId: 'ws-1' },
     });
 
-    const tablist = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
+    const tablist = tabScroller();
     const firstTab = document.querySelector('[data-workspace-tab="ws-1"]')!;
     expect(tablist.className).toContain('pl-7');
     expect(tablist.className).toContain('-ml-1');
@@ -708,6 +708,29 @@ describe('WorkspaceTabStrip', () => {
     });
 
     expect(onActiveTabBoundsChange).toHaveBeenCalledWith({ left: 100, width: 160 });
+  });
+
+  it('owns only tab roles from the semantic tablist', () => {
+    render(WorkspaceTabStrip);
+    const tablist = screen.getByRole('tablist', {
+      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
+    });
+    const tabs = screen.getAllByRole('tab');
+    const ownedIds = tablist.getAttribute('aria-owns')?.split(' ') ?? [];
+
+    expect(ownedIds).toEqual(tabs.map((tab) => tab.id));
+    expect(
+      ownedIds.every((id) => document.getElementById(id)?.getAttribute('role') === 'tab'),
+    ).toBe(true);
+    expect(tablist.childElementCount).toBe(0);
+    expect(tablist.contains(document.querySelector('[aria-live="polite"]'))).toBe(false);
+    expect(
+      tablist.contains(document.querySelector('[data-testid="workspace-tab-tooltip-root"]')),
+    ).toBe(false);
+    for (const close of screen.getAllByRole('button', { name: /Close/ })) {
+      expect(tablist.contains(close)).toBe(false);
+      expect(close.closest('[role="tab"]')).toBeNull();
+    }
   });
 
   it('keeps the close control outside the hover trigger and isolated from navigation', async () => {
@@ -812,9 +835,7 @@ describe('WorkspaceTabStrip', () => {
     );
 
     render(WorkspaceTabStrip);
-    const strip = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
+    const strip = tabScroller();
     expect(strip.className).toContain('-mr-2.5');
     expect(strip.className).not.toMatch(/(?:^|\s)mr-1(?:\s|$)/);
 
@@ -832,9 +853,7 @@ describe('WorkspaceTabStrip', () => {
 
   it('scrolls a newly active final tab fully inside the strip', async () => {
     const { rerender } = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-1' } });
-    const strip = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
+    const strip = tabScroller();
     const finalTab = document.querySelector<HTMLElement>('[data-workspace-tab="ws-3"]')!;
     Object.defineProperty(strip, 'scrollLeft', { value: 0, writable: true });
     strip.getBoundingClientRect = () => ({ left: 100, right: 400, width: 300 }) as DOMRect;
@@ -851,9 +870,7 @@ describe('WorkspaceTabStrip', () => {
       props: { activeWorkspaceId: 'ws-1', onActiveTabBoundsChange },
     });
     container.classList.add('window-title-bar');
-    const strip = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
+    const strip = tabScroller();
     const activeTab = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
     Object.defineProperty(strip, 'scrollLeft', { value: 120, writable: true });
     strip.getBoundingClientRect = () => ({ left: 100, right: 400, width: 300 }) as DOMRect;
@@ -960,9 +977,7 @@ describe('WorkspaceTabStrip', () => {
     mocks.dispatch.mockClear();
     const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
     const tab = tabButton(source);
-    const strip = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
+    const strip = tabScroller();
 
     expect(tab.className).toContain('cursor-pointer');
     expect(source.className).toContain('cursor-pointer');
@@ -1052,10 +1067,7 @@ describe('WorkspaceTabStrip', () => {
 
     expect(renderedTabOrder()).toEqual(['ws-1', 'ws-2', 'ws-3']);
     expect(document.querySelector('[data-workspace-tab-placeholder]')).toBeNull();
-    expect(
-      screen.getByRole('tablist', { name: m.layout_workspaceTabStrip_openSpaces_ariaLabel() })
-        .className,
-    ).not.toContain('cursor-grabbing');
+    expect(tabScroller().className).not.toContain('cursor-grabbing');
     expect(
       mocks.dispatch.mock.calls
         .map(([action]) => action)
@@ -1089,9 +1101,7 @@ describe('WorkspaceTabStrip', () => {
     const runFrames = (count: number) => {
       for (let index = 0; index < count; index += 1) frames.shift()?.(0);
     };
-    const strip = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
+    const strip = tabScroller();
     const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-2"]')!;
     Object.defineProperties(strip, {
       scrollLeft: { value: 100, writable: true },
@@ -1150,10 +1160,7 @@ describe('WorkspaceTabStrip', () => {
     );
     expect(source.style.left).toBe('');
     expect(document.querySelector('[data-workspace-tab-placeholder]')).toBeNull();
-    expect(
-      screen.getByRole('tablist', { name: m.layout_workspaceTabStrip_openSpaces_ariaLabel() })
-        .className,
-    ).not.toContain('cursor-grabbing');
+    expect(tabScroller().className).not.toContain('cursor-grabbing');
   });
 
   it('moves the final tab to the first endpoint with one persisted action', async () => {
@@ -1199,23 +1206,20 @@ describe('WorkspaceTabStrip', () => {
     expect(source.className).toContain('border-b-0');
     expect(source.className).toContain('shadow-none');
     expect(source.className).not.toContain('shadow-lg');
-    expect(
-      screen.getByRole('tablist', { name: m.layout_workspaceTabStrip_openSpaces_ariaLabel() })
-        .className,
-    ).not.toContain('cursor-grabbing');
+    expect(tabScroller().className).not.toContain('cursor-grabbing');
     expect(
       mocks.dispatch.mock.calls.some(([action]) => action.type === 'tabState/moveWorkspace'),
     ).toBe(false);
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'tabState/endDrag', payload: [] });
   });
 
-  it('keeps keyboard focus perceivable without a perimeter outline, ring, or focus-only shadow', () => {
+  it('keeps loaded and loading tabs available to the shared focus contract', () => {
     mocks.loadedWorkspaceIds.delete('ws-3');
     render(WorkspaceTabStrip);
 
     for (const tab of screen.getAllByRole('tab')) {
-      expect(tab.className).toContain('outline-none');
-      expect(tab.className).not.toMatch(/focus-visible:(?:ring|outline|shadow)/);
+      expect(tab.matches('button[role="tab"]')).toBe(true);
+      expect(tab.id).not.toBe('');
     }
     expect(
       screen.getByRole('tab', { name: /Alpha/ }).querySelector('[data-workspace-tab-title]'),
