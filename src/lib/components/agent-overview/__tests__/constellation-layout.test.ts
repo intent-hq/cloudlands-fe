@@ -5,7 +5,11 @@ import {
   GRAPH_NODE_GAPS,
   GRAPH_ZOOM_EXTENT,
 } from '../constants';
-import { createConstellationLayout } from '../constellation-layout';
+import {
+  createConstellationLayout,
+  MIN_COMPACT_NODE_GAP,
+  SMALL_GRAPH_FIT_SCALE,
+} from '../constellation-layout';
 import {
   buildBusyGraph,
   buildConstellationGraph,
@@ -386,11 +390,66 @@ describe('constellation layout', () => {
     layout.update([agent('coordinator')], []);
     layout.stop();
 
-    expect(layout.fitBounds()).toMatchObject({
-      width: GRAPH_NODE_DIMENSIONS.agent.width,
-      height: GRAPH_NODE_DIMENSIONS.agent.height,
-    });
+    expect(layout.fitBounds(SMALL_GRAPH_FIT_SCALE).width).toBeCloseTo(128 / SMALL_GRAPH_FIT_SCALE);
+    expect(layout.fitBounds(SMALL_GRAPH_FIT_SCALE).height).toBeCloseTo(84 / SMALL_GRAPH_FIT_SCALE);
   });
+
+  for (const [name, buildGraph] of [
+    ['constellation', buildConstellationGraph],
+    ['busy', buildBusyGraph],
+  ] as const) {
+    it(`compacts the ${name} fixture into the 1092x720 fit target at 0.7`, () => {
+      const graph = buildGraph(Date.parse('2026-09-04T00:00:00.000Z'));
+      const available = { width: 1092 - 24 - 24, height: 720 - 56 - 72 };
+      const fitTarget = {
+        width: (available.width - GRAPH_FIT_PADDING * 2) / SMALL_GRAPH_FIT_SCALE,
+        height: (available.height - GRAPH_FIT_PADDING * 2) / SMALL_GRAPH_FIT_SCALE,
+      };
+      const layout = createConstellationLayout({
+        width: 1092,
+        height: 720,
+        fitTarget,
+        seed: 7,
+      });
+      layout.update(graph.nodes, graph.edges);
+      layout.settle();
+      const bounds = layout.fitBounds(SMALL_GRAPH_FIT_SCALE);
+      const { nodes } = settledSnapshot(layout);
+
+      expect(bounds.width).toBeLessThanOrEqual(fitTarget.width);
+      expect(bounds.height).toBeLessThanOrEqual(fitTarget.height);
+      expect(bounds.width * SMALL_GRAPH_FIT_SCALE + GRAPH_FIT_PADDING * 2).toBeGreaterThanOrEqual(
+        available.width * 0.6,
+      );
+      expect(bounds.height * SMALL_GRAPH_FIT_SCALE + GRAPH_FIT_PADDING * 2).toBeGreaterThanOrEqual(
+        available.height * 0.6,
+      );
+      const labelEnvelope = {
+        agent: { width: 128 / SMALL_GRAPH_FIT_SCALE, height: 30 / SMALL_GRAPH_FIT_SCALE, y: 20 },
+        task: { width: 176, height: 56, y: 4 },
+        file: { width: 112 / SMALL_GRAPH_FIT_SCALE, height: 30 / SMALL_GRAPH_FIT_SCALE, y: 31 },
+        note: { width: 112 / SMALL_GRAPH_FIT_SCALE, height: 30 / SMALL_GRAPH_FIT_SCALE, y: 31 },
+      };
+      for (let left = 0; left < nodes.length; left += 1) {
+        for (let right = left + 1; right < nodes.length; right += 1) {
+          const leftSize = labelEnvelope[nodes[left].type];
+          const rightSize = labelEnvelope[nodes[right].type];
+          const separatedX =
+            Math.abs(nodes[left].x - nodes[right].x) * SMALL_GRAPH_FIT_SCALE >=
+            ((leftSize.width + rightSize.width) / 2) * SMALL_GRAPH_FIT_SCALE + MIN_COMPACT_NODE_GAP;
+          const separatedY =
+            Math.abs(nodes[left].y + leftSize.y - nodes[right].y - rightSize.y) *
+              SMALL_GRAPH_FIT_SCALE >=
+            ((leftSize.height + rightSize.height) / 2) * SMALL_GRAPH_FIT_SCALE +
+              MIN_COMPACT_NODE_GAP;
+          expect(separatedX || separatedY, `${nodes[left].id} overlaps ${nodes[right].id}`).toBe(
+            true,
+          );
+        }
+      }
+      layout.stop();
+    });
+  }
 
   it('pins and releases nodes with d3 fixed coordinates', () => {
     const layout = createConstellationLayout({ width: 800, height: 600 });

@@ -83,9 +83,8 @@
       state={avatarState}
     />
   </span>
-  <span
-    class="agent-name line-clamp-2 w-full break-words text-xs leading-tight"
-    class:font-semibold={isActive}>{node.name}</span
+  <span class="agent-name line-clamp-2 text-xs leading-tight" class:font-semibold={isActive}
+    >{node.name}</span
   >
   {#if specialistLabel && zoomBand === 'full'}
     <span
@@ -118,7 +117,12 @@
     outline-offset: 4px;
   }
   .agent-name {
+    width: calc(128px / var(--zoom));
+    max-width: calc(128px / var(--zoom));
     font-size: clamp(13px, calc(13px / var(--zoom)), 31.5px);
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
     opacity: clamp(0.58, calc((var(--zoom) - 0.3) * 3.34), 1);
     transition: opacity 120ms linear;
   }

@@ -5,15 +5,18 @@ import {
   forceSimulation,
   forceX,
   forceY,
+  type Force,
   type Simulation,
   type SimulationLinkDatum,
 } from 'd3';
 import { GRAPH_NODE_DIMENSIONS, GRAPH_NODE_GAPS } from './constants';
+import { anchorFitBounds, NODE_SCREEN_MARGINS } from './graph-fit';
 import type { GraphEdge, GraphNode } from './types';
 
 export interface ConstellationLayoutConfig {
   width: number;
   height: number;
+  fitTarget?: { width: number; height: number };
   seed?: number;
 }
 
@@ -32,9 +35,10 @@ export interface ConstellationLayout {
   pin(id: string, x: number, y: number): void;
   unpin(id: string): void;
   reheat(): void;
+  resize(config: Pick<ConstellationLayoutConfig, 'width' | 'height' | 'fitTarget'>): void;
   settle(): void;
   stop(): void;
-  fitBounds(): ConstellationBounds;
+  fitBounds(candidateScale?: number): ConstellationBounds;
 }
 
 interface LayoutLink extends SimulationLinkDatum<GraphNode> {
@@ -66,6 +70,105 @@ const TASK_ANCHOR_SPACING_RATIO = 0.9;
 const TASK_ORBIT_WIDTH_RATIO = 0.36;
 const TASK_ORBIT_HEIGHT_RATIO = 0.32;
 const TASK_ORBIT_MIN_ASPECT = 0.7;
+export const SMALL_GRAPH_FIT_SCALE = 0.7;
+/** Smallest visible separation retained while compacting small graphs, in screen pixels. */
+export const MIN_COMPACT_NODE_GAP = 8;
+const MIN_COMPACT_TASK_AGENT_DISTANCE = 106;
+const MIN_COMPACT_RESOURCE_DISTANCE = 104;
+const MIN_COMPACT_AGENT_DISTANCE = 112;
+const MIN_COMPACT_ORBIT_Y = 48;
+const COMPACT_SCREEN_MARGINS_Y = 80;
+const COMPACT_LAYOUT_SLACK = 16;
+const SIMULATION_VELOCITY_DECAY = 0.35;
+
+interface CollisionEnvelope {
+  width: number;
+  height: number;
+  offsetX?: number;
+  offsetY?: number;
+}
+
+const COMPACT_NODE_DIMENSIONS: Record<GraphNode['type'], CollisionEnvelope> = {
+  agent: { width: 128 / SMALL_GRAPH_FIT_SCALE, height: 90 },
+  task: { width: GRAPH_NODE_DIMENSIONS.task.width, height: 56, offsetY: 4 },
+  file: { width: 112 / SMALL_GRAPH_FIT_SCALE, height: 96, offsetY: 4 },
+  note: { width: 112 / SMALL_GRAPH_FIT_SCALE, height: 96, offsetY: 4 },
+};
+const COMPACT_LABEL_DIMENSIONS: Record<GraphNode['type'], CollisionEnvelope> = {
+  agent: { width: 128 / SMALL_GRAPH_FIT_SCALE, height: 30 / SMALL_GRAPH_FIT_SCALE, offsetY: 20 },
+  task: { width: GRAPH_NODE_DIMENSIONS.task.width, height: 56, offsetY: 4 },
+  file: { width: 112 / SMALL_GRAPH_FIT_SCALE, height: 30 / SMALL_GRAPH_FIT_SCALE, offsetY: 31 },
+  note: { width: 112 / SMALL_GRAPH_FIT_SCALE, height: 30 / SMALL_GRAPH_FIT_SCALE, offsetY: 31 },
+};
+function rectangleCollisionForce(
+  dimensions: Record<GraphNode['type'], CollisionEnvelope>,
+  gap: number,
+): Force<GraphNode, undefined> {
+  let nodes: GraphNode[] = [];
+  const force = (() => {
+    for (let leftIndex = 0; leftIndex < nodes.length; leftIndex += 1) {
+      const left = nodes[leftIndex];
+      const leftSize = dimensions[left.type];
+      for (let rightIndex = leftIndex + 1; rightIndex < nodes.length; rightIndex += 1) {
+        const right = nodes[rightIndex];
+        const rightSize = dimensions[right.type];
+        const dx =
+          right.x +
+          right.vx +
+          (rightSize.offsetX ?? 0) -
+          left.x -
+          left.vx -
+          (leftSize.offsetX ?? 0);
+        const dy =
+          right.y +
+          right.vy +
+          (rightSize.offsetY ?? 0) -
+          left.y -
+          left.vy -
+          (leftSize.offsetY ?? 0);
+        const overlapX = (leftSize.width + rightSize.width) / 2 + gap - Math.abs(dx);
+        const overlapY = (leftSize.height + rightSize.height) / 2 + gap - Math.abs(dy);
+        if (overlapX <= 0 || overlapY <= 0) continue;
+        if (overlapX < overlapY) {
+          const shift = overlapX * 0.8 * (dx < 0 ? -1 : 1);
+          left.vx -= shift;
+          right.vx += shift;
+        } else {
+          const shift = overlapY * 0.8 * (dy < 0 ? -1 : 1);
+          left.vy -= shift;
+          right.vy += shift;
+        }
+      }
+    }
+  }) as Force<GraphNode, undefined>;
+  force.initialize = (nextNodes) => (nodes = nextNodes);
+  return force;
+}
+
+function compactBoundaryForce(
+  target: { width: number; height: number },
+  center: Point,
+): Force<GraphNode, undefined> {
+  let nodes: GraphNode[] = [];
+  const force = (() => {
+    for (const node of nodes) {
+      const margin = NODE_SCREEN_MARGINS[node.type];
+      const minX = center.x - target.width / 2 + margin.left / SMALL_GRAPH_FIT_SCALE;
+      const maxX = center.x + target.width / 2 - margin.right / SMALL_GRAPH_FIT_SCALE;
+      const minY = center.y - target.height / 2 + margin.top / SMALL_GRAPH_FIT_SCALE;
+      const maxY = center.y + target.height / 2 - margin.bottom / SMALL_GRAPH_FIT_SCALE;
+      const nextX = node.x + node.vx;
+      const nextY = node.y + node.vy;
+      const velocityRetention = 1 - SIMULATION_VELOCITY_DECAY;
+      if (nextX < minX) node.vx += (minX - nextX) / velocityRetention;
+      else if (nextX > maxX) node.vx += (maxX - nextX) / velocityRetention;
+      if (nextY < minY) node.vy += (minY - nextY) / velocityRetention;
+      else if (nextY > maxY) node.vy += (maxY - nextY) / velocityRetention;
+    }
+  }) as Force<GraphNode, undefined>;
+  force.initialize = (nextNodes) => (nodes = nextNodes);
+  return force;
+}
 
 function edgeType(edge: GraphEdge): string {
   return String(edge.type);
@@ -133,19 +236,26 @@ function isTopLevelAgent(node: GraphNode): boolean {
 export function createConstellationLayout({
   width,
   height,
+  fitTarget,
   seed = 1,
 }: ConstellationLayoutConfig): ConstellationLayout {
-  const center = { x: width / 2, y: height / 2 };
+  let viewport: Pick<ConstellationLayoutConfig, 'width' | 'height' | 'fitTarget'> = {
+    width,
+    height,
+    fitTarget,
+  };
+  let center = { x: width / 2, y: height / 2 };
   const callbacks = new Set<(nodes: GraphNode[], alpha: number) => void>();
   let currentNodes: GraphNode[] = [];
   let nodeById = new Map<string, GraphNode>();
   let taskAnchors = new Map<string, Point>();
   let desiredPositions = new Map<string, Point>();
+  let currentEdges: GraphEdge[] = [];
   let fingerprint = '';
   let strengthFingerprint = '';
 
   const simulation: Simulation<GraphNode, LayoutLink> = forceSimulation<GraphNode>([])
-    .velocityDecay(0.35)
+    .velocityDecay(SIMULATION_VELOCITY_DECAY)
     .alphaDecay(0.035)
     .force('charge', forceManyBody<GraphNode>().strength(-24).distanceMax(420))
     .force(
@@ -158,6 +268,67 @@ export function createConstellationLayout({
       callbacks.forEach((callback) => callback(currentNodes, simulation.alpha()));
     })
     .stop();
+
+  function compactGeometry(nodeCount: number): {
+    taskAgentDistance: number;
+    resourceDistance: number;
+    agentDistance: number;
+    orbitX: number;
+    orbitY: number;
+    compact: boolean;
+  } {
+    const compact = nodeCount <= 40 && viewport.fitTarget !== undefined;
+    if (!compact) {
+      const orbitX = viewport.width * TASK_ORBIT_WIDTH_RATIO;
+      return {
+        taskAgentDistance: TASK_AGENT_DISTANCE,
+        resourceDistance: RESOURCE_DISTANCE,
+        agentDistance: AGENT_DISTANCE,
+        orbitX,
+        orbitY: Math.max(viewport.height * TASK_ORBIT_HEIGHT_RATIO, orbitX * TASK_ORBIT_MIN_ASPECT),
+        compact,
+      };
+    }
+    const target = viewport.fitTarget!;
+    const nestedBudget = Math.max(
+      MIN_COMPACT_TASK_AGENT_DISTANCE + MIN_COMPACT_RESOURCE_DISTANCE,
+      target.height / 2 - MIN_COMPACT_ORBIT_Y - COMPACT_SCREEN_MARGINS_Y - COMPACT_LAYOUT_SLACK,
+    );
+    const taskAgentDistance = Math.max(
+      MIN_COMPACT_TASK_AGENT_DISTANCE,
+      nestedBudget * (TASK_AGENT_DISTANCE / (TASK_AGENT_DISTANCE + RESOURCE_DISTANCE)),
+    );
+    const resourceDistance = Math.max(
+      MIN_COMPACT_RESOURCE_DISTANCE,
+      nestedBudget - taskAgentDistance,
+    );
+    const orbitX = Math.min(
+      viewport.width * TASK_ORBIT_WIDTH_RATIO,
+      Math.max(MIN_COMPACT_ORBIT_Y, target.width / 2 - taskAgentDistance - resourceDistance - 96),
+    );
+    const orbitY = Math.min(
+      Math.max(
+        viewport.height * TASK_ORBIT_HEIGHT_RATIO,
+        viewport.width * TASK_ORBIT_WIDTH_RATIO * TASK_ORBIT_MIN_ASPECT,
+      ),
+      Math.max(
+        MIN_COMPACT_ORBIT_Y,
+        target.height / 2 -
+          taskAgentDistance -
+          resourceDistance -
+          COMPACT_SCREEN_MARGINS_Y -
+          COMPACT_LAYOUT_SLACK,
+      ),
+    );
+    return {
+      taskAgentDistance,
+      resourceDistance,
+      agentDistance: Math.max(MIN_COMPACT_AGENT_DISTANCE, taskAgentDistance),
+      orbitX,
+      orbitY,
+      compact,
+    };
+  }
 
   function ringCapacity(radius: number, minimumSpacing: number): number {
     return Math.max(1, Math.floor(Math.PI / Math.asin(Math.min(1, minimumSpacing / (2 * radius)))));
@@ -189,8 +360,7 @@ export function createConstellationLayout({
   function computeTaskAnchors(nodes: GraphNode[], edges: GraphEdge[]): Map<string, Point> {
     const tasks = nodes.filter((node) => node.type === 'task');
     const clusterSpacing = NODE_RADII.task * 2 + NODE_RADII.agent + GRAPH_NODE_GAPS.taskAgent;
-    const orbitX = width * TASK_ORBIT_WIDTH_RATIO;
-    const orbitY = Math.max(height * TASK_ORBIT_HEIGHT_RATIO, orbitX * TASK_ORBIT_MIN_ASPECT);
+    const { orbitX, orbitY } = compactGeometry(nodes.length);
     const anchors = new Map<string, Point>();
     if (tasks.length <= SINGLE_RING_TASK_LIMIT) {
       tasks.forEach((task, index) => {
@@ -262,11 +432,12 @@ export function createConstellationLayout({
 
   function computeDesiredPositions(nodes: GraphNode[], edges: GraphEdge[]): Map<string, Point> {
     const positions = new Map(taskAnchors);
+    const { taskAgentDistance, resourceDistance, agentDistance } = compactGeometry(nodes.length);
     const orderedIds = new Map(nodes.map((node, index) => [node.id, index]));
     const topLevelAgents = nodes.filter(isTopLevelAgent);
     const topLevelRadius =
       topLevelAgents.length > 1
-        ? AGENT_DISTANCE / (2 * Math.sin(Math.PI / topLevelAgents.length))
+        ? agentDistance / (2 * Math.sin(Math.PI / topLevelAgents.length))
         : 0;
     topLevelAgents.forEach((node, index) => {
       const angle = -Math.PI / 2 + (index / Math.max(1, topLevelAgents.length)) * Math.PI * 2;
@@ -292,8 +463,8 @@ export function createConstellationLayout({
           fanOffset === 0 ? AGENT_AXIS_OFFSET : Math.sign(fanOffset) * AGENT_AXIS_OFFSET;
         const angle = baseAngle + fanOffset + axisOffset;
         positions.set(edge.sourceId, {
-          x: taskPosition.x + Math.cos(angle) * TASK_AGENT_DISTANCE,
-          y: taskPosition.y + Math.sin(angle) * TASK_AGENT_DISTANCE,
+          x: taskPosition.x + Math.cos(angle) * taskAgentDistance,
+          y: taskPosition.y + Math.sin(angle) * taskAgentDistance,
         });
       });
     }
@@ -316,8 +487,8 @@ export function createConstellationLayout({
       const baseAngle = angleFromCenter(parent, id);
       const angle = baseAngle + (siblingIndex - (siblings.length - 1) / 2) * AGENT_FAN_STEP;
       const position = {
-        x: parent.x + Math.cos(angle) * AGENT_DISTANCE,
-        y: parent.y + Math.sin(angle) * AGENT_DISTANCE,
+        x: parent.x + Math.cos(angle) * agentDistance,
+        y: parent.y + Math.sin(angle) * agentDistance,
       };
       positions.set(id, position);
       return position;
@@ -348,8 +519,8 @@ export function createConstellationLayout({
             ? safeTopLevelAngles[index % safeTopLevelAngles.length]
             : baseAngle + (index - (resources.length - 1) / 2) * RESOURCE_FAN_STEP;
         positions.set(edge.targetId, {
-          x: ownerPosition.x + Math.cos(angle) * RESOURCE_DISTANCE,
-          y: ownerPosition.y + Math.sin(angle) * RESOURCE_DISTANCE,
+          x: ownerPosition.x + Math.cos(angle) * resourceDistance,
+          y: ownerPosition.y + Math.sin(angle) * resourceDistance,
         });
       });
     }
@@ -395,16 +566,19 @@ export function createConstellationLayout({
   }
 
   function configureLinkForce(edges: GraphEdge[]): void {
+    const { taskAgentDistance, resourceDistance, agentDistance } = compactGeometry(
+      currentNodes.length,
+    );
     simulation.force(
       'links',
       forceLink<GraphNode, LayoutLink>(buildLinks(edges))
         .id((node) => node.id)
         .distance((link) =>
           link.kind === 'task-assignment'
-            ? TASK_AGENT_DISTANCE
+            ? taskAgentDistance
             : link.kind === 'delegation'
-              ? AGENT_DISTANCE
-              : RESOURCE_DISTANCE,
+              ? agentDistance
+              : resourceDistance,
         )
         .strength((link) => {
           if (link.kind === 'task-assignment') return 0.5;
@@ -415,9 +589,30 @@ export function createConstellationLayout({
   }
 
   function configureForces(edges: GraphEdge[]): void {
+    const { compact } = compactGeometry(currentNodes.length);
     desiredPositions = computeDesiredPositions(currentNodes, edges);
     simulation
       .nodes(currentNodes)
+      .force(
+        'collision',
+        compact
+          ? rectangleCollisionForce(
+              COMPACT_NODE_DIMENSIONS,
+              (MIN_COMPACT_NODE_GAP + 1) / SMALL_GRAPH_FIT_SCALE,
+            )
+          : forceCollide<GraphNode>((node) => NODE_RADII[node.type] + GRAPH_NODE_GAPS.collision)
+              .strength(1)
+              .iterations(4),
+      )
+      .force(
+        'label-collision',
+        compact
+          ? rectangleCollisionForce(
+              COMPACT_LABEL_DIMENSIONS,
+              (MIN_COMPACT_NODE_GAP + 1) / SMALL_GRAPH_FIT_SCALE,
+            )
+          : null,
+      )
       .force(
         'x',
         forceX<GraphNode>((node) => desiredPositions.get(node.id)?.x ?? center.x).strength(
@@ -440,10 +635,15 @@ export function createConstellationLayout({
                 : 0.16,
         ),
       );
+    simulation.force(
+      'compact-boundary',
+      compact && viewport.fitTarget ? compactBoundaryForce(viewport.fitTarget, center) : null,
+    );
     configureLinkForce(edges);
   }
 
   function update(nodes: GraphNode[], edges: GraphEdge[]): void {
+    currentEdges = edges;
     const nextFingerprint = graphFingerprint(nodes, edges);
     const nextStrengthFingerprint = linkStrengthFingerprint(edges);
     if (nextFingerprint === fingerprint) {
@@ -537,6 +737,21 @@ export function createConstellationLayout({
       reheat();
     },
     reheat,
+    resize(next) {
+      if (
+        next.width === viewport.width &&
+        next.height === viewport.height &&
+        next.fitTarget?.width === viewport.fitTarget?.width &&
+        next.fitTarget?.height === viewport.fitTarget?.height
+      ) {
+        return;
+      }
+      viewport = next;
+      center = { x: next.width / 2, y: next.height / 2 };
+      taskAnchors = computeTaskAnchors(currentNodes, currentEdges);
+      configureForces(currentEdges);
+      reheat();
+    },
     settle() {
       simulation.stop();
       for (let index = 0; index < 300 && simulation.alpha() >= 0.001; index += 1) {
@@ -547,7 +762,7 @@ export function createConstellationLayout({
     stop() {
       simulation.stop();
     },
-    fitBounds() {
+    fitBounds(candidateScale = 1) {
       if (currentNodes.length === 0) {
         return {
           minX: center.x,
@@ -559,19 +774,11 @@ export function createConstellationLayout({
         };
       }
 
-      const minX = Math.min(
-        ...currentNodes.map((node) => node.x - GRAPH_NODE_DIMENSIONS[node.type].width / 2),
+      return anchorFitBounds(
+        currentNodes,
+        new Map(currentNodes.map((node) => [node.id, node])),
+        candidateScale,
       );
-      const minY = Math.min(
-        ...currentNodes.map((node) => node.y - GRAPH_NODE_DIMENSIONS[node.type].height / 2),
-      );
-      const maxX = Math.max(
-        ...currentNodes.map((node) => node.x + GRAPH_NODE_DIMENSIONS[node.type].width / 2),
-      );
-      const maxY = Math.max(
-        ...currentNodes.map((node) => node.y + GRAPH_NODE_DIMENSIONS[node.type].height / 2),
-      );
-      return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
     },
   };
 }

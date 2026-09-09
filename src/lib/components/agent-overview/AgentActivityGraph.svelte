@@ -5,7 +5,11 @@
   import { faExpand } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
-  import { createConstellationLayout, type ConstellationLayout } from './constellation-layout';
+  import {
+    createConstellationLayout,
+    SMALL_GRAPH_FIT_SCALE,
+    type ConstellationLayout,
+  } from './constellation-layout';
   import GraphEdgeLayer, { type GraphPosition } from './GraphEdgeLayer.svelte';
   import GraphHullLayer from './GraphHullLayer.svelte';
   import GraphNodeDetailCard, { type GraphNodeRecentEvent } from './GraphNodeDetailCard.svelte';
@@ -13,7 +17,7 @@
   import ResourceNode from './nodes/ResourceNode.svelte';
   import TaskAnchorNode from './nodes/TaskAnchorNode.svelte';
   import {
-    GRAPH_NODE_DIMENSIONS,
+    GRAPH_FIT_PADDING,
     GRAPH_ZOOM_EXTENT,
     MAX_VISIBLE_RESOURCES_PER_AGENT,
   } from './constants';
@@ -22,7 +26,7 @@
   import type { PlaybackSpeed } from './playback';
   import { createTaskHullMembershipMemo } from './graph-helpers';
   import { createGraphRenderIndexMemo } from './graph-render-index';
-  import { containedFitScale } from './graph-fit';
+  import { anchorFitBounds, containedAnchorFitScale } from './graph-fit';
 
   export interface GraphLayers {
     agents?: boolean;
@@ -388,8 +392,7 @@
 
   function applyFit(coalesce: boolean): void {
     if (!layout || !zoomBehavior || !container || visibleGraph.nodes.length === 0) return;
-    const bounds = layout.fitBounds();
-    applyBounds(bounds, coalesce);
+    applyBounds(coalesce);
   }
 
   function measuredFitInsets(): FitInsets {
@@ -445,17 +448,7 @@
     };
   }
 
-  function applyBounds(
-    bounds: {
-      minX: number;
-      minY: number;
-      maxX: number;
-      maxY: number;
-      width: number;
-      height: number;
-    },
-    coalesce: boolean,
-  ): void {
+  function applyBounds(coalesce: boolean, nodes = visibleGraph.nodes): void {
     if (!zoomBehavior || !container) return;
     const width = container.clientWidth;
     const height = container.clientHeight;
@@ -463,16 +456,25 @@
     const availableWidth = Math.max(1, width - insets.left - insets.right);
     const availableHeight = Math.max(1, height - insets.top - insets.bottom);
     const maximumScale = GRAPH_ZOOM_EXTENT[1];
-    const naturalScale = containedFitScale(bounds, availableWidth, availableHeight, maximumScale);
+    const naturalScale = containedAnchorFitScale(
+      nodes,
+      latestPositions.current,
+      availableWidth,
+      availableHeight,
+      maximumScale,
+    );
     const minimumScale = Math.min(
       maximumScale,
       Math.max(GRAPH_ZOOM_EXTENT[0], naturalScale * MINIMUM_VIEWPORT_FILL),
     );
     zoomBehavior.scaleExtent([minimumScale, maximumScale]);
-    const scale =
-      visibleGraph.nodes.length > 40
+    const scale = Math.min(
+      maximumScale,
+      nodes.length > 40
         ? Math.max(TASK_LABEL_VISIBLE_SCALE, naturalScale)
-        : naturalScale;
+        : Math.max(SMALL_GRAPH_FIT_SCALE, naturalScale),
+    );
+    const bounds = anchorFitBounds(nodes, latestPositions.current, scale);
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerY = (bounds.minY + bounds.maxY) / 2;
     const viewportCenterX = insets.left + availableWidth / 2;
@@ -604,23 +606,8 @@
       }
     }
     const nodes = visibleGraph.nodes.filter((node) => included.has(node.id));
-    const bounds = nodes.reduce(
-      (result, node) => {
-        const position = latestPositions.current.get(node.id) ?? node;
-        const dimensions = GRAPH_NODE_DIMENSIONS[node.type];
-        result.minX = Math.min(result.minX, position.x - dimensions.width / 2);
-        result.minY = Math.min(result.minY, position.y - dimensions.height / 2);
-        result.maxX = Math.max(result.maxX, position.x + dimensions.width / 2);
-        result.maxY = Math.max(result.maxY, position.y + dimensions.height / 2);
-        return result;
-      },
-      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
-    );
-    if (!Number.isFinite(bounds.minX)) return;
-    applyBounds(
-      { ...bounds, width: bounds.maxX - bounds.minX, height: bounds.maxY - bounds.minY },
-      false,
-    );
+    if (nodes.length === 0) return;
+    applyBounds(false, nodes);
   }
 
   function nodeElement(nodeId: string): HTMLElement | undefined {
@@ -831,7 +818,19 @@
   onMount(() => {
     const width = Math.max(1, container.clientWidth);
     const height = Math.max(1, container.clientHeight);
-    layout = createConstellationLayout({ width, height });
+    const insets = measuredFitInsets();
+    layout = createConstellationLayout({
+      width,
+      height,
+      fitTarget: {
+        width:
+          Math.max(1, width - insets.left - insets.right - GRAPH_FIT_PADDING * 2) /
+          SMALL_GRAPH_FIT_SCALE,
+        height:
+          Math.max(1, height - insets.top - insets.bottom - GRAPH_FIT_PADDING * 2) /
+          SMALL_GRAPH_FIT_SCALE,
+      },
+    });
     layout.update(visibleGraph.nodes, visibleGraph.edges);
     autoFitPending = true;
     unsubscribeTick = layout.tick(publishPositions);
@@ -875,7 +874,29 @@
         if (resizeFitTimeout !== null) clearTimeout(resizeFitTimeout);
         resizeFitTimeout = setTimeout(() => {
           resizeFitTimeout = null;
-          if (!hasManualTransform) applyFit(false);
+          if (!hasManualTransform && layout) {
+            const nextWidth = Math.max(1, container.clientWidth);
+            const nextHeight = Math.max(1, container.clientHeight);
+            const nextInsets = measuredFitInsets();
+            layout.resize({
+              width: nextWidth,
+              height: nextHeight,
+              fitTarget: {
+                width:
+                  Math.max(
+                    1,
+                    nextWidth - nextInsets.left - nextInsets.right - GRAPH_FIT_PADDING * 2,
+                  ) / SMALL_GRAPH_FIT_SCALE,
+                height:
+                  Math.max(
+                    1,
+                    nextHeight - nextInsets.top - nextInsets.bottom - GRAPH_FIT_PADDING * 2,
+                  ) / SMALL_GRAPH_FIT_SCALE,
+              },
+            });
+            autoFitPending = true;
+            applyFit(false);
+          }
         }, RESIZE_FIT_DEBOUNCE_MS);
       });
       resizeObserver.observe(container);

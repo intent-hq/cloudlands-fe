@@ -370,7 +370,7 @@ describe('AgentActivityGraph', () => {
       .__zoom;
 
     expect(transform.x + 400 * transform.k).toBeCloseTo(380);
-    expect(transform.y + 300 * transform.k).toBeCloseTo(292);
+    expect(transform.y + 300 * transform.k).toBeCloseTo(282);
   });
 
   it('debounces resize fits and stops them after manual pan', async () => {
