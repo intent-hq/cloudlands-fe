@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getAgentColorsWithSeed } from '$lib/utils/agent-colors';
 import type { MapActivity } from '../core/types';
 import type { RegionGeometry } from '../layout/place';
-import { buildRouteEdges, buildScene, filterActivities, hitRouteEdge } from './scene';
+import { buildRouteEdges, buildScene, filterActivities, hitRouteEdge, quantizeHeat } from './scene';
 
 const geometry: RegionGeometry[] = [
   {
@@ -86,6 +86,105 @@ describe('semantic map render scene', () => {
     expect(
       filterActivities(activities, { agentIds: ['a', 'b'], kinds: ['read', 'edit'] }, window),
     ).toEqual(activities.slice(0, 3));
+  });
+
+  it('quantizes mutation counts into three stable heat bands', () => {
+    expect([0, 1, 2, 3, 4, 12].map(quantizeHeat)).toEqual([0, 1, 2, 2, 3, 3]);
+  });
+
+  it('keeps mutation evidence as an edge tick for the full window', () => {
+    const scene = buildScene({
+      activities: [
+        {
+          id: 'old-edit',
+          agentId: 'a',
+          regionId: 'one',
+          kind: 'edit',
+          ts: '2026-09-06T10:00:00.000Z',
+        },
+        {
+          id: 'old-create',
+          agentId: 'a',
+          regionId: 'one',
+          kind: 'create',
+          ts: '2026-09-06T10:01:00.000Z',
+        },
+      ],
+      filters: {},
+      timeWindow: window,
+      geometry,
+      dark: false,
+      neutral: '#neutral',
+      fileLabel: (count) => `${count}`,
+    });
+
+    expect(scene.marks).toHaveLength(0);
+    expect(scene.ticks).toEqual([expect.objectContaining({ regionId: 'one', count: 2, x: 150 })]);
+    expect(scene.heatByRegion.one).toBe(2);
+  });
+
+  it('draws each agent last four region centroids with hop-based decay', () => {
+    const trailActivities: MapActivity[] = [
+      ['one', '2026-09-06T10:00:00.000Z'],
+      ['two', '2026-09-06T10:02:00.000Z'],
+      ['one', '2026-09-06T10:09:00.000Z'],
+      ['two', '2026-09-06T10:10:00.000Z'],
+    ].map(([regionId, ts], index) => ({
+      id: `trail-${index}`,
+      agentId: 'a',
+      regionId,
+      kind: 'read',
+      ts,
+    }));
+    const scene = buildScene({
+      activities: trailActivities,
+      filters: {},
+      timeWindow: window,
+      geometry,
+      dark: false,
+      neutral: '#neutral',
+      fileLabel: (count) => `${count}`,
+    });
+
+    expect(scene.trails).toHaveLength(1);
+    expect(scene.trails[0].points.map(({ x, y }) => [x, y])).toEqual([
+      [100, 100],
+      [300, 100],
+      [100, 100],
+      [300, 100],
+    ]);
+    scene.trails[0].points
+      .map(({ alpha }) => alpha)
+      .forEach((alpha, index) => expect(alpha).toBeCloseTo([0.3, 0.5, 0.7, 0.9][index]));
+  });
+
+  it('caps Unsorted below the hottest curated heat band', () => {
+    const unsorted: RegionGeometry = {
+      ...geometry[1],
+      id: 'Unsorted',
+      x: 500,
+      hull: geometry[1].hull.map(([x, y]) => [x + 200, y]),
+    };
+    const mutations = (regionId: string, count: number): MapActivity[] =>
+      Array.from({ length: count }, (_, index) => ({
+        id: `${regionId}-${index}`,
+        agentId: 'a',
+        regionId,
+        kind: 'edit',
+        ts: `2026-09-06T10:0${index}:00.000Z`,
+      }));
+    const scene = buildScene({
+      activities: [...mutations('one', 4), ...mutations('Unsorted', 8)],
+      filters: {},
+      timeWindow: window,
+      geometry: [...geometry, unsorted],
+      dark: false,
+      neutral: '#neutral',
+      fileLabel: (count) => `${count}`,
+    });
+
+    expect(scene.heatByRegion.one).toBe(3);
+    expect(scene.heatByRegion.Unsorted).toBe(2);
   });
 
   it('ages current live activity against now instead of the unbounded window end', () => {

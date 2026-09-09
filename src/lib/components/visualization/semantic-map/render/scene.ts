@@ -3,7 +3,10 @@ import type { MapActivity, Route } from '../core/types';
 import type { RegionGeometry } from '../layout/place';
 import type {
   ActivityMark,
+  ActivityTick,
   AgentBadge,
+  AgentTrail,
+  HeatBand,
   RouteEdge,
   SemanticMapFilters,
   SemanticMapScene,
@@ -14,6 +17,13 @@ const READ_DURATION_MS = 2_000;
 const MOVE_DURATION_MS = 1_000;
 const TOOL_DURATION_MS = 1_200;
 const BADGE_RADIUS = 13;
+export const DEFAULT_TRAIL_LENGTH = 4;
+export const HEAT_BAND_ALPHA: Readonly<Record<HeatBand, number>> = {
+  0: 0,
+  1: 0.46,
+  2: 0.54,
+  3: 0.62,
+};
 
 function timestamp(value: string): number {
   return Date.parse(value);
@@ -61,6 +71,29 @@ function markPosition(activity: MapActivity, region: RegionGeometry): [number, n
   return [region.x + Math.cos(angle) * distance, region.y + Math.sin(angle) * distance];
 }
 
+export function quantizeHeat(count: number): HeatBand {
+  if (count <= 0) return 0;
+  if (count === 1) return 1;
+  if (count <= 3) return 2;
+  return 3;
+}
+
+function tickPosition(region: RegionGeometry): [number, number] {
+  return region.hull.reduce(
+    (rightmost, point) =>
+      point[0] > rightmost[0] ||
+      (point[0] === rightmost[0] &&
+        Math.abs(point[1] - region.y) < Math.abs(rightmost[1] - region.y))
+        ? point
+        : rightmost,
+    region.hull[0] ?? ([region.x + region.radius, region.y] as [number, number]),
+  );
+}
+
+function isUnsortedRegion(regionId: string): boolean {
+  return regionId.toLowerCase() === 'unsorted'; // i18n-ignore (wire identifier)
+}
+
 function buildMarks(
   activities: MapActivity[],
   geometry: Map<string, RegionGeometry>,
@@ -68,37 +101,101 @@ function buildMarks(
   duration: number,
   colors: Map<string, string>,
   neutral: string,
-): { marks: ActivityMark[]; heatByRegion: Record<string, number> } {
+): {
+  marks: ActivityMark[];
+  ticks: ActivityTick[];
+  trails: AgentTrail[];
+  heatByRegion: Record<string, HeatBand>;
+} {
   const marks: ActivityMark[] = [];
-  const heatByRegion: Record<string, number> = {};
+  const mutationCountByRegion = new Map<string, number>();
+  const latestMutationColorByRegion = new Map<string, string>();
+  const trailRegionsByAgent = new Map<string, RegionGeometry[]>();
   const previousRegion = new Map<string, RegionGeometry>();
   for (const activity of activities) {
-    if (!activity.regionId || activity.kind === 'tool' || activity.kind === 'thinking') continue;
+    if (!activity.regionId) continue;
     const region = geometry.get(activity.regionId);
     if (!region) continue;
-    const ageMs = Math.max(0, end - timestamp(activity.ts));
-    const alpha = Math.max(0.12, 1 - ageMs / duration);
     const agentId = activity.agentId ?? '';
     const color = colors.get(agentId) ?? neutral;
+    if (agentId) {
+      const trailRegions = trailRegionsByAgent.get(agentId) ?? [];
+      if (trailRegions.at(-1)?.id !== region.id) trailRegions.push(region);
+      trailRegionsByAgent.set(agentId, trailRegions);
+    }
+    if (activity.kind === 'edit' || activity.kind === 'create') {
+      mutationCountByRegion.set(
+        activity.regionId,
+        (mutationCountByRegion.get(activity.regionId) ?? 0) + 1,
+      );
+      latestMutationColorByRegion.set(activity.regionId, color);
+    }
+    if (activity.kind === 'tool' || activity.kind === 'thinking') continue;
+    const ageMs = Math.max(0, end - timestamp(activity.ts));
+    const alpha = Math.max(0.12, 1 - ageMs / duration);
     const [x, y] = markPosition(activity, region);
     const from = previousRegion.get(agentId);
     previousRegion.set(agentId, region);
     if (activity.kind === 'read' && ageMs > READ_DURATION_MS) continue;
     if (activity.kind === 'move' && ageMs > MOVE_DURATION_MS) continue;
-    const mark: ActivityMark = { kind: activity.kind, x, y, alpha, ageMs, color };
+    if ((activity.kind === 'edit' || activity.kind === 'create') && ageMs > READ_DURATION_MS)
+      continue;
+    const mark: ActivityMark = {
+      kind: activity.kind,
+      x,
+      y,
+      alpha:
+        activity.kind === 'edit' || activity.kind === 'create'
+          ? Math.max(0, 1 - ageMs / READ_DURATION_MS)
+          : alpha,
+      ageMs,
+      color,
+    };
     if (activity.kind === 'move' && from) {
       mark.fromX = from.x;
       mark.fromY = from.y;
     }
     marks.push(mark);
-    if (activity.kind === 'edit' || activity.kind === 'create') {
-      heatByRegion[activity.regionId] = Math.min(
-        1,
-        (heatByRegion[activity.regionId] ?? 0) + alpha * 0.3,
-      );
+  }
+  const heatByRegion = Object.fromEntries(
+    [...mutationCountByRegion].map(([regionId, count]) => [regionId, quantizeHeat(count)]),
+  ) as Record<string, HeatBand>;
+  const hottestCuratedBand = Math.max(
+    0,
+    ...Object.entries(heatByRegion)
+      .filter(([regionId]) => !isUnsortedRegion(regionId))
+      .map(([, band]) => band),
+  );
+  for (const regionId of Object.keys(heatByRegion)) {
+    if (isUnsortedRegion(regionId)) {
+      heatByRegion[regionId] = Math.min(
+        heatByRegion[regionId],
+        Math.max(0, hottestCuratedBand - 1),
+      ) as HeatBand;
     }
   }
-  return { marks, heatByRegion };
+  const ticks: ActivityTick[] = [...mutationCountByRegion].flatMap(([regionId, count]) => {
+    const region = geometry.get(regionId);
+    if (!region) return [];
+    const [x, y] = tickPosition(region);
+    return [{ regionId, x, y, count, color: latestMutationColorByRegion.get(regionId) ?? neutral }];
+  });
+  const trails: AgentTrail[] = [...trailRegionsByAgent].flatMap(([agentId, regions]) => {
+    const recent = regions.slice(-DEFAULT_TRAIL_LENGTH);
+    if (recent.length < 2) return [];
+    return [
+      {
+        agentId,
+        color: colors.get(agentId) ?? neutral,
+        points: recent.map((region, index) => ({
+          x: region.x,
+          y: region.y,
+          alpha: 0.9 - (recent.length - 1 - index) * 0.2,
+        })),
+      },
+    ];
+  });
+  return { marks, heatByRegion, ticks, trails };
 }
 
 function agentColors(activities: MapActivity[], dark: boolean): Map<string, string> {
@@ -216,7 +313,7 @@ export function buildScene(input: {
   const duration = Math.max(1, referenceTime - timestamp(input.timeWindow.start));
   const geometry = geometryIndex(input.geometry);
   const colors = agentColors(activities, input.dark);
-  const { marks, heatByRegion } = buildMarks(
+  const { marks, heatByRegion, ticks, trails } = buildMarks(
     activities,
     geometry,
     referenceTime,
@@ -228,6 +325,8 @@ export function buildScene(input: {
   return {
     activities,
     marks,
+    ticks,
+    trails,
     badges,
     edges: buildRouteEdges(input.route, input.geometry, input.fileLabel),
     heatByRegion,

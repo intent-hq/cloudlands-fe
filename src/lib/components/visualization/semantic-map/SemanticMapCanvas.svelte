@@ -8,8 +8,15 @@
   import type { RegionGeometry } from './layout/place';
   import { CanvasPathCache, drawQuadraticPath, traceHull } from './render/canvas';
   import { layoutSceneLabels, type LabelLayout, type PlacedLabel } from './render/labels';
-  import { buildScene, hitRouteEdge } from './render/scene';
-  import type { ActivityMark, AgentBadge, RouteEdge, SemanticMapCanvasProps } from './render/types';
+  import { buildScene, HEAT_BAND_ALPHA, hitRouteEdge } from './render/scene';
+  import type {
+    ActivityMark,
+    ActivityTick,
+    AgentBadge,
+    AgentTrail,
+    RouteEdge,
+    SemanticMapCanvasProps,
+  } from './render/types';
 
   let {
     manifest,
@@ -295,12 +302,58 @@
       ctx.fill();
       ctx.stroke();
     }
-    const heat = scene.heatByRegion[region.id] ?? 0;
-    if (heat > 0) {
-      ctx.globalAlpha = heat * 0.18;
-      ctx.fillStyle = colors.mutedForeground;
+    const heatBand = scene.heatByRegion[region.id] ?? 0;
+    if (heatBand > 0) {
+      ctx.globalAlpha = HEAT_BAND_ALPHA[heatBand];
+      ctx.fillStyle = colors.foreground;
       path && !tweening ? ctx.fill(path) : ctx.fill();
     }
+    ctx.restore();
+  }
+
+  function drawTrails(ctx: CanvasRenderingContext2D, trails: AgentTrail[]): void {
+    for (const trail of trails) {
+      for (let index = 1; index < trail.points.length; index += 1) {
+        const from = trail.points[index - 1];
+        const to = trail.points[index];
+        ctx.save();
+        ctx.strokeStyle = trail.color;
+        ctx.fillStyle = trail.color;
+        ctx.globalAlpha = to.alpha;
+        ctx.lineWidth = 1.5 / transform.scale;
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(from.x, from.y, 2.5 / transform.scale, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+
+  function drawTick(ctx: CanvasRenderingContext2D, tick: ActivityTick): void {
+    const label = formatInteger(tick.count);
+    ctx.save();
+    ctx.font = `600 ${10 / transform.scale}px ${uiFont}`;
+    const width = Math.max(
+      18 / transform.scale,
+      ctx.measureText(label).width + 9 / transform.scale,
+    );
+    const height = 16 / transform.scale;
+    ctx.translate(tick.x, tick.y);
+    ctx.fillStyle = colors.surface;
+    ctx.strokeStyle = tick.color;
+    ctx.lineWidth = 2 / transform.scale;
+    ctx.beginPath();
+    ctx.roundRect(-width / 2, -height / 2, width, height, 5 / transform.scale);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = colors.foreground;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, 0, 0);
     ctx.restore();
   }
 
@@ -518,10 +571,12 @@
     ctx.translate(transform.x, transform.y);
     ctx.scale(transform.scale, transform.scale);
     currentGeometry.forEach((region) => drawRegion(ctx, region, pathCache.hulls.get(region.id)));
+    drawTrails(ctx, scene.trails);
     drawRoute(ctx, scene.edges);
     scene.marks.forEach((mark) => drawMark(ctx, mark, elapsed));
     labelLayout.regions.forEach((label) => drawRegionLabel(ctx, label));
     drawRouteLabels(ctx);
+    scene.ticks.forEach((tick) => drawTick(ctx, tick));
     labelLayout.badges.forEach((badge) => drawBadge(ctx, badge, now, elapsed));
     ctx.restore();
     if (showMinimap) drawMinimap(ctx);

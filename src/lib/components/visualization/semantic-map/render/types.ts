@@ -49,6 +49,28 @@ export interface ActivityMark {
   color: string;
 }
 
+export type HeatBand = 0 | 1 | 2 | 3;
+
+export interface ActivityTick {
+  regionId: string;
+  x: number;
+  y: number;
+  count: number;
+  color: string;
+}
+
+export interface AgentTrailPoint {
+  x: number;
+  y: number;
+  alpha: number;
+}
+
+export interface AgentTrail {
+  agentId: string;
+  color: string;
+  points: AgentTrailPoint[];
+}
+
 export interface AgentBadge {
   id: string;
   name: string;
@@ -77,8 +99,10 @@ export interface RouteEdge {
 export interface SemanticMapScene {
   activities: MapActivity[];
   marks: ActivityMark[];
+  ticks: ActivityTick[];
+  trails: AgentTrail[];
   badges: AgentBadge[];
   edges: RouteEdge[];
-  heatByRegion: Record<string, number>;
+  heatByRegion: Record<string, HeatBand>;
   hasMotion: boolean;
 }
