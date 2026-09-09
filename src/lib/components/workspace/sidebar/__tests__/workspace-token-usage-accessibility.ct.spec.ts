@@ -704,18 +704,21 @@ for (const localeCase of [
       .locator('.breakdown-item-control');
     await agentControls.last().dispatchEvent('pointerenter', { pointerType: 'mouse' });
     await modelControls.last().focus();
+    await expect(modelControls.last()).toHaveAttribute('data-preview-active', 'true');
     await expect(messageRows.locator('.animated-number-value')).toHaveText(localeCase.singular);
     await expect(messageRows.locator('.animated-number-target')).toHaveText(localeCase.singular);
 
     await agentControls.last().dispatchEvent('pointerleave', { pointerType: 'mouse' });
     await agentControls.nth(1).dispatchEvent('pointerenter', { pointerType: 'mouse' });
     await modelControls.nth(2).focus();
+    await expect(modelControls.nth(2)).toHaveAttribute('data-preview-active', 'true');
     await expect(messageRows.locator('.animated-number-value')).toHaveText(localeCase.pluralHuman);
     await expect(messageRows.locator('.animated-number-target')).toHaveText(localeCase.pluralHuman);
 
     await agentControls.nth(1).dispatchEvent('pointerleave', { pointerType: 'mouse' });
     await agentControls.first().dispatchEvent('pointerenter', { pointerType: 'mouse' });
     await modelControls.nth(1).focus();
+    await expect(modelControls.nth(1)).toHaveAttribute('data-preview-active', 'true');
     await expect(messageRows.locator('.animated-number-value')).toHaveText(localeCase.pluralAgent);
     await expect(messageRows.locator('.animated-number-target')).toHaveText(localeCase.pluralAgent);
   });
