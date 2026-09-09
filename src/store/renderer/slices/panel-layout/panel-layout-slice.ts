@@ -3275,10 +3275,16 @@ panelLayoutReducer.with(applyBrowserTabRegistryRow, (state, { payload: [wsId, ta
       emulatedSize: _size,
       ...rest
     } = tab;
-    // A viewport derived from a now-cleared emulation is stale too; a local
-    // (geometry) viewport of a never-emulated tab is kept.
+    // Viewport mode is local geometry (the registry carries only dimensions):
+    // preserve a stored Fit choice, or a preset/custom choice whose dimensions
+    // still match. A changed canonical size becomes Custom.
     const viewport = row.emulatedSize
-      ? { mode: 'custom' as const, ...row.emulatedSize }
+      ? tab.viewport?.mode === 'fit' ||
+        (tab.viewport !== undefined &&
+          tab.viewport.width === row.emulatedSize.width &&
+          tab.viewport.height === row.emulatedSize.height)
+        ? tab.viewport
+        : { mode: 'custom' as const, ...row.emulatedSize }
       : tab.emulatedSize
         ? { mode: 'fit' as const }
         : tab.viewport;

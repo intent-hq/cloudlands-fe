@@ -312,7 +312,15 @@ function toInput(wsId: string, { tab, visibility }: HostedTab): BrowserTabInput 
     ownerAgentId: tab.ownerAgentId ?? null,
     ownerAgentName: tab.ownerAgentName ?? null,
     visibility,
-    emulatedSize: tab.emulatedSize ?? null,
+    // The registry has no separate viewport-mode field: absence represents
+    // Fit, while preset/custom dimensions represent a fixed viewport. Use the
+    // persisted mode rather than an owned Fit tab's retained offscreen size.
+    emulatedSize:
+      tab.viewport?.mode === 'fit'
+        ? null
+        : tab.viewport
+          ? { width: tab.viewport.width, height: tab.viewport.height }
+          : (tab.emulatedSize ?? null),
   };
 }
 

@@ -12,6 +12,9 @@
   import { writable } from 'svelte/store';
   import EmbeddedBrowser from '$lib/components/browser/EmbeddedBrowser.svelte';
   import BrowserViewerTab from '$lib/components/browser/BrowserViewerTab.svelte';
+  import InlineAgentAvatar from '$lib/components/chat/InlineAgentAvatar.svelte';
+  import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
+  import { navigateToAgent } from '$lib/utils/workspace-navigation';
   import {
     BROWSER_VIEWPORT_CHANGE_EVENT,
     browserViewportAction,
@@ -52,13 +55,18 @@
     $pendingPanelReveal$?.tabId === tab.id && $pendingPanelReveal$.preserveFocus === true,
   );
 
-  // Owner agent display name for the toolbar chip (monorepo#2857).
+  // Owner agent display name for the panel header chip.
   const workspaceIdStore = writable(workspaceId);
   $effect(() => workspaceIdStore.set(workspaceId));
   const agents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const ownerAgentName = $derived(
     tab.ownerAgentId ? resolveOwnerName(tab.ownerAgentId, $agents$, tab.ownerAgentName) : undefined,
   );
+  const headerContext = getPanelHeaderContext();
+  $effect(() => {
+    if (!headerContext || !isActive || !tab.ownerAgentId) return;
+    return headerContext.registerActions({ primary: connectedAgent });
+  });
   let viewportActionNode: HTMLDivElement | null = $state(null);
 
   // The live webview mounts only on the tab's host (REV-2 §5.45). A tab the
@@ -73,6 +81,20 @@
   $effect(() => hostClientIdStore.set(tab.hostClientId ?? ''));
   const tabHost$ = selectBrowserTabHost(hostClientIdStore);
 </script>
+
+{#snippet connectedAgent()}
+  {#if tab.ownerAgentId}
+    {#key tab.ownerAgentId}
+      <span data-browser-owner-chip={tab.ownerAgentId} class="flex shrink-0 items-center">
+        <InlineAgentAvatar
+          agentId={tab.ownerAgentId}
+          agentName={ownerAgentName}
+          onclick={() => void navigateToAgent(tab.ownerAgentId!)}
+        />
+      </span>
+    {/key}
+  {/if}
+{/snippet}
 
 {#if !isHostedHere}
   <div class="h-full" data-browser-tab-mirror={tab.hostClientId}>
@@ -109,7 +131,6 @@
       focusUrlBarOnMount={isActive && isPanelFocused && !isFocusPreservingReveal}
       isFocused={isPanelFocused}
       ownerAgentId={tab.ownerAgentId}
-      {ownerAgentName}
       viewport={tab.viewport ?? { mode: 'fit' }}
       onViewportChange={(viewport) => {
         viewportActionNode?.dispatchEvent(

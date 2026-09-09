@@ -3627,6 +3627,45 @@ describe('panelLayoutReducer', () => {
       });
     });
 
+    it('applyBrowserTabRegistryRow preserves the stored Fit viewport over a retained size', () => {
+      const state = stateWithPanel('p1', [
+        {
+          id: 'b1',
+          type: 'browser',
+          title: 'Browser',
+          hostClientId: 'cli-laptop',
+          viewport: { mode: 'fit' },
+        },
+      ]);
+      const result = panelLayoutReducer(state, applyBrowserTabRegistryRow(WS, 'b1', row));
+
+      expect(result.byWorkspaceId[WS].panels.p1.tabs[0].viewport).toEqual({ mode: 'fit' });
+      expect(result.byWorkspaceId[WS].panels.p1.tabs[0].emulatedSize).toEqual({
+        width: 390,
+        height: 844,
+      });
+    });
+
+    it('applyBrowserTabRegistryRow preserves a matching stored preset viewport', () => {
+      const state = stateWithPanel('p1', [
+        {
+          id: 'b1',
+          type: 'browser',
+          title: 'Browser',
+          hostClientId: 'cli-laptop',
+          viewport: { mode: 'preset', presetId: 'phone', width: 390, height: 844 },
+        },
+      ]);
+      const result = panelLayoutReducer(state, applyBrowserTabRegistryRow(WS, 'b1', row));
+
+      expect(result.byWorkspaceId[WS].panels.p1.tabs[0].viewport).toEqual({
+        mode: 'preset',
+        presetId: 'phone',
+        width: 390,
+        height: 844,
+      });
+    });
+
     it('applyBrowserTabRegistryRow drops fields the row cleared and re-homes the tab', () => {
       const state = stateWithPanel('p1', [
         {
