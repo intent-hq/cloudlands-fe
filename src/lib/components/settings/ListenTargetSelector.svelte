@@ -22,6 +22,8 @@
    * - The tunnel toggle lives in the parent; its state is carried through.
    */
   import { m } from '$shared/paraglide/messages.js';
+  import { flushSync } from 'svelte';
+  import { Checkbox } from '$lib/components/patterns/settings/custom-controls';
 
   export interface ListenTargetSelection {
     /** Selected bind IPs ('0.0.0.0' means all interfaces, exclusive). */
@@ -64,6 +66,7 @@
   ]);
 
   const selection = $derived(new Set(selectedIps));
+  let rollbackGeneration = $state(0);
 
   // While an unspecified address is bound, every other address is already
   // covered by it — render them checked but locked until it is unchecked.
@@ -93,6 +96,12 @@
     }
     onchange({ ips: withLoopback(ips), tunnel: tunnelSelected });
   }
+
+  function handleCheckedChange(ip: string, next: boolean, rendered: boolean): void {
+    if (next === rendered) return;
+    toggleIp(ip);
+    flushSync(() => (rollbackGeneration += 1));
+  }
 </script>
 
 <div class="flex flex-col gap-1" data-listen-target-selector>
@@ -114,13 +123,18 @@
               ? m.settings_listenTargets_loopbackAlwaysBound_note()
               : undefined}
         >
-          <input
-            type="checkbox"
-            {checked}
-            disabled={saving || locked}
-            onchange={() => toggleIp(ip)}
-            class="accent-primary"
-          />
+          {#key `${ip}:${rollbackGeneration}`}
+            <Checkbox
+              {checked}
+              disabled={saving || locked}
+              ariaLabel={ip === ALL_INTERFACES
+                ? m.settings_listenTargets_allInterfaces_label()
+                : ip === LOOPBACK
+                  ? m.settings_listenTargets_loopback_label()
+                  : ip}
+              onCheckedChange={(next) => handleCheckedChange(ip, next, checked)}
+            />
+          {/key}
           <span class="font-mono text-xs">
             {ip === ALL_INTERFACES
               ? m.settings_listenTargets_allInterfaces_label()

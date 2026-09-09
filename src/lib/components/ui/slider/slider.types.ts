@@ -3,6 +3,7 @@ import type { WithElementRef } from '$lib/utils';
 
 export type SliderValue = number | [number, number];
 export type SliderValuePosition = 'left' | 'right' | 'top' | 'bottom' | 'tooltip';
+export type SliderAppearance = 'default' | 'overlay';
 
 export interface SliderProps extends WithElementRef<
   Omit<HTMLInputAttributes, 'type' | 'value' | 'oninput' | 'onkeydown' | 'onfocus' | 'onblur'>
@@ -18,4 +19,8 @@ export interface SliderProps extends WithElementRef<
   showSteps?: boolean;
   showValue?: boolean;
   valuePosition?: SliderValuePosition;
+  /** Make the track and fill transparent for use over surface-owned progress artwork. */
+  appearance?: SliderAppearance;
+  /** Called when pointer interaction begins, including presses that keep the current value. */
+  onInteractionStart?: () => void;
 }

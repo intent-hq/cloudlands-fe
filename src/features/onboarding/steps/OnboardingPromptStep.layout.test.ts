@@ -1,7 +1,9 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
+import axe from 'axe-core';
 import type { ComponentProps } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { m } from '$shared/paraglide/messages.js';
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', async () => {
   const { readable } = await import('svelte/store');
@@ -184,6 +186,31 @@ describe('OnboardingPromptStep rendered metadata layout', () => {
     expect(
       (result.getByRole('button', { name: 'Create workspace' }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+
+  it('opens the hidden FileInput host and attaches the selected file', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/tmp/notes.txt');
+    const result = render(OnboardingPromptStep, { props: props() });
+    const input = result.container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const open = vi.spyOn(input, 'click');
+
+    await fireEvent.click(
+      result.getByRole('button', { name: m.onboarding_promptStep_addFiles_tooltip() }),
+    );
+    expect(open).toHaveBeenCalledOnce();
+
+    const file = new File(['notes'], 'notes.txt', { type: 'text/plain' });
+    await fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() =>
+      expect(result.container.querySelector('[data-testid="attachment-pill"]')).toBeTruthy(),
+    );
+  });
+
+  it('has no scoped axe violations', async () => {
+    const { container } = render(OnboardingPromptStep, { props: props() });
+    container.setAttribute('role', 'main');
+    const result = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(result.violations.map(({ id }) => id)).toEqual([]);
   });
 
   it.each([

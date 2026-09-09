@@ -22,7 +22,9 @@
     showSteps = false,
     showValue = false,
     valuePosition = 'right',
+    appearance = 'default',
     disabled = false,
+    onInteractionStart,
     onValueChange,
     oninput,
     onkeydown,
@@ -194,6 +196,7 @@
 
   function handlePointerDown(event: PointerEvent) {
     if (disabled || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    onInteractionStart?.();
     event.preventDefault();
     pressed = true;
     const next = valueFromClientX(event.clientX);
@@ -317,6 +320,7 @@
   data-disabled={disabled || undefined}
   data-invalid={invalid || undefined}
   data-pressed={pressed || undefined}
+  data-appearance={appearance}
   class={cn(
     'flex w-full min-w-24 select-none touch-none overflow-visible',
     valuePosition === 'left' || valuePosition === 'right'
@@ -344,7 +348,7 @@
       aria-valuetext={valueText}
       data-slot={dataSlot}
       class={cn(
-        'peer pointer-events-none absolute inset-0 z-20 h-9 w-full cursor-ew-resize opacity-0',
+        'peer pointer-events-none absolute inset-0 z-20 h-9 w-full cursor-ew-resize opacity-0 outline-none',
         'aria-invalid:accent-danger aria-invalid:ring-1 aria-invalid:ring-danger/25',
         className,
       )}
@@ -382,21 +386,31 @@
       <span
         aria-hidden="true"
         data-slot="slider-track-background"
-        class="absolute inset-x-px top-[9px] h-[18px] overflow-hidden rounded-full border border-border bg-transparent"
+        class={cn(
+          'absolute inset-x-px top-[9px] h-[18px] overflow-hidden rounded-full border bg-transparent',
+          appearance === 'overlay' ? 'border-transparent' : 'border-border',
+        )}
       ></span>
       <span
         aria-hidden="true"
         data-slot="slider-fill"
         class={cn(
           'absolute top-[9px] left-px h-[18px] rounded-full',
-          invalid ? 'bg-danger/30 dark:bg-danger/35' : 'bg-selected/50 dark:bg-accent/40',
+          appearance === 'overlay'
+            ? 'bg-transparent'
+            : invalid
+              ? 'bg-danger/30 dark:bg-danger/35'
+              : 'bg-selected/50 dark:bg-accent/40',
         )}
         style:width={fillWidthStyle(thumbPosition.current)}
       ></span>
       <span
         aria-hidden="true"
         data-slot="slider-preview"
-        class="pointer-events-none absolute top-[9px] h-[18px] rounded-full bg-accent/40 transition-opacity duration-spring-fast ease-spring-fast motion-reduce:transition-none"
+        class={cn(
+          'pointer-events-none absolute top-[9px] h-[18px] rounded-full transition-opacity duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+          appearance === 'overlay' ? 'bg-transparent' : 'bg-accent/40',
+        )}
         class:opacity-0={previewValue === null || pressed}
         style:left={previewLeftStyle()}
         style:width={previewWidthStyle()}
@@ -418,7 +432,7 @@
         data-slot="slider-thumb"
         class={cn(
           'pointer-events-none absolute top-1/2 z-20 -translate-y-1/2 rounded-full border border-border bg-background shadow-(--elevation-raised)',
-          focused && 'ring-1 ring-focus-ring ring-offset-2 ring-offset-background',
+          focused && 'outline outline-1 outline-focus-ring outline-offset-2 shadow-none',
           invalid && 'border-danger',
         )}
         style:left={thumbStyle(thumbPosition.current)}

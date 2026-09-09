@@ -80,6 +80,15 @@ describe('Checkbox', () => {
     }
   });
 
+  it('uses a one-pixel offset focus outline without a shadow', () => {
+    const { getByRole } = render(Checkbox, { props: { ariaLabel: 'Focused choice' } });
+    const classes = getByRole('checkbox', { name: 'Focused choice' }).className;
+
+    expect(classes).toContain('focus-visible:outline-1');
+    expect(classes).toContain('focus-visible:outline-offset-2');
+    expect(classes).toContain('focus-visible:shadow-none');
+  });
+
   it('publishes valid metadata and a complete fixture state matrix', () => {
     expect(() => parseUiComponentMetadata(checkboxMetadata)).not.toThrow();
     expect(checkboxMetadata.fixtures[0].states).toEqual(

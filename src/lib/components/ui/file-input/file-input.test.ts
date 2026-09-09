@@ -160,6 +160,19 @@ describe('FileInput', () => {
     expect(button.getAttribute('aria-busy')).toBe('true');
   });
 
+  it('supports an externally triggered hidden picker host', () => {
+    const { component, container, queryByRole } = render(FileInput, {
+      props: { id: 'attachment-file', label: 'Attach files', hiddenHost: true, multiple: true },
+    });
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const open = vi.spyOn(input, 'click');
+
+    expect(queryByRole('button')).toBeNull();
+    expect(input.multiple).toBe(true);
+    component.openPicker();
+    expect(open).toHaveBeenCalledOnce();
+  });
+
   it('uses the shared quiet-rest picker surface with safe filename truncation', () => {
     const { container, getByRole } = render(FileInput, {
       props: { id: 'long-file', label: 'Choose a file' },
@@ -216,6 +229,7 @@ describe('FileInput', () => {
         'multi-filename',
         'form-reset',
         'parent-reset',
+        'hidden-host',
         'zoom-200',
         'no-overflow',
       ]),

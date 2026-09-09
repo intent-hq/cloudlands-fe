@@ -21,6 +21,7 @@ export const sliderFixtures = [
       'step-pips',
       'semantic-track',
       'semantic-thumb',
+      'transparent-overlay-track',
       'compact',
       'light',
       'dark',

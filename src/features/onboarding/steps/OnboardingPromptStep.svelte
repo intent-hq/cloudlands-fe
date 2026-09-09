@@ -18,6 +18,7 @@
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
+  import { FileInput } from '$lib/components/ui/file-input';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
@@ -175,7 +176,8 @@
 
   // Refs managed by this component
   let onboardingRichTextarea: RichTextarea | null = $state(null);
-  let onboardingFileInput: HTMLInputElement | null = $state(null);
+  let onboardingFileInput: { openPicker: () => void } | null = $state(null);
+  let selectedFiles: FileList | undefined = $state();
   let richTextareaWrapper: HTMLDivElement | null = $state(null);
 
   const treatAsNewRepo = $derived(
@@ -278,17 +280,15 @@
 
   /** Open the file input dialog. */
   function handleFileSelect() {
-    onboardingFileInput?.click();
+    onboardingFileInput?.openPicker();
   }
 
   /** Handle selected files — images become thumbnail context items, other
    * files are staged path-only. */
-  async function handleFileChange(e: Event) {
-    const target = e.target as HTMLInputElement;
-    const files = target.files;
+  async function handleFileChange(files: FileList | undefined) {
     if (!files || files.length === 0) return;
     await processImageFiles(Array.from(files));
-    target.value = '';
+    selectedFiles = undefined;
   }
 
   /** Process files from file input, drag-and-drop, or paste: images become
@@ -540,12 +540,14 @@
   {:else}
     <!-- Normal editing state -->
     <div class="relative w-full z-0">
-      <input
+      <FileInput
         bind:this={onboardingFileInput}
-        type="file"
+        bind:files={selectedFiles}
+        id="onboarding-attachments"
+        label={m.onboarding_promptStep_addFiles_tooltip()}
         multiple
-        class="hidden"
-        onchange={handleFileChange}
+        hiddenHost
+        onFilesChange={handleFileChange}
       />
       <div
         class="relative rich-input-container flex flex-col bg-background rounded-xl border shadow-xs transition-colors overflow-hidden {isDragging

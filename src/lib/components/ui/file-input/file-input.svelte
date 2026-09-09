@@ -27,6 +27,7 @@
     error,
     files = $bindable(),
     onFilesChange,
+    hiddenHost = false,
     class: className,
   }: {
     id: string;
@@ -46,6 +47,8 @@
     error?: string;
     files?: FileList;
     onFilesChange?: (files: FileList | undefined) => void;
+    /** Hide the built-in surface while retaining an imperative native picker host. */
+    hiddenHost?: boolean;
     class?: string;
   } = $props();
 
@@ -59,7 +62,7 @@
     files?.length ? Array.from(files, (file) => file.name).join(', ') : emptyText,
   );
 
-  function openPicker() {
+  export function openPicker() {
     inputRef?.click();
   }
 
@@ -90,6 +93,8 @@
   aria-disabled={disabled || busy || undefined}
   data-invalid={isInvalid || undefined}
   data-variant={variant}
+  data-host-mode={hiddenHost ? 'hidden' : 'surface'}
+  hidden={hiddenHost}
 >
   <input
     bind:this={inputRef}
@@ -108,43 +113,45 @@
     tabindex="-1"
     onchange={handleChange}
   />
-  <div
-    data-slot="file-input-surface"
-    data-state={previewState}
-    data-size={resolvedSize}
-    class={cn(
-      'flex min-w-0 items-center gap-2 rounded-(--radius-medium) p-1',
-      textEntryGroupClasses,
-      textEntryHeight(resolvedSize),
-      variant === 'default'
-        ? 'border-0 bg-hover hover:bg-card'
-        : 'border-0 bg-transparent shadow-none',
-      (disabled || busy) && 'pointer-events-none opacity-60',
-      isInvalid && 'ring-1 ring-danger/25',
-    )}
-  >
-    <Button
-      type="button"
-      variant={variant === 'flat' ? 'ghost' : 'outline'}
-      size={resolvedSize === 'compact' ? 'xs' : 'default'}
-      class={cn('h-full shrink-0', 'aria-invalid:border-danger aria-invalid:ring-danger/25')}
-      {disabled}
-      loading={busy}
-      aria-controls={id}
-      aria-invalid={isInvalid || undefined}
-      aria-describedby={describedBy}
-      onclick={openPicker}>{label}</Button
+  {#if !hiddenHost}
+    <div
+      data-slot="file-input-surface"
+      data-state={previewState}
+      data-size={resolvedSize}
+      class={cn(
+        'flex min-w-0 items-center gap-2 rounded-(--radius-medium) p-1',
+        textEntryGroupClasses,
+        textEntryHeight(resolvedSize),
+        variant === 'default'
+          ? 'border-0 bg-hover hover:bg-card'
+          : 'border-0 bg-transparent shadow-none',
+        (disabled || busy) && 'pointer-events-none opacity-60',
+        isInvalid && 'ring-1 ring-danger/25',
+      )}
     >
-    <span
-      class="type-body min-w-0 flex-1 truncate text-muted-foreground"
-      role="status"
-      aria-live="polite"
-      title={selectedText}
-    >
-      {selectedText}
-    </span>
-  </div>
-  {#if error || message}
+      <Button
+        type="button"
+        variant={variant === 'flat' ? 'ghost' : 'outline'}
+        size={resolvedSize === 'compact' ? 'xs' : 'default'}
+        class={cn('h-full shrink-0', 'aria-invalid:border-danger aria-invalid:ring-danger/25')}
+        {disabled}
+        loading={busy}
+        aria-controls={id}
+        aria-invalid={isInvalid || undefined}
+        aria-describedby={describedBy}
+        onclick={openPicker}>{label}</Button
+      >
+      <span
+        class="type-body min-w-0 flex-1 truncate text-muted-foreground"
+        role="status"
+        aria-live="polite"
+        title={selectedText}
+      >
+        {selectedText}
+      </span>
+    </div>
+  {/if}
+  {#if !hiddenHost && (error || message)}
     <InputMessage id={errorId ?? messageId} tone={error ? 'error' : 'helper'}>
       {error ?? message}
     </InputMessage>

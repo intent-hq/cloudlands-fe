@@ -205,6 +205,38 @@ describe('Slider', () => {
     }
   });
 
+  it('offers a transparent overlay track while retaining its semantic thumb', () => {
+    const { container, getByRole } = render(Slider, {
+      props: { 'aria-label': 'Timeline', value: 25, appearance: 'overlay' },
+    });
+
+    expect(getByRole('slider', { name: 'Timeline' })).toBeTruthy();
+    expect(
+      container.querySelector('[data-slot="slider-root"]')?.getAttribute('data-appearance'),
+    ).toBe('overlay');
+    expect(container.querySelector('[data-slot="slider-track-background"]')?.className).toContain(
+      'border-transparent',
+    );
+    expect(container.querySelector('[data-slot="slider-fill"]')?.className).toContain(
+      'bg-transparent',
+    );
+    expect(container.querySelector('[data-slot="slider-thumb"]')).toBeTruthy();
+  });
+
+  it('gives the focused thumb a one-pixel offset outline without a shadow', async () => {
+    const { container, getByRole } = render(Slider, {
+      props: { 'aria-label': 'Focused timeline', value: 25 },
+    });
+    const slider = getByRole('slider', { name: 'Focused timeline' });
+    vi.spyOn(slider, 'matches').mockImplementation((selector) => selector === ':focus-visible');
+
+    await fireEvent.focus(slider);
+    const thumbClasses = container.querySelector('[data-slot="slider-thumb"]')?.className ?? '';
+    expect(thumbClasses).toContain('outline-1');
+    expect(thumbClasses).toContain('outline-offset-2');
+    expect(thumbClasses).toContain('shadow-none');
+  });
+
   it('settles pointer travel instantly for reduced motion', async () => {
     vi.stubGlobal(
       'matchMedia',
@@ -229,6 +261,7 @@ describe('Slider', () => {
         'inline-value-edit',
         'discrete-steps',
         'step-pips',
+        'transparent-overlay-track',
         'capture-hover-drag-200ms',
         'reduced-motion',
       ]),

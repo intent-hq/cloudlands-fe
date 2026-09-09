@@ -29,6 +29,7 @@ export const fileInputFixtures = [
       'no-overflow',
       'form-reset',
       'parent-reset',
+      'hidden-host',
     ],
     themes: ['light', 'dark'],
     viewport: 'both',

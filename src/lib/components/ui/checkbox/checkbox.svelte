@@ -73,6 +73,7 @@
     disabled && 'cursor-not-allowed bg-muted/40 opacity-60 hover:border-border',
     readonly && 'cursor-default',
     invalid && 'border-danger ring-1 ring-danger/25',
+    'focus-visible:outline focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus-visible:ring-0',
     'data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=checked]:hover:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground data-[state=indeterminate]:hover:bg-primary',
     sizeClasses[size],
     className,

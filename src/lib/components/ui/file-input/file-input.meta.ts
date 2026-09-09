@@ -9,7 +9,10 @@ export const fileInputMetadata = parseUiComponentMetadata({
   exports: ['FileInput'],
   category: 'primitive',
   owner: '008-B',
-  callers: ['src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte'],
+  callers: [
+    'src/features/onboarding/steps/OnboardingPromptStep.svelte',
+    'src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte',
+  ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/file-input/file-input.test.ts',
   removalGate: 'Retain while exported and file activation, feedback, and fixture tests pass.',
