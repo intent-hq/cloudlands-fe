@@ -1,5 +1,3 @@
-const EQUAL_CAMERA_REFRAME_SCALE = 0.985;
-
 export function partitionSceneIds(previous: string[], next: string[]) {
   const previousIds = new Set(previous);
   const nextIds = new Set(next);
@@ -28,16 +26,7 @@ function cameraTransformsMatch(previous: string, next: string): boolean {
 }
 
 export function cameraMotionKeyframes(previous: string, next: string): Keyframe[] {
-  if (!cameraTransformsMatch(previous, next)) {
-    return [{ transform: previous }, { transform: next }];
-  }
-  return [
-    { transform: previous, transformOrigin: '50% 50%' },
-    {
-      transform: `${next} scale(${EQUAL_CAMERA_REFRAME_SCALE})`,
-      transformOrigin: '50% 50%',
-      offset: 0.5,
-    },
-    { transform: next, transformOrigin: '50% 50%' },
-  ];
+  return cameraTransformsMatch(previous, next)
+    ? []
+    : [{ transform: previous }, { transform: next }];
 }

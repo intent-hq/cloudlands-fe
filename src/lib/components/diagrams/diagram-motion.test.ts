@@ -27,13 +27,12 @@ describe('cameraMotionKeyframes', () => {
     ]);
   });
 
-  it('adds a visible reframe when the camera endpoints are equal', () => {
-    const keyframes = cameraMotionKeyframes(
-      'matrix(1.25, 0, 0, 1.25, -318, -178)',
-      'matrix(1.25, 0, 0, 1.25, -318, -178)',
-    );
-    expect(keyframes).toHaveLength(3);
-    expect(keyframes[1]?.transform).not.toBe(keyframes[0]?.transform);
-    expect(keyframes.at(-1)?.transform).toBe(keyframes[0]?.transform);
+  it('skips the camera stage when the endpoints are equal', () => {
+    expect(
+      cameraMotionKeyframes(
+        'matrix(1.25, 0, 0, 1.25, -318, -178)',
+        'matrix(1.25, 0, 0, 1.25, -318, -178)',
+      ),
+    ).toEqual([]);
   });
 });

@@ -40,7 +40,6 @@ type Frame = {
   sourceDistance: number;
   targetDistance: number;
   labelDistance: number | null;
-  exitingOpacity: number | null;
   overflow: number;
   camera: string;
   footerOffset: number;
@@ -52,6 +51,9 @@ type Frame = {
   groupEntryOpacity: number;
   routeEntryOpacity: number;
   labelEntryOpacity: number;
+  nodeColor: string | null;
+  edgeReveal: number;
+  exitingReveal: number | null;
 };
 
 async function openMotionFixture(page: Page, state: string, reduced = false) {
@@ -106,6 +108,11 @@ async function recordControlMotion(page: Page, rootId: string, direction: 'forwa
           );
         const maximumOpacity = (elements: Element[]) =>
           Math.max(0, ...elements.map((node) => Number(getComputedStyle(node).opacity)));
+        const revealProgress = (element: Element) => {
+          const value = getComputedStyle(element).getPropertyValue('--edge-reveal-progress').trim();
+          return value === '' ? 1 : Number(value);
+        };
+        const maximumReveal = (elements: Element[]) => Math.max(0, ...elements.map(revealProgress));
         const maximumDelay = (elements: Element[]) =>
           Math.max(
             0,
@@ -132,7 +139,7 @@ async function recordControlMotion(page: Page, rootId: string, direction: 'forwa
             ]),
           );
         const detachedEdges = [...element.querySelectorAll<SVGGElement>('.diagram-edge')]
-          .filter((edge) => Number(getComputedStyle(edge.parentElement!).opacity) > 0.01)
+          .filter((edge) => revealProgress(edge.parentElement!) > 0.01)
           .filter((edge) => {
             const source = element.querySelector<SVGForeignObjectElement>(
               `[data-node-id="${edge.dataset.edgeFrom}"]`,
@@ -176,12 +183,22 @@ async function recordControlMotion(page: Page, rootId: string, direction: 'forwa
             Number(animation.effect?.getTiming().duration),
           ),
           enteredCounts: [nodes.length, groups.length, routes.length, labels.length],
-          entryOpacities: [nodes, groups, routes, labels].map(maximumOpacity),
+          entryOpacities: [
+            maximumOpacity(nodes),
+            maximumOpacity(groups),
+            maximumReveal(routes),
+            maximumOpacity(labels),
+          ],
           entryDelays: [nodes, groups, routes, labels].map(maximumDelay),
           entryDurations: [nodes, groups, routes, labels].map(maximumDuration),
           nodeOpacities: opacityRecord('[data-node-id]'),
           groupOpacities: opacityRecord('[data-group-id]', true),
-          edgeOpacities: opacityRecord('.diagram-edge', true),
+          edgeReveals: Object.fromEntries(
+            [...element.querySelectorAll<SVGGElement>('.diagram-edge')].map((edge) => [
+              edge.dataset.edgeId,
+              revealProgress(edge.parentElement!),
+            ]),
+          ),
           labelOpacities: opacityRecord('.edge-label-container'),
           detachedEdges,
           routeProgress: [...element.querySelectorAll<SVGGElement>('.diagram-edge')].map((edge) =>
@@ -372,6 +389,11 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
           ? root.querySelector<SVGGElement>(`.diagram-edge[data-edge-id="${probe.exitingEdgeId}"]`)
               ?.parentElement
           : null;
+        const revealProgress = (element: Element | null) => {
+          if (!element) return null;
+          const value = getComputedStyle(element).getPropertyValue('--edge-reveal-progress').trim();
+          return value === '' ? 1 : Number(value);
+        };
         const viewport = root.querySelector<HTMLElement>('.diagram-scroll-container')!;
         const footer = root.querySelector<HTMLElement>('.diagram-footer')!;
         const camera = root.querySelector<SVGSVGElement>('.diagram-svg-layer')!;
@@ -398,7 +420,7 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
         const entryOpacities = [
           maxOpacity(enteringNodes),
           maxOpacity(enteringGroups),
-          maxOpacity(enteringRoutes),
+          Math.max(0, ...enteringRoutes.map((route) => revealProgress(route) ?? 0)),
           maxOpacity(enteringLabels),
         ];
         return {
@@ -433,7 +455,6 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
           sourceDistance: sideDistance(start, source),
           targetDistance: sideDistance(end, target),
           labelDistance,
-          exitingOpacity: exiting ? Number(getComputedStyle(exiting).opacity) : null,
           overflow: viewport.scrollWidth - viewport.clientWidth,
           camera: `${getComputedStyle(camera).transform}|${getComputedStyle(geometry).transform}`,
           footerOffset:
@@ -448,6 +469,11 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
           groupEntryOpacity: entryOpacities[1],
           routeEntryOpacity: entryOpacities[2],
           labelEntryOpacity: entryOpacities[3],
+          nodeColor: movingNode
+            ? getComputedStyle(movingNode.querySelector('.diagram-node-html')!).backgroundColor
+            : null,
+          edgeReveal: revealProgress(edgeGroup.parentElement) ?? 1,
+          exitingReveal: revealProgress(exiting),
         };
       };
       const before = frame();
@@ -601,7 +627,7 @@ function expectCameraBeforeScene(transition: Awaited<ReturnType<typeof recordTra
   expect(transition.cameraFrames.length).toBeGreaterThan(0);
   expect(
     transition.cameraFrames.some((frame) =>
-      frame.cameraDurations.some((duration) => duration >= 300 && duration <= 340),
+      frame.cameraDurations.some((duration) => duration >= 160 && duration <= 200),
     ),
     JSON.stringify(transition.cameraFrames.map((frame) => frame.cameraDurations)),
   ).toBe(true);
@@ -618,8 +644,8 @@ function expectCameraBeforeScene(transition: Awaited<ReturnType<typeof recordTra
     ),
   ).toBe(0);
   expect(transition.afterCamera.motionPhase).not.toBe('camera');
-  expect(transition.afterCamera.elapsedMs).toBeGreaterThanOrEqual(200);
-  expect(transition.afterCamera.elapsedMs).toBeLessThanOrEqual(650);
+  expect(transition.afterCamera.elapsedMs).toBeGreaterThanOrEqual(120);
+  expect(transition.afterCamera.elapsedMs).toBeLessThanOrEqual(450);
   const firstVisibleFrame = (key: keyof Frame) =>
     transition.samples.findIndex((frame) => Number(frame[key]) > 0.01);
   const sceneFrame = Math.max(
@@ -628,8 +654,14 @@ function expectCameraBeforeScene(transition: Awaited<ReturnType<typeof recordTra
   );
   const routeFrame = firstVisibleFrame('routeEntryOpacity');
   const labelFrame = firstVisibleFrame('labelEntryOpacity');
-  if (sceneFrame >= 0 && routeFrame >= 0) expect(routeFrame).toBeGreaterThan(sceneFrame);
-  if (routeFrame >= 0 && labelFrame >= 0) expect(labelFrame).toBeGreaterThan(routeFrame);
+  if (sceneFrame >= 0 && routeFrame >= 0)
+    expect(Math.abs(routeFrame - sceneFrame)).toBeLessThanOrEqual(1);
+  if (routeFrame >= 0 && labelFrame >= 0) {
+    expect(labelFrame).toBeGreaterThanOrEqual(routeFrame);
+    expect(
+      transition.samples[labelFrame].elapsedMs - transition.samples[routeFrame].elapsedMs,
+    ).toBeLessThanOrEqual(100);
+  }
 }
 
 function expectFixedFooter(transition: Awaited<ReturnType<typeof recordTransition>>) {
@@ -646,13 +678,12 @@ function expectCameraInterpolation(transition: Awaited<ReturnType<typeof recordT
         frame.camera !== transition.start.camera && frame.camera !== transition.settled.camera,
     ),
   ).toBe(true);
-  const midpoint = transition.cameraFrames.reduce((closest, frame) =>
-    Math.abs(frame.elapsedMs - 160) < Math.abs(closest.elapsedMs - 160) ? frame : closest,
-  );
-  expect(midpoint.elapsedMs).toBeGreaterThanOrEqual(120);
-  expect(midpoint.elapsedMs).toBeLessThanOrEqual(210);
-  expect(cameraProgress(transition.before, midpoint, transition.settled)).toBeGreaterThan(0.05);
-  expect(cameraProgress(transition.before, midpoint, transition.settled)).toBeLessThan(0.8);
+  expect(
+    transition.cameraFrames.some((frame) => {
+      const progress = cameraProgress(transition.before, frame, transition.settled);
+      return progress > 0.15 && progress < 0.85;
+    }),
+  ).toBe(true);
 }
 
 test('animates real clicks by default without a motion query', async ({ page }) => {
@@ -761,16 +792,20 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
         expect(transition.sameMount).toBe(true);
         expect(transition.frames[0].state).not.toBe(transition.baseline.state);
         expect(transition.frames[0].selectedStep).toBe(expectedStep);
-        expect(transition.frames[0].phase).toBe('camera');
+        expect(['camera', 'exit']).toContain(transition.frames[0].phase);
         expect(transition.frames[0].settled).toBe(false);
-        expect(
-          transition.frames.some(
-            (frame) =>
-              frame.phase === 'camera' &&
-              frame.cameraAnimationCount > 0 &&
-              frame.cameraDurations.some((duration) => duration >= 300 && duration <= 340),
-          ),
-        ).toBe(true);
+        const cameraFrames = transition.frames.filter((frame) => frame.phase === 'camera');
+        if (cameraFrames.length > 0) {
+          expect(
+            cameraFrames.some(
+              (frame) =>
+                frame.cameraAnimationCount > 0 &&
+                frame.cameraDurations.some((duration) => duration >= 160 && duration <= 200),
+            ),
+          ).toBe(true);
+        } else {
+          expect(transition.frames[0].phase).toBe('exit');
+        }
         const sceneIndex = transition.frames.findIndex((frame) => frame.phase === 'scene');
         expect(sceneIndex).toBeGreaterThan(0);
         const exitIndex = transition.frames.findIndex((frame) => frame.phase === 'exit');
@@ -800,7 +835,7 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
         const lifecycleKeys = [
           'nodeOpacities',
           'groupOpacities',
-          'edgeOpacities',
+          'edgeReveals',
           'labelOpacities',
         ] as const;
         const hasDepartingContent = lifecycleKeys.some((key) =>
@@ -811,7 +846,7 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
           expect(sceneIndex).toBeGreaterThan(exitIndex);
         }
         const lifecycle = (
-          key: 'nodeOpacities' | 'groupOpacities' | 'edgeOpacities' | 'labelOpacities',
+          key: 'nodeOpacities' | 'groupOpacities' | 'edgeReveals' | 'labelOpacities',
         ) => {
           const beforeIds = Object.keys(transition.frames[0][key]);
           const afterIds = Object.keys(settledFrame[key]);
@@ -863,8 +898,9 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
         );
         if (stagedFrame) {
           const sceneDelay = Math.max(stagedFrame.entryDelays[0], stagedFrame.entryDelays[1]);
-          if (sceneDelay > 0) expect(stagedFrame.entryDelays[2]).toBeGreaterThan(sceneDelay);
+          expect(stagedFrame.entryDelays[2]).toBeLessThanOrEqual(sceneDelay);
           expect(stagedFrame.entryDelays[3]).toBeGreaterThan(stagedFrame.entryDelays[2]);
+          expect(stagedFrame.entryDelays[3] - stagedFrame.entryDelays[2]).toBeLessThanOrEqual(80);
         }
         if (routeEntry >= 0 && labelEntry >= 0) {
           expect(
@@ -942,12 +978,15 @@ test('shows continuous Redux walkthrough motion when the system requests reduced
   expect(
     transition.frames.some((frame) => frame.routeProgress.some((value) => value > 0 && value < 1)),
   ).toBe(true);
+  expect(
+    transition.frames.some((frame) => frame.entryOpacities[2] > 0 && frame.entryOpacities[2] < 1),
+  ).toBe(true);
   expect(Math.max(...transition.frames.map((frame) => frame.entryDurations[2]))).toBeGreaterThan(
     100,
   );
-  expect(Math.max(...transition.frames.map((frame) => frame.entryDurations[3]))).toBeGreaterThan(
-    100,
-  );
+  expect(
+    transition.frames.some((frame) => frame.entryOpacities[3] > 0 && frame.entryOpacities[3] < 1),
+  ).toBe(true);
   expect(transition.frames.at(-1)).toMatchObject({ phase: 'settled', settled: true });
 });
 
@@ -1004,6 +1043,14 @@ test('coordinates architecture and ownership state motion through settled frames
           isBetween(sample.node.y, architecture23.start.node!.y, architecture23.settled.node!.y)),
     ),
   ).toBe(true);
+  expect(
+    architecture23.samples.some(
+      (frame) =>
+        frame.nodeColor !== null &&
+        frame.nodeColor !== architecture23.start.nodeColor &&
+        frame.nodeColor !== architecture23.settled.nodeColor,
+    ),
+  ).toBe(true);
   expect(architecture23.start.group!.height).not.toBe(architecture23.settled.group!.height);
   expect(
     [architecture23.afterClick, ...architecture23.samples].some((frame) =>
@@ -1012,9 +1059,7 @@ test('coordinates architecture and ownership state motion through settled frames
   ).toBe(true);
   expect(
     architecture23.samples.some(
-      (frame) =>
-        frame.progress > architecture23.start.progress &&
-        frame.progress < architecture23.settled.progress,
+      (frame) => frame.progress > 0 && frame.progress < architecture23.settled.progress,
     ),
   ).toBe(true);
   expect(architecture23.settled.progress).toBe(1);
@@ -1044,7 +1089,16 @@ test('coordinates architecture and ownership state motion through settled frames
     },
   );
   expect(architecture31.settled.state).toBe('orient');
-  expect(architecture31.settled.exitingOpacity).toBeNull();
+  expect(architecture31.settled.exitingReveal).toBeNull();
+  expect(
+    architecture31.samples.some(
+      (frame) =>
+        frame.motionPhase === 'exit' &&
+        frame.exitingReveal !== null &&
+        frame.exitingReveal > 0 &&
+        frame.exitingReveal < 1,
+    ),
+  ).toBe(true);
   expectCameraBeforeScene(architecture31);
   expectFixedFooter(architecture31);
 
@@ -1058,9 +1112,7 @@ test('coordinates architecture and ownership state motion through settled frames
   expect(ownership12.start.path).not.toBe(ownership12.settled.path);
   expect(
     ownership12.samples.some(
-      (frame) =>
-        frame.progress > ownership12.start.progress &&
-        frame.progress < ownership12.settled.progress,
+      (frame) => frame.progress > 0 && frame.progress < ownership12.settled.progress,
     ),
   ).toBe(true);
   expect(ownership12.settled.progress).toBe(1);
@@ -1087,12 +1139,15 @@ test('coordinates architecture and ownership state motion through settled frames
   expect(
     ownership23.samples.some(
       (frame) =>
-        frame.exitingOpacity !== null &&
-        frame.exitingOpacity < ownership23.start.exitingOpacity! &&
-        frame.exitingOpacity > 0,
+        frame.motionPhase === 'exit' &&
+        frame.exitingReveal !== null &&
+        frame.exitingReveal < 1 &&
+        frame.exitingReveal > 0 &&
+        frame.progress > 0 &&
+        frame.progress < ownership23.settled.progress,
     ),
   ).toBe(true);
-  expect(ownership23.settled.exitingOpacity).toBeNull();
+  expect(ownership23.settled.exitingReveal).toBeNull();
   expectCameraBeforeScene(ownership23);
   expectFrameGeometry(ownership23.settled);
   expectFixedFooter(ownership23);

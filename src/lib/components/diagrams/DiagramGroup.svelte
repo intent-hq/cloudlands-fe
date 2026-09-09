@@ -68,12 +68,12 @@
     ry: var(--diagram-group-radius);
     vector-effect: non-scaling-stroke;
     transition:
-      width 220ms cubic-bezier(0.16, 1, 0.3, 1),
-      height 220ms cubic-bezier(0.16, 1, 0.3, 1),
-      x 220ms cubic-bezier(0.16, 1, 0.3, 1),
-      y 220ms cubic-bezier(0.16, 1, 0.3, 1),
-      fill var(--motion-standard) var(--ease-standard),
-      stroke var(--motion-standard) var(--ease-standard),
+      width var(--diagram-move-exit-duration, 220ms) cubic-bezier(0.16, 1, 0.3, 1),
+      height var(--diagram-move-exit-duration, 220ms) cubic-bezier(0.16, 1, 0.3, 1),
+      x var(--diagram-move-exit-duration, 220ms) cubic-bezier(0.16, 1, 0.3, 1),
+      y var(--diagram-move-exit-duration, 220ms) cubic-bezier(0.16, 1, 0.3, 1),
+      fill var(--diagram-move-exit-duration, var(--motion-standard)) var(--ease-standard),
+      stroke var(--diagram-move-exit-duration, var(--motion-standard)) var(--ease-standard),
       opacity var(--motion-standard) var(--ease-standard);
   }
 
@@ -108,8 +108,8 @@
     letter-spacing: var(--text-caption-tracking);
     pointer-events: none;
     transition:
-      x 220ms cubic-bezier(0.16, 1, 0.3, 1),
-      y 220ms cubic-bezier(0.16, 1, 0.3, 1),
+      x var(--diagram-move-exit-duration, 220ms) cubic-bezier(0.16, 1, 0.3, 1),
+      y var(--diagram-move-exit-duration, 220ms) cubic-bezier(0.16, 1, 0.3, 1),
       opacity var(--motion-standard) var(--ease-standard);
   }
 

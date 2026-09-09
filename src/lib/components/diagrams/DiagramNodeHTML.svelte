@@ -209,8 +209,10 @@
     font-family: var(--font-ui);
     text-align: left;
     transition:
-      background var(--motion-standard) var(--ease-standard),
-      opacity var(--motion-standard) var(--ease-standard);
+      background-color var(--diagram-move-exit-duration, var(--motion-standard))
+        var(--ease-standard),
+      color var(--diagram-move-exit-duration, var(--motion-standard)) var(--ease-standard),
+      opacity var(--diagram-move-exit-duration, var(--motion-standard)) var(--ease-standard);
     cursor: default;
     appearance: none;
     padding: 0;

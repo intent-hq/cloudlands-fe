@@ -35,6 +35,24 @@
   let previousTargetPath = '';
   let previousEdgeReference: ComputedEdge | undefined;
   let previousEdgeId = '';
+  let revealMaskId = $derived(`edge-reveal-${markerScope}-${edge.id}`);
+  let revealMaskBounds = $derived.by(() => {
+    displayedPath;
+    const points = [...(edge.points ?? []), ...previousPoints];
+    const padding = Math.max(16, terminalGap * 3);
+    const xs = points.map((point) => point.x);
+    const ys = points.map((point) => point.y);
+    const minX = xs.length > 0 ? Math.min(...xs) : 0;
+    const minY = ys.length > 0 ? Math.min(...ys) : 0;
+    const maxX = xs.length > 0 ? Math.max(...xs) : 1;
+    const maxY = ys.length > 0 ? Math.max(...ys) : 1;
+    return {
+      x: minX - padding,
+      y: minY - padding,
+      width: Math.max(1, maxX - minX) + padding * 2,
+      height: Math.max(1, maxY - minY) + padding * 2,
+    };
+  });
 
   function insetTerminal(points: { x: number; y: number }[], gap: number) {
     if (points.length < 2 || gap <= 0) return points;
@@ -217,22 +235,47 @@
   data-edge-to={edge.to}
   data-edge-motion-progress={motionProgress}
 >
-  <!-- Edge path -->
-  <path
-    d={displayedPath}
-    class="edge-path"
-    marker-end={markerUrl}
-    vector-effect="non-scaling-stroke"
-  />
-  {#if (edge.animated || edge.dashed) && edge.points?.[0]}
-    <circle
-      class="edge-origin"
-      cx={edge.points[0].x}
-      cy={edge.points[0].y}
-      r="1.5"
-      aria-hidden="true"
+  <defs>
+    <mask
+      id={revealMaskId}
+      maskUnits="userSpaceOnUse"
+      maskContentUnits="userSpaceOnUse"
+      x={revealMaskBounds.x}
+      y={revealMaskBounds.y}
+      width={revealMaskBounds.width}
+      height={revealMaskBounds.height}
+      style="mask-type: alpha;"
+    >
+      <path
+        d={displayedPath}
+        class="edge-reveal-mask-path"
+        pathLength="1"
+        fill="none"
+        stroke="white"
+        stroke-width={Math.max(12, terminalGap * 3)}
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </mask>
+  </defs>
+  <g mask={`url(#${revealMaskId})`}>
+    <!-- Edge path -->
+    <path
+      d={displayedPath}
+      class="edge-path"
+      marker-end={markerUrl}
+      vector-effect="non-scaling-stroke"
     />
-  {/if}
+    {#if (edge.animated || edge.dashed) && edge.points?.[0]}
+      <circle
+        class="edge-origin"
+        cx={edge.points[0].x}
+        cy={edge.points[0].y}
+        r="1.5"
+        aria-hidden="true"
+      />
+    {/if}
+  </g>
 </g>
 
 <style>
@@ -243,8 +286,13 @@
     stroke-linecap: round;
     stroke-linejoin: round;
     transition:
-      stroke var(--motion-standard) var(--ease-standard),
-      opacity var(--motion-standard) var(--ease-standard);
+      stroke var(--diagram-move-exit-duration, var(--motion-standard)) var(--ease-standard),
+      opacity var(--diagram-move-exit-duration, var(--motion-standard)) var(--ease-standard);
+  }
+
+  :global(.edge-reveal-mask-path) {
+    stroke-dasharray: 1 1;
+    stroke-dashoffset: calc(1 - var(--edge-reveal-progress, 1));
   }
 
   :global(.diagram-edge:hover .edge-path) {

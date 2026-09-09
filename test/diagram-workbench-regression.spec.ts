@@ -1066,7 +1066,9 @@ async function expectStoreNodeGeometry(
         node.textContent?.includes('Capture evidence'),
       )!;
       const content = body.querySelector<HTMLElement>('.node-row')!;
-      const path = root.querySelector<SVGPathElement>('.diagram-edge[data-edge-id="d4"] path')!;
+      const path = root.querySelector<SVGPathElement>(
+        '.diagram-edge[data-edge-id="d4"] path.edge-path',
+      )!;
       const terminal = path
         .getPointAtLength(path.getTotalLength())
         .matrixTransform(path.getScreenCTM()!);
@@ -1780,7 +1782,9 @@ for (const appearance of [
         const measured = root
           .querySelector<SVGGraphicsElement>('[data-node-id="multiline"]')!
           .getBoundingClientRect();
-        const route = root.querySelector<SVGPathElement>('.diagram-edge[data-edge-id="x2"] path')!;
+        const route = root.querySelector<SVGPathElement>(
+          '.diagram-edge[data-edge-id="x2"] path.edge-path',
+        )!;
         const length = route.getTotalLength();
         const end = route.getPointAtLength(length).matrixTransform(route.getScreenCTM()!);
         const label = root
@@ -2263,7 +2267,9 @@ test('keeps data-flow feedback continuous from Preview source to Capture evidenc
       d5: 'Capture evidence',
     });
     const geometry = await page.locator('#custom-data-flow').evaluate((root) => {
-      const path = root.querySelector<SVGPathElement>('.diagram-edge[data-edge-id="d5"] path')!;
+      const path = root.querySelector<SVGPathElement>(
+        '.diagram-edge[data-edge-id="d5"] path.edge-path',
+      )!;
       const source = [...root.querySelectorAll<HTMLElement>('.diagram-node-html')].find(
         (node) => node.querySelector('.node-label')?.textContent?.trim() === 'Preview source',
       )!;
@@ -2463,7 +2469,9 @@ test('uses one continuous centered-port route for the dense primary request', as
   if ((await fit.getAttribute('aria-pressed')) !== 'true') await fit.click({ force: true });
   await expect(fit).toHaveAttribute('aria-pressed', 'true');
   const geometry = await root.evaluate((section) => {
-    const path = section.querySelector<SVGPathElement>('.diagram-edge[data-edge-id="z1"] path')!;
+    const path = section.querySelector<SVGPathElement>(
+      '.diagram-edge[data-edge-id="z1"] path.edge-path',
+    )!;
     const nodes = [...section.querySelectorAll<HTMLElement>('.diagram-node-html')];
     const nodeBounds = (label: string) =>
       nodes
@@ -2616,10 +2624,21 @@ test('animates diagram state entries and exposes a deterministic settled signal'
         );
       const opacity = (element: Element | null) =>
         element ? Number(getComputedStyle(element).opacity) : null;
-      const routeOpacity = (id: string) => opacity(edge(id)?.parentElement ?? null);
+      const routeReveal = (id: string) => {
+        const route = edge(id)?.parentElement;
+        if (!route) return null;
+        const value = getComputedStyle(route).getPropertyValue('--edge-reveal-progress').trim();
+        return value === '' ? 1 : Number(value);
+      };
+      const labelOpacity = (id: string) => opacity(label(id));
       const edgePath = edge('w4')?.querySelector<SVGPathElement>('path.edge-path') ?? null;
       const visibleDetachedEdges = [...section.querySelectorAll<SVGGElement>('.diagram-edge')]
-        .filter((element) => (opacity(element.parentElement) ?? 0) > 0.01)
+        .filter((element) => {
+          const value = getComputedStyle(element.parentElement!)
+            .getPropertyValue('--edge-reveal-progress')
+            .trim();
+          return (value === '' ? 1 : Number(value)) > 0.01;
+        })
         .filter((element) => {
           const source = node(element.dataset.edgeFrom!);
           const target = node(element.dataset.edgeTo!);
@@ -2641,21 +2660,19 @@ test('animates diagram state entries and exposes a deterministic settled signal'
         sharedRedux: opacity(node('redux')),
         sharedChat: opacity(node('chat')),
         departingNode: opacity(node('user')),
-        departingRoute: routeOpacity('w1'),
-        departingLabel: opacity(label('w1')),
+        departingRoute: routeReveal('w1'),
+        departingLabel: labelOpacity('w1'),
         enteringNode: opacity(enteringNode),
-        enteringRoute: routeOpacity('w4'),
-        enteringLabel: opacity(label('w4')),
+        enteringRoute: routeReveal('w4'),
+        enteringLabel: labelOpacity('w4'),
         enteringTransform: enteringNode ? getComputedStyle(enteringNode).transform : null,
         visibleDetachedEdges,
-        edgeDrawIn: Boolean(edgePath?.closest('.edge-draw-in')),
+        edgeMask: edgePath?.parentElement?.getAttribute('mask') ?? null,
         edgeAnimation: edgePath ? getComputedStyle(edgePath).animationName : null,
         edgeDashOffset: edgePath ? getComputedStyle(edgePath).strokeDashoffset : null,
       };
     };
-    const frames = [read()];
-    const observer = new MutationObserver(() => frames.push(read()));
-    observer.observe(section, { attributes: true, childList: true, subtree: true });
+    const frames = [{ ...read(), sampledAt: performance.now() }];
     section
       .querySelector<HTMLButtonElement>('button[aria-label="State 2: 2. Follow execution"]')!
       .click();
@@ -2663,9 +2680,8 @@ test('animates diagram state entries and exposes a deterministic settled signal'
     while (frames.at(-1)!.settled !== 'true' || frames.length === 1) {
       if (performance.now() > deadline) throw new Error('Diagram entry did not settle');
       await nextFrame();
-      frames.push(read());
+      frames.push({ ...read(), sampledAt: performance.now() });
     }
-    observer.disconnect();
     const final = read();
     await nextFrame();
     return { frames, final, nextPaint: read() };
@@ -2700,14 +2716,18 @@ test('animates diagram state entries and exposes a deterministic settled signal'
   expect(firstMovingFrame).toBeGreaterThan(0);
   expect(firstExitingFrame).toBeGreaterThan(firstMovingFrame);
   expect(firstEnteringNode).toBeGreaterThan(firstExitingFrame);
-  expect(firstEnteringRoute).toBeGreaterThan(firstEnteringNode);
-  expect(firstEnteringLabel).toBeGreaterThan(firstEnteringRoute);
+  expect(Math.abs(firstEnteringRoute - firstEnteringNode)).toBeLessThanOrEqual(1);
+  expect(firstEnteringLabel).toBeGreaterThanOrEqual(firstEnteringRoute);
+  expect(
+    motion.frames[firstEnteringLabel].sampledAt - motion.frames[firstEnteringRoute].sampledAt,
+  ).toBeLessThanOrEqual(100);
   expect(motion.frames[firstEnteringNode]).toMatchObject({
     departingNode: null,
     departingRoute: null,
     departingLabel: null,
   });
-  expect(motion.frames[firstEnteringRoute].enteringNode).toBe(1);
+  expect(motion.frames[firstEnteringRoute].enteringNode).toBeGreaterThan(0);
+  expect(motion.frames[firstEnteringRoute].enteringNode).toBeLessThan(1);
   expect(
     motion.frames.every(
       (frame) =>
@@ -2718,6 +2738,17 @@ test('animates diagram state entries and exposes a deterministic settled signal'
     ),
   ).toBe(true);
   expect(motion.frames.every((frame) => frame.visibleDetachedEdges.length === 0)).toBe(true);
+  expect(
+    motion.frames.some(
+      (frame) =>
+        frame.departingRoute !== null && frame.departingRoute > 0 && frame.departingRoute < 1,
+    ),
+  ).toBe(true);
+  expect(
+    motion.frames.some(
+      (frame) => frame.enteringRoute !== null && frame.enteringRoute > 0 && frame.enteringRoute < 1,
+    ),
+  ).toBe(true);
   expect(motion.final).toMatchObject({
     state: 'execute',
     settled: 'true',
@@ -2729,7 +2760,7 @@ test('animates diagram state entries and exposes a deterministic settled signal'
     enteringLabel: 1,
   });
   expect(motion.final.enteringTransform).toBe('none');
-  expect(motion.final.edgeDrawIn).toBe(false);
+  expect(motion.final.edgeMask).toMatch(/^url\(#edge-reveal-/);
   expect(motion.final.edgeAnimation).toBe('none');
   expect(motion.final.edgeDashOffset).toBe('0px');
   expect(motion.nextPaint).toEqual(motion.final);
@@ -2743,7 +2774,7 @@ test('animates diagram state entries and exposes a deterministic settled signal'
   await expect(reducedDaemon).toHaveCSS('opacity', '1');
   await expect(reducedDaemon).toHaveCSS('transform', 'none');
   await expect(reducedRoot.locator('[data-node-id="user"]')).toHaveCount(0);
-  await expect(reducedRoot.locator('.diagram-edge[data-edge-id="w4"] path')).toHaveCSS(
+  await expect(reducedRoot.locator('.diagram-edge[data-edge-id="w4"] path.edge-path')).toHaveCSS(
     'animation-name',
     'none',
   );
