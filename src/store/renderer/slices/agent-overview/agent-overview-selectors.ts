@@ -378,22 +378,43 @@ function computeGraphState(
     nodes.push(agentNode);
 
     if (taskNoteId) {
+      const agentCreatedAt = String(session.createdAt || currentTime);
+      const agentCreatedTimestamp = Date.parse(agentCreatedAt);
+      const taskCreatedTimestamp = taskHistory.createdAtByTaskId.get(taskNoteId);
+      const assignmentTimestamp =
+        taskCreatedTimestamp === undefined
+          ? agentCreatedAt
+          : new Date(
+              Math.max(
+                Number.isFinite(agentCreatedTimestamp)
+                  ? agentCreatedTimestamp
+                  : taskCreatedTimestamp,
+                taskCreatedTimestamp,
+              ),
+            ).toISOString();
+      const assignmentTimestampMs = Date.parse(assignmentTimestamp);
       const edgeKey = `task-assignment-${agentId}-${taskNoteId}`;
-      addPendingEdge(edgeSet, pendingEdges, {
-        key: edgeKey,
-        sourceRawId: agentId,
-        targetRawId: taskNoteId,
-        edge: {
-          id: edgeKey,
-          type: 'task-assignment',
-          sourceId: `agent-${agentId}`,
-          targetId: taskNoteId,
-          agentId,
-          taskId: taskNoteId,
-          timestamp: String(session.createdAt || currentTime),
-          isActive: false,
-        },
-      });
+      if (
+        isLive ||
+        !Number.isFinite(assignmentTimestampMs) ||
+        assignmentTimestampMs <= currentTimestamp
+      ) {
+        addPendingEdge(edgeSet, pendingEdges, {
+          key: edgeKey,
+          sourceRawId: agentId,
+          targetRawId: taskNoteId,
+          edge: {
+            id: edgeKey,
+            type: 'task-assignment',
+            sourceId: `agent-${agentId}`,
+            targetId: taskNoteId,
+            agentId,
+            taskId: taskNoteId,
+            timestamp: assignmentTimestamp,
+            isActive: false,
+          },
+        });
+      }
     }
 
     // Queue delegation edge if parent exists

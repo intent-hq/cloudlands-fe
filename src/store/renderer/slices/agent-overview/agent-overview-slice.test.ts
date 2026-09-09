@@ -183,7 +183,7 @@ describe('selectGraphState', () => {
     expect(graph.maxTime).toBe(currentTime);
   });
 
-  it('reveals tasks at their creation event and hides assignment edges while they are absent', () => {
+  it('reveals task assignments at the later agent or task creation time', () => {
     const agent = makeSession('a1', {
       createdAt: '2026-03-20T13:00:00.000Z',
       metadata: { taskNoteId: 'task-1' as any },
@@ -210,6 +210,14 @@ describe('selectGraphState', () => {
       expect.objectContaining({ type: 'task', taskId: 'task-1' }),
     );
     expect(atCreation.edges).toContainEqual(
+      expect.objectContaining({
+        type: 'task-assignment',
+        targetId: 'task-1',
+        timestamp: '2026-03-20T13:10:00.000Z',
+      }),
+    );
+
+    expect(selectGraphState.select(state, WS).edges).toContainEqual(
       expect.objectContaining({ type: 'task-assignment', targetId: 'task-1' }),
     );
   });
