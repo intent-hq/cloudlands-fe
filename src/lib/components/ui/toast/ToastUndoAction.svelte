@@ -12,7 +12,8 @@
 
 <style>
   :global(.toast-undo-action) {
-    border-radius: var(--radius-medium);
+    min-height: var(--toast-action-height, 2.5rem);
+    border-radius: var(--toast-action-radius, 0.625rem);
   }
 
   :global(.toast-undo-action:focus-visible) {

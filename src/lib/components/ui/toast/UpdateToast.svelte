@@ -299,14 +299,15 @@
 
   .title {
     font-weight: 500;
-    font-size: 1rem;
-    line-height: 1.35;
+    font-size: var(--toast-title-size, 1.0625rem);
+    line-height: 1.4;
     color: hsl(var(--foreground));
     overflow-wrap: anywhere;
   }
 
   .description {
-    font-size: 0.9375rem;
+    font-size: var(--toast-description-size, 1rem);
+    font-weight: 400;
     line-height: 1.4;
     color: hsl(var(--muted-foreground));
     margin-top: 0.25rem;
@@ -335,7 +336,8 @@
   }
 
   :global(.toast-action) {
-    border-radius: var(--radius-medium);
+    min-height: var(--toast-action-height, 2.5rem);
+    border-radius: var(--toast-action-radius, 0.625rem);
   }
 
   :global(.toast-action:focus-visible) {

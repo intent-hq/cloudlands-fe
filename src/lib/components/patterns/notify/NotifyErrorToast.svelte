@@ -20,7 +20,7 @@
 <div class="relative flex min-w-0 flex-1 items-start gap-3 pr-10" data-toast-layout="error-details">
   <ToastGlyph variant="error" />
   <div class="min-w-0 flex-1">
-    <p class="break-words text-base font-medium leading-[1.35] text-foreground">{message}</p>
+    <p class="toast-title break-words text-foreground">{message}</p>
     <details class="mt-2 min-w-0 text-sm text-muted-foreground">
       <summary class="toast-details-summary cursor-pointer select-none">
         <span class="toast-details-chevron" aria-hidden="true">›</span>
@@ -40,6 +40,12 @@
 </div>
 
 <style>
+  .toast-title {
+    font-size: var(--toast-title-size, 1.0625rem);
+    font-weight: 500;
+    line-height: 1.4;
+  }
+
   .toast-details-summary {
     display: inline-flex;
     align-items: center;
@@ -70,7 +76,8 @@
   }
 
   :global(.toast-detail-copy) {
-    border-radius: var(--radius-medium);
+    min-height: var(--toast-action-height, 2.5rem);
+    border-radius: var(--toast-action-radius, 0.625rem);
   }
 
   @media (prefers-reduced-motion: reduce) {

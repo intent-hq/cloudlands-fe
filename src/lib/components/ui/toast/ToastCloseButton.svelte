@@ -42,7 +42,7 @@
     width: 2.5rem;
     height: 2.5rem;
     border: 0;
-    border-radius: var(--radius-medium);
+    border-radius: var(--toast-action-radius, 0.625rem);
     background: transparent;
     color: hsl(var(--muted-foreground));
     padding: 0;

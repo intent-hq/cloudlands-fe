@@ -173,6 +173,16 @@
 
 <style>
   :global([data-sonner-toaster]) {
+    --toast-radius: 0.875rem;
+    --toast-padding: 1.25rem;
+    --toast-min-height: 4.5rem;
+    --toast-title-size: 1.0625rem;
+    --toast-description-size: 1rem;
+    --toast-action-height: 2.5rem;
+    --toast-action-radius: 0.625rem;
+    --toast-shadow:
+      0 1px 2px hsl(var(--theme-light-foreground) / 0.06),
+      0 8px 24px hsl(var(--theme-light-foreground) / 0.1);
     --width: var(--app-toast-width) !important;
     width: var(--app-toast-width) !important;
   }
@@ -206,15 +216,15 @@
        This also relies on these :global styles staying UNLAYERED: moving them
        into a cascade layer would change the fallback chain for default toasts. */
     border: 1px solid hsl(var(--foreground) / 0.05) !important;
-    border-radius: var(--radius-large) !important;
+    border-radius: var(--toast-radius) !important;
     width: var(--app-toast-width) !important;
     min-width: 0;
     max-width: 100%;
-    min-height: 3.125rem;
-    padding: 0.875rem 1rem;
+    min-height: var(--toast-min-height) !important;
+    padding: var(--toast-padding) !important;
     align-items: center !important;
     gap: 0.75rem !important;
-    box-shadow: var(--elevation-overlay);
+    box-shadow: var(--toast-shadow) !important;
   }
 
   :global([data-sonner-toast][data-swiping='false']) {
@@ -241,14 +251,15 @@
 
   :global([data-sonner-toast] [data-title]) {
     color: hsl(var(--foreground)) !important;
-    font-size: 1rem;
+    font-size: var(--toast-title-size);
     font-weight: 500 !important;
     line-height: 1.35 !important;
   }
 
   :global([data-sonner-toast] [data-description]) {
     color: hsl(var(--muted-foreground)) !important;
-    font-size: 0.9375rem;
+    font-size: var(--toast-description-size);
+    font-weight: 400 !important;
     line-height: 1.4 !important;
     margin-top: 0.25rem;
   }
@@ -262,7 +273,7 @@
   :global([data-sonner-toast][data-type='loading'] [data-description]) {
     margin-top: 0;
     margin-left: 0.25rem;
-    font-size: 0.875rem;
+    font-size: var(--toast-description-size);
   }
 
   :global([data-sonner-toast] [data-content]),
@@ -275,13 +286,13 @@
   /* Sonner owns this button element, so mirror Button's inset surface recipe. */
   :global([data-sonner-toast] button[data-button]) {
     font-size: 0.875rem !important;
-    min-height: var(--control-height-medium) !important;
+    min-height: var(--toast-action-height) !important;
     font-weight: 500 !important;
     padding: 0 0.625rem !important;
     position: relative;
     isolation: isolate;
     overflow: hidden;
-    border-radius: var(--radius-medium) !important;
+    border-radius: var(--toast-action-radius) !important;
     transition:
       color var(--spring-fast) var(--spring-fast-ease),
       opacity var(--spring-fast) var(--spring-fast-ease) !important;
@@ -335,7 +346,7 @@
     right: 0.5rem !important;
     left: auto !important;
     border: 0 !important;
-    border-radius: var(--radius-medium) !important;
+    border-radius: var(--toast-action-radius) !important;
     background: transparent !important;
     transform: translateY(-50%) !important;
   }
