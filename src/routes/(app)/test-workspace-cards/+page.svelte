@@ -289,16 +289,15 @@
   <section class="mb-12">
     <h2 class="text-lg font-semibold mb-4">Interactive — click to advance</h2>
     <div class="grid grid-cols-[1fr_320px] gap-6 items-start">
-      <button type="button" onclick={nextStep} class="cursor-pointer text-left w-full">
-        <WorkspaceCard
-          phase={currentInteractive.phase}
-          stats={currentInteractive.stats}
-          title="Add dark mode support"
-          repoName="acme/frontend"
-          branch="feat/dark-mode"
-          onAction={handleAction}
-        />
-      </button>
+      <WorkspaceCard
+        phase={currentInteractive.phase}
+        stats={currentInteractive.stats}
+        title="Add dark mode support"
+        repoName="acme/frontend"
+        branch="feat/dark-mode"
+        onClick={nextStep}
+        onAction={handleAction}
+      />
       <!-- Step info -->
       <div class="flex flex-col gap-3">
         <div class="text-xs text-subtle font-medium">

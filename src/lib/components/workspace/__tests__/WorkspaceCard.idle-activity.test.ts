@@ -382,6 +382,47 @@ describe('WorkspaceCard compact agent metadata', () => {
   });
 });
 
+describe('WorkspaceCard phase-card controls', () => {
+  it('keeps activation, task tooltip, and action controls as named siblings', async () => {
+    const onClick = vi.fn();
+    const onAction = vi.fn();
+    const { container, getByRole, getByText } = render(WorkspaceCard, {
+      props: {
+        phase: { phase: 'building', label: 'Building', subtitle: 'Implementing', isActive: true },
+        stats: {
+          tasks: { total: 4, completed: 1, inProgress: 1, notStarted: 2 },
+          files: { changed: 0, additions: 0, deletions: 0 },
+          commits: { total: 0, unpushed: 0 },
+          pr: { hasOpen: false, hasMerged: false, hasClosed: false },
+        },
+        title: 'Build search',
+        onClick,
+        onAction,
+      },
+    });
+    await tick();
+
+    const activation = getByRole('button', { name: 'Build search' });
+    const taskProgress = getByRole('button', { name: '1/4 tasks' });
+    const primaryAction = getByRole('button', { name: 'Show Coordinator' });
+    const secondaryAction = getByRole('button', { name: 'Pause' });
+
+    for (const button of [activation, taskProgress, primaryAction, secondaryAction]) {
+      expect(button.parentElement?.closest('button, [role="button"]')).toBeNull();
+    }
+
+    expect(getByText('Building')).toBeTruthy();
+    await fireEvent.click(activation);
+    expect(onClick).toHaveBeenCalledOnce();
+
+    await fireEvent.click(primaryAction);
+    expect(onAction).toHaveBeenCalledWith('show-coordinator');
+    expect(onClick).toHaveBeenCalledOnce();
+
+    expect(container.querySelectorAll('button button, [role="button"] button')).toHaveLength(0);
+  });
+});
+
 describe('WorkspaceCard hover-intent delay', () => {
   const hoverCard = () => document.querySelector('[role="tooltip"]');
 

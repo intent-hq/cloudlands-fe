@@ -750,12 +750,9 @@
     />
   {/if}
 {:else if phase && stats && variant === 'row'}
-  <Button
-    bind:ref={phaseRowButtonRef}
-    variant="plain"
-    type="button"
+  <div
     class={cn(
-      'flex h-auto items-center gap-2 w-full min-w-0 text-left text-sm !px-0 !py-1',
+      'relative flex items-center gap-2 w-full min-w-0 text-left text-sm py-1',
       onClick && 'cursor-pointer transition-colors rounded',
       !onClick && 'cursor-default',
       highlighted && 'bg-sidebar',
@@ -763,9 +760,20 @@
       className,
     )}
     data-highlight-id={highlightId}
-    onclick={onClick}
-    disabled={!onClick}
   >
+    {#if onClick}
+      <Button
+        bind:ref={phaseRowButtonRef}
+        variant="plain"
+        type="button"
+        class="absolute inset-0 z-0 h-auto w-auto rounded focus-visible:bg-sidebar"
+        aria-label={_title || phase.label}
+        onclick={(event) => {
+          event.stopPropagation();
+          onClick?.(event);
+        }}
+      ></Button>
+    {/if}
     <WorkspacePhaseIndicator
       phase={phase.phase}
       progress={statusBuildProgress}
@@ -775,8 +783,12 @@
     <span class="font-medium truncate">{phase.label}</span>
     <span class="shrink-0 text-muted-foreground">·</span>
     <span class="truncate text-xs text-muted-foreground">{statusSubtitle}</span>
-    {@render actions?.()}
-  </Button>
+    {#if actions}
+      <div class="relative z-10 flex shrink-0 items-center">
+        {@render actions()}
+      </div>
+    {/if}
+  </div>
 {:else if phase && stats && variant === 'header'}
   <div
     class={cn(
@@ -816,10 +828,9 @@
     {@render actions?.()}
   </div>
 {:else if phase && stats}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_tabindex -->
   <div
     class={cn(
-      'rounded-lg border border-border bg-sidebar text-left w-full',
+      'relative rounded-lg border border-border bg-sidebar text-left w-full',
       onClick && 'cursor-pointer hover:bg-sidebar/80 transition-colors',
       highlighted && 'ring-1 ring-primary-ink/40',
       selected && 'bg-primary/5 ring-1 ring-primary/30',
@@ -827,11 +838,21 @@
     )}
     data-highlight-id={highlightId}
     use:highlightTarget={{ id: highlightId }}
-    onclick={onClick}
-    onkeydown={handleKeydown}
-    role="button"
-    tabindex={onClick ? 0 : undefined}
+    role="group"
   >
+    {#if onClick}
+      <Button
+        variant="plain"
+        type="button"
+        class="absolute inset-0 z-0 h-auto w-auto rounded-lg focus-visible:bg-sidebar/80"
+        aria-label={_title || phase.label}
+        data-workspace-phase-card-trigger
+        onclick={(event) => {
+          event.stopPropagation();
+          onClick?.(event);
+        }}
+      ></Button>
+    {/if}
     <div class="flex items-start gap-2.5 px-3 pt-3 pb-2">
       <WorkspacePhaseIndicator
         phase={phase.phase}
@@ -889,11 +910,11 @@
     {/if}
 
     {#if actions}
-      <div class="flex items-center gap-1.5 px-2 pb-2">
+      <div class="relative z-10 flex items-center gap-1.5 px-2 pb-2">
         {@render actions()}
       </div>
     {:else if onAction}
-      <div class="flex items-center gap-1.5 px-2 pb-2">
+      <div class="relative z-10 flex items-center gap-1.5 px-2 pb-2">
         <Button
           class="flex-1 h-7 text-xs"
           variant="outline"
