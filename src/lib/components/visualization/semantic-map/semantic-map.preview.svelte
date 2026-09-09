@@ -239,7 +239,8 @@
   function selectDetail(next: Exclude<SemanticMapDetailSelection, null>): void {
     detailHistory = detailSelection ? [...detailHistory, detailSelection] : detailHistory;
     detailSelection = next;
-    if (next.type === 'crossing') selection = { type: 'route', transitionIndex: next.transitionIndex };
+    if (next.type === 'crossing')
+      selection = { type: 'route', transitionIndex: next.transitionIndex };
   }
 
   function navigateDetailBack(): void {

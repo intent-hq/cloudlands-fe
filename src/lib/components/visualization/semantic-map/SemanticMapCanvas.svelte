@@ -9,12 +9,7 @@
   import { CanvasPathCache, drawQuadraticPath, traceHull } from './render/canvas';
   import { layoutSceneLabels, type LabelLayout, type PlacedLabel } from './render/labels';
   import { moveSpatialFocus, type SpatialArrowKey, type SpatialTarget } from './render/navigation';
-  import {
-    buildScene,
-    HEAT_BAND_ALPHA,
-    hitRouteEdge,
-    routeEdgePresentation,
-  } from './render/scene';
+  import { buildScene, HEAT_BAND_ALPHA, hitRouteEdge, routeEdgePresentation } from './render/scene';
   import type {
     ActivityMark,
     ActivityTick,

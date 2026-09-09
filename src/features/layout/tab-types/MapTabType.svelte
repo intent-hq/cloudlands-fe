@@ -81,12 +81,12 @@
     selectedCrossingIndex !== null
       ? { type: 'route' as const, transitionIndex: selectedCrossingIndex }
       : $mapState.selectedAgentId
-      ? { type: 'agent' as const, agentId: $mapState.selectedAgentId }
-      : $mapState.selectedRegionId
-        ? { type: 'region' as const, regionIds: [$mapState.selectedRegionId] }
-        : $mapState.selectedTaskNoteId
-          ? { type: 'route' as const }
-          : null,
+        ? { type: 'agent' as const, agentId: $mapState.selectedAgentId }
+        : $mapState.selectedRegionId
+          ? { type: 'region' as const, regionIds: [$mapState.selectedRegionId] }
+          : $mapState.selectedTaskNoteId
+            ? { type: 'route' as const }
+            : null,
   );
   const detailSelection = $derived.by<SemanticMapDetailSelection>(() => {
     if (detailOverride?.type === 'crossing') {
