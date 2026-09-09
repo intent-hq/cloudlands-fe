@@ -353,11 +353,8 @@
         {m.semanticMap_detail_crossing_label()}
       </p>
       <h2 class="detail-heading mt-1 text-lg font-semibold">
-        {transitionLabel(selectedTransition)}
-      </h2>
-      <p class="mt-1 text-muted-foreground">
         {regionLabel(selectedTransition.from)} → {regionLabel(selectedTransition.to)}
-      </p>
+      </h2>
     </header>
     <section>
       <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -432,8 +429,11 @@
       {/if}
     </div>
   {:else}
-    <div class="m-auto max-w-52 text-center text-muted-foreground">
+    <div class="m-auto max-w-60 space-y-3 text-center text-muted-foreground">
       <p>{m.semanticMap_detail_empty_description()}</p>
+      <p class="text-xs" data-semantic-map-encoding-note>
+        {m.semanticMap_detail_encoding_description()}
+      </p>
     </div>
   {/if}
 </div>

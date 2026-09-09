@@ -4251,6 +4251,7 @@
   "semanticMap_sandbox_thinking_label": "Pensando",
   "semanticMap_sandbox_minutes_label": "{count} min.",
   "semanticMap_detail_empty_description": "Selecciona una región o un agente para entender qué está cambiando y por qué.",
+  "semanticMap_detail_encoding_description": "Tamaño del área = archivos de la región · sombreado = ediciones en el intervalo",
   "semanticMap_detail_subregions_label": "Subregiones",
   "semanticMap_detail_filesTouched_label": "Archivos modificados",
   "semanticMap_detail_recentActivity_label": "Actividad reciente",

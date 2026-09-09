@@ -4251,6 +4251,7 @@
   "semanticMap_sandbox_thinking_label": "Réflexion",
   "semanticMap_sandbox_minutes_label": "{count} min.",
   "semanticMap_detail_empty_description": "Sélectionnez une région ou un agent pour comprendre ce qui change et pourquoi.",
+  "semanticMap_detail_encoding_description": "Taille de la zone = fichiers de la région · ombrage = modifications dans la période",
   "semanticMap_detail_subregions_label": "Sous-régions",
   "semanticMap_detail_filesTouched_label": "Fichiers touchés",
   "semanticMap_detail_recentActivity_label": "Activité récente",

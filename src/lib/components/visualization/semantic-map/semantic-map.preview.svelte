@@ -58,6 +58,7 @@
   import { getAgentColorsWithSeed } from '$lib/utils/agent-colors';
   import SemanticMapCanvas from './SemanticMapCanvas.svelte';
   import SemanticMapDetail, { type SemanticMapDetailSelection } from './SemanticMapDetail.svelte';
+  import SemanticMapKindGlyph from './SemanticMapKindGlyph.svelte';
   import manifestJson from './fixtures/intent-manifest.json';
   import { computeBudget } from './layout/budget';
   import { placeRegions } from './layout/place';
@@ -317,8 +318,11 @@
           size="sm"
           variant={enabledKinds.includes(kind) ? 'secondary' : 'outline'}
           aria-pressed={enabledKinds.includes(kind)}
-          onclick={() => toggleKind(kind)}>{kindLabel(kind)}</Button
+          onclick={() => toggleKind(kind)}
         >
+          <SemanticMapKindGlyph {kind} />
+          {kindLabel(kind)}
+        </Button>
       {/each}
     </fieldset>
     <label class="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3">

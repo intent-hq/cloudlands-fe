@@ -4251,6 +4251,7 @@
   "semanticMap_sandbox_thinking_label": "思考",
   "semanticMap_sandbox_minutes_label": "{count} 分钟",
   "semanticMap_detail_empty_description": "选择区域或智能体，了解发生了什么变化及其原因。",
+  "semanticMap_detail_encoding_description": "区域大小 = 区域内文件数 · 阴影 = 时间窗口内的编辑",
   "semanticMap_detail_subregions_label": "子区域",
   "semanticMap_detail_filesTouched_label": "涉及的文件",
   "semanticMap_detail_recentActivity_label": "最近活动",

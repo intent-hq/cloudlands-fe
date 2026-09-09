@@ -4251,6 +4251,7 @@
   "semanticMap_sandbox_thinking_label": "思考中",
   "semanticMap_sandbox_minutes_label": "{count} 分鐘",
   "semanticMap_detail_empty_description": "選取區域或代理程式，瞭解發生了什麼變更及其原因。",
+  "semanticMap_detail_encoding_description": "區域大小 = 區域內檔案數 · 陰影 = 時間範圍內的編輯",
   "semanticMap_detail_subregions_label": "子區域",
   "semanticMap_detail_filesTouched_label": "涉及的檔案",
   "semanticMap_detail_recentActivity_label": "最近活動",

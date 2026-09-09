@@ -199,11 +199,26 @@ test('a DPR change resizes the canvas backing store after mount', async ({ mount
 });
 
 for (const width of [320, 420, 640, 960]) {
-  test(`minimap uses the compact visibility contract at ${width}px`, async ({ mount }) => {
+  test(`minimap stays hidden at rest at ${width}px`, async ({ mount }) => {
     const component = await mount(SemanticMapCanvasHost, { props: { width } });
     await expect(component.getByRole('application')).toHaveAttribute(
       'data-semantic-map-minimap',
-      width < 768 ? 'hidden' : 'visible',
+      'hidden',
     );
   });
 }
+
+test('minimap appears after navigation and clicking it jumps the viewport', async ({ mount }) => {
+  const component = await mount(SemanticMapCanvasHost, { props: { width: 960, height: 620 } });
+  const application = component.getByRole('application');
+  const canvas = component.locator('canvas');
+  await canvas.hover({ position: { x: 480, y: 310 } });
+  await canvas.dispatchEvent('wheel', { deltaY: -500 });
+  await expect(application).toHaveAttribute('data-semantic-map-minimap', 'visible');
+
+  const before = await application.getAttribute('data-semantic-map-pan-x');
+  const minimapX = Number(await application.getAttribute('data-semantic-map-minimap-x'));
+  const minimapY = Number(await application.getAttribute('data-semantic-map-minimap-y'));
+  await canvas.click({ position: { x: minimapX + 24, y: minimapY + 24 } });
+  await expect.poll(() => application.getAttribute('data-semantic-map-pan-x')).not.toBe(before);
+});

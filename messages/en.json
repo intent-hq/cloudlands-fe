@@ -4252,6 +4252,7 @@
   "semanticMap_sandbox_thinking_label": "Thinking",
   "semanticMap_sandbox_minutes_label": "{count} min",
   "semanticMap_detail_empty_description": "Select a region or agent to understand what is changing and why.",
+  "semanticMap_detail_encoding_description": "Hull size = files in region · shading = edits in window",
   "semanticMap_detail_subregions_label": "Sub-regions",
   "semanticMap_detail_filesTouched_label": "Files touched",
   "semanticMap_detail_recentActivity_label": "Recent activity",

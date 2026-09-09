@@ -73,7 +73,10 @@ describe('SemanticMapDetail', () => {
       onNavigateBack,
     });
 
-    expect(view.getByRole('heading', { name: route.transitions[0].label })).toBeTruthy();
+    const transition = route.transitions[0];
+    const from = manifest.regions.find(({ id }) => id === transition.from)?.label;
+    const to = manifest.regions.find(({ id }) => id === transition.to)?.label;
+    expect(view.getByRole('heading', { name: `${from} → ${to}` })).toBeTruthy();
     const evidence = view.getByRole('button', { name: route.transitions[0].evidence[0] });
     await fireEvent.click(evidence);
     expect(onSelectFile).toHaveBeenCalledWith(route.transitions[0].evidence[0]);

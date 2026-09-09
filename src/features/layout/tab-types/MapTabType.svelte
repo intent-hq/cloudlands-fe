@@ -5,6 +5,7 @@
   import SemanticMapDetail, {
     type SemanticMapDetailSelection,
   } from '$lib/components/visualization/semantic-map/SemanticMapDetail.svelte';
+  import SemanticMapKindGlyph from '$lib/components/visualization/semantic-map/SemanticMapKindGlyph.svelte';
   import { computeBudget } from '$lib/components/visualization/semantic-map/layout/budget';
   import { placeRegions } from '$lib/components/visualization/semantic-map/layout/place';
   import { Button } from '$lib/components/ui/button';
@@ -319,8 +320,11 @@
               ? 'secondary'
               : 'outline'}
             aria-pressed={$mapState.kindFilter.length === 0 || $mapState.kindFilter.includes(kind)}
-            onclick={() => toggleKindFilter(kind)}>{kindLabel(kind)}</Button
+            onclick={() => toggleKindFilter(kind)}
           >
+            <SemanticMapKindGlyph {kind} />
+            {kindLabel(kind)}
+          </Button>
         {/each}
       </fieldset>
       <fieldset class="mb-4 flex flex-wrap gap-1.5">

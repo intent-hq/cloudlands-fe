@@ -8,6 +8,7 @@
   import type { RegionGeometry } from './layout/place';
   import { CanvasPathCache, drawQuadraticPath, traceHull } from './render/canvas';
   import { layoutSceneLabels, type LabelLayout, type PlacedLabel } from './render/labels';
+  import { jumpToMinimapPoint, resolveMinimapRect } from './render/minimap';
   import { moveSpatialFocus, type SpatialArrowKey, type SpatialTarget } from './render/navigation';
   import { buildScene, HEAT_BAND_ALPHA, hitRouteEdge, routeEdgePresentation } from './render/scene';
   import type {
@@ -42,11 +43,8 @@
   const MOVE_DURATION_MS = 1_000;
   const TOOL_DURATION_MS = 1_200;
   const BADGE_RADIUS = 13;
-  const MINIMAP_WIDTH = 160;
-  const MINIMAP_HEIGHT = 100;
-  const MINIMAP_MARGIN = 16;
+  const MINIMAP_FADE_DURATION_MS = 180;
   const applicationAttributes = { role: 'application', tabindex: 0 } as const;
-  const showMinimap = $derived(width >= 768 && height >= 240);
   type KeyboardLayer = 'agents' | 'crossings' | 'regions';
 
   interface CanvasColors {
@@ -103,10 +101,19 @@
   let lastPointerX = 0;
   let lastPointerY = 0;
   let dragDistance = 0;
+  let minimapShownAt = 0;
+  let minimapWasVisible = false;
 
   const selectedRegionIds = $derived(
     selection?.type === 'region' ? new Set(selection.regionIds) : new Set<string>(),
   );
+  const focusedHull = $derived(
+    selection?.type === 'region'
+      ? geometry.focus.find(({ id }) => selection.regionIds.includes(id))?.hull
+      : undefined,
+  );
+  const minimapRect = $derived(resolveMinimapRect({ width, height }, transform, focusedHull));
+  const showMinimap = $derived(minimapRect !== null);
   const scene = $derived(
     buildScene({
       activities,
@@ -654,33 +661,38 @@
     if (!reducedMotion) drawToolPulse(ctx, badge, elapsed);
   }
 
-  function drawMinimap(ctx: CanvasRenderingContext2D): void {
-    const x = width - MINIMAP_WIDTH - MINIMAP_MARGIN;
-    const y = height - MINIMAP_HEIGHT - MINIMAP_MARGIN;
+  function drawMinimap(
+    ctx: CanvasRenderingContext2D,
+    rect: NonNullable<typeof minimapRect>,
+    now: number,
+  ): void {
+    const fade = reducedMotion
+      ? 1
+      : Math.min(1, Math.max(0, (now - minimapShownAt) / MINIMAP_FADE_DURATION_MS));
     ctx.save();
     ctx.fillStyle = colors.surface;
     ctx.strokeStyle = colors.border;
-    ctx.globalAlpha = 0.94;
-    ctx.fillRect(x, y, MINIMAP_WIDTH, MINIMAP_HEIGHT);
-    ctx.strokeRect(x + 0.5, y + 0.5, MINIMAP_WIDTH - 1, MINIMAP_HEIGHT - 1);
+    ctx.globalAlpha = 0.94 * fade;
+    ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+    ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.width - 1, rect.height - 1);
     for (const region of geometry.rest) {
       ctx.fillStyle = colors.mutedForeground;
-      ctx.globalAlpha = 0.25 + (scene.heatByRegion[region.id] ?? 0) * 0.75;
+      ctx.globalAlpha = fade * (0.25 + (scene.heatByRegion[region.id] ?? 0) * 0.75);
       ctx.save();
-      ctx.translate(x, y);
-      ctx.scale(MINIMAP_WIDTH / width, MINIMAP_HEIGHT / height);
+      ctx.translate(rect.x, rect.y);
+      ctx.scale(rect.width / width, rect.height / height);
       const hull = minimapPathCache.hulls.get(region.id);
       if (hull) ctx.fill(hull);
       ctx.restore();
     }
     ctx.strokeStyle = colors.accent;
-    ctx.globalAlpha = 0.8;
+    ctx.globalAlpha = 0.8 * fade;
     ctx.lineWidth = 1;
     ctx.strokeRect(
-      x + (-transform.x / transform.scale / width) * MINIMAP_WIDTH,
-      y + (-transform.y / transform.scale / height) * MINIMAP_HEIGHT,
-      (width / transform.scale / width) * MINIMAP_WIDTH,
-      (height / transform.scale / height) * MINIMAP_HEIGHT,
+      rect.x + (-transform.x / transform.scale / width) * rect.width,
+      rect.y + (-transform.y / transform.scale / height) * rect.height,
+      rect.width / transform.scale,
+      rect.height / transform.scale,
     );
     ctx.restore();
   }
@@ -708,13 +720,16 @@
     scene.ticks.forEach((tick) => drawTick(ctx, tick));
     labelLayout.badges.forEach((badge) => drawBadge(ctx, badge, now, elapsed));
     ctx.restore();
-    if (showMinimap) drawMinimap(ctx);
+    if (minimapRect) drawMinimap(ctx, minimapRect, now);
     ctx.restore();
   }
 
   function hasActiveMotion(elapsed: number): boolean {
     return (
       tweening ||
+      (!reducedMotion &&
+        showMinimap &&
+        performance.now() - minimapShownAt < MINIMAP_FADE_DURATION_MS) ||
       (!reducedMotion && scene.badges.some((badge) => badge.thinking)) ||
       scene.marks.some((mark) =>
         mark.kind === 'read'
@@ -804,6 +819,16 @@
     if (!canvas || event.button !== 0) return;
     const rect = canvas.getBoundingClientRect();
     pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    if (
+      minimapRect &&
+      pointer.x >= minimapRect.x &&
+      pointer.x <= minimapRect.x + minimapRect.width &&
+      pointer.y >= minimapRect.y &&
+      pointer.y <= minimapRect.y + minimapRect.height
+    ) {
+      transform = jumpToMinimapPoint({ width, height }, transform, minimapRect, pointer);
+      return;
+    }
     updateHover(pointer.x, pointer.y);
     dragPointerId = event.pointerId;
     lastPointerX = event.clientX;
@@ -944,6 +969,12 @@
   });
 
   $effect(() => {
+    if (showMinimap && !minimapWasVisible) minimapShownAt = performance.now();
+    minimapWasVisible = showMinimap;
+    scheduleDraw();
+  });
+
+  $effect(() => {
     void colors;
     void transform;
     void hoveredRegionId;
@@ -1009,6 +1040,11 @@
   data-semantic-map-height={height}
   data-semantic-map-agent-count={scene.badges.length}
   data-semantic-map-minimap={showMinimap ? 'visible' : 'hidden'}
+  data-semantic-map-minimap-x={minimapRect?.x}
+  data-semantic-map-minimap-y={minimapRect?.y}
+  data-semantic-map-pan-x={transform.x}
+  data-semantic-map-pan-y={transform.y}
+  data-semantic-map-scale={transform.scale}
   data-semantic-map-keyboard-layer={keyboardLayer}
 >
   <span class="sr-only" aria-live="polite">{selectionDescription}</span>

@@ -4251,6 +4251,7 @@
   "semanticMap_sandbox_thinking_label": "Denken",
   "semanticMap_sandbox_minutes_label": "{count} Min.",
   "semanticMap_detail_empty_description": "Wähle eine Region oder einen Agenten aus, um zu verstehen, was sich ändert und warum.",
+  "semanticMap_detail_encoding_description": "Flächengröße = Dateien in der Region · Schattierung = Änderungen im Zeitfenster",
   "semanticMap_detail_subregions_label": "Unterregionen",
   "semanticMap_detail_filesTouched_label": "Berührte Dateien",
   "semanticMap_detail_recentActivity_label": "Letzte Aktivität",

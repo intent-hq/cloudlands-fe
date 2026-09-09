@@ -4251,6 +4251,7 @@
   "semanticMap_sandbox_thinking_label": "思考中",
   "semanticMap_sandbox_minutes_label": "{count} 分",
   "semanticMap_detail_empty_description": "リージョンまたはエージェントを選択すると、何がなぜ変わっているかを確認できます。",
+  "semanticMap_detail_encoding_description": "領域の大きさ = 領域内のファイル数 · 濃淡 = 期間内の編集",
   "semanticMap_detail_subregions_label": "サブリージョン",
   "semanticMap_detail_filesTouched_label": "変更されたファイル",
   "semanticMap_detail_recentActivity_label": "最近のアクティビティ",

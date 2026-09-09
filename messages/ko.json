@@ -4251,6 +4251,7 @@
   "semanticMap_sandbox_thinking_label": "생각 중",
   "semanticMap_sandbox_minutes_label": "{count}분",
   "semanticMap_detail_empty_description": "영역 또는 에이전트를 선택하여 무엇이 왜 변경되는지 확인하세요.",
+  "semanticMap_detail_encoding_description": "영역 크기 = 영역의 파일 수 · 음영 = 기간 내 편집",
   "semanticMap_detail_subregions_label": "하위 영역",
   "semanticMap_detail_filesTouched_label": "수정한 파일",
   "semanticMap_detail_recentActivity_label": "최근 활동",
