@@ -136,7 +136,7 @@
         bind:ref={triggerElement}
         type="button"
         truncateLabel={false}
-        class="col-span-2 flex h-auto min-w-0 w-full cursor-pointer items-center justify-start gap-[var(--operational-leading-gap)] border-0 bg-transparent p-0 text-left focus-visible:underline focus-visible:underline-offset-2 focus-visible:outline-none"
+        class="col-span-2 flex h-auto min-w-0 w-full cursor-pointer items-center justify-start gap-[var(--operational-leading-gap)] border-0 bg-transparent p-0 text-left focus-visible:underline focus-visible:underline-offset-2"
         data-testid={disclosureTestId}
         aria-label={ariaLabel}
         aria-expanded={expanded}
