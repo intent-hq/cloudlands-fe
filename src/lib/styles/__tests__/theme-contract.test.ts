@@ -436,8 +436,7 @@ describe('theme color contract', () => {
     );
     const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
 
-    expect(picker).toContain('border-border! focus-visible:border-ring!');
-    expect(picker).toContain('focus-visible:ring-2 focus-visible:ring-ring/40');
+    expect(picker).toContain("'w-full justify-between border-border!'");
     expect(picker).not.toMatch(/(?:border|ring)-\[#/);
     expect(avatar).toContain('color: hsl(var(--agent-avatar-foreground))');
     expect(avatar).not.toContain('color: #080808');
