@@ -89,7 +89,8 @@ describe('MapTabType hydration states', () => {
       activities: [],
       filteredActivities: [],
       route: null,
-      selectedAgentId: null,
+      agentRoutes: {},
+      selectedAgentIds: [],
       selectedTaskNoteId: null,
       selectedRegionId: null,
       timeWindow: { startTs: null, endTs: null },
@@ -179,7 +180,7 @@ describe('MapTabType hydration states', () => {
     expect(canvas.getAttribute('data-agent-filter')).toBe('');
     expect(canvas.getAttribute('data-kind-filter')).toBe('');
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Ada' }));
+    await fireEvent.click(screen.getAllByRole('button', { name: 'Ada' })[0]);
     expect(dispatchMock).toHaveBeenCalledWith({
       type: 'semanticMap/agentFilterChanged',
       payload: ['ws-1', ['b']],
@@ -266,13 +267,15 @@ describe('MapTabType hydration states', () => {
       hydrationStatus: 'loaded',
       manifest: SEMANTIC_MAP_FIXTURE_MANIFEST,
       source: 'curated',
-      selectedAgentId: 'a',
-      route: {
-        visits: ['one', 'two', 'three'],
-        transitions: [
-          { from: 'one', to: 'two', count: 1, evidence: [] },
-          { from: 'two', to: 'three', count: 1, evidence: [] },
-        ],
+      selectedAgentIds: ['a'],
+      agentRoutes: {
+        a: {
+          visits: ['one', 'two', 'three'],
+          transitions: [
+            { from: 'one', to: 'two', count: 1, evidence: [] },
+            { from: 'two', to: 'three', count: 1, evidence: [] },
+          ],
+        },
       },
     };
     renderMapTab();
@@ -280,12 +283,14 @@ describe('MapTabType hydration states', () => {
     await fireEvent.click(detail);
     expect(detail.getAttribute('data-transition-index')).toBe('0');
 
-    mapState.current.route = {
-      visits: ['one', 'two', 'three'],
-      transitions: [
-        { from: 'two', to: 'three', count: 2, evidence: [] },
-        { from: 'one', to: 'two', count: 2, evidence: [] },
-      ],
+    mapState.current.agentRoutes = {
+      a: {
+        visits: ['one', 'two', 'three'],
+        transitions: [
+          { from: 'two', to: 'three', count: 2, evidence: [] },
+          { from: 'one', to: 'two', count: 2, evidence: [] },
+        ],
+      },
     };
     emitSelectors();
 

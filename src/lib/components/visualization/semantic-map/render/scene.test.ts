@@ -13,6 +13,7 @@ import {
   hitRouteEdge,
   quantizeHeat,
   routeEdgePresentation,
+  sharedRegionIds,
 } from './scene';
 
 function themeRgb(css: string, mode: 'light' | 'dark', role: string): [number, number, number] {
@@ -453,15 +454,22 @@ describe('semantic map render scene', () => {
 
   it('renders declared and factual route labels with evidence hit targets', () => {
     const edges = buildRouteEdges(
-      {
-        visits: ['one', 'two'],
-        transitions: [
-          { from: 'one', to: 'two', count: 3, evidence: ['a.ts', 'b.ts'], label: 'Declared' },
-          { from: 'two', to: 'one', count: 1, evidence: ['c.ts'] },
-        ],
-      },
+      [
+        {
+          agentId: 'a',
+          route: {
+            visits: ['one', 'two'],
+            transitions: [
+              { from: 'one', to: 'two', count: 3, evidence: ['a.ts', 'b.ts'], label: 'Declared' },
+              { from: 'two', to: 'one', count: 1, evidence: ['c.ts'] },
+            ],
+          },
+        },
+      ],
       geometry,
       (count) => `${count} files`,
+      false,
+      '#neutral',
     );
 
     expect(edges.map(({ label }) => label)).toEqual(['Declared', '1 files']);
@@ -475,11 +483,29 @@ describe('semantic map render scene', () => {
 
   it('accents only the selected crossing and dims every other route edge', () => {
     const selection = { type: 'route' as const, transitionIndex: 1 };
-    expect(routeEdgePresentation(1, selection, null)).toEqual({ accented: true, opacity: 1 });
-    expect(routeEdgePresentation(0, selection, 0)).toEqual({ accented: false, opacity: 0.24 });
-    expect(routeEdgePresentation(0, { type: 'route' }, null)).toEqual({
+    const selectedEdge = { agentId: undefined, transitionIndex: 1 };
+    const otherEdge = { agentId: undefined, transitionIndex: 0 };
+    expect(routeEdgePresentation(selectedEdge, selection, false)).toEqual({
+      accented: true,
+      opacity: 1,
+    });
+    expect(routeEdgePresentation(otherEdge, selection, true)).toEqual({
+      accented: false,
+      opacity: 0.24,
+    });
+    expect(routeEdgePresentation(otherEdge, { type: 'route' }, false)).toEqual({
       accented: true,
       opacity: 0.9,
     });
+  });
+
+  it('identifies regions touched by both selected agents', () => {
+    expect(
+      sharedRegionIds(
+        [...activities, { ...activities[0], id: 'shared', agentId: 'b', regionId: 'one' }],
+        ['a', 'b'],
+      ),
+    ).toEqual(['one']);
+    expect(sharedRegionIds(activities, ['a'])).toEqual([]);
   });
 });

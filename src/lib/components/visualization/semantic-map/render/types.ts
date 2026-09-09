@@ -3,9 +3,14 @@ import type { RegionGeometry } from '../layout/place';
 
 export type SemanticMapSelection =
   | { type: 'region'; regionIds: string[] }
-  | { type: 'agent'; agentId: string }
-  | { type: 'route'; transitionIndex?: number }
+  | { type: 'agent'; agentIds: string[]; pinnedRegionIds?: string[] }
+  | { type: 'route'; agentId?: string; transitionIndex?: number; pinnedRegionIds?: string[] }
   | null;
+
+export interface SemanticMapRoute {
+  agentId?: string;
+  route: Route;
+}
 
 export interface SemanticMapFilters {
   agentIds?: string[];
@@ -26,15 +31,17 @@ export interface SemanticMapCanvasProps {
   manifest: Manifest;
   geometry: SemanticMapGeometry;
   activities: MapActivity[];
-  route?: Route;
+  routes?: SemanticMapRoute[];
   selection: SemanticMapSelection;
   filters: SemanticMapFilters;
   timeWindow: SemanticMapTimeWindow;
   width: number;
   height: number;
   onSelectRegion?: (regionIds: string[]) => void;
-  onSelectAgent?: (agentId: string) => void;
-  onSelectRoute?: (transitionIndex: number) => void;
+  onSelectAgent?: (agentId: string, additive: boolean) => void;
+  onSelectRoute?: (agentId: string | undefined, transitionIndex: number) => void;
+  onOpenFile?: (path: string) => void;
+  onOpenDiff?: (path: string) => void;
   onClearSelection?: () => void;
 }
 
@@ -100,6 +107,9 @@ export interface AgentBadge {
 }
 
 export interface RouteEdge {
+  agentId?: string;
+  transitionIndex: number;
+  color: string;
   from: string;
   to: string;
   startX: number;

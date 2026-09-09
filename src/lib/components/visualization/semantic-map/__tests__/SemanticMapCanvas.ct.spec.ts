@@ -176,6 +176,28 @@ test('an idle focused region exposes its responsibility', async ({ mount }) => {
   );
 });
 
+test('agent comparison preserves a region pin and opens the latest diff', async ({ mount }) => {
+  const component = await mount(SemanticMapCanvasHost, {
+    props: { activityFixture: true, compareFixture: true },
+  });
+  const application = component.getByRole('application');
+  const canvas = component.locator('canvas');
+
+  await canvas.click({ position: { x: 180, y: 180 } });
+  await canvas.click({ position: { x: 180, y: 128 } });
+  await canvas.click({ position: { x: 470, y: 146 }, modifiers: ['Shift'] });
+
+  await expect(component.getByTestId('selected-agent')).toHaveAttribute(
+    'data-agent',
+    'reading,thinking',
+  );
+  await expect(application).toHaveAttribute('data-semantic-map-shared-regions', 'first');
+  await expect(application).toHaveAttribute('data-semantic-map-focus-mode', 'files');
+
+  await canvas.dblclick({ position: { x: 470, y: 146 } });
+  await expect(component.getByTestId('opened-diff')).toHaveText('src/edit.ts');
+});
+
 test('visibility pauses and resumes a hull tween without a time jump', async ({ mount, page }) => {
   await installRuntimeMediaMock(page);
   const component = await mount(SemanticMapCanvasHost);

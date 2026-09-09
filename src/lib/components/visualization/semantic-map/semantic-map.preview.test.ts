@@ -22,6 +22,7 @@ describe('semantic map preview', () => {
       'detail-agent',
       'detail-route',
       'detail-crossing',
+      'compare-agents',
     ]);
   });
 

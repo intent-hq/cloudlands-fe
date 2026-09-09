@@ -13,7 +13,8 @@
     | 'detail-region'
     | 'detail-agent'
     | 'detail-route'
-    | 'detail-crossing';
+    | 'detail-crossing'
+    | 'compare-agents';
 
   export interface SemanticMapPreviewProps {
     state: SemanticMapPreviewState;
@@ -48,6 +49,7 @@
       'detail-agent': previewState('detail-agent'),
       'detail-route': previewState('detail-route'),
       'detail-crossing': previewState('detail-crossing'),
+      'compare-agents': previewState('compare-agents'),
     },
   });
 </script>
@@ -114,28 +116,32 @@
       : null,
   );
   let selection = $state<SemanticMapSelection>(
-    initialMode === 'route' || initialMode === 'detail-agent'
-      ? { type: 'agent', agentId: SCRIPT_AGENTS[0].id }
-      : initialMode === 'focus-region' ||
-          initialMode === 'focus-region-idle' ||
-          initialMode === 'detail-region'
-        ? { type: 'region', regionIds: ['renderer-ui'] }
-        : initialMode === 'detail-route'
-          ? { type: 'route' }
-          : initialMode === 'detail-crossing'
-            ? { type: 'route', transitionIndex: 0 }
-            : null,
+    initialMode === 'compare-agents'
+      ? { type: 'agent', agentIds: SCRIPT_AGENTS.slice(0, 2).map(({ id }) => id) }
+      : initialMode === 'route' || initialMode === 'detail-agent'
+        ? { type: 'agent', agentIds: [SCRIPT_AGENTS[0].id] }
+        : initialMode === 'focus-region' ||
+            initialMode === 'focus-region-idle' ||
+            initialMode === 'detail-region'
+          ? { type: 'region', regionIds: ['renderer-ui'] }
+          : initialMode === 'detail-route'
+            ? { type: 'route' }
+            : initialMode === 'detail-crossing'
+              ? { type: 'route', transitionIndex: 0 }
+              : null,
   );
   let detailSelection = $state<SemanticMapDetailSelection>(
-    initialMode === 'detail-region'
-      ? { type: 'region', regionId: 'renderer-ui' }
-      : initialMode === 'detail-agent'
-        ? { type: 'agent', agentId: SCRIPT_AGENTS[0].id }
-        : initialMode === 'detail-route'
-          ? { type: 'route' }
-          : initialMode === 'detail-crossing'
-            ? { type: 'crossing', transitionIndex: 0 }
-            : null,
+    initialMode === 'compare-agents'
+      ? { type: 'agent', agentIds: SCRIPT_AGENTS.slice(0, 2).map(({ id }) => id) }
+      : initialMode === 'detail-region'
+        ? { type: 'region', regionId: 'renderer-ui' }
+        : initialMode === 'detail-agent'
+          ? { type: 'agent', agentIds: [SCRIPT_AGENTS[0].id] }
+          : initialMode === 'detail-route'
+            ? { type: 'route' }
+            : initialMode === 'detail-crossing'
+              ? { type: 'crossing', transitionIndex: 0 }
+              : null,
   );
   let detailHistory = $state<SemanticMapDetailSelection[]>(
     initialMode === 'detail-crossing' ? [{ type: 'route' }] : [],
@@ -205,14 +211,30 @@
   const canvasWidth = $derived(
     resolveSemanticMapPreviewCanvasWidth(measuredCanvasWidth, requestedCanvasWidth),
   );
+  const canvasRoutes = $derived.by(() => {
+    const agentIds =
+      selection?.type === 'agent' ? selection.agentIds : routeAgentId ? [routeAgentId] : [];
+    return agentIds.flatMap((agentId) => {
+      const agentRoute = script.routes[agentId];
+      return agentRoute ? [{ agentId, route: agentRoute }] : [];
+    });
+  });
   const route = $derived(routeAgentId ? script.routes[routeAgentId] : undefined);
+  const comparisonRoute = $derived(
+    canvasRoutes.length > 0
+      ? {
+          visits: canvasRoutes.flatMap(({ route: agentRoute }) => agentRoute.visits),
+          transitions: canvasRoutes.flatMap(({ route: agentRoute }) => agentRoute.transitions),
+        }
+      : undefined,
+  );
   const geometry = $derived.by(() => ({
     rest: placeRegions(manifest, computeBudget(manifest), { width: canvasWidth, height }),
     focus: placeRegions(
       manifest,
       computeBudget(manifest, {
         regionIds: selection?.type === 'region' ? selection.regionIds : undefined,
-        route,
+        route: comparisonRoute,
       }),
       { width: canvasWidth, height },
     ),
@@ -238,15 +260,27 @@
     detailHistory = [];
   }
 
-  function selectAgent(agentId: string): void {
+  function selectAgent(agentId: string, additive = false): void {
+    const current = selection?.type === 'agent' ? selection.agentIds : [];
+    const next = additive
+      ? current.includes(agentId)
+        ? current.filter((id) => id !== agentId)
+        : [...current, agentId]
+      : [agentId];
     routeAgentId = agentId;
-    selection = { type: 'agent', agentId };
-    detailSelection = { type: 'agent', agentId };
+    selection = {
+      type: 'agent',
+      agentIds: next,
+      pinnedRegionIds:
+        selection?.type === 'region' ? selection.regionIds : selection?.pinnedRegionIds,
+    };
+    detailSelection = next.length > 0 ? { type: 'agent', agentIds: next } : null;
     detailHistory = [];
   }
 
-  function selectRoute(transitionIndex: number): void {
-    selection = { type: 'route', transitionIndex };
+  function selectRoute(agentId: string | undefined, transitionIndex: number): void {
+    routeAgentId = agentId ?? routeAgentId;
+    selection = { type: 'route', agentId, transitionIndex };
     detailSelection = { type: 'crossing', transitionIndex };
     detailHistory = [];
   }
@@ -313,9 +347,17 @@
         <Button
           type="button"
           size="sm"
-          variant={selectedAgentIds.includes(agent.id) ? 'secondary' : 'outline'}
-          aria-pressed={selectedAgentIds.includes(agent.id)}
-          onclick={() => toggleAgent(agent.id)}
+          variant={(mode === 'compare-agents' &&
+            selection?.type === 'agent' &&
+            selection.agentIds.includes(agent.id)) ||
+          (mode !== 'compare-agents' && selectedAgentIds.includes(agent.id))
+            ? 'secondary'
+            : 'outline'}
+          aria-pressed={mode === 'compare-agents' && selection?.type === 'agent'
+            ? selection.agentIds.includes(agent.id)
+            : selectedAgentIds.includes(agent.id)}
+          onclick={() =>
+            mode === 'compare-agents' ? selectAgent(agent.id, true) : toggleAgent(agent.id)}
         >
           <span aria-hidden="true" data-agent-color-swatch>
             <span
@@ -404,7 +446,7 @@
         {manifest}
         {geometry}
         {activities}
-        {route}
+        routes={canvasRoutes}
         {selection}
         {filters}
         {timeWindow}
@@ -429,7 +471,11 @@
         agents={detailAgents}
         fileChanges={detailFileChanges}
         routeSubjectLabel={SCRIPT_AGENTS.find(({ id }) => id === routeAgentId)?.name}
-        onSelectCrossing={(transitionIndex) => selectDetail({ type: 'crossing', transitionIndex })}
+        routes={canvasRoutes}
+        onSelectCrossing={(transitionIndex, agentId) => {
+          routeAgentId = agentId ?? routeAgentId;
+          selectDetail({ type: 'crossing', transitionIndex });
+        }}
         onSelectFile={(path) => selectDetail({ type: 'file', path })}
         onNavigateBack={navigateDetailBack}
       />

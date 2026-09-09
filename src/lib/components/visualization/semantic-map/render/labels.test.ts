@@ -27,7 +27,7 @@ function layout(state: 'route' | 'focus' | 'replay', width: number, height: numb
     filters: {},
     timeWindow: { start: SCRIPT_START, end },
     geometry,
-    route,
+    routes: route ? [{ agentId: SCRIPT_AGENTS[0].id, route }] : [],
     dark: false,
     neutral: '#777',
     fileLabel: (count) => `${count} files`,

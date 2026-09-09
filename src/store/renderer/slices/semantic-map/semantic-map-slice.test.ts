@@ -127,7 +127,7 @@ describe('semanticMapReducer', () => {
         [],
       ),
     );
-    state = semanticMapReducer(state, semanticMapSelectedAgentChanged(WORKSPACE_ID, 'agent-1'));
+    state = semanticMapReducer(state, semanticMapSelectedAgentChanged(WORKSPACE_ID, ['agent-1']));
     state = semanticMapReducer(
       state,
       semanticMapSelectedRegionChanged(WORKSPACE_ID, 'renderer-state'),
@@ -144,7 +144,7 @@ describe('semanticMapReducer', () => {
 
     expect(getItems(state.byWorkspaceId[WORKSPACE_ID].activities)).toEqual(activities);
     expect(state.byWorkspaceId[WORKSPACE_ID]).toMatchObject({
-      selectedAgentId: null,
+      selectedAgentIds: ['agent-1'],
       selectedRegionId: 'renderer-state',
       timeWindow: {
         startTs: '2026-09-06T02:00:00.000Z',
@@ -161,25 +161,53 @@ describe('semanticMapReducer', () => {
       transitions: [{ from: 'one', to: 'two', count: 1, evidence: ['src/x.ts'] }],
     };
     let state = semanticMapReducer(initialState, semanticMapLoadStarted(WORKSPACE_ID, GENERATION));
-    state = semanticMapReducer(state, semanticMapSelectedAgentChanged(WORKSPACE_ID, 'agent-1'));
+    state = semanticMapReducer(state, semanticMapSelectedAgentChanged(WORKSPACE_ID, ['agent-1']));
     state = semanticMapReducer(
       state,
       semanticMapRouteLoaded(WORKSPACE_ID, GENERATION, { agentId: 'agent-1' }, route),
     );
-    expect(state.byWorkspaceId[WORKSPACE_ID].route).toBe(route);
+    expect(state.byWorkspaceId[WORKSPACE_ID].agentRoutes['agent-1']).toBe(route);
 
     state = semanticMapReducer(state, semanticMapSelectedTaskChanged(WORKSPACE_ID, 'task-1'));
     expect(state.byWorkspaceId[WORKSPACE_ID]).toMatchObject({
       route: null,
-      selectedAgentId: null,
+      agentRoutes: {},
+      selectedAgentIds: [],
       selectedTaskNoteId: 'task-1',
     });
 
-    state = semanticMapReducer(state, semanticMapSelectedAgentChanged(WORKSPACE_ID, 'agent-1'));
+    state = semanticMapReducer(state, semanticMapSelectedAgentChanged(WORKSPACE_ID, ['agent-1']));
     expect(state.byWorkspaceId[WORKSPACE_ID]).toMatchObject({
       route: null,
-      selectedAgentId: 'agent-1',
+      selectedAgentIds: ['agent-1'],
       selectedTaskNoteId: null,
+    });
+  });
+
+  it('keeps a pinned region while selecting two agents and stores both routes', () => {
+    const route: Route = { visits: ['one'], transitions: [] };
+    let state = semanticMapReducer(initialState, semanticMapLoadStarted(WORKSPACE_ID, GENERATION));
+    state = semanticMapReducer(
+      state,
+      semanticMapSelectedRegionChanged(WORKSPACE_ID, 'renderer-state'),
+    );
+    state = semanticMapReducer(
+      state,
+      semanticMapSelectedAgentChanged(WORKSPACE_ID, ['agent-1', 'agent-2']),
+    );
+    state = semanticMapReducer(
+      state,
+      semanticMapRouteLoaded(WORKSPACE_ID, GENERATION, { agentId: 'agent-1' }, route),
+    );
+    state = semanticMapReducer(
+      state,
+      semanticMapRouteLoaded(WORKSPACE_ID, GENERATION, { agentId: 'agent-2' }, route),
+    );
+
+    expect(state.byWorkspaceId[WORKSPACE_ID]).toMatchObject({
+      selectedAgentIds: ['agent-1', 'agent-2'],
+      selectedRegionId: 'renderer-state',
+      agentRoutes: { 'agent-1': route, 'agent-2': route },
     });
   });
 

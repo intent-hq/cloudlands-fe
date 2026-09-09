@@ -43,6 +43,12 @@ type ManifestNoteAction =
   | ReturnType<typeof applyNoteDeleted>
   | ReturnType<typeof applyNoteUpdated>;
 type TaggedManifestNotes = Map<string, Set<string>>;
+type RouteReadResult =
+  | {
+      subject: SemanticMapRouteSubject;
+      route: Awaited<ReturnType<SemanticMapClient['route']>>;
+    }
+  | { subject: SemanticMapRouteSubject; error: unknown };
 
 function mapContext(
   generations: GenerationCoordinator,
@@ -103,7 +109,7 @@ function* readMapWorker(
       ),
     );
     const hydratedState = yield* selectSemanticMapState.effect(workspaceId);
-    if (hydratedState.selectedAgentId || hydratedState.selectedTaskNoteId) {
+    if (hydratedState.selectedAgentIds.length > 0 || hydratedState.selectedTaskNoteId) {
       yield* put(semanticMapRouteRefreshRequested(workspaceId));
     }
   } catch (error) {
@@ -164,6 +170,23 @@ function routeContext(
   return workspaceId;
 }
 
+function* readRouteSubject(
+  workspaceId: string,
+  subject: SemanticMapRouteSubject,
+): SagaGenerator<RouteReadResult> {
+  try {
+    const route: Awaited<ReturnType<SemanticMapClient['route']>> = yield* call(
+      [client, client.route],
+      workspaceId,
+      subject,
+    );
+    return { subject, route };
+  } catch (error) {
+    logger.warn('Semantic map route refresh failed', { workspaceId, error });
+    return { subject, error };
+  }
+}
+
 function* readRouteWorker(
   generations: GenerationCoordinator,
   requests: RequestGenerations<ReturnType<typeof semanticMapRouteRefreshRequested>>,
@@ -173,30 +196,29 @@ function* readRouteWorker(
   const generation = requests.get(action);
   if (generation === undefined) return;
   const state = yield* selectSemanticMapState.effect(workspaceId);
-  const subject: SemanticMapRouteSubject | null = state.selectedAgentId
-    ? { agentId: state.selectedAgentId }
-    : state.selectedTaskNoteId
-      ? { taskNoteId: state.selectedTaskNoteId }
-      : null;
-  if (!subject) {
-    return;
-  }
-  try {
-    const route: Awaited<ReturnType<SemanticMapClient['route']>> = yield* call(
-      [client, client.route],
-      workspaceId,
-      subject,
-    );
-    const current = yield* selectSemanticMapState.effect(workspaceId);
-    const subjectIsCurrent =
-      'agentId' in subject
-        ? current.selectedAgentId === subject.agentId && current.selectedTaskNoteId === null
-        : current.selectedTaskNoteId === subject.taskNoteId && current.selectedAgentId === null;
-    if (generations.get(workspaceId) === generation && subjectIsCurrent) {
-      yield* put(semanticMapRouteLoaded(workspaceId, generation, subject, route));
+  const subjects: SemanticMapRouteSubject[] =
+    state.selectedAgentIds.length > 0
+      ? state.selectedAgentIds.map((agentId) => ({ agentId }))
+      : state.selectedTaskNoteId
+        ? [{ taskNoteId: state.selectedTaskNoteId }]
+        : [];
+  const results = yield* all(
+    subjects.map((subject) => call(readRouteSubject, workspaceId, subject)),
+  );
+  const current = yield* selectSemanticMapState.effect(workspaceId);
+  for (const result of results) {
+    if ('route' in result) {
+      const { subject, route } = result;
+      const subjectIsCurrent =
+        'agentId' in subject
+          ? current.selectedAgentIds.includes(subject.agentId) &&
+            current.selectedTaskNoteId === null
+          : current.selectedTaskNoteId === subject.taskNoteId &&
+            current.selectedAgentIds.length === 0;
+      if (generations.get(workspaceId) === generation && subjectIsCurrent) {
+        yield* put(semanticMapRouteLoaded(workspaceId, generation, subject, route));
+      }
     }
-  } catch (error) {
-    logger.warn('Semantic map route refresh failed', { workspaceId, error });
   }
 }
 

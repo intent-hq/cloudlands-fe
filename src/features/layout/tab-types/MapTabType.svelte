@@ -1,5 +1,4 @@
 <script lang="ts">
-  import WorkspaceAgentsList from '$lib/components/workspace/WorkspaceAgentsList.svelte';
   import TaskStatusIndicator from '$lib/components/workspace/TaskStatusIndicator.svelte';
   import SemanticMapCanvas from '$lib/components/visualization/semantic-map/SemanticMapCanvas.svelte';
   import SemanticMapDetail, {
@@ -37,6 +36,7 @@
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import type { TabTypeComponentProps } from './registry';
   import type { MapActivityKind } from '$lib/components/visualization/semantic-map/core/types';
+  import type { SemanticMapRoute } from '$lib/components/visualization/semantic-map/render/types';
 
   type StableDetailSelection =
     | Exclude<SemanticMapDetailSelection, { type: 'crossing' }>
@@ -54,12 +54,13 @@
   const timeWindowMinutes = [5, 15, 60] as const;
 
   let { workspaceId }: TabTypeComponentProps = $props();
-  const mapState = selectSemanticMapState(workspaceId);
-  const filteredActivities = selectFilteredSemanticMapActivities(workspaceId);
-  const agents = selectAllWorkspaceAgents(workspaceId);
-  const tasks = selectWorkspaceTaskDisplayList(workspaceId);
-  const taskProgress = selectWorkspaceTaskProgress(workspaceId);
-  const trackedChanges = selectFileTrackingChanges(workspaceId);
+  const selectorWorkspaceId = (() => workspaceId)();
+  const mapState = selectSemanticMapState(selectorWorkspaceId);
+  const filteredActivities = selectFilteredSemanticMapActivities(selectorWorkspaceId);
+  const agents = selectAllWorkspaceAgents(selectorWorkspaceId);
+  const tasks = selectWorkspaceTaskDisplayList(selectorWorkspaceId);
+  const taskProgress = selectWorkspaceTaskProgress(selectorWorkspaceId);
+  const trackedChanges = selectFileTrackingChanges(selectorWorkspaceId);
   let canvasWidth = $state(1);
   let canvasHeight = $state(1);
   let detailOverride = $state<StableDetailSelection>(null);
@@ -68,21 +69,46 @@
   let detailsExpanded = $state(false);
 
   const selectedTask = $derived($tasks.find(({ id }) => id === $mapState.selectedTaskNoteId));
-  const selectedAgent = $derived($agents.find(({ id }) => id === $mapState.selectedAgentId));
+  const selectedAgentId = $derived($mapState.selectedAgentIds.at(-1) ?? null);
+  const selectedAgent = $derived($agents.find(({ id }) => id === selectedAgentId));
+  const canvasRoutes = $derived.by<SemanticMapRoute[]>(() => {
+    if ($mapState.selectedTaskNoteId && $mapState.route) return [{ route: $mapState.route }];
+    return $mapState.selectedAgentIds.flatMap((agentId) => {
+      const route = $mapState.agentRoutes[agentId];
+      return route ? [{ agentId, route }] : [];
+    });
+  });
+  const comparisonRoute = $derived.by(() => {
+    if (canvasRoutes.length === 0) return undefined;
+    return {
+      visits: canvasRoutes.flatMap(({ route }) => route.visits),
+      transitions: canvasRoutes.flatMap(({ route }) => route.transitions),
+    };
+  });
   const selectedCrossingIndex = $derived.by(() => {
     if (detailOverride?.type !== 'crossing') return null;
     const crossing = detailOverride;
-    if (crossing.agentId !== $mapState.selectedAgentId) return null;
-    const index = $mapState.route?.transitions.findIndex(
+    const route = crossing.agentId ? $mapState.agentRoutes[crossing.agentId] : $mapState.route;
+    const index = route?.transitions.findIndex(
       ({ from, to }) => from === crossing.from && to === crossing.to,
     );
     return index === undefined || index < 0 ? null : index;
   });
   const selection = $derived(
     selectedCrossingIndex !== null
-      ? { type: 'route' as const, transitionIndex: selectedCrossingIndex }
-      : $mapState.selectedAgentId
-        ? { type: 'agent' as const, agentId: $mapState.selectedAgentId }
+      ? {
+          type: 'route' as const,
+          agentId:
+            detailOverride?.type === 'crossing' ? (detailOverride.agentId ?? undefined) : undefined,
+          transitionIndex: selectedCrossingIndex,
+          pinnedRegionIds: $mapState.selectedRegionId ? [$mapState.selectedRegionId] : undefined,
+        }
+      : $mapState.selectedAgentIds.length > 0
+        ? {
+            type: 'agent' as const,
+            agentIds: $mapState.selectedAgentIds,
+            pinnedRegionIds: $mapState.selectedRegionId ? [$mapState.selectedRegionId] : undefined,
+          }
         : $mapState.selectedRegionId
           ? { type: 'region' as const, regionIds: [$mapState.selectedRegionId] }
           : $mapState.selectedTaskNoteId
@@ -97,8 +123,8 @@
     }
     return (
       detailOverride ??
-      ($mapState.selectedAgentId
-        ? { type: 'agent', agentId: $mapState.selectedAgentId }
+      ($mapState.selectedAgentIds.length > 0
+        ? { type: 'agent', agentIds: $mapState.selectedAgentIds }
         : $mapState.selectedRegionId
           ? { type: 'region', regionId: $mapState.selectedRegionId }
           : $mapState.selectedTaskNoteId
@@ -126,7 +152,7 @@
         $mapState.manifest,
         computeBudget($mapState.manifest, {
           regionIds: $mapState.selectedRegionId ? [$mapState.selectedRegionId] : undefined,
-          route: $mapState.route ?? undefined,
+          route: comparisonRoute,
         }),
         viewport,
       ),
@@ -198,14 +224,15 @@
     }[kind];
   }
 
-  function selectCrossing(transitionIndex: number): void {
-    const transition = $mapState.route?.transitions[transitionIndex];
+  function selectCrossing(agentId: string | undefined, transitionIndex: number): void {
+    const route = agentId ? $mapState.agentRoutes[agentId] : $mapState.route;
+    const transition = route?.transitions[transitionIndex];
     if (!transition) return;
     detailOverride = {
       type: 'crossing',
       from: transition.from,
       to: transition.to,
-      agentId: $mapState.selectedAgentId,
+      agentId: agentId ?? null,
     };
     detailHistory = [];
     detailsExpanded = true;
@@ -221,15 +248,21 @@
     detailHistory = detailHistory.slice(0, -1);
   }
 
-  function selectAgent(agentId: string | null): void {
-    detailOverride = null;
+  function selectAgent(agentId: string, additive = false): void {
+    const selected = $mapState.selectedAgentIds;
+    const next = additive
+      ? selected.includes(agentId)
+        ? selected.filter((id) => id !== agentId)
+        : [...selected, agentId]
+      : [agentId];
+    detailOverride = next.length > 0 ? { type: 'agent', agentIds: next } : null;
     detailHistory = [];
-    detailsExpanded = agentId !== null;
-    appStore.dispatch(semanticMapSelectedAgentChanged(workspaceId, agentId));
+    detailsExpanded = next.length > 0;
+    appStore.dispatch(semanticMapSelectedAgentChanged(workspaceId, next));
   }
 
   function selectRegion(regionId: string | null): void {
-    detailOverride = null;
+    detailOverride = regionId ? { type: 'region', regionId } : null;
     detailHistory = [];
     detailsExpanded = regionId !== null;
     appStore.dispatch(semanticMapSelectedRegionChanged(workspaceId, regionId));
@@ -245,6 +278,7 @@
   function clearSelection(): void {
     detailOverride = null;
     detailHistory = [];
+    appStore.dispatch(semanticMapSelectedAgentChanged(workspaceId, []));
     appStore.dispatch(semanticMapSelectedRegionChanged(workspaceId, null));
   }
 
@@ -348,11 +382,23 @@
         {/each}
       </fieldset>
       <h2 class="mb-2 text-sm font-semibold">{m.semanticMap_sandbox_agents_label()}</h2>
-      <WorkspaceAgentsList
-        agents={$agents}
-        selectedAgentId={$mapState.selectedAgentId}
-        onSelect={({ agentId }) => selectAgent(agentId)}
-      />
+      <div class="flex flex-wrap gap-1.5">
+        {#each filterAgents as agent (agent.id)}
+          <Button
+            size="sm"
+            variant={$mapState.selectedAgentIds.includes(agent.id) ? 'secondary' : 'outline'}
+            aria-pressed={$mapState.selectedAgentIds.includes(agent.id)}
+            onclick={() => selectAgent(agent.id, true)}
+          >
+            <span
+              class="size-2.5 shrink-0 rounded-full"
+              aria-hidden="true"
+              style:background-color={getAgentColorsWithSeed(agent.id)[0]}
+            ></span>
+            {agent.name}
+          </Button>
+        {/each}
+      </div>
       <h2 class="mb-2 mt-4 text-sm font-semibold">
         {m.workspace_flameGraph_tasksComplete_label({
           completed: formatInteger($taskProgress.completed),
@@ -425,7 +471,7 @@
         manifest={$mapState.manifest}
         {geometry}
         activities={$mapState.activities}
-        route={$mapState.route ?? undefined}
+        routes={canvasRoutes}
         {selection}
         filters={{ agentIds: $mapState.agentFilter, kinds: $mapState.kindFilter }}
         timeWindow={canvasTimeWindow}
@@ -434,6 +480,8 @@
         onSelectRegion={(regionIds) => selectRegion(regionIds[0] ?? null)}
         onSelectAgent={selectAgent}
         onSelectRoute={selectCrossing}
+        onOpenFile={(path) => appStore.dispatch(openWorkspaceFile(workspaceId, path))}
+        onOpenDiff={openDiff}
         onClearSelection={clearSelection}
       />
     {/if}
@@ -459,12 +507,16 @@
         <SemanticMapDetail
           manifest={$mapState.manifest}
           activities={$filteredActivities}
-          route={$mapState.route ?? undefined}
+          route={detailOverride?.type === 'crossing' && detailOverride.agentId
+            ? $mapState.agentRoutes[detailOverride.agentId]
+            : ($mapState.route ?? undefined)}
+          routes={canvasRoutes}
           selection={detailSelection}
           agents={detailAgents}
           fileChanges={detailFileChanges}
           {routeSubjectLabel}
-          onSelectCrossing={selectCrossing}
+          onSelectCrossing={(transitionIndex, agentId) =>
+            selectCrossing(agentId ?? selectedAgentId ?? undefined, transitionIndex)}
           onSelectFile={selectDetailFile}
           onOpenFile={(path) => appStore.dispatch(openWorkspaceFile(workspaceId, path))}
           onOpenDiff={openDiff}

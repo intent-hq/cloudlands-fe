@@ -38,8 +38,8 @@ describe('SemanticMapDetail', () => {
     const view = render(SemanticMapDetail, {
       manifest,
       activities: script.activities,
-      route,
-      selection: { type: 'agent', agentId: SCRIPT_AGENTS[0].id },
+      routes: [{ agentId: SCRIPT_AGENTS[0].id, route }],
+      selection: { type: 'agent', agentIds: [SCRIPT_AGENTS[0].id] },
       agents: [{ id: SCRIPT_AGENTS[0].id, name: SCRIPT_AGENTS[0].name, status: 'active' }],
     });
 

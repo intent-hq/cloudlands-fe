@@ -6,7 +6,12 @@
   import type { MapActivityKind } from './core/types';
   import { capFocusGeometry, lerpGeometry } from './layout/interpolate';
   import type { RegionGeometry } from './layout/place';
-  import { CanvasPathCache, drawQuadraticPath, traceHull } from './render/canvas';
+  import { CanvasPathCache, traceHull } from './render/canvas';
+  import {
+    drawComparisonRoutes,
+    drawSharedRegionOutline,
+    latestEvidenceAction,
+  } from './render/comparison';
   import { drawFocusContent, drawFocusedResponsibility } from './render/focus';
   import { layoutSceneLabels, type LabelLayout, type PlacedLabel } from './render/labels';
   import { jumpToMinimapPoint, resolveMinimapRect } from './render/minimap';
@@ -18,6 +23,7 @@
     HEAT_BAND_ALPHA,
     hitRouteEdge,
     routeEdgePresentation,
+    sharedRegionIds,
   } from './render/scene';
   import type {
     ActivityMark,
@@ -32,7 +38,7 @@
     manifest,
     geometry,
     activities,
-    route,
+    routes,
     selection,
     filters,
     timeWindow,
@@ -41,6 +47,8 @@
     onSelectRegion,
     onSelectAgent,
     onSelectRoute,
+    onOpenFile,
+    onOpenDiff,
     onClearSelection,
   }: SemanticMapCanvasProps = $props();
 
@@ -91,9 +99,10 @@
   let darkMode = $state(false);
 
   let reducedMotion = false;
-  let currentGeometry: RegionGeometry[] = geometry.rest;
-  let targetGeometry: RegionGeometry[] = geometry.rest;
-  let tweenFrom: RegionGeometry[] = geometry.rest;
+  const initialGeometry = (() => geometry.rest)();
+  let currentGeometry: RegionGeometry[] = initialGeometry;
+  let targetGeometry: RegionGeometry[] = initialGeometry;
+  let tweenFrom: RegionGeometry[] = initialGeometry;
   let tweenStartedAt = 0;
   let tweening = false;
   const pathCache = new CanvasPathCache();
@@ -113,7 +122,12 @@
   let minimapWasVisible = false;
 
   const selectedRegionIds = $derived(
-    selection?.type === 'region' ? new Set(selection.regionIds) : new Set<string>(),
+    new Set(
+      selection?.type === 'region' ? selection.regionIds : (selection?.pinnedRegionIds ?? []),
+    ),
+  );
+  const selectedAgentIds = $derived(
+    selection?.type === 'agent' ? new Set(selection.agentIds) : new Set<string>(),
   );
   const focusedActivityRegionIds = $derived.by(() => {
     const ids = new Set(selectedRegionIds);
@@ -123,19 +137,19 @@
     return ids;
   });
   const hasFocusedActivity = $derived(
-    selection?.type === 'region' &&
+    selectedRegionIds.size > 0 &&
       filterActivities(activities, filters, timeWindow).some(
         ({ regionId }) => !!regionId && focusedActivityRegionIds.has(regionId),
       ),
   );
   const focusGeometry = $derived(
-    selection?.type === 'region' && !hasFocusedActivity
+    selectedRegionIds.size > 0 && !hasFocusedActivity
       ? capFocusGeometry(geometry.rest, geometry.focus, selectedRegionIds)
       : geometry.focus,
   );
   const focusedHull = $derived(
-    selection?.type === 'region'
-      ? focusGeometry.find(({ id }) => selection.regionIds.includes(id))?.hull
+    selectedRegionIds.size > 0
+      ? focusGeometry.find(({ id }) => selectedRegionIds.has(id))?.hull
       : undefined,
   );
   const minimapRect = $derived(resolveMinimapRect({ width, height }, transform, focusedHull));
@@ -146,14 +160,14 @@
       filters,
       timeWindow,
       geometry: selection ? focusGeometry : geometry.rest,
-      route,
+      routes,
       dark: darkMode,
       neutral: colors.mutedForeground,
       fileLabel: routeFileLabel,
     }),
   );
   const focusContent = $derived(
-    selection?.type === 'region' && hasFocusedActivity
+    selectedRegionIds.size > 0 && hasFocusedActivity
       ? buildFocusContent({
           activities: scene.activities,
           manifest,
@@ -165,7 +179,7 @@
       : null,
   );
   const focusedResponsibility = $derived(
-    selection?.type === 'region' && !hasFocusedActivity
+    selectedRegionIds.size > 0 && !hasFocusedActivity
       ? manifest.regions.find(({ id }) => selectedRegionIds.has(id))?.responsibility
       : undefined,
   );
@@ -179,6 +193,7 @@
   const keyboardEdge = $derived(
     keyboardEdgeIndex === null ? undefined : scene.edges[keyboardEdgeIndex],
   );
+  const sharedRegions = $derived(new Set(sharedRegionIds(scene.activities, [...selectedAgentIds])));
   const agentSummaries = $derived.by(() =>
     scene.badges.map((badge) => {
       const agentActivities = scene.activities.filter(({ agentId }) => agentId === badge.id);
@@ -210,7 +225,7 @@
       selection.regionIds.includes(keyboardRegion.id)
     )
       return m.semanticMap_canvas_regionSelected_description({ label: keyboardRegion.label });
-    if (keyboardBadge && selection?.type === 'agent' && selection.agentId === keyboardBadge.id)
+    if (keyboardBadge && selectedAgentIds.has(keyboardBadge.id))
       return m.semanticMap_canvas_agentSelected_description({ name: keyboardBadge.name });
     if (
       keyboardEdge &&
@@ -232,7 +247,7 @@
     }
     if (selection?.type === 'agent') {
       const name =
-        scene.badges.find(({ id }) => id === selection.agentId)?.name ?? selection.agentId;
+        scene.badges.find(({ id }) => id === selection.agentIds[0])?.name ?? selection.agentIds[0];
       return m.semanticMap_canvas_agentSelected_description({ name });
     }
     if (selection?.type === 'route') return m.semanticMap_canvas_routeSelected_description();
@@ -394,6 +409,7 @@
     const isUnsorted = region.id.toLowerCase() === 'unsorted'; // i18n-ignore (wire identifier)
     const highlighted = hoveredRegionId === region.id || selectedRegionIds.has(region.id);
     const cachedPath = path && !tweening;
+    const drawablePath = cachedPath ? path : undefined;
     const regionAlpha = isUnsorted ? 0.46 : 1;
     ctx.save();
     ctx.globalAlpha = regionAlpha;
@@ -421,6 +437,9 @@
     ctx.lineWidth = (highlighted ? 2 : 1) / transform.scale;
     ctx.setLineDash(isUnsorted ? [6 / transform.scale, 5 / transform.scale] : []);
     cachedPath ? ctx.stroke(path) : ctx.stroke();
+    if (sharedRegions.has(region.id)) {
+      drawSharedRegionOutline(ctx, drawablePath, scene.badges, selectedAgentIds, transform.scale);
+    }
     if (keyboardRegionId === region.id) {
       ctx.setLineDash([]);
       ctx.strokeStyle = colors.background;
@@ -500,42 +519,14 @@
   }
 
   function drawRoute(ctx: CanvasRenderingContext2D, edges: RouteEdge[]): void {
-    edges.forEach((edge, index) => {
-      const presentation = routeEdgePresentation(index, selection, hoveredEdgeIndex);
-      ctx.save();
-      ctx.strokeStyle = presentation.accented ? colors.accent : colors.mutedForeground;
-      ctx.fillStyle = presentation.accented ? colors.accent : colors.mutedForeground;
-      ctx.globalAlpha = presentation.opacity;
-      ctx.lineWidth = (1.5 + Math.sqrt(Math.max(1, edge.count))) / transform.scale;
-      const path = pathCache.routes[index];
-      if (path) ctx.stroke(path);
-      else {
-        drawQuadraticPath(ctx, edge);
-        ctx.stroke();
-      }
-      const arrowSize = 7 / transform.scale;
-      ctx.translate(edge.arrowX, edge.arrowY);
-      ctx.rotate(edge.arrowAngle);
-      ctx.beginPath();
-      ctx.moveTo(arrowSize, 0);
-      ctx.lineTo(-arrowSize, arrowSize * 0.62);
-      ctx.lineTo(-arrowSize, -arrowSize * 0.62);
-      ctx.closePath();
-      ctx.fill();
-      ctx.rotate(-edge.arrowAngle);
-      ctx.translate(-edge.arrowX, -edge.arrowY);
-      if (keyboardEdgeIndex === index) {
-        ctx.globalAlpha = 1;
-        ctx.setLineDash([]);
-        ctx.strokeStyle = colors.background;
-        ctx.lineWidth = 8 / transform.scale;
-        path ? ctx.stroke(path) : (drawQuadraticPath(ctx, edge), ctx.stroke());
-        ctx.strokeStyle = colors.accent;
-        ctx.lineWidth = 2 / transform.scale;
-        ctx.setLineDash([4 / transform.scale, 3 / transform.scale]);
-        path ? ctx.stroke(path) : (drawQuadraticPath(ctx, edge), ctx.stroke());
-      }
-      ctx.restore();
+    drawComparisonRoutes(ctx, edges, {
+      selection,
+      hoveredEdgeIndex,
+      keyboardEdgeIndex,
+      paths: pathCache.routes,
+      scale: transform.scale,
+      accent: colors.accent,
+      background: colors.background,
     });
   }
 
@@ -572,11 +563,13 @@
     }
     for (const label of labelLayout.pips) {
       const index = Number(label.id.slice('pip-'.length));
-      const presentation = routeEdgePresentation(index, selection, hoveredEdgeIndex);
+      const edge = scene.edges[index];
+      if (!edge) continue;
+      const presentation = routeEdgePresentation(edge, selection, hoveredEdgeIndex === index);
       ctx.save();
       ctx.globalAlpha = presentation.opacity;
       ctx.fillStyle = colors.popover;
-      ctx.strokeStyle = presentation.accented ? colors.accent : colors.mutedForeground;
+      ctx.strokeStyle = edge.color;
       ctx.lineWidth = 2 / transform.scale;
       ctx.beginPath();
       ctx.arc(label.x, label.y, label.width / 2, 0, Math.PI * 2);
@@ -675,7 +668,7 @@
     elapsed: number,
   ): void {
     const breathing = badge.thinking && !reducedMotion ? 1 + Math.sin(now / 420) * 0.08 : 1;
-    const selected = selection?.type === 'agent' && selection.agentId === badge.id;
+    const selected = selectedAgentIds.has(badge.id);
     ctx.save();
     ctx.fillStyle = badge.color;
     ctx.strokeStyle = selected || hoveredBadgeId === badge.id ? colors.accent : colors.background;
@@ -926,12 +919,27 @@
     dragPointerId = null;
     if (!panning && dragDistance <= 3) {
       clearKeyboardFocus();
-      if (hoveredBadgeId) onSelectAgent?.(hoveredBadgeId);
-      else if (hoveredEdgeIndex !== null) onSelectRoute?.(hoveredEdgeIndex);
+      if (hoveredBadgeId)
+        onSelectAgent?.(hoveredBadgeId, event.shiftKey || event.metaKey || event.ctrlKey);
+      else if (hoveredEdgeIndex !== null) {
+        const edge = scene.edges[hoveredEdgeIndex];
+        if (edge) onSelectRoute?.(edge.agentId, edge.transitionIndex);
+      } else if ((event.metaKey || event.ctrlKey) && hoveredRegionId)
+        openLatestEvidence(undefined, hoveredRegionId);
       else if (hoveredRegionId) onSelectRegion?.([hoveredRegionId]);
       else onClearSelection?.();
     }
     panning = false;
+  }
+
+  function openLatestEvidence(agentId?: string, regionId?: string): void {
+    const action = latestEvidenceAction(scene.activities, selectedAgentIds, agentId, regionId);
+    if (action?.type === 'diff') onOpenDiff?.(action.path);
+    else if (action) onOpenFile?.(action.path);
+  }
+
+  function handleDoubleClick(): void {
+    if (hoveredBadgeId) openLatestEvidence(hoveredBadgeId);
   }
 
   function handleWheel(event: WheelEvent): void {
@@ -1010,9 +1018,12 @@
     if (event.key === 'Enter') {
       event.preventDefault();
       if (keyboardLayer === 'regions' && keyboardRegionId) onSelectRegion?.([keyboardRegionId]);
-      else if (keyboardLayer === 'agents' && keyboardBadgeId) onSelectAgent?.(keyboardBadgeId);
-      else if (keyboardLayer === 'crossings' && keyboardEdgeIndex !== null)
-        onSelectRoute?.(keyboardEdgeIndex);
+      else if (keyboardLayer === 'agents' && keyboardBadgeId)
+        onSelectAgent?.(keyboardBadgeId, false);
+      else if (keyboardLayer === 'crossings' && keyboardEdgeIndex !== null) {
+        const edge = scene.edges[keyboardEdgeIndex];
+        if (edge) onSelectRoute?.(edge.agentId, edge.transitionIndex);
+      }
     }
   }
 
@@ -1114,6 +1125,8 @@
   data-semantic-map-focus-mode={focusContent?.mode ??
     (focusedResponsibility ? 'responsibility' : 'none')}
   data-semantic-map-focus-evidence-count={focusContent?.items.length ?? 0}
+  data-semantic-map-selected-agents={[...selectedAgentIds].join(',')}
+  data-semantic-map-shared-regions={[...sharedRegions].join(',')}
   data-semantic-map-keyboard-layer={keyboardLayer}
 >
   <span class="sr-only" aria-live="polite">{selectionDescription}</span>
@@ -1137,6 +1150,7 @@
       hoveredEdgeIndex = null;
       hoveredBadgeId = null;
     }}
+    ondblclick={handleDoubleClick}
     onwheel={handleWheel}
   ></canvas>
 

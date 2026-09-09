@@ -1,5 +1,5 @@
 import { getAgentColorsWithSeed } from '$lib/utils/agent-colors';
-import type { Manifest, MapActivity, Route } from '../core/types';
+import type { Manifest, MapActivity } from '../core/types';
 import type { RegionGeometry } from '../layout/place';
 import type {
   ActivityMark,
@@ -11,6 +11,7 @@ import type {
   HeatBand,
   RouteEdge,
   SemanticMapFilters,
+  SemanticMapRoute,
   SemanticMapSelection,
   SemanticMapScene,
   SemanticMapTimeWindow,
@@ -352,70 +353,90 @@ function buildBadges(
 }
 
 export function buildRouteEdges(
-  route: Route | undefined,
+  routes: SemanticMapRoute[],
   geometry: RegionGeometry[],
   fileLabel: (count: number) => string,
+  dark: boolean,
+  neutral: string,
 ): RouteEdge[] {
-  if (!route) return [];
   const byId = geometryIndex(geometry);
-  return route.transitions.flatMap((transition, index) => {
-    const from = byId.get(transition.from);
-    const to = byId.get(transition.to);
-    if (!from || !to) return [];
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const bend = (index % 2 === 0 ? 1 : -1) * Math.min(42, Math.hypot(dx, dy) * 0.12);
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const controlX = (from.x + to.x) / 2 - (dy / length) * bend;
-    const controlY = (from.y + to.y) / 2 + (dx / length) * bend;
-    const pointAt = (t: number) => {
-      const inverse = 1 - t;
-      return {
-        x: inverse * inverse * from.x + 2 * inverse * t * controlX + t * t * to.x,
-        y: inverse * inverse * from.y + 2 * inverse * t * controlY + t * t * to.y,
+  return routes.flatMap(({ agentId, route }, routeIndex) =>
+    route.transitions.flatMap((transition, index) => {
+      const from = byId.get(transition.from);
+      const to = byId.get(transition.to);
+      if (!from || !to) return [];
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const direction = (index + routeIndex) % 2 === 0 ? 1 : -1;
+      const separation = routes.length > 1 ? 8 * routeIndex : 0;
+      const bend = direction * (Math.min(42, Math.hypot(dx, dy) * 0.12) + separation);
+      const length = Math.max(1, Math.hypot(dx, dy));
+      const controlX = (from.x + to.x) / 2 - (dy / length) * bend;
+      const controlY = (from.y + to.y) / 2 + (dx / length) * bend;
+      const pointAt = (t: number) => {
+        const inverse = 1 - t;
+        return {
+          x: inverse * inverse * from.x + 2 * inverse * t * controlX + t * t * to.x,
+          y: inverse * inverse * from.y + 2 * inverse * t * controlY + t * t * to.y,
+        };
       };
-    };
-    const midpoint = pointAt(0.5);
-    const arrow = pointAt(0.84);
-    const arrowTangentX = 2 * 0.16 * (controlX - from.x) + 2 * 0.84 * (to.x - controlX);
-    const arrowTangentY = 2 * 0.16 * (controlY - from.y) + 2 * 0.84 * (to.y - controlY);
-    return [
-      {
-        from: transition.from,
-        to: transition.to,
-        startX: from.x,
-        startY: from.y,
-        controlX,
-        controlY,
-        endX: to.x,
-        endY: to.y,
-        midpointX: midpoint.x,
-        midpointY: midpoint.y,
-        arrowX: arrow.x,
-        arrowY: arrow.y,
-        arrowAngle: Math.atan2(arrowTangentY, arrowTangentX),
-        step: index + 1,
-        count: transition.count,
-        label: transition.label ?? fileLabel(transition.evidence.length),
-        evidence: transition.evidence,
-      },
-    ];
-  });
+      const midpoint = pointAt(0.5);
+      const arrow = pointAt(0.84);
+      const arrowTangentX = 2 * 0.16 * (controlX - from.x) + 2 * 0.84 * (to.x - controlX);
+      const arrowTangentY = 2 * 0.16 * (controlY - from.y) + 2 * 0.84 * (to.y - controlY);
+      return [
+        {
+          agentId,
+          transitionIndex: index,
+          color: agentId ? getAgentColorsWithSeed(agentId, dark)[0] : neutral,
+          from: transition.from,
+          to: transition.to,
+          startX: from.x,
+          startY: from.y,
+          controlX,
+          controlY,
+          endX: to.x,
+          endY: to.y,
+          midpointX: midpoint.x,
+          midpointY: midpoint.y,
+          arrowX: arrow.x,
+          arrowY: arrow.y,
+          arrowAngle: Math.atan2(arrowTangentY, arrowTangentX),
+          step: index + 1,
+          count: transition.count,
+          label: transition.label ?? fileLabel(transition.evidence.length),
+          evidence: transition.evidence,
+        },
+      ];
+    }),
+  );
 }
 
 export function routeEdgePresentation(
-  index: number,
+  edge: Pick<RouteEdge, 'agentId' | 'transitionIndex'>,
   selection: SemanticMapSelection,
-  hoveredEdgeIndex: number | null,
+  hovered: boolean,
 ): { accented: boolean; opacity: number } {
   if (selection?.type === 'route' && selection.transitionIndex !== undefined) {
-    return index === selection.transitionIndex
+    return edge.transitionIndex === selection.transitionIndex && edge.agentId === selection.agentId
       ? { accented: true, opacity: 1 }
       : { accented: false, opacity: 0.24 };
   }
-  const accented =
-    hoveredEdgeIndex === index || selection?.type === 'route' || selection?.type === 'agent';
+  const accented = hovered || selection?.type === 'route' || selection?.type === 'agent';
   return { accented, opacity: accented ? 0.9 : 0.62 };
+}
+
+export function sharedRegionIds(activities: MapActivity[], agentIds: string[]): string[] {
+  if (agentIds.length < 2) return [];
+  const selected = new Set(agentIds);
+  const agentsByRegion = new Map<string, Set<string>>();
+  for (const activity of activities) {
+    if (!activity.regionId || !activity.agentId || !selected.has(activity.agentId)) continue;
+    const agents = agentsByRegion.get(activity.regionId) ?? new Set<string>();
+    agents.add(activity.agentId);
+    agentsByRegion.set(activity.regionId, agents);
+  }
+  return [...agentsByRegion].filter(([, agents]) => agents.size > 1).map(([regionId]) => regionId);
 }
 
 export function buildScene(input: {
@@ -423,7 +444,7 @@ export function buildScene(input: {
   filters: SemanticMapFilters;
   timeWindow: SemanticMapTimeWindow;
   geometry: RegionGeometry[];
-  route?: Route;
+  routes?: SemanticMapRoute[];
   dark: boolean;
   neutral: string;
   fileLabel: (count: number) => string;
@@ -449,7 +470,13 @@ export function buildScene(input: {
     ticks,
     trails,
     badges,
-    edges: buildRouteEdges(input.route, input.geometry, input.fileLabel),
+    edges: buildRouteEdges(
+      input.routes ?? [],
+      input.geometry,
+      input.fileLabel,
+      input.dark,
+      input.neutral,
+    ),
     heatByRegion,
     hasMotion:
       marks.some((mark) => mark.kind === 'read' || mark.kind === 'move') ||

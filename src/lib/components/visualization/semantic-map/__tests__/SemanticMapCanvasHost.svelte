@@ -6,11 +6,13 @@
 
   let {
     activityFixture = false,
+    compareFixture = false,
     routeFixture = false,
     width = 640,
     height = 360,
   }: {
     activityFixture?: boolean;
+    compareFixture?: boolean;
     routeFixture?: boolean;
     width?: number;
     height?: number;
@@ -35,42 +37,60 @@
       },
     ],
   };
-  const activities: MapActivity[] = activityFixture
-    ? [
-        {
-          id: 'read',
-          agentId: 'reading',
-          agentName: 'Reading',
-          regionId: 'first',
-          kind: 'read',
-          ts: '2026-09-06T10:19:59.800Z',
-        },
-        {
-          id: 'edit',
-          agentId: 'thinking',
-          agentName: 'Thinking',
-          regionId: 'second',
-          kind: 'edit',
-          ts: '2026-09-06T10:19:59.700Z',
-        },
-        {
-          id: 'tool',
-          agentId: 'tooling',
-          agentName: 'Tooling',
-          regionId: 'first',
-          kind: 'tool',
-          ts: '2026-09-06T10:19:59.900Z',
-        },
-        {
-          id: 'thinking',
-          agentId: 'thinking',
-          agentName: 'Thinking',
-          regionId: 'second',
-          kind: 'thinking',
-          ts: '2026-09-06T10:19:59.900Z',
-        },
-      ]
-    : [];
+  const activities = $derived.by<MapActivity[]>(() =>
+    activityFixture
+      ? [
+          {
+            id: 'read',
+            agentId: 'reading',
+            agentName: 'Reading',
+            regionId: 'first',
+            path: 'src/read.ts',
+            kind: 'read',
+            ts: '2026-09-06T10:19:59.800Z',
+          },
+          {
+            id: 'edit',
+            agentId: 'thinking',
+            agentName: 'Thinking',
+            regionId: 'second',
+            path: 'src/edit.ts',
+            kind: 'edit',
+            ts: '2026-09-06T10:19:59.700Z',
+          },
+          {
+            id: 'tool',
+            agentId: 'tooling',
+            agentName: 'Tooling',
+            regionId: 'first',
+            path: 'src/tool.ts',
+            kind: 'tool',
+            ts: '2026-09-06T10:19:59.900Z',
+          },
+          {
+            id: 'thinking',
+            agentId: 'thinking',
+            agentName: 'Thinking',
+            regionId: 'second',
+            kind: 'thinking',
+            ts: '2026-09-06T10:19:59.900Z',
+          },
+          ...(compareFixture
+            ? [
+                {
+                  id: 'shared-edit',
+                  agentId: 'thinking',
+                  agentName: 'Thinking',
+                  regionId: 'first',
+                  path: 'src/shared.ts',
+                  kind: 'edit' as const,
+                  ts: '2026-09-06T10:19:59.600Z',
+                },
+              ]
+            : []),
+        ]
+      : [],
+  );
   let selection = $state<SemanticMapSelection>(null);
   const firstHull: [number, number][] = [
     [180, 130],
@@ -111,12 +131,16 @@
         : region,
   );
   const geometry = { rest, focus };
-  const route: Route | undefined = routeFixture
-    ? {
-        visits: ['first', 'second'],
-        transitions: [{ from: 'first', to: 'second', count: 1, evidence: ['src/example.ts'] }],
-      }
-    : undefined;
+  const route = $derived.by<Route | undefined>(() =>
+    routeFixture
+      ? {
+          visits: ['first', 'second'],
+          transitions: [{ from: 'first', to: 'second', count: 1, evidence: ['src/example.ts'] }],
+        }
+      : undefined,
+  );
+  let openedFile = $state('');
+  let openedDiff = $state('');
   const timeWindow = { start: '2026-09-06T10:00:00.000Z', end: '2026-09-06T10:20:00.000Z' };
 </script>
 
@@ -125,15 +149,26 @@
   {manifest}
   {geometry}
   {activities}
-  {route}
+  routes={route ? [{ agentId: 'reading', route }] : []}
   {selection}
   filters={{}}
   {timeWindow}
   {width}
   {height}
   onSelectRegion={(regionIds) => (selection = { type: 'region', regionIds })}
-  onSelectAgent={(agentId) => (selection = { type: 'agent', agentId })}
-  onSelectRoute={(transitionIndex) => (selection = { type: 'route', transitionIndex })}
+  onSelectAgent={(agentId, additive) => {
+    const current = selection?.type === 'agent' ? selection.agentIds : [];
+    selection = {
+      type: 'agent',
+      agentIds: additive ? [...new Set([...current, agentId])] : [agentId],
+      pinnedRegionIds:
+        selection?.type === 'region' ? selection.regionIds : selection?.pinnedRegionIds,
+    };
+  }}
+  onSelectRoute={(agentId, transitionIndex) =>
+    (selection = { type: 'route', agentId, transitionIndex })}
+  onOpenFile={(path) => (openedFile = path)}
+  onOpenDiff={(path) => (openedDiff = path)}
   onClearSelection={() => (selection = null)}
 />
 <output
@@ -148,5 +183,7 @@
 ></output>
 <output
   data-testid="selected-agent"
-  data-agent={selection?.type === 'agent' ? selection.agentId : ''}
+  data-agent={selection?.type === 'agent' ? selection.agentIds.join(',') : ''}
 ></output>
+<output data-testid="opened-file">{openedFile}</output>
+<output data-testid="opened-diff">{openedDiff}</output>

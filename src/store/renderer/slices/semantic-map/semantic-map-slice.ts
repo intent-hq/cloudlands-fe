@@ -32,7 +32,8 @@ export interface SemanticMapWorkspaceState {
   source: MapSource | null;
   activities: Collection<MapActivity, 'id'>;
   route: Route | null;
-  selectedAgentId: string | null;
+  agentRoutes: Record<string, Route>;
+  selectedAgentIds: string[];
   selectedTaskNoteId: string | null;
   selectedRegionId: string | null;
   timeWindow: SemanticMapTimeWindow;
@@ -51,7 +52,8 @@ export const emptySemanticMapWorkspaceState: SemanticMapWorkspaceState = {
   source: null,
   activities: createCollection('id'),
   route: null,
-  selectedAgentId: null,
+  agentRoutes: {},
+  selectedAgentIds: [],
   selectedTaskNoteId: null,
   selectedRegionId: null,
   timeWindow: { startTs: null, endTs: null },
@@ -96,7 +98,7 @@ export const semanticMapRouteLoaded =
     [workspaceId: string, generation: number, subject: SemanticMapRouteSubject, route: Route]
   >('semanticMap/routeLoaded');
 export const semanticMapSelectedAgentChanged = createAction<
-  [workspaceId: string, agentId: string | null]
+  [workspaceId: string, agentIds: string[]]
 >('semanticMap/selectedAgentChanged');
 export const semanticMapSelectedTaskChanged = createAction<
   [workspaceId: string, taskNoteId: string | null]
@@ -128,10 +130,10 @@ function matchesRouteSubject(
   subject: SemanticMapRouteSubject,
 ): boolean {
   return 'agentId' in subject
-    ? workspaceState.selectedAgentId === subject.agentId &&
+    ? workspaceState.selectedAgentIds.includes(subject.agentId) &&
         workspaceState.selectedTaskNoteId === null
     : workspaceState.selectedTaskNoteId === subject.taskNoteId &&
-        workspaceState.selectedAgentId === null;
+        workspaceState.selectedAgentIds.length === 0;
 }
 
 semanticMapReducer.with(semanticMapLoadStarted, (state, { payload: [workspaceId, generation] }) => {
@@ -174,6 +176,7 @@ semanticMapReducer.with(
       source,
       activities: createCappedActivities([...activities, ...liveActivities]),
       route: null,
+      agentRoutes: {},
       selectedRegionId,
     });
   },
@@ -211,19 +214,24 @@ semanticMapReducer.with(
     ) {
       return state;
     }
-    return setWorkspaceState(state, workspaceId, { ...workspaceState, route });
+    return 'agentId' in subject
+      ? setWorkspaceState(state, workspaceId, {
+          ...workspaceState,
+          agentRoutes: { ...workspaceState.agentRoutes, [subject.agentId]: route },
+        })
+      : setWorkspaceState(state, workspaceId, { ...workspaceState, route });
   },
 );
 semanticMapReducer.with(
   semanticMapSelectedAgentChanged,
-  (state, { payload: [workspaceId, selectedAgentId] }) => {
+  (state, { payload: [workspaceId, selectedAgentIds] }) => {
     const workspaceState = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, {
       ...workspaceState,
       route: null,
-      selectedAgentId,
+      agentRoutes: {},
+      selectedAgentIds,
       selectedTaskNoteId: null,
-      selectedRegionId: null,
     });
   },
 );
@@ -234,7 +242,8 @@ semanticMapReducer.with(
     return setWorkspaceState(state, workspaceId, {
       ...workspaceState,
       route: null,
-      selectedAgentId: null,
+      agentRoutes: {},
+      selectedAgentIds: [],
       selectedTaskNoteId,
       selectedRegionId: null,
     });
@@ -247,7 +256,6 @@ semanticMapReducer.with(
     return setWorkspaceState(state, workspaceId, {
       ...workspaceState,
       route: null,
-      selectedAgentId: null,
       selectedTaskNoteId: null,
       selectedRegionId,
     });

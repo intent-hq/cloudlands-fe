@@ -247,14 +247,14 @@ describe('semanticMapSaga', () => {
     await settle();
     harness.dispatch(workspaceMounted('ws-1'));
     await settle();
-    harness.dispatch(semanticMapSelectedAgentChanged('ws-1', 'agent-1'));
+    harness.dispatch(semanticMapSelectedAgentChanged('ws-1', ['agent-1']));
     await settle();
 
     harness.dispatch(applyNoteCreated('ws-1', { id: 'manifest', tags: ['semantic-map'] } as never));
     await settle();
 
     expect(mocks.route).toHaveBeenNthCalledWith(2, 'ws-1', { agentId: 'agent-1' });
-    expect(harness.state().route).toEqual(refreshedRoute);
+    expect(harness.state().agentRoutes).toEqual({ 'agent-1': refreshedRoute });
     await harness.stop();
   });
 
@@ -317,18 +317,41 @@ describe('semanticMapSaga', () => {
     await settle();
     harness.dispatch(workspaceMounted('ws-1'));
     await settle();
-    harness.dispatch(semanticMapSelectedAgentChanged('ws-1', 'agent-1'));
+    harness.dispatch(semanticMapSelectedAgentChanged('ws-1', ['agent-1']));
     await settle();
-    harness.dispatch(semanticMapSelectedAgentChanged('ws-1', 'agent-2'));
+    harness.dispatch(semanticMapSelectedAgentChanged('ws-1', ['agent-2']));
     await settle();
 
     expect(mocks.route).toHaveBeenCalledWith('ws-1', { agentId: 'agent-1' });
-    expect(harness.state()?.route).toBeNull();
+    expect(harness.state()?.agentRoutes).toEqual({});
     firstRoute.resolve(SEMANTIC_MAP_FIXTURE_ROUTE);
     await settle();
 
     expect(mocks.route).toHaveBeenNthCalledWith(2, 'ws-1', { agentId: 'agent-2' });
-    expect(harness.state()?.route).toEqual(secondRoute);
+    expect(harness.state()?.agentRoutes).toEqual({ 'agent-2': secondRoute });
+    await harness.stop();
+  });
+
+  it('loads routes for both selected agents through the semantic-map saga', async () => {
+    const firstRoute = deferred<typeof SEMANTIC_MAP_FIXTURE_ROUTE>();
+    const secondRoute = { visits: ['renderer-state'], transitions: [] };
+    mocks.route.mockReset();
+    mocks.route.mockReturnValueOnce(firstRoute.promise).mockResolvedValueOnce(secondRoute);
+    const harness = createHarness();
+    await settle();
+    harness.dispatch(workspaceMounted('ws-1'));
+    await settle();
+    harness.dispatch(semanticMapSelectedAgentChanged('ws-1', ['agent-1', 'agent-2']));
+    await settle();
+
+    expect(mocks.route).toHaveBeenNthCalledWith(1, 'ws-1', { agentId: 'agent-1' });
+    expect(mocks.route).toHaveBeenNthCalledWith(2, 'ws-1', { agentId: 'agent-2' });
+    firstRoute.resolve(SEMANTIC_MAP_FIXTURE_ROUTE);
+    await settle();
+    expect(harness.state().agentRoutes).toEqual({
+      'agent-1': SEMANTIC_MAP_FIXTURE_ROUTE,
+      'agent-2': secondRoute,
+    });
     await harness.stop();
   });
 
@@ -339,7 +362,7 @@ describe('semanticMapSaga', () => {
     await settle();
     harness.dispatch(workspaceMounted('ws-1'));
     await settle();
-    harness.dispatch(semanticMapSelectedAgentChanged('ws-1', 'agent-1'));
+    harness.dispatch(semanticMapSelectedAgentChanged('ws-1', ['agent-1']));
     await settle();
 
     harness.dispatch(workspaceUnmounted('ws-1'));

@@ -3,7 +3,7 @@
 
   export type SemanticMapDetailSelection =
     | { type: 'region'; regionId: string }
-    | { type: 'agent'; agentId: string }
+    | { type: 'agent'; agentIds: string[] }
     | { type: 'route' }
     | { type: 'crossing'; transitionIndex: number }
     | { type: 'file'; path: string }
@@ -25,11 +25,12 @@
     manifest: Manifest;
     activities: MapActivity[];
     route?: Route;
+    routes?: import('./render/types').SemanticMapRoute[];
     selection: SemanticMapDetailSelection;
     agents?: SemanticMapDetailAgent[];
     fileChanges?: SemanticMapDetailFileChange[];
     routeSubjectLabel?: string;
-    onSelectCrossing?: (transitionIndex: number) => void;
+    onSelectCrossing?: (transitionIndex: number, agentId?: string) => void;
     onSelectFile?: (path: string) => void;
     onOpenFile?: (path: string) => void;
     onOpenDiff?: (path: string) => void;
@@ -49,6 +50,7 @@
     manifest,
     activities,
     route,
+    routes = [],
     selection,
     agents = [],
     fileChanges = [],
@@ -65,8 +67,13 @@
       ? manifest.regions.find(({ id }) => id === selection.regionId)
       : undefined,
   );
-  const selectedAgent = $derived(
-    selection?.type === 'agent' ? agents.find(({ id }) => id === selection.agentId) : undefined,
+  const selectedAgents = $derived(
+    selection?.type === 'agent'
+      ? selection.agentIds.map(
+          (agentId) =>
+            agents.find(({ id }) => id === agentId) ?? { id: agentId, name: agentId, status: '' },
+        )
+      : [],
   );
   const selectedTransition = $derived(
     selection?.type === 'crossing' ? route?.transitions[selection.transitionIndex] : undefined,
@@ -85,13 +92,6 @@
   );
   const regionChildren = $derived(
     selectedRegion ? manifest.regions.filter(({ parent }) => parent === selectedRegion.id) : [],
-  );
-  const agentActivities = $derived(
-    selection?.type === 'agent'
-      ? activities
-          .filter(({ agentId }) => agentId === selection.agentId)
-          .toSorted((left, right) => Date.parse(right.ts) - Date.parse(left.ts))
-      : [],
   );
   const regionFileGroups = $derived.by(() => {
     if (!selectedRegion) return [];
@@ -173,6 +173,16 @@
         return m.agentOverview_hierarchyGraph_statusIdle_label();
     }
   }
+
+  function activitiesForAgent(agentId: string): MapActivity[] {
+    return activities
+      .filter((activity) => activity.agentId === agentId)
+      .toSorted((left, right) => Date.parse(right.ts) - Date.parse(left.ts));
+  }
+
+  function routeForAgent(agentId: string): Route | undefined {
+    return routes.find((entry) => entry.agentId === agentId)?.route;
+  }
 </script>
 
 <div
@@ -251,70 +261,59 @@
     </section>
   {:else if selection?.type === 'agent'}
     <header>
-      <h2 class="detail-heading text-lg font-semibold">
-        {selectedAgent?.name ?? selection.agentId}
-      </h2>
-      {#if selectedAgent}
-        <p class="mt-1 text-muted-foreground">{statusLabel(selectedAgent.status)}</p>
-      {/if}
+      <h2 class="detail-heading text-lg font-semibold">{m.semanticMap_sandbox_agents_label()}</h2>
     </header>
-    <section>
-      <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {m.semanticMap_detail_recentActivity_label()}
-      </h3>
-      <ul class="space-y-2">
-        {#each agentActivities.slice(0, 8) as activity (`${activity.ts}-${activity.path ?? activity.kind}`)}
-          <li class="border-l border-border pl-2">
-            <div class="flex items-baseline justify-between gap-2">
-              <span>{activityKindLabel(activity.kind)}</span>
-              <time class="text-xs text-muted-foreground" datetime={activity.ts}
-                >{formatTime(activity.ts)}</time
-              >
-            </div>
-            {#if activity.path}
-              <p class="break-all text-xs font-medium text-foreground" title={activity.path}>
-                {fileName(activity.path)}
-              </p>
-              {#if fileDirectory(activity.path)}
-                <p class="truncate text-xs text-muted-foreground" title={activity.path}>
-                  {fileDirectory(activity.path)}
-                </p>
-              {/if}
-            {:else}
-              <p class="truncate text-xs text-muted-foreground">
-                {activity.regionId ? regionLabel(activity.regionId) : ''}
-              </p>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    </section>
-    <section>
-      <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {m.semanticMap_detail_routeSoFar_label()}
-      </h3>
-      <ol class="space-y-2">
-        {#each route?.visits ?? [] as regionId, index (`${regionId}-${index}`)}
-          <li>
-            <span class="mr-2 font-mono text-xs text-muted-foreground"
-              >{formatInteger(index + 1)}</span
-            >{regionLabel(regionId)}
-          </li>
-        {/each}
-      </ol>
-      {#if route?.transitions.length}
-        <div class="mt-3 space-y-1">
-          {#each route.transitions as transition, index (`${transition.from}-${transition.to}-${index}`)}
-            <Button
-              type="button"
-              variant="outline"
-              class="block h-auto w-full whitespace-normal rounded px-2 py-1.5 text-left hover:bg-muted"
-              onclick={() => onSelectCrossing?.(index)}>{transitionLabel(transition)}</Button
-            >
+    {#each selectedAgents as agent (agent.id)}
+      <section class="rounded-md border border-border p-3">
+        <h3 class="font-semibold">{agent.name}</h3>
+        {#if agent.status}<p class="mt-1 text-xs text-muted-foreground">
+            {statusLabel(agent.status)}
+          </p>{/if}
+        <h4 class="mb-2 mt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {m.semanticMap_detail_recentActivity_label()}
+        </h4>
+        <ul class="space-y-2">
+          {#each activitiesForAgent(agent.id).slice(0, 4) as activity (`${agent.id}-${activity.id}`)}
+            <li class="border-l border-border pl-2">
+              <div class="flex items-baseline justify-between gap-2">
+                <span>{activityKindLabel(activity.kind)}</span>
+                <time class="text-xs text-muted-foreground" datetime={activity.ts}
+                  >{formatTime(activity.ts)}</time
+                >
+              </div>
+              {#if activity.path}<p class="break-all text-xs font-medium" title={activity.path}>
+                  {fileName(activity.path)}
+                </p>{/if}
+            </li>
           {/each}
-        </div>
-      {/if}
-    </section>
+        </ul>
+        <h4 class="mb-2 mt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {m.semanticMap_detail_routeSoFar_label()}
+        </h4>
+        <ol class="space-y-1">
+          {#each routeForAgent(agent.id)?.visits ?? [] as regionId, index (`${agent.id}-${regionId}-${index}`)}
+            <li>
+              <span class="mr-2 font-mono text-xs text-muted-foreground"
+                >{formatInteger(index + 1)}</span
+              >{regionLabel(regionId)}
+            </li>
+          {/each}
+        </ol>
+        {#if routeForAgent(agent.id)?.transitions.length}
+          <div class="mt-3 space-y-1">
+            {#each routeForAgent(agent.id)?.transitions ?? [] as transition, index (`${agent.id}-${transition.from}-${transition.to}-${index}`)}
+              <Button
+                type="button"
+                variant="outline"
+                class="block h-auto w-full whitespace-normal rounded px-2 py-1.5 text-left hover:bg-muted"
+                onclick={() => onSelectCrossing?.(index, agent.id)}
+                >{transitionLabel(transition)}</Button
+              >
+            {/each}
+          </div>
+        {/if}
+      </section>
+    {/each}
   {:else if selection?.type === 'route'}
     <header>
       <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
