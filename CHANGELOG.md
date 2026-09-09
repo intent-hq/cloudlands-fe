@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.144.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.3...v2.144.4) (2026-09-09)
+
+
+### 🐛 Bug Fixes
+
+* harmonize BranchSelector search strip and input backgrounds ([#2245](https://github.com/intent-hq/cloudlands-fe/issues/2245)) ([0c3e9e2](https://github.com/intent-hq/cloudlands-fe/commit/0c3e9e2b8f4fdbf603ba6bfe0f08b4159167820f))
+
 ## [2.144.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.2...v2.144.3) (2026-09-08)
 
 
