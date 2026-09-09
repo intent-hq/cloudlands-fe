@@ -179,6 +179,8 @@
   let currentSearchIndex = $state(0);
   let searchInputRef: HTMLInputElement | null = $state(null);
   let wrapperRef: HTMLDivElement | undefined = $state();
+  let viewerWidth = $state(0);
+  const effectiveViewMode = $derived(viewerWidth < 640 ? 'unified' : viewMode);
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let searchRefreshQueued = false;
 
@@ -422,7 +424,7 @@
   // structure so folded labels live outside the line-number gutter sizing path.
   function buildFileDiffOptions(): any {
     return {
-      diffStyle: viewMode,
+      diffStyle: effectiveViewMode,
       diffIndicators,
       disableLineNumbers: !showLineNumbers,
       overflow,
@@ -960,7 +962,7 @@
   // themselves drive a rerender.
   function getStructuralSignature(): string {
     return [
-      viewMode,
+      effectiveViewMode,
       diffIndicators,
       showLineNumbers,
       overflow,
@@ -981,7 +983,7 @@
   // triggers a full rerender if the structural signature has changed.
   $effect(() => {
     const _deps = [
-      viewMode,
+      effectiveViewMode,
       diffIndicators,
       showLineNumbers,
       overflow,
@@ -1045,9 +1047,10 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   bind:this={wrapperRef}
+  bind:clientWidth={viewerWidth}
   class="pure-diff {className}"
   style="{maxHeight ? `max-height: ${maxHeight};` : ''} {style}"
-  data-view-mode={viewMode}
+  data-view-mode={effectiveViewMode}
   data-collapsed={collapsed}
   tabindex="-1"
   onkeydown={handleKeydown}
