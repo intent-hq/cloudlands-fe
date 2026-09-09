@@ -140,7 +140,7 @@
   // Combined content classes - use $derived to react to prop changes
   const contentClasses = $derived(
     cn(
-      'z-(--layer-tooltip) rounded-md border border-border shadow-(--elevation-overlay)',
+      'overlay-surface z-(--layer-tooltip)',
       !disableAnimation && 'tooltip-motion',
       config.bg,
       config.text,
@@ -198,6 +198,7 @@
           {alignOffset}
           class={contentClasses}
           data-tooltip-content
+          data-overlay-surface
           onFocusOutside={() => {}}
         >
           <div class="relative" style="max-width: {maxWidth};">

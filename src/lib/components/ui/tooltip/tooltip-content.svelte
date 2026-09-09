@@ -28,10 +28,11 @@
     role="tooltip"
     data-slot="tooltip-content"
     data-surface-level={surface}
+    data-overlay-surface
     {sideOffset}
     {side}
     class={cn(
-      'tooltip-motion type-caption z-(--layer-tooltip) w-fit text-balance rounded-(--radius-small) bg-foreground px-2 py-1 text-background',
+      'tooltip-motion overlay-surface type-caption z-(--layer-tooltip) w-fit text-balance bg-foreground px-2 py-1 text-background',
       className,
     )}
     onFocusOutside={() => {}}

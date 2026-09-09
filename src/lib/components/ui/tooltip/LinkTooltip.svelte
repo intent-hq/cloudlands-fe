@@ -57,7 +57,7 @@
 <Portal zIndex={70}>
   {#if tooltip.visible}
     <div
-      class="link-tooltip"
+      class="link-tooltip overlay-surface"
       class:link-tooltip--card={cardPreview !== null}
       class:link-tooltip--below={placeBelow}
       style={tooltipStyle}
@@ -87,11 +87,8 @@
     pointer-events: none;
     max-width: 400px;
     padding: 6px 10px 4px;
-    border-radius: var(--radius-medium);
     background: var(--color-popover);
     color: var(--color-popover-foreground);
-    border: 1px solid var(--color-border);
-    box-shadow: var(--elevation-overlay);
     font-size: 12px;
     line-height: 1.4;
   }

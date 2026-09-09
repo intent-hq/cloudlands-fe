@@ -75,7 +75,7 @@
   // Combined content classes - use $derived to react to prop changes
   const contentClasses = $derived(
     cn(
-      'tooltip-motion z-(--layer-tooltip) w-fit max-w-xs whitespace-pre-wrap text-balance rounded-(--radius-small)',
+      'tooltip-motion overlay-surface z-(--layer-tooltip) w-fit max-w-xs whitespace-pre-wrap text-balance',
       variantStyles[variant],
       sizeStyles[size],
       contentClass,
@@ -126,6 +126,7 @@
           {alignOffset}
           class={contentClasses}
           data-tooltip-content
+          data-overlay-surface
           onFocusOutside={() => {}}
         >
           {#if typeof content === 'string'}

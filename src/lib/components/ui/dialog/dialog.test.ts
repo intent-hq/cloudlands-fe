@@ -44,6 +44,7 @@ describe('Dialog', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }));
     const dialog = screen.getByRole('dialog', { name: 'Canonical dialog' });
     expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(dialog.hasAttribute('data-overlay-surface')).toBe(true);
     expect(document.getElementById(dialog.getAttribute('aria-describedby')!)?.textContent).toBe(
       'Dialog behavior fixture',
     );

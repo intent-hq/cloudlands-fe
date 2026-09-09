@@ -41,6 +41,7 @@ describe('Tooltip', () => {
     await fireEvent.focus(trigger);
     const tooltip = await screen.findByRole('tooltip', { hidden: true });
     expect(tooltip.textContent).toContain('Press Command K');
+    expect(tooltip.hasAttribute('data-overlay-surface')).toBe(true);
     expect(container.contains(tooltip)).toBe(false);
     expect(trigger.getAttribute('aria-describedby')).toBe(tooltip.id);
     expect(tooltip.getAttribute('data-surface-level')).toBe('3');
@@ -84,6 +85,7 @@ describe('Tooltip', () => {
       name: 'Rich button help',
       hidden: true,
     });
+    expect(richTooltip.hasAttribute('data-overlay-surface')).toBe(true);
     await waitFor(() => expect(richTrigger.getAttribute('aria-describedby')).toBe(richTooltip.id));
     await fireEvent.click(
       screen.getByRole('button', { name: m.ui_tooltipRich_close_ariaLabel(), hidden: true }),

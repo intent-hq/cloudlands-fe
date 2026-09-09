@@ -715,6 +715,23 @@ describe('theme color contract', () => {
     );
   });
 
+  it('defines one theme-aware overlay surface recipe', () => {
+    const appCss = fs.readFileSync(path.resolve(process.cwd(), 'src/app.css'), 'utf8');
+    const recipe = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/styles/overlay-surface.css'),
+      'utf8',
+    );
+
+    expect(appCss).toContain("@import '$lib/styles/overlay-surface.css';");
+    expect(recipe).toContain('border-radius: var(--radius-medium);');
+    expect(recipe).toContain('box-shadow: var(--elevation-overlay);');
+    expect(recipe).toContain('--overlay-surface-border-width: 0px;');
+    expect(recipe).toMatch(
+      /\.dark \.overlay-surface\s*{[^}]*--overlay-surface-border-width:\s*1px/s,
+    );
+    expect(recipe).toContain('--overlay-surface-border-color: hsl(var(--border));');
+  });
+
   it('limits product typography to five canonical styles with compatibility aliases', () => {
     const tokens = fs.readFileSync(
       path.resolve(process.cwd(), 'src/lib/styles/tokens.css'),

@@ -73,9 +73,10 @@
             {...props}
             {role}
             data-slot="dialog-content"
+            data-overlay-surface
             class={cn(
               container ? 'absolute' : 'fixed',
-              'dialog-editorial-content left-1/2 top-1/2 z-[var(--layer-modal)] grid w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto overscroll-contain rounded-(--radius-large) p-6 text-popover-foreground outline-none motion-reduce:animate-none motion-reduce:transition-none',
+              'dialog-editorial-content overlay-surface left-1/2 top-1/2 z-[var(--layer-modal)] grid w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto overscroll-contain p-6 text-popover-foreground outline-none motion-reduce:animate-none motion-reduce:transition-none',
               size === 'sm' && (density === 'compact' ? 'max-w-90' : 'max-w-100'),
               size === 'lg' && (density === 'compact' ? 'max-w-120' : 'max-w-135'),
               surfaceClasses(surface),
