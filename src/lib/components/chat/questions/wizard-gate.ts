@@ -5,6 +5,8 @@ import {
   selectAgentMessageById,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getAnsweredQuestionsMessageId } from './answer-message';
 import {
   classifyPendingQuestionMarker,
   derivePendingQuestions,
@@ -73,6 +75,19 @@ export function deriveWizardPendingQuestions(
       );
   if (!pending) return null;
   if (isQuestionMessageDismissed(session?.metadata, pending.messageId)) return null;
+  // Hide only while this exact set has an answer in the authoritative queue.
+  // The daemon resolves on delivery; removing an undelivered answer restores
+  // the wizard without rewriting the pending marker.
+  const queuedMessages = state.agentQueue?.byAgentId[agentId]?.messages;
+  if (
+    queuedMessages &&
+    getItems(queuedMessages).some(
+      (message) =>
+        getAnsweredQuestionsMessageId({ metadata: message.messageMetadata }) === pending.messageId,
+    )
+  ) {
+    return null;
+  }
   return pending;
 }
 

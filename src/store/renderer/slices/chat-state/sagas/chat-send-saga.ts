@@ -21,6 +21,8 @@ import {
 } from '$lib/components/chat/input/image-attachment-placement';
 import { getActiveStalledEvent } from '$lib/components/chat/streaming-status-utils';
 import { appClient } from '$lib/client';
+import type { MutationResult } from '$lib/client/app-client';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentSession } from '$shared/types';
@@ -227,7 +229,9 @@ function* dispatchToLifecycle(
   yield* call(hydrateBeforeSend, agentId, wsId);
   const recordedAttempt = buildRecordedAttempt(content, options);
   const isResponding = yield* selectAgentIsResponding.effect(agentId);
-  if (!skipQueueCheck && isResponding) {
+  // Let the daemon decide whether tagged messages queue even when the local
+  // activity snapshot says idle: a new turn may have started on another client.
+  if (!skipQueueCheck && (isResponding || options.messageMetadata !== undefined)) {
     yield* put(clearChatDraft(wsId, agentId));
     try {
       const queueOptions = {
@@ -240,10 +244,37 @@ function* dispatchToLifecycle(
       // advances this seq, and the queue-on-send seed below must then yield
       // to it.
       const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId);
-      const result =
-        Object.keys(queueOptions).length > 0
-          ? yield* call([appClient.agents, appClient.agents.queue], agentId, content, queueOptions)
-          : yield* call([appClient.agents, appClient.agents.queue], agentId, content);
+      // queueMessage cannot carry metadata (PROTOCOL §5.5). Tagged answers
+      // must use sendMessage's queue-if-busy default so the daemon can resolve
+      // the question set on drain. Do not use the optimistic direct-send
+      // lifecycle here: a queued answer is not a delivered transcript row,
+      // and any current turn stays active (intent#4604).
+      const result: MutationResult & { queued?: boolean } =
+        options.messageMetadata !== undefined
+          ? yield* call(
+              backendRequest<MutationResult & { queued?: boolean }>,
+              'agent.sendMessage',
+              {
+                agentId,
+                workspaceId: wsId,
+                content,
+                ...queueOptions,
+                messageMetadata: options.messageMetadata,
+                ...(options.noteIds !== undefined ? { noteIds: options.noteIds } : {}),
+                ...(options.userAppMessageId !== undefined
+                  ? { userAppMessageId: options.userAppMessageId }
+                  : {}),
+                ...(options.model !== undefined ? { model: options.model } : {}),
+              },
+            )
+          : Object.keys(queueOptions).length > 0
+            ? yield* call(
+                [appClient.agents, appClient.agents.queue],
+                agentId,
+                content,
+                queueOptions,
+              )
+            : yield* call([appClient.agents, appClient.agents.queue], agentId, content);
       if (!result.success) {
         yield* put(chatLastAttemptedMessageSet(agentId, recordedAttempt));
         yield* put(chatSendFailed(agentId, result.error ?? m.agent_chatSend_queueRejected_error()));
@@ -251,6 +282,12 @@ function* dispatchToLifecycle(
       }
       yield* put(chatErrorCleared(agentId));
       yield* put(chatModelUnavailableCleared(agentId));
+      if (result.queued === false) {
+        // The agent became idle before the request arrived. Delivery is owned
+        // by the daemon; hydrate its answer row rather than sending twice.
+        yield* put(chatLastAttemptedMessageSet(agentId, recordedAttempt));
+        yield* put(refreshChatTranscriptRequested(wsId, agentId));
+      }
       const queuedMessage = result.queuedMessage;
       if (queuedMessage) {
         const turnId = result.turnId ?? queuedMessage.turnId;

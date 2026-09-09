@@ -4,6 +4,7 @@ import { createCollection } from '@augmentcode/themis/utils/collections/collecti
 
 const mocks = vi.hoisted(() => ({
   send: vi.fn(),
+  backendRequest: vi.fn(),
   queue: vi.fn(),
   hydrateQueue: vi.fn(async () => undefined),
   sendQueuedNow: vi.fn(),
@@ -24,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   ),
 }));
 vi.mock('$features/agent/agent-send', () => ({ sendMessage: mocks.send }));
+vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
 vi.mock('svelte-sonner', () => ({ toast: { info: mocks.toastInfo } }));
 vi.mock('$lib/components/chat/input/image-attachment-placement', () => ({
   toImageReferenceBlocks: mocks.toImageReferenceBlocks,
@@ -528,6 +530,78 @@ describe('chatSendSaga', () => {
         'turn-queued',
       ),
     );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it.each(['rejected', 'offline'] as const)(
+    'preserves the answer tag for retry when a busy-agent send is %s',
+    async (failure) => {
+      if (failure === 'offline') mocks.backendRequest.mockRejectedValueOnce(new Error('offline'));
+      else mocks.backendRequest.mockResolvedValueOnce({ success: false, error: 'rejected' });
+      const run = harness(session({ isResponding: true }));
+      const messageMetadata = {
+        type: 'question_answers',
+        answeredQuestionsMessageId: 'question-1',
+      };
+      run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'answer', messageMetadata }));
+      await settle();
+
+      expect(mocks.backendRequest).toHaveBeenCalledWith('agent.sendMessage', {
+        agentId: AGENT,
+        workspaceId: WS,
+        content: 'answer',
+        messageMetadata,
+      });
+      expect(run.dispatch).toHaveBeenCalledWith(
+        chatLastAttemptedMessageSet(AGENT, { text: 'answer', options: { messageMetadata } }),
+      );
+      expect(run.dispatch.mock.calls.some(([action]) => action.type === chatSendFailed.type)).toBe(
+        true,
+      );
+      expect(
+        run.dispatch.mock.calls.some(([action]) => action.type === replaceAgentQueue.type),
+      ).toBe(false);
+      expect(mocks.send).not.toHaveBeenCalled();
+      expect(mocks.queue).not.toHaveBeenCalled();
+      expect(mocks.stop).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
+
+  it('refreshes a delivered answer if the agent becomes idle before the busy send arrives', async () => {
+    mocks.backendRequest.mockResolvedValueOnce({
+      success: true,
+      queued: false,
+      messageId: 'answer-1',
+      turnId: 'turn-answer',
+    });
+    const run = harness(session({ isResponding: true }));
+    run.channel.put(
+      sendMessage(AGENT, {
+        wsId: WS,
+        text: 'answer',
+        messageMetadata: { type: 'question_answers', answeredQuestionsMessageId: 'question-1' },
+      }),
+    );
+    await settle();
+
+    expect(mocks.backendRequest).toHaveBeenCalledTimes(1);
+    expect(run.dispatch).toHaveBeenCalledWith(
+      chatLastAttemptedMessageSet(AGENT, {
+        text: 'answer',
+        options: {
+          messageMetadata: { type: 'question_answers', answeredQuestionsMessageId: 'question-1' },
+        },
+      }),
+    );
+    expect(run.dispatch).toHaveBeenCalledWith(refreshChatTranscriptRequested(WS, AGENT));
+    expect(run.dispatch.mock.calls.some(([action]) => action.type === replaceAgentQueue.type)).toBe(
+      false,
+    );
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(mocks.queue).not.toHaveBeenCalled();
     run.task.cancel();
     await run.task.toPromise();
   });

@@ -12,6 +12,11 @@ import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import type { StoreState } from '$store/renderer/types';
 import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
+import {
+  agentQueueReducer,
+  initialState as initialQueueState,
+  replaceAgentQueue,
+} from '$store/renderer/slices/agent-queue/agent-queue-slice';
 
 const QUESTION = {
   attachmentId: 'tar-abc123def456',
@@ -389,6 +394,30 @@ describe('wizard gate while waiting on delegated agents', () => {
     expect(deriveWizardPendingQuestions(state, AGENT_ID, laterTurn)).toMatchObject({
       messageId: 'msg-a1',
     });
+  });
+
+  it.each([
+    { metadata: undefined, hides: false },
+    { metadata: { type: 'agent_message', answeredQuestionsMessageId: 'msg-a1' }, hides: false },
+    { metadata: buildAnswerMessageMetadata('msg-other'), hides: false },
+    { metadata: buildAnswerMessageMetadata('msg-a1'), hides: true },
+  ])('only suppresses the exact queued answer tag: $metadata', ({ metadata, hides }) => {
+    const state = stateWith(waitingSession);
+    state.agentQueue = agentQueueReducer(
+      initialQueueState,
+      replaceAgentQueue(AGENT_ID, [
+        {
+          id: 'queued-answer',
+          content: 'Q: Which authentication method?\nA: OAuth',
+          queuedAt: '2026-09-09T12:00:00.000Z',
+          position: 0,
+          ...(metadata ? { messageMetadata: metadata } : {}),
+        },
+      ]),
+    );
+    const pending = deriveWizardPendingQuestions(state, AGENT_ID, transcript);
+    if (hides) expect(pending).toBeNull();
+    else expect(pending).toMatchObject({ messageId: 'msg-a1' });
   });
 
   it('STICKY: the marked message still streaming (asking turn in flight) suppresses the wizard', () => {

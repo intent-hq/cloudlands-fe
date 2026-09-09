@@ -40,6 +40,10 @@ import {
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
 import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { chatSendSaga } from '$store/renderer/slices/chat-state/sagas/chat-send-saga';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
+import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
+import { deriveWizardPendingQuestions } from '../wizard-gate';
 import QuestionWizard from '../QuestionWizard.svelte';
 import {
   buildAnswerMessageMetadata,
@@ -251,8 +255,92 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
     );
   });
   afterEach(() => {
+    appStore.dispatch(replaceAgentQueue(AGENT, []));
     appStore.dispatch(clearAllSessions());
   });
+
+  it.each(['responding', 'tool', 'stale-idle'] as const)(
+    'queues wizard answers during a %s turn without interrupting or marking them delivered',
+    async (activity) => {
+      const messages = [assistantMessage([questionBlock(SINGLE)])];
+      appStore.dispatch(
+        bulkUpsertSessions([
+          {
+            ...daemonPendingAgent,
+            status: AgentStatus.Active,
+            backendSessionId: AGENT,
+            isResponding: activity === 'responding',
+            isWaitingOnTool: activity === 'tool',
+            isStreaming: activity !== 'stale-idle',
+            messages,
+            metadata: { pendingQuestionsMessageId: 'msg-a1' },
+          } as unknown as AgentSession,
+        ]),
+      );
+      const queuedMessage = {
+        id: 'queued-answer',
+        content: `Q: ${SINGLE.question}\nA: OS keychain`,
+        queuedAt: '2026-09-09T12:00:00.000Z',
+        position: 0,
+        turnId: 'queued-answer',
+        messageMetadata: { type: 'question_answers', answeredQuestionsMessageId: 'msg-a1' },
+      };
+      backendRequestMock.mockImplementation(async (method: string) => {
+        if (method === 'agent.sendMessage') {
+          return { success: true, queued: true, queuedMessage, turnId: 'queued-answer' };
+        }
+        return {};
+      });
+      const pending = deriveWizardPendingQuestions(appStore.state, AGENT, messages);
+      expect(pending?.messageId).toBe('msg-a1');
+      render(QuestionWizard, {
+        props: {
+          questions: pending!.questions,
+          onComplete: (answers: QuestionAnswer[]) => {
+            appStore.dispatch(
+              sendMessage(AGENT, {
+                wsId: WS,
+                text: flattenAnswersToMessage(answers),
+                messageMetadata: buildAnswerMessageMetadata(pending!.messageId),
+              }),
+            );
+          },
+        },
+      });
+      await fireEvent.click(screen.getByText('OS keychain'));
+      await vi.waitFor(() => {
+        expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([queuedMessage]);
+      });
+      expect(backendRequestMock.mock.calls).toEqual([
+        [
+          'agent.sendMessage',
+          {
+            agentId: AGENT,
+            workspaceId: WS,
+            content: queuedMessage.content,
+            messageMetadata: {
+              type: 'question_answers',
+              answeredQuestionsMessageId: 'msg-a1',
+            },
+          },
+        ],
+      ]);
+      const session = selectAgentSession.select(appStore.state, AGENT)!;
+      expect(session.isStreaming).toBe(activity !== 'stale-idle');
+      expect(session.messages.filter((message) => message.role === 'user')).toEqual([]);
+      expect(deriveWizardPendingQuestions(appStore.state, AGENT, session.messages)).toBeNull();
+      expect(
+        appStore.state.chatState.byAgentId[AGENT].queuedRetryRecords['queued-answer'],
+      ).toMatchObject({ record: { options: { messageMetadata: queuedMessage.messageMetadata } } });
+
+      // Removing an undelivered answer restores the wizard; it never clears
+      // the daemon's pending marker locally.
+      appStore.dispatch(replaceAgentQueue(AGENT, []));
+      expect(deriveWizardPendingQuestions(appStore.state, AGENT, session.messages)).toMatchObject({
+        messageId: 'msg-a1',
+      });
+    },
+  );
 
   it('sends ONE flattened plain-text user message tagged with the answer metadata', async () => {
     // Questions come off a PROTOCOL-shaped transcript, exactly as ChatPanel
