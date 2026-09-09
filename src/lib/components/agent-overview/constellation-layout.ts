@@ -58,11 +58,14 @@ const TASK_AGENT_DISTANCE = NODE_RADII.task + NODE_RADII.agent + GRAPH_NODE_GAPS
 const RESOURCE_DISTANCE = NODE_RADII.agent + NODE_RADII.file + GRAPH_NODE_GAPS.agentResource + 30;
 const AGENT_DISTANCE = NODE_RADII.agent * 2 + GRAPH_NODE_GAPS.taskAgent + 16;
 const AGENT_FAN_STEP = 1;
+const AGENT_AXIS_OFFSET = Math.PI / 10;
 const RESOURCE_FAN_STEP = 0.95;
 const SINGLE_RING_TASK_LIMIT = 8;
-const TASK_RING_START_RATIO = 1.5;
 const TASK_RING_STEP_RATIO = 0.92;
 const TASK_ANCHOR_SPACING_RATIO = 0.9;
+const TASK_ORBIT_WIDTH_RATIO = 0.36;
+const TASK_ORBIT_HEIGHT_RATIO = 0.32;
+const TASK_ORBIT_MIN_ASPECT = 0.7;
 
 function edgeType(edge: GraphEdge): string {
   return String(edge.type);
@@ -185,24 +188,16 @@ export function createConstellationLayout({
 
   function computeTaskAnchors(nodes: GraphNode[], edges: GraphEdge[]): Map<string, Point> {
     const tasks = nodes.filter((node) => node.type === 'task');
-    const topLevelCount = nodes.filter(isTopLevelAgent).length;
-    const centerOrbit =
-      topLevelCount > 1 ? AGENT_DISTANCE / (2 * Math.sin(Math.PI / topLevelCount)) : 0;
-    const centerClearance =
-      topLevelCount > 0
-        ? centerOrbit + NODE_RADII.agent + NODE_RADII.task + GRAPH_NODE_GAPS.taskAgent
-        : 0;
     const clusterSpacing = NODE_RADII.task * 2 + NODE_RADII.agent + GRAPH_NODE_GAPS.taskAgent;
-    const taskSpacingRadius =
-      tasks.length > 1 ? clusterSpacing / (2 * Math.sin(Math.PI / tasks.length)) : 0;
-    const ringRadius = Math.max(Math.min(width, height) * 0.32, centerClearance, taskSpacingRadius);
+    const orbitX = width * TASK_ORBIT_WIDTH_RATIO;
+    const orbitY = Math.max(height * TASK_ORBIT_HEIGHT_RATIO, orbitX * TASK_ORBIT_MIN_ASPECT);
     const anchors = new Map<string, Point>();
     if (tasks.length <= SINGLE_RING_TASK_LIMIT) {
       tasks.forEach((task, index) => {
         const angle = -Math.PI / 2 + (index / Math.max(1, tasks.length)) * Math.PI * 2;
         anchors.set(task.id, {
-          x: center.x + Math.cos(angle) * ringRadius,
-          y: center.y + Math.sin(angle) * ringRadius,
+          x: center.x + Math.cos(angle) * orbitX,
+          y: center.y + Math.sin(angle) * orbitY,
         });
       });
       return anchors;
@@ -227,23 +222,19 @@ export function createConstellationLayout({
       .sort((left, right) => right.priority - left.priority || left.index - right.index)
       .map(({ task }) => task);
     const minimumSpacing = clusterSpacing * TASK_ANCHOR_SPACING_RATIO;
-    const firstRingRadius = Math.max(
-      Math.min(width, height) * 0.32,
-      centerClearance,
-      clusterSpacing * TASK_RING_START_RATIO,
-    );
     const ringStep = clusterSpacing * TASK_RING_STEP_RATIO;
     let taskIndex = 0;
     for (let ringIndex = 0; taskIndex < orderedTasks.length; ringIndex += 1) {
-      const radius = firstRingRadius + ringIndex * ringStep;
-      const capacity = ringCapacity(radius, minimumSpacing);
+      const radiusX = orbitX + ringIndex * ringStep;
+      const radiusY = orbitY + ringIndex * ringStep;
+      const capacity = ringCapacity(Math.min(radiusX, radiusY), minimumSpacing);
       const slotOrder = balancedSlotOrder(capacity);
       for (let index = 0; index < capacity && taskIndex < orderedTasks.length; index += 1) {
         const task = orderedTasks[taskIndex++];
         const angle = -Math.PI / 2 + (slotOrder[index] / capacity) * Math.PI * 2;
         anchors.set(task.id, {
-          x: center.x + Math.cos(angle) * radius,
-          y: center.y + Math.sin(angle) * radius,
+          x: center.x + Math.cos(angle) * radiusX,
+          y: center.y + Math.sin(angle) * radiusY,
         });
       }
     }
@@ -296,7 +287,10 @@ export function createConstellationLayout({
         .sort((a, b) => (orderedIds.get(a.sourceId) ?? 0) - (orderedIds.get(b.sourceId) ?? 0));
       const baseAngle = angleFromCenter(taskPosition, task.id);
       assigned.forEach((edge, index) => {
-        const angle = baseAngle + (index - (assigned.length - 1) / 2) * AGENT_FAN_STEP;
+        const fanOffset = (index - (assigned.length - 1) / 2) * AGENT_FAN_STEP;
+        const axisOffset =
+          fanOffset === 0 ? AGENT_AXIS_OFFSET : Math.sign(fanOffset) * AGENT_AXIS_OFFSET;
+        const angle = baseAngle + fanOffset + axisOffset;
         positions.set(edge.sourceId, {
           x: taskPosition.x + Math.cos(angle) * TASK_AGENT_DISTANCE,
           y: taskPosition.y + Math.sin(angle) * TASK_AGENT_DISTANCE,

@@ -130,7 +130,10 @@ function renderGraph(value: GraphState, overrides: Record<string, unknown> = {})
   });
 }
 
-function useViewport(reducedMotion = true): void {
+function useViewport(
+  reducedMotion = true,
+  dimensions = { width: 800, height: 600 },
+): { width: number; height: number } {
   vi.spyOn(window, 'matchMedia').mockImplementation(
     (query) =>
       ({
@@ -144,8 +147,25 @@ function useViewport(reducedMotion = true): void {
         dispatchEvent: vi.fn(),
       }) as MediaQueryList,
   );
-  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
-  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => dimensions.width);
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(
+    () => dimensions.height,
+  );
+  return dimensions;
+}
+
+function domRect(left: number, top: number, width: number, height: number): DOMRect {
+  return {
+    x: left,
+    y: top,
+    left,
+    top,
+    right: left + width,
+    bottom: top + height,
+    width,
+    height,
+    toJSON: () => ({}),
+  } as DOMRect;
 }
 
 function graphElements(container: HTMLElement): { viewport: HTMLElement; scene: HTMLElement } {
@@ -171,6 +191,7 @@ function graphFitTransitionIds(viewport: HTMLElement): string[] {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('AgentActivityGraph', () => {
@@ -276,7 +297,7 @@ describe('AgentActivityGraph', () => {
     expect(document.activeElement).toBe(fileButton);
   });
 
-  it('pans on plain wheel and zooms into semantic bands with a modifier', async () => {
+  it('pans on plain wheel and clamps modifier zoom to 40% of the fitted scale', async () => {
     useViewport();
     const view = renderGraph(graph([agent(), task()]));
     const { viewport, scene } = graphElements(view.container);
@@ -297,15 +318,89 @@ describe('AgentActivityGraph', () => {
       clientX: 400,
       clientY: 300,
     });
-    await waitFor(() => expect(scene.getAttribute('data-zoom-band')).toBe('far'));
-    const farZoom = (viewport as HTMLElement & { __zoom: { k: number } }).__zoom.k;
-    expect(Number(scene.style.getPropertyValue('--zoom'))).toBeCloseTo(farZoom);
-    expect(screen.getByRole('button', { name: /Agent One/ }).getAttribute('data-zoom-band')).toBe(
-      'far',
+    await waitFor(() =>
+      expect((viewport as HTMLElement & { __zoom: { k: number } }).__zoom.k).toBeLessThan(
+        initialZoom.k,
+      ),
     );
-    expect(
-      screen.getByRole('button', { name: /Task One/ }).querySelector('.task-status-dot'),
-    ).toBeTruthy();
+    const minimumZoom = (viewport as HTMLElement & { __zoom: { k: number } }).__zoom.k;
+    expect(minimumZoom).toBeGreaterThanOrEqual(initialZoom.k * 0.4 - 0.001);
+    expect(Number(scene.style.getPropertyValue('--zoom'))).toBeCloseTo(minimumZoom);
+    expect(screen.getByRole('button', { name: /Agent One/ }).getAttribute('data-zoom-band')).toBe(
+      'full',
+    );
+    expect(screen.getByRole('button', { name: /Task One/ }).textContent).toContain('Task One');
+  });
+
+  it('keeps small and large automatic fits above their label-visible floors', async () => {
+    useViewport();
+    const small = renderGraph(
+      graph(Array.from({ length: 20 }, (_, index) => task(`small-${index}`))),
+    );
+    const smallViewport = graphElements(small.container).viewport;
+    await waitFor(() =>
+      expect(
+        (smallViewport as HTMLElement & { __zoom: { k: number } }).__zoom.k,
+      ).toBeGreaterThanOrEqual(0.7),
+    );
+    small.unmount();
+
+    const large = renderGraph(
+      graph(Array.from({ length: 41 }, (_, index) => task(`large-${index}`))),
+    );
+    const largeViewport = graphElements(large.container).viewport;
+    await waitFor(() =>
+      expect(
+        (largeViewport as HTMLElement & { __zoom: { k: number } }).__zoom.k,
+      ).toBeGreaterThanOrEqual(0.3),
+    );
+  });
+
+  it('centres fitted content inside chrome-aware asymmetric insets', async () => {
+    useViewport();
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      if (this.matches('[data-agent-activity-graph]')) return domRect(0, 0, 800, 600);
+      if (this.matches('[data-graph-controls]')) return domRect(744, 536, 40, 40);
+      return domRect(0, 0, 0, 0);
+    });
+    const view = renderGraph(graph([agent()]));
+    const { viewport, scene } = graphElements(view.container);
+    await waitForFit(scene);
+    const transform = (viewport as HTMLElement & { __zoom: { x: number; y: number; k: number } })
+      .__zoom;
+
+    expect(transform.x + 400 * transform.k).toBeCloseTo(380);
+    expect(transform.y + 300 * transform.k).toBeCloseTo(292);
+  });
+
+  it('debounces resize fits and stops them after manual pan', async () => {
+    let onResize: ResizeObserverCallback | undefined;
+    class ResizeObserverMock {
+      constructor(callback: ResizeObserverCallback) {
+        onResize = callback;
+      }
+      observe = vi.fn();
+      disconnect = vi.fn();
+    }
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+    const dimensions = useViewport();
+    const view = renderGraph(graph([agent(), task()]));
+    const { viewport, scene } = graphElements(view.container);
+    await waitForFit(scene);
+    const initialTransform = scene.style.transform;
+
+    dimensions.width = 1_000;
+    onResize?.([], {} as ResizeObserver);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(scene.style.transform).toBe(initialTransform);
+    await waitFor(() => expect(scene.style.transform).not.toBe(initialTransform));
+
+    await fireEvent.wheel(viewport, { deltaY: 60, clientX: 400, clientY: 300 });
+    const manualTransform = scene.style.transform;
+    dimensions.width = 1_200;
+    onResize?.([], {} as ResizeObserver);
+    await new Promise((resolve) => setTimeout(resolve, 160));
+    expect(scene.style.transform).toBe(manualTransform);
   });
 
   it('caps resources per agent and expands the remainder', async () => {

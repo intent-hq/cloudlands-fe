@@ -13,7 +13,6 @@
   import ResourceNode from './nodes/ResourceNode.svelte';
   import TaskAnchorNode from './nodes/TaskAnchorNode.svelte';
   import {
-    GRAPH_FIT_PADDING,
     GRAPH_NODE_DIMENSIONS,
     GRAPH_ZOOM_EXTENT,
     MAX_VISIBLE_RESOURCES_PER_AGENT,
@@ -95,6 +94,8 @@
   let deferredFit: (() => void) | null = null;
   let unsubscribeTick: (() => void) | null = null;
   let resizeObserver: ResizeObserver | null = null;
+  let resizeFitTimeout: ReturnType<typeof setTimeout> | null = null;
+  let hasManualTransform = false;
   let dragState = $state<{
     id: string;
     pointerId: number;
@@ -107,6 +108,14 @@
   const suppressedClicks = new Set<string>();
   type FocusState = 'focused' | 'neighbour' | 'dimmed' | 'none';
   type ZoomBand = 'full' | 'mid' | 'far';
+  type FitInsets = { top: number; right: number; bottom: number; left: number };
+
+  const FIT_FALLBACK_INSETS: FitInsets = { top: 56, right: 24, bottom: 72, left: 24 };
+  const FIT_CHROME_GAP = 8;
+  const SMALL_GRAPH_FIT_FLOOR = 0.7;
+  const TASK_LABEL_VISIBLE_SCALE = 0.3;
+  const MINIMUM_VIEWPORT_FILL = 0.4;
+  const RESIZE_FIT_DEBOUNCE_MS = 120;
 
   const visibleGraph = $derived.by(() => {
     const baseNodes = graph.nodes.filter(
@@ -365,11 +374,13 @@
   }
 
   function fitToView(): void {
+    hasManualTransform = false;
     applyFit(false);
   }
 
   function applyZoomRequest(action: GraphZoomAction): void {
     if (!zoomBehavior || !container) return;
+    hasManualTransform = true;
     const selection = select(container).interrupt('graph-fit').interrupt('graph-focus');
     if (action === 'reset') selection.call(zoomBehavior.scaleTo, 1);
     else selection.call(zoomBehavior.scaleBy, action === 'in' ? 1.25 : 0.8);
@@ -379,6 +390,59 @@
     if (!layout || !zoomBehavior || !container || visibleGraph.nodes.length === 0) return;
     const bounds = layout.fitBounds();
     applyBounds(bounds, coalesce);
+  }
+
+  function measuredFitInsets(): FitInsets {
+    const viewport = container.getBoundingClientRect();
+    const measured: Partial<FitInsets> = {};
+    const chrome = (container.parentElement ?? container).querySelectorAll<HTMLElement>(
+      '[data-graph-controls], [data-time-scrubber]',
+    );
+    for (const element of chrome) {
+      if (element.closest('.graph-scene')) continue;
+      const bounds = element.getBoundingClientRect();
+      if (
+        bounds.width <= 0 ||
+        bounds.height <= 0 ||
+        bounds.right <= viewport.left ||
+        bounds.left >= viewport.right ||
+        bounds.bottom <= viewport.top ||
+        bounds.top >= viewport.bottom
+      ) {
+        continue;
+      }
+      if (element.matches('[data-time-scrubber]')) {
+        measured.bottom = Math.max(
+          measured.bottom ?? 0,
+          viewport.bottom - bounds.top + FIT_CHROME_GAP,
+        );
+        continue;
+      }
+      const distances = [
+        ['top', Math.abs(bounds.top - viewport.top)],
+        ['right', Math.abs(viewport.right - bounds.right)],
+        ['bottom', Math.abs(viewport.bottom - bounds.bottom)],
+        ['left', Math.abs(bounds.left - viewport.left)],
+      ] as const;
+      const side = distances.reduce((closest, candidate) =>
+        candidate[1] < closest[1] ? candidate : closest,
+      )[0];
+      const inset =
+        side === 'top'
+          ? bounds.bottom - viewport.top
+          : side === 'right'
+            ? viewport.right - bounds.left
+            : side === 'bottom'
+              ? viewport.bottom - bounds.top
+              : bounds.right - viewport.left;
+      measured[side] = Math.max(measured[side] ?? 0, inset + FIT_CHROME_GAP);
+    }
+    return {
+      top: measured.top ?? FIT_FALLBACK_INSETS.top,
+      right: measured.right ?? FIT_FALLBACK_INSETS.right,
+      bottom: measured.bottom ?? FIT_FALLBACK_INSETS.bottom,
+      left: measured.left ?? FIT_FALLBACK_INSETS.left,
+    };
   }
 
   function applyBounds(
@@ -395,21 +459,28 @@
     if (!zoomBehavior || !container) return;
     const width = container.clientWidth;
     const height = container.clientHeight;
-    const [minimumScale, maximumScale] = GRAPH_ZOOM_EXTENT;
-    const scale = Math.max(
-      minimumScale,
-      Math.min(
-        maximumScale,
-        Math.min(
-          width / Math.max(1, bounds.width + GRAPH_FIT_PADDING * 2),
-          height / Math.max(1, bounds.height + GRAPH_FIT_PADDING * 2),
-        ),
-      ),
+    const insets = measuredFitInsets();
+    const availableWidth = Math.max(1, width - insets.left - insets.right);
+    const availableHeight = Math.max(1, height - insets.top - insets.bottom);
+    const naturalScale = Math.min(
+      availableWidth / Math.max(1, bounds.width),
+      availableHeight / Math.max(1, bounds.height),
     );
+    const maximumScale = GRAPH_ZOOM_EXTENT[1];
+    const minimumScale = Math.min(
+      maximumScale,
+      Math.max(GRAPH_ZOOM_EXTENT[0], naturalScale * MINIMUM_VIEWPORT_FILL),
+    );
+    zoomBehavior.scaleExtent([minimumScale, maximumScale]);
+    const fitFloor =
+      visibleGraph.nodes.length <= 40 ? SMALL_GRAPH_FIT_FLOOR : TASK_LABEL_VISIBLE_SCALE;
+    const scale = Math.min(maximumScale, Math.max(minimumScale, fitFloor, naturalScale));
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerY = (bounds.minY + bounds.maxY) / 2;
+    const viewportCenterX = insets.left + availableWidth / 2;
+    const viewportCenterY = insets.top + availableHeight / 2;
     const transform = zoomIdentity
-      .translate(width / 2 - centerX * scale, height / 2 - centerY * scale)
+      .translate(viewportCenterX - centerX * scale, viewportCenterY - centerY * scale)
       .scale(scale);
     const selection = select(container);
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
@@ -658,6 +729,9 @@
           ? container.clientHeight
           : 1;
     const transform = zoomTransform(container);
+    hasManualTransform = true;
+    autoFitPending = false;
+    autoFitQueued = false;
     const next = transform.translate(
       (-event.deltaX * factor) / transform.k,
       (-event.deltaY * factor) / transform.k,
@@ -772,6 +846,7 @@
       })
       .on('start', (event) => {
         if (event.sourceEvent) {
+          hasManualTransform = true;
           canvasPanning = true;
           select(container).interrupt('graph-fit').interrupt('graph-focus');
         }
@@ -798,7 +873,13 @@
     window.addEventListener('keyup', handleGraphKeyUp);
     window.addEventListener('blur', handleWindowBlur);
     if (typeof ResizeObserver !== 'undefined') {
-      resizeObserver = new ResizeObserver(() => fitToView());
+      resizeObserver = new ResizeObserver(() => {
+        if (resizeFitTimeout !== null) clearTimeout(resizeFitTimeout);
+        resizeFitTimeout = setTimeout(() => {
+          resizeFitTimeout = null;
+          if (!hasManualTransform) applyFit(false);
+        }, RESIZE_FIT_DEBOUNCE_MS);
+      });
       resizeObserver.observe(container);
     }
     previousNodeIds = visibleGraph.nodes
@@ -810,6 +891,7 @@
 
   onDestroy(() => {
     resizeObserver?.disconnect();
+    if (resizeFitTimeout !== null) clearTimeout(resizeFitTimeout);
     container?.removeEventListener('wheel', handleWheel);
     container?.removeEventListener('click', handleCanvasClick);
     container?.removeEventListener('dblclick', handleCanvasDoubleClick);

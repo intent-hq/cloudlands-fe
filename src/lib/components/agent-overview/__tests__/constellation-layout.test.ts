@@ -210,7 +210,7 @@ describe('constellation layout', () => {
     dispose();
   });
 
-  it('spawns a newly assigned agent outside its task anchor', () => {
+  it('spawns a newly assigned agent outside and 18 degrees off its task axis', () => {
     const layout = createConstellationLayout({ width: 800, height: 600, seed: 11 });
     layout.update(
       [agent('agent-1', 'coordinator'), task('task-1')],
@@ -220,10 +220,16 @@ describe('constellation layout', () => {
     const nodes = snapshot(layout);
     const assignedAgent = nodes.find((node) => node.id === 'agent-1')!;
     const taskPosition = nodes.find((node) => node.id === 'task-1')!;
+    const hubAngle = Math.atan2(taskPosition.y - 300, taskPosition.x - 400);
+    const agentAngle = Math.atan2(
+      assignedAgent.y - taskPosition.y,
+      assignedAgent.x - taskPosition.x,
+    );
 
     expect(
       Math.hypot(assignedAgent.x - taskPosition.x, assignedAgent.y - taskPosition.y),
     ).toBeGreaterThanOrEqual(nodeRadius('task') + nodeRadius('agent') + GRAPH_NODE_GAPS.taskAgent);
+    expect(agentAngle - hubAngle).toBeCloseTo(Math.PI / 10, 8);
   });
 
   it('preserves existing node identity, position, and velocity across updates', () => {
@@ -246,23 +252,21 @@ describe('constellation layout', () => {
     });
   });
 
-  it('places task anchors in source order around a consistently spaced ring', () => {
+  it('places task anchors in source order around the panel-shaped ellipse', () => {
     const layout = createConstellationLayout({ width: 800, height: 600, seed: 3 });
     layout.update([task('first'), task('second', 'in_progress'), task('third')], []);
     layout.stop();
     const byId = new Map(snapshot(layout).map((node) => [node.id, node]));
     const center = { x: 400, y: 300 };
-    const radius = (id: string) => {
-      const node = byId.get(id)!;
-      return Math.hypot(node.x - center.x, node.y - center.y);
-    };
+    const radiusX = 800 * 0.36;
+    const radiusY = Math.max(600 * 0.32, radiusX * 0.7);
 
     expect(byId.get('first')!.y).toBeLessThan(center.y);
     expect(byId.get('second')!.x).toBeGreaterThan(center.x);
     expect(byId.get('third')!.x).toBeLessThan(center.x);
-    expect(radius('first')).toBeCloseTo(192, -1);
-    expect(radius('third')).toBeCloseTo(192, -1);
-    expect(radius('second')).toBeCloseTo(radius('first'), 5);
+    expect(byId.get('first')).toMatchObject({ x: center.x, y: center.y - radiusY });
+    expect(byId.get('second')!.x).toBeCloseTo(center.x + Math.cos(Math.PI / 6) * radiusX, 8);
+    expect(byId.get('second')!.y).toBeCloseTo(center.y + Math.sin(Math.PI / 6) * radiusY, 8);
   });
 
   it('preserves the single-ring layout through eight tasks', () => {
@@ -271,13 +275,13 @@ describe('constellation layout', () => {
     layout.update(tasks, []);
     layout.stop();
     const nodes = snapshot(layout);
-    const clusterSpacing = nodeRadius('task') * 2 + nodeRadius('agent') + GRAPH_NODE_GAPS.taskAgent;
-    const expectedRadius = clusterSpacing / (2 * Math.sin(Math.PI / tasks.length));
+    const radiusX = 800 * 0.36;
+    const radiusY = Math.max(600 * 0.32, radiusX * 0.7);
 
     nodes.forEach((node, index) => {
       const angle = -Math.PI / 2 + (index / tasks.length) * Math.PI * 2;
-      expect(node.x).toBeCloseTo(400 + Math.cos(angle) * expectedRadius, 8);
-      expect(node.y).toBeCloseTo(300 + Math.sin(angle) * expectedRadius, 8);
+      expect(node.x).toBeCloseTo(400 + Math.cos(angle) * radiusX, 8);
+      expect(node.y).toBeCloseTo(300 + Math.sin(angle) * radiusY, 8);
     });
   });
 
@@ -289,12 +293,10 @@ describe('constellation layout', () => {
     const nodes = snapshot(layout);
     const center = { x: 640, y: 400 };
     const clusterSpacing = nodeRadius('task') * 2 + nodeRadius('agent') + GRAPH_NODE_GAPS.taskAgent;
-    const currentSingleRingRadius = clusterSpacing / (2 * Math.sin(Math.PI / tasks.length));
-    const outerRadius = Math.max(
-      ...nodes.map((node) => Math.hypot(node.x - center.x, node.y - center.y)),
-    );
+    const horizontalExtent = Math.max(...nodes.map((node) => Math.abs(node.x - center.x)));
+    const verticalExtent = Math.max(...nodes.map((node) => Math.abs(node.y - center.y)));
 
-    expect(outerRadius).toBeLessThanOrEqual(currentSingleRingRadius * 0.45);
+    expect(horizontalExtent).toBeGreaterThan(verticalExtent);
     for (let left = 0; left < nodes.length; left += 1) {
       for (let right = left + 1; right < nodes.length; right += 1) {
         expect(
