@@ -187,6 +187,13 @@
   let hoverCardId = $derived(workspace ? `workspace-hover-card-${workspace.id}` : undefined);
   let hoverCardVisible = $state(false);
   let rowElement: HTMLDivElement | null = $state(null);
+  let phaseRowButtonRef: HTMLButtonElement | null = $state(null);
+
+  $effect(() => {
+    if (!phaseRowButtonRef) return;
+    const action = highlightTarget(phaseRowButtonRef, { id: highlightId });
+    return () => action.destroy();
+  });
 
   // Hover-intent delay before mounting the hover card. Mounting
   // WorkspaceHoverCard is expensive (7 store selector subscriptions plus
@@ -743,10 +750,12 @@
     />
   {/if}
 {:else if phase && stats && variant === 'row'}
-  <button
+  <Button
+    bind:ref={phaseRowButtonRef}
+    variant="plain"
     type="button"
     class={cn(
-      'flex items-center gap-2 w-full min-w-0 text-left text-sm py-1',
+      'flex h-auto items-center gap-2 w-full min-w-0 text-left text-sm !px-0 !py-1',
       onClick && 'cursor-pointer transition-colors rounded',
       !onClick && 'cursor-default',
       highlighted && 'bg-sidebar',
@@ -754,7 +763,6 @@
       className,
     )}
     data-highlight-id={highlightId}
-    use:highlightTarget={{ id: highlightId }}
     onclick={onClick}
     disabled={!onClick}
   >
@@ -768,7 +776,7 @@
     <span class="shrink-0 text-muted-foreground">·</span>
     <span class="truncate text-xs text-muted-foreground">{statusSubtitle}</span>
     {@render actions?.()}
-  </button>
+  </Button>
 {:else if phase && stats && variant === 'header'}
   <div
     class={cn(

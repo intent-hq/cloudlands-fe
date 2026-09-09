@@ -20,6 +20,7 @@
     disabled,
     loading = false,
     active = false,
+    wrapContent = true,
     truncateLabel = true,
     labelClass = undefined,
     iconOnly = false,
@@ -92,11 +93,12 @@
   let containerRef: HTMLDivElement | null = $state(null);
 
   $effect(() => {
-    if (containerRef) {
-      const element = containerRef.firstElementChild as
-        HTMLButtonElement | HTMLAnchorElement | null;
-      ref = element;
-    }
+    if (!containerRef) return;
+    const element = containerRef.firstElementChild as HTMLButtonElement | HTMLAnchorElement | null;
+    ref = element;
+    return () => {
+      if (ref === element) ref = null;
+    };
   });
 </script>
 
@@ -107,34 +109,38 @@
     style="border-radius: inherit"
     aria-hidden="true"
   ></span>
-  <span
-    data-slot="button-content"
-    class="relative inline-flex min-w-0 max-w-full flex-1 items-center [&_svg]:transition-[stroke-width] [&_svg]:duration-spring-fast motion-reduce:[&_svg]:transition-none"
-    style="gap: inherit; justify-content: inherit"
-    class:opacity-0={loading}
-  >
-    {#if leadingIcon}
-      <span
-        data-slot="button-leading-icon"
-        class="inline-flex shrink-0 items-center justify-center"
-      >
-        {@render leadingIcon()}
-      </span>
-    {/if}
+  {#if wrapContent}
     <span
-      data-slot="button-label"
-      class={cn('min-w-0 max-w-full flex-1', truncateLabel && 'truncate', labelClass)}
-      >{@render children?.()}</span
+      data-slot="button-content"
+      class="relative inline-flex min-w-0 max-w-full flex-1 items-center [&_svg]:transition-[stroke-width] [&_svg]:duration-spring-fast motion-reduce:[&_svg]:transition-none"
+      style="gap: inherit; justify-content: inherit"
+      class:opacity-0={loading}
     >
-    {#if trailingIcon}
+      {#if leadingIcon}
+        <span
+          data-slot="button-leading-icon"
+          class="inline-flex shrink-0 items-center justify-center"
+        >
+          {@render leadingIcon()}
+        </span>
+      {/if}
       <span
-        data-slot="button-trailing-icon"
-        class="inline-flex shrink-0 items-center justify-center"
+        data-slot="button-label"
+        class={cn('min-w-0 max-w-full flex-1', truncateLabel && 'truncate', labelClass)}
+        >{@render children?.()}</span
       >
-        {@render trailingIcon()}
-      </span>
-    {/if}
-  </span>
+      {#if trailingIcon}
+        <span
+          data-slot="button-trailing-icon"
+          class="inline-flex shrink-0 items-center justify-center"
+        >
+          {@render trailingIcon()}
+        </span>
+      {/if}
+    </span>
+  {:else}
+    {@render children?.()}
+  {/if}
   {#if loading}
     <span
       data-slot="button-spinner"

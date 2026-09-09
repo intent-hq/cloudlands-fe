@@ -113,7 +113,7 @@
   let activeStreamsVersion = $state(0);
   let stripElement = $state<HTMLDivElement | null>(null);
   let isOverflowing = $state(false);
-  const tabButtons = new Map<string, HTMLButtonElement>();
+  let tabButtons = $state<Record<string, HTMLButtonElement | null>>({});
   const tabSurfaces = new Map<string, HTMLElement>();
   const ACTIVE_TAB_EDGE_GAP = 2;
   const POINTER_DRAG_THRESHOLD = 4;
@@ -386,15 +386,6 @@
     };
   }
 
-  function registerTabButton(node: HTMLButtonElement, workspaceId: string) {
-    tabButtons.set(workspaceId, node);
-    return {
-      destroy() {
-        tabButtons.delete(workspaceId);
-      },
-    };
-  }
-
   function registerTabSurface(node: HTMLElement, workspaceId: string) {
     tabSurfaces.set(workspaceId, node);
     return {
@@ -407,7 +398,7 @@
   async function openWorkspace(workspaceId: string, restoreFocus = false) {
     appStore.dispatch(openWorkspaceTab(workspaceId));
     await goto(`/workspace/${workspaceId}`);
-    if (restoreFocus) requestAnimationFrame(() => tabButtons.get(workspaceId)?.focus());
+    if (restoreFocus) requestAnimationFrame(() => tabButtons[workspaceId]?.focus());
   }
 
   function closeWorkspace(workspaceId: string, event?: Event) {
@@ -454,7 +445,7 @@
       name: workspaceById.get(workspaceId)?.title || m.layout_workspaceTabStrip_untitled_label(),
       position: targetIndex + 1,
     });
-    requestAnimationFrame(() => tabButtons.get(workspaceId)?.focus());
+    requestAnimationFrame(() => tabButtons[workspaceId]?.focus());
   }
 
   function handleGlobalWorkspaceTabMoved(event: CustomEvent<WorkspaceTabMovedEventDetail>) {
@@ -465,7 +456,7 @@
       position,
     });
     requestAnimationFrame(() => {
-      const tab = tabButtons.get(workspaceId);
+      const tab = tabButtons[workspaceId];
       if (!tab) return;
       tab.focus();
       tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -499,7 +490,7 @@
     if (!targetId) return;
 
     event.preventDefault();
-    tabButtons.get(targetId)?.focus();
+    tabButtons[targetId]?.focus();
     void openWorkspace(targetId, true);
   }
 
@@ -863,10 +854,11 @@
                   <WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds} />
                 </div>
               {/snippet}
-              <button
+              <Button
+                bind:ref={tabButtons[workspaceId]}
+                variant="plain"
                 type="button"
-                use:registerTabButton={workspaceId}
-                class="flex h-full w-full min-w-0 touch-none cursor-pointer select-none items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 text-left text-xs font-medium outline-none! focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
+                class="flex h-full w-full min-w-0 touch-none cursor-pointer select-none items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 !pl-3 !pr-1 text-left text-xs font-medium outline-none! focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
                 onclick={(event) => handleTabClick(event, workspaceId)}
                 onkeydown={(event) => handleTabKeydown(event, workspaceId)}
                 onfocusin={() => pointerOpenEligibleWorkspaceHoverCardIds.delete(workspaceId)}
@@ -897,7 +889,7 @@
                   <span class="size-5 shrink-0" data-workspace-tab-close-space aria-hidden="true"
                   ></span>
                 </span>
-              </button>
+              </Button>
             </TooltipRich>
             <Button
               type="button"
@@ -961,10 +953,11 @@
                 />
               </svg>
             {/if}
-            <button
+            <Button
+              bind:ref={tabButtons[workspaceId]}
+              variant="plain"
               type="button"
-              use:registerTabButton={workspaceId}
-              class="absolute -inset-px flex min-w-0 cursor-pointer items-center rounded-[inherit] px-3 pr-8 text-left outline-none! forced-colors:focus-visible:text-[HighlightText]"
+              class="absolute -inset-px flex h-auto w-auto min-w-0 cursor-pointer items-center rounded-[inherit] px-3 pr-8 !px-3 !pr-8 text-left outline-none! forced-colors:focus-visible:text-[HighlightText]"
               onclick={(event) => void openWorkspace(workspaceId, event.detail === 0)}
               onkeydown={(event) => handleTabKeydown(event, workspaceId)}
               role="tab"
@@ -979,7 +972,7 @@
                 aria-hidden="true"
                 data-workspace-tab-loading-indicator
               ></span>
-            </button>
+            </Button>
             <Button
               type="button"
               class="absolute right-1 z-10 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-subtle opacity-70 outline-none! hover:bg-muted hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
@@ -1012,17 +1005,19 @@
     box-shadow: none;
   }
 
-  button[data-workspace-tab-hover-trigger] {
+  :global(button[data-workspace-tab-hover-trigger]) {
     cursor: pointer;
   }
 
-  button[data-workspace-tab-hover-trigger]:focus-visible [data-workspace-tab-title] {
+  :global(button[data-workspace-tab-hover-trigger]:focus-visible [data-workspace-tab-title]) {
     text-decoration-line: underline;
     text-decoration-thickness: 2px;
     text-underline-offset: 2px;
   }
 
-  button[data-workspace-tab-loading-target]:focus-visible [data-workspace-tab-loading-indicator] {
+  :global(
+    button[data-workspace-tab-loading-target]:focus-visible [data-workspace-tab-loading-indicator]
+  ) {
     background-color: currentColor;
     opacity: 0.45;
   }

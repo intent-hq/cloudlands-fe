@@ -121,6 +121,8 @@ type ButtonBaseProps = WithElementRef<HTMLButtonAttributes> &
     size?: ButtonSize;
     loading?: boolean;
     active?: boolean;
+    /** Bypass content wrappers only when direct children define full-card flex/grid geometry. */
+    wrapContent?: boolean;
     truncateLabel?: boolean;
     labelClass?: string;
     leadingIcon?: Snippet;

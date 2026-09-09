@@ -13,6 +13,7 @@
   import { hudTakeoverRequested } from '$store/renderer/slices/hud/hud-slice';
   import type { HudWorkspaceCard } from '$store/renderer/slices/hud/hud-selectors';
   import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
+  import { Button } from '$lib/components/ui/button';
   import HudKeySlotSquare from '../components/HudKeySlotSquare.svelte';
   import { formatHudTimer } from '../utils/hud-format';
   import { takeoverBlinkTarget } from '../takeover/hud-takeover-bus';
@@ -92,10 +93,12 @@
   }
 </script>
 
-<button
-  class="hud-ws-card"
-  class:hud-ws-card-flash={blinking}
-  class:hud-ws-card-unread={card.isUnread}
+<Button
+  variant="plain"
+  wrapContent={false}
+  class="hud-ws-card h-auto! items-stretch! justify-start! gap-0! whitespace-normal! rounded-none! font-normal!
+    {blinking ? 'hud-ws-card-flash' : ''}
+    {card.isUnread ? 'hud-ws-card-unread' : ''}"
   data-testid="hud-ws-card"
   data-workspace-id={card.workspaceId}
   onclick={handleClick}
@@ -207,10 +210,10 @@
       </span>
     {/if}
   </div>
-</button>
+</Button>
 
 <style>
-  .hud-ws-card {
+  :global(.hud-ws-card) {
     position: relative;
     aspect-ratio: 1 / 1;
     border: 1px solid hsl(var(--border) / 0.8);
@@ -446,7 +449,7 @@
   }
   /* Takeover pre-roll flash: 3 fast blinks (0.18s × 3 = 540ms, inside the
      630ms HUD_TAKEOVER_BLINK_MS pend window — kept in sync with the queue). */
-  .hud-ws-card-flash {
+  :global(.hud-ws-card-flash) {
     animation: hudwsflash 0.18s step-end 3;
   }
   @keyframes hudwsflash {
@@ -461,7 +464,7 @@
   @media (prefers-reduced-motion: reduce) {
     .hud-anim-pulse,
     .hud-anim-blink,
-    .hud-ws-card-flash,
+    :global(.hud-ws-card-flash),
     .hud-ws-card-dogear {
       animation: none;
     }

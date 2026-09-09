@@ -4,6 +4,7 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { createRawSnippet } from 'svelte';
 import { parse } from 'svelte/compiler';
 import { describe, expect, it, vi } from 'vitest';
 import Button from './button.svelte';
@@ -122,6 +123,17 @@ describe('Button', () => {
     expect(loader?.getAttribute('width')).toBe('16');
     expect(loader?.getAttribute('class')).toContain('size-4!');
     expect(container.querySelectorAll('[data-slot="button-surface"]')).toHaveLength(5);
+  });
+
+  it('keeps full-card layout regions as direct children when content wrapping is disabled', () => {
+    const children = createRawSnippet(() => ({
+      render: () => '<span data-testid="card-layout-region"></span>',
+    }));
+    render(Button, { props: { 'aria-label': 'Workspace card', wrapContent: false, children } });
+
+    const button = screen.getByRole('button', { name: 'Workspace card' });
+    expect(screen.getByTestId('card-layout-region').parentElement).toBe(button);
+    expect(button.querySelector('[data-slot="button-content"]')).toBeNull();
   });
 
   it('prevents disabled and loading buttons from activating', async () => {
