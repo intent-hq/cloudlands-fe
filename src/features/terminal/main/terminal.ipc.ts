@@ -42,13 +42,6 @@ import {
   getWorkspacePathInfo,
   isWorkspacePathDeterministicallyNull,
 } from '$features/workspace/main/workspace-path.service';
-import { mainDispatch } from '../../../store/main/redux-store-bridge';
-import {
-  terminalProfessionalData,
-  terminalProfessionalExit,
-  terminalDisposed,
-  terminalCreated,
-} from '../../../store/main/slices/terminal-events/terminal-events-slice';
 import {
   getBackendClientForId,
   getBackendIdForIpcSender,
@@ -348,13 +341,11 @@ class DaemonTerminalRegistry {
         const chunk = decodeBase64(event.data?.chunk);
         if (chunk) {
           terminal.appendOutput(chunk);
-          mainDispatch(terminalProfessionalData({ terminalId: localId, data: chunk }));
         }
       } else if (type === 'terminal:exit') {
         const exitCode = typeof event.data?.exitCode === 'number' ? event.data.exitCode : null;
         const signal = typeof event.data?.signal === 'string' ? event.data.signal : null;
         terminal.markExit(exitCode, signal);
-        mainDispatch(terminalProfessionalExit({ terminalId: localId, exitCode, signal }));
       }
     };
     this.notificationDisposer = onBackendNotification(listener, this.backendId);
@@ -835,16 +826,6 @@ async function createTerminalFromBackend(options: {
   if (!spawn.ok) {
     return { terminalId: '', success: false, error: spawn.error };
   }
-  mainDispatch(
-    terminalCreated({
-      terminalId: localId,
-      workspaceId,
-      title: title || m.terminal_quakeOverlay_terminal_fallback(),
-      cwd: validatedCwd,
-      createdAt: new Date().toISOString(),
-      background: !!initialCommand,
-    }),
-  );
   logger.info('[Terminal] Backend terminal created via daemon', {
     terminalId: localId,
     daemonTerminalId: spawn.terminal.daemonTerminalId,
@@ -892,10 +873,7 @@ export async function cleanupWorkspaceTerminals(workspaceId: WorkspaceId): Promi
   });
   await Promise.all(
     terminals.map(async ({ registry, terminal }) => {
-      const ok = await registry.dispose(terminal.id).catch(() => false);
-      if (ok) {
-        mainDispatch(terminalDisposed({ terminalId: terminal.id, workspaceId }));
-      }
+      await registry.dispose(terminal.id).catch(() => false);
     }),
   );
 }

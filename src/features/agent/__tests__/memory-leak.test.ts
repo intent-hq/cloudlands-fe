@@ -5,33 +5,11 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { Store } from '@augmentcode/themis/svelte-store';
 
 vi.mock('svelte', async (importOriginal) => ({
   ...(await importOriginal<typeof import('svelte')>()),
   getContext: () => undefined,
 }));
-
-import { messageAccumulatorReducer } from '../../../store/main/slices/message-accumulator/message-accumulator-slice';
-
-// Create per-test store for the API
-let testStore: Store<any, any>;
-
-const getTestBridgeStore = () => ({
-  get state() {
-    return testStore.state;
-  },
-  dispatch: (action: any) => testStore.dispatch(action),
-});
-
-vi.mock('../../../store/main/redux-store-bridge', () => ({
-  mainDispatch: (action: any) => getTestBridgeStore().dispatch(action),
-  getMainState: () => getTestBridgeStore().state,
-  getMainStore: () => getTestBridgeStore(),
-  initMainStoreBridge: vi.fn(),
-}));
-
-import * as messageAccumulatorApi from '../../../store/main/slices/message-accumulator/message-accumulator-api';
 
 // Mock disposal classes for testing
 class DisposeManager {
@@ -359,44 +337,4 @@ describe('Memory Leak Prevention', () => {
     });
   });
 
-  describe('Message Accumulator Redux State Cleanup', () => {
-    beforeEach(() => {
-      testStore = new Store({ messageAccumulator: messageAccumulatorReducer });
-      testStore.init();
-    });
-
-    it('should clear all accumulators via clearAll', () => {
-      const sessions = ['session-1', 'session-2', 'session-3'];
-
-      sessions.forEach((sessionId) => {
-        messageAccumulatorApi.startAccumulation(sessionId, {
-          messageId: `msg-${sessionId}`,
-          role: 'assistant',
-        });
-        messageAccumulatorApi.addChunk(sessionId, `content for ${sessionId}`, {
-          sequenceNumber: 1,
-        });
-      });
-
-      const statsBefore = messageAccumulatorApi.getStats();
-      expect(statsBefore.activeAccumulators).toBe(3);
-
-      messageAccumulatorApi.clearAll();
-
-      const statsAfter = messageAccumulatorApi.getStats();
-      expect(statsAfter.activeAccumulators).toBe(0);
-    });
-
-    it('should clear individual accumulators', () => {
-      messageAccumulatorApi.startAccumulation('s1');
-      messageAccumulatorApi.startAccumulation('s2');
-      messageAccumulatorApi.addChunk('s1', 'data', { sequenceNumber: 1 });
-
-      messageAccumulatorApi.clear('s1');
-
-      expect(messageAccumulatorApi.getAccumulated('s1')).toBeUndefined();
-      expect(messageAccumulatorApi.getAccumulated('s2')).toBeDefined();
-      expect(messageAccumulatorApi.getStats().activeAccumulators).toBe(1);
-    });
-  });
 });

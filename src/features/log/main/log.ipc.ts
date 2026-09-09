@@ -15,14 +15,12 @@ import path from 'path';
 import { z } from 'zod';
 import { mainLogger } from './main-logger';
 import type { CommandResponse } from '../../../shared/types';
-import { WorkspaceEvent, WorkspaceEventType, createWorkspaceEvent } from '../../events/types';
+import { WorkspaceEvent, WorkspaceEventType } from '../../events/types';
 import { FileSystemLogRepository } from './log.repository';
 import type { LogRepository } from './log.repository';
 import { m } from '../../../shared/paraglide/messages.js';
 
 import { LOG_CHANNELS } from '../../../shared/ipc/channels';
-import { mainDispatch } from '../../../store/main/redux-store-bridge';
-import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { EmptySchema } from '../../../main/ipc-schemas';
 
@@ -143,37 +141,6 @@ const logRepository: LogRepository = new FileSystemLogRepository();
 // Helper Functions
 // ============================================================================
 
-/**
- * Determine tool kind from tool name for categorization
- */
-function getToolKindFromName(
-  toolName: string,
-): 'file' | 'terminal' | 'search' | 'note' | 'git' | 'other' {
-  const lowerName = toolName.toLowerCase();
-
-  if (
-    lowerName.includes('file') ||
-    lowerName.includes('read') ||
-    lowerName.includes('write') ||
-    lowerName.includes('edit')
-  ) {
-    return 'file';
-  }
-  if (lowerName.includes('terminal') || lowerName.includes('exec') || lowerName.includes('shell')) {
-    return 'terminal';
-  }
-  if (lowerName.includes('search') || lowerName.includes('find') || lowerName.includes('grep')) {
-    return 'search';
-  }
-  if (lowerName.includes('note') || lowerName.includes('document')) {
-    return 'note';
-  }
-  if (lowerName.includes('git') || lowerName.includes('commit') || lowerName.includes('branch')) {
-    return 'git';
-  }
-  return 'other';
-}
-
 // ============================================================================
 // IPC Handlers
 // ============================================================================
@@ -190,23 +157,6 @@ export function setupLogIPC() {
       TrackFileChangeSchema,
       async (_, validated): Promise<CommandResponse<any>> => {
         try {
-          // Emit file change event through the event service.
-          const actor = validated.actor || { type: 'user' as const, name: 'User' };
-          const fileEvent = createWorkspaceEvent(
-            'file:changed',
-            validated.workspaceId,
-            actor as any,
-            {
-              path: validated.filePath,
-              relativePath: validated.filePath,
-              action: validated.action,
-              additions: validated.additions,
-              deletions: validated.deletions,
-              diff: validated.diff,
-            },
-          );
-          mainDispatch(reduxEmitWorkspaceEvent(fileEvent));
-
           // Return success
           return {
             success: true,
@@ -249,8 +199,6 @@ export function setupLogIPC() {
             metadata: validated.metadata,
           };
 
-          mainDispatch(reduxEmitWorkspaceEvent(event));
-
           mainLogger.debug('[LOG] Agent event tracked', {
             eventType: validated.eventType,
             title: validated.title,
@@ -276,25 +224,6 @@ export function setupLogIPC() {
       TrackMcpCallSchema,
       async (_, validated): Promise<CommandResponse<WorkspaceEvent>> => {
         try {
-          // Determine tool kind from tool name
-          const toolKind = getToolKindFromName(validated.toolName);
-
-          // Emit agent tool call event through the event service.
-          const toolEvent = createWorkspaceEvent(
-            'agent:tool:call',
-            validated.workspaceId,
-            validated.actor || { type: 'agent' as const, name: 'Agent', id: '' },
-            {
-              toolName: validated.toolName,
-              toolKind,
-              metadata: validated.metadata || {},
-              status: validated.success ? 'completed' : 'error',
-              error: validated.error,
-              duration: validated.duration,
-            },
-          );
-          mainDispatch(reduxEmitWorkspaceEvent(toolEvent));
-
           mainLogger.debug('[LOG] MCP tool call tracked', {
             toolName: validated.toolName,
             success: validated.success,

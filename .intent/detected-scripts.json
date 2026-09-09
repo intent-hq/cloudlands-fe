@@ -479,12 +479,6 @@
       "mode": "command"
     },
     {
-      "name": "test:agent-launch-mcp",
-      "command": "pnpm test:agent-launch-mcp",
-      "category": "test",
-      "mode": "command"
-    },
-    {
       "name": "test:migration",
       "command": "pnpm test:migration",
       "category": "test",
@@ -721,12 +715,6 @@
     {
       "name": "test:message-duplication",
       "command": "pnpm test:message-duplication",
-      "category": "test",
-      "mode": "command"
-    },
-    {
-      "name": "test:content-blocks",
-      "command": "pnpm test:content-blocks",
       "category": "test",
       "mode": "command"
     },

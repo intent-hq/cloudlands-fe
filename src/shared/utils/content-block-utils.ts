@@ -1,8 +1,8 @@
 /**
  * Shared utility for building ordered content blocks from stream items.
  *
- * Used by main process (message-accumulator) code to convert interleaved
- * text/block items into a flat ContentBlock array.
+ * Used by streaming code to convert interleaved text/block items into a flat
+ * ContentBlock array.
  */
 
 import flatstr from 'flatstr';

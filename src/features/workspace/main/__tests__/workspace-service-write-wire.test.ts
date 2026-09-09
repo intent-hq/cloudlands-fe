@@ -119,13 +119,8 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
   },
 }));
 
-vi.mock('../../../../store/main/redux-store-bridge', () => ({
-  mainDispatch: vi.fn((action: unknown) => action),
-}));
-
 import { WorkspaceService } from '../workspace.service';
 import { InMemoryWorkspaceRepository } from '../workspace.repository';
-import { mainDispatch } from '../../../../store/main/redux-store-bridge';
 import {
   PullRequestStatus,
   WorkspaceStatus,
@@ -353,25 +348,6 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
     // `restoreWorkspace` must not fall back to the retired unarchive path.
     const unarchiveCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.unarchive');
     expect(unarchiveCalls).toHaveLength(0);
-    // The emitted `workspaceUpdated` delta must carry both `archived: false`
-    // and the new `status`, otherwise the renderer's changes-merge leaves the
-    // sidebar showing the stale `Archived` status until a full refetch.
-    const updateDispatch = (mainDispatch as unknown as ReturnType<typeof vi.fn>).mock.calls.find(
-      ([action]) =>
-        typeof action === 'object' &&
-        action !== null &&
-        'type' in action &&
-        (action as { type: string }).type === 'domainEvents/workspaceUpdated',
-    );
-    expect(updateDispatch).toBeDefined();
-    const payload = (
-      updateDispatch![0] as { payload: [{ workspaceId: string; changes: Record<string, unknown> }] }
-    ).payload[0];
-    expect(payload.workspaceId).toBe(ws.id);
-    expect(payload.changes).toEqual({
-      archived: false,
-      status: WorkspaceStatus.Active,
-    });
   });
 
   it('cleanupWorkspace sends workspace.cleanup with { workspaceId } and no local shell-outs', async () => {
