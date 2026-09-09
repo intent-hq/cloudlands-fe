@@ -21,7 +21,7 @@
 </div>
 
 <div data-testid="rich-tooltip">
-  <Tooltip.TooltipRich title="Rich button help" delayDuration={0}>
+  <Tooltip.TooltipRich title="Rich button help" delayDuration={0} showClose>
     <button type="button" aria-label="Show rich help">Rich help</button>
   </Tooltip.TooltipRich>
 </div>

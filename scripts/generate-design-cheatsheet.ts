@@ -108,6 +108,16 @@ ${buttonAliases}
 
 - **Geometry escape hatch:** use \`wrapContent={false}\` only for full-card interactive containers whose flex or grid layout requires slotted regions to remain direct button children.
 
+### Primitive-internal button decisions
+
+- \`sidebar/sidebar-rail.svelte\` retains its native button because the rail is the control primitive: it owns resize, peek, toggle, pointer, and focus behavior.
+- \`sidebar/sidebar-menu-button.svelte\` retains its native button because it is the menu-button control primitive and owns the row recipe, roving focus, active state, and tooltip trigger contract.
+- \`sidebar/sidebar-menu-action.svelte\` uses \`Button\`; it is an action inside the sidebar row primitive rather than the control primitive itself.
+- \`sidebar/sidebar-group-action.svelte\` uses \`Button\`; it is an action inside the sidebar group primitive rather than the control primitive itself.
+- \`toast/ToastCloseButton.svelte\` uses \`Button\`; it is a close action whose floating-circle geometry layers on the shared action and focus contract.
+- \`tooltip/TooltipRich.svelte\` uses \`Button\` for its optional close action; the tooltip owns content and positioning, not a distinct button contract.
+- \`badge/badge.svelte\` uses \`Button\` for its remove action; the badge owns status presentation, not a distinct button contract.
+
 ${sections.join('\n')}\n`;
   return format(markdown, { parser: 'markdown' });
 }

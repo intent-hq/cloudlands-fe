@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+
   /**
    * ToastCloseButton - Shared floating-circle close button for custom toasts.
    *
@@ -15,7 +17,13 @@
   let { onclick, ariaLabel }: Props = $props();
 </script>
 
-<button type="button" class="toast-close-btn" {onclick} aria-label={ariaLabel}>
+<Button
+  variant="ghost"
+  size="icon-compact"
+  class="toast-close-btn"
+  {onclick}
+  aria-label={ariaLabel}
+>
   <svg
     width="12"
     height="12"
@@ -29,10 +37,10 @@
     <line x1="18" y1="6" x2="6" y2="18"></line>
     <line x1="6" y1="6" x2="18" y2="18"></line>
   </svg>
-</button>
+</Button>
 
 <style>
-  .toast-close-btn {
+  :global(.toast-close-btn) {
     position: absolute;
     top: -1rem;
     right: -1.25rem;
@@ -52,17 +60,17 @@
     z-index: 1;
   }
 
-  .toast-close-btn:hover {
+  :global(.toast-close-btn:hover) {
     opacity: 0.8;
   }
 
-  .toast-close-btn:focus-visible {
+  :global(.toast-close-btn:focus-visible) {
     outline: 1px solid hsl(var(--ring));
     outline-offset: 2px;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .toast-close-btn {
+    :global(.toast-close-btn) {
       transition: none;
     }
   }

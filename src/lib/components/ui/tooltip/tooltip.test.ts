@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseUiComponentMetadata } from '../component-metadata';
+import { m } from '$shared/paraglide/messages.js';
 import TooltipHarness from './TooltipHarness.svelte';
 import { tooltipFixtures } from './tooltip.fixtures';
 import * as tooltipApi from './index';
@@ -73,6 +74,10 @@ describe('Tooltip', () => {
       hidden: true,
     });
     await waitFor(() => expect(richTrigger.getAttribute('aria-describedby')).toBe(richTooltip.id));
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.ui_tooltipRich_close_ariaLabel(), hidden: true }),
+    );
+    await waitFor(() => expect(screen.queryByText('Rich button help')).toBeNull());
   });
 
   it('does not add an interactive role or tab stop inside menu content (monorepo#2320)', async () => {

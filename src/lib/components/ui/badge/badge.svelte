@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils.js';
   import { crispOut } from '$lib/motion';
   import { badgeVariants, type BadgeProps } from './badge.variants';
@@ -54,15 +55,16 @@
     {/if}
     {@render children?.()}
     {#if removable}
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="icon-compact"
         data-slot="badge-remove"
         aria-label={removeLabel}
         class="-mr-1 inline-flex size-4 items-center justify-center rounded-full bg-transparent text-current transition-colors duration-spring-fast ease-spring-fast hover:bg-hover active:bg-active motion-reduce:transition-none"
         onclick={beginRemove}
       >
         <span aria-hidden="true">×</span>
-      </button>
+      </Button>
     {/if}
   </svelte:element>
 {/if}

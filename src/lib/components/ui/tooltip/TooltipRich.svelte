@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Tooltip as TooltipPrimitive } from 'bits-ui';
   import Fa from 'svelte-fa';
+  import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils.js';
   import {
     faXmark,
@@ -201,13 +202,15 @@
         >
           <div class="relative" style="max-width: {maxWidth};">
             {#if showClose}
-              <button
+              <Button
+                variant="ghost"
+                size="icon-compact"
                 onclick={handleClose}
-                class="absolute -right-1 -top-1 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground motion-reduce:transition-none"
+                class="absolute -right-1 -top-1 size-5 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground motion-reduce:transition-none"
                 aria-label={m.ui_tooltipRich_close_ariaLabel()}
               >
                 <Fa icon={faXmark} size="xs" class="w-3 h-3" />
-              </button>
+              </Button>
             {/if}
 
             <div class="px-3 py-2 space-y-1 {contentContainerClass}">
