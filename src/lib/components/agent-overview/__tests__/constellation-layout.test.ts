@@ -14,7 +14,7 @@ import {
   buildConstellationGraph,
   buildLargeGraph,
 } from '../__fixtures__/agent-activity-graph.fixtures';
-import type { AgentNode, GraphEdge, GraphNode, TaskNode } from '../types';
+import type { AgentNode, FileNode, GraphEdge, GraphNode, TaskNode } from '../types';
 
 function task(id: string, state: TaskNode['state'] = 'not_started'): TaskNode {
   return {
@@ -43,6 +43,22 @@ function agent(id: string, parentAgentId: string | null = null): AgentNode {
     status: 'idle',
     parentAgentId,
     createdAt: '2026-01-01T00:00:00.000Z',
+    x: 0,
+    y: 0,
+    vx: 0,
+    vy: 0,
+  };
+}
+
+function file(id: string): FileNode {
+  return {
+    id,
+    type: 'file',
+    path: id,
+    fileName: id,
+    isExternal: false,
+    lastAction: 'read',
+    lastActionTimestamp: '2026-01-01T00:00:00.000Z',
     x: 0,
     y: 0,
     vx: 0,
@@ -302,6 +318,76 @@ describe('constellation layout', () => {
     expect(offsets.every((offset) => Math.abs(offset) <= Math.PI / 2)).toBe(true);
   });
 
+  it('caps compact relationship distances at their non-compact bases', () => {
+    const nodes = [
+      agent('coordinator'),
+      agent('assigned', 'coordinator'),
+      agent('delegated', 'coordinator'),
+      task('task-1'),
+      file('resource-1'),
+    ];
+    const edges = [
+      edge('task-assignment', 'assigned', 'task-1'),
+      edge('delegation', 'coordinator', 'delegated'),
+      edge('file-read', 'assigned', 'resource-1'),
+    ];
+    const baseLayout = createConstellationLayout({ width: 800, height: 600, seed: 5 });
+    const compactLayout = createConstellationLayout({
+      width: 800,
+      height: 600,
+      fitTarget: { width: 5_000, height: 5_000 },
+      seed: 5,
+    });
+    baseLayout.update(nodes, edges);
+    compactLayout.update(nodes, edges);
+    baseLayout.stop();
+    compactLayout.stop();
+    const base = new Map(snapshot(baseLayout).map((node) => [node.id, node]));
+    const compact = new Map(snapshot(compactLayout).map((node) => [node.id, node]));
+    const relationships = [
+      ['assigned', 'task-1'],
+      ['assigned', 'resource-1'],
+      ['coordinator', 'delegated'],
+    ] as const;
+
+    for (const [sourceId, targetId] of relationships) {
+      const baseDistance = Math.hypot(
+        base.get(sourceId)!.x - base.get(targetId)!.x,
+        base.get(sourceId)!.y - base.get(targetId)!.y,
+      );
+      const compactDistance = Math.hypot(
+        compact.get(sourceId)!.x - compact.get(targetId)!.x,
+        compact.get(sourceId)!.y - compact.get(targetId)!.y,
+      );
+      expect(compactDistance).toBeLessThanOrEqual(baseDistance + 1e-8);
+    }
+  });
+
+  it('places top-level resources beside their owner independently of task anchor gaps', () => {
+    const owner = agent('coordinator');
+    const resource = file('resource-1');
+    const edges = [edge('file-read', owner.id, resource.id)];
+    const withoutTasks = createConstellationLayout({ width: 800, height: 600, seed: 19 });
+    const withTasks = createConstellationLayout({ width: 800, height: 600, seed: 19 });
+    withoutTasks.update([owner, resource], edges);
+    withTasks.update([owner, resource, task('task-1'), task('task-2'), task('task-3')], edges);
+    withoutTasks.stop();
+    withTasks.stop();
+    const withoutById = new Map(snapshot(withoutTasks).map((node) => [node.id, node]));
+    const withById = new Map(snapshot(withTasks).map((node) => [node.id, node]));
+    const withoutOwner = withoutById.get(owner.id)!;
+    const withOwner = withById.get(owner.id)!;
+
+    expect(withById.get(resource.id)!.x - withOwner.x).toBeCloseTo(
+      withoutById.get(resource.id)!.x - withoutOwner.x,
+      8,
+    );
+    expect(withById.get(resource.id)!.y - withOwner.y).toBeCloseTo(
+      withoutById.get(resource.id)!.y - withoutOwner.y,
+      8,
+    );
+  });
+
   it('preserves existing node identity, position, and velocity across updates', () => {
     const layout = createConstellationLayout({ width: 800, height: 600, seed: 5 });
     layout.update([task('task-1')], []);
@@ -338,6 +424,35 @@ describe('constellation layout', () => {
     expect(byId.get('second')!.x).toBeCloseTo(center.x + Math.cos(Math.PI / 6) * radiusX, 8);
     expect(byId.get('second')!.y).toBeCloseTo(center.y + Math.sin(Math.PI / 6) * radiusY, 8);
   });
+
+  for (const relationType of ['delegation', 'message', 'waiting-on'] as const) {
+    it(`places tasks linked by ${relationType} between their agents next to each other`, () => {
+      const tasks = [task('first'), task('unrelated-a'), task('second'), task('unrelated-b')];
+      const workers = [agent('first-agent', 'coordinator'), agent('second-agent', 'coordinator')];
+      const layout = createConstellationLayout({ width: 800, height: 600, seed: 3 });
+      layout.update(
+        [...workers, ...tasks],
+        [
+          edge('task-assignment', workers[0].id, tasks[0].id),
+          edge('task-assignment', workers[1].id, tasks[2].id),
+          edge(relationType, workers[0].id, workers[1].id),
+        ],
+      );
+      layout.stop();
+      const taskOrder = snapshot(layout)
+        .filter((node) => node.type === 'task')
+        .sort((left, right) => {
+          const leftAngle =
+            (Math.atan2(left.y - 300, left.x - 400) + Math.PI * 2.5) % (Math.PI * 2);
+          const rightAngle =
+            (Math.atan2(right.y - 300, right.x - 400) + Math.PI * 2.5) % (Math.PI * 2);
+          return leftAngle - rightAngle;
+        })
+        .map((node) => node.id);
+
+      expect(taskOrder).toEqual(['first', 'second', 'unrelated-a', 'unrelated-b']);
+    });
+  }
 
   it('preserves the single-ring layout through eight tasks', () => {
     const layout = createConstellationLayout({ width: 800, height: 600 });
@@ -470,6 +585,18 @@ describe('constellation layout', () => {
         ).toBeGreaterThanOrEqual(
           nodeRadius('agent') + nodeRadius(resourceNode.type) + GRAPH_NODE_GAPS.agentResource,
         );
+        if (name !== 'large') {
+          expect(
+            Math.hypot(agentNode.x - resourceNode.x, agentNode.y - resourceNode.y),
+            edge.id,
+          ).toBeLessThanOrEqual(
+            (nodeRadius('agent') +
+              nodeRadius(resourceNode.type) +
+              GRAPH_NODE_GAPS.agentResource +
+              30) *
+              1.25,
+          );
+        }
       }
 
       const hulls = taskHulls(nodes, graph.edges);

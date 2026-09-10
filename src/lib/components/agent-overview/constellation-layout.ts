@@ -76,6 +76,8 @@ const AGENT_DISTANCE = NODE_RADII.agent * 2 + GRAPH_NODE_GAPS.taskAgent + 16;
 const AGENT_FAN_STEP = Math.PI / 6;
 const AGENT_AXIS_OFFSET = Math.PI / 12;
 const RESOURCE_FAN_STEP = 0.95;
+const TOP_LEVEL_RESOURCE_FAN_STEP = 0.6;
+const TASK_ADJACENCY_EDGE_TYPES = new Set(['delegation', 'message', 'waiting-on']);
 const SINGLE_RING_TASK_LIMIT = 8;
 const TASK_RING_STEP_RATIO = 1.01;
 const TASK_ANCHOR_SPACING_RATIO = 1;
@@ -86,8 +88,7 @@ const HULL_SEPARATION_GAP = 48;
 export const SMALL_GRAPH_FIT_SCALE = 0.7;
 /** Smallest visible separation retained while compacting small graphs, in screen pixels. */
 export const MIN_COMPACT_NODE_GAP = 8;
-const MIN_COMPACT_TASK_AGENT_DISTANCE = 106;
-const MIN_COMPACT_RESOURCE_DISTANCE = 104;
+const MIN_COMPACT_TASK_AGENT_DISTANCE = 96;
 const MIN_COMPACT_AGENT_DISTANCE = 112;
 const MIN_COMPACT_ORBIT_Y = 48;
 const COMPACT_SCREEN_MARGINS_Y = 80;
@@ -326,18 +327,8 @@ export function createConstellationLayout({
       width: (fitTarget.width * SMALL_GRAPH_FIT_SCALE) / scale,
       height: (fitTarget.height * SMALL_GRAPH_FIT_SCALE) / scale,
     };
-    const nestedBudget = Math.max(
-      MIN_COMPACT_TASK_AGENT_DISTANCE + MIN_COMPACT_RESOURCE_DISTANCE,
-      target.height / 2 - MIN_COMPACT_ORBIT_Y - COMPACT_SCREEN_MARGINS_Y - COMPACT_LAYOUT_SLACK,
-    );
-    const taskAgentDistance = Math.max(
-      MIN_COMPACT_TASK_AGENT_DISTANCE,
-      nestedBudget * (TASK_AGENT_DISTANCE / (TASK_AGENT_DISTANCE + RESOURCE_DISTANCE)),
-    );
-    const resourceDistance = Math.max(
-      MIN_COMPACT_RESOURCE_DISTANCE,
-      nestedBudget - taskAgentDistance,
-    );
+    const taskAgentDistance = MIN_COMPACT_TASK_AGENT_DISTANCE;
+    const resourceDistance = RESOURCE_DISTANCE;
     const orbitX = Math.min(
       viewport.width * TASK_ORBIT_WIDTH_RATIO,
       Math.max(MIN_COMPACT_ORBIT_Y, target.width / 2 - taskAgentDistance - resourceDistance - 96),
@@ -359,7 +350,7 @@ export function createConstellationLayout({
     return {
       taskAgentDistance,
       resourceDistance,
-      agentDistance: Math.max(MIN_COMPACT_AGENT_DISTANCE, taskAgentDistance),
+      agentDistance: MIN_COMPACT_AGENT_DISTANCE,
       orbitX,
       orbitY,
       compact,
@@ -438,6 +429,56 @@ export function createConstellationLayout({
     return slots;
   }
 
+  function orderTasksByAgentAdjacency(tasks: GraphNode[], edges: GraphEdge[]): GraphNode[] {
+    const taskIds = new Set(tasks.map((task) => task.id));
+    const sourceOrder = new Map(tasks.map((task, index) => [task.id, index]));
+    const tasksByAgent = new Map<string, string[]>();
+    for (const assignment of edges.filter((edge) => edgeType(edge) === 'task-assignment')) {
+      if (!taskIds.has(assignment.targetId)) continue;
+      const assignedTasks = tasksByAgent.get(assignment.sourceId) ?? [];
+      if (!assignedTasks.includes(assignment.targetId)) assignedTasks.push(assignment.targetId);
+      tasksByAgent.set(assignment.sourceId, assignedTasks);
+    }
+
+    const connections = new Map<string, Map<string, number>>();
+    const connect = (leftId: string, rightId: string, weight: number): void => {
+      if (leftId === rightId) return;
+      const neighbors = connections.get(leftId) ?? new Map<string, number>();
+      neighbors.set(rightId, (neighbors.get(rightId) ?? 0) + weight);
+      connections.set(leftId, neighbors);
+    };
+    for (const relation of edges.filter((edge) => TASK_ADJACENCY_EDGE_TYPES.has(edgeType(edge)))) {
+      for (const leftId of tasksByAgent.get(relation.sourceId) ?? []) {
+        for (const rightId of tasksByAgent.get(relation.targetId) ?? []) {
+          connect(leftId, rightId, edgeCount(relation));
+          connect(rightId, leftId, edgeCount(relation));
+        }
+      }
+    }
+
+    const tasksById = new Map(tasks.map((task) => [task.id, task]));
+    const remaining = new Set(taskIds);
+    const ordered: GraphNode[] = [];
+    for (const seed of tasks) {
+      if (!remaining.has(seed.id)) continue;
+      let currentId: string | undefined = seed.id;
+      while (currentId) {
+        const current = tasksById.get(currentId);
+        if (!current) break;
+        ordered.push(current);
+        remaining.delete(currentId);
+        currentId = [...(connections.get(currentId)?.entries() ?? [])]
+          .filter(([neighborId]) => remaining.has(neighborId))
+          .sort(
+            ([leftId, leftWeight], [rightId, rightWeight]) =>
+              rightWeight - leftWeight ||
+              (sourceOrder.get(leftId) ?? 0) - (sourceOrder.get(rightId) ?? 0),
+          )[0]?.[0];
+      }
+    }
+    return ordered;
+  }
+
   function computeTaskAnchors(nodes: GraphNode[], edges: GraphEdge[]): Map<string, Point> {
     const tasks = nodes.filter((node) => node.type === 'task');
     const {
@@ -455,13 +496,14 @@ export function createConstellationLayout({
     let orbitY = baseOrbitY;
     const anchors = new Map<string, Point>();
     if (tasks.length <= SINGLE_RING_TASK_LIMIT) {
+      const orderedTasks = orderTasksByAgentAdjacency(tasks, edges);
       const minimumSpacing = Math.max(0, ...spacingByTask.values());
       const minimumRadius =
         tasks.length > 1 ? minimumSpacing / (2 * Math.sin(Math.PI / tasks.length)) : 0;
       orbitX = Math.max(orbitX, minimumRadius);
       orbitY = Math.max(orbitY, minimumRadius);
-      tasks.forEach((task, index) => {
-        const angle = -Math.PI / 2 + (index / Math.max(1, tasks.length)) * Math.PI * 2;
+      orderedTasks.forEach((task, index) => {
+        const angle = -Math.PI / 2 + (index / Math.max(1, orderedTasks.length)) * Math.PI * 2;
         anchors.set(task.id, {
           x: center.x + Math.cos(angle) * orbitX,
           y: center.y + Math.sin(angle) * orbitY,
@@ -484,10 +526,11 @@ export function createConstellationLayout({
     }
     // Source order is stable within each attachment tier; new bare tasks therefore append without
     // moving existing anchors, while task clusters with agents/resources occupy inner rings first.
-    const orderedTasks = tasks
+    const tierOrderedTasks = tasks
       .map((task, index) => ({ task, index, priority: taskPriority.get(task.id) ?? 0 }))
       .sort((left, right) => right.priority - left.priority || left.index - right.index)
       .map(({ task }) => task);
+    const orderedTasks = orderTasksByAgentAdjacency(tierOrderedTasks, edges);
     let taskIndex = 0;
     let radiusX = orbitX;
     let radiusY = orbitY;
@@ -639,18 +682,6 @@ export function createConstellationLayout({
     return seededUnit(seed, fallbackId, 2) * Math.PI * 2;
   }
 
-  function topLevelResourceAngles(): number[] {
-    const angles = [...taskAnchors.values()]
-      .map((point) => Math.atan2(point.y - center.y, point.x - center.x))
-      .sort((a, b) => a - b);
-    if (angles.length === 0) return [];
-    return angles.map((angle, index) => {
-      const next =
-        angles[(index + 1) % angles.length] + (index === angles.length - 1 ? Math.PI * 2 : 0);
-      return angle + (next - angle) / 2;
-    });
-  }
-
   function computeDesiredPositions(nodes: GraphNode[], edges: GraphEdge[]): Map<string, Point> {
     const positions = new Map(taskAnchors);
     const { taskAgentDistance, resourceDistance, agentDistance } = compactGeometry(nodes.length);
@@ -720,7 +751,6 @@ export function createConstellationLayout({
       )
       .forEach((node) => placeDelegatedAgent(node.id));
 
-    const safeTopLevelAngles = topLevelResourceAngles();
     const resourceEdges = edges.filter(
       (edge) => edgeType(edge).startsWith('file-') || edgeType(edge).startsWith('note-'),
     );
@@ -735,10 +765,8 @@ export function createConstellationLayout({
         .sort((a, b) => (orderedIds.get(a.targetId) ?? 0) - (orderedIds.get(b.targetId) ?? 0));
       const baseAngle = angleFromCenter(ownerPosition, owner.id);
       resources.forEach((edge, index) => {
-        const angle =
-          isTopLevelAgent(owner) && safeTopLevelAngles.length > 0
-            ? safeTopLevelAngles[index % safeTopLevelAngles.length]
-            : baseAngle + (index - (resources.length - 1) / 2) * RESOURCE_FAN_STEP;
+        const fanStep = isTopLevelAgent(owner) ? TOP_LEVEL_RESOURCE_FAN_STEP : RESOURCE_FAN_STEP;
+        const angle = baseAngle + (index - (resources.length - 1) / 2) * fanStep;
         positions.set(edge.targetId, {
           x: ownerPosition.x + Math.cos(angle) * resourceDistance,
           y: ownerPosition.y + Math.sin(angle) * resourceDistance,
@@ -786,6 +814,33 @@ export function createConstellationLayout({
     });
   }
 
+  function resourceAnchorForce(edges: GraphEdge[]): Force<GraphNode, undefined> {
+    const resources = edges.flatMap((edge) => {
+      if (!edgeType(edge).startsWith('file-') && !edgeType(edge).startsWith('note-')) return [];
+      const sourceTarget = desiredPositions.get(edge.sourceId);
+      const targetPosition = desiredPositions.get(edge.targetId);
+      if (!sourceTarget || !targetPosition) return [];
+      return [
+        {
+          edge,
+          offsetX: targetPosition.x - sourceTarget.x,
+          offsetY: targetPosition.y - sourceTarget.y,
+        },
+      ];
+    });
+    const force = ((alpha: number) => {
+      for (const { edge, offsetX, offsetY } of resources) {
+        const source = nodeById.get(edge.sourceId);
+        const target = nodeById.get(edge.targetId);
+        if (!source || !target) continue;
+        target.vx += (source.x + offsetX - target.x) * alpha * 2.5;
+        target.vy += (source.y + offsetY - target.y) * alpha * 2.5;
+      }
+    }) as Force<GraphNode, undefined>;
+    force.initialize = () => {};
+    return force;
+  }
+
   function configureLinkForce(edges: GraphEdge[]): void {
     const { taskAgentDistance, resourceDistance, agentDistance } = compactGeometry(
       currentNodes.length,
@@ -804,7 +859,7 @@ export function createConstellationLayout({
         .strength((link) => {
           if (link.kind === 'task-assignment') return 0.5;
           if (link.kind === 'delegation') return 0.32;
-          return Math.min(0.5, 0.28 + Math.log2(link.count + 1) * 0.05);
+          return Math.min(0.65, 0.42 + Math.log2(link.count + 1) * 0.04);
         }),
     );
   }
@@ -855,6 +910,7 @@ export function createConstellationLayout({
         : null,
     );
     configureLinkForce(edges);
+    simulation.force('resource-anchor', resourceAnchorForce(edges));
     simulation.force('cluster-separation', taskClusterSeparationForce());
     simulation.force(
       'collision',
