@@ -111,7 +111,11 @@
       </ListView>
     </div>
     <div class="row-cell" data-row-preview="list-row-loading-disabled">
-      <ListView items={[]} status="loading" ariaLabel="Loading collection rows" />
+      <ListView items={listItems.slice(0, 0)} status="loading" ariaLabel="Loading collection rows">
+        {#snippet row({ item })}
+          <ListRow>{#snippet title()}{item.title}{/snippet}</ListRow>
+        {/snippet}
+      </ListView>
       <ListRow aria-disabled="true" class="opacity-50">
         {#snippet title()}Disabled row{/snippet}
         {#snippet trailing()}<Badge>Loading</Badge>{/snippet}
