@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.144.9](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.8...v2.144.9) (2026-09-10)
+
+
+### 🐛 Bug Fixes
+
+* start onboarding at step one and test only Claude Code ([#2297](https://github.com/intent-hq/cloudlands-fe/issues/2297)) ([102d655](https://github.com/intent-hq/cloudlands-fe/commit/102d655a09098a62e8a21db66f5d819f0e54ba1c))
+
 ## [2.144.8](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.7...v2.144.8) (2026-09-10)
 
 
