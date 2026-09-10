@@ -636,7 +636,7 @@
       {/snippet}
 
       {#snippet content()}
-        <div class="w-48">
+        <div class="min-w-48 w-max max-w-80">
           <WorkspaceActionsMenu
             filePath={workspace?.worktreePath || workspace?.repositoryPath || workspace?.path || ''}
             workspaceId={workspace?.id || workspaceId}
