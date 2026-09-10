@@ -103,8 +103,9 @@ const runtimePatterns = [
   // Set by bits-ui at runtime on Select content; externally owned, not a design token.
   /^--bits-select-content-available-height$/,
   // Set by bits-ui at runtime on menu content (dropdown-menu content and the shared
-  // menu primitive used by SubContent); externally owned, not design tokens.
-  /^--bits-(?:dropdown-)?menu-content-available-height$/,
+  // menu primitive used by SubContent); available height and width are externally
+  // owned, not design tokens.
+  /^--bits-(?:dropdown-)?menu-content-available-(height|width)$/,
 ];
 const exceptionFiles = new Map(
   allowlist.undefined.map((entry) => [entry.token, new Set(entry.allowedFiles ?? [])]),

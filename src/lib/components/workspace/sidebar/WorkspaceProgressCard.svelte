@@ -895,7 +895,8 @@
 
           {#snippet content()}
             <div
-              class="min-w-48 w-max max-w-[min(20rem,calc(var(--bits-dropdown-menu-content-available-width,100vw)-0.625rem))]"
+              class="min-w-48 w-max"
+              style="max-width: min(20rem, calc(var(--bits-dropdown-menu-content-available-width, 100vw) - 0.625rem))"
             >
               <WorkspaceActionsMenu
                 filePath={$workspace?.worktreePath ||
