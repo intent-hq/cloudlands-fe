@@ -2,6 +2,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { faComment } from '@fortawesome/free-solid-svg-icons';
   import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
+  import { AgentStatus } from '$shared/types/agent.types';
   import AgentTabType from '$features/layout/tab-types/AgentTabType.svelte';
   import InitialAgentChatTabType from './InitialAgentChatTabType.svelte';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
@@ -622,7 +623,7 @@
           [
             {
               ...session,
-              status: status === 'thinking' ? 'active' : 'idle',
+              status: status === 'thinking' ? AgentStatus.Active : AgentStatus.RuntimeIdle,
               isActive: status === 'thinking',
               isStreaming: status === 'thinking',
               isProcessing: status === 'thinking',
