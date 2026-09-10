@@ -343,12 +343,13 @@ function removeOneOpening(openingIds: string[], id: string): string[] {
 }
 
 connectionsReducer.with(openOperationStarted, (state, { payload: [id] }) => {
-  // Preserves the legacy latch-clearing semantics of connectOperationStarted:
-  // a new attempt clears the stale auth-rejected latch so the UI reflects the
-  // operation under way. Opening does not itself replace the client (main's
-  // connectBackendClient reuses the pooled instance; replacement happens on
-  // re-pair/config changes). One entry per operation (not per id): takeEvery
-  // admits repeat opens of the same backend and each must settle on its own.
+  // Mirrors connectOperationStarted's legacy latch-clearing semantics: any new
+  // open clears the auth-rejected latch, regardless of whether `id` matches
+  // the window's own backend (the clearing is not scoped to the opened id).
+  // Opening does not itself replace the client (main's connectBackendClient
+  // reuses the pooled instance; replacement happens on re-pair/config
+  // changes). One entry per operation (not per id): takeEvery admits repeat
+  // opens of the same backend and each must settle on its own.
   const openingIds = [...state.openingIds, id];
   return { ...state, openingIds, status: 'connecting', error: null, authRejected: null };
 });
