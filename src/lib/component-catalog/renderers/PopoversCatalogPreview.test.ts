@@ -41,9 +41,6 @@ describe('PopoversCatalogPreview', () => {
         values: ['aria-required-children', 'aria-required-parent', 'scrollable-region-focusable'],
       },
     });
-    expect(result.violations.map(({ id }) => id).sort()).toEqual([
-      'aria-required-children',
-      'aria-required-parent',
-    ]);
+    expect(result.violations).toEqual([]);
   });
 });

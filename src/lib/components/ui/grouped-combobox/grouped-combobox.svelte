@@ -129,6 +129,8 @@
   <Button
     variant="plain"
     type="button"
+    role="option"
+    aria-selected="false"
     aria-label={m.ui_groupedCombobox_toggleGroup_ariaLabel({ group: group.label })}
     onclick={() => toggleGroup(group.key)}
   >

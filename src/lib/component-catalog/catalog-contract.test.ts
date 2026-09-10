@@ -82,18 +82,6 @@ const intentionalAxeAllowlist: Record<string, ReadonlyArray<{ rule: string; reas
         'The state matrix intentionally renders repeated copies of the same settings navigation landmark.',
     },
   ],
-  'product:popovers:non-modal-overlay-matrix': [
-    {
-      rule: 'aria-required-children',
-      reason:
-        'Dropdown submenu and grouped-combobox group controls reproduce this rule in their default component fixtures.',
-    },
-    {
-      rule: 'aria-required-parent',
-      reason:
-        'The Dropdown submenu trigger reproduces this role-parent rule in default portal rendering.',
-    },
-  ],
 };
 const axeRules = {
   // jsdom cannot calculate visual contrast for isolated fixtures.

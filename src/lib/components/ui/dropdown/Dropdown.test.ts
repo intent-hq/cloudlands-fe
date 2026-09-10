@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import axe from 'axe-core';
 import Dropdown from './Dropdown.svelte';
 import { dropdownCallerLedger } from './dropdown-caller-ledger';
 import { buildUiComponentInventory } from '../../../../../scripts/ui-component-inventory';
@@ -339,6 +340,7 @@ describe('Dropdown compatibility modes', () => {
       props: {
         multiple: true,
         searchable: false,
+        portal: true,
         onchange,
         options: [
           { value: 'a', label: 'Alpha' },
@@ -361,8 +363,13 @@ describe('Dropdown compatibility modes', () => {
 
     await fireEvent.click(screen.getByRole('option', { name: 'Toggle detail' }));
     expect(onchange).toHaveBeenCalledWith('toggle', expect.any(MouseEvent));
-    await fireEvent.mouseOver(screen.getByRole('menuitem', { name: 'More' }));
+    await fireEvent.mouseOver(screen.getByRole('option', { name: 'More' }));
     expect(await screen.findByRole('menu')).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Child action' })).toBeTruthy();
+    const axeResult = await axe.run(document.body, {
+      runOnly: ['aria-required-children', 'aria-required-parent'],
+    });
+    expect(axeResult.violations).toEqual([]);
 
     await fireEvent.click(screen.getByRole('option', { name: 'Run action' }));
     expect(action).toHaveBeenCalledOnce();

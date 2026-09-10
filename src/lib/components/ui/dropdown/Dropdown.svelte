@@ -793,7 +793,7 @@
   {/if}
 {/snippet}
 
-{#snippet optionItem(option: DropdownOption)}
+{#snippet optionItem(option: DropdownOption, popupRole: 'listbox' | 'menu' = 'listbox')}
   {@const optionIndex = selectableOptions.findIndex((o) => o.value === option.value)}
   <!-- i18n-ignore (scanner false positive: `<` comparison inside the const expression) -->
   {@const isHighlighted =
@@ -823,10 +823,12 @@
         data-menu-item
         style="scroll-margin-top: var(--control-height-medium)"
         class={cn(menuItem(), 'gap-1.5 overflow-hidden px-2 py-1.5', option.class)}
-        role={option.type === 'submenu' ? 'menuitem' : 'option'}
-        aria-selected={option.type !== 'submenu' ? isSelected(option.value) : undefined}
+        role={popupRole === 'menu' ? 'menuitem' : 'option'}
+        aria-selected={popupRole === 'listbox' ? isSelected(option.value) : undefined}
         aria-haspopup={option.type === 'submenu' ? 'menu' : undefined}
-        aria-expanded={option.type === 'submenu' ? openSubmenu === option.value : undefined}
+        aria-expanded={popupRole === 'menu' && option.type === 'submenu'
+          ? openSubmenu === option.value
+          : undefined}
       >
         {#if item}
           {@render item({ option, selected: isSelected(option.value), highlighted: isHighlighted })}
@@ -917,7 +919,7 @@
           >
             <ListHighlight />
             {#each deduplicateOptions(option.children) as child (child.value)}
-              {@render optionItem(child)}
+              {@render optionItem(child, 'menu')}
             {/each}
           </div>
         </Portal>
