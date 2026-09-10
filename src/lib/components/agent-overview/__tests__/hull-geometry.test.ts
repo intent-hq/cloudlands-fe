@@ -80,6 +80,17 @@ describe('task hull geometry', () => {
     }
   });
 
+  it.each([0.6, 1])('encloses a centered 176x48 task box at zoom %s', (zoomScale) => {
+    const task = { x: 100, y: 120, width: 176, height: 48, offsetX: 0, offsetY: 0 };
+    const agent = { x: 300, y: 120, width: 112, height: 102, offsetX: 0, offsetY: 0 };
+    const hull = paddedHull([task, agent], HULL_PADDING / zoomScale);
+
+    expect(hull).not.toBeNull();
+    for (const point of paddedMemberPoints(task, 0)) {
+      expect(polygonContains(hull!, point)).toBe(true);
+    }
+  });
+
   it('smooths polygons into a closed path', () => {
     const path = smoothClosedHullPath([
       [0, 0],

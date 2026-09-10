@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { GRAPH_NODE_DIMENSIONS } from './constants';
   import type { TaskHullMembership } from './graph-helpers';
-  import { NODE_SCREEN_MARGINS } from './graph-fit';
   import {
     activityHullTransition,
     activityMotion,
@@ -24,10 +24,16 @@
     y: number;
   }
 
+  interface NodeEnvelope {
+    width: number;
+    height: number;
+  }
+
   interface Props {
     memberships: TaskHullMembership[];
     nodes: GraphNode[];
     positions: Map<string, Position>;
+    nodeEnvelopes?: ReadonlyMap<string, NodeEnvelope>;
     focusNodeId?: string | null;
     spotlightNodeId?: string | null;
     playbackSpeed?: number;
@@ -38,6 +44,7 @@
     memberships,
     nodes,
     positions,
+    nodeEnvelopes = new Map(),
     focusNodeId = null,
     spotlightNodeId = null,
     playbackSpeed = 1,
@@ -58,20 +65,19 @@
     group: TaskHullMembership,
     currentPositions: Map<string, Position>,
   ): KeyedHullMember[] | null {
-    const scale = Math.max(0.01, zoomScale);
     const members: KeyedHullMember[] = [];
     for (const id of group.memberIds) {
       const node = nodeById.get(id);
       if (!node) return null;
       const position = currentPositions.get(id) ?? node;
-      const margin = NODE_SCREEN_MARGINS[node.type];
+      const envelope = nodeEnvelopes.get(id) ?? GRAPH_NODE_DIMENSIONS[node.type];
       members.push({
         id,
         ...position,
-        width: (margin.left + margin.right) / scale,
-        height: (margin.top + margin.bottom) / scale,
-        offsetX: (margin.right - margin.left) / (2 * scale),
-        offsetY: (margin.bottom - margin.top) / (2 * scale),
+        width: envelope.width,
+        height: envelope.height,
+        offsetX: 0,
+        offsetY: 0,
       });
     }
     return members;

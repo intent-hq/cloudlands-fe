@@ -19,6 +19,7 @@
   import TaskAnchorNode from './nodes/TaskAnchorNode.svelte';
   import {
     GRAPH_FIT_PADDING,
+    GRAPH_NODE_DIMENSIONS,
     GRAPH_ZOOM_EXTENT,
     MAX_VISIBLE_RESOURCES_PER_AGENT,
   } from './constants';
@@ -80,6 +81,7 @@
   let layout: ConstellationLayout | null = null;
   let zoomBehavior: ZoomBehavior<HTMLDivElement, unknown> | null = null;
   let zoomScale = $state(1);
+  let hullNodeEnvelopes = $state(new Map<string, { width: number; height: number }>());
   let hoveredNodeId = $state<string | null>(null);
   let dismissedHoverNodeId = $state<string | null>(null);
   let selectedNodeId = $state<string | null>(null);
@@ -102,6 +104,7 @@
   const positionedNodes = new Map<string, HTMLElement>();
   let frame: number | null = null;
   let fitFrame: number | null = null;
+  let hullEnvelopeFrame: number | null = null;
   let deferredFit: (() => void) | null = null;
   let unsubscribeTick: (() => void) | null = null;
   let resizeObserver: ResizeObserver | null = null;
@@ -337,6 +340,31 @@
     return nodeId === (selectedNodeId ?? keyboardNodeId);
   }
 
+  function measureHullNodeEnvelopes(): void {
+    const measured = new Map<string, { width: number; height: number }>();
+    for (const node of visibleGraph.nodes) {
+      const element = nodeElement(node.id);
+      const fallback = GRAPH_NODE_DIMENSIONS[node.type];
+      const labelWidth =
+        node.type === 'agent'
+          ? (element?.querySelector<HTMLElement>('.agent-name')?.offsetWidth ?? 0)
+          : 0;
+      measured.set(node.id, {
+        width: Math.max(fallback.width, element?.offsetWidth ?? 0, labelWidth),
+        height: Math.max(fallback.height, element?.offsetHeight ?? 0),
+      });
+    }
+    hullNodeEnvelopes = measured;
+  }
+
+  function scheduleHullNodeEnvelopeMeasurement(): void {
+    if (hullEnvelopeFrame !== null) return;
+    hullEnvelopeFrame = requestAnimationFrame(() => {
+      hullEnvelopeFrame = null;
+      measureHullNodeEnvelopes();
+    });
+  }
+
   function publishPositions(nodes: GraphNode[], alpha = 1): void {
     pendingPositions = new Map(nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
     if (frame !== null) return;
@@ -351,6 +379,7 @@
       edgeLayer?.updatePositions(pendingPositions);
       hullLayer?.updatePositions(pendingPositions);
       frame = null;
+      if (alpha < 0.01) scheduleHullNodeEnvelopeMeasurement();
       if (autoFitPending && alpha < 0.01) {
         autoFitPending = false;
         fitAutomatically();
@@ -361,15 +390,18 @@
   function positionGraphNode(element: HTMLElement, initialId: string) {
     let id = initialId;
     positionedNodes.set(id, element);
+    scheduleHullNodeEnvelopeMeasurement();
     return {
       update(nextId: string) {
         if (nextId === id) return;
         positionedNodes.delete(id);
         id = nextId;
         positionedNodes.set(id, element);
+        scheduleHullNodeEnvelopeMeasurement();
       },
       destroy() {
         positionedNodes.delete(id);
+        scheduleHullNodeEnvelopeMeasurement();
       },
     };
   }
@@ -907,6 +939,7 @@
         if (scene) {
           scene.style.transform = `translate(${event.transform.x}px, ${event.transform.y}px) scale(${event.transform.k})`;
         }
+        scheduleHullNodeEnvelopeMeasurement();
       })
       .on('end', () => (canvasPanning = false));
     select(container).call(zoomBehavior).on('dblclick.zoom', null);
@@ -970,6 +1003,7 @@
     if (frame !== null) cancelAnimationFrame(frame);
     deferredFit = null;
     if (fitFrame !== null) cancelAnimationFrame(fitFrame);
+    if (hullEnvelopeFrame !== null) cancelAnimationFrame(hullEnvelopeFrame);
   });
 </script>
 
@@ -1004,6 +1038,7 @@
         memberships={hullMemberships}
         nodes={visibleGraph.nodes}
         positions={latestPositions.current}
+        nodeEnvelopes={hullNodeEnvelopes}
         {zoomScale}
         {focusNodeId}
         {playbackSpeed}
@@ -1023,6 +1058,7 @@
           use:positionGraphNode={node.id}
           class="absolute"
           style:transform={`translate(${node.x}px, ${node.y}px) translate(-50%, -50%)`}
+          style:transition-property="none"
           style:z-index={node.type === 'task' ? 2 : node.type === 'agent' ? 3 : 1}
         >
           {#if node.type === 'task'}

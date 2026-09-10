@@ -126,6 +126,30 @@ describe('GraphHullLayer', () => {
     expect(view.container.querySelector('.task-hull')?.getAttribute('d')).not.toBe(pathAtOne);
   });
 
+  it('uses measured node boxes centered on their layout anchors', async () => {
+    useMotionPreference(true);
+    const nodes = [task('one'), agent('one')];
+    const memberships = deriveTaskHullMemberships(nodes, [assignment('one', 'one')]);
+    const view = render(GraphHullLayer, {
+      props: { nodes, memberships, positions: positions(nodes), zoomScale: 1 },
+    });
+    const fallbackPath = view.container.querySelector('.task-hull')?.getAttribute('d');
+
+    await view.rerender({
+      nodes,
+      memberships,
+      positions: positions(nodes),
+      zoomScale: 1,
+      nodeEnvelopes: new Map([
+        ['task:one', { width: 176, height: 48 }],
+        ['agent:one', { width: 160, height: 102 }],
+      ]),
+    });
+    await tick();
+
+    expect(view.container.querySelector('.task-hull')?.getAttribute('d')).not.toBe(fallbackPath);
+  });
+
   it('hides a group when an assigned member is not visible at the replay cursor', () => {
     const nodes = [task('one'), agent('visible')];
     const { container } = render(GraphHullLayer, {
