@@ -23,10 +23,10 @@ jobs:
       - name: Checkout exact PR source
         uses: actions/checkout@v7
         with:
-          ref: 8c37ab1bedec17901ea17789d0e5cb78b9abb19f
+          ref: ca0059b58558cee3e3b9f70919e1def6e78d3788
           persist-credentials: false
       - name: Verify source identity
-        run: test "$(git rev-parse HEAD)" = 8c37ab1bedec17901ea17789d0e5cb78b9abb19f
+        run: test "$(git rev-parse HEAD)" = ca0059b58558cee3e3b9f70919e1def6e78d3788
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -58,7 +58,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: chat-pending-status-8c37ab1b
+          name: chat-pending-status-ca0059b5
           path: |
             playwright-report/
             test-results/
