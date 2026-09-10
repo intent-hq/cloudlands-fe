@@ -1,6 +1,11 @@
 <script lang="ts">
   import { m } from '$shared/paraglide/messages.js';
-  import neutralUrl from '../../../../../static/intent-mark/neutral.png?url';
+  import {
+    intentMarkPaths,
+    intentMarkStrokeWidth,
+    intentMarkViewBox,
+    pulseKeyframes,
+  } from './intent-mark-vector';
   import {
     createIntentMarkMotion,
     type IntentMarkMotionOptions,
@@ -34,7 +39,7 @@
   class="intent-mark-loader {className}"
   width={size}
   height={size}
-  viewBox="0 0 256 256"
+  viewBox={intentMarkViewBox}
   fill="none"
   role="status"
   aria-label={m.ui_spinner_loading_ariaLabel()}
@@ -43,15 +48,18 @@
   data-playing={playing}
   data-motion-state="neutral"
 >
-  <foreignObject x="0" y="0" width="256" height="256" aria-hidden="true">
-    <div class="intent-mark-viewport">
-      <div
-        class="intent-mark-sheet"
-        data-mark-sheet="neutral"
-        style:mask-image={`url("${neutralUrl}")`}
-      ></div>
-    </div>
-  </foreignObject>
+  <g data-mark-layer="neutral" aria-hidden="true">
+    {#each intentMarkPaths as d, index}
+      <path
+        {d}
+        data-mark-arm={index}
+        pathLength="100"
+        stroke="currentColor"
+        stroke-width={intentMarkStrokeWidth}
+        style:transform={String(pulseKeyframes(index)[0].transform)}
+      />
+    {/each}
+  </g>
 </svg>
 
 <style>
@@ -65,26 +73,13 @@
     vertical-align: middle;
   }
 
-  .intent-mark-viewport {
-    position: relative;
-    width: 256px;
-    height: 256px;
-    overflow: hidden;
-    contain: strict;
-  }
-
-  .intent-mark-sheet {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 256px;
-    height: 256px;
-    background: currentColor;
-    mask-mode: alpha;
-    mask-repeat: no-repeat;
+  path {
     pointer-events: none;
-    transform: translate(0px, 0px);
-    forced-color-adjust: none;
+    stroke-linecap: butt;
+    stroke-linejoin: round;
+    stroke-dasharray: 100 200;
+    stroke-dashoffset: 0;
+    transform-origin: 0 0;
   }
 
   @media (forced-colors: active) {

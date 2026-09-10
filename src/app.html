@@ -3,7 +3,6 @@
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
-    <link rel="stylesheet" href="%sveltekit.assets%/intent-mark/pulse.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
@@ -31,7 +30,7 @@
         justify-content: center;
         background: transparent;
       }
-      /* Exact Pulse frames, loaded independently of the app bundle. */
+      /* Continuous vector Pulse, available before the app bundle loads. */
       #splash-mark {
         display: block;
         width: 64px;
@@ -42,10 +41,49 @@
       .dark #splash-mark {
         color: hsl(var(--foreground, 145 80% 96%));
       }
-      #splash-mark-viewport {
-        width: 256px;
-        height: 256px;
-        overflow: hidden;
+      @media (prefers-color-scheme: dark) {
+        html:not(.light) #splash-mark {
+          color: hsl(var(--foreground, 145 80% 96%));
+        }
+      }
+      #splash-mark path {
+        stroke: currentColor;
+        stroke-width: 18.45088;
+      }
+      #splash-mark g:nth-child(1) {
+        --pulse-x: -15.856px;
+        --pulse-y: -18.903px;
+      }
+      #splash-mark g:nth-child(2) {
+        --pulse-x: 15.8795px;
+        --pulse-y: -18.9409px;
+      }
+      #splash-mark g:nth-child(3) {
+        --pulse-x: -21.4098px;
+        --pulse-y: 12.4218px;
+      }
+      #splash-mark g:nth-child(4) {
+        --pulse-x: 21.3538px;
+        --pulse-y: 12.359px;
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        #splash-mark g:not(:last-child) path {
+          animation: splash-pulse 2033.333333ms linear infinite;
+        }
+      }
+      @keyframes splash-pulse {
+        0% {
+          transform: translate(0px, 0px);
+          animation-timing-function: cubic-bezier(0.667, 0, 0.333, 1);
+        }
+        49.18032787% {
+          transform: translate(var(--pulse-x), var(--pulse-y));
+          animation-timing-function: cubic-bezier(0.667, 0, 0.25, 1);
+        }
+        98.36065574%,
+        100% {
+          transform: translate(0px, 0px);
+        }
       }
       @media (forced-colors: active) {
         #splash-mark {
@@ -109,9 +147,29 @@
         fill="none"
         aria-hidden="true"
       >
-        <foreignObject width="256" height="256">
-          <div id="splash-mark-viewport"><div class="intent-pulse-frames"></div></div>
-        </foreignObject>
+        <g transform="translate(0.03 26.84)">
+          <path
+            d="M92.148293 3.803071L112.21 58.92178C117.575582 73.663539 101.604204 87.065138 88.018096 79.221207L37.220352 49.893204"
+          />
+        </g>
+        <g transform="translate(-0.03 27.04)">
+          <path
+            d="M221.41417 49.978045L170.616426 79.306048C157.030318 87.149979 141.05894 73.74838 146.424522 59.006621L166.486229 3.887912"
+          />
+        </g>
+        <g transform="translate(-0.43 26.09)">
+          <path
+            d="M24.769303 119.698155L82.534231 109.51261C97.983713 106.788469 108.40846 124.844303 98.324395 136.861921L60.621011 181.795086"
+          />
+        </g>
+        <g transform="translate(-0.03 27.01)">
+          <path
+            d="M195.378989 181.795086L157.675605 136.861921C147.59154 124.844303 158.016287 106.788469 173.465769 109.51261L231.230697 119.698155"
+          />
+        </g>
+        <g transform="translate(0 27)">
+          <path d="M128 135.5954L128 208.081" />
+        </g>
       </svg>
     </div>
     <div style="display: contents" id="app">%sveltekit.body%</div>

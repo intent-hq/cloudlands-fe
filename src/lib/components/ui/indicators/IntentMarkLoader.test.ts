@@ -157,22 +157,13 @@ describe('IntentMarkLoader', () => {
       ).toBe(true);
       completeTransition();
       const loops = liveLoops(root);
-      expect(loops).toHaveLength(1);
-      expect((loops[0].target as HTMLElement).dataset.markSheet).toBe(to);
-      expect(
-        loops.every(({ frames }) =>
-          frames.every((frame) =>
-            Object.keys(frame).every((property) =>
-              ['easing', 'offset', 'transform'].includes(property),
-            ),
-          ),
-        ),
-      ).toBe(true);
+      expect(loops).toHaveLength(5);
+      expect((loops[0].target.parentElement as unknown as SVGGElement).dataset.markLayer).toBe(to);
       expect(root.dataset.motionState).toBe('playing');
     },
   );
 
-  it('cancels stale transitions during rapid updates without retaining extra sheets', async () => {
+  it('cancels stale transitions during rapid updates without retaining extra vector layers', async () => {
     const view = render(IntentMarkLoader, { props: { variant: 'pulse', playing: true } });
     const root = view.container.querySelector<HTMLElement>('[data-slot="intent-mark-loader"]')!;
     completeTransition();
@@ -184,11 +175,13 @@ describe('IntentMarkLoader', () => {
     expect(staleMorphs.every(({ cancel }) => cancel.mock.calls.length === 1)).toBe(true);
     staleMorphs[0].finish();
     expect(liveLoops(root)).toHaveLength(0);
-    expect(root.querySelectorAll('[data-mark-sheet]')).toHaveLength(2);
+    expect(root.querySelectorAll('[data-mark-layer]')).toHaveLength(2);
     completeTransition();
-    expect(liveLoops(root)).toHaveLength(1);
-    expect((liveLoops(root)[0].target as HTMLElement).dataset.markSheet).toBe('twist');
-    expect(root.querySelectorAll('[data-mark-sheet]')).toHaveLength(1);
+    expect(liveLoops(root)).toHaveLength(5);
+    expect(
+      (liveLoops(root)[0].target.parentElement as unknown as SVGGElement).dataset.markLayer,
+    ).toBe('twist');
+    expect(root.querySelectorAll('[data-mark-layer]')).toHaveLength(1);
   });
 
   it('stops, reactivates, respects tab visibility and reduced motion, and cleans up', async () => {
@@ -244,30 +237,27 @@ describe('IntentMarkLoader', () => {
   });
 
   it.each([
-    ['pulse', 51],
-    ['bloom', 51],
-    ['twist', 92],
+    ['pulse', 61],
+    ['bloom', 61],
+    ['twist', 110],
   ] as const)(
-    'plays every %s source frame for 40ms using only stepped sheet translation',
+    'runs %s on native SVG strokes with the original 30fps source duration',
     (variant, count) => {
       const view = render(IntentMarkLoader, { props: { variant, playing: true } });
       completeTransition();
-      const [loop] = liveLoops(view.container);
+      const loops = liveLoops(view.container);
+      const [loop] = loops;
       expect(loop.options).toMatchObject({
-        duration: count * 40,
+        duration: (count * 1000) / 30,
         iterations: Infinity,
         easing: 'linear',
       });
-      expect(loop.frames).toHaveLength(count + 1);
-      for (const [index, frame] of loop.frames.entries()) {
-        expect(Object.keys(frame).sort()).toEqual(['easing', 'offset', 'transform']);
-        expect(frame.easing).toBe('steps(1, end)');
-        expect(frame.offset).toBe(index / count);
-        expect(frame.transform).toBe(
-          `translate(${-((index % count) % 8) * 256}px, ${-Math.floor((index % count) / 8) * 256}px)`,
-        );
-      }
-      expect((loop.target as HTMLElement).style.willChange).toBe('transform');
+      expect(
+        loops.every(({ target }) => target instanceof SVGElement && target.tagName === 'path'),
+      ).toBe(true);
+      expect(
+        loops.every(({ frames }) => frames.every(({ easing }) => !easing?.startsWith('steps'))),
+      ).toBe(true);
       expect(loop.currentTime).toBe(0);
     },
   );
@@ -289,7 +279,7 @@ describe('IntentMarkLoader', () => {
     expect(root.getAttribute('data-motion-state')).toBe('neutral');
     intersect(true);
     completeTransition();
-    expect(liveLoops(root)).toHaveLength(1);
+    expect(liveLoops(root)).toHaveLength(5);
     expect(liveLoops(root)[0]).not.toBe(originalLoop);
   });
 });

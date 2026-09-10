@@ -1,16 +1,13 @@
-import bloomUrl from '../../../../../static/intent-mark/bloom.png?url';
-import pulseUrl from '../../../../../static/intent-mark/pulse.png?url';
-import twistUrl from '../../../../../static/intent-mark/twist.png?url';
-
-export const intentMarkVariants = ['bloom', 'pulse', 'twist'] as const;
-export type IntentMarkVariant = (typeof intentMarkVariants)[number];
-
-export const intentMarkMotionTiming = {
-  settleMs: 160,
-  bloomMs: 51 * 40,
-  pulseMs: 51 * 40,
-  twistMs: 92 * 40,
-} as const;
+import {
+  intentMarkKeyframes,
+  intentMarkMotionTiming,
+  type IntentMarkVariant,
+} from './intent-mark-vector';
+export {
+  intentMarkMotionTiming,
+  intentMarkVariants,
+  type IntentMarkVariant,
+} from './intent-mark-vector';
 
 export interface IntentMarkMotionOptions {
   variant: IntentMarkVariant;
@@ -22,43 +19,22 @@ export interface IntentMarkMotionController {
   destroy(): void;
 }
 
-const atlases = {
-  bloom: { url: bloomUrl, frames: 51, rows: 7 },
-  pulse: { url: pulseUrl, frames: 51, rows: 7 },
-  twist: { url: twistUrl, frames: 92, rows: 12 },
-} as const;
-
-// The source GIFs are 256px square, 40ms per frame. Only the sheet moves;
-// steps hold each complete source frame, including the last frame before wrap.
-function loopFrames(variant: IntentMarkVariant): Keyframe[] {
-  const count = atlases[variant].frames;
-  return Array.from({ length: count + 1 }, (_, index) => {
-    const frame = index % count;
-    return {
-      transform: `translate(${-(frame % 8) * 256}px, ${-Math.floor(frame / 8) * 256}px)`,
-      offset: index / count,
-      easing: 'steps(1, end)',
-    };
-  });
-}
-
 export function createIntentMarkMotion(
   root: SVGSVGElement,
   initial: IntentMarkMotionOptions,
 ): IntentMarkMotionController {
-  const neutral = root.querySelector<HTMLElement>('[data-mark-sheet]');
-  if (!neutral?.parentElement) throw new Error('Intent mark sheet is missing');
-  const viewport = neutral.parentElement;
-  const template = neutral.cloneNode(false) as HTMLElement;
+  const neutral = root.querySelector<SVGGElement>('[data-mark-layer]');
+  if (!neutral) throw new Error('Intent mark layer is missing');
+  const template = neutral.cloneNode(true) as SVGGElement;
   const media = window.matchMedia('(prefers-reduced-motion: reduce)');
   let options = initial;
   let inViewport = true;
   let visible = !document.hidden;
   let destroyed = false;
   let sequence = 0;
-  let current: HTMLElement = neutral;
-  let outgoing: HTMLElement | undefined;
-  let loop: Animation | undefined;
+  let current = neutral;
+  let outgoing: SVGGElement | undefined;
+  let loops: Animation[] = [];
   let fades: Animation[] = [];
   let activeVariant: IntentMarkVariant | undefined;
   let transitionTimer: number | undefined;
@@ -67,8 +43,8 @@ export function createIntentMarkMotion(
   const cancelAnimations = () => {
     if (transitionTimer !== undefined) window.clearTimeout(transitionTimer);
     transitionTimer = undefined;
-    loop?.cancel();
-    loop = undefined;
+    for (const animation of loops) animation.cancel();
+    loops = [];
     for (const animation of fades) animation.cancel();
     fades = [];
     current.style.willChange = '';
@@ -78,8 +54,8 @@ export function createIntentMarkMotion(
   const setNeutral = () => {
     sequence += 1;
     cancelAnimations();
-    current = template.cloneNode(false) as HTMLElement;
-    viewport.replaceChildren(current);
+    current = template.cloneNode(true) as SVGGElement;
+    root.replaceChildren(current);
     outgoing = undefined;
     activeVariant = undefined;
     transitioning = false;
@@ -89,19 +65,35 @@ export function createIntentMarkMotion(
   const canPlay = () => options.playing && inViewport && visible && !media.matches && !destroyed;
 
   const startLoop = (variant: IntentMarkVariant) => {
-    current.style.willChange = 'transform';
-    loop = current.animate(loopFrames(variant), {
-      duration: intentMarkMotionTiming[`${variant}Ms`],
-      easing: 'linear',
-      iterations: Infinity,
-    });
+    loops = Array.from(current.querySelectorAll<SVGPathElement>('[data-mark-arm]')).map(
+      (path, index) =>
+        path.animate(intentMarkKeyframes(variant, index), {
+          duration: intentMarkMotionTiming[`${variant}Ms`],
+          easing: 'linear',
+          iterations: Infinity,
+        }),
+    );
     root.dataset.motionState = 'playing';
   };
 
   const transitionTo = (variant?: IntentMarkVariant) => {
     const run = ++sequence;
-    // Freeze the outgoing source frame before cancelling its transform animation.
-    // Rapid updates discard the stale outgoing sheet, so at most two are retained.
+    // Freeze the rendered vector pose before cancel. Rapid updates keep at most
+    // two layers and cannot revive the callbacks from an earlier handoff.
+    for (const path of current.querySelectorAll<SVGPathElement>('[data-mark-arm]')) {
+      const rendered = getComputedStyle(path);
+      for (const property of [
+        'd',
+        'fill',
+        'stroke',
+        'transform',
+        'opacity',
+        'stroke-dasharray',
+        'stroke-dashoffset',
+        'stroke-width',
+      ])
+        path.style.setProperty(property, rendered.getPropertyValue(property));
+    }
     const style = getComputedStyle(current);
     const transform = style.transform;
     const opacity = style.opacity || '1';
@@ -110,15 +102,19 @@ export function createIntentMarkMotion(
     outgoing = current;
     outgoing.style.transform = transform;
     outgoing.style.opacity = opacity;
-    current = template.cloneNode(false) as HTMLElement;
+    current = template.cloneNode(true) as SVGGElement;
     if (variant) {
-      const atlas = atlases[variant];
-      current.dataset.markSheet = variant;
-      current.style.maskImage = `url("${atlas.url}")`;
-      current.style.width = '2048px';
-      current.style.height = `${atlas.rows * 256}px`;
+      current.dataset.markLayer = variant;
+      current.querySelectorAll<SVGPathElement>('[data-mark-arm]').forEach((path, index) => {
+        const {
+          offset: _offset,
+          easing: _easing,
+          ...pose
+        } = intentMarkKeyframes(variant, index)[0];
+        Object.assign(path.style, pose);
+      });
     }
-    viewport.append(current);
+    root.append(current);
     activeVariant = variant;
     transitioning = true;
     root.dataset.motionState = variant ? 'morphing' : 'settling';
@@ -156,7 +152,13 @@ export function createIntentMarkMotion(
     }
     if (activeVariant === options.variant) {
       if (transitioning) return;
-      if (loop && ['running', 'paused'].includes(loop.playState) && loop.replaceState !== 'removed')
+      if (
+        loops.length === 5 &&
+        loops.every(
+          (loop) =>
+            ['running', 'paused'].includes(loop.playState) && loop.replaceState !== 'removed',
+        )
+      )
         return;
     }
     transitionTo(options.variant);

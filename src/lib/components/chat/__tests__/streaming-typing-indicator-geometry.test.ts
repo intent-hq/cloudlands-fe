@@ -119,7 +119,7 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
     });
     animationRecords[0].finish();
     expect(animationRecords.filter(({ options }) => options.iterations === Infinity)).toHaveLength(
-      1,
+      5,
     );
 
     view.unmount();

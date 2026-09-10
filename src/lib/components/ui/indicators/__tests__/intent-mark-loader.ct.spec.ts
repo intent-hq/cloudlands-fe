@@ -7,16 +7,18 @@ test.setTimeout(120_000);
 
 async function seekLoop(root: Locator, time: number) {
   return root.evaluate((node, currentTime) => {
-    const animation = node
+    const animations = node
       .getAnimations({ subtree: true })
-      .find((item) => item.effect?.getTiming().iterations === Infinity)!;
-    animation.pause();
-    animation.currentTime = currentTime;
-    return animation.effect!.getTiming().duration;
+      .filter((item) => item.effect?.getTiming().iterations === Infinity);
+    for (const animation of animations) {
+      animation.pause();
+      animation.currentTime = currentTime;
+    }
+    return animations[0].effect!.getTiming().duration;
   }, time);
 }
 
-test('keeps one root and one loop through every directed handoff', async ({ mount }) => {
+test('keeps one root and five vector strokes through every directed handoff', async ({ mount }) => {
   const component = await mount(IntentMarkLoaderHost, {
     props: { variant: 'bloom', size: 128, playing: true },
   });
@@ -45,14 +47,11 @@ test('keeps one root and one loop through every directed handoff', async ({ moun
         .map((animation) => ({
           playState: animation.playState,
           targetTag: (animation.effect as KeyframeEffect).target?.tagName,
-          willChange: ((animation.effect as KeyframeEffect).target as HTMLElement | null)?.style
-            .willChange,
         })),
     );
-    expect(loops).toHaveLength(1);
+    expect(loops).toHaveLength(5);
     expect(loops.every(({ playState }) => playState === 'running')).toBe(true);
-    expect(loops.every(({ targetTag }) => targetTag === 'DIV')).toBe(true);
-    expect(loops.every(({ willChange }) => willChange === 'transform')).toBe(true);
+    expect(loops.every(({ targetTag }) => targetTag === 'path')).toBe(true);
     expect(
       await root.evaluate(
         (node) =>
@@ -60,7 +59,7 @@ test('keeps one root and one loop through every directed handoff', async ({ moun
             .getAnimations({ subtree: true })
             .filter((animation) => animation.effect?.getTiming().iterations === Infinity).length,
       ),
-    ).toBe(1);
+    ).toBe(5);
   }
 
   expect(
@@ -70,8 +69,77 @@ test('keeps one root and one loop through every directed handoff', async ({ moun
   ).toBe(true);
 });
 
+test('freezes the filled Twist pose during a theme change in a handoff', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(IntentMarkLoaderHost, {
+    props: { variant: 'twist', playing: true },
+  });
+  const root = component.getByRole('status');
+  await expect(root).toHaveAttribute('data-motion-state', 'playing');
+  await seekLoop(root, 1600);
+  const before = await root
+    .locator('[data-mark-arm]')
+    .first()
+    .evaluate((path) => {
+      const style = getComputedStyle(path);
+      return {
+        fill: style.fill,
+        stroke: style.stroke,
+        width: style.strokeWidth,
+        d: style.getPropertyValue('d'),
+      };
+    });
+  await root.evaluate((node) => {
+    (window as typeof window & { frozenTwist?: Promise<unknown> }).frozenTwist = new Promise(
+      (resolve) => {
+        const observer = new MutationObserver(() => {
+          const path = node.querySelector<SVGPathElement>(
+            '[data-mark-layer="twist"] [data-mark-arm]',
+          );
+          if (!path || !node.querySelector('[data-mark-layer="pulse"]')) return;
+          observer.disconnect();
+          (node as SVGSVGElement).style.color = 'rgb(220, 180, 140)';
+          const style = getComputedStyle(path);
+          resolve({
+            fill: style.fill,
+            stroke: style.stroke,
+            width: style.strokeWidth,
+            d: style.getPropertyValue('d'),
+          });
+        });
+        observer.observe(node, { childList: true });
+      },
+    );
+  });
+  await component.update({ props: { variant: 'pulse', playing: true } });
+  const frozen = await page.evaluate(
+    () => (window as typeof window & { frozenTwist: Promise<unknown> }).frozenTwist,
+  );
+  expect(frozen).toEqual(before);
+  await expect(root).toHaveAttribute('data-motion-state', 'playing');
+  await component.update({ props: { variant: 'pulse', playing: false } });
+  await expect(root).toHaveAttribute('data-motion-state', 'neutral');
+  const neutral = await root
+    .locator('[data-mark-arm]')
+    .first()
+    .evaluate((path) => {
+      const style = getComputedStyle(path);
+      return {
+        fill: style.fill,
+        stroke: style.stroke,
+        color: style.color,
+        width: Number.parseFloat(style.strokeWidth),
+      };
+    });
+  expect(neutral.fill).toBe('none');
+  expect(neutral.stroke).toBe(neutral.color);
+  expect(neutral.width).toBeGreaterThan(0);
+});
+
 for (const variant of ['pulse', 'bloom', 'twist'] as const) {
-  test(`matches every ${variant} GIF frame, its hold time, and the loop boundary`, async ({
+  test(`matches every measured ${variant} source pose and the loop boundary`, async ({
     mount,
     page,
   }, testInfo) => {
@@ -83,12 +151,6 @@ for (const variant of ['pulse', 'bloom', 'twist'] as const) {
     });
     const root = component.getByRole('status');
     await expect(root).toHaveAttribute('data-motion-state', 'playing');
-    await root.evaluate(async (node) => {
-      const url = getComputedStyle(node.querySelector('[data-mark-sheet]')!).maskImage.slice(5, -2);
-      const image = new Image();
-      image.src = url;
-      await image.decode();
-    });
     const metadata = await page.evaluate(async (base64) => {
       const Decoder = (
         window as unknown as {
@@ -123,10 +185,18 @@ for (const variant of ['pulse', 'bloom', 'twist'] as const) {
       return { count: frames.length, durations };
     }, gif.toString('base64'));
     expect(new Set(metadata.durations)).toEqual(new Set([40_000]));
-    expect(await seekLoop(root, 0)).toBe(
-      metadata.durations.reduce((sum, duration) => sum + duration / 1000, 0),
-    );
-    let maximumDifference = 0;
+    expect(metadata.count).toBe(variant === 'twist' ? 92 : 51);
+    const duration = ((variant === 'twist' ? 110 : 61) * 1000) / 30;
+    expect(await seekLoop(root, 0)).toBe(duration);
+    const measurements: {
+      frame: number;
+      mean: number;
+      iou: number;
+      expectedArea: number;
+      opaquePixels: number;
+      coverageError: number;
+      centroidError: number;
+    }[] = [];
     const compareFrame = async (frame: number, name?: string) => {
       const screenshot = await root.screenshot({
         animations: 'allow',
@@ -145,40 +215,83 @@ for (const variant of ['pulse', 'bloom', 'twist'] as const) {
           context.drawImage(image, 0, 0);
           image.close();
           const actual = context.getImageData(0, 0, 256, 256).data;
-          let max = 0;
+          let error = 0,
+            intersection = 0,
+            union = 0;
+          let expectedArea = 0,
+            actualArea = 0,
+            opaquePixels = 0;
+          const quadrants = Array.from({ length: 4 }, () => ({
+            expectedArea: 0,
+            actualArea: 0,
+            expectedMoment: [0, 0],
+            actualMoment: [0, 0],
+          }));
           for (let pixel = 0; pixel < actual.length; pixel += 4) {
             // Remove the original GIF's white matte with mean RGB, retaining
             // coverage while allowing currentColor instead of its near-black ink.
-            // This oracle never reads the generated masks or production keyframes.
+            // This oracle never reads production geometry or keyframes.
             const gray = Math.round(
               (expected[pixel] + expected[pixel + 1] + expected[pixel + 2]) / 3,
             );
-            for (let channel = 0; channel < 3; channel++)
-              max = Math.max(max, Math.abs(actual[pixel + channel] - gray));
-            max = Math.max(max, Math.abs(actual[pixel + 3] - 255));
+            error += Math.abs(actual[pixel] - gray);
+            const expectedInk = (255 - gray) / 255,
+              actualInk = (255 - actual[pixel]) / 255;
+            expectedArea += expectedInk;
+            actualArea += actualInk;
+            const x = (pixel / 4) % 256,
+              y = Math.floor(pixel / 4 / 256);
+            const quadrant = quadrants[(x >= 128 ? 1 : 0) + (y >= 128 ? 2 : 0)];
+            quadrant.expectedArea += expectedInk;
+            quadrant.actualArea += actualInk;
+            quadrant.expectedMoment[0] += x * expectedInk;
+            quadrant.expectedMoment[1] += y * expectedInk;
+            quadrant.actualMoment[0] += x * actualInk;
+            quadrant.actualMoment[1] += y * actualInk;
+            if (gray < 128) opaquePixels++;
+            if (actual[pixel] < 128 && gray < 128) intersection++;
+            if (actual[pixel] < 128 || gray < 128) union++;
           }
-          return max;
+          return {
+            mean: error / (256 * 256),
+            iou: union ? intersection / union : 1,
+            expectedArea,
+            opaquePixels,
+            coverageError: Math.abs(expectedArea - actualArea),
+            // Measure each arm separately: palette coverage must not move a
+            // whole-logo centroid simply by weighting distant fragments unevenly.
+            centroidError: Math.max(
+              ...quadrants.map((q) =>
+                q.expectedArea > 1
+                  ? q.actualArea > 0
+                    ? Math.hypot(
+                        ...q.expectedMoment.map(
+                          (value, axis) =>
+                            value / q.expectedArea - q.actualMoment[axis] / q.actualArea,
+                        ),
+                      )
+                    : Infinity
+                  : 0,
+              ),
+            ),
+          };
         },
         { png: screenshot.toString('base64'), frame },
       );
-      expect(difference, `${variant} frame ${frame}`).toBeLessThanOrEqual(1);
-      maximumDifference = Math.max(maximumDifference, difference);
+      measurements.push({ frame, ...difference });
     };
     for (let index = 0; index < metadata.count; index++) {
-      // Seek into the middle of each hold, not an interpolated or guessed pose.
-      await seekLoop(root, index * 40 + 20);
+      // The 25fps reference samples its 30fps source with floor(frame * 6/5).
+      // Native SVG motion remains continuous between those reference samples.
+      await seekLoop(root, (Math.floor((index * 6) / 5) * 1000) / 30);
       await compareFrame(
         index,
         index === Math.floor(metadata.count / 2) ? `${variant}-reference-frame` : undefined,
       );
     }
-    // Check both sides of a row change and loop wrap, where an off-by-one index
-    // or interpolated translation would expose a different cell (or an empty one).
     for (const [time, frame] of [
-      [319.9, 7],
-      [320.1, 8],
-      [metadata.count * 40 - 0.1, metadata.count - 1],
-      [metadata.count * 40 + 0.1, 0],
+      [duration - 0.1, 0],
+      [duration + 0.1, 0],
     ]) {
       await seekLoop(root, time);
       await compareFrame(frame);
@@ -200,7 +313,7 @@ for (const variant of ['pulse', 'bloom', 'twist'] as const) {
       JSON.stringify({
         variant,
         frames: metadata.count,
-        maximumDifference,
+        measurements,
         size: await root.boundingBox(),
       }),
     );
@@ -208,6 +321,61 @@ for (const variant of ['pulse', 'bloom', 'twist'] as const) {
       path: reportPath,
       contentType: 'application/json',
     });
+    for (const {
+      frame,
+      mean,
+      iou,
+      expectedArea,
+      opaquePixels,
+      coverageError,
+      centroidError,
+    } of measurements) {
+      expect(mean, `${variant} frame ${frame}: mean channel error`).toBeLessThan(2.5);
+      if (expectedArea >= 100 || opaquePixels === 0) {
+        expect(iou, `${variant} frame ${frame}: silhouette overlap`).toBeGreaterThan(
+          variant === 'pulse' ? 0.98 : 0.96,
+        );
+      } else {
+        // Binary IoU is unstable for subpixel fragments: one edge pixel crossing
+        // 50% coverage can dominate the score. Retain a much tighter pixel-error
+        // limit here and independently bound ink loss and displacement instead.
+        expect(mean, `${variant} frame ${frame}: fragment channel error`).toBeLessThan(0.05);
+        expect(coverageError, `${variant} frame ${frame}: fragment ink area`).toBeLessThan(4);
+        expect(centroidError, `${variant} frame ${frame}: fragment position`).toBeLessThan(0.5);
+      }
+    }
+  });
+}
+
+for (const variant of ['pulse', 'bloom', 'twist'] as const) {
+  test(`interpolates ${variant} vectors between reference frames without image or media requests`, async ({
+    mount,
+    page,
+  }) => {
+    const assetRequests: string[] = [];
+    page.on('request', (request) => {
+      if (['image', 'media'].includes(request.resourceType())) assetRequests.push(request.url());
+    });
+    const component = await mount(IntentMarkLoaderHost, {
+      props: { variant, playing: true },
+    });
+    const root = component.getByRole('status');
+    await expect(root).toHaveAttribute('data-motion-state', 'playing');
+    const poses = [];
+    for (const time of [500, 510, 520]) {
+      await seekLoop(root, time);
+      poses.push(
+        await root
+          .locator('[data-mark-arm]')
+          .first()
+          .evaluate((path) => {
+            const style = getComputedStyle(path);
+            return [style.transform, style.getPropertyValue('d'), style.strokeDasharray].join('|');
+          }),
+      );
+    }
+    expect(new Set(poses).size).toBe(3);
+    expect(assetRequests).toEqual([]);
   });
 }
 
@@ -227,7 +395,7 @@ for (const theme of ['light', 'dark'] as const) {
       const colors = await root.evaluate((node) => ({
         color: getComputedStyle(node).color,
         contain: getComputedStyle(node).contain,
-        ink: getComputedStyle(node.querySelector('[data-mark-sheet]')!).backgroundColor,
+        ink: getComputedStyle(node.querySelector('[data-mark-arm]')!).stroke,
       }));
       expect(colors.ink).toBe(colors.color);
       expect(colors.contain).toBe('content');
