@@ -113,11 +113,12 @@ function startWithReducer() {
     dispatch,
     task,
     entry: (wsId: string) => state.browserClients.byWorkspaceId[wsId],
-    /** The sidebar indicator's view for `wsId`, resolved from live state. */
+    /** The sidebar indicator's view for `wsId`, resolved from live state (with a browser tab open). */
     sidebar: (wsId: string) =>
-      resolveDrivingClientView(
-        selectWorkspaceDrivingClient.select(state as unknown as StoreState, wsId),
-      ),
+      resolveDrivingClientView({
+        ...selectWorkspaceDrivingClient.select(state as unknown as StoreState, wsId),
+        hasBrowserTabs: true,
+      }),
   };
 }
 
