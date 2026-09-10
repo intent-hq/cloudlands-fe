@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 
@@ -25,6 +25,8 @@ const { dispatch, selectorState } = vi.hoisted(() => ({
     pendingBulkGroupLabel: null as string | null,
     bulkActiveAgentCount: 0,
     bulkActiveHookCount: 0,
+    bulkOpenPrCount: 0,
+    bulkPreflightReady: false,
   },
 }));
 
@@ -57,6 +59,8 @@ vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-select
     selectPendingBulkGroupLabel: selector('pendingBulkGroupLabel'),
     selectBulkActiveAgentCount: selector('bulkActiveAgentCount'),
     selectBulkActiveHookCount: selector('bulkActiveHookCount'),
+    selectBulkOpenPrCount: selector('bulkOpenPrCount'),
+    selectBulkPreflightReady: selector('bulkPreflightReady'),
   };
 });
 
@@ -70,6 +74,10 @@ describe('WorkspaceWarningDialogs bulk confirmations', () => {
     selectorState.pendingBulkWorkspaceIds = [];
     selectorState.pendingBulkWorkspaces = [];
     selectorState.pendingBulkGroupLabel = null;
+    selectorState.bulkActiveAgentCount = 0;
+    selectorState.bulkActiveHookCount = 0;
+    selectorState.bulkOpenPrCount = 0;
+    selectorState.bulkPreflightReady = false;
   });
   afterEach(cleanup);
 
@@ -81,6 +89,7 @@ describe('WorkspaceWarningDialogs bulk confirmations', () => {
       { id: 'ws-2', title: 'Second workspace', branch: 'feature/two', status: 'Active' },
     ];
     selectorState.pendingBulkGroupLabel = 'Idle';
+    selectorState.bulkPreflightReady = true;
     const WorkspaceWarningDialogs = (await import('../WorkspaceWarningDialogs.svelte')).default;
 
     render(WorkspaceWarningDialogs);
@@ -97,7 +106,7 @@ describe('WorkspaceWarningDialogs bulk confirmations', () => {
     ).toBe(true);
   });
 
-  it('renders the pending delete count and dispatches the confirm action', async () => {
+  it('renders the current delete targets and dispatches only after preflight resolves', async () => {
     selectorState.showBulkDeleteConfirm = true;
     selectorState.pendingBulkWorkspaceIds = ['ws-1', 'ws-2', 'ws-3'];
     selectorState.pendingBulkWorkspaces = [
@@ -106,6 +115,8 @@ describe('WorkspaceWarningDialogs bulk confirmations', () => {
       { id: 'ws-3', title: 'Third workspace', branch: 'old', status: 'Archived' },
     ];
     selectorState.pendingBulkGroupLabel = 'Completed';
+    selectorState.bulkOpenPrCount = 2;
+    selectorState.bulkPreflightReady = true;
     const WorkspaceWarningDialogs = (await import('../WorkspaceWarningDialogs.svelte')).default;
 
     render(WorkspaceWarningDialogs);
@@ -115,11 +126,70 @@ describe('WorkspaceWarningDialogs bulk confirmations', () => {
     expect(within(dialog).getByText('First workspace')).toBeTruthy();
     expect(within(dialog).getByText('Second workspace')).toBeTruthy();
     expect(within(dialog).getByText('Third workspace')).toBeTruthy();
+    expect(within(dialog).getByText('2 pull requests are still open')).toBeTruthy();
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Delete all' }));
     expect(
       dispatch.mock.calls.some(
         ([action]) => action.type === 'workspaceOperations/confirmBulkDelete',
       ),
     ).toBe(true);
+  });
+
+  it('disables Delete all while the current snapshot preflight is pending', async () => {
+    selectorState.showBulkDeleteConfirm = true;
+    selectorState.pendingBulkWorkspaceIds = ['ws-1'];
+    selectorState.pendingBulkWorkspaces = [
+      { id: 'ws-1', title: 'First workspace', branch: 'main', status: 'Active' },
+    ];
+    selectorState.pendingBulkGroupLabel = 'Active';
+    const WorkspaceWarningDialogs = (await import('../WorkspaceWarningDialogs.svelte')).default;
+
+    render(WorkspaceWarningDialogs);
+
+    const confirm = screen.getByRole('button', { name: 'Delete all' });
+    expect((confirm as HTMLButtonElement).disabled).toBe(true);
+    expect(confirm.getAttribute('aria-busy')).toBe('true');
+  });
+
+  it('does not dispatch bulk delete when Enter activates the initial focused action', async () => {
+    selectorState.showBulkDeleteConfirm = true;
+    selectorState.pendingBulkWorkspaceIds = ['ws-1'];
+    selectorState.pendingBulkWorkspaces = [
+      { id: 'ws-1', title: 'First workspace', branch: 'main', status: 'Active' },
+    ];
+    selectorState.pendingBulkGroupLabel = 'Active';
+    selectorState.bulkPreflightReady = true;
+    const WorkspaceWarningDialogs = (await import('../WorkspaceWarningDialogs.svelte')).default;
+
+    render(WorkspaceWarningDialogs);
+
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
+    await fireEvent.keyDown(cancel, { key: 'Enter', code: 'Enter' });
+    await fireEvent.click(cancel);
+
+    expect(
+      dispatch.mock.calls.some(
+        ([action]) => action.type === 'workspaceOperations/confirmBulkDelete',
+      ),
+    ).toBe(false);
+  });
+
+  it('counts only targets that still render after the snapshot loses an entity', async () => {
+    selectorState.showBulkDeleteConfirm = true;
+    selectorState.pendingBulkWorkspaceIds = ['ws-1', 'ws-removed'];
+    selectorState.pendingBulkWorkspaces = [
+      { id: 'ws-1', title: 'Remaining workspace', branch: 'main', status: 'Active' },
+    ];
+    selectorState.pendingBulkGroupLabel = 'Active';
+    selectorState.bulkPreflightReady = true;
+    const WorkspaceWarningDialogs = (await import('../WorkspaceWarningDialogs.svelte')).default;
+
+    render(WorkspaceWarningDialogs);
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText(/^1 /)).toBeTruthy();
+    expect(within(dialog).queryByText(/^2 /)).toBeNull();
+    expect(within(dialog).getAllByRole('listitem')).toHaveLength(1);
   });
 });

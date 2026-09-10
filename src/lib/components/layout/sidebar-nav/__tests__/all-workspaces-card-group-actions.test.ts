@@ -14,6 +14,10 @@ import {
 import { WorkspaceStatus, type Workspace, type WorkspaceId } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
 import AllWorkspacesCardHarness from './mocks/AllWorkspacesCardHarness.svelte';
+import {
+  bulkOperationFinished,
+  bulkOperationStarted,
+} from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
 
 vi.mock('$lib/components/workspace/WorkspaceCard.svelte', async () => ({
   default: (await import('./mocks/MockWorkspaceCard.svelte')).default,
@@ -74,6 +78,7 @@ describe('AllWorkspacesCard group actions', () => {
   beforeEach(() => {
     appStore.init();
     appStore.dispatch(resetWorkspaceState());
+    appStore.dispatch(bulkOperationFinished());
     appStore.dispatch(
       hydrateSidebarNav({
         pinnedWorkspaceIds: [],
@@ -146,5 +151,30 @@ describe('AllWorkspacesCard group actions', () => {
         name: m.layout_allCard_groupDeleteAll_ariaLabel({ group: 'Archived' }),
       }),
     ).toBeTruthy();
+  });
+
+  it('disables every group action while a bulk operation is in flight', async () => {
+    renderView('repo', [workspace('alpha-1', 'alpha'), workspace('alpha-2', 'alpha')]);
+    appStore.dispatch(
+      bulkOperationStarted({ kind: 'delete', workspaceIds: ['alpha-1', 'alpha-2'] }),
+    );
+
+    const group = await waitFor(() => repositoryGroup('alpha'));
+    await waitFor(() => {
+      expect(
+        (
+          within(group).getByRole('button', {
+            name: m.layout_allCard_groupArchiveAll_ariaLabel({ group: 'alpha' }),
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true);
+      expect(
+        (
+          within(group).getByRole('button', {
+            name: m.layout_allCard_groupDeleteAll_ariaLabel({ group: 'alpha' }),
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true);
+    });
   });
 });

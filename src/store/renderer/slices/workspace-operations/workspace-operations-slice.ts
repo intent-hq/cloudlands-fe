@@ -27,8 +27,13 @@ export type WorkspaceOperationsState = {
   pendingBulkGroupLabel: string | null;
   bulkActiveAgentCount: number;
   bulkActiveHookCount: number;
+  bulkOpenPrCount: number;
+  bulkPreflightReady: boolean;
   /** Monotonic token; only the compute matching the latest open folds its counts. */
   bulkComputeToken: number;
+  bulkOperationInFlight: boolean;
+  bulkOperationKind: 'archive' | 'delete' | null;
+  bulkReservedWorkspaceIds: string[];
   showRemoveRepoConfirm: boolean;
   pendingRemoveRepoPath: string | null;
 };
@@ -54,7 +59,12 @@ export const initialState: WorkspaceOperationsState = {
   pendingBulkGroupLabel: null,
   bulkActiveAgentCount: 0,
   bulkActiveHookCount: 0,
+  bulkOpenPrCount: 0,
+  bulkPreflightReady: false,
   bulkComputeToken: 0,
+  bulkOperationInFlight: false,
+  bulkOperationKind: null,
+  bulkReservedWorkspaceIds: [],
   showRemoveRepoConfirm: false,
   pendingRemoveRepoPath: null,
 };
@@ -129,10 +139,17 @@ export const bulkActiveWorkComputed = createAction<
       kind: 'archive' | 'delete';
       agentCount: number;
       hookCount: number;
+      openPrCount: number;
       token: number;
     },
   ]
 >('workspaceOperations/bulkActiveWorkComputed');
+
+export const bulkOperationStarted = createAction<
+  [payload: { kind: 'archive' | 'delete'; workspaceIds: string[] }]
+>('workspaceOperations/bulkOperationStarted');
+
+export const bulkOperationFinished = createAction('workspaceOperations/bulkOperationFinished');
 
 export const openRemoveRepoConfirm = createAction<[repoPath: string]>(
   'workspaceOperations/openRemoveRepoConfirm',
@@ -187,16 +204,21 @@ workspaceOperationsReducer.with(closeArchiveWarning, (state) => ({
 }));
 workspaceOperationsReducer.with(
   openBulkArchiveConfirm,
-  (state, { payload: [{ workspaceIds, groupLabel }] }) => ({
-    ...state,
-    showBulkArchiveConfirm: true,
-    showBulkDeleteConfirm: false,
-    pendingBulkWorkspaceIds: workspaceIds,
-    pendingBulkGroupLabel: groupLabel,
-    bulkActiveAgentCount: 0,
-    bulkActiveHookCount: 0,
-    bulkComputeToken: state.bulkComputeToken + 1,
-  }),
+  (state, { payload: [{ workspaceIds, groupLabel }] }) =>
+    state.bulkOperationInFlight
+      ? state
+      : {
+          ...state,
+          showBulkArchiveConfirm: true,
+          showBulkDeleteConfirm: false,
+          pendingBulkWorkspaceIds: workspaceIds,
+          pendingBulkGroupLabel: groupLabel,
+          bulkActiveAgentCount: 0,
+          bulkActiveHookCount: 0,
+          bulkOpenPrCount: 0,
+          bulkPreflightReady: false,
+          bulkComputeToken: state.bulkComputeToken + 1,
+        },
 );
 workspaceOperationsReducer.with(closeBulkArchiveConfirm, (state) => ({
   ...state,
@@ -205,19 +227,26 @@ workspaceOperationsReducer.with(closeBulkArchiveConfirm, (state) => ({
   pendingBulkGroupLabel: null,
   bulkActiveAgentCount: 0,
   bulkActiveHookCount: 0,
+  bulkOpenPrCount: 0,
+  bulkPreflightReady: false,
 }));
 workspaceOperationsReducer.with(
   openBulkDeleteConfirm,
-  (state, { payload: [{ workspaceIds, groupLabel }] }) => ({
-    ...state,
-    showBulkArchiveConfirm: false,
-    showBulkDeleteConfirm: true,
-    pendingBulkWorkspaceIds: workspaceIds,
-    pendingBulkGroupLabel: groupLabel,
-    bulkActiveAgentCount: 0,
-    bulkActiveHookCount: 0,
-    bulkComputeToken: state.bulkComputeToken + 1,
-  }),
+  (state, { payload: [{ workspaceIds, groupLabel }] }) =>
+    state.bulkOperationInFlight
+      ? state
+      : {
+          ...state,
+          showBulkArchiveConfirm: false,
+          showBulkDeleteConfirm: true,
+          pendingBulkWorkspaceIds: workspaceIds,
+          pendingBulkGroupLabel: groupLabel,
+          bulkActiveAgentCount: 0,
+          bulkActiveHookCount: 0,
+          bulkOpenPrCount: 0,
+          bulkPreflightReady: false,
+          bulkComputeToken: state.bulkComputeToken + 1,
+        },
 );
 workspaceOperationsReducer.with(closeBulkDeleteConfirm, (state) => ({
   ...state,
@@ -226,10 +255,12 @@ workspaceOperationsReducer.with(closeBulkDeleteConfirm, (state) => ({
   pendingBulkGroupLabel: null,
   bulkActiveAgentCount: 0,
   bulkActiveHookCount: 0,
+  bulkOpenPrCount: 0,
+  bulkPreflightReady: false,
 }));
 workspaceOperationsReducer.with(
   bulkActiveWorkComputed,
-  (state, { payload: [{ kind, agentCount, hookCount, token }] }) => {
+  (state, { payload: [{ kind, agentCount, hookCount, openPrCount, token }] }) => {
     if (
       (kind === 'archive' ? !state.showBulkArchiveConfirm : !state.showBulkDeleteConfirm) ||
       state.bulkComputeToken !== token
@@ -240,9 +271,29 @@ workspaceOperationsReducer.with(
       ...state,
       bulkActiveAgentCount: agentCount,
       bulkActiveHookCount: hookCount,
+      bulkOpenPrCount: openPrCount,
+      bulkPreflightReady: true,
     };
   },
 );
+workspaceOperationsReducer.with(
+  bulkOperationStarted,
+  (state, { payload: [{ kind, workspaceIds }] }) =>
+    state.bulkOperationInFlight
+      ? state
+      : {
+          ...state,
+          bulkOperationInFlight: true,
+          bulkOperationKind: kind,
+          bulkReservedWorkspaceIds: workspaceIds,
+        },
+);
+workspaceOperationsReducer.with(bulkOperationFinished, (state) => ({
+  ...state,
+  bulkOperationInFlight: false,
+  bulkOperationKind: null,
+  bulkReservedWorkspaceIds: [],
+}));
 workspaceOperationsReducer.with(openRemoveRepoConfirm, (state, { payload: [repoPath] }) => ({
   ...state,
   showRemoveRepoConfirm: true,

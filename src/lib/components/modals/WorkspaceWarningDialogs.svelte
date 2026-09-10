@@ -20,13 +20,14 @@
     selectActiveHookNamesForDelete,
     selectBulkActiveAgentCount,
     selectBulkActiveHookCount,
+    selectBulkOpenPrCount,
+    selectBulkPreflightReady,
     selectLocalChangesForArchive,
     selectLocalChangesForDelete,
     selectOpenPrsForArchive,
     selectOpenPrsForDelete,
     selectPendingBulkGroupLabel,
     selectPendingBulkWorkspaces,
-    selectPendingBulkWorkspaceIds,
     selectRunningAgentNamesForArchive,
     selectRunningAgentNamesForDelete,
     selectShowArchiveWarning,
@@ -47,11 +48,12 @@
   const localChangesForArchive$ = selectLocalChangesForArchive();
   const showBulkArchiveConfirm$ = selectShowBulkArchiveConfirm();
   const showBulkDeleteConfirm$ = selectShowBulkDeleteConfirm();
-  const pendingBulkWorkspaceIds$ = selectPendingBulkWorkspaceIds();
   const pendingBulkWorkspaces$ = selectPendingBulkWorkspaces();
   const pendingBulkGroupLabel$ = selectPendingBulkGroupLabel();
   const bulkActiveAgentCount$ = selectBulkActiveAgentCount();
   const bulkActiveHookCount$ = selectBulkActiveHookCount();
+  const bulkOpenPrCount$ = selectBulkOpenPrCount();
+  const bulkPreflightReady$ = selectBulkPreflightReady();
 </script>
 
 <!-- Redux-owned delete warning host (global for all workspace delete entrypoints) -->
@@ -80,16 +82,18 @@
 <BulkActionConfirmDialog
   open={$showBulkArchiveConfirm$}
   title={m.modals_bulkArchive_title({ group: $pendingBulkGroupLabel$ ?? '' })}
-  description={$pendingBulkWorkspaceIds$.length === 1
+  description={$pendingBulkWorkspaces$.length === 1
     ? m.modals_bulkArchive_description_one({
-        count: formatInteger($pendingBulkWorkspaceIds$.length),
+        count: formatInteger($pendingBulkWorkspaces$.length),
       })
     : m.modals_bulkArchive_description_many({
-        count: formatInteger($pendingBulkWorkspaceIds$.length),
+        count: formatInteger($pendingBulkWorkspaces$.length),
       })}
   confirmText={m.modals_bulkArchive_confirm_label()}
   activeAgentCount={$bulkActiveAgentCount$}
   activeHookCount={$bulkActiveHookCount$}
+  openPrCount={$bulkOpenPrCount$}
+  preflightReady={$bulkPreflightReady$}
   onConfirm={() => appStore.dispatch(confirmBulkArchive())}
   onCancel={() => appStore.dispatch(closeBulkArchiveConfirm())}
 >
@@ -101,17 +105,19 @@
 <BulkActionConfirmDialog
   open={$showBulkDeleteConfirm$}
   title={m.modals_bulkDelete_title({ group: $pendingBulkGroupLabel$ ?? '' })}
-  description={$pendingBulkWorkspaceIds$.length === 1
+  description={$pendingBulkWorkspaces$.length === 1
     ? m.modals_bulkDelete_description_one({
-        count: formatInteger($pendingBulkWorkspaceIds$.length),
+        count: formatInteger($pendingBulkWorkspaces$.length),
       })
     : m.modals_bulkDelete_description_many({
-        count: formatInteger($pendingBulkWorkspaceIds$.length),
+        count: formatInteger($pendingBulkWorkspaces$.length),
       })}
   confirmText={m.modals_bulkDelete_confirm_label()}
   variant="destructive"
   activeAgentCount={$bulkActiveAgentCount$}
   activeHookCount={$bulkActiveHookCount$}
+  openPrCount={$bulkOpenPrCount$}
+  preflightReady={$bulkPreflightReady$}
   onConfirm={() => appStore.dispatch(confirmBulkDelete())}
   onCancel={() => appStore.dispatch(closeBulkDeleteConfirm())}
 >

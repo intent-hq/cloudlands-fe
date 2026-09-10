@@ -41,6 +41,7 @@
   import WorkspaceCardSkeleton from '../WorkspaceCardSkeleton.svelte';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { Button } from '$lib/components/ui/button';
+  import { selectBulkOperationInFlight } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
   import {
     openBulkArchiveConfirm,
     openBulkDeleteConfirm,
@@ -58,6 +59,7 @@
   const viewMode$ = selectAllSpacesViewMode();
   const collapsedStatusGroupIds$ = selectCollapsedStatusGroupIds();
   const showArchivedWorkspaces$ = selectShowArchivedWorkspaces();
+  const bulkOperationInFlight$ = selectBulkOperationInFlight();
 
   interface Props {
     expanded?: boolean;
@@ -462,6 +464,7 @@
           variant="plain"
           size="icon-xs"
           iconOnly
+          disabled={$bulkOperationInFlight$}
           class="text-muted-foreground hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0"
           aria-label={m.layout_allCard_groupArchiveAll_ariaLabel({ group: groupLabel })}
           data-group-archive-all
@@ -477,6 +480,7 @@
         variant="plain"
         size="icon-xs"
         iconOnly
+        disabled={$bulkOperationInFlight$}
         class="text-muted-foreground hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0"
         aria-label={m.layout_allCard_groupDeleteAll_ariaLabel({ group: groupLabel })}
         data-group-delete-all

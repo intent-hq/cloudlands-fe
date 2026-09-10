@@ -11,6 +11,8 @@ import {
 import { selectPendingBulkWorkspaces } from './workspace-operations-selectors';
 import {
   bulkActiveWorkComputed,
+  bulkOperationFinished,
+  bulkOperationStarted,
   closeArchiveWarning,
   closeBulkArchiveConfirm,
   closeBulkDeleteConfirm,
@@ -171,6 +173,7 @@ describe('workspaceOperationsReducer', () => {
       showBulkDeleteConfirm: false,
       pendingBulkWorkspaceIds: ['ws-1', 'ws-2'],
       pendingBulkGroupLabel: 'Active',
+      bulkPreflightReady: false,
     });
     expect(workspaceOperationsReducer(archiveOpened, closeBulkArchiveConfirm())).toMatchObject({
       showBulkArchiveConfirm: false,
@@ -178,6 +181,8 @@ describe('workspaceOperationsReducer', () => {
       pendingBulkGroupLabel: null,
       bulkActiveAgentCount: 0,
       bulkActiveHookCount: 0,
+      bulkOpenPrCount: 0,
+      bulkPreflightReady: false,
     });
 
     const deleteOpened = workspaceOperationsReducer(
@@ -189,6 +194,7 @@ describe('workspaceOperationsReducer', () => {
       showBulkDeleteConfirm: true,
       pendingBulkWorkspaceIds: ['ws-3'],
       pendingBulkGroupLabel: 'Archived',
+      bulkPreflightReady: false,
     });
     expect(workspaceOperationsReducer(deleteOpened, closeBulkDeleteConfirm())).toMatchObject({
       showBulkDeleteConfirm: false,
@@ -196,6 +202,8 @@ describe('workspaceOperationsReducer', () => {
       pendingBulkGroupLabel: null,
       bulkActiveAgentCount: 0,
       bulkActiveHookCount: 0,
+      bulkOpenPrCount: 0,
+      bulkPreflightReady: false,
     });
   });
 
@@ -215,6 +223,7 @@ describe('workspaceOperationsReducer', () => {
         kind: 'archive',
         agentCount: 9,
         hookCount: 8,
+        openPrCount: 7,
         token: firstOpen.bulkComputeToken,
       }),
     );
@@ -227,6 +236,7 @@ describe('workspaceOperationsReducer', () => {
         kind: 'archive',
         agentCount: 7,
         hookCount: 6,
+        openPrCount: 5,
         token: reopened.bulkComputeToken,
       }),
     );
@@ -239,11 +249,43 @@ describe('workspaceOperationsReducer', () => {
         kind: 'delete',
         agentCount: 2,
         hookCount: 1,
+        openPrCount: 3,
         token: reopened.bulkComputeToken,
       }),
     );
     expect(afterFresh.bulkActiveAgentCount).toBe(2);
     expect(afterFresh.bulkActiveHookCount).toBe(1);
+    expect(afterFresh.bulkOpenPrCount).toBe(3);
+    expect(afterFresh.bulkPreflightReady).toBe(true);
+  });
+
+  it('tracks a single in-flight bulk operation and rejects another dialog open', () => {
+    const opened = workspaceOperationsReducer(
+      initialState,
+      openBulkDeleteConfirm({ workspaceIds: ['ws-1'], groupLabel: 'Active' }),
+    );
+    const started = workspaceOperationsReducer(
+      opened,
+      bulkOperationStarted({ kind: 'delete', workspaceIds: ['ws-1'] }),
+    );
+
+    expect(started).toMatchObject({
+      bulkOperationInFlight: true,
+      bulkOperationKind: 'delete',
+      bulkReservedWorkspaceIds: ['ws-1'],
+    });
+    expect(
+      workspaceOperationsReducer(
+        started,
+        openBulkArchiveConfirm({ workspaceIds: ['ws-2'], groupLabel: 'Other' }),
+      ),
+    ).toBe(started);
+
+    expect(workspaceOperationsReducer(started, bulkOperationFinished())).toMatchObject({
+      bulkOperationInFlight: false,
+      bulkOperationKind: null,
+      bulkReservedWorkspaceIds: [],
+    });
   });
 
   it('tracks and clears pending repo removal', () => {

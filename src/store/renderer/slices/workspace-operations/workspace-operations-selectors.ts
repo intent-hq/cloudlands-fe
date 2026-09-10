@@ -86,6 +86,18 @@ export const selectBulkActiveHookCount = store.createSelector((state) => {
   return state.workspaceOperations.bulkActiveHookCount;
 });
 
+export const selectBulkOpenPrCount = store.createSelector((state) => {
+  return state.workspaceOperations.bulkOpenPrCount;
+});
+
+export const selectBulkPreflightReady = store.createSelector((state) => {
+  return state.workspaceOperations.bulkPreflightReady;
+});
+
+export const selectBulkOperationInFlight = store.createSelector((state) => {
+  return state.workspaceOperations.bulkOperationInFlight;
+});
+
 export const selectBulkComputeToken = store.createSelector((state) => {
   return state.workspaceOperations.bulkComputeToken;
 });

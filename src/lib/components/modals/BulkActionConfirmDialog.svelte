@@ -17,6 +17,10 @@
     activeAgentCount?: number;
     /** Active background hooks across the targeted workspaces that the action would cancel. */
     activeHookCount?: number;
+    /** Open pull requests across the targeted workspaces. */
+    openPrCount?: number;
+    /** Whether active-work preflight has resolved for the current target snapshot. */
+    preflightReady?: boolean;
     onConfirm?: () => void;
     onCancel?: () => void;
   }
@@ -30,13 +34,16 @@
     body,
     activeAgentCount = 0,
     activeHookCount = 0,
+    openPrCount = 0,
+    preflightReady = true,
     onConfirm,
     onCancel,
   }: Props = $props();
 
-  const hasActiveWork = $derived(activeAgentCount > 0 || activeHookCount > 0);
+  const hasActiveWork = $derived(activeAgentCount > 0 || activeHookCount > 0 || openPrCount > 0);
 
   let confirmButtonRef: HTMLButtonElement | null = $state(null);
+  let cancelButtonRef: HTMLButtonElement | null = $state(null);
   let confirmHasFocus = $state(false);
 
   function close() {
@@ -55,7 +62,8 @@
 
   function handleOpenAutoFocus(event: Event) {
     event.preventDefault();
-    confirmButtonRef?.focus();
+    if (variant === 'destructive' || !preflightReady) cancelButtonRef?.focus();
+    else confirmButtonRef?.focus();
   }
 </script>
 
@@ -95,6 +103,13 @@
                   })}
             </p>
           {/if}
+          {#if openPrCount > 0}
+            <p class="text-sm text-muted-foreground">
+              {openPrCount === 1
+                ? m.modals_deleteWarning_openPrs_one({ count: formatInteger(openPrCount) })
+                : m.modals_deleteWarning_openPrs_many({ count: formatInteger(openPrCount) })}
+            </p>
+          {/if}
         </div>
       {/if}
 
@@ -102,12 +117,14 @@
     </div>
 
     <Dialog.Footer class="mt-0 flex-row items-center justify-end border-0 px-5 pb-5 pt-0">
-      <Button variant="ghost-light" onclick={close}>
+      <Button variant="ghost-light" bind:ref={cancelButtonRef} onclick={close}>
         {m.modals_bulkActionConfirm_cancel_label()}
       </Button>
       <Button
         {variant}
         bind:ref={confirmButtonRef}
+        disabled={!preflightReady}
+        loading={!preflightReady}
         class={confirmHasFocus ? 'ring-ring/50 ring-[3px]' : undefined}
         onfocus={() => (confirmHasFocus = true)}
         onblur={() => (confirmHasFocus = false)}

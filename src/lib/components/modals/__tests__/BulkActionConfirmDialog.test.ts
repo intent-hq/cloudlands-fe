@@ -58,6 +58,16 @@ describe('BulkActionConfirmDialog', () => {
     expect(screen.queryByText(/active agent/)).toBeNull();
   });
 
+  it('renders the open pull request count', async () => {
+    const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
+
+    render(BulkActionConfirmDialog, {
+      props: { open: true, description: 'Delete all spaces?', openPrCount: 2 },
+    });
+
+    expect(screen.getByText('2 pull requests are still open')).toBeTruthy();
+  });
+
   it('renders no active-work copy when there is no active work', async () => {
     const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
 
@@ -102,6 +112,34 @@ describe('BulkActionConfirmDialog', () => {
 
     const confirm = screen.getByRole('button', { name: 'Archive' });
     await waitFor(() => expect(document.activeElement).toBe(confirm));
+  });
+
+  it('focuses Cancel instead of the destructive action when the dialog opens', async () => {
+    const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
+
+    render(BulkActionConfirmDialog, {
+      props: {
+        open: true,
+        title: 'Delete spaces?',
+        confirmText: 'Delete all',
+        variant: 'destructive',
+      },
+    });
+
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
+  });
+
+  it('disables and marks confirm busy while preflight is pending', async () => {
+    const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
+
+    render(BulkActionConfirmDialog, {
+      props: { open: true, confirmText: 'Delete all', preflightReady: false },
+    });
+
+    const confirm = screen.getByRole('button', { name: 'Delete all' });
+    expect((confirm as HTMLButtonElement).disabled).toBe(true);
+    expect(confirm.getAttribute('aria-busy')).toBe('true');
   });
 
   it('cancels the action from the cancel button', async () => {

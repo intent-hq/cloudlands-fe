@@ -44,6 +44,7 @@ import {
 import { initialState as specialistsInitialState } from '../../specialists/specialists-slice';
 import {
   initialState as workspaceInitialState,
+  removeWorkspaceEntity,
   replaceWorkspaceList,
   setWorkspaceEntity,
   workspaceReducer,
@@ -239,7 +240,7 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.getActiveWorkNames.mock.calls.map(([id]) => id)).toEqual(['ws-1', 'ws-2', 'ws-3']);
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/bulkActiveWorkComputed',
-      payload: [{ kind: 'archive', agentCount: 1, hookCount: 2, token: 1 }],
+      payload: [{ kind: 'archive', agentCount: 1, hookCount: 2, openPrCount: 0, token: 1 }],
     });
 
     run.send(confirmBulkArchive());
@@ -720,9 +721,11 @@ describe('workspaceOperationsSaga', () => {
     vi.useFakeTimers();
     const empty = harness([workspace('other')]);
     empty.send(openBulkArchiveConfirm({ workspaceIds: ['missing'], groupLabel: 'Missing' }));
+    await vi.advanceTimersByTimeAsync(50);
     empty.send(confirmBulkArchive());
     await vi.advanceTimersByTimeAsync(50);
     empty.send(openBulkDeleteConfirm({ workspaceIds: ['missing'], groupLabel: 'Missing' }));
+    await vi.advanceTimersByTimeAsync(50);
     empty.send(confirmBulkDelete());
     await vi.advanceTimersByTimeAsync(50);
     expect(mocks.archive).not.toHaveBeenCalled();
@@ -763,7 +766,7 @@ describe('workspaceOperationsSaga', () => {
     await vi.advanceTimersByTimeAsync(50);
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/bulkActiveWorkComputed',
-      payload: [{ kind: 'delete', agentCount: 2, hookCount: 1, token: 1 }],
+      payload: [{ kind: 'delete', agentCount: 2, hookCount: 1, openPrCount: 3, token: 1 }],
     });
     run.send(confirmBulkDelete());
     await vi.advanceTimersByTimeAsync(50);
@@ -780,6 +783,91 @@ describe('workspaceOperationsSaga', () => {
     expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
     await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
     expect(run.state().workspace.pendingDeletions).toEqual({});
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('drops a workspace removed after opening from both the confirmed count and deletion', async () => {
+    vi.useFakeTimers();
+    mocks.deleteWorkspace.mockResolvedValue({ ok: true, data: undefined });
+    const run = harness([workspace('ws-1'), workspace('ws-removed')]);
+    run.send(
+      openBulkDeleteConfirm({
+        workspaceIds: ['ws-1', 'ws-removed'],
+        groupLabel: 'Active',
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(50);
+    run.send(removeWorkspaceEntity('ws-removed'));
+    run.send(confirmBulkDelete());
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1']]);
+    expect(mocks.toast.success).toHaveBeenCalledWith('Permanently deleted 1 workspace');
+    await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('reports a neutral success toast for mixed active and archived targets', async () => {
+    vi.useFakeTimers();
+    mocks.deleteWorkspace.mockResolvedValue({ ok: true, data: undefined });
+    const run = harness([
+      workspace('ws-active'),
+      workspace('ws-archived', WorkspaceStatusEnum.Archived),
+    ]);
+    run.send(
+      openBulkDeleteConfirm({
+        workspaceIds: ['ws-active', 'ws-archived'],
+        groupLabel: 'Repository',
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(50);
+    run.send(confirmBulkDelete());
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(mocks.toast.success).toHaveBeenCalledWith('Permanently deleted 2 workspaces');
+    await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('reserves every target and ignores an overlapping bulk confirmation', async () => {
+    vi.useFakeTimers();
+    let resolveFirst!: (value: { ok: true; data: undefined }) => void;
+    let resolveSecond!: (value: { ok: true; data: undefined }) => void;
+    const firstDelete = new Promise<{ ok: true; data: undefined }>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const secondDelete = new Promise<{ ok: true; data: undefined }>((resolve) => {
+      resolveSecond = resolve;
+    });
+    mocks.deleteWorkspace.mockReturnValueOnce(firstDelete).mockReturnValueOnce(secondDelete);
+    const run = harness([workspace('ws-1'), workspace('ws-2')]);
+    run.send(openBulkDeleteConfirm({ workspaceIds: ['ws-1', 'ws-2'], groupLabel: 'First group' }));
+    await vi.advanceTimersByTimeAsync(50);
+    run.send(confirmBulkDelete());
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(run.state().workspaceOperations).toMatchObject({
+      bulkOperationInFlight: true,
+      bulkReservedWorkspaceIds: ['ws-1', 'ws-2'],
+    });
+    expect(run.state().workspace.pendingDeletions).toEqual({ 'ws-1': true, 'ws-2': true });
+    run.send(openBulkDeleteConfirm({ workspaceIds: ['ws-2'], groupLabel: 'Overlapping group' }));
+    run.send(confirmBulkDelete());
+    await vi.advanceTimersByTimeAsync(50);
+    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1']]);
+
+    resolveFirst({ ok: true, data: undefined });
+    await vi.advanceTimersByTimeAsync(50);
+    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1'], ['ws-2']]);
+    resolveSecond({ ok: true, data: undefined });
+    await vi.advanceTimersByTimeAsync(50);
+    expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(2);
+    expect(run.state().workspaceOperations.bulkOperationInFlight).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
     run.task.cancel();
     await run.task.toPromise();
   });
