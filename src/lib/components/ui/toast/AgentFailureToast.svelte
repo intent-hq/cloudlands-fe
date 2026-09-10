@@ -51,7 +51,10 @@
 
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
      the destructive border tint is passed as a wrapper class by the service. -->
-<div class="relative flex w-full min-w-0 items-start gap-3 pr-10" data-toast-layout="agent-failure">
+<div
+  class="relative flex w-full min-w-0 items-start gap-2.5 pr-6"
+  data-toast-layout="agent-failure"
+>
   <ToastGlyph variant="error" />
 
   <!-- Content -->
@@ -100,14 +103,14 @@
     <div class="toast-actions">
       <Button
         variant="outline"
-        size="default"
+        size="compact"
         class="toast-action"
         disabled={retrying}
         onclick={onRetry}
       >
         {retrying ? m.ui_agentFailureToast_retrying_label() : retryLabel}
       </Button>
-      <Button variant="ghost" size="default" class="toast-action" onclick={onSwitchTo}>
+      <Button variant="ghost" size="compact" class="toast-action" onclick={onSwitchTo}>
         {m.agent_failureToast_switchTo_label()}
       </Button>
     </div>
@@ -128,7 +131,7 @@
 
   .toast-title {
     color: hsl(var(--foreground));
-    font-size: var(--toast-title-size, 1.0625rem);
+    font-size: var(--toast-title-size, 0.8125rem);
     font-weight: 500;
     line-height: 1.4;
   }
@@ -136,7 +139,7 @@
   .toast-description {
     margin-top: 0.25rem;
     color: hsl(var(--muted-foreground));
-    font-size: var(--toast-description-size, 1rem);
+    font-size: var(--toast-description-size, 0.8125rem);
     font-weight: 400;
     line-height: 1.4;
   }
@@ -167,8 +170,8 @@
   }
 
   :global(.toast-action) {
-    min-height: var(--toast-action-height, 2.5rem);
-    border-radius: var(--toast-action-radius, 0.625rem);
+    min-height: var(--toast-action-height, var(--control-height-compact));
+    border-radius: var(--toast-action-radius, var(--radius));
   }
 
   :global(.toast-action:focus-visible) {

@@ -17,7 +17,10 @@
   }
 </script>
 
-<div class="relative flex min-w-0 flex-1 items-start gap-3 pr-10" data-toast-layout="error-details">
+<div
+  class="relative flex min-w-0 flex-1 items-start gap-2.5 pr-6"
+  data-toast-layout="error-details"
+>
   <ToastGlyph variant="error" />
   <div class="min-w-0 flex-1">
     <p class="toast-title break-words text-foreground">{message}</p>
@@ -28,7 +31,7 @@
       </summary>
       <pre
         class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-(--radius-medium) bg-muted p-2">{details}</pre>
-      <Button variant="ghost" size="default" class="toast-detail-copy mt-2" onclick={copyDetails}>
+      <Button variant="ghost" size="compact" class="toast-detail-copy mt-2" onclick={copyDetails}>
         {m.ui_errorToast_copy_label()}
       </Button>
     </details>
@@ -41,7 +44,7 @@
 
 <style>
   .toast-title {
-    font-size: var(--toast-title-size, 1.0625rem);
+    font-size: var(--toast-title-size, 0.8125rem);
     font-weight: 500;
     line-height: 1.4;
   }
@@ -76,8 +79,8 @@
   }
 
   :global(.toast-detail-copy) {
-    min-height: var(--toast-action-height, 2.5rem);
-    border-radius: var(--toast-action-radius, 0.625rem);
+    min-height: var(--toast-action-height, var(--control-height-compact));
+    border-radius: var(--toast-action-radius, var(--radius));
   }
 
   @media (prefers-reduced-motion: reduce) {

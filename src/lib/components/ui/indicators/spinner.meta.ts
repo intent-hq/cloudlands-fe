@@ -78,7 +78,6 @@ export const spinnerMetadata = parseUiComponentMetadata({
     'src/lib/components/ui/ScrollableSection.svelte',
     'src/lib/components/ui/button/button.svelte',
     'src/lib/components/ui/list/ListItem.svelte',
-    'src/lib/components/ui/toast/UpdateToast.svelte',
     'src/lib/components/workspace/CheckoutModePill.svelte',
     'src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
     'src/lib/components/workspace/PullRequestCreator.svelte',

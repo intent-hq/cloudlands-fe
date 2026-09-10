@@ -11,13 +11,8 @@
 
   import { untrack } from 'svelte';
   import { crispOut, springIn } from '$lib/motion';
-  import { IntentMarkLoader } from '$lib/components/ui/indicators';
-  import {
-    faCakeCandles,
-    faRotateRight,
-    faTriangleExclamation,
-  } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
+  import ArrowsClockwiseIcon from 'phosphor-svelte/lib/ArrowsClockwiseIcon';
+  import ConfettiIcon from 'phosphor-svelte/lib/ConfettiIcon';
   import { readable } from 'svelte/store';
 
   import {
@@ -143,9 +138,7 @@
   {/if}
   {#if status === 'checking'}
     <div class="toast-row">
-      <div class="icon checking">
-        <IntentMarkLoader size={16} />
-      </div>
+      <ToastGlyph variant="loading" />
       <div class="text">
         <div class="title">{m.ui_updateToast_checking_label()}</div>
       </div>
@@ -163,7 +156,7 @@
       </div>
       <Button
         variant="primary"
-        size="default"
+        size="compact"
         class="toast-action ml-auto"
         onclick={handleDownload}
       >
@@ -199,7 +192,7 @@
         in:springIn={{ tier: 'slow', y: 30, scale: 1 }}
         out:crispOut={{ tier: 'slow' }}
       >
-        <Fa icon={faCakeCandles} size="2x" />
+        <ConfettiIcon size={16} weight="fill" aria-hidden="true" />
       </div>
       <div class="text flex-1">
         <div class="title">{m.ui_updateToast_updateReady_label()}</div>
@@ -207,15 +200,15 @@
           {m.ui_updateToast_readyToInstall_description({ version: updateInfo?.version ?? '' })}
         </div>
       </div>
-      <Button variant="primary" size="default" class="toast-action" onclick={handleInstall}>
-        <Fa icon={faRotateRight} class="mr-1" />
+      <Button variant="primary" size="compact" class="toast-action" onclick={handleInstall}>
+        <ArrowsClockwiseIcon size={16} weight="bold" aria-hidden="true" />
         {m.ui_updateToast_install_label()}
       </Button>
     </div>
   {:else if status === 'not-available'}
     <div class="toast-row">
       <div class="icon-celebrate">
-        <Fa icon={faCakeCandles} size="2x" />
+        <ConfettiIcon size={16} weight="fill" aria-hidden="true" />
       </div>
       <div class="text">
         <div class="title">{m.ui_updateToast_upToDate_label()}</div>
@@ -226,9 +219,7 @@
     </div>
   {:else if status === 'error'}
     <div class="toast-row">
-      <div class="icon error">
-        <Fa icon={faTriangleExclamation} />
-      </div>
+      <ToastGlyph variant="error" />
       <div class="text flex-1">
         <div class="title">{m.ui_updateToast_checkFailed_label()}</div>
         <div class="description">
@@ -248,13 +239,13 @@
   }
 
   .update-toast.has-close {
-    padding-right: 2.5rem;
+    padding-right: 1.5rem;
   }
 
   .toast-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.625rem;
   }
 
   .toast-downloading {
@@ -263,34 +254,14 @@
     gap: 0.75rem;
   }
 
-  .icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    border-radius: 0;
-    flex-shrink: 0;
-  }
-
-  .icon.checking {
-    background: hsl(var(--primary) / 0.1);
-    color: hsl(var(--primary-ink));
-  }
-
   .icon-celebrate {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 2rem;
-    height: 2rem;
+    width: 1rem;
+    height: 1rem;
     flex-shrink: 0;
-    color: hsl(var(--muted-foreground) / 0.3);
-  }
-
-  .icon.error {
-    background: hsl(0 84% 60% / 0.1);
-    color: hsl(0 84% 60%);
+    color: hsl(var(--success));
   }
 
   .text {
@@ -299,14 +270,14 @@
 
   .title {
     font-weight: 500;
-    font-size: var(--toast-title-size, 1.0625rem);
+    font-size: var(--toast-title-size, 0.8125rem);
     line-height: 1.4;
     color: hsl(var(--foreground));
     overflow-wrap: anywhere;
   }
 
   .description {
-    font-size: var(--toast-description-size, 1rem);
+    font-size: var(--toast-description-size, 0.8125rem);
     font-weight: 400;
     line-height: 1.4;
     color: hsl(var(--muted-foreground));
@@ -319,7 +290,7 @@
     background: hsl(var(--muted));
     border-radius: var(--radius-full);
     overflow: hidden;
-    margin-left: 2rem;
+    margin-left: 1.625rem;
   }
 
   .progress-fill {
@@ -331,13 +302,13 @@
 
   .toast-progress-label {
     color: hsl(var(--muted-foreground));
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     line-height: 1.4;
   }
 
   :global(.toast-action) {
-    min-height: var(--toast-action-height, 2.5rem);
-    border-radius: var(--toast-action-radius, 0.625rem);
+    min-height: var(--toast-action-height, var(--control-height-compact));
+    border-radius: var(--toast-action-radius, var(--radius));
   }
 
   :global(.toast-action:focus-visible) {

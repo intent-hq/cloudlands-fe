@@ -27,7 +27,7 @@
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
      the kind-flavored border tint is passed as a wrapper class by the service. -->
 <div
-  class="relative flex w-full min-w-0 items-start gap-3 pr-10"
+  class="relative flex w-full min-w-0 items-start gap-2.5 pr-6"
   data-toast-layout="agent-attention"
 >
   <ToastGlyph variant={kind === 'blocker' ? 'warning' : 'discussion'} />
@@ -49,10 +49,10 @@
 
     <!-- Action buttons -->
     <div class="toast-actions">
-      <Button variant="primary" size="default" class="toast-action" onclick={onSwitchTo}>
+      <Button variant="primary" size="compact" class="toast-action" onclick={onSwitchTo}>
         {m.agent_attentionToast_switchTo_label()}
       </Button>
-      <Button variant="ghost" size="default" class="toast-action" onclick={onClose}>
+      <Button variant="ghost" size="compact" class="toast-action" onclick={onClose}>
         {m.agent_attentionToast_later_label()}
       </Button>
     </div>
@@ -73,7 +73,7 @@
 
   .toast-title {
     color: hsl(var(--foreground));
-    font-size: var(--toast-title-size, 1.0625rem);
+    font-size: var(--toast-title-size, 0.8125rem);
     font-weight: 500;
     line-height: 1.4;
   }
@@ -81,7 +81,7 @@
   .toast-description {
     margin-top: 0.25rem;
     color: hsl(var(--muted-foreground));
-    font-size: var(--toast-description-size, 1rem);
+    font-size: var(--toast-description-size, 0.8125rem);
     font-weight: 400;
     line-height: 1.4;
   }
@@ -95,8 +95,8 @@
   }
 
   :global(.toast-action) {
-    min-height: var(--toast-action-height, 2.5rem);
-    border-radius: var(--toast-action-radius, 0.625rem);
+    min-height: var(--toast-action-height, var(--control-height-compact));
+    border-radius: var(--toast-action-radius, var(--radius));
   }
 
   :global(.toast-action:focus-visible) {

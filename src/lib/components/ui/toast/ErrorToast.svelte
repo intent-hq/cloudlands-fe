@@ -36,7 +36,7 @@
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
      the severity border tint is passed as a wrapper class by error-toast.ts. -->
 <div
-  class="relative flex w-full min-w-0 items-start gap-3 pr-10"
+  class="relative flex w-full min-w-0 items-start gap-2.5 pr-6"
   data-toast-layout="application-error"
 >
   <ToastGlyph variant={getGlyph(error.type)} />
@@ -49,14 +49,14 @@
     <!-- Action buttons -->
     <div class="toast-actions">
       {#if error.recoverable && onRetry}
-        <Button variant="outline" size="default" class="toast-action" onclick={onRetry}
+        <Button variant="outline" size="compact" class="toast-action" onclick={onRetry}
           >{m.ui_errorToast_retry_label()}</Button
         >
       {/if}
-      <Button variant="outline" size="default" class="toast-action" onclick={onDebug}
+      <Button variant="outline" size="compact" class="toast-action" onclick={onDebug}
         >{m.ui_errorToast_debug_label()}</Button
       >
-      <Button variant="ghost" size="default" class="toast-action" onclick={onCopy}
+      <Button variant="ghost" size="compact" class="toast-action" onclick={onCopy}
         >{m.ui_errorToast_copy_label()}</Button
       >
     </div>
@@ -77,7 +77,7 @@
 
   .toast-title {
     color: hsl(var(--foreground));
-    font-size: var(--toast-title-size, 1.0625rem);
+    font-size: var(--toast-title-size, 0.8125rem);
     font-weight: 500;
     line-height: 1.4;
   }
@@ -85,7 +85,7 @@
   .toast-description {
     margin-top: 0.25rem;
     color: hsl(var(--muted-foreground));
-    font-size: var(--toast-description-size, 1rem);
+    font-size: var(--toast-description-size, 0.8125rem);
     font-weight: 400;
     line-height: 1.4;
   }
@@ -99,8 +99,8 @@
   }
 
   :global(.toast-action) {
-    min-height: var(--toast-action-height, 2.5rem);
-    border-radius: var(--toast-action-radius, 0.625rem);
+    min-height: var(--toast-action-height, var(--control-height-compact));
+    border-radius: var(--toast-action-radius, var(--radius));
   }
 
   :global(.toast-action:focus-visible) {

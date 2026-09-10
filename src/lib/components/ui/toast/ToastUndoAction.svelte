@@ -5,15 +5,15 @@
   let { onclick = () => undefined }: { onclick?: () => void } = $props();
 </script>
 
-<Button variant="outline" size="default" class="toast-undo-action" {onclick}>
+<Button variant="outline" size="compact" class="toast-undo-action" {onclick}>
   <span>{m.ui_reversibleActions_undo_label()}</span>
   <kbd data-toast-shortcut>⌘Z</kbd>
 </Button>
 
 <style>
   :global(.toast-undo-action) {
-    min-height: var(--toast-action-height, 2.5rem);
-    border-radius: var(--toast-action-radius, 0.625rem);
+    min-height: var(--toast-action-height, var(--control-height-compact));
+    border-radius: var(--toast-action-radius, var(--radius));
   }
 
   :global(.toast-undo-action:focus-visible) {

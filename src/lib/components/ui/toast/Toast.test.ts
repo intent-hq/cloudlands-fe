@@ -158,7 +158,7 @@ describe('Toast', () => {
     expect(toaster).toBeTruthy();
     expect(toastElements).toHaveLength(2);
     expect(toaster!.style.getPropertyValue('--app-toast-width').trim()).toBe(
-      'min(26rem, calc(100vw - clamp(2rem, 8vw, 4rem)))',
+      'min(22rem, calc(100vw - clamp(2rem, 8vw, 4rem)))',
     );
     expect(new Set(toastElements.map((element) => getComputedStyle(element).width)).size).toBe(1);
     expect(toastElements.every((element) => element.classList.contains('w-full'))).toBe(true);

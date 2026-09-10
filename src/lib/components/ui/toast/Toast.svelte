@@ -3,6 +3,7 @@
   import { writable } from 'svelte/store';
   import { Toaster as Sonner, toast, type ToasterProps } from 'svelte-sonner';
   import { Button } from '$lib/components/ui/button';
+  import XIcon from 'phosphor-svelte/lib/XIcon';
   import ToastGlyph from './ToastGlyph.svelte';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { m } from '$shared/paraglide/messages.js';
@@ -130,7 +131,7 @@
     id={toasterId}
     theme={$isDarkTheme ? 'dark' : 'light'}
     class="toaster group"
-    style="--app-toast-width: min(26rem, calc(100vw - clamp(2rem, 8vw, 4rem)))"
+    style="--app-toast-width: min(22rem, calc(100vw - clamp(2rem, 8vw, 4rem)))"
     {offset}
     {mobileOffset}
     {containerAriaLabel}
@@ -141,8 +142,8 @@
         description: 'group-[.toast]:text-subtle',
         actionButton: 'toast-action-button',
         cancelButton:
-          'group-[.toast]:bg-transparent group-[.toast]:text-foreground group-[.toast]:border group-[.toast]:border-border group-[.toast]:hover:bg-muted group-[.toast]:px-4 group-[.toast]:py-2 group-[.toast]:text-sm group-[.toast]:font-semibold',
-        action: 'text-sm font-semibold',
+          'group-[.toast]:bg-transparent group-[.toast]:text-foreground group-[.toast]:border group-[.toast]:border-border group-[.toast]:hover:bg-muted',
+        action: 'font-medium',
       },
     }}
     {position}
@@ -155,6 +156,7 @@
     {#snippet warningIcon()}<ToastGlyph variant="warning" />{/snippet}
     {#snippet infoIcon()}<ToastGlyph variant="info" />{/snippet}
     {#snippet loadingIcon()}<ToastGlyph variant="loading" />{/snippet}
+    {#snippet closeIcon()}<XIcon size={16} aria-hidden="true" />{/snippet}
   </Sonner>
 </div>
 
@@ -173,16 +175,14 @@
 
 <style>
   :global([data-sonner-toaster]) {
-    --toast-radius: 0.875rem;
-    --toast-padding: 1.25rem;
-    --toast-min-height: 4.5rem;
-    --toast-title-size: 1.0625rem;
-    --toast-description-size: 1rem;
-    --toast-action-height: 2.5rem;
-    --toast-action-radius: 0.625rem;
-    --toast-shadow:
-      0 1px 2px hsl(var(--theme-light-foreground) / 0.06),
-      0 8px 24px hsl(var(--theme-light-foreground) / 0.1);
+    --toast-radius: var(--radius);
+    --toast-padding: 0.75rem 0.875rem;
+    --toast-min-height: 2.75rem;
+    --toast-title-size: 0.8125rem;
+    --toast-description-size: 0.8125rem;
+    --toast-action-height: var(--control-height-compact);
+    --toast-action-radius: var(--radius);
+    --toast-shadow: var(--elevation-overlay);
     --width: var(--app-toast-width) !important;
     width: var(--app-toast-width) !important;
   }
@@ -223,7 +223,7 @@
     min-height: var(--toast-min-height) !important;
     padding: var(--toast-padding) !important;
     align-items: center !important;
-    gap: 0.75rem !important;
+    gap: 0.625rem !important;
     box-shadow: var(--toast-shadow) !important;
   }
 
@@ -244,8 +244,8 @@
   }
 
   :global([data-sonner-toast] [data-icon]) {
-    width: 1.25rem !important;
-    height: 1.25rem !important;
+    width: 1rem !important;
+    height: 1rem !important;
     margin: 0 !important;
   }
 
@@ -285,7 +285,8 @@
 
   /* Sonner owns this button element, so mirror Button's inset surface recipe. */
   :global([data-sonner-toast] button[data-button]) {
-    font-size: 0.875rem !important;
+    font-size: 0.75rem !important;
+    line-height: 0.8125rem !important;
     min-height: var(--toast-action-height) !important;
     font-weight: 500 !important;
     padding: 0 0.625rem !important;
@@ -340,8 +341,8 @@
   /* Close button styling */
   :global([data-sonner-toast] [data-close-button]) {
     color: hsl(var(--muted-foreground)) !important;
-    width: 2.5rem !important;
-    height: 2.5rem !important;
+    width: 1.5rem !important;
+    height: 1.5rem !important;
     top: 50% !important;
     right: 0.5rem !important;
     left: auto !important;
@@ -349,6 +350,11 @@
     border-radius: var(--toast-action-radius) !important;
     background: transparent !important;
     transform: translateY(-50%) !important;
+  }
+
+  :global([data-sonner-toast] [data-close-button] svg) {
+    width: 1rem;
+    height: 1rem;
   }
 
   :global([data-sonner-toast] [data-close-button]:hover) {

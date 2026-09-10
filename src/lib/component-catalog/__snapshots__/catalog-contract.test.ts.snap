@@ -2127,10 +2127,11 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:notify:notif
   <div>
     <div data-catalog-renderer-fixture="notify-states" data-pattern-contract="notify">
       <section data-catalog-rendered-state="success">
-        <div class="flex flex-1 gap-3 items-start min-w-0 pr-10 relative" data-toast-layout="error-details">
+        <div class="flex flex-1 gap-2.5 items-start min-w-0 pr-6 relative" data-toast-layout="error-details">
           <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-error" data-toast-glyph="error">
-            <span class="svelte-<scope>">
-              "!"
+            <svg aria-hidden="true" role="img">
+              <rect>
+              <path>
           <div class="flex-1 min-w-0">
             <p class="break-words svelte-<scope> text-foreground toast-title">
               "success notification"
@@ -2142,24 +2143,25 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:notify:notif
               <pre class="bg-muted break-all max-h-40 mt-2 overflow-auto p-2 rounded-(--radius-medium) whitespace-pre-wrap">
                 "Deterministic catalog details"
               <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                   <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                   <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                     <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                       "Copy"
           <div>
-            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-large) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
               <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
               <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                 <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                  <svg>
-                    <line>
-                    <line>
+                  <svg aria-hidden="true" role="img">
+                    <rect>
+                    <path>
       <section data-catalog-rendered-state="info">
-        <div class="flex flex-1 gap-3 items-start min-w-0 pr-10 relative" data-toast-layout="error-details">
+        <div class="flex flex-1 gap-2.5 items-start min-w-0 pr-6 relative" data-toast-layout="error-details">
           <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-error" data-toast-glyph="error">
-            <span class="svelte-<scope>">
-              "!"
+            <svg aria-hidden="true" role="img">
+              <rect>
+              <path>
           <div class="flex-1 min-w-0">
             <p class="break-words svelte-<scope> text-foreground toast-title">
               "info notification"
@@ -2171,24 +2173,25 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:notify:notif
               <pre class="bg-muted break-all max-h-40 mt-2 overflow-auto p-2 rounded-(--radius-medium) whitespace-pre-wrap">
                 "Deterministic catalog details"
               <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                   <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                   <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                     <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                       "Copy"
           <div>
-            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-large) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
               <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
               <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                 <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                  <svg>
-                    <line>
-                    <line>
+                  <svg aria-hidden="true" role="img">
+                    <rect>
+                    <path>
       <section data-catalog-rendered-state="warning">
-        <div class="flex flex-1 gap-3 items-start min-w-0 pr-10 relative" data-toast-layout="error-details">
+        <div class="flex flex-1 gap-2.5 items-start min-w-0 pr-6 relative" data-toast-layout="error-details">
           <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-error" data-toast-glyph="error">
-            <span class="svelte-<scope>">
-              "!"
+            <svg aria-hidden="true" role="img">
+              <rect>
+              <path>
           <div class="flex-1 min-w-0">
             <p class="break-words svelte-<scope> text-foreground toast-title">
               "warning notification"
@@ -2200,24 +2203,25 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:notify:notif
               <pre class="bg-muted break-all max-h-40 mt-2 overflow-auto p-2 rounded-(--radius-medium) whitespace-pre-wrap">
                 "Deterministic catalog details"
               <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                   <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                   <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                     <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                       "Copy"
           <div>
-            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-large) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
               <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
               <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                 <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                  <svg>
-                    <line>
-                    <line>
+                  <svg aria-hidden="true" role="img">
+                    <rect>
+                    <path>
       <section data-catalog-rendered-state="error">
-        <div class="flex flex-1 gap-3 items-start min-w-0 pr-10 relative" data-toast-layout="error-details">
+        <div class="flex flex-1 gap-2.5 items-start min-w-0 pr-6 relative" data-toast-layout="error-details">
           <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-error" data-toast-glyph="error">
-            <span class="svelte-<scope>">
-              "!"
+            <svg aria-hidden="true" role="img">
+              <rect>
+              <path>
           <div class="flex-1 min-w-0">
             <p class="break-words svelte-<scope> text-foreground toast-title">
               "error notification"
@@ -2229,24 +2233,25 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:notify:notif
               <pre class="bg-muted break-all max-h-40 mt-2 overflow-auto p-2 rounded-(--radius-medium) whitespace-pre-wrap">
                 "Deterministic catalog details"
               <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                   <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                   <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                     <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                       "Copy"
           <div>
-            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-large) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
               <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
               <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                 <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                  <svg>
-                    <line>
-                    <line>
+                  <svg aria-hidden="true" role="img">
+                    <rect>
+                    <path>
       <section data-catalog-rendered-state="progress">
-        <div class="flex flex-1 gap-3 items-start min-w-0 pr-10 relative" data-toast-layout="error-details">
+        <div class="flex flex-1 gap-2.5 items-start min-w-0 pr-6 relative" data-toast-layout="error-details">
           <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-error" data-toast-glyph="error">
-            <span class="svelte-<scope>">
-              "!"
+            <svg aria-hidden="true" role="img">
+              <rect>
+              <path>
           <div class="flex-1 min-w-0">
             <p class="break-words svelte-<scope> text-foreground toast-title">
               "progress notification"
@@ -2258,24 +2263,25 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:notify:notif
               <pre class="bg-muted break-all max-h-40 mt-2 overflow-auto p-2 rounded-(--radius-medium) whitespace-pre-wrap">
                 "Deterministic catalog details"
               <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                   <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                   <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                     <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                       "Copy"
           <div>
-            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-large) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
               <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
               <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                 <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                  <svg>
-                    <line>
-                    <line>
+                  <svg aria-hidden="true" role="img">
+                    <rect>
+                    <path>
       <section data-catalog-rendered-state="undoable">
-        <div class="flex flex-1 gap-3 items-start min-w-0 pr-10 relative" data-toast-layout="error-details">
+        <div class="flex flex-1 gap-2.5 items-start min-w-0 pr-6 relative" data-toast-layout="error-details">
           <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-error" data-toast-glyph="error">
-            <span class="svelte-<scope>">
-              "!"
+            <svg aria-hidden="true" role="img">
+              <rect>
+              <path>
           <div class="flex-1 min-w-0">
             <p class="break-words svelte-<scope> text-foreground toast-title">
               "undoable notification"
@@ -2287,24 +2293,25 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:notify:notif
               <pre class="bg-muted break-all max-h-40 mt-2 overflow-auto p-2 rounded-(--radius-medium) whitespace-pre-wrap">
                 "Deterministic catalog details"
               <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                   <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                   <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                     <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                       "Copy"
           <div>
-            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-large) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
               <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
               <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                 <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                  <svg>
-                    <line>
-                    <line>
+                  <svg aria-hidden="true" role="img">
+                    <rect>
+                    <path>
       <section data-catalog-rendered-state="custom">
-        <div class="flex flex-1 gap-3 items-start min-w-0 pr-10 relative" data-toast-layout="error-details">
+        <div class="flex flex-1 gap-2.5 items-start min-w-0 pr-6 relative" data-toast-layout="error-details">
           <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-error" data-toast-glyph="error">
-            <span class="svelte-<scope>">
-              "!"
+            <svg aria-hidden="true" role="img">
+              <rect>
+              <path>
           <div class="flex-1 min-w-0">
             <p class="break-words svelte-<scope> text-foreground toast-title">
               "custom notification"
@@ -2316,24 +2323,25 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:notify:notif
               <pre class="bg-muted break-all max-h-40 mt-2 overflow-auto p-2 rounded-(--radius-medium) whitespace-pre-wrap">
                 "Deterministic catalog details"
               <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                   <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                   <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                     <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                       "Copy"
           <div>
-            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-large) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
               <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
               <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                 <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                  <svg>
-                    <line>
-                    <line>
+                  <svg aria-hidden="true" role="img">
+                    <rect>
+                    <path>
       <section data-catalog-rendered-state="reduced-motion">
-        <div class="flex flex-1 gap-3 items-start min-w-0 pr-10 relative" data-toast-layout="error-details">
+        <div class="flex flex-1 gap-2.5 items-start min-w-0 pr-6 relative" data-toast-layout="error-details">
           <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-error" data-toast-glyph="error">
-            <span class="svelte-<scope>">
-              "!"
+            <svg aria-hidden="true" role="img">
+              <rect>
+              <path>
           <div class="flex-1 min-w-0">
             <p class="break-words svelte-<scope> text-foreground toast-title">
               "reduced-motion notification"
@@ -2345,19 +2353,19 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:notify:notif
               <pre class="bg-muted break-all max-h-40 mt-2 overflow-auto p-2 rounded-(--radius-medium) whitespace-pre-wrap">
                 "Deterministic catalog details"
               <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                   <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                   <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                     <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                       "Copy"
           <div>
-            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-large) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
               <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
               <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                 <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                  <svg>
-                    <line>
-                    <line>",
+                  <svg aria-hidden="true" role="img">
+                    <rect>
+                    <path>",
 }
 `;
 
@@ -9643,15 +9651,16 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                         <li aria-atomic="true" aria-live="polite" class="bg-surface-3 group group-[.toaster]:text-foreground max-w-full min-w-0 shadow-surface-3 toast w-full" data-dismissible="true" data-expanded="false" data-front="true" data-index="0" data-invert="false" data-mounted="true" data-promise="false" data-removed="false" data-rich-colors="false" data-sonner-toast="" data-styled="true" data-swipe-out="false" data-swiped="false" data-swiping="false" data-type="success" data-visible="true" data-x-position="left" data-y-position="bottom" tabindex="0">
                           <div data-icon="">
                             <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-success" data-toast-glyph="success">
-                              <svg class="svelte-<scope>">
-                                <path class="svelte-<scope>">
+                              <svg aria-hidden="true" role="img">
+                                <rect>
+                                <path>
                           <div data-content="">
                             <div data-title="">
                               "Workspace saved"
                           <button aria-label="Close notification" data-close-button="" data-disabled="false">
-                            <svg aria-hidden="true" data-sonner-close-icon="">
-                              <line>
-                              <line>
+                            <svg aria-hidden="true" role="img">
+                              <rect>
+                              <path>
                 <section class="content-start gap-2 grid min-w-0" data-toast-preview="error">
                   <h3 class="font-medium text-muted-foreground text-xs">
                     "Sonner error"
@@ -9661,15 +9670,16 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                         <li aria-atomic="true" aria-live="polite" class="bg-surface-3 group group-[.toaster]:text-foreground max-w-full min-w-0 shadow-surface-3 toast w-full" data-dismissible="true" data-expanded="false" data-front="true" data-index="0" data-invert="false" data-mounted="true" data-promise="false" data-removed="false" data-rich-colors="false" data-sonner-toast="" data-styled="true" data-swipe-out="false" data-swiped="false" data-swiping="false" data-type="error" data-visible="true" data-x-position="left" data-y-position="bottom" tabindex="0">
                           <div data-icon="">
                             <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-error" data-toast-glyph="error">
-                              <span class="svelte-<scope>">
-                                "!"
+                              <svg aria-hidden="true" role="img">
+                                <rect>
+                                <path>
                           <div data-content="">
                             <div data-title="">
                               "Could not save workspace"
                           <button aria-label="Close notification" data-close-button="" data-disabled="false">
-                            <svg aria-hidden="true" data-sonner-close-icon="">
-                              <line>
-                              <line>
+                            <svg aria-hidden="true" role="img">
+                              <rect>
+                              <path>
                 <section class="content-start gap-2 grid min-w-0" data-toast-preview="warning">
                   <h3 class="font-medium text-muted-foreground text-xs">
                     "Sonner warning"
@@ -9679,16 +9689,16 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                         <li aria-atomic="true" aria-live="polite" class="bg-surface-3 group group-[.toaster]:text-foreground max-w-full min-w-0 shadow-surface-3 toast w-full" data-dismissible="true" data-expanded="false" data-front="true" data-index="0" data-invert="false" data-mounted="true" data-promise="false" data-removed="false" data-rich-colors="false" data-sonner-toast="" data-styled="true" data-swipe-out="false" data-swiped="false" data-swiping="false" data-type="warning" data-visible="true" data-x-position="left" data-y-position="bottom" tabindex="0">
                           <div data-icon="">
                             <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-warning" data-toast-glyph="warning">
-                              <svg class="svelte-<scope>">
-                                <path class="fill svelte-<scope>">
-                                <path class="svelte-<scope>">
+                              <svg aria-hidden="true" role="img">
+                                <rect>
+                                <path>
                           <div data-content="">
                             <div data-title="">
                               "Connection is unstable"
                           <button aria-label="Close notification" data-close-button="" data-disabled="false">
-                            <svg aria-hidden="true" data-sonner-close-icon="">
-                              <line>
-                              <line>
+                            <svg aria-hidden="true" role="img">
+                              <rect>
+                              <path>
                 <section class="content-start gap-2 grid min-w-0" data-toast-preview="info">
                   <h3 class="font-medium text-muted-foreground text-xs">
                     "Sonner info"
@@ -9698,15 +9708,16 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                         <li aria-atomic="true" aria-live="polite" class="bg-surface-3 group group-[.toaster]:text-foreground max-w-full min-w-0 shadow-surface-3 toast w-full" data-dismissible="true" data-expanded="false" data-front="true" data-index="0" data-invert="false" data-mounted="true" data-promise="false" data-removed="false" data-rich-colors="false" data-sonner-toast="" data-styled="true" data-swipe-out="false" data-swiped="false" data-swiping="false" data-type="info" data-visible="true" data-x-position="left" data-y-position="bottom" tabindex="0">
                           <div data-icon="">
                             <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-info" data-toast-glyph="info">
-                              <span class="svelte-<scope>">
-                                "i"
+                              <svg aria-hidden="true" role="img">
+                                <rect>
+                                <path>
                           <div data-content="">
                             <div data-title="">
                               "A newer workspace snapshot is available"
                           <button aria-label="Close notification" data-close-button="" data-disabled="false">
-                            <svg aria-hidden="true" data-sonner-close-icon="">
-                              <line>
-                              <line>
+                            <svg aria-hidden="true" role="img">
+                              <rect>
+                              <path>
                 <section class="content-start gap-2 grid min-w-0" data-toast-preview="loading">
                   <h3 class="font-medium text-muted-foreground text-xs">
                     "Sonner loading"
@@ -9730,10 +9741,11 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                     <section aria-atomic="false" aria-label="Notify error with details preview alt+T" aria-live="polite" aria-relevant="additions text" tabindex="-1">
                       <ol class="group toaster" data-sonner-theme="light" data-sonner-toaster="true" data-x-position="left" data-y-position="bottom" tabindex="-1">
                         <li aria-atomic="true" aria-live="polite" class="bg-surface-3 group group-[.toaster]:text-foreground max-w-full min-w-0 shadow-surface-3 toast w-full" data-dismissible="true" data-expanded="false" data-front="true" data-index="0" data-invert="false" data-mounted="true" data-promise="false" data-removed="false" data-rich-colors="false" data-sonner-toast="" data-styled="false" data-swipe-out="false" data-swiped="false" data-swiping="false" data-type="default" data-visible="true" data-x-position="left" data-y-position="bottom" tabindex="0">
-                          <div class="flex flex-1 gap-3 items-start min-w-0 pr-10 relative" data-toast-layout="error-details">
+                          <div class="flex flex-1 gap-2.5 items-start min-w-0 pr-6 relative" data-toast-layout="error-details">
                             <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-error" data-toast-glyph="error">
-                              <span class="svelte-<scope>">
-                                "!"
+                              <svg aria-hidden="true" role="img">
+                                <rect>
+                                <path>
                             <div class="flex-1 min-w-0">
                               <p class="break-words svelte-<scope> text-foreground toast-title">
                                 "Request failed"
@@ -9745,19 +9757,19 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                                 <pre class="bg-muted break-all max-h-40 mt-2 overflow-auto p-2 rounded-(--radius-medium) whitespace-pre-wrap">
                                   "JSON-RPC -32000 The daemon rejected the request."
                                 <div>
-                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                     <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                     <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                         "Copy"
                             <div>
-                              <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-large) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                 <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                 <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                   <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                    <svg>
-                                      <line>
-                                      <line>
+                                    <svg aria-hidden="true" role="img">
+                                      <rect>
+                                      <path>
                 <section class="content-start gap-2 grid min-w-0" data-toast-preview="app-error">
                   <h3 class="font-medium text-muted-foreground text-xs">
                     "Application error"
@@ -9765,10 +9777,11 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                     <section aria-atomic="false" aria-label="Application error preview alt+T" aria-live="polite" aria-relevant="additions text" tabindex="-1">
                       <ol class="group toaster" data-sonner-theme="light" data-sonner-toaster="true" data-x-position="left" data-y-position="bottom" tabindex="-1">
                         <li aria-atomic="true" aria-live="polite" class="bg-surface-3 group group-[.toaster]:text-foreground max-w-full min-w-0 shadow-surface-3 toast w-full" data-dismissible="true" data-expanded="false" data-front="true" data-index="0" data-invert="false" data-mounted="true" data-promise="false" data-removed="false" data-rich-colors="false" data-sonner-toast="" data-styled="false" data-swipe-out="false" data-swiped="false" data-swiping="false" data-type="default" data-visible="true" data-x-position="left" data-y-position="bottom" tabindex="0">
-                          <div class="flex gap-3 items-start min-w-0 pr-10 relative w-full" data-toast-layout="application-error">
+                          <div class="flex gap-2.5 items-start min-w-0 pr-6 relative w-full" data-toast-layout="application-error">
                             <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-error" data-toast-glyph="error">
-                              <span class="svelte-<scope>">
-                                "!"
+                              <svg aria-hidden="true" role="img">
+                                <rect>
+                                <path>
                             <div class="flex-1 min-w-0">
                               <p class="break-words line-clamp-2 svelte-<scope> toast-title">
                                 "The workspace could not be opened"
@@ -9776,31 +9789,31 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                                 "The local index is corrupted or locked by another process."
                               <div class="svelte-<scope> toast-actions">
                                 <div>
-                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                     <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-hover/button:bg-hover inset-px motion-reduce:transition-none pointer-events-none shadow-none transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                     <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                         "Retry"
                                 <div>
-                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                     <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-hover/button:bg-hover inset-px motion-reduce:transition-none pointer-events-none shadow-none transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                     <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                         "Debug with AI"
                                 <div>
-                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                     <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                     <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                         "Copy"
                             <div>
-                              <button aria-label="Close" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-large) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <button aria-label="Close" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                 <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                 <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                   <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                    <svg>
-                                      <line>
-                                      <line>
+                                    <svg aria-hidden="true" role="img">
+                                      <rect>
+                                      <path>
                 <section class="content-start gap-2 grid min-w-0" data-toast-preview="agent-failure">
                   <h3 class="font-medium text-muted-foreground text-xs">
                     "Agent failure"
@@ -9808,10 +9821,11 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                     <section aria-atomic="false" aria-label="Agent failure preview alt+T" aria-live="polite" aria-relevant="additions text" tabindex="-1">
                       <ol class="group toaster" data-sonner-theme="light" data-sonner-toaster="true" data-x-position="left" data-y-position="bottom" tabindex="-1">
                         <li aria-atomic="true" aria-live="polite" class="bg-surface-3 group group-[.toaster]:text-foreground max-w-full min-w-0 shadow-surface-3 toast w-full" data-dismissible="true" data-expanded="false" data-front="true" data-index="0" data-invert="false" data-mounted="true" data-promise="false" data-removed="false" data-rich-colors="false" data-sonner-toast="" data-styled="false" data-swipe-out="false" data-swiped="false" data-swiping="false" data-type="default" data-visible="true" data-x-position="left" data-y-position="bottom" tabindex="0">
-                          <div class="flex gap-3 items-start min-w-0 pr-10 relative w-full" data-toast-layout="agent-failure">
+                          <div class="flex gap-2.5 items-start min-w-0 pr-6 relative w-full" data-toast-layout="agent-failure">
                             <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-error" data-toast-glyph="error">
-                              <span class="svelte-<scope>">
-                                "!"
+                              <svg aria-hidden="true" role="img">
+                                <rect>
+                                <path>
                             <div class="flex-1 min-w-0">
                               <div class="flex gap-1.5 items-center">
                                 <p class="break-words min-w-0 svelte-<scope> toast-title">
@@ -9823,25 +9837,25 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                                 "Implementor / Toast catalog"
                               <div class="svelte-<scope> toast-actions">
                                 <div>
-                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                     <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-hover/button:bg-hover inset-px motion-reduce:transition-none pointer-events-none shadow-none transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                     <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                         "Retry Implementor"
                                 <div>
-                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                     <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                     <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                         "Switch To"
                             <div>
-                              <button aria-label="Close" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-large) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <button aria-label="Close" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                 <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                 <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                   <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                    <svg>
-                                      <line>
-                                      <line>
+                                    <svg aria-hidden="true" role="img">
+                                      <rect>
+                                      <path>
                 <section class="content-start gap-2 grid min-w-0" data-toast-preview="agent-attention">
                   <h3 class="font-medium text-muted-foreground text-xs">
                     "Agent attention"
@@ -9849,10 +9863,11 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                     <section aria-atomic="false" aria-label="Agent attention preview alt+T" aria-live="polite" aria-relevant="additions text" tabindex="-1">
                       <ol class="group toaster" data-sonner-theme="light" data-sonner-toaster="true" data-x-position="left" data-y-position="bottom" tabindex="-1">
                         <li aria-atomic="true" aria-live="polite" class="bg-surface-3 group group-[.toaster]:text-foreground max-w-full min-w-0 shadow-surface-3 toast w-full" data-dismissible="true" data-expanded="false" data-front="true" data-index="0" data-invert="false" data-mounted="true" data-promise="false" data-removed="false" data-rich-colors="false" data-sonner-toast="" data-styled="false" data-swipe-out="false" data-swiped="false" data-swiping="false" data-type="default" data-visible="true" data-x-position="left" data-y-position="bottom" tabindex="0">
-                          <div class="flex gap-3 items-start min-w-0 pr-10 relative w-full" data-toast-layout="agent-attention">
+                          <div class="flex gap-2.5 items-start min-w-0 pr-6 relative w-full" data-toast-layout="agent-attention">
                             <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-discussion" data-toast-glyph="discussion">
-                              <svg class="svelte-<scope>">
-                                <path class="svelte-<scope>">
+                              <svg aria-hidden="true" role="img">
+                                <rect>
+                                <path>
                             <div class="flex-1 min-w-0">
                               <div class="flex gap-1.5 items-center">
                                 <p class="break-words min-w-0 svelte-<scope> toast-title">
@@ -9861,25 +9876,25 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                                 "Choose whether the catalog should include diagnostic details."
                               <div class="svelte-<scope> toast-actions">
                                 <div>
-                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-primary-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                     <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                     <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                         "Switch To"
                                 <div>
-                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                     <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                     <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                         "Later"
                             <div>
-                              <button aria-label="Dismiss attention request" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-large) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <button aria-label="Dismiss attention request" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                 <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                 <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                   <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                    <svg>
-                                      <line>
-                                      <line>
+                                    <svg aria-hidden="true" role="img">
+                                      <rect>
+                                      <path>
                 <section class="content-start gap-2 grid min-w-0" data-toast-preview="update-available">
                   <h3 class="font-medium text-muted-foreground text-xs">
                     "Update available"
@@ -9890,15 +9905,16 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                           <div class="svelte-<scope> update-toast">
                             <div class="svelte-<scope> toast-row">
                               <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-update" data-toast-glyph="update">
-                                <svg class="svelte-<scope>">
-                                  <path class="svelte-<scope>">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
                               <div class="flex-1 svelte-<scope> text">
                                 <div class="svelte-<scope> title">
                                   "Update 4.2.0 available"
                                 <div class="description svelte-<scope>">
                                   "Ready to install · 84 MB"
                               <div>
-                                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center ml-auto motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center ml-auto motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-primary-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                   <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                   <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                     <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
@@ -9912,18 +9928,19 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                         <li aria-atomic="true" aria-live="polite" class="bg-surface-3 group group-[.toaster]:text-foreground max-w-full min-w-0 shadow-surface-3 toast w-full" data-dismissible="true" data-expanded="false" data-front="true" data-index="0" data-invert="false" data-mounted="true" data-promise="false" data-removed="false" data-rich-colors="false" data-sonner-toast="" data-styled="false" data-swipe-out="false" data-swiped="false" data-swiping="false" data-type="default" data-visible="true" data-x-position="left" data-y-position="bottom" tabindex="0">
                           <div class="has-close svelte-<scope> update-toast">
                             <div>
-                              <button aria-label="Close" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-large) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <button aria-label="Close" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                 <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                 <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                   <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                    <svg>
-                                      <line>
-                                      <line>
+                                    <svg aria-hidden="true" role="img">
+                                      <rect>
+                                      <path>
                             <div class="svelte-<scope> toast-downloading">
                               <div class="items-start svelte-<scope> toast-row">
                                 <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-update" data-toast-glyph="update">
-                                  <svg class="svelte-<scope>">
-                                    <path class="svelte-<scope>">
+                                  <svg aria-hidden="true" role="img">
+                                    <rect>
+                                    <path>
                                 <div class="flex-1 min-w-0 svelte-<scope> text">
                                   <div class="svelte-<scope> title">
                                     "Downloading update 4.2.0"
@@ -9943,14 +9960,14 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                         <li aria-atomic="true" aria-live="polite" class="bg-surface-3 group group-[.toaster]:text-foreground max-w-full min-w-0 shadow-surface-3 toast toast-countdown w-full" data-dismissible="true" data-expanded="false" data-front="true" data-index="0" data-invert="false" data-mounted="true" data-promise="false" data-removed="false" data-rich-colors="false" data-sonner-toast="" data-styled="true" data-swipe-out="false" data-swiped="false" data-swiping="false" data-type="warning" data-visible="true" data-x-position="left" data-y-position="bottom" tabindex="0">
                           <div data-icon="">
                             <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-warning" data-toast-glyph="warning">
-                              <svg class="svelte-<scope>">
-                                <path class="fill svelte-<scope>">
-                                <path class="svelte-<scope>">
+                              <svg aria-hidden="true" role="img">
+                                <rect>
+                                <path>
                           <div data-content="">
                             <div data-title="">
                               "Workspace archived"
                           <div>
-                            <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-undo-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                            <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-undo-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                               <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-hover/button:bg-hover inset-px motion-reduce:transition-none pointer-events-none shadow-none transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                               <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                 <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
@@ -9959,9 +9976,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                                   <kbd class="svelte-<scope>" data-toast-shortcut="">
                                     "⌘Z"
                           <button aria-label="Close notification" data-close-button="" data-disabled="false">
-                            <svg aria-hidden="true" data-sonner-close-icon="">
-                              <line>
-                              <line>
+                            <svg aria-hidden="true" role="img">
+                              <rect>
+                              <path>
                 <section class="content-start gap-2 grid min-w-0" data-toast-preview="stack">
                   <h3 class="font-medium text-muted-foreground text-xs">
                     "Multi-toast stack"
@@ -9971,42 +9988,44 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                         <li aria-atomic="true" aria-live="polite" class="bg-surface-3 group group-[.toaster]:text-foreground max-w-full min-w-0 shadow-surface-3 toast w-full" data-dismissible="true" data-expanded="false" data-front="true" data-index="0" data-invert="false" data-mounted="true" data-promise="false" data-removed="false" data-rich-colors="false" data-sonner-toast="" data-styled="true" data-swipe-out="false" data-swiped="false" data-swiping="false" data-type="info" data-visible="true" data-x-position="left" data-y-position="bottom" tabindex="0">
                           <div data-icon="">
                             <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-info" data-toast-glyph="info">
-                              <span class="svelte-<scope>">
-                                "i"
+                              <svg aria-hidden="true" role="img">
+                                <rect>
+                                <path>
                           <div data-content="">
                             <div data-title="">
                               "Second task is ready"
                           <span class="toast-stack-count" data-toast-stack-count="">
                             "2 more"
                           <button aria-label="Close notification" data-close-button="" data-disabled="false">
-                            <svg aria-hidden="true" data-sonner-close-icon="">
-                              <line>
-                              <line>
+                            <svg aria-hidden="true" role="img">
+                              <rect>
+                              <path>
                         <li aria-atomic="true" aria-live="polite" class="bg-surface-3 group group-[.toaster]:text-foreground max-w-full min-w-0 shadow-surface-3 toast w-full" data-dismissible="true" data-expanded="false" data-front="false" data-index="1" data-invert="false" data-mounted="true" data-promise="false" data-removed="false" data-rich-colors="false" data-sonner-toast="" data-styled="true" data-swipe-out="false" data-swiped="false" data-swiping="false" data-type="warning" data-visible="true" data-x-position="left" data-y-position="bottom" tabindex="0">
                           <div data-icon="">
                             <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-warning" data-toast-glyph="warning">
-                              <svg class="svelte-<scope>">
-                                <path class="fill svelte-<scope>">
-                                <path class="svelte-<scope>">
+                              <svg aria-hidden="true" role="img">
+                                <rect>
+                                <path>
                           <div data-content="">
                             <div data-title="">
                               "Archived task restored"
                           <button aria-label="Close notification" data-close-button="" data-disabled="false">
-                            <svg aria-hidden="true" data-sonner-close-icon="">
-                              <line>
-                              <line>
+                            <svg aria-hidden="true" role="img">
+                              <rect>
+                              <path>
                         <li aria-atomic="true" aria-live="polite" class="bg-surface-3 group group-[.toaster]:text-foreground max-w-full min-w-0 shadow-surface-3 toast w-full" data-dismissible="true" data-expanded="false" data-front="false" data-index="2" data-invert="false" data-mounted="true" data-promise="false" data-removed="false" data-rich-colors="false" data-sonner-toast="" data-styled="true" data-swipe-out="false" data-swiped="false" data-swiping="false" data-type="success" data-visible="true" data-x-position="left" data-y-position="bottom" tabindex="0">
                           <div data-icon="">
                             <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-success" data-toast-glyph="success">
-                              <svg class="svelte-<scope>">
-                                <path class="svelte-<scope>">
+                              <svg aria-hidden="true" role="img">
+                                <rect>
+                                <path>
                           <div data-content="">
                             <div data-title="">
                               "First completed task"
                           <button aria-label="Close notification" data-close-button="" data-disabled="false">
-                            <svg aria-hidden="true" data-sonner-close-icon="">
-                              <line>
-                              <line>
+                            <svg aria-hidden="true" role="img">
+                              <rect>
+                              <path>
                   <div>
                     <button aria-controls="toast-catalog-region-stack" aria-label="Dismiss all 3 notifications" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-large) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground toast-clear-all toast-clear-all-static transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                       <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
