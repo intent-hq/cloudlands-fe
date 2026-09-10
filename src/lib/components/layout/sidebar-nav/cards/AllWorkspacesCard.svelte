@@ -629,9 +629,7 @@
               data-repository-group
               data-repository-key={repositoryGroup.key}
             >
-              <div
-                class="section-header group flex items-center gap-1.5 px-2 pt-2 pb-1 min-w-0"
-              >
+              <div class="section-header group flex items-center gap-1.5 px-2 pt-2 pb-1 min-w-0">
                 {#if repositoryGroup.group.owner}
                   <img
                     src={getGitHubAvatarUrl(repositoryGroup.group.owner)}
