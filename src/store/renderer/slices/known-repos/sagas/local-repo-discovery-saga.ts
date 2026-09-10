@@ -1,5 +1,5 @@
 import type { Task } from 'redux-saga';
-import { all, call, cancel, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
+import { all, call, cancel, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { getRepoFolderName } from '$lib/components/workspace/initializer/recent-repo-display';
 import { localRepoOptions } from '$features/onboarding/utils/local-repo-options';
@@ -65,37 +65,48 @@ export function* localRepoDiscoverySaga(): SagaGenerator<void> {
   let requested = false;
   let attempted = false;
   let backendId = yield* selectActiveBackendId();
-  while (true) {
-    const action = yield* take([
-      onboardingPickerOpened,
-      onboardingPickerClosed,
-      discoverLocalReposRequested,
-      connectionsListReceived,
-    ]);
+
+  function* resetAttempt(): SagaGenerator<void> {
+    if (worker) yield* cancel(worker);
+    worker = undefined;
+    attempted = false;
+    backendId = yield* selectActiveBackendId();
+    yield* put(resetLocalRepoDiscovery());
+  }
+
+  function* startIfRequested(): SagaGenerator<void> {
     const nextBackendId = yield* selectActiveBackendId();
-    if (
-      action.type === onboardingPickerOpened.type ||
-      action.type === onboardingPickerClosed.type ||
-      nextBackendId !== backendId
-    ) {
-      if (worker) yield* cancel(worker);
-      worker = undefined;
-      attempted = false;
-      backendId = nextBackendId;
-      yield* put(resetLocalRepoDiscovery());
-    }
-    if (action.type === onboardingPickerOpened.type) {
-      open = true;
-      requested = (action as ReturnType<typeof onboardingPickerOpened>).payload[0];
-    } else if (action.type === onboardingPickerClosed.type) {
-      open = false;
-      requested = false;
-    } else if (action.type === discoverLocalReposRequested.type) {
-      requested = true;
-    }
+    if (nextBackendId !== backendId) yield* resetAttempt();
     if (open && requested && !attempted) {
       attempted = true;
       worker = yield* fork(discover, backendId);
     }
   }
+
+  function* openPicker(action: ReturnType<typeof onboardingPickerOpened>): SagaGenerator<void> {
+    open = true;
+    requested = action.payload[0];
+    yield* resetAttempt();
+    yield* startIfRequested();
+  }
+
+  function* closePicker(): SagaGenerator<void> {
+    open = false;
+    requested = false;
+    yield* resetAttempt();
+  }
+
+  function* requestDiscovery(): SagaGenerator<void> {
+    requested = true;
+    yield* startIfRequested();
+  }
+
+  // Every lifecycle action must be handled, even while the attached scan is pending.
+  // The request/attempt latches own session deduplication, not watcher cancellation.
+  yield* all([
+    takeEvery(onboardingPickerOpened, openPicker),
+    takeEvery(onboardingPickerClosed, closePicker),
+    takeEvery(discoverLocalReposRequested, requestDiscovery),
+    takeEvery(connectionsListReceived, startIfRequested),
+  ]);
 }

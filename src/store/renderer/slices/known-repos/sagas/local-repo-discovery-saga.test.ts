@@ -33,19 +33,19 @@ function harness() {
     knownRepos = knownReposReducer(knownRepos, action);
     channel.put(action);
   };
-  tasks.push(
-    runSaga(
-      {
-        channel,
-        dispatch: send,
-        getState: () => ({ knownRepos, connections: { windowBackendId: backendId } }),
-      },
-      localRepoDiscoverySaga,
-    ),
+  const task = runSaga(
+    {
+      channel,
+      dispatch: send,
+      getState: () => ({ knownRepos, connections: { windowBackendId: backendId } }),
+    },
+    localRepoDiscoverySaga,
   );
+  tasks.push(task);
   return {
     send,
     state: () => knownRepos.discovery,
+    stop: () => task.cancel(),
     switchBackend: (id: string) => {
       backendId = id;
       send(connectionsListReceived({ connections: [], activeId: id, windowBackendId: id }));
@@ -274,5 +274,78 @@ describe('onboarding local repository discovery', () => {
     expect(mocks.request).toHaveBeenLastCalledWith('workspace.findRepositories', {
       directory: '/home/remote',
     });
+  });
+
+  it('deduplicates immediate request bursts while preflight is pending', async () => {
+    const registry = deferred<{ repos: [] }>();
+    mockBackend({ 'repo.list': registry.promise });
+    const run = harness();
+    run.send(onboardingPickerOpened(false));
+    for (let i = 0; i < 5; i++) run.send(discoverLocalReposRequested());
+    run.switchBackend('local');
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+    registry.resolve({ repos: [] });
+    await settle();
+    expect(mocks.request).toHaveBeenCalledTimes(4);
+    expect(run.state().status).toBe('complete');
+  });
+
+  it('keeps an immediately reopened session when an older scan resolves last', async () => {
+    const stale = deferred<{ repositories: string[] }>();
+    mockBackend({ 'workspace.findRepositories': stale.promise });
+    const run = harness();
+    run.send(onboardingPickerOpened(true));
+    await settle();
+    mockBackend();
+    run.send(onboardingPickerClosed());
+    run.send(onboardingPickerOpened(true));
+    run.send(discoverLocalReposRequested());
+    await settle();
+    stale.resolve({ repositories: ['/home/dev/stale'] });
+    await settle();
+    expect(mocks.request).toHaveBeenCalledTimes(8);
+    expect(run.state().status).toBe('complete');
+    expect(getItems(run.state().repos)).toEqual([{ path: '/home/dev/code/app', name: 'app' }]);
+  });
+
+  it('uses only the final backend after back-to-back switches during preflight', async () => {
+    const stale = deferred<{ repos: [] }>();
+    mockBackend({ 'repo.list': stale.promise });
+    const run = harness();
+    run.send(onboardingPickerOpened(true));
+    run.switchBackend('remote-a');
+    mockBackend({
+      'host.listDirectory': { ...home, home: '/home/remote-b' },
+      'workspace.findRepositories': { repositories: ['/home/remote-b/repo'] },
+    });
+    run.switchBackend('remote-b');
+    run.send(discoverLocalReposRequested());
+    await settle();
+    stale.resolve({ repos: [] });
+    await settle();
+    expect(mocks.request).toHaveBeenCalledTimes(8);
+    expect(run.state().backendId).toBe('remote-b');
+    expect(getItems(run.state().repos)).toEqual([{ path: '/home/remote-b/repo', name: 'repo' }]);
+    expect(mocks.request).toHaveBeenLastCalledWith('workspace.findRepositories', {
+      directory: '/home/remote-b',
+    });
+  });
+
+  it('cancels the scan and all lifecycle watchers when the root saga stops', async () => {
+    const scan = deferred<{ repositories: string[] }>();
+    mockBackend({ 'workspace.findRepositories': scan.promise });
+    const run = harness();
+    run.send(onboardingPickerOpened(true));
+    await settle();
+    run.stop();
+    const stoppedState = run.state();
+    scan.resolve({ repositories: ['/home/dev/stale'] });
+    run.send(onboardingPickerClosed());
+    run.send(onboardingPickerOpened(true));
+    run.send(discoverLocalReposRequested());
+    run.switchBackend('remote');
+    await settle();
+    expect(mocks.request).toHaveBeenCalledTimes(4);
+    expect(run.state()).toEqual(stoppedState);
   });
 });
