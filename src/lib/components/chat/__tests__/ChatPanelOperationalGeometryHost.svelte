@@ -622,6 +622,8 @@
           [
             {
               ...session,
+              status: status === 'thinking' ? 'active' : 'idle',
+              isActive: status === 'thinking',
               isStreaming: status === 'thinking',
               isProcessing: status === 'thinking',
               isResponding: status === 'thinking',
@@ -641,6 +643,11 @@
       );
       store.dispatch(chatErrorCleared(agentId));
       store.dispatch(chatModelUnavailableCleared(agentId));
+      if (status === 'idle' || status === 'reply') {
+        store.dispatch(
+          streamCompleted(agentId, { lastAttemptedMessage: null, modelUnavailable: null }),
+        );
+      }
       if (status === 'error') store.dispatch(chatSendFailed(agentId, 'The provider failed.'));
       if (status === 'model-unavailable') {
         store.dispatch(
