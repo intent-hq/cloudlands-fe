@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import type { AgentMessage } from '$shared/types';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import AgentMessageList from '../AgentMessageList.svelte';
 import MessageContent from '../MessageContent.svelte';
@@ -42,7 +43,12 @@ const surfaces = [
   {
     name: 'normal workspace',
     render: (content: ReturnType<typeof liveGroupBlocks>, isStreaming: boolean) => {
-      const message = reconcileToolResultMessage(content);
+      const message: AgentMessage = {
+        id: 'message-tool-result-parity',
+        role: 'assistant',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        contentBlocks: content,
+      };
       return render(AgentMessageList, {
         props: {
           messages: [message],
@@ -256,8 +262,11 @@ describe('tool-result production renderer parity', () => {
   );
 
   it('keeps complex visible result order and rows equal across both production surfaces', async () => {
-    const message = reconcileToolResultMessage(resilienceBlocks(), true);
-    const normal = surfaces[0].render(message.contentBlocks ?? [], true);
+    // Deliberately malformed renderer input is not a valid wire fixture: intake
+    // rejects the result with no tool_use_id. Exercise renderer resilience here;
+    // live-chat-client.test.ts covers strict snapshot/delta rejection separately.
+    const content = resilienceBlocks();
+    const normal = surfaces[0].render(content, true);
     await fireEvent.click(
       normal.container.querySelector('[data-testid="response-group-disclosure"]')!,
     );
@@ -272,7 +281,7 @@ describe('tool-result production renderer parity', () => {
       (node) => node.getAttribute('data-message-content-block'),
     );
     cleanup();
-    const dedicated = surfaces[1].render(message.contentBlocks ?? [], true);
+    const dedicated = surfaces[1].render(content, true);
     await fireEvent.click(
       dedicated.container.querySelector('[data-testid="response-group-disclosure"]')!,
     );
@@ -293,6 +302,10 @@ describe('tool-result production renderer parity', () => {
       const dedicatedCount = dedicatedText.match(new RegExp(marker, 'g'))?.length ?? 0;
       expect(normalCount).toBeGreaterThan(0);
       expect(dedicatedCount).toBe(normalCount);
+    }
+    for (const marker of ['missing-id-orphan-marker', 'later-orphan-marker']) {
+      expect(normalText.match(new RegExp(marker, 'g'))).toHaveLength(1);
+      expect(dedicatedText.match(new RegExp(marker, 'g'))).toHaveLength(1);
     }
     expect(normalText.indexOf('Trailing prose stays visible.')).toBeLessThan(
       normalText.indexOf('missing-id-orphan-marker'),

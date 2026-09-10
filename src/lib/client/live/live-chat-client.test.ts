@@ -1277,6 +1277,12 @@ describe('LiveChatClient.subscribe canonical delta validation', () => {
     { type: 'thinking', text: null },
     { type: 'tool_use', toolName: 'legacy' },
     { type: 'tool_result', toolCallId: 'legacy' },
+    { type: 'tool_result', output: 'missing-id-orphan-marker' },
+    ...[undefined, null, 7, true, {}, []].map((tool_use_id) => ({
+      type: 'tool_result',
+      tool_use_id,
+      output: 'invalid-id-orphan-marker',
+    })),
     { type: 'audio', data: 7, mimeType: 'audio/wav' },
     { type: 'file', data: 'AAAA', mimeType: 'text/plain', fileName: null },
     { type: 'plan', entries: [{}] },
@@ -1384,6 +1390,48 @@ describe('LiveChatClient.subscribe canonical delta validation', () => {
     expect(seen.at(-1)?.messages.map((message) => message.contentBlocks)).toEqual([
       [image],
       [image],
+    ]);
+    off();
+  });
+
+  it('preserves an unpaired result with a canonical id across snapshot, added, and updated paths', async () => {
+    mockChatSubscribe();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = new LiveChatClient().subscribe('agent-1', (transcript) => seen.push(transcript));
+    await flush();
+    expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', {
+      agentId: 'agent-1',
+      deltaEncoding: 'incremental',
+      projection: 'slim',
+    });
+    const result = {
+      type: 'tool_result',
+      id: 'orphan:0',
+      tool_use_id: 'call-outside-this-message',
+      output: 'unpaired-result-marker',
+    };
+    snapshotPush('sub-1', 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [{ ...SEEDED_SNAPSHOT.messages[0], contentBlocks: [result] }],
+    });
+    deltaPush('sub-1', 1, {
+      added: [{ messageId: 'orphan-delta', block: result }],
+      updated: [],
+      removedIds: [],
+    });
+    expect(seen.at(-1)?.messages.map((message) => message.contentBlocks)).toEqual([
+      [result],
+      [result],
+    ]);
+    const updated = { ...result, output: 'updated-unpaired-result-marker' };
+    deltaPush('sub-1', 2, {
+      added: [],
+      updated: [{ messageId: 'orphan-delta', block: updated, streamingComplete: true }],
+      removedIds: [],
+    });
+    expect(seen.at(-1)?.messages.map((message) => message.contentBlocks)).toEqual([
+      [result],
+      [updated],
     ]);
     off();
   });
