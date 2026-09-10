@@ -66,7 +66,7 @@
   data-preview-count={count}
 >
   <div
-    class="flex h-[var(--panel-header-height)] min-w-0 items-center bg-card pr-2.5"
+    class="flex h-(--panel-header-height) min-w-0 items-center bg-card pr-2.5"
     data-panel-content-header
     data-panel-id="browser-tabs-menu-preview-panel"
     data-panel-header-preview
