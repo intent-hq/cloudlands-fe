@@ -27,6 +27,7 @@
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
     SUBSCRIPTION_LEADING_COLUMN_CLASS,
+    SUBSCRIPTION_LEADING_CONTENT_CLASS,
   } from './subscription-disclosure';
 
   interface Props {
@@ -118,7 +119,7 @@
 >
   {#if attribution.kind === 'chief' && attribution.sourceUrl}
     <a
-      class="flex min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded text-left font-[inherit] text-muted-foreground no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      class="{SUBSCRIPTION_LEADING_CONTENT_CLASS} shrink-0 cursor-pointer rounded text-left font-[inherit] text-muted-foreground no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       style="max-width: 40%;"
       href={attribution.sourceUrl}
       onclick={handleSourceClick}
@@ -146,7 +147,7 @@
     </a>
   {:else if attribution.kind === 'chief'}
     <span
-      class="flex min-w-0 shrink-0 items-center gap-2 text-left font-[inherit] text-muted-foreground"
+      class="{SUBSCRIPTION_LEADING_CONTENT_CLASS} shrink-0 text-left font-[inherit] text-muted-foreground"
       style="max-width: 40%;"
       data-testid="agent-message-attribution"
     >
@@ -171,7 +172,7 @@
   {:else}
     <button
       type="button"
-      class="flex min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      class="{SUBSCRIPTION_LEADING_CONTENT_CLASS} shrink-0 cursor-pointer rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       style="max-width: 40%;"
       onclick={handleClick}
       ondblclick={(event) => event.stopPropagation()}

@@ -537,7 +537,6 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       const distinctSurfaceClass = /^(?:bg-|rounded(?:-|$)|shadow(?:-|$))/;
 
       expect(summary.getAttribute('aria-expanded')).toBe('false');
-      expect(summary.classList).toContain('px-3!');
       expect(summary.classList).toContain('py-2!');
       expect(summary.textContent?.trim()).toBe('2 agents finished');
       expect(
@@ -588,14 +587,11 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       const waitingIcon = waitingSummary.querySelector('[data-icon="hourglass"]');
       const finishedIcon = finishedSummary.querySelector('[data-icon="circle-check"]');
 
-      expect(finishedSummary.classList).toContain('inline-flex');
-      expect(finishedSummary.classList).toContain('gap-1.5');
       expect(finishedSummary.classList).not.toContain('px-2');
       expect(waitingLeadingColumn.classList).not.toContain('size-5');
       expect(finishedLeadingColumn.classList).not.toContain('size-5');
       expect(finishedLeadingColumn.className).not.toMatch(/^-m(?:[lrxse])?-/);
       expect(screen.getByTestId('one-shot-agent-list').classList).not.toContain('px-1');
-      expect(screen.getByTestId('one-shot-summary-toggle').classList).toContain('px-3!');
       expect(finishedIcon).toBeTruthy();
       expect(finishedSummary.querySelector('[data-icon="check"]')).toBeNull();
       expect(finishedIcon?.classList).toContain('text-muted-foreground!');

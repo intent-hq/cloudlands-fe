@@ -47,8 +47,11 @@
     SUBSCRIPTION_ACTION_ICON_CLASS,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
+    SUBSCRIPTION_FINISHED_ROW_GEOMETRY_CLASS,
     SUBSCRIPTION_ICON_CLASS,
     SUBSCRIPTION_ICON_BUTTON_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_CLASS,
+    SUBSCRIPTION_LEADING_CONTENT_CLASS,
     SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
   } from './subscription-disclosure';
 
@@ -233,12 +236,12 @@
         transition:safeSubscriptionRowTransition
       >
         <div
-          class="flex min-h-10 min-w-0 max-w-full items-center gap-1.5 px-2 py-1.5 text-muted-foreground"
+          class="flex min-w-0 max-w-full items-center gap-1.5 text-muted-foreground {SUBSCRIPTION_FINISHED_ROW_GEOMETRY_CLASS}"
         >
           <Button
             variant="plain"
             type="button"
-            class="h-auto min-h-7 w-auto min-w-0 max-w-full flex-1 shrink overflow-hidden whitespace-normal rounded border-0 px-1.5 text-left {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+            class="h-auto w-auto min-w-0 max-w-full flex-1 shrink overflow-hidden whitespace-normal rounded border-0 text-left {SUBSCRIPTION_LEADING_CONTENT_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
             data-testid="background-hook-summary"
             data-subscription-row="event-subscription"
             aria-expanded={expandedHookId === hook.hookId}
@@ -246,7 +249,7 @@
             onclick={() => toggleHookDetails(hook.hookId)}
           >
             <span
-              class="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none {SUBSCRIPTION_ICON_CLASS}"
+              class="{SUBSCRIPTION_LEADING_COLUMN_CLASS} {SUBSCRIPTION_ICON_CLASS}"
               data-testid="background-hook-icon"
               aria-hidden="true"
             >

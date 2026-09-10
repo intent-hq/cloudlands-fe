@@ -4,6 +4,9 @@
   import PinnedUserPrompt from '$lib/components/chat/PinnedUserPrompt.svelte';
   import ChatMessage from '$lib/components/chat/ChatMessage.svelte';
   import EventWakeupBanner from '$lib/components/chat/EventWakeupBanner.svelte';
+  import ChatOperationalRow from '$lib/components/chat/ChatOperationalRow.svelte';
+  import Fa from 'svelte-fa';
+  import { faWrench } from '@fortawesome/free-solid-svg-icons';
   import ConversationTurnGap from '$lib/components/chat/ConversationTurnGap.svelte';
   import {
     attachPinnedPromptMessage,
@@ -112,7 +115,7 @@
 </script>
 
 <section class:dark={theme === 'dark'} style:width="{width}px" style:zoom data-panel={panelId}>
-  <div class="grid grid-cols-2 gap-4 bg-background p-4 text-foreground">
+  <div class="transcript-geometry-grid grid grid-cols-2 gap-4 bg-background p-4 text-foreground">
     <div>
       <div data-testid="sent-card" class={USER_MESSAGE_SURFACE_CLASS}>
         <span data-testid="ordinary-user-text" class={USER_MESSAGE_TEXT_CLASS}>
@@ -124,7 +127,15 @@
         <ChatMessage message={attributedMessage} />
       </div>
     </div>
-    <div>
+    <div data-testid="transcript-oracle-column">
+      <ChatOperationalRow testId="subscription-geometry-tool-row" toolIcon>
+        {#snippet leading()}
+          <Fa icon={faWrench} size={16} />
+        {/snippet}
+        {#snippet summary()}
+          <span data-testid="subscription-geometry-tool-summary">Reviewing</span>
+        {/snippet}
+      </ChatOperationalRow>
       <div data-testid="event-predecessor"></div>
       <EventWakeupBanner
         metadata={finishedMetadata}
@@ -193,6 +204,22 @@
 </section>
 
 <style>
+  section {
+    container-type: inline-size;
+  }
+
+  .transcript-geometry-grid {
+    --chat-operational-row-inline-padding: 0.5rem;
+    --chat-operational-leading-gap: 0.5rem;
+  }
+
+  @container (max-width: 639.98px) {
+    .transcript-geometry-grid {
+      --chat-operational-row-inline-padding: 0.125rem;
+      --chat-operational-leading-gap: 0.625rem;
+    }
+  }
+
   /* Prefer a classic scrollbar. The host reserves the same 16px lane when
      Chromium uses an overlay scrollbar, which keeps the geometry test strict. */
   .forced-scrollbar::-webkit-scrollbar {

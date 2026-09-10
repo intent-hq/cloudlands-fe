@@ -60,7 +60,6 @@
     SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS,
     SUBSCRIPTION_LEADING_COLUMN_CLASS,
     SUBSCRIPTION_LEADING_CONTENT_CLASS,
-    SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
   } from './subscription-disclosure';
   import { getBrowserTabsExpanded, setBrowserTabsExpanded } from './agent-subscriptions-view-state';
 
@@ -293,21 +292,22 @@
             <Button
               variant="plain"
               type="button"
-              class="flex h-auto min-h-9 min-w-0 flex-1 items-center justify-start! gap-2 overflow-hidden rounded-none border-0 px-3! py-2! text-left {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1 focus-visible:ring-inset"
+              class="min-w-0 flex-1 shrink whitespace-normal rounded-none border-0 text-left {SUBSCRIPTION_DISCLOSURE_ROW_CLASS} {SUBSCRIPTION_LEADING_CONTENT_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1 focus-visible:ring-inset"
               data-testid="browser-tab-item"
               data-browser-tab-id={entry.tab.id}
               data-hidden={entry.hidden || undefined}
               data-active={entry.active || undefined}
               onclick={() => handleTabClick(entry)}
             >
-              <span
-                class="size-1.5 shrink-0 rounded-full {entry.hidden
-                  ? 'bg-muted-foreground/20'
-                  : entry.active
-                    ? 'bg-success'
-                    : 'bg-muted-foreground/40'}"
-                aria-hidden="true"
-              ></span>
+              <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true">
+                <span
+                  class="size-1.5 shrink-0 rounded-full {entry.hidden
+                    ? 'bg-muted-foreground/20'
+                    : entry.active
+                      ? 'bg-success'
+                      : 'bg-muted-foreground/40'}"
+                ></span>
+              </span>
               <span class="min-w-0 flex-1 {entry.hidden ? 'opacity-60' : ''}">
                 <span class="block truncate" title={tabTitle}>{tabTitle}</span>
                 <span class="block truncate text-xs text-subtle" title={entry.tab.browserUrl ?? ''}>

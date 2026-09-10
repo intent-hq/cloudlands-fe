@@ -27,6 +27,7 @@
     SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
     SUBSCRIPTION_ICON_BUTTON_CLASS,
     SUBSCRIPTION_ICON_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_CLASS,
   } from './subscription-disclosure';
 
   interface Props {
@@ -79,11 +80,13 @@
   data-wake-state={presentation.state}
   onclick={handleRowClick}
 >
-  <Fa
-    icon={presentation.kind === 'hook' ? faBolt : faCodePullRequest}
-    size={16}
-    class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} mt-1 shrink-0 self-start {SUBSCRIPTION_ICON_CLASS}"
-  />
+  <span class="{SUBSCRIPTION_LEADING_COLUMN_CLASS} mt-1 self-start" aria-hidden="true">
+    <Fa
+      icon={presentation.kind === 'hook' ? faBolt : faCodePullRequest}
+      size={16}
+      class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+    />
+  </span>
   <span
     class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1 text-left"
     data-testid="automated-wake-text-lane"

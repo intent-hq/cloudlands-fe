@@ -20,6 +20,66 @@ function contrastRatio(foreground: string, background: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+for (const width of [360, 960]) {
+  for (const zoom of [1, 2]) {
+    test(`aligns subscription and sent-message columns to a tool row at ${width}px and ${zoom * 100}%`, async ({
+      mount,
+    }) => {
+      const component = await mount(ChatEventGeometryHost, {
+        props: { panelId: `subscription-columns-${width}-${zoom}`, width, zoom },
+      });
+      const geometry = await component.evaluate((root) => {
+        const toolRow = root.querySelector(
+          '[data-testid="subscription-geometry-tool-row"] [data-operational-disclosure-row]',
+        )!;
+        const toolLeading = root.querySelector(
+          '[data-testid="subscription-geometry-tool-row"] [data-operational-leading]',
+        )!;
+        const toolSummary = root.querySelector(
+          '[data-testid="subscription-geometry-tool-row"] [data-operational-summary]',
+        )!;
+        const card = root.querySelector('[data-testid="event-wakeup-card"]')!;
+        const subscriptionLeading = root.querySelector(
+          '[data-testid="event-wakeup-leading-column"] svg',
+        )!;
+        const subscriptionSummary = root.querySelector('[data-testid="event-wakeup-summary"]')!;
+        const agentCard = root.querySelector(
+          '[data-testid="attributed-message-lane"] [data-testid="user-message-surface"]',
+        )!;
+        const agentLeading = root.querySelector('[data-testid="agent-message-avatar-column"]')!;
+        const agentSummary = root.querySelector('[data-testid="agent-message-actor-name"]')!;
+        const center = (element: Element) => {
+          const box = element.getBoundingClientRect();
+          return (box.left + box.right) / 2;
+        };
+        return {
+          toolOuterLeft: toolRow.getBoundingClientRect().left,
+          subscriptionOuterLeft: card.getBoundingClientRect().left,
+          toolLeadingCenter: center(toolLeading),
+          subscriptionLeadingCenter: center(subscriptionLeading),
+          toolTextStart: toolSummary.getBoundingClientRect().left,
+          subscriptionTextStart: subscriptionSummary.getBoundingClientRect().left,
+          agentOuterLeft: agentCard.getBoundingClientRect().left,
+          agentLeadingCenter: center(agentLeading),
+          agentTextStart: agentSummary.getBoundingClientRect().left,
+        };
+      });
+
+      expect(geometry.subscriptionOuterLeft).toBeCloseTo(geometry.toolOuterLeft, 1);
+      expect(geometry.subscriptionLeadingCenter).toBeCloseTo(geometry.toolLeadingCenter, 1);
+      expect(geometry.subscriptionTextStart).toBeCloseTo(geometry.toolTextStart, 1);
+      expect(geometry.agentLeadingCenter - geometry.agentOuterLeft).toBeCloseTo(
+        geometry.toolLeadingCenter - geometry.toolOuterLeft,
+        1,
+      );
+      expect(geometry.agentTextStart - geometry.agentOuterLeft).toBeCloseTo(
+        geometry.toolTextStart - geometry.toolOuterLeft,
+        1,
+      );
+    });
+  }
+}
+
 test('measures the production finished-card turn gap across all required states', async ({
   mount,
   page,
@@ -81,7 +141,10 @@ test('measures the production finished-card turn gap across all required states'
                   surfaceInset: [surface.paddingInlineStart, surface.paddingBlockStart],
                 };
               });
-              expect(measurement.finishedInset).toEqual(measurement.sentInset);
+              expect(measurement.finishedInset).toEqual([
+                width === 360 ? '1px' : '7px',
+                measurement.sentInset[1],
+              ]);
               expect(measurement.finishedHeight).toBeCloseTo(40 * zoom, 1);
               expect(measurement.surfaceInset).toEqual(['0px', '0px']);
               const topGap = measurement.cardTop - measurement.predecessorBottom;
@@ -213,10 +276,10 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
           expect(collapsed.agentSurface).toEqual(collapsed.eventSurface);
           expect(collapsed.agentRow).toEqual(collapsed.eventRow);
           expect(collapsed.agentRowGap).toBe('4px');
-          expect(collapsed.eventRowGap).toBe('8px');
+          expect(collapsed.eventRowGap).toBe(width === 360 ? '10px' : '8px');
           expect(collapsed.agentRow['justify-content']).toBe('flex-start');
           expect(collapsed.agentNameRect.left - collapsed.agentIconRect.right).toBeCloseTo(
-            8 * zoom,
+            (width === 360 ? 10 : 8) * zoom,
             1,
           );
           expect(collapsed.agentActionRect.left - collapsed.agentActorRect.right).toBeCloseTo(
@@ -224,7 +287,7 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             1,
           );
           expect(collapsed.eventSummaryRect.left - collapsed.eventIconRect.right).toBeCloseTo(
-            8 * zoom,
+            (width === 360 ? 13 : 11) * zoom,
             1,
           );
           expect(collapsed.eventStatusRect.left - collapsed.eventNameRect.right).toBeCloseTo(
@@ -232,7 +295,7 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             1,
           );
           expect(collapsed.agentIconRect.left - collapsed.agentRowRect.left).toBeCloseTo(
-            12 * zoom,
+            (width === 360 ? 1 : 7) * zoom,
             1,
           );
           expect(collapsed.agentRowRect.bottom - collapsed.agentRowRect.top).toBeCloseTo(

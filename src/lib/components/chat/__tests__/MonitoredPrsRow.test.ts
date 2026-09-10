@@ -201,14 +201,10 @@ describe('MonitoredPrsRow', () => {
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     const summary = screen.getByTestId('monitored-pr-summary');
-    const line = summary.closest('[data-monitor-state]')?.firstElementChild;
     expect(summary.textContent).toContain('Fix widget rendering');
     // Same-owner label shows the repo name without the owner
     expect(summary.textContent).toContain('widgets #42');
     expect(summary.textContent).not.toContain('acme/');
-    expect(line?.className).toContain('min-h-9');
-    expect(line?.className).toContain('gap-2');
-    expect(line?.className).toContain('px-3');
   });
 
   it('renders selector data without dispatching lifecycle actions on mount', () => {
