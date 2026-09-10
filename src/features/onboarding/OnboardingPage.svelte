@@ -38,7 +38,6 @@
   import {
     selectOnboardingStep,
     selectOnboardingState,
-    selectOnboardingFullFlowRequested,
   } from '$store/renderer/slices/onboarding/onboarding-selectors';
   import {
     goToStep,
@@ -74,21 +73,10 @@
     selectHostRequirementsHasCheckedOnce,
   } from '$store/renderer/slices/host-requirements/host-requirements-selectors';
   import {
-    selectProviderStatusMap,
-    selectHasCheckedOnce as selectProvidersCheckedOnce,
-  } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
-  import {
     checkSingleProviderRequested,
     ensureProvidersChecked,
   } from '$store/renderer/slices/agent-availability/agent-availability-slice';
-  import { hasReadyProvider } from '$store/renderer/slices/setup-prompt/setup-prompt-utils';
-  import { selectHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { hasAvailableWorkspace } from '$features/workspace/utils/empty-window-destination';
-  import {
-    determineOnboardingInitialStep,
-    resolveFastPathSettlement,
-  } from '$features/onboarding/utils/determine-onboarding-initial-step';
+  import { determineOnboardingInitialStep } from '$features/onboarding/utils/determine-onboarding-initial-step';
 
   import { Button } from '$lib/components/ui/button';
   import { Checkbox } from '$lib/components/ui/checkbox';
@@ -199,9 +187,6 @@
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
   const allRequirementsMet$ = selectAllRequirementsMet();
   const requirementsCheckedOnce$ = selectHostRequirementsHasCheckedOnce();
-  const providerStatusMap$ = selectProviderStatusMap();
-  const providersCheckedOnce$ = selectProvidersCheckedOnce();
-  const workspaceItems$ = selectWorkspaceItems();
   const providerCatalogEntries$ = selectProviderCatalogEntries();
 
   let projectSelection = $state<ProjectSelection | null>(null);
@@ -800,64 +785,19 @@
     // (resetOnboarding preserves a pending fullFlowRequested — see the slice.)
     if (isOnboarding) {
       appStore.dispatch(resetOnboarding());
-      // Kick the bulk provider check so the initial-step decision (and the
-      // fast-path settlement below) has real availability data to settle on
-      // even when the welcome step's AgentGrid never mounts.
       appStore.dispatch(ensureProvidersChecked());
     }
   });
 
-  // True while 'project' was entered on the persisted local flag alone; the
-  // settlement effect below corrects back to 'welcome' if the provider check
-  // settles with no ready provider and no workspaces.
-  let onboardingFastPathPending = $state(false);
-
-  // Requirements gate: advance only once the check group has settled with
-  // every requirement met; otherwise stay blocked on the requirements step
-  // (OnboardingRequirementsStep renders the setup guidance and re-checks on
-  // focus/visibility until the tools appear). Once green, jump to the step
-  // the provider-setup state warrants: 'project' when setup is already done
-  // (ready provider / existing workspaces / persisted local flag), 'welcome'
-  // for the full flow otherwise. An explicit full-flow request (Command
-  // Palette "Show onboarding") always gets the full flow and is consumed here.
   $effect(() => {
-    if (
-      isOnboarding &&
-      $onboardingStep$ === 'requirements' &&
-      $requirementsCheckedOnce$ &&
-      $allRequirementsMet$
-    ) {
-      const fullFlowRequested = selectOnboardingFullFlowRequested.select(appStore.state);
-      const decision = determineOnboardingInitialStep({
-        fullFlowRequested,
-        hasReadyProvider: hasReadyProvider($providerStatusMap$),
-        hasCompletedProviderSetup: selectHasCompletedProviderSetup.select(appStore.state),
-        hasWorkspaces: hasAvailableWorkspace($workspaceItems$),
-        providersCheckedOnce: $providersCheckedOnce$,
-      });
-      if (fullFlowRequested) {
-        appStore.dispatch(setOnboardingFullFlowRequested(false));
-      }
-      onboardingFastPathPending = decision.viaLocalFastPath;
-      appStore.dispatch(goToStep(decision.step));
-    }
-  });
-
-  // Local fast-path settlement: the persisted flag skipped ahead while the
-  // bulk provider check was still pending; once it settles with no ready
-  // provider (and no workspaces exist), route back into provider setup.
-  $effect(() => {
-    if (!isOnboarding || !onboardingFastPathPending) return;
-    const settlement = resolveFastPathSettlement({
-      hasReadyProvider: hasReadyProvider($providerStatusMap$),
-      providersCheckedOnce: $providersCheckedOnce$,
-      hasWorkspaces: hasAvailableWorkspace($workspaceItems$),
+    if (!isOnboarding || $onboardingStep$ !== 'requirements') return;
+    const step = determineOnboardingInitialStep({
+      requirementsCheckedOnce: $requirementsCheckedOnce$,
+      allRequirementsMet: $allRequirementsMet$,
     });
-    if (settlement === 'pending') return;
-    onboardingFastPathPending = false;
-    if (settlement === 'correct' && $onboardingStep$ === 'project') {
-      appStore.dispatch(goToStep('welcome'));
-    }
+    if (step === 'requirements') return;
+    appStore.dispatch(setOnboardingFullFlowRequested(false));
+    appStore.dispatch(goToStep(step));
   });
 
   // ============================================================================
