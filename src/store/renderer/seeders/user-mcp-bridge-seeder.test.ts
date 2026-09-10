@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mockInvoke, resetMockIpcRouter } from '$shared/ipc-mock-router';
+import * as m from '$shared/paraglide/messages.js';
 import { registerUserMcpBridge } from './user-mcp-bridge-seeder';
 
 const payload = { serverId: 'srv-figma', url: 'https://mcp.figma.com/mcp' };
@@ -37,7 +38,7 @@ describe('user-mcp-bridge-seeder', () => {
 
     await expect(mockInvoke('user-mcp:authenticate', payload)).resolves.toEqual({
       success: false,
-      error: 'Interactive MCP authentication requires the desktop app',
+      error: m.mcp_management_authFailed_error(),
     });
     expect(invoke).not.toHaveBeenCalled();
   });

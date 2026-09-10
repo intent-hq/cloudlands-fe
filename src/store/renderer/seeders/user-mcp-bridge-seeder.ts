@@ -1,12 +1,8 @@
 /** Forward interactive MCP OAuth to the Electron main process when available. */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { USER_MCP_CHANNELS } from '$shared/ipc/channels';
+import * as m from '$shared/paraglide/messages.js';
 import { detectPlatform } from '$lib/utils/platform-capabilities';
-
-const OAUTH_UNAVAILABLE = {
-  success: false,
-  error: 'Interactive MCP authentication requires the desktop app',
-} as const;
 
 /** Register the interactive MCP OAuth invoke bridge. Idempotent. */
 export function registerUserMcpBridge(): void {
@@ -21,7 +17,7 @@ export function registerUserMcpBridge(): void {
     ) {
       return bridge.invoke(USER_MCP_CHANNELS.AUTHENTICATE, payload);
     }
-    return OAUTH_UNAVAILABLE;
+    return { success: false, error: m.mcp_management_authFailed_error() };
   });
 }
 

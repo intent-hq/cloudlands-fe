@@ -216,7 +216,7 @@ function* refreshDaemonIdsAndStatuses(): SagaGenerator<void> {
  * enabled servers carrying a daemon id, and overlay them on the status map.
  * A wire failure leaves the config-derived statuses in place — live updates
  * still arrive via `mcp.servers:status-changed`. Mirroring the events bridge,
- * a non-error status clears any stale `errorMessages` entry. Because the
+ * a status without a recovery error clears any stale `errorMessages` entry. Because the
  * fan-out is forked, the list may change while it is in flight (e.g. a
  * remove-and-re-add of the same name assigns a new daemon id), so a status is
  * only applied when the current list still maps the queried id to that name.
@@ -243,7 +243,7 @@ function* fetchDaemonStatuses(servers: McpServerConfig[]): SagaGenerator<void> {
       if (!name || mapped === null) continue;
       if (currentIdByName.get(name) !== status.serverId) continue;
       statusMap[name] = mapped;
-      if (mapped === 'error' && status.lastError) {
+      if ((mapped === 'error' || mapped === 'auth_required') && status.lastError) {
         yield* put(setServerErrorMessage(name, status.lastError));
       } else {
         yield* put(clearServerErrorMessage(name));

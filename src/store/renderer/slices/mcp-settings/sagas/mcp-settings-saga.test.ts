@@ -166,6 +166,7 @@ describe('mcpSettingsSaga', () => {
     mocks.getMcpServers.mockResolvedValue([
       { id: 'srv-up', name: 'up', type: 'http', url: 'https://up.test' },
       { id: 'srv-down', name: 'down', type: 'http', url: 'https://down.test' },
+      { id: 'srv-auth', name: 'auth', type: 'http', url: 'https://auth.test' },
       { id: 'srv-off', name: 'off', type: 'http', url: 'https://off.test', disabled: true },
       { name: 'no-id', type: 'stdio', command: 'node' },
     ]);
@@ -173,19 +174,24 @@ describe('mcpSettingsSaga', () => {
     mocks.getMcpServerStatuses.mockResolvedValue([
       { serverId: 'srv-up', state: 'running', toolCount: 7, startedAt: 1750000000000 },
       { serverId: 'srv-down', state: 'error', lastError: 'unreachable from daemon host' },
+      { serverId: 'srv-auth', state: 'auth_required', lastError: 'authentication required' },
     ]);
     const run = harness();
     run.channel.put(loadServers());
     await settle();
 
-    expect(mocks.getMcpServerStatuses.mock.calls).toEqual([[['srv-up', 'srv-down']]]);
+    expect(mocks.getMcpServerStatuses.mock.calls).toEqual([[['srv-up', 'srv-down', 'srv-auth']]]);
     expect(run.state().statusMap).toEqual({
       up: 'connected',
       down: 'error',
+      auth: 'auth_required',
       off: 'disabled',
       'no-id': 'configured',
     });
-    expect(run.state().errorMessages).toEqual({ down: 'unreachable from daemon host' });
+    expect(run.state().errorMessages).toEqual({
+      down: 'unreachable from daemon host',
+      auth: 'authentication required',
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
