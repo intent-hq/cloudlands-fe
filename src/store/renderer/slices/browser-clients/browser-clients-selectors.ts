@@ -8,7 +8,7 @@ import type { BrowserTabHost } from '$lib/components/browser/browser-tab-host';
 import {
   browserClientDisplayName,
   type BrowserClientSummary,
-  type DrivingClientInput,
+  type ResolvedBrowserClients,
 } from '$lib/components/workspace/driving-indicator';
 import { store } from '../../store';
 import { emptyWorkspaceBrowserClientsState, initialState } from './browser-clients-types';
@@ -58,7 +58,7 @@ function liveClientSummary(client: LiveClient): BrowserClientSummary {
  * and `null` when unpinned with nothing eligible or before the first read.
  */
 export const selectWorkspaceDrivingClient = store.createSelector(
-  (state, wsId: string): DrivingClientInput => {
+  (state, wsId: string): ResolvedBrowserClients => {
     const slice = state?.browserClients ?? initialState;
     const eligibleClients = getItems(slice.liveClients)
       .filter((client) => client.capabilities.browserExec === true)
