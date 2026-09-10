@@ -110,7 +110,9 @@
     {/snippet}
 
     {#snippet content()}
-      <div class="min-w-48 w-max max-w-80">
+      <div
+        class="min-w-48 w-max max-w-[min(20rem,calc(var(--bits-dropdown-menu-content-available-width,100vw)-0.625rem))]"
+      >
         <WorkspaceActionsMenu
           {filePath}
           {workspaceId}
