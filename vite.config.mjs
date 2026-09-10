@@ -6,6 +6,7 @@ import { dirname, join } from 'path';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { execSync } from 'child_process';
 import { intentdBridgePlugin } from './scripts/vite-plugin-intentd-bridge.mjs';
+import { compactParaglideDevPlugin } from './scripts/vite-plugin-paraglide-dev.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -376,6 +377,7 @@ export default defineConfig(({ command, mode, isPreview }) => {
             // locale modules keep the same runtime contract with a bounded build graph.
             outputStructure: 'locale-modules',
           }),
+      compactParaglideDevPlugin(paraglideOutdir),
       devHealthProbeSilencer(),
       intentdBridgeRequested && intentdBridgePlugin(),
       preventSvelteKitRegenHMR(),
