@@ -9728,7 +9728,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                           <div data-icon="">
                             <div class="sonner-loader" data-visible="true">
                               <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-loading" data-toast-glyph="loading">
-                                <span class="loading-ring svelte-<scope>">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
                           <div data-content="">
                             <div data-title="">
                               "Synchronizing workspace"

@@ -1,6 +1,7 @@
 <script lang="ts">
   import CheckCircleIcon from 'phosphor-svelte/lib/CheckCircleIcon';
   import ChatCircleDotsIcon from 'phosphor-svelte/lib/ChatCircleDotsIcon';
+  import CircleNotchIcon from 'phosphor-svelte/lib/CircleNotchIcon';
   import DownloadSimpleIcon from 'phosphor-svelte/lib/DownloadSimpleIcon';
   import InfoIcon from 'phosphor-svelte/lib/InfoIcon';
   import WarningCircleIcon from 'phosphor-svelte/lib/WarningCircleIcon';
@@ -22,7 +23,7 @@
   {:else if variant === 'info'}
     <InfoIcon size={16} weight="fill" aria-hidden="true" />
   {:else if variant === 'loading'}
-    <span class="loading-ring"></span>
+    <CircleNotchIcon size={16} weight="bold" aria-hidden="true" />
   {:else if variant === 'update'}
     <DownloadSimpleIcon size={16} weight="bold" aria-hidden="true" />
   {:else}
@@ -57,12 +58,9 @@
     color: hsl(var(--warning));
   }
 
-  .loading-ring {
-    width: 1rem;
-    height: 1rem;
-    border: 1.5px solid hsl(var(--muted-foreground) / 0.3);
-    border-top-color: hsl(var(--muted-foreground));
-    border-radius: var(--radius-full);
+  .toast-glyph-loading :global(path) {
+    transform-box: view-box;
+    transform-origin: center;
     animation: toast-glyph-spin 900ms linear infinite;
   }
 
@@ -75,7 +73,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .loading-ring {
+    .toast-glyph-loading :global(path) {
       animation: none;
     }
   }

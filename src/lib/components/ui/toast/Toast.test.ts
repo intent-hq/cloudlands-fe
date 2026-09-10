@@ -44,7 +44,8 @@ describe('Toast', () => {
 
     await screen.findByText('Loading');
     for (const variant of ['success', 'error', 'warning', 'info', 'loading']) {
-      expect(document.querySelector(`[data-toast-glyph="${variant}"]`)).toBeTruthy();
+      const glyph = document.querySelector(`[data-toast-glyph="${variant}"]`);
+      expect(glyph?.querySelector('svg')).toBeTruthy();
     }
   });
 
