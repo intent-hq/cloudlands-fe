@@ -133,12 +133,23 @@ async function renderFoldedRowDiff() {
 
 describe('DiffViewer folded row click delegation', () => {
   beforeEach(() => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
     testState.renderCalls = 0;
     testState.nativeExpandActivations = 0;
     testState.expandButtonClicks = 0;
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
 
   it('delegates whole-row clicks from inside the diffs Shadow DOM to the folded row expand button', async () => {
     const { rowClickTarget } = await renderFoldedRowDiff();

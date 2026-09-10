@@ -42,7 +42,7 @@ function shortenClientId(clientId: string): string {
   return clientId.length > 15 ? `${clientId.slice(0, 15)}…` : clientId;
 }
 
-function browserClientDisplayName(client: BrowserClientSummary): string {
+export function browserClientDisplayName(client: BrowserClientSummary): string {
   const name = client.name?.trim();
   return name || shortenClientId(client.clientId);
 }

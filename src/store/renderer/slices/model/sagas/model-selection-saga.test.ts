@@ -197,6 +197,37 @@ describe('modelSelectionSaga', () => {
     });
   });
 
+  it.each([0, 1, 3])('accepts a successful atomic save with %i changed paths', async (count) => {
+    const applied = [
+      { path: 'model.providerDefaults', value: { auggie: 'sonnet4.5', codex: 'gpt-5' } },
+      { path: 'model.defaultProvider', value: 'codex' },
+      { path: 'model.default', value: '' },
+    ].slice(0, count);
+    mocks.updateSnapshot = vi.fn().mockResolvedValue({ applied, revision: 8 });
+    const dispatch = vi.fn();
+    const result = await runSaga(
+      { dispatch, getState: state },
+      persistSelectedModelsWorker,
+      { codex: 'gpt-5' },
+      'codex',
+    ).toPromise();
+    expect(result).toBe('persisted');
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith({
+      type: 'settings/changesReceived',
+      payload: [
+        expect.arrayContaining([
+          { path: 'model.defaultProvider', value: 'codex' },
+          {
+            path: 'model.providerDefaults',
+            value: { auggie: 'sonnet4.5', codex: 'gpt-5' },
+          },
+          ...applied,
+        ]),
+        8,
+      ],
+    });
+  });
+
   it('serializes writes and retains only the latest queued snapshot', async () => {
     let release!: () => void;
     mocks.update

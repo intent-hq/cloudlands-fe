@@ -314,6 +314,8 @@
         return agent.name;
       }
     }
+    // A browser tab's title is canonical registry data; none yet shows the label.
+    if (tab.type === 'browser') return tab.title || m.layout_panelLayout_browser_fallback();
     // Fall back to the tab's stored title
     return tab.title;
   }
