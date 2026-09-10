@@ -5,8 +5,6 @@
  * their delegations, and interactions with files/notes.
  */
 
-import type { TaskStatus } from '$shared/types';
-
 // ============================================================================
 // Node Types
 // ============================================================================
@@ -33,8 +31,6 @@ export interface AgentNode extends BaseNode {
   status: 'idle' | 'responding' | 'waiting' | 'completed' | 'failed';
   specialist?: string | null;
   parentAgentId?: string | null;
-  /** Canonical task note assigned to this agent, when present. */
-  taskNoteId?: string | null;
   createdAt: string;
   /** IDs of agents this agent is waiting for (subscriptions) */
   waitingForAgentIds?: string[];
@@ -54,7 +50,6 @@ export interface FileNode extends BaseNode {
   type: 'file';
   path: string;
   fileName: string;
-  isExternal: boolean;
   lastAction: 'read' | 'write' | 'create' | 'delete' | 'modify';
   lastActionTimestamp: string;
 }
@@ -70,12 +65,11 @@ export interface NoteNode extends BaseNode {
 export interface TaskNode extends BaseNode {
   type: 'task';
   taskId: string;
-  title: string;
+  name: string;
   description?: string;
-  state: TaskStatus;
-  dependsOn: string[];
-  lastAction?: 'create' | 'update' | 'read';
-  lastActionTimestamp?: string;
+  state: 'not_started' | 'in_progress' | 'complete' | 'cancelled';
+  lastAction: 'create' | 'update' | 'read';
+  lastActionTimestamp: string;
 }
 
 export type GraphNode = AgentNode | FileNode | NoteNode | TaskNode;
@@ -86,9 +80,6 @@ export type GraphNode = AgentNode | FileNode | NoteNode | TaskNode;
 
 type EdgeType =
   | 'delegation'
-  | 'task-assignment'
-  | 'message'
-  | 'waiting-on'
   | 'file-read'
   | 'file-write'
   | 'note-read'
@@ -103,8 +94,6 @@ interface BaseEdge {
   targetId: string;
   timestamp: string;
   isActive: boolean; // Currently happening
-  /** Number of interactions represented by this de-duplicated edge. */
-  count?: number;
   /** Number of line additions (for write edges) */
   additions?: number;
   /** Number of line deletions (for write edges) */
@@ -121,14 +110,12 @@ interface FileInteractionEdge extends BaseEdge {
   type: 'file-read' | 'file-write';
   agentId: string;
   filePath: string;
-  count: number;
 }
 
 interface NoteInteractionEdge extends BaseEdge {
   type: 'note-read' | 'note-write';
   agentId: string;
   noteId: string;
-  count: number;
 }
 
 interface TaskInteractionEdge extends BaseEdge {
@@ -137,50 +124,16 @@ interface TaskInteractionEdge extends BaseEdge {
   taskId: string;
 }
 
-interface TaskAssignmentEdge extends BaseEdge {
-  type: 'task-assignment';
-  agentId: string;
-  taskId: string;
-}
-
-interface MessageEdge extends BaseEdge {
-  type: 'message';
-  senderAgentId: string;
-  receiverAgentId: string;
-  count: number;
-}
-
-interface WaitingOnEdge extends BaseEdge {
-  type: 'waiting-on';
-  waiterAgentId: string;
-  targetAgentId: string;
-  count: number;
-}
-
 export type GraphEdge =
-  | DelegationEdge
-  | TaskAssignmentEdge
-  | MessageEdge
-  | WaitingOnEdge
-  | FileInteractionEdge
-  | NoteInteractionEdge
-  | TaskInteractionEdge;
+  DelegationEdge | FileInteractionEdge | NoteInteractionEdge | TaskInteractionEdge;
 
 // ============================================================================
 // Graph State
 // ============================================================================
 
 export interface GraphState {
-  // eslint-disable-next-line themis/collection-state-shape -- Render input snapshot, not Redux state.
   nodes: GraphNode[];
-  // eslint-disable-next-line themis/collection-state-shape -- Render input snapshot, not Redux state.
   edges: GraphEdge[];
-  stats: {
-    agents: { active: number; total: number };
-    tasks: Record<TaskStatus, number>;
-    files: number;
-    notes: number;
-  };
   /** Current time position for scrubbing (ISO string) */
   currentTime: string;
   /** Whether playing live updates */
@@ -189,8 +142,6 @@ export interface GraphState {
   minTime: string;
   /** Max time in the event log */
   maxTime: string;
-  /** Full event-log timestamps used to render timeline activity ticks. */
-  eventTimes?: string[];
 }
 
 // ============================================================================
@@ -207,9 +158,6 @@ export interface InteractionEvent {
     | 'file-write'
     | 'note-read'
     | 'note-write'
-    | 'task-update'
-    | 'agent-message'
-    | 'agent-waiting'
     | 'delegation';
   agentId: string;
   agentName?: string;
@@ -217,4 +165,12 @@ export interface InteractionEvent {
   targetName?: string;
   parentAgentId?: string;
   isActive?: boolean;
+}
+
+// ============================================================================
+// Type Guards
+// ============================================================================
+
+export function isAgentNode(node: GraphNode): node is AgentNode {
+  return node.type === 'agent';
 }

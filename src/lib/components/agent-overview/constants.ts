@@ -6,6 +6,21 @@
  */
 
 // ============================================================================
+// Node Dimensions
+// ============================================================================
+
+/**
+ * Visual card dimensions for edge endpoint calculations.
+ * These should match the actual rendered card sizes.
+ */
+export const CARD_DIMENSIONS = {
+  agent: { width: 232, height: 72 },
+  file: { width: 120, height: 47 },
+  note: { width: 120, height: 47 },
+  task: { width: 120, height: 47 },
+} as const;
+
+// ============================================================================
 // Tool Names for File/Note Detection
 // ============================================================================
 
@@ -15,13 +30,7 @@ export const FILE_EDIT_TOOLS = new Set([
   'save-file',
   'remove-files',
   'str_replace_editor',
-  'apply_patch',
-  'edit',
-  'write',
 ]);
-
-/** Tool names that indicate file read operations */
-export const FILE_READ_TOOLS = new Set(['view', 'read', 'read-file', 'read_file']);
 
 /** Tool names that indicate note operations */
 export const NOTE_TOOLS = new Set([
@@ -62,28 +71,6 @@ export const DELEGATION_TOOLS = new Set(['delegate_task', 'create_sub_agent', 'c
 /** Duration in milliseconds for an edge to be considered "active" */
 export const ACTIVE_EDGE_WINDOW_MS = 5000;
 
-/** Maximum resource satellites shown for an agent before they collapse. */
-export const MAX_VISIBLE_RESOURCES_PER_AGENT = 6;
-
-/** Maximum rendered node dimensions used by layout collision and fit-to-view. */
-export const GRAPH_NODE_DIMENSIONS = {
-  agent: { width: 112, height: 88 },
-  task: { width: 176, height: 48 },
-  file: { width: 72, height: 88 },
-  note: { width: 72, height: 88 },
-} as const;
-
-/** Clear space beyond node bounds for related-node orbits. */
-export const GRAPH_NODE_GAPS = {
-  collision: 16,
-  taskAgent: 30,
-  agentResource: 20,
-} as const;
-
-/** Shared zoom limits and per-side fit padding. */
-export const GRAPH_ZOOM_EXTENT: [number, number] = [0.25, 2.5];
-export const GRAPH_FIT_PADDING = 48;
-
 // ============================================================================
 // Edge Animation Configuration
 // ============================================================================
@@ -105,69 +92,51 @@ export const EDGE_ANIMATION = {
 /** Edge visual styles by type */
 export const EDGE_STYLES = {
   delegation: {
-    stroke: 'var(--color-muted-foreground)',
-    strokeWidth: 1,
+    stroke: 'var(--color-muted)',
+    strokeWidth: 1.5,
     strokeDasharray: 'none',
-    opacity: 0.66,
-  },
-  'task-assignment': {
-    stroke: 'var(--color-muted-foreground)',
-    strokeWidth: 1,
-    strokeDasharray: 'none',
-    opacity: 0.45,
-  },
-  message: {
-    stroke: 'var(--color-muted-foreground)',
-    strokeWidth: 0.75,
-    strokeDasharray: 'none',
-    opacity: 0.58,
-  },
-  'waiting-on': {
-    stroke: 'var(--color-muted-foreground)',
-    strokeWidth: 0.75,
-    strokeDasharray: '2 3',
-    opacity: 0.64,
+    opacity: 0.85,
   },
   'file-read': {
-    stroke: 'var(--color-muted-foreground)',
-    strokeWidth: 0.75,
-    strokeDasharray: '2 3',
-    opacity: 0.3,
+    stroke: 'var(--color-muted)',
+    strokeWidth: 1.5,
+    strokeDasharray: '6,4',
+    opacity: 0.6,
   },
   'note-read': {
-    stroke: 'var(--color-muted-foreground)',
-    strokeWidth: 0.75,
-    strokeDasharray: '2 3',
-    opacity: 0.3,
+    stroke: 'var(--color-muted)',
+    strokeWidth: 1.5,
+    strokeDasharray: '6,4',
+    opacity: 0.6,
   },
   'file-write': {
-    stroke: 'var(--color-muted-foreground)',
-    strokeWidth: 0.75,
+    stroke: 'rgb(59, 130, 246)',
+    strokeWidth: 1.5,
     strokeDasharray: 'none',
-    opacity: 0.54,
+    opacity: 0.9,
   },
   'note-write': {
-    stroke: 'var(--color-muted-foreground)',
-    strokeWidth: 0.75,
+    stroke: 'rgb(59, 130, 246)',
+    strokeWidth: 1.5,
     strokeDasharray: 'none',
-    opacity: 0.54,
+    opacity: 0.9,
   },
   'task-create': {
-    stroke: 'var(--color-border)',
-    strokeWidth: 0.75,
-    strokeDasharray: '2 3',
-    opacity: 0.5,
+    stroke: 'rgb(139, 92, 246)',
+    strokeWidth: 1.5,
+    strokeDasharray: 'none',
+    opacity: 0.9,
   },
   'task-update': {
-    stroke: 'var(--color-border)',
-    strokeWidth: 0.75,
-    strokeDasharray: '2 3',
-    opacity: 0.5,
+    stroke: 'rgb(139, 92, 246)',
+    strokeWidth: 1.5,
+    strokeDasharray: 'none',
+    opacity: 0.9,
   },
   default: {
     stroke: 'var(--color-border)',
-    strokeWidth: 0.75,
+    strokeWidth: 1.5,
     strokeDasharray: 'none',
-    opacity: 0.4,
+    opacity: 0.5,
   },
 } as const;

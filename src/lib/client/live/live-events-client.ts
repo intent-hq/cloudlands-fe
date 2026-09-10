@@ -45,19 +45,11 @@ export class LiveEventsClient implements EventsClient {
     workspaceId: string,
     options: EventQueryPageOptions = {},
   ): Promise<EventQueryPage> {
-    const { nextToken, ...filters } = options;
-    const result = await backendRequest<unknown>('event.query', {
+    return backendRequest<EventQueryPage>('event.query', {
       workspaceId,
-      ...filters,
+      ...options,
       paginate: true,
-      ...(typeof nextToken === 'string' ? { nextToken } : {}),
     });
-    if (!result || typeof result !== 'object') return { items: [], nextToken: null };
-    const page = result as { items?: unknown; nextToken?: unknown };
-    return {
-      items: Array.isArray(page.items) ? (page.items as WorkspaceEvent[]) : [],
-      nextToken: typeof page.nextToken === 'string' ? page.nextToken : null,
-    };
   }
 
   subscribe(workspaceId: string, handler: SubscriptionHandler<WorkspaceEvent[]>): Unsubscribe {
