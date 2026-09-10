@@ -7,7 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
-import { workspaceHoverCardIntentSession } from '../../workspace/utils/workspace-hover-card-intent';
+import {
+  WORKSPACE_HOVER_CARD_OPEN_DELAY_MS,
+  workspaceHoverCardIntentSession,
+} from '../../workspace/utils/workspace-hover-card-intent';
 
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
@@ -85,7 +88,7 @@ describe('BulkWorkspaceList', () => {
     const row = screen.getByText(workspace.title).closest('[role="listitem"]')!;
 
     await fireEvent.mouseEnter(row);
-    vi.advanceTimersByTime(399);
+    vi.advanceTimersByTime(WORKSPACE_HOVER_CARD_OPEN_DELAY_MS - 1);
     await tick();
     expect(document.querySelector('[data-workspace-hover-card]')).toBeNull();
 
