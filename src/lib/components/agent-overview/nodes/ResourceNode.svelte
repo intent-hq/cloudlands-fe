@@ -101,8 +101,7 @@
 >
   {#if zoomBand === 'full' || isSelectionActive}
     <span
-      class="resource-card relative flex h-14 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-background text-subtle"
-      class:border-dashed={node.type === 'file' && node.isExternal}
+      class="resource-card relative flex h-14 w-11 shrink-0 items-center justify-center rounded-md bg-background text-subtle shadow-(--elevation-raised)"
       style:opacity
       style:animation-duration={`${cooldownRemaining}ms`}
       aria-hidden="true"
@@ -177,7 +176,9 @@
     background: var(--color-muted-foreground);
   }
   .resource-node[data-active='true'] .resource-card {
-    border-color: var(--color-muted-foreground);
+    box-shadow:
+      var(--elevation-raised),
+      0 2px 4px hsl(var(--foreground) / 0.08);
   }
   .resource-node[data-active='true'] {
     color: var(--color-foreground);
