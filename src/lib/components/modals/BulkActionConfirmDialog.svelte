@@ -12,6 +12,7 @@
     description?: string;
     confirmText?: string;
     variant?: ButtonVariant;
+    initialFocus?: 'confirm' | 'cancel';
     body?: Snippet;
     /** Streaming agents across the targeted workspaces that the action would stop. */
     activeAgentCount?: number;
@@ -31,6 +32,7 @@
     description = '',
     confirmText = m.modals_bulkActionConfirm_confirm_label(),
     variant = 'default',
+    initialFocus = 'confirm',
     body,
     activeAgentCount = 0,
     activeHookCount = 0,
@@ -62,7 +64,7 @@
 
   function handleOpenAutoFocus(event: Event) {
     event.preventDefault();
-    if (variant === 'destructive' || !preflightReady) cancelButtonRef?.focus();
+    if (!preflightReady || initialFocus === 'cancel') cancelButtonRef?.focus();
     else confirmButtonRef?.focus();
   }
 </script>

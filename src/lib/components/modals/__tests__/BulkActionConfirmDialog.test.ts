@@ -114,7 +114,7 @@ describe('BulkActionConfirmDialog', () => {
     await waitFor(() => expect(document.activeElement).toBe(confirm));
   });
 
-  it('focuses Cancel instead of the destructive action when the dialog opens', async () => {
+  it('focuses a destructive confirm action by default when the dialog opens', async () => {
     const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
 
     render(BulkActionConfirmDialog, {
@@ -126,8 +126,31 @@ describe('BulkActionConfirmDialog', () => {
       },
     });
 
+    const confirm = screen.getByRole('button', { name: 'Delete all' });
+    await waitFor(() => expect(document.activeElement).toBe(confirm));
+  });
+
+  it('focuses Cancel when opted in and Enter does not confirm the action', async () => {
+    const onConfirm = vi.fn();
+    const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
+
+    render(BulkActionConfirmDialog, {
+      props: {
+        open: true,
+        title: 'Delete spaces?',
+        confirmText: 'Delete all',
+        variant: 'destructive',
+        initialFocus: 'cancel',
+        onConfirm,
+      },
+    });
+
     const cancel = screen.getByRole('button', { name: 'Cancel' });
     await waitFor(() => expect(document.activeElement).toBe(cancel));
+    await fireEvent.keyDown(cancel, { key: 'Enter', code: 'Enter' });
+    await fireEvent.click(cancel);
+
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 
   it('disables and marks confirm busy while preflight is pending', async () => {

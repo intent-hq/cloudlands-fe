@@ -114,6 +114,7 @@
       })}
   confirmText={m.modals_bulkDelete_confirm_label()}
   variant="destructive"
+  initialFocus="cancel"
   activeAgentCount={$bulkActiveAgentCount$}
   activeHookCount={$bulkActiveHookCount$}
   openPrCount={$bulkOpenPrCount$}
