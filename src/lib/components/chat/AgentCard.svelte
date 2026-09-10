@@ -32,6 +32,8 @@
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
+  import { selectHudAgentHasPendingQuestion } from '$store/renderer/slices/hud/hud-selectors';
+  import { deriveWizardPendingQuestions } from './questions/wizard-gate';
   import { safeSlide } from '$lib/utils/animations';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -149,6 +151,7 @@
   });
 
   const agentPermCount = selectPendingCount(agentIdStore);
+  const hasCapturedQuestion$ = selectHudAgentHasPendingQuestion(agentIdStore);
 
   $effect(() => {
     const wsId = workspace?.id;
@@ -502,10 +505,18 @@
   // fields; null when none is pending (retired on agent:updated clear).
   const attentionRequest = $derived(getAgentAttentionRequest($agent$));
 
+  // Mirrors PanelHeaderAgentAvatar / the mini dock: captured HUD question or
+  // transcript-derived pending question set.
+  const hasQuestion = $derived(
+    $hasCapturedQuestion$ ||
+      deriveWizardPendingQuestions(appStore.state, agentId, $agent$?.messages ?? []) !== null,
+  );
+
   // Use the canonical session state derivation for every agent surface.
   const avatarState = $derived(
     getAvatarStateForSession($agent$, {
       hasPermissionRequest: $agentPermCount > 0,
+      hasQuestion,
       isActive: selected,
       isCompleted,
       attentionKind: attentionRequest?.kind ?? null,

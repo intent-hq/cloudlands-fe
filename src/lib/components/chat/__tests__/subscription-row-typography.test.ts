@@ -62,6 +62,12 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPendingCount: () => readable(0),
 }));
+vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
+  selectHudAgentHasPendingQuestion: () => readable(false),
+}));
+vi.mock('$lib/components/chat/questions/wizard-gate', () => ({
+  deriveWizardPendingQuestions: () => null,
+}));
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectAgentLineStats: () => readable(null),
 }));
