@@ -14,11 +14,12 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     onConfirm?: () => void;
     onCancel?: () => void;
   }
 
-  let { open = false, onConfirm, onCancel }: Props = $props();
+  let { open = false, static: staticPosition = false, onConfirm, onCancel }: Props = $props();
 
   let confirmButtonRef: HTMLButtonElement | null = $state(null);
   let confirmHasFocus = $state(false);
@@ -33,7 +34,7 @@
   }
 </script>
 
-<Dialog.Root {open} onOpenChange={handleOpenChange}>
+<Dialog.Root {open} {staticPosition} onOpenChange={handleOpenChange}>
   <Dialog.Content
     class="max-w-sm gap-0 overflow-hidden p-0"
     closeLabel={m.chat_proposalTray_dismissDialog_close_ariaLabel()}

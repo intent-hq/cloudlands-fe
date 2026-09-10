@@ -6,6 +6,7 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     title?: string;
     description?: string;
     confirmText?: string;
@@ -20,6 +21,7 @@
 
   let {
     open = $bindable(false),
+    static: staticPosition = false,
     title = m.modals_bulkActionConfirm_title(),
     description = '',
     confirmText = m.modals_bulkActionConfirm_confirm_label(),
@@ -49,6 +51,7 @@
 
 <DestructiveConfirm
   bind:open
+  static={staticPosition}
   {title}
   {description}
   confirmLabel={confirmText}

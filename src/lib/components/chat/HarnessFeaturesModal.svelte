@@ -17,18 +17,24 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     /** Harness version stamp, rendered in the title (verbatim). */
     version: string;
     /** Session `harnessFeatures` snapshot; null/absent renders all catalog rows OFF. */
     features?: Record<string, boolean> | null;
   }
 
-  let { open = $bindable(false), version, features = null }: Props = $props();
+  let {
+    open = $bindable(false),
+    static: staticPosition = false,
+    version,
+    features = null,
+  }: Props = $props();
 
   const rows = $derived(buildHarnessFeatureRows(features));
 </script>
 
-<Dialog.Root bind:open>
+<Dialog.Root bind:open {staticPosition}>
   <Dialog.Content>
     <Dialog.Header>
       <Dialog.Title>

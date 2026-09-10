@@ -8,6 +8,7 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     title: string;
     description?: string;
     titleId?: string;
@@ -38,6 +39,7 @@
 
   let {
     open = $bindable(false),
+    static: staticPosition = false,
     title,
     description,
     titleId,
@@ -101,7 +103,7 @@
   }
 </script>
 
-<Dialog.Root {open} onOpenChange={(nextOpen) => !nextOpen && cancel()}>
+<Dialog.Root {open} {staticPosition} onOpenChange={(nextOpen) => !nextOpen && cancel()}>
   <Dialog.Content
     bind:ref={contentRef}
     {role}

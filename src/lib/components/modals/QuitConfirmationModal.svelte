@@ -14,12 +14,18 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     payload?: QuitConfirmationShowPayload | null;
     /** Called exactly once per open with the user's decision. */
     onRespond?: (proceed: boolean) => void;
   }
 
-  let { open = $bindable(false), payload = null, onRespond }: Props = $props();
+  let {
+    open = $bindable(false),
+    static: staticPosition = false,
+    payload = null,
+    onRespond,
+  }: Props = $props();
 
   const dialogTitleId = 'quit-confirmation-dialog-title';
   const dialogDescriptionId = 'quit-confirmation-dialog-description';
@@ -40,6 +46,7 @@
 {#if open && payload}
   <FormDialog
     bind:open
+    static={staticPosition}
     role="alertdialog"
     title={closeOnly
       ? m.quitConfirmation_modal_close_title()

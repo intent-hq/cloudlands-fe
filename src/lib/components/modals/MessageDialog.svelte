@@ -4,6 +4,7 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     title: string;
     message: string;
     type?: 'info' | 'warning' | 'error';
@@ -16,6 +17,7 @@
 
   let {
     open = $bindable(false),
+    static: staticPosition = false,
     title,
     message,
     buttons,
@@ -31,6 +33,7 @@
 
 <FormDialog
   bind:open
+  static={staticPosition}
   role="alertdialog"
   {title}
   description={message}

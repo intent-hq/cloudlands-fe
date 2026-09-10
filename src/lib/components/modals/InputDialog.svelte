@@ -5,6 +5,7 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     title?: string;
     description?: string;
     placeholder?: string;
@@ -16,6 +17,7 @@
 
   let {
     open = $bindable(false),
+    static: staticPosition = false,
     title = m.modals_input_title(),
     description = '',
     placeholder = '',
@@ -44,6 +46,7 @@
 
 <FormDialog
   bind:open
+  static={staticPosition}
   {title}
   {description}
   submitLabel={confirmLabel}

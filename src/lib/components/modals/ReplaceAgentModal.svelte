@@ -21,6 +21,7 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     /** Exact current name of the agent being replaced. */
     agentName: string;
     /** Specialist id from the session metadata, when known. */
@@ -30,7 +31,14 @@
     onCancel?: () => void;
   }
 
-  let { open = $bindable(false), agentName, specialist = null, onSend, onCancel }: Props = $props();
+  let {
+    open = $bindable(false),
+    static: staticPosition = false,
+    agentName,
+    specialist = null,
+    onSend,
+    onCancel,
+  }: Props = $props();
 
   // Pre-filled once at mount — callers mount the modal per open, so each open
   // starts from a freshly built instruction.
@@ -52,7 +60,7 @@
   }
 </script>
 
-<Dialog.Root {open} onOpenChange={(nextOpen) => !nextOpen && close()}>
+<Dialog.Root {open} {staticPosition} onOpenChange={(nextOpen) => !nextOpen && close()}>
   <Dialog.Content
     class="max-w-xl gap-0 overflow-hidden p-0"
     closeLabel={m.modals_replaceAgent_close_ariaLabel()}

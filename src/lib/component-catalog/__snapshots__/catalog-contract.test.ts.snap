@@ -10883,3 +10883,1002 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:primi
                   "light, dark"",
 }
 `;
+
+exports[`catalog DOM, token, and accessibility contracts > 'product:modals:product-modal-matrix' 1`] = `
+{
+  "declaredStates": [
+    "destructive-confirm-default",
+    "destructive-confirm-typed-name",
+    "destructive-confirm-busy",
+    "form-dialog-default",
+    "form-dialog-busy",
+    "form-dialog-invalid",
+    "input-dialog",
+    "message-dialog",
+    "delete-warning-dialog",
+    "bulk-action-confirm-dialog",
+    "quit-confirmation-modal",
+    "replace-agent-modal",
+    "release-notes-modal",
+    "import-workspace-modal",
+    "transfer-workspace-modal",
+    "harness-features-modal",
+    "model-switch-confirm-dialog",
+    "dismiss-proposal-confirm-dialog",
+    "dismiss-questions-confirm-dialog",
+  ],
+  "dom": "<body>
+  <div>
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
+      <header class="border-b border-border entry-header svelte-<scope>">
+        <div class="min-w-0">
+          <div class="flex flex-wrap gap-2 items-baseline">
+            <p class="font-medium text-muted-foreground text-xs tracking-wide uppercase">
+              "Component focus"
+            <h1 class="font-medium mt-1 text-3xl tracking-tight">
+              "Modals"
+            <span class="bg-muted border border-border px-2 py-0.5 rounded-full text-muted-foreground text-xs">
+              "product"
+          <p class="leading-relaxed max-w-3xl mt-1 text-muted-foreground text-xs">
+            "Static modal state matrices for reviewing shared dialog and product compositions."
+        <div class="flex gap-2 items-center shrink-0">
+          <details class="entry-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Source"
+            <div class="inspector-popover svelte-<scope>">
+              <p class="text-foreground">
+                "Canonical source"
+              <code class="block break-all mt-1">
+                "src/lib/component-catalog/renderers/ModalCatalogPreview.svelte"
+      <div class="fixture-grid svelte-<scope>">
+        <article class="fixture-card svelte-<scope>" data-catalog-fixture="product-modal-matrix">
+          <div class="fixture-heading svelte-<scope>">
+            <h2 class="font-medium text-sm">
+              "Product modals"
+            <span class="bg-muted border border-border px-2 py-0.5 rounded-full text-muted-foreground text-xs">
+              "both"
+          <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="product-modal-matrix" data-catalog-preview="modals">
+            <div class="gap-6 grid min-w-0" data-catalog-rendered-state="destructive-confirm-default destructive-confirm-typed-name destructive-confirm-busy form-dialog-default form-dialog-busy form-dialog-invalid input-dialog message-dialog delete-warning-dialog bulk-action-confirm-dialog quit-confirmation-modal replace-agent-modal release-notes-modal import-workspace-modal transfer-workspace-modal harness-features-modal model-switch-confirm-dialog dismiss-proposal-confirm-dialog dismiss-questions-confirm-dialog" data-catalog-renderer-fixture="product-modal-matrix">
+              <section aria-labelledby="product-modals-title" class="gap-3 grid">
+                <h2 class="font-medium text-base" id="product-modals-title">
+                  "Product modals"
+                <div class="modal-preview-grid svelte-<scope>">
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="destructive-confirm-default">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "DestructiveConfirm — default"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-100 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                        <form class="gap-4 grid" data-slot="form">
+                          <fieldset class="contents">
+                            <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                              <div aria-level="2" class="font-bold leading-tight text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                                "Delete workspace?"
+                              <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                                "This action cannot be undone."
+                            <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                              <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                                <div class="flex items-center" data-slot="form-actions-destructive">
+                                <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                      <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Cancel"
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-danger border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast focus-visible:-outline-offset-1 focus-visible:outline font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-danger-background transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
+                                      <span aria-hidden="true" class="absolute bg-danger duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Delete workspace"
+                        <div>
+                          <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="destructive-confirm-typed-name">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "DestructiveConfirm — typed name"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-100 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                        <form class="gap-4 grid" data-slot="form">
+                          <fieldset class="contents">
+                            <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                              <div aria-level="2" class="font-bold leading-tight text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                                "Delete Design system?"
+                              <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                                "Type the workspace name to continue."
+                            <div class="gap-2 grid">
+                              <label class="data-[invalid=true]:text-danger data-[state=focus]:text-foreground data-[state=hover]:text-foreground duration-(--spring-fast) flex font-medium gap-2 group-data-[disabled=true]:opacity-60 group-data-[disabled=true]:pointer-events-none group-data-[invalid=true]:text-danger group-focus-within:text-foreground group-hover:text-foreground items-center min-w-0 motion-reduce:transition-none peer-disabled:cursor-not-allowed peer-disabled:opacity-60 select-none text-muted-foreground tracking-normal transition-[color] type-caption" data-label-root="" data-size="default" data-slot="label" for="typed-confirmation" id="bits-<id>">
+                                "Workspace name"
+                              <input class="aria-invalid:border-danger bg-transparent border border-border data-[state=focus]:bg-card data-[state=focus]:shadow-[inset_0_0_0_1px_var(--ring)] data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:bg-card h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input" id="typed-confirmation">
+                            <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                              <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                                <div class="flex items-center" data-slot="form-actions-destructive">
+                                <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                      <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Cancel"
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-danger border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-danger-background transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="submit">
+                                      <span aria-hidden="true" class="absolute bg-danger duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Delete workspace"
+                        <div>
+                          <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="destructive-confirm-busy">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "DestructiveConfirm — busy"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-100 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                        <form aria-busy="true" class="gap-4 grid" data-slot="form">
+                          <fieldset aria-busy="true" class="contents" disabled="">
+                            <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                              <div aria-level="2" class="font-bold leading-tight text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                                "Deleting workspace"
+                              <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                                "Local workspace data is being removed."
+                            <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                              <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                                <div class="flex items-center" data-slot="form-actions-destructive">
+                                <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="button">
+                                      <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Cancel"
+                                  <div>
+                                    <button aria-busy="true" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-danger border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast focus-visible:-outline-offset-1 focus-visible:outline font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-danger-background transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="submit">
+                                      <span aria-hidden="true" class="absolute bg-danger duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none opacity-0 relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Delete workspace"
+                                      <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
+                                        <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                                          <g aria-hidden="true" data-mark="">
+                                            <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
+                                            <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
+                                            <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
+                                            <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
+                                            <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                        <div>
+                          <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" disabled="" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="form-dialog-default">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "FormDialog — default"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-100 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                        <form class="gap-4 grid" data-slot="form">
+                          <fieldset class="contents">
+                            <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                              <div aria-level="2" class="font-bold leading-tight text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                                "Save workspace"
+                              <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                                "Review the workspace details before saving."
+                            <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                              <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                                <div class="flex items-center" data-slot="form-actions-destructive">
+                                <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                      <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Cancel"
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
+                                      <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Confirm"
+                        <div>
+                          <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="form-dialog-busy">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "FormDialog — busy"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-100 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                        <form aria-busy="true" class="gap-4 grid" data-slot="form">
+                          <fieldset aria-busy="true" class="contents" disabled="">
+                            <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                              <div aria-level="2" class="font-bold leading-tight text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                                "Saving workspace"
+                              <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                                "Your changes are being saved."
+                            <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                              <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                                <div class="flex items-center" data-slot="form-actions-destructive">
+                                <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="button">
+                                      <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Cancel"
+                                  <div>
+                                    <button aria-busy="true" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="submit">
+                                      <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none opacity-0 relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Confirm"
+                                      <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
+                                        <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                                          <g aria-hidden="true" data-mark="">
+                                            <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
+                                            <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
+                                            <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
+                                            <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
+                                            <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                        <div>
+                          <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" disabled="" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="form-dialog-invalid">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "FormDialog — invalid"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-100 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                        <form class="gap-4 grid" data-slot="form">
+                          <fieldset class="contents">
+                            <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                              <div aria-level="2" class="font-bold leading-tight text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                                "Save workspace"
+                              <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                                "A workspace name is required."
+                            <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                              <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                                <div class="flex items-center" data-slot="form-actions-destructive">
+                                <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                      <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Cancel"
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="submit">
+                                      <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Confirm"
+                        <div>
+                          <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="input-dialog">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "InputDialog"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-100 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                        <form class="gap-4 grid" data-slot="form">
+                          <fieldset class="contents">
+                            <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                              <div aria-level="2" class="font-bold leading-tight text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                                "Rename workspace"
+                              <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                                "Enter a new workspace name."
+                            <input class="aria-invalid:border-danger bg-transparent border border-border data-[state=focus]:bg-card data-[state=focus]:shadow-[inset_0_0_0_1px_var(--ring)] data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:bg-card h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input" type="text">
+                            <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                              <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                                <div class="flex items-center" data-slot="form-actions-destructive">
+                                <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                      <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Cancel"
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="submit">
+                                      <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "OK"
+                        <div>
+                          <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="message-dialog">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "MessageDialog"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-100 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="alertdialog" tabindex="-1">
+                        <form class="gap-4 grid" data-slot="form">
+                          <fieldset class="contents">
+                            <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                              <div aria-level="2" class="font-bold leading-tight text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                                "Workspace moved"
+                              <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                                "The workspace is ready on the selected connection."
+                            <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                              <div>
+                                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                      "Dismiss"
+                              <div>
+                                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                      "Open workspace"
+                        <div>
+                          <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="delete-warning-dialog">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "DeleteWarningDialog"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-100 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                        <form class="gap-4 grid" data-slot="form">
+                          <fieldset class="contents">
+                            <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                              <div aria-level="2" class="font-bold leading-tight text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                                "Stop active work and delete workspace?"
+                              <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                                "This action will stop running work before permanently deleting the workspace."
+                            <div class="space-y-4">
+                              <div class="bg-muted/40 border border-border p-3 rounded-md">
+                                <p class="font-medium text-foreground text-sm">
+                                  "2 active agents will be stopped"
+                                <ul class="max-h-28 mt-2 overflow-auto pr-1 space-y-1">
+                                  <li class="text-sm text-subtle truncate">
+                                    "Implementor"
+                                  <li class="text-sm text-subtle truncate">
+                                    "Verifier"
+                                <p class="font-medium mt-3 text-foreground text-sm">
+                                  "1 active background hook will be cancelled"
+                                <ul class="max-h-28 mt-2 overflow-auto pr-1 space-y-1">
+                                  <li class="text-sm text-subtle truncate">
+                                    "Watch release build"
+                                <p class="font-medium mt-3 text-foreground text-sm">
+                                  "1 pull request is still open"
+                                <ul class="max-h-28 mt-2 overflow-auto pr-1 space-y-1">
+                                  <li class="flex gap-2 items-center text-sm text-subtle">
+                                    <span class="min-w-0 truncate">
+                                      "#418 Refine modal catalog"
+                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-success duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-success-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
+                                      "Open"
+                              <p class="leading-5 text-sm text-subtle">
+                                "Intent will permanently remove this workspace from disk after stopping the running work. This cannot be undone."
+                            <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                              <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                                <div class="flex items-center" data-slot="form-actions-destructive">
+                                <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                      <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Cancel"
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-danger border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast focus-visible:-outline-offset-1 focus-visible:outline font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-danger-background transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
+                                      <span aria-hidden="true" class="absolute bg-danger duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Stop work and delete"
+                        <div>
+                          <button aria-label="Close delete warning dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="bulk-action-confirm-dialog">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "BulkActionConfirmDialog"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-sm motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                        <form class="gap-4 grid" data-slot="form">
+                          <fieldset class="contents">
+                            <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                              <div aria-level="2" class="font-bold leading-tight text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                                "Archive selected workspaces?"
+                              <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                                "The selected workspaces will move to the archive."
+                            <div class="space-y-4">
+                              <div class="bg-muted/40 border border-border p-3 rounded-md space-y-1">
+                                <p class="font-medium text-foreground text-sm">
+                                  "2 active agents will be stopped"
+                                <p class="font-medium text-foreground text-sm">
+                                  "1 active background hook will be cancelled"
+                            <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                              <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                                <div class="flex items-center" data-slot="form-actions-destructive">
+                                <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                      <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Cancel"
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-danger border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast focus-visible:-outline-offset-1 focus-visible:outline font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-danger-background transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
+                                      <span aria-hidden="true" class="absolute bg-danger duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Archive workspaces"
+                        <div>
+                          <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="quit-confirmation-modal">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "QuitConfirmationModal"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-describedby="quit-confirmation-dialog-description" aria-labelledby="quit-confirmation-dialog-title" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-2xl motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="alertdialog" tabindex="-1">
+                        <form class="gap-4 grid" data-slot="form">
+                          <fieldset class="contents">
+                            <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                              <div aria-level="2" class="font-bold leading-tight text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="quit-confirmation-dialog-title" role="heading">
+                                "Quit Intent?"
+                              <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="quit-confirmation-dialog-description">
+                                "Some of your work will be affected if you quit now."
+                            <div class="flex-1 overflow-auto space-y-5">
+                              <section class="space-y-2">
+                                <h3 class="font-medium text-foreground text-sm">
+                                  "Will be interrupted"
+                                <p class="text-subtle text-xs">
+                                  "intentd shuts down with the app, so these agents stop mid-turn. You can resume them when the app reopens."
+                                <ul class="pl-2 space-y-1">
+                                  <li class="text-foreground text-sm truncate">
+                                    "Build reviewer"
+                                    <span class="text-subtle text-xs">
+                                      "— Design system"
+                              <section class="space-y-2">
+                                <h3 class="font-medium text-foreground text-sm">
+                                  "Keep running"
+                                <p class="text-subtle text-xs">
+                                  "These agents run on a daemon the app does not stop and continue working in the background."
+                                <ul class="pl-2 space-y-1">
+                                  <li class="text-foreground text-sm truncate">
+                                    "Remote verifier"
+                                    <span class="text-subtle text-xs">
+                                      "— Release prep"
+                              <section class="space-y-2">
+                                <h3 class="font-medium text-foreground text-sm">
+                                  "Browsers disconnected"
+                                <p class="text-subtle text-xs">
+                                  "Models lose access to these agent-owned browser tabs while the app is closed."
+                                <ul class="pl-2 space-y-1">
+                                  <li class="text-foreground text-sm truncate">
+                                    "Component docs"
+                                    <span class="text-subtle text-xs">
+                                      "— Build reviewer"
+                            <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                              <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                                <div class="flex items-center" data-slot="form-actions-destructive">
+                                <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                      <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Cancel"
+                                  <div>
+                                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-danger border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-danger-background transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
+                                      <span aria-hidden="true" class="absolute bg-danger duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                          "Quit"
+                        <div>
+                          <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="replace-agent-modal">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "ReplaceAgentModal"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content gap-0 grid max-w-xl motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-hidden overlay-surface overscroll-contain p-0 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                        <div class="p-5 pr-12 space-y-4">
+                          <div class="flex flex-col gap-2 mb-4 min-w-0 pr-0" data-slot="dialog-header">
+                            <div aria-level="2" class="font-bold leading-tight text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                              "Replace this agent?"
+                            <div class="break-words leading-5 text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                              "Sending this instruction tells Catalog implementor to create a replacement top-level agent with the same name and specialist, hand off its work through a gradual dialog, keep watching its own child agents until they finish, move its hooks, PR monitors, and subscriptions to the replacement, and retire once both agents agree the hand-off is complete."
+                          <textarea aria-label="Hand-off instruction" class="aria-invalid:border-danger bg-transparent border border-border data-[state=focus]:bg-card data-[state=focus]:shadow-[inset_0_0_0_1px_var(--ring)] data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:bg-card hover:bg-hover leading-5 max-h-72 min-h-48 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-2 read-only:text-muted-foreground rounded-(--radius-medium) shadow-none text-foreground text-xs transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="textarea">
+                          <p class="leading-5 text-sm text-subtle">
+                            "You can edit the instruction before sending. It is delivered to the agent as a normal chat message."
+                        <div class="border-0 flex flex-row gap-2 items-center justify-end mt-0 pb-5 pt-0 px-5" data-slot="dialog-footer">
+                          <div>
+                            <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                  "Cancel"
+                          <div>
+                            <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                  "Send"
+                        <div>
+                          <button aria-label="Close replace agent dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="release-notes-modal">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "ReleaseNotesModal"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content flex flex-col gap-0 max-w-2xl motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-hidden overlay-surface overscroll-contain p-0 relative release-notes-dialog rounded-lg shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                        <div class="border-b border-border flex items-center pr-12 px-6 py-4 shrink-0">
+                          <div aria-level="2" class="font-bold leading-tight text-foreground type-title type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                            "What's New in 2.140.0"
+                        <div class="flex-1 min-h-0 overflow-y-auto px-6 py-5 release-notes-body svelte-<scope>">
+                          <div class="markdown-viewer static-content svelte-<scope>" role="group">
+                            <h2>
+                              "Highlights"
+                            <ul>
+                              <li>
+                                <p>
+                                  "Refined modal compositions"
+                              <li>
+                                <p>
+                                  "Improved keyboard navigation"
+                        <div class="flex flex-row gap-3 items-center justify-between mt-0 px-6 py-3 shrink-0 sm:justify-between" data-slot="dialog-footer">
+                          <div>
+                            <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-small) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                  "View on GitHub"
+                          <div>
+                            <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-small) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                  "Got it"
+                        <div>
+                          <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="import-workspace-modal">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "ImportWorkspaceModal"
+                    <div class="bg-muted/40 legacy-static-frame min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="bg-black/50 fixed flex inset-0 items-center justify-center z-50" role="presentation">
+                        <div aria-labelledby="import-modal-title" aria-modal="true" class="bg-background border border-border flex flex-col max-w-md overflow-hidden rounded-lg shadow-lg w-full" role="dialog" tabindex="-1">
+                          <div class="border-b border-border flex items-center justify-between px-6 py-4">
+                            <h2 class="font-semibold text-lg" id="import-modal-title">
+                              "Import workspace"
+                            <div>
+                              <button aria-label="Close" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-medium) text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    <svg aria-hidden="true" data-icon="xmark" data-weight="bold" role="img">
+                                      <rect>
+                                      <path>
+                          <div class="max-h-[70vh] overflow-y-auto p-6 space-y-4">
+                            <p class="flex gap-2 items-center text-sm" data-testid="import-result-success">
+                              <svg aria-hidden="true" class="shrink-0 text-green-500" data-icon="circle-check" data-weight="bold" role="img">
+                                <rect>
+                                <path>
+                              <span class="font-semibold">
+                                "Import complete"
+                            <p class="text-sm text-subtle" data-testid="import-result-message">
+                              "“Imported workspace” was imported successfully."
+                            <p class="text-subtle text-xs" data-testid="import-result-interrupted">
+                              "1 agent was mid-task when the archive was created. Resume it from the workspace."
+                          <div class="border-border border-t flex gap-2 justify-end px-6 py-4">
+                            <div>
+                              <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" data-testid="import-done-button" type="button">
+                                <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    "Done"
+                            <div>
+                              <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" data-testid="import-open-button" type="button">
+                                <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    "Open Workspace"
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="transfer-workspace-modal">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "TransferWorkspaceModal"
+                    <div class="bg-muted/40 legacy-static-frame min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="bg-black/50 fixed flex inset-0 items-center justify-center z-50" role="presentation">
+                        <div aria-labelledby="transfer-modal-title" aria-modal="true" class="bg-background border border-border flex flex-col max-w-md overflow-hidden rounded-lg shadow-lg w-full" role="dialog" tabindex="-1">
+                          <div class="border-b border-border flex items-center justify-between px-6 py-4">
+                            <h2 class="font-semibold text-lg" id="transfer-modal-title">
+                              "Transfer workspace"
+                            <div>
+                              <button aria-label="Close" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-medium) text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    <svg aria-hidden="true" data-icon="xmark" data-weight="bold" role="img">
+                                      <rect>
+                                      <path>
+                          <div class="max-h-[70vh] overflow-y-auto p-6 space-y-4">
+                            <p class="text-sm text-subtle">
+                              "Choose a destination for “Design system”."
+                            <div class="space-y-1">
+                              <span class="block text-subtle text-xs">
+                                "Send to another server"
+                              <p class="bg-muted/50 p-2 rounded text-subtle text-xs" data-testid="transfer-empty-servers">
+                                "No other servers are connected. Add one via “Connect to another intentd” in the daemon status menu — downloading to a file is still available below."
+                            <div class="space-y-1">
+                              <div>
+                                <button aria-pressed="false" class="!px-3 !py-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex font-inherit font-normal gap-3 group/button h-auto hover:bg-muted/50 isolate items-center justify-start motion-reduce:transition-none px-4 relative rounded shrink-0 text-inherit text-left text-sm transition-colors type-caption w-full whitespace-normal" data-slot="button" data-testid="transfer-download-option" type="button">
+                                  <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                      <svg aria-hidden="true" class="shrink-0 text-subtle" data-icon="download" data-weight="bold" role="img">
+                                        <rect>
+                                        <path>
+                                      <span class="flex flex-col min-w-0">
+                                        <span>
+                                          "Download to file"
+                                        <span class="text-subtle text-xs">
+                                          "Save the transfer archive to your disk."
+                          <div class="border-border border-t flex gap-2 justify-end px-6 py-4">
+                            <div>
+                              <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    "Cancel"
+                            <div>
+                              <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="button">
+                                <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    "Next"
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="harness-features-modal">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "HarnessFeaturesModal"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-100 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                        <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                          <div aria-level="2" class="font-bold leading-tight text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                            "Harness v2.3"
+                          <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                            "Capabilities this agent session was created with. This snapshot is read-only and fixed for the session's lifetime."
+                        <div class="divide-border divide-y flex flex-col" data-testid="harness-features-list">
+                          <section class="flex gap-3 items-start justify-between py-3">
+                            <div class="min-w-0">
+                              <p class="font-medium text-foreground text-sm">
+                                "Background hooks"
+                              <p class="mt-1 text-subtle text-xs">
+                                "Let agents schedule background hooks that watch for external conditions"
+                            <span class="shrink-0 text-muted-foreground text-xs" data-enabled="false" data-feature="backgroundHooks" data-testid="harness-feature-state">
+                              "Off"
+                          <section class="flex gap-3 items-start justify-between py-3">
+                            <div class="min-w-0">
+                              <p class="font-medium text-foreground text-sm">
+                                "Host command execution"
+                              <p class="mt-1 text-subtle text-xs">
+                                "Let agents run one-shot commands on the daemon host"
+                            <span class="shrink-0 text-muted-foreground text-xs" data-enabled="false" data-feature="hostExec" data-testid="harness-feature-state">
+                              "Off"
+                          <section class="flex gap-3 items-start justify-between py-3">
+                            <div class="min-w-0">
+                              <p class="font-medium text-foreground text-sm">
+                                "Saved scripts"
+                              <p class="mt-1 text-subtle text-xs">
+                                "Let agents create and run saved scripts and services"
+                            <span class="shrink-0 text-muted-foreground text-xs" data-enabled="false" data-feature="scripts" data-testid="harness-feature-state">
+                              "Off"
+                          <section class="flex gap-3 items-start justify-between py-3">
+                            <div class="min-w-0">
+                              <p class="font-medium text-foreground text-sm">
+                                "Terminal read access"
+                              <p class="mt-1 text-subtle text-xs">
+                                "Let agents list terminal sessions and read their output"
+                            <span class="shrink-0 text-muted-foreground text-xs" data-enabled="false" data-feature="terminalAccess" data-testid="harness-feature-state">
+                              "Off"
+                          <section class="flex gap-3 items-start justify-between py-3">
+                            <div class="min-w-0">
+                              <p class="font-medium text-foreground text-sm">
+                                "Browser automation"
+                              <p class="mt-1 text-subtle text-xs">
+                                "Let agents drive Chrome via DevTools automation"
+                            <span class="shrink-0 text-muted-foreground text-xs" data-enabled="false" data-feature="browserAutomation" data-testid="harness-feature-state">
+                              "Off"
+                          <section class="flex gap-3 items-start justify-between py-3">
+                            <div class="min-w-0">
+                              <p class="font-medium text-foreground text-sm">
+                                "Rich chat blocks"
+                              <p class="mt-1 text-subtle text-xs">
+                                "Prompt agents to emit rich chat blocks (Mermaid diagrams, CLI commands, code references, navigation links)"
+                            <span class="shrink-0 text-muted-foreground text-xs" data-enabled="false" data-feature="richChatBlocks" data-testid="harness-feature-state">
+                              "Off"
+                          <section class="flex gap-3 items-start justify-between py-3">
+                            <div class="min-w-0">
+                              <p class="font-medium text-foreground text-sm">
+                                "Structured questions"
+                              <p class="mt-1 text-subtle text-xs">
+                                "Let agents ask structured clarifying questions with predefined options"
+                            <span class="shrink-0 text-muted-foreground text-xs" data-enabled="false" data-feature="structuredQuestions" data-testid="harness-feature-state">
+                              "Off"
+                          <section class="flex gap-3 items-start justify-between py-3">
+                            <div class="min-w-0">
+                              <p class="font-medium text-foreground text-sm">
+                                "Attention requests"
+                              <p class="mt-1 text-subtle text-xs">
+                                "Let agents raise blockers and request discussions"
+                            <span class="shrink-0 text-muted-foreground text-xs" data-enabled="false" data-feature="attentionRequests" data-testid="harness-feature-state">
+                              "Off"
+                          <section class="flex gap-3 items-start justify-between py-3">
+                            <div class="min-w-0">
+                              <p class="font-medium text-foreground text-sm">
+                                "State snapshot"
+                              <p class="mt-1 text-subtle text-xs">
+                                "Prepend a compact ws.agent.snapshot() state digest to each agent turn"
+                            <span class="shrink-0 text-muted-foreground text-xs" data-enabled="false" data-feature="stateSnapshot" data-testid="harness-feature-state">
+                              "Off"
+                          <section class="flex gap-3 items-start justify-between py-3">
+                            <div class="min-w-0">
+                              <p class="font-medium text-foreground text-sm">
+                                "PR monitoring"
+                              <p class="mt-1 text-subtle text-xs">
+                                "Let agents register centralized pull-request monitors (ws.pr.monitor) that watch merge requirements and wake the owner on changes"
+                            <span class="shrink-0 text-muted-foreground text-xs" data-enabled="false" data-feature="prMonitor" data-testid="harness-feature-state">
+                              "Off"
+                          <section class="flex gap-3 items-start justify-between py-3">
+                            <div class="min-w-0">
+                              <p class="font-medium text-foreground text-sm">
+                                "Task graph coordination"
+                              <p class="mt-1 text-subtle text-xs">
+                                "Enable the task-graph coordination workflow (batch delegation, task relations, unblocked-task wakes)"
+                            <span class="shrink-0 text-muted-foreground text-xs" data-enabled="false" data-feature="taskGraph" data-testid="harness-feature-state">
+                              "Off"
+                          <section class="flex gap-3 items-start justify-between py-3">
+                            <div class="min-w-0">
+                              <p class="font-medium text-foreground text-sm">
+                                "Top-level agent spawning & retirement"
+                              <p class="mt-1 text-subtle text-xs">
+                                "Allow agents to spawn independent top-level agents and retire themselves (ws.agent.create with topLevel: true / ws.agent.retire); applies to new sessions only"
+                            <span class="shrink-0 text-muted-foreground text-xs" data-enabled="false" data-feature="peerAgents" data-testid="harness-feature-state">
+                              "Off"
+                          <section class="flex gap-3 items-start justify-between py-3">
+                            <div class="min-w-0">
+                              <p class="font-medium text-foreground text-sm">
+                                "External MCP tools"
+                              <p class="mt-1 text-subtle text-xs">
+                                "Expose external MCP server tools (ws.mcp.*) to agents; enforced server-side on every forwarded call"
+                            <span class="shrink-0 text-muted-foreground text-xs" data-enabled="false" data-feature="mcpTools" data-testid="harness-feature-state">
+                              "Off"
+                          <section class="flex gap-3 items-start justify-between py-3">
+                            <div class="min-w-0">
+                              <p class="font-medium text-foreground text-sm">
+                                "Browser"
+                            <span class="shrink-0 text-foreground text-xs" data-enabled="true" data-feature="browser" data-testid="harness-feature-state">
+                              "On"
+                          <section class="flex gap-3 items-start justify-between py-3">
+                            <div class="min-w-0">
+                              <p class="font-medium text-foreground text-sm">
+                                "Hooks"
+                            <span class="shrink-0 text-foreground text-xs" data-enabled="true" data-feature="hooks" data-testid="harness-feature-state">
+                              "On"
+                        <div>
+                          <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="model-switch-confirm-dialog">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "ModelSwitchConfirmDialog"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content gap-0 grid max-w-md motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-hidden overlay-surface overscroll-contain p-0 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                        <div class="p-5 pr-12 space-y-4">
+                          <div class="flex flex-col gap-2 mb-4 min-w-0 pr-0" data-slot="dialog-header">
+                            <div aria-level="2" class="font-bold leading-tight text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                              "Switch provider mid-conversation?"
+                          <div class="bg-muted/40 border border-border font-medium px-3 py-2 rounded-md text-sm">
+                            "Augment / Auggie → OpenAI / GPT-5.6"
+                          <div class="break-words leading-5 space-y-2 text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                            <span class="block">
+                              "The agent restarts with the new provider and model when you send your next message. The conversation history is replayed to the new provider as plain text, so tool-call details lose fidelity, and your next message re-sends the entire conversation (which can be costly in tokens)."
+                            <span class="block">
+                              "The switch takes effect when the next message is sent — an in-flight turn finishes on the current model. Re-selecting the current model before sending cancels the switch entirely, leaving no trace in the conversation."
+                        <div class="border-0 flex flex-row gap-2 items-center justify-end mt-0 pb-5 pt-0 px-5" data-slot="dialog-footer">
+                          <div>
+                            <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                  "Cancel"
+                          <div>
+                            <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                  "Switch provider"
+                        <div>
+                          <button aria-label="Close" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="dismiss-proposal-confirm-dialog">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "DismissProposalConfirmDialog"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content gap-0 grid max-w-sm motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-hidden overlay-surface overscroll-contain p-0 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                        <div class="p-5 pr-12">
+                          <div class="flex flex-col gap-2 mb-4 min-w-0 pr-0" data-slot="dialog-header">
+                            <div aria-level="2" class="font-bold leading-tight text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                              "Dismiss proposal?"
+                            <div class="break-words leading-5 text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                              "The proposal will be dismissed without applying. This is permanent — it won't come back, even after a reload."
+                        <div class="border-0 flex flex-row gap-2 items-center justify-end mt-0 pb-5 pt-0 px-5" data-slot="dialog-footer">
+                          <div>
+                            <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                  "Cancel"
+                          <div>
+                            <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-danger border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-danger-background transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <span aria-hidden="true" class="absolute bg-danger duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                  "Dismiss proposal"
+                        <div>
+                          <button aria-label="Close" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                  <article class="content-start gap-2 grid min-w-0" data-modal-preview="dismiss-questions-confirm-dialog">
+                    <h3 class="font-medium text-muted-foreground text-xs">
+                      "DismissQuestionsConfirmDialog"
+                    <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
+                      <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content gap-0 grid max-w-sm motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-hidden overlay-surface overscroll-contain p-0 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                        <div class="p-5 pr-12">
+                          <div class="flex flex-col gap-2 mb-4 min-w-0 pr-0" data-slot="dialog-header">
+                            <div aria-level="2" class="font-bold leading-tight text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                              "Dismiss questions?"
+                            <div class="break-words leading-5 text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                              "The agent's questions will be dismissed completely without answering. This is permanent — they won't come back, even after a reload."
+                        <div class="border-0 flex flex-row gap-2 items-center justify-end mt-0 pb-5 pt-0 px-5" data-slot="dialog-footer">
+                          <div>
+                            <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                  "Cancel"
+                          <div>
+                            <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-danger border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-danger-background transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <span aria-hidden="true" class="absolute bg-danger duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                  "Dismiss questions"
+                        <div>
+                          <button aria-label="Close" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true">
+                                  <path>
+                <aside aria-labelledby="not-renderable-title" class="bg-muted/40 border border-border p-4 rounded-md">
+                  <h3 class="font-medium text-sm" id="not-renderable-title">
+                    "Not renderable in catalog"
+                  <ul class="list-disc mt-2 pl-5 space-y-1 text-muted-foreground text-xs">
+                    <li>
+                      <strong class="font-medium text-foreground">
+                        "ConfirmHost"
+                      "— Its singleton request queue cannot expose confirm, prompt, alert, and busy concurrently."
+                    <li>
+                      <strong class="font-medium text-foreground">
+                        "NewSpaceModal"
+                      "— Its full workspace initializer transitively loads daemon and Monaco worker integrations."
+                    <li>
+                      <strong class="font-medium text-foreground">
+                        "SetupScriptModal"
+                      "— Its production CodeEditor requires Monaco worker entrypoints unavailable in the catalog runtime."
+                    <li>
+                      <strong class="font-medium text-foreground">
+                        "PullConflictDialog"
+                      "— Mounting requires initialized editor-discovery Redux state and dispatches native editor discovery."
+                    <li>
+                      <strong class="font-medium text-foreground">
+                        "InterruptedAgentsModal"
+                      "— It portals a full-screen takeover directly to document.body."
+                    <li>
+                      <strong class="font-medium text-foreground">
+                        "SetupPromptDialog"
+                      "— Visibility and content are owned by routed Redux connection state."
+                    <li>
+                      <strong class="font-medium text-foreground">
+                        "WorkspaceWarningDialogs"
+                      "— This global Redux host has no prop seam; its child DeleteWarningDialog is shown above."
+                    <li>
+                      <strong class="font-medium text-foreground">
+                        "FeatureCodeDialog"
+                      "— Opening immediately fetches active feature codes from the daemon."
+                    <li>
+                      <strong class="font-medium text-foreground">
+                        "DirectoryPickerModal"
+                      "— Opening immediately requests a daemon-host filesystem listing."
+                    <li>
+                      <strong class="font-medium text-foreground">
+                        "AddRemoteSetupModal"
+                      "— It portals a bespoke full-screen form directly to document.body."
+          <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Fixture details"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "States"
+                <dd class="mt-1 text-foreground">
+                  "destructive-confirm-default, destructive-confirm-typed-name, destructive-confirm-busy, form-dialog-default, form-dialog-busy, form-dialog-invalid, input-dialog, message-dialog, delete-warning-dialog, bulk-action-confirm-dialog, quit-confirmation-modal, replace-agent-modal, release-notes-modal, import-workspace-modal, transfer-workspace-modal, harness-features-modal, model-switch-confirm-dialog, dismiss-proposal-confirm-dialog, dismiss-questions-confirm-dialog"
+              <div>
+                <dt>
+                  "Themes"
+                <dd class="mt-1 text-foreground">
+                  "light, dark"",
+}
+`;

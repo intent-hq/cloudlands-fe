@@ -6,6 +6,7 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     title: string;
     description?: string;
     confirmLabel: string;
@@ -23,6 +24,7 @@
 
   let {
     open = $bindable(false),
+    static: staticPosition = false,
     title,
     description,
     confirmLabel,
@@ -49,6 +51,7 @@
 
 <FormDialog
   bind:open
+  static={staticPosition}
   {title}
   {description}
   submitLabel={confirmLabel}

@@ -16,6 +16,7 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     /** Whether the target model belongs to a different provider. */
     isProviderChange?: boolean;
     fromModelLabel?: string;
@@ -28,6 +29,7 @@
 
   let {
     open = false,
+    static: staticPosition = false,
     isProviderChange = false,
     fromModelLabel = '',
     toModelLabel = '',
@@ -45,7 +47,7 @@
   }
 </script>
 
-<Dialog.Root {open} onOpenChange={(nextOpen) => !nextOpen && onCancel?.()}>
+<Dialog.Root {open} {staticPosition} onOpenChange={(nextOpen) => !nextOpen && onCancel?.()}>
   <Dialog.Content
     class="max-w-md gap-0 overflow-hidden p-0"
     closeLabel={m.chat_modelSwitchDialog_close_ariaLabel()}

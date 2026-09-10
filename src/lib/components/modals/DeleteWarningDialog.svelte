@@ -12,6 +12,7 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     /** 'delete' (default) warns before a permanent delete; 'archive' before an archive. */
     mode?: 'delete' | 'archive';
     agentNames?: string[];
@@ -25,6 +26,7 @@
 
   let {
     open = $bindable(false),
+    static: staticPosition = false,
     mode = 'delete',
     agentNames = [],
     hookNames = [],
@@ -78,6 +80,7 @@
 
 <DestructiveConfirm
   bind:open
+  static={staticPosition}
   title={isArchive ? m.modals_archiveWarning_title() : m.modals_deleteWarning_title()}
   description={isArchive
     ? m.modals_archiveWarning_description()
