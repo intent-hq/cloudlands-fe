@@ -296,6 +296,61 @@ describe('mcp-oauth ↔ daemon mcp.oauth.* (PROTOCOL.md §5.22)', () => {
     expect(requestMock).not.toHaveBeenCalled();
   });
 
+  it('rejects an OAuth error response from a different issuer', async () => {
+    stubDiscovery({ authorizationResponseIssuerSupported: true });
+    openExternalMock.mockImplementationOnce(async (value: string) => {
+      const authorizationUrl = new URL(value);
+      const redirectUri = authorizationUrl.searchParams.get('redirect_uri')!;
+      const state = authorizationUrl.searchParams.get('state')!;
+      const response = await realFetch(
+        `${redirectUri}?error=access_denied&state=${state}&iss=https%3A%2F%2Fattacker.example`,
+      );
+      expect(response.status).toBe(400);
+    });
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    const result = await initiateMcpOAuth('srv-figma', 'https://mcp.example.com/mcp');
+
+    expect(result).toMatchObject({ success: false, error: expect.stringMatching(/issuer/i) });
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('handles an OAuth error response after validating its matching issuer', async () => {
+    stubDiscovery({ authorizationResponseIssuerSupported: true });
+    openExternalMock.mockImplementationOnce(async (value: string) => {
+      const authorizationUrl = new URL(value);
+      const redirectUri = authorizationUrl.searchParams.get('redirect_uri')!;
+      const state = authorizationUrl.searchParams.get('state')!;
+      const response = await realFetch(
+        `${redirectUri}?error=access_denied&error_description=User%20cancelled&state=${state}&iss=https%3A%2F%2Fauth.example.com`,
+      );
+      expect(response.status).toBe(400);
+    });
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    const result = await initiateMcpOAuth('srv-figma', 'https://mcp.example.com/mcp');
+
+    expect(result).toEqual({ success: false, error: 'User cancelled' });
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects an OAuth error response with a mismatched state', async () => {
+    stubDiscovery({ authorizationResponseIssuerSupported: true });
+    openExternalMock.mockImplementationOnce(async (value: string) => {
+      const redirectUri = new URL(value).searchParams.get('redirect_uri')!;
+      const response = await realFetch(
+        `${redirectUri}?error=access_denied&state=wrong&iss=https%3A%2F%2Fauth.example.com`,
+      );
+      expect(response.status).toBe(400);
+    });
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    const result = await initiateMcpOAuth('srv-figma', 'https://mcp.example.com/mcp');
+
+    expect(result).toMatchObject({ success: false, error: expect.stringMatching(/state/i) });
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
   it('appends OIDC discovery to an authorization server path issuer', async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);

@@ -364,11 +364,8 @@ export async function initiateMcpOAuth(
     } = {};
     let tokens: OAuthTokens | undefined;
     callbackServer = await startCallbackServer(async (params) => {
-      const error = params.get('error');
-      if (error) throw new Error(params.get('error_description') || 'OAuth authorization failed.');
-      const code = params.get('code');
       const context = callbackContext.current;
-      if (!code || !context) throw new Error('The OAuth callback was incomplete.');
+      if (!context) throw new Error('The OAuth callback was incomplete.');
       if (params.get('state') !== context.state) {
         throw new Error('OAuth state verification failed.');
       }
@@ -380,6 +377,10 @@ export async function initiateMcpOAuth(
       ) {
         throw new Error('OAuth authorization response issuer verification failed.');
       }
+      const error = params.get('error');
+      if (error) throw new Error(params.get('error_description') || 'OAuth authorization failed.');
+      const code = params.get('code');
+      if (!code) throw new Error('The OAuth callback was incomplete.');
       tokens = await exchangeCode(
         metadata,
         context.client,
