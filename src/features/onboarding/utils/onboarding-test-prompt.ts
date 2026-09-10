@@ -14,7 +14,7 @@ import type { ProviderCatalogEntry } from '$shared/provider-catalog';
 /**
  * Whether the provider's catalog row opts into the live test prompt. The
  * flag is always present on rows from a v9.3+ daemon; absence (older daemon
- * without the RPC) is treated as unsupported so the checkbox never offers a
+ * without the RPC) is treated as unsupported so onboarding never sends a
  * test the daemon cannot run.
  */
 export function providerSupportsTestPrompt(entry: ProviderCatalogEntry | undefined): boolean {

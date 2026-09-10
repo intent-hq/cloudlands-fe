@@ -79,7 +79,6 @@
   import { determineOnboardingInitialStep } from '$features/onboarding/utils/determine-onboarding-initial-step';
 
   import { Button } from '$lib/components/ui/button';
-  import { Checkbox } from '$lib/components/ui/checkbox';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { shell } from '$lib/electron-bridge';
   import { runProviderTestPrompt } from '$features/providers/provider-test-prompt.client';
@@ -661,11 +660,6 @@
   let agentGridRef: AgentGrid | null = $state(null);
   let onboardingSkipIsolation = $state(false);
 
-  // "Send a test prompt" opt-out: one live end-to-end prompt against the
-  // selected provider before advancing (host.providerTestPrompt, §5.14).
-  // Checked by default; hidden when the provider's catalog row does not
-  // support the test (supportsTestPrompt false/absent — e.g. unsloth).
-  let onboardingSendTestPrompt = $state(true);
   let onboardingTestPromptRunning = $state(false);
   let onboardingTestPromptFailure = $state<TestPromptFailureGuidance | null>(null);
   let onboardingGridSelectedProviderId = $state<string | undefined>(undefined);
@@ -679,15 +673,15 @@
   /** Advance from the welcome step, first committing the grid's resolved
    *  provider selection so a no-click advance still enables/activates the
    *  visually-selected provider (D1(B): commit only on explicit advance).
-   *  With the test-prompt box checked (and the provider supporting it), one
-   *  live test prompt runs first: success advances, a structured failure
+   *  When the provider supports it, one live test prompt runs first:
+   *  success advances, a structured failure
    *  keeps the user on the step with actionable guidance. */
   async function advanceFromWelcomeStep() {
     if (onboardingTestPromptRunning) return;
     const committed = agentGridRef?.commitSelection();
     const providerId = committed ?? onboardingGridSelectedProviderId;
     if (!providerId) return;
-    if (onboardingSendTestPrompt && onboardingTestPromptSupported && providerId) {
+    if (onboardingTestPromptSupported) {
       onboardingTestPromptFailure = null;
       onboardingTestPromptRunning = true;
       try {
@@ -1765,23 +1759,6 @@
                           </div>
                         </div>
                         <div class="max-w-5xl mx-auto flex flex-col items-start gap-2 mt-9">
-                          {#if hasConnectedProvider && onboardingTestPromptSupported}
-                            <div class="flex flex-col gap-1 mb-2">
-                              <label
-                                class="flex items-center gap-2 text-sm cursor-pointer"
-                                data-testid="onboarding-test-prompt-checkbox"
-                              >
-                                <Checkbox
-                                  bind:checked={onboardingSendTestPrompt}
-                                  disabled={onboardingTestPromptRunning}
-                                />
-                                {m.onboarding_testPrompt_checkbox_label()}
-                              </label>
-                              <p class="text-xs text-muted-foreground pl-6">
-                                {m.onboarding_testPrompt_finePrint_label()}
-                              </p>
-                            </div>
-                          {/if}
                           <Button
                             class="group/button"
                             size="xl"
