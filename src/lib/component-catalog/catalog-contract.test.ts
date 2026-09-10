@@ -65,6 +65,12 @@ const cases: ContractCase[] = [
     id: 'fields',
     fixture,
   })) ?? []),
+  ...(getCatalogEntry('screen-states')?.fixtures.map((fixture) => ({
+    key: `product:screen-states:${fixture.id}`,
+    kind: 'product' as const,
+    id: 'screen-states',
+    fixture,
+  })) ?? []),
 ].sort((left, right) => left.key.localeCompare(right.key));
 
 const intentionalAxeAllowlist: Record<string, ReadonlyArray<{ rule: string; reason: string }>> = {

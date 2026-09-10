@@ -68,6 +68,7 @@ export const sidebarMetadata = parseUiComponentMetadata({
   owner: '012-F2',
   callers: [
     'src/lib/component-catalog/renderers/NavigationHelpCatalogPreview.svelte',
+    'src/lib/component-catalog/renderers/ScreenStatesCatalogPreview.svelte',
     'src/lib/components/file-explorer/file-explorer-layout.svelte',
     'src/lib/components/file-explorer/file-explorer-sidebar.svelte',
   ],

@@ -42,6 +42,7 @@ describe('static component catalog', () => {
       'modals',
       'popovers',
       'rows',
+      'screen-states',
       'fields',
     ].sort();
     expect(Object.keys(catalogRenderers).sort()).toEqual(rendererIds);
@@ -66,6 +67,7 @@ describe('static component catalog', () => {
       'modals',
       'proposal-card',
       'rows',
+      'screen-states',
     ]);
     expect(
       buildCatalogGroups([

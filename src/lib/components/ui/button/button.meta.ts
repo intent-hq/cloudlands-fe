@@ -17,6 +17,7 @@ export const buttonMetadata = parseUiComponentMetadata({
   callers: [
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
+    'src/lib/component-catalog/renderers/ScreenStatesCatalogPreview.svelte',
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/button/button.test.ts',

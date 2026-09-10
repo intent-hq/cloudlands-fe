@@ -18,6 +18,7 @@ export const skeletonMetadata = parseUiComponentMetadata({
     'src/features/layout/tab-types/NoteTabType.svelte',
     'src/features/log/components/ActivityTimeline.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
+    'src/lib/component-catalog/renderers/ScreenStatesCatalogPreview.svelte',
     'src/lib/components/CommandPalette.svelte',
     'src/lib/components/chat/ChatChangesPanel.svelte',
     'src/lib/components/chat/ChatPanel.svelte',

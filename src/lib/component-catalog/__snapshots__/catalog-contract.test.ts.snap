@@ -15687,3 +15687,541 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                   "light, dark"",
 }
 `;
+
+exports[`catalog DOM, token, and accessibility contracts > 'product:screen-states:screen-feedback…' 1`] = `
+{
+  "declaredStates": [
+    "screen-composition",
+    "takeover",
+    "empty",
+    "error",
+    "loading",
+    "skeleton-text",
+    "skeleton-avatar",
+    "skeleton-card",
+    "skeleton-list",
+    "loading-indicator",
+    "notice-banner",
+    "notice-inline",
+    "media-unavailable",
+    "notify-error-toast",
+    "short-copy",
+    "long-copy",
+    "with-icon",
+    "without-icon",
+    "primary-action",
+    "secondary-action",
+    "no-action",
+    "width-320",
+    "full-width",
+    "compact-density",
+    "zoom-200",
+    "reduced-motion",
+  ],
+  "dom": "<body>
+  <div>
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
+      <header class="border-b border-border entry-header svelte-<scope>">
+        <div class="min-w-0">
+          <div class="flex flex-wrap gap-2 items-baseline">
+            <p class="font-medium text-muted-foreground text-xs tracking-wide uppercase">
+              "Component focus"
+            <h1 class="font-medium mt-1 text-3xl tracking-tight">
+              "Screen and feedback states"
+            <span class="bg-muted border border-border px-2 py-0.5 rounded-full text-muted-foreground text-xs">
+              "product"
+          <p class="leading-relaxed max-w-3xl mt-1 text-muted-foreground text-xs">
+            "Blank, error, loading, notice, unavailable-content, and composed screen states at wide and narrow widths."
+        <div class="flex gap-2 items-center shrink-0">
+          <details class="entry-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Source"
+            <div class="inspector-popover svelte-<scope>">
+              <p class="text-foreground">
+                "Canonical source"
+              <code class="block break-all mt-1">
+                "src/lib/component-catalog/renderers/ScreenStatesCatalogPreview.svelte"
+      <div class="fixture-grid svelte-<scope>">
+        <article class="fixture-card svelte-<scope>" data-catalog-fixture="screen-feedback-state-matrix">
+          <div class="fixture-heading svelte-<scope>">
+            <h2 class="font-medium text-sm">
+              "Screen and feedback state matrix"
+            <span class="bg-muted border border-border px-2 py-0.5 rounded-full text-muted-foreground text-xs">
+              "both"
+          <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="screen-feedback-state-matrix" data-catalog-preview="screen-states">
+            <div class="screen-states-matrix svelte-<scope>" data-catalog-rendered-state="screen-composition takeover empty error loading skeleton-text skeleton-avatar skeleton-card skeleton-list loading-indicator notice-banner notice-inline media-unavailable notify-error-toast short-copy long-copy with-icon without-icon primary-action secondary-action no-action width-320 full-width compact-density zoom-200 reduced-motion" data-catalog-renderer-fixture="screen-feedback-state-matrix">
+              <section aria-labelledby="screen-composition-family" class="state-family svelte-<scope>">
+                <h3 class="family-title svelte-<scope>" id="screen-composition-family">
+                  "Screen composition"
+                <div class="preview-grid svelte-<scope>">
+                  <article aria-labelledby="screen-composition-full-label" class="preview-cell svelte-<scope>" data-screen-preview="screen-composition-full">
+                    <h4 class="preview-label svelte-<scope>" id="screen-composition-full-label">
+                      "Header, body, footer · full width"
+                    <div class="preview-frame svelte-<scope>" data-preview-width="full">
+                      <section class="bg-background flex flex-col h-64 min-h-0 min-w-0 text-foreground" data-slot="screen">
+                        <header class="flex gap-3 items-start min-w-0 pt-5 px-5 shrink-0" data-slot="screen-header">
+                          <div class="flex-1 min-w-0">
+                            <div class="flex gap-2 items-center min-w-0">
+                              <div class="flex-1 min-w-0" data-slot="screen-header-title">
+                                <h3 class="font-semibold type-title">
+                                  "Workspace setup"
+                            <div class="mt-1 text-muted-foreground text-sm" data-slot="screen-header-description">
+                              <p>
+                                "Review the repository before continuing."
+                        <div class="flex-1 min-h-0 min-w-0" data-slot="screen-body">
+                          <div class="gap-3 grid p-5">
+                            <div class="bg-hover h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-3/4" data-slot="skeleton">
+                            <div class="bg-hover h-20 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
+                        <footer class="border-border border-t px-5 py-3 shrink-0" data-slot="screen-footer">
+                          <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                            <div class="flex items-center" data-slot="form-actions-destructive">
+                            <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                              <div>
+                                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-hover/button:bg-hover inset-px motion-reduce:transition-none pointer-events-none shadow-none transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                      "Back"
+                              <div>
+                                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                      "Continue"
+                  <article aria-labelledby="screen-composition-320-label" class="preview-cell svelte-<scope>" data-screen-preview="screen-composition-320">
+                    <h4 class="preview-label svelte-<scope>" id="screen-composition-320-label">
+                      "Header, body, footer · 320 px"
+                    <div class="narrow preview-frame svelte-<scope>" data-preview-width="320">
+                      <section class="bg-background flex flex-col h-64 min-h-0 min-w-0 text-foreground" data-slot="screen">
+                        <header class="flex gap-3 items-start min-w-0 pt-5 px-5 shrink-0" data-slot="screen-header">
+                          <div class="flex-1 min-w-0">
+                            <div class="flex gap-2 items-center min-w-0">
+                              <div class="flex-1 min-w-0" data-slot="screen-header-title">
+                                <h3 class="font-semibold type-title">
+                                  "Workspace setup"
+                            <div class="mt-1 text-muted-foreground text-sm" data-slot="screen-header-description">
+                              <p>
+                                "Review the repository before continuing."
+                        <div class="flex-1 min-h-0 min-w-0" data-slot="screen-body">
+                          <div class="gap-3 grid p-5">
+                            <div class="bg-hover h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-3/4" data-slot="skeleton">
+                            <div class="bg-hover h-20 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
+                        <footer class="border-border border-t px-5 py-3 shrink-0" data-slot="screen-footer">
+                          <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                            <div class="flex items-center" data-slot="form-actions-destructive">
+                            <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                              <div>
+                                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-hover/button:bg-hover inset-px motion-reduce:transition-none pointer-events-none shadow-none transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                      "Back"
+                              <div>
+                                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                      "Continue"
+                  <article aria-labelledby="takeover-full-label" class="preview-cell svelte-<scope>" data-screen-preview="takeover-full">
+                    <h4 class="preview-label svelte-<scope>" id="takeover-full-label">
+                      "Takeover · full width"
+                    <div class="preview-frame svelte-<scope>" data-preview-width="full">
+                      <div class="flex flex-col min-h-0 min-w-0 w-full" data-slot="takeover-screen">
+                        <section class="bg-background flex flex-1 flex-col h-64 min-h-0 min-w-0 overflow-hidden text-foreground" data-slot="screen">
+                          <header class="flex gap-3 items-start min-w-0 pt-5 px-5 shrink-0" data-slot="screen-header">
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-center min-w-0">
+                                <div class="shrink-0" data-slot="screen-header-counter">
+                                  <span class="text-muted-foreground type-caption">
+                                    "2 of 3"
+                                <div class="flex-1 min-w-0" data-slot="screen-header-title">
+                                  <h3 class="font-semibold type-title">
+                                    "Workspace setup"
+                              <div class="mt-1 text-muted-foreground text-sm" data-slot="screen-header-description">
+                                <p>
+                                  "Review the repository before continuing."
+                          <div class="flex-1 min-h-0" data-slot="takeover-screen-body">
+                            <div class="flex-1 min-h-0 min-w-0" data-slot="screen-body">
+                              <div class="gap-3 grid p-5">
+                                <div class="bg-hover h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-3/4" data-slot="skeleton">
+                                <div class="bg-hover h-20 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
+                          <footer class="border-border border-t px-5 py-3 shrink-0" data-slot="screen-footer">
+                            <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                              <div class="flex items-center" data-slot="form-actions-destructive">
+                              <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                                <div>
+                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                    <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-hover/button:bg-hover inset-px motion-reduce:transition-none pointer-events-none shadow-none transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                    <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                      <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                        "Back"
+                                <div>
+                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                    <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                    <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                      <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                        "Continue"
+                  <article aria-labelledby="takeover-320-label" class="preview-cell svelte-<scope>" data-screen-preview="takeover-320">
+                    <h4 class="preview-label svelte-<scope>" id="takeover-320-label">
+                      "Takeover · 320 px"
+                    <div class="narrow preview-frame svelte-<scope>" data-preview-width="320">
+                      <div class="flex flex-col min-h-0 min-w-0 w-full" data-slot="takeover-screen">
+                        <section class="bg-background flex flex-1 flex-col h-64 min-h-0 min-w-0 overflow-hidden text-foreground" data-slot="screen">
+                          <header class="flex gap-3 items-start min-w-0 pt-5 px-5 shrink-0" data-slot="screen-header">
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-center min-w-0">
+                                <div class="shrink-0" data-slot="screen-header-counter">
+                                  <span class="text-muted-foreground type-caption">
+                                    "2 of 3"
+                                <div class="flex-1 min-w-0" data-slot="screen-header-title">
+                                  <h3 class="font-semibold type-title">
+                                    "Workspace setup"
+                              <div class="mt-1 text-muted-foreground text-sm" data-slot="screen-header-description">
+                                <p>
+                                  "Review the repository before continuing."
+                          <div class="flex-1 min-h-0" data-slot="takeover-screen-body">
+                            <div class="flex-1 min-h-0 min-w-0" data-slot="screen-body">
+                              <div class="gap-3 grid p-5">
+                                <div class="bg-hover h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-3/4" data-slot="skeleton">
+                                <div class="bg-hover h-20 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
+                          <footer class="border-border border-t px-5 py-3 shrink-0" data-slot="screen-footer">
+                            <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                              <div class="flex items-center" data-slot="form-actions-destructive">
+                              <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                                <div>
+                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                    <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-hover/button:bg-hover inset-px motion-reduce:transition-none pointer-events-none shadow-none transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                    <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                      <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                        "Back"
+                                <div>
+                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                    <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                    <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                      <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                        "Continue"
+              <section aria-labelledby="empty-state-family" class="state-family svelte-<scope>">
+                <h3 class="family-title svelte-<scope>" id="empty-state-family">
+                  "Blank and error states"
+                <div class="preview-grid svelte-<scope>">
+                  <article aria-labelledby="empty-short-no-icon-label" class="preview-cell svelte-<scope>" data-screen-preview="empty-short-no-icon">
+                    <h4 class="preview-label svelte-<scope>" id="empty-short-no-icon-label">
+                      "Empty · short copy · no icon"
+                    <div class="preview-frame svelte-<scope>" data-preview-width="full">
+                      <section class="flex items-center justify-center min-h-48 px-6 py-10 text-center" data-density="default" data-emphasis="routine" data-severity="routine" data-slot="empty-state">
+                        <div class="max-w-md w-full">
+                          <div class="font-normal text-muted-foreground type-body" data-slot="empty-state-title">
+                            <h3>
+                              "No workspaces yet"
+                          <div class="mt-1 text-muted-foreground type-caption" data-slot="empty-state-description">
+                            <p>
+                              "Create a workspace to begin."
+                          <div class="flex gap-2 justify-center mt-4" data-slot="empty-state-actions">
+                            <div>
+                              <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    "Create workspace"
+                  <article aria-labelledby="empty-long-icon-actions-320-label" class="preview-cell svelte-<scope>" data-screen-preview="empty-long-icon-actions-320">
+                    <h4 class="preview-label svelte-<scope>" id="empty-long-icon-actions-320-label">
+                      "Empty · long copy · icon · two actions · 320 px"
+                    <div class="narrow preview-frame svelte-<scope>" data-preview-width="320">
+                      <section class="flex items-center justify-center min-h-48 px-6 py-10 text-center" data-density="default" data-emphasis="prominent" data-severity="routine" data-slot="empty-state">
+                        <div class="max-w-md w-full">
+                          <div class="flex mb-3 mx-auto text-muted-foreground w-fit" data-slot="empty-state-icon">
+                            <svg aria-hidden="true" class="size-6" data-icon="folder-open" data-weight="bold" role="img">
+                              <rect>
+                              <path>
+                          <div class="font-semibold text-foreground type-title" data-slot="empty-state-title">
+                            <h3>
+                              "No workspaces yet"
+                          <div class="mt-1 text-muted-foreground type-caption" data-slot="empty-state-description">
+                            <p>
+                              "A workspace keeps repository context, conversations, tasks, and review evidence together so the next handoff stays easy to understand."
+                          <div class="flex gap-2 justify-center mt-4" data-slot="empty-state-actions">
+                            <div>
+                              <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-hover/button:bg-hover inset-px motion-reduce:transition-none pointer-events-none shadow-none transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    "Learn more"
+                            <div>
+                              <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    "Create workspace"
+                  <article aria-labelledby="empty-compact-no-action-label" class="preview-cell svelte-<scope>" data-screen-preview="empty-compact-no-action">
+                    <h4 class="preview-label svelte-<scope>" id="empty-compact-no-action-label">
+                      "Empty · compact · no action"
+                    <div class="preview-frame svelte-<scope>" data-preview-width="full">
+                      <section class="flex items-center justify-center min-h-28 px-4 py-6 text-center" data-density="compact" data-emphasis="routine" data-severity="routine" data-slot="empty-state">
+                        <div class="max-w-md w-full">
+                          <div class="font-normal text-muted-foreground type-body" data-slot="empty-state-title">
+                            <h3>
+                              "No workspaces yet"
+                          <div class="mt-1 text-muted-foreground type-caption" data-slot="empty-state-description">
+                            <p>
+                              "Create a workspace to begin."
+                  <article aria-labelledby="error-routine-retry-label" class="preview-cell svelte-<scope>" data-screen-preview="error-routine-retry">
+                    <h4 class="preview-label svelte-<scope>" id="error-routine-retry-label">
+                      "Error · routine · retry"
+                    <div class="preview-frame svelte-<scope>" data-preview-width="full">
+                      <section class="flex items-center justify-center min-h-48 px-6 py-10 text-center" data-density="default" data-emphasis="routine" data-severity="routine" data-slot="empty-state" data-state-kind="error" role="alert">
+                        <div class="max-w-md w-full">
+                          <div class="text-muted-foreground type-body" data-slot="empty-state-description">
+                            <p>
+                              "We could not load this screen."
+                          <div class="flex gap-2 justify-center mt-4" data-slot="empty-state-actions">
+                            <div>
+                              <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    "Retry"
+                  <article aria-labelledby="error-danger-details-320-label" class="preview-cell svelte-<scope>" data-screen-preview="error-danger-details-320">
+                    <h4 class="preview-label svelte-<scope>" id="error-danger-details-320-label">
+                      "Error · danger · icon · details · 320 px"
+                    <div class="narrow preview-frame svelte-<scope>" data-preview-width="320">
+                      <section class="flex items-center justify-center min-h-48 px-6 py-10 text-center" data-density="default" data-emphasis="routine" data-severity="danger" data-slot="empty-state" data-state-kind="error" role="alert">
+                        <div class="max-w-md w-full">
+                          <div class="flex mb-3 mx-auto text-danger w-fit" data-slot="empty-state-icon">
+                            <svg aria-hidden="true" class="size-6" data-icon="triangle-exclamation" data-weight="bold" role="img">
+                              <rect>
+                              <path>
+                          <div class="text-danger type-body" data-slot="empty-state-description">
+                            <p>
+                              "The daemon did not return the requested workspace. Check the connection and try again; your local changes remain safe."
+                          <div class="flex gap-2 justify-center mt-4" data-slot="empty-state-actions">
+                            <div>
+                              <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    "Try again"
+                          <details class="mt-3 text-left text-muted-foreground type-caption">
+                            <summary class="cursor-pointer font-normal text-muted-foreground">
+                              "Technical details"
+                            <div class="mt-1.5">
+                              <p>
+                                "JSON-RPC request timed out after 30 seconds."
+                  <article aria-labelledby="error-no-action-label" class="preview-cell svelte-<scope>" data-screen-preview="error-no-action">
+                    <h4 class="preview-label svelte-<scope>" id="error-no-action-label">
+                      "Error · no action"
+                    <div class="preview-frame svelte-<scope>" data-preview-width="full">
+                      <section class="flex items-center justify-center min-h-48 px-6 py-10 text-center" data-density="default" data-emphasis="routine" data-severity="routine" data-slot="empty-state" data-state-kind="error" role="alert">
+                        <div class="max-w-md w-full">
+                          <div class="text-muted-foreground type-body" data-slot="empty-state-description">
+                            <p>
+                              "We could not load this screen."
+              <section aria-labelledby="loading-state-family" class="state-family svelte-<scope>">
+                <h3 class="family-title svelte-<scope>" id="loading-state-family">
+                  "Loading and skeleton states"
+                <div class="preview-grid svelte-<scope>">
+                  <article aria-labelledby="loading-list-full-label" class="preview-cell svelte-<scope>" data-screen-preview="loading-list-full">
+                    <h4 class="preview-label svelte-<scope>" id="loading-list-full-label">
+                      "LoadingState · list · full width"
+                    <div class="preview-frame svelte-<scope>" data-preview-width="full">
+                      <div class="p-4">
+                        <div aria-label="Loading workspaces" class="flex flex-col gap-(--state-list-row-gap) px-(--state-list-inline-inset)" data-density="default" data-recipe="list" data-slot="loading-state" role="status">
+                          <div class="bg-surface-2 h-(--state-list-row-height) rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton" tokens=["--surface-4"]>
+                          <div class="bg-surface-2 h-(--state-list-row-height) rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton" tokens=["--surface-4"]>
+                          <div class="bg-surface-2 h-(--state-list-row-height) rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton" tokens=["--surface-4"]>
+                          <div class="bg-surface-2 h-(--state-list-row-height) rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton" tokens=["--surface-4"]>
+                  <article aria-labelledby="loading-card-grid-320-label" class="preview-cell svelte-<scope>" data-screen-preview="loading-card-grid-320">
+                    <h4 class="preview-label svelte-<scope>" id="loading-card-grid-320-label">
+                      "LoadingState · cards · 320 px"
+                    <div class="narrow preview-frame svelte-<scope>" data-preview-width="320">
+                      <div class="p-4">
+                        <div aria-label="Loading cards" class="gap-3 grid grid-cols-2" data-density="default" data-recipe="card-grid" data-slot="loading-state" role="status">
+                          <div class="bg-surface-2 h-28 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton" tokens=["--surface-4"]>
+                          <div class="bg-surface-2 h-28 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton" tokens=["--surface-4"]>
+                          <div class="bg-surface-2 h-28 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton" tokens=["--surface-4"]>
+                          <div class="bg-surface-2 h-28 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton" tokens=["--surface-4"]>
+                  <article aria-labelledby="loading-form-compact-label" class="preview-cell svelte-<scope>" data-screen-preview="loading-form-compact">
+                    <h4 class="preview-label svelte-<scope>" id="loading-form-compact-label">
+                      "LoadingState · compact form"
+                    <div class="preview-frame svelte-<scope>" data-preview-width="full">
+                      <div class="p-4">
+                        <div aria-label="Loading form" class="space-y-3" data-density="compact" data-recipe="form" data-slot="loading-state" role="status">
+                          <div class="space-y-2">
+                            <div class="bg-surface-2 h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-24" data-slot="skeleton" tokens=["--surface-4"]>
+                            <div class="bg-surface-2 h-9 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton" tokens=["--surface-4"]>
+                          <div class="space-y-2">
+                            <div class="bg-surface-2 h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-24" data-slot="skeleton" tokens=["--surface-4"]>
+                            <div class="bg-surface-2 h-9 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton" tokens=["--surface-4"]>
+                  <article aria-labelledby="loading-indicator-label" class="preview-cell svelte-<scope>" data-screen-preview="loading-indicator">
+                    <h4 class="preview-label svelte-<scope>" id="loading-indicator-label">
+                      "LoadingIndicator"
+                    <div class="preview-frame svelte-<scope>" data-preview-width="full">
+                      <div class="flex items-center justify-center min-h-28">
+                        <svg aria-label="Loading" class="intent-mark-loader svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                          <g aria-hidden="true" data-mark="">
+                            <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
+                            <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
+                            <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
+                            <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
+                            <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                  <article aria-labelledby="skeleton-text-avatar-label" class="preview-cell svelte-<scope>" data-screen-preview="skeleton-text-avatar">
+                    <h4 class="preview-label svelte-<scope>" id="skeleton-text-avatar-label">
+                      "Skeleton · text and avatar"
+                    <div class="preview-frame svelte-<scope>" data-preview-width="full">
+                      <div aria-label="Loading profile" class="flex gap-3 p-4" role="status">
+                        <div class="bg-hover rounded-full shrink-0 size-10 skeleton-shimmer svelte-<scope>" data-slot="skeleton">
+                        <div class="flex-1 gap-2 grid">
+                          <div class="bg-hover h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-1/2" data-slot="skeleton">
+                          <div class="bg-hover h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
+                          <div class="bg-hover h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-3/4" data-slot="skeleton">
+                  <article aria-labelledby="skeleton-card-list-label" class="preview-cell svelte-<scope>" data-screen-preview="skeleton-card-list">
+                    <h4 class="preview-label svelte-<scope>" id="skeleton-card-list-label">
+                      "Skeleton · card and list"
+                    <div class="preview-frame svelte-<scope>" data-preview-width="full">
+                      <div aria-label="Loading cards and list" class="gap-3 grid p-4" role="status">
+                        <div class="bg-hover h-20 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
+                        <div class="bg-hover h-8 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
+                        <div class="bg-hover h-8 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
+                        <div class="bg-hover h-8 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
+                  <article aria-labelledby="loading-reduced-motion-label" class="preview-cell svelte-<scope>" data-screen-preview="loading-reduced-motion">
+                    <h4 class="preview-label svelte-<scope>" id="loading-reduced-motion-label">
+                      "Reduced motion · static loader and skeleton"
+                    <div class="preview-frame svelte-<scope>" data-preview-width="full">
+                      <div class="gap-3 grid p-4" data-reduced-motion="">
+                        <svg aria-label="Loading" class="intent-mark-loader svelte-<scope>" data-motion-state="neutral" data-playing="false" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                          <g aria-hidden="true" data-mark="">
+                            <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
+                            <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
+                            <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
+                            <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
+                            <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                        <div class="bg-hover h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
+                        <div class="bg-hover h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-2/3" data-slot="skeleton">
+                  <article aria-labelledby="loading-zoom-200-label" class="preview-cell svelte-<scope>" data-screen-preview="loading-zoom-200">
+                    <h4 class="preview-label svelte-<scope>" id="loading-zoom-200-label">
+                      "Skeleton · 200% zoom"
+                    <div class="preview-frame svelte-<scope> zoom-preview" data-preview-width="full">
+                      <div aria-label="Loading zoomed content" class="gap-2 grid p-3" role="status">
+                        <div class="bg-hover h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
+                        <div class="bg-hover h-10 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
+              <section aria-labelledby="feedback-state-family" class="state-family svelte-<scope>">
+                <h3 class="family-title svelte-<scope>" id="feedback-state-family">
+                  "Notices and unavailable content"
+                <div class="preview-grid svelte-<scope>">
+                  <article aria-labelledby="notice-banner-label" class="preview-cell svelte-<scope>" data-screen-preview="notice-banner">
+                    <h4 class="preview-label svelte-<scope>" id="notice-banner-label">
+                      "SidebarCallout · banner"
+                    <div class="preview-frame svelte-<scope>" data-preview-width="full">
+                      <div class="p-4">
+                        <div class="bg-surface-2 flex flex-col gap-2 p-3 rounded-xl shadow-surface-2 text-foreground" data-sidebar="callout" data-slot="sidebar-callout" data-variant="banner" role="status">
+                          <strong>
+                            "Connection restored"
+                          <span class="text-muted-foreground type-caption">
+                            "Workspace events are current again."
+                  <article aria-labelledby="notice-inline-320-label" class="preview-cell svelte-<scope>" data-screen-preview="notice-inline-320">
+                    <h4 class="preview-label svelte-<scope>" id="notice-inline-320-label">
+                      "SidebarCallout · inline · 320 px"
+                    <div class="narrow preview-frame svelte-<scope>" data-preview-width="320">
+                      <div class="p-4">
+                        <div class="bg-hover flex gap-2 items-center px-2 py-1.5 rounded-md text-foreground" data-sidebar="callout" data-slot="sidebar-callout" data-variant="inline" role="status">
+                          <svg aria-hidden="true" class="size-4" data-icon="triangle-exclamation" data-weight="bold" role="img">
+                            <rect>
+                            <path>
+                          <span class="type-caption">
+                            "This branch is behind main."
+                  <article aria-labelledby="input-messages-label" class="preview-cell svelte-<scope>" data-screen-preview="input-messages">
+                    <h4 class="preview-label svelte-<scope>" id="input-messages-label">
+                      "Inline helper and error messages"
+                    <div class="preview-frame svelte-<scope>" data-preview-width="full">
+                      <div class="p-4">
+                        <p aria-live="polite" class="motion-reduce:transition-none mt-1.5 pl-0.5 text-muted-foreground type-body" data-slot="input-message" data-tone="helper">
+                          "Changes save automatically."
+                        <p class="motion-reduce:transition-none mt-1.5 pl-0.5 text-danger type-body" data-slot="input-message" data-tone="error" role="alert">
+                          "Choose a repository before continuing."
+                  <article aria-labelledby="media-unavailable-missing-label" class="preview-cell svelte-<scope>" data-screen-preview="media-unavailable-missing">
+                    <h4 class="preview-label svelte-<scope>" id="media-unavailable-missing-label">
+                      "Media unavailable · missing"
+                    <div class="preview-frame svelte-<scope>" data-preview-width="full">
+                      <div class="p-4">
+                        <div class="bg-muted/30 border border-border border-dashed flex flex-wrap gap-x-2 gap-y-1.5 items-center max-w-full min-w-0 px-2.5 py-2 rounded-lg text-muted-foreground w-fit" data-reason="missing" data-testid="media-unavailable" role="status">
+                          <svg aria-hidden="true" class="shrink-0 size-3.5" data-icon="triangle-exclamation" data-weight="bold" role="img">
+                            <rect>
+                            <path>
+                          <span class="flex-1 min-w-0">
+                            <span class="block font-medium text-foreground truncate type-caption">
+                              "architecture.png"
+                            <span class="block type-caption">
+                              "File is missing."
+                  <article aria-labelledby="media-unavailable-actions-320-label" class="preview-cell svelte-<scope>" data-screen-preview="media-unavailable-actions-320">
+                    <h4 class="preview-label svelte-<scope>" id="media-unavailable-actions-320-label">
+                      "Media unavailable · actions · 320 px"
+                    <div class="narrow preview-frame svelte-<scope>" data-preview-width="320">
+                      <div class="p-4">
+                        <div class="bg-muted/30 border border-border border-dashed flex flex-wrap gap-x-2 gap-y-1.5 items-center max-w-full min-w-0 px-2.5 py-2 rounded-lg text-muted-foreground w-fit" data-reason="unsupported" data-testid="media-unavailable" role="status">
+                          <svg aria-hidden="true" class="shrink-0 size-3.5" data-icon="triangle-exclamation" data-weight="bold" role="img">
+                            <rect>
+                            <path>
+                          <span class="flex-1 min-w-0">
+                            <span class="block font-medium text-foreground truncate type-caption">
+                              "recording.webm"
+                            <span class="block type-caption">
+                              "This file type is not supported."
+                          <span class="flex gap-1 items-center shrink-0">
+                            <div>
+                              <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-6 hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    <svg aria-hidden="true" data-icon="copy" data-weight="bold" role="img">
+                                      <rect>
+                                      <path>
+                                    "Copy path"
+                  <article aria-labelledby="notify-error-toast-static-label" class="preview-cell svelte-<scope>" data-screen-preview="notify-error-toast-static">
+                    <h4 class="preview-label svelte-<scope>" id="notify-error-toast-static-label">
+                      "NotifyErrorToast · static"
+                    <div class="preview-frame svelte-<scope>" data-preview-width="full">
+                      <div class="svelte-<scope> toast-static">
+                        <div class="flex flex-1 gap-2.5 items-start min-w-0 pr-6 relative" data-toast-layout="error-details">
+                          <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-error" data-toast-glyph="error">
+                            <svg aria-hidden="true" role="img">
+                              <rect>
+                              <path>
+                          <div class="flex-1 min-w-0">
+                            <p class="break-words svelte-<scope> text-foreground toast-title">
+                              "Request failed"
+                            <details class="min-w-0 mt-2 svelte-<scope> text-muted-foreground text-sm">
+                              <summary class="cursor-pointer select-none svelte-<scope> toast-details-summary">
+                                <span aria-hidden="true" class="svelte-<scope> toast-details-chevron">
+                                  "›"
+                                "Technical details"
+                              <pre class="bg-muted break-all max-h-40 mt-2 overflow-auto p-2 rounded-(--radius-medium) whitespace-pre-wrap">
+                                "JSON-RPC -32000 The daemon rejected the request."
+                              <div>
+                                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none mt-2 px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-detail-copy transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                      "Copy"
+                          <div>
+                            <button aria-label="Close notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                  <svg aria-hidden="true" role="img">
+                                    <rect>
+                                    <path>
+          <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Fixture details"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "States"
+                <dd class="mt-1 text-foreground">
+                  "screen-composition, takeover, empty, error, loading, skeleton-text, skeleton-avatar, skeleton-card, skeleton-list, loading-indicator, notice-banner, notice-inline, media-unavailable, notify-error-toast, short-copy, long-copy, with-icon, without-icon, primary-action, secondary-action, no-action, width-320, full-width, compact-density, zoom-200, reduced-motion"
+              <div>
+                <dt>
+                  "Themes"
+                <dd class="mt-1 text-foreground">
+                  "light, dark"",
+}
+`;

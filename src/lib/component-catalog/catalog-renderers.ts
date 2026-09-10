@@ -16,6 +16,7 @@ import ModalCatalogPreview from './renderers/ModalCatalogPreview.svelte';
 import PopoversCatalogPreview from './renderers/PopoversCatalogPreview.svelte';
 import RowsCatalogPreview from './renderers/RowsCatalogPreview.svelte';
 import FieldsCatalogPreview from './renderers/FieldsCatalogPreview.svelte';
+import ScreenStatesCatalogPreview from './renderers/ScreenStatesCatalogPreview.svelte';
 
 export const catalogRendererIds = [
   'accordion',
@@ -46,6 +47,7 @@ export const catalogRendererIds = [
   'proximity-highlight',
   'popovers',
   'rows',
+  'screen-states',
   'radio-group',
   'scroll-area',
   'searchable-select',
@@ -113,6 +115,7 @@ export const catalogRenderers = {
   modals: ModalCatalogPreview,
   popovers: PopoversCatalogPreview,
   rows: RowsCatalogPreview,
+  'screen-states': ScreenStatesCatalogPreview,
   'proximity-highlight': ProximityHighlightCatalogPreview,
   'radio-group': ChoiceGroupCatalogPreview,
   'scroll-area': NavigationHelpCatalogPreview,

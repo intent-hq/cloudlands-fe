@@ -12,6 +12,7 @@ export const inputMessageMetadata = parseUiComponentMetadata({
   callers: [
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
+    'src/lib/component-catalog/renderers/ScreenStatesCatalogPreview.svelte',
     'src/lib/components/ui/file-input/file-input.svelte',
     'src/lib/components/ui/input-group/input-group.svelte',
     'src/lib/components/ui/input/input.svelte',
