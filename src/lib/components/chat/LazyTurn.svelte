@@ -157,17 +157,24 @@
     () => scrollRoot,
     () => containerRef,
   );
+  let ledgerRequestGeneration = 0;
 
   function setVisibleWithScrollCompensation(next: boolean) {
-    if (isVisible === next) return;
+    if (!isActive || disposed || isVisible === next) return;
     // Snapshot the scroller BEFORE the swap flushes: when the swap shrinks
     // scrollHeight (stale overestimated placeholder collapsing to real
     // content), the browser clamps scrollTop natively at flush time — the
     // snapshot lets the ledger preserve the reader's distance-from-bottom
     // through that clamp instead of double-shifting (bottom snap-back).
     const preSwap = snapshotScroller(scrollRoot);
+    const generation = ledgerRequestGeneration;
     isVisible = next;
-    void tick().then(() => ledger.request(preSwap));
+    void tick().then(() => {
+      // Cancellation must also invalidate continuations that have not queued
+      // their ledger request yet, even if the panel has since reactivated.
+      if (disposed || !isActive || ledgerRequestGeneration !== generation) return;
+      ledger.request(preSwap);
+    });
   }
 
   let resizeObserver: ResizeObserver | null = null;
@@ -291,6 +298,7 @@
     if (isActive) startMeasurements();
     else {
       cancelPendingSwapOut();
+      ledgerRequestGeneration += 1;
       ledger.cancel();
       stopMeasurements();
     }
@@ -324,6 +332,7 @@
 
     return () => {
       disposed = true;
+      ledgerRequestGeneration += 1;
       ledger.cancel();
       stopObserving();
       cancelPendingSwapOut();
