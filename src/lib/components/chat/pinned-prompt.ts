@@ -14,6 +14,7 @@ export interface PinnedPromptController {
 // Only turn-start source rows carry this identity, including automated wakes.
 // Passive subscription/footer cards must never become response context.
 const SELECTOR = '[data-pinned-prompt-id]';
+const MESSAGE_CHANGED_EVENT = 'pinned-prompt-message-changed';
 const ENTER_OFFSET = 1;
 const EXIT_OFFSET = 2;
 
@@ -124,6 +125,7 @@ export function trackPinnedPrompt(
 
   function stop() {
     container.removeEventListener('scroll', schedule);
+    container.removeEventListener(MESSAGE_CHANGED_EVENT, schedule);
     resizeObserver?.disconnect();
     resizeObserver = null;
     mutationObserver?.disconnect();
@@ -149,6 +151,7 @@ export function trackPinnedPrompt(
     });
     mutationObserver.observe(container, { childList: true, subtree: true, characterData: true });
     container.addEventListener('scroll', schedule, { passive: true });
+    container.addEventListener(MESSAGE_CHANGED_EVENT, schedule);
     schedule();
   }
 
@@ -173,6 +176,9 @@ export function attachPinnedPromptMessage(element: HTMLElement, message: AgentMe
   const update = (next: AgentMessage) => {
     (element as HTMLElement & { __pinnedPromptMessage?: AgentMessage }).__pinnedPromptMessage =
       next;
+    // Rehydrated metadata can change while the inner row is virtualized, with
+    // no DOM mutation or resize. Refresh through the owning viewport's batched read.
+    element.dispatchEvent(new Event(MESSAGE_CHANGED_EVENT, { bubbles: true }));
   };
   update(message);
   return { update };

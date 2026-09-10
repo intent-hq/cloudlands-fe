@@ -125,6 +125,63 @@ describe('pinned prompt tracker lifecycle', () => {
     vi.restoreAllMocks();
   });
 
+  it('refreshes same-id metadata without DOM mutations and stops refreshing while disabled', () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    const flush = () => frames.splice(0).forEach((callback) => callback(0));
+    class SilentObserver {
+      observe() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', SilentObserver);
+    vi.stubGlobal('MutationObserver', SilentObserver);
+    const container = document.createElement('div');
+    container.getBoundingClientRect = () => ({ top: 100 }) as DOMRect;
+    const turn = document.createElement('div');
+    turn.dataset.conversationTurn = '';
+    turn.getBoundingClientRect = () => ({ bottom: 500 }) as DOMRect;
+    const source = document.createElement('div');
+    source.dataset.pinnedPromptId = 'wake';
+    source.getBoundingClientRect = () => ({ bottom: 90 }) as DOMRect;
+    turn.append(source);
+    container.append(turn);
+    const original = message('wake');
+    const attached = attachPinnedPromptMessage(source, original);
+    const onChange = vi.fn();
+    const tracker = trackPinnedPrompt(container, { enabled: true, onChange });
+    flush();
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ message: original }));
+
+    const replacement = {
+      ...original,
+      contentBlocks: [{ type: 'text' as const, text: 'updated' }],
+    };
+    attached.update(replacement);
+    attached.update(replacement);
+    flush();
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ message: replacement }));
+
+    tracker.update({ enabled: false, onChange });
+    expect(onChange).toHaveBeenLastCalledWith(null);
+    onChange.mockClear();
+    attached.update(original);
+    flush();
+    expect(onChange).not.toHaveBeenCalled();
+    tracker.update({ enabled: true, onChange });
+    flush();
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ message: original }));
+    tracker.destroy();
+    onChange.mockClear();
+    attached.update(replacement);
+    flush();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('disconnects and restores listeners and observers when disabled', () => {
     const resizeDisconnect = vi.fn();
     const mutationDisconnect = vi.fn();
