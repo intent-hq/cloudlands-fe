@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
+    <link rel="stylesheet" href="%sveltekit.assets%/intent-mark/pulse.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
@@ -30,7 +31,7 @@
         justify-content: center;
         background: transparent;
       }
-      /* Inline IntentMarkLoader pulse variant, visible before the app bundle loads. */
+      /* Exact Pulse frames, loaded independently of the app bundle. */
       #splash-mark {
         display: block;
         width: 64px;
@@ -41,41 +42,10 @@
       .dark #splash-mark {
         color: hsl(var(--foreground, 145 80% 96%));
       }
-      #splash-mark path {
-        stroke: currentColor;
-        stroke-width: 18;
-        stroke-linecap: butt;
-        stroke-linejoin: miter;
-      }
-      #splash-mark path:nth-child(1) {
-        --pulse-x: -11px;
-        --pulse-y: -20px;
-      }
-      #splash-mark path:nth-child(2) {
-        --pulse-x: 11px;
-        --pulse-y: -20px;
-      }
-      #splash-mark path:nth-child(3) {
-        --pulse-x: -21px;
-        --pulse-y: 8px;
-      }
-      #splash-mark path:nth-child(4) {
-        --pulse-x: 21px;
-        --pulse-y: 8px;
-      }
-      @keyframes splash-pulse {
-        0%,
-        100% {
-          transform: translate(0, 0);
-        }
-        50% {
-          transform: translate(var(--pulse-x), var(--pulse-y));
-        }
-      }
-      @media (prefers-reduced-motion: no-preference) {
-        #splash-mark path:not(:last-child) {
-          animation: splash-pulse 2033.333ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
-        }
+      #splash-mark-viewport {
+        width: 256px;
+        height: 256px;
+        overflow: hidden;
       }
       @media (forced-colors: active) {
         #splash-mark {
@@ -135,15 +105,13 @@
         id="splash-mark"
         width="64"
         height="64"
-        viewBox="0 0 256 208"
+        viewBox="0 0 256 256"
         fill="none"
         aria-hidden="true"
       >
-        <path d="M76 8L94 61C99 76 92 83 78 77L27 48" />
-        <path d="M180 8L162 61C157 76 164 83 178 77L229 48" />
-        <path d="M16 104L68 96C83 94 89 102 79 114L45 157" />
-        <path d="M240 104L188 96C173 94 167 102 177 114L211 157" />
-        <path d="M128 126L128 184" />
+        <foreignObject width="256" height="256">
+          <div id="splash-mark-viewport"><div class="intent-pulse-frames"></div></div>
+        </foreignObject>
       </svg>
     </div>
     <div style="display: contents" id="app">%sveltekit.body%</div>

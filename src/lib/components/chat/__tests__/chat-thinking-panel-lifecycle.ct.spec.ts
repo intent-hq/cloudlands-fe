@@ -63,7 +63,7 @@ test('keeps concurrent panels independent and preserves lifecycle presentation',
             .getAnimations({ subtree: true })
             .filter((animation) => animation.effect?.getTiming().iterations === Infinity).length,
       ),
-    ).toBe(5);
+    ).toBe(1);
   }
 
   const firstRow = component.locator('[data-streaming-typing-row]').first();

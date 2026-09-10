@@ -142,13 +142,11 @@ test('matches adjacent tool-row geometry and keeps the explicit 8px top margin',
           }
 
           const mark = component.getByRole('status', { name: 'Loading' });
-          await expect(mark).toHaveAttribute('viewBox', '0 0 256 208');
-          await expect(mark.locator('[data-mark-arm]')).toHaveCount(5);
           const semanticColors = await mark.evaluate((node) => ({
             color: getComputedStyle(node).color,
-            stroke: getComputedStyle(node.querySelector('[data-mark-arm]')!).stroke,
+            ink: getComputedStyle(node.querySelector('[data-mark-sheet]')!).backgroundColor,
           }));
-          expect(semanticColors.stroke).toBe(semanticColors.color);
+          expect(semanticColors.ink).toBe(semanticColors.color);
         }
       }
     }
@@ -169,7 +167,7 @@ test('runs the mark only while active and holds neutral for reduced motion', asy
           .getAnimations({ subtree: true })
           .filter((animation) => animation.effect?.getTiming().iterations === Infinity).length,
     ),
-  ).toBe(5);
+  ).toBe(1);
 
   await mark.evaluate(
     (node) => ((window as typeof window & { thinkingRoot?: Element }).thinkingRoot = node),

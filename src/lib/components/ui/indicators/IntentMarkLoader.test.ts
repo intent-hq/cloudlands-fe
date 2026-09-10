@@ -97,7 +97,7 @@ function completeTransition(): void {
     ({ options, cancel }) =>
       options.duration === intentMarkMotionTiming.settleMs && cancel.mock.calls.length === 0,
   );
-  expect(live).toHaveLength(5);
+  expect(live).toHaveLength(2);
   live[0].finish();
 }
 
@@ -109,8 +109,8 @@ function liveLoops(root: Element): AnimationRecord[] {
 }
 
 describe('IntentMarkLoader', () => {
-  it('publishes the shared API and renders one accessible currentColor five-arm SVG', () => {
-    const { container, getByRole } = render(IntentMarkLoader, {
+  it('keeps the public API and accepts size, class, variant, and stopped state', () => {
+    const { getByRole } = render(IntentMarkLoader, {
       props: { variant: 'pulse', size: 48, playing: false, class: 'custom-mark' },
     });
     const root = getByRole('status', { name: 'Loading' });
@@ -119,9 +119,8 @@ describe('IntentMarkLoader', () => {
     expect(root.getAttribute('height')).toBe('48');
     expect(root.getAttribute('data-variant')).toBe('pulse');
     expect(root.classList.contains('custom-mark')).toBe(true);
-    expect(container.querySelectorAll('[data-mark-arm]')).toHaveLength(5);
-    expect(container.querySelectorAll('[data-mark-arm-box]')).toHaveLength(5);
-    expect(container.querySelectorAll('[data-bloom-arm]')).toHaveLength(5);
+    expect(root.getAttribute('data-motion-state')).toBe('neutral');
+    expect(records).toHaveLength(0);
     expect(intentMarkVariants).toEqual(['bloom', 'pulse', 'twist']);
     expect(spinnerMetadata.exports).toContain('IntentMarkVariant');
     expect(new Set(spinnerMetadata.exports.filter((name) => name !== 'IntentMarkVariant'))).toEqual(
@@ -137,7 +136,7 @@ describe('IntentMarkLoader', () => {
     ['twist', 'bloom'],
     ['twist', 'pulse'],
   ] as const)(
-    'morphs %s to %s on the same root and continues at the handoff frame',
+    'crossfades %s to %s on the same root, then runs only the requested loop',
     async (from, to) => {
       const view = render(IntentMarkLoader, { props: { variant: from, playing: true } });
       const root = view.container.querySelector<HTMLElement>('[data-slot="intent-mark-loader"]')!;
@@ -147,20 +146,24 @@ describe('IntentMarkLoader', () => {
       await view.rerender({ variant: to, playing: true });
       expect(view.container.querySelector('[data-slot="intent-mark-loader"]')).toBe(originalRoot);
       expect(root.dataset.motionState).toBe('morphing');
-      expect(root.dataset.handoffVariant).toBe(to);
       const morphs = records.filter(
         ({ options, cancel }) => options.duration === 160 && cancel.mock.calls.length === 0,
       );
-      expect(morphs).toHaveLength(5);
-      expect(morphs.every(({ frames }) => frames[0].d && frames[1].d)).toBe(true);
+      expect(morphs).toHaveLength(2);
+      expect(
+        morphs.every(({ frames }) =>
+          frames.every((frame) => Object.keys(frame).every((key) => key === 'opacity')),
+        ),
+      ).toBe(true);
       completeTransition();
       const loops = liveLoops(root);
-      expect(loops).toHaveLength(5);
+      expect(loops).toHaveLength(1);
+      expect((loops[0].target as HTMLElement).dataset.markSheet).toBe(to);
       expect(
         loops.every(({ frames }) =>
           frames.every((frame) =>
             Object.keys(frame).every((property) =>
-              ['easing', 'offset', 'opacity', 'transform'].includes(property),
+              ['easing', 'offset', 'transform'].includes(property),
             ),
           ),
         ),
@@ -169,7 +172,7 @@ describe('IntentMarkLoader', () => {
     },
   );
 
-  it('samples a rapid mid-morph pose and does not restart the stale destination', async () => {
+  it('cancels stale transitions during rapid updates without retaining extra sheets', async () => {
     const view = render(IntentMarkLoader, { props: { variant: 'pulse', playing: true } });
     const root = view.container.querySelector<HTMLElement>('[data-slot="intent-mark-loader"]')!;
     completeTransition();
@@ -177,32 +180,15 @@ describe('IntentMarkLoader', () => {
     const staleMorphs = records.filter(
       ({ options, cancel }) => options.duration === 160 && cancel.mock.calls.length === 0,
     );
-    vi.spyOn(window, 'getComputedStyle').mockImplementation(
-      () =>
-        ({
-          opacity: '0.47',
-          strokeDasharray: '61 39',
-          strokeDashoffset: '-17',
-          strokeWidth: '18.2px',
-          transform: 'matrix(0.8, 0, 0, 0.8, 3, 4)',
-          transformOrigin: '128px 99px',
-          getPropertyValue: (property: string) =>
-            property === 'd' ? 'path("M80 10L98 60C102 74 94 82 80 76L30 48")' : '',
-        }) as CSSStyleDeclaration,
-    );
     await view.rerender({ variant: 'twist', playing: true });
     expect(staleMorphs.every(({ cancel }) => cancel.mock.calls.length === 1)).toBe(true);
-    const current = records.filter(
-      ({ options, cancel }) => options.duration === 160 && cancel.mock.calls.length === 0,
-    );
-    expect(current[0].frames[0]).toMatchObject({
-      opacity: '0.47',
-      strokeDasharray: '61 39',
-      strokeDashoffset: '-17',
-      transform: 'matrix(0.8, 0, 0, 0.8, 3, 4)',
-    });
+    staleMorphs[0].finish();
+    expect(liveLoops(root)).toHaveLength(0);
+    expect(root.querySelectorAll('[data-mark-sheet]')).toHaveLength(2);
     completeTransition();
-    expect(root.dataset.loopPhase).toBe('0.2');
+    expect(liveLoops(root)).toHaveLength(1);
+    expect((liveLoops(root)[0].target as HTMLElement).dataset.markSheet).toBe('twist');
+    expect(root.querySelectorAll('[data-mark-sheet]')).toHaveLength(1);
   });
 
   it('stops, reactivates, respects tab visibility and reduced motion, and cleans up', async () => {
@@ -257,32 +243,53 @@ describe('IntentMarkLoader', () => {
     expect(secondLoops.every(({ cancel }) => cancel.mock.calls.length === 0)).toBe(true);
   });
 
-  it('samples every Bloom frame with compositor properties and no JS frame loop', () => {
-    expect(intentMarkMotionTiming).toMatchObject({
-      settleMs: 160,
-      bloomMs: 61_000 / 30,
-      pulseMs: 61_000 / 30,
-      twistMs: 110_000 / 30,
-    });
-    render(IntentMarkLoader, { props: { variant: 'bloom', playing: true } });
+  it.each([
+    ['pulse', 51],
+    ['bloom', 51],
+    ['twist', 92],
+  ] as const)(
+    'plays every %s source frame for 40ms using only stepped sheet translation',
+    (variant, count) => {
+      const view = render(IntentMarkLoader, { props: { variant, playing: true } });
+      completeTransition();
+      const [loop] = liveLoops(view.container);
+      expect(loop.options).toMatchObject({
+        duration: count * 40,
+        iterations: Infinity,
+        easing: 'linear',
+      });
+      expect(loop.frames).toHaveLength(count + 1);
+      for (const [index, frame] of loop.frames.entries()) {
+        expect(Object.keys(frame).sort()).toEqual(['easing', 'offset', 'transform']);
+        expect(frame.easing).toBe('steps(1, end)');
+        expect(frame.offset).toBe(index / count);
+        expect(frame.transform).toBe(
+          `translate(${-((index % count) % 8) * 256}px, ${-Math.floor((index % count) / 8) * 256}px)`,
+        );
+      }
+      expect((loop.target as HTMLElement).style.willChange).toBe('transform');
+      expect(loop.currentTime).toBe(0);
+    },
+  );
+
+  it('stops offscreen and resumes when visible without restarting unchanged props', async () => {
+    const view = render(IntentMarkLoader, { props: { variant: 'pulse', playing: true } });
+    const root = view.getByRole('status');
     completeTransition();
-    const loops = records.slice(-5);
-    expect(loops.every(({ frames }) => frames.length === 63)).toBe(true);
-    expect(loops.every(({ options }) => options.duration === 61_000 / 30)).toBe(true);
-    expect(
-      loops.every(({ frames }) => frames.every(({ easing }) => easing === 'steps(1, end)')),
-    ).toBe(true);
-    expect(
-      loops.every(({ frames }) =>
-        frames.every(
-          ({ d, strokeWidth, transformOrigin }) => !d && !strokeWidth && !transformOrigin,
-        ),
-      ),
-    ).toBe(true);
-    const arms = loops.map(({ target }) => target as SVGSVGElement);
-    expect(arms.every((arm) => arm.matches('[data-mark-arm-box]'))).toBe(true);
-    const paths = arms.map((arm) => arm.querySelector('path')!);
-    expect(paths.every((path) => path.style.strokeWidth === '18.45088')).toBe(true);
-    expect(paths.every((path) => path.style.transformOrigin === '128px 101px')).toBe(true);
+    const originalLoop = liveLoops(root)[0];
+    await view.rerender({ variant: 'pulse', playing: true, size: 64 });
+    expect(liveLoops(root)[0]).toBe(originalLoop);
+    const intersect = (isIntersecting: boolean) =>
+      intersectionCallbacks[0](
+        [{ isIntersecting, target: root } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    intersect(false);
+    expect(originalLoop.cancel).toHaveBeenCalledOnce();
+    expect(root.getAttribute('data-motion-state')).toBe('neutral');
+    intersect(true);
+    completeTransition();
+    expect(liveLoops(root)).toHaveLength(1);
+    expect(liveLoops(root)[0]).not.toBe(originalLoop);
   });
 });

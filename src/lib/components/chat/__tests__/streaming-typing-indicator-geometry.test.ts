@@ -60,7 +60,7 @@ function expectClasses(element: Element, contract: string) {
 }
 
 describe('StreamingTypingIndicator geometry matches operational rows', () => {
-  it('uses the shared row geometry and a 16px five-arm currentColor mark', () => {
+  it('uses the shared row geometry and a 16px accessible mark', () => {
     const { container } = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
@@ -77,8 +77,8 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
     expect(mark.getAttribute('data-playing')).toBe('true');
     expect(mark.getAttribute('width')).toBe('16');
     expect(mark.getAttribute('height')).toBe('16');
-    expect(mark.getAttribute('viewBox')).toBe('0 0 256 208');
-    expect(mark.querySelectorAll('[data-mark-arm]')).toHaveLength(5);
+    expect(mark.getAttribute('role')).toBe('status');
+    expect(mark.getAttribute('aria-label')).toBeTruthy();
     expect(container.innerHTML).not.toContain('legacy-spinner');
     expect(container.innerHTML).not.toContain('--color');
   });
@@ -119,7 +119,7 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
     });
     animationRecords[0].finish();
     expect(animationRecords.filter(({ options }) => options.iterations === Infinity)).toHaveLength(
-      5,
+      1,
     );
 
     view.unmount();
