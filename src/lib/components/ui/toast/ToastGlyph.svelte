@@ -55,7 +55,7 @@
   }
 
   .toast-glyph-warning {
-    color: hsl(var(--warning));
+    color: hsl(var(--warning-ink));
   }
 
   .toast-glyph-loading :global(path) {

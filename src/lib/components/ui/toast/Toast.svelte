@@ -188,14 +188,14 @@
   }
 
   .toast-static {
-    width: 100%;
+    width: min(100%, 22rem);
+    justify-self: start;
   }
 
   .toast-static :global([data-sonner-toaster]) {
     position: relative !important;
     inset: auto !important;
     transform: none !important;
-    width: 100% !important;
     height: calc(var(--front-toast-height) + 1rem) !important;
     padding-top: 1rem !important;
   }
