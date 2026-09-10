@@ -632,7 +632,7 @@
     title={m.workspace_fileChanges_unstaged_label()}
     subtitle={m.workspace_fileChanges_new_label()}
     active={hasUnstaged}
-    activeColor="bg-amber-500"
+    activeColor="bg-warning"
   >
     {#snippet action()}
       <!-- Auto-commit toggle -->

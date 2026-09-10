@@ -296,7 +296,7 @@
 
     // Active/running states
     if (type === 'agent:started' || type === 'agent:created') return 'text-blue-400/70';
-    if (type === 'agent:woken-by-subscription') return 'text-amber-400/70';
+    if (type === 'agent:woken-by-subscription') return 'text-warning-ink';
 
     // Messaging
     if (type === 'agent:message:sent' || type === 'agent:message:received')

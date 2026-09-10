@@ -324,7 +324,7 @@
 
       <!-- npx requirement hint for shim providers when binary not installed + npx missing/old -->
       {#if showNpxMissingHint}
-        <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+        <div class="mt-2 flex items-start gap-2 text-xs text-warning-ink">
           <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
           <span>
             {m.onboarding_providerCard_requiresNpx_before()}
@@ -337,7 +337,7 @@
           </span>
         </div>
       {:else if showNpxOldHint}
-        <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+        <div class="mt-2 flex items-start gap-2 text-xs text-warning-ink">
           <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
           <span>{m.onboarding_providerCard_npxTooOld_label()}</span>
         </div>
@@ -345,7 +345,7 @@
 
       <!-- Provider status warning (e.g. claude-code installed but npx missing) -->
       {#if provider.warning && !provider.statusLoading}
-        <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+        <div class="mt-2 flex items-start gap-2 text-xs text-warning-ink">
           <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
           <span>
             {provider.warning}{#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}

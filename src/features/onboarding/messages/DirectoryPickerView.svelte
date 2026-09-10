@@ -582,7 +582,7 @@
                     <Fa
                       icon={entry.isDirectory ? faFolder : faFile}
                       class={entry.isGitRepo
-                        ? 'text-amber-500'
+                        ? 'text-warning-ink'
                         : entry.isDirectory
                           ? 'text-blue-500/80'
                           : 'text-ghost'}
@@ -591,7 +591,7 @@
                     <span class="min-w-0 flex-1 truncate text-sm">{entry.name}</span>
                     {#if entry.isGitRepo}
                       <span title={m.onboarding_dirPicker_gitRepository_tooltip()}>
-                        <Fa icon={faCodeBranch} class="text-amber-500/70" size="xs" />
+                        <Fa icon={faCodeBranch} class="text-warning-ink" size="xs" />
                       </span>
                     {/if}
                   </Button>

@@ -77,7 +77,7 @@
       <!-- Header -->
       <div class="flex justify-between items-center p-4 border-b border-border">
         <h2 class="m-0 text-lg font-semibold flex items-center gap-2">
-          <Fa icon={faKey} class="text-amber-500" />
+          <Fa icon={faKey} class="text-warning-ink" />
           {m.lib_gitCredentials_title()}
         </h2>
         <Button

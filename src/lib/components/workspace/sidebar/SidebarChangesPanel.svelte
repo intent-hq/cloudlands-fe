@@ -1132,7 +1132,7 @@
           <!-- Truncation warning banner -->
           {#if changesTruncated}
             <div
-              class="mb-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-md text-xs text-amber-600 dark:text-amber-400"
+              class="mb-2 px-3 py-2 bg-warning/10 border border-warning/30 rounded-md text-xs text-warning-ink"
             >
               <span class="font-medium"
                 >{m.workspace_sidebarChanges_showingChanges_label({

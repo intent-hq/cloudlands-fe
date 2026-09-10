@@ -83,7 +83,7 @@
 
 <div
   class="rounded-lg border px-4 py-3 text-sm {variant === 'warning'
-    ? 'border-amber-500/30 bg-amber-500/5'
+    ? 'border-warning/30 bg-warning/10'
     : 'border-danger/30 bg-danger-background/5'}"
   in:fly={{ tier: 'moderate', distance: 10 }}
   role="alert"
@@ -91,15 +91,9 @@
   <div class="flex items-start gap-2 mb-2">
     <Fa
       icon={faExclamationTriangle}
-      class="mt-0.5 shrink-0 {variant === 'warning'
-        ? 'text-amber-600 dark:text-amber-400'
-        : 'text-danger'}"
+      class="mt-0.5 shrink-0 {variant === 'warning' ? 'text-warning-ink' : 'text-danger'}"
     />
-    <p
-      class="font-medium {variant === 'warning'
-        ? 'text-amber-700 dark:text-amber-300'
-        : 'text-danger'}"
-    >
+    <p class="font-medium {variant === 'warning' ? 'text-warning-ink' : 'text-danger'}">
       {titles[diagnosis.kind]}
     </p>
   </div>

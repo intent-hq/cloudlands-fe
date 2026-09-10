@@ -158,7 +158,7 @@
   // Color mapping for health states
   const healthColors: Record<DaemonHealth, string> = {
     healthy: 'bg-green-500',
-    degraded: 'bg-yellow-500',
+    degraded: 'bg-warning',
     down: 'bg-red-500',
   };
 
@@ -198,10 +198,10 @@
   });
 
   // A version mismatch or low workspace disk turns an otherwise-healthy dot
-  // yellow; degraded (already yellow) and down (red) are unchanged.
+  // warning; degraded (already warning) and down (red) are unchanged.
   const dotColorClass = $derived(
     $health$ === 'healthy' && (versionMismatch || workspaceDiskLow)
-      ? 'bg-yellow-500'
+      ? 'bg-warning'
       : healthColors[$health$],
   );
 
@@ -488,7 +488,7 @@
                     'font-medium',
                     $health$ === 'healthy' && !workspaceDiskLow
                       ? 'text-green-500'
-                      : 'text-yellow-500',
+                      : 'text-warning-ink',
                   )}
                 >
                   {$health$ === 'healthy'
@@ -543,7 +543,7 @@
                         (role="img" so the span's aria-label is reliably mapped).
                       -->
                           <span
-                            class="text-yellow-600 dark:text-yellow-500"
+                            class="text-warning-ink"
                             role="img"
                             aria-label={versionMismatchTooltip}
                           >
@@ -704,7 +704,7 @@
                     <span
                       class={cn(
                         'font-mono text-xs',
-                        $unslothStatus$.phase === 'ready' ? 'text-green-500' : 'text-yellow-500',
+                        $unslothStatus$.phase === 'ready' ? 'text-green-500' : 'text-warning-ink',
                       )}
                     >
                       {$unslothStatus$.phase}
@@ -820,7 +820,7 @@
                         protocol-mismatch icon below.
                       -->
                     <span
-                      class="text-yellow-600 dark:text-yellow-500"
+                      class="text-warning-ink"
                       role="img"
                       aria-label={`${m.layout_daemonStatus_certWarnings_tooltip()}: ${certWarningHosts}`}
                       data-testid="daemon-status-cert-warnings-icon"
@@ -841,7 +841,7 @@
                         so arrow-key navigation announces it with the row.
                       -->
                     <span
-                      class="text-yellow-600 dark:text-yellow-500"
+                      class="text-warning-ink"
                       role="img"
                       aria-label={m.layout_daemonStatus_protocolMismatch_tooltip()}
                     >

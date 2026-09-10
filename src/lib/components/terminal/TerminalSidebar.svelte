@@ -527,7 +527,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   function getStatusColor(script: ScriptWithState): string {
     const kind = getScriptStatusKind(script.runtime);
     if (kind === 'running' || kind === 'succeeded') return 'bg-green-500';
-    if (kind === 'restarting') return 'bg-amber-500';
+    if (kind === 'restarting') return 'bg-warning';
     if (kind === 'failed') return 'bg-red-500';
     if (kind === 'stopped') return 'bg-muted-foreground/60';
     return 'bg-muted-foreground/40';

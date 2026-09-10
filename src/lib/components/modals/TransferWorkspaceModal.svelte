@@ -324,7 +324,7 @@
                 <span class="text-xs text-subtle">{m.workspace_transfer_warnings_label()}</span>
                 {#each plan.warnings as warning (warning.code)}
                   <p class="flex items-start gap-2 text-xs bg-muted/50 rounded p-2">
-                    <Fa icon={faTriangleExclamation} class="text-amber-500 shrink-0 mt-0.5" />
+                    <Fa icon={faTriangleExclamation} class="text-warning-ink shrink-0 mt-0.5" />
                     <span>{warning.message}</span>
                   </p>
                 {/each}

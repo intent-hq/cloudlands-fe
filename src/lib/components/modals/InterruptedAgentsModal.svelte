@@ -162,7 +162,7 @@
 
 {#snippet takeoverLeading()}
   <div
-    class="flex size-10 items-center justify-center rounded-full bg-amber-500/20 text-amber-600 ring-1 ring-amber-600/20 dark:bg-amber-500/15 dark:text-amber-400"
+    class="flex size-10 items-center justify-center rounded-full bg-warning/20 text-warning-ink ring-1 ring-warning/20"
   >
     <Fa icon={faExclamationTriangle} size="lg" />
   </div>

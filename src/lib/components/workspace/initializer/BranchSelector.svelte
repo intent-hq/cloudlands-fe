@@ -1456,7 +1456,7 @@
                 side="bottom"
                 delayDuration={200}
               >
-                <span class="w-1.5 h-1.5 ml-0.5 rounded-full bg-amber-500 cursor-help"></span>
+                <span class="w-1.5 h-1.5 ml-0.5 rounded-full bg-warning cursor-help"></span>
               </Tooltip>
             </div>
           {/if}
@@ -1535,7 +1535,7 @@
             {/if}
             {#if showUncommittedIndicator && !skipIsolation && branchStatusHasUncommittedChanges && isCurrentBranch}
               <p class={branchStatusBehind > 0 ? 'mt-1.5' : ''}>
-                <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 mr-1 align-middle"
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-warning mr-1 align-middle"
                 ></span>
                 {m.workspace_branchSelector_uncommittedNotIncluded_label()}
               </p>

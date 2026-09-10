@@ -384,7 +384,7 @@
     {/if}
 
     {#if hasStaged}
-      <p class="text-xs text-amber-500">
+      <p class="text-xs text-warning-ink">
         {m.workspace_mergePanel_stagedNotIncluded_label()}
       </p>
     {/if}

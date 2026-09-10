@@ -1938,7 +1938,7 @@
               <IntentMarkLoader size={12} />
             </span>
           {:else if showModelWarning}
-            <Fa icon={faTriangleExclamation} class="h-3 w-3 text-amber-600 shrink-0" />
+            <Fa icon={faTriangleExclamation} class="h-3 w-3 text-warning-ink shrink-0" />
           {/if}
           {#if hasProviderIcon(triggerProviderId)}
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />

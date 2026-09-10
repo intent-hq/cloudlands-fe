@@ -1673,7 +1673,7 @@
               {:else if newRepoPathStatus?.exists && !newRepoPathStatus?.isGitRepo}
                 <!-- Existing folder but not a git repo -->
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-sm text-amber-500">
+                  <span class="text-sm text-warning-ink">
                     {m.workspace_repoSelector_folderNotGitRepo_label()}
                   </span>
                   <Button

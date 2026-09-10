@@ -70,7 +70,7 @@
       if (result?.status === 'already_active') {
         feedback = {
           message: m.modals_featureCode_alreadyActive_feedback(),
-          color: 'text-yellow-400',
+          color: 'text-warning-ink',
         };
       } else {
         feedback = { message: m.modals_featureCode_activated_feedback(), color: 'text-green-400' };
@@ -86,7 +86,7 @@
       ) {
         feedback = {
           message: m.modals_featureCode_alreadyActive_feedback(),
-          color: 'text-yellow-400',
+          color: 'text-warning-ink',
         };
       } else {
         feedback = {
@@ -138,7 +138,7 @@
     await refreshActiveFeatures();
     if (!result?.success) return;
     needsRestart = true;
-    feedback = { message: m.modals_featureCode_deactivated_feedback(), color: 'text-yellow-400' };
+    feedback = { message: m.modals_featureCode_deactivated_feedback(), color: 'text-warning-ink' };
     scheduleFeedbackClear();
   }
 </script>
