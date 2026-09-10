@@ -127,6 +127,7 @@
   {#if comment.location}
     <div class="flex items-center gap-2 px-4 py-2 border-t border-border">
       <Button
+        variant="ghost"
         class="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex-1 min-w-0"
         onclick={toggleCodeExpand}
       >
@@ -141,6 +142,7 @@
         </span>
       </Button>
       <Button
+        variant="ghost"
         class="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0"
         onclick={() => onViewInDiff?.(comment)}
         title={m.codeReview_commentCard_viewInDiff_tooltip()}
@@ -181,6 +183,7 @@
   <div class="flex items-center gap-3 px-4 py-2 border-t border-border">
     {#if onFix}
       <Button
+        variant="ghost"
         class="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
         onclick={() => onFix?.(comment)}
         disabled={isFixing}

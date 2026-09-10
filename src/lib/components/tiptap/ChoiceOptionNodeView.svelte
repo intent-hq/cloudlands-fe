@@ -101,6 +101,7 @@
   <!-- Keep .selection-button class for test compatibility -->
   <Button
     type="button"
+    variant="ghost"
     class="selection-button choice-option-marker cursor-pointer bg-transparent border-none p-0 text-inherit"
     onclick={(e) => {
       e.stopPropagation();

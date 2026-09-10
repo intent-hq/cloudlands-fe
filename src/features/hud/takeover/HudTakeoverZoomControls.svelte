@@ -19,6 +19,7 @@
   data-testid="hud-takeover-zoom"
 >
   <Button
+    variant="ghost"
     class="ov-map-zoom-btn"
     onclick={() => map.zoomFit()}
     aria-label={m.hud_takeover_zoomFit_ariaLabel()}
@@ -28,6 +29,7 @@
     {m.hud_takeover_zoomFit_label()}
   </Button>
   <Button
+    variant="ghost"
     class="ov-map-zoom-btn"
     onclick={() => map.zoomOut()}
     disabled={!map.canZoomOut}
@@ -38,6 +40,7 @@
     {m.hud_takeover_zoomOut_label()}
   </Button>
   <Button
+    variant="ghost"
     class="ov-map-zoom-btn"
     onclick={() => map.zoomIn()}
     disabled={!map.canZoomIn}
@@ -48,6 +51,7 @@
     {m.hud_takeover_zoomIn_label()}
   </Button>
   <Button
+    variant="ghost"
     class="ov-map-zoom-btn"
     onclick={() => map.zoomReset()}
     aria-label={m.hud_takeover_zoomReset_ariaLabel()}

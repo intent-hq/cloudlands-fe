@@ -141,6 +141,7 @@
           {m.tiptap_commentDialog_send_label()}
         </Button>
         <Button
+          variant="ghost"
           onclick={handleClose}
           class="text-xs px-2 py-1 rounded text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         >
@@ -152,6 +153,7 @@
 
   <!-- Backdrop - click outside to close -->
   <Button
+    variant="ghost"
     class="fixed inset-0 z-[14]"
     onclick={handleClose}
     aria-label={m.tiptap_commentDialog_close_ariaLabel()}

@@ -449,6 +449,7 @@
         </span>
         <Button
           type="button"
+          variant="ghost"
           data-testid="linked-task-title"
           data-task-row-content
           data-task-row-title

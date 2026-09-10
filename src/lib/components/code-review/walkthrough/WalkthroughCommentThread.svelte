@@ -174,6 +174,7 @@
     {#if onClose}
       <Button
         type="button"
+        variant="ghost"
         onclick={onClose}
         class="shrink-0 p-1 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors"
         title={m.codeReview_commentThread_dismiss_tooltip()}
@@ -188,6 +189,7 @@
     <div class="border-t border-border">
       <Button
         type="button"
+        variant="ghost"
         onclick={() => (showSuggestedChanges = !showSuggestedChanges)}
         class="w-full flex items-center justify-between px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
       >
@@ -266,6 +268,7 @@
         </Button>
         <Button
           type="button"
+          variant="ghost"
           onclick={() => {
             showReplyInput = false;
             replyText = '';
@@ -281,6 +284,7 @@
     {:else}
       <Button
         type="button"
+        variant="ghost"
         onclick={() => (showReplyInput = true)}
         class="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
       >

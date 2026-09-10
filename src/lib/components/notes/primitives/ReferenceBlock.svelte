@@ -216,6 +216,7 @@
           <!-- Show agent avatar that opens the agent panel -->
           <Button
             type="button"
+            variant="ghost"
             class="shrink-0 rounded-sm transition-opacity hover:opacity-80"
             onclick={(event) => {
               event.stopPropagation();
@@ -238,6 +239,7 @@
         <!-- Clickable area to toggle expansion -->
         <Button
           type="button"
+          variant="ghost"
           class="flex min-w-0 flex-1 items-center gap-2 text-left transition-colors hover:text-foreground"
           onclick={() => (expanded = !expanded)}
         >

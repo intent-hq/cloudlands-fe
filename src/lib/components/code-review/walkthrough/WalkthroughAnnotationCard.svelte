@@ -51,6 +51,7 @@
   <div class="flex-1 pb-6 min-w-0">
     <!-- File header - clickable -->
     <Button
+      variant="ghost"
       class="group mb-2 flex items-center gap-2 text-left transition-colors hover:text-primary-ink"
       onclick={() => onClick?.()}
       title={m.codeReview_annotationCard_viewInDiff_tooltip()}

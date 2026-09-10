@@ -85,6 +85,7 @@
 <Portal>
   <!-- Backdrop - click outside to close -->
   <Button
+    variant="ghost"
     class="fixed inset-0 z-50 bg-transparent"
     onclick={handleClose}
     aria-label={m.tiptap_launchDialog_close_ariaLabel()}

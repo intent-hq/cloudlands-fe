@@ -216,14 +216,14 @@
         </div>
         <div class="edit-actions">
           {#if hasChanges}
-            <Button type="button" class="action-btn" onclick={cancelChanges}
+            <Button type="button" variant="ghost" class="action-btn" onclick={cancelChanges}
               >{m.tiptap_mermaidBlock_cancel_label()}</Button
             >
             <Button type="button" class="action-btn primary" onclick={saveChanges}
               >{m.tiptap_mermaidBlock_save_label()}</Button
             >
           {:else}
-            <Button type="button" class="action-btn" onclick={closeCodeView}
+            <Button type="button" variant="ghost" class="action-btn" onclick={closeCodeView}
               >{m.tiptap_mermaidBlock_close_label()}</Button
             >
           {/if}
@@ -236,6 +236,7 @@
       <div class="action-btns">
         <Button
           type="button"
+          variant="ghost"
           class="hover-btn"
           onclick={openCodeView}
           title={m.tiptap_mermaidBlock_editCode_tooltip()}
@@ -244,6 +245,7 @@
         </Button>
         <Button
           type="button"
+          variant="ghost"
           class="hover-btn"
           onclick={openFullscreen}
           title={m.tiptap_mermaidBlock_fullscreen_tooltip()}

@@ -227,6 +227,7 @@
   {#if effectiveDisplayMode === 'icon' && !focused}
     <!-- Icon-only mode when not focused -->
     <Button
+      variant="ghost"
       class="icon-button {getCommentColor(comment.type, comment.status)} {replies.length > 0
         ? 'has-replies'
         : ''}"

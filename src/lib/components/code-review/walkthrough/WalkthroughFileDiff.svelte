@@ -403,6 +403,7 @@
   <div class="flex flex-col border-b border-border">
     <Button
       type="button"
+      variant="ghost"
       class="w-full flex items-center gap-2 px-4 py-3 hover:bg-muted/30 transition-colors text-left group"
       onclick={toggleFileCollapsed}
     >
@@ -466,6 +467,7 @@
         {#if totalChangedLines > previewLines.length}
           <Button
             type="button"
+            variant="ghost"
             class="w-full py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors text-center"
             onclick={toggleFileCollapsed}
           >
@@ -488,6 +490,7 @@
         >
           <Button
             type="button"
+            variant="ghost"
             class="text-muted-foreground hover:text-foreground transition-colors"
             onclick={expandAll}
           >
@@ -497,6 +500,7 @@
             <span class="text-subtle">·</span>
             <Button
               type="button"
+              variant="ghost"
               class="text-muted-foreground hover:text-foreground transition-colors"
               onclick={collapseToDefault}
             >
@@ -516,6 +520,7 @@
             {#if gapAtStart}
               <Button
                 type="button"
+                variant="ghost"
                 class="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors border-b border-border"
                 onclick={() => expandRange(hunkIndex, gapAtStart.startIndex, gapAtStart.endIndex)}
               >
@@ -564,6 +569,7 @@
                     {#if onSendMessage}
                       <Button
                         type="button"
+                        variant="ghost"
                         class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-primary-ink transition-all shrink-0"
                         onclick={() => handleOpenComment(lineKey)}
                         title={m.codeReview_fileDiff_askLine_tooltip()}
@@ -607,6 +613,7 @@
                 {#if gapAfter}
                   <Button
                     type="button"
+                    variant="ghost"
                     class="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors border-y border-border bg-muted/10"
                     onclick={() => expandRange(hunkIndex, gapAfter.startIndex, gapAfter.endIndex)}
                   >

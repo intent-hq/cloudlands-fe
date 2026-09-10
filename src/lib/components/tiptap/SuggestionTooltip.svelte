@@ -69,6 +69,7 @@
 
   <div class="suggestion-tooltip-actions">
     <Button
+      variant="ghost"
       class="accept"
       onclick={handleAccept}
       title={m.tiptap_suggestionTooltip_accept_tooltip()}
@@ -77,6 +78,7 @@
       {m.tiptap_suggestionTooltip_accept_label()}
     </Button>
     <Button
+      variant="ghost"
       class="reject"
       onclick={handleReject}
       title={m.tiptap_suggestionTooltip_reject_tooltip()}

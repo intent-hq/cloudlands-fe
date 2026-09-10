@@ -94,6 +94,7 @@
   <!-- Content -->
   <Button
     type="button"
+    variant="ghost"
     class="flex-1 min-w-0 text-left cursor-pointer group/content"
     onclick={onClick}
   >
@@ -114,6 +115,7 @@
   {#if isAgent && agentId}
     <Button
       type="button"
+      variant="ghost"
       class="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
       onclick={onAgentClick}
     >

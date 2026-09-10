@@ -250,6 +250,7 @@
       {#if isCollapsed && replies.length > 0}
         <div class="ml-8">
           <Button
+            variant="ghost"
             class="text-ui text-muted-foreground hover:text-foreground mt-1"
             onclick={(e) => {
               e.stopPropagation();

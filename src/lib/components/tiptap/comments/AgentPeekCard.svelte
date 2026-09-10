@@ -123,6 +123,7 @@
   <!-- Icon mode - just show avatar -->
   {#if agentData}
     <Button
+      variant="ghost"
       class="icon-button session-comment"
       onclick={() => onShow?.()}
       aria-label={m.tiptap_agentPeek_session_ariaLabel({ name: agentData.name })}
@@ -138,6 +139,7 @@
   {:else if isRecentComment}
     <!-- Waiting state in icon mode -->
     <Button
+      variant="ghost"
       class="icon-button session-comment"
       onclick={() => onShow?.()}
       aria-label={m.tiptap_agentPeek_launching_ariaLabel()}
@@ -149,6 +151,7 @@
   {:else}
     <!-- Error state in icon mode -->
     <Button
+      variant="ghost"
       class="icon-button session-comment error"
       onclick={() => onShow?.()}
       aria-label={m.tiptap_agentPeek_notFound_ariaLabel()}

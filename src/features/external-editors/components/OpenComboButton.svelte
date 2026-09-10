@@ -377,6 +377,7 @@
           <!-- With a single action there is no dropdown to show; run it directly. -->
           <Button
             type="button"
+            variant="ghost"
             onclick={actions.length > 1 ? undefined : handlePrimaryClick}
             class="cursor-pointer"
             title={primaryTitle}
@@ -402,6 +403,7 @@
           >
             <Button
               type="button"
+              variant="ghost"
               class="flex items-center gap-1.5 px-2 py-1 text-xs {bgClass} transition-colors cursor-pointer"
               onpointerdown={keepPrimaryActionOutsideDropdown}
               onkeydown={keepPrimaryActionOutsideDropdown}
@@ -433,6 +435,7 @@
               <Button
                 {...props}
                 type="button"
+                variant="ghost"
                 class="flex items-center h-full min-h-full px-1.5 py-2 {bgClass} border-lx border-border transition-colors cursor-pointer"
               >
                 <Fa icon={faChevronDown} class="w-2! h-2! text-ghost" />
@@ -456,6 +459,7 @@
             {/if}
             <Button
               type="button"
+              variant="ghost"
               class="flex flex-col w-full px-2 py-1.5 text-sm hover:bg-muted transition-colors text-left cursor-pointer"
               onclick={() => handleActionClick(action.id)}
             >

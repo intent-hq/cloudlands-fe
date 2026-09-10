@@ -87,6 +87,7 @@
 
 <Button
   type="button"
+  variant="ghost"
   class="task-status-icon inline-flex items-center justify-center shrink-0 cursor-pointer bg-transparent border-0 p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-primary-ink rounded-full"
   style="width: {size}px; height: {size}px;"
   {onclick}

@@ -214,6 +214,7 @@
     </label>
 
     <Button
+      variant="ghost"
       class="bg-transparent border-none text-primary-ink cursor-pointer text-sm px-2 py-1 ml-auto hover:underline"
       onclick={() => (showAdvanced = !showAdvanced)}
     >
@@ -231,6 +232,7 @@
     />
     {#if filters.searchQuery}
       <Button
+        variant="ghost"
         class="absolute right-2 top-1/2 -translate-y-1/2 bg-transparent border-none text-subtle cursor-pointer text-xl p-1"
         onclick={() => (filters.searchQuery = '')}
       >
@@ -303,12 +305,14 @@
             {#each $activityLogPresets$ as preset, i (`preset-${i}-${preset.name}`)}
               <div class="flex justify-between items-center">
                 <Button
+                  variant="ghost"
                   class="flex-1 text-left px-2 py-1 bg-transparent border border-transparent rounded cursor-pointer text-sm hover:bg-background hover:border-border"
                   onclick={() => loadPreset(preset)}
                 >
                   {preset.name}
                 </Button>
                 <Button
+                  variant="ghost"
                   class="bg-transparent border-none text-subtle cursor-pointer text-base p-1"
                   onclick={() => deletePreset(i)}
                 >
@@ -327,6 +331,7 @@
       <!-- Actions -->
       <div class="mt-4 flex justify-end">
         <Button
+          variant="ghost"
           class="px-4 py-2 bg-muted border border-border rounded cursor-pointer text-sm hover:bg-background"
           onclick={resetFilters}
         >

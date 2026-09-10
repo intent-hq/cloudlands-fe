@@ -374,10 +374,12 @@
           delayDuration={200}
         >
           <Button
+            variant="ghost"
             class="bubble-menu-btn"
             onclick={toggleBold}
             aria-label={m.tiptap_bubbleMenu_bold_label()}
             disabled={!editor.can().chain().focus().toggleBold().run()}
+            aria-pressed={editor.isActive('bold')}
             data-active={editor.isActive('bold')}
           >
             <Fa icon={faBold} size="xs" />
@@ -391,10 +393,12 @@
           delayDuration={200}
         >
           <Button
+            variant="ghost"
             class="bubble-menu-btn"
             onclick={toggleItalic}
             aria-label={m.tiptap_bubbleMenu_italic_label()}
             disabled={!editor.can().chain().focus().toggleItalic().run()}
+            aria-pressed={editor.isActive('italic')}
             data-active={editor.isActive('italic')}
           >
             <Fa icon={faItalic} size="xs" />
@@ -408,10 +412,12 @@
           delayDuration={200}
         >
           <Button
+            variant="ghost"
             class="bubble-menu-btn"
             onclick={toggleUnderline}
             aria-label={m.tiptap_bubbleMenu_underline_label()}
             disabled={!editor.can().chain().focus().toggleUnderline().run()}
+            aria-pressed={editor.isActive('underline')}
             data-active={editor.isActive('underline')}
           >
             <Fa icon={faUnderline} size="xs" />
@@ -425,10 +431,12 @@
           delayDuration={200}
         >
           <Button
+            variant="ghost"
             class="bubble-menu-btn"
             onclick={toggleStrike}
             aria-label={m.tiptap_bubbleMenu_strikethrough_label()}
             disabled={!editor.can().chain().focus().toggleStrike().run()}
+            aria-pressed={editor.isActive('strike')}
             data-active={editor.isActive('strike')}
           >
             <Fa icon={faStrikethrough} size="xs" />
@@ -442,10 +450,12 @@
           delayDuration={200}
         >
           <Button
+            variant="ghost"
             class="bubble-menu-btn"
             onclick={toggleCode}
             aria-label={m.tiptap_bubbleMenu_code_label()}
             disabled={!editor.can().chain().focus().toggleCode().run()}
+            aria-pressed={editor.isActive('code')}
             data-active={editor.isActive('code')}
           >
             <Fa icon={faCode} size="xs" />
@@ -459,9 +469,11 @@
           delayDuration={200}
         >
           <Button
+            variant="ghost"
             class="bubble-menu-btn"
             onclick={handleLinkClick}
             aria-label={m.tiptap_bubbleMenu_addLink_label()}
+            aria-pressed={editor.isActive('link')}
             data-active={editor.isActive('link')}
           >
             <Fa icon={faLink} size="xs" />
@@ -477,6 +489,7 @@
             delayDuration={200}
           >
             <Button
+              variant="ghost"
               class="bubble-menu-btn"
               onclick={handleAddComment}
               aria-label={m.tiptap_bubbleMenu_addComment_label()}
@@ -491,6 +504,7 @@
             delayDuration={200}
           >
             <Button
+              variant="ghost"
               class="bubble-menu-btn"
               onclick={handleLaunchAgentClick}
               aria-label={m.tiptap_bubbleMenu_sendToAgent_label()}
@@ -514,6 +528,7 @@
           />
           <div class="link-input-actions">
             <Button
+              variant="ghost"
               class="bubble-menu-btn small"
               onclick={handleSetLink}
               aria-label={m.tiptap_bubbleMenu_setLink_ariaLabel()}
@@ -521,6 +536,7 @@
               <Fa icon={faCheck} size="xs" />
             </Button>
             <Button
+              variant="ghost"
               class="bubble-menu-btn small"
               onclick={handleCancelLink}
               aria-label={m.tiptap_bubbleMenu_cancel_ariaLabel()}
@@ -590,7 +606,7 @@
     cursor: not-allowed;
   }
 
-  :global(.bubble-menu-btn[data-active='true']) {
+  :global(.bubble-menu-btn[aria-pressed='true']) {
     background-color: hsl(var(--muted));
     color: hsl(var(--foreground));
   }

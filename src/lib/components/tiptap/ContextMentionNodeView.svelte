@@ -363,6 +363,7 @@
     <!-- Delete button - shows on hover, positioned outside TooltipRich to avoid snippet issues -->
     <Button
       type="button"
+      variant="ghost"
       onclick={handleDelete}
       class="delete-btn absolute right-0 top-0 bottom-0 flex items-center justify-center w-5 rounded-r-md cursor-pointer
         opacity-0 group-hover/pill:opacity-100 transition-opacity
@@ -391,6 +392,7 @@
     >
       <Button
         type="button"
+        variant="ghost"
         onclick={handleSwitchToPRBranch}
         class="branch-switch-btn inline-flex items-center justify-center w-5 h-5 ml-1 rounded cursor-pointer transition-colors
           hover:bg-primary/20"

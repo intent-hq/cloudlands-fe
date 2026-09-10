@@ -421,6 +421,7 @@
           <!-- Show agent avatar that opens the agent panel -->
           <Button
             type="button"
+            variant="ghost"
             class="flex-none hover:opacity-80 transition-opacity cursor-pointer"
             onclick={(event) => {
               const agentWsId = workspaceId;
@@ -440,6 +441,7 @@
         {/if}
         <Button
           type="button"
+          variant="ghost"
           class="flex items-center gap-1.5 text-subtle transition-colors flex-1 min-w-0 cursor-pointer"
           onclick={toggleExpanded}
         >
@@ -467,6 +469,7 @@
               <Button
                 {...props}
                 type="button"
+                variant="ghost"
                 class="flex-none p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-muted-foreground cursor-pointer"
                 onclick={(e) => {
                   e.stopPropagation();
@@ -485,6 +488,7 @@
             <div class="min-w-36">
               <Button
                 type="button"
+                variant="ghost"
                 class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-muted/50 transition-colors cursor-pointer"
                 onclick={() => {
                   handleCopyAsSvg();
@@ -496,6 +500,7 @@
               </Button>
               <Button
                 type="button"
+                variant="ghost"
                 class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-muted/50 transition-colors cursor-pointer"
                 onclick={() => {
                   handleCopyAsPng();

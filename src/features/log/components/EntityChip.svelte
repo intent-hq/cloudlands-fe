@@ -74,6 +74,7 @@
     <Tooltip.Trigger>
       <Button
         type="button"
+        variant="ghost"
         class={cn(
           'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
           'transition-colors duration-150 cursor-pointer',

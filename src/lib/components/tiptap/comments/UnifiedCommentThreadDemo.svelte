@@ -67,7 +67,10 @@
     <div class="space-y-4">
       <div class="flex items-center gap-4 mb-4">
         <Button
-          class="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+          variant="ghost"
+          active={isCollapsed}
+          aria-pressed={isCollapsed}
+          class="px-4 py-2 rounded-md transition-colors"
           onclick={() => (isCollapsed = !isCollapsed)}
         >
           <!-- i18n-ignore (dev-only demo content) -->

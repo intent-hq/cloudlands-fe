@@ -339,6 +339,7 @@
             {commentText}
           </div>
           <Button
+            variant="ghost"
             class="block text-sm text-muted-foreground hover:text-foreground underline underline-offset-2"
             onclick={() => (expanded = true)}
             type="button">{m.tiptap_comment_more_label()}</Button
@@ -358,6 +359,7 @@
     <!-- Agent link for session comments -->
     {#if isSessionCommentWithAgent(comment)}
       <Button
+        variant="ghost"
         onclick={(e) => {
           const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
           const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;

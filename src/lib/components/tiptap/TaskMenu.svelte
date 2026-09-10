@@ -72,12 +72,12 @@
   class:anchored={anchorName}
   style={anchorName ? `position-anchor: --${anchorName};` : ''}
 >
-  <Button class="task-menu-item" onclick={() => handleAction('assign-agent')}>
+  <Button variant="ghost" class="task-menu-item" onclick={() => handleAction('assign-agent')}>
     <Fa icon={faRobot} size="sm" class="w-4 h-4" />
     <span>{m.tiptap_taskMenu_assignToAgent_label()}</span>
   </Button>
 
-  <Button class="task-menu-item" onclick={() => handleAction('task-breakdown')}>
+  <Button variant="ghost" class="task-menu-item" onclick={() => handleAction('task-breakdown')}>
     <Fa icon={faList} size="sm" class="w-4 h-4" />
     <span>{m.tiptap_taskMenu_breakIntoSubtasks_label()}</span>
   </Button>

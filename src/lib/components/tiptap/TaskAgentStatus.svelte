@@ -366,6 +366,7 @@
 
 {#if shouldShow}
   <Button
+    variant="ghost"
     onclick={handleClick}
     onmousedown={(e) => e.preventDefault()}
     class="task-agent-status {compact ? 'compact' : ''} {indicator ? 'indicator' : ''} {!agent

@@ -1221,6 +1221,7 @@
           <span class="opacity-40">/</span>
         {/if}
         <Button
+          variant="ghost"
           class="hover:text-foreground transition-colors truncate max-w-[120px] cursor-pointer {i ===
           breadcrumbs.length - 1
             ? 'text-foreground font-medium'
@@ -1305,6 +1306,7 @@
               onblur={() => !searchQuery.trim() && closeSearch()}
             />
             <Button
+              variant="ghost"
               class="text-muted-foreground hover:text-foreground text-xs"
               onclick={closeSearch}
             >
@@ -1355,6 +1357,7 @@
         </div>
       {:else}
         <Button
+          variant="ghost"
           class="flex items-center gap-2 px-2.5 py-1.5 rounded text-xs bg-background/70 text-muted-foreground hover:bg-background/90 hover:text-foreground transition-all cursor-pointer"
           onclick={openSearch}
         >
@@ -1379,6 +1382,8 @@
       <!-- Changes toggle (when there are any changes) -->
       {#if hasAnyChanges}
         <Button
+          variant="ghost"
+          aria-pressed={showChangesMode}
           class="flex items-center gap-3 px-2.5 py-1.5 rounded text-xs cursor-pointer border {showChangesMode
             ? 'bg-background/95 text-foreground shadow-sm border-border'
             : 'bg-background/70 text-muted-foreground hover:bg-background/90 border-border'}"

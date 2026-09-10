@@ -84,6 +84,7 @@
   </Button>
   <Button
     type="button"
+    variant="ghost"
     onclick={() => onClose?.()}
     class="h-8 px-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
   >

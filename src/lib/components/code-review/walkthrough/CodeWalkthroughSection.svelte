@@ -234,6 +234,7 @@
 <div class="border-t border-border">
   <!-- Header -->
   <Button
+    variant="ghost"
     class="flex items-center gap-2 w-full px-4 py-3 hover:bg-muted/30 transition-colors cursor-pointer"
     onclick={() => (isExpanded = !isExpanded)}
   >
@@ -326,6 +327,7 @@
             <div class="pt-4 border-t border-border">
               <Button
                 type="button"
+                variant="ghost"
                 class="flex items-center gap-2 w-full text-left py-2 hover:bg-muted/30 rounded transition-colors"
                 onclick={() => (isOtherFilesExpanded = !isOtherFilesExpanded)}
               >

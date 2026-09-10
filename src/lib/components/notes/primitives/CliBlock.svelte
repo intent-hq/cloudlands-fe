@@ -187,6 +187,7 @@
         <!-- Show agent avatar that opens the agent panel -->
         <Button
           type="button"
+          variant="ghost"
           class="shrink-0 rounded-sm transition-opacity hover:opacity-80"
           onclick={(event) => {
             if (workspaceId) {
