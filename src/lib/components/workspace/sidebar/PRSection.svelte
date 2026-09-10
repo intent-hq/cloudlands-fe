@@ -1032,6 +1032,7 @@
                (secondary-root browsing) mode (monorepo#2053). -->
         {#if !listOnly && (hasAnyPRs || $githubAuthIsAuthenticated$)}
           <Button
+            variant="ghost"
             type="button"
             class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
             onclick={() => {
@@ -1111,6 +1112,7 @@
 
               <Fa icon={statusIcon} size="xs" class="{statusColor} shrink-0" />
               <Button
+                variant="ghost"
                 type="button"
                 class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
                 onclick={onOpenFullPanel}

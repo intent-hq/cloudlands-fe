@@ -139,6 +139,7 @@
   <DropdownMenu bind:open={menuOpen} align="start" side="bottom">
     {#snippet trigger({ props })}
       <Button
+        variant="ghost"
         {...props}
         class="inline-flex font-mediumx text-subtlex items-center cursor-pointer {compact
           ? 'py-0.5 text-sm gap-1.5'
@@ -159,6 +160,7 @@
       >
         {#each statusOptions as option, i (option)}
           <Button
+            variant="ghost"
             onclick={() => handleStatusSelect(option, close)}
             onmouseenter={() => (selectedIndex = i)}
             class="w-full text-left px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-2 cursor-pointer {i ===

@@ -212,6 +212,7 @@
           <div class="h-px bg-border my-1"></div>
         {:else}
           <Button
+            variant="ghost"
             class="w-full flex gap-2.5 px-3 py-1.5 text-left hover:bg-muted transition-colors rounded-sm cursor-pointer"
             onclick={() => handlePresetClick(preset.id, close)}
           >

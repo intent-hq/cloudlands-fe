@@ -197,6 +197,7 @@
               ><Fa icon={faCheck} size="xs" /></span
             >{/if}{/snippet}
         <Button
+          variant="ghost"
           class="text-ui text-subtle bg-transparent
                  border-none px-1 py-0.5 rounded cursor-pointer text-left
                  max-w-full overflow-hidden text-ellipsis whitespace-nowrap

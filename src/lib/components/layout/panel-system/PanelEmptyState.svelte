@@ -232,6 +232,7 @@
   <div class="creation-grid grid gap-1.5">
     {#each creationActions as action (action.id)}
       <Button
+        variant="ghost"
         class="creation-card type-body flex min-h-16 cursor-pointer items-center gap-2.5 rounded-md border border-transparent bg-muted/30 px-3 py-2.5 text-left text-foreground transition-transform duration-150 focus-visible:outline-none motion-reduce:transition-none"
         onclick={action.action}
         title={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
@@ -263,6 +264,7 @@
       {#each recentItems as item (item.tab.id + '-' + item.closedAt)}
         {@const resourceKind = getResourceIconKind(item.tab.type)}
         <Button
+          variant="ghost"
           class="recent-item type-caption flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none motion-reduce:transition-none"
           onclick={handleReopenItem}
           title={m.layout_panelEmptyState_reopen_tooltip({ title: item.tab.title })}
@@ -282,6 +284,7 @@
   <div class="shortcut-grid mt-5 grid gap-x-5 gap-y-0.5 pt-3">
     {#each utilityActions as action (action.key)}
       <Button
+        variant="ghost"
         class="shortcut-item type-caption flex cursor-pointer items-center justify-between gap-3 rounded-md px-1 py-1.5 text-left text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none motion-reduce:transition-none"
         onclick={action.action}
         title={action.label}

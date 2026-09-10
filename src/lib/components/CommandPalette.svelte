@@ -941,6 +941,7 @@
           <div class="px-3 py-2">
             {#if goToLineNumber != null && goToLineNumber > 0}
               <Button
+                variant="ghost"
                 class="w-full px-3 py-2 flex items-center gap-3 text-left rounded-md bg-foreground/[0.04] hover:bg-foreground/[0.06] transition-colors duration-50"
                 onclick={() => {
                   if (goToLineNumber != null && goToLineNumber > 0) {
@@ -974,6 +975,7 @@
                 <div class="flex gap-2">
                   {#each searchResults.filter((r) => r._newAction && !r._newWorkspace) as action}
                     <Button
+                      variant="ghost"
                       class="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors duration-100
                              {selectedIndex === action._idx
                         ? 'border-foreground/[0.12] bg-foreground/[0.04]'
@@ -992,6 +994,7 @@
                 <!-- Right side: New Workspace -->
                 {#each searchResults.filter((r) => r._newWorkspace) as wsAction}
                   <Button
+                    variant="ghost"
                     class="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors duration-100
                            {selectedIndex === wsAction._idx
                       ? 'border-foreground/[0.12] bg-foreground/[0.04]'
@@ -1025,6 +1028,7 @@
             {:else if item._showMore}
               <!-- Show More Button -->
               <Button
+                variant="ghost"
                 class="w-full px-3 py-1.5 flex items-center justify-center gap-2 text-left transition-colors duration-50
                        hover:bg-foreground/[0.03]"
                 onclick={() => selectItem(item)}
@@ -1036,6 +1040,7 @@
             {:else if !item._newAction}
               <!-- Regular Item -->
               <Button
+                variant="ghost"
                 class="w-full px-3 py-1.5 flex items-start gap-3 text-left transition-colors duration-50
                        {selectedIndex === index
                   ? 'bg-foreground/[0.04]'

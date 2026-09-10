@@ -1087,6 +1087,7 @@
 
           <div class="flex items-center mb-4 -ml-1 gap-1.25 h-7">
             <Button
+              variant="ghost"
               type="button"
               class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer z-10"
               onclick={handleRefreshGitStatus}
@@ -1100,6 +1101,7 @@
             {#if hasAnyChanges}
               {@const isActive = isAllChangesViewActive}
               <Button
+                variant="ghost"
                 onclick={handleOpenAllChanges}
                 class="flex flex-1 items-center border gap-2 pr-2 py-1.5 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0 {isActive
                   ? 'bg-background text-foreground border-transparent pl-2'

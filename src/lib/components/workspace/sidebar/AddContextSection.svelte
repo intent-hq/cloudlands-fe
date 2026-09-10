@@ -166,6 +166,7 @@
       <div class="">
         <!-- Note -->
         <Button
+          variant="ghost"
           class="w-full px-3 py-2 flex items-center gap-2.5 transition-colors text-left hover:bg-muted/50 cursor-pointer"
           onclick={handleNoteClick}
         >
@@ -197,6 +198,7 @@
 
         <!-- Browser -->
         <Button
+          variant="ghost"
           class="w-full px-3 py-2 flex items-center gap-2.5 transition-colors text-left hover:bg-muted/50 cursor-pointer"
           onclick={handleBrowserClick}
         >

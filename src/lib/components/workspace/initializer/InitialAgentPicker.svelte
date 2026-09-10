@@ -788,6 +788,7 @@
           <div class="min-w-[220px] max-h-[300px] overflow-y-auto">
             <!-- General (blank) option -->
             <Button
+              variant="ghost"
               type="button"
               class="specialist-option {selectedSpecialist === null ||
               (selectedSpecialist && isTeamRoleId(selectedSpecialist))
@@ -811,6 +812,7 @@
 
               {#each customSpecialists as specialist (specialist.id)}
                 <Button
+                  variant="ghost"
                   type="button"
                   class="specialist-option {selectedSpecialist === specialist.id
                     ? 'specialist-option-selected'
@@ -833,6 +835,7 @@
 
             <!-- Create new specialist link -->
             <Button
+              variant="ghost"
               type="button"
               class="sticky bottom-0 border-t border-border bg-background px-4 gap-3 py-1 z-10 w-full flex items-center text-subtle cursor-pointer"
               onclick={openSpecialistSettings}

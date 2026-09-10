@@ -272,6 +272,7 @@
         class="block"
       >
         <Button
+          variant="ghost"
           class="w-full h-8 flex items-center justify-center rounded-md transition-colors {isActive
             ? 'bg-secondary text-secondary-foreground'
             : 'hover:bg-accent'}"

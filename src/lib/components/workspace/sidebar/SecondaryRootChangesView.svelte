@@ -183,6 +183,7 @@
       <span class="text-ui truncate min-w-0">{branchLabel}</span>
     {/if}
     <Button
+      variant="ghost"
       type="button"
       class="ml-auto p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
       onclick={load}

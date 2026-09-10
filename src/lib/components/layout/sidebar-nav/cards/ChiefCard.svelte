@@ -298,6 +298,7 @@
 {#if !expanded}
   <div class="p-3">
     <Button
+      variant="ghost"
       type="button"
       class="block w-full cursor-pointer rounded-sm text-left outline-none"
       onclick={openChiefPanel}
@@ -397,6 +398,7 @@
           : 'mr-0 w-6 opacity-100'}"
       >
         <Button
+          variant="ghost"
           class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
           onclick={handleNewThreadClick}
           disabled={isCreatingThread || collapsed}

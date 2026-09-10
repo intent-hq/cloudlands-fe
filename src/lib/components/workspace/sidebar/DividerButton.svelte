@@ -79,7 +79,15 @@
     <TooltipPrimitive.Root delayDuration={200} disableHoverableContent>
       <TooltipPrimitive.Trigger>
         {#snippet child({ props })}
-          <Button type="button" class={buttonClass} {onclick} {disabled} {...restProps} {...props}>
+          <Button
+            variant="ghost"
+            type="button"
+            class={buttonClass}
+            {onclick}
+            {disabled}
+            {...restProps}
+            {...props}
+          >
             {@render buttonContent()}
           </Button>
         {/snippet}
@@ -98,7 +106,7 @@
     </TooltipPrimitive.Root>
   </TooltipPrimitive.Provider>
 {:else}
-  <Button type="button" class={buttonClass} {onclick} {disabled} {...restProps}>
+  <Button variant="ghost" type="button" class={buttonClass} {onclick} {disabled} {...restProps}>
     {@render buttonContent()}
   </Button>
 {/if}

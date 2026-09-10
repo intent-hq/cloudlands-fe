@@ -94,6 +94,7 @@
   <!-- WIP Draft -->
   {#if hasDraft}
     <Button
+      variant="ghost"
       class="w-full text-left p-2.5 rounded-lg bg-primary/5 border border-primary/15 hover:bg-primary/10 transition-colors cursor-pointer group"
       onclick={openWithDraft}
     >
@@ -119,6 +120,7 @@
       <div class="flex flex-col">
         {#each recentRepos as repo}
           <Button
+            variant="ghost"
             class="flex items-center gap-2 px-1 py-1 rounded-md text-left hover:bg-sidebar cursor-pointer w-full focus:outline-0"
             onclick={(e) =>
               openModal(

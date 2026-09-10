@@ -55,6 +55,7 @@
 </script>
 
 <Button
+  variant="ghost"
   type="button"
   class="file-node-card flex gap-2 px-2.5 py-2 rounded-md border border-border shadow-xs transition-all duration-200 cursor-pointer
     bg-muted/30 hover:bg-muted/50

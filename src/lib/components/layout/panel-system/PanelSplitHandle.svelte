@@ -182,6 +182,7 @@
 </script>
 
 <Button
+  variant="ghost"
   type="button"
   bind:ref={handleRef}
   class={cn(

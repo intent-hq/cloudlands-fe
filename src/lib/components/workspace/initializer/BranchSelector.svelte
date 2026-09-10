@@ -1483,6 +1483,7 @@
         <!-- Suggested PR branch -->
         {#if suggestedBranch && suggestedBranch !== internalSelectedBranch}
           <Button
+            variant="ghost"
             type="button"
             class="mx-2 mb-2 px-3 py-2 flex items-center gap-2 text-sm text-left rounded-md bg-primary/10 hover:bg-primary/15 border border-primary/20 transition-colors cursor-pointer"
             onclick={() => selectBranch(suggestedBranch)}
@@ -1547,6 +1548,7 @@
           {#if githubAuthNeeded === 'not-authenticated' && !isConnectingGitHub}
             <!-- Connect with GitHub prompt for private repos -->
             <Button
+              variant="ghost"
               type="button"
               class="w-full px-3 py-3 flex items-center gap-3 hover:bg-muted/50 transition-colors cursor-pointer text-left border-l-2 border-primary bg-primary/5"
               onclick={handleConnectGitHub}
@@ -1818,6 +1820,7 @@
         {#if typeof onSkipIsolationChange === 'function' && currentBranch}
           <div class="px-2 pt-2 pb-3 border-t border-border sticky -bottom-1 bg-background">
             <Button
+              variant="ghost"
               onclick={() => {
                 const enabling = !skipIsolation;
                 try {

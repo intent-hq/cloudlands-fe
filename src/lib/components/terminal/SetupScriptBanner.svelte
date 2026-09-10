@@ -252,6 +252,7 @@
         {m.terminal_setupBanner_headline_suffix()}
       </p>
       <Button
+        variant="ghost"
         type="button"
         class="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
         onclick={dismiss}
@@ -270,6 +271,7 @@
         </Button>
       {/if}
       <Button
+        variant="ghost"
         type="button"
         class="p-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
         onclick={close}
@@ -318,6 +320,7 @@
           {m.terminal_setupBanner_save_label()}
         </Button>
         <Button
+          variant="ghost"
           type="button"
           class="p-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
           onclick={() => (isExpanded = false)}

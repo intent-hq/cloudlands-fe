@@ -118,6 +118,7 @@
   <!-- Version list -->
   <div class="version-list">
     <Button
+      variant="ghost"
       class="version-item {selectedVersionIndex === null ? 'selected' : ''}"
       onclick={() => (selectedVersionIndex = null)}
     >
@@ -137,6 +138,7 @@
     {:else}
       {#each versions as version, index (version.versionId)}
         <Button
+          variant="ghost"
           class="version-item {selectedVersionIndex === index ? 'selected' : ''}"
           onclick={() => (selectedVersionIndex = index)}
         >

@@ -196,6 +196,7 @@
     {/if}
 
     <Button
+      variant="ghost"
       type="button"
       class="flex min-w-0 flex-1 items-center gap-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       onclick={() => handleEventClick(row.event)}
@@ -254,6 +255,7 @@
 
       {#if hasMore}
         <Button
+          variant="ghost"
           type="button"
           class="shrink-0 w-full text-sm text-muted-foreground hover:text-foreground transition-colors mt-1.5 flex items-center gap-1 cursor-pointer outline-none"
           onclick={() => (expanded = !expanded)}
@@ -273,6 +275,7 @@
 
       {#if onViewAll}
         <Button
+          variant="ghost"
           type="button"
           class="shrink-0 w-full text-sm text-muted-foreground hover:text-foreground transition-colors mt-1.5 flex items-center gap-1 cursor-pointer"
           onclick={() => onViewAll?.()}

@@ -502,6 +502,7 @@
               {/if}
 
               <Button
+                variant="ghost"
                 type="button"
                 class="ml-0.5 p-1 text-muted-foreground hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
                 onclick={(e) => closeTerminal(term.id, e)}
@@ -518,6 +519,7 @@
             delayDuration={300}
           >
             <Button
+              variant="ghost"
               type="button"
               class="flex items-center justify-center w-7 h-7 ml-1 border-none rounded-md bg-transparent text-muted-foreground cursor-pointer transition-all duration-150 hover:bg-muted/80 hover:text-foreground"
               onclick={createNewTerminal}

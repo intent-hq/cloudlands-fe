@@ -69,6 +69,7 @@
 </script>
 
 <Button
+  variant="ghost"
   type="button"
   class="agent-node-card flex flex-col items-center gap-1 p-2 rounded-lg border transition-all duration-200 cursor-pointer
     {node.isCoordinator

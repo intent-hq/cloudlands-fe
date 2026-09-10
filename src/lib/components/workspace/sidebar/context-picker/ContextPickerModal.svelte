@@ -85,6 +85,7 @@
             <h2 class="text-sm font-semibold">{providerTitles[provider]}</h2>
           </div>
           <Button
+            variant="ghost"
             type="button"
             class="p-1.5 rounded hover:bg-muted transition-colors cursor-pointer"
             onclick={onClose}

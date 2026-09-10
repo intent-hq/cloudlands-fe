@@ -226,6 +226,7 @@
         <div class="flex flex-col gap-1.5 min-h-6 min-w-0 overflow-hidden">
           {#if assignedAgents.length === 0}
             <Button
+              variant="ghost"
               onclick={handleRunAgent}
               class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
               title={m.workspace_noteMetadataBar_runAgent_tooltip()}
@@ -236,6 +237,7 @@
             <div class="flex flex-wrap items-center gap-1.5 min-w-0">
               {#each assignedAgents as agentId (agentId)}
                 <Button
+                  variant="ghost"
                   onclick={(e) => handleAgentClick(e, agentId)}
                   class="inline-flex items-center gap-1 min-w-0 py-0.5 pl-0.5 pr-2 rounded bg-muted/30 px-2 cursor-pointer"
                 >
@@ -246,6 +248,7 @@
                 </Button>
               {/each}
               <Button
+                variant="ghost"
                 onclick={handleRunAgent}
                 class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
                 title={m.workspace_noteMetadataBar_runAgent_tooltip()}

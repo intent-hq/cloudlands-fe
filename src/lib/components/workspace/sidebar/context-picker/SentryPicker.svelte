@@ -197,6 +197,7 @@
     {:else}
       {#each filteredIssues as issue (issue.id)}
         <Button
+          variant="ghost"
           type="button"
           class="w-full text-left px-4 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer flex items-start gap-3 border-b border-border last:border-0"
           onclick={() => handleSelect(issue)}

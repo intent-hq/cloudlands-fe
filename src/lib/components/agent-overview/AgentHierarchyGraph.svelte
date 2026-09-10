@@ -681,6 +681,7 @@
       class="zoom-controls absolute bottom-4 right-4 flex items-center gap-1 bg-card border border-border rounded-lg shadow-sm p-1"
     >
       <Button
+        variant="ghost"
         type="button"
         class="zoom-btn w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
         onclick={zoomOut}
@@ -692,6 +693,7 @@
       </Button>
 
       <Button
+        variant="ghost"
         type="button"
         class="zoom-percent w-12 h-8 flex items-center justify-center text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
         onclick={resetZoom}
@@ -701,6 +703,7 @@
       </Button>
 
       <Button
+        variant="ghost"
         type="button"
         class="zoom-btn w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
         onclick={zoomIn}
@@ -715,6 +718,7 @@
       <div class="w-px h-6 bg-border mx-1"></div>
 
       <Button
+        variant="ghost"
         type="button"
         class="zoom-btn w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
         onclick={fitToView}

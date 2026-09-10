@@ -310,6 +310,7 @@
                   sideOffset={4}
                 >
                   <Button
+                    variant="ghost"
                     type="button"
                     class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground"
                     onclick={() => appStore.dispatch(setShowCreateModal(true))}
@@ -328,6 +329,7 @@
                         sideOffset={4}
                       >
                         <Button
+                          variant="ghost"
                           {...props}
                           type="button"
                           class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:bg-muted/50 focus-visible:text-foreground data-[state=open]:bg-muted/50 data-[state=open]:text-foreground"
@@ -381,6 +383,7 @@
                   sideOffset={4}
                 >
                   <Button
+                    variant="ghost"
                     class="w-8 h-8 flex items-center justify-center rounded-md outline-none transition-colors cursor-pointer focus-visible:bg-muted/50 focus-visible:text-foreground {searchVisible
                       ? 'text-foreground bg-muted/50'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
@@ -451,6 +454,7 @@
           </div>
           <div class="flex items-center gap-0.5 shrink-0">
             <Button
+              variant="ghost"
               class="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
               onclick={() => appStore.dispatch(closePanel())}
               aria-label={m.layout_sidebarPanel_close_ariaLabel()}

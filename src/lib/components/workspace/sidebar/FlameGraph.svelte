@@ -158,6 +158,7 @@
     class="flex h-auto min-h-0 max-h-72 w-72 flex-col overflow-x-hidden overflow-y-auto px-2 pt-2"
   >
     <Button
+      variant="ghost"
       type="button"
       class="type-caption mb-1 w-full cursor-pointer text-left font-normal text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40 disabled:cursor-default"
       onclick={() => specNoteId && onTaskClick?.(specNoteId)}
@@ -175,6 +176,7 @@
     {#each taskList as task (task.note.id)}
       {@const status = task.note.metadata?.task?.status ?? 'not_started'}
       <Button
+        variant="ghost"
         type="button"
         class="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded px-1 py-1 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
         onclick={() => onTaskClick?.(task.note.id as string)}

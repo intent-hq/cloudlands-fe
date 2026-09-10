@@ -1506,6 +1506,7 @@
   <!-- Trigger button (hidden when hideToggle is true) -->
   {#if !hideToggle}
     <Button
+      variant="ghost"
       type="button"
       onclick={togglePanel}
       class="inline-flex items-center gap-2.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -1556,6 +1557,7 @@
             {#each sources as source (source.id)}
               {@const count = getSourceCount(source.id)}
               <Button
+                variant="ghost"
                 type="button"
                 onclick={() => {
                   userSelectedTab = true;
@@ -1580,6 +1582,7 @@
       {#if activeSource === 'sentry' && sentryProjects.length > 1}
         <div class="flex items-center gap-1 px-3 py-1.5 border-b border-border">
           <Button
+            variant="ghost"
             type="button"
             onclick={() => (selectedSentryProject = null)}
             class="px-2 py-0.5 text-xs rounded-full transition-colors cursor-pointer {selectedSentryProject ===
@@ -1591,6 +1594,7 @@
           </Button>
           {#each sentryProjects as project}
             <Button
+              variant="ghost"
               type="button"
               onclick={() => (selectedSentryProject = project.slug)}
               class="px-2 py-0.5 text-xs rounded-full transition-colors cursor-pointer whitespace-nowrap {selectedSentryProject ===
@@ -1643,6 +1647,7 @@
       {#if activeSource === 'github-prs' && isGitHubAuthenticated}
         <div class="flex items-center gap-1 px-3 py-1.5 border-b border-border flex-wrap">
           <Button
+            variant="ghost"
             type="button"
             onclick={() => {
               if (githubPRFilter !== 'all') {
@@ -1658,6 +1663,7 @@
             {m.workspace_issueSuggestions_all_label()}
           </Button>
           <Button
+            variant="ghost"
             type="button"
             onclick={() => {
               if (githubPRFilter !== 'review-requested') {
@@ -1673,6 +1679,7 @@
             {m.workspace_issueSuggestions_reviewRequested_label()}
           </Button>
           <Button
+            variant="ghost"
             type="button"
             onclick={() => {
               if (githubPRFilter !== 'assigned') {
@@ -1688,6 +1695,7 @@
             {m.workspace_issueSuggestions_assigned_label()}
           </Button>
           <Button
+            variant="ghost"
             type="button"
             onclick={() => {
               if (githubPRFilter !== 'created') {
@@ -1703,6 +1711,7 @@
             {m.workspace_issueSuggestions_created_label()}
           </Button>
           <Button
+            variant="ghost"
             type="button"
             onclick={() => {
               if (githubPRFilter !== 'involves') {
@@ -1755,6 +1764,7 @@
             {:else if activeSource === 'github-issues'}
               {m.workspace_issueSuggestions_noIssuesFoundFor_before()}
               <Button
+                variant="ghost"
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/issues`, {
                     workspaceId: workspaceId as WorkspaceId | undefined,
@@ -1766,6 +1776,7 @@
             {:else if activeSource === 'github-prs'}
               {m.workspace_issueSuggestions_noPullRequestsFoundFor_before()}
               <Button
+                variant="ghost"
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/pulls`, {
                     workspaceId: workspaceId as WorkspaceId | undefined,
@@ -1800,6 +1811,7 @@
                 >
                   {#snippet trigger()}
                     <Button
+                      variant="ghost"
                       type="button"
                       onclick={() => handleLinearIssueClick(issue)}
                       class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
@@ -1873,6 +1885,7 @@
                 >
                   {#snippet trigger()}
                     <Button
+                      variant="ghost"
                       type="button"
                       onclick={() => handleLinearIssueClick(issue)}
                       class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
@@ -1941,6 +1954,7 @@
               >
                 {#snippet trigger()}
                   <Button
+                    variant="ghost"
                     type="button"
                     onclick={() => handleLinearIssueClick(issue)}
                     class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
@@ -2032,6 +2046,7 @@
             >
               {#snippet trigger()}
                 <Button
+                  variant="ghost"
                   type="button"
                   onclick={() => handleGitHubIssueClick(issue)}
                   class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
@@ -2097,6 +2112,7 @@
             >
               {#snippet trigger()}
                 <Button
+                  variant="ghost"
                   type="button"
                   onclick={() => handleGitHubPRClick(pr)}
                   class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
@@ -2192,6 +2208,7 @@
               <span class="text-subtle">{m.workspace_issueSuggestions_connectLinear_label()}</span>
             </div>
             <Button
+              variant="ghost"
               type="button"
               disabled={$linearIsAuthenticating$}
               onclick={() => appStore.dispatch(startLinearAuth())}
@@ -2219,6 +2236,7 @@
               >
             </div>
             <Button
+              variant="ghost"
               type="button"
               disabled={$githubAuthIsAuthenticating$}
               onclick={() => appStore.dispatch(startGitHubAuth())}
@@ -2260,6 +2278,7 @@
                   >
                 </div>
                 <Button
+                  variant="ghost"
                   type="button"
                   onclick={() => (sentryShowForm = true)}
                   class="text-primary-ink hover:text-primary-ink/80 transition-colors font-medium cursor-pointer"
@@ -2288,6 +2307,7 @@
                     }}
                   />
                   <Button
+                    variant="ghost"
                     type="button"
                     disabled={$sentryIsConnecting$ || !sentryOrg.trim() || !sentryToken.trim()}
                     onclick={() =>
@@ -2305,6 +2325,7 @@
                 <p class="text-xs text-muted-foreground">
                   {m.workspace_issueSuggestions_createTokenAt_label()}
                   <Button
+                    variant="ghost"
                     type="button"
                     onclick={() =>
                       handleLink('https://sentry.io/settings/account/api/auth-tokens/', {

@@ -84,6 +84,7 @@
 <!-- The interactive click target composes the shared non-interactive square
      (identical visual to the toast surfaces); hover states ride the square. -->
 <Button
+  variant="ghost"
   type="button"
   class="micro-key-slot-badge shrink-0 cursor-pointer a11y-ignore"
   aria-label={m.workspace_microKeyBadge_ariaLabel({ number: formatInteger(slot + 1) })}

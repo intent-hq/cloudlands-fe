@@ -476,6 +476,7 @@
         />
       {:else}
         <Button
+          variant="ghost"
           class="type-title relative z-10 cursor-text rounded border-none bg-transparent py-0.5 pr-1 text-left text-foreground
                  max-w-full overflow-hidden text-ellipsis whitespace-nowrap
                  transition-all duration-150 leading-normal line-clamp-3
@@ -521,6 +522,7 @@
       ></Textarea>
     {:else if workspace}
       <Button
+        variant="ghost"
         class="type-body cursor-pointer rounded border-none bg-transparent py-0.5 text-left text-muted-foreground {!currentStatusMessage
           ? 'italic text-ghost'
           : ''}

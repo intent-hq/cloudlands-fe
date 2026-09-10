@@ -156,6 +156,7 @@
             <div class="rounded-md border border-border overflow-hidden">
               <!-- Commit header -->
               <Button
+                variant="ghost"
                 type="button"
                 class="group flex items-center gap-2 w-full text-left py-1.5 px-2 hover:bg-muted/50 transition-colors cursor-pointer"
                 onclick={() => toggleCommitExpanded(commit.hash)}
@@ -192,6 +193,7 @@
       {:else}
         <div class="px-3 py-2">
           <Button
+            variant="ghost"
             type="button"
             class="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             onclick={() => onAcceptChanges?.()}
@@ -223,6 +225,7 @@
           <div class="rounded-md border border-border overflow-hidden">
             <!-- Commit header -->
             <Button
+              variant="ghost"
               type="button"
               class="group flex items-center gap-2 w-full text-left py-1.5 px-2 hover:bg-muted/50 transition-colors cursor-pointer"
               onclick={() => toggleCommitExpanded(commit.hash)}
@@ -283,6 +286,7 @@
             <span class="text-xs truncate flex-1">{pr.title}</span>
             <span class="text-ui text-subtle">#{pr.number}</span>
             <Button
+              variant="ghost"
               type="button"
               class="opacity-0 group-hover:opacity-30 transition-opacity hover:opacity-100 cursor-pointer"
               onclick={(e) => {

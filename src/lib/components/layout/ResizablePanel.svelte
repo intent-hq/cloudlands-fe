@@ -917,6 +917,7 @@
 
     {#if !doSkipResize}
       <Button
+        variant="ghost"
         type="button"
         class="absolute top-0 {side === 'left'
           ? '-right-2'
@@ -946,6 +947,7 @@
     {#if !doSkipResize}
       <!-- Resize handle -->
       <Button
+        variant="ghost"
         type="button"
         class="{edge === 'top'
           ? 'absolute -top-2'

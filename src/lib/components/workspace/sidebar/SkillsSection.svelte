@@ -70,6 +70,7 @@
   <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors group">
     <!-- Skill Icon + Name (clickable) -->
     <Button
+      variant="ghost"
       type="button"
       class="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer text-left"
       onclick={() => handleSkillClick(skill)}
@@ -94,6 +95,7 @@
   <div class="mt-3 {className ?? ''}">
     <!-- Section Header -->
     <Button
+      variant="ghost"
       type="button"
       class="w-full flex items-center gap-2 px-1.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
       onclick={() => (isExpanded = !isExpanded)}

@@ -434,6 +434,7 @@
       {@const nextCollapsed = collapsedPanels.has(panels[index + 1].id)}
       {#if !isCollapsed && !nextCollapsed}
         <Button
+          variant="ghost"
           type="button"
           class="app-resize-handle relative z-30 {orientation === 'vertical'
             ? '-my-[7.5px] h-4 w-full'

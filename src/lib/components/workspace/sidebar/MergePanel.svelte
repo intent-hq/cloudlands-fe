@@ -326,6 +326,7 @@
 {#if hasOpenPR && hasRemote}
   <div class="flex items-center rounded-md border border-border overflow-hidden w-fit">
     <Button
+      variant="ghost"
       class="px-2.5 py-1 text-xs font-medium transition-colors {mergeOptions.viaPR
         ? 'bg-primary text-primary-foreground'
         : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'}"
@@ -334,6 +335,7 @@
       {m.workspace_mergePanel_viaPr_label()}
     </Button>
     <Button
+      variant="ghost"
       class="px-2.5 py-1 text-xs font-medium transition-colors border-l border-border {!mergeOptions.viaPR
         ? 'bg-primary text-primary-foreground'
         : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'}"

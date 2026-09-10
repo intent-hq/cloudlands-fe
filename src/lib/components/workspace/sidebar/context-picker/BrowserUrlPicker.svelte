@@ -155,6 +155,7 @@
       <div class="space-y-1 max-h-48 overflow-y-auto">
         {#each $recentUrls$.slice(0, 10) as entry (entry.url)}
           <Button
+            variant="ghost"
             type="button"
             class="w-full text-left px-3 py-2 rounded hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-2"
             onclick={() => handleRecentClick(entry)}

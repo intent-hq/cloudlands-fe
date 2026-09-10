@@ -40,6 +40,7 @@
 </script>
 
 <Button
+  variant="ghost"
   type="button"
   class="w-full rounded-lg bg-muted/30 px-3 py-3 hover:bg-muted/50 transition-colors cursor-pointer text-left whitespace-nowrap"
   onclick={() => onOpenDashboard?.()}

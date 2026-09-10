@@ -207,7 +207,12 @@
     <!-- Editor -->
     <div class="editor-panel">
       <div class="editor-toolbar">
-        <Button onclick={handleAddComment} class="toolbar-button" disabled={!editor}>
+        <Button
+          variant="ghost"
+          onclick={handleAddComment}
+          class="toolbar-button"
+          disabled={!editor}
+        >
           <Fa icon={faComment} />
           <!-- i18n-ignore (dev-only demo UI) -->
           Add Comment
@@ -259,12 +264,20 @@
 
             <div class="comment-actions">
               {#if comment.status === 'open'}
-                <Button onclick={() => resolveComment(comment.id)} class="action-button resolve">
+                <Button
+                  variant="ghost"
+                  onclick={() => resolveComment(comment.id)}
+                  class="action-button resolve"
+                >
                   <!-- i18n-ignore (dev-only demo UI) -->
                   <Fa icon={faCheck} /> Resolve
                 </Button>
               {/if}
-              <Button onclick={() => deleteComment(comment.id)} class="action-button delete">
+              <Button
+                variant="ghost"
+                onclick={() => deleteComment(comment.id)}
+                class="action-button delete"
+              >
                 <!-- i18n-ignore (dev-only demo UI) -->
                 <Fa icon={faTrash} /> Delete
               </Button>

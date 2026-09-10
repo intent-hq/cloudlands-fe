@@ -192,6 +192,7 @@
     {#if hasExternalLink}
       <Tooltip content="Open in browser" side="top" delayDuration={300}>
         <Button
+          variant="ghost"
           type="button"
           class="p-1 rounded hover:bg-muted transition-colors cursor-pointer"
           onclick={handleExternalClick}
@@ -203,6 +204,7 @@
     <!-- {#if canDelete}
       <Tooltip content="Remove from context" side="top" delayDuration={300}>
         <Button
+        variant="ghost"
           type="button"
           class="p-1 rounded hover:bg-danger-background/10 transition-colors cursor-pointer"
           onclick={handleDeleteClick}

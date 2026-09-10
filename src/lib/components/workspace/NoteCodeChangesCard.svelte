@@ -227,6 +227,7 @@
       <div class="rounded-lg border border-border overflow-hidden">
         <!-- Header -->
         <Button
+          variant="ghost"
           onclick={() => (isExpanded = !isExpanded)}
           class="w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer"
         >
@@ -258,6 +259,7 @@
             <div class="divide-y divide-border">
               {#each displayedChanges as change (change.filePath)}
                 <Button
+                  variant="ghost"
                   onclick={() => handleFileClick(change)}
                   class="w-full flex items-center gap-3 px-4 py-2 transition-colors cursor-pointer text-left group"
                 >
@@ -295,6 +297,7 @@
             <!-- View All Link -->
             <div class="px-4 pt-0.5 pb-1 bg-muted/30">
               <Button
+                variant="ghost"
                 onclick={handleViewAllClick}
                 class="text-xs text-subtle transition-colors cursor-pointer"
               >

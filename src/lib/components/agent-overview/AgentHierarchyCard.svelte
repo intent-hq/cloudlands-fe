@@ -105,6 +105,7 @@
 
   <!-- Main agent card -->
   <Button
+    variant="ghost"
     type="button"
     class="agent-card flex flex-col items-center px-2.5 py-4 bg-card border border-border
       hover:shadow transition-all cursor-pointer {$agentIsWaiting$

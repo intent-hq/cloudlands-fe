@@ -161,6 +161,7 @@
           <!-- Transport type selector -->
           <div class="flex gap-2">
             <Button
+              variant="ghost"
               type="button"
               class="flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors {transport ===
               'ssh'
@@ -177,6 +178,7 @@
               SSH
             </Button>
             <Button
+              variant="ghost"
               type="button"
               class="flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors {transport ===
               'websocket'

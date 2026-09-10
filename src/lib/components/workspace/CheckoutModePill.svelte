@@ -279,6 +279,7 @@
       <div class="mt-0.5 flex flex-col gap-1 border-t border-border pt-1.5 text-xs">
         <div class="text-subtle">{m.workspace_diskUsagePill_shrink_description()}</div>
         <Button
+          variant="ghost"
           type="button"
           class="self-start cursor-pointer border-none bg-transparent p-0 font-medium text-accent-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
           onclick={handleShrinkClick}

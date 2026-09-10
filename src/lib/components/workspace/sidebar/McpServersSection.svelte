@@ -128,6 +128,7 @@
   <div class="mt-3 {className ?? ''}">
     <!-- Section Header -->
     <Button
+      variant="ghost"
       type="button"
       class="w-full flex items-center gap-2 px-1.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
       onclick={() => (isExpanded = !isExpanded)}
@@ -217,6 +218,7 @@
 
         <!-- Manage Servers Button -->
         <Button
+          variant="ghost"
           type="button"
           class="w-full flex items-center gap-1.5 px-2 py-1.5 mt-1 text-sm text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
           onclick={() => navigateToSettings({ hash: 'mcp-servers' })}

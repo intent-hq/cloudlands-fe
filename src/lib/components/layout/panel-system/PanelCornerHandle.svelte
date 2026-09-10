@@ -67,6 +67,7 @@
 </script>
 
 <Button
+  variant="ghost"
   type="button"
   class={cn('app-resize-handle panel-corner-handle', isDragging && 'dragging')}
   data-resize-axis="both"

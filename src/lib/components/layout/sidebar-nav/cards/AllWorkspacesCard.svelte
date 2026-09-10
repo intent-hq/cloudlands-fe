@@ -634,6 +634,7 @@
             {@const isExpanded = !$collapsedStatusGroupIds$.includes(group.id)}
             <div class="section-header px-2 pt-2 pb-1 mt-2 min-w-0" data-status-group={group.id}>
               <Button
+                variant="ghost"
                 type="button"
                 class="flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-left outline-none hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring"
                 aria-expanded={isExpanded}

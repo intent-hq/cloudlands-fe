@@ -3160,6 +3160,7 @@
                 {m.workspace_compactInitializer_gitRequired_description()}
               </p>
               <Button
+                variant="ghost"
                 class="mt-2 text-primary-ink hover:text-primary-ink/80 underline cursor-pointer"
                 onclick={() => {
                   if (typeof window !== 'undefined' && window.electronAPI) {
@@ -3340,6 +3341,7 @@
           <div class="flex items-center justify-between flex-wrap gap-2 w-full">
             <!-- Left: setup script button -->
             <Button
+              variant="ghost"
               type="button"
               class="group flex min-h-9 w-full cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               onclick={() => (showSetupScript = !showSetupScript)}

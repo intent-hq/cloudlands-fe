@@ -231,6 +231,7 @@
                   </div>
                 </div>
                 <Button
+                  variant="ghost"
                   onclick={(e) => {
                     e.stopPropagation();
                     e.preventDefault();
@@ -246,6 +247,7 @@
           {/each}
           <div class="border-t border-border"></div>
           <Button
+            variant="ghost"
             onclick={handleAddNewSetup}
             class="w-full text-left px-2 py-1.5 hover:bg-accent flex items-center gap-2 text-sm cursor-pointer rounded-b-sm"
           >
@@ -308,6 +310,7 @@
               </div>
               {#each applicableSetups as setup (setup.id)}
                 <Button
+                  variant="ghost"
                   onclick={() => selectSetup(setup)}
                   class="w-full text-left px-2 py-1.5 hover:bg-accent rounded-sm flex items-center gap-2 text-sm {selectedSetup?.id ===
                   setup.id
@@ -359,6 +362,7 @@
               </div>
               {#each otherSetups as setup (setup.id)}
                 <Button
+                  variant="ghost"
                   disabled
                   class="w-full text-left px-2 py-1.5 opacity-50 flex items-center gap-2 text-sm"
                 >

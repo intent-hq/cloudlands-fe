@@ -417,6 +417,7 @@
 <div class={cn('w-full flex flex-col', className)}>
   {#if onCreateNote}
     <Button
+      variant="ghost"
       onclick={onCreateNote}
       class="-mt-1 mb-2 text-muted-foreground hover:text-foreground p-1 cursor-pointer transition-colors flex items-center gap-1 text-xs"
       title={m.workspace_notesPanel_newNote_tooltip()}
@@ -575,6 +576,7 @@
                   <div class="flex items-center gap-0.5 pr-1 -space-x-1">
                     {#each activeAgents.slice(0, 3) as { agentId, state, onClick, specialist } (agentId)}
                       <Button
+                        variant="ghost"
                         type="button"
                         class="cursor-pointer hover:opacity-80 transition-opacity"
                         onclick={onClick}
@@ -717,6 +719,7 @@
                   <div class="flex items-center gap-0.5 pr-1 -space-x-1">
                     {#each activeAgents.slice(0, 3) as { agentId, state, onClick, specialist } (agentId)}
                       <Button
+                        variant="ghost"
                         type="button"
                         class="cursor-pointer hover:opacity-80 transition-opacity"
                         onclick={onClick}
@@ -740,6 +743,7 @@
             {/if}
             {#if hasChildren}
               <Button
+                variant="ghost"
                 type="button"
                 class="shrink-0 p-1 mr-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer opacity-0 group-hover/note:opacity-100"
                 onclick={(e) => toggleCollapse(note.id as string, e)}

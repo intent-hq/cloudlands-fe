@@ -677,6 +677,7 @@
               <!-- Agent header -->
               <div class="relative group/agent-header flex items-center gap-1.5 py-0.5 -ml-1 px-1">
                 <Button
+                  variant="ghost"
                   type="button"
                   class="group/row flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-1 -mx-1"
                   onclick={() => toggleAgentGroup(group.agentId)}
@@ -903,6 +904,7 @@
               <!-- Agent header -->
               <div class="relative group/agent-header flex items-center gap-1.5 py-0.5 -ml-1 px-1">
                 <Button
+                  variant="ghost"
                   type="button"
                   class="group/row flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-1 -mx-1"
                   onclick={() => toggleAgentGroup(group.agentId)}

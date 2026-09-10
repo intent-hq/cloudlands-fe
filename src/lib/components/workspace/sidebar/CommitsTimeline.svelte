@@ -794,6 +794,7 @@
               />
             {:else}
               <Button
+                variant="ghost"
                 type="button"
                 class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer {commit.isPushed &&
                 !commit.agentId
@@ -927,6 +928,7 @@
   <!-- Workspace start boundary marker + show previous toggle -->
   {#if $ftBoundarySha$}
     <Button
+      variant="ghost"
       class="group/boundary relative w-full cursor-pointer {allCommits.length > 0 ? 'mt-2' : ''}"
       disabled={$ftLoadingOlderCommits$}
       onclick={() => {
@@ -1005,6 +1007,7 @@
 
             <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
             <Button
+              variant="ghost"
               type="button"
               class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
               onclick={() => handleOpenCommitChangeset(commit.hash, commit.message)}
@@ -1043,6 +1046,7 @@
   <!-- Load more previous commits -->
   {#if olderCommits.length > 0}
     <Button
+      variant="ghost"
       class="w-full text-ui text-ghost hover:text-muted-foreground py-1 transition-colors cursor-pointer"
       disabled={$ftLoadingOlderCommits$}
       onclick={() => {

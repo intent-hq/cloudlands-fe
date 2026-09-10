@@ -450,6 +450,7 @@
     <!-- Skip isolation toggle for remote -->
     {#if typeof onSkipIsolationChange === 'function'}
       <Button
+        variant="ghost"
         type="button"
         onclick={() => onSkipIsolationChange?.(!skipIsolation)}
         class="flex items-center gap-1.5 ml-3 shrink-0 cursor-pointer"

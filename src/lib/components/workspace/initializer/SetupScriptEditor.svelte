@@ -352,6 +352,7 @@
             {m.workspace_setupScriptEditor_repoConfig_label()}
           </h4>
           <Button
+            variant="ghost"
             class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId ===
             REPO_CONFIG_SCRIPT_ID
               ? 'bg-background text-foreground ring-1 ring-border'
@@ -377,6 +378,7 @@
             {m.workspace_setupScriptEditor_lastUsed_label()}
           </h4>
           <Button
+            variant="ghost"
             class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId ===
             LAST_USED_SCRIPT_ID
               ? 'bg-background text-foreground ring-1 ring-border'
@@ -402,6 +404,7 @@
         </h4>
         {#each SETUP_SCRIPT_TEMPLATES as template (template.id)}
           <Button
+            variant="ghost"
             class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId ===
             `template-${template.id}`
               ? 'bg-background text-foreground ring-1 ring-border'

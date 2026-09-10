@@ -56,6 +56,7 @@
   <div class="flex items-center gap-4">
     {#each tabs as tab (tab.id)}
       <Button
+        variant="ghost"
         type="button"
         class={cn(
           'text-ui uppercase tracking-wider font-medium transition-colors cursor-pointer whitespace-nowrap',
