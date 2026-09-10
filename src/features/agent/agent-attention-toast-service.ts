@@ -61,14 +61,6 @@ export function agentAttentionToastId(agentId: string): string {
   return `agent-attention:${agentId}`;
 }
 
-/**
- * Wrapper class for the Sonner toast element — the component is content-only,
- * so the single wrapper border carries the kind-flavored tint.
- */
-function wrapperClass(kind: AgentAttentionRequest['kind']): string {
-  return kind === 'blocker' ? '!border-danger/50' : '!border-primary-ink/50';
-}
-
 /** Lazily pull the toast lib so this middleware-reachable module stays light.
  *  The import promise is cached — concurrent events must not race two
  *  first-time dynamic imports of the same module. */
@@ -184,8 +176,8 @@ export async function switchToAttentionAgent(workspaceId: string, agentId: strin
 
 /**
  * Show (or update in place) the sticky attention toast for one agent.
- * Kind-flavored: title, icon, and border tint differ for discussion vs
- * blocker. Never auto-dismisses (`duration: Infinity`).
+ * Kind-flavored: title and icon differ for discussion vs blocker. Never
+ * auto-dismisses (`duration: Infinity`).
  *
  * Skipped entirely when the user is already viewing the raising agent's
  * conversation (see {@link isUserViewingAgent}) — the in-conversation notice
@@ -222,7 +214,6 @@ export async function showAgentAttentionToast(request: AgentAttentionRequest): P
       onClose: () => void dismissAgentAttentionToast(agentId),
     },
     duration: Number.POSITIVE_INFINITY,
-    class: wrapperClass(kind),
   });
 }
 

@@ -92,7 +92,6 @@ function lastCustomCall(): {
   id: string;
   componentProps: Record<string, any>;
   duration: number;
-  class?: string;
 } {
   const call = toastCustomMock.mock.calls[toastCustomMock.mock.calls.length - 1];
   expect(call).toBeDefined();
@@ -129,10 +128,9 @@ describe('agent-attention-toast-service', () => {
     expect(call.componentProps.title).toBe('Implementor requests a discussion');
     expect(call.componentProps.reason).toBe('Need a decision on the API shape');
     expect(call.componentProps.kind).toBe('discussion');
-    expect(call.class).toBe('!border-primary-ink/50');
   });
 
-  it('flavors blocker toasts with the destructive tint and blocker title', async () => {
+  it('flavors blocker toasts with the blocker title and kind', async () => {
     await showAgentAttentionToast({
       workspaceId: WS,
       agentId: AGENT,
@@ -144,7 +142,6 @@ describe('agent-attention-toast-service', () => {
     const call = lastCustomCall();
     expect(call.componentProps.title).toBe('Verifier reports a blocker');
     expect(call.componentProps.kind).toBe('blocker');
-    expect(call.class).toBe('!border-danger/50');
   });
 
   describe('micro key-slot badge', () => {

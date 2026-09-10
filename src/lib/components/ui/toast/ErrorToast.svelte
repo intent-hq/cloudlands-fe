@@ -33,8 +33,7 @@
   }
 </script>
 
-<!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
-     the severity border tint is passed as a wrapper class by error-toast.ts. -->
+<!-- Content-only: the Sonner wrapper owns the shared card chrome (bg, neutral border, padding). -->
 <div
   class="relative flex w-full min-w-0 items-start gap-2.5 pr-6"
   data-toast-layout="application-error"

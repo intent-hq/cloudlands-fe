@@ -211,10 +211,9 @@
        !important declarations). */
     background-color: hsl(var(--toast-surface)) !important;
     color: hsl(var(--foreground)) !important;
-    /* Width/style stay !important, but color must NOT be — per-toast Tailwind
-       classes (e.g. !border-danger/50 on custom toasts) override it.
-       This also relies on these :global styles staying UNLAYERED: moving them
-       into a cascade layer would change the fallback chain for default toasts. */
+    /* The wrapper's single neutral border is shared by standard and custom
+       content-only toasts. These :global styles must stay UNLAYERED: moving
+       them into a cascade layer would change the default toast chrome. */
     border: 1px solid hsl(var(--foreground) / 0.05) !important;
     border-radius: var(--toast-radius) !important;
     width: var(--app-toast-width) !important;

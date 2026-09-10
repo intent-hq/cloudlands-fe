@@ -58,12 +58,6 @@ const logger = createLogger('AgentFailureToastSaga');
 /** Cap on the error message length shown in the toast. */
 const ERROR_SUMMARY_MAX_CHARS = 200;
 
-/**
- * Wrapper class for the Sonner toast element — the component is content-only,
- * so the single wrapper border carries the destructive tint.
- */
-const WRAPPER_CLASS = '!border-danger/50';
-
 /** Per-agent transient toast state (never Redux, gone on reload). */
 interface AgentToastState {
   /** True while this agent's toast is currently shown. */
@@ -208,7 +202,6 @@ function* renderEntry(
   notify.agentFailure(componentProps, {
     id: toastId(entry.agentId),
     duration: Number.POSITIVE_INFINITY,
-    class: WRAPPER_CLASS,
   });
   state.visible = true;
   // Auth failure: force a provider auth-status refresh so provider cards /

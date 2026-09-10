@@ -112,21 +112,6 @@ async function attemptRecovery(error: AppError): Promise<void> {
 }
 
 /**
- * Severity-tinted border class for the Sonner toast wrapper — ErrorToast is
- * content-only, so the single wrapper border carries the tint.
- */
-function getWrapperBorderClass(type: string): string {
-  switch (type) {
-    case 'warning':
-      return '!border-warning/50';
-    case 'info':
-      return '!border-info/50';
-    default:
-      return '!border-danger/50';
-  }
-}
-
-/**
  * Show an error as a toast notification
  */
 export function showErrorToast(error: AppError): void {
@@ -139,7 +124,6 @@ export function showErrorToast(error: AppError): void {
     },
     {
       duration: error.type === 'info' ? 5000 : 15000,
-      class: getWrapperBorderClass(error.type),
     },
   );
 }

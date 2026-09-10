@@ -26,7 +26,7 @@
 <style>
   :global(.toast-close-btn) {
     position: absolute;
-    top: 50%;
+    top: -0.1875rem;
     right: -0.375rem;
     width: 1.5rem;
     height: 1.5rem;
@@ -35,7 +35,6 @@
     background: transparent;
     color: hsl(var(--muted-foreground));
     padding: 0;
-    transform: translateY(-50%);
     z-index: 2;
   }
 

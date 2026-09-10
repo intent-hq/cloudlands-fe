@@ -24,8 +24,7 @@
   let { title, reason, kind, timestamp, keySlot = null, onSwitchTo, onClose }: Props = $props();
 </script>
 
-<!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
-     the kind-flavored border tint is passed as a wrapper class by the service. -->
+<!-- Content-only: the Sonner wrapper owns the shared card chrome (bg, neutral border, padding). -->
 <div
   class="relative flex w-full min-w-0 items-start gap-2.5 pr-6"
   data-toast-layout="agent-attention"
