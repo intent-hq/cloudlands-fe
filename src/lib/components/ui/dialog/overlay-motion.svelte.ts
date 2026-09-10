@@ -5,6 +5,7 @@ export type OverlaySide = 'top' | 'right' | 'bottom' | 'left';
 type OpenGetter = () => boolean;
 
 const OPEN_CONTEXT = Symbol('overlay-open');
+const STATIC_CONTEXT = Symbol('overlay-static');
 const backdrop = { tier: 'moderate', x: 0, y: 0, scale: 1, opacity: 0 } as const;
 const dialog = { tier: 'slow', x: 0, y: 8, scale: 0.97, opacity: 0 } as const;
 const sheetOffsets: Record<OverlaySide, Pick<SpringInParams, 'x' | 'y'>> = {
@@ -31,6 +32,14 @@ export function useOverlayOpen(): OpenGetter {
   const open = getContext<OpenGetter | undefined>(OPEN_CONTEXT);
   if (!open) throw new Error('Dialog or Sheet Content must be nested inside its Root.');
   return open;
+}
+
+export function provideOverlayStatic(staticPosition: OpenGetter): void {
+  setContext(STATIC_CONTEXT, staticPosition);
+}
+
+export function useOverlayStatic(): OpenGetter {
+  return getContext<OpenGetter | undefined>(STATIC_CONTEXT) ?? (() => false);
 }
 
 export function createOverlayPresence(open: OpenGetter) {

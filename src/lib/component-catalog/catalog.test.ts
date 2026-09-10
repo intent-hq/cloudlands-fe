@@ -37,8 +37,8 @@ describe('static component catalog', () => {
   });
 
   it('registers exactly one real preview renderer for every canonical fixture', () => {
-    const manifestIds = canonicalComponentManifest.map(({ id }) => id).sort();
-    expect(Object.keys(catalogRenderers).sort()).toEqual(manifestIds);
+    const rendererIds = [...canonicalComponentManifest.map(({ id }) => id), 'modals'].sort();
+    expect(Object.keys(catalogRenderers).sort()).toEqual(rendererIds);
 
     for (const component of canonicalComponentManifest) {
       expect(catalogRenderers[component.id], component.id).toBeDefined();
@@ -56,6 +56,7 @@ describe('static component catalog', () => {
     expect(new Set(groupedSlugs).size).toBe(groupedSlugs.length);
     expect(groups.find(({ id }) => id === 'products')?.entries.map(({ slug }) => slug)).toEqual([
       'chat-polish',
+      'modals',
       'proposal-card',
     ]);
     expect(

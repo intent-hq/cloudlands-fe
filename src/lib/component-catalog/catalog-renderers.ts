@@ -12,6 +12,7 @@ import OverlayCatalogPreview from './renderers/OverlayCatalogPreview.svelte';
 import ProximityHighlightCatalogPreview from './renderers/ProximityHighlightCatalogPreview.svelte';
 import SettingsCatalogPreview from './renderers/SettingsCatalogPreview.svelte';
 import ToastCatalogPreview from './renderers/ToastCatalogPreview.svelte';
+import ModalCatalogPreview from './renderers/ModalCatalogPreview.svelte';
 
 export const catalogRendererIds = [
   'accordion',
@@ -37,6 +38,7 @@ export const catalogRendererIds = [
   'list',
   'menu',
   'message-composer',
+  'modals',
   'proximity-highlight',
   'radio-group',
   'scroll-area',
@@ -101,6 +103,7 @@ export const catalogRenderers = {
   list: ContentFieldCatalogPreview,
   menu: OverlayCatalogPreview,
   'message-composer': MessageComposerCatalogPreview,
+  modals: ModalCatalogPreview,
   'proximity-highlight': ProximityHighlightCatalogPreview,
   'radio-group': ChoiceGroupCatalogPreview,
   'scroll-area': NavigationHelpCatalogPreview,

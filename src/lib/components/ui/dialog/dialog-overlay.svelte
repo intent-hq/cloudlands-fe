@@ -9,8 +9,9 @@
     class: className,
     forceMount = false,
     contained = false,
+    staticPosition = false,
     ...restProps
-  }: DialogPrimitive.OverlayProps & { contained?: boolean } = $props();
+  }: DialogPrimitive.OverlayProps & { contained?: boolean; staticPosition?: boolean } = $props();
 
   const rootOpen = useOverlayOpen();
 </script>
@@ -21,8 +22,9 @@
       <div
         {...props}
         data-slot="dialog-overlay"
+        data-static-position={staticPosition || undefined}
         class={cn(
-          contained ? 'absolute' : 'fixed',
+          contained || staticPosition ? 'absolute' : 'fixed',
           'inset-0 z-[var(--layer-modal)] bg-black/40 dark:bg-black/80 motion-reduce:animate-none motion-reduce:transition-none',
           className,
         )}

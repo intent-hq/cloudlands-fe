@@ -18,6 +18,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/features/onboarding/messages/NewProjectTab.svelte',
     'src/lib/component-catalog/CatalogGallery.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
+    'src/lib/component-catalog/renderers/ModalCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/OverlayCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
     'src/lib/components/CommandPalette.svelte',

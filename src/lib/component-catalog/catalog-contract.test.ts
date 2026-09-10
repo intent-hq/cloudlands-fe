@@ -17,7 +17,7 @@ import '../../app.css';
 
 type ContractCase = {
   key: string;
-  kind: 'pattern' | 'primitive';
+  kind: 'pattern' | 'primitive' | 'product';
   id: string;
   fixture: UiComponentFixture;
 };
@@ -41,6 +41,12 @@ const cases: ContractCase[] = [
       fixture,
     })),
   ),
+  ...(getCatalogEntry('modals')?.fixtures.map((fixture) => ({
+    key: `product:modals:${fixture.id}`,
+    kind: 'product' as const,
+    id: 'modals',
+    fixture,
+  })) ?? []),
 ].sort((left, right) => left.key.localeCompare(right.key));
 
 const intentionalAxeAllowlist: Record<string, ReadonlyArray<{ rule: string; reason: string }>> = {
