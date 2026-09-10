@@ -300,10 +300,20 @@
   }
 
   // Notify parent once on mount with pre-filled persisted values (if any)
+  let pickerMounted = $state(false);
   onMount(() => {
     notifyParent();
-    appStore.dispatch(onboardingPickerOpened(activeTab === 'local'));
+    appStore.dispatch(onboardingPickerOpened(false));
+    pickerMounted = true;
     return () => appStore.dispatch(onboardingPickerClosed());
+  });
+
+  // The initial Local tab is provisional until saved preferences have resolved.
+  // Explicit Local clicks below can still request discovery before hydration.
+  $effect(() => {
+    if (pickerMounted && (didApplyPrefill || didApplyPersistedRepo) && activeTab === 'local') {
+      appStore.dispatch(discoverLocalReposRequested());
+    }
   });
 
   const tabs: { id: TabId; label: string }[] = [
