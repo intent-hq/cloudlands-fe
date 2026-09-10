@@ -14,7 +14,10 @@ export const buttonMetadata = parseUiComponentMetadata({
   exports: ['Button', 'ButtonVariant'],
   category: 'primitive',
   owner: '007-B1',
-  callers: ['src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte'],
+  callers: [
+    'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
+    'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
+  ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/button/button.test.ts',
   removalGate:

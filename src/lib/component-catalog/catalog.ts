@@ -247,6 +247,40 @@ export const catalogEntries: CatalogEntry[] = [
     ],
   } satisfies CatalogEntry,
   {
+    slug: 'fields',
+    name: 'Composed form fields',
+    description:
+      'Full field-row compositions across control, interaction, validation, density, and zoom states.',
+    category: 'product',
+    source: 'src/lib/component-catalog/renderers/FieldsCatalogPreview.svelte',
+    publicImport: '$lib/components/patterns/form',
+    exports: ['FormRow', 'FormField', 'SettingsFieldRow'],
+    props: commonProps,
+    fixtures: [
+      {
+        id: 'field-state-matrix',
+        title: 'Composed field state matrix',
+        states: [
+          'empty-placeholder',
+          'filled',
+          'hover',
+          'focus-visible',
+          'invalid',
+          'disabled',
+          'read-only',
+          'help-text',
+          'required',
+          'long-label',
+          'compact-density',
+          'zoom-200',
+        ],
+        themes: ['light', 'dark'],
+        viewport: 'both',
+        reducedMotion: true,
+      },
+    ],
+  } satisfies CatalogEntry,
+  {
     slug: 'rows',
     name: 'Rows and collections',
     description:

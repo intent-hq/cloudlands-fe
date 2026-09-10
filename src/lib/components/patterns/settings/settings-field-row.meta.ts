@@ -9,7 +9,10 @@ export const settingsFieldRowMetadata = parseUiComponentMetadata({
   exports: ['SettingsFieldRow'],
   category: 'pattern',
   owner: '008-B',
-  callers: ['src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte'],
+  callers: [
+    'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
+    'src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte',
+  ],
   replacement: null,
   characterizationTest: 'src/lib/components/patterns/settings/settings-field-row.test.ts',
   removalGate:

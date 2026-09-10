@@ -11,6 +11,7 @@ export const labelMetadata = parseUiComponentMetadata({
   owner: '007-B2',
   callers: [
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
+    'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/components/debug/DebugPanel.svelte',
     'src/lib/components/layout/ConnectBackendModal.svelte',
     'src/lib/components/patterns/confirm/ConfirmHost.svelte',

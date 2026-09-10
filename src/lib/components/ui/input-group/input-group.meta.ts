@@ -9,7 +9,10 @@ export const inputGroupMetadata = parseUiComponentMetadata({
   exports: ['InputGroup', 'inputGroupMetadata'],
   category: 'primitive',
   owner: 'design-system',
-  callers: ['src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte'],
+  callers: [
+    'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
+    'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
+  ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/input-group/input-group.test.ts',
   removalGate: 'Retain while grouped focus, addon, validation, and size behavior tests pass.',

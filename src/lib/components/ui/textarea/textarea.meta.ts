@@ -11,6 +11,7 @@ export const textareaMetadata = parseUiComponentMetadata({
   owner: '007-B2',
   callers: [
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
+    'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/components/chat/MessageEditor.svelte',
     'src/lib/components/chat/QueuedMessageList.svelte',
     'src/lib/components/chat/proposals/ProposalCard.svelte',

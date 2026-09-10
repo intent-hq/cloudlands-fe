@@ -11,6 +11,7 @@ export const fileInputMetadata = parseUiComponentMetadata({
   owner: '008-B',
   callers: [
     'src/features/onboarding/steps/OnboardingPromptStep.svelte',
+    'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte',
   ],
   replacement: null,

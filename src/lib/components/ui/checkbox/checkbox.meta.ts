@@ -13,6 +13,7 @@ export const checkboxMetadata = {
     'src/features/log/components/ActivityLogFilters.svelte',
     'src/features/onboarding/OnboardingPage.svelte',
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
+    'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
     'src/lib/components/chat/ChatChangesPanel.svelte',
     'src/lib/components/chat/ChatSearch.svelte',

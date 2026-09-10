@@ -13,6 +13,7 @@ export const switchMetadata = {
     'src/lib/component-catalog/CatalogControls.svelte',
     'src/lib/component-catalog/ChatPolishGeometryControls.svelte',
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
+    'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/components/debug/DebugPanel.svelte',
     'src/lib/components/patterns/settings/SettingsControl.svelte',
     'src/lib/components/patterns/settings/custom-controls.ts',

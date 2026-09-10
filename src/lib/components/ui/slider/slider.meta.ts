@@ -13,6 +13,7 @@ export const sliderMetadata = parseUiComponentMetadata({
     'src/features/hud/components/HudHeader.svelte',
     'src/lib/components/agent-overview/TimeScrubber.svelte',
     'src/lib/component-catalog/ChatPolishGeometryControls.svelte',
+    'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte',
     'src/lib/components/settings/AgentBackendSettings.svelte',
     'src/lib/components/settings/NotificationSettings.svelte',

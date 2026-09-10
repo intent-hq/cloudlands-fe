@@ -42,6 +42,7 @@ describe('static component catalog', () => {
       'modals',
       'popovers',
       'rows',
+      'fields',
     ].sort();
     expect(Object.keys(catalogRenderers).sort()).toEqual(rendererIds);
 
@@ -61,6 +62,7 @@ describe('static component catalog', () => {
     expect(new Set(groupedSlugs).size).toBe(groupedSlugs.length);
     expect(groups.find(({ id }) => id === 'products')?.entries.map(({ slug }) => slug)).toEqual([
       'chat-polish',
+      'fields',
       'modals',
       'proposal-card',
       'rows',

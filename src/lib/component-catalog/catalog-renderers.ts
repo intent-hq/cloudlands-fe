@@ -15,6 +15,7 @@ import ToastCatalogPreview from './renderers/ToastCatalogPreview.svelte';
 import ModalCatalogPreview from './renderers/ModalCatalogPreview.svelte';
 import PopoversCatalogPreview from './renderers/PopoversCatalogPreview.svelte';
 import RowsCatalogPreview from './renderers/RowsCatalogPreview.svelte';
+import FieldsCatalogPreview from './renderers/FieldsCatalogPreview.svelte';
 
 export const catalogRendererIds = [
   'accordion',
@@ -32,6 +33,7 @@ export const catalogRendererIds = [
   'copy-input',
   'dialog',
   'file-input',
+  'fields',
   'input',
   'input-group',
   'input-message',
@@ -99,6 +101,7 @@ export const catalogRenderers = {
   'copy-input': ContentFieldCatalogPreview,
   dialog: OverlayCatalogPreview,
   'file-input': SettingsCatalogPreview,
+  fields: FieldsCatalogPreview,
   input: ContentFieldCatalogPreview,
   'input-group': ContentFieldCatalogPreview,
   'input-message': ContentFieldCatalogPreview,

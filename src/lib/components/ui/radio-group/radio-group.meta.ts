@@ -9,7 +9,7 @@ export const radioGroupMetadata = {
   exports: ['Item', 'RadioGroup', 'RadioGroupItem', 'Root'],
   category: 'primitive',
   owner: '007-B2',
-  callers: [],
+  callers: ['src/lib/component-catalog/renderers/FieldPreviewCell.svelte'],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/radio-group/radio-group.test.ts',
   removalGate: 'Retain while exported; selection, form, and keyboard-roving tests must pass.',

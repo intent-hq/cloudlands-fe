@@ -9,7 +9,7 @@ export const checkboxGroupMetadata = {
   exports: ['CheckboxGroup', 'CheckboxGroupItem', 'Item', 'Root'],
   category: 'primitive',
   owner: '007-B2',
-  callers: [],
+  callers: ['src/lib/component-catalog/renderers/FieldPreviewCell.svelte'],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/checkbox-group/checkbox-group.test.ts',
   removalGate:
