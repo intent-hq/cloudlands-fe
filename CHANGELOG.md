@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.145.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.145.0...v2.145.1) (2026-09-10)
+
+
+### 🐛 Bug Fixes
+
+* shorten onboarding project picker labels ([#2305](https://github.com/intent-hq/cloudlands-fe/issues/2305)) ([3a5b4d7](https://github.com/intent-hq/cloudlands-fe/commit/3a5b4d7b11e68e56a46261736c08b858f4e99b23))
+
 ## [2.145.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.9...v2.145.0) (2026-09-10)
 
 
