@@ -208,7 +208,7 @@
       {/if}
       <Button
         type="submit"
-        variant="default"
+        variant="primary"
         disabled={!inputValue.trim() || isActivating || feedback !== null}
       >
         {m.modals_featureCode_activate_label()}

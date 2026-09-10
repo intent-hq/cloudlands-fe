@@ -1809,7 +1809,7 @@
                           <Button
                             class="group/button"
                             size="xl"
-                            variant={!hasConnectedProvider ? 'outline' : 'default'}
+                            variant={!hasConnectedProvider ? 'outline' : 'primary'}
                             disabled={!hasConnectedProvider}
                             loading={onboardingTestPromptRunning}
                             onclick={advanceFromWelcomeStep}
@@ -1893,7 +1893,7 @@
                             <Button
                               class="group/button"
                               size="xl"
-                              variant={!projectSelection?.isValid ? 'outline' : 'default'}
+                              variant={!projectSelection?.isValid ? 'outline' : 'primary'}
                               disabled={!projectSelection?.isValid}
                               onclick={() => appStore.dispatch(goToStep('configuring'))}
                             >

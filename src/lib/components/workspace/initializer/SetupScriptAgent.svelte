@@ -143,7 +143,7 @@
           <span class="text-sm font-medium">{generatedScript.name}</span>
         </div>
         <Button
-          variant="default"
+          variant="primary"
           size="sm"
           onclick={() => handleUseScript(generatedScript!)}
           class="h-7"

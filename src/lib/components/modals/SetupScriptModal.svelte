@@ -116,11 +116,11 @@
   {#snippet footer()}
     <Button variant="ghost" onclick={handleCancel}>{m.modals_setupScript_cancel_label()}</Button>
     {#if localHasUnsavedChanges}
-      <Button variant="default" onclick={handleSaveAndDone}>
+      <Button variant="primary" onclick={handleSaveAndDone}>
         {m.modals_setupScript_saveAndDone_label()}
       </Button>
     {:else}
-      <Button variant="default" onclick={handleDone}>{m.modals_setupScript_done_label()}</Button>
+      <Button variant="primary" onclick={handleDone}>{m.modals_setupScript_done_label()}</Button>
     {/if}
   {/snippet}
 </FormDialog>

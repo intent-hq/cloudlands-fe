@@ -126,7 +126,7 @@
   {:else if $requiresDaemonAuth$}
     <p class="text-sm text-subtle">{m.onboarding_githubStep_requiresDaemonAuth_label()}</p>
   {:else}
-    <Button class="group/button" size="xl" onclick={handleConnect}>
+    <Button class="group/button" size="xl" variant="primary" onclick={handleConnect}>
       <Fa icon={faGithub} />
       {m.onboarding_githubStep_connectGithub_label()}
     </Button>
@@ -138,7 +138,7 @@
 
   <div class="flex flex-col items-start gap-2 mt-9">
     {#if $isAuthenticated$}
-      <Button class="group/button" size="xl" onclick={onContinue}>
+      <Button class="group/button" size="xl" variant="primary" onclick={onContinue}>
         {m.onboarding_githubStep_continue_label()}
         <span class="ml-1 opacity-50">⌘↵</span>
       </Button>

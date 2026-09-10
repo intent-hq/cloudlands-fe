@@ -60,7 +60,7 @@
       ? m.quitConfirmation_modal_closeButton_label()
       : m.quitConfirmation_modal_quitButton_label()}
     cancelLabel={m.quitConfirmation_modal_cancelButton_label()}
-    submitVariant={closeOnly ? 'default' : 'destructive'}
+    submitVariant={closeOnly ? 'primary' : 'destructive'}
     class="max-w-2xl"
     focusContent
     onSubmit={() => respond(true)}

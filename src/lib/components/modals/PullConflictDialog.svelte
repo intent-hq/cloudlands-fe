@@ -276,7 +276,7 @@
         </Tooltip>
         <!-- Create workspace action -->
         <Button
-          variant="default"
+          variant="primary"
           onclick={handleCreateWorkspace}
           class="w-full justify-start gap-2"
         >

@@ -906,7 +906,7 @@
       <Button
         class="group/button"
         size="xl"
-        variant={!onboardingInputValue.trim() ? 'outline' : 'default'}
+        variant={!onboardingInputValue.trim() ? 'outline' : 'primary'}
         disabled={createDisabledReason !== null}
         onclick={handleSubmit}
       >

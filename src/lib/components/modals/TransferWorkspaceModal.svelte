@@ -564,7 +564,7 @@
           <Button variant="ghost" onclick={() => onCancel?.()}>
             {m.workspace_transfer_cancel_label()}
           </Button>
-          <Button variant="default" onclick={() => onNext?.()} disabled={!canNext}>
+          <Button variant="primary" onclick={() => onNext?.()} disabled={!canNext}>
             {m.workspace_transfer_next_label()}
           </Button>
         {:else if step === 'confirm'}
@@ -575,7 +575,7 @@
             {m.workspace_transfer_cancel_label()}
           </Button>
           <Button
-            variant="default"
+            variant="primary"
             onclick={() => onStart?.()}
             disabled={planStatus !== 'loaded'}
             data-testid="transfer-start-button"
@@ -600,7 +600,7 @@
             </Button>
           {/if}
           <Button
-            variant="default"
+            variant="primary"
             onclick={() => onFinalize?.(false)}
             disabled={finalizeStatus === 'running'}
             data-testid="transfer-done-button"
@@ -611,7 +611,7 @@
           <Button variant="ghost" onclick={() => onCancel?.()}>
             {m.workspace_transfer_close_label()}
           </Button>
-          <Button variant="default" onclick={() => onRetry?.()} data-testid="transfer-retry-button">
+          <Button variant="primary" onclick={() => onRetry?.()} data-testid="transfer-retry-button">
             {m.workspace_transfer_retry_label()}
           </Button>
         {/if}

@@ -48,7 +48,7 @@
         variant={index === cancelIndex
           ? 'ghost'
           : index === buttons.length - 1
-            ? 'default'
+            ? 'primary'
             : 'outline'}
         onclick={() => select(index)}
       >

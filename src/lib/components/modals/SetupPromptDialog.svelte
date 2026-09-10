@@ -102,7 +102,9 @@
       <!-- Footer -->
       <div class="px-6 py-4 border-t border-border flex justify-end gap-2">
         <Button variant="ghost" onclick={dismiss}>{m.modals_setupPrompt_notNow_label()}</Button>
-        <Button onclick={handleConfirm}>{m.modals_setupPrompt_confirm_label()}</Button>
+        <Button variant="primary" onclick={handleConfirm}
+          >{m.modals_setupPrompt_confirm_label()}</Button
+        >
       </div>
     </div>
   </div>

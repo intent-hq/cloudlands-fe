@@ -377,7 +377,12 @@
 
               <div class="provider-actions">
                 {#if provider.id === 'auggie'}
-                  <Button onclick={installAuggie} disabled={actionInProgress} size="sm">
+                  <Button
+                    variant="primary"
+                    onclick={installAuggie}
+                    disabled={actionInProgress}
+                    size="sm"
+                  >
                     {#if actionInProgress}
                       <IntentMarkLoader size={16} class="mr-2" />
                       {m.lib_auggieSetup_loading_label()}
@@ -447,7 +452,11 @@
         <section class="authenticate">
           <h2>{m.lib_auggieSetup_authenticate_title()}</h2>
           <div class="actions">
-            <Button onclick={() => startAuthentication()} disabled={actionInProgress}>
+            <Button
+              variant="primary"
+              onclick={() => startAuthentication()}
+              disabled={actionInProgress}
+            >
               {#if actionInProgress}
                 <IntentMarkLoader size={16} class="mr-2" />
                 {m.lib_auggieSetup_loading_label()}

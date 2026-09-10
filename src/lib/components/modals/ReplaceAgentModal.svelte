@@ -88,7 +88,7 @@
       <Button variant="ghost-light" onclick={close}>
         {m.modals_replaceAgent_cancel_label()}
       </Button>
-      <Button variant="default" onclick={handleSend} disabled={!canSend}>
+      <Button variant="primary" onclick={handleSend} disabled={!canSend}>
         {m.modals_replaceAgent_send_label()}
       </Button>
     </Dialog.Footer>

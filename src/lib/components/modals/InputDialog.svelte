@@ -50,6 +50,7 @@
   {title}
   {description}
   submitLabel={confirmLabel}
+  submitVariant="primary"
   {cancelLabel}
   canSubmit={Boolean(inputValue.trim())}
   initialFocus={inputRef}

@@ -316,7 +316,7 @@
         <Button onclick={handleClose} variant="outline"
           >{m.workspace_addRemoteSetupModal_cancel_label()}</Button
         >
-        <Button onclick={handleSave} disabled={!isFormValid}
+        <Button variant="primary" onclick={handleSave} disabled={!isFormValid}
           >{m.workspace_addRemoteSetupModal_addSetup_label()}</Button
         >
       </div>

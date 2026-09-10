@@ -1676,8 +1676,12 @@
                   <span class="text-sm text-amber-500">
                     {m.workspace_repoSelector_folderNotGitRepo_label()}
                   </span>
-                  <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0" disabled
-                    >{m.workspace_repoSelector_create_label()}</Button
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onclick={handleConfirmNewRepo}
+                    class="shrink-0"
+                    disabled>{m.workspace_repoSelector_create_label()}</Button
                   >
                 </div>
               {:else}
@@ -1686,8 +1690,11 @@
                   <span class="text-sm text-subtle"
                     >{m.workspace_repoSelector_newRepoWillBeCreated_label()}</span
                   >
-                  <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0"
-                    >{m.workspace_repoSelector_create_label()}</Button
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onclick={handleConfirmNewRepo}
+                    class="shrink-0">{m.workspace_repoSelector_create_label()}</Button
                   >
                 </div>
               {/if}
