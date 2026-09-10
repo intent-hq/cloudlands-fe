@@ -2,7 +2,7 @@ import { svelteElementName } from './common.js';
 
 const aliases = {
   variant: new Map([
-    ['default', 'primary'],
+    ['default', 'secondary'],
     ['tertiary', 'outline'],
     ['neumorphic', 'outline'],
   ]),

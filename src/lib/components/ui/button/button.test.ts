@@ -59,20 +59,22 @@ describe('Button', () => {
       { value: 'lg', iconValue: 'icon-lg', label: 'Large' },
     ]);
     expect(buttonCompatibilityAliases).toEqual([
-      { prop: 'variant', alias: 'default', replacement: 'primary' },
+      { prop: 'variant', alias: 'default', replacement: 'secondary' },
       { prop: 'variant', alias: 'tertiary', replacement: 'outline' },
       { prop: 'variant', alias: 'neumorphic', replacement: 'outline' },
       { prop: 'size', alias: 'xs', replacement: 'compact' },
       { prop: 'size', alias: 'icon-xs', replacement: 'icon-compact' },
     ]);
-    expect(buttonVariants()).toBe(buttonVariants({ variant: 'primary', size: 'default' }));
+    expect(buttonVariants()).toBe(buttonVariants({ variant: 'secondary', size: 'default' }));
     expect(buttonMetadata.apiGuidance?.emphasis).toEqual(buttonEmphasisLadder);
   });
 
   it('gives default, primary, and secondary solid raised surfaces with pressed states', () => {
     const defaultButton = buttonVariants({ variant: 'default' });
-    expect(defaultButton).toContain('text-primary-foreground');
-    expect(buttonSurfaceVariants.default).toContain('bg-primary');
+    expect(defaultButton).toBe(buttonVariants({ variant: 'secondary' }));
+    expect(defaultButton).toContain('text-secondary-foreground');
+    expect(buttonSurfaceVariants.default).toBe(buttonSurfaceVariants.secondary);
+    expect(activeButtonSurfaceVariants.default).toBe(activeButtonSurfaceVariants.secondary);
     expect(buttonVariants({ variant: 'primary' })).toContain('text-primary-foreground');
     expect(buttonSurfaceVariants.primary).toContain('bg-primary');
     expect(buttonSurfaceVariants.primary).toContain('shadow-(--elevation-raised)');

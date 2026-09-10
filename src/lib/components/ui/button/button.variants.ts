@@ -21,7 +21,7 @@ export const buttonSizeLadder = [
 ] as const;
 
 export const buttonCompatibilityAliases = [
-  { prop: 'variant', alias: 'default', replacement: 'primary' },
+  { prop: 'variant', alias: 'default', replacement: 'secondary' },
   { prop: 'variant', alias: 'tertiary', replacement: 'outline' },
   { prop: 'variant', alias: 'neumorphic', replacement: 'outline' },
   { prop: 'size', alias: 'xs', replacement: 'compact' },
@@ -33,7 +33,7 @@ export const buttonVariants = tv({
   variants: {
     variant: {
       primary: 'text-primary-foreground',
-      default: 'text-primary-foreground',
+      default: 'text-secondary-foreground',
       destructive: 'bg-danger text-danger-background',
       outline: 'border border-border text-foreground',
       tertiary: 'border border-border text-foreground',
@@ -63,7 +63,7 @@ export const buttonVariants = tv({
     trailingIcon: { true: 'pr-[var(--button-icon-padding)]' },
   },
   defaultVariants: {
-    variant: 'primary',
+    variant: 'secondary',
     size: 'default',
   },
 });
@@ -77,7 +77,7 @@ export const buttonSurfaceVariants: Record<ConcreteButtonVariant, string> = {
   primary:
     'bg-primary shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
   default:
-    'bg-primary shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
+    'bg-secondary shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
   secondary:
     'bg-secondary shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
   destructive:
@@ -98,7 +98,7 @@ export const buttonSurfaceVariants: Record<ConcreteButtonVariant, string> = {
 export const activeButtonSurfaceVariants: Record<ConcreteButtonVariant, string> = {
   ...buttonSurfaceVariants,
   primary: 'bg-primary brightness-90 shadow-none',
-  default: 'bg-primary brightness-90 shadow-none',
+  default: 'bg-secondary brightness-90 shadow-none',
   secondary: 'bg-secondary brightness-90 shadow-none',
   destructive: 'bg-danger brightness-90 shadow-none',
   outline: 'bg-active shadow-none',

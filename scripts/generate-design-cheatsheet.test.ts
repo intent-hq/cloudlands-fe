@@ -35,7 +35,7 @@ describe('generated design-system cheatsheet', () => {
     expect(cheatsheet).toContain('**Small:** `sm`; icon-only `icon-sm`');
     expect(cheatsheet).toContain('**Medium:** `default`; icon-only `icon`');
     expect(cheatsheet).toContain('**Large:** `lg`; icon-only `icon-lg`');
-    expect(cheatsheet).toContain('`variant="default"` → `variant="primary"`');
+    expect(cheatsheet).toContain('`variant="default"` → `variant="secondary"`');
     expect(cheatsheet).toContain('`variant="neumorphic"` → `variant="outline"`');
     expect(cheatsheet).toContain('`size="xs"` → `size="compact"`');
   });

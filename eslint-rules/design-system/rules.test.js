@@ -80,7 +80,7 @@ svelteTester.run('no-button-compatibility-aliases', noButtonCompatibilityAliases
     {
       code: '<script>import { Button } from "$lib/components/ui/button";</script><Button variant="default" size="xs">Save</Button>',
       errors: [
-        { message: 'Use `variant="primary"` instead — /sandbox/button' },
+        { message: 'Use `variant="secondary"` instead — /sandbox/button' },
         { message: 'Use `size="compact"` instead — /sandbox/button' },
       ],
     },
@@ -97,7 +97,7 @@ svelteTester.run('no-button-compatibility-aliases', noButtonCompatibilityAliases
     },
     {
       code: '<script>import { Button } from "$lib/components/ui/button/index.js";</script><Button variant="default">Save</Button>',
-      errors: [{ message: 'Use `variant="primary"` instead — /sandbox/button' }],
+      errors: [{ message: 'Use `variant="secondary"` instead — /sandbox/button' }],
     },
   ],
 });
