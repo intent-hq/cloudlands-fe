@@ -84,6 +84,7 @@
 
 {#if select.staticPosition}
   <SelectPrimitive.ContentStatic
+    preventScroll={false}
     data-slot="select-content"
     data-static-position
     data-surface-level={surface}

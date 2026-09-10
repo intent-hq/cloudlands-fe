@@ -5,7 +5,7 @@
 import { cleanup, render } from '@testing-library/svelte';
 import axe from 'axe-core';
 import { tick } from 'svelte';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { canonicalPatternManifest } from '$lib/components/patterns/manifest';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 import { canonicalComponentManifest } from '$lib/components/ui/manifest';
@@ -47,6 +47,12 @@ const cases: ContractCase[] = [
     id: 'modals',
     fixture,
   })) ?? []),
+  ...(getCatalogEntry('popovers')?.fixtures.map((fixture) => ({
+    key: `product:popovers:${fixture.id}`,
+    kind: 'product' as const,
+    id: 'popovers',
+    fixture,
+  })) ?? []),
   ...(getCatalogEntry('rows')?.fixtures.map((fixture) => ({
     key: `product:rows:${fixture.id}`,
     kind: 'product' as const,
@@ -68,6 +74,18 @@ const intentionalAxeAllowlist: Record<string, ReadonlyArray<{ rule: string; reas
       rule: 'landmark-unique',
       reason:
         'The state matrix intentionally renders repeated copies of the same settings navigation landmark.',
+    },
+  ],
+  'product:popovers:non-modal-overlay-matrix': [
+    {
+      rule: 'aria-required-children',
+      reason:
+        'Dropdown submenu and grouped-combobox group controls reproduce this rule in their default component fixtures.',
+    },
+    {
+      rule: 'aria-required-parent',
+      reason:
+        'The Dropdown submenu trigger reproduces this role-parent rule in default portal rendering.',
     },
   ],
 };
@@ -142,8 +160,10 @@ function renderCase(testCase: ContractCase) {
 }
 
 const originalResizeObserver = globalThis.ResizeObserver;
+const originalScrollIntoView = Element.prototype.scrollIntoView;
 
 beforeAll(() => {
+  Element.prototype.scrollIntoView = vi.fn();
   globalThis.ResizeObserver = class ResizeObserverMock {
     observe() {}
     unobserve() {}
@@ -152,6 +172,7 @@ beforeAll(() => {
 });
 
 afterAll(() => {
+  Element.prototype.scrollIntoView = originalScrollIntoView;
   globalThis.ResizeObserver = originalResizeObserver;
 });
 

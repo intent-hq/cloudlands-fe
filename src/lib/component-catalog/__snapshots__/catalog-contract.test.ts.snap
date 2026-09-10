@@ -11883,6 +11883,513 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
 }
 `;
 
+exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non-modal-overlay-ma…' 1`] = `
+{
+  "declaredStates": [
+    "menu-item-states",
+    "long-menu",
+    "compact-density",
+    "dropdown-menu",
+    "select-listbox",
+    "combobox-listbox",
+    "empty-search",
+    "grouped",
+    "popover-title-body",
+    "popover-form",
+    "popover-footer",
+    "workspace-hover-card",
+    "github-link-card",
+    "tooltip-short",
+    "tooltip-multi-line",
+    "tooltip-kbd",
+    "zoom-200",
+    "reduced-motion",
+  ],
+  "dom": "<body>
+  <div>
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
+      <header class="border-b border-border entry-header svelte-<scope>">
+        <div class="min-w-0">
+          <div class="flex flex-wrap gap-2 items-baseline">
+            <p class="font-medium text-muted-foreground text-xs tracking-wide uppercase">
+              "Component focus"
+            <h1 class="font-medium mt-1 text-3xl tracking-tight">
+              "Menus and popovers"
+            <span class="bg-muted border border-border px-2 py-0.5 rounded-full text-muted-foreground text-xs">
+              "product"
+          <p class="leading-relaxed max-w-3xl mt-1 text-muted-foreground text-xs">
+            "Static non-modal overlay matrices for reviewing shared menu, listbox, popover, hover-card, and tooltip contracts."
+        <div class="flex gap-2 items-center shrink-0">
+          <details class="entry-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Source"
+            <div class="inspector-popover svelte-<scope>">
+              <p class="text-foreground">
+                "Canonical source"
+              <code class="block break-all mt-1">
+                "src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte"
+      <div class="fixture-grid svelte-<scope>">
+        <article class="fixture-card svelte-<scope>" data-catalog-fixture="non-modal-overlay-matrix">
+          <div class="fixture-heading svelte-<scope>">
+            <h2 class="font-medium text-sm">
+              "Open non-modal overlays"
+            <span class="bg-muted border border-border px-2 py-0.5 rounded-full text-muted-foreground text-xs">
+              "both"
+          <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="non-modal-overlay-matrix" data-catalog-preview="popovers">
+            <div class="matrix svelte-<scope>" data-catalog-renderer-fixture="non-modal-overlay-matrix" data-popovers-matrix="">
+              <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="default hover active disabled checked radio shortcut icon submenu destructive separator group-label">
+                <h3 class="font-medium text-muted-foreground type-caption">
+                  "Menu item states"
+                <div aria-orientation="vertical" class="bg-surface-3 border border-border data-[side=bottom]:origin-top data-[side=left]:origin-right data-[side=right]:origin-left data-[side=top]:origin-bottom data-[state=closed]:animate-out data-[state=closed]:duration-spring-moderate-exit data-[state=closed]:ease-spring-exit data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-spring-moderate data-[state=open]:ease-spring-moderate data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 focus-visible:-outline-offset-1 focus-visible:border-input focus-visible:outline isolate min-w-40 motion-reduce:animate-none motion-reduce:transition-none overflow-hidden overflow-y-auto overscroll-contain p-1 relative rounded-md shadow-(--elevation-overlay) text-popover-foreground type-body w-full z-(--layer-popover)" data-dropdown-menu-content="" data-list-overlay="" data-slot="menu-content" data-state="open" data-static-position="true" data-surface-level="3" id="c<id>-content" role="menu" tabindex="-1" tokens=["--bits-dropdown-menu-content-available-height","--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
+                  <span aria-hidden="true" class="contents" data-active-index="1" data-slot="menu-list-highlight">
+                    <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                      <div class="absolute bg-selected" tokens=["--radius-row"]>
+                      <div class="absolute bg-selected" tokens=["--radius-row"]>
+                      <div class="absolute bg-hover" tokens=["--radius-row"]>
+                  <div aria-labelledby="bits-<id>" data-dropdown-menu-group="" id="bits-<id>" role="group">
+                    <div class="font-medium px-2 py-1.5 text-muted-foreground type-caption" data-dropdown-menu-group-heading="" id="bits-<id>" role="group">
+                      "Workspace actions"
+                    <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                      "Default item"
+                    <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-highlighted="true" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                      "Hover / highlighted"
+                    <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" data-state="open" id="bits-<id>" role="menuitem" tabindex="-1">
+                      "Active / pressed"
+                    <div aria-disabled="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-disabled="" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                      "Disabled item"
+                    <div aria-checked="true" aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-checkbox-item="" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-checkbox-item" data-state="checked" id="bits-<id>" role="menuitemcheckbox" tabindex="-1">
+                      "Checked checkbox"
+                      <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="menu-item-indicator">
+                        "✓"
+                    <div data-dropdown-menu-radio-group="" id="bits-<id>" role="group">
+                      <div aria-checked="false" aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-dropdown-menu-radio-item="" data-menu-item="true" data-slot="menu-radio-item" data-state="unchecked" id="bits-<id>" role="menuitemradio" tabindex="-1">
+                        "Compact radio"
+                        <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="menu-item-indicator">
+                      <div aria-checked="true" aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-dropdown-menu-radio-item="" data-menu-item="true" data-slot="menu-radio-item" data-state="checked" id="bits-<id>" role="menuitemradio" tabindex="-1">
+                        "Comfortable radio"
+                        <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="menu-item-indicator">
+                          "●"
+                    <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-command-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                      <svg aria-hidden="true" class="opacity-70 shrink-0 text-muted-foreground w-4" data-icon="paperclip" data-weight="bold" role="img">
+                        <rect>
+                        <path>
+                      <span class="flex-1 min-w-0 truncate">
+                        "Attach files"
+                      <span aria-hidden="true" class="ml-5">
+                        <kbd class="font-normal leading-none shrink-0 text-muted-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                          "⇧⌘A"
+                    <div aria-disabled="false" aria-expanded="false" aria-haspopup="menu" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-dropdown-menu-sub-trigger="" data-menu-item="true" data-slot="menu-sub-trigger" data-state="closed" id="bits-<id>" role="menuitem" tabindex="-1">
+                      "More actions"
+                      <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4" data-slot="menu-sub-chevron">
+                        "›"
+                    <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-destructive="" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                      "Delete workspace"
+                    <div class="-mx-1 bg-border h-px my-1.5" data-dropdown-menu-separator="" data-slot="menu-separator" id="bits-<id>" role="group">
+                    <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                      "After separator"
+              <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="long-menu scrolling">
+                <h3 class="font-medium text-muted-foreground type-caption">
+                  "Long menu"
+                <div aria-orientation="vertical" class="bg-surface-3 border border-border data-[side=bottom]:origin-top data-[side=left]:origin-right data-[side=right]:origin-left data-[side=top]:origin-bottom data-[state=closed]:animate-out data-[state=closed]:duration-spring-moderate-exit data-[state=closed]:ease-spring-exit data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-spring-moderate data-[state=open]:ease-spring-moderate data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 focus-visible:-outline-offset-1 focus-visible:border-input focus-visible:outline isolate min-w-40 motion-reduce:animate-none motion-reduce:transition-none overflow-hidden overflow-y-auto overscroll-contain p-1 relative rounded-md shadow-(--elevation-overlay) text-popover-foreground type-body w-full z-(--layer-popover)" data-dropdown-menu-content="" data-list-overlay="" data-slot="menu-content" data-state="open" data-static-position="true" data-surface-level="3" id="c<id>-content" role="menu" tabindex="-1" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
+                  <span aria-hidden="true" class="contents" data-slot="menu-list-highlight">
+                    <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Command 1"
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Command 2"
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Command 3"
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Command 4"
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Command 5"
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Command 6"
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Command 7"
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Command 8"
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Command 9"
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Command 10"
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Command 11"
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Command 12"
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Command 13"
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Command 14"
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Command 15"
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Command 16"
+              <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="compact-density">
+                <h3 class="font-medium text-muted-foreground type-caption">
+                  "Compact menu"
+                <div aria-orientation="vertical" class="bg-surface-3 border border-border data-[side=bottom]:origin-top data-[side=left]:origin-right data-[side=right]:origin-left data-[side=top]:origin-bottom data-[state=closed]:animate-out data-[state=closed]:duration-spring-moderate-exit data-[state=closed]:ease-spring-exit data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-spring-moderate data-[state=open]:ease-spring-moderate data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 focus-visible:-outline-offset-1 focus-visible:border-input focus-visible:outline isolate min-w-40 motion-reduce:animate-none motion-reduce:transition-none overflow-hidden overflow-y-auto overscroll-contain p-1 relative rounded-md shadow-(--elevation-overlay) text-popover-foreground type-body w-full z-(--layer-popover)" data-dropdown-menu-content="" data-list-overlay="" data-slot="menu-content" data-state="open" data-static-position="true" data-surface-level="3" id="c<id>-content" role="menu" tabindex="-1" tokens=["--bits-dropdown-menu-content-available-height","--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
+                  <span aria-hidden="true" class="contents" data-slot="menu-list-highlight">
+                    <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Compact action"
+                  <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                    "Second action"
+              <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="dropdown-menu open selected disabled submenu">
+                <h3 class="font-medium text-muted-foreground type-caption">
+                  "Dropdown menu"
+                <div class="inline-block relative" data-slot="dropdown-root">
+                  <div>
+                    <button aria-controls="c<id>-listbox" aria-expanded="true" aria-haspopup="listbox" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-2 group/button h-(--control-height-medium) hover:bg-hover inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption type-caption whitespace-nowrap" data-slot="button" data-state="active" id="c<id>-trigger" type="button">
+                      <span aria-hidden="true" class="absolute bg-primary brightness-90 duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-none transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <span class="flex-1 text-left truncate">
+                            "Open workspace"
+                          <svg aria-hidden="true" class="shrink-0 size-4! text-muted-foreground" data-icon="chevron-down" data-weight="bold" role="img">
+                            <rect>
+                            <path>
+                  <div class="bg-popover border border-border data-[side=bottom]:origin-top data-[side=left]:origin-right data-[side=right]:origin-left data-[side=top]:origin-bottom data-[state=closed]:animate-out data-[state=closed]:duration-spring-moderate-exit data-[state=closed]:ease-spring-exit data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-spring-moderate data-[state=open]:ease-spring-moderate data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 focus-visible:-outline-offset-1 focus-visible:border-input focus-visible:outline isolate min-w-full motion-reduce:animate-none motion-reduce:transition-none overflow-hidden relative rounded-md shadow-(--elevation-overlay) text-popover-foreground type-body w-full z-50" data-slot="dropdown-content" data-static-position="">
+                    <div aria-labelledby="c<id>-trigger" class="isolate max-h-[300px] overflow-y-auto p-1 relative" data-list-overlay="" data-scroll-container="" id="c<id>-listbox" role="listbox" tabindex="-1">
+                      <span aria-hidden="true" class="contents" data-active-index="0" data-slot="menu-list-highlight">
+                        <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                          <div class="absolute bg-selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-hover" tokens=["--radius-row"]>
+                      <div class="relative">
+                        <div>
+                          <button aria-selected="true" class="!px-0 !py-0 [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground font-inherit font-normal gap-1.5 group/button group/menu-item h-(--control-height-medium) isolate items-center justify-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none overflow-hidden px-2 py-1.5 relative rounded-(--radius-row) select-none shrink-0 text-inherit text-left transition-[color,font-weight] type-caption type-caption w-full whitespace-nowrap z-10" data-highlighted="true" data-menu-item="true" data-slot="button" id="c<id>-option-0" role="option" type="button" tokens=["--control-height-medium"]>
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <svg aria-hidden="true" class="h-4 shrink-0 text-ghost w-4" data-icon="paperclip" data-weight="bold" role="img">
+                                  <rect>
+                                  <path>
+                                <div class="flex-1 min-w-0 truncate">
+                                  <span>
+                                    "Open workspace"
+                                <span class="text-subtle text-xs">
+                                  "⌘O"
+                                <svg aria-hidden="true" class="h-4 shrink-0 text-foreground w-4" data-icon="check" data-weight="bold" role="img">
+                                  <rect>
+                                  <path>
+                      <div class="relative">
+                        <div>
+                          <button aria-selected="false" class="!px-0 !py-0 [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground font-inherit font-normal gap-1.5 group/button group/menu-item h-(--control-height-medium) isolate items-center justify-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none overflow-hidden px-2 py-1.5 relative rounded-(--radius-row) select-none shrink-0 text-inherit text-left transition-[color,font-weight] type-caption type-caption w-full whitespace-nowrap z-10" data-menu-item="true" data-slot="button" id="c<id>-option-1" role="option" type="button" tokens=["--control-height-medium"]>
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <div class="bg-primary border border-primary flex h-4 items-center justify-center rounded shrink-0 w-4">
+                                  <svg aria-hidden="true" class="h-2.5 text-primary-foreground w-2.5" data-icon="check" data-weight="bold" role="img">
+                                    <rect>
+                                    <path>
+                                <div class="flex-1 min-w-0 truncate">
+                                  <span>
+                                    "Pin workspace"
+                      <div class="bg-border h-px my-1">
+                      <div class="relative">
+                        <div>
+                          <button aria-selected="false" class="!px-0 !py-0 [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground font-inherit font-normal gap-1.5 group/button group/menu-item h-(--control-height-medium) isolate items-center justify-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none overflow-hidden px-2 py-1.5 relative rounded-(--radius-row) select-none shrink-0 text-inherit text-left transition-[color,font-weight] type-caption type-caption w-full whitespace-nowrap z-10" data-menu-item="true" data-slot="button" disabled="" role="option" type="button" tokens=["--control-height-medium"]>
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <div class="flex-1 min-w-0 truncate">
+                                  <span>
+                                    "Unavailable action"
+                      <div class="relative">
+                        <div>
+                          <button aria-expanded="false" aria-haspopup="menu" class="!px-0 !py-0 [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground font-inherit font-normal gap-1.5 group/button group/menu-item h-(--control-height-medium) isolate items-center justify-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none overflow-hidden px-2 py-1.5 relative rounded-(--radius-row) select-none shrink-0 text-inherit text-left transition-[color,font-weight] type-caption type-caption w-full whitespace-nowrap z-10" data-menu-item="true" data-slot="button" role="menuitem" type="button" tokens=["--control-height-medium"]>
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                <div class="flex-1 min-w-0 truncate">
+                                  <span>
+                                    "More actions"
+                                <svg aria-hidden="true" class="h-3 shrink-0 text-ghost w-3" data-icon="chevron-right" data-weight="bold" role="img">
+                                  <rect>
+                                  <path>
+              <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="select default highlighted selected disabled-option">
+                <h3 class="font-medium text-muted-foreground type-caption">
+                  "Select listbox"
+                <div class="min-w-0 relative w-full" data-slot="select-root">
+                  <div>
+                    <button aria-controls="c<id>-listbox" aria-expanded="true" aria-haspopup="listbox" aria-label="Catalog static select" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:border-danger aria-invalid:ring-1 aria-invalid:ring-danger/25 bg-transparent border border-border cursor-pointer disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:border-border disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast flex font-normal gap-2 group group/button h-(--control-height-medium) hover:bg-hover hover:border-input isolate items-center justify-between min-w-0 motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shadow-none shrink-0 text-foreground transition-[border-color,background-color,box-shadow] type-caption type-caption w-full whitespace-nowrap" data-select-trigger="" data-slot="button" data-state="open" id="c<id>-trigger" type="button">
+                      <span aria-hidden="true" class="absolute bg-active duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-none transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <span class="flex-1 min-w-0 text-foreground text-left truncate">
+                            "Grace Hopper"
+                          <svg aria-hidden="true" class="duration-spring-fast group-data-[state=open]:rotate-180 motion-reduce:transition-none shrink-0 size-3 text-muted-foreground transition-transform" data-icon="chevron-down" data-weight="bold" role="img">
+                            <rect>
+                            <path>
+                  <div class="bg-surface-3 border border-border data-[side=bottom]:origin-top data-[side=left]:origin-right data-[side=right]:origin-left data-[side=top]:origin-bottom data-[state=closed]:animate-out data-[state=closed]:duration-spring-moderate-exit data-[state=closed]:ease-spring-exit data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-spring-moderate data-[state=open]:ease-spring-moderate data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 focus-visible:-outline-offset-1 focus-visible:border-input focus-visible:outline isolate max-h-60 motion-reduce:animate-none motion-reduce:transition-none overflow-hidden relative rounded-(--radius-medium) shadow-(--elevation-overlay) text-popover-foreground type-body w-full z-(--layer-popover)" data-select-content="" data-slot="select-content" data-state="open" data-static-position="true" data-surface-level="3" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin","--space-4"]>
+                    <div aria-labelledby="c<id>-trigger" class="flex-1 isolate min-h-0 overflow-y-auto p-1 relative" data-list-overlay="" data-select-viewport="" id="c<id>-listbox" role="listbox" tabindex="0">
+                      <span aria-hidden="true" class="contents" data-active-index="1" data-slot="menu-list-highlight">
+                        <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                          <div class="absolute bg-selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-hover" tokens=["--radius-row"]>
+                      <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-label="Ada Lovelace" data-menu-item="true" data-select-item="" data-value="ada" id="bits-<id>" role="option">
+                        <div class="flex-1 min-w-0 truncate">
+                          "Ada Lovelace"
+                        <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          "✓"
+                      <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-highlighted="" data-label="Grace Hopper" data-menu-item="true" data-select-item="" data-selected="" data-value="grace" id="bits-<id>" role="option">
+                        <div class="flex-1 min-w-0 truncate">
+                          "Grace Hopper"
+                        <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          "✓"
+                      <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-disabled="" data-label="Linus Torvalds" data-menu-item="true" data-select-item="" data-value="linus" id="bits-<id>" role="option">
+                        <div class="flex-1 min-w-0 truncate">
+                          "Linus Torvalds"
+                        <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          "✓"
+              <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="combobox default highlighted selected disabled-option">
+                <h3 class="font-medium text-muted-foreground type-caption">
+                  "Combobox listbox"
+                <div class="relative w-full">
+                  <span class="sr-only" id="c<id>-label">
+                    "Catalog static combobox"
+                  <input aria-activedescendant="bits-<id>" aria-autocomplete="list" aria-controls="c<id>-listbox" aria-expanded="true" aria-labelledby="c<id>-label" class="aria-invalid:border-danger bg-transparent border border-border data-[state=focus]:bg-card data-[state=focus]:shadow-[inset_0_0_0_1px_var(--ring)] data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:bg-card h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 read-only:text-muted-foreground rounded-(--radius-medium) shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-combobox-input="" data-size="default" data-state="open" id="c<id>-input" role="combobox">
+                  <div class="bg-surface-3 border border-border data-[side=bottom]:origin-top data-[side=left]:origin-right data-[side=right]:origin-left data-[side=top]:origin-bottom data-[state=closed]:animate-out data-[state=closed]:duration-spring-moderate-exit data-[state=closed]:ease-spring-exit data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-spring-moderate data-[state=open]:ease-spring-moderate data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 focus-visible:-outline-offset-1 focus-visible:border-input focus-visible:outline isolate max-h-72 motion-reduce:animate-none motion-reduce:transition-none overflow-hidden relative rounded-(--radius-medium) shadow-(--elevation-overlay) text-popover-foreground type-body w-full z-(--layer-popover)" data-combobox-content="" data-state="open" data-static-position="true" data-surface-level="3" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin","--space-4"]>
+                    <div aria-labelledby="c<id>-label" class="isolate max-h-72 overflow-y-auto overscroll-contain p-1 relative" data-combobox-viewport="" data-list-overlay="" id="c<id>-listbox" role="listbox" tabindex="0">
+                      <span aria-hidden="true" class="contents" data-active-index="1" data-slot="menu-list-highlight">
+                        <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                          <div class="absolute bg-selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-hover" tokens=["--radius-row"]>
+                      <div data-combobox-group="" id="bits-<id>" role="group">
+                        <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-combobox-item="" data-label="Ada Lovelace" data-menu-item="true" data-slot="combobox-option-motion" data-value="ada" id="bits-<id>" role="option">
+                          <span class="flex-1 min-w-0 truncate">
+                            "Ada Lovelace"
+                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                            "✓"
+                        <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-combobox-item="" data-highlighted="" data-label="Grace Hopper" data-menu-item="true" data-selected="" data-slot="combobox-option-motion" data-value="grace" id="bits-<id>" role="option">
+                          <span class="flex-1 min-w-0 truncate">
+                            "Grace Hopper"
+                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                            "✓"
+                        <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-combobox-item="" data-disabled="" data-label="Linus Torvalds" data-menu-item="true" data-slot="combobox-option-motion" data-value="linus" id="bits-<id>" role="option">
+                          <span class="flex-1 min-w-0 truncate">
+                            "Linus Torvalds"
+                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                            "✓"
+              <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="empty-search searchable-select">
+                <h3 class="font-medium text-muted-foreground type-caption">
+                  "Empty search"
+                <div class="relative w-full">
+                  <span class="sr-only" id="c<id>-label">
+                    "Search people"
+                  <input aria-autocomplete="list" aria-controls="c<id>-listbox" aria-expanded="true" aria-labelledby="c<id>-label" class="aria-invalid:border-danger bg-transparent border border-border data-[state=focus]:bg-card data-[state=focus]:shadow-[inset_0_0_0_1px_var(--ring)] data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:bg-card h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 read-only:text-muted-foreground rounded-(--radius-medium) shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-combobox-input="" data-size="default" data-state="open" id="c<id>-input" role="combobox">
+                  <div class="bg-surface-3 border border-border data-[side=bottom]:origin-top data-[side=left]:origin-right data-[side=right]:origin-left data-[side=top]:origin-bottom data-[state=closed]:animate-out data-[state=closed]:duration-spring-moderate-exit data-[state=closed]:ease-spring-exit data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-spring-moderate data-[state=open]:ease-spring-moderate data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 focus-visible:-outline-offset-1 focus-visible:border-input focus-visible:outline isolate max-h-72 motion-reduce:animate-none motion-reduce:transition-none overflow-hidden relative rounded-(--radius-medium) shadow-(--elevation-overlay) text-popover-foreground type-body w-full z-(--layer-popover)" data-combobox-content="" data-state="open" data-static-position="true" data-surface-level="3" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin","--space-4"]>
+                    <div aria-labelledby="c<id>-label" class="isolate max-h-72 overflow-y-auto overscroll-contain p-1 relative" data-combobox-viewport="" data-list-overlay="" id="c<id>-listbox" role="listbox" tabindex="0">
+                      <span aria-hidden="true" class="contents" data-slot="menu-list-highlight">
+                        <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                      <div aria-disabled="true" aria-selected="false" class="px-3 py-2 text-muted-foreground type-body" role="option">
+                        "No options available"
+                      <div data-combobox-group="" id="bits-<id>" role="group">
+              <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="grouped grouped-combobox">
+                <h3 class="font-medium text-muted-foreground type-caption">
+                  "Grouped combobox"
+                <div class="relative w-full">
+                  <span class="sr-only" id="c<id>-label">
+                    "Select..."
+                  <input aria-activedescendant="bits-<id>" aria-autocomplete="list" aria-controls="c<id>-listbox" aria-expanded="true" aria-labelledby="c<id>-label" class="aria-invalid:border-danger bg-transparent border border-border data-[state=focus]:bg-card data-[state=focus]:shadow-[inset_0_0_0_1px_var(--ring)] data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:bg-card h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 read-only:text-muted-foreground rounded-(--radius-medium) shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-combobox-input="" data-size="default" data-state="open" id="c<id>-input" role="combobox">
+                  <div class="bg-surface-3 border border-border data-[side=bottom]:origin-top data-[side=left]:origin-right data-[side=right]:origin-left data-[side=top]:origin-bottom data-[state=closed]:animate-out data-[state=closed]:duration-spring-moderate-exit data-[state=closed]:ease-spring-exit data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-spring-moderate data-[state=open]:ease-spring-moderate data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 focus-visible:-outline-offset-1 focus-visible:border-input focus-visible:outline isolate max-h-72 motion-reduce:animate-none motion-reduce:transition-none overflow-hidden relative rounded-(--radius-medium) shadow-(--elevation-overlay) text-popover-foreground type-body w-full z-(--layer-popover)" data-combobox-content="" data-state="open" data-static-position="true" data-surface-level="3" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin","--space-4"]>
+                    <div aria-labelledby="c<id>-label" class="isolate max-h-72 overflow-y-auto overscroll-contain p-1 relative" data-combobox-viewport="" data-list-overlay="" id="c<id>-listbox" role="listbox" tabindex="0">
+                      <span aria-hidden="true" class="contents" data-active-index="1" data-slot="menu-list-highlight">
+                        <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                          <div class="absolute bg-selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-hover" tokens=["--radius-row"]>
+                      <div aria-labelledby="bits-<id>" data-combobox-group="" id="bits-<id>" role="group">
+                        <div class="font-medium px-2 py-1.5 text-muted-foreground type-caption" data-combobox-group-label="" id="bits-<id>">
+                          <span>
+                            "Active"
+                          <div>
+                            <button aria-label="Toggle Active" class="!px-0 !py-0 [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-inherit transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                  "Collapse"
+                        <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-combobox-item="" data-label="Ada Lovelace" data-menu-item="true" data-slot="combobox-option-motion" data-value="ada" id="bits-<id>" role="option">
+                          <span class="flex-1 min-w-0 truncate">
+                            "Ada Lovelace"
+                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                            "✓"
+                        <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-combobox-item="" data-highlighted="" data-label="Grace Hopper" data-menu-item="true" data-selected="" data-slot="combobox-option-motion" data-value="grace" id="bits-<id>" role="option">
+                          <span class="flex-1 min-w-0 truncate">
+                            "Grace Hopper"
+                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                            "✓"
+                      <div aria-labelledby="bits-<id>" data-combobox-group="" id="bits-<id>" role="group">
+                        <div class="font-medium px-2 py-1.5 text-muted-foreground type-caption" data-combobox-group-label="" id="bits-<id>">
+                          <span>
+                            "Unavailable"
+                          <div>
+                            <button aria-label="Toggle Unavailable" class="!px-0 !py-0 [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-inherit transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                  "Collapse"
+                        <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-combobox-item="" data-label="Linus Torvalds" data-menu-item="true" data-slot="combobox-option-motion" data-value="linus" id="bits-<id>" role="option">
+                          <span class="flex-1 min-w-0 truncate">
+                            "Linus Torvalds"
+                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                            "✓"
+              <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="popover title body">
+                <h3 class="font-medium text-muted-foreground type-caption">
+                  "Popover — title and body"
+                <div class="bg-surface-3 border border-border data-[side=bottom]:origin-top data-[side=left]:origin-right data-[side=right]:origin-left data-[side=top]:origin-bottom data-[state=closed]:animate-out data-[state=closed]:duration-spring-moderate-exit data-[state=closed]:ease-spring-exit data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-spring-moderate data-[state=open]:ease-spring-moderate data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 focus-visible:-outline-offset-1 focus-visible:border-input focus-visible:outline isolate motion-reduce:animate-none motion-reduce:transition-none overflow-hidden p-4 relative rounded-md shadow-(--elevation-overlay) text-popover-foreground type-body w-full z-(--layer-popover)" data-popover-content="" data-slot="popover-content" data-state="open" data-static-position="true" data-surface-level="3" tabindex="-1" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
+                  <h4 class="font-medium type-title">
+                    "Workspace details"
+                  <p class="mt-1 text-muted-foreground type-body">
+                    "Review the selected workspace before continuing."
+              <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="popover form">
+                <h3 class="font-medium text-muted-foreground type-caption">
+                  "Popover — form"
+                <div class="bg-surface-3 border border-border data-[side=bottom]:origin-top data-[side=left]:origin-right data-[side=right]:origin-left data-[side=top]:origin-bottom data-[state=closed]:animate-out data-[state=closed]:duration-spring-moderate-exit data-[state=closed]:ease-spring-exit data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-spring-moderate data-[state=open]:ease-spring-moderate data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 focus-visible:-outline-offset-1 focus-visible:border-input focus-visible:outline gap-3 grid isolate motion-reduce:animate-none motion-reduce:transition-none overflow-hidden p-4 relative rounded-md shadow-(--elevation-overlay) text-popover-foreground type-body w-full z-(--layer-popover)" data-popover-content="" data-slot="popover-content" data-state="open" data-static-position="true" data-surface-level="3" tabindex="-1" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
+                  <label class="type-caption" for="popover-name">
+                    "Workspace name"
+                  <input class="aria-invalid:border-danger bg-transparent border border-border data-[state=focus]:bg-card data-[state=focus]:shadow-[inset_0_0_0_1px_var(--ring)] data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:bg-card h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input" id="popover-name">
+                  <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-small) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                      <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          "Save"
+              <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="popover footer">
+                <h3 class="font-medium text-muted-foreground type-caption">
+                  "Popover — footer"
+                <div class="bg-surface-3 border border-border data-[side=bottom]:origin-top data-[side=left]:origin-right data-[side=right]:origin-left data-[side=top]:origin-bottom data-[state=closed]:animate-out data-[state=closed]:duration-spring-moderate-exit data-[state=closed]:ease-spring-exit data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-spring-moderate data-[state=open]:ease-spring-moderate data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 focus-visible:-outline-offset-1 focus-visible:border-input focus-visible:outline isolate motion-reduce:animate-none motion-reduce:transition-none overflow-hidden relative rounded-md shadow-(--elevation-overlay) text-popover-foreground type-body w-full z-(--layer-popover)" data-popover-content="" data-slot="popover-content" data-state="open" data-static-position="true" data-surface-level="3" tabindex="-1" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
+                  <div class="p-4">
+                    <h4 class="font-medium type-title">
+                      "Archive workspace?"
+                    <p class="mt-1 text-muted-foreground type-body">
+                      "You can restore it later."
+                  <footer class="border-border border-t flex gap-2 justify-end p-3">
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-small) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Cancel"
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-small) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                        <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Archive"
+              <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="hover-card workspace">
+                <h3 class="font-medium text-muted-foreground type-caption">
+                  "Workspace hover card"
+                <div class="bg-surface-3 border border-border flex flex-col overflow-y-auto pointer-events-auto relative shadow-surface-3 w-64 w-full z-50" data-static-position="" data-surface-level="3" role="tooltip">
+                  <section class="bg-background overflow-hidden ring-1 ring-border rounded-md shadow-(--elevation-overlay) shrink-0 svelte-<scope> text-foreground text-left workspace-hover-card" data-workspace-hover-card-layout="landscape" data-workspace-hover-card="">
+                    <header class="min-w-0 pt-4 px-5" data-workspace-hover-card-header="">
+                      <div class="min-w-0" data-workspace-hover-card-identity="">
+                        <div class="flex gap-3 items-center justify-between min-w-0">
+                          <h2 class="font-medium! min-w-0 text-foreground truncate type-body" data-workspace-hover-card-title="">
+                            "Polish workspace hover cards"
+                          <span class="flex gap-1.5 items-center shrink-0 text-muted-foreground type-caption" data-workspace-hover-card-status="">
+                            <span class="truncate" data-workspace-hover-card-status-label="">
+                              "In progress"
+                            <span aria-hidden="true" class="forced-colors:text-[CanvasText] inline-flex items-center justify-center shrink-0 svelte-<scope> workspace-status-color-active workspace-status-icon" data-workspace-status-visual="dot" data-workspace-status="in_progress">
+                              <span class="svelte-<scope> workspace-status-dot" data-workspace-status-dot="">
+                        <div class="min-w-0 mt-1 text-muted-foreground truncate type-caption" data-workspace-hover-card-repo="">
+                          "intent-hq / cloudlands-fe"
+                        <p class="line-clamp-3 min-w-0 mt-1 text-muted-foreground type-caption" data-workspace-hover-card-summary="">
+                          "Implementing the approved stacked hover-card polish."
+                    <div class="border-border border-t my-4" data-workspace-hover-card-divider="">
+                    <div class="body-grid gap-4 grid grid-cols-1 items-stretch min-w-0 pb-4 px-5" data-workspace-hover-card-columns="">
+                      <section aria-label="Pull requests" class="min-w-0 pull-requests" data-workspace-hover-card-pr-column="">
+                        <div aria-label="Pull requests" class="gap-3 grid min-w-0" data-workspace-hover-card-pr-list="" role="list">
+                          <div aria-label="intent-hq/cloudlands-fe #73 Polish workspace hover cards Open ⏳ 1/5 checks running" class="gap-x-2.5 grid grid-cols-[2rem_minmax(0,1fr)_auto_auto] items-center min-w-0" data-pr-identity="intent-hq/cloudlands-fe#73" data-pr-status="open" data-workspace-hover-card-pr-row="" role="listitem">
+                            <svg aria-hidden="true" class="justify-self-center shrink-0 text-success" data-icon="code-pull-request" data-weight="bold" role="img">
+                              <rect>
+                              <path>
+                            <span class="min-w-0 text-foreground truncate type-body" data-workspace-hover-card-pr-title="">
+                              "Polish workspace hover cards"
+                            <span class="shrink-0 text-muted-foreground type-caption" data-workspace-hover-card-pr-status="">
+                              "Open"
+                            <span class="shrink-0 text-muted-foreground type-caption" data-workspace-hover-card-pr-number="">
+                              "#73"
+              <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="hover-card github-link">
+                <h3 class="font-medium text-muted-foreground type-caption">
+                  "GitHub link card"
+                <div class="bg-surface-3 border border-border flex flex-col overflow-y-auto pointer-events-auto relative shadow-surface-3 w-64 w-full z-50" data-static-position="" data-surface-level="3" role="tooltip">
+                  <article class="gap-3 grid max-w-md" data-preview-scenario="PR — open">
+                    <div>
+                      <h3 class="font-semibold text-sm">
+                        "PR — open"
+                      <p class="leading-5 text-muted-foreground text-xs">
+                        "Green PR icon + Open badge, title, author, relative time, head → base."
+                    <div class="bg-muted/20 gap-2 grid justify-items-center p-4" data-preview-status="ready">
+                      <div class="link-tooltip link-tooltip--card link-tooltip--static">
+                        <div class="github-link-card" data-kind="pr" data-preview-status="ready">
+                          <div class="github-link-card-header">
+                            <svg aria-hidden="true" class="h-3 shrink-0 text-success w-3" data-icon="code-pull-request" data-weight="bold" role="img">
+                              <rect>
+                              <path>
+                            <span class="github-link-card-ref">
+                              "acme/web-app #42"
+                            <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-success duration-spring-fast ease-spring-fast font-normal gap-1 h-4 inline-flex items-center justify-center ml-auto motion-reduce:transition-none overflow-hidden px-1.5 py-0.5 rounded-(--radius-medium) shrink-0 text-success-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
+                              "Open"
+                          <div class="github-link-card-title">
+                            "Add dark mode toggle to the settings panel"
+                          <div class="github-link-card-meta">
+                            <span class="truncate">
+                              "by octocat"
+                            <span aria-hidden="true">
+                              "·"
+                            <span class="shrink-0">
+                              "updated"
+                              <span>
+                                "8 months ago"
+                          <div class="github-link-card-branches">
+                            <span class="truncate">
+                              "feat/dark-mode-toggle"
+                            <span aria-hidden="true" class="shrink-0">
+                              "→"
+                            <span class="truncate">
+                              "main"
+                        <div class="link-tooltip-hint">
+                          "Click for actions · Hold ⌘ to open in app"
+                      <p class="text-muted-foreground text-xs">
+                        <a class="underline" href="https://github.com/acme/web-app/pull/42">
+                          "https://github.com/acme/web-app/pull/42"
+              <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="tooltip short">
+                <h3 class="font-medium text-muted-foreground type-caption">
+                  "Tooltip — short"
+                <div class="bg-foreground overlay-surface px-2 py-1 text-background text-balance tooltip-motion type-caption w-fit z-(--layer-tooltip)" data-overlay-surface="true" data-slot="tooltip-content" data-state="instant-open" data-static-position="true" data-surface-level="3" data-tooltip-content="" role="tooltip" tabindex="-1" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
+                  "Open settings"
+              <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="tooltip multi-line">
+                <h3 class="font-medium text-muted-foreground type-caption">
+                  "Tooltip — multi-line"
+                <div class="bg-foreground max-w-56 overlay-surface px-2 py-1 text-background text-balance tooltip-motion type-caption w-fit z-(--layer-tooltip)" data-overlay-surface="true" data-slot="tooltip-content" data-state="instant-open" data-static-position="true" data-surface-level="3" data-tooltip-content="" role="tooltip" tabindex="-1" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
+                  "This action updates every selected workspace and cannot be undone."
+              <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="tooltip kbd zoom-200 reduced-motion">
+                <h3 class="font-medium text-muted-foreground type-caption">
+                  "Tooltip — keyboard shortcut"
+                <div class="bg-foreground overlay-surface px-2 py-1 text-background text-balance tooltip-motion type-caption w-fit z-(--layer-tooltip)" data-overlay-surface="true" data-slot="tooltip-content" data-state="instant-open" data-static-position="true" data-surface-level="3" data-tooltip-content="" role="tooltip" tabindex="-1" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
+                  <span class="flex gap-2 items-center">
+                    "Open command menu"
+                    <kbd class="font-normal leading-none shrink-0 text-muted-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                      "⌘K"
+          <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Fixture details"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "States"
+                <dd class="mt-1 text-foreground">
+                  "menu-item-states, long-menu, compact-density, dropdown-menu, select-listbox, combobox-listbox, empty-search, grouped, popover-title-body, popover-form, popover-footer, workspace-hover-card, github-link-card, tooltip-short, tooltip-multi-line, tooltip-kbd, zoom-200, reduced-motion"
+              <div>
+                <dt>
+                  "Themes"
+                <dd class="mt-1 text-foreground">
+                  "light, dark"
+  <div class="portal-container">
+    <div>",
+}
+`;
+
 exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-family-matrix' 1`] = `
 {
   "declaredStates": [

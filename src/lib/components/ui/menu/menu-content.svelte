@@ -58,6 +58,7 @@
   <MenuPrimitive.ContentStatic
     bind:ref
     {id}
+    preventScroll={false}
     data-slot="menu-content"
     data-static-position
     data-surface-level={surface}

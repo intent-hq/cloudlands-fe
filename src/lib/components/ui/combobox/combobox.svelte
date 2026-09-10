@@ -418,6 +418,7 @@
 
   {#if staticPosition}
     <ComboboxPrimitive.ContentStatic
+      preventScroll={false}
       data-static-position
       data-surface-level={surface}
       class={cn(

@@ -28,6 +28,8 @@
 
 {#if isStatic}
   <PopoverPrimitive.ContentStatic
+    preventScroll={false}
+    trapFocus={false}
     data-slot="popover-content"
     data-static-position
     data-surface-level={surface}
