@@ -7,7 +7,10 @@
  * cards must render neither.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/svelte';
+import { fireEvent, render, waitFor } from '@testing-library/svelte';
+import { runSaga } from 'redux-saga';
+import { openClaudeLoginWorker } from '$store/renderer/slices/agent-availability/sagas/provider-availability-saga';
+import { claudeLoginRequested } from '$store/renderer/slices/agent-availability/agent-availability-slice';
 import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
 
 const mocks = vi.hoisted(() => {
@@ -82,7 +85,7 @@ const oldCheckBadge = (root: HTMLElement) =>
   root.querySelector('span.absolute.top-3.right-3.rounded-full');
 
 beforeEach(() => {
-  mocks.dispatch.mockClear();
+  mocks.dispatch.mockReset();
 });
 
 describe('ProviderCard selected-state indicator', () => {
@@ -155,29 +158,26 @@ describe('ProviderCard selected-state indicator', () => {
 });
 
 describe('ProviderCard needsLogin derivation', () => {
-  const loginBadge = (root: HTMLElement) =>
-    Array.from(root.querySelectorAll('span')).find((el) => el.textContent?.trim() === 'Log in');
-
-  it('renders the Log in badge only for an explicit authenticated: false', () => {
-    const { container } = render(ProviderCard, {
+  it('offers login only while authentication is explicitly false', async () => {
+    const { getByRole, queryByRole, rerender } = render(ProviderCard, {
       props: {
         ...baseProps(),
         provider: { ...readyProvider(), authenticated: false, authDetails: undefined },
       },
     });
-    expect(loginBadge(container)).toBeDefined();
-    expect(container.textContent).not.toContain('Connected');
+    expect(getByRole('button', { name: 'Log in', exact: true })).toHaveProperty('disabled', false);
+    await rerender({ ...baseProps(), provider: readyProvider() });
+    expect(queryByRole('button', { name: 'Log in', exact: true })).toBeNull();
   });
 
   it('treats an unknown auth verdict (authenticated: undefined) as ready, not needs-login', () => {
-    const { container } = render(ProviderCard, {
+    const { queryByRole } = render(ProviderCard, {
       props: {
         ...baseProps(),
         provider: { ...readyProvider(), authenticated: undefined, authDetails: undefined },
       },
     });
-    expect(loginBadge(container)).toBeUndefined();
-    expect(container.textContent).toContain('Connected');
+    expect(queryByRole('button', { name: 'Log in', exact: true })).toBeNull();
   });
 });
 
@@ -227,8 +227,20 @@ describe('ProviderCard identity line', () => {
 describe('ProviderCard login guidance', () => {
   const loginHint = (root: HTMLElement) =>
     root.querySelector('[data-testid="provider-card-login-hint"]');
-  const desktopNote = (root: HTMLElement) =>
-    root.querySelector('[data-testid="provider-card-claude-desktop-note"]');
+
+  beforeEach(() => {
+    mocks.dispatch.mockImplementation((action) => {
+      if (action.type === claudeLoginRequested.type) {
+        void runSaga({ dispatch: mocks.dispatch }, openClaudeLoginWorker, action).toPromise();
+      }
+      return action;
+    });
+  });
+
+  afterEach(() => {
+    unregisterMockIpcHandler('terminal:createWithCommand');
+    unregisterMockIpcHandler('shell:openExternal');
+  });
 
   const needsLoginProvider = (overrides: Partial<ProviderCardData> = {}): ProviderCardData => ({
     ...readyProvider(),
@@ -243,15 +255,21 @@ describe('ProviderCard login guidance', () => {
     Object.assign(navigator, { clipboard: { writeText } });
 
     const { container } = render(ProviderCard, {
-      props: { ...baseProps(), provider: needsLoginProvider() },
+      props: {
+        ...baseProps(),
+        provider: needsLoginProvider({
+          id: 'codex',
+          name: 'Codex',
+          loginCommandHint: 'codex login',
+        }),
+      },
     });
 
     const hint = loginHint(container);
     expect(hint).not.toBeNull();
-    expect(hint?.textContent).toContain('claude auth login');
 
     await fireEvent.click(hint!.querySelector('button')!);
-    expect(writeText).toHaveBeenCalledWith('claude auth login');
+    expect(writeText).toHaveBeenCalledWith('codex login');
   });
 
   it('falls back to no command hint when the catalog carries none', () => {
@@ -271,24 +289,85 @@ describe('ProviderCard login guidance', () => {
     expect(loginHint(container)).toBeNull();
   });
 
-  it('shows the desktop-app note for claude-code needing login, even without a hint', () => {
-    const { container } = render(ProviderCard, {
-      props: {
-        ...baseProps(),
-        provider: needsLoginProvider({ loginCommandHint: undefined }),
-      },
+  it.each(['claude auth login', undefined])(
+    'starts Claude login and opens its root drawer terminal with catalog hint %s',
+    async (loginCommandHint) => {
+      const createTerminal = vi.fn().mockResolvedValue({ ok: true, terminalId: 'login-terminal' });
+      const openExternal = vi.fn();
+      registerMockIpcHandler('terminal:createWithCommand', createTerminal);
+      registerMockIpcHandler('shell:openExternal', openExternal);
+      const props = { ...baseProps(), provider: needsLoginProvider({ loginCommandHint }) };
+      const { getByRole } = render(ProviderCard, { props });
+      const login = getByRole('button', { name: 'Log in', exact: true });
+
+      const defaultAllowed = await fireEvent.keyDown(login, { key: 'Enter' });
+      expect(defaultAllowed).toBe(true);
+      expect(openExternal).not.toHaveBeenCalled();
+      await fireEvent.click(login);
+
+      await waitFor(() => {
+        expect(createTerminal).toHaveBeenCalledExactlyOnceWith({
+          workspaceId: '__root__',
+          command: 'claude auth login',
+        });
+        expect(mocks.dispatch).toHaveBeenCalledWith({
+          type: 'terminals/open',
+          payload: ['__root__', 'login-terminal'],
+        });
+      });
+      expect(openExternal).not.toHaveBeenCalled();
+      expect(props.onSelect).not.toHaveBeenCalled();
+    },
+  );
+
+  it('prevents duplicate launches while opening and allows retry after failure', async () => {
+    let resolveLaunch!: (value: { ok: boolean; error: string }) => void;
+    const createTerminal = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveLaunch = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ ok: true, terminalId: 'retry-terminal' });
+    registerMockIpcHandler('terminal:createWithCommand', createTerminal);
+    const { getByRole } = render(ProviderCard, {
+      props: { ...baseProps(), provider: needsLoginProvider() },
     });
-    expect(desktopNote(container)).not.toBeNull();
+    const login = getByRole('button', { name: 'Log in', exact: true });
+    await fireEvent.click(login);
+    login.click();
+    expect(login).toHaveProperty('disabled', true);
+    expect(createTerminal).toHaveBeenCalledTimes(1);
+
+    resolveLaunch({ ok: false, error: 'Terminal unavailable' });
+    await waitFor(() => expect(getByRole('alert').textContent).toContain('Terminal unavailable'));
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'terminals/open' }),
+    );
+    expect(login).toHaveProperty('disabled', false);
+    await fireEvent.click(login);
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'terminals/open',
+        payload: ['__root__', 'retry-terminal'],
+      }),
+    );
   });
 
-  it('does not show the desktop-app note for other providers needing login', () => {
-    const { container } = render(ProviderCard, {
-      props: {
-        ...baseProps(),
-        provider: needsLoginProvider({ id: 'codex', name: 'Codex' }),
-      },
+  it('surfaces a rejected terminal request without opening an empty drawer', async () => {
+    registerMockIpcHandler('terminal:createWithCommand', () => {
+      throw new Error('Connection lost');
     });
-    expect(desktopNote(container)).toBeNull();
+    const { getByRole } = render(ProviderCard, {
+      props: { ...baseProps(), provider: needsLoginProvider() },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Log in', exact: true }));
+    await waitFor(() => expect(getByRole('alert').textContent).toContain('Connection lost'));
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'terminals/open' }),
+    );
   });
 });
 

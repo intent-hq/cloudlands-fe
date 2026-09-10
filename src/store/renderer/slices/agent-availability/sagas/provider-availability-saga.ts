@@ -3,6 +3,9 @@ import { all, call, cancelled, put, takeEvery } from 'typed-redux-saga';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { m } from '$shared/paraglide/messages.js';
+import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { openTerminalOverlay } from '../../terminals/terminals-slice';
 import {
   PROVIDER_AVAILABILITY_KEY_TO_ID,
   type ProviderAvailabilityResult,
@@ -13,6 +16,7 @@ import { selectHasCheckedOnce, selectProviderCheckEpochMap } from '../agent-avai
 import {
   checkAllProvidersComplete,
   checkAllProvidersRequested,
+  claudeLoginRequested,
   checkSingleProviderFailure,
   checkSingleProviderRequested,
   checkSingleProviderSuccess,
@@ -101,12 +105,38 @@ function* handleSingleProviderRequest(action: ReturnType<typeof checkSingleProvi
   yield* call(checkSingleProviderWorker, action.payload[0]);
 }
 
+export function* openClaudeLoginWorker(action: ReturnType<typeof claudeLoginRequested>) {
+  try {
+    const result = yield* call(
+      invoke<{ ok: boolean; terminalId?: string; error?: string }>,
+      IPC_CHANNELS.TERMINAL.CREATE_WITH_COMMAND,
+      { workspaceId: ROOT_WORKSPACE_ID, command: 'claude auth login' },
+    );
+    if (!result.ok || !result.terminalId) {
+      throw new Error(result.error || m.terminal_adapter_openFailed_error());
+    }
+    yield* put(openTerminalOverlay(ROOT_WORKSPACE_ID, result.terminalId));
+    yield* put(action.success(undefined));
+  } catch (cause) {
+    yield* put(
+      action.failure(
+        cause instanceof Error ? cause : new Error(m.terminal_adapter_openFailed_error()),
+      ),
+    );
+  } finally {
+    if (yield* cancelled()) {
+      yield* put(action.failure(new Error(m.terminal_adapter_openFailed_error())));
+    }
+  }
+}
+
 /** Unregistered until the S20 middleware cutover. */
 export function* providerAvailabilitySaga() {
   // Register request ownership before async catalog hydration so setup's one
   // boot-time ensure cannot be missed. This removes the need for setup polling
   // without initiating an extra sweep from provider availability itself.
   yield* takeEvery(checkSingleProviderRequested, handleSingleProviderRequest);
+  yield* takeEvery(claudeLoginRequested, openClaudeLoginWorker);
   yield* takeEvery(ensureProvidersChecked, handleEnsureProvidersChecked);
   yield* takeSingleFlightInContext(
     checkAllProvidersRequested,

@@ -11,6 +11,7 @@ import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-s
 import {
   agentAvailabilityReducer,
   checkAllProvidersRequested,
+  claudeLoginRequested,
   checkSingleProviderRequested,
   ensureProvidersChecked,
   initialState,
@@ -37,6 +38,32 @@ describe('providerAvailabilitySaga', () => {
   });
   afterEach(() => {
     window.electronAPI = originalElectronApi;
+  });
+
+  it('handles login before catalog hydration finishes and selects the returned drawer terminal', async () => {
+    mocks.catalog.mockImplementation(() => new Promise(() => {}));
+    mocks.invoke.mockResolvedValue({ ok: true, terminalId: 'claude-login-terminal' });
+    const channel = stdChannel();
+    const dispatch = vi.fn((action) => channel.put(action));
+    const task = runSaga(
+      { channel, dispatch, getState: () => ({ agentAvailability: initialState }) },
+      providerAvailabilitySaga,
+    );
+    const request = claudeLoginRequested();
+    try {
+      channel.put(request);
+      await request.promise;
+      expect(mocks.invoke.mock.calls).toEqual([
+        ['terminal:createWithCommand', { workspaceId: '__root__', command: 'claude auth login' }],
+      ]);
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'terminals/open',
+        payload: ['__root__', 'claude-login-terminal'],
+      });
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
   });
 
   it('sends the exact single-provider IPC request and dispatches its terminal result', async () => {
