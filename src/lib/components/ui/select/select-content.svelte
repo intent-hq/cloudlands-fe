@@ -28,6 +28,11 @@
     children?: Snippet;
   } = $props();
 
+  type StaticContentChildProps = { props: Record<string, unknown> };
+  type ContentChildProps = StaticContentChildProps & {
+    wrapperProps: Record<string, unknown>;
+  };
+
   const usePortal = $derived(dropUp || portal);
   const surface = clampSurface(useSurface() + 2);
   setSurface(surface);
@@ -62,20 +67,16 @@
   </SelectPrimitive.Viewport>
 {/snippet}
 
-{#snippet staticContentChild({ props }: { props: Record<string, unknown> })}
+<!-- i18n-ignore (snippet parameter type annotation, not UI text) -->
+{#snippet staticContentChild({ props }: StaticContentChildProps)}
   {@const contentProps = withoutListboxSemantics(props)}
   <div {...contentProps} {...wrapperId ? { id: wrapperId } : {}}>
     {@render contentBody()}
   </div>
 {/snippet}
 
-{#snippet contentChild({
-  props,
-  wrapperProps,
-}: {
-  props: Record<string, unknown>;
-  wrapperProps: Record<string, unknown>;
-})}
+<!-- i18n-ignore (snippet parameter type annotation, not UI text) -->
+{#snippet contentChild({ props, wrapperProps }: ContentChildProps)}
   {@const contentProps = withoutListboxSemantics(props)}
   <div {...wrapperProps} {...wrapperId ? { id: wrapperId } : {}}>
     <div {...contentProps}>{@render contentBody()}</div>

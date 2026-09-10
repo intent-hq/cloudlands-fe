@@ -59,6 +59,11 @@
     onopenchange?: (open: boolean) => void;
   }
 
+  type StaticContentChildProps = { props: Record<string, unknown> };
+  type ContentChildProps = StaticContentChildProps & {
+    wrapperProps: Record<string, unknown>;
+  };
+
   let {
     value = $bindable(),
     options = [],
@@ -394,20 +399,16 @@
     {/if}
   {/snippet}
 
-  {#snippet staticContentChild({ props }: { props: Record<string, unknown> })}
+  <!-- i18n-ignore (snippet parameter type annotation, not UI text) -->
+  {#snippet staticContentChild({ props }: StaticContentChildProps)}
     {@const contentProps = withoutListboxSemantics(props)}
     <div {...contentProps}>
       {@render contentBody()}
     </div>
   {/snippet}
 
-  {#snippet contentChild({
-    props,
-    wrapperProps,
-  }: {
-    props: Record<string, unknown>;
-    wrapperProps: Record<string, unknown>;
-  })}
+  <!-- i18n-ignore (snippet parameter type annotation, not UI text) -->
+  {#snippet contentChild({ props, wrapperProps }: ContentChildProps)}
     {@const contentProps = withoutListboxSemantics(props)}
     <div {...wrapperProps}>
       <div {...contentProps}>
