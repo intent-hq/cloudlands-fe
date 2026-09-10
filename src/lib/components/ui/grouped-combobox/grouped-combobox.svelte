@@ -27,6 +27,8 @@
     tooltip?: string | Snippet;
     tooltipSide?: 'top' | 'right' | 'bottom' | 'left';
     defaultCollapsed?: boolean;
+    open?: boolean;
+    staticPosition?: boolean;
   }
 
   let {
@@ -50,6 +52,8 @@
     tooltip,
     tooltipSide = 'top',
     defaultCollapsed = true,
+    open = $bindable(false),
+    staticPosition = false,
   }: Props = $props();
 
   let searchQuery = $state('');
@@ -138,6 +142,7 @@
 {#snippet combobox()}
   <Combobox
     bind:value
+    bind:open
     groups={canonicalGroups}
     {disabled}
     {placeholder}
@@ -147,6 +152,7 @@
     contentClass={dropdownClass}
     ariaLabel={placeholder}
     portal={false}
+    {staticPosition}
     {header}
     {headerAction}
     {footer}

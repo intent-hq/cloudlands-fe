@@ -33,6 +33,8 @@
     placeholder?: string;
     /** Whether to use a portal to render content (useful when inside overflow:hidden containers) */
     portal?: boolean;
+    /** Render the open panel in normal flow without portal or positioning observers. */
+    staticPosition?: boolean;
     /** Optional containing boundary for collision-aware inline content. */
     collisionBoundary?: string | HTMLElement | null;
     /** Space kept between collision-aware content and its boundary. */
@@ -89,6 +91,7 @@
     groups = [],
     placeholder = m.ui_dropdown_select_placeholder(),
     portal = false,
+    staticPosition = false,
     collisionBoundary = null,
     collisionPadding = 8,
     searchable = true,
@@ -506,6 +509,7 @@
   }
 
   onMount(() => {
+    if (staticPosition) return;
     document.addEventListener('mousedown', handleClickOutside, true);
     // Listen for scroll (with capture to catch scrolling in any container) and resize
     window.addEventListener('scroll', updateContentPosition, true);
@@ -520,7 +524,7 @@
 
   // Update portal position when dropdown opens
   $effect(() => {
-    if (open && (portal || collisionBoundary)) {
+    if (!staticPosition && open && (portal || collisionBoundary)) {
       // Use requestAnimationFrame to ensure DOM is ready
       requestAnimationFrame(() => updateContentPosition());
     }
@@ -621,30 +625,43 @@
 
   <!-- Content (inline, no portal) -->
   {#if open && !portal}
-    <!-- svelte-ignore a11y_no_static_element_interactions (keyboard boundary for nested popup controls) -->
-    <div
-      bind:this={inlineContentRef}
-      in:springIn={menuOverlayTransition.enter}
-      out:crispOut={menuOverlayTransition.exit}
-      class={cn(
-        menuOverlay(),
-        'absolute z-50 min-w-full w-max',
-        collisionBoundary ? 'flex flex-col' : 'top-full left-0 mt-1',
-        contentClass,
-      )}
-      style={collisionBoundary ? inlineStyle : undefined}
-      data-side={collisionBoundary ? inlineSide : undefined}
-      data-collision-aware={collisionBoundary ? 'true' : undefined}
-      data-slot="dropdown-content"
-      onkeydown={handleKeyDown}
-    >
-      {@render dropdownContent(Boolean(collisionBoundary))}
-    </div>
+    {#if staticPosition}
+      <!-- svelte-ignore a11y_no_static_element_interactions (static catalog keyboard boundary) -->
+      <div
+        bind:this={inlineContentRef}
+        class={cn(menuOverlay(), 'relative z-50 min-w-full w-full', contentClass)}
+        data-static-position
+        data-slot="dropdown-content"
+        onkeydown={handleKeyDown}
+      >
+        {@render dropdownContent(false)}
+      </div>
+    {:else}
+      <!-- svelte-ignore a11y_no_static_element_interactions (keyboard boundary for nested popup controls) -->
+      <div
+        bind:this={inlineContentRef}
+        in:springIn={menuOverlayTransition.enter}
+        out:crispOut={menuOverlayTransition.exit}
+        class={cn(
+          menuOverlay(),
+          'absolute z-50 min-w-full w-max',
+          collisionBoundary ? 'flex flex-col' : 'top-full left-0 mt-1',
+          contentClass,
+        )}
+        style={collisionBoundary ? inlineStyle : undefined}
+        data-side={collisionBoundary ? inlineSide : undefined}
+        data-collision-aware={collisionBoundary ? 'true' : undefined}
+        data-slot="dropdown-content"
+        onkeydown={handleKeyDown}
+      >
+        {@render dropdownContent(Boolean(collisionBoundary))}
+      </div>
+    {/if}
   {/if}
 </div>
 
 <!-- Portal content (renders outside overflow:hidden containers) -->
-{#if open && portal}
+{#if open && portal && !staticPosition}
   <Portal zIndex={100}>
     <!-- svelte-ignore a11y_no_static_element_interactions (keyboard boundary for nested popup controls) -->
     <div

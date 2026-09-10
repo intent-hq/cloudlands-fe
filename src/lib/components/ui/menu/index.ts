@@ -15,6 +15,8 @@ const Portal = MenuPrimitive.Portal;
 const CheckboxGroup = MenuPrimitive.CheckboxGroup;
 const RadioGroup = MenuPrimitive.RadioGroup;
 const Sub = MenuPrimitive.Sub;
+const Group = MenuPrimitive.Group;
+const GroupHeading = MenuPrimitive.GroupHeading;
 export { menuMetadata, menuSemantics } from './menu.meta';
 export type { StackedMenuGroup, StackedMenuItem } from './menu-stacked-content.types';
 
@@ -26,6 +28,8 @@ export {
   Item,
   CommandItem,
   CheckboxGroup,
+  Group,
+  GroupHeading,
   CheckboxItem,
   RadioGroup,
   RadioItem,

@@ -13,6 +13,7 @@ import ProximityHighlightCatalogPreview from './renderers/ProximityHighlightCata
 import SettingsCatalogPreview from './renderers/SettingsCatalogPreview.svelte';
 import ToastCatalogPreview from './renderers/ToastCatalogPreview.svelte';
 import ModalCatalogPreview from './renderers/ModalCatalogPreview.svelte';
+import PopoversCatalogPreview from './renderers/PopoversCatalogPreview.svelte';
 
 export const catalogRendererIds = [
   'accordion',
@@ -40,6 +41,7 @@ export const catalogRendererIds = [
   'message-composer',
   'modals',
   'proximity-highlight',
+  'popovers',
   'radio-group',
   'scroll-area',
   'searchable-select',
@@ -104,6 +106,7 @@ export const catalogRenderers = {
   menu: OverlayCatalogPreview,
   'message-composer': MessageComposerCatalogPreview,
   modals: ModalCatalogPreview,
+  popovers: PopoversCatalogPreview,
   'proximity-highlight': ProximityHighlightCatalogPreview,
   'radio-group': ChoiceGroupCatalogPreview,
   'scroll-area': NavigationHelpCatalogPreview,

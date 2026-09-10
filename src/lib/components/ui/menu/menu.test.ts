@@ -144,7 +144,10 @@ describe('Menu metadata and compatibility', () => {
     expect(menuMetadata.owner).toBe('007-B5');
     expect(menuSemantics.interaction).toBe('command');
     expect(menuSemantics.selectionReplacement).toBe('$lib/components/ui/select');
-    expect(menuMetadata.callers).toHaveLength(16);
+    expect(menuMetadata.callers).toHaveLength(17);
+    expect(menuMetadata.callers).toContain(
+      'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
+    );
     expect(menuMetadata.callers).toContain('src/lib/components/chat/RegularAgentWelcome.svelte');
     expect(menuMetadata.callers).toContain('src/lib/components/chat/input/SimpleRichInput.svelte');
   });

@@ -11,6 +11,7 @@ export const searchableSelectMetadata = parseUiComponentMetadata({
   owner: '007-B6',
   callers: [
     'src/lib/component-catalog/renderers/ChoiceCatalogPreview.svelte',
+    'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     'src/lib/components/ui/combobox/legacy-wrappers.test-harness.svelte',
   ],
   replacement: '$lib/components/ui/combobox',

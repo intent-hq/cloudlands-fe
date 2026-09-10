@@ -13,6 +13,11 @@ export const dropdownCallerLedger = [
     reason: 'catalog characterization of the deprecated value-selection wrapper',
   },
   {
+    caller: 'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
+    replacement: 'Combobox',
+    reason: 'catalog characterization of the deprecated action-menu wrapper',
+  },
+  {
     caller: 'src/lib/components/chat/input/ModelPicker.svelte',
     replacement: 'Combobox',
     reason: 'searchable grouped value selection',

@@ -5,11 +5,11 @@ import Tooltip from './Tooltip.svelte';
 import TooltipRich from './TooltipRich.svelte';
 import TooltipShortcut from './TooltipShortcut.svelte';
 import LinkTooltip from './LinkTooltip.svelte';
+import Root from './tooltip-root.svelte';
 import { showLinkTooltip, hideLinkTooltip, formatUrlForDisplay } from './link-tooltip-state.svelte';
 
 export { tooltipMetadata } from './tooltip.meta';
 
-const Root = TooltipPrimitive.Root;
 const Provider = TooltipPrimitive.Provider;
 const Portal = TooltipPrimitive.Portal;
 

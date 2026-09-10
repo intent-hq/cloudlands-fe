@@ -10,6 +10,7 @@
     useSurface,
   } from '$lib/components/ui/surface-context';
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
+  import { useStaticOverlay } from '../static-overlay-context.svelte';
 
   const uid = $props.id();
 
@@ -19,6 +20,7 @@
     class: className,
     portal = true,
     portalProps,
+    staticPosition,
     sideOffset = 4,
     // bits-ui 2.18.1: DropdownMenu.Content sizes via the 'dropdown-menu'-prefixed
     // floating CSS vars, while SubContent (menu-sub-content.svelte) uses the shared
@@ -30,8 +32,11 @@
     portal?: boolean;
     portalProps?: MenuPrimitive.PortalProps;
     maxHeight?: string;
+    staticPosition?: boolean;
   } = $props();
 
+  const rootStaticPosition = useStaticOverlay();
+  const isStatic = $derived(staticPosition ?? rootStaticPosition());
   const surface = clampSurface(useSurface() + 2);
   setSurface(surface);
   const contentClass = $derived(
@@ -49,7 +54,21 @@
   });
 </script>
 
-{#if portal}
+{#if isStatic}
+  <MenuPrimitive.ContentStatic
+    bind:ref
+    {id}
+    data-slot="menu-content"
+    data-static-position
+    data-surface-level={surface}
+    class={contentClass}
+    style="max-height: {maxHeight}"
+    {...restProps as any}
+  >
+    <ListHighlight />
+    {@render children?.()}
+  </MenuPrimitive.ContentStatic>
+{:else if portal}
   <MenuPrimitive.Portal {...portalProps}>
     <MenuPrimitive.Content
       bind:ref

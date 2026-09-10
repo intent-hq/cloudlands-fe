@@ -11,6 +11,7 @@ export const kbdMetadata = parseUiComponentMetadata({
   owner: 'design-system',
   callers: [
     'src/lib/component-catalog/renderers/NavigationHelpCatalogPreview.svelte',
+    'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     'src/lib/components/ui/tooltip/TooltipShortcut.svelte',
   ],
   replacement: null,

@@ -17,6 +17,7 @@ export const dropdownMetadata = parseUiComponentMetadata({
   owner: '007-B6',
   callers: [
     'src/lib/component-catalog/renderers/ChoiceCatalogPreview.svelte',
+    'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     'src/lib/components/chat/input/ModelPicker.svelte',
     'src/lib/components/chat/input/ModelPickerGroupHeader.svelte',
     'src/lib/components/chat/input/ModelPickerOptionItem.svelte',

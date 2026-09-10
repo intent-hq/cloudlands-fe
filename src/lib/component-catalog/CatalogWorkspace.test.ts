@@ -14,6 +14,7 @@ import { themePresets } from '$lib/utils/theme-presets';
 import { parseVSCodeTheme } from '$lib/utils/vscode-theme-parser';
 
 const originalResizeObserver = globalThis.ResizeObserver;
+const originalScrollIntoView = Element.prototype.scrollIntoView;
 
 beforeEach(() => {
   globalThis.ResizeObserver = class ResizeObserverMock {
@@ -21,11 +22,13 @@ beforeEach(() => {
     unobserve() {}
     disconnect() {}
   };
+  Element.prototype.scrollIntoView = vi.fn();
 });
 
 afterEach(() => {
   cleanup();
   globalThis.ResizeObserver = originalResizeObserver;
+  Element.prototype.scrollIntoView = originalScrollIntoView;
   localStorage.clear();
   document.documentElement.className = '';
   document.documentElement.removeAttribute('style');

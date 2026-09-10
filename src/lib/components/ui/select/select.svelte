@@ -24,6 +24,7 @@
     onchange?: (value: string) => void;
     onopenchange?: (open: boolean) => void;
     children?: Snippet;
+    staticPosition?: boolean;
   }
 
   let {
@@ -38,6 +39,7 @@
     onchange,
     onopenchange,
     children,
+    staticPosition = false,
   }: Props = $props();
 
   setContext('canonical-select', {
@@ -59,6 +61,9 @@
     },
     get open() {
       return open;
+    },
+    get staticPosition() {
+      return staticPosition;
     },
     set open(nextOpen: boolean) {
       open = nextOpen;

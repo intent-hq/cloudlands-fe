@@ -41,6 +41,7 @@ export const menuMetadata = {
     'src/features/external-editors/components/FileActionsDropdown.svelte',
     'src/features/external-editors/components/OpenComboButton.svelte',
     'src/features/layout/components/ViewSettingsDropdown.svelte',
+    'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     'src/lib/components/chat/RegularAgentWelcome.svelte',
     'src/lib/components/chat/input/SimpleRichInput.svelte',
     'src/lib/components/chat/SpecialistDropdown.svelte',
@@ -58,7 +59,7 @@ export const menuMetadata = {
   replacement: null,
   characterizationTest: 'src/lib/components/ui/menu/menu.test.ts',
   removalGate:
-    'Retain the compatibility wrapper until all 16 callers migrate and canonical keyboard and focus tests pass.', // i18n-ignore (design-system catalog metadata)
+    'Retain the compatibility wrapper until all 17 callers migrate and canonical keyboard and focus tests pass.', // i18n-ignore (design-system catalog metadata)
   dynamicImports: [],
   fixtures: menuFixtures,
 } satisfies UiComponentMetadata;

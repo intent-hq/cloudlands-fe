@@ -9,7 +9,7 @@ export const comboboxMetadata = parseUiComponentMetadata({
   exports: ['Combobox', 'ComboboxGroup', 'ComboboxOption', 'default'],
   category: 'pattern',
   owner: '007-B6',
-  callers: [],
+  callers: ['src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte'],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/combobox/combobox.test.ts',
   removalGate: 'Retain while callers need the pattern and catalog coverage remains current.',

@@ -40,6 +40,7 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'src/features/onboarding/messages/ProviderCard.svelte',
     'src/features/onboarding/messages/WorkspaceSetupCard.svelte',
     'src/lib/component-catalog/renderers/NavigationHelpCatalogPreview.svelte',
+    'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     'src/lib/components/chat/AgentInputArea.svelte',
     'src/lib/components/chat/AgentSubscriptions.svelte',
     'src/lib/components/chat/ChatHeader.svelte',

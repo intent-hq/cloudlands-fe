@@ -10,6 +10,7 @@
     useSurface,
   } from '$lib/components/ui/surface-context';
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
+  import { useStaticOverlay } from '../static-overlay-context.svelte';
 
   const uid = $props.id();
 
@@ -19,18 +20,22 @@
     class: className,
     portal = true,
     portalProps,
+    staticPosition,
     sideOffset = 4,
     children,
     ...restProps
   }: MenuPrimitive.SubContentProps & {
     portal?: boolean;
     portalProps?: MenuPrimitive.PortalProps;
+    staticPosition?: boolean;
   } = $props();
 
   // bits-ui 2.18.1: SubContent is the shared menu primitive, so its available-height
   // var uses the 'menu' prefix — unlike DropdownMenu.Content's 'dropdown-menu' prefix
   // in menu-content.svelte. The differing var names are intentional.
   const maxHeight = 'var(--bits-menu-content-available-height, calc(100dvh - 1rem))';
+  const rootStaticPosition = useStaticOverlay();
+  const isStatic = $derived(staticPosition ?? rootStaticPosition());
 
   const surface = clampSurface(useSurface() + 2);
   setSurface(surface);
@@ -49,7 +54,21 @@
   });
 </script>
 
-{#if portal}
+{#if isStatic}
+  <MenuPrimitive.SubContentStatic
+    bind:ref
+    {id}
+    data-slot="menu-sub-content"
+    data-static-position
+    data-surface-level={surface}
+    class={contentClass}
+    style="max-height: {maxHeight}"
+    {...restProps as any}
+  >
+    <ListHighlight />
+    {@render children?.()}
+  </MenuPrimitive.SubContentStatic>
+{:else if portal}
   <MenuPrimitive.Portal {...portalProps}>
     <MenuPrimitive.SubContent
       bind:ref

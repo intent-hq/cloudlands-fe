@@ -18,6 +18,8 @@
     absolute?: boolean;
     /** Optional trigger element used for viewport-aware fixed positioning. */
     anchorElement?: HTMLElement | null;
+    /** Render in normal flow without a portal or positioning observers. */
+    staticPosition?: boolean;
     class?: string;
     children?: Snippet;
   }
@@ -27,6 +29,7 @@
     position = 'right',
     absolute = false,
     anchorElement = null,
+    staticPosition = false,
     class: className = '',
     children,
   }: Props = $props();
@@ -50,7 +53,7 @@
   // - 'top': appears above the anchor, horizontally centered
   const isBottom = $derived(position === 'bottom-right' || position === 'bottom-left');
   const isTop = $derived(position === 'top');
-  const positionClass = $derived(absolute ? 'absolute' : 'fixed');
+  const positionClass = $derived(staticPosition ? 'relative' : absolute ? 'absolute' : 'fixed');
   const enterOffset = $derived.by(() => {
     if (position === 'right') return { x: -4, y: 0 };
     if (position === 'bottom') return { x: 4, y: 0 };
@@ -94,7 +97,7 @@
   }
 
   function updateMeasuredPosition() {
-    if (absolute || !cardEl) return;
+    if (staticPosition || absolute || !cardEl) return;
 
     const trigger = findAnchorElement();
     if (!trigger) return;
@@ -196,11 +199,12 @@
   $effect(() => {
     const currentCard = cardEl;
     const currentAnchor = anchorElement;
-    if (absolute || !currentCard || !currentAnchor) return;
+    if (staticPosition || absolute || !currentCard || !currentAnchor) return;
     void schedulePositionUpdate();
   });
 
   onMount(() => {
+    if (staticPosition) return;
     let resizeObserver: ResizeObserver | null = null;
     void schedulePositionUpdate().then(() => {
       if (!absolute && typeof ResizeObserver !== 'undefined') {
@@ -222,7 +226,20 @@
   });
 </script>
 
-{#if absolute}
+{#if staticPosition}
+  <div
+    {id}
+    bind:this={cardEl}
+    class={positionClass +
+      ` z-50 w-64 flex flex-col overflow-y-auto border border-border pointer-events-auto ${surfaceClass} ` +
+      className}
+    data-static-position
+    data-surface-level={surface}
+    role="tooltip"
+  >
+    {@render children?.()}
+  </div>
+{:else if absolute}
   <div
     {id}
     bind:this={cardEl}

@@ -42,6 +42,7 @@
     activeAgentIds?: string[];
     loadAgentSessions?: boolean;
     loadWorkspaceData?: boolean;
+    staticData?: boolean;
   }
   let {
     workspace,
@@ -50,13 +51,20 @@
     activeAgentIds = [],
     loadAgentSessions = true,
     loadWorkspaceData = true,
+    staticData = false,
   }: Props = $props();
   $effect(() => {
     void lineStats;
   });
   const workspaceIdStore = writable('');
-  const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
-  const prMonitors$ = selectPrMonitors(workspaceIdStore);
+  function createWorkspaceAgentsStore() {
+    return staticData ? writable([]) : selectAllWorkspaceAgents(workspaceIdStore);
+  }
+  function createPrMonitorsStore() {
+    return staticData ? writable([]) : selectPrMonitors(workspaceIdStore);
+  }
+  const workspaceAgents$ = createWorkspaceAgentsStore();
+  const prMonitors$ = createPrMonitorsStore();
   $effect(() => workspaceIdStore.set(workspace?.id ?? ''));
   $effect(() => {
     if (workspace && loadWorkspaceData) {
@@ -286,6 +294,7 @@
   }
   let activePullRequest = $derived.by(() => {
     if (!workspace) return null;
+    if (staticData) return getWorkspacePullRequest(workspace);
     return (
       selectWorkspaceActivePullRequest.select(appStore.state, workspace.id) ??
       getWorkspacePullRequest(workspace)
