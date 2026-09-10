@@ -241,7 +241,11 @@
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
   import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
-  import { deriveTaskProgress, type TaskProgressItem } from './workspace-task-fallback';
+  import {
+    deriveTaskProgressFromNativePlan,
+    selectNativeExecutionPlan,
+    type TaskProgressItem,
+  } from './workspace-task-fallback';
   import Button from '../ui/button/button.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
@@ -2131,14 +2135,20 @@
       revealDeferred: deferTranscriptReveal,
     }),
   );
+  // Cache each segment by its selector reference. Live text and session/task
+  // updates must not rescan unchanged scrollback history for a native plan.
+  const historyNativePlan = $derived(selectNativeExecutionPlan([$agentHistoryMessages$]));
+  const liveNativePlan = $derived(selectNativeExecutionPlan([$agentMessages$]));
   const taskProgressItems = $derived(
     showTranscriptUtilityCard
-      ? deriveTaskProgress({
-          initialized: $workspaceTasksInitialized$,
-          tasks: $workspaceTasks$,
-          session: $agentSession$ ?? null,
-          messages: [...$agentHistoryMessages$, ...$agentMessages$],
-        })
+      ? deriveTaskProgressFromNativePlan(
+          {
+            initialized: $workspaceTasksInitialized$,
+            tasks: $workspaceTasks$,
+            session: $agentSession$ ?? null,
+          },
+          liveNativePlan.present ? liveNativePlan : historyNativePlan,
+        )
       : [],
   );
 

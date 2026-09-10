@@ -9,18 +9,34 @@
  * inside the skeleton branch, so this suite renders ChatPanel itself.
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
+import { flushSync } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { selectNativeExecutionPlan } from '../workspace-task-fallback';
+// Load the component during collection, not inside a test's timeout budget.
+// A timed-out dynamic import can otherwise mount after that test's cleanup.
+import ChatPanel from '../ChatPanel.svelte';
 
 const testState = vi.hoisted(() => {
+  const subscribers = new Set<() => void>();
   const readable = <T>(value: T) => ({
     subscribe: (run: (value: T) => void) => (run(value), () => {}),
   });
-  // Selector mock that re-reads its value at subscribe time, so each test can
-  // set the hydration phase before rendering.
+  // Match reference-based selector emissions for updates after mounting.
   const selectorFrom = <T>(get: () => T) =>
     Object.assign(
       vi.fn(() => ({
-        subscribe: (run: (value: T) => void) => (run(get()), () => {}),
+        subscribe: (run: (value: T) => void) => {
+          let current = get();
+          run(current);
+          const update = () => {
+            const next = get();
+            if (Object.is(current, next)) return;
+            current = next;
+            run(current);
+          };
+          subscribers.add(update);
+          return () => subscribers.delete(update);
+        },
       })),
       { select: vi.fn(get) },
     );
@@ -30,10 +46,12 @@ const testState = vi.hoisted(() => {
     readable,
     selector,
     selectorFrom,
+    notify: () => subscribers.forEach((update) => update()),
     transcriptHydration: 'loading' as string,
     transcriptHydratedOnce: false,
     agentSession: null as Record<string, unknown> | null,
     agentMessages: [] as unknown[],
+    agentHistoryMessages: [] as unknown[],
     workspaceTasks: [] as Array<{
       id: string;
       title: string;
@@ -47,6 +65,11 @@ const testState = vi.hoisted(() => {
     },
   };
   return state;
+});
+
+vi.mock('../workspace-task-fallback', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../workspace-task-fallback')>();
+  return { ...actual, selectNativeExecutionPlan: vi.fn(actual.selectNativeExecutionPlan) };
 });
 
 vi.mock('$store/renderer/store', async () => {
@@ -90,7 +113,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSessionIsStreaming: testState.selector(false),
   selectAgentSessionStreamingContent: testState.selector(''),
   selectAgentMessages: testState.selectorFrom(() => testState.agentMessages),
-  selectAgentHistoryMessages: testState.selector([]),
+  selectAgentHistoryMessages: testState.selectorFrom(() => testState.agentHistoryMessages),
   selectHistorySegmentMeta: testState.selector({
     gapToTail: false,
     oldestReached: false,
@@ -255,7 +278,6 @@ const workspace = {
 };
 
 async function renderInitialWorkspaceChatPanel(onTaskProgressChange?: (tasks: unknown[]) => void) {
-  const ChatPanel = (await import('../ChatPanel.svelte')).default;
   render(ChatPanel, {
     props: {
       workspace,
@@ -273,6 +295,7 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
     vi.clearAllMocks();
     testState.agentSession = null;
     testState.agentMessages = [];
+    testState.agentHistoryMessages = [];
     testState.workspaceTasks = [];
     testState.workspaceTasksInitialized = false;
     vi.stubGlobal(
@@ -354,4 +377,88 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
       ]),
     );
   });
+
+  it.each([false, true])(
+    'does not rescan unchanged history on live-only updates (history plan: %s)',
+    async (hasHistoryPlan) => {
+      const planMessage = (id: string, title: string) => ({
+        id,
+        role: 'assistant',
+        contentBlocks: [
+          {
+            id: `${id}:plan`,
+            type: 'plan',
+            entries: [{ content: title, priority: 'high', status: 'in_progress' }],
+          },
+        ],
+      });
+      testState.transcriptHydration = 'settled';
+      testState.transcriptHydratedOnce = true;
+      testState.workspaceTasksInitialized = true;
+      testState.workspaceTasks = [
+        { id: 'task-1', title: 'Workspace task', status: 'in_progress', specLinked: true },
+      ];
+      const history = Array.from({ length: 8 }, (_, index) => ({
+        id: `history-${index}`,
+        role: 'assistant',
+        contentBlocks: [{ type: 'text', text: 'History' }],
+      }));
+      testState.agentHistoryMessages = hasHistoryPlan
+        ? [planMessage('history-plan', 'History task'), ...history]
+        : history;
+      const historyMessages = testState.agentHistoryMessages;
+      const historyScanCount = () =>
+        vi
+          .mocked(selectNativeExecutionPlan)
+          .mock.calls.filter(([sources]) => sources.some((source) => source === historyMessages))
+          .length;
+      const expectedInitial = hasHistoryPlan
+        ? [{ id: 'plan:history-plan:plan:0', title: 'History task', status: 'running' }]
+        : [{ id: 'workspace:task-1', title: 'Workspace task', status: 'running' }];
+      const onTaskProgressChange = vi.fn();
+      await renderInitialWorkspaceChatPanel(onTaskProgressChange);
+      await waitFor(() => expect(onTaskProgressChange).toHaveBeenLastCalledWith(expectedInitial));
+      expect(historyScanCount()).toBe(1);
+
+      for (let index = 0; index < 3; index += 1) {
+        testState.agentMessages = [
+          {
+            id: 'live-text',
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: `${index}` }],
+          },
+        ];
+        flushSync(() => testState.notify());
+        expect(onTaskProgressChange).toHaveBeenLastCalledWith(expectedInitial);
+        expect(historyScanCount()).toBe(1);
+      }
+
+      testState.agentMessages = [planMessage('live-plan', 'Live task')];
+      flushSync(() => testState.notify());
+      expect(onTaskProgressChange).toHaveBeenLastCalledWith([
+        { id: 'plan:live-plan:plan:0', title: 'Live task', status: 'running' },
+      ]);
+      testState.agentMessages = [
+        { id: 'empty-plan', role: 'assistant', contentBlocks: [{ type: 'plan', entries: [] }] },
+      ];
+      flushSync(() => testState.notify());
+      expect(onTaskProgressChange).toHaveBeenLastCalledWith([]);
+
+      testState.agentMessages = [];
+      flushSync(() => testState.notify());
+      expect(onTaskProgressChange).toHaveBeenLastCalledWith(expectedInitial);
+      expect(historyScanCount()).toBe(1);
+
+      testState.agentHistoryMessages = [planMessage('reloaded-plan', 'Reloaded task')];
+      flushSync(() => testState.notify());
+      expect(onTaskProgressChange).toHaveBeenLastCalledWith([
+        { id: 'plan:reloaded-plan:plan:0', title: 'Reloaded task', status: 'running' },
+      ]);
+      testState.agentHistoryMessages = [];
+      flushSync(() => testState.notify());
+      expect(onTaskProgressChange).toHaveBeenLastCalledWith([
+        { id: 'workspace:task-1', title: 'Workspace task', status: 'running' },
+      ]);
+    },
+  );
 });
