@@ -78,19 +78,27 @@ describe('LiveEventsClient (PROTOCOL §5.10 event.query, fake transport)', () =>
     expect(await client.query('ws-1')).toEqual([]);
   });
 
-  it('queryPage requests the paginated envelope and forwards an older-page cursor', async () => {
+  it('queryPage opts into pagination and forwards the opaque cursor', async () => {
     mockedRequest.mockResolvedValueOnce({ items: wireEvents, nextToken: 'older-page' });
     const client = new LiveEventsClient();
 
-    const page = await client.queryPage('ws-1', { limit: 100, nextToken: 'current-page' });
+    const page = await client.queryPage('ws-1', { limit: 200, nextToken: 'page-2' });
 
     expect(mockedRequest).toHaveBeenCalledWith('event.query', {
       workspaceId: 'ws-1',
-      limit: 100,
-      nextToken: 'current-page',
+      limit: 200,
       paginate: true,
+      nextToken: 'page-2',
     });
-    expect(page).toEqual({ items: wireEvents, nextToken: 'older-page' });
+    expect(page.items.map((event) => event.id)).toEqual(['evt-2', 'evt-1']);
+    expect(page.nextToken).toBe('older-page');
+  });
+
+  it('queryPage normalizes a malformed envelope', async () => {
+    mockedRequest.mockResolvedValueOnce({ items: 'not-an-array' });
+    const client = new LiveEventsClient();
+
+    expect(await client.queryPage('ws-1')).toEqual({ items: [], nextToken: null });
   });
 
   it('subscribe emits the initial snapshot once and returns an idle disposer', async () => {

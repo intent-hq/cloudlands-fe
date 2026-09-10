@@ -348,6 +348,7 @@ export default [
       '**/static/generated/**',
       '**/.backup-state-migration/**',
       '**/.test-data/**',
+      '**/.demo-artifacts/**',
       '**/*.cjs',
       '**/cdp-mcp-server/**',
       '**/playwright/.cache/**',

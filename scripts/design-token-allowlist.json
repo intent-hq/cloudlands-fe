@@ -143,6 +143,18 @@
   ],
   "undefined": [
     {
+      "token": "--zoom",
+      "owner": "agent-overview",
+      "reason": "Runtime constellation zoom scale",
+      "replacement": "graph scene input",
+      "removalCondition": "Constellation nodes no longer scale inversely with viewport zoom",
+      "allowedFiles": [
+        "src/lib/components/agent-overview/nodes/AgentOrbNode.svelte",
+        "src/lib/components/agent-overview/nodes/ResourceNode.svelte",
+        "src/lib/components/agent-overview/nodes/TaskAnchorNode.svelte"
+      ]
+    },
+    {
       "token": "--color-bg",
       "owner": "terminal-adapter",
       "reason": "Terminal viewer and diagnostics host override",

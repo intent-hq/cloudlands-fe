@@ -13,6 +13,7 @@ describe('renderer app saga registry', () => {
 
     expect(names).toEqual([
       'daemonEventsSaga',
+      'agentOverviewHistorySaga',
       'daemonHealthSaga',
       'connectionsSaga',
       'settingsHydrationSaga',
