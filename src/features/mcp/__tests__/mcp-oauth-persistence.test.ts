@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { m } from '$shared/paraglide/messages.js';
 
 /**
  * Wire-contract tests for MCP OAuth token persistence (PROTOCOL.md §5.22).
@@ -19,6 +20,64 @@ const openExternalMock = vi.hoisted(() => vi.fn());
 vi.mock('electron', () => ({ shell: { openExternal: openExternalMock } }));
 
 const realFetch = globalThis.fetch;
+
+interface DiscoveryOverrides {
+  resource?: string;
+  authorizationServer?: string;
+  metadataIssuer?: string;
+  authorizationEndpoint?: string;
+  authorizationResponseIssuerSupported?: boolean;
+  registrationStatus?: number;
+  includeChallengeMetadata?: boolean;
+}
+
+function stubDiscovery(overrides: DiscoveryOverrides = {}): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith('http://127.0.0.1:')) return realFetch(input, init);
+      if (url === 'https://mcp.example.com/mcp') {
+        const challenge =
+          overrides.includeChallengeMetadata === false
+            ? 'Bearer'
+            : 'Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource/mcp"';
+        return new Response(null, {
+          status: 401,
+          headers: { 'WWW-Authenticate': challenge },
+        });
+      }
+      if (url === 'https://mcp.example.com/.well-known/oauth-protected-resource/mcp') {
+        return Response.json({
+          resource: overrides.resource ?? 'https://mcp.example.com/mcp',
+          authorization_servers: [overrides.authorizationServer ?? 'https://auth.example.com'],
+        });
+      }
+      if (url === 'https://auth.example.com/.well-known/oauth-authorization-server') {
+        return Response.json({
+          issuer: overrides.metadataIssuer ?? 'https://auth.example.com',
+          authorization_endpoint:
+            overrides.authorizationEndpoint ?? 'https://auth.example.com/authorize',
+          token_endpoint: 'https://auth.example.com/token',
+          registration_endpoint: 'https://auth.example.com/register',
+          code_challenge_methods_supported: ['S256'],
+          authorization_response_iss_parameter_supported:
+            overrides.authorizationResponseIssuerSupported,
+        });
+      }
+      if (url === 'https://auth.example.com/register') {
+        const status = overrides.registrationStatus ?? 201;
+        return status === 201
+          ? Response.json({ client_id: 'intent-client' }, { status })
+          : new Response(null, { status });
+      }
+      if (url === 'https://auth.example.com/token') {
+        return Response.json({ access_token: 'access-value', token_type: 'Bearer' });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }),
+  );
+}
 
 describe('mcp-oauth ↔ daemon mcp.oauth.* (PROTOCOL.md §5.22)', () => {
   beforeEach(() => {
@@ -82,6 +141,7 @@ describe('mcp-oauth ↔ daemon mcp.oauth.* (PROTOCOL.md §5.22)', () => {
           token_endpoint: 'https://auth.example.com/token',
           registration_endpoint: 'https://auth.example.com/register',
           code_challenge_methods_supported: ['S256'],
+          authorization_response_iss_parameter_supported: true,
         });
       }
       if (url === 'https://auth.example.com/register') {
@@ -105,7 +165,9 @@ describe('mcp-oauth ↔ daemon mcp.oauth.* (PROTOCOL.md §5.22)', () => {
       authorizationUrl = new URL(value);
       const redirectUri = authorizationUrl.searchParams.get('redirect_uri')!;
       const state = authorizationUrl.searchParams.get('state')!;
-      const response = await realFetch(`${redirectUri}?code=authorization-code&state=${state}`);
+      const response = await realFetch(
+        `${redirectUri}?code=authorization-code&state=${state}&iss=https%3A%2F%2Fauth.example.com`,
+      );
       expect(response.status).toBe(200);
     });
 
@@ -138,5 +200,157 @@ describe('mcp-oauth ↔ daemon mcp.oauth.* (PROTOCOL.md §5.22)', () => {
       },
     });
     now.mockRestore();
+  });
+
+  it('rejects protected-resource metadata for a different resource', async () => {
+    stubDiscovery({ resource: 'https://attacker.example/mcp' });
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    const result = await initiateMcpOAuth('srv-figma', 'https://mcp.example.com/mcp');
+
+    expect(result).toMatchObject({ success: false, error: expect.stringMatching(/resource/i) });
+    expect(openExternalMock).not.toHaveBeenCalled();
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('validates resource identity for well-known metadata fallback', async () => {
+    stubDiscovery({
+      includeChallengeMetadata: false,
+      resource: 'https://attacker.example/mcp',
+    });
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    const result = await initiateMcpOAuth('srv-figma', 'https://mcp.example.com/mcp');
+
+    expect(result).toMatchObject({ success: false, error: expect.stringMatching(/resource/i) });
+    expect(openExternalMock).not.toHaveBeenCalled();
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects authorization metadata for a different issuer', async () => {
+    stubDiscovery({ metadataIssuer: 'https://attacker.example' });
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    const result = await initiateMcpOAuth('srv-figma', 'https://mcp.example.com/mcp');
+
+    expect(result).toMatchObject({ success: false, error: expect.stringMatching(/issuer/i) });
+    expect(openExternalMock).not.toHaveBeenCalled();
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects an issuer with a query before fetching authorization metadata', async () => {
+    stubDiscovery({ authorizationServer: 'https://auth.example.com?tenant=one' });
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    const result = await initiateMcpOAuth('srv-figma', 'https://mcp.example.com/mcp');
+
+    expect(result).toMatchObject({ success: false, error: expect.stringMatching(/query/i) });
+    expect(openExternalMock).not.toHaveBeenCalled();
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects an authorization endpoint that does not use HTTPS', async () => {
+    stubDiscovery({ authorizationEndpoint: 'intent-test://authorize' });
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    const result = await initiateMcpOAuth('srv-figma', 'https://mcp.example.com/mcp');
+
+    expect(result).toMatchObject({ success: false, error: expect.stringMatching(/HTTPS/) });
+    expect(openExternalMock).not.toHaveBeenCalled();
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('validates the authorization response issuer when the provider supports it', async () => {
+    stubDiscovery({ authorizationResponseIssuerSupported: true });
+    openExternalMock.mockImplementationOnce(async (value: string) => {
+      const authorizationUrl = new URL(value);
+      const redirectUri = authorizationUrl.searchParams.get('redirect_uri')!;
+      const state = authorizationUrl.searchParams.get('state')!;
+      const response = await realFetch(
+        `${redirectUri}?code=authorization-code&state=${state}&iss=https%3A%2F%2Fattacker.example`,
+      );
+      expect(response.status).toBe(400);
+    });
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    const result = await initiateMcpOAuth('srv-figma', 'https://mcp.example.com/mcp');
+
+    expect(result).toMatchObject({ success: false, error: expect.stringMatching(/issuer/i) });
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('requires an authorization response issuer when the provider advertises it', async () => {
+    stubDiscovery({ authorizationResponseIssuerSupported: true });
+    openExternalMock.mockImplementationOnce(async (value: string) => {
+      const authorizationUrl = new URL(value);
+      const redirectUri = authorizationUrl.searchParams.get('redirect_uri')!;
+      const state = authorizationUrl.searchParams.get('state')!;
+      const response = await realFetch(`${redirectUri}?code=authorization-code&state=${state}`);
+      expect(response.status).toBe(400);
+    });
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    const result = await initiateMcpOAuth('srv-figma', 'https://mcp.example.com/mcp');
+
+    expect(result).toMatchObject({ success: false, error: expect.stringMatching(/issuer/i) });
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('appends OIDC discovery to an authorization server path issuer', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === 'https://mcp.example.com/mcp') {
+        return new Response(null, { status: 401 });
+      }
+      if (url === 'https://mcp.example.com/.well-known/oauth-protected-resource/mcp') {
+        return Response.json({
+          resource: 'https://mcp.example.com/mcp',
+          authorization_servers: ['https://auth.example.com/tenant'],
+        });
+      }
+      if (url === 'https://auth.example.com/.well-known/oauth-authorization-server/tenant') {
+        return new Response(null, { status: 404 });
+      }
+      if (url === 'https://auth.example.com/tenant/.well-known/openid-configuration') {
+        return Response.json({
+          issuer: 'https://auth.example.com/tenant',
+          authorization_endpoint: 'https://auth.example.com/authorize',
+          token_endpoint: 'https://auth.example.com/token',
+          registration_endpoint: 'https://auth.example.com/register',
+        });
+      }
+      if (url === 'https://auth.example.com/register') {
+        return new Response(null, { status: 403 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    const result = await initiateMcpOAuth('srv-figma', 'https://mcp.example.com/mcp');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://auth.example.com/tenant/.well-known/openid-configuration',
+      expect.any(Object),
+    );
+    expect(result).toEqual({
+      success: false,
+      error: m.mcp_oauth_registrationRestricted_error(),
+    });
+    expect(openExternalMock).not.toHaveBeenCalled();
+  });
+
+  it('reports provider-restricted dynamic registration without opening sign-in', async () => {
+    stubDiscovery({ registrationStatus: 403 });
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    const result = await initiateMcpOAuth('srv-figma', 'https://mcp.example.com/mcp');
+
+    expect(result).toEqual({
+      success: false,
+      error: m.mcp_oauth_registrationRestricted_error(),
+    });
+    expect(openExternalMock).not.toHaveBeenCalled();
+    expect(requestMock).not.toHaveBeenCalled();
   });
 });

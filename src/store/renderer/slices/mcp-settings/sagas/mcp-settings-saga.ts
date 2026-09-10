@@ -467,7 +467,6 @@ function* restart(name: string): SagaGenerator<void> {
     return;
   }
   yield* put(clearServerErrorMessage(name));
-  yield* put(setServerStatus(name, statusFor(false)));
   try {
     const status: Awaited<ReturnType<typeof appClient.settings.restartMcpServer>> = yield* call(
       [appClient.settings, appClient.settings.restartMcpServer],

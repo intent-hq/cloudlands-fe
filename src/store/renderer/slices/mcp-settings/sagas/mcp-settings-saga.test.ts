@@ -698,7 +698,6 @@ describe('mcpSettingsSaga', () => {
     expect(mocks.restartMcpServer).toHaveBeenCalledWith('srv-remote');
     expect(run.dispatched).toEqual([
       { type: 'mcpSettings/clearServerErrorMessage', payload: ['remote'] },
-      { type: 'mcpSettings/setServerStatus', payload: ['remote', 'configured'] },
       { type: 'mcpSettings/setServerStatus', payload: ['remote', 'auth_required'] },
       {
         type: 'mcpSettings/setServerErrorMessage',

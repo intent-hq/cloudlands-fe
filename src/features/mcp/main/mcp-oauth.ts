@@ -22,6 +22,7 @@ interface OAuthServerMetadata {
   registration_endpoint?: string;
   scopes_supported?: string[];
   code_challenge_methods_supported?: string[];
+  authorization_response_iss_parameter_supported?: boolean;
 }
 
 interface OAuthClient {
@@ -83,6 +84,35 @@ function authorizationServerWellKnown(issuer: string): string {
   return new URL(`/.well-known/oauth-authorization-server${suffix}`, url.origin).toString();
 }
 
+function openIdConfiguration(issuer: string): string {
+  const url = new URL(issuer);
+  const prefix = url.pathname === '/' ? '' : url.pathname.replace(/\/$/, '');
+  url.pathname = `${prefix}/.well-known/openid-configuration`;
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
+
+function requireHttpsUrl(value: string, field: string): URL {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`The OAuth ${field} is not a valid URL.`);
+  }
+  if (url.protocol !== 'https:' || url.username || url.password) {
+    throw new Error(`The OAuth ${field} must use a secure HTTPS URL.`);
+  }
+  return url;
+}
+
+function validateIssuer(issuer: string): void {
+  const url = requireHttpsUrl(issuer, 'issuer');
+  if (url.search || url.hash) {
+    throw new Error('The OAuth issuer must not contain a query or fragment.');
+  }
+}
+
 async function fetchJson<T>(url: string): Promise<{ response: Response; value?: T }> {
   const response = await fetch(url, {
     headers: { Accept: 'application/json' },
@@ -94,29 +124,52 @@ async function fetchJson<T>(url: string): Promise<{ response: Response; value?: 
 }
 
 async function discoverProtectedResource(serverUrl: string): Promise<ProtectedResourceMetadata> {
-  const challenge = await fetch(serverUrl, {
+  const resourceUrl = requireHttpsUrl(serverUrl, 'protected resource').toString();
+  const challenge = await fetch(resourceUrl, {
     method: 'POST',
     headers: { Accept: 'application/json, text/event-stream' },
     redirect: 'error',
     signal: requestSignal(),
   });
   const challengedUrl = resourceMetadataFromChallenge(challenge.headers.get('www-authenticate'));
-  const metadataUrl = challengedUrl ?? protectedResourceWellKnown(serverUrl);
+  const metadataUrl = challengedUrl ?? protectedResourceWellKnown(resourceUrl);
+  requireHttpsUrl(metadataUrl, 'protected-resource metadata endpoint');
   const { response, value } = await fetchJson<ProtectedResourceMetadata>(metadataUrl);
-  if (!response.ok || !value?.resource || !value.authorization_servers?.length) {
+  if (
+    !response.ok ||
+    typeof value?.resource !== 'string' ||
+    !Array.isArray(value.authorization_servers) ||
+    !value.authorization_servers.length ||
+    value.authorization_servers.some((issuer) => typeof issuer !== 'string')
+  ) {
     throw new Error('The MCP server did not provide valid OAuth protected-resource metadata.');
+  }
+  if (value.resource !== resourceUrl) {
+    throw new Error('The OAuth protected-resource metadata did not match the MCP server URL.');
   }
   return value;
 }
 
 async function discoverAuthorizationServer(issuer: string): Promise<OAuthServerMetadata> {
-  const candidates = [
-    authorizationServerWellKnown(issuer),
-    new URL('/.well-known/openid-configuration', issuer).toString(),
-  ];
+  validateIssuer(issuer);
+  const candidates = [authorizationServerWellKnown(issuer), openIdConfiguration(issuer)];
   for (const candidate of candidates) {
     const { response, value } = await fetchJson<OAuthServerMetadata>(candidate);
-    if (response.ok && value?.authorization_endpoint && value.token_endpoint) {
+    if (
+      response.ok &&
+      typeof value?.issuer === 'string' &&
+      typeof value.authorization_endpoint === 'string' &&
+      typeof value.token_endpoint === 'string'
+    ) {
+      if (value.issuer !== issuer) {
+        throw new Error('The OAuth authorization metadata issuer did not match discovery.');
+      }
+      validateIssuer(value.issuer);
+      requireHttpsUrl(value.authorization_endpoint, 'authorization endpoint');
+      requireHttpsUrl(value.token_endpoint, 'token endpoint');
+      if (value.registration_endpoint !== undefined) {
+        requireHttpsUrl(value.registration_endpoint, 'registration endpoint');
+      }
       if (
         value.code_challenge_methods_supported &&
         !value.code_challenge_methods_supported.includes('S256')
@@ -300,32 +353,41 @@ export async function initiateMcpOAuth(
   try {
     const resourceMetadata = await discoverProtectedResource(serverUrl);
     const metadata = await discoverAuthorizationServer(resourceMetadata.authorization_servers[0]);
-    let callbackContext:
-      | {
-          client: OAuthClient;
-          verifier: string;
-          state: string;
-          redirectUri: string;
-          scope?: string;
-        }
-      | undefined;
+    const callbackContext: {
+      current?: {
+        client: OAuthClient;
+        verifier: string;
+        state: string;
+        redirectUri: string;
+        scope?: string;
+      };
+    } = {};
     let tokens: OAuthTokens | undefined;
     callbackServer = await startCallbackServer(async (params) => {
       const error = params.get('error');
       if (error) throw new Error(params.get('error_description') || 'OAuth authorization failed.');
       const code = params.get('code');
-      if (!code || !callbackContext) throw new Error('The OAuth callback was incomplete.');
-      if (params.get('state') !== callbackContext.state) {
+      const context = callbackContext.current;
+      if (!code || !context) throw new Error('The OAuth callback was incomplete.');
+      if (params.get('state') !== context.state) {
         throw new Error('OAuth state verification failed.');
+      }
+      const responseIssuer = params.get('iss');
+      if (
+        responseIssuer !== null
+          ? responseIssuer !== metadata.issuer
+          : metadata.authorization_response_iss_parameter_supported === true
+      ) {
+        throw new Error('OAuth authorization response issuer verification failed.');
       }
       tokens = await exchangeCode(
         metadata,
-        callbackContext.client,
+        context.client,
         code,
-        callbackContext.redirectUri,
-        callbackContext.verifier,
+        context.redirectUri,
+        context.verifier,
         resourceMetadata.resource,
-        callbackContext.scope,
+        context.scope,
       );
     });
     const redirectUri = `http://127.0.0.1:${callbackServer.port}/callback`;
@@ -333,7 +395,7 @@ export async function initiateMcpOAuth(
     const verifier = randomBase64Url(32);
     const state = randomBase64Url(16);
     const scope = (resourceMetadata.scopes_supported ?? metadata.scopes_supported)?.join(' ');
-    callbackContext = { client, verifier, state, redirectUri, scope };
+    callbackContext.current = { client, verifier, state, redirectUri, scope };
     const authorizationUrl = new URL(metadata.authorization_endpoint);
     authorizationUrl.searchParams.set('response_type', 'code');
     authorizationUrl.searchParams.set('client_id', client.client_id);
@@ -343,8 +405,7 @@ export async function initiateMcpOAuth(
     authorizationUrl.searchParams.set('code_challenge_method', 'S256');
     authorizationUrl.searchParams.set('resource', resourceMetadata.resource);
     if (scope) authorizationUrl.searchParams.set('scope', scope);
-    await shell.openExternal(authorizationUrl.toString());
-    await callbackServer.completion;
+    await Promise.all([shell.openExternal(authorizationUrl.toString()), callbackServer.completion]);
     if (!tokens) throw new Error('OAuth sign-in did not return tokens.');
     await persistTokensOnDaemon(serverId, tokens);
     tokenStore.set(serverId, tokens);
