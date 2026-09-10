@@ -434,6 +434,43 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('keeps a repeat same-id open in flight until its own RPC settles', async () => {
+    const deferred: Array<(value: { status: 'opened'; id: string }) => void> = [];
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.OPEN)
+        return new Promise<{ status: 'opened'; id: string }>((resolve) => {
+          deferred.push(resolve);
+        });
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const first = openConnectionRequested('remote-1');
+    const second = openConnectionRequested('remote-1');
+    run.channel.put(first);
+    run.channel.put(second);
+    await vi.waitFor(() => expect(deferred).toHaveLength(2));
+    expect(run.getState().connections.openingIds).toEqual(['remote-1', 'remote-1']);
+
+    // Only the first RPC settles: the second open is still outstanding, so the
+    // id stays tracked and the global status stays busy.
+    deferred[0]({ status: 'opened', id: 'remote-1' });
+    await expect(first.promise).resolves.toEqual({ status: 'opened', id: 'remote-1' });
+    expect(run.getState().connections.openingIds).toEqual(['remote-1']);
+    expect(run.getState().connections.status).toBe('connecting');
+
+    deferred[1]({ status: 'opened', id: 'remote-1' });
+    await expect(second.promise).resolves.toEqual({ status: 'opened', id: 'remote-1' });
+    expect(run.getState().connections.openingIds).toEqual([]);
+    expect(run.getState().connections.status).toBe('idle');
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('passes through token-free open guidance without leaking an IPC exception', async () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === CONNECTION_CHANNELS.LIST)

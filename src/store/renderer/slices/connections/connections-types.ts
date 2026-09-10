@@ -87,9 +87,10 @@ export interface ConnectionsState {
   /** Error message from the last failed add/open operation, or null. */
   error: string | null;
   /**
-   * ids of the backends with an open operation currently in flight. Opens run
-   * concurrently (main serializes the underlying work), so each is tracked per
-   * id for per-row UI feedback; `status` stays `connecting` while any remain.
+   * One entry per open operation currently in flight, keyed by backend id (a
+   * multiset — a repeat open of the same id adds a second entry). Opens run
+   * concurrently (main serializes the underlying work), so each is tracked
+   * for per-row UI feedback; `status` stays `connecting` while any remain.
    */
   openingIds: string[];
   /**

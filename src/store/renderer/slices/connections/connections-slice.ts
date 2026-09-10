@@ -332,20 +332,32 @@ connectionsReducer.with(connectOperationSettled, (state) => {
 connectionsReducer.with(connectOperationFailed, (state, { payload: [error] }) => {
   return { ...state, status: 'error', error };
 });
+/**
+ * Drop exactly one occurrence of `id` from the in-flight multiset so a repeat
+ * open of the same backend keeps the id tracked until its own settle.
+ */
+function removeOneOpening(openingIds: string[], id: string): string[] {
+  const index = openingIds.indexOf(id);
+  if (index === -1) return openingIds;
+  return [...openingIds.slice(0, index), ...openingIds.slice(index + 1)];
+}
+
 connectionsReducer.with(openOperationStarted, (state, { payload: [id] }) => {
   // Same latch-clearing semantics as connectOperationStarted: a fresh open
-  // rebuilds the client, so the latched rejection no longer applies.
-  const openingIds = state.openingIds.includes(id) ? state.openingIds : [...state.openingIds, id];
+  // rebuilds the client, so the latched rejection no longer applies. One
+  // entry per operation (not per id): takeEvery admits repeat opens of the
+  // same backend and each must settle on its own.
+  const openingIds = [...state.openingIds, id];
   return { ...state, openingIds, status: 'connecting', error: null, authRejected: null };
 });
 connectionsReducer.with(openOperationSettled, (state, { payload: [id] }) => {
-  const openingIds = state.openingIds.filter((openingId) => openingId !== id);
+  const openingIds = removeOneOpening(state.openingIds, id);
   // Another open still in flight keeps the global status busy.
   if (openingIds.length > 0) return { ...state, openingIds };
   return { ...state, openingIds, status: 'idle', error: null };
 });
 connectionsReducer.with(openOperationFailed, (state, { payload: [id, error] }) => {
-  const openingIds = state.openingIds.filter((openingId) => openingId !== id);
+  const openingIds = removeOneOpening(state.openingIds, id);
   return { ...state, openingIds, status: 'error', error };
 });
 connectionsReducer.with(certMismatchReceived, (state, { payload: [event] }) => {

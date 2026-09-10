@@ -67,9 +67,9 @@ export const selectIsConnecting = store.createSelector(
   (state) => state.connections.status === 'connecting' || state.connections.openingIds.length > 0,
 );
 
-/** ids of the backends with an open operation currently in flight. */
-export const selectOpeningConnectionIds = store.createSelector(
-  (state) => state.connections.openingIds,
+/** Distinct ids of the backends with at least one open operation in flight. */
+export const selectOpeningConnectionIds = store.createSelector((state) =>
+  state.connections.openingIds.filter((id, index, ids) => ids.indexOf(id) === index),
 );
 
 /** True while an open operation for the given backend id is in flight. */
