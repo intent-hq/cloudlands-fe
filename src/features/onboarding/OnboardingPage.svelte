@@ -84,7 +84,7 @@
   import { runProviderTestPrompt } from '$features/providers/provider-test-prompt.client';
   import {
     mapTestPromptFailure,
-    providerSupportsTestPrompt,
+    shouldRunOnboardingTestPrompt,
     type TestPromptFailureGuidance,
   } from '$features/onboarding/utils/onboarding-test-prompt';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
@@ -666,14 +666,14 @@
   const onboardingSelectedCatalogEntry = $derived(
     $providerCatalogEntries$.find((entry) => entry.id === onboardingGridSelectedProviderId),
   );
-  const onboardingTestPromptSupported = $derived(
-    providerSupportsTestPrompt(onboardingSelectedCatalogEntry),
+  const shouldTestOnboardingProvider = $derived(
+    shouldRunOnboardingTestPrompt(onboardingSelectedCatalogEntry),
   );
 
   /** Advance from the welcome step, first committing the grid's resolved
    *  provider selection so a no-click advance still enables/activates the
    *  visually-selected provider (D1(B): commit only on explicit advance).
-   *  When the provider supports it, one live test prompt runs first:
+   *  For allowlisted providers that support it, one live test prompt runs first:
    *  success advances, a structured failure
    *  keeps the user on the step with actionable guidance. */
   async function advanceFromWelcomeStep() {
@@ -681,7 +681,7 @@
     const committed = agentGridRef?.commitSelection();
     const providerId = committed ?? onboardingGridSelectedProviderId;
     if (!providerId) return;
-    if (onboardingTestPromptSupported) {
+    if (shouldTestOnboardingProvider) {
       onboardingTestPromptFailure = null;
       onboardingTestPromptRunning = true;
       try {

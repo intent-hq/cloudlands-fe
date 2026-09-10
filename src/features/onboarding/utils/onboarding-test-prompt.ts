@@ -1,6 +1,6 @@
 /**
- * Onboarding "Send a test prompt" helpers: the `supportsTestPrompt` catalog
- * gate and the failure-reason → actionable-guidance mapping rendered on the
+ * Onboarding test-prompt helpers: the provider allowlist, catalog capability
+ * gate, and failure-reason → actionable-guidance mapping rendered on the
  * welcome step when `host.providerTestPrompt` reports `{ ok: false }`.
  *
  * The auth-required branch mirrors `selectProviderAuthFailureGuidance`
@@ -11,14 +11,16 @@
 import { m } from '$shared/paraglide/messages.js';
 import type { ProviderCatalogEntry } from '$shared/provider-catalog';
 
+const ONBOARDING_TEST_PROMPT_PROVIDERS = new Set(['claude-code']);
+
 /**
- * Whether the provider's catalog row opts into the live test prompt. The
+ * Whether onboarding should test an allowlisted provider. The capability
  * flag is always present on rows from a v9.3+ daemon; absence (older daemon
  * without the RPC) is treated as unsupported so onboarding never sends a
  * test the daemon cannot run.
  */
-export function providerSupportsTestPrompt(entry: ProviderCatalogEntry | undefined): boolean {
-  return entry?.supportsTestPrompt === true;
+export function shouldRunOnboardingTestPrompt(entry: ProviderCatalogEntry | undefined): boolean {
+  return entry?.supportsTestPrompt === true && ONBOARDING_TEST_PROMPT_PROVIDERS.has(entry.id);
 }
 
 /** Actionable guidance for one structured test-prompt failure. */
