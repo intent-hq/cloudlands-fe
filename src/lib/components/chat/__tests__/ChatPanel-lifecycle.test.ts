@@ -957,12 +957,18 @@ describe('ChatPanel mounted lifecycle', () => {
       const activePlusOneOwnership = ownership();
 
       await switchTo('workspace-c');
-      expect(surfaceCount()).toBe(3);
+      expect(surfaceCount()).toBe(2);
+      expect(chatInterestLeaseCount('agent-workspace-a')).toBe(0);
       await switchTo('workspace-d');
-      expect(surfaceCount()).toBe(4);
+      expect(surfaceCount()).toBe(2);
       const fullWorkingSetOwnership = ownership();
+      expect(fullWorkingSetOwnership).toEqual(activePlusOneOwnership);
       // Retained DOM must not keep background transcript subscriptions active.
       expect(fullWorkingSetOwnership.chatSubscriptionLeases).toBe(1);
+      // The retained DOM shells stay mounted, but only the visible panel may
+      // retain row measurement observers. Otherwise each retained transcript
+      // adds per-row ResizeObserver delivery while hidden.
+      expect(fullWorkingSetOwnership.resizeObservers).toBe(singleSurfaceOwnership.resizeObservers);
 
       const activeEditor = view.container.querySelector<HTMLInputElement>(
         '[data-retained-workspace-active="true"] [data-testid="mock-rich-input-editor"]',
@@ -975,7 +981,7 @@ describe('ChatPanel mounted lifecycle', () => {
       );
 
       await switchTo('workspace-e');
-      expect(surfaceCount()).toBe(4);
+      expect(surfaceCount()).toBe(2);
       expect(ownership()).toEqual(fullWorkingSetOwnership);
       expect(chatInterestLeaseCount('agent-workspace-a')).toBe(0);
       expect(mocks.draftSet).toHaveBeenCalledWith(

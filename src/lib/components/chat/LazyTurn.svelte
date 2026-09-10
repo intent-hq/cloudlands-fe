@@ -41,6 +41,8 @@
     turnKey: string;
     /** Force this turn to always be visible (for streaming, last N turns) */
     forceVisible?: boolean;
+    /** Whether the owning chat panel is currently visible. */
+    isActive?: boolean;
     /** The scroll container element (for IntersectionObserver root) */
     scrollRoot?: HTMLElement | null;
     /** Panel-scoped, bounded, width-aware height cache. */
@@ -58,6 +60,7 @@
   let {
     turnKey,
     forceVisible = false,
+    isActive = true,
     scrollRoot = null,
     heightCache,
     hydrationController,
@@ -100,6 +103,10 @@
   // intersection notification. In message mode the transcript-level policy
   // owns the asymmetric frontier; in legacy mode use the last observer state.
   $effect(() => {
+    if (!isActive) {
+      cancelPendingSwapOut();
+      return;
+    }
     if (shouldStayVisible) {
       cancelPendingSwapOut();
       setVisibleWithScrollCompensation(true);
@@ -129,12 +136,12 @@
   }
 
   function requestSwapOut() {
-    if (swapOutTimer !== null) return;
+    if (!isActive || swapOutTimer !== null) return;
     swapOutTimer = setTimeout(() => {
       swapOutTimer = null;
       // Conditions re-checked at fire time: the turn may have re-entered,
       // re-entered the force-visible window, or lost its measurement.
-      if (!shouldStayVisible && hasBeenMeasured && localCachedHeight !== null) {
+      if (isActive && !shouldStayVisible && hasBeenMeasured && localCachedHeight !== null) {
         setVisibleWithScrollCompensation(false);
       }
     }, SWAP_OUT_SETTLE_MS);
@@ -163,37 +170,42 @@
     void tick().then(() => ledger.request(preSwap));
   }
 
-  onMount(() => {
-    if (!containerRef) return;
-    let resizeObserver: ResizeObserver | null = null;
-    let resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-    let initialMeasureAnimationFrame: number | null = null;
-    let initialMeasureTimer: ReturnType<typeof setTimeout> | null = null;
-    let disposed = false;
-    const mountedContainer = containerRef;
-    const mountedTurnKey = turnKey;
+  let resizeObserver: ResizeObserver | null = null;
+  let resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let initialMeasureAnimationFrame: number | null = null;
+  let initialMeasureTimer: ReturnType<typeof setTimeout> | null = null;
+  let mountedContainer: HTMLDivElement | null = null;
+  let mountedTurnKey: string | null = null;
+  let measurementGeneration = 0;
+  let disposed = false;
 
-    // Observer ownership is shared per scroll root, so a long transcript does
-    // not allocate one IntersectionObserver for every turn.
-    const stopObserving = hydrationController
-      ? hydrationController.observe(turnKey, containerRef, scrollRoot)
-      : observeLazyTurnVisibility(containerRef, scrollRoot, (next) => {
-          isIntersecting = next;
-          if (next) {
-            // Re-entry cancels any pending swap-out (boundary jitter must not
-            // mature into a swap while the turn keeps touching the viewport).
-            cancelPendingSwapOut();
-            const cached = heightCache.get(turnKey, measuredWidth);
-            if (cached !== undefined && cached !== localCachedHeight) localCachedHeight = cached;
-            setVisibleWithScrollCompensation(true);
-          } else if (!forceVisible && hasBeenMeasured && localCachedHeight !== null) {
-            requestSwapOut();
-          }
-        });
+  function stopMeasurements() {
+    measurementGeneration += 1;
+    resizeObserver?.disconnect();
+    resizeObserver = null;
+    if (initialMeasureAnimationFrame !== null) {
+      cancelAnimationFrame(initialMeasureAnimationFrame);
+      initialMeasureAnimationFrame = null;
+    }
+    if (initialMeasureTimer !== null) {
+      clearTimeout(initialMeasureTimer);
+      initialMeasureTimer = null;
+    }
+    if (resizeDebounceTimer !== null) {
+      clearTimeout(resizeDebounceTimer);
+      resizeDebounceTimer = null;
+    }
+  }
 
-    // PERF: Set up ResizeObserver with debouncing to batch height updates
-    // This prevents rapid-fire updates during streaming or animations
+  function startMeasurements() {
+    if (!isActive || disposed || !mountedContainer || !mountedTurnKey || resizeObserver) return;
+    const measuredContainer = mountedContainer;
+    const measuredTurnKey = mountedTurnKey;
+    const generation = measurementGeneration;
+
+    // PERF: Set up ResizeObserver with debouncing to batch height updates.
     resizeObserver = new ResizeObserver((entries) => {
+      if (!isActive || disposed || measurementGeneration !== generation) return;
       const entry = entries[0];
       if (!entry) return;
 
@@ -201,13 +213,6 @@
       // microtask so ResizeObserver compensation still lands before paint.
       ledger.requestBeforePaint();
 
-      // Width validation: cached heights are wrap-width-dependent, so the
-      // first fire (init-time read was unvalidated — width unknown) and
-      // every live width change re-validate the local placeholder height
-      // against the cache at the observed width. A stale-width height is
-      // dropped (placeholder falls back to the default estimate); the
-      // resulting height change is a normal above-viewport settle the
-      // ledger compensates on the next fire.
       const observedWidth = entry.contentRect.width;
       if (
         observedWidth > 0 &&
@@ -226,63 +231,103 @@
       if (!shouldRenderContent) return;
 
       const height = entry.contentRect.height;
-      if (height > 0) {
-        // Debounce height updates to avoid layout thrashing
-        if (resizeDebounceTimer) {
-          clearTimeout(resizeDebounceTimer);
+      if (height <= 0) return;
+      if (resizeDebounceTimer !== null) clearTimeout(resizeDebounceTimer);
+      resizeDebounceTimer = setTimeout(() => {
+        resizeDebounceTimer = null;
+        if (
+          disposed ||
+          !isActive ||
+          measurementGeneration !== generation ||
+          measuredWidth === null
+        ) {
+          return;
         }
-        resizeDebounceTimer = setTimeout(() => {
-          if (measuredWidth !== null) {
-            heightCache.set(turnKey, height, measuredWidth);
-          }
-          localCachedHeight = height;
-          hasBeenMeasured = true;
-          if (!shouldStayVisible) requestSwapOut();
-          resizeDebounceTimer = null;
-        }, 50); // 50ms debounce
-      }
+        heightCache.set(turnKey, height, measuredWidth);
+        localCachedHeight = height;
+        hasBeenMeasured = true;
+        if (!shouldStayVisible) requestSwapOut();
+      }, 50);
     });
+    resizeObserver.observe(measuredContainer);
 
-    resizeObserver.observe(containerRef);
-
-    // Mark as measured after initial render (with debounce)
     initialMeasureAnimationFrame = requestAnimationFrame(() => {
       initialMeasureAnimationFrame = null;
-      if (!disposed && containerRef === mountedContainer && turnKey === mountedTurnKey) {
-        const height = mountedContainer.offsetHeight;
-        const width = mountedContainer.offsetWidth;
-        if (height > 0) {
-          // Use timeout to batch with other measurements
-          initialMeasureTimer = setTimeout(() => {
-            initialMeasureTimer = null;
-            if (disposed || containerRef !== mountedContainer || turnKey !== mountedTurnKey) return;
-            if (width > 0) {
-              measuredWidth ??= width;
-              heightCache.set(mountedTurnKey, height, width);
-            }
-            localCachedHeight = height;
-            hasBeenMeasured = true;
-            if (!shouldStayVisible) requestSwapOut();
-          }, 0);
-        }
+      if (
+        disposed ||
+        !isActive ||
+        measurementGeneration !== generation ||
+        containerRef !== measuredContainer ||
+        turnKey !== measuredTurnKey
+      ) {
+        return;
       }
+      const height = measuredContainer.offsetHeight;
+      const width = measuredContainer.offsetWidth;
+      if (height <= 0) return;
+      initialMeasureTimer = setTimeout(() => {
+        initialMeasureTimer = null;
+        if (
+          disposed ||
+          !isActive ||
+          measurementGeneration !== generation ||
+          containerRef !== measuredContainer ||
+          turnKey !== measuredTurnKey
+        ) {
+          return;
+        }
+        if (width > 0) {
+          measuredWidth ??= width;
+          heightCache.set(measuredTurnKey, height, width);
+        }
+        localCachedHeight = height;
+        hasBeenMeasured = true;
+        if (!shouldStayVisible) requestSwapOut();
+      }, 0);
     });
+  }
+
+  $effect(() => {
+    if (isActive) startMeasurements();
+    else {
+      cancelPendingSwapOut();
+      ledger.cancel();
+      stopMeasurements();
+    }
+  });
+
+  onMount(() => {
+    if (!containerRef) return;
+    mountedContainer = containerRef;
+    mountedTurnKey = turnKey;
+
+    // Observer ownership is shared per scroll root, so a long transcript does
+    // not allocate one IntersectionObserver for every turn.
+    const stopObserving = hydrationController
+      ? hydrationController.observe(turnKey, containerRef, scrollRoot)
+      : observeLazyTurnVisibility(containerRef, scrollRoot, (next) => {
+          isIntersecting = next;
+          if (!isActive) return;
+          if (next) {
+            // Re-entry cancels any pending swap-out (boundary jitter must not
+            // mature into a swap while the turn keeps touching the viewport).
+            cancelPendingSwapOut();
+            const cached = heightCache.get(turnKey, measuredWidth);
+            if (cached !== undefined && cached !== localCachedHeight) localCachedHeight = cached;
+            setVisibleWithScrollCompensation(true);
+          } else if (!forceVisible && hasBeenMeasured && localCachedHeight !== null) {
+            requestSwapOut();
+          }
+        });
+
+    startMeasurements();
 
     return () => {
       disposed = true;
       ledger.cancel();
       stopObserving();
       cancelPendingSwapOut();
-      resizeObserver?.disconnect();
-      if (initialMeasureAnimationFrame !== null) {
-        cancelAnimationFrame(initialMeasureAnimationFrame);
-      }
-      if (initialMeasureTimer !== null) {
-        clearTimeout(initialMeasureTimer);
-      }
-      if (resizeDebounceTimer) {
-        clearTimeout(resizeDebounceTimer);
-      }
+      stopMeasurements();
     };
   });
 

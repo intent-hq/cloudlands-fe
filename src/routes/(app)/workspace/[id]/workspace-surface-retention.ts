@@ -6,7 +6,7 @@ interface RetainedWorkspaceSurface {
 }
 
 // Keep a small working set warm without mounting every open workspace's editors.
-const MAX_RETAINED_WORKSPACE_SURFACES = 4;
+const MAX_RETAINED_WORKSPACE_SURFACES = 2;
 
 export interface WorkspaceSurfaceRetentionState {
   activeWorkspaceId: string | null;

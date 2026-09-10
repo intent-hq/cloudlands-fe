@@ -115,10 +115,9 @@
   // local version counter when the tracker notifies so deriveds recompute.
   let activeStreamsVersion = $state(0);
 
-  // Fetch fresh stream state when the card mounts so data is up-to-date
+  // Start event listening and its initial refresh when the card mounts.
   onMount(() => {
     activeStreamsTracker.startPolling();
-    activeStreamsTracker.fetchActiveStreams();
     return activeStreamsTracker.subscribe(() => activeStreamsVersion++);
   });
 

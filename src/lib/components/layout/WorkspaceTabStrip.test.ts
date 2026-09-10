@@ -740,6 +740,46 @@ describe('WorkspaceTabStrip', () => {
     expect(flareOpacity(loadingTab)).toEqual(['0', '0']);
   });
 
+  it('defers activation geometry until the batched frame and ignores superseded tabs', async () => {
+    const onActiveTabBoundsChange = vi.fn();
+    const { container, rerender } = render(WorkspaceTabStrip, {
+      props: { activeWorkspaceId: 'ws-1', onActiveTabBoundsChange },
+    });
+    container.classList.add('window-title-bar');
+    const strip = screen.getByRole('tablist', {
+      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
+    });
+    strip.getBoundingClientRect = () => makeRect(0, 20, 600);
+    Object.defineProperties(strip, {
+      scrollWidth: { value: 600, configurable: true },
+      clientWidth: { value: 600, configurable: true },
+    });
+    setTabGeometry();
+    const second = document.querySelector<HTMLElement>('[data-workspace-tab="ws-2"]')!;
+    const third = document.querySelector<HTMLElement>('[data-workspace-tab="ws-3"]')!;
+    const secondReads = vi.spyOn(second, 'getBoundingClientRect');
+    const thirdReads = vi.spyOn(third, 'getBoundingClientRect');
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    onActiveTabBoundsChange.mockClear();
+
+    await rerender({ activeWorkspaceId: 'ws-2' });
+    await rerender({ activeWorkspaceId: 'ws-3' });
+    expect(secondReads).not.toHaveBeenCalled();
+    expect(thirdReads).not.toHaveBeenCalled();
+    expect(third.querySelector('[role="tab"]')?.getAttribute('aria-selected')).toBe('true');
+
+    frames.splice(0).forEach((frame) => frame(performance.now()));
+    expect(secondReads).not.toHaveBeenCalled();
+    expect(thirdReads).toHaveBeenCalledTimes(1);
+    expect(onActiveTabBoundsChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ left: 324, width: 160 }),
+    );
+  });
+
   it('refreshes the active-tab border bounds when title-bar positioning changes', async () => {
     const onActiveTabBoundsChange = vi.fn();
     const { container, rerender } = render(WorkspaceTabStrip, {
