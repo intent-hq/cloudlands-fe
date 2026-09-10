@@ -5981,6 +5981,20 @@
                   )}
                   {@const isLastTurnInConversation =
                     globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1}
+                  {@const showPendingAssistantStatus =
+                    groupIndex === groupedMessages.length - 1 &&
+                    turnIndex === turns.length - 1 &&
+                    turn.assistantMessages.length === 0 &&
+                    shouldShowPendingAssistantStatus({
+                      isStreaming: $agentSessionIsStreaming$,
+                      isProcessing: $agentIsResponding$,
+                      error: effectiveError,
+                      modelUnavailable: $chatModelUnavailable$,
+                    })}
+                  {@const hasTurnBody =
+                    turn.assistantMessages.length > 0 ||
+                    turn.noticeMessages.length > 0 ||
+                    showPendingAssistantStatus}
                   {@const compactOperationalTurnBoundary = hasOperationalAssistantTurnBoundary(
                     turn,
                     nextTurn,
@@ -6040,7 +6054,7 @@
                         data-message-index={globalIndex}
                         class="message-nav-target relative z-10 {eventCardAssistantMarginClass(
                           message,
-                          turn.assistantMessages.length > 0,
+                          turn.assistantMessages.length > 0 || showPendingAssistantStatus,
                         )}"
                         use:attachPinnedPromptMessage={message}
                         transition:safeSlide={{ axis: 'y', duration: 200 }}
@@ -6084,13 +6098,8 @@
                         data-send-app-message-id={message.appMessageId}
                         data-message-index={globalIndex}
                         class="message-nav-target relative z-20"
-                        class:mb-0={batchedDeliveryTurnSeam ||
-                          (currentIsChatCard &&
-                            turn.assistantMessages.length === 0 &&
-                            turn.noticeMessages.length === 0)}
-                        class:mb-6={!batchedDeliveryTurnSeam &&
-                          currentIsChatCard &&
-                          (turn.assistantMessages.length > 0 || turn.noticeMessages.length > 0)}
+                        class:mb-0={batchedDeliveryTurnSeam || (currentIsChatCard && !hasTurnBody)}
+                        class:mb-6={!batchedDeliveryTurnSeam && currentIsChatCard && hasTurnBody}
                         class:mb-5={!batchedDeliveryTurnSeam &&
                           !currentIsChatCard &&
                           isAutomatedMessage(message)}
@@ -6153,7 +6162,7 @@
                     {/each}
 
                     <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
-                    {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: effectiveError, modelUnavailable: $chatModelUnavailable$ } )}
+                    {#if showPendingAssistantStatus}
                       <div class={isCompactMode ? 'mb-2' : 'mb-8'}>
                         <StreamingStatus
                           isStreaming={$agentSessionIsStreaming$}
