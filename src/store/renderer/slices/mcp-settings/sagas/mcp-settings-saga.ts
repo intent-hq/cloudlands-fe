@@ -1,6 +1,8 @@
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
+import { invoke } from '$lib/electron-bridge';
 import { m } from '$shared/paraglide/messages.js';
+import { USER_MCP_CHANNELS } from '$shared/ipc/channels';
 import {
   call,
   delay,
@@ -29,6 +31,7 @@ import {
 } from '../mcp-settings-selectors';
 import {
   addServer,
+  authenticateServer,
   bulkSetServerStatus,
   clearAllErrorMessages,
   clearServerErrorMessage,
@@ -458,8 +461,68 @@ function* restart(name: string): SagaGenerator<void> {
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
   const server = servers.find((candidate) => candidate.name === name);
   if (!server) return;
+  if (!server.id) {
+    yield* put(setServerStatus(name, 'error'));
+    yield* put(setServerErrorMessage(name, m.mcp_management_serverNotReady_error()));
+    return;
+  }
   yield* put(clearServerErrorMessage(name));
   yield* put(setServerStatus(name, statusFor(false)));
+  try {
+    const status: Awaited<ReturnType<typeof appClient.settings.restartMcpServer>> = yield* call(
+      [appClient.settings, appClient.settings.restartMcpServer],
+      server.id,
+    );
+    const mapped = mapDaemonMcpState(status.state);
+    if (mapped === null) throw new Error(m.mcp_management_restartFailed_error());
+    yield* put(setServerStatus(name, mapped));
+    if ((mapped === 'error' || mapped === 'auth_required') && status.lastError) {
+      yield* put(setServerErrorMessage(name, status.lastError));
+    } else {
+      yield* put(clearServerErrorMessage(name));
+    }
+  } catch (error) {
+    yield* put(setServerStatus(name, 'error'));
+    yield* put(
+      setServerErrorMessage(name, toMcpErrorMessage(error, m.mcp_management_restartFailed_error())),
+    );
+  }
+}
+
+interface McpAuthenticateIpcResponse {
+  success: boolean;
+  data?: { success: boolean; error?: string };
+  error?: string;
+}
+
+function* authenticate(name: string): SagaGenerator<void> {
+  const servers: McpServerConfig[] = yield* selectMcpServers.effect();
+  const server = servers.find((candidate) => candidate.name === name);
+  if (!server) return;
+  if (!server.id || !server.url || server.type === 'stdio') {
+    yield* put(setServerStatus(name, 'auth_required'));
+    yield* put(setServerErrorMessage(name, m.mcp_management_oauthUnavailable_error()));
+    return;
+  }
+  yield* put(clearServerErrorMessage(name));
+  try {
+    const response: McpAuthenticateIpcResponse = yield* call(
+      invoke<McpAuthenticateIpcResponse>,
+      USER_MCP_CHANNELS.AUTHENTICATE,
+      { serverId: server.id, url: server.url },
+    );
+    if (!response.success || !response.data?.success) {
+      throw new Error(
+        response.data?.error ?? response.error ?? m.mcp_management_authFailed_error(),
+      );
+    }
+    yield* call(restart, name);
+  } catch (error) {
+    yield* put(setServerStatus(name, 'auth_required'));
+    yield* put(
+      setServerErrorMessage(name, toMcpErrorMessage(error, m.mcp_management_authFailed_error())),
+    );
+  }
 }
 
 function* saveAdvanced(json: string): SagaGenerator<void> {
@@ -576,6 +639,12 @@ function* restartServerWorker(action: ReturnType<typeof restartServer>): SagaGen
   yield* call(restart, action.payload[0]);
 }
 
+function* authenticateServerWorker(
+  action: ReturnType<typeof authenticateServer>,
+): SagaGenerator<void> {
+  yield* call(authenticate, action.payload[0]);
+}
+
 function* saveAdvancedJsonWorker(action: ReturnType<typeof saveAdvancedJson>): SagaGenerator<void> {
   yield* call(saveAdvanced, action.payload[0]);
 }
@@ -591,5 +660,6 @@ export function* mcpSettingsSaga(): SagaGenerator<void> {
   yield* takeEvery(toggleWorkspaceMcpServer, toggleWorkspaceMcpServerWorker);
   yield* takeEvery(hydrateWorkspaceMcpDisabled, hydrateWorkspaceMcpDisabledWorker);
   yield* takeEvery(restartServer, restartServerWorker);
+  yield* takeEvery(authenticateServer, authenticateServerWorker);
   yield* takeEvery(saveAdvancedJson, saveAdvancedJsonWorker);
 }
