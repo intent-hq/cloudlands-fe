@@ -35,6 +35,8 @@ import {
   updateConnectionRequested,
   updateBackendRequested,
 } from '../connections-slice';
+import { selectIsConnecting, selectIsOpeningConnection } from '../connections-selectors';
+import type { StoreState } from '../../../types';
 import { connectionsSaga } from './connections-saga';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 
@@ -469,6 +471,86 @@ describe('connectionsSaga', () => {
 
     run.task.cancel();
     await run.task.toPromise();
+  });
+
+  it('keeps a repeat same-id open tracked and busy when the first one fails', async () => {
+    type OpenResult = { status: 'opened'; id: string };
+    const deferred: Array<{
+      resolve: (value: OpenResult) => void;
+      reject: (error: Error) => void;
+    }> = [];
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.OPEN)
+        return new Promise<OpenResult>((resolve, reject) => {
+          deferred.push({ resolve, reject });
+        });
+      return {};
+    });
+    const run = start();
+    await settle();
+    const storeState = () => run.getState() as unknown as StoreState;
+
+    const first = openConnectionRequested('remote-1');
+    const second = openConnectionRequested('remote-1');
+    run.channel.put(first);
+    run.channel.put(second);
+    await vi.waitFor(() => expect(deferred).toHaveLength(2));
+    let secondSettled = false;
+    second.promise.then(
+      () => (secondSettled = true),
+      () => (secondSettled = true),
+    );
+
+    // Only the first RPC fails: its own promise rejects and the error is
+    // surfaced, but the outstanding second open keeps the id tracked and the
+    // busy selectors true.
+    deferred[0].reject(new Error('boom'));
+    await expect(first.promise).rejects.toThrow('boom');
+    await settle();
+    expect(secondSettled).toBe(false);
+    expect(run.getState().connections.openingIds).toEqual(['remote-1']);
+    expect(run.getState().connections.error).toBe('boom');
+    expect(selectIsOpeningConnection.select(storeState(), 'remote-1')).toBe(true);
+    expect(selectIsConnecting.select(storeState())).toBe(true);
+
+    deferred[1].resolve({ status: 'opened', id: 'remote-1' });
+    await expect(second.promise).resolves.toEqual({ status: 'opened', id: 'remote-1' });
+    expect(run.getState().connections.openingIds).toEqual([]);
+    expect(run.getState().connections.status).toBe('idle');
+    expect(run.getState().connections.error).toBeNull();
+    expect(selectIsOpeningConnection.select(storeState(), 'remote-1')).toBe(false);
+    expect(selectIsConnecting.select(storeState())).toBe(false);
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('rejects every outstanding same-id open and clears the id when the root saga is cancelled', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.OPEN) return await new Promise(() => {});
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const first = openConnectionRequested('remote-1');
+    const second = openConnectionRequested('remote-1');
+    run.channel.put(first);
+    run.channel.put(second);
+    await vi.waitFor(() =>
+      expect(run.getState().connections.openingIds).toEqual(['remote-1', 'remote-1']),
+    );
+
+    run.task.cancel();
+    await run.task.toPromise();
+    await expect(first.promise).rejects.toThrow('Connection open was cancelled');
+    await expect(second.promise).rejects.toThrow('Connection open was cancelled');
+    expect(run.getState().connections.openingIds).toEqual([]);
+    expect(selectIsConnecting.select(run.getState() as unknown as StoreState)).toBe(false);
   });
 
   it('passes through token-free open guidance without leaking an IPC exception', async () => {
