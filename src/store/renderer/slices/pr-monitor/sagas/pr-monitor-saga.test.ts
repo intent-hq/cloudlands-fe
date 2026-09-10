@@ -356,14 +356,51 @@ describe('prMonitorSaga', () => {
     await harness.task.toPromise();
   });
 
-  it('closes the live subscription on root cancellation', async () => {
+  it('reacquires a released Chief channel without accepting retired callbacks', async () => {
+    const harness = createHarness();
+    try {
+      harness.dispatch(prMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
+      const [first] = mocks.subscribePrMonitors.mock.calls;
+      const firstDispose = mocks.subscribePrMonitors.mock.results[0].value.dispose;
+      harness.dispatch(prMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID));
+      expect(firstDispose).toHaveBeenCalledOnce();
+
+      harness.dispatch(prMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
+      expect(mocks.subscribePrMonitors).toHaveBeenCalledTimes(2);
+      const monitor = {
+        monitorId: 'fresh',
+        workspaceId: CHIEF_WORKSPACE_ID,
+        state: 'active',
+      } as PrMonitorRow;
+      mocks.subscribePrMonitors.mock.calls[1][1]([monitor]);
+      first[1]([]);
+      first[2]('failed');
+      await settle();
+
+      const snapshot = harness.getState().prMonitor.byWorkspaceId[CHIEF_WORKSPACE_ID];
+      expect(snapshot.snapshotStatus).toBe('ready');
+      expect(snapshot.monitors.map.fresh).toBe(monitor);
+      expect(firstDispose).toHaveBeenCalledOnce();
+      expect(mocks.subscribePrMonitors.mock.results[1].value.dispose).not.toHaveBeenCalled();
+    } finally {
+      harness.task.cancel();
+      await harness.task.toPromise();
+    }
+    expect(mocks.subscribePrMonitors.mock.results[1].value.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('closes every live subscription on root cancellation', async () => {
     const harness = createHarness('ws-A');
+    harness.dispatch(prMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
+    harness.dispatch(prMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
     await settle();
     await advanceReconciliation();
+    expect(mocks.subscribePrMonitors).toHaveBeenCalledTimes(2);
 
     harness.task.cancel();
     await harness.task.toPromise();
 
     expect(mocks.subscribePrMonitors.mock.results[0].value.dispose).toHaveBeenCalledOnce();
+    expect(mocks.subscribePrMonitors.mock.results[1].value.dispose).toHaveBeenCalledOnce();
   });
 });

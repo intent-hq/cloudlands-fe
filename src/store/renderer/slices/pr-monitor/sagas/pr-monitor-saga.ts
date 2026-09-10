@@ -1,17 +1,6 @@
 import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
-import type { Task } from 'redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
-import {
-  all,
-  call,
-  cancel,
-  delay,
-  fork,
-  put,
-  take,
-  takeEvery,
-  type SagaGenerator,
-} from 'typed-redux-saga';
+import { all, call, delay, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';
 import { markWorkspaceSeed } from '../../../utils/switch-timing';
@@ -38,7 +27,7 @@ type MonitorChannelMessage = { kind: 'rows'; monitors: PrMonitorRow[] } | { kind
 
 type SubscriptionEntry = {
   count: number;
-  task?: Task;
+  channel?: EventChannel<MonitorChannelMessage>;
 };
 
 const SUBSCRIPTION_RECONCILIATION_DELAY_MS = 100;
@@ -82,11 +71,12 @@ function* acquireSubscription(
   const entry = active.get(workspaceId) ?? { count: 0 };
   entry.count += 1;
   active.set(workspaceId, entry);
-  if (entry.task) return;
+  if (entry.channel) return;
   try {
     markWorkspaceSeed(workspaceId, 'prSeedStarted');
     const channel = createMonitorChannel(workspaceId);
-    entry.task = yield* fork(forwardMonitorUpdates, workspaceId, channel);
+    entry.channel = channel;
+    yield* fork(forwardMonitorUpdates, workspaceId, channel);
   } catch (error) {
     logger.error('Failed to subscribe to prMonitor events', {
       workspaceId,
@@ -104,7 +94,8 @@ function* releaseSubscription(
   const entry = active.get(workspaceId);
   if (!entry || --entry.count > 0) return;
   active.delete(workspaceId);
-  if (entry.task) yield* cancel(entry.task);
+  // Close the external resource; END retires its attached forwarding worker.
+  entry.channel?.close();
 }
 
 function* watchActiveWorkspace(): SagaGenerator<void> {
@@ -176,7 +167,7 @@ export function* prMonitorSaga(): SagaGenerator<void> {
     yield* all([call(watchActiveWorkspace), call(watchFlush), call(watchCancel)]);
   } finally {
     for (const entry of active.values()) {
-      if (entry.task) yield* cancel(entry.task);
+      entry.channel?.close();
     }
     active.clear();
   }
