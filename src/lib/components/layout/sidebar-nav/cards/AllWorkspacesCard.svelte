@@ -612,7 +612,7 @@
                 </div>
               {/each}
               {#if !searchQuery.trim() && repositoryGroup.group.workspaces.length > REPOSITORY_WORKSPACE_LIMIT}
-                <div class="flex min-w-0 px-2 pb-1" class:pl-7={!!repositoryGroup.group.owner}>
+                <div class="flex min-w-0 pl-9.5 pr-2 pb-1">
                   <Button
                     variant="plain"
                     type="button"
