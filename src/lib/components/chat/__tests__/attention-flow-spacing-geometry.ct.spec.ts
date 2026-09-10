@@ -48,7 +48,7 @@ for (const theme of ['light', 'dark'] as const) {
           expect(negative.attentionAnswerSeam, scenario).toBeNull();
           expect(negative.batchSeam, scenario).toBe('true');
           expect(negative.attentionToFinished, scenario).toBeCloseTo(
-            (scenario === 'ordinary-batch' ? 32 : 16) * zoom,
+            (scenario === 'ordinary-batch' ? 24 : 16) * zoom,
             1,
           );
         }

@@ -57,6 +57,33 @@ test('opens directly to one long conversation with no scenario gallery', async (
   expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeGreaterThan(3000);
 });
 
+test('separates prose from a compact, evenly spaced card group', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await openSandbox(page);
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+  const gaps = await page.getByTestId('chat-polish-conversation').evaluate((root) => {
+    const cards = [...root.querySelectorAll('[data-testid="user-message-surface"]')].filter(
+      (node) => node.querySelector('[data-testid="agent-message-attribution"]'),
+    );
+    const prose = [...root.querySelectorAll('[data-message-content-block="text"]')].find((node) =>
+      node.textContent?.includes('I am checking the final responsive state'),
+    )!;
+    const wake = root.querySelector('[data-testid="event-wakeup-card"]')!;
+    const subscriptions = root.querySelector('[data-testid="event-subscriptions-card"]')!;
+    const gap = (before: Element, after: Element) =>
+      after.getBoundingClientRect().top - before.getBoundingClientRect().bottom;
+    return [
+      gap(prose, cards[0]),
+      gap(cards[0], cards[1]),
+      gap(cards[1], wake),
+      gap(wake, subscriptions),
+    ];
+  });
+  expect(gaps).toEqual([24, 8, 8, 8]);
+});
+
 for (const zoom of [1, 2]) {
   test(`updates every visible operational seam immediately at ${zoom * 100}%`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });

@@ -256,6 +256,7 @@
     eventCardAssistantMarginClass,
     isAttentionQuestionAnswerSeam,
   } from './attention-flow-spacing';
+  import { getSubscriptionCardSeam, isSubscriptionCardMessage } from './subscription-card-spacing';
   import {
     captureMessageSendOrigin,
     createMessageSendLaunchBubble,
@@ -5991,6 +5992,14 @@
                   {@const nextTurnHasUserMessage = Boolean(
                     nextTurn?.userMessage && !nextTurnIsEventNotification,
                   )}
+                  {@const currentIsSubscriptionCard = isSubscriptionCardMessage(turn.userMessage)}
+                  {@const nextIsSubscriptionCard = isSubscriptionCardMessage(nextTurn?.userMessage)}
+                  {@const subscriptionCardSeam = getSubscriptionCardSeam(
+                    currentIsSubscriptionCard &&
+                      turn.assistantMessages.length === 0 &&
+                      turn.noticeMessages.length === 0,
+                    nextIsSubscriptionCard,
+                  )}
                   {@const isLastTurnInConversation =
                     globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1}
                   {@const compactOperationalTurnBoundary = hasOperationalAssistantTurnBoundary(
@@ -6020,6 +6029,7 @@
                     !isAttentionQuestionAnswerSeam(prevTurn, turn) &&
                     isBatchedDeliverySeam(prevTurn, turn),
                   )}
+                  {@const cardSpacingOwnedBefore = Boolean(prevTurn && currentIsSubscriptionCard)}
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- Fallback chain mirrors the row render order below. Edge case:
                        a user message with metadata.type === 'event_notification' but
@@ -6070,7 +6080,7 @@
                           {messageText}
                           asDivider={true}
                           compact={isCompactMode}
-                          suppressTopGap={batchedSeamBefore}
+                          suppressTopGap={batchedSeamBefore || cardSpacingOwnedBefore}
                           showAgentCards={!isDelegatedBackgroundTaskAgent}
                           {workspace}
                         />
@@ -6096,8 +6106,16 @@
                         data-send-app-message-id={message.appMessageId}
                         data-message-index={globalIndex}
                         class="message-nav-target relative z-20"
-                        class:mb-0={batchedDeliveryTurnSeam}
-                        class:mb-5={!batchedDeliveryTurnSeam && isAutomatedMessage(message)}
+                        class:mb-0={batchedDeliveryTurnSeam ||
+                          (currentIsSubscriptionCard &&
+                            turn.assistantMessages.length === 0 &&
+                            turn.noticeMessages.length === 0)}
+                        class:mb-6={!batchedDeliveryTurnSeam &&
+                          currentIsSubscriptionCard &&
+                          (turn.assistantMessages.length > 0 || turn.noticeMessages.length > 0)}
+                        class:mb-5={!batchedDeliveryTurnSeam &&
+                          !currentIsSubscriptionCard &&
+                          isAutomatedMessage(message)}
                         class:mb-7={!batchedDeliveryTurnSeam && !isAutomatedMessage(message)}
                         class:invisible={pendingSendMessageIds.has(
                           String(message.appMessageId ?? ''),
@@ -6130,7 +6148,8 @@
                                   hydratedInputModel}
                                 onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
                                 backendSessionId={auggieSessionId}
-                                suppressAutomatedWakeTopSpacing={batchedSeamBefore}
+                                suppressAutomatedWakeTopSpacing={batchedSeamBefore ||
+                                  cardSpacingOwnedBefore}
                               />
                             </div>
                           {/snippet}
@@ -6268,7 +6287,10 @@
                             class="w-full"
                             class:mb-1={!compactNextMessageBoundary &&
                               !(isLastAssistant && compactOperationalTurnBoundary) &&
-                              !(isLastAssistant && nextTurnHasUserMessage)}
+                              !(
+                                isLastAssistant &&
+                                (nextTurnHasUserMessage || nextIsSubscriptionCard)
+                              )}
                             data-after-assistant-message={message.id}
                           >
                             <ChatFileChangesSummary
@@ -6305,6 +6327,7 @@
                       zeroToolSeam={zeroOperationalTurnBoundary}
                       batchedDeliverySeam={batchedDeliveryTurnSeam}
                       attentionQuestionAnswerSeam={attentionQuestionAnswerTurnSeam}
+                      {subscriptionCardSeam}
                     />
                   {/if}
                   <!-- Turn-boundary divider placement: the anchor is this turn's
