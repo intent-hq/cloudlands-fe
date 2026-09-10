@@ -7,6 +7,8 @@ import {
 } from '../constants';
 import { createConstellationLayout, SMALL_GRAPH_FIT_SCALE } from '../constellation-layout';
 import { NODE_SCREEN_MARGINS, SMALL_GRAPH_FIT_FLOOR } from '../graph-fit';
+import { deriveTaskHullMemberships } from '../graph-helpers';
+import { paddedHull, taskHullPadding, type HullPoint } from '../hull-geometry';
 import {
   buildBusyGraph,
   buildConstellationGraph,
@@ -122,6 +124,39 @@ function overlaps(a: GraphNode, b: GraphNode): boolean {
   );
 }
 
+function polygonsOverlap(left: HullPoint[], right: HullPoint[]): boolean {
+  for (const polygon of [left, right]) {
+    for (let index = 0; index < polygon.length; index += 1) {
+      const point = polygon[index];
+      const next = polygon[(index + 1) % polygon.length];
+      const axis = { x: -(next[1] - point[1]), y: next[0] - point[0] };
+      const leftProjection = left.map(([x, y]) => x * axis.x + y * axis.y);
+      const rightProjection = right.map(([x, y]) => x * axis.x + y * axis.y);
+      if (
+        Math.max(...leftProjection) <= Math.min(...rightProjection) ||
+        Math.max(...rightProjection) <= Math.min(...leftProjection)
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function taskHulls(nodes: GraphNode[], edges: GraphEdge[]) {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  return deriveTaskHullMemberships(nodes, edges).map((membership) => ({
+    ...membership,
+    polygon: paddedHull(
+      membership.memberIds.map((id) => {
+        const node = byId.get(id)!;
+        return { x: node.x, y: node.y, radius: nodeRadius(node.type) };
+      }),
+      taskHullPadding(membership.memberIds.length),
+    )!,
+  }));
+}
+
 describe('constellation layout', () => {
   it('leaves positions, alpha, and tick callbacks untouched for presentation-only updates', () => {
     vi.useFakeTimers();
@@ -221,7 +256,7 @@ describe('constellation layout', () => {
     dispose();
   });
 
-  it('spawns a newly assigned agent outside and 18 degrees off its task axis', () => {
+  it('spawns a newly assigned agent outside and 15 degrees off its task axis', () => {
     const layout = createConstellationLayout({ width: 800, height: 600, seed: 11 });
     layout.update(
       [agent('agent-1', 'coordinator'), task('task-1')],
@@ -240,7 +275,31 @@ describe('constellation layout', () => {
     expect(
       Math.hypot(assignedAgent.x - taskPosition.x, assignedAgent.y - taskPosition.y),
     ).toBeGreaterThanOrEqual(nodeRadius('task') + nodeRadius('agent') + GRAPH_NODE_GAPS.taskAgent);
-    expect(agentAngle - hubAngle).toBeCloseTo(Math.PI / 10, 8);
+    expect(agentAngle - hubAngle).toBeCloseTo(Math.PI / 12, 8);
+  });
+
+  it('fans three assigned agents across less than 90 degrees on the outward side', () => {
+    const layout = createConstellationLayout({ width: 800, height: 600, seed: 11 });
+    const workers = ['agent-1', 'agent-2', 'agent-3'].map((id) => agent(id, 'coordinator'));
+    const taskNode = task('task-1');
+    layout.update(
+      [...workers, taskNode],
+      workers.map((worker) => edge('task-assignment', worker.id, taskNode.id)),
+    );
+    layout.stop();
+    const byId = new Map(snapshot(layout).map((node) => [node.id, node]));
+    const anchor = byId.get(taskNode.id)!;
+    const outwardAngle = Math.atan2(anchor.y - 300, anchor.x - 400);
+    const offsets = workers
+      .map((worker) => {
+        const position = byId.get(worker.id)!;
+        const angle = Math.atan2(position.y - anchor.y, position.x - anchor.x);
+        return Math.atan2(Math.sin(angle - outwardAngle), Math.cos(angle - outwardAngle));
+      })
+      .sort((left, right) => left - right);
+
+    expect(offsets.at(-1)! - offsets[0]).toBeLessThanOrEqual(Math.PI / 2);
+    expect(offsets.every((offset) => Math.abs(offset) <= Math.PI / 2)).toBe(true);
   });
 
   it('preserves existing node identity, position, and velocity across updates', () => {
@@ -287,7 +346,9 @@ describe('constellation layout', () => {
     layout.stop();
     const nodes = snapshot(layout);
     const radiusX = 800 * 0.36;
-    const radiusY = Math.max(600 * 0.32, radiusX * 0.7);
+    const bareTaskSpacing = nodeRadius('task') * 2;
+    const minimumRadius = bareTaskSpacing / (2 * Math.sin(Math.PI / tasks.length));
+    const radiusY = Math.max(600 * 0.32, radiusX * 0.7, minimumRadius);
 
     nodes.forEach((node, index) => {
       const angle = -Math.PI / 2 + (index / tasks.length) * Math.PI * 2;
@@ -303,7 +364,7 @@ describe('constellation layout', () => {
     layout.stop();
     const nodes = snapshot(layout);
     const center = { x: 640, y: 400 };
-    const clusterSpacing = nodeRadius('task') * 2 + nodeRadius('agent') + GRAPH_NODE_GAPS.taskAgent;
+    const minimumSpacing = nodeRadius('task') * 2;
     const horizontalExtent = Math.max(...nodes.map((node) => Math.abs(node.x - center.x)));
     const verticalExtent = Math.max(...nodes.map((node) => Math.abs(node.y - center.y)));
 
@@ -312,7 +373,7 @@ describe('constellation layout', () => {
       for (let right = left + 1; right < nodes.length; right += 1) {
         expect(
           Math.hypot(nodes[left].x - nodes[right].x, nodes[left].y - nodes[right].y),
-        ).toBeGreaterThanOrEqual(clusterSpacing * 0.9);
+        ).toBeGreaterThanOrEqual(minimumSpacing - 1e-8);
       }
     }
   });
@@ -323,6 +384,27 @@ describe('constellation layout', () => {
     const tasks = Array.from({ length: 66 }, (_, index) => task(`task-${index + 1}`));
     firstLayout.update(tasks, []);
     nextLayout.update([...tasks, task('task-67')], []);
+    firstLayout.stop();
+    nextLayout.stop();
+    const nextById = new Map(snapshot(nextLayout).map((node) => [node.id, node]));
+
+    for (const node of snapshot(firstLayout)) {
+      expect(nextById.get(node.id)?.x).toBeCloseTo(node.x, 8);
+      expect(nextById.get(node.id)?.y).toBeCloseTo(node.y, 8);
+    }
+  });
+
+  it('keeps hull-aware ring slots stable when a bare task is appended', () => {
+    const firstLayout = createConstellationLayout({ width: 1280, height: 800, seed: 9 });
+    const nextLayout = createConstellationLayout({ width: 1280, height: 800, seed: 9 });
+    const tasks = Array.from({ length: 12 }, (_, index) => task(`task-${index + 1}`));
+    const workers = tasks.map((_, index) => agent(`agent-${index + 1}`, 'coordinator'));
+    const edges = tasks.map((taskNode, index) =>
+      edge('task-assignment', workers[index].id, taskNode.id),
+    );
+    const nodes = [...workers, ...tasks];
+    firstLayout.update(nodes, edges);
+    nextLayout.update([...nodes, task('task-13')], edges);
     firstLayout.stop();
     nextLayout.stop();
     const nextById = new Map(snapshot(nextLayout).map((node) => [node.id, node]));
@@ -388,6 +470,18 @@ describe('constellation layout', () => {
         ).toBeGreaterThanOrEqual(
           nodeRadius('agent') + nodeRadius(resourceNode.type) + GRAPH_NODE_GAPS.agentResource,
         );
+      }
+
+      const hulls = taskHulls(nodes, graph.edges);
+      for (let left = 0; left < hulls.length; left += 1) {
+        for (let right = left + 1; right < hulls.length; right += 1) {
+          const sharesAgent = hulls[left].agentIds.some((id) => hulls[right].agentIds.includes(id));
+          if (sharesAgent) continue;
+          expect(
+            polygonsOverlap(hulls[left].polygon, hulls[right].polygon),
+            `${hulls[left].taskId} hull overlaps ${hulls[right].taskId}`,
+          ).toBe(false);
+        }
       }
     });
   }

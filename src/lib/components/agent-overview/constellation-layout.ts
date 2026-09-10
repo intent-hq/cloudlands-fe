@@ -16,6 +16,7 @@ import {
   SMALL_GRAPH_FIT_FLOOR,
   smallGraphNeedsFitFallback,
 } from './graph-fit';
+import { paddedHull, taskHullPadding, type HullPoint } from './hull-geometry';
 import type { GraphEdge, GraphNode } from './types';
 
 export interface ConstellationLayoutConfig {
@@ -57,6 +58,12 @@ interface Point {
   y: number;
 }
 
+interface TaskCluster {
+  taskId: string;
+  agentIds: string[];
+  satelliteIds: string[];
+}
+
 const NODE_RADII = Object.fromEntries(
   Object.entries(GRAPH_NODE_DIMENSIONS).map(([type, dimensions]) => [
     type,
@@ -66,15 +73,16 @@ const NODE_RADII = Object.fromEntries(
 const TASK_AGENT_DISTANCE = NODE_RADII.task + NODE_RADII.agent + GRAPH_NODE_GAPS.taskAgent + 20;
 const RESOURCE_DISTANCE = NODE_RADII.agent + NODE_RADII.file + GRAPH_NODE_GAPS.agentResource + 30;
 const AGENT_DISTANCE = NODE_RADII.agent * 2 + GRAPH_NODE_GAPS.taskAgent + 16;
-const AGENT_FAN_STEP = 1;
-const AGENT_AXIS_OFFSET = Math.PI / 10;
+const AGENT_FAN_STEP = Math.PI / 6;
+const AGENT_AXIS_OFFSET = Math.PI / 12;
 const RESOURCE_FAN_STEP = 0.95;
 const SINGLE_RING_TASK_LIMIT = 8;
-const TASK_RING_STEP_RATIO = 0.92;
-const TASK_ANCHOR_SPACING_RATIO = 0.9;
+const TASK_RING_STEP_RATIO = 1.01;
+const TASK_ANCHOR_SPACING_RATIO = 1;
 const TASK_ORBIT_WIDTH_RATIO = 0.36;
 const TASK_ORBIT_HEIGHT_RATIO = 0.32;
 const TASK_ORBIT_MIN_ASPECT = 0.7;
+const HULL_SEPARATION_GAP = 48;
 export const SMALL_GRAPH_FIT_SCALE = 0.7;
 /** Smallest visible separation retained while compacting small graphs, in screen pixels. */
 export const MIN_COMPACT_NODE_GAP = 8;
@@ -273,6 +281,7 @@ export function createConstellationLayout({
   let taskAnchors = new Map<string, Point>();
   let desiredPositions = new Map<string, Point>();
   let currentEdges: GraphEdge[] = [];
+  let taskClusters: TaskCluster[] = [];
   let fingerprint = '';
   let strengthFingerprint = '';
 
@@ -358,7 +367,52 @@ export function createConstellationLayout({
   }
 
   function ringCapacity(radius: number, minimumSpacing: number): number {
+    if (minimumSpacing > radius * 2) return 1;
     return Math.max(1, Math.floor(Math.PI / Math.asin(Math.min(1, minimumSpacing / (2 * radius)))));
+  }
+
+  function taskClusterAgentIds(taskId: string, nodes: GraphNode[], edges: GraphEdge[]): string[] {
+    const nodesById = new Map(nodes.map((node) => [node.id, node]));
+    return edges
+      .filter((edge) => edgeType(edge) === 'task-assignment' && edge.targetId === taskId)
+      .map((edge) => edge.sourceId)
+      .filter((id, index, ids) => {
+        const node = nodesById.get(id);
+        return node?.type === 'agent' && !isTopLevelAgent(node) && ids.indexOf(id) === index;
+      });
+  }
+
+  function taskClusterSpacing(
+    taskId: string,
+    nodes: GraphNode[],
+    edges: GraphEdge[],
+    taskAgentDistance: number,
+  ): number {
+    const agentIds = taskClusterAgentIds(taskId, nodes, edges);
+    if (agentIds.length === 0) return NODE_RADII.task * 2;
+    return (
+      NODE_RADII.task + taskAgentDistance + NODE_RADII.agent + taskHullPadding(agentIds.length + 1)
+    );
+  }
+
+  function computeTaskClusters(nodes: GraphNode[], edges: GraphEdge[]): TaskCluster[] {
+    return nodes
+      .filter((node) => node.type === 'task')
+      .map((task) => {
+        const agentIds = taskClusterAgentIds(task.id, nodes, edges);
+        return {
+          taskId: task.id,
+          agentIds,
+          satelliteIds: edges
+            .filter(
+              (edge) =>
+                agentIds.includes(edge.sourceId) &&
+                (edgeType(edge).startsWith('file-') || edgeType(edge).startsWith('note-')),
+            )
+            .map((edge) => edge.targetId),
+        };
+      })
+      .filter((cluster) => cluster.agentIds.length > 0);
   }
 
   function balancedSlotOrder(capacity: number): number[] {
@@ -386,10 +440,26 @@ export function createConstellationLayout({
 
   function computeTaskAnchors(nodes: GraphNode[], edges: GraphEdge[]): Map<string, Point> {
     const tasks = nodes.filter((node) => node.type === 'task');
-    const clusterSpacing = NODE_RADII.task * 2 + NODE_RADII.agent + GRAPH_NODE_GAPS.taskAgent;
-    const { orbitX, orbitY } = compactGeometry(nodes.length);
+    const {
+      taskAgentDistance,
+      orbitX: baseOrbitX,
+      orbitY: baseOrbitY,
+    } = compactGeometry(nodes.length);
+    const spacingByTask = new Map(
+      tasks.map((task) => [
+        task.id,
+        taskClusterSpacing(task.id, nodes, edges, taskAgentDistance) * TASK_ANCHOR_SPACING_RATIO,
+      ]),
+    );
+    let orbitX = baseOrbitX;
+    let orbitY = baseOrbitY;
     const anchors = new Map<string, Point>();
     if (tasks.length <= SINGLE_RING_TASK_LIMIT) {
+      const minimumSpacing = Math.max(0, ...spacingByTask.values());
+      const minimumRadius =
+        tasks.length > 1 ? minimumSpacing / (2 * Math.sin(Math.PI / tasks.length)) : 0;
+      orbitX = Math.max(orbitX, minimumRadius);
+      orbitY = Math.max(orbitY, minimumRadius);
       tasks.forEach((task, index) => {
         const angle = -Math.PI / 2 + (index / Math.max(1, tasks.length)) * Math.PI * 2;
         anchors.set(task.id, {
@@ -418,14 +488,17 @@ export function createConstellationLayout({
       .map((task, index) => ({ task, index, priority: taskPriority.get(task.id) ?? 0 }))
       .sort((left, right) => right.priority - left.priority || left.index - right.index)
       .map(({ task }) => task);
-    const minimumSpacing = clusterSpacing * TASK_ANCHOR_SPACING_RATIO;
-    const ringStep = clusterSpacing * TASK_RING_STEP_RATIO;
     let taskIndex = 0;
-    for (let ringIndex = 0; taskIndex < orderedTasks.length; ringIndex += 1) {
-      const radiusX = orbitX + ringIndex * ringStep;
-      const radiusY = orbitY + ringIndex * ringStep;
+    let radiusX = orbitX;
+    let radiusY = orbitY;
+    while (taskIndex < orderedTasks.length) {
+      const remainingSpacing = orderedTasks
+        .slice(taskIndex)
+        .map((task) => spacingByTask.get(task.id) ?? NODE_RADII.task * 2);
+      const minimumSpacing = Math.max(...remainingSpacing);
       const capacity = ringCapacity(Math.min(radiusX, radiusY), minimumSpacing);
       const slotOrder = balancedSlotOrder(capacity);
+      const ringStart = taskIndex;
       for (let index = 0; index < capacity && taskIndex < orderedTasks.length; index += 1) {
         const task = orderedTasks[taskIndex++];
         const angle = -Math.PI / 2 + (slotOrder[index] / capacity) * Math.PI * 2;
@@ -434,8 +507,129 @@ export function createConstellationLayout({
           y: center.y + Math.sin(angle) * radiusY,
         });
       }
+      const ringSpacing = Math.max(
+        ...orderedTasks
+          .slice(ringStart, taskIndex)
+          .map((task) => spacingByTask.get(task.id) ?? NODE_RADII.task * 2),
+      );
+      const ringStep = ringSpacing * TASK_RING_STEP_RATIO;
+      radiusX += ringStep;
+      radiusY += ringStep;
     }
     return anchors;
+  }
+
+  function separationVector(left: HullPoint[], right: HullPoint[]): Point | null {
+    let smallestOverlap = Number.POSITIVE_INFINITY;
+    let smallestAxis = { x: 0, y: 0 };
+    const leftCenter = left.reduce((sum, point) => ({ x: sum.x + point[0], y: sum.y + point[1] }), {
+      x: 0,
+      y: 0,
+    });
+    const rightCenter = right.reduce(
+      (sum, point) => ({ x: sum.x + point[0], y: sum.y + point[1] }),
+      { x: 0, y: 0 },
+    );
+    leftCenter.x /= left.length;
+    leftCenter.y /= left.length;
+    rightCenter.x /= right.length;
+    rightCenter.y /= right.length;
+    for (const polygon of [left, right]) {
+      for (let index = 0; index < polygon.length; index += 1) {
+        const point = polygon[index];
+        const next = polygon[(index + 1) % polygon.length];
+        const length = Math.hypot(next[0] - point[0], next[1] - point[1]);
+        if (length === 0) continue;
+        let axis = { x: -(next[1] - point[1]) / length, y: (next[0] - point[0]) / length };
+        const leftProjection = left.map(([x, y]) => x * axis.x + y * axis.y);
+        const rightProjection = right.map(([x, y]) => x * axis.x + y * axis.y);
+        const overlap =
+          Math.min(Math.max(...leftProjection), Math.max(...rightProjection)) -
+          Math.max(Math.min(...leftProjection), Math.min(...rightProjection));
+        if (overlap <= 0) return null;
+        if (overlap < smallestOverlap) {
+          if (
+            (rightCenter.x - leftCenter.x) * axis.x + (rightCenter.y - leftCenter.y) * axis.y <
+            0
+          ) {
+            axis = { x: -axis.x, y: -axis.y };
+          }
+          smallestOverlap = overlap;
+          smallestAxis = axis;
+        }
+      }
+    }
+    return {
+      x: smallestAxis.x * (smallestOverlap + HULL_SEPARATION_GAP),
+      y: smallestAxis.y * (smallestOverlap + HULL_SEPARATION_GAP),
+    };
+  }
+
+  function separateTaskClusters(
+    clusters: TaskCluster[],
+    positions: Map<string, Point>,
+    maxIterations = clusters.length * 3,
+  ): void {
+    const polygonFor = (cluster: (typeof clusters)[number]): HullPoint[] | null => {
+      const memberIds = [cluster.taskId, ...cluster.agentIds];
+      const members = memberIds.flatMap((id) => {
+        const position = positions.get(id);
+        const node = nodeById.get(id);
+        return position && node ? [{ ...position, radius: NODE_RADII[node.type] }] : [];
+      });
+      return members.length === memberIds.length
+        ? paddedHull(members, taskHullPadding(memberIds.length) + HULL_SEPARATION_GAP)
+        : null;
+    };
+
+    for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+      let moved = false;
+      const polygons = new Map<string, HullPoint[] | null>();
+      const cachedPolygon = (cluster: TaskCluster): HullPoint[] | null => {
+        if (!polygons.has(cluster.taskId)) polygons.set(cluster.taskId, polygonFor(cluster));
+        return polygons.get(cluster.taskId) ?? null;
+      };
+      for (let leftIndex = 0; leftIndex < clusters.length; leftIndex += 1) {
+        const left = clusters[leftIndex];
+        for (let rightIndex = leftIndex + 1; rightIndex < clusters.length; rightIndex += 1) {
+          const right = clusters[rightIndex];
+          if (right.agentIds.some((id) => left.agentIds.includes(id))) continue;
+          const leftPolygon = cachedPolygon(left);
+          const rightPolygon = cachedPolygon(right);
+          if (!leftPolygon || !rightPolygon) continue;
+          const shift = separationVector(leftPolygon, rightPolygon);
+          if (!shift) continue;
+          for (const id of [right.taskId, ...right.agentIds, ...right.satelliteIds]) {
+            const position = positions.get(id);
+            if (position) positions.set(id, { x: position.x + shift.x, y: position.y + shift.y });
+          }
+          const anchor = taskAnchors.get(right.taskId);
+          if (anchor)
+            taskAnchors.set(right.taskId, { x: anchor.x + shift.x, y: anchor.y + shift.y });
+          polygons.delete(right.taskId);
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+  }
+
+  function taskClusterSeparationForce(): Force<GraphNode, undefined> {
+    const force = (() => separateCurrentTaskClusters()) as Force<GraphNode, undefined>;
+    force.initialize = () => {};
+    return force;
+  }
+
+  function separateCurrentTaskClusters(): void {
+    const positions = new Map(currentNodes.map((node) => [node.id, { x: node.x, y: node.y }]));
+    separateTaskClusters(taskClusters, positions, 2);
+    for (const node of currentNodes) {
+      const separated = positions.get(node.id);
+      if (!separated || (separated.x === node.x && separated.y === node.y)) continue;
+      node.x = separated.x;
+      node.y = separated.y;
+      desiredPositions.set(node.id, separated);
+    }
   }
 
   function angleFromCenter(point: Point, fallbackId: string): number {
@@ -486,8 +680,7 @@ export function createConstellationLayout({
       const baseAngle = angleFromCenter(taskPosition, task.id);
       assigned.forEach((edge, index) => {
         const fanOffset = (index - (assigned.length - 1) / 2) * AGENT_FAN_STEP;
-        const axisOffset =
-          fanOffset === 0 ? AGENT_AXIS_OFFSET : Math.sign(fanOffset) * AGENT_AXIS_OFFSET;
+        const axisOffset = assigned.length === 1 ? AGENT_AXIS_OFFSET : 0;
         const angle = baseAngle + fanOffset + axisOffset;
         positions.set(edge.sourceId, {
           x: taskPosition.x + Math.cos(angle) * taskAgentDistance,
@@ -495,6 +688,7 @@ export function createConstellationLayout({
         });
       });
     }
+    separateTaskClusters(taskClusters, positions);
 
     const assignedAgents = new Set(assignments.map((edge) => edge.sourceId));
     const delegations = edges.filter(
@@ -622,17 +816,11 @@ export function createConstellationLayout({
         ? compactFitScale(currentNodes, viewport.fitTarget)
         : SMALL_GRAPH_FIT_SCALE;
     const compactDimensions = compactNodeDimensions(compactScale);
+    taskClusters = computeTaskClusters(currentNodes, edges);
     desiredPositions = computeDesiredPositions(currentNodes, edges);
     simulation
       .nodes(currentNodes)
-      .force(
-        'collision',
-        compact
-          ? null
-          : forceCollide<GraphNode>((node) => NODE_RADII[node.type] + GRAPH_NODE_GAPS.collision)
-              .strength(1)
-              .iterations(4),
-      )
+      .force('collision', null)
       .force('label-collision', null)
       .force(
         'x',
@@ -667,12 +855,15 @@ export function createConstellationLayout({
         : null,
     );
     configureLinkForce(edges);
-    if (compact) {
-      simulation.force(
-        'collision',
-        rectangleCollisionForce(compactDimensions, (MIN_COMPACT_NODE_GAP + 1) / compactScale),
-      );
-    }
+    simulation.force('cluster-separation', taskClusterSeparationForce());
+    simulation.force(
+      'collision',
+      compact
+        ? rectangleCollisionForce(compactDimensions, (MIN_COMPACT_NODE_GAP + 1) / compactScale)
+        : forceCollide<GraphNode>((node) => NODE_RADII[node.type] + GRAPH_NODE_GAPS.collision)
+            .strength(1)
+            .iterations(4),
+    );
   }
 
   function update(nodes: GraphNode[], edges: GraphEdge[]): void {
