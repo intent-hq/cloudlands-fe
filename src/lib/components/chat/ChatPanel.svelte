@@ -251,7 +251,8 @@
     type UserMessageNavigationItem,
   } from './chat-message-navigation';
   import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
-  import { getQueueInfo, isBatchedDeliverySeam, stripDequeueWaitNote } from '$lib/utils/queue-info';
+  import { isBatchedDeliverySeam } from '$lib/utils/queue-info';
+  import { isEventWakeMessage } from './event-wake-summary';
   import {
     eventCardAssistantMarginClass,
     isAttentionQuestionAnswerSeam,
@@ -264,7 +265,7 @@
   import { createPendingSendTransitions } from './pending-send-transitions';
 
   import LazyTurn from './LazyTurn.svelte';
-  import PinnedUserPrompt from './PinnedUserPrompt.svelte';
+  import PinnedTurnPrompt from './PinnedTurnPrompt.svelte';
   import {
     attachPinnedPromptMessage,
     trackPinnedPrompt,
@@ -861,20 +862,6 @@
     const turn = source?.closest<HTMLElement>('[data-conversation-turn]');
     setPinnedPrompt(null);
     if (turn) smoothScrollTo(turn, 'start');
-  }
-
-  function getPinnedPromptText(message: AgentMessage): string {
-    const extracted = extractAllContent(message);
-    const text = getQueueInfo(message.metadata) ? stripDequeueWaitNote(extracted) : extracted;
-    if (text.trim()) return text.trim();
-    const attachment = message.contentBlocks?.find(
-      (block) => block.type === 'image' || block.type === 'file',
-    );
-    if (attachment?.type === 'file' && attachment.fileName) return attachment.fileName;
-    if (attachment?.type === 'image') {
-      return m.chat_chatMessage_attachedImage_fallback({ number: '1' });
-    }
-    return m.chat_shared_context_fallback();
   }
 
   // CRITICAL: Destruction flag to prevent async callbacks from accessing reactive state after destruction.
@@ -1698,14 +1685,6 @@
    */
   function isAutomatedMessage(message: AgentMessage): boolean {
     return isAutomatedChatMessage(message);
-  }
-
-  function isEventWakeMessage(message?: AgentMessage): boolean {
-    if (!message) return false;
-    return (
-      message.metadata?.type === 'event_notification' ||
-      extractAllContent(message).trim().startsWith('[WORKSPACE EVENTS]')
-    );
   }
 
   // Initialize input history from existing chat messages
@@ -5434,8 +5413,8 @@
           data-testid="pinned-prompt-overlay-lane"
         >
           <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
-            <PinnedUserPrompt
-              text={getPinnedPromptText(pinnedPrompt.message)}
+            <PinnedTurnPrompt
+              message={pinnedPrompt.message}
               {workspace}
               onActivate={handlePinnedPromptClick}
             />
@@ -6101,7 +6080,6 @@
                       <div
                         data-message-id={message.id}
                         data-message-role="user"
-                        data-pinnable-user-prompt={!isAutomatedMessage(message) ? '' : undefined}
                         data-pinned-prompt-id={message.id}
                         data-send-app-message-id={message.appMessageId}
                         data-message-index={globalIndex}

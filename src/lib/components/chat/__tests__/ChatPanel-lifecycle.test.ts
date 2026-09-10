@@ -695,6 +695,42 @@ afterEach(() => {
 });
 
 describe('ChatPanel mounted lifecycle', () => {
+  it.each([
+    { type: 'event_notification', eventCount: 1, eventTypes: ['file:changed'] },
+    { type: 'agent_message', fromAgentId: 'agent-sender', fromAgentName: 'Reviewer' },
+    { type: 'hook_wake', hookId: 'hook-1', hookName: 'Build watch', reason: 'dispatched' },
+    { type: 'pr_monitor_wake', repo: 'intent-hq/intent', prNumber: 42 },
+  ])('makes $type turn sources eligible for the production pinned tracker', async (metadata) => {
+    const { createPinnedPromptController } = await import('../pinned-prompt');
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      {
+        id: 'trigger',
+        role: 'user',
+        content: 'A new result arrived',
+        metadata,
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'response',
+        role: 'assistant',
+        content: 'Reviewing the result',
+        timestamp: '2026-01-01T00:00:01.000Z',
+      },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const source = view.container.querySelector<HTMLElement>('[data-pinned-prompt-id="trigger"]')!;
+    const turn = source.closest<HTMLElement>('[data-conversation-turn]')!;
+    const scroll = source.closest<HTMLElement>('.overflow-y-auto')!;
+    source.getBoundingClientRect = () => ({ bottom: -10 }) as DOMRect;
+    turn.getBoundingClientRect = () => ({ bottom: 500 }) as DOMRect;
+    scroll.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
+    expect(createPinnedPromptController().update(scroll, true)?.id).toBe('trigger');
+  });
+
   it('consumes a targeted browser capture and includes its image and context in the next send', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.pendingBrowserCaptures.set([

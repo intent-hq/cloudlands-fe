@@ -11,7 +11,9 @@ export interface PinnedPromptController {
   reset(): void;
 }
 
-const SELECTOR = '[data-pinnable-user-prompt][data-pinned-prompt-id]';
+// Only turn-start source rows carry this identity, including automated wakes.
+// Passive subscription/footer cards must never become response context.
+const SELECTOR = '[data-pinned-prompt-id]';
 const ENTER_OFFSET = 1;
 const EXIT_OFFSET = 2;
 
@@ -167,7 +169,11 @@ export function trackPinnedPrompt(
   };
 }
 
-export function attachPinnedPromptMessage(element: HTMLElement, message: AgentMessage): void {
-  (element as HTMLElement & { __pinnedPromptMessage?: AgentMessage }).__pinnedPromptMessage =
-    message;
+export function attachPinnedPromptMessage(element: HTMLElement, message: AgentMessage) {
+  const update = (next: AgentMessage) => {
+    (element as HTMLElement & { __pinnedPromptMessage?: AgentMessage }).__pinnedPromptMessage =
+      next;
+  };
+  update(message);
+  return { update };
 }
