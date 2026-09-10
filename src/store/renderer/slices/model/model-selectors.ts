@@ -38,11 +38,9 @@ export const selectSelectedModel = store.createSelector((state, providerId?: str
       ? getItems<AuggieModel, 'value'>(state.model.availableModels)
       : [];
   const persisted = state.model.providerModels[effectiveProviderId];
-  if (persisted) {
-    if (catalogModels.length === 0) return persisted;
-    if (catalogModels.some((model) => model.value === persisted)) return persisted;
-    return resolveDefaultModel(catalogModels);
-  }
+  // Catalogs can be cold, stale, or partial. They supply defaults only when
+  // the user has no persisted choice; absence is not a new model selection.
+  if (persisted) return persisted;
 
   const isAvailable = selectAvailableEnabledProviderIds.select(state).includes(effectiveProviderId);
   if (!isAvailable) return '';

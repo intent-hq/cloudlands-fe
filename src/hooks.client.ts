@@ -2,6 +2,7 @@ import { logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { HandleClientError } from '@sveltejs/kit';
 import { shouldSuppressMonacoUnhandledRejection } from '$lib/utils/monaco-error-suppression';
+import { expectsElectronPreloadBridge } from '$lib/utils/platform-capabilities';
 
 // Install a full browser mock for window.electronAPI when running outside Electron.
 // This provides mock data for workspaces, settings, etc. so the app renders fully.
@@ -10,11 +11,17 @@ import { shouldSuppressMonacoUnhandledRejection } from '$lib/utils/monaco-error-
 // channels then fail loudly (UnbridgedMockIpcChannelError) instead of silently
 // serving mock data. The import auto-installs the mock if window.electronAPI is
 // not already present (installBrowserMock re-checks the same gate internally).
+// An Electron-built renderer running in Electron is owed the real preload
+// bridge, so it never loads the mock — decided synchronously from the user
+// agent + build target, not from window.electronAPI presence, which is not a
+// safe signal at import time (intent-hq/monorepo#3606). The web build keeps
+// the mock even inside the app's own <webview> (no preload there).
 const isCatalogRoute =
   typeof window !== 'undefined' && window.location.pathname.startsWith('/sandbox');
 
 if (
   !isCatalogRoute &&
+  !expectsElectronPreloadBridge() &&
   (import.meta.env.DEV || import.meta.env.VITE_ENABLE_BROWSER_MOCK === 'true')
 ) {
   void import('$lib/browser-mock');

@@ -461,6 +461,20 @@ export default defineConfig(({ command, mode, isPreview }) => {
 
       cors: true,
 
+      // Pre-transform the primary SvelteKit entry paths before announcing sandbox readiness.
+      // This avoids sending the first tunneled browser through a cold transform waterfall.
+      ...(isWebBuild
+        ? {
+            warmup: {
+              clientFiles: [
+                'src/routes/+layout.svelte',
+                'src/routes/[(]app[)]/+page.svelte',
+                'src/routes/sandbox/[[]slug]/+page.svelte',
+              ],
+            },
+          }
+        : {}),
+
       // Electron connects directly to this host. Web clients derive HMR host
       // and port from the page URL so a daemon-side tunnel also carries HMR.
       ...(isWebBuild
@@ -557,6 +571,9 @@ export default defineConfig(({ command, mode, isPreview }) => {
 
     define: {
       'process.env.IS_ELECTRON': JSON.stringify(!isWebBuild),
+      // Renderer-visible build profile: a web build never receives a preload
+      // bridge, even when it is loaded inside the app's own <webview>.
+      'process.env.INTENT_BUILD_TARGET': JSON.stringify(isWebBuild ? 'web' : 'electron'),
       // Never compile production web credentials into versioned static JS.
       // /runtime-config.js is loaded before the application bootstrap instead.
       'process.env.VITE_INTENTD_WS_URL': JSON.stringify(isProductionWebBuild ? '' : browserWsUrl),

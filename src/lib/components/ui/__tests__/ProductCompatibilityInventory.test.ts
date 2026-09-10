@@ -1,3 +1,4 @@
+// @ui-invariant
 import { describe, expect, it } from 'vitest';
 import { buildUiComponentInventory } from '../../../../../scripts/ui-component-inventory';
 

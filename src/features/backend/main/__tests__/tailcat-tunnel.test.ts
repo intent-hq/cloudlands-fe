@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { PassThrough } from 'node:stream';
+import { Duplex, PassThrough } from 'node:stream';
 import type { ChildProcess } from 'node:child_process';
 
 /**
@@ -29,6 +29,7 @@ import {
   createTailcatTunnel,
   createTunneledSocket,
   resolveTailcatBinaryPath,
+  TUNNEL_CONNECT_TIMEOUT_MS,
   type TailcatSpawn,
 } from '../tailcat-tunnel';
 import { raceDuplexSockets } from '../backend-connection';
@@ -57,6 +58,29 @@ function fakeSpawn(children: FakeChild[], args: string[][]): TailcatSpawn {
     args.push(spawnArgs);
     return child as unknown as ChildProcess;
   };
+}
+
+/**
+ * Inner transport that is TCP-connected through the forwarder but never
+ * finishes its handshake — the shape of `WebSocketDuplex` while the remote
+ * daemon is down: tailcat accepts the loopback connect immediately, the TLS
+ * handshake bytes vanish into the tunnel, and `connect` (ws `open`) never
+ * fires.
+ */
+function stalledInner(localPort: number): Duplex {
+  const socket = net.connect(localPort, '127.0.0.1');
+  socket.on('error', () => {});
+  return new Duplex({
+    allowHalfOpen: false,
+    read() {},
+    write(chunk, encoding, callback) {
+      socket.write(chunk, encoding, callback);
+    },
+    destroy(error, callback) {
+      socket.destroy();
+      callback(error);
+    },
+  });
 }
 
 let tmpDir: string;
@@ -245,5 +269,90 @@ describe('createTunneledSocket', () => {
       expect(children.every((child) => child.killed)).toBe(true);
     });
     raced.destroy();
+  });
+
+  it('fails a candidate whose inner socket never connects at the connect bound and tears the tunnel down', async () => {
+    const children: FakeChild[] = [];
+    let dialedPort = 0;
+    let inner: Duplex | null = null;
+    const facade = createTunneledSocket({
+      tcAddress: 'tc.example.ts.net',
+      remotePort: 8443,
+      binaryPath: '/fake/tailcat',
+      spawn: fakeSpawn(children, []),
+      connectTimeoutMs: 50,
+      createInner: (localPort) => {
+        dialedPort = localPort;
+        inner = stalledInner(localPort);
+        return inner;
+      },
+    });
+    const failed = new Promise<Error>((resolve) => facade.once('error', resolve));
+    const error = await failed;
+    expect(error.message).toMatch(/did not connect within 50ms/);
+    expect(facade.destroyed).toBe(true);
+    // The inner socket had been dialed (TCP-accepted by the forwarder) and is
+    // destroyed with the facade; the forwarder's child dies and it stops
+    // listening, so a lost candidate leaves no tailcat process behind.
+    expect(dialedPort).toBeGreaterThan(0);
+    expect(inner!.destroyed).toBe(true);
+    await vi.waitFor(() => {
+      expect(children).toHaveLength(1);
+      expect(children.every((child) => child.killed)).toBe(true);
+    });
+    const refused = new Promise<NodeJS.ErrnoException>((resolve) => {
+      net.connect(dialedPort, '127.0.0.1').once('error', resolve);
+    });
+    expect((await refused).code).toBe('ECONNREFUSED');
+  });
+
+  it('leaves a candidate that connects within the bound alone; the timer never fires later', async () => {
+    const children: FakeChild[] = [];
+    const facade = createTunneledSocket({
+      tcAddress: 'tc.example.ts.net',
+      remotePort: 8443,
+      binaryPath: '/fake/tailcat',
+      spawn: fakeSpawn(children, []),
+      connectTimeoutMs: 50,
+      createInner: (localPort) => net.connect(localPort, '127.0.0.1'),
+    });
+    const errors: Error[] = [];
+    facade.on('error', (error: Error) => errors.push(error));
+    await new Promise<void>((resolve) => facade.once('connect', resolve));
+    // Outlive the bound: a connected candidate must stay usable.
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(facade.destroyed).toBe(false);
+    expect(errors).toEqual([]);
+    const echoed = new Promise<string>((resolve) => {
+      facade.once('data', (chunk: Buffer) => resolve(chunk.toString()));
+    });
+    facade.write('still-alive');
+    expect(await echoed).toBe('still-alive');
+    facade.destroy();
+    await vi.waitFor(() => expect(children.every((child) => child.killed)).toBe(true));
+  });
+
+  it('bounds the connect at TUNNEL_CONNECT_TIMEOUT_MS by default, counting from facade creation', async () => {
+    vi.useFakeTimers();
+    try {
+      const neverConnects = new PassThrough();
+      const facade = createTunneledSocket({
+        tcAddress: 'tc.example.ts.net',
+        remotePort: 8443,
+        binaryPath: '/fake/tailcat',
+        spawn: fakeSpawn([], []),
+        createInner: () => neverConnects,
+      });
+      const errors: Error[] = [];
+      facade.on('error', (error: Error) => errors.push(error));
+      await vi.advanceTimersByTimeAsync(TUNNEL_CONNECT_TIMEOUT_MS - 1);
+      expect(facade.destroyed).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(facade.destroyed).toBe(true);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]!.message).toMatch(/did not connect/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

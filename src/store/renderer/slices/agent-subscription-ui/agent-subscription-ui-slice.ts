@@ -31,7 +31,7 @@ export const emptyEntry: AgentSubscriptionUIEntry = {
   agentStatuses: {},
   waitingState: 'idle',
   wokenUpInfo: null,
-  snapshotFetched: false,
+  snapshotStatus: 'loading',
 };
 
 export const initialState: AgentSubscriptionUIState = {
@@ -94,9 +94,7 @@ export const requestSubscriptionFetch = createAction<[workspaceId: string, agent
   'agentSubscriptionUI/requestSubscriptionFetch',
 );
 
-/** Saga → reducer: a snapshot read failed. Latches `snapshotFetched` so the
- *  utility-footer readiness gate treats the failure as ready-with-empty and
- *  never wedges the transcript reveal on subscription data. */
+/** Saga → reducer: preserve cached rows and surface the failed snapshot read. */
 export const subscriptionSnapshotFetchFailed = createAction<[workspaceId: string, agentId: string]>(
   'agentSubscriptionUI/subscriptionSnapshotFetchFailed',
 );
@@ -132,7 +130,7 @@ agentSubscriptionUIReducer.with(setSubscriptionSnapshot, (state, { payload }) =>
         delegationGroups: payload.data.delegationGroups,
         agentStatuses: payload.data.agentStatuses,
         waitingState: payload.data.waitingState,
-        snapshotFetched: true,
+        snapshotStatus: 'ready',
       },
     },
   };
@@ -142,25 +140,21 @@ agentSubscriptionUIReducer.with(
   (state, { payload: [workspaceId, agentId] }) => {
     const key = makeKey(workspaceId, agentId);
     const existing = state.entries[key] ?? emptyEntry;
-    if (existing.snapshotFetched) return state;
+    if (existing.snapshotStatus === 'failed') return state;
     return {
       ...state,
       entries: {
         ...state.entries,
         [key]: {
           ...existing,
-          snapshotFetched: true,
+          snapshotStatus: 'failed',
         },
       },
     };
   },
 );
-// Switch-back freshness: drop the readiness latch the moment the agent is
-// (re)viewed, so an armed utility-footer reveal gate waits for the VIEW-TIME
-// `agent.getSubscriptions` read (the read saga starts it on this same action)
-// instead of clearing on a cached snapshot that a post-reveal refresh would
-// then update. The fresh read re-latches on success AND failure, and the
-// reveal gate's bounded fallback caps a slow read — this can never wedge.
+// Switch-back freshness: retain cached rows but show their view-time
+// `agent.getSubscriptions` refresh independently from transcript reveal.
 // The payload carries only the agentId; entries are keyed `${wsId}:${agentId}`,
 // so every workspace entry of the agent drops (an agent has one workspace).
 agentSubscriptionUIReducer.with(markAgentAsViewed, (state, { payload: [agentId] }) => {
@@ -168,9 +162,9 @@ agentSubscriptionUIReducer.with(markAgentAsViewed, (state, { payload: [agentId] 
   let changed = false;
   const entries = { ...state.entries };
   for (const [key, entry] of Object.entries(state.entries)) {
-    if (!key.endsWith(suffix) || !entry.snapshotFetched) continue;
+    if (!key.endsWith(suffix) || entry.snapshotStatus === 'loading') continue;
     changed = true;
-    entries[key] = { ...entry, snapshotFetched: false };
+    entries[key] = { ...entry, snapshotStatus: 'loading' };
   }
   return changed ? { ...state, entries } : state;
 });
@@ -232,8 +226,7 @@ agentSubscriptionUIReducer.with(
     // STAB-23: keep an idle entry instead of deleting so future
     // refreshWorkspaceSubscriptionEntries fan-outs still reach this agent.
     // Actual deletion happens on workspace deleted (via deleteSubscriptionUI).
-    // The snapshotFetched readiness latch survives the reset: the reset means
-    // "back to empty", which is still a settled snapshot.
+    // Preserve snapshot presentation: "back to empty" is still settled.
     return {
       ...state,
       entries: {
@@ -241,7 +234,7 @@ agentSubscriptionUIReducer.with(
         [key]: {
           ...emptyEntry,
           waitingState: 'idle',
-          snapshotFetched: existing.snapshotFetched,
+          snapshotStatus: existing.snapshotStatus,
         },
       },
     };

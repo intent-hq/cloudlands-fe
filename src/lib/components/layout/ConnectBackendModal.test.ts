@@ -128,6 +128,7 @@ describe('ConnectBackendModal', () => {
     expect(mocks.addConnectionRequested).toHaveBeenCalledWith({
       label: 'Studio Mac',
       accent: 'blue',
+      deviceIcon: 'auto',
       host: '10.0.0.2',
       port: 4180,
       fingerprint: 'AA:BB:CC:DD',
@@ -189,6 +190,26 @@ describe('ConnectBackendModal', () => {
 
     expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
       expect.objectContaining({ accent: null }),
+    );
+  });
+
+  it('offers Automatic first and stores an explicit device icon override', async () => {
+    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+    render(ConnectBackendModal, { props: { open: true } });
+
+    const picker = screen.getByTestId('device-icon-picker-trigger');
+    expect(picker.getAttribute('aria-label')).toContain('Automatic (Desktop)');
+    picker.focus();
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+    await fireEvent.keyDown(picker, { key: 'End' });
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+    await fillDetails();
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await screen.findByText('AA:BB:CC:DD');
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+
+    expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
+      expect.objectContaining({ deviceIcon: 'pottedPlant' }),
     );
   });
 
@@ -257,6 +278,28 @@ describe('ConnectBackendModal', () => {
     // Still on details: the Host field is present, no confirm button.
     expect(screen.getByLabelText('Host')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Confirm & connect' })).toBeNull();
+  });
+
+  it('stays open with an inline error when the post-add open resolves secret-unavailable (#3783)', async () => {
+    mocks.openConnectionRequested.mockImplementationOnce((id) => ({
+      payload: [id],
+      promise: Promise.resolve({ status: 'secret-unavailable' }),
+    }));
+
+    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+    render(ConnectBackendModal, { props: { open: true } });
+
+    await fillDetails();
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await screen.findByText('AA:BB:CC:DD');
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+
+    await vi.waitFor(() => expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1'));
+    // A resolved secret-unavailable is a failure: the modal must not close as
+    // if the open succeeded, and the confirm action is re-enabled.
+    expect(await screen.findByText(/access token could not be read back/i)).toBeTruthy();
+    const confirm = screen.getByRole('button', { name: 'Confirm & connect' }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(false);
   });
 
   it('surfaces a 403 rejection (WS API disabled) with its dedicated message', async () => {

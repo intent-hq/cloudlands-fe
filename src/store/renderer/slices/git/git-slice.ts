@@ -26,6 +26,7 @@ import type {
 export type { GitOperationCompletedEvent, GitOperationFailedEvent } from './git-types';
 import type { GitStatus } from '$shared/types';
 import type { CommitFile } from '$features/file-tracking/types';
+import type { WorkspaceGitStatus } from '$features/accept-changes/types';
 
 export const defaultGitOperationFlags: GitOperationFlags = {
   isPushing: false,
@@ -46,6 +47,8 @@ const emptyWorkspaceState: GitWorkspaceState = {
   ahead: 0,
   behind: 0,
   postMergeState: null,
+  acceptChangesStatus: null,
+  acceptChangesStatusLoading: false,
   gitOperations: { ...defaultGitOperationFlags },
   secondaryRoots: {},
 };
@@ -112,6 +115,22 @@ export const setLastGitError =
 
 export const setPostMergeState =
   createAction<[wsId: string, postMergeState: PostMergeState | null]>('git/setPostMergeState');
+
+export const acceptChangesConsumerMounted = createAction<[wsId: string]>(
+  'git/acceptChangesConsumerMounted',
+);
+export const acceptChangesConsumerUnmounted = createAction<[wsId: string]>(
+  'git/acceptChangesConsumerUnmounted',
+);
+export const acceptChangesStatusInvalidated = createAction<[wsId: string]>(
+  'git/acceptChangesStatusInvalidated',
+);
+export const setAcceptChangesStatus = createAction<[wsId: string, status: WorkspaceGitStatus]>(
+  'git/setAcceptChangesStatus',
+);
+export const setAcceptChangesStatusLoading = createAction<[wsId: string, loading: boolean]>(
+  'git/setAcceptChangesStatusLoading',
+);
 
 export const setGitOperationFlag =
   createAction<[wsId: string, flag: GitOperationFlagName, value: boolean]>(
@@ -223,6 +242,14 @@ gitReducer.with(setLastGitError, (state, { payload: [event] }) => ({
 gitReducer.with(setPostMergeState, (state, { payload: [wsId, postMergeState] }) => {
   const ws = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, { ...ws, postMergeState });
+});
+gitReducer.with(setAcceptChangesStatus, (state, { payload: [wsId, acceptChangesStatus] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, { ...ws, acceptChangesStatus });
+});
+gitReducer.with(setAcceptChangesStatusLoading, (state, { payload: [wsId, loading] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, { ...ws, acceptChangesStatusLoading: loading });
 });
 gitReducer.with(setGitOperationFlag, (state, { payload: [wsId, flag, value] }) => {
   const ws = getWorkspaceState(state, wsId);

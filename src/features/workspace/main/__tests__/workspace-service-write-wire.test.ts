@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  */
 
 const daemonWorkspaces = new Map<string, Record<string, unknown>>();
+const reconnectHandlers = vi.hoisted(() => new Set<() => void>());
 
 const requestMock = vi.hoisted(() =>
   vi.fn(async (method: string, params?: Record<string, unknown>) => {
@@ -112,6 +113,10 @@ const requestMock = vi.hoisted(() =>
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: requestMock }),
+  onBackendReconnected: (handler: () => void) => {
+    reconnectHandlers.add(handler);
+    return () => reconnectHandlers.delete(handler);
+  },
 }));
 
 vi.mock('../../../../store/main/redux-store-bridge', () => ({
@@ -472,6 +477,22 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
       const retried = await service.listWorkspaces();
       expect(retried.ok).toBe(true);
       expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
+    });
+
+    it('clears the cached workspace.list after a backend reconnect', async () => {
+      const ws = seed();
+      daemonWorkspaces.set(ws.id, { ...ws });
+
+      expect(reconnectHandlers.size).toBe(0);
+      await service.listWorkspaces();
+      expect(reconnectHandlers.size).toBe(1);
+      for (const handler of reconnectHandlers) handler();
+      await service.listWorkspaces();
+
+      expect(requestMock.mock.calls.filter(([method]) => method === 'workspace.list')).toEqual([
+        ['workspace.list', { includeArchived: false }],
+        ['workspace.list', { includeArchived: false }],
+      ]);
     });
 
     it('keeps single-flighting a still-pending request slower than the TTL (no expire-while-pending race)', async () => {

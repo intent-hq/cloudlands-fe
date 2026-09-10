@@ -1,0 +1,98 @@
+{
+  "default": {
+    "420": {
+      "probes": {
+        "data-slot=button": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 89.09,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 82,
+        "width": 420
+      }
+    }
+  },
+  "destructive": {
+    "420": {
+      "probes": {
+        "data-slot=button": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 151.17,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 82,
+        "width": 420
+      }
+    }
+  },
+  "disabled": {
+    "420": {
+      "probes": {
+        "data-slot=button": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 105.38,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 82,
+        "width": 420
+      }
+    }
+  },
+  "loading": {
+    "420": {
+      "probes": {
+        "data-slot=button": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 92.56,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 82,
+        "width": 420
+      }
+    }
+  }
+}

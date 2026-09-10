@@ -58,6 +58,7 @@
   import type { ConnectionRecord } from '$shared/types/connections';
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { DAEMON_UPDATING_COUNTDOWN_MS } from './DaemonUpdatingOverlay.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -90,6 +91,12 @@
   // countdown — that window replaces the grace period, it is not added to it.
   let visible = $state(false);
   let graceTimer: ReturnType<typeof setTimeout> | null = null;
+  // Fail-over "Open …" that resolved with `secret-unavailable` (#3783): the
+  // stored access token for that backend cannot be read, so the open is a
+  // failure, not a success. Surfaced inline below the known-backends list with
+  // the re-pair modal prefilled for that backend — re-adding the same
+  // host:port replaces the stored token. Cleared on dismiss and on retry.
+  let secretUnavailableConnection = $state<ConnectionRecord | null>(null);
   const isSandboxPage = $derived(
     $page.url.pathname === '/sandbox' ||
       $page.url.pathname.startsWith('/sandbox/') ||
@@ -118,6 +125,7 @@
         graceTimer = null;
       }
       visible = false;
+      secretUnavailableConnection = null;
     }
     return () => {
       if (graceTimer !== null) {
@@ -173,6 +181,29 @@
   const isAuthRejected = $derived($authRejected$ !== null);
   let repairModalOpen = $state(false);
 
+  // The re-pair modal serves both the auth-rejected posture and the
+  // secret-unavailable fail-over; the latter takes precedence while set.
+  const repairTarget = $derived(secretUnavailableConnection ?? repairConnection ?? null);
+  const repairHost = $derived(secretUnavailableConnection?.host ?? $authRejected$?.host ?? null);
+  const repairPort = $derived(secretUnavailableConnection?.port ?? $authRejected$?.port ?? null);
+
+  function openRepairForAuthRejected() {
+    secretUnavailableConnection = null;
+    repairModalOpen = true;
+  }
+
+  // Once the re-pair modal closes the secret-unavailable notice is stale: a
+  // successful re-add + open has replaced the token (and this window's overlay
+  // may stay up while the other backend's window opens), and a cancel leaves
+  // the user free to retry Open, which re-derives the outcome.
+  let wasRepairModalOpen = false;
+  $effect(() => {
+    if (wasRepairModalOpen && !repairModalOpen) {
+      secretUnavailableConnection = null;
+    }
+    wasRepairModalOpen = repairModalOpen;
+  });
+
   /** Display label for a remote connection: `hostname (host:port)`, or its raw label. */
   function connectionLabel(conn: ConnectionRecord): string {
     const hostname = conn.hostname?.trim();
@@ -210,13 +241,17 @@
   }
 
   async function handleOpenConnection(id: string) {
+    secretUnavailableConnection = null;
     try {
       const action = openConnectionRequested(id);
       appStore.dispatch(action);
-      await action.promise;
+      const result = await action.promise;
+      if (result.status === 'secret-unavailable') {
+        secretUnavailableConnection = $connections$.find((c) => c.id === id) ?? null;
+      }
     } catch {
-      // Failure surfaces via the connections slice op-status; the list/active
-      // refresh arrives via the connections:changed push.
+      // Other failures surface via the connections slice op-status; the
+      // list/active refresh arrives via the connections:changed push.
     }
   }
 
@@ -359,7 +394,7 @@
               type="button"
               class="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={$isConnecting$}
-              onclick={() => (repairModalOpen = true)}
+              onclick={openRepairForAuthRejected}
               data-testid="daemon-stopped-repair"
             >
               {m.daemonStatus_overlay_repair_label()}
@@ -482,6 +517,25 @@
                 </button>
               {/each}
             </div>
+            {#if secretUnavailableConnection}
+              <p
+                class="mt-2 text-sm text-danger"
+                role="alert"
+                data-testid="daemon-stopped-open-secret-unavailable"
+              >
+                {m.daemonStatus_overlay_secretUnavailable_error({
+                  label: connectionLabel(secretUnavailableConnection),
+                })}
+              </p>
+              <Button
+                class="mt-2 w-full"
+                disabled={$isConnecting$}
+                onclick={() => (repairModalOpen = true)}
+                data-testid="daemon-stopped-reenter-token"
+              >
+                {m.daemonStatus_overlay_reenterToken_label()}
+              </Button>
+            {/if}
           </div>
         {/if}
       </div>
@@ -490,9 +544,9 @@
 
   <ConnectBackendModal
     bind:open={repairModalOpen}
-    prefillLabel={repairConnection?.label ?? null}
-    prefillAccent={repairConnection?.accent}
-    prefillHost={$authRejected$?.host ?? null}
-    prefillPort={$authRejected$?.port ?? null}
+    prefillLabel={repairTarget?.label ?? null}
+    prefillAccent={repairTarget?.accent}
+    prefillHost={repairHost}
+    prefillPort={repairPort}
   />
 {/if}

@@ -52,6 +52,14 @@ import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
 import type { RecentUrl } from '$store/renderer/slices/browser/browser-types';
 import type {
+  BrowserActionEnvelope,
+  BrowserTab,
+  BrowserTabInput,
+  BrowserTabListing,
+  LiveClient,
+  WorkspaceBrowserClient,
+} from '$shared/types/browser-clients';
+import type {
   McpServerConfig,
   McpServerRuntimeStatus,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
@@ -442,6 +450,20 @@ export interface WorkspacesClient {
    * that the bridge folds into the context slice.
    */
   updateContext(workspaceId: string, items: ContextItem[]): Promise<ContextItem[]>;
+  /**
+   * `workspace.getBrowserClient` (REV-2, PROTOCOL §5.1): the workspace's
+   * effective browser client — the persisted pin (`clientId` + `source:
+   * "workspace"`, else `source: "default"`) plus `resolved`, the client an
+   * agent `browser.exec` would reach right now (`null` when none).
+   */
+  getBrowserClient(workspaceId: string): Promise<WorkspaceBrowserClient>;
+  /**
+   * `workspace.setBrowserClient` (REV-2, PROTOCOL §5.1): persist (`clientId`)
+   * or clear (`null`) the per-workspace browser-client pin. The daemon emits
+   * `workspace:updated { changes: { browserClientId } }` and echoes the
+   * `getBrowserClient` shape.
+   */
+  setBrowserClient(workspaceId: string, clientId: string | null): Promise<WorkspaceBrowserClient>;
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe;
 }
 
@@ -1859,7 +1881,7 @@ export interface SpecialistsClient {
 }
 
 export interface ModelsClient {
-  list(): Promise<AuggieModel[]>;
+  list(providerId?: string): Promise<AuggieModel[]>;
   subscribe(handler: SubscriptionHandler<AuggieModel[]>): Unsubscribe;
 }
 
@@ -1998,6 +2020,47 @@ export interface VoiceClient {
 export interface BrowserClient {
   recentUrls(workspaceId: string): Promise<RecentUrl[]>;
   subscribe(handler: SubscriptionHandler<RecentUrl[]>): Unsubscribe;
+  /*
+   * Daemon tab registry (REV-2, `browser.*` tab methods). Tabs are
+   * workspace-bound rows keyed by `tabId`; the reporting host is the
+   * connection's hello'd `clientId`, never a wire parameter.
+   */
+  /** `browser.listTabs { workspaceId }` → the workspace's rows with host presence. */
+  listTabs(workspaceId: string): Promise<BrowserTabListing[]>;
+  /** `browser.upsertTab { workspaceId, tab }` (host only) → the stored row. */
+  upsertTab(workspaceId: string, tab: Omit<BrowserTabInput, 'workspaceId'>): Promise<BrowserTab>;
+  /** `browser.removeTab { tabId }` (host only): host-reported close. */
+  removeTab(tabId: string): Promise<{ ok: true }>;
+  /**
+   * `browser.syncTabs { tabs }` (host only): full snapshot of this host's
+   * tabs → `drop`, the tabIds the daemon rejected (stale / foreign rows) that
+   * the host must close locally.
+   */
+  syncTabs(tabs: BrowserTabInput[]): Promise<{ drop: string[] }>;
+  /**
+   * `browser.navigateTab { tabId, url }` (any client): routed to the tab's
+   * host → the `navigate` action's `{ action, success, result?, error? }` envelope.
+   */
+  navigateTab(tabId: string, url: string): Promise<BrowserActionEnvelope>;
+  /**
+   * `browser.closeTab { tabId, force? }` (any client). Without `force` the
+   * host must be connected (typed error otherwise, no mutation); `force`
+   * tombstones the row regardless of connectivity.
+   */
+  closeTab(tabId: string, options?: { force?: boolean }): Promise<{ ok: true }>;
+}
+
+/**
+ * Connected-clients domain (REV-2, PROTOCOL §5.17). `list` is the daemon's
+ * live logical-client registry; `ownClientId` is the identity THIS renderer's
+ * connection presents on `client.hello`, so later consumers can compute
+ * `isHost = hostClientId === ownClientId`.
+ */
+export interface ClientsClient {
+  /** `client.list` → every connected logical client. */
+  list(): Promise<LiveClient[]>;
+  /** The stable `clientId` the daemon confirmed for this connection. */
+  ownClientId(): Promise<string>;
 }
 
 /**
@@ -2172,6 +2235,17 @@ export interface EventQueryOptions {
   limit?: number;
 }
 
+/** Cursor options for the opt-in paginated `event.query` envelope. */
+export interface EventQueryPageOptions extends EventQueryOptions {
+  nextToken?: string;
+}
+
+/** One newest→oldest page returned by paginated `event.query`. */
+export interface EventQueryPage {
+  items: WorkspaceEvent[];
+  nextToken: string | null;
+}
+
 export interface EventsClient {
   /** Boot snapshot of the workspace event stream, oldest→newest. */
   list(workspaceId: string): Promise<WorkspaceEvent[]>;
@@ -2180,6 +2254,8 @@ export interface EventsClient {
    * wire order (newest→oldest); the daemon defaults `limit` to 50.
    */
   query(workspaceId: string, options?: EventQueryOptions): Promise<WorkspaceEvent[]>;
+  /** Paginated historical read; `nextToken` continues toward older events. */
+  queryPage(workspaceId: string, options?: EventQueryPageOptions): Promise<EventQueryPage>;
   subscribe(workspaceId: string, handler: SubscriptionHandler<WorkspaceEvent[]>): Unsubscribe;
 }
 
@@ -2263,4 +2339,5 @@ export interface AppClient {
   server: ServerClient;
   events: EventsClient;
   drafts: DraftsClient;
+  clients: ClientsClient;
 }

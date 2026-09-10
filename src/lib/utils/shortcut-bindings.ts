@@ -41,7 +41,6 @@ export const SHORTCUT_DEFAULTS = {
   'leader.navigate-panels': 'h/j/k/l',
   'leader.resize-panels': 'H/J/K/L',
   'leader.split-right': '%',
-  'leader.split-down': '"',
   'leader.toggle-zoom': 'z',
   'leader.close-panel': 'x',
   'leader.next-previous-panel': 'o/p',

@@ -17,7 +17,6 @@
     label: string;
     description: string;
     workspace: Workspace;
-    lineStats?: { additions: number; deletions: number };
     activeAgentIds?: string[];
     frameClass?: string;
   };
@@ -215,7 +214,6 @@
         {
           label: 'Changed files plus git summary',
           description: 'Diff summary and git divergence combine into one comma-separated line.',
-          lineStats: { additions: 42, deletions: 7 },
           workspace: workspace('changed-files', 'Implement hover-card route'),
         },
         {
@@ -420,7 +418,6 @@
               >
                 <WorkspaceHoverCard
                   workspace={variation.workspace}
-                  lineStats={variation.lineStats}
                   activeAgentIds={variation.activeAgentIds ?? []}
                   loadAgentSessions={false}
                   loadWorkspaceData={false}

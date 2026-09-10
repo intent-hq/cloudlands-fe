@@ -13,7 +13,11 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('$lib/utils/platform-capabilities', () => ({ getPlatform: mocks.platform }));
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backend }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.backend,
+  onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
+}));
 vi.mock('$features/notifications/notification-sound-gate', () => ({
   playNotificationSoundPerSettings: mocks.sound,
 }));
@@ -27,6 +31,10 @@ vi.mock('$lib/utils/client-logger', () => ({
 import { emitMockIpcEvent, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { loadWorkspaceTabsState, openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { notificationIpcSaga, webNotificationSaga } from './notifications-saga';
+import {
+  __resetSettingsReadCacheForTests,
+  invalidateSettingsReadCache,
+} from '$lib/client/live/live-settings-client';
 
 class MockNotification {
   static permission: NotificationPermission = 'granted';
@@ -65,6 +73,10 @@ const idle = (data: Record<string, unknown> = {}, workspaceId = 'ws-1') => ({
 const flush = async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
 };
+const settingResult = (path: string, value: unknown) => ({
+  value,
+  definition: { path, label: path, description: '', category: 'notifications', type: 'boolean' },
+});
 
 function startWebSaga(current = state(), dispatch = vi.fn()) {
   const channel = stdChannel();
@@ -102,6 +114,7 @@ function startWebSaga(current = state(), dispatch = vi.fn()) {
 describe('notification sagas', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetSettingsReadCacheForTests();
     resetMockIpcRouter();
     mocks.platform.mockReturnValue('web');
     mocks.isElectron.mockReturnValue(false);
@@ -225,7 +238,7 @@ describe('notification sagas', () => {
     await flush();
     mocks.backend.mockImplementation(async (method, params) => {
       if (method === 'settings.get')
-        return { value: params.path === 'notifications.enabled' ? false : true };
+        return settingResult(params.path, params.path === 'notifications.enabled' ? false : true);
       throw new Error('unexpected');
     });
     emitMockIpcEvent('agent:idle', idle());
@@ -234,7 +247,7 @@ describe('notification sagas', () => {
 
     mocks.backend.mockImplementation(async (method, params) => {
       if (method === 'settings.get')
-        return { value: params.path === 'notifications.enabled' ? true : false };
+        return settingResult(params.path, params.path === 'notifications.enabled' ? true : false);
       if (method === 'agent.list')
         return { agents: [{ id: 'other', isStreaming: true, isResponding: false }] };
       throw new Error('unexpected');
@@ -253,7 +266,7 @@ describe('notification sagas', () => {
     mocks.backend.mockClear();
     mocks.backend.mockImplementation(async (method, params) => {
       if (method === 'settings.get')
-        return { value: params.path === 'notifications.enabled' ? true : false };
+        return settingResult(params.path, params.path === 'notifications.enabled' ? true : false);
       throw new Error(`unexpected ${method}`);
     });
     emitMockIpcEvent('agent:idle', idle({ workspaceArchived: true }));
@@ -275,8 +288,9 @@ describe('notification sagas', () => {
 
     window.history.replaceState({}, '', '/workspace/ws-1');
     vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    invalidateSettingsReadCache();
     mocks.backend.mockImplementation(async (method, params) => {
-      if (method === 'settings.get') return { value: true };
+      if (method === 'settings.get') return settingResult(params.path, true);
       if (method === 'agent.list')
         return { agents: [{ id: 'agent-1', isStreaming: false, isResponding: false }] };
       if (method === 'workspace.get')
@@ -327,7 +341,7 @@ describe('notification sagas', () => {
     window.history.replaceState({}, '', '/workspace/ws-1');
     vi.spyOn(document, 'hasFocus').mockReturnValue(true);
     mocks.backend.mockImplementation(async (method, params) => {
-      if (method === 'settings.get') return { value: true };
+      if (method === 'settings.get') return settingResult(params.path, true);
       if (method === 'agent.list')
         return new Promise((resolve) => {
           resolveAgents = resolve;

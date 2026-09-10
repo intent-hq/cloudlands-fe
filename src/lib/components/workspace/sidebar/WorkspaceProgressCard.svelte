@@ -16,6 +16,7 @@
     faCodePullRequest,
     faCheck,
     faFileLines,
+    faGlobe,
     faRightLeft,
   } from '@fortawesome/free-solid-svg-icons';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
@@ -50,14 +51,14 @@
   } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { listenSync } from '$lib/electron-bridge';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
-  import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
-  import type { WorkspaceGitStatus } from '$features/accept-changes/types';
   import {
-    shouldClearGitStatusBeforeLoad,
-    shouldApplyGitStatusResult,
-    shouldClearGitStatusOnError,
-    isFetchCurrent,
-  } from './git-status-refresh-utils';
+    acceptChangesConsumerMounted,
+    acceptChangesConsumerUnmounted,
+  } from '$store/renderer/slices/git/git-slice';
+  import {
+    selectAcceptChangesStatus,
+    selectAcceptChangesStatusLoading,
+  } from '$store/renderer/slices/git/git-selectors';
   import FlameGraph from './FlameGraph.svelte';
   import WorkspaceTokenUsage from './WorkspaceTokenUsage.svelte';
 
@@ -77,7 +78,12 @@
   } from '$store/renderer/slices/workspace/workspace-types';
   import { store as appStore } from '$store/renderer/store';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
+  import { selectWorkspaceDrivingClient } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
+  import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
+  import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
+  import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
+  import { resolveDrivingClientView } from '$lib/components/workspace/driving-indicator';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -122,137 +128,16 @@
   // the workflow-stage, headline, and action logic.
   const progressActions$ = selectWorkspaceProgressActions(workspaceIdStore, progressInput$);
 
-  // Git status state for workflow awareness
-  let gitStatus = $state<WorkspaceGitStatus | null>(null);
-  let gitStatusLoading = $state(false);
-  let lastLoadedWorkspaceId: string | undefined;
-  // Monotonic counter to guard against overlapping fetches for the same workspace.
-  // Incremented at the start of each loadGitStatus() call; only the most recent
-  // fetch's result is applied.
-  let fetchGeneration = 0;
+  const gitStatus$ = selectAcceptChangesStatus(workspaceIdStore);
+  const gitStatusLoading$ = selectAcceptChangesStatusLoading(workspaceIdStore);
+  const gitStatus = $derived($gitStatus$);
+  const gitStatusLoading = $derived($gitStatusLoading$);
 
-  // Load git status when workspace is available
-  async function loadGitStatus() {
-    if (!workspaceId) return;
-
-    const capturedWorkspaceId = workspaceId; // Capture for async guard
-    fetchGeneration++;
-    const capturedGeneration = fetchGeneration;
-    gitStatusLoading = true;
-
-    // Only clear stale data when switching to a different workspace
-    if (shouldClearGitStatusBeforeLoad(workspaceId, lastLoadedWorkspaceId)) {
-      gitStatus = null;
-    }
-
-    try {
-      const result = await AcceptChangesClient.getStatus(WorkspaceId(capturedWorkspaceId));
-      // Guard: only apply if workspace hasn't changed AND this is still the latest fetch
-      if (
-        shouldApplyGitStatusResult(workspaceId, capturedWorkspaceId) &&
-        isFetchCurrent(capturedGeneration, fetchGeneration)
-      ) {
-        gitStatus = result;
-        lastLoadedWorkspaceId = capturedWorkspaceId;
-      }
-    } catch {
-      // Silently handle errors - git status is optional
-      // For same-workspace refresh, keep existing data instead of nulling it out
-      if (
-        shouldApplyGitStatusResult(workspaceId, capturedWorkspaceId) &&
-        isFetchCurrent(capturedGeneration, fetchGeneration) &&
-        shouldClearGitStatusOnError(workspaceId, capturedWorkspaceId, lastLoadedWorkspaceId)
-      ) {
-        gitStatus = null;
-      }
-    } finally {
-      if (
-        shouldApplyGitStatusResult(workspaceId, capturedWorkspaceId) &&
-        isFetchCurrent(capturedGeneration, fetchGeneration)
-      ) {
-        gitStatusLoading = false;
-      }
-    }
-  }
-
-  // Load git status on mount and when workspace changes
-  // Keep this as an effect since it needs to react to workspaceId changes
   $effect(() => {
-    if (workspaceId) {
-      loadGitStatus();
-    }
-  });
-
-  // Listen for git status changes to refresh
-  // Using onMount with listenSync for proper cleanup on unmount
-  onMount(() => {
-    if (!workspaceId) return;
-
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const DEBOUNCE_MS = 5000; // 5 seconds debounce to avoid rate limiting GitHub API
-
-    // Capture workspaceId at mount time
-    const mountedWorkspaceId = workspaceId;
-
-    // Debounced version of loadGitStatus to prevent excessive GitHub API calls
-    const debouncedLoadGitStatus = () => {
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-      }
-      debounceTimer = setTimeout(() => {
-        loadGitStatus();
-        debounceTimer = null;
-      }, DEBOUNCE_MS);
-    };
-
-    // Use listenSync for synchronous cleanup - no race conditions on unmount
-    const unsubscribe1 = listenSync<{ workspaceId: string }>('git:status-changed', (event) => {
-      if (event.payload?.workspaceId === mountedWorkspaceId) {
-        debouncedLoadGitStatus();
-      }
-    });
-
-    // Also listen for file tracking changes
-    // NOTE: file-tracking:changes-updated can fire very frequently during agent activity.
-    // We debounce this to avoid hitting GitHub API rate limits, since loadGitStatus
-    // calls AcceptChangesClient.getStatus which fetches PR info from GitHub.
-    const unsubscribe2 = listenSync<{ workspaceId: string }>(
-      'file-tracking:changes-updated',
-      (event) => {
-        if (event.payload?.workspaceId === mountedWorkspaceId) {
-          debouncedLoadGitStatus();
-        }
-      },
-    );
-
-    // Listen for workspace updates (e.g., PR discovered via refresh)
-    const unsubscribe3 = listenSync<{ workspaceId: string; changes: Record<string, unknown> }>(
-      'workspace:updated',
-      (event) => {
-        if (event.payload?.workspaceId === mountedWorkspaceId) {
-          // Check if PR-related fields changed
-          const changes = event.payload?.changes;
-          if (
-            changes &&
-            ('activePullRequest' in changes ||
-              'prStatus' in changes ||
-              'prNumber' in changes ||
-              'pullRequests' in changes)
-          ) {
-            debouncedLoadGitStatus();
-          }
-        }
-      },
-    );
-
-    return () => {
-      unsubscribe1();
-      unsubscribe2();
-      unsubscribe3();
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-      }
-    };
+    const visibleWorkspaceId = workspaceId;
+    if (!visibleWorkspaceId) return;
+    appStore.dispatch(acceptChangesConsumerMounted(visibleWorkspaceId));
+    return () => appStore.dispatch(acceptChangesConsumerUnmounted(visibleWorkspaceId));
   });
 
   // Header editing state
@@ -561,9 +446,43 @@
       : null,
   );
 
+  // REV-2 driving browser client (spec Model 8): the daemon resolves it; the
+  // indicator renders only when another eligible client could take over.
+  const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
+  const drivingClientView = $derived(resolveDrivingClientView($drivingClient$));
+
+  // "Set Current Client as Primary": pin this workspace's browser to this
+  // app; the daemon also migrates the workspace's claimed (agent-owned) tabs
+  // here (PROTOCOL §5.1 workspace.setBrowserClient). Offered only while
+  // another client drives (or the pin is offline); hidden when this app
+  // already drives or its own clientId is unknown. The menu action only opens
+  // the confirmation; the RPC is dispatched on confirm.
+  let confirmingSetPrimaryClient = $state(false);
+
+  const setPrimaryClientAction: MenuAction | null = $derived.by(() => {
+    const ownClientId = $drivingClient$.ownClientId;
+    if (!drivingClientView?.canSwitchHere || !ownClientId || !workspaceId) return null;
+    return {
+      label: m.workspace_drivingClient_setPrimary_label(),
+      icon: faGlobe,
+      dividerBefore: true,
+      onClick: () => {
+        confirmingSetPrimaryClient = true;
+      },
+    };
+  });
+
+  function handleConfirmSetPrimaryClient() {
+    confirmingSetPrimaryClient = false;
+    const ownClientId = $drivingClient$.ownClientId;
+    if (!workspaceId || !ownClientId) return;
+    appStore.dispatch(setWorkspaceBrowserClientRequested(workspaceId, ownClientId));
+  }
+
   const additionalActions: MenuAction[] = $derived([
     sidebarToggleAction,
     sidebarSideAction,
+    ...(setPrimaryClientAction ? [setPrimaryClientAction] : []),
     ...(transferAction ? [transferAction] : []),
   ]);
 
@@ -909,7 +828,7 @@
   <!-- Workspace Header -->
   <div class="flex w-full flex-col pb-1">
     <div class="flex items-center justify-between group">
-      <div class="flex-1 flex flex-col min-w-0">
+      <div class="relative flex-1 flex flex-col min-w-0">
         {#if isEditingTitle}
           <input
             bind:this={titleInputRef}
@@ -917,7 +836,7 @@
             bind:value={editedTitle}
             onblur={saveTitle}
             onkeydown={handleTitleKeydown}
-            class="text-xl font-semibold text-foreground bg-none
+            class="edit-input relative z-10 text-xl font-semibold text-foreground bg-transparent
                py-0.5 rounded
                outline-none w-full leading-normal
                focus:ring-none! focus:outline-none!
@@ -926,8 +845,8 @@
           />
         {:else}
           <button
-            class="text-xl font-semibold text-foreground bg-transparent
-               border-none py-0.5 pr-1 rounded cursor-pointer text-left
+            class="relative z-10 text-xl font-semibold text-foreground bg-transparent
+               border-none py-0.5 pr-1 rounded cursor-text text-left
                max-w-full overflow-hidden text-ellipsis whitespace-nowrap
                transition-all duration-150 leading-normal
                focus-visible:outline-1 focus-visible:outline-primary/50 focus-visible:-outline-offset-1
@@ -942,6 +861,13 @@
             {/if}
           </button>
         {/if}
+        <span
+          aria-hidden="true"
+          data-workspace-title-edit-decoration
+          class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
+            ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
+            : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+        ></span>
       </div>
 
       <div class="flex shrink-0 -mt-0.5 -mr-2 items-center gap-0.5" data-workspace-header-actions>
@@ -994,76 +920,11 @@
       </div>
     </div>
     <!-- repository and branch metadata -->
-    <div
-      class="type-caption mb-4 flex h-5 w-full min-w-0 items-center gap-2.5 font-normal leading-5 text-muted-foreground"
-      data-sidebar-repository-branch-metadata
-    >
-      <TooltipRich
-        side="bottom"
-        align="start"
-        sideOffset={6}
-        delayDuration={300}
-        maxWidth="16rem"
-        contentClass="border-0!"
-        contentContainerClass="p-0! space-y-0!"
-        showArrow={false}
-        interactive
-        class={`h-5 min-w-0 cursor-copy items-center overflow-hidden border-none bg-transparent p-0 text-left font-inherit text-muted-foreground outline-none hover:underline focus:outline-none focus-visible:outline-none ${$workspace?.branch ? 'shrink' : 'flex-1'}`}
-        bind:open={repoTooltipOpen}
-        onOpenChange={handleRepoTooltipOpenChange}
-        disableCloseOnTriggerClick
-        onclick={copyRepoPath}
+    <div class="mb-4 flex w-full flex-col gap-1" data-sidebar-workspace-metadata>
+      <div
+        class="type-caption flex h-5 w-full min-w-0 items-center gap-2.5 font-normal leading-5 text-muted-foreground"
+        data-sidebar-repository-branch-metadata
       >
-        {#snippet trigger()}
-          <span
-            class="block min-w-0 truncate"
-            data-sidebar-repository-control
-            data-sidebar-repository-label
-          >
-            {repositoryLabel}
-          </span>
-        {/snippet}
-        {#snippet content()}
-          <div class="w-56 p-2.5" data-sidebar-repository-hover-card>
-            <div class="flex min-w-0 items-center gap-2">
-              <p
-                class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
-                title={repositoryLabel}
-              >
-                {repositoryLabel}
-              </p>
-              {#if copiedRepoPath}
-                <span class="flex shrink-0 items-center gap-1 text-xs text-success">
-                  <Fa icon={faCheck} size="xs" />
-                  {m.workspace_progressCard_copied_label()}
-                </span>
-              {/if}
-            </div>
-            {#if workspacePath}
-              <Button
-                variant="plain"
-                class="mt-1 h-auto w-full min-w-0 cursor-copy justify-start rounded-none text-xs font-normal text-muted-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
-                title={workspacePath}
-                aria-label={m.workspace_progressCard_copyPath_ariaLabel()}
-                onclick={copyRepoPath}
-                data-sidebar-repository-path-copy
-              >
-                <span class="block min-w-0 truncate">{workspacePath}</span>
-              </Button>
-            {/if}
-            {#if $workspace?.checkoutMode}
-              <div class="mt-1.5 border-t border-border pt-1.5">
-                <CheckoutModePill
-                  workspace={$workspace}
-                  presentation="repository"
-                  repositoryOpen={repoTooltipOpen}
-                />
-              </div>
-            {/if}
-          </div>
-        {/snippet}
-      </TooltipRich>
-      {#if $workspace?.branch}
         <TooltipRich
           side="bottom"
           align="start"
@@ -1073,46 +934,115 @@
           contentClass="border-0!"
           contentContainerClass="p-0! space-y-0!"
           showArrow={false}
-          class="h-5 min-w-0 shrink cursor-copy items-center justify-start overflow-hidden rounded-sm border-none bg-transparent p-0 text-left font-inherit font-medium text-muted-foreground outline-none transition-colors hover:underline focus:outline-none focus-visible:outline-none"
-          bind:open={branchTooltipOpen}
-          onOpenChange={handleBranchTooltipOpenChange}
+          interactive
+          class={`h-5 min-w-0 cursor-copy items-center overflow-hidden border-none bg-transparent p-0 text-left font-inherit text-muted-foreground outline-none hover:underline focus:outline-none focus-visible:outline-none ${$workspace?.branch ? 'shrink' : 'flex-1'}`}
+          bind:open={repoTooltipOpen}
+          onOpenChange={handleRepoTooltipOpenChange}
           disableCloseOnTriggerClick
-          onclick={copyBranchName}
+          onclick={copyRepoPath}
         >
           {#snippet trigger()}
             <span
-              class="min-w-0 flex-1 truncate"
-              data-sidebar-branch-control
-              data-sidebar-branch-label
+              class="block min-w-0 truncate"
+              data-sidebar-repository-control
+              data-sidebar-repository-label
             >
-              {$workspace.branch}
+              {repositoryLabel}
             </span>
           {/snippet}
           {#snippet content()}
-            <div class="w-56 p-2.5" data-sidebar-branch-hover-card>
+            <div class="w-56 p-2.5" data-sidebar-repository-hover-card>
               <div class="flex min-w-0 items-center gap-2">
                 <p
                   class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
-                  title={$workspace.branch}
+                  title={repositoryLabel}
                 >
-                  {$workspace.branch}
+                  {repositoryLabel}
                 </p>
-                {#if copiedBranchName}
+                {#if copiedRepoPath}
                   <span class="flex shrink-0 items-center gap-1 text-xs text-success">
                     <Fa icon={faCheck} size="xs" />
                     {m.workspace_progressCard_copied_label()}
                   </span>
                 {/if}
               </div>
-              {#if $workspace.baseRef}
-                <p class="mt-1 min-w-0 truncate text-xs text-muted-foreground">
-                  {m.workspace_progressCard_base_label({ ref: $workspace.baseRef })}
-                </p>
+              {#if workspacePath}
+                <Button
+                  variant="plain"
+                  class="mt-1 h-auto w-full min-w-0 cursor-copy justify-start rounded-none text-xs font-normal text-muted-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
+                  title={workspacePath}
+                  aria-label={m.workspace_progressCard_copyPath_ariaLabel()}
+                  onclick={copyRepoPath}
+                  data-sidebar-repository-path-copy
+                >
+                  <span class="block min-w-0 truncate">{workspacePath}</span>
+                </Button>
+              {/if}
+              {#if $workspace?.checkoutMode}
+                <div class="mt-1.5 border-t border-border pt-1.5">
+                  <CheckoutModePill
+                    workspace={$workspace}
+                    presentation="repository"
+                    repositoryOpen={repoTooltipOpen}
+                  />
+                </div>
               {/if}
             </div>
           {/snippet}
         </TooltipRich>
-      {/if}
+        {#if $workspace?.branch}
+          <TooltipRich
+            side="bottom"
+            align="start"
+            sideOffset={6}
+            delayDuration={300}
+            maxWidth="16rem"
+            contentClass="border-0!"
+            contentContainerClass="p-0! space-y-0!"
+            showArrow={false}
+            class="h-5 min-w-0 shrink cursor-copy items-center justify-start overflow-hidden rounded-sm border-none bg-transparent p-0 text-left font-inherit font-medium text-muted-foreground outline-none transition-colors hover:underline focus:outline-none focus-visible:outline-none"
+            bind:open={branchTooltipOpen}
+            onOpenChange={handleBranchTooltipOpenChange}
+            disableCloseOnTriggerClick
+            onclick={copyBranchName}
+          >
+            {#snippet trigger()}
+              <span
+                class="min-w-0 flex-1 truncate"
+                data-sidebar-branch-control
+                data-sidebar-branch-label
+              >
+                {$workspace.branch}
+              </span>
+            {/snippet}
+            {#snippet content()}
+              <div class="w-56 p-2.5" data-sidebar-branch-hover-card>
+                <div class="flex min-w-0 items-center gap-2">
+                  <p
+                    class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
+                    title={$workspace.branch}
+                  >
+                    {$workspace.branch}
+                  </p>
+                  {#if copiedBranchName}
+                    <span class="flex shrink-0 items-center gap-1 text-xs text-success">
+                      <Fa icon={faCheck} size="xs" />
+                      {m.workspace_progressCard_copied_label()}
+                    </span>
+                  {/if}
+                </div>
+                {#if $workspace.baseRef}
+                  <p class="mt-1 min-w-0 truncate text-xs text-muted-foreground">
+                    {m.workspace_progressCard_base_label({ ref: $workspace.baseRef })}
+                  </p>
+                {/if}
+              </div>
+            {/snippet}
+          </TooltipRich>
+        {/if}
+      </div>
+      <!-- driving browser client (REV-2); renders nothing with one eligible client -->
+      <DrivingClientIndicator {...$drivingClient$} />
     </div>
   </div>
 
@@ -1214,38 +1144,47 @@
     <!-- Status follows identity and progress so it reads as the current update. -->
     {#if isEditingStatusMessage || currentStatusMessage}
       <div class="pt-1">
-        {#if isEditingStatusMessage}
-          <textarea
-            bind:this={statusInputRef}
-            bind:value={editedStatusMessage}
-            onblur={saveStatusMessage}
-            onkeydown={handleStatusMessageKeydown}
-            disabled={isSavingStatusMessage}
-            maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
-            rows={1}
-            aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
-            class="type-body min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-none py-0.5 text-foreground outline-none leading-snug
-                   focus:ring-none! focus:outline-none! transition-all duration-150 disabled:opacity-50"
-            style="field-sizing: content;"
-            placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}></textarea>
-        {:else if $workspace && currentStatusMessage}
-          <button
-            class="type-body w-full cursor-pointer whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
-                   transition-all duration-150 leading-snug hover:text-foreground
-                   focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
-                   disabled:cursor-default disabled:opacity-50"
-            onclick={startEditingStatusMessage}
-            title={currentStatusMessage
-              ? m.workspace_sidebarHeader_editStatus_tooltip()
-              : m.workspace_sidebarHeader_addStatus_tooltip()}
-            aria-label={currentStatusMessage
-              ? m.workspace_sidebarHeader_editStatus_ariaLabel()
-              : m.workspace_sidebarHeader_addStatus_ariaLabel()}
-            disabled={!$workspace}
-          >
-            {currentStatusMessage}
-          </button>
-        {/if}
+        <div class="relative flex">
+          {#if isEditingStatusMessage}
+            <textarea
+              bind:this={statusInputRef}
+              bind:value={editedStatusMessage}
+              onblur={saveStatusMessage}
+              onkeydown={handleStatusMessageKeydown}
+              disabled={isSavingStatusMessage}
+              maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
+              rows={1}
+              aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
+              class="edit-input type-body relative z-10 min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-foreground outline-none leading-snug
+                     focus:ring-none! focus:outline-none! transition-all duration-150 disabled:opacity-50"
+              style="field-sizing: content;"
+              placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}></textarea>
+          {:else if $workspace && currentStatusMessage}
+            <button
+              class="type-body relative z-10 w-full cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
+                     transition-all duration-150 leading-snug hover:text-foreground
+                     focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
+                     disabled:cursor-default disabled:opacity-50"
+              onclick={startEditingStatusMessage}
+              title={currentStatusMessage
+                ? m.workspace_sidebarHeader_editStatus_tooltip()
+                : m.workspace_sidebarHeader_addStatus_tooltip()}
+              aria-label={currentStatusMessage
+                ? m.workspace_sidebarHeader_editStatus_ariaLabel()
+                : m.workspace_sidebarHeader_addStatus_ariaLabel()}
+              disabled={!$workspace}
+            >
+              {currentStatusMessage}
+            </button>
+          {/if}
+          <span
+            aria-hidden="true"
+            data-workspace-status-edit-decoration
+            class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingStatusMessage
+              ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
+              : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+          ></span>
+        </div>
       </div>
     {/if}
 
@@ -1313,6 +1252,7 @@
           </span>
         {/if}
       </div>
+
       <button
         class="flex items-center gap-2 w-full text-left text-sm text-subtle transition-colors py-1 rounded cursor-pointer"
         onclick={() => onOpenNote?.(currentDisplayReadyTask.id as string)}
@@ -1333,3 +1273,25 @@
   {/if} -->
   </div>
 </div>
+
+{#if drivingClientView}
+  <SetPrimaryClientConfirmDialog
+    open={confirmingSetPrimaryClient}
+    currentHost={drivingClientView.hostName}
+    onConfirm={handleConfirmSetPrimaryClient}
+    onCancel={() => (confirmingSetPrimaryClient = false)}
+  />
+{/if}
+
+<style>
+  .edit-input::selection {
+    background: hsl(var(--ring) / 0.3);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-workspace-title-edit-decoration],
+    [data-workspace-status-edit-decoration] {
+      transition-duration: 0s !important;
+    }
+  }
+</style>

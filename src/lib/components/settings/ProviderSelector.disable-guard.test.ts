@@ -46,6 +46,8 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 async function buildState(fileSpecialists: object[]) {
+  const { initialState: setupInitialState } =
+    await import('$store/renderer/slices/antigravity-setup/antigravity-setup-slice');
   const { initialState: specialistsInitialState } =
     await import('$store/renderer/slices/specialists/specialists-slice');
   const { initialState: modelInitialState } =
@@ -59,6 +61,7 @@ async function buildState(fileSpecialists: object[]) {
   } = await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
   const { MOCK_PROVIDER_CATALOG } = await import('../../../test/fixtures/provider-catalog.fixture');
   return {
+    antigravitySetup: { ...setupInitialState },
     providerCatalog: providerCatalogReducer(
       providerCatalogInitialState,
       providerCatalogLoaded(MOCK_PROVIDER_CATALOG),

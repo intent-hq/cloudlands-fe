@@ -21,6 +21,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
   backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: 'sub-1' })),
   backendUnsubscribe: vi.fn(() => Promise.resolve()),
   onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 // Mock the AppClient seam for seeder tests and IPC bridges
@@ -45,9 +46,23 @@ import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import type { Workspace } from '$shared/types';
 import { seedMockStore } from '../mock-bootstrap';
 import { appClient } from '$lib/client';
+import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 
 const mockedRequest = vi.mocked(backendRequest);
 const mockedAppClient = vi.mocked(appClient);
+
+function reposSetting(value: unknown) {
+  return {
+    value,
+    definition: {
+      path: 'repos.known',
+      label: 'Known repositories',
+      description: '',
+      category: 'repos',
+      type: 'object',
+    },
+  };
+}
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -70,6 +85,7 @@ describe('workspaces-seeder legacy IPC bridges', () => {
   });
 
   afterEach(() => {
+    __resetSettingsReadCacheForTests();
     vi.clearAllMocks();
   });
 
@@ -131,7 +147,7 @@ describe('workspaces-seeder legacy IPC bridges', () => {
             ],
           };
         }
-        if (method === 'settings.get') return { value: [] };
+        if (method === 'settings.get') return reposSetting([]);
         return undefined;
       });
 
@@ -181,18 +197,16 @@ describe('workspaces-seeder legacy IPC bridges', () => {
           };
         }
         if (method === 'settings.get') {
-          return {
-            value: [
-              {
-                path: 'acme/widget',
-                name: 'widget',
-                owner: 'acme',
-                githubUrl: 'https://github.com/acme/widget',
-                addedAt: '2026-01-03T00:00:00Z',
-                lastUsedAt: '2026-01-06T00:00:00Z',
-              },
-            ],
-          };
+          return reposSetting([
+            {
+              path: 'acme/widget',
+              name: 'widget',
+              owner: 'acme',
+              githubUrl: 'https://github.com/acme/widget',
+              addedAt: '2026-01-03T00:00:00Z',
+              lastUsedAt: '2026-01-06T00:00:00Z',
+            },
+          ]);
         }
         return undefined;
       });
@@ -240,7 +254,7 @@ describe('workspaces-seeder legacy IPC bridges', () => {
             ],
           };
         }
-        if (method === 'settings.get') return { value: [] };
+        if (method === 'settings.get') return reposSetting([]);
         return undefined;
       });
 
@@ -267,7 +281,7 @@ describe('workspaces-seeder legacy IPC bridges', () => {
   describe('workspace:add-recent-repository → repos.known setting', () => {
     it('upserts a path-less GitHub pick into repos.known via settings.update', async () => {
       mockedRequest.mockImplementation(async (method) => {
-        if (method === 'settings.get') return { value: [] };
+        if (method === 'settings.get') return reposSetting([]);
         return undefined;
       });
 
@@ -299,18 +313,16 @@ describe('workspaces-seeder legacy IPC bridges', () => {
     it('bumps lastUsedAt on re-add instead of duplicating the entry', async () => {
       mockedRequest.mockImplementation(async (method) => {
         if (method === 'settings.get') {
-          return {
-            value: [
-              {
-                path: 'acme/widget',
-                name: 'widget',
-                owner: 'acme',
-                githubUrl: 'https://github.com/acme/widget',
-                addedAt: '2026-01-01T00:00:00Z',
-                lastUsedAt: '2026-01-01T00:00:00Z',
-              },
-            ],
-          };
+          return reposSetting([
+            {
+              path: 'acme/widget',
+              name: 'widget',
+              owner: 'acme',
+              githubUrl: 'https://github.com/acme/widget',
+              addedAt: '2026-01-01T00:00:00Z',
+              lastUsedAt: '2026-01-01T00:00:00Z',
+            },
+          ]);
         }
         return undefined;
       });
@@ -347,7 +359,7 @@ describe('workspaces-seeder legacy IPC bridges', () => {
     it('forwards the path and wraps { removed } in {success, data}', async () => {
       // PROTOCOL §5.11: repo.remove { path } → { removed: bool }.
       mockedRequest.mockImplementation(async (method) => {
-        if (method === 'settings.get') return { value: [] };
+        if (method === 'settings.get') return reposSetting([]);
         if (method === 'repo.remove') return { removed: true };
         return undefined;
       });
@@ -366,17 +378,15 @@ describe('workspaces-seeder legacy IPC bridges', () => {
     it('removes a path-less GitHub pick from repos.known (registry no-op)', async () => {
       mockedRequest.mockImplementation(async (method) => {
         if (method === 'settings.get') {
-          return {
-            value: [
-              {
-                path: 'acme/widget',
-                name: 'widget',
-                githubUrl: 'https://github.com/acme/widget',
-                addedAt: 't',
-                lastUsedAt: 't',
-              },
-            ],
-          };
+          return reposSetting([
+            {
+              path: 'acme/widget',
+              name: 'widget',
+              githubUrl: 'https://github.com/acme/widget',
+              addedAt: 't',
+              lastUsedAt: 't',
+            },
+          ]);
         }
         if (method === 'repo.remove') return { removed: false };
         return undefined;
@@ -396,7 +406,7 @@ describe('workspaces-seeder legacy IPC bridges', () => {
 
     it('passes through removed:false for an unregistered path (daemon no-op)', async () => {
       mockedRequest.mockImplementation(async (method) => {
-        if (method === 'settings.get') return { value: [] };
+        if (method === 'settings.get') return reposSetting([]);
         if (method === 'repo.remove') return { removed: false };
         return undefined;
       });
@@ -411,7 +421,7 @@ describe('workspaces-seeder legacy IPC bridges', () => {
 
     it('folds a daemon failure into {success:false, error} for the loud toast', async () => {
       mockedRequest.mockImplementation(async (method) => {
-        if (method === 'settings.get') return { value: [] };
+        if (method === 'settings.get') return reposSetting([]);
         throw new Error('daemon unreachable');
       });
 
@@ -427,17 +437,15 @@ describe('workspaces-seeder legacy IPC bridges', () => {
       mockedRequest.mockImplementation(async (method) => {
         if (method === 'repo.remove') throw new Error('daemon hiccup');
         if (method === 'settings.get') {
-          return {
-            value: [
-              {
-                path: 'acme/widget',
-                name: 'widget',
-                githubUrl: 'https://github.com/acme/widget',
-                addedAt: 't',
-                lastUsedAt: 't',
-              },
-            ],
-          };
+          return reposSetting([
+            {
+              path: 'acme/widget',
+              name: 'widget',
+              githubUrl: 'https://github.com/acme/widget',
+              addedAt: 't',
+              lastUsedAt: 't',
+            },
+          ]);
         }
         return undefined;
       });

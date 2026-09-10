@@ -7,6 +7,20 @@ import type {
   WorkspaceSessionPhase,
 } from './workspace-lifecycle-types';
 
+export type WorkspaceHydrationBranch =
+  | 'tasks'
+  | 'events'
+  | 'scripts'
+  | 'skills'
+  | 'prStatus'
+  | 'changes'
+  | 'agents'
+  | 'terminals'
+  | 'fileExplorer'
+  | 'context'
+  | 'taskAgentLinks'
+  | 'notes';
+
 export const initialState: WorkspaceLifecycleState = {
   sessionPhaseByWorkspaceId: {},
   loadByWorkspaceId: {},
@@ -69,6 +83,10 @@ export const workspaceDeleted = createAction<[wsId: string, agentIds: string[]]>
  * loading UI on reconnect.
  */
 export const backendReconnected = createAction('workspace-lifecycle/backendReconnected');
+
+export const workspaceHydrationBranchRequested = createAction<
+  [workspaceId: string, branch: WorkspaceHydrationBranch, generation: number, force: boolean]
+>('workspaceLifecycle/hydrationBranchRequested');
 
 // Match cross-slice invalidation actions by type without importing workspace-slice,
 // which already imports workspaceDeleted and would create a runtime cycle.

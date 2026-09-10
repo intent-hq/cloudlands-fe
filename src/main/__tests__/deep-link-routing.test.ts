@@ -53,6 +53,7 @@ vi.mock('../../features/deeplink/main/pair-deep-link', () => ({
 
 vi.mock('../utils/resolve-app-title', () => ({
   resolveAppTitle: () => 'Intent',
+  registerWindowTitleListener: vi.fn(),
 }));
 
 vi.mock('../utils/resolve-app-icon', () => ({

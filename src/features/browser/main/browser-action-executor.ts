@@ -332,6 +332,30 @@ function workspaceNotVisibleWarning(workspaceId: string | undefined): { warning?
 }
 
 /**
+ * Whether `tabId` is displayed in the saved layout: visible AND its panel's
+ * active tab. A visible-but-inactive tab is mounted in a panel yet renders
+ * nothing, so a screenshot of it comes back empty. This is a layout fact, not
+ * a paint guarantee: a displayed tab still paints only while its workspace is
+ * in view and its panel is not hidden (e.g. by zoom). Read from the layout, never inferred
+ * from the request; `undefined` when the renderer could not confirm (stale
+ * or unavailable tab list, unknown tab) so the caller omits the field rather
+ * than guessing.
+ */
+async function readTabDisplayed(
+  workspaceId: string | undefined,
+  tabId: string,
+): Promise<boolean | undefined> {
+  try {
+    const { tabs, stale } = await embeddedBrowserCdp.listAllTabs(workspaceId);
+    const tab = tabs.find((t) => t.tabId === tabId);
+    if (stale || !tab) return undefined;
+    return tab.hidden !== true && tab.active === true;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Ensure a capture op's target tab has a mounted, CDP-addressable webview,
  * mounting it on demand when possible (intent-hq/monorepo#4103).
  *
@@ -663,7 +687,7 @@ async function executeAction(
         const ownerNames = scoped.some((t) => t.ownerAgentId)
           ? await resolveAgentDisplayNames(workspaceId, ownerNameCache)
           : new Map<string, string>();
-        const result = scoped.map(({ emulatedSize, viewport, hidden, ...tab }) => {
+        const result = scoped.map(({ emulatedSize, viewport, hidden, active, ...tab }) => {
           const ownerAgentId = tab.ownerAgentId ?? null;
           const ownerAgentName = ownerAgentId ? ownerNames.get(ownerAgentId) : undefined;
           const effectiveSize = embeddedBrowserCdp.getTabEffectiveViewportSize(tab.tabId);
@@ -683,6 +707,13 @@ async function executeAction(
             // unowned (user) tabs are always visible.
             visibility:
               ownerAgentId && hidden === true ? ('hidden' as const) : ('visible' as const),
+            // Layout fact, not a paint guarantee: visible AND its panel's
+            // active tab. A visible-but-inactive tab is mounted in a panel
+            // yet renders nothing, so screenshots of it come back empty —
+            // showTab activates it without stealing focus. A displayed tab
+            // still paints only while its workspace is in view and its
+            // panel is not hidden by zoom.
+            displayed: !(ownerAgentId && hidden === true) && active === true,
           };
         });
         if (stale) {
@@ -736,8 +767,9 @@ async function executeAction(
       }
 
       case 'showTab': {
-        // Reveal a hidden agent-owned tab (monorepo#3045). Checks run
-        // existence-first against a fresh tab list so an unknown tabId
+        // Reveal a hidden agent-owned tab, or activate one that is already in
+        // the layout but not its panel's active tab (monorepo#3045). Checks
+        // run existence-first against a fresh tab list so an unknown tabId
         // reports "not found" (never a misleading not-owner error), then
         // owner-only enforcement for agent callers.
         const { tabs, stale } = await embeddedBrowserCdp.listAllTabs(workspaceId);
@@ -761,15 +793,9 @@ async function executeAction(
           );
         }
         const focus = action.focus === true;
-        if (target.hidden !== true && !focus) {
-          // Idempotent no-op: the tab is already visible and no activation
-          // was requested.
-          return {
-            action: 'showTab',
-            success: true,
-            result: { tabId: action.tabId, visibility: 'visible', focused: false },
-          };
-        }
+        // Always forwarded: the renderer activates a visible-but-inactive
+        // tab in place (no panel-focus change) and treats an already-active
+        // tab as an idempotent no-op.
         await embeddedBrowserCdp.showTab(action.tabId, workspaceId, focus);
         return {
           action: 'showTab',
@@ -968,7 +994,13 @@ async function executeAction(
             );
             // No focus: the reused tab is already mounted (the finder only
             // returns mounted tabs — hidden ones offscreen), so it stays
-            // addressable without any focus/reveal.
+            // addressable without any focus/reveal. A visible: true request
+            // reports the reused tab's real display state, since the reuse
+            // may have handed back a hidden or inactive tab.
+            const reusedDisplayed =
+              action.visible === true
+                ? await readTabDisplayed(workspaceId, duplicateTabId)
+                : undefined;
             return {
               action: 'openTab',
               success: true,
@@ -977,6 +1009,7 @@ async function executeAction(
                 focused: false,
                 tabId: duplicateTabId,
                 url: finalRewrite.url,
+                ...(reusedDisplayed !== undefined ? { displayed: reusedDisplayed } : {}),
                 ...echo,
               },
             };
@@ -1017,6 +1050,10 @@ async function executeAction(
               // Like the exact-URL reuse above: a pure reuse with no
               // visibility side effect — never focus, even on visible: true
               // (reveal is showTab-only, monorepo#3045).
+              const reusedDisplayed =
+                action.visible === true
+                  ? await readTabDisplayed(workspaceId, requestedTabId)
+                  : undefined;
               return {
                 action: 'openTab',
                 success: true,
@@ -1025,6 +1062,7 @@ async function executeAction(
                   focused: false,
                   tabId: requestedTabId,
                   url: finalRewrite.url,
+                  ...(reusedDisplayed !== undefined ? { displayed: reusedDisplayed } : {}),
                   ...echo,
                 },
               };
@@ -1188,6 +1226,14 @@ async function executeAction(
             };
           }
         }
+        // A visible open reports whether the tab is displayed in the layout
+        // (its panel's active tab) so the caller knows up front whether it
+        // sits behind a sibling; painting additionally needs the workspace
+        // in view and the panel not hidden by zoom.
+        const displayed =
+          result.success && effectiveTabId && visible === true
+            ? await readTabDisplayed(workspaceId, effectiveTabId)
+            : undefined;
         return {
           action: 'openTab',
           success: result.success,
@@ -1195,6 +1241,7 @@ async function executeAction(
             ...result,
             ...(effectiveTabId ? { tabId: effectiveTabId } : {}),
             ...(result.success && replaceTargetTabId ? { replaced: true } : {}),
+            ...(displayed !== undefined ? { displayed } : {}),
             ...echo,
           },
           // Surface the failure message (e.g. "workspace not open in any

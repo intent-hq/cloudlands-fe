@@ -138,17 +138,18 @@
 
   // Track the last processed timestamp to detect new navigation requests
   let lastJumpTimestamp = $state<number | undefined>(undefined);
+  let markdownPreview = $state(true); // default to rich text for markdown files
 
   // Extract line from tab.data when tab changes
   // Uses jumpTimestamp to detect changes even when navigating to the same line
   $effect(() => {
     const line = tab.data?.line as number | undefined;
     const timestamp = tab.data?.jumpTimestamp as number | undefined;
-    // Only process if this is a new navigation request (new timestamp)
-    if (line && timestamp && timestamp !== lastJumpTimestamp) {
-      lastJumpTimestamp = timestamp;
-      jumpToLine = { line };
-    }
+    if (!line || (timestamp !== undefined && timestamp === lastJumpTimestamp)) return;
+
+    lastJumpTimestamp = timestamp;
+    jumpToLine = { line };
+    markdownPreview = false;
   });
 
   $effect(() => {
@@ -229,7 +230,6 @@
   );
   const fileLanguage = $derived(tab.filePath ? getLanguageFromPath(tab.filePath) : 'plaintext');
   const isMarkdownFile = $derived(fileLanguage === 'markdown');
-  let markdownPreview = $state(true); // default to rich text for markdown files
 
   // Media cannot use the UTF-8 file.read fallback. Confirm the exact contained
   // path first, then use the existing bounded ignored-artifact resolver. Hold

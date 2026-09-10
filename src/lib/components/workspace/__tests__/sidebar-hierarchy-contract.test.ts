@@ -60,7 +60,10 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(metadata).toBeLessThan(progressSection);
     expect(progressSection).toBeLessThan(status);
     expect(fullMode).toContain('class="flex w-full flex-col" data-workspace-title-section');
-    expect(fullMode).toContain('type-caption mb-4 flex h-5 w-full min-w-0 items-center gap-2.5');
+    expect(fullMode).toContain(
+      'class="mb-4 flex w-full flex-col gap-1" data-sidebar-workspace-metadata',
+    );
+    expect(fullMode).toContain('type-caption flex h-5 w-full min-w-0 items-center gap-2.5');
     expect(fullMode).toContain('class="flex w-full flex-col pb-1"');
     expect(fullMode).toContain('flex w-full flex-col gap-3.5 pb-2 text-left');
     expect(fullMode).not.toContain('pb-1 pl-1');

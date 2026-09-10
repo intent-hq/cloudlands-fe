@@ -35,10 +35,13 @@ vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import type { BulkOperationProposal, WorkspaceCreateProposal } from '$shared/types/proposal';
+import type { Specialist } from '$lib/constants/specialists';
+import { initialState as githubAuthInitialState } from '../../github-auth/github-auth-slice';
 import {
   initialState as proposalLifecycleInitialState,
   proposalLifecycleReducer,
 } from '../../proposal-lifecycle/proposal-lifecycle-slice';
+import { initialState as specialistsInitialState } from '../../specialists/specialists-slice';
 import {
   initialState as workspaceInitialState,
   replaceWorkspaceList,
@@ -134,13 +137,14 @@ function latestUndo(): (() => void) | undefined {
   return options?.action?.onClick;
 }
 
-function harness(seed: Workspace[]) {
+function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
   const channel = stdChannel();
   let workspaceState = workspaceInitialState;
   for (const item of seed)
     workspaceState = workspaceReducer(workspaceState, setWorkspaceEntity(item));
   let operations = operationsInitialState;
   let proposalLifecycle = proposalLifecycleInitialState;
+  const specialists = { ...specialistsInitialState, bundledSpecialists };
   const dispatch = vi.fn((action) => {
     workspaceState = workspaceReducer(workspaceState, action);
     operations = workspaceOperationsReducer(operations, action);
@@ -155,6 +159,8 @@ function harness(seed: Workspace[]) {
         workspace: workspaceState,
         workspaceOperations: operations,
         proposalLifecycle,
+        specialists,
+        githubAuth: githubAuthInitialState,
       }),
     },
     workspaceOperationsSaga,
@@ -847,6 +853,50 @@ describe('workspaceOperationsSaga', () => {
       errorCode: 'base-ref-unresolvable',
     });
     expect(mocks.toast.error).toHaveBeenCalledWith('cannot resolve base ref');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('names the initial agent from the resolved specialist, or "Agent" for General', async () => {
+    mocks.create.mockResolvedValue({ ok: true, data: { workspace: workspace('ws-named') } });
+    const coordinator = {
+      id: 'coordinator',
+      name: 'Coordinator',
+      description: 'Plans and delegates',
+    } as Specialist;
+    const run = harness([], [coordinator]);
+    const unnamed = (applyToolCallId: string, specialist?: string): WorkspaceCreateProposal => ({
+      kind: 'workspace-create',
+      payload: {
+        operation: 'workspace.create',
+        params: {
+          title: 'New space',
+          repositoryPath: '/repo',
+          baseRef: 'main',
+          initialAgent: { prompt: 'Go', ...(specialist ? { specialist } : {}) },
+        },
+      },
+      preview: { title: 'Create workspace' },
+      applyToolCallId,
+    });
+
+    run.send(applyWorkspaceProposal({ proposal: unnamed('general-create') }));
+    run.send(applyWorkspaceProposal({ proposal: unnamed('specialist-create', 'coordinator') }));
+    run.send(
+      applyWorkspaceProposal({
+        proposal: unnamed('edited-general-create', 'coordinator'),
+        editedFields: { specialist: null },
+      }),
+    );
+    run.send(applyWorkspaceProposal({ proposal: unnamed('unknown-create', 'not-a-specialist') }));
+    await settle();
+
+    expect(mocks.create.mock.calls.map(([request]) => request.initialAgent?.name)).toEqual([
+      'Agent',
+      'Coordinator',
+      'Agent',
+      'Agent',
+    ]);
     run.task.cancel();
     await run.task.toPromise();
   });
