@@ -41,6 +41,7 @@ describe('static component catalog', () => {
       ...canonicalComponentManifest.map(({ id }) => id),
       'modals',
       'popovers',
+      'rows',
     ].sort();
     expect(Object.keys(catalogRenderers).sort()).toEqual(rendererIds);
 
@@ -62,6 +63,7 @@ describe('static component catalog', () => {
       'chat-polish',
       'modals',
       'proposal-card',
+      'rows',
     ]);
     expect(
       buildCatalogGroups([

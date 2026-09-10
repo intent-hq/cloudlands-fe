@@ -14,6 +14,7 @@ import SettingsCatalogPreview from './renderers/SettingsCatalogPreview.svelte';
 import ToastCatalogPreview from './renderers/ToastCatalogPreview.svelte';
 import ModalCatalogPreview from './renderers/ModalCatalogPreview.svelte';
 import PopoversCatalogPreview from './renderers/PopoversCatalogPreview.svelte';
+import RowsCatalogPreview from './renderers/RowsCatalogPreview.svelte';
 
 export const catalogRendererIds = [
   'accordion',
@@ -42,6 +43,7 @@ export const catalogRendererIds = [
   'modals',
   'proximity-highlight',
   'popovers',
+  'rows',
   'radio-group',
   'scroll-area',
   'searchable-select',
@@ -107,6 +109,7 @@ export const catalogRenderers = {
   'message-composer': MessageComposerCatalogPreview,
   modals: ModalCatalogPreview,
   popovers: PopoversCatalogPreview,
+  rows: RowsCatalogPreview,
   'proximity-highlight': ProximityHighlightCatalogPreview,
   'radio-group': ChoiceGroupCatalogPreview,
   'scroll-area': NavigationHelpCatalogPreview,

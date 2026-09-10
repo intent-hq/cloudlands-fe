@@ -11882,3 +11882,433 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                   "light, dark"",
 }
 `;
+
+exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-family-matrix' 1`] = `
+{
+  "declaredStates": [
+    "default",
+    "hover",
+    "focus-visible",
+    "selected",
+    "active-current",
+    "disabled",
+    "busy-loading",
+    "unread-attention",
+    "trailing-actions",
+    "dragging-placeholder",
+    "long-content",
+    "compact-density",
+    "zoom-200",
+    "baseline-grid",
+  ],
+  "dom": "<body>
+  <div>
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
+      <header class="border-b border-border entry-header svelte-<scope>">
+        <div class="min-w-0">
+          <div class="flex flex-wrap gap-2 items-baseline">
+            <p class="font-medium text-muted-foreground text-xs tracking-wide uppercase">
+              "Component focus"
+            <h1 class="font-medium mt-1 text-3xl tracking-tight">
+              "Rows and collections"
+            <span class="bg-muted border border-border px-2 py-0.5 rounded-full text-muted-foreground text-xs">
+              "product"
+          <p class="leading-relaxed max-w-3xl mt-1 text-muted-foreground text-xs">
+            "Static row-family matrices for comparing collection, sidebar, settings, table, menu, and tab-strip geometry."
+        <div class="flex gap-2 items-center shrink-0">
+          <details class="entry-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Source"
+            <div class="inspector-popover svelte-<scope>">
+              <p class="text-foreground">
+                "Canonical source"
+              <code class="block break-all mt-1">
+                "src/lib/component-catalog/renderers/RowsCatalogPreview.svelte"
+      <div class="fixture-grid svelte-<scope>">
+        <article class="fixture-card svelte-<scope>" data-catalog-fixture="row-family-matrix">
+          <div class="fixture-heading svelte-<scope>">
+            <h2 class="font-medium text-sm">
+              "List rows and collections"
+            <span class="bg-muted border border-border px-2 py-0.5 rounded-full text-muted-foreground text-xs">
+              "both"
+          <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="row-family-matrix" data-catalog-preview="rows">
+            <div class="rows-matrix svelte-<scope>" data-catalog-rendered-state="default hover focus-visible selected active-current disabled busy-loading unread-attention trailing-actions dragging-placeholder long-content compact-density zoom-200 baseline-grid" data-catalog-renderer-fixture="row-family-matrix">
+              <section aria-labelledby="rows-list-row" class="row-family svelte-<scope>">
+                <h3 class="family-title svelte-<scope>" id="rows-list-row">
+                  "ListRow"
+                <div class="row-cell svelte-<scope>" data-row-preview="list-row-compositions">
+                  <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
+                    <div class="flex items-center justify-center shrink-0">
+                      <svg aria-hidden="true" class="size-4 text-muted-foreground" data-icon="folder" data-weight="bold" role="img">
+                        <rect>
+                        <path>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex gap-2 items-baseline min-w-0">
+                        <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                          "Workspace sources"
+                        <div class="shrink-0 text-muted-foreground text-xs">
+                          "2 files"
+                      <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                        "Leading icon and secondary text"
+                    <div class="flex gap-1 items-center shrink-0">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-success duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-success-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
+                        "Ready"
+                  <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
+                    <div class="flex items-center justify-center shrink-0">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-primary duration-spring-fast ease-spring-fast font-normal gap-1 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden p-1 rounded-full shrink-0 size-6 text-primary-foreground transition-[background-color,color,box-shadow,filter] type-caption whitespace-nowrap" data-slot="badge">
+                        <svg aria-hidden="true" class="size-3" data-icon="robot" data-weight="bold" role="img">
+                          <rect>
+                          <path>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex gap-2 items-baseline min-w-0">
+                        <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                          "Avatar row"
+                    <div class="flex gap-1 items-center shrink-0">
+                      <div class="duration-spring-fast ease-spring-fast flex gap-1 items-center motion-reduce:transition-none transition-opacity" data-revealed="true" data-slot="row-actions">
+                        <div class="flex gap-1 items-center" data-slot="action-bar">
+                          <span class="inline-flex" id="bits-<id>" tabindex="-1">
+                            <div>
+                              <button aria-label="More details" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-action-id="more" data-delay-duration="200" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
+                                <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    <svg aria-hidden="true" data-icon="ellipsis" data-weight="bold" role="img">
+                                      <rect>
+                                      <path>
+                          <div>
+                            <button aria-expanded="false" aria-haspopup="menu" aria-label="More avatar-row actions" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-dropdown-menu-trigger="" data-slot="menu-trigger" data-state="closed" id="bits-<id>" type="button">
+                              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                  <span aria-hidden="true">
+                                    "•••"
+                <div class="row-cell svelte-<scope>" data-row-preview="list-row-selection-states">
+                  <div aria-label="Collection row states" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
+                    <div class="min-w-0 relative">
+                      <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                        <div class="absolute bg-selected" tokens=["--radius-row"]>
+                      <div>
+                        <div aria-selected="false" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+                          <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                                  "Default row"
+                              <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                                "Supporting text"
+                        <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
+                          <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                                  "Selected row"
+                              <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                                "Merged selection surface"
+                        <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
+                          <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                                  "A deliberately long collection row title that truncates before its actions"
+                              <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                                "Secondary text remains readable."
+                <div class="row-cell svelte-<scope>" data-row-preview="list-row-loading-disabled">
+                  <div aria-label="Loading" class="flex flex-col gap-(--state-list-row-gap) px-(--state-list-inline-inset)" data-density="default" data-recipe="list" data-slot="loading-state" role="status">
+                    <div class="bg-surface-2 h-(--state-list-row-height) rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton" tokens=["--surface-4"]>
+                    <div class="bg-surface-2 h-(--state-list-row-height) rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton" tokens=["--surface-4"]>
+                    <div class="bg-surface-2 h-(--state-list-row-height) rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton" tokens=["--surface-4"]>
+                  <div aria-disabled="true" class="flex gap-3 items-center min-h-12 min-w-0 opacity-50 px-3 py-2.5" data-density="default" data-slot="list-row">
+                    <div class="flex-1 min-w-0">
+                      <div class="flex gap-2 items-baseline min-w-0">
+                        <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                          "Disabled row"
+                    <div class="flex gap-1 items-center shrink-0">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-primary duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
+                        "Loading"
+                <div class="row-cell svelte-<scope>" data-row-preview="list-row-compact">
+                  <div class="flex gap-3 items-center min-h-9 min-w-0 px-3 py-1.5" data-density="compact" data-slot="list-row">
+                    <div class="flex-1 min-w-0">
+                      <div class="flex gap-2 items-baseline min-w-0">
+                        <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                          "Compact density"
+                    <div class="flex gap-1 items-center shrink-0">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-primary duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
+                        "28 px target"
+                <div class="row-cell svelte-<scope> zoom-preview" data-row-preview="list-row-zoom-200">
+                  <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
+                    <div class="flex-1 min-w-0">
+                      <div class="flex gap-2 items-baseline min-w-0">
+                        <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                          "200% zoom"
+                      <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                        "Content remains contained"
+              <section aria-labelledby="rows-sectioned-list" class="row-family svelte-<scope>">
+                <h3 class="family-title svelte-<scope>" id="rows-sectioned-list">
+                  "SectionedList"
+                <div class="row-cell svelte-<scope>" data-row-preview="sectioned-list">
+                  <div class="min-w-0" data-slot="sectioned-list">
+                    <section class="min-w-0">
+                      <div class="backdrop-blur-sm bg-background/95 font-medium px-3 py-1.5 sticky text-muted-foreground text-xs top-0 z-20">
+                        "Recent work"
+                      <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
+                        <div class="flex-1 min-w-0">
+                          <div class="flex gap-2 items-baseline min-w-0">
+                            <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                              "Default row"
+                          <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                            "Supporting text"
+                      <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
+                        <div class="flex-1 min-w-0">
+                          <div class="flex gap-2 items-baseline min-w-0">
+                            <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                              "Selected row"
+                          <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                            "Merged selection surface"
+              <section aria-labelledby="rows-data-list" class="row-family svelte-<scope>">
+                <h3 class="family-title svelte-<scope>" id="rows-data-list">
+                  "DataList"
+                <div class="row-cell svelte-<scope>" data-row-preview="data-list">
+                  <dl class="divide-border divide-y min-w-0" data-slot="data-list">
+                    <div class="gap-4 grid grid-cols-[minmax(7rem,1fr)_minmax(0,2fr)] min-w-0 py-2.5">
+                      <dt class="font-medium text-muted-foreground text-sm">
+                        "Repository"
+                      <dd class="min-w-0 text-foreground text-sm">
+                        <span class="break-words">
+                          "intent-hq/cloudlands-fe"
+                    <div class="gap-4 grid grid-cols-[minmax(7rem,1fr)_minmax(0,2fr)] min-w-0 py-2.5">
+                      <dt class="font-medium text-muted-foreground text-sm">
+                        "Branch"
+                      <dd class="min-w-0 text-foreground text-sm">
+                        <span class="break-words">
+                          "system-design"
+                        <p class="mt-0.5 text-muted-foreground text-xs">
+                          "Local preview branch"
+              <section aria-labelledby="rows-table" class="row-family svelte-<scope>">
+                <h3 class="family-title svelte-<scope>" id="rows-table">
+                  "Table"
+                <div class="row-cell svelte-<scope>" data-row-preview="table-header-body-selected">
+                  <div class="overflow-x-auto relative rounded-(--radius-large) w-full" data-slot="table-container">
+                    <table aria-label="Workspace row comparison" class="border-collapse caption-bottom type-caption w-full" data-slot="table">
+                      <thead class="[&_tr]:border-b" data-slot="table-header">
+                        <tr class="border-b border-border data-[state=selected]:bg-selected duration-(--motion-fast) focus-within:bg-hover h-8 hover:bg-hover motion-reduce:transition-none transition-colors" data-slot="table-row">
+                          <th class="align-middle font-medium h-8 px-2 text-left text-muted-foreground" data-slot="table-head">
+                            "Workspace"
+                          <th class="align-middle font-medium h-8 px-2 text-left text-muted-foreground" data-slot="table-head">
+                            "Status"
+                      <tbody class="[&_tr:last-child]:border-0" data-slot="table-body">
+                        <tr class="border-b border-border data-[state=selected]:bg-selected duration-(--motion-fast) focus-within:bg-hover h-8 hover:bg-hover motion-reduce:transition-none transition-colors" data-slot="table-row">
+                          <td class="align-middle h-8 px-2 py-1.5 tabular-nums" data-slot="table-cell">
+                            "Default row"
+                          <td class="align-middle h-8 px-2 py-1.5 tabular-nums" data-slot="table-cell">
+                            "Idle"
+                        <tr class="border-b border-border data-[state=selected]:bg-selected duration-(--motion-fast) focus-within:bg-hover h-8 hover:bg-hover motion-reduce:transition-none transition-colors" data-slot="table-row" data-state="selected">
+                          <td class="align-middle h-8 px-2 py-1.5 tabular-nums" data-slot="table-cell">
+                            "Selected row"
+                          <td class="align-middle h-8 px-2 py-1.5 tabular-nums" data-slot="table-cell">
+                            "Active"
+              <section aria-labelledby="rows-sidebar" class="row-family svelte-<scope>">
+                <h3 class="family-title svelte-<scope>" id="rows-sidebar">
+                  "Sidebar rows"
+                <div class="bg-sidebar row-cell svelte-<scope>" data-row-preview="workspace-sidebar-rows">
+                  <div class="flex group/sidebar-wrapper has-data-[variant=inset]:bg-sidebar min-h-0! min-h-svh w-full" data-slot="sidebar-wrapper">
+                    <ul class="flex flex-col gap-0.5 min-w-0 p-1 relative select-none w-full" data-sidebar="menu" data-slot="sidebar-menu">
+                      <div aria-hidden="true" class="absolute bg-active left-0 pointer-events-none rounded-md top-0 z-0" data-sidebar="menu-active-highlight">
+                      <li class="group/menu-item relative z-10" data-sidebar="menu-item" data-slot="sidebar-menu-item">
+                        <button aria-current="page" aria-label="Active catalog workspace" class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center min-h-(--control-height-medium) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="true" data-proximity-active="false" data-sidebar-index="0" data-sidebar="menu-button" data-size="default" data-slot="sidebar-menu-button" data-status="active" tabindex="0">
+                          <span aria-hidden="true" class="flex items-center justify-center shrink-0 size-4">
+                            <span class="bg-current duration-spring-fast ease-spring-fast motion-reduce:transition-none rounded-full size-2 svelte-<scope> text-foreground/60 transition-colors">
+                          <span class="flex-1 inline-grid min-w-0 text-left">
+                            <span aria-hidden="true" class="col-start-1 invisible row-start-1 truncate">
+                              "Active catalog workspace"
+                            <span class="col-start-1 duration-spring-fast ease-spring-fast motion-reduce:transition-none row-start-1 svelte-<scope> text-foreground transition-[color,font-variation-settings] truncate">
+                              "Active catalog workspace"
+                      <li class="group/menu-item relative z-10" data-sidebar="menu-item" data-slot="sidebar-menu-item">
+                        <button aria-label="A very long unread workspace name that must truncate" class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center min-h-(--control-height-medium) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="false" data-proximity-active="false" data-sidebar-index="1" data-sidebar="menu-button" data-size="default" data-slot="sidebar-menu-button" data-status="unread" tabindex="-1">
+                          <span aria-hidden="true" class="flex items-center justify-center shrink-0 size-4">
+                            <span class="bg-current duration-spring-fast ease-spring-fast motion-reduce:transition-none rounded-full size-2 svelte-<scope> text-muted-foreground/50 transition-colors">
+                          <span class="flex-1 inline-grid min-w-0 text-left">
+                            <span aria-hidden="true" class="col-start-1 invisible row-start-1 truncate">
+                              "A very long unread workspace name that must truncate"
+                            <span class="col-start-1 duration-spring-fast ease-spring-fast motion-reduce:transition-none row-start-1 svelte-<scope> text-muted-foreground transition-[color,font-variation-settings] truncate">
+                              "A very long unread workspace name that must truncate"
+                          <span class="sr-only">
+                            ", UNREAD"
+                        <div class="absolute duration-spring-fast ease-spring-fast flex group-data-[collapsible=icon]:hidden h-5 items-center justify-center min-w-5 motion-reduce:transition-none pointer-events-none px-1 right-2 select-none tabular-nums text-muted-foreground top-1.5 transition-[color,font-variation-settings] type-caption z-10" data-sidebar="menu-badge" data-slot="sidebar-menu-badge">
+                          "1"
+                <div class="bg-sidebar row-cell svelte-<scope>" data-row-preview="agent-sidebar-rows">
+                  <div class="flex group/sidebar-wrapper has-data-[variant=inset]:bg-sidebar min-h-0! min-h-svh w-full" data-slot="sidebar-wrapper">
+                    <ul class="flex flex-col gap-0.5 min-w-0 p-1 relative select-none w-full" data-sidebar="menu" data-slot="sidebar-menu">
+                      <div aria-hidden="true" class="absolute bg-active left-0 pointer-events-none rounded-md top-0 z-0" data-sidebar="menu-active-highlight">
+                      <li class="group/menu-item relative z-10" data-sidebar="menu-item" data-slot="sidebar-menu-item">
+                        <button aria-current="page" class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center min-h-(--control-height-medium) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="true" data-proximity-active="false" data-sidebar-index="0" data-sidebar="menu-button" data-size="default" data-slot="sidebar-menu-button" data-status="active" tabindex="0">
+                          <span class="[&>svg]:duration-spring-fast [&>svg]:size-4 [&>svg]:transition-[stroke-width] duration-spring-fast ease-spring-fast flex items-center justify-center motion-reduce:transition-none shrink-0 sidebar-menu-icon size-4 svelte-<scope> text-foreground transition-colors">
+                            <svg aria-hidden="true" data-icon="robot" data-weight="bold" role="img">
+                              <rect>
+                              <path>
+                          <span class="flex-1 inline-grid min-w-0 text-left">
+                            <span aria-hidden="true" class="col-start-1 invisible row-start-1 truncate">
+                              "Active catalog implementor"
+                            <span class="col-start-1 duration-spring-fast ease-spring-fast motion-reduce:transition-none row-start-1 svelte-<scope> text-foreground transition-[color,font-variation-settings] truncate">
+                              "Active catalog implementor"
+                      <li class="group/menu-item relative z-10" data-sidebar="menu-item" data-slot="sidebar-menu-item">
+                        <button class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center min-h-(--control-height-medium) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="false" data-proximity-active="false" data-sidebar-index="1" data-sidebar="menu-button" data-size="default" data-slot="sidebar-menu-button" tabindex="-1">
+                          <span class="[&>svg]:duration-spring-fast [&>svg]:size-4 [&>svg]:transition-[stroke-width] duration-spring-fast ease-spring-fast flex items-center justify-center motion-reduce:transition-none shrink-0 sidebar-menu-icon size-4 svelte-<scope> text-muted-foreground transition-colors">
+                            <svg aria-hidden="true" data-icon="robot" data-weight="bold" role="img">
+                              <rect>
+                              <path>
+                          <span class="flex-1 inline-grid min-w-0 text-left">
+                            <span aria-hidden="true" class="col-start-1 invisible row-start-1 truncate">
+                              "A very long background agent name that must truncate"
+                            <span class="col-start-1 duration-spring-fast ease-spring-fast motion-reduce:transition-none row-start-1 svelte-<scope> text-muted-foreground transition-[color,font-variation-settings] truncate">
+                              "A very long background agent name that must truncate"
+                <div class="bg-sidebar row-cell svelte-<scope>" data-row-preview="sidebar-menu-states">
+                  <div class="flex group/sidebar-wrapper has-data-[variant=inset]:bg-sidebar min-h-0! min-h-svh w-full" data-slot="sidebar-wrapper">
+                    <ul class="flex flex-col gap-0.5 min-w-0 p-1 relative select-none w-full" data-sidebar="menu" data-slot="sidebar-menu">
+                      <div aria-hidden="true" class="absolute bg-active left-0 pointer-events-none rounded-md top-0 z-0" data-sidebar="menu-active-highlight">
+                      <div aria-hidden="true" class="absolute bg-hover left-0 pointer-events-none rounded-md top-0 z-0" data-sidebar="menu-hover-highlight">
+                      <li class="group/menu-item relative z-10" data-sidebar="menu-item" data-slot="sidebar-menu-item">
+                        <button class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center min-h-(--control-height-medium) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="false" data-proximity-active="true" data-sidebar-index="0" data-sidebar="menu-button" data-size="default" data-slot="sidebar-menu-button" tabindex="-1">
+                          <span class="flex-1 inline-grid min-w-0 text-left">
+                            <span aria-hidden="true" class="col-start-1 invisible row-start-1 truncate">
+                              "Focused navigation"
+                            <span class="col-start-1 duration-spring-fast ease-spring-fast motion-reduce:transition-none row-start-1 svelte-<scope> text-foreground transition-[color,font-variation-settings] truncate">
+                              "Focused navigation"
+                      <li class="group/menu-item relative z-10" data-sidebar="menu-item" data-slot="sidebar-menu-item">
+                        <button aria-current="page" class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center min-h-(--control-height-medium) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="true" data-proximity-active="false" data-sidebar-index="1" data-sidebar="menu-button" data-size="default" data-slot="sidebar-menu-button" data-status="active" tabindex="0">
+                          <span aria-hidden="true" class="flex items-center justify-center shrink-0 size-4">
+                            <span class="bg-current duration-spring-fast ease-spring-fast motion-reduce:transition-none rounded-full size-2 svelte-<scope> text-foreground/60 transition-colors">
+                          <span class="flex-1 inline-grid min-w-0 text-left">
+                            <span aria-hidden="true" class="col-start-1 invisible row-start-1 truncate">
+                              "Current navigation"
+                            <span class="col-start-1 duration-spring-fast ease-spring-fast motion-reduce:transition-none row-start-1 svelte-<scope> text-foreground transition-[color,font-variation-settings] truncate">
+                              "Current navigation"
+                      <li class="group/menu-item relative z-10" data-sidebar="menu-item" data-slot="sidebar-menu-item">
+                        <button class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center min-h-(--control-height-medium) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="false" data-proximity-active="false" data-sidebar-index="2" data-sidebar="menu-button" data-size="default" data-slot="sidebar-menu-button" data-status="unread" tabindex="-1">
+                          <span aria-hidden="true" class="flex items-center justify-center shrink-0 size-4">
+                            <span class="bg-current duration-spring-fast ease-spring-fast motion-reduce:transition-none rounded-full size-2 svelte-<scope> text-muted-foreground/50 transition-colors">
+                          <span class="flex-1 inline-grid min-w-0 text-left">
+                            <span aria-hidden="true" class="col-start-1 invisible row-start-1 truncate">
+                              "Unread navigation"
+                            <span class="col-start-1 duration-spring-fast ease-spring-fast motion-reduce:transition-none row-start-1 svelte-<scope> text-muted-foreground transition-[color,font-variation-settings] truncate">
+                              "Unread navigation"
+                          <span class="sr-only">
+                            ", UNREAD"
+                        <div class="absolute duration-spring-fast ease-spring-fast flex group-data-[collapsible=icon]:hidden h-5 items-center justify-center min-w-5 motion-reduce:transition-none pointer-events-none px-1 right-2 select-none tabular-nums text-muted-foreground top-1.5 transition-[color,font-variation-settings] type-caption z-10" data-sidebar="menu-badge" data-slot="sidebar-menu-badge">
+                          "3"
+                        <div>
+                          <button aria-label="Unread row actions" class="[&_svg]:[stroke-width:1.5] [&_svg]:duration-spring-fast [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 [&_svg]:transition-[stroke-width] absolute after:-inset-2 after:absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer data-[state=open]:opacity-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:opacity-100 focus-visible:outline font-normal gap-1.5 group-data-[collapsible=icon]:hidden group-focus-within/menu-sub-item:opacity-100 group-hover/menu-sub-item:opacity-100 group/button hover:[&_svg]:[stroke-width:2] hover:bg-hover hover:opacity-100 hover:text-foreground in-data-[force-actions=true]:opacity-100! isolate items-center justify-center md:after:hidden motion-reduce:transition-none opacity-0 p-0 peer-focus-visible/menu-button:opacity-100 peer-hover/menu-button:opacity-100 right-8.5 rounded-md shrink-0 size-6 text-muted-foreground top-1 transition-[color,background-color,opacity] type-caption whitespace-nowrap z-10" data-show-on-hover="true" data-sidebar="menu-action" data-slot="sidebar-menu-action" type="button">
+                            <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                            <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                              <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                "⋯"
+                      <li class="group/menu-item relative z-10" data-sidebar="menu-item" data-slot="sidebar-menu-item">
+                        <button class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center min-h-(--control-height-medium) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="false" data-proximity-active="false" data-sidebar-index="3" data-sidebar="menu-button" data-size="default" data-slot="sidebar-menu-button" disabled="" tabindex="-1">
+                          <span class="flex-1 inline-grid min-w-0 text-left">
+                            <span aria-hidden="true" class="col-start-1 invisible row-start-1 truncate">
+                              "Disabled navigation"
+                            <span class="col-start-1 duration-spring-fast ease-spring-fast motion-reduce:transition-none row-start-1 svelte-<scope> text-muted-foreground transition-[color,font-variation-settings] truncate">
+                              "Disabled navigation"
+              <section aria-labelledby="rows-menu" class="row-family svelte-<scope>">
+                <h3 class="family-title svelte-<scope>" id="rows-menu">
+                  "Menu item rows"
+                <div class="row-cell svelte-<scope>" data-row-preview="menu-item-states">
+                  <div aria-orientation="vertical" class="bg-surface-3 border border-border data-[side=bottom]:origin-top data-[side=left]:origin-right data-[side=right]:origin-left data-[side=top]:origin-bottom data-[state=closed]:animate-out data-[state=closed]:duration-spring-moderate-exit data-[state=closed]:ease-spring-exit data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-spring-moderate data-[state=open]:ease-spring-moderate data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 focus-visible:-outline-offset-1 focus-visible:border-input focus-visible:outline isolate min-w-40 motion-reduce:animate-none motion-reduce:transition-none overflow-hidden overflow-y-auto overscroll-contain p-1 relative rounded-md shadow-(--elevation-overlay) text-popover-foreground type-body w-full z-(--layer-popover)" data-dropdown-menu-content="" data-list-overlay="" data-slot="menu-content" data-state="open" data-static-position="true" data-surface-level="3" id="c<id>-content" role="menu" tabindex="-1" tokens=["--bits-dropdown-menu-content-available-height","--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
+                    <span aria-hidden="true" class="contents" data-active-index="1" data-slot="menu-list-highlight">
+                      <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                        <div class="absolute bg-hover" tokens=["--radius-row"]>
+                    <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                      "Default item"
+                    <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-highlighted="true" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                      "Hover / highlighted"
+                    <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" data-state="open" id="bits-<id>" role="menuitem" tabindex="-1">
+                      "Active item"
+                    <div aria-disabled="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:text-foreground data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:[--text-caption-weight:500] data-[selected]:[--text-caption-weight:500] data-[state=checked]:[--text-caption-weight:500] data-[state=open]:[--text-caption-weight:500] duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none focus:text-foreground gap-2 group/menu-item items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-[color,font-weight] type-caption w-full z-10" data-disabled="" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                      "Disabled item"
+              <section aria-labelledby="rows-settings" class="row-family svelte-<scope>">
+                <h3 class="family-title svelte-<scope>" id="rows-settings">
+                  "SettingsFieldRow"
+                <div class="row-cell svelte-<scope>" data-row-preview="settings-field-row-default-busy">
+                  <div aria-busy="true" class="first:pt-3 gap-3 grid last:pb-3 md:gap-8 md:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)] md:items-start min-w-0 py-3" data-highlight-id="rows-setting" data-orientation="responsive" data-settings-search-text="Workspace notifications" data-slot="settings-field-row" id="rows-setting">
+                    <div class="flex gap-3 items-start min-w-0">
+                      <div class="break-words flex-1 min-w-0 space-y-1">
+                        <div class="font-medium text-foreground type-body" id="rows-setting-label">
+                          "Workspace notifications"
+                        <p class="text-muted-foreground type-body" id="rows-setting-description">
+                          "Receive updates when a workspace needs attention."
+                        <p class="text-info type-body" role="status">
+                          "Saving changes"
+                    <div class="max-w-full md:justify-self-end md:w-auto min-w-0 w-full" data-field-control="" data-orientation="responsive">
+                      <div>
+                        <button aria-busy="true" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-small) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="button">
+                          <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                          <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none opacity-0 relative" data-slot="button-content">
+                            <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                              "Saving"
+                          <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
+                            <svg aria-label="Loading" class="intent-mark-loader size-3! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                              <g aria-hidden="true" data-mark="">
+                                <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
+                                <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
+                                <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
+                                <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
+                                <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                <div class="row-cell svelte-<scope>" data-row-preview="settings-field-row-compact-disabled">
+                  <div class="first:pt-3 gap-3 grid grid-cols-1 last:pb-3 min-w-0 py-3" data-disabled="true" data-highlight-id="rows-setting-compact" data-orientation="stacked" data-settings-search-text="Compact disabled field" data-slot="settings-field-row" id="rows-setting-compact">
+                    <div class="flex gap-3 items-start min-w-0">
+                      <div class="break-words flex-1 min-w-0 space-y-1">
+                        <div class="font-medium text-foreground type-body" id="rows-setting-compact-label">
+                          "Compact disabled field"
+                    <div class="max-w-full md:justify-self-end md:w-auto min-w-0 opacity-60 w-full" data-field-control="" data-orientation="stacked">
+                      <div>
+                        <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-small) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="button">
+                          <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                          <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                            <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                              "Unavailable"
+              <section aria-labelledby="rows-tabs" class="row-family svelte-<scope> tabs-family">
+                <h3 class="family-title svelte-<scope>" id="rows-tabs">
+                  "Tab strip items"
+                <div class="row-cell svelte-<scope>" data-row-preview="panel-tab-strip">
+                  <div data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
+                    <div aria-label="Panel tabs" aria-orientation="horizontal" class="bg-muted gap-0.5 inline-flex isolate items-center justify-start max-w-full overflow-hidden relative rounded-(--radius-medium) select-none w-full" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
+                      <div aria-hidden="true" class="absolute bg-selected left-0 pointer-events-none shadow-(--elevation-raised) top-0" data-tabs-indicator="" tokens=["--radius-medium"]>
+                      <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                      <button aria-selected="false" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-muted-foreground transition-[color,font-weight] type-caption z-10" data-orientation="horizontal" data-size="default" data-state="inactive" data-tabs-trigger="" data-value="note" data-variant="default" id="bits-<id>" role="tab" tabindex="-1" type="button">
+                        "Implementation plan"
+                      <button aria-selected="false" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-muted-foreground transition-[color,font-weight] type-caption z-10" data-orientation="horizontal" data-size="default" data-state="inactive" data-tabs-trigger="" data-value="agent" data-variant="default" id="bits-<id>" role="tab" tabindex="-1" type="button">
+                        "Catalog implementor"
+                      <button aria-selected="true" class="[--text-caption-weight:500] bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-foreground transition-[color,font-weight] type-caption z-10" data-orientation="horizontal" data-size="default" data-state="active" data-tabs-trigger="" data-value="file" data-variant="default" id="bits-<id>" role="tab" tabindex="0" type="button">
+                        "RowsCatalogPreview.svelte"
+                      <button aria-selected="false" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-muted-foreground transition-[color,font-weight] type-caption z-10" data-orientation="horizontal" data-size="default" data-state="inactive" data-tabs-trigger="" data-value="browser" data-variant="default" id="bits-<id>" role="tab" tabindex="-1" type="button">
+                        "Browser preview"
+                <div class="row-cell svelte-<scope>" data-row-preview="workspace-tab-strip">
+                  <div data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
+                    <div aria-label="Workspace tabs" aria-orientation="horizontal" class="bg-muted gap-0.5 inline-flex isolate items-center justify-start max-w-full overflow-hidden relative rounded-(--radius-medium) select-none w-full" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
+                      <div aria-hidden="true" class="absolute bg-selected left-0 pointer-events-none shadow-(--elevation-raised) top-0" data-tabs-indicator="" tokens=["--radius-medium"]>
+                      <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                      <button aria-selected="true" class="[--text-caption-weight:500] bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-foreground transition-[color,font-weight] type-caption z-10" data-orientation="horizontal" data-size="default" data-state="active" data-tabs-trigger="" data-value="active" data-variant="default" id="bits-<id>" role="tab" tabindex="0" type="button">
+                        "Active workspace"
+                      <button aria-selected="false" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-muted-foreground transition-[color,font-weight] type-caption z-10" data-orientation="horizontal" data-size="default" data-state="inactive" data-tabs-trigger="" data-value="unread" data-variant="default" id="bits-<id>" role="tab" tabindex="-1" type="button">
+                        "Unread workspace"
+                      <button aria-selected="false" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-muted-foreground transition-[color,font-weight] type-caption z-10" data-disabled="" data-orientation="horizontal" data-size="default" data-state="inactive" data-tabs-trigger="" data-value="disabled" data-variant="default" disabled="" id="bits-<id>" role="tab" tabindex="-1" type="button">
+                        "Disabled workspace"
+                <div class="row-cell svelte-<scope>" data-row-preview="dragging-placeholder">
+                  <div aria-hidden="true" class="drag-placeholder svelte-<scope>" data-dragging-placeholder="">
+                  <span class="sr-only">
+                    "Dragging placeholder"
+          <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Fixture details"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "States"
+                <dd class="mt-1 text-foreground">
+                  "default, hover, focus-visible, selected, active-current, disabled, busy-loading, unread-attention, trailing-actions, dragging-placeholder, long-content, compact-density, zoom-200, baseline-grid"
+              <div>
+                <dt>
+                  "Themes"
+                <dd class="mt-1 text-foreground">
+                  "light, dark"",
+}
+`;
