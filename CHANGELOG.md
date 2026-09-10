@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.144.8](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.7...v2.144.8) (2026-09-10)
+
+
+### 🐛 Bug Fixes
+
+* **workspace:** let WorkspaceActionsMenu wrappers size to content ([#2293](https://github.com/intent-hq/cloudlands-fe/issues/2293)) ([97f8ba7](https://github.com/intent-hq/cloudlands-fe/commit/97f8ba75396db231219924b8f569bfb00d75d422))
+
 ## [2.144.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.6...v2.144.7) (2026-09-10)
 
 
