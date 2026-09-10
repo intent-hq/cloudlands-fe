@@ -18,6 +18,7 @@ const Sub = MenuPrimitive.Sub;
 const Group = MenuPrimitive.Group;
 const GroupHeading = MenuPrimitive.GroupHeading;
 export { menuMetadata, menuSemantics } from './menu.meta';
+export { getPageTargetIndex } from './menu-roving-focus';
 export type { StackedMenuGroup, StackedMenuItem } from './menu-stacked-content.types';
 
 export {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
+  import { tick } from 'svelte';
   import { cn } from '$lib/utils.js';
   import ListHighlight from './menu-list-highlight.svelte';
   import { menuOverlay } from './menu-recipes';
@@ -11,6 +12,7 @@
   } from '$lib/components/ui/surface-context';
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { useStaticOverlay } from '../static-overlay-context.svelte';
+  import { handleMenuPageKey, setMenuTabStop, syncMenuTabStopFromFocus } from './menu-roving-focus';
 
   const uid = $props.id();
 
@@ -22,6 +24,8 @@
     portalProps,
     staticPosition,
     sideOffset = 4,
+    onkeydown,
+    onfocusin,
     // bits-ui 2.18.1: DropdownMenu.Content sizes via the 'dropdown-menu'-prefixed
     // floating CSS vars, while SubContent (menu-sub-content.svelte) uses the shared
     // 'menu' prefix — the differing var names between the two files are intentional.
@@ -50,8 +54,23 @@
   );
 
   $effect(() => {
-    if (ref) ref.id = id;
+    const content = ref;
+    if (!content) return;
+    content.id = id;
+    void tick().then(() => {
+      if (ref === content) setMenuTabStop(content);
+    });
   });
+
+  function handleKeydown(event: KeyboardEvent & { currentTarget: HTMLDivElement }) {
+    onkeydown?.(event);
+    if (!event.defaultPrevented) handleMenuPageKey(event.currentTarget, event);
+  }
+
+  function handleFocusin(event: FocusEvent & { currentTarget: HTMLDivElement }) {
+    onfocusin?.(event);
+    syncMenuTabStopFromFocus(event.currentTarget, event.target);
+  }
 </script>
 
 {#if isStatic}
@@ -64,6 +83,8 @@
     data-surface-level={surface}
     class={contentClass}
     style="max-height: {maxHeight}"
+    onkeydown={handleKeydown}
+    onfocusin={handleFocusin}
     {...restProps as any}
   >
     <ListHighlight />
@@ -79,6 +100,8 @@
       class={contentClass}
       {sideOffset}
       style="max-height: {maxHeight}"
+      onkeydown={handleKeydown}
+      onfocusin={handleFocusin}
       {...restProps}
     >
       <ListHighlight />
@@ -94,6 +117,8 @@
     class={contentClass}
     {sideOffset}
     style="max-height: {maxHeight}"
+    onkeydown={handleKeydown}
+    onfocusin={handleFocusin}
     {...restProps}
   >
     <ListHighlight />

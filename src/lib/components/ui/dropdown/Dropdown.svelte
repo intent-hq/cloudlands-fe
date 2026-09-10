@@ -6,6 +6,7 @@
   import Portal from '../Portal.svelte';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
+  import { getPageTargetIndex } from '$lib/components/ui/menu';
   import ListHighlight from '../menu/menu-list-highlight.svelte';
   import { menuItem, menuOverlay, menuOverlayTransition } from '../menu/menu-recipes';
   import { crispOut, springIn } from '$lib/motion';
@@ -449,10 +450,34 @@
     tick().then(() => {
       const container = portalContentRef ?? inlineContentRef ?? containerRef;
       if (!container || highlightedIndex < 0) return;
-      const options = container.querySelectorAll('[role="option"]');
+      const options = container.querySelectorAll('[role="option"][id]');
       const el = options[highlightedIndex] as HTMLElement | undefined;
       el?.scrollIntoView?.({ block: 'nearest' });
     });
+  }
+
+  function moveHighlight(nextIndex: number) {
+    const container = portalContentRef ?? inlineContentRef ?? containerRef;
+    const activeElement = document.activeElement;
+    const shouldMoveFocus =
+      activeElement instanceof HTMLElement &&
+      activeElement.matches('[role="option"]') &&
+      Boolean(container?.contains(activeElement));
+    highlightedIndex = nextIndex;
+    void tick().then(() => {
+      const option = container?.querySelector<HTMLElement>(`#${uid}-option-${nextIndex}`);
+      if (shouldMoveFocus) option?.focus({ preventScroll: true });
+      option?.scrollIntoView?.({ block: 'nearest' });
+    });
+  }
+
+  function moveHighlightByPage(direction: -1 | 1) {
+    const content = portalContentRef ?? inlineContentRef ?? containerRef;
+    const viewport = content?.querySelector<HTMLElement>('[data-scroll-container]');
+    if (!viewport) return;
+    const options = Array.from(viewport.querySelectorAll<HTMLElement>('[role="option"][id]'));
+    const nextIndex = getPageTargetIndex(options, highlightedIndex, viewport, direction);
+    if (nextIndex >= 0) moveHighlight(nextIndex);
   }
 
   // Handle keyboard
@@ -464,33 +489,35 @@
         e.preventDefault();
         e.stopPropagation();
         if (selectableOptions.length > 0) {
-          highlightedIndex = Math.min(highlightedIndex + 1, selectableOptions.length - 1);
-          scrollHighlightedIntoView();
+          moveHighlight(Math.min(highlightedIndex + 1, selectableOptions.length - 1));
         }
         break;
       case 'ArrowUp':
         e.preventDefault();
         e.stopPropagation();
         if (selectableOptions.length > 0) {
-          highlightedIndex = Math.max(highlightedIndex - 1, 0);
-          scrollHighlightedIntoView();
+          moveHighlight(Math.max(highlightedIndex - 1, 0));
         }
         break;
       case 'Home':
         e.preventDefault();
         e.stopPropagation();
         if (selectableOptions.length > 0) {
-          highlightedIndex = 0;
-          scrollHighlightedIntoView();
+          moveHighlight(0);
         }
         break;
       case 'End':
         e.preventDefault();
         e.stopPropagation();
         if (selectableOptions.length > 0) {
-          highlightedIndex = selectableOptions.length - 1;
-          scrollHighlightedIntoView();
+          moveHighlight(selectableOptions.length - 1);
         }
+        break;
+      case 'PageDown':
+      case 'PageUp':
+        e.preventDefault();
+        e.stopPropagation();
+        moveHighlightByPage(e.key === 'PageDown' ? 1 : -1);
         break;
       case 'Enter':
         e.preventDefault();
@@ -829,6 +856,7 @@
         aria-expanded={popupRole === 'menu' && option.type === 'submenu'
           ? openSubmenu === option.value
           : undefined}
+        tabindex={isHighlighted && !option.disabled ? 0 : -1}
       >
         {#if item}
           {@render item({ option, selected: isSelected(option.value), highlighted: isHighlighted })}

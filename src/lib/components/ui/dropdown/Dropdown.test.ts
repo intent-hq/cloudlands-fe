@@ -203,6 +203,18 @@ describe('Dropdown portal positioning', () => {
     expect(content.style.maxHeight).toBe('360px');
 
     const search = screen.getByRole('searchbox', { name: 'Search options' });
+    const listbox = screen.getByRole('listbox');
+    const options = screen.getAllByRole('option');
+    Object.defineProperty(listbox, 'clientHeight', { configurable: true, value: 90 });
+    options.forEach((option, index) => {
+      option.getBoundingClientRect = () =>
+        ({ top: index * 30, bottom: index * 30 + 30, height: 30 }) as DOMRect;
+    });
+    expect(options.filter((option) => option.tabIndex === 0)).toEqual([options[0]]);
+    await fireEvent.keyDown(search, { key: 'PageDown' });
+    expect(options.filter((option) => option.tabIndex === 0)).toEqual([options[3]]);
+    await fireEvent.keyDown(search, { key: 'PageUp' });
+    expect(options.filter((option) => option.tabIndex === 0)).toEqual([options[0]]);
     await fireEvent.keyDown(search, { key: 'End' });
     expect(screen.getByRole('option', { name: 'Option 11' }).dataset.highlighted).toBe('true');
     await fireEvent.keyDown(search, { key: 'Home' });

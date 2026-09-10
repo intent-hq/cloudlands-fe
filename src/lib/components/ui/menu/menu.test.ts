@@ -16,7 +16,7 @@ async function openMenu() {
 }
 
 describe('Menu keyboard and focus behavior', () => {
-  it('supports arrows, Home, End, and typeahead while skipping disabled items', async () => {
+  it('supports arrows, paging, Home, End, and typeahead with one roving tab stop', async () => {
     render(MenuTestHarness);
     await openMenu();
     const apple = screen.getByRole('menuitem', { name: 'Apple' });
@@ -24,7 +24,22 @@ describe('Menu keyboard and focus behavior', () => {
     const cherry = screen.getByRole('menuitem', { name: 'Cherry' });
     const more = screen.getByRole('menuitem', { name: 'More' });
     await waitFor(() => expect(document.activeElement).toBe(apple));
+    const menu = apple.closest<HTMLElement>('[role="menu"]')!;
+    const enabledItems = Array.from(
+      menu.querySelectorAll<HTMLElement>('[data-menu-item]:not([data-disabled])'),
+    );
+    Object.defineProperty(menu, 'clientHeight', { configurable: true, value: 80 });
+    enabledItems.forEach((item, index) => {
+      item.getBoundingClientRect = () =>
+        ({ top: index * 20, bottom: index * 20 + 20, height: 20 }) as DOMRect;
+    });
+    expect(enabledItems.filter((item) => item.tabIndex === 0)).toEqual([apple]);
     await fireEvent.keyDown(apple, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(banana);
+    expect(enabledItems.filter((item) => item.tabIndex === 0)).toEqual([banana]);
+    await fireEvent.keyDown(banana, { key: 'PageDown' });
+    expect(document.activeElement).toBe(enabledItems[5]);
+    await fireEvent.keyDown(enabledItems[5], { key: 'PageUp' });
     expect(document.activeElement).toBe(banana);
     await fireEvent.keyDown(banana, { key: 'End' });
     expect(document.activeElement).toBe(more);
