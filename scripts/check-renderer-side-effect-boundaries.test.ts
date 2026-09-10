@@ -320,6 +320,27 @@ describe('renderer side-effect boundary guard', () => {
     ).toEqual([expect.stringContaining('reviewed renderer IPC bridge registrations changed')]);
   });
 
+  it('pins the user MCP bridge seeder to its reviewed registration', () => {
+    const seeder = (channels: string[]) => ({
+      path: 'src/store/renderer/seeders/user-mcp-bridge-seeder.ts',
+      content: [
+        "import { registerMockIpcHandler } from '$shared/ipc-mock-router';",
+        ...channels.map(
+          (channel) => `registerMockIpcHandler('${channel}', async () => undefined);`,
+        ),
+      ].join('\n'),
+    });
+    expect(
+      findRendererSideEffectBoundaryViolations([registry, seeder(['user-mcp:authenticate'])]),
+    ).toEqual([]);
+    expect(
+      findRendererSideEffectBoundaryViolations([
+        registry,
+        seeder(['user-mcp:authenticate', 'user-mcp:unreviewed']),
+      ]),
+    ).toEqual([expect.stringContaining('reviewed renderer IPC bridge registrations changed')]);
+  });
+
   it('rejects expansion of an approved bridge path', () => {
     const violations = findRendererSideEffectBoundaryViolations([
       registry,
