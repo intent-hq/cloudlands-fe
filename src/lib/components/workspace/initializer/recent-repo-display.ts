@@ -86,6 +86,45 @@ export function getWorkspaceOwnedCheckoutPaths(workspaces: WorkspaceCheckoutPath
   return owned;
 }
 
+export interface GitHubPickSelection {
+  /** Current trigger value: `owner/repo` shorthand for GitHub picks, a path otherwise */
+  selectedValue: string;
+  selectedRepoType: 'local' | 'github' | 'new';
+  /** GitHub URL captured when the user explicitly confirmed a GitHub repo */
+  confirmedGithubUrl?: string;
+}
+
+/**
+ * Bare `owner/repo` shorthand guard shared with the trigger label: exactly one
+ * slash and nothing that could be a local path (leading `/`, backslashes, drive
+ * letters).
+ */
+function getShorthandOwner(value: string): string | undefined {
+  if (value.includes('\\') || value.includes(':') || value.startsWith('/')) return undefined;
+  const match = /^([^/]+)\/[^/]+$/.exec(value);
+  return match?.[1];
+}
+
+/**
+ * GitHub owner login for the current selection when — and only when — the pick
+ * is a GitHub repo, for the trigger avatar. Local repos (even with a known
+ * GitHub origin), new repos, and the empty state resolve to `undefined`.
+ */
+export function getGitHubPickOwner(
+  selection: GitHubPickSelection,
+  parseGitHubUrl: (input: string) => { owner: string } | null,
+): string | undefined {
+  const { selectedValue, selectedRepoType, confirmedGithubUrl } = selection;
+  if (selectedRepoType !== 'github' || !selectedValue) return undefined;
+
+  if (confirmedGithubUrl) {
+    const owner = parseGitHubUrl(confirmedGithubUrl)?.owner;
+    if (owner) return owner;
+  }
+
+  return getShorthandOwner(selectedValue);
+}
+
 /** Whether a Recent-list entry matches the search term (folder name included). */
 export function matchesRecentRepoSearch(repo: RecentRepoEntry, searchTerm: string): boolean {
   const search = searchTerm.trim().toLowerCase();

@@ -72,6 +72,7 @@
     type IsolationMode,
   } from './isolation-mode';
   import {
+    getGitHubPickOwner,
     getRecentRepoLabel,
     getRecentRepoTooltip,
     getWorkspaceOwnedCheckoutPaths,
@@ -1425,6 +1426,10 @@
   }
 
   const triggerDisplayValue = $derived(displayValue ?? formatDisplayValue());
+  // Owner avatar next to the trigger label; GitHub picks only, never local repos
+  const triggerAvatarOwner = $derived(
+    getGitHubPickOwner({ selectedValue, selectedRepoType, confirmedGithubUrl }, parseGitHubUrl),
+  );
 </script>
 
 <div class="relative">
@@ -1440,6 +1445,15 @@
           <Fa icon={triggerIcon} size="xs" />
         {:else if showEmptyIcon && !selectedValue}
           <GitRepoIcon size={12} class="text-ghost -mb-0.25 mr-1" />
+        {/if}
+        {#if !triggerIcon && triggerAvatarOwner}
+          <img
+            src={getGitHubAvatarUrl(triggerAvatarOwner, 32)}
+            alt={triggerAvatarOwner}
+            class="w-4 h-4 rounded-full shrink-0"
+            loading="lazy"
+            onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
+          />
         {/if}
         {#if !triggerIcon && (selectedValue || emptyLabel)}
           <span class="flex-1 text-left truncate">
