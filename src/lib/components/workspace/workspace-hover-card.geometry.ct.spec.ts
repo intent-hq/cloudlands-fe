@@ -277,6 +277,7 @@ test('uses accessible muted foreground for secondary metadata', async ({ mount, 
     props: fixture('working'),
   });
   const card = preview.locator('[data-workspace-hover-card]');
+  await expect(card.locator('[data-workspace-hover-card-agent-time]').first()).toBeVisible();
   const styles = await card.evaluate((node) => {
     const renderedColor = (color: string) => {
       const canvas = document.createElement('canvas');
