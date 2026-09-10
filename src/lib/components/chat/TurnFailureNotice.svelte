@@ -31,7 +31,7 @@
   <div class="flex flex-col gap-0.5 min-w-0">
     <span class="text-sm font-semibold">{m.chat_turnFailureNotice_title_label()}</span>
     {#if reason}
-      <span class="text-sm whitespace-pre-wrap break-words">{reason}</span>
+      <span class="text-sm text-muted-foreground whitespace-pre-wrap break-words">{reason}</span>
     {/if}
   </div>
 </div>
