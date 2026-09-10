@@ -522,13 +522,29 @@
     return val && parseGitHubUrl(val) ? 'github' : 'local';
   }
 
+  /** Whether two GitHub values (URL or shorthand) name the same owner/repo. */
+  function isSameGitHubRepo(a: string, b: string): boolean {
+    const left = parseGitHubUrl(a);
+    const right = parseGitHubUrl(b);
+    return (
+      !!left &&
+      !!right &&
+      left.owner.toLowerCase() === right.owner.toLowerCase() &&
+      left.repo.toLowerCase() === right.repo.toLowerCase()
+    );
+  }
+
   // Update internal state when value prop changes; re-derive the repo type so
-  // the dropdown opens on the tab matching the restored selection.
+  // the dropdown opens on the tab matching the restored selection. A confirmed
+  // GitHub URL only survives when the new value still names the same repo.
   $effect(() => {
     if (value && value !== selectedValue) {
       selectedValue = value;
       inputValue = value;
       selectedRepoType = repoTypeForValue(value);
+      if (confirmedGithubUrl && !isSameGitHubRepo(confirmedGithubUrl, value)) {
+        confirmedGithubUrl = '';
+      }
     }
   });
 
@@ -1447,13 +1463,18 @@
           <GitRepoIcon size={12} class="text-ghost -mb-0.25 mr-1" />
         {/if}
         {#if !triggerIcon && triggerAvatarOwner}
-          <img
-            src={getGitHubAvatarUrl(triggerAvatarOwner, 32)}
-            alt={triggerAvatarOwner}
-            class="w-4 h-4 rounded-full shrink-0"
-            loading="lazy"
-            onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
-          />
+          <!-- Keyed by owner so a failed (hidden) image is recreated for the next owner.
+               Decorative: the adjacent label already names the owner. -->
+          {#key triggerAvatarOwner}
+            <img
+              src={getGitHubAvatarUrl(triggerAvatarOwner, 32)}
+              alt=""
+              aria-hidden="true"
+              class="w-4 h-4 rounded-full shrink-0"
+              loading="lazy"
+              onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
+            />
+          {/key}
         {/if}
         {#if !triggerIcon && (selectedValue || emptyLabel)}
           <span class="flex-1 text-left truncate">

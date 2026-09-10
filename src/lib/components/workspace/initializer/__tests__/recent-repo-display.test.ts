@@ -180,6 +180,38 @@ describe('getGitHubPickOwner', () => {
     ).toBe('intent-hq');
   });
 
+  it('resolves the owner from a full GitHub URL value when nothing is confirmed', () => {
+    expect(
+      owner({ selectedValue: 'https://github.com/intent-hq/intent', selectedRepoType: 'github' }),
+    ).toBe('intent-hq');
+    expect(
+      owner({
+        selectedValue: 'https://github.com/intent-hq/intent.git',
+        selectedRepoType: 'github',
+        confirmedGithubUrl: '',
+      }),
+    ).toBe('intent-hq');
+  });
+
+  it('resolves the owner from an SSH value when the parser accepts it', () => {
+    const parseSsh = (input: string) => {
+      const match = /^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/.exec(input);
+      return match ? { owner: match[1], repo: match[2] } : parseGitHubUrl(input);
+    };
+    expect(
+      getGitHubPickOwner(
+        { selectedValue: 'git@github.com:intent-hq/intent.git', selectedRepoType: 'github' },
+        parseSsh,
+      ),
+    ).toBe('intent-hq');
+  });
+
+  it('returns nothing for a non-GitHub URL value', () => {
+    expect(
+      owner({ selectedValue: 'https://gitlab.com/intent-hq/intent', selectedRepoType: 'github' }),
+    ).toBeUndefined();
+  });
+
   it('ignores a local path even when a segment looks like an owner', () => {
     expect(owner({ selectedValue: 'intent-hq/intent', selectedRepoType: 'local' })).toBeUndefined();
     expect(

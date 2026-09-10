@@ -109,6 +109,10 @@ function getShorthandOwner(value: string): string | undefined {
  * GitHub owner login for the current selection when — and only when — the pick
  * is a GitHub repo, for the trigger avatar. Local repos (even with a known
  * GitHub origin), new repos, and the empty state resolve to `undefined`.
+ *
+ * Without a confirmed URL the value itself is parsed: a restored pick may be a
+ * full GitHub URL (`RepoAndBranchPicker` passes `githubUrl` through as the
+ * value) or the bare `owner/repo` shorthand.
  */
 export function getGitHubPickOwner(
   selection: GitHubPickSelection,
@@ -122,7 +126,7 @@ export function getGitHubPickOwner(
     if (owner) return owner;
   }
 
-  return getShorthandOwner(selectedValue);
+  return parseGitHubUrl(selectedValue)?.owner ?? getShorthandOwner(selectedValue);
 }
 
 /** Whether a Recent-list entry matches the search term (folder name included). */
