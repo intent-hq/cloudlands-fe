@@ -352,7 +352,7 @@
             </p>
           {:else if showConnectError}
             {#if showInputMonitoringHint}
-              <p class="text-xs text-amber-500/90 mt-0.5">
+              <p class="text-xs text-warning-ink mt-0.5">
                 {m.settings_hardware_inputMonitoring_error()}
               </p>
               <p class="text-xs text-subtle mt-1">
@@ -373,7 +373,7 @@
                 {m.settings_hardware_inputMonitoring_openSettings_button()}
               </Button>
             {:else}
-              <p class="text-xs text-amber-500/90 mt-0.5">
+              <p class="text-xs text-warning-ink mt-0.5">
                 {m.settings_hardware_connectError_label({ error: lastConnectError?.message ?? '' })}
               </p>
             {/if}
@@ -383,7 +383,7 @@
             </p>
           {/if}
           {#if connectFailed && !showConnectError}
-            <p class="text-xs text-amber-500/90 mt-1">
+            <p class="text-xs text-warning-ink mt-1">
               {m.settings_hardware_connectFailed_error()}
             </p>
           {/if}
@@ -449,7 +449,7 @@
               </ul>
             {/if}
             {#if showLinkedKeyWarning}
-              <p class="text-xs text-amber-500/90 mt-2">
+              <p class="text-xs text-warning-ink mt-2">
                 {m.settings_hardware_linkedKey_warning()}
               </p>
             {/if}

@@ -1154,7 +1154,7 @@
             {@const gitColor =
               node.type === 'directory'
                 ? flatNode.directoryHasChanges
-                  ? 'text-yellow-700 dark:text-yellow-400'
+                  ? 'text-warning-ink'
                   : ''
                 : getGitStatusColor(flatNode.gitStatus?.status)}
             {@const hasChanges =

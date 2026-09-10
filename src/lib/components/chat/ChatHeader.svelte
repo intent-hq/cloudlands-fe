@@ -119,7 +119,7 @@
     if (!session) return '';
 
     if (isPendingAgentSession(session)) {
-      return 'text-yellow-500';
+      return 'text-warning-ink';
     }
 
     switch (session.status) {

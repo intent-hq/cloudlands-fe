@@ -68,7 +68,7 @@
   const statusColors: Record<TaskStatus, string> = {
     not_started: 'bg-gray-400/10 text-gray-400',
     waiting: 'bg-gray-300/10 text-gray-400',
-    discussion_needed: 'bg-amber-500/10 text-amber-700/70',
+    discussion_needed: 'bg-warning/10 text-warning-ink',
     blocked: 'bg-red-500/10 text-red-600',
     in_progress: 'bg-sky-400/10 text-sky-600',
     review_required: 'bg-blue-500/10 text-blue-600',
@@ -80,7 +80,7 @@
   const statusDotColors: Record<TaskStatus, string> = {
     not_started: 'bg-gray-400',
     waiting: 'bg-gray-300',
-    discussion_needed: 'bg-amber-500',
+    discussion_needed: 'bg-warning',
     blocked: 'bg-red-500',
     in_progress: 'bg-sky-400',
     review_required: 'bg-blue-500',

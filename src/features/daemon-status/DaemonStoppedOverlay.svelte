@@ -345,7 +345,7 @@
 
         {#if !isSidecarFailure && !isAuthRejected}
           <p class="mt-3 text-sm text-muted-foreground" data-testid="daemon-stopped-retrying">
-            <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-yellow-500 align-middle"
+            <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-warning align-middle"
             ></span>
             <span class="ml-1.5 align-middle">
               {$reconnectAttempts$ > 0
@@ -365,7 +365,7 @@
         -->
         {#if $certWarnings$.length > 0}
           <div
-            class="mt-3 rounded-md border border-yellow-600/40 bg-yellow-500/10 p-2"
+            class="mt-3 rounded-md border border-warning/30 bg-warning/10 p-2"
             data-testid="daemon-stopped-cert-warnings"
           >
             <p class="text-xs text-muted-foreground">

@@ -810,7 +810,7 @@
           </div>
         </div>
         {#if !isValid}
-          <p class="text-xs text-amber-500/90 mt-1">{m.settings_wsApi_port_invalid()}</p>
+          <p class="text-xs text-warning-ink mt-1">{m.settings_wsApi_port_invalid()}</p>
         {/if}
       {/snippet}
       {@render portValidation()}
@@ -935,7 +935,7 @@
               </Button>
             </div>
           </div>
-          <p class="text-xs text-amber-500/90">
+          <p class="text-xs text-warning-ink">
             {m.settings_wsApi_tokenSecretWarning()}
           </p>
         </section>
@@ -971,7 +971,7 @@
       <p class="text-xs text-subtle mt-3">
         {m.settings_wsApi_scanDescription()}
       </p>
-      <p class="text-xs text-amber-500/90 mt-2">
+      <p class="text-xs text-warning-ink mt-2">
         {m.settings_wsApi_qrTokenWarning()}
       </p>
       <Button

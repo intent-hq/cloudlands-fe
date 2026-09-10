@@ -1325,7 +1325,7 @@
                 >
                   <span
                     class="w-3 h-3 shrink-0 text-{result.isFolder
-                      ? 'amber-500'
+                      ? 'warning-ink'
                       : 'muted-foreground'}"
                   >
                     {result.isFolder ? '📁' : '📄'}

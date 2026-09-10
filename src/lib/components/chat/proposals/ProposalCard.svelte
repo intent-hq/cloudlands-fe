@@ -1028,7 +1028,7 @@
                   <div
                     bind:this={branchRowElement}
                     class={branchNeedsAttention
-                      ? 'min-w-0 max-w-[50%] rounded-md ring-1 ring-amber-500/70 focus:outline-none'
+                      ? 'min-w-0 max-w-[50%] rounded-md ring-1 ring-warning/30 focus:outline-none'
                       : 'min-w-0 max-w-[50%] focus:outline-none'}
                     data-testid="proposal-branch-picker"
                     data-branch-warning={branchNeedsAttention ? 'true' : undefined}
@@ -1055,7 +1055,7 @@
                 {#if proposedBranchMissing}
                   <p
                     id={`${metadataIdPrefix}-branch-mismatch`}
-                    class="type-caption mt-1 text-amber-600 dark:text-amber-400"
+                    class="type-caption mt-1 text-warning-ink"
                     data-testid="proposal-branch-mismatch-warning"
                   >
                     {m.chat_proposalCard_branchNotFound_label({

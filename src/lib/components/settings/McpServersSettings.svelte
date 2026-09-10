@@ -655,7 +655,7 @@
                           <div class="flex items-center gap-2">
                             <span class="text-sm font-medium truncate">{option.label}</span>
                             {#if needsAuth}
-                              <span class="text-ui text-amber-700 dark:text-amber-400 font-medium">
+                              <span class="text-ui text-warning-ink font-medium">
                                 {m.settings_mcp_status_needsAuth()}
                               </span>
                             {:else if installed}
@@ -674,7 +674,7 @@
                         {:else if needsAuth}
                           <Button
                             type="button"
-                            class="px-3 py-1 text-xs font-medium rounded-md border border-amber-500/50 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer"
+                            class="px-3 py-1 text-xs font-medium rounded-md border border-warning/30 text-warning-ink hover:bg-warning/10 transition-colors cursor-pointer"
                             onclick={() => handleReauthenticate(normalizeServerName(option.label))}
                           >
                             {m.settings_mcp_authenticateButton()}

@@ -286,7 +286,7 @@
     return status === 'connected'
       ? 'bg-green-500'
       : status === 'connecting'
-        ? 'bg-yellow-500'
+        ? 'bg-warning'
         : 'bg-muted-foreground/50';
   }
 
@@ -495,7 +495,7 @@
         {#if daemonBehindTooltip}
           <Tooltip content={daemonBehindTooltip} class="self-center">
             <span
-              class="block size-2 rounded-full bg-yellow-500"
+              class="block size-2 rounded-full bg-warning"
               role="img"
               aria-label={daemonBehindTooltip}
             ></span>

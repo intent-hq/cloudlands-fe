@@ -2927,7 +2927,7 @@
       class="flex items-center gap-2 px-4 py-1.5 group relative sticky z-10 bg-sidebar {allChangesSearchHeaderMatchKeys.has(
         expandKey,
       )
-        ? 'ring-1 ring-yellow-400/60 bg-yellow-400/10'
+        ? 'ring-1 ring-warning/30 bg-warning/10'
         : ''} {allChangesSearchCurrentHeaderKey === expandKey
         ? 'ring-2 ring-blue-400/70 bg-blue-500/10'
         : ''}"
@@ -2951,7 +2951,7 @@
         <span class="text-sm truncate shrink-0 max-w-full" title={displayPath}>
           {#each getAllChangesHighlightedTextSegments(getFileName(displayPath)) as segment, i (i)}
             {#if segment.isMatch}
-              <mark class="rounded-sm bg-yellow-400/40 px-0.5 text-foreground">{segment.text}</mark>
+              <mark class="rounded-sm bg-warning/10 px-0.5 text-foreground">{segment.text}</mark>
             {:else}
               {segment.text}
             {/if}
@@ -2961,9 +2961,7 @@
           <span class="text-xs text-subtle truncate hidden sm:inline shrink-6">
             {#each getAllChangesHighlightedTextSegments(getDirectoryPath(displayPath)) as segment, i (i)}
               {#if segment.isMatch}
-                <mark class="rounded-sm bg-yellow-400/40 px-0.5 text-foreground"
-                  >{segment.text}</mark
-                >
+                <mark class="rounded-sm bg-warning/10 px-0.5 text-foreground">{segment.text}</mark>
               {:else}
                 {segment.text}
               {/if}

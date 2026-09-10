@@ -26,7 +26,7 @@
       'bg-blue-500/10 border-blue-500/30 hover:border-blue-500/50',
       'bg-purple-500/10 border-purple-500/30 hover:border-purple-500/50',
       'bg-emerald-500/10 border-emerald-500/30 hover:border-emerald-500/50',
-      'bg-amber-500/10 border-amber-500/30 hover:border-amber-500/50',
+      'bg-warning/10 border-warning/30 hover:border-warning/30',
       'bg-rose-500/10 border-rose-500/30 hover:border-rose-500/50',
       'bg-cyan-500/10 border-cyan-500/30 hover:border-cyan-500/50',
     ];
@@ -39,7 +39,7 @@
       'text-blue-500',
       'text-purple-500',
       'text-emerald-500',
-      'text-amber-500',
+      'text-warning-ink',
       'text-rose-500',
       'text-cyan-500',
     ];

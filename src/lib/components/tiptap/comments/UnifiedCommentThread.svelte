@@ -267,7 +267,7 @@
       {#if orphaned && !isCollapsed}
         <div class="ml-8">
           <span
-            class="text-xs text-amber-600 mt-1 inline-block"
+            class="text-xs text-warning-ink mt-1 inline-block"
             title={m.tiptap_commentThread_unlinked_tooltip()}
             >{m.tiptap_commentThread_unlinked_label()}</span
           >

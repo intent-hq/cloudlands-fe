@@ -86,7 +86,7 @@
     { icon: typeof faCircleExclamation; color: string }
   > = {
     critical: { icon: faCircleExclamation, color: 'text-red-500' },
-    important: { icon: faTriangleExclamation, color: 'text-amber-500' },
+    important: { icon: faTriangleExclamation, color: 'text-warning-ink' },
     minor: { icon: faCircleInfo, color: 'text-blue-400' },
   };
 

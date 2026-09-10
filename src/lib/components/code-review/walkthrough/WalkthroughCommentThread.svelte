@@ -126,7 +126,7 @@
         return 'text-blue-500';
       case 'explanation':
       default:
-        return 'text-amber-500';
+        return 'text-warning-ink';
     }
   }
 

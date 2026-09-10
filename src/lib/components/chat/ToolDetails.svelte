@@ -661,7 +661,7 @@
                   <Fa
                     icon={isDirectory ? faFolder : faFile}
                     size="xs"
-                    class={isDirectory ? 'text-amber-500/70' : 'text-subtle'}
+                    class={isDirectory ? 'text-warning-ink' : 'text-subtle'}
                   />
                   <span class={isDirectory ? 'text-foreground' : 'text-subtle'}>
                     {file}
@@ -768,7 +768,7 @@
               </p>
               {#if parsedResult.messagePriority === 'high'}
                 <span
-                  class="inline-flex self-start px-1.5 py-0.5 text-ui font-semibold rounded-full bg-amber-500/30 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                  class="inline-flex self-start px-1.5 py-0.5 text-ui font-semibold rounded-full bg-warning/10 text-warning-ink border border-warning/30"
                 >
                   {m.chat_toolDetails_highPriority_label()}
                 </span>
@@ -1052,7 +1052,7 @@
                 : issue.level === 'error'
                   ? 'bg-red-500/20 text-red-600 dark:text-red-400'
                   : issue.level === 'warning'
-                    ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                    ? 'bg-warning/10 text-warning-ink'
                     : issue.level === 'info'
                       ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400'
                       : 'bg-muted text-subtle'}
@@ -1135,7 +1135,7 @@
                     : issue.level === 'error'
                       ? 'bg-red-500'
                       : issue.level === 'warning'
-                        ? 'bg-amber-500'
+                        ? 'bg-warning'
                         : issue.level === 'info'
                           ? 'bg-blue-500'
                           : 'bg-muted-foreground'}
@@ -1258,7 +1258,7 @@
                     ? 'text-green-600 dark:text-green-400'
                     : file.status === 'removed'
                       ? 'text-red-600 dark:text-red-400'
-                      : 'text-amber-600 dark:text-amber-400'}
+                      : 'text-warning-ink'}
                 <div
                   class="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/30 transition-colors"
                 >
@@ -1314,7 +1314,7 @@
                     : parsedResult.githubOverallStatus === 'failure' ||
                         parsedResult.githubOverallStatus === 'error'
                       ? 'text-red-600 dark:text-red-400'
-                      : 'text-amber-600 dark:text-amber-400'}
+                      : 'text-warning-ink'}
                 <div class="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-border">
                   <span class="text-sm font-medium {overallColor}"
                     >{m.chat_toolDetails_overall_label({
@@ -1349,7 +1349,7 @@
                       : conclusion === 'in_progress' ||
                           conclusion === 'queued' ||
                           conclusion === 'pending'
-                        ? 'text-amber-600 dark:text-amber-400'
+                        ? 'text-warning-ink'
                         : 'text-subtle'}
                 <div
                   class="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/30 transition-colors"

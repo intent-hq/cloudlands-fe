@@ -139,7 +139,7 @@
         <div
           class="text-sm flex flex-col items-center gap-0.5 {$attentionRequest$.kind === 'blocker'
             ? 'text-red-500'
-            : 'text-amber-500'}"
+            : 'text-warning-ink'}"
         >
           <div class="flex items-center justify-center gap-1">
             <Fa

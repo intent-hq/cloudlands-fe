@@ -419,7 +419,7 @@
             : m.codeReview_panel_commentCount_many({ count: totalCount })}
         </Badge>
       {:else if isStale}
-        <Badge variant="outline" class="text-xs text-amber-600"
+        <Badge variant="outline" class="text-xs text-warning-ink"
           >{m.codeReview_panel_outdated_label()}</Badge
         >
       {/if}

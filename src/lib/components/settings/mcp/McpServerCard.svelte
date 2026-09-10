@@ -60,7 +60,7 @@
     },
     auth_required: {
       label: m.settings_mcp_status_needsAuth(),
-      class: 'text-amber-700 dark:text-amber-400 bg-amber-500/10',
+      class: 'text-warning-ink bg-warning/10',
     },
     disabled: {
       label: m.settings_mcp_status_disabled(),

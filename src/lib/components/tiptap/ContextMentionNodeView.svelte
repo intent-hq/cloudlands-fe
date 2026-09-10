@@ -171,7 +171,7 @@
     const p = priority.toLowerCase();
     if (p.includes('urgent') || p === '1') return { color: 'bg-red-500', label: '🔴' };
     if (p.includes('high') || p === '2') return { color: 'bg-orange-500', label: '🟠' };
-    if (p.includes('medium') || p === '3') return { color: 'bg-yellow-500', label: '🟡' };
+    if (p.includes('medium') || p === '3') return { color: 'bg-warning', label: '🟡' };
     if (p.includes('low') || p === '4') return { color: 'bg-blue-500', label: '🔵' };
     return null;
   }
@@ -181,7 +181,7 @@
     if (!level) return '';
     const l = level.toLowerCase();
     if (l === 'error' || l === 'fatal') return 'text-danger';
-    if (l === 'warning') return 'text-yellow-500';
+    if (l === 'warning') return 'text-warning-ink';
     return 'text-subtle';
   }
 

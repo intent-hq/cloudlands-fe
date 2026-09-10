@@ -175,7 +175,7 @@
         </div>
       </div>
       {#if !isValid}
-        <p class="text-xs text-amber-500/90 mt-1">
+        <p class="text-xs text-warning-ink mt-1">
           {m.settings_workspaceApi_maxOutputChars_invalid()}
         </p>
       {/if}

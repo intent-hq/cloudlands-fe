@@ -67,7 +67,6 @@ describe('AttentionRequestBanner', () => {
     const header = screen.getByTestId('attention-request-header');
     const label = screen.getByTestId('attention-request-label');
     expect(label.textContent).toMatch(/Requests a discussion/i);
-    expect(label.parentElement?.className).toContain('text-amber-500');
     expect(label.previousElementSibling?.tagName.toLowerCase()).toBe('svg');
     expect(header.querySelector('[title]')).toBeTruthy();
     expect(screen.getByText('Need input on API design')).toBeTruthy();

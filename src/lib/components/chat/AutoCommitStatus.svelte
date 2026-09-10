@@ -67,10 +67,10 @@
             </span>
           </span>
         {:else if status.state === 'hook-failure'}
-          <Fa icon={faCodeCommit} class="opacity-30 text-amber-500/70" size="xs" />
+          <Fa icon={faCodeCommit} class="opacity-30 text-warning-ink" size="xs" />
           <span class="truncate min-w-0 text-left flex-1">
             {#if status.status === 'waking-agent'}
-              <span class="text-amber-500/70">{m.chat_autoCommitStatus_hooksFailed_label()}</span>
+              <span class="text-warning-ink">{m.chat_autoCommitStatus_hooksFailed_label()}</span>
               <span class="text-subtle">
                 {m.chat_autoCommitStatus_fixingAttempt_label({
                   attempt: formatInteger(status.retryCount),

@@ -626,7 +626,7 @@
               <!-- Hover status reads the selector-derived graph status; AgentNode
                 intentionally carries no separate waiting boolean. -->
               {#if hoveredAgent.status === 'waiting'}
-                <span class="text-yellow-500"
+                <span class="text-warning-ink"
                   >● {m.agentOverview_hierarchyGraph_statusWaiting_label()}</span
                 >
               {:else if hoveredAgent.status === 'responding'}

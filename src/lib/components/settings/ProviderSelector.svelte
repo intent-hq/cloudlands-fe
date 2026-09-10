@@ -568,9 +568,7 @@
                           {m.settings_providers_default()}
                         </span>
                       {:else}
-                        <span
-                          class="text-xs text-yellow-600 dark:text-yellow-500 flex items-center gap-1"
-                        >
+                        <span class="text-xs text-warning-ink flex items-center gap-1">
                           <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
                           {m.settings_providers_defaultUnavailable_label()}
                         </span>
@@ -593,7 +591,7 @@
                       role="img"
                       aria-label={warningLabel}
                       title={warningLabel}
-                      class="flex size-4 items-center justify-center text-yellow-600 dark:text-yellow-500"
+                      class="flex size-4 items-center justify-center text-warning-ink"
                     >
                       <Fa icon={faTriangleExclamation} class="size-3.5" />
                     </span>
@@ -647,7 +645,7 @@
                           {#if hasWarning}
                             <div class="border-b border-border pb-1">
                               {#if hasPiAdapterWarning}
-                                <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                                <p class="px-3 py-1.5 text-xs text-warning-ink">
                                   {m.settings_providers_piAdapterNeeded()}
                                 </p>
                                 <Button
@@ -668,7 +666,7 @@
                               {/if}
 
                               {#if hasNodeMissing}
-                                <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                                <p class="px-3 py-1.5 text-xs text-warning-ink">
                                   {m.settings_providers_requiresNodejs()}
                                 </p>
                                 <Button
@@ -685,13 +683,13 @@
                               {/if}
 
                               {#if hasNpmOld}
-                                <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                                <p class="px-3 py-1.5 text-xs text-warning-ink">
                                   {m.settings_providers_npmTooOld()}
                                 </p>
                               {/if}
 
                               {#if hasProviderWarning}
-                                <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                                <p class="px-3 py-1.5 text-xs text-warning-ink">
                                   {provider.warning}
                                 </p>
                                 {#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}

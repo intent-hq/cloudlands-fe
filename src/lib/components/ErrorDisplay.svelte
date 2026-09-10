@@ -75,9 +75,9 @@
     },
     warning: {
       icon: faExclamationTriangle,
-      color: 'text-amber-500',
-      bgColor: 'bg-amber-500/10',
-      borderColor: 'border-amber-500/30',
+      color: 'text-warning-ink',
+      bgColor: 'bg-warning/10',
+      borderColor: 'border-warning/30',
       get defaultTitle() {
         return m.lib_errorDisplay_warning_title();
       },
@@ -149,14 +149,14 @@
             </div>
 
             <!-- Common Causes -->
-            <div class="bg-amber-500/10 border border-amber-500/20 rounded-md p-3">
-              <div class="text-sm font-medium text-amber-600 dark:text-amber-400 mb-2">
+            <div class="bg-warning/10 border border-warning/30 rounded-md p-3">
+              <div class="text-sm font-medium text-warning-ink mb-2">
                 {m.lib_errorDisplay_commonCauses_title()}
               </div>
               <ul class="text-xs text-muted-foreground space-y-1">
                 {#each svelteErrorInfo.commonCauses as cause, causeIndex (`cause-${causeIndex}-${cause.slice(0, 20)}`)}
                   <li class="flex items-start gap-2">
-                    <span class="text-amber-500">•</span>
+                    <span class="text-warning-ink">•</span>
                     <span>{cause}</span>
                   </li>
                 {/each}

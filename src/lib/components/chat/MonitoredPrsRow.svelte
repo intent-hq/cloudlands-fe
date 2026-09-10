@@ -296,7 +296,7 @@
             <span class="min-w-0 flex-1 truncate">{monitorLabel(monitor)}</span>
             {#if monitor.hasPendingChanges}
               <span
-                class="block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500/80"
+                class="block h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
                 title={m.chat_monitoredPrs_pendingDot_tooltip()}
               ></span>
             {/if}

@@ -45,7 +45,7 @@
         <span
           class="flex min-w-0 items-start gap-2 {$attentionRequest$.kind === 'blocker'
             ? 'text-red-500'
-            : 'text-amber-500'}"
+            : 'text-warning-ink'}"
         >
           <Fa
             icon={$attentionRequest$.kind === 'blocker' ? faCircleExclamation : faCommentDots}

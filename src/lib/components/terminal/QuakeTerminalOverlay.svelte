@@ -249,8 +249,8 @@
     },
     restarting: {
       label: () => m.workspace_devScripts_restarting_label(),
-      dotClass: 'bg-amber-500',
-      textClass: 'text-amber-500',
+      dotClass: 'bg-warning',
+      textClass: 'text-warning-ink',
     },
     idle: {
       label: () => m.terminal_quakeOverlay_status_idle(),

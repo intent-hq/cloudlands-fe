@@ -567,10 +567,10 @@
     if (!showStateBorder) return '';
     if (isRunning) return 'agent-glow-active';
     if (avatarState === 'failed') return 'shadow shadow-red-500 shadow-sm';
-    if (avatarState === 'needs-permission') return 'shadow shadow-amber-500 shadow-sm';
-    if (avatarState === 'attention-discussion') return 'shadow shadow-amber-500 shadow-sm';
+    if (avatarState === 'needs-permission') return 'shadow shadow-warning shadow-sm';
+    if (avatarState === 'attention-discussion') return 'shadow shadow-warning shadow-sm';
     if (avatarState === 'attention-blocker') return 'shadow shadow-red-500 shadow-sm';
-    if (avatarState === 'waiting') return 'shadow shadow-amber-500 shadow-sm';
+    if (avatarState === 'waiting') return 'shadow shadow-warning shadow-sm';
     return 'glow-transparent';
   });
 
@@ -844,7 +844,7 @@
                 class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm {$preview$
                   .attention.kind === 'blocker'
                   ? 'text-red-500'
-                  : 'text-amber-500'}"
+                  : 'text-warning-ink'}"
                 data-testid="agent-card-attention"
               >
                 {$preview$.attention.kind === 'blocker'
