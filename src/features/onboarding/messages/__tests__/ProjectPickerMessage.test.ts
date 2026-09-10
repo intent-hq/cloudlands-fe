@@ -48,7 +48,9 @@ vi.mock('svelte-fa', async () => {
 });
 
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
+import { localRepoDiscoverySaga } from '$store/renderer/slices/known-repos/sagas/local-repo-discovery-saga';
 import { resetMockIpcRouter, setMockIpcInvokeFallback } from '$shared/ipc-mock-router';
 // Side-effect import: bridges `file:getDirectoryStatus` → daemon `host.directoryStatus`.
 import '$store/renderer/seeders/host-bridge-seeder';
@@ -97,7 +99,7 @@ async function openGithubTab(
 ): Promise<HTMLInputElement> {
   render(ProjectPickerMessage, { props: { onProjectChange } });
   const tabButton = Array.from(document.body.querySelectorAll('button')).find(
-    (b) => b.textContent?.trim() === 'GitHub repo',
+    (b) => b.textContent?.trim() === m.onboarding_projectPicker_githubRepo_label(),
   );
   if (!tabButton) throw new Error('GitHub repo tab button not found');
   await fireEvent.click(tabButton);
@@ -131,6 +133,68 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
     // into other suites (also drops this file's seeder handlers, which are
     // re-registered on the next import in a fresh module registry).
     resetMockIpcRouter();
+  });
+
+  it('discovers once on mount and preserves a manual selection when results arrive', async () => {
+    let finishScan!: (value: { repositories: string[] }) => void;
+    const scan = new Promise<{ repositories: string[] }>((resolve) => {
+      finishScan = resolve;
+    });
+    backendRequestMock.mockImplementation((async (method: string) => {
+      if (method === 'repo.list') return { repos: [] };
+      if (method === 'workspace.list') return { workspaces: [] };
+      if (method === 'host.listDirectory')
+        return {
+          path: '/home/dev',
+          home: '/home/dev',
+          parent: '/home',
+          entries: [],
+          favorites: [],
+        };
+      if (method === 'workspace.findRepositories') return scan;
+      if (method === 'host.checkGit') return { available: true };
+      return undefined;
+    }) as never);
+    const stop = appStore.runSaga(localRepoDiscoverySaga);
+    try {
+      const selections: ProjectSelection[] = [];
+      render(ProjectPickerMessage, {
+        props: { onProjectChange: (value) => selections.push(value) },
+      });
+      await waitFor(() =>
+        expect(backendRequestMock).toHaveBeenCalledWith('workspace.findRepositories', {
+          directory: '/home/dev',
+        }),
+      );
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.onboarding_localRepoTab_browse_ariaLabel() }),
+      );
+      await waitFor(() => expect(selections.at(-1)?.repoPath).toBe(LOCAL_PATH));
+      finishScan({ repositories: ['/home/dev/website'] });
+      await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(2));
+      expect(selections.at(-1)?.repoPath).toBe(LOCAL_PATH);
+      await fireEvent.input(screen.getByRole('combobox'), { target: { value: 'no-match' } });
+      expect(screen.queryAllByRole('option')).toHaveLength(0);
+      await fireEvent.click(
+        screen.getByRole('button', {
+          name: m.onboarding_projectPicker_githubRepo_label(),
+          exact: true,
+        }),
+      );
+      await fireEvent.click(
+        screen.getByRole('button', {
+          name: m.onboarding_projectPicker_localFolder_label(),
+          exact: true,
+        }),
+      );
+      await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(1));
+      expect(
+        backendRequestMock.mock.calls.filter(([method]) => method === 'workspace.findRepositories'),
+      ).toHaveLength(1);
+    } finally {
+      cleanup();
+      stop();
+    }
   });
 
   it('typing owner/repo yields a valid picked-repo selection with no clonePath', async () => {

@@ -9,6 +9,12 @@
    *   - reveals Message 3
    */
   import { onMount } from 'svelte';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    discoverLocalReposRequested,
+    onboardingPickerOpened,
+    onboardingPickerClosed,
+  } from '$store/renderer/slices/known-repos/known-repos-slice';
   import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
   import { invoke } from '$shared/generated/ipc-client';
@@ -296,6 +302,8 @@
   // Notify parent once on mount with pre-filled persisted values (if any)
   onMount(() => {
     notifyParent();
+    appStore.dispatch(onboardingPickerOpened(activeTab === 'local'));
+    return () => appStore.dispatch(onboardingPickerClosed());
   });
 
   const tabs: { id: TabId; label: string }[] = [
@@ -349,6 +357,7 @@
         onclick={() => {
           previousTabIndex = TAB_ORDER.indexOf(activeTab);
           activeTab = tab.id;
+          if (tab.id === 'local') appStore.dispatch(discoverLocalReposRequested());
           notifyParent();
         }}
       >

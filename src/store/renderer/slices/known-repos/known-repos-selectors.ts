@@ -15,3 +15,10 @@ export const selectKnownRepos = store.createSelector((state) => {
 export const selectKnownReposLoaded = store.createSelector((state) => {
   return state.knownRepos.loaded;
 });
+
+export const selectLocalRepoDiscoveryStatus = store.createSelector(
+  (state) => state.knownRepos.discovery.status,
+);
+export const selectDiscoveredLocalRepos = store.createSelector((state) =>
+  getItems(state.knownRepos.discovery.repos),
+);

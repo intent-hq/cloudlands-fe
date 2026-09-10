@@ -24,6 +24,8 @@ const mocks = vi.hoisted(() => {
   const state = {
     workspaces: [] as Array<Record<string, unknown>>,
     knownRepos: [] as Array<Record<string, unknown>>,
+    discovered: [] as Array<{ path: string; name: string }>,
+    discoveryStatus: 'idle',
     pickedPath: '/home/dev/manual',
   };
   return { readable, selector, state };
@@ -34,6 +36,8 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/known-repos/known-repos-selectors', () => ({
   selectKnownRepos: mocks.selector(() => mocks.state.knownRepos),
+  selectDiscoveredLocalRepos: mocks.selector(() => mocks.state.discovered),
+  selectLocalRepoDiscoveryStatus: mocks.selector(() => mocks.state.discoveryStatus),
 }));
 
 vi.mock('$lib/electron-bridge', () => ({
@@ -87,6 +91,8 @@ describe('LocalRepoTab — recent repos filtering', () => {
     cleanup();
     mocks.state.workspaces = [];
     mocks.state.knownRepos = [];
+    mocks.state.discovered = [];
+    mocks.state.discoveryStatus = 'idle';
     mocks.state.pickedPath = '/home/dev/manual';
   });
 
@@ -149,6 +155,45 @@ describe('LocalRepoTab — recent repos filtering', () => {
     });
     expect(props.onSelect).toHaveBeenCalledWith('/home/dev/manual', undefined);
   });
+
+  it('searches and selects discovered suggestions without automatically selecting them', async () => {
+    mocks.state.discovered = [
+      { path: '/home/dev/app', name: 'app' },
+      { path: '/home/dev/lib', name: 'lib' },
+      { path: '/home/dev/app', name: 'app' },
+      { path: '/ws/.repo-cache/internal', name: 'internal' },
+    ];
+    const props = baseProps();
+    render(LocalRepoTab, { props });
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+    expect(props.onSelect).not.toHaveBeenCalled();
+    const input = screen.getByRole('combobox');
+    await fireEvent.input(input, { target: { value: 'lib' } });
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    await fireEvent.click(screen.getByRole('option'));
+    await waitFor(() => expect(props.onSelect).toHaveBeenCalledWith('/home/dev/lib', undefined));
+    await fireEvent.input(input, { target: { value: 'missing' } });
+    expect(screen.queryAllByRole('option')).toHaveLength(0);
+  });
+
+  it.each(['loading', 'error', 'complete'])(
+    'keeps manual browsing available during discovery %s',
+    async (status) => {
+      mocks.state.discoveryStatus = status;
+      const props = baseProps();
+      render(LocalRepoTab, { props });
+      expect(screen.getByRole('listbox').getAttribute('aria-busy')).toBe(
+        String(status === 'loading'),
+      );
+      if (status !== 'complete') expect(screen.getByRole('status')).toBeTruthy();
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.onboarding_localRepoTab_browse_ariaLabel() }),
+      );
+      await waitFor(() =>
+        expect(props.onSelect).toHaveBeenCalledWith('/home/dev/manual', undefined),
+      );
+    },
+  );
 
   it('exempts manually picked folders from the exclusion filter', async () => {
     // Picking a path that the filter would otherwise exclude (a workspace-owned

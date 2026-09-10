@@ -9,14 +9,14 @@
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
-  import { getRecentRepos } from '$lib/utils/workspace-utils';
+  import { localRepoOptions } from '../utils/local-repo-options';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectKnownRepos } from '$store/renderer/slices/known-repos/known-repos-selectors';
-  import { invoke } from '$lib/electron-bridge';
   import {
-    getWorkspaceOwnedCheckoutPaths,
-    isDaemonManagedRepoPath,
-  } from '$lib/components/workspace/initializer/recent-repo-display';
+    selectKnownRepos,
+    selectDiscoveredLocalRepos,
+    selectLocalRepoDiscoveryStatus,
+  } from '$store/renderer/slices/known-repos/known-repos-selectors';
+  import { invoke } from '$lib/electron-bridge';
   import { faFolder } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Input from '$lib/components/ui/input/input.svelte';
@@ -47,6 +47,8 @@
 
   const workspaceItems$ = selectWorkspaceItems();
   const knownRepos$ = selectKnownRepos();
+  const discoveredRepos$ = selectDiscoveredLocalRepos();
+  const discoveryStatus$ = selectLocalRepoDiscoveryStatus();
 
   let searchQuery = $state('');
   let focusedIndex = $state(0);
@@ -56,49 +58,9 @@
   let manuallyAddedPaths = $state<string[]>([]);
   let initGitPath = $state('');
 
-  // Build recent repos list
-  const recentRepos = $derived.by(() => {
-    const repoMap = new Map<string, { path: string; name: string; owner?: string }>();
-
-    // Daemon-managed paths (`/.clones/`, `/.repo-cache/`) and workspace-owned
-    // standalone checkouts are not copyable local repos (same exclusions as
-    // RepoSelector). Manually picked folders are exempt — the user chose them.
-    const workspaceOwnedCheckouts = getWorkspaceOwnedCheckoutPaths($workspaceItems$);
-    const isExcluded = (path: string) =>
-      isDaemonManagedRepoPath(path) || workspaceOwnedCheckouts.has(path);
-
-    // Add manually picked folders first so they appear at the top
-    for (const p of manuallyAddedPaths) {
-      repoMap.set(p, { path: p, name: p.split('/').pop() || p });
-    }
-
-    // Add known repos from registry (skip path-less GitHub picks — their
-    // `path` is an owner/repo shorthand, not a local checkout)
-    for (const repo of $knownRepos$) {
-      if (repo.path && !repo.githubUrl && !isExcluded(repo.path)) {
-        repoMap.set(repo.path, {
-          path: repo.path,
-          name:
-            repo.name ||
-            repo.path.split('/').pop() ||
-            m.onboarding_localRepoTab_unknownProject_label(),
-          owner: repo.owner,
-        });
-      }
-    }
-
-    // Merge workspace-derived repos
-    const wsRepos = getRecentRepos($workspaceItems$, 10);
-    for (const repo of wsRepos) {
-      const isLocal =
-        repo.path.startsWith('/') || repo.path.startsWith('~') || repo.path.startsWith('.');
-      if (isLocal && !isExcluded(repo.path)) {
-        repoMap.set(repo.path, { path: repo.path, name: repo.name, owner: repo.owner });
-      }
-    }
-
-    return Array.from(repoMap.values());
-  });
+  const recentRepos = $derived(
+    localRepoOptions($knownRepos$, $workspaceItems$, $discoveredRepos$, manuallyAddedPaths),
+  );
 
   // Filter repos based on search
   const filteredRepos = $derived.by(() => {
@@ -287,6 +249,7 @@
     id="local-repo-list"
     role="listbox"
     aria-label={m.onboarding_localRepoTab_repoList_ariaLabel()}
+    aria-busy={$discoveryStatus$ === 'loading'}
     class="max-h-70 overflow-y-auto -mx-1 px-1"
   >
     {#if filteredRepos.length > 0}
@@ -380,12 +343,19 @@
       <div class="py-4 text-center text-sm text-muted-foreground">
         {m.onboarding_localRepoTab_noMatches_label({ query: searchQuery })}
       </div>
-    {:else}
+    {:else if $discoveryStatus$ !== 'loading' && $discoveryStatus$ !== 'error'}
       <div class="py-4 text-center text-sm text-muted-foreground">
         {m.onboarding_localRepoTab_noRecent_label()}
       </div>
     {/if}
   </div>
+  {#if $discoveryStatus$ === 'loading' || $discoveryStatus$ === 'error'}
+    <div role="status" class="py-4 text-center text-sm text-muted-foreground">
+      {$discoveryStatus$ === 'loading'
+        ? m.onboarding_localRepoTab_discovering_label()
+        : m.onboarding_localRepoTab_discoveryFailed_error()}
+    </div>
+  {/if}
 </div>
 
 <DirectoryPickerModal
