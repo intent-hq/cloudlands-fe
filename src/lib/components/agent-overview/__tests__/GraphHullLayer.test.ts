@@ -111,6 +111,21 @@ describe('GraphHullLayer', () => {
     expect(container.querySelectorAll('.task-hull')).toHaveLength(2);
   });
 
+  it('redraws counter-scaled envelopes and padding when zoom changes', async () => {
+    useMotionPreference(true);
+    const nodes = [task('one'), agent('one')];
+    const memberships = deriveTaskHullMemberships(nodes, [assignment('one', 'one')]);
+    const view = render(GraphHullLayer, {
+      props: { nodes, memberships, positions: positions(nodes), zoomScale: 1 },
+    });
+    const pathAtOne = view.container.querySelector('.task-hull')?.getAttribute('d');
+
+    await view.rerender({ nodes, memberships, positions: positions(nodes), zoomScale: 0.5 });
+    await tick();
+
+    expect(view.container.querySelector('.task-hull')?.getAttribute('d')).not.toBe(pathAtOne);
+  });
+
   it('hides a group when an assigned member is not visible at the replay cursor', () => {
     const nodes = [task('one'), agent('visible')];
     const { container } = render(GraphHullLayer, {

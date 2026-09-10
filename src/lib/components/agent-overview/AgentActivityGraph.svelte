@@ -1004,6 +1004,7 @@
         memberships={hullMemberships}
         nodes={visibleGraph.nodes}
         positions={latestPositions.current}
+        {zoomScale}
         {focusNodeId}
         {playbackSpeed}
       />

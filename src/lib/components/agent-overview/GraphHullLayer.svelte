@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { GRAPH_NODE_DIMENSIONS } from './constants';
   import type { TaskHullMembership } from './graph-helpers';
+  import { NODE_SCREEN_MARGINS } from './graph-fit';
   import {
     activityHullTransition,
     activityMotion,
@@ -10,10 +10,11 @@
   } from './activity-motion';
   import {
     HULL_FILL_OPACITIES,
+    HULL_PADDING,
+    HULL_SOFT_PADDING,
     interpolateHullMembers,
     paddedHull,
     smoothClosedHullPath,
-    taskHullPadding,
     type KeyedHullMember,
   } from './hull-geometry';
   import type { GraphNode } from './types';
@@ -30,6 +31,7 @@
     focusNodeId?: string | null;
     spotlightNodeId?: string | null;
     playbackSpeed?: number;
+    zoomScale?: number;
   }
 
   let {
@@ -39,6 +41,7 @@
     focusNodeId = null,
     spotlightNodeId = null,
     playbackSpeed = 1,
+    zoomScale = 1,
   }: Props = $props();
 
   const nodeById = $derived(new Map(nodes.map((node) => [node.id, node])));
@@ -46,10 +49,7 @@
   const hullPaths = new Map<string, { main?: SVGPathElement; soft?: SVGPathElement }>();
   const renderedMembers = new Map<string, KeyedHullMember[]>();
   const previousMemberIds = new Map<string, string[]>();
-  const morphs = new Map<
-    string,
-    { from: KeyedHullMember[]; fromMemberCount: number; startedAt: number }
-  >();
+  const morphs = new Map<string, { from: KeyedHullMember[]; startedAt: number }>();
   let currentPositions = new Map<string, Position>();
   let morphFrame: number | null = null;
   let motionEnabled = $state(true);
@@ -58,16 +58,20 @@
     group: TaskHullMembership,
     currentPositions: Map<string, Position>,
   ): KeyedHullMember[] | null {
+    const scale = Math.max(0.01, zoomScale);
     const members: KeyedHullMember[] = [];
     for (const id of group.memberIds) {
       const node = nodeById.get(id);
       if (!node) return null;
       const position = currentPositions.get(id) ?? node;
-      const dimensions = GRAPH_NODE_DIMENSIONS[node.type];
+      const margin = NODE_SCREEN_MARGINS[node.type];
       members.push({
         id,
         ...position,
-        radius: Math.hypot(dimensions.width, dimensions.height) / 2,
+        width: (margin.left + margin.right) / scale,
+        height: (margin.top + margin.bottom) / scale,
+        offsetX: (margin.right - margin.left) / (2 * scale),
+        offsetY: (margin.bottom - margin.top) / (2 * scale),
       });
     }
     return members;
@@ -75,13 +79,10 @@
 
   function pathsFor(group: TaskHullMembership, currentPositions: Map<string, Position>) {
     const members = memberGeometry(group, currentPositions);
+    const scale = Math.max(0.01, zoomScale);
     return {
-      main: members
-        ? smoothClosedHullPath(paddedHull(members, taskHullPadding(group.memberIds.length)))
-        : null,
-      soft: members
-        ? smoothClosedHullPath(paddedHull(members, taskHullPadding(group.memberIds.length, 25)))
-        : null,
+      main: members ? smoothClosedHullPath(paddedHull(members, HULL_PADDING / scale)) : null,
+      soft: members ? smoothClosedHullPath(paddedHull(members, HULL_SOFT_PADDING / scale)) : null,
     };
   }
 
@@ -102,24 +103,24 @@
       return;
     }
     const morph = morphs.get(group.taskId);
+    const scale = Math.max(0.01, zoomScale);
     let members = target;
-    let mainPadding = taskHullPadding(group.memberIds.length);
-    let softPadding = taskHullPadding(group.memberIds.length, 25);
     if (morph) {
       const anchor = target.find((member) => member.id === group.taskId) ?? target[0];
       const progress = (now - morph.startedAt) / playbackDuration(300, playbackSpeed);
       members = interpolateHullMembers(morph.from, target, anchor, progress);
-      const clampedProgress = Math.min(1, Math.max(0, progress));
-      const fromMainPadding = taskHullPadding(morph.fromMemberCount);
-      const fromSoftPadding = taskHullPadding(morph.fromMemberCount, 25);
-      mainPadding += (fromMainPadding - mainPadding) * (1 - clampedProgress);
-      softPadding += (fromSoftPadding - softPadding) * (1 - clampedProgress);
       if (progress >= 1) morphs.delete(group.taskId);
     }
     renderedMembers.set(group.taskId, members);
     const elements = hullPaths.get(group.taskId);
-    elements?.main?.setAttribute('d', smoothClosedHullPath(paddedHull(members, mainPadding)) ?? '');
-    elements?.soft?.setAttribute('d', smoothClosedHullPath(paddedHull(members, softPadding)) ?? '');
+    elements?.main?.setAttribute(
+      'd',
+      smoothClosedHullPath(paddedHull(members, HULL_PADDING / scale)) ?? '',
+    );
+    elements?.soft?.setAttribute(
+      'd',
+      smoothClosedHullPath(paddedHull(members, HULL_SOFT_PADDING / scale)) ?? '',
+    );
   }
 
   function scheduleMorphFrame(): void {
@@ -161,7 +162,6 @@
       if (changed && reshapeEnabled()) {
         morphs.set(group.taskId, {
           from: renderedMembers.get(group.taskId) ?? target,
-          fromMemberCount: previousIds.length,
           startedAt: performance.now(),
         });
       } else if (!morphs.has(group.taskId) || !reshapeEnabled()) {

@@ -1,11 +1,14 @@
-import { curveCatmullRomClosed, line, polygonHull } from 'd3';
+import { curveLinearClosed, line, polygonHull } from 'd3';
 
 export type HullPoint = [number, number];
 
 export interface HullMember {
   x: number;
   y: number;
-  radius: number;
+  width: number;
+  height: number;
+  offsetX: number;
+  offsetY: number;
 }
 
 export interface KeyedHullMember extends HullMember {
@@ -13,6 +16,7 @@ export interface KeyedHullMember extends HullMember {
 }
 
 export const HULL_PADDING = 18;
+export const HULL_SOFT_PADDING = 25;
 export const TWO_MEMBER_HULL_PADDING = 16;
 export const HULL_FILL_OPACITIES = {
   dimmed: 0.012,
@@ -22,6 +26,7 @@ export const HULL_FILL_OPACITIES = {
   idle: 0.035,
   softenerRatio: 0.34,
 } as const;
+const HULL_CORNER_STEPS = 4;
 const HULL_SAMPLES = 16;
 const ENCLOSURE_EPSILON = 1;
 const HULL_DIRECTIONS = Array.from({ length: HULL_SAMPLES }, (_, index) => {
@@ -29,7 +34,13 @@ const HULL_DIRECTIONS = Array.from({ length: HULL_SAMPLES }, (_, index) => {
   return { x: Math.cos(angle), y: Math.sin(angle) };
 });
 
-function paddedCircle(member: HullMember, padding: number): HullPoint[] {
+interface CircularHullMember {
+  x: number;
+  y: number;
+  radius: number;
+}
+
+function paddedCircle(member: CircularHullMember, padding: number): HullPoint[] {
   const radius = (member.radius + padding) / Math.cos(Math.PI / HULL_SAMPLES) + ENCLOSURE_EPSILON;
   return HULL_DIRECTIONS.map((direction): HullPoint => [
     member.x + direction.x * radius,
@@ -37,16 +48,48 @@ function paddedCircle(member: HullMember, padding: number): HullPoint[] {
   ]);
 }
 
+function paddedRoundedRectangle(member: HullMember, padding: number): HullPoint[] {
+  const centerX = member.x + member.offsetX;
+  const centerY = member.y + member.offsetY;
+  const halfWidth = member.width / 2;
+  const halfHeight = member.height / 2;
+  const cornerRadius = padding + ENCLOSURE_EPSILON;
+  const corners = [
+    { x: halfWidth, y: -halfHeight, startAngle: -Math.PI / 2 },
+    { x: halfWidth, y: halfHeight, startAngle: 0 },
+    { x: -halfWidth, y: halfHeight, startAngle: Math.PI / 2 },
+    { x: -halfWidth, y: -halfHeight, startAngle: Math.PI },
+  ];
+  return corners.flatMap((corner) =>
+    Array.from({ length: HULL_CORNER_STEPS + 1 }, (_, index): HullPoint => {
+      const angle = corner.startAngle + (index / HULL_CORNER_STEPS) * (Math.PI / 2);
+      return [
+        centerX + corner.x + Math.cos(angle) * cornerRadius,
+        centerY + corner.y + Math.sin(angle) * cornerRadius,
+      ];
+    }),
+  );
+}
+
+function paddedShape(member: HullMember | CircularHullMember, padding: number): HullPoint[] {
+  return 'width' in member
+    ? paddedRoundedRectangle(member, padding)
+    : paddedCircle(member, padding);
+}
+
 export function taskHullPadding(memberCount: number, padding = HULL_PADDING): number {
   return memberCount === 2 ? Math.min(padding, TWO_MEMBER_HULL_PADDING) : padding;
 }
 
-/** Returns a convex outline around circularly padded graph members. */
-export function paddedHull(members: HullMember[], padding = HULL_PADDING): HullPoint[] | null {
+/** Returns a convex outline around rounded, rectangularly padded graph members. */
+export function paddedHull(
+  members: Array<HullMember | CircularHullMember>,
+  padding = HULL_PADDING,
+): HullPoint[] | null {
   if (members.length === 0) return null;
-  if (members.length === 1) return paddedCircle(members[0], padding);
+  if (members.length === 1) return paddedShape(members[0], padding);
 
-  const paddedPoints = members.flatMap((member) => paddedCircle(member, padding));
+  const paddedPoints = members.flatMap((member) => paddedShape(member, padding));
   return polygonHull(paddedPoints) ?? null;
 }
 
@@ -70,13 +113,17 @@ export function interpolateHullMembers(
     .map((id) => {
       const previousMember = previousById.get(id);
       const nextMember = nextById.get(id);
-      const from = previousMember ?? { id, ...anchor, radius: 0 };
-      const to = nextMember ?? { id, ...anchor, radius: 0 };
+      const collapsed = { id, ...anchor, width: 0, height: 0, offsetX: 0, offsetY: 0 };
+      const from = previousMember ?? collapsed;
+      const to = nextMember ?? collapsed;
       return {
         id,
         x: from.x + (to.x - from.x) * t,
         y: from.y + (to.y - from.y) * t,
-        radius: from.radius + (to.radius - from.radius) * t,
+        width: from.width + (to.width - from.width) * t,
+        height: from.height + (to.height - from.height) * t,
+        offsetX: from.offsetX + (to.offsetX - from.offsetX) * t,
+        offsetY: from.offsetY + (to.offsetY - from.offsetY) * t,
       };
     });
 }
@@ -84,9 +131,9 @@ export function interpolateHullMembers(
 const closedHullLine = line<HullPoint>()
   .x((point) => point[0])
   .y((point) => point[1])
-  .curve(curveCatmullRomClosed.alpha(0.5));
+  .curve(curveLinearClosed);
 
-/** Produces an organic closed SVG path from a hull polygon. */
+/** Produces a stable closed SVG path that preserves straight hull edges. */
 export function smoothClosedHullPath(hull: HullPoint[] | null): string | null {
   if (!hull || hull.length < 3) return null;
   const path = closedHullLine(hull);

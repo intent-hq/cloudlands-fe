@@ -12,11 +12,20 @@ import {
 } from '../hull-geometry';
 
 function paddedMemberPoints(member: HullMember, padding = HULL_PADDING): [number, number][] {
-  const radius = member.radius + padding;
-  return Array.from({ length: 32 }, (_, index) => {
-    const angle = (index / 32) * Math.PI * 2;
-    return [member.x + Math.cos(angle) * radius, member.y + Math.sin(angle) * radius];
-  });
+  const centerX = member.x + member.offsetX;
+  const centerY = member.y + member.offsetY;
+  const halfWidth = member.width / 2;
+  const halfHeight = member.height / 2;
+  return [
+    [centerX - halfWidth - padding, centerY - halfHeight],
+    [centerX + halfWidth + padding, centerY - halfHeight],
+    [centerX + halfWidth, centerY + halfHeight + padding],
+    [centerX - halfWidth, centerY + halfHeight + padding],
+    [centerX - halfWidth, centerY - halfHeight],
+    [centerX + halfWidth, centerY - halfHeight],
+    [centerX + halfWidth, centerY + halfHeight],
+    [centerX - halfWidth, centerY + halfHeight],
+  ];
 }
 
 describe('task hull geometry', () => {
@@ -33,9 +42,9 @@ describe('task hull geometry', () => {
 
   it('encloses the padded extents of every member', () => {
     const members = [
-      { x: 40, y: 80, radius: 22 },
-      { x: 180, y: 40, radius: 30 },
-      { x: 130, y: 170, radius: 26 },
+      { x: 40, y: 80, width: 60, height: 30, offsetX: 0, offsetY: 8 },
+      { x: 180, y: 40, width: 120, height: 40, offsetX: -4, offsetY: 0 },
+      { x: 130, y: 170, width: 50, height: 90, offsetX: 6, offsetY: -3 },
     ];
     const hull = paddedHull(members);
 
@@ -45,18 +54,21 @@ describe('task hull geometry', () => {
     }
   });
 
-  it('creates a circular fallback for one member', () => {
-    const hull = paddedHull([{ x: 100, y: 120, radius: 30 }]);
+  it('creates a rounded rectangle for one member', () => {
+    const member = { x: 100, y: 120, width: 80, height: 40, offsetX: 5, offsetY: 10 };
+    const hull = paddedHull([member]);
 
-    expect(hull).toHaveLength(16);
-    expect(polygonContains(hull!, [100, 120])).toBe(true);
+    expect(hull).toHaveLength(20);
+    for (const point of paddedMemberPoints(member)) {
+      expect(polygonContains(hull!, point)).toBe(true);
+    }
     expect(smoothClosedHullPath(hull)).toMatch(/^M.*Z$/);
   });
 
   it('creates a rounded capsule fallback for two members', () => {
     const members = [
-      { x: 60, y: 90, radius: 20 },
-      { x: 180, y: 90, radius: 28 },
+      { x: 60, y: 90, width: 56, height: 40, offsetX: 0, offsetY: 4 },
+      { x: 180, y: 90, width: 72, height: 52, offsetX: -3, offsetY: 0 },
     ];
     const padding = taskHullPadding(members.length, 25);
     const hull = paddedHull(members, padding);
@@ -82,17 +94,51 @@ describe('task hull geometry', () => {
 
   it('grows joining members from and shrinks leaving members toward the task anchor', () => {
     const anchor = { x: 0, y: 0 };
-    const task = { id: 'task', ...anchor, radius: 10 };
-    const leaving = { id: 'leaving', x: 20, y: 0, radius: 4 };
-    const joining = { id: 'joining', x: 40, y: 0, radius: 8 };
+    const task = {
+      id: 'task',
+      ...anchor,
+      width: 20,
+      height: 12,
+      offsetX: 0,
+      offsetY: 2,
+    };
+    const leaving = {
+      id: 'leaving',
+      x: 20,
+      y: 0,
+      width: 8,
+      height: 6,
+      offsetX: -2,
+      offsetY: 0,
+    };
+    const joining = {
+      id: 'joining',
+      x: 40,
+      y: 0,
+      width: 16,
+      height: 10,
+      offsetX: 2,
+      offsetY: 4,
+    };
 
     const start = interpolateHullMembers([task, leaving], [task, joining], anchor, 0);
     const midpoint = interpolateHullMembers([task, leaving], [task, joining], anchor, 0.5);
     const end = interpolateHullMembers([task, leaving], [task, joining], anchor, 1);
 
-    expect(start.find((member) => member.id === 'joining')).toMatchObject({ x: 0, radius: 0 });
-    expect(midpoint.find((member) => member.id === 'joining')).toMatchObject({ x: 20, radius: 4 });
-    expect(midpoint.find((member) => member.id === 'leaving')).toMatchObject({ x: 10, radius: 2 });
+    expect(start.find((member) => member.id === 'joining')).toMatchObject({ x: 0, width: 0 });
+    expect(midpoint.find((member) => member.id === 'joining')).toMatchObject({
+      x: 20,
+      width: 8,
+      height: 5,
+      offsetX: 1,
+      offsetY: 2,
+    });
+    expect(midpoint.find((member) => member.id === 'leaving')).toMatchObject({
+      x: 10,
+      width: 4,
+      height: 3,
+      offsetX: -1,
+    });
     expect(end).toEqual([task, joining]);
   });
 });
