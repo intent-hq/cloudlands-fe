@@ -946,6 +946,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
           </Button>
           {#if isAgentDetecting && $_scriptDetectAgentId$}
             <Button
+              variant="plain"
               type="button"
               class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
               onclick={(e) => {
@@ -1126,6 +1127,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             {/each}
             {#if showScriptListToggle}
               <Button
+                variant="ghost-light"
                 type="button"
                 class="w-full text-left px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 onclick={() => (showAllScripts = !showAllScripts)}
@@ -1155,6 +1157,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                   {#if selectedScriptIds.size > 1}
                     <!-- Multi-select actions -->
                     <Button
+                      variant="ghost-light"
                       type="button"
                       class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('startAll')}
@@ -1162,6 +1165,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                       {m.terminal_sidebar_startAll_label()}
                     </Button>
                     <Button
+                      variant="ghost-light"
                       type="button"
                       class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('stopAll')}
@@ -1172,6 +1176,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                     <!-- Single-select actions -->
                     {#if isLiveScriptStatus(script.runtime.status)}
                       <Button
+                        variant="ghost-light"
                         type="button"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('stop')}
@@ -1179,6 +1184,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                         {m.terminal_quakeOverlay_stop_label()}
                       </Button>
                       <Button
+                        variant="ghost-light"
                         type="button"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('restart')}
@@ -1187,6 +1193,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                       </Button>
                     {:else}
                       <Button
+                        variant="ghost-light"
                         type="button"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('start')}
@@ -1195,6 +1202,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                       </Button>
                     {/if}
                     <Button
+                      variant="ghost-light"
                       type="button"
                       class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('edit')}
@@ -1204,6 +1212,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                   {/if}
                   <div class="border-t border-border my-1"></div>
                   <Button
+                    variant="plain"
                     type="button"
                     class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors text-danger hover:bg-danger-background/10"
                     onclick={() => handleContextMenuAction('delete')}

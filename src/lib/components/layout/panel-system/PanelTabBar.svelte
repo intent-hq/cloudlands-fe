@@ -1691,6 +1691,7 @@
                 <!-- User close of an agent-owned browser tab hides it (webview
                      kept alive for the agent, monorepo#2857) — say so. -->
                 <Button
+                  variant="ghost-light"
                   class={cn(
                     'tab-close ml-1 p-0.5 rounded transition-opacity cursor-pointer',
                     isActive
@@ -1754,6 +1755,7 @@
                 {#if onCreateAgentWithSpecialist}
                   <!-- Blank Agent option -->
                   <Button
+                    variant="ghost-light"
                     class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors"
                     onclick={() => {
                       onCreateAgentWithSpecialist(null);
@@ -1766,6 +1768,7 @@
                   <!-- Specialist options -->
                   {#each visibleSpecialists as specialist (specialist.id)}
                     <Button
+                      variant="ghost-light"
                       class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors"
                       onclick={() => {
                         onCreateAgentWithSpecialist(specialist.id);
@@ -1783,6 +1786,7 @@
                   {/each}
                   <!-- Manage specialists link -->
                   <Button
+                    variant="ghost-light"
                     class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors text-subtle border-t border-border mt-0.5 pt-1.5"
                     onclick={async () => {
                       await navigateToSettings({ tab: 'agents' });
@@ -1794,6 +1798,7 @@
                   </Button>
                 {:else if onCreateAgent}
                   <Button
+                    variant="ghost-light"
                     class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors"
                     onclick={() => {
                       onCreateAgent();
@@ -1806,6 +1811,7 @@
                 {/if}
                 {#if onCreateNote}
                   <Button
+                    variant="ghost-light"
                     class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors"
                     onclick={() => {
                       onCreateNote();
@@ -1818,6 +1824,7 @@
                 {/if}
                 {#if onCreateTerminal}
                   <Button
+                    variant="ghost-light"
                     class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors"
                     onclick={() => {
                       onCreateTerminal();
@@ -1830,6 +1837,7 @@
                 {/if}
                 {#if onOpenBrowser}
                   <Button
+                    variant="ghost-light"
                     class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors"
                     onclick={() => {
                       onOpenBrowser();
@@ -2058,6 +2066,7 @@
       }}
     >
       <Button
+        variant="plain"
         type="button"
         class="absolute inset-0 bg-transparent border-0 p-0 cursor-default"
         aria-label={m.layout_panelTabBar_closeContextMenu_ariaLabel()}
@@ -2071,6 +2080,7 @@
       >
         {#if contextTab && canLocateInSidebar(contextTab)}
           <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={(e) => {
               handleLocateInSidebar(e, contextTab);
@@ -2084,6 +2094,7 @@
         <!-- Type-specific actions for file/diff tabs -->
         {#if contextTab && (contextTab.type === 'file' || contextTab.type === 'diff')}
           <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyRelativePath(contextTab);
@@ -2094,6 +2105,7 @@
             {m.layout_panelTabBar_copyRelativePath_label()}
           </Button>
           <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyAbsolutePath(contextTab);
@@ -2104,6 +2116,7 @@
             {m.layout_panelTabBar_copyAbsolutePath_label()}
           </Button>
           <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyFileName(contextTab);
@@ -2115,6 +2128,7 @@
           </Button>
           {#if $isWorkspaceHostLocal$}
             <Button
+              variant="ghost-light"
               class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
               onclick={() => {
                 revealInFinder(contextTab);
@@ -2129,6 +2143,7 @@
         <!-- Type-specific actions for browser tabs -->
         {#if contextTab && contextTab.type === 'browser' && contextTab.browserUrl}
           <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between gap-4"
             onclick={() => {
               copyBrowserUrl(contextTab);
@@ -2142,6 +2157,7 @@
             <span class="text-subtle text-xs">{copyBrowserUrlShortcutHint}</span>
           </Button>
           <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               openInExternalBrowser(contextTab);
@@ -2155,6 +2171,7 @@
         <!-- Type-specific actions for agent tabs -->
         {#if contextTab && contextTab.type === 'agent'}
           <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyAgentRelativePath(contextTab);
@@ -2165,6 +2182,7 @@
             {m.layout_panelTabBar_copyRelativePath_label()}
           </Button>
           <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyAgentAbsolutePath(contextTab);
@@ -2175,6 +2193,7 @@
             {m.layout_panelTabBar_copyAbsolutePath_label()}
           </Button>
           <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyAgentFileName(contextTab);
@@ -2186,6 +2205,7 @@
           </Button>
           {#if $isWorkspaceHostLocal$}
             <Button
+              variant="ghost-light"
               class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
               onclick={() => {
                 revealAgentInFinder(contextTab);
@@ -2200,6 +2220,7 @@
         <!-- Type-specific actions for note tabs -->
         {#if contextTab && contextTab.type === 'note'}
           <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyNoteRelativePath(contextTab);
@@ -2210,6 +2231,7 @@
             {m.layout_panelTabBar_copyRelativePath_label()}
           </Button>
           <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyNoteAbsolutePath(contextTab);
@@ -2220,6 +2242,7 @@
             {m.layout_panelTabBar_copyAbsolutePath_label()}
           </Button>
           <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyNoteFileName(contextTab);
@@ -2231,6 +2254,7 @@
           </Button>
           {#if $isWorkspaceHostLocal$}
             <Button
+              variant="ghost-light"
               class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
               onclick={() => {
                 revealNoteInFinder(contextTab);
@@ -2245,6 +2269,7 @@
         <!-- Type-specific actions for terminal tabs -->
         {#if contextTab && contextTab.type === 'terminal'}
           <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyTabTitle(contextTab);
@@ -2260,6 +2285,7 @@
         {/if}
         <!-- Zoom toggle -->
         <Button
+          variant="ghost-light"
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
           onclick={() => {
             onZoomToggle?.();
@@ -2336,6 +2362,7 @@
         </Button>
         <div class="border-t border-border"></div>
         <Button
+          variant="ghost-light"
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!onSplitHorizontal}
           onclick={() => {
@@ -2374,6 +2401,7 @@
         <div class="border-t border-border"></div>
         {#if contextMenuTab.source === 'tab'}
           <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
             onclick={() => {
               onTabClose?.(menuTabId);
@@ -2384,6 +2412,7 @@
             <span class="text-subtle text-xs">{closePaneShortcutHint}</span>
           </Button>
           <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
             onclick={() => {
               onCloseOtherTabs?.(menuTabId);
@@ -2394,6 +2423,7 @@
             <span class="text-subtle text-xs"></span>
           </Button>
           <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
             onclick={() => {
               onCloseTabsToRight?.(menuTabId);
@@ -2405,6 +2435,7 @@
           </Button>
         {/if}
         <Button
+          variant="ghost-light"
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
           onclick={() => {
             onClosePanel?.();
@@ -2415,6 +2446,7 @@
           <span class="text-subtle text-xs"></span>
         </Button>
         <Button
+          variant="ghost-light"
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
           onclick={() => {
             onCloseAllOthersEverywhere?.(menuTabId);

@@ -97,6 +97,7 @@
 >
   {#each primaryItems as item (item.id)}
     <Button
+      variant="ghost"
       type="button"
       onclick={() => onSelect(item.id as SettingsTab)}
       aria-current={activeTab === item.id ? 'page' : undefined}

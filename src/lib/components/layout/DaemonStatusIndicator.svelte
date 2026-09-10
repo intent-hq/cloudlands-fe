@@ -436,6 +436,7 @@
   {#snippet trigger({ props })}
     <Button
       {...props}
+      variant="ghost-light"
       class={cn(
         'flex items-center justify-center h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer',
         currentRemoteName ? 'gap-1.5 px-1.5' : 'w-6',
@@ -759,6 +760,7 @@
 
                 <!-- Stop action -->
                 <Button
+                  variant="ghost-light"
                   class="w-full text-left text-xs text-danger hover:bg-muted/50 rounded px-1 py-1 mt-0.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
                   disabled={$unslothStopping$}
                   onclick={() => {
@@ -865,6 +867,7 @@
           {/each}
         {/if}
         <Button
+          variant="ghost-light"
           class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1.5 transition-colors cursor-pointer flex items-center gap-2"
           onclick={openDevicesSettings}
         >

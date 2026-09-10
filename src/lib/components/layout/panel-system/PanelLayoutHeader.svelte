@@ -489,6 +489,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
       delayDuration={300}
     >
       <Button
+        variant="ghost-light"
         class={cn(
           'p-1.5 rounded hover:bg-muted transition-colors',
           canGoBack ? 'text-foreground' : 'text-ghost cursor-not-allowed',
@@ -508,6 +509,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
       delayDuration={300}
     >
       <Button
+        variant="ghost-light"
         class={cn(
           'p-1.5 rounded hover:bg-muted transition-colors',
           canGoForward ? 'text-foreground' : 'text-ghost cursor-not-allowed',
@@ -537,6 +539,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         delayDuration={300}
       >
         <Button
+          variant="ghost-light"
           class={cn(
             'p-1.5 rounded transition-colors',
             currentPreset === preset.id
@@ -562,6 +565,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
       delayDuration={300}
     >
       <Button
+        variant="ghost-light"
         class={cn(
           'p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted',
           showPresetDropdown && 'bg-muted text-foreground',
@@ -584,6 +588,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         </div>
         {#each contentPresets as preset (preset.id)}
           <Button
+            variant="ghost-light"
             class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
             onclick={() => handleContentPreset(preset.id)}
           >
@@ -606,6 +611,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
       delayDuration={300}
     >
       <Button
+        variant="ghost-light"
         class={cn(
           'p-1.5 rounded transition-colors',
           showPrompt
@@ -638,6 +644,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         )}
       />
       <Button
+        variant="ghost-light"
         class={cn(
           'p-1 rounded transition-colors',
           promptValue.trim() && !isGenerating

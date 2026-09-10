@@ -68,7 +68,7 @@
 
   <Button
     bind:ref={specialistButtonRefs[specialist.id]}
-    variant="plain"
+    variant="ghost"
     id={`specialist-${specialist.id}`}
     type="button"
     onclick={() => onSelect({ type: 'specialist', id: specialist.id })}
@@ -105,7 +105,7 @@
             delayDuration={400}
           >
             <span
-              class="text-ui px-1 py-0.5 rounded font-medium shrink-0 bg-primary/15 text-primary"
+              class="text-ui shrink-0 rounded bg-muted px-1 py-0.5 font-medium text-muted-foreground"
             >
               {m.settings_aiBehavior_sidebar_projectBadge()}
             </span>
@@ -119,7 +119,7 @@
 <!-- Create button - flows after specialists -->
 <Button
   bind:ref={createSpecialistButtonRef}
-  variant="plain"
+  variant="ghost"
   id="create-specialist"
   type="button"
   onclick={() => onSelect({ type: 'create-specialist' })}

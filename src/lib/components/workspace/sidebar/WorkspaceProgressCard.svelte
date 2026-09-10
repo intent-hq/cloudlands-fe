@@ -929,6 +929,7 @@
           />
         {:else}
           <Button
+            variant="plain"
             class="text-xl font-semibold text-foreground bg-transparent {!$workspace?.title
               ? 'opacity-50'
               : ''}
@@ -1233,6 +1234,7 @@
           ></Textarea>
         {:else if $workspace && currentStatusMessage}
           <Button
+            variant="plain"
             class="type-body w-full cursor-pointer whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
                    transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-snug hover:text-foreground
                    focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
@@ -1256,6 +1258,7 @@
     {#if showStatusImage}
       <div class="py-1">
         <Button
+          variant="plain"
           bind:ref={statusImageButtonRef}
           type="button"
           class="block w-full cursor-zoom-in bg-transparent border-none p-0
@@ -1298,6 +1301,7 @@
         {#if displayReadyTasks.length > 1}
           <span class="flex items-center gap-1">
             <Button
+              variant="ghost-light"
               class="p-0.5 hover:bg-muted rounded transition-colors text-ghost cursor-pointer"
               onclick={navigatePrev}
               disabled={displayReadyTasks.length <= 1}
@@ -1306,6 +1310,7 @@
               <Fa icon={faChevronLeft} size="xs" />
             </Button>
             <Button
+              variant="ghost-light"
               class="p-0.5 hover:bg-muted rounded transition-colors text-ghost cursor-pointer"
               onclick={navigateNext}
               disabled={displayReadyTasks.length <= 1}
@@ -1317,6 +1322,7 @@
         {/if}
       </div>
       <Button
+        variant="ghost-light"
         class="flex items-center gap-2 w-full text-left text-sm text-subtle transition-colors py-1 rounded cursor-pointer"
         onclick={() => onOpenNote?.(currentDisplayReadyTask.id as string)}
         onmouseenter={() => (highlightedNoteId = currentDisplayReadyTask.id as string)}

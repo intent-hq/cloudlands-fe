@@ -37,8 +37,8 @@
   const displayErrorMessage = $derived(errorMessage || $themeError || undefined);
 
   const defaultPreviewColors = {
-    dark: ['#1b1b22', '#f7f7f7', '#009960', '#009960'] as const,
-    light: ['#ffffff', '#171717', '#009960', '#009960'] as const,
+    dark: ['#1b1b22', '#f7f7f7', 'hsl(var(--primary))', 'hsl(var(--primary))'] as const,
+    light: ['#ffffff', '#171717', 'hsl(var(--primary))', 'hsl(var(--primary))'] as const,
   };
 
   function clearThemeErrorMessage() {

@@ -470,6 +470,7 @@
   <div class="px-5 pt-8 pb-3">
     <!-- Back button with keyboard shortcut -->
     <Button
+      variant="ghost"
       onclick={navigateBackFromSettings}
       class="group flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
     >
@@ -502,6 +503,7 @@
       </div>
       {#if $isReadyToInstall$}
         <Button
+          variant="plain"
           class="cursor-pointer border-none bg-transparent p-0 font-medium text-primary-ink underline hover:text-primary-ink/80"
           onclick={() => appStore.dispatch(installUpdate())}
         >
