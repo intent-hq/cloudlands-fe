@@ -87,6 +87,12 @@ export interface ConnectionsState {
   /** Error message from the last failed add/open operation, or null. */
   error: string | null;
   /**
+   * ids of the backends with an open operation currently in flight. Opens run
+   * concurrently (main serializes the underlying work), so each is tracked per
+   * id for per-row UI feedback; `status` stays `connecting` while any remain.
+   */
+  openingIds: string[];
+  /**
    * Last cert-mismatch push (`connections:cert-mismatch`), or null. A pinned
    * cert changed on (re)connect — the UI surfaces a blocking failure modal
    * (no silent re-trust). Cleared once the user dismisses it.

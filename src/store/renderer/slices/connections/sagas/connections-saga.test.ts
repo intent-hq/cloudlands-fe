@@ -392,6 +392,48 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('opens two backends back-to-back and tracks each in flight per id (takeEvery, not takeLeading)', async () => {
+    let releaseFirst!: (value: { status: 'opened'; id: string }) => void;
+    const firstResult = new Promise<{ status: 'opened'; id: string }>((resolve) => {
+      releaseFirst = resolve;
+    });
+    invoke.mockImplementation(async (channel: string, params?: unknown) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.OPEN) {
+        const { id } = params as { id: string };
+        return id === 'remote-1' ? firstResult : { status: 'opened', id };
+      }
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const first = openConnectionRequested('remote-1');
+    const second = openConnectionRequested('remote-2');
+    run.channel.put(first);
+    run.channel.put(second);
+    await vi.waitFor(() =>
+      expect(run.getState().connections.openingIds).toEqual(['remote-1', 'remote-2']),
+    );
+
+    // The second settles while the first is still awaiting its RPC; the
+    // global status stays busy for the remaining open.
+    await expect(second.promise).resolves.toEqual({ status: 'opened', id: 'remote-2' });
+    expect(run.getState().connections.openingIds).toEqual(['remote-1']);
+    expect(run.getState().connections.status).toBe('connecting');
+
+    releaseFirst({ status: 'opened', id: 'remote-1' });
+    await expect(first.promise).resolves.toEqual({ status: 'opened', id: 'remote-1' });
+    expect(run.getState().connections.openingIds).toEqual([]);
+    expect(run.getState().connections.status).toBe('idle');
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: 'remote-1' });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: 'remote-2' });
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('passes through token-free open guidance without leaking an IPC exception', async () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === CONNECTION_CHANNELS.LIST)
