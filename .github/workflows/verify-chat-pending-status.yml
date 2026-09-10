@@ -1,0 +1,66 @@
+name: Temporary chat pending-status verification
+
+on:
+  push:
+    branches: ['verify/chat-pending-status-2298']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-chat-pending-status-2298
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    name: Focused chat browser geometry
+    runs-on: gh-linux-8x
+    timeout-minutes: 25
+    env:
+      CI: 'true'
+      GIT_TERMINAL_PROMPT: '0'
+    steps:
+      - name: Checkout exact PR source
+        uses: actions/checkout@v7
+        with:
+          ref: 8c37ab1bedec17901ea17789d0e5cb78b9abb19f
+          persist-credentials: false
+      - name: Verify source identity
+        run: test "$(git rev-parse HEAD)" = 8c37ab1bedec17901ea17789d0e5cb78b9abb19f
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install declared dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate i18n messages
+        run: pnpm run generate:i18n
+      - name: Install CT-aligned Chromium
+        timeout-minutes: 8
+        run: node scripts/run-ct-tests.mjs --install-browsers --with-deps chromium
+      - name: Run focused geometry tests
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
+          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/results.json
+        run: >-
+          pnpm run test:ct --
+          src/lib/components/chat/__tests__/chat-panel-pending-status-spacing.ct.spec.ts
+          src/lib/components/chat/__tests__/subscription-card-gap.ct.spec.ts
+          src/lib/components/chat/__tests__/attention-flow-spacing-geometry.ct.spec.ts
+          --workers=1 --retries=0 --fail-on-flaky-tests --reporter=list,html,json
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: chat-pending-status-8c37ab1b
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 7
