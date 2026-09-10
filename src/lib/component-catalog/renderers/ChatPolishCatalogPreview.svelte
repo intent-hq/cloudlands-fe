@@ -10,6 +10,7 @@
   import { getChatPolishScenario } from '../chat-polish/chat-polish-scenarios';
   import {
     getSubscriptionCardSeam,
+    isChatCardMessage,
     isSubscriptionCardMessage,
   } from '$lib/components/chat/subscription-card-spacing';
   import type { ChatPolishScenario } from '../chat-polish/chat-polish-types';
@@ -25,7 +26,7 @@
     return (
       item?.kind === 'wake' ||
       item?.kind === 'subscriptions' ||
-      (item?.kind === 'message' && isSubscriptionCardMessage(item.message))
+      (item?.kind === 'message' && isChatCardMessage(item.message))
     );
   }
 
@@ -52,7 +53,8 @@
       data-testid="chat-polish-conversation"
     >
       {#each scenario.items as item, index (item.kind === 'message' ? item.message.id : item.id)}
-        {@const previousIsCard = isCard(scenario.items[index - 1])}
+        {@const previousItem = scenario.items[index - 1]}
+        {@const previousIsCard = isCard(previousItem)}
         {@const currentIsCard = isCard(item)}
         {@const seam =
           index > 0 ? getSubscriptionCardSeam(previousIsCard, currentIsCard) : undefined}
@@ -61,17 +63,15 @@
             class="chat-polish-card-gap"
             data-card-seam={seam}
             data-before-card={currentIsCard}
+            data-after-user-bubble={seam === 'content' &&
+              previousItem?.kind === 'message' &&
+              previousIsCard &&
+              !isSubscriptionCardMessage(previousItem.message)}
             aria-hidden="true"
           ></div>
         {/if}
         {#if item.kind === 'message'}
-          <div
-            class="chat-polish-message"
-            data-preview-message-role={item.message.role}
-            class:chat-polish-user-gap={item.message.role === 'user' &&
-              !currentIsCard &&
-              !isCard(scenario.items[index + 1])}
-          >
+          <div class="chat-polish-message" data-preview-message-role={item.message.role}>
             <ChatMessage
               message={item.message}
               isStreaming={item.isStreaming}
@@ -132,9 +132,6 @@
     padding: var(--chat-polish-content-inset, 22px);
     border-radius: var(--chat-polish-card-radius, 9px);
   }
-  .chat-polish-user-gap {
-    margin-bottom: var(--chat-polish-user-bottom-gap, 24px);
-  }
   .chat-polish-card-gap {
     height: var(--chat-polish-wake-bottom-gap, 24px);
     flex-shrink: 0;
@@ -142,8 +139,11 @@
   .chat-polish-card-gap[data-before-card='true'] {
     height: var(--chat-polish-wake-top-gap, 24px);
   }
+  .chat-polish-card-gap[data-after-user-bubble='true'] {
+    height: var(--chat-polish-user-bottom-gap, 24px);
+  }
   .chat-polish-card-gap[data-card-seam='cards'] {
-    height: var(--chat-polish-subscription-bottom-gap, 8px);
+    height: var(--chat-polish-subscription-bottom-gap, 16px);
   }
   :global(.chat-polish-preview .turn-failure-notice) {
     margin-block: var(--chat-polish-failure-notice-top-gap, 16px)

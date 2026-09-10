@@ -33,7 +33,7 @@ export const defaultChatPolishGeometry: ChatPolishGeometry = Object.freeze({
   thinkingTopGap: 16,
   wakeTopGap: 24,
   wakeBottomGap: 24,
-  subscriptionBottomGap: 8,
+  subscriptionBottomGap: 16,
   rowPadding: 12,
   cardRadius: 9,
   failureNoticeTopGap: 16,

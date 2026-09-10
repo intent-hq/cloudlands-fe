@@ -256,7 +256,7 @@
     eventCardAssistantMarginClass,
     isAttentionQuestionAnswerSeam,
   } from './attention-flow-spacing';
-  import { getSubscriptionCardSeam, isSubscriptionCardMessage } from './subscription-card-spacing';
+  import { getSubscriptionCardSeam, isChatCardMessage } from './subscription-card-spacing';
   import {
     captureMessageSendOrigin,
     createMessageSendLaunchBubble,
@@ -5992,13 +5992,13 @@
                   {@const nextTurnHasUserMessage = Boolean(
                     nextTurn?.userMessage && !nextTurnIsEventNotification,
                   )}
-                  {@const currentIsSubscriptionCard = isSubscriptionCardMessage(turn.userMessage)}
-                  {@const nextIsSubscriptionCard = isSubscriptionCardMessage(nextTurn?.userMessage)}
+                  {@const currentIsChatCard = isChatCardMessage(turn.userMessage)}
+                  {@const nextIsChatCard = isChatCardMessage(nextTurn?.userMessage)}
                   {@const subscriptionCardSeam = getSubscriptionCardSeam(
-                    currentIsSubscriptionCard &&
+                    currentIsChatCard &&
                       turn.assistantMessages.length === 0 &&
                       turn.noticeMessages.length === 0,
-                    nextIsSubscriptionCard,
+                    nextIsChatCard,
                   )}
                   {@const isLastTurnInConversation =
                     globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1}
@@ -6019,7 +6019,7 @@
                     !attentionQuestionAnswerTurnSeam && isBatchedDeliverySeam(turn, nextTurn)}
                   <!-- Seam BEFORE this turn: the same batch test against the
                        previous rendered turn (crossing group boundaries like
-                       nextTurn). When true, the preceding h-2 gap owns the
+                       nextTurn). When true, the preceding gap owns the
                        seam and this turn's rows drop their own top margins. -->
                   {@const prevTurn =
                     turns[turnIndex - 1] ??
@@ -6029,7 +6029,7 @@
                     !isAttentionQuestionAnswerSeam(prevTurn, turn) &&
                     isBatchedDeliverySeam(prevTurn, turn),
                   )}
-                  {@const cardSpacingOwnedBefore = Boolean(prevTurn && currentIsSubscriptionCard)}
+                  {@const cardSpacingOwnedBefore = Boolean(prevTurn && currentIsChatCard)}
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- Fallback chain mirrors the row render order below. Edge case:
                        a user message with metadata.type === 'event_notification' but
@@ -6107,16 +6107,18 @@
                         data-message-index={globalIndex}
                         class="message-nav-target relative z-20"
                         class:mb-0={batchedDeliveryTurnSeam ||
-                          (currentIsSubscriptionCard &&
+                          (currentIsChatCard &&
                             turn.assistantMessages.length === 0 &&
                             turn.noticeMessages.length === 0)}
                         class:mb-6={!batchedDeliveryTurnSeam &&
-                          currentIsSubscriptionCard &&
+                          currentIsChatCard &&
                           (turn.assistantMessages.length > 0 || turn.noticeMessages.length > 0)}
                         class:mb-5={!batchedDeliveryTurnSeam &&
-                          !currentIsSubscriptionCard &&
+                          !currentIsChatCard &&
                           isAutomatedMessage(message)}
-                        class:mb-7={!batchedDeliveryTurnSeam && !isAutomatedMessage(message)}
+                        class:mb-7={!batchedDeliveryTurnSeam &&
+                          !currentIsChatCard &&
+                          !isAutomatedMessage(message)}
                         class:invisible={pendingSendMessageIds.has(
                           String(message.appMessageId ?? ''),
                         )}
@@ -6287,10 +6289,7 @@
                             class="w-full"
                             class:mb-1={!compactNextMessageBoundary &&
                               !(isLastAssistant && compactOperationalTurnBoundary) &&
-                              !(
-                                isLastAssistant &&
-                                (nextTurnHasUserMessage || nextIsSubscriptionCard)
-                              )}
+                              !(isLastAssistant && (nextTurnHasUserMessage || nextIsChatCard))}
                             data-after-assistant-message={message.id}
                           >
                             <ChatFileChangesSummary

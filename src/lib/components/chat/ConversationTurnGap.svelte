@@ -25,19 +25,18 @@
     subscriptionCardSeam,
   }: Props = $props();
 
-  // The structured attention-to-answer seam is intentionally wider than a
-  // generic batch seam. Otherwise batchedDeliverySeam wins over the event branches on both
-  // sides: rows sharing a queueInfo.batchId (one batch flush) read as one
-  // delivery, whether they are plain user messages or wake cards.
+  // Filled cards use one rhythm regardless of author or delivery source.
+  // Structured attention-to-answer flows keep their distinct 24px seam;
+  // batching and operational fallbacks only apply outside card boundaries.
   const gapClass = $derived(
     attentionQuestionAnswerSeam
       ? 'h-6'
-      : batchedDeliverySeam
-        ? 'h-2'
-        : subscriptionCardSeam
-          ? subscriptionCardSeam === 'cards'
-            ? 'h-2'
-            : 'h-6'
+      : subscriptionCardSeam
+        ? subscriptionCardSeam === 'cards'
+          ? 'h-4'
+          : 'h-6'
+        : batchedDeliverySeam
+          ? 'h-2'
           : zeroToolSeam
             ? 'h-0'
             : compactOperationalSeam

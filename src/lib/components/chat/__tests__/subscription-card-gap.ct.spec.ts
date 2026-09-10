@@ -3,7 +3,7 @@ import ConversationTurnGap from '../ConversationTurnGap.svelte';
 import EventSubscriptionsCard from '../EventSubscriptionsCard.svelte';
 
 for (const [seam, expected] of [
-  ['cards', 8],
+  ['cards', 16],
   ['content', 24],
 ] as const) {
   test(`measures the ${seam} boundary without an extra event gap`, async ({ mount }) => {
@@ -15,6 +15,8 @@ for (const [seam, expected] of [
         subscriptionCardSeam: seam,
       },
     });
+    expect((await component.boundingBox())?.height).toBe(expected);
+    await component.update({ props: { batchedDeliverySeam: true } });
     expect((await component.boundingBox())?.height).toBe(expected);
     await component.update({ props: { attentionQuestionAnswerSeam: true } });
     expect((await component.boundingBox())?.height).toBe(24);

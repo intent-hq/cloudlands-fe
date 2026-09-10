@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '$shared/types';
-import { getSubscriptionCardSeam, isSubscriptionCardMessage } from '../subscription-card-spacing';
+import {
+  getSubscriptionCardSeam,
+  isChatCardMessage,
+  isSubscriptionCardMessage,
+} from '../subscription-card-spacing';
 
 function message(metadata: Record<string, unknown>, text = 'Update'): AgentMessage {
   return {
@@ -12,6 +16,33 @@ function message(metadata: Record<string, unknown>, text = 'Update'): AgentMessa
 }
 
 describe('subscription card boundaries', () => {
+  it.each([
+    {},
+    { queueInfo: { batchId: 'batch-1' } },
+    { type: 'agent_message', fromAgentId: 'agent-1' },
+    { type: 'event_notification' },
+    { type: 'question_answers' },
+  ])('uses filled-card spacing for user-role surfaces with metadata %j', (metadata) => {
+    const card = message(metadata);
+    expect(isChatCardMessage(card)).toBe(true);
+    expect(getSubscriptionCardSeam(isChatCardMessage(message({})), isChatCardMessage(card))).toBe(
+      'cards',
+    );
+    expect(
+      getSubscriptionCardSeam(
+        isChatCardMessage({ ...card, role: 'assistant' }),
+        isChatCardMessage(card),
+      ),
+    ).toBe('content');
+  });
+
+  it('does not classify prose or notice rows as filled cards', () => {
+    expect(isChatCardMessage(undefined)).toBe(false);
+    for (const role of ['assistant', 'system'] as const) {
+      expect(isChatCardMessage({ ...message({}), role })).toBe(false);
+    }
+  });
+
   it.each([
     [true, true, 'cards'],
     [true, false, 'content'],
