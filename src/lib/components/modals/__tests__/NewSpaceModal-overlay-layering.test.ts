@@ -24,7 +24,7 @@ describe('NewSpaceModal nested overlay layering', () => {
     const overlay = source('src/lib/components/ui/dialog/dialog-overlay.svelte');
 
     expect(modal).toContain("import * as Dialog from '$lib/components/ui/dialog'");
-    expect(overlay).toContain("contained ? 'absolute' : 'fixed'");
+    expect(overlay).toContain("contained || staticPosition ? 'absolute' : 'fixed'");
     expect(overlay).toContain('{#if forceMount || rootOpen()}');
     expect(overlay).toContain('inset-0 z-[var(--layer-modal)]');
     expect(overlay).toContain('bg-black/40 dark:bg-black/80');
