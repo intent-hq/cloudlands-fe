@@ -13,7 +13,7 @@
     HULL_PADDING,
     HULL_SOFT_PADDING,
     interpolateHullMembers,
-    paddedHull,
+    organicHull,
     smoothClosedHullPath,
     type KeyedHullMember,
   } from './hull-geometry';
@@ -87,8 +87,8 @@
     const members = memberGeometry(group, currentPositions);
     const scale = Math.max(0.01, zoomScale);
     return {
-      main: members ? smoothClosedHullPath(paddedHull(members, HULL_PADDING / scale)) : null,
-      soft: members ? smoothClosedHullPath(paddedHull(members, HULL_SOFT_PADDING / scale)) : null,
+      main: members ? smoothClosedHullPath(organicHull(members, HULL_PADDING / scale)) : null,
+      soft: members ? smoothClosedHullPath(organicHull(members, HULL_SOFT_PADDING / scale)) : null,
     };
   }
 
@@ -121,11 +121,11 @@
     const elements = hullPaths.get(group.taskId);
     elements?.main?.setAttribute(
       'd',
-      smoothClosedHullPath(paddedHull(members, HULL_PADDING / scale)) ?? '',
+      smoothClosedHullPath(organicHull(members, HULL_PADDING / scale)) ?? '',
     );
     elements?.soft?.setAttribute(
       'd',
-      smoothClosedHullPath(paddedHull(members, HULL_SOFT_PADDING / scale)) ?? '',
+      smoothClosedHullPath(organicHull(members, HULL_SOFT_PADDING / scale)) ?? '',
     );
   }
 

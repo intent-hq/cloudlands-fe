@@ -1,10 +1,18 @@
 import { polygonContains } from 'd3';
 import { describe, expect, it } from 'vitest';
 import {
+  buildBusyGraph,
+  buildConstellationGraph,
+} from '../__fixtures__/agent-activity-graph.fixtures';
+import { createConstellationLayout } from '../constellation-layout';
+import { GRAPH_NODE_DIMENSIONS } from '../constants';
+import { deriveTaskHullMemberships } from '../graph-helpers';
+import {
   HULL_FILL_OPACITIES,
   HULL_PADDING,
   TWO_MEMBER_HULL_PADDING,
   interpolateHullMembers,
+  organicHull,
   paddedHull,
   smoothClosedHullPath,
   taskHullPadding,
@@ -40,17 +48,57 @@ describe('task hull geometry', () => {
     });
   });
 
-  it('encloses the padded extents of every member', () => {
+  it('encloses the padded extents of every member with one connected ring', () => {
     const members = [
       { x: 40, y: 80, width: 60, height: 30, offsetX: 0, offsetY: 8 },
       { x: 180, y: 40, width: 120, height: 40, offsetX: -4, offsetY: 0 },
       { x: 130, y: 170, width: 50, height: 90, offsetX: 6, offsetY: -3 },
     ];
-    const hull = paddedHull(members);
+    const hull = organicHull(members);
 
     expect(hull).not.toBeNull();
     for (const point of members.flatMap(paddedMemberPoints)) {
       expect(polygonContains(hull!, point)).toBe(true);
+    }
+  });
+
+  it('follows an L-shaped cluster instead of filling its convex gap', () => {
+    const members = [
+      { x: 0, y: 0, width: 48, height: 32, offsetX: 0, offsetY: 0 },
+      { x: 140, y: 0, width: 48, height: 32, offsetX: 0, offsetY: 0 },
+      { x: 0, y: 140, width: 48, height: 32, offsetX: 0, offsetY: 0 },
+    ];
+    const hull = organicHull(members);
+
+    expect(hull).not.toBeNull();
+    expect(polygonContains(hull!, [105, 105])).toBe(false);
+    expect(smoothClosedHullPath(hull)?.match(/M/g)).toHaveLength(1);
+  });
+
+  it.each([
+    ['constellation', buildConstellationGraph],
+    ['busy', buildBusyGraph],
+  ] as const)('emits exactly one smooth ring for every %s task hull', (_name, buildGraph) => {
+    const graph = buildGraph(Date.parse('2026-09-04T02:00:00.000Z'));
+    const layout = createConstellationLayout({ width: 1092, height: 720, seed: 7 });
+    let settledNodes = graph.nodes;
+    const stopTick = layout.tick((nodes) => (settledNodes = nodes));
+    layout.update(graph.nodes, graph.edges);
+    layout.settle();
+    stopTick();
+    layout.stop();
+    const nodeById = new Map(settledNodes.map((node) => [node.id, node]));
+    const memberships = deriveTaskHullMemberships(settledNodes, graph.edges);
+
+    expect(memberships.length).toBeGreaterThan(0);
+    for (const group of memberships) {
+      const members = group.memberIds.map((id) => {
+        const node = nodeById.get(id)!;
+        return { ...node, ...GRAPH_NODE_DIMENSIONS[node.type], offsetX: 0, offsetY: 0 };
+      });
+      const path = smoothClosedHullPath(organicHull(members));
+      expect(path?.match(/M/g), group.taskId).toHaveLength(1);
+      expect(path?.match(/Z/g), group.taskId).toHaveLength(1);
     }
   });
 
@@ -83,7 +131,7 @@ describe('task hull geometry', () => {
   it.each([0.6, 1])('encloses a centered 176x48 task box at zoom %s', (zoomScale) => {
     const task = { x: 100, y: 120, width: 176, height: 48, offsetX: 0, offsetY: 0 };
     const agent = { x: 300, y: 120, width: 112, height: 102, offsetX: 0, offsetY: 0 };
-    const hull = paddedHull([task, agent], HULL_PADDING / zoomScale);
+    const hull = organicHull([task, agent], HULL_PADDING / zoomScale);
 
     expect(hull).not.toBeNull();
     for (const point of paddedMemberPoints(task, 0)) {
@@ -91,7 +139,7 @@ describe('task hull geometry', () => {
     }
   });
 
-  it('smooths polygons into a closed path', () => {
+  it('smooths outlines with continuous curves instead of straight segments', () => {
     const path = smoothClosedHullPath([
       [0, 0],
       [80, 0],
@@ -100,6 +148,8 @@ describe('task hull geometry', () => {
     ]);
 
     expect(path).toMatch(/^M/);
+    expect(path).toContain('C');
+    expect(path).not.toContain('L');
     expect(path).toMatch(/Z$/);
   });
 
