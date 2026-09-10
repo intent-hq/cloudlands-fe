@@ -141,6 +141,7 @@
   >
     <!-- Close affordance -->
     <Button
+      variant="ghost"
       class="stats-close pointer-events-auto fixed top-10 right-5 z-10 flex h-8 w-8 items-center justify-center rounded-lg cursor-pointer"
       onclick={close}
       aria-label={m.stats_overlay_close_ariaLabel()}
@@ -155,6 +156,7 @@
       <div class="stats-pill flex rounded-lg p-[3px]">
         {#each STATS_MODES as entry (entry.mode)}
           <Button
+            variant="ghost"
             class="stats-pill-seg rounded-md px-3.5 py-[5px] text-[12.5px] font-medium cursor-pointer select-none {$mode$ ===
             entry.mode
               ? 'stats-pill-seg-active'
@@ -169,6 +171,7 @@
       {#if $mode$ !== '24h'}
         <div class="relative">
           <Button
+            variant="ghost"
             class="stats-dd-trigger flex h-8 items-center gap-2 rounded-lg px-3 text-[12.5px] font-medium cursor-pointer select-none"
             onclick={() => (dropdownOpen = !dropdownOpen)}
             aria-haspopup="listbox"
@@ -186,6 +189,7 @@
             >
               {#each options as key (key)}
                 <Button
+                  variant="ghost"
                   class="stats-dd-opt flex w-full items-center justify-between rounded-[5px] px-[9px] py-1.5 text-xs cursor-pointer select-none {key ===
                   $periodKey$
                     ? 'stats-dd-opt-sel'
@@ -249,6 +253,7 @@
 
 {#snippet exportBtn(card: StatsCardName)}
   <Button
+    variant="ghost"
     class="stats-export-btn absolute top-3.5 right-3.5 z-[2] flex h-[30px] items-center gap-1.5 rounded-lg px-3 text-xs font-medium cursor-pointer"
     onclick={(event) => exportCard(event.currentTarget as HTMLElement, card)}
     aria-label={m.stats_overlay_exportCard_ariaLabel({ card })}

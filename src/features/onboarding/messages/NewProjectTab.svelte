@@ -70,6 +70,7 @@
     class="flex items-center rounded-lg border border-border bg-card/50 text-sm overflow-hidden focus-within:border-ring"
   >
     <Button
+      variant="ghost"
       type="button"
       class="flex items-center gap-1.5 shrink-0 px-3 py-3 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer border-r border-border"
       onclick={handleSelectParentFolder}

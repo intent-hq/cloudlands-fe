@@ -200,6 +200,7 @@
           {#if gitGuidance.command}
             {@const command = gitGuidance.command}
             <Button
+              variant="ghost"
               type="button"
               class="install-command-button"
               onclick={() => copyCommand(command)}
@@ -212,7 +213,12 @@
           {#if gitGuidance.note}
             <p class="text-xs text-muted-foreground">{gitGuidance.note}</p>
           {/if}
-          <Button type="button" class="docs-link" onclick={() => openDocs(gitGuidance.docsUrl)}>
+          <Button
+            variant="ghost"
+            type="button"
+            class="docs-link"
+            onclick={() => openDocs(gitGuidance.docsUrl)}
+          >
             <Fa icon={faExternalLinkAlt} size="sm" class="mr-1" />
             {m.onboarding_requirementsStep_installGit_label()}
           </Button>
@@ -259,6 +265,7 @@
           {#if nodeGuidance.command}
             {@const command = nodeGuidance.command}
             <Button
+              variant="ghost"
               type="button"
               class="install-command-button"
               onclick={() => copyCommand(command)}
@@ -271,7 +278,12 @@
           {#if nodeGuidance.note}
             <p class="text-xs text-muted-foreground">{nodeGuidance.note}</p>
           {/if}
-          <Button type="button" class="docs-link" onclick={() => openDocs(nodeGuidance.docsUrl)}>
+          <Button
+            variant="ghost"
+            type="button"
+            class="docs-link"
+            onclick={() => openDocs(nodeGuidance.docsUrl)}
+          >
             <Fa icon={faExternalLinkAlt} size="sm" class="mr-1" />
             {m.onboarding_requirementsStep_installNode_label()}
           </Button>

@@ -317,6 +317,7 @@
     >
       <p>{m.onboarding_githubRepoTab_loadFailed_error({ error: $reposError$ })}</p>
       <Button
+        variant="ghost"
         type="button"
         class="inline-flex items-center gap-1.5 text-xs underline underline-offset-2 cursor-pointer hover:no-underline"
         onclick={refreshRepos}
@@ -339,6 +340,7 @@
             {@const isFocused = index === focusedIndex}
             {@const isCommitted = githubUrl === `https://github.com/${repo.owner}/${repo.name}`}
             <Button
+              variant="ghost"
               type="button"
               id="github-repo-option-{index}"
               role="option"

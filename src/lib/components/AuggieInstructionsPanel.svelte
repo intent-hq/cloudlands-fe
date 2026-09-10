@@ -54,6 +54,7 @@
     </ol>
     {#if onDismiss}
       <Button
+        variant="ghost"
         type="button"
         class="shrink-0 opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
         onclick={onDismiss}
@@ -67,6 +68,7 @@
 
   {#if command}
     <Button
+      variant="ghost"
       type="button"
       class="flex items-center gap-1.5 px-2 py-1 bg-background border border-border rounded font-mono text-xs text-foreground hover:bg-muted transition-colors w-fit cursor-pointer"
       onclick={copyCommand}
@@ -81,6 +83,7 @@
   {#if onRecheck}
     <div class="flex gap-3 text-xs pt-1">
       <Button
+        variant="ghost"
         type="button"
         class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium disabled:opacity-50"
         onclick={onRecheck}

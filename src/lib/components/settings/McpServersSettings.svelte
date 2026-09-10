@@ -417,6 +417,7 @@
               <!-- Mode Toggle -->
               <div class="flex gap-1 p-1 bg-muted rounded-lg w-fit mb-4">
                 <Button
+                  variant="ghost"
                   type="button"
                   class="px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer {addMode ===
                   'form'
@@ -427,6 +428,7 @@
                   {m.settings_mcpServers_modeConfigure()}
                 </Button>
                 <Button
+                  variant="ghost"
                   type="button"
                   class="px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer {addMode ===
                   'import'
@@ -549,6 +551,7 @@
               <p class="mt-1">
                 {m.settings_mcpServers_emptyDescription()}
                 <Button
+                  variant="ghost"
                   type="button"
                   class="text-primary-ink hover:underline cursor-pointer"
                   onclick={(e) => {
@@ -644,6 +647,7 @@
                       class="w-full flex items-center gap-3 py-2.5 px-1 rounded-md transition-colors"
                     >
                       <Button
+                        variant="ghost"
                         type="button"
                         class="flex-1 flex items-center gap-3 min-w-0 cursor-pointer"
                         onclick={() => startInstall(option)}
@@ -673,6 +677,7 @@
                           <IntentMarkLoader size={16} class="text-muted-foreground" />
                         {:else if needsAuth}
                           <Button
+                            variant="ghost"
                             type="button"
                             class="px-3 py-1 text-xs font-medium rounded-md border border-warning/30 text-warning-ink hover:bg-warning/10 transition-colors cursor-pointer"
                             onclick={() => handleReauthenticate(normalizeServerName(option.label))}
@@ -683,6 +688,7 @@
                           <Fa icon={faCheck} size="sm" class="text-green-500" />
                         {:else}
                           <Button
+                            variant="ghost"
                             type="button"
                             class="p-1 rounded-md hover:bg-muted transition-colors cursor-pointer"
                             onclick={() => startInstall(option)}
@@ -703,6 +709,7 @@
       <!-- Advanced: Settings JSON Editor (daemon `mcp.servers` structured config) -->
       <section>
         <Button
+          variant="ghost"
           type="button"
           class="w-full flex items-center justify-between py-4 hover:bg-muted/30 transition-colors cursor-pointer"
           onclick={handleToggleAdvanced}

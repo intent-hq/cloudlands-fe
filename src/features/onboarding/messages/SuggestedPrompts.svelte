@@ -80,6 +80,7 @@
   {#each prompts as prompt}
     <div class="contents" in:fly={{ tier: 'moderate', distance: 8 }}>
       <Button
+        variant="ghost"
         type="button"
         class="flex items-center gap-2.5 rounded-lg border border-border bg-card/30
                px-3 py-2.5 text-left text-sm transition-all duration-150

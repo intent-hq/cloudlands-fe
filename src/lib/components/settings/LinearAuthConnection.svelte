@@ -113,6 +113,7 @@
         <span class="text-subtle">{m.settings_connections_linear_validatingApiKey()}</span>
       {:else if $isAuthenticated$}
         <Button
+          variant="ghost"
           type="button"
           class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
           onclick={handleShowKeyInput}
@@ -121,6 +122,7 @@
         </Button>
         <span class="text-ghost">·</span>
         <Button
+          variant="ghost"
           type="button"
           class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
           onclick={handleLinearDisconnect}
@@ -132,6 +134,7 @@
         </Button>
       {:else if !$requiresDaemonAuth$}
         <Button
+          variant="ghost"
           type="button"
           class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium"
           onclick={handleShowKeyInput}

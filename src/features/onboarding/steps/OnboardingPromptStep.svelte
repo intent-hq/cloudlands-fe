@@ -596,6 +596,7 @@
                 {#each visibleSuggestions.slice(0, 4) as suggestion, i (suggestion)}
                   <div class="contents" in:fly={{ tier: 'moderate', axis: 'x', distance: -6 }}>
                     <Button
+                      variant="ghost"
                       type="button"
                       role="option"
                       id="suggestion-{i}"
@@ -616,6 +617,7 @@
                   </div>
                 {/each}
                 <Button
+                  variant="ghost"
                   type="button"
                   role="option"
                   id="suggestion-shuffle"
@@ -815,6 +817,7 @@
             in:fly={{ tier: 'moderate', distance: 10 }}
           >
             <Button
+              variant="ghost"
               type="button"
               class="flex min-h-8 min-w-0 max-w-full flex-wrap items-center gap-y-1 text-left text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               onclick={() => onShowSetupScriptChange(!showSetupScript)}
@@ -872,6 +875,7 @@
     {#if selectedPRBranch && projectSelection?.branch !== selectedPRBranch && !treatAsNewRepo}
       <div class="mt-1" transition:slide={{ axis: 'y', tier: 'moderate' }}>
         <Button
+          variant="ghost"
           class="flex items-center gap-2 mt-1 mb-1 px-1 text-sm text-primary-ink hover:text-primary-ink/80 cursor-pointer"
           onclick={() => {
             if (projectSelection) {

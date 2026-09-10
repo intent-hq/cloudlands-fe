@@ -110,6 +110,7 @@
         <IntentMarkLoader size={16} class="shrink-0" />
         <span>{m.onboarding_githubStep_waitingForAuthorization_label()}</span>
         <Button
+          variant="ghost"
           type="button"
           class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors ml-2"
           onclick={handleCancel}

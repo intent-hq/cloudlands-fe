@@ -111,6 +111,7 @@
           gh auth login
         </code>
         <Button
+          variant="ghost"
           type="button"
           class="shrink-0 rounded p-1.5 text-muted-foreground hover:text-foreground hover:bg-background/70 cursor-pointer"
           aria-label={m.onboarding_creationError_copyCommand_ariaLabel()}
@@ -122,6 +123,7 @@
       <p class="text-xs text-muted-foreground">
         {m.onboarding_creationError_noCli_before()}
         <Button
+          variant="ghost"
           type="button"
           class="underline hover:text-foreground cursor-pointer"
           onclick={() => openLink('https://cli.github.com/')}
@@ -129,6 +131,7 @@
         >
         {m.onboarding_creationError_or_label()}
         <Button
+          variant="ghost"
           type="button"
           class="underline hover:text-foreground cursor-pointer"
           onclick={() =>
@@ -182,6 +185,7 @@
       <code class="font-mono text-xs">git</code>
       {m.onboarding_creationError_gitNotInstalled_middle()}
       <Button
+        variant="ghost"
         type="button"
         class="underline hover:text-foreground cursor-pointer"
         onclick={() => openLink('https://git-scm.com/downloads')}
@@ -203,6 +207,7 @@
     {/if}
     {#if diagnosis.kind !== 'unknown' && diagnosis.rawMessage.trim()}
       <Button
+        variant="ghost"
         type="button"
         class="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
         onclick={() => (showDetails = !showDetails)}

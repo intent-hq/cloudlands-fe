@@ -206,6 +206,7 @@
         class="flex-1 min-w-0 h-8 px-2.5 text-sm rounded-md border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
       />
       <Button
+        variant="ghost"
         type="button"
         onclick={() => removeRow(index)}
         aria-label={m.settings_aiBehavior_modelOptions_remove_ariaLabel()}
@@ -218,6 +219,7 @@
 
   <div>
     <Button
+      variant="ghost"
       type="button"
       onclick={addRow}
       class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5 cursor-pointer"

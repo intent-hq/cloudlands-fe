@@ -394,6 +394,7 @@
                   {#if provider.installCommand}
                     {@const installCommand = provider.installCommand}
                     <Button
+                      variant="ghost"
                       class="install-command-button"
                       onclick={() => copyCommand(installCommand)}
                       title={m.lib_auggieSetup_clickToCopy_tooltip()}
@@ -403,7 +404,11 @@
                     </Button>
                   {/if}
                 {/if}
-                <Button class="docs-link" onclick={() => openProviderDocs(provider.docsUrl)}>
+                <Button
+                  variant="ghost"
+                  class="docs-link"
+                  onclick={() => openProviderDocs(provider.docsUrl)}
+                >
                   <Fa icon={faExternalLinkAlt} size="sm" class="mr-1" />
                   {m.lib_auggieSetup_docs_label()}
                 </Button>

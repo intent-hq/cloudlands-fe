@@ -103,6 +103,7 @@
       <div class="flex justify-between items-center p-4 border-b border-border">
         <h2 class="m-0 text-lg text-foreground">{m.lib_githubAuth_connect_label()}</h2>
         <Button
+          variant="ghost"
           class="bg-transparent border-none text-2xl cursor-pointer text-muted-foreground hover:text-foreground"
           onclick={handleCancel}>×</Button
         >

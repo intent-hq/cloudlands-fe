@@ -338,6 +338,7 @@
   >
     {#each tabs as tab (tab.id)}
       <Button
+        variant="ghost"
         type="button"
         class="flex-1 px-3 py-2.5 text-sm rounded-md cursor-pointer transition-all duration-200
           {activeTab === tab.id

@@ -98,6 +98,7 @@
         <span class="text-subtle">{m.settings_connections_github_waitingForAuthorization()}</span>
       {:else if $isAuthenticated$}
         <Button
+          variant="ghost"
           type="button"
           class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
           onclick={handleGitHubReconnect}
@@ -106,6 +107,7 @@
         </Button>
         <span class="text-ghost">·</span>
         <Button
+          variant="ghost"
           type="button"
           class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
           onclick={handleGitHubDisconnect}
@@ -117,6 +119,7 @@
         </Button>
       {:else if !$requiresDaemonAuth$}
         <Button
+          variant="ghost"
           type="button"
           class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium"
           onclick={handleGitHubConnect}

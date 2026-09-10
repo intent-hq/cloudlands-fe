@@ -205,6 +205,7 @@
       <div class="flex items-center gap-1.5 min-w-0 pb-1.5">
         {#if provider.docsUrl}
           <Button
+            variant="ghost"
             onclick={(e) => openDocs(provider.docsUrl, e)}
             class="font-medium text-lg truncate min-w-0 cursor-pointer"
           >
@@ -217,6 +218,7 @@
         {/if}
         {#if provider.docsUrl}
           <Button
+            variant="ghost"
             type="button"
             class="group/button shrink-0 opacity-50 flex items-center gap-1.5 hover:opacity-100 transition-colors p-0.5 cursor-pointer"
             onclick={(e) => openDocs(provider.docsUrl, e)}
@@ -271,6 +273,7 @@
         <div class="flex items-center gap-1.5">
           {#if needsInstall || needsLogin || authUnknown}
             <Button
+              variant="ghost"
               type="button"
               class="flex-none opacity-50 hover:opacity-100 transition-colors px-0.5 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               onclick={(e) => {
@@ -329,6 +332,7 @@
           <span>
             {m.onboarding_providerCard_requiresNpx_before()}
             <Button
+              variant="ghost"
               type="button"
               class="underline hover:no-underline"
               onclick={() => shell.open('https://nodejs.org')}
@@ -350,6 +354,7 @@
           <span>
             {provider.warning}{#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
               — <Button
+                variant="ghost"
                 type="button"
                 class="underline hover:no-underline"
                 onclick={() => void shell.open('https://nodejs.org')}

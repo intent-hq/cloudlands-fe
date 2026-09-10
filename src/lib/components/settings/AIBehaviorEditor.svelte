@@ -730,6 +730,7 @@
           {/if}
           {#if isBuiltIn && hasOverrides}
             <Button
+              variant="ghost"
               type="button"
               onclick={resetToDefault}
               class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer shrink-0"
@@ -843,6 +844,7 @@
         {#if !isBuiltIn}
           <div class="pt-4 border-border">
             <Button
+              variant="ghost"
               type="button"
               onclick={deleteSpecialist}
               class="text-xs text-muted-foreground hover:text-danger transition-colors flex items-center gap-1.5 cursor-pointer"

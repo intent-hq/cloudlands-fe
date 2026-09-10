@@ -153,6 +153,7 @@
         {:else}
           <span class="text-muted-foreground">{m.settings_rtk_notInstalled()}</span>
           <Button
+            variant="ghost"
             type="button"
             class="text-primary-ink hover:underline cursor-pointer text-xs ml-1"
             onclick={recheckRtk}
@@ -175,6 +176,7 @@
     <p class="text-xs text-muted-foreground mt-2">
       {m.settings_rtk_installHint_before()}
       <Button
+        variant="ghost"
         type="button"
         class="text-primary-ink hover:underline cursor-pointer font-mono"
         onclick={installRtk}><!-- i18n-ignore (shell command) -->brew install rtk</Button

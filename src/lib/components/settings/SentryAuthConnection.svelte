@@ -101,6 +101,7 @@
       <span class="text-subtle">{m.settings_connections_connecting()}</span>
     {:else if $isAuthenticated$}
       <Button
+        variant="ghost"
         type="button"
         class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
         onclick={handleSentryReconnect}
@@ -109,6 +110,7 @@
       </Button>
       <span class="text-ghost">·</span>
       <Button
+        variant="ghost"
         type="button"
         class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
         onclick={handleSentryDisconnect}
@@ -120,6 +122,7 @@
       </Button>
     {:else}
       <Button
+        variant="ghost"
         type="button"
         class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium"
         onclick={() => (showConnectForm = true)}
@@ -163,6 +166,7 @@
       <p class="text-xs text-subtle">
         {m.settings_connections_sentry_apiToken_createTokenAt()}{' '}
         <Button
+          variant="ghost"
           type="button"
           onclick={() => {
             handleLink('https://sentry.io/settings/account/api/auth-tokens/', {

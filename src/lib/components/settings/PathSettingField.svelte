@@ -104,6 +104,7 @@
     class="flex-1 min-w-0 px-3 py-1.5 bg-background border border-border rounded-md text-sm text-foreground transition-all focus:outline-none focus:border-primary-ink focus:ring-2 focus:ring-primary-ink/10"
   />
   <Button
+    variant="ghost"
     type="button"
     onclick={handleBrowseClick}
     aria-label={resolvedBrowseAriaLabel}
@@ -113,6 +114,7 @@
     <Fa icon={faFolderOpen} size="sm" />
   </Button>
   <Button
+    variant="ghost"
     type="button"
     onclick={() => commit('')}
     disabled={!value}

@@ -464,6 +464,7 @@
     <div class="flex items-center justify-between gap-4 rounded-xl bg-card px-6 py-4">
       <p class="text-sm text-danger">{checkError}</p>
       <Button
+        variant="ghost"
         type="button"
         class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors text-xs font-medium"
         onclick={() => checkProviderAvailability(true, true)}
@@ -649,6 +650,7 @@
                                   {m.settings_providers_piAdapterNeeded()}
                                 </p>
                                 <Button
+                                  variant="ghost"
                                   type="button"
                                   role="menuitem"
                                   disabled={setupInProgress.pi}
@@ -670,6 +672,7 @@
                                   {m.settings_providers_requiresNodejs()}
                                 </p>
                                 <Button
+                                  variant="ghost"
                                   type="button"
                                   role="menuitem"
                                   class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
@@ -694,6 +697,7 @@
                                 </p>
                                 {#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
                                   <Button
+                                    variant="ghost"
                                     type="button"
                                     role="menuitem"
                                     class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
@@ -721,6 +725,7 @@
                           {/if}
 
                           <Button
+                            variant="ghost"
                             type="button"
                             role="menuitem"
                             class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
@@ -735,6 +740,7 @@
 
                           {#if canSetDefault}
                             <Button
+                              variant="ghost"
                               type="button"
                               role="menuitem"
                               class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -753,6 +759,7 @@
 
                           {#if canDisable}
                             <Button
+                              variant="ghost"
                               type="button"
                               role="menuitem"
                               class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -795,6 +802,7 @@
                               </p>
                             {/if}
                             <Button
+                              variant="ghost"
                               type="button"
                               role="menuitem"
                               class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -820,6 +828,7 @@
 
                           {#if canLogIn}
                             <Button
+                              variant="ghost"
                               type="button"
                               role="menuitem"
                               class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
@@ -834,6 +843,7 @@
 
                           {#if canInstall}
                             <Button
+                              variant="ghost"
                               type="button"
                               role="menuitem"
                               class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"

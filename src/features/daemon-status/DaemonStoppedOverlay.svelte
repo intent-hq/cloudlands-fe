@@ -507,6 +507,7 @@
             <div class="mt-2 space-y-2">
               {#each otherConnections as conn (conn.id)}
                 <Button
+                  variant="ghost"
                   type="button"
                   class="w-full truncate rounded-md border border-border px-4 py-2 text-left text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={$isConnecting$}

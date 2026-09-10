@@ -254,6 +254,7 @@
     <div class="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
       {#if searchQuery}
         <Button
+          variant="ghost"
           type="button"
           class="text-muted-foreground/50 hover:text-foreground text-xs cursor-pointer p-1.5 rounded hover:bg-muted/40 transition-colors"
           onclick={() => {
@@ -264,6 +265,7 @@
         >
       {/if}
       <Button
+        variant="ghost"
         type="button"
         class="text-muted-foreground/60 hover:text-foreground cursor-pointer p-1.5 mr-0.5 rounded hover:bg-muted/40 transition-colors"
         onclick={handleSelectFolder}
@@ -296,6 +298,7 @@
           {@const isFocused = index === focusedIndex}
           {@const isCommitted = repo.path === selectedPath}
           <Button
+            variant="ghost"
             type="button"
             id="local-repo-option-{index}"
             role="option"

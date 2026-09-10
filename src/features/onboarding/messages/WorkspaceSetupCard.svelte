@@ -350,6 +350,7 @@
         {m.onboarding_setupCard_creatingBranch_before()} <span class="">{branch}</span>
         {m.onboarding_setupCard_creatingBranch_middle()}
         <Button
+          variant="ghost"
           class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
           onclick={() => copyToClipboard(baseRef, m.onboarding_setupCard_baseRef_label())}
           >{baseRef}</Button
@@ -360,6 +361,7 @@
     {/snippet}
     {#snippet copyableRef(text: string, label: string, copyValue?: string)}
       <Button
+        variant="ghost"
         class="group/copy inline-flex items-center gap-0.5 underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
         onclick={() => copyToClipboard(copyValue ?? text, label)}
       >
@@ -413,6 +415,7 @@
         <TooltipRich side="bottom" align="start" interactive maxWidth="22rem" delayDuration={300}>
           {#snippet trigger()}
             <Button
+              variant="ghost"
               class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
               onclick={onFocusSetupTerminal}>{m.onboarding_setupCard_terminalTab_label()}</Button
             >
@@ -439,6 +442,7 @@
       <TooltipRich side="bottom" align="start" interactive maxWidth="22rem" delayDuration={300}>
         {#snippet trigger()}
           <Button
+            variant="ghost"
             class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
             onclick={openSpecialistSettings}>{displaySpecialistName}</Button
           >

@@ -734,6 +734,7 @@
                   title={tcAddress}>{tcAddress}</code
                 >
                 <Button
+                  variant="ghost"
                   type="button"
                   onclick={handleCopyTcAddress}
                   class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
@@ -845,6 +846,7 @@
               </p>
             </div>
             <Button
+              variant="ghost"
               type="button"
               onclick={handleShowQr}
               class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer"
@@ -905,6 +907,7 @@
                 {showToken ? token : maskedToken}
               </code>
               <Button
+                variant="ghost"
                 type="button"
                 onclick={() => (showToken = !showToken)}
                 class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
@@ -913,6 +916,7 @@
                 <Fa icon={showToken ? faEyeSlash : faEye} size="sm" />
               </Button>
               <Button
+                variant="ghost"
                 type="button"
                 onclick={handleCopy}
                 class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
@@ -921,6 +925,7 @@
                 <Fa icon={faCopy} size="sm" />
               </Button>
               <Button
+                variant="ghost"
                 type="button"
                 onclick={handleRegenerate}
                 disabled={regenerating}

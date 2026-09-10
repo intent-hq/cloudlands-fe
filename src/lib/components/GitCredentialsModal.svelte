@@ -81,6 +81,7 @@
           {m.lib_gitCredentials_title()}
         </h2>
         <Button
+          variant="ghost"
           class="bg-transparent border-none text-2xl cursor-pointer text-muted-foreground hover:text-foreground"
           onclick={handleClose}>×</Button
         >
@@ -99,6 +100,7 @@
               </p>
               {#if canRetry}
                 <Button
+                  variant="ghost"
                   class="text-sm text-blue-600 dark:text-blue-400 underline bg-transparent border-none cursor-pointer p-0 hover:text-blue-800 dark:hover:text-blue-300"
                   onclick={() => onRetryInTerminal?.()}
                 >
@@ -142,6 +144,7 @@
             <p class="m-0">eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519</p>
           </div>
           <Button
+            variant="ghost"
             class="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 bg-transparent border-none cursor-pointer p-0"
             onclick={openGitHubSSHDocs}
           >
@@ -172,6 +175,7 @@
             <p class="m-0">git credential-manager configure</p>
           </div>
           <Button
+            variant="ghost"
             class="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 bg-transparent border-none cursor-pointer p-0"
             onclick={openGitCredentialManagerDocs}
           >

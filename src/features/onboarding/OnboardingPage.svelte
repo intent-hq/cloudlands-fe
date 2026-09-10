@@ -1676,6 +1676,7 @@
 
                         {#if !isRequirementsStep && onboardingVisibleStep > 1}
                           <Button
+                            variant="ghost"
                             type="button"
                             class="flex items-center gap-1.5 text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer"
                             onclick={() =>

@@ -291,6 +291,7 @@
               {:else}
                 {#if !isDefault && $keyConfigured$[target]}
                   <Button
+                    variant="ghost"
                     type="button"
                     class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
                     onclick={() => handleSetProviderDefault(target)}
@@ -301,6 +302,7 @@
                 {/if}
                 {#if $keyConfigured$[target]}
                   <Button
+                    variant="ghost"
                     type="button"
                     class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
                     onclick={() => handleShowKeyInput(target)}
@@ -309,6 +311,7 @@
                   </Button>
                   <span class="text-ghost">·</span>
                   <Button
+                    variant="ghost"
                     type="button"
                     class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
                     onclick={() => handleClearApiKey(target)}
@@ -317,6 +320,7 @@
                   </Button>
                 {:else}
                   <Button
+                    variant="ghost"
                     type="button"
                     class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium"
                     onclick={() => handleShowKeyInput(target)}
@@ -417,6 +421,7 @@
           <div class="flex items-center gap-2 text-xs shrink-0">
             {#if !isOsDefault}
               <Button
+                variant="ghost"
                 type="button"
                 class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 onclick={handleSetOsDefault}
@@ -555,6 +560,7 @@
                     >
                       {term}
                       <Button
+                        variant="ghost"
                         type="button"
                         class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
                         aria-label={m.settings_voice_vocabulary_remove_ariaLabel({ term })}

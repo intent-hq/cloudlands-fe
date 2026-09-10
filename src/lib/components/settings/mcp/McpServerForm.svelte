@@ -178,6 +178,7 @@
     <div class="flex gap-1 p-1 bg-muted rounded-lg w-fit">
       {#each transportTypes as type (type.value)}
         <Button
+          variant="ghost"
           type="button"
           class="px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer
                  {form.type === type.value
@@ -269,6 +270,7 @@
       <div class="flex gap-1 p-1 bg-muted rounded-lg w-fit">
         {#each authTypes as auth (auth.value)}
           <Button
+            variant="ghost"
             type="button"
             class="px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer
                    {form.authType === auth.value
