@@ -193,7 +193,8 @@ class EmbeddedBrowserCdpService {
   private registrationWaiters = new Map<string, Set<(registered: boolean) => void>>();
 
   /**
-   * Renderer-reported bounds (CSS px) of each tab's visible webview element,
+   * Bounds in device-independent pixels of each tab's visible webview element,
+   * converted from renderer CSS pixels using the sending window's zoom factor,
    * keyed by tabId. Used to scale-to-fit emulated (agent-owned) tabs when
    * they are visible in a panel — the emulated viewport keeps its size, only
    * the displayed image is scaled (docs/protocol §5.9). Entries are dropped
@@ -1164,8 +1165,8 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Record the on-screen bounds (CSS px) of a tab's visible webview element,
-   * reported by the renderer, and re-fit the emulation scale. Scale-to-fit
+   * Record the on-screen bounds (device-independent pixels) of a tab's visible
+   * webview element and re-fit the emulation scale. Scale-to-fit
    * only shrinks (docs/protocol §5.9): an emulated viewport smaller than the
    * element renders 1:1.
    */

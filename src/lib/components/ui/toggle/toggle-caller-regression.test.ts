@@ -1,4 +1,5 @@
 // @vitest-environment node
+// @ui-invariant
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -93,7 +94,6 @@ describe('B2 caller metadata regression', () => {
   it('matches current source-derived callers for every field primitive', () => {
     const expected = {
       checkbox: [
-        'src/features/onboarding/OnboardingPage.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
         'src/lib/components/chat/input/ContextPickerButton.svelte',

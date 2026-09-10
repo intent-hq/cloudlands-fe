@@ -12,6 +12,7 @@ import { all, call } from 'typed-redux-saga';
 import { backgroundExecutorSaga } from '../../features/agent/background-executor-service';
 import { providerAvailabilitySaga } from './slices/agent-availability/sagas/provider-availability-saga';
 import { agentEventsIpcSaga } from './slices/agent-events/sagas/agent-events-ipc-saga';
+import { agentOverviewHistorySaga } from './slices/agent-overview/sagas/agent-overview-history-saga';
 import { agentFailureToastSaga } from './slices/agent-session/sagas/agent-failure-toast-saga';
 import { agentMutationSaga } from './slices/agent-session/sagas/agent-mutation-saga';
 import { agentStreamSaga } from './slices/agent-session/sagas/agent-stream-saga';
@@ -126,6 +127,7 @@ export function* hardwareConsoleSaga() {
 /** App-owned sagas in audited startup order. Each production owner appears once. */
 export const sagas = [
   daemonEventsSaga,
+  agentOverviewHistorySaga,
   daemonHealthSaga,
   connectionsSaga,
   settingsHydrationSaga,

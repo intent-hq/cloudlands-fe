@@ -25,7 +25,7 @@ describe('modelReloadSaga', () => {
       reloadModelsWorker,
     ).toPromise();
 
-    expect(mocks.list.mock.calls).toEqual([[]]);
+    expect(mocks.list.mock.calls).toEqual([['auggie']]);
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       {
         type: 'model/setLoadingStateForProvider',

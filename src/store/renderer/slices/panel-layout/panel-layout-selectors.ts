@@ -15,6 +15,7 @@ import {
 } from './panel-layout-tabless';
 import { panelTabsAreEquivalent } from './panel-tab-identity';
 import type { PanelDefaultWidthTier } from '../../../../shared/panel-layout-sizing';
+import type { BrowserTab } from '../../../../shared/types/browser-clients';
 import type {
   WorkspacePanelLayoutState,
   PanelLayoutNode,
@@ -210,6 +211,37 @@ export const selectHiddenTabs = store.createSelector<[wsId: string], PanelTab[]>
   // Pre-#2857 persisted/test states may lack the field.
   return getItems(ws.hiddenTabs ?? emptyWorkspaceState.hiddenTabs);
 });
+
+export type BrowserTabVisibility = BrowserTab['visibility'];
+export type LayoutBrowserTab = { tab: PanelTab; visibility: BrowserTabVisibility };
+
+/**
+ * Every browser tab in a workspace layout — live or mirror — with where it
+ * lives: `visible` in a panel's tab bar, `hidden` in `hiddenTabs`
+ * (monorepo#2857). Shared by the registry report and the sidebar's
+ * driving-client gate so both see the same set.
+ */
+export function collectBrowserTabs(layout: WorkspacePanelLayoutState): LayoutBrowserTab[] {
+  const out: LayoutBrowserTab[] = [];
+  for (const panel of Object.values(layout.panels)) {
+    for (const tab of panel.tabs) {
+      if (tab.type === 'browser') out.push({ tab, visibility: 'visible' });
+    }
+  }
+  // Pre-#2857 persisted/test states may lack the field.
+  for (const tab of getItems(layout.hiddenTabs ?? emptyWorkspaceState.hiddenTabs)) {
+    if (tab.type === 'browser') out.push({ tab, visibility: 'hidden' });
+  }
+  return out;
+}
+
+/** Whether the workspace layout holds any browser tab (local or mirror, visible or hidden). */
+export const selectWorkspaceHasBrowserTabs = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => {
+    const ws = state?.panelLayout?.byWorkspaceId[wsId] ?? emptyWorkspaceState;
+    return collectBrowserTabs(ws).length > 0;
+  },
+);
 
 /** Select visible horizontal panel-column counts for workspace width reservation. */
 export const selectPanelColumnCountsByWorkspaceId = store.createSelector((state) => {

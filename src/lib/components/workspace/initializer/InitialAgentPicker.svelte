@@ -42,6 +42,7 @@
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
+  import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
 
   const logger = createLogger('InitialAgentPicker');
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
@@ -62,6 +63,14 @@
   const availableModels$ = selectAvailableModels();
   const availableModelsProviderId$ = selectAvailableModelsProviderId();
   const providerModelsCacheMap$ = selectProviderModelsCacheMap();
+
+  // First-launch single-agent default (mirrors the parent's init): Developer
+  // when the resolved set carries it, else General.
+  const defaultSingleAgentSpecialistId: string | null = $specialists$.some(
+    (s) => s.id === DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
+  )
+    ? DEFAULT_NEW_WORKSPACE_SPECIALIST_ID
+    : null;
 
   interface Props {
     /** Selected specialist ID - null means blank agent */
@@ -89,11 +98,11 @@
   }
 
   let {
-    selectedSpecialist = $bindable<string | null>($orchestrator$?.id ?? null),
+    selectedSpecialist = $bindable<string | null>(defaultSingleAgentSpecialistId),
     selectedModel = $bindable<string | undefined>(undefined),
     modelWasOverridden = $bindable<boolean>(false),
     selectedReasoningEffort = $bindable<string | undefined>(undefined),
-    isTeamMode = $bindable<boolean>(true),
+    isTeamMode = $bindable<boolean>(false),
     selectedProvider = $bindable<string>($activeProviderId$ || $defaultProviderId$),
     onSpecialistChange,
     onModelChange,
@@ -503,11 +512,13 @@
     specialist: null,
   });
 
+  // Seeded from the incoming single-agent selection so switching to team mode
+  // and back restores it; in team mode there is no single-agent selection yet.
   let lastSingleAgent = $state<ModeSnapshot>({
     model: undefined,
     provider: defaultProvider,
     modelOverridden: false,
-    specialist: null,
+    specialist: untrack(() => (isTeamMode ? null : selectedSpecialist)),
   });
 
   // The specialist to display in the single-agent card — uses the saved value when in team mode
@@ -639,81 +650,6 @@
 
 <!-- Agent mode cards -->
 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-  <!-- Team orchestration card — hidden when the resolved set has no orchestrator -->
-  {#if orchestrator}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="agent-card min-w-0 {isTeamMode
-        ? 'border-input bg-accent/60'
-        : 'border-border bg-card hover:bg-muted/50'}"
-      onclick={selectTeamMode}
-      onkeydown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          selectTeamMode();
-        }
-      }}
-      role="button"
-      tabindex="0"
-      aria-pressed={isTeamMode}
-    >
-      <div class="text-sm font-medium text-foreground">
-        {m.workspace_initialAgentPicker_teamMode_label()}
-      </div>
-      <div class="flex items-center gap-1 py-1.5">
-        <AgentAvatar
-          agentId="blank"
-          size={22}
-          specialist={orchestrator.id}
-          icon={orchestrator.icon}
-        />
-        {#if teamAgentAvatars.length > 0}
-          <span class="text-subtle text-xs mx-0.5">→</span>
-          {#each teamAgentAvatars as teamAgent (teamAgent.id)}
-            <AgentAvatar
-              agentId="blank"
-              size={22}
-              specialist={teamAgent.id}
-              icon={teamAgent.icon}
-            />
-          {/each}
-        {/if}
-      </div>
-      <div class="text-sm text-subtle leading-snug">
-        {m.workspace_initialAgentPicker_teamMode_description()}
-      </div>
-      <div
-        class="model-picker-row {isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
-        inert={!isTeamMode}
-        onclick={(event) => event.stopPropagation()}
-        onkeydown={(event) => event.stopPropagation()}
-      >
-        <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_before()}</span>
-        {#key teamModeModel}
-          <ModelPicker
-            selectedModel={modelWasOverridden ? selectedModel : undefined}
-            onModelChange={handleModelChange}
-            variant="ghost-light"
-            size="xs"
-            showReasoning
-            reasoningEffort={selectedReasoningEffort ?? null}
-            onReasoningChange={handleReasoningChange}
-            showManageLink={true}
-            defaultModelId={teamModeModel}
-            defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
-            fallbackToCatalogDefault
-            fallbackProviderId={selectedProvider}
-            noticeClass="basis-full w-full max-w-full mt-1.5"
-            silentFallback
-            portal={false}
-            modalAware={true}
-            collisionBoundary="[data-model-picker-collision-boundary]"
-          />
-        {/key}
-      </div>
-    </div>
-  {/if}
-
   <!-- Single agent card -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
@@ -879,6 +815,81 @@
       {/key}
     </div>
   </div>
+
+  <!-- Team orchestration card — hidden when the resolved set has no orchestrator -->
+  {#if orchestrator}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="agent-card min-w-0 {isTeamMode
+        ? 'border-input bg-accent/60'
+        : 'border-border bg-card hover:bg-muted/50'}"
+      onclick={selectTeamMode}
+      onkeydown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          selectTeamMode();
+        }
+      }}
+      role="button"
+      tabindex="0"
+      aria-pressed={isTeamMode}
+    >
+      <div class="text-sm font-medium text-foreground">
+        {m.workspace_initialAgentPicker_teamMode_label()}
+      </div>
+      <div class="flex items-center gap-1 py-1.5">
+        <AgentAvatar
+          agentId="blank"
+          size={22}
+          specialist={orchestrator.id}
+          icon={orchestrator.icon}
+        />
+        {#if teamAgentAvatars.length > 0}
+          <span class="text-subtle text-xs mx-0.5">→</span>
+          {#each teamAgentAvatars as teamAgent (teamAgent.id)}
+            <AgentAvatar
+              agentId="blank"
+              size={22}
+              specialist={teamAgent.id}
+              icon={teamAgent.icon}
+            />
+          {/each}
+        {/if}
+      </div>
+      <div class="text-sm text-subtle leading-snug">
+        {m.workspace_initialAgentPicker_teamMode_description()}
+      </div>
+      <div
+        class="model-picker-row {isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
+        inert={!isTeamMode}
+        onclick={(event) => event.stopPropagation()}
+        onkeydown={(event) => event.stopPropagation()}
+      >
+        <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_before()}</span>
+        {#key teamModeModel}
+          <ModelPicker
+            selectedModel={modelWasOverridden ? selectedModel : undefined}
+            onModelChange={handleModelChange}
+            variant="ghost-light"
+            size="xs"
+            showReasoning
+            reasoningEffort={selectedReasoningEffort ?? null}
+            onReasoningChange={handleReasoningChange}
+            showManageLink={true}
+            defaultModelId={teamModeModel}
+            defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
+            fallbackToCatalogDefault
+            fallbackProviderId={selectedProvider}
+            noticeClass="basis-full w-full max-w-full mt-1.5"
+            silentFallback
+            portal={false}
+            modalAware={true}
+            collisionBoundary="[data-model-picker-collision-boundary]"
+          />
+        {/key}
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>

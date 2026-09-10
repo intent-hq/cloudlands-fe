@@ -252,19 +252,19 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     },
     queryPage: async (workspaceId, options = {}) => {
       if (workspaceId !== String(fx.MOCK_WORKSPACE_ID)) return { items: [], nextToken: null };
-      const matching = fx.mockWorkspaceEvents
-        .filter(
-          (event) =>
-            (!options.eventType || event.type === options.eventType) &&
-            (!options.actorType || event.actor?.type === options.actorType) &&
-            (!options.actorId || event.actor?.id === options.actorId),
-        )
-        .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-      const start = Number.parseInt(options.nextToken ?? '0', 10) || 0;
-      const end = start + (options.limit || 50);
+      const matching = fx.mockWorkspaceEvents.filter(
+        (event) =>
+          (!options.eventType || event.type === options.eventType) &&
+          (!options.actorType || event.actor?.type === options.actorType) &&
+          (!options.actorId || event.actor?.id === options.actorId),
+      );
+      matching.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      const limit = Math.min(200, Math.max(1, options.limit || 50));
+      const offset = Math.max(0, Number.parseInt(options.nextToken ?? '0', 10) || 0);
+      const items = matching.slice(offset, offset + limit);
       return {
-        items: matching.slice(start, end),
-        nextToken: end < matching.length ? String(end) : null,
+        items,
+        nextToken: offset + items.length < matching.length ? String(offset + items.length) : null,
       };
     },
     subscribe: (workspaceId, handler) =>

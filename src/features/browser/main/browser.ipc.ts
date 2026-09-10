@@ -489,12 +489,13 @@ export function registerBrowserHandlers(): void {
     IPC_CHANNELS.BROWSER.REPORT_TAB_BOUNDS,
     createSafeValidatedHandler(
       ReportTabBoundsSchema,
-      async (_event, validated) => {
+      async (event, validated) => {
         if (validated.width !== undefined && validated.height !== undefined) {
+          const zoomFactor = event.sender.getZoomFactor();
           embeddedBrowserCdp.reportTabViewBounds(
             validated.tabId,
-            validated.width,
-            validated.height,
+            validated.width * zoomFactor,
+            validated.height * zoomFactor,
           );
         } else {
           embeddedBrowserCdp.clearTabViewBounds(validated.tabId);

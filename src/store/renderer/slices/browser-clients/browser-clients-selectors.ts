@@ -4,9 +4,11 @@
 
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { BrowserTab, LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
-import type {
-  BrowserClientSummary,
-  DrivingClientInput,
+import type { BrowserTabHost } from '$lib/components/browser/browser-tab-host';
+import {
+  browserClientDisplayName,
+  type BrowserClientSummary,
+  type ResolvedBrowserClients,
 } from '$lib/components/workspace/driving-indicator';
 import { store } from '../../store';
 import { emptyWorkspaceBrowserClientsState, initialState } from './browser-clients-types';
@@ -56,7 +58,7 @@ function liveClientSummary(client: LiveClient): BrowserClientSummary {
  * and `null` when unpinned with nothing eligible or before the first read.
  */
 export const selectWorkspaceDrivingClient = store.createSelector(
-  (state, wsId: string): DrivingClientInput => {
+  (state, wsId: string): ResolvedBrowserClients => {
     const slice = state?.browserClients ?? initialState;
     const eligibleClients = getItems(slice.liveClients)
       .filter((client) => client.capabilities.browserExec === true)
@@ -71,6 +73,25 @@ export const selectWorkspaceDrivingClient = store.createSelector(
       driving = { clientId: browserClient.clientId, connected: false };
     }
     return { eligibleClients, ownClientId: slice.ownClientId ?? '', driving };
+  },
+);
+
+/**
+ * The host of a browser tab mirrored here (REV-2 Model 3): its display name
+ * and whether it is connected. Presence comes from `client.list`; until that
+ * first read lands it is unknown, and the host is reported connected so the
+ * mirror does not open in the offline state only to flip back a moment later.
+ * An offline host has no live hello, so its name falls back to the id.
+ */
+export const selectBrowserTabHost = store.createSelector(
+  (state, hostClientId: string): BrowserTabHost => {
+    const slice = state?.browserClients ?? initialState;
+    const live = getItem(slice.liveClients, hostClientId);
+    if (live) return { name: browserClientDisplayName(liveClientSummary(live)), connected: true };
+    return {
+      name: browserClientDisplayName({ clientId: hostClientId, connected: false }),
+      connected: !slice.liveClientsLoaded,
+    };
   },
 );
 

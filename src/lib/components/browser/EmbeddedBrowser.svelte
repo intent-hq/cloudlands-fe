@@ -34,7 +34,10 @@
     recordEmbeddedBrowserNavigation,
   } from './embedded-browser-navigation-sync';
   import { reportTabBounds } from './tab-bounds-action';
-  import { isValidBrowserUrl } from './embedded-browser-url-validation';
+  import {
+    isValidBrowserUrl,
+    normalizeBrowserAddressInput,
+  } from './embedded-browser-url-validation';
   import { navigateToAgent } from '$lib/utils/workspace-navigation';
   import InlineAgentAvatar from '$lib/components/chat/InlineAgentAvatar.svelte';
   import Fa from 'svelte-fa';
@@ -1015,16 +1018,13 @@
     });
 
     if (urlDraft) {
-      let urlToLoad = urlDraft.trim();
-      // Only prepend a protocol if the input doesn't already have one (scheme://...).
-      // This avoids turning "file:///path" into "https://file:///path" (ERR_NAME_NOT_RESOLVED).
       // loadUrl() will reject disallowed protocols with a clear error message.
-      if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(urlToLoad)) {
-        const isLocalhost =
-          urlToLoad.includes('localhost') ||
-          urlToLoad.includes('127.0.0.1') ||
-          urlToLoad.includes('0.0.0.0');
-        urlToLoad = (isLocalhost ? 'http://' : 'https://') + urlToLoad;
+      const urlToLoad = normalizeBrowserAddressInput(urlDraft);
+      if (urlToLoad === null) {
+        errorMessage = m.browser_embedded_invalidUrlFormat_error();
+        logger.warn('Invalid URL format', { url: urlDraft });
+        exitUrlEditMode();
+        return;
       }
       logger.info('Loading URL from form', { urlToLoad });
       loadUrl(urlToLoad);

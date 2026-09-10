@@ -38,7 +38,6 @@
   import {
     selectOnboardingStep,
     selectOnboardingState,
-    selectOnboardingFullFlowRequested,
   } from '$store/renderer/slices/onboarding/onboarding-selectors';
   import {
     goToStep,
@@ -74,30 +73,18 @@
     selectHostRequirementsHasCheckedOnce,
   } from '$store/renderer/slices/host-requirements/host-requirements-selectors';
   import {
-    selectProviderStatusMap,
-    selectHasCheckedOnce as selectProvidersCheckedOnce,
-  } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
-  import {
     checkSingleProviderRequested,
     ensureProvidersChecked,
   } from '$store/renderer/slices/agent-availability/agent-availability-slice';
-  import { hasReadyProvider } from '$store/renderer/slices/setup-prompt/setup-prompt-utils';
-  import { selectHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { hasAvailableWorkspace } from '$features/workspace/utils/empty-window-destination';
-  import {
-    determineOnboardingInitialStep,
-    resolveFastPathSettlement,
-  } from '$features/onboarding/utils/determine-onboarding-initial-step';
+  import { determineOnboardingInitialStep } from '$features/onboarding/utils/determine-onboarding-initial-step';
 
   import { Button } from '$lib/components/ui/button';
-  import { Checkbox } from '$lib/components/ui/checkbox';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { shell } from '$lib/electron-bridge';
   import { runProviderTestPrompt } from '$features/providers/provider-test-prompt.client';
   import {
     mapTestPromptFailure,
-    providerSupportsTestPrompt,
+    shouldRunOnboardingTestPrompt,
     type TestPromptFailureGuidance,
   } from '$features/onboarding/utils/onboarding-test-prompt';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
@@ -143,7 +130,12 @@
   import {
     cancelWorkspaceInitializerOnboardingFormStateDebounce,
     debounceWorkspaceInitializerOnboardingFormState,
+    setWorkspaceInitializerLastSubmittedAgent,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+  import {
+    DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
+    getSpecialistById,
+  } from '$lib/constants/specialists';
   import {
     selectWorkspaceInitializerHydrated,
     selectWorkspaceInitializerOnboardingFormState,
@@ -194,9 +186,6 @@
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
   const allRequirementsMet$ = selectAllRequirementsMet();
   const requirementsCheckedOnce$ = selectHostRequirementsHasCheckedOnce();
-  const providerStatusMap$ = selectProviderStatusMap();
-  const providersCheckedOnce$ = selectProvidersCheckedOnce();
-  const workspaceItems$ = selectWorkspaceItems();
   const providerCatalogEntries$ = selectProviderCatalogEntries();
 
   let projectSelection = $state<ProjectSelection | null>(null);
@@ -536,6 +525,14 @@
   // retry create mints a fresh id, which rekeys the card and rebinds its
   // init-bound selector cleanly.
   let onboardingCreateProgressId = $state<string | null>(null);
+  // Initial agent shown on the setup card: the Developer specialist's id and
+  // localized name, refreshed from the resolved config at create time (both
+  // undefined when the resolved list lacks the Developer → General).
+  let setupSpecialistId = $state<string | undefined>(DEFAULT_NEW_WORKSPACE_SPECIALIST_ID);
+  let setupSpecialistName = $state<string | undefined>(
+    getSpecialistById(DEFAULT_NEW_WORKSPACE_SPECIALIST_ID)?.name ??
+      DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
+  );
 
   // Setup script state — session-local: the default is restored per repo
   // from the repo config / localStorage last-used, never from persisted
@@ -546,7 +543,7 @@
   let setupScriptNameSource = $state<SetupScriptNameSource>('custom');
   let isCustomSetupScript = $state(false);
 
-  // User-picked model (bare id) + its provider for the initial Coordinator
+  // User-picked model (bare id) + its provider for the initial Developer
   // agent (step 3 picker). undefined + false means the auto-resolved default
   // applies (behavior identical to before the picker existed).
   let onboardingSelectedModel = $state<string | undefined>(undefined);
@@ -663,33 +660,28 @@
   let agentGridRef: AgentGrid | null = $state(null);
   let onboardingSkipIsolation = $state(false);
 
-  // "Send a test prompt" opt-out: one live end-to-end prompt against the
-  // selected provider before advancing (host.providerTestPrompt, §5.14).
-  // Checked by default; hidden when the provider's catalog row does not
-  // support the test (supportsTestPrompt false/absent — e.g. unsloth).
-  let onboardingSendTestPrompt = $state(true);
   let onboardingTestPromptRunning = $state(false);
   let onboardingTestPromptFailure = $state<TestPromptFailureGuidance | null>(null);
   let onboardingGridSelectedProviderId = $state<string | undefined>(undefined);
   const onboardingSelectedCatalogEntry = $derived(
     $providerCatalogEntries$.find((entry) => entry.id === onboardingGridSelectedProviderId),
   );
-  const onboardingTestPromptSupported = $derived(
-    providerSupportsTestPrompt(onboardingSelectedCatalogEntry),
+  const shouldTestOnboardingProvider = $derived(
+    shouldRunOnboardingTestPrompt(onboardingSelectedCatalogEntry),
   );
 
   /** Advance from the welcome step, first committing the grid's resolved
    *  provider selection so a no-click advance still enables/activates the
    *  visually-selected provider (D1(B): commit only on explicit advance).
-   *  With the test-prompt box checked (and the provider supporting it), one
-   *  live test prompt runs first: success advances, a structured failure
+   *  For allowlisted providers that support it, one live test prompt runs first:
+   *  success advances, a structured failure
    *  keeps the user on the step with actionable guidance. */
   async function advanceFromWelcomeStep() {
     if (onboardingTestPromptRunning) return;
     const committed = agentGridRef?.commitSelection();
     const providerId = committed ?? onboardingGridSelectedProviderId;
     if (!providerId) return;
-    if (onboardingSendTestPrompt && onboardingTestPromptSupported && providerId) {
+    if (shouldTestOnboardingProvider) {
       onboardingTestPromptFailure = null;
       onboardingTestPromptRunning = true;
       try {
@@ -787,64 +779,19 @@
     // (resetOnboarding preserves a pending fullFlowRequested — see the slice.)
     if (isOnboarding) {
       appStore.dispatch(resetOnboarding());
-      // Kick the bulk provider check so the initial-step decision (and the
-      // fast-path settlement below) has real availability data to settle on
-      // even when the welcome step's AgentGrid never mounts.
       appStore.dispatch(ensureProvidersChecked());
     }
   });
 
-  // True while 'project' was entered on the persisted local flag alone; the
-  // settlement effect below corrects back to 'welcome' if the provider check
-  // settles with no ready provider and no workspaces.
-  let onboardingFastPathPending = $state(false);
-
-  // Requirements gate: advance only once the check group has settled with
-  // every requirement met; otherwise stay blocked on the requirements step
-  // (OnboardingRequirementsStep renders the setup guidance and re-checks on
-  // focus/visibility until the tools appear). Once green, jump to the step
-  // the provider-setup state warrants: 'project' when setup is already done
-  // (ready provider / existing workspaces / persisted local flag), 'welcome'
-  // for the full flow otherwise. An explicit full-flow request (Command
-  // Palette "Show onboarding") always gets the full flow and is consumed here.
   $effect(() => {
-    if (
-      isOnboarding &&
-      $onboardingStep$ === 'requirements' &&
-      $requirementsCheckedOnce$ &&
-      $allRequirementsMet$
-    ) {
-      const fullFlowRequested = selectOnboardingFullFlowRequested.select(appStore.state);
-      const decision = determineOnboardingInitialStep({
-        fullFlowRequested,
-        hasReadyProvider: hasReadyProvider($providerStatusMap$),
-        hasCompletedProviderSetup: selectHasCompletedProviderSetup.select(appStore.state),
-        hasWorkspaces: hasAvailableWorkspace($workspaceItems$),
-        providersCheckedOnce: $providersCheckedOnce$,
-      });
-      if (fullFlowRequested) {
-        appStore.dispatch(setOnboardingFullFlowRequested(false));
-      }
-      onboardingFastPathPending = decision.viaLocalFastPath;
-      appStore.dispatch(goToStep(decision.step));
-    }
-  });
-
-  // Local fast-path settlement: the persisted flag skipped ahead while the
-  // bulk provider check was still pending; once it settles with no ready
-  // provider (and no workspaces exist), route back into provider setup.
-  $effect(() => {
-    if (!isOnboarding || !onboardingFastPathPending) return;
-    const settlement = resolveFastPathSettlement({
-      hasReadyProvider: hasReadyProvider($providerStatusMap$),
-      providersCheckedOnce: $providersCheckedOnce$,
-      hasWorkspaces: hasAvailableWorkspace($workspaceItems$),
+    if (!isOnboarding || $onboardingStep$ !== 'requirements') return;
+    const step = determineOnboardingInitialStep({
+      requirementsCheckedOnce: $requirementsCheckedOnce$,
+      allRequirementsMet: $allRequirementsMet$,
     });
-    if (settlement === 'pending') return;
-    onboardingFastPathPending = false;
-    if (settlement === 'correct' && $onboardingStep$ === 'project') {
-      appStore.dispatch(goToStep('welcome'));
-    }
+    if (step === 'requirements') return;
+    appStore.dispatch(setOnboardingFullFlowRequested(false));
+    appStore.dispatch(goToStep(step));
   });
 
   // ============================================================================
@@ -1248,12 +1195,17 @@
         model: effectiveModel,
         behaviorPrompt,
         specialistId,
+        specialistName,
       } = await resolveOnboardingModel(
         reduxState,
         onboardingModelWasOverridden && onboardingSelectedModel
           ? { model: onboardingSelectedModel, provider: onboardingSelectedProvider }
           : undefined,
       );
+      setupSpecialistId = specialistId ?? undefined;
+      setupSpecialistName = specialistName;
+      // General (null specialist) uses the modal's generic agent name.
+      const agentName = specialistName ?? m.workspace_fileChanges_agent_label();
 
       // The prompt-step picker is the authoritative source of the initial
       // default provider + default model (monorepo#3044): commit the resolved
@@ -1383,11 +1335,11 @@
         linearIssue,
         sentryIssue,
         initialAgent: {
-          name: 'Coordinator',
+          name: agentName,
           model: effectiveModel,
           prompt: hasStagedFiles ? undefined : prompt,
           agentType,
-          specialist: specialistId,
+          specialist: specialistId ?? undefined,
           behaviorPrompt,
           provider,
           contextReferences:
@@ -1396,7 +1348,7 @@
           metadata: {
             source: 'onboarding',
             isInitialAgent: true,
-            specialist: specialistId,
+            specialist: specialistId ?? undefined,
           },
         },
         progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
@@ -1435,12 +1387,28 @@
       if (agentId) {
         appStore.dispatch(setInitialAgentId(workspace.id, agentId));
       }
+      // Seed the New Workspace modal's remembered choice with the onboarding
+      // agent (single-agent Developer, or General when it was unavailable);
+      // the workspace-initializer saga persists it.
+      appStore.dispatch(
+        setWorkspaceInitializerLastSubmittedAgent({
+          selectedSpecialist: specialistId,
+          isTeamMode: false,
+          selectedModel: onboardingSelectedModel,
+          modelWasOverridden: onboardingModelWasOverridden,
+          selectedReasoningEffort: undefined,
+          selectedProvider: onboardingSelectedProvider,
+        }),
+      );
       appStore.dispatch(
         bootstrapNewWorkspaceLayout(
           workspace.id,
           agentId ?? null,
-          'Coordinator',
-          specialistId === 'spec-writer',
+          agentName,
+          // The Developer writes a spec before implementing (like the
+          // Coordinator did), so the spec-first layout is kept; a General
+          // agent does not.
+          specialistId !== null,
           undefined,
           // Daemon-persisted links are canonical; fall back to the request's
           // links when an older daemon does not echo them (PROTOCOL §5.1).
@@ -1638,7 +1606,8 @@
                 baseRef={projectSelection?.branch
                   ? `origin/${projectSelection.branch}`
                   : 'origin/main'}
-                specialistName="Coordinator"
+                specialistId={setupSpecialistId}
+                specialistName={setupSpecialistName}
                 {setupScriptStatus}
                 repoStatus={setupRepoStatus}
                 branchStatus={setupBranchStatus}
@@ -1790,23 +1759,6 @@
                           </div>
                         </div>
                         <div class="max-w-5xl mx-auto flex flex-col items-start gap-2 mt-9">
-                          {#if hasConnectedProvider && onboardingTestPromptSupported}
-                            <div class="flex flex-col gap-1 mb-2">
-                              <label
-                                class="flex items-center gap-2 text-sm cursor-pointer"
-                                data-testid="onboarding-test-prompt-checkbox"
-                              >
-                                <Checkbox
-                                  bind:checked={onboardingSendTestPrompt}
-                                  disabled={onboardingTestPromptRunning}
-                                />
-                                {m.onboarding_testPrompt_checkbox_label()}
-                              </label>
-                              <p class="text-xs text-muted-foreground pl-6">
-                                {m.onboarding_testPrompt_finePrint_label()}
-                              </p>
-                            </div>
-                          {/if}
                           <Button
                             class="group/button"
                             size="xl"

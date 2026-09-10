@@ -18,13 +18,19 @@ export interface BrowserClientSummary {
   connected: boolean;
 }
 
-export interface DrivingClientInput {
+/** The workspace's resolved browser clients, as the daemon reports them. */
+export interface ResolvedBrowserClients {
   /** Connected clients advertising `capabilities.browserExec`. */
   eligibleClients: BrowserClientSummary[];
   /** This app's own stable client id. */
   ownClientId: string;
   /** Effective browser client for the workspace; null when none resolves. */
   driving: BrowserClientSummary | null;
+}
+
+export interface DrivingClientInput extends ResolvedBrowserClients {
+  /** Whether the workspace layout holds any browser tab (local or mirror, visible or hidden). */
+  hasBrowserTabs: boolean;
 }
 
 type DrivingClientMode = 'here' | 'elsewhere' | 'offline';
@@ -42,20 +48,22 @@ function shortenClientId(clientId: string): string {
   return clientId.length > 15 ? `${clientId.slice(0, 15)}…` : clientId;
 }
 
-function browserClientDisplayName(client: BrowserClientSummary): string {
+export function browserClientDisplayName(client: BrowserClientSummary): string {
   const name = client.name?.trim();
   return name || shortenClientId(client.clientId);
 }
 
 /**
- * Resolve what the sidebar should show. Returns null when nothing should be
- * rendered: a single eligible client (this app or nothing) leaves no choice
- * to make, so the indicator stays hidden (spec Model 8). A pinned client that
- * is offline is always surfaced, because agent tabs for the workspace fail
- * until the user switches or the pinned client reconnects.
+ * Resolve the driving client. Returns null when there is no choice to make:
+ * a single eligible client (this app or nothing) leaves nothing to switch to
+ * (spec Model 8). A pinned client that is offline is always resolved, because
+ * agent tabs for the workspace fail until the user switches or the pinned
+ * client reconnects.
  */
-export function resolveDrivingClientView(input: DrivingClientInput): DrivingClientView | null {
-  const { eligibleClients, ownClientId, driving } = input;
+export function resolveDrivingClientSwitch(
+  clients: ResolvedBrowserClients,
+): DrivingClientView | null {
+  const { eligibleClients, ownClientId, driving } = clients;
   if (!driving) return null;
 
   const offline = !driving.connected;
@@ -69,4 +77,17 @@ export function resolveDrivingClientView(input: DrivingClientInput): DrivingClie
     hostName: browserClientDisplayName(driving),
     canSwitchHere: !drivesHere,
   };
+}
+
+/**
+ * Resolve what the sidebar indicator should show. On top of
+ * `resolveDrivingClientSwitch`, the `here` / `elsewhere` modes render only
+ * when the workspace has a browser tab to drive; a pinned client that is
+ * offline is surfaced regardless, tabs or not.
+ */
+export function resolveDrivingClientView(input: DrivingClientInput): DrivingClientView | null {
+  const view = resolveDrivingClientSwitch(input);
+  if (!view) return null;
+  if (view.mode !== 'offline' && !input.hasBrowserTabs) return null;
+  return view;
 }

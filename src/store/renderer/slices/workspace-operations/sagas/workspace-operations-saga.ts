@@ -34,6 +34,7 @@ import {
   proposalFailed,
 } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import { selectProposalLifecycleEntry } from '../../proposal-lifecycle/proposal-lifecycle-selectors';
+import { selectSpecialists } from '../../specialists/specialists-selectors';
 import {
   bulkUpdateWorkspaceEntities,
   clearWorkspacePendingDeletion,
@@ -594,9 +595,16 @@ function* applyCreateProposal(payload: WorkspaceProposalApplyPayload): SagaGener
   if (lifecycle?.status === 'applying' || lifecycle?.status === 'applied') return;
   yield* put(proposalApplyStarted({ proposalId, startedAt: Date.now() }));
   try {
+    // Mirror CompactWorkspaceInitializer: the specialist's display name, or
+    // the generic "Agent" label when the specialist is General or unknown.
+    const specialists = yield* selectSpecialists.effect();
     const result = yield* call(
       [workspaceClient, workspaceClient.create],
-      buildCreateWorkspaceRequestFromProposal(proposal, editedFields),
+      buildCreateWorkspaceRequestFromProposal(proposal, editedFields, {
+        resolveAgentName: (specialistId) =>
+          (specialistId ? specialists.find((s) => s.id === specialistId)?.name : undefined) ??
+          m.workspace_fileChanges_agent_label(),
+      }),
     );
     if (!result.ok) {
       yield* failProposal(proposalId, result.error, result.errorCode);

@@ -1881,7 +1881,7 @@ export interface SpecialistsClient {
 }
 
 export interface ModelsClient {
-  list(): Promise<AuggieModel[]>;
+  list(providerId?: string): Promise<AuggieModel[]>;
   subscribe(handler: SubscriptionHandler<AuggieModel[]>): Unsubscribe;
 }
 
@@ -2235,9 +2235,8 @@ export interface EventQueryOptions {
   limit?: number;
 }
 
-/** Cursor options for the opt-in paginated `event.query` envelope. */
 export interface EventQueryPageOptions extends EventQueryOptions {
-  nextToken?: string;
+  nextToken?: string | null;
 }
 
 /** One newest→oldest page returned by paginated `event.query`. */
