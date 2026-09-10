@@ -30,7 +30,6 @@
  * fresh `agent.getConversation` snapshot.
  */
 import {
-  isPlanContentBlock,
   MESSAGE_ROLES,
   migrateFromLegacy,
   type AgentMessage,
@@ -292,7 +291,8 @@ function pushTurnCorrelation(push: ChatPush): string | undefined {
   }
   const entities = [...(push.delta?.updated ?? []), ...(push.delta?.added ?? [])];
   for (let index = entities.length - 1; index >= 0; index -= 1) {
-    const entity = parseDeltaEntity(entities[index]);
+    // Diagnostics accept either encoding; transcript intake uses the snapshot echo.
+    const entity = parseDeltaEntity(entities[index], true);
     if (entity && (entity.role === undefined || entity.role === 'assistant')) {
       return streamTurnCorrelation(entity.messageId);
     }
@@ -328,14 +328,23 @@ interface ChatDeltaEntity {
   appMessageId?: string;
 }
 
-function parseDeltaEntity(raw: unknown): ChatDeltaEntity | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const e = raw as Record<string, unknown>;
+function parseDeltaEntity(raw: unknown, incremental: boolean): ChatDeltaEntity | null {
+  if (!isRecord(raw)) return null;
+  const e = raw;
   const messageId = typeof e.messageId === 'string' ? e.messageId : null;
-  const block =
-    e.block && typeof e.block === 'object' ? (e.block as ChatDeltaEntity['block']) : null;
-  if (!messageId || !block || typeof block.id !== 'string') return null;
-  if (block.type === 'plan' && !isPlanContentBlock(block)) return null;
+  if (!messageId || !isRecord(e.block) || typeof e.block.id !== 'string') return null;
+  const isFragment =
+    incremental &&
+    (e.block.type === 'text' || e.block.type === 'thinking') &&
+    typeof e.block.textDelta === 'string';
+  // Use the same canonical validation as snapshots. Fragment-only blocks use
+  // their textDelta as text for validation, then retain the wire shape until
+  // materializeBlock appends it. A present invalid text must still be rejected.
+  const block = normalizeSnapshotBlock(
+    isFragment ? { text: e.block.textDelta, ...e.block } : e.block,
+  );
+  if (!block) return null;
+  if (isFragment && !('text' in e.block)) delete block.text;
   return {
     messageId,
     ...(typeof e.role === 'string' ? { role: e.role } : {}),
@@ -495,7 +504,7 @@ export class ChatTranscriptReconciler {
     let sawTerminal = false;
     let sawUpsert = false;
     for (const raw of [...delta.added, ...delta.updated]) {
-      const entity = parseDeltaEntity(raw);
+      const entity = parseDeltaEntity(raw, this.incremental);
       if (!entity) continue;
       this.upsertBlock(entity);
       sawUpsert = true;
