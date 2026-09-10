@@ -192,13 +192,49 @@ describe('onboarding local repository discovery', () => {
     },
   );
 
-  it('never scans filesystem root if the daemon cannot resolve home', async () => {
-    mockBackend({ 'host.listDirectory': { ...home, home: '/' } });
+  it.each([
+    { 'repo.list': undefined },
+    { 'repo.list': { repos: null } },
+    { 'workspace.list': undefined },
+    { 'workspace.list': { workspaces: {} } },
+  ])('does not infer an empty list from a malformed preflight: %o', async (response) => {
+    mockBackend(response);
     const run = harness();
     run.send(onboardingPickerOpened(true));
     await settle();
     expect(run.state().status).toBe('error');
-    expect(mocks.request).toHaveBeenCalledTimes(3);
+    expect(mocks.request.mock.calls).toEqual([
+      ['repo.list', {}],
+      ['workspace.list', { includeArchived: true }],
+    ]);
+  });
+
+  it.each(['', '/', '\\', 'C:\\', 'C:/', 'C:'])(
+    'never scans an unavailable or filesystem-root home: %s',
+    async (homePath) => {
+      mockBackend({ 'host.listDirectory': { ...home, home: homePath } });
+      const run = harness();
+      run.send(onboardingPickerOpened(true));
+      await settle();
+      expect(run.state().status).toBe('error');
+      expect(mocks.request).toHaveBeenCalledTimes(3);
+    },
+  );
+
+  it('does not begin scanning if the picker closes during preflight', async () => {
+    const registry = deferred<{ repos: [] }>();
+    mockBackend({ 'repo.list': registry.promise });
+    const run = harness();
+    run.send(onboardingPickerOpened(true));
+    await settle();
+    run.send(onboardingPickerClosed());
+    registry.resolve({ repos: [] });
+    await settle();
+    expect(run.state().status).toBe('idle');
+    expect(mocks.request.mock.calls).toEqual([
+      ['repo.list', {}],
+      ['workspace.list', { includeArchived: true }],
+    ]);
   });
 
   it('discards a late result after closing and permits a new picker session', async () => {
