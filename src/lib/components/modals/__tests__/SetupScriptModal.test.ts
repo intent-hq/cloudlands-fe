@@ -9,13 +9,13 @@ const source = readFileSync(
 );
 
 describe('SetupScriptModal primary actions', () => {
-  it('keeps Done and Save and Done on the theme-safe default button variant', () => {
-    expect(source).toContain('<Button variant="default" onclick={handleSaveAndDone}>');
-    expect(source).toContain('<Button variant="default" onclick={handleDone}>');
+  it('keeps Done and Save and Done on the primary button variant', () => {
+    expect(source).toContain('<Button variant="primary" onclick={handleSaveAndDone}>');
+    expect(source).toContain('<Button variant="primary" onclick={handleDone}>');
     expect(source).not.toContain('text-white');
 
-    const defaultClasses = buttonVariants({ variant: 'default' });
-    expect(defaultClasses).toContain('bg-transparent');
-    expect(defaultClasses).toContain('text-primary-foreground');
+    const primaryClasses = buttonVariants({ variant: 'primary' });
+    expect(primaryClasses).toContain('bg-transparent');
+    expect(primaryClasses).toContain('text-primary-foreground');
   });
 });
