@@ -141,7 +141,8 @@ describe('editorial conversation presentation contract', () => {
     // (the bottom-of-chat snap-back; behavioral coverage in
     // lazy-turn-scroll-ledger.test.ts).
     expect(lazyTurn).toContain('const preSwap = snapshotScroller(scrollRoot);');
-    expect(lazyTurn).toContain('void tick().then(() => ledger.request(preSwap));');
+    // Deferred snapshot forwarding and cancellation are exercised through the
+    // real ledger in LazyTurn-deferred-ledger.test.ts, not callback spelling.
     expect(lazyTurn).toContain('setVisibleWithScrollCompensation(true);');
     expect(lazyTurn).toContain('setVisibleWithScrollCompensation(false);');
     // The ResizeObserver path must reconcile the ledger FIRST on EVERY fire

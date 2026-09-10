@@ -141,6 +141,13 @@ describe('LazyTurn deferred scroll compensation', () => {
         flushFrame();
 
         expect(request).toHaveBeenCalledTimes(lifecycle === 'active' ? 1 : 0);
+        if (lifecycle === 'active') {
+          expect(request).toHaveBeenCalledWith({
+            scrollTop: 1200,
+            scrollHeight: 2000,
+            clientHeight: 500,
+          });
+        }
         expect(scroller.scrollTop).toBe(lifecycle === 'active' ? 1360 : 1200);
       } finally {
         if (!unmounted) view.unmount();
