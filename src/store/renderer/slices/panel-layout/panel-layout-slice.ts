@@ -160,7 +160,8 @@ const {
 
 function hasAnyWorkspaceTab(ws: WorkspacePanelLayoutState): boolean {
   return (
-    Object.values(ws.panels).some((panel) => panel.tabs.length > 0) || ws.hiddenTabs.ids.length > 0
+    Object.values(ws.panels).some((panel) => panel.tabs.length > 0) ||
+    (ws.hiddenTabs?.ids.length ?? 0) > 0
   );
 }
 
