@@ -8,7 +8,7 @@
  *
  * Also bridges the legacy renderer→main terminal IPC channels to the daemon's
  * unified PTY host (PROTOCOL §5.13) through the `AppClient` terminals seam:
- *   `terminal:createWithCommand` → `terminal.create` (with `command`/`cwd`),
+ *   `terminal:createWithCommand` → `terminal.create` then `terminal.write`,
  *     emitting the `terminal:created` mock event the panel layout listens for
  *     and forwarding the daemon's `terminal:exit` to the per-terminal
  *     `terminal:professional:exit:<id>` channel CLI blocks subscribe to.
@@ -27,7 +27,8 @@ function asRecord(arg: unknown): Record<string, unknown> {
 
 /**
  * `terminal:createWithCommand` → daemon `terminal.create` (PROTOCOL §5.13).
- * The daemon runs `command` in the new PTY and assigns the terminal id. On
+ * Interactive launches create a login shell and write the command; ordinary
+ * launches retain the daemon command's process lifetime and exit code. On
  * success this emits `terminal:created` (so `PanelLayout` reloads the
  * workspace's terminal list) and forwards the daemon's `terminal:exit` to
  * `terminal:professional:exit:<terminalId>` so call sites (CliBlock,
@@ -41,12 +42,13 @@ registerMockIpcHandler('terminal:createWithCommand', async (arg) => {
   if (!workspaceId || !command) {
     return { ok: false, error: 'workspaceId and command are required' };
   }
+  const interactive = params.interactive === true || params.pasteOnly === true;
   const result = await appClient.terminals.create({
     workspaceId,
     cols: 80,
     rows: 24,
     ...(typeof params.cwd === 'string' && params.cwd ? { cwd: params.cwd } : {}),
-    command,
+    ...(!interactive ? { command } : {}),
   });
   if (!result.success || !result.id) {
     return { ok: false, error: result.error ?? 'Failed to create terminal' };
@@ -58,6 +60,21 @@ registerMockIpcHandler('terminal:createWithCommand', async (arg) => {
       unsubscribe();
     },
   });
+  try {
+    if (interactive) {
+      const written = await appClient.terminals.write(
+        terminalId,
+        params.pasteOnly === true ? command : `${command}\r`,
+      );
+      if (!written.success) {
+        throw new Error(written.error ?? 'Failed to write terminal command');
+      }
+    }
+  } catch (error) {
+    unsubscribe();
+    await appClient.terminals.kill(terminalId);
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
   emitMockIpcEvent('terminal:created', { terminalId, workspaceId, background: true });
   return { ok: true, terminalId };
 });
