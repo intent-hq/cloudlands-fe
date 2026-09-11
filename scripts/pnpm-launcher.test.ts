@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pnpmInvocation } from './pnpm-launcher.mjs';
+import { pnpmInvocation, quoteForCmd } from './pnpm-launcher.mjs';
 
 const PNPM_ENV = {
   npm_execpath: '/store/pnpm/10.30.3/bin/pnpm.cjs',
@@ -40,10 +40,49 @@ describe('pnpm-launcher', () => {
     });
   });
 
-  it('uses a shell for the PATH fallback on Windows', () => {
+  it('uses a shell with cmd.exe-quoted arguments for the PATH fallback on Windows', () => {
     expect(
       pnpmInvocation(['run', 'dev'], { env: {}, platform: 'win32', execPath: 'node.exe' }),
-    ).toEqual({ executable: 'pnpm', args: ['run', 'dev'], shell: true });
+    ).toEqual({ executable: 'pnpm', args: ['^"run^"', '^"dev^"'], shell: true });
+  });
+
+  it('keeps spaces and cmd.exe metacharacters inside one argument on the Windows fallback', () => {
+    const invocation = pnpmInvocation(['exec', 'prettier', '--check', 'src/a & b.ts'], {
+      env: {},
+      platform: 'win32',
+      execPath: 'node.exe',
+    });
+    expect(invocation.shell).toBe(true);
+    expect(invocation.args).toHaveLength(4);
+    expect(invocation.args[3]).toBe('^"src/a^ ^&^ b.ts^"');
+  });
+
+  it('does not quote arguments when the node launcher is used on Windows', () => {
+    const invocation = pnpmInvocation(['exec', 'prettier', 'src/a & b.ts'], {
+      env: { ...PNPM_ENV, npm_execpath: 'C:\\pnpm\\bin\\pnpm.cjs' },
+      platform: 'win32',
+      execPath: 'C:\\node\\node.exe',
+    });
+    expect(invocation.shell).toBe(false);
+    expect(invocation.args).toEqual([
+      'C:\\pnpm\\bin\\pnpm.cjs',
+      'exec',
+      'prettier',
+      'src/a & b.ts',
+    ]);
+  });
+
+  it('does not quote arguments for the PATH fallback off Windows', () => {
+    const invocation = pnpmInvocation(['exec', 'prettier', 'src/a & b.ts'], {
+      env: {},
+      platform: 'linux',
+      execPath: '/node',
+    });
+    expect(invocation).toEqual({
+      executable: 'pnpm',
+      args: ['exec', 'prettier', 'src/a & b.ts'],
+      shell: false,
+    });
   });
 
   it('ignores npm_execpath from a runner that is not pnpm', () => {
@@ -71,5 +110,24 @@ describe('pnpm-launcher', () => {
     const args = ['exec', 'tsc'];
     const invocation = pnpmInvocation(args, { env: {}, platform: 'linux', execPath: '/node' });
     expect(invocation.args).not.toBe(args);
+  });
+});
+
+describe('quoteForCmd', () => {
+  it('wraps the argument in quotes and caret-escapes every cmd.exe metacharacter', () => {
+    expect(quoteForCmd('plain')).toBe('^"plain^"');
+    expect(quoteForCmd('a b')).toBe('^"a^ b^"');
+    expect(quoteForCmd('a&b|c<d>e')).toBe('^"a^&b^|c^<d^>e^"');
+    expect(quoteForCmd('%PATH%')).toBe('^"^%PATH^%^"');
+  });
+
+  it('escapes embedded quotes and trailing backslashes for the argv parser', () => {
+    expect(quoteForCmd('say "hi"')).toBe('^"say^ \\^"hi\\^"^"');
+    expect(quoteForCmd('C:\\dir\\')).toBe('^"C:\\dir\\\\^"');
+    expect(quoteForCmd('C:\\dir')).toBe('^"C:\\dir^"');
+  });
+
+  it('accepts non-string arguments', () => {
+    expect(quoteForCmd(3100)).toBe('^"3100^"');
   });
 });
