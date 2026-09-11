@@ -7,6 +7,7 @@
 
 import { Logger } from '$shared/logger';
 import DOMPurify from 'dompurify';
+import { workspaceAssetVideoSource } from './workspace-file-image';
 
 const logger = new Logger('html-sanitizer');
 
@@ -33,6 +34,7 @@ DOMPurify.addHook('uponSanitizeElement', (node) => {
   if (
     node instanceof Element &&
     node.nodeName === 'VIDEO' &&
+    !workspaceAssetVideoSource(node.getAttribute('src') ?? '', sanitizedWorkspaceId) &&
     (!isWorkspaceFileUrl(node.getAttribute('src') ?? '') ||
       (enforceWorkspaceFileScope && !isAllowedWorkspaceFileUrl(node.getAttribute('src') ?? '')))
   ) {

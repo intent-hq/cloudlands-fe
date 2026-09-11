@@ -3,6 +3,7 @@ import { getWorkspaceVideoSource } from '$shared/types/content-block';
 import { parseWorkspaceFileImageUrl } from './image-actions';
 import {
   intentFileImageUrlToWorkspaceFileUrl,
+  workspaceAssetVideoSource,
   workspaceFileMediaUrlToIntentFileUrl,
 } from './workspace-file-image';
 
@@ -16,11 +17,12 @@ export type WorkspaceVideoMarkdownSegment =
     };
 
 const IMAGE_LINE_RE =
-  /^\s*!\[([^\]\n]*)\]\((?:<)?((?:intent:\/\/local\/|workspace-file:\/\/)[^)\s>]+)(?:>)?\)\s*$/;
+  /^\s*!\[([^\]\n]*)\]\((?:<)?((?:intent:\/\/local\/|workspace-file:\/\/|workspace-asset:\/\/)[^)\s>]+)(?:>)?\)\s*$/;
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 
 function resolveVideoPath(path: unknown, workspaceId?: string) {
   if (typeof path !== 'string' || !path || path !== path.trim()) return null;
+  if (path.startsWith('workspace-asset://')) return workspaceAssetVideoSource(path, workspaceId);
   if (path.startsWith('workspace-file://')) {
     const target = parseWorkspaceFileImageUrl(path);
     if (!target || target.workspaceId !== workspaceId) return null;
@@ -124,7 +126,10 @@ export function splitWorkspaceVideoMarkdown(
     if (source) {
       flushMarkdown();
       segments.push({ type: 'video', source, name: alt || undefined });
-    } else if (resolvesWorkspaceImage(mediaUrl, workspaceId)) {
+    } else if (
+      mediaUrl.startsWith('workspace-asset://') ||
+      resolvesWorkspaceImage(mediaUrl, workspaceId)
+    ) {
       markdownLines.push(lines[index]);
     } else {
       markdownLines.push(`[${alt}](${mediaUrl})`);

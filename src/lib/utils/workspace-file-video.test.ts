@@ -7,6 +7,38 @@ describe('splitWorkspaceVideoMarkdown', () => {
   it.each([
     ['webm', 'video/webm'],
     ['mp4', 'video/mp4'],
+  ] as const)('resolves saved %s assets without rewriting the source', (extension, mimeType) => {
+    const url = `workspace-asset://${WS}/mfr7-1234abcd.${extension}?backend=remote-1&v=render-1`;
+    expect(splitWorkspaceVideoMarkdown(`![demo](${url})`, WS)).toEqual([
+      { type: 'video', name: 'demo', source: { kind: 'workspace', url, mimeType } },
+    ]);
+  });
+
+  it('keeps saved images and code examples in markdown', () => {
+    for (const markdown of [
+      `![image](workspace-asset://${WS}/image.png)`,
+      `\`\`\`md\n![demo](workspace-asset://${WS}/demo.webm)\n\`\`\``,
+    ]) {
+      expect(splitWorkspaceVideoMarkdown(markdown, WS)).toEqual([
+        { type: 'markdown', content: markdown },
+      ]);
+    }
+  });
+
+  it.each([undefined, 'other-ws'])(
+    'does not resolve saved video outside its workspace (%s)',
+    (workspaceId) => {
+      expect(
+        splitWorkspaceVideoMarkdown(`![demo](workspace-asset://${WS}/demo.webm)`, workspaceId).some(
+          (segment) => segment.type === 'video',
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it.each([
+    ['webm', 'video/webm'],
+    ['mp4', 'video/mp4'],
   ] as const)('resolves standalone %s images as workspace videos', (extension, mimeType) => {
     expect(
       splitWorkspaceVideoMarkdown(`![demo](intent://local/file/demo.${extension})`, WS),

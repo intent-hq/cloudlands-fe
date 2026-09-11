@@ -5,6 +5,47 @@ import { describe, expect, it } from 'vitest';
 import { sanitizeMarkdownHTML } from './html-sanitizer';
 
 describe('html-sanitizer', () => {
+  it.each(['mp4', 'webm'])(
+    'preserves same-workspace saved %s identity and safe player attributes',
+    (extension) => {
+      const src = `workspace-asset://ws-abc/saved.${extension}?backend=remote-1&v=render-1`;
+      const element = document.createElement('div');
+      element.innerHTML = sanitizeMarkdownHTML(
+        `<video src="${src}" controls preload="metadata" playsinline onclick="alert(1)"></video>`,
+        'ws-abc',
+      );
+      const video = element.querySelector('video');
+      expect(video?.getAttribute('src')).toBe(src);
+      expect(video?.controls).toBe(true);
+      expect(video?.getAttribute('onclick')).toBeNull();
+    },
+  );
+
+  it.each([undefined, 'other-workspace'])(
+    'removes saved videos without matching workspace scope (%s)',
+    (workspaceId) => {
+      expect(
+        sanitizeMarkdownHTML(
+          '<video src="workspace-asset://ws-abc/saved.webm"></video>',
+          workspaceId,
+        ),
+      ).not.toContain('<video');
+    },
+  );
+
+  it.each([
+    'workspace-asset://ws-abc/../saved.webm',
+    'workspace-asset://ws-abc/a%2Fsaved.webm',
+    'workspace-asset://ws-abc/saved.mov',
+    'workspace-asset://ws-abc/saved.svg',
+    'workspace-asset://ws-abc/saved.webm?backend=one&backend=two',
+    'workspace-asset://ws-abc/saved.webm?backend=one%0A',
+    'workspace-asset://ws-abc/saved.webm?url=remote',
+    'workspace-asset://ws-abc/saved.webm#fragment',
+  ])('rejects unsafe saved video source %s', (src) => {
+    expect(sanitizeMarkdownHTML(`<video src="${src}"></video>`, 'ws-abc')).not.toContain('<video');
+  });
+
   it('preserves diff block data attributes', () => {
     const html = '<div data-type="diff-block" data-diff-code="abc123"></div>';
 
