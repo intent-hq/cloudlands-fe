@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.145.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.145.3...v2.145.4) (2026-09-11)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.40 ([#2330](https://github.com/intent-hq/cloudlands-fe/issues/2330)) ([0c01494](https://github.com/intent-hq/cloudlands-fe/commit/0c014944c91621e44e20190294b4d00f697e9780))
+* render saved video assets in chat and notes ([#2313](https://github.com/intent-hq/cloudlands-fe/issues/2313)) ([a6c67eb](https://github.com/intent-hq/cloudlands-fe/commit/a6c67ebfd080a40d1303ce3f80e91c000c0d2f9e))
+* **scripts:** run the preload drift test in verify:changed for IPC channel sources ([#2319](https://github.com/intent-hq/cloudlands-fe/issues/2319)) ([8651e76](https://github.com/intent-hq/cloudlands-fe/commit/8651e768994d99d4503bf07c6efa13b28204b2e2))
+
 ## [2.145.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.145.2...v2.145.3) (2026-09-11)
 
 
