@@ -393,7 +393,7 @@ describe('WorkspaceTabStrip', () => {
     expect(indicator?.getAttribute('style')).toContain('width: 14px; height: 14px');
     expect(indicator?.getAttribute('aria-hidden')).toBe('true');
     expect(dot?.classList.contains('workspace-status-dot')).toBe(true);
-    expect(tab.getAttribute('aria-label')).toBe('Alpha. RUNNING: 1 (Coordinator)');
+    expect(tab.getAttribute('aria-label')).toBe('Alpha. Running: 1 (Coordinator)');
   });
 
   it('dims archived workspace tab titles in current and non-current states', () => {
@@ -448,7 +448,7 @@ describe('WorkspaceTabStrip', () => {
     render(WorkspaceTabStrip);
 
     const tab = screen.getByRole('tab', {
-      name: 'Alpha. QUESTION: 1 (Coordinator) · UNREAD: 1 (Builder) · RUNNING: 1 (Builder)',
+      name: 'Alpha. Question: 1 (Coordinator) · Unread: 1 (Builder) · Running: 1 (Builder)',
     });
     const statuses = tab.querySelectorAll('[data-workspace-status]');
     expect(statuses).toHaveLength(1);
