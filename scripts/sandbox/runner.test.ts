@@ -7,6 +7,7 @@ vi.mock('playwright', () => ({ chromium: { launch: playwright.launch } }));
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — plain .mjs module without type declarations
 import {
+  acquireSandboxEnvironment,
   buildSandboxUrl,
   classifyModuleResponse,
   classifyServerLog,
@@ -248,6 +249,67 @@ describe('readiness failure classification', () => {
     expect(watch.error()?.message).toMatch(/Outdated Optimize Dep/);
     expect(watch.failures).toHaveLength(2);
   });
+
+  it('keeps a recorded failure sticky against waits that already settled', async () => {
+    const watch = createReadinessWatch();
+    watch.record({ kind: 'dependency-scan-failed', message: 'scan failed' });
+
+    await expect(watch.race(Promise.resolve('unexpected success'))).rejects.toThrow(
+      /Sandbox readiness failed: Vite's esbuild dependency scan failed:\nscan failed/,
+    );
+    await expect(watch.race(Promise.reject(new Error('other')))).rejects.toThrow(
+      /Sandbox readiness failed/,
+    );
+  });
+
+  it('fails a pending wait that settles after a failure was recorded', async () => {
+    const watch = createReadinessWatch();
+    let resolveWait!: (value: string) => void;
+    const racing = watch.race(new Promise<string>((resolve) => (resolveWait = resolve)));
+    watch.record({ kind: 'esbuild-crashed', message: 'panic: boom' });
+    resolveWait('late success');
+
+    await expect(racing).rejects.toThrow(/esbuild crashed while optimizing dependencies/);
+  });
+});
+
+describe('acquireSandboxEnvironment', () => {
+  it('restores an initially unset variable only after the last holder releases', () => {
+    const env: Record<string, string | undefined> = {};
+    const releaseA = acquireSandboxEnvironment({ GOMAXPROCS: '2', INTENT_UI_PREVIEW: '1' }, env);
+    const releaseB = acquireSandboxEnvironment({ GOMAXPROCS: '2', INTENT_UI_PREVIEW: '1' }, env);
+    expect(env).toEqual({ GOMAXPROCS: '2', INTENT_UI_PREVIEW: '1' });
+
+    releaseA();
+    expect(env).toEqual({ GOMAXPROCS: '2', INTENT_UI_PREVIEW: '1' });
+    releaseA();
+    expect(env).toEqual({ GOMAXPROCS: '2', INTENT_UI_PREVIEW: '1' });
+
+    releaseB();
+    expect(env).toEqual({});
+    expect('GOMAXPROCS' in env).toBe(false);
+  });
+
+  it('restores the original value, not a sibling override, when holders close non-LIFO', () => {
+    const env: Record<string, string | undefined> = { GOMAXPROCS: '3', KEEP: 'yes' };
+    const releaseA = acquireSandboxEnvironment({ GOMAXPROCS: '2' }, env);
+    const releaseB = acquireSandboxEnvironment(
+      { GOMAXPROCS: '4', INTENT_BUILD_TARGET: 'web' },
+      env,
+    );
+    expect(env).toEqual({ GOMAXPROCS: '4', INTENT_BUILD_TARGET: 'web', KEEP: 'yes' });
+
+    releaseA();
+    expect(env).toEqual({ GOMAXPROCS: '4', INTENT_BUILD_TARGET: 'web', KEEP: 'yes' });
+
+    releaseB();
+    expect(env).toEqual({ GOMAXPROCS: '3', KEEP: 'yes' });
+
+    const releaseC = acquireSandboxEnvironment({ GOMAXPROCS: '1' }, env);
+    expect(env.GOMAXPROCS).toBe('1');
+    releaseC();
+    expect(env).toEqual({ GOMAXPROCS: '3', KEEP: 'yes' });
+  });
 });
 
 describe('runSandbox readiness failures', () => {
@@ -362,10 +424,16 @@ describe('runSandbox viewport', () => {
 });
 
 describe('default sandbox server', () => {
-  const previousGoMaxProcs = process.env.SANDBOX_GOMAXPROCS;
+  const previousEnvironment = {
+    SANDBOX_GOMAXPROCS: process.env.SANDBOX_GOMAXPROCS,
+    GOMAXPROCS: process.env.GOMAXPROCS,
+    INTENT_UI_PREVIEW: process.env.INTENT_UI_PREVIEW,
+  };
   afterEach(() => {
-    if (previousGoMaxProcs === undefined) delete process.env.SANDBOX_GOMAXPROCS;
-    else process.env.SANDBOX_GOMAXPROCS = previousGoMaxProcs;
+    for (const [name, value] of Object.entries(previousEnvironment)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
   });
 
   it('rejects an invalid SANDBOX_GOMAXPROCS before touching Vite', async () => {
@@ -374,9 +442,12 @@ describe('default sandbox server', () => {
   });
 
   it('serves two concurrent runners on distinct resolved URLs from an isolated cacheDir', async () => {
+    process.env.GOMAXPROCS = '3';
+    process.env.SANDBOX_GOMAXPROCS = '2';
     const servers = await Promise.all([startSandboxServer(), startSandboxServer()]);
 
     try {
+      expect(process.env.GOMAXPROCS).toBe('2');
       expect(servers[0].baseUrl).not.toBe(servers[1].baseUrl);
       expect(servers[0].cacheDir).toBe(viteHarnessCacheDir('sandbox'));
       expect(servers[0].cacheDir).not.toBe(path.join(process.cwd(), 'node_modules', '.vite'));
@@ -386,8 +457,11 @@ describe('default sandbox server', () => {
       await Promise.all(responses.map((response) => response.text()));
       expect(responses.map(({ status }) => status)).toEqual([200, 200]);
     } finally {
-      await servers[1].close();
       await servers[0].close();
+      expect(process.env.GOMAXPROCS).toBe('2');
+      await servers[1].close();
+      expect(process.env.GOMAXPROCS).toBe('3');
+      expect(process.env.INTENT_UI_PREVIEW).toBe(previousEnvironment.INTENT_UI_PREVIEW);
     }
   });
 });

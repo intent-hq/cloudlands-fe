@@ -85,23 +85,60 @@ export function createReadinessWatch() {
     reject = rejectWith;
   });
   failed.catch(() => {});
+  const error = () => {
+    const [failure] = failures;
+    return failure
+      ? new Error(`Sandbox readiness failed: ${describeReadinessFailure(failure)}`)
+      : undefined;
+  };
   return {
     failures,
     record(failure) {
       if (!failure) return;
       failures.push(failure);
       debug(`readiness failure: ${failure.kind}`);
-      reject(new Error(`Sandbox readiness failed: ${describeReadinessFailure(failure)}`));
+      reject(error());
     },
-    race(promise) {
-      return Promise.race([promise, failed]);
+    async race(promise) {
+      // A recorded failure wins even against already-settled waits: Promise.race
+      // would otherwise favour whichever settled input comes first in the list.
+      // The abandoned wait is still observed so its own rejection stays handled.
+      if (failures.length > 0) {
+        Promise.resolve(promise).catch(() => {});
+        throw error();
+      }
+      const value = await Promise.race([promise, failed]);
+      if (failures.length > 0) throw error();
+      return value;
     },
-    error() {
-      const [failure] = failures;
-      return failure
-        ? new Error(`Sandbox readiness failed: ${describeReadinessFailure(failure)}`)
-        : undefined;
-    },
+    error,
+  };
+}
+
+// Overrides applied to process.env while in-process sandbox servers run. The
+// baseline is captured once, when the first server acquires it, and restored
+// when the last server releases it, so overlapping servers closing in any
+// order never leak an override or restore a sibling's temporary value.
+const environmentBaseline = new Map();
+let environmentHolders = 0;
+
+export function acquireSandboxEnvironment(environment, env = process.env) {
+  for (const [name, value] of Object.entries(environment)) {
+    if (!environmentBaseline.has(name)) environmentBaseline.set(name, env[name]);
+    env[name] = value;
+  }
+  environmentHolders += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    environmentHolders -= 1;
+    if (environmentHolders > 0) return;
+    for (const [name, value] of environmentBaseline) {
+      if (value === undefined) delete env[name];
+      else env[name] = value;
+    }
+    environmentBaseline.clear();
   };
 }
 
@@ -221,18 +258,8 @@ export async function startSandboxServer({ onReadinessFailure } = {}) {
     INTENT_BUILD_TARGET: 'web',
     ...sandboxProcessEnvironment(),
   };
-  const previousEnvironment = Object.fromEntries(
-    Object.keys(environment).map((name) => [name, process.env[name]]),
-  );
-  Object.assign(process.env, environment);
+  const restoreEnvironment = acquireSandboxEnvironment(environment);
   let server;
-
-  const restoreEnvironment = () => {
-    for (const [name, value] of Object.entries(previousEnvironment)) {
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
-  };
 
   try {
     debug('loading Vite');
