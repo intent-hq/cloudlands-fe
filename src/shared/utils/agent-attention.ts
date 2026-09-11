@@ -16,14 +16,14 @@
  * parent/subscription wakes) do not clear them. An absent kind means no
  * pending request and the indicator retires.
  *
- * The daemon defers *emitting* a mid-turn request until the turn ends, but a
- * mid-turn rehydration/list read can still deliver the persisted fields while
- * the agent is streaming. Defensively, the derivation returns null while a
- * live turn is in flight (`isAgentTurnLive`) — the indicator appears once the
- * agent stops streaming.
+ * A pending request is surfaced regardless of turn activity: automatic
+ * deliveries (hook wakes, parent wakes, A2A sends) restart the agent without
+ * clearing the request, so it stays genuinely pending while the turn runs and
+ * attention must trump in-progress on every surface (failed > attention >
+ * running > idle).
  */
 
-import { isAgentTurnLive, type AgentRuntimeStateInput } from './agent-runtime-state';
+import type { AgentRuntimeStateInput } from './agent-runtime-state';
 
 export type AgentAttentionKind = 'discussion' | 'blocker';
 
@@ -49,15 +49,13 @@ function isAttentionKind(value: unknown): value is AgentAttentionKind {
  * Derive the pending attention request for a session, or null when none is
  * pending. Reads the top-level fields first (full `AgentSession` projection),
  * falling back to `metadata` (the `AgentLite` list/get projection). Unknown
- * kinds are treated as no pending request rather than guessed at. While the
- * session shows a live turn in flight (activity flags on a non-terminal
- * status), the request is suppressed — it surfaces when the turn ends.
+ * kinds are treated as no pending request rather than guessed at. Live-turn
+ * activity flags do not suppress the request.
  */
 export function getAgentAttentionRequest(
   session?: AgentAttentionFieldsLike | null,
 ): AgentAttentionRequest | null {
   if (!session) return null;
-  if (isAgentTurnLive(session)) return null;
   const metadata = session.metadata ?? {};
   const kind = session.attentionRequestKind ?? metadata.attentionRequestKind;
   if (!isAttentionKind(kind)) return null;

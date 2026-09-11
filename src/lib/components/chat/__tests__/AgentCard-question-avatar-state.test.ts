@@ -248,6 +248,29 @@ describe('AgentCard pending-question avatar state', () => {
     await expect.poll(findAvatarState).toBe('question');
   });
 
+  it.each([
+    ['blocker', 'attention-blocker'],
+    ['discussion', 'attention-discussion'],
+  ] as const)(
+    'lets a pending %s request win over a running agent on the panel row',
+    async (kind, expected) => {
+      appStore.dispatch(
+        bulkUpsertSessions([
+          makeSession({
+            status: AgentStatus.Active,
+            isResponding: true,
+            attentionRequestKind: kind,
+            attentionRequestReason: 'needs a decision',
+          }),
+        ]),
+      );
+
+      render(AgentCard, { props: { agentId, panelRow: true } });
+
+      expect(await findAvatarState()).toBe(expected);
+    },
+  );
+
   it('keeps Stop available for a running agent whose avatar shows the question state', async () => {
     const dispatch = vi.spyOn(appStore, 'dispatch');
     appStore.dispatch(bulkUpsertSessions([makeSession({ status: AgentStatus.Active })]));

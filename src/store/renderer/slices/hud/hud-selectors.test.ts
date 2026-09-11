@@ -702,9 +702,9 @@ describe('selectHudAttnCount', () => {
     expect(selectHudAttnCount.select(state)).toBe(1);
   });
 
-  it('does not count a pending request while the agent runs a live turn (mid-turn gate)', () => {
-    // Mid-turn rehydration can deliver the persisted attention fields while
-    // the agent is still streaming — nothing must blink until the turn ends.
+  it('counts a pending request while the agent runs a live turn (attention trumps running)', () => {
+    // Automatic deliveries restart the agent without clearing the request, so
+    // it is still pending while the agent streams and must blink.
     const state = attnState({
       root: {
         status: 'active',
@@ -713,7 +713,7 @@ describe('selectHudAttnCount', () => {
         messages: [],
       },
     });
-    expect(selectHudAttnCount.select(state)).toBe(0);
+    expect(selectHudAttnCount.select(state)).toBe(1);
   });
 
   it('counts a wire needs_attention rollup once when no per-agent signal covers it', () => {
