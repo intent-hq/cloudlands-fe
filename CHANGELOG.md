@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.146.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.145.4...v2.146.0) (2026-09-11)
+
+
+### 🚀 Features
+
+* add hosted MCP OAuth recovery ([#2286](https://github.com/intent-hq/cloudlands-fe/issues/2286)) ([c64ae71](https://github.com/intent-hq/cloudlands-fe/commit/c64ae7156dc1c182f81c148a7063888780735e98))
+* gate local checks on a fresh node_modules install ([#2321](https://github.com/intent-hq/cloudlands-fe/issues/2321)) ([e9312a1](https://github.com/intent-hq/cloudlands-fe/commit/e9312a1d0f3ef83de65510519269e0c731603f47))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.41 ([#2334](https://github.com/intent-hq/cloudlands-fe/issues/2334)) ([1fda7ff](https://github.com/intent-hq/cloudlands-fe/commit/1fda7ffe9345b8881d6bbb55263f1a9d34bcbd37))
+* recover stalled remote workspace previews ([#2285](https://github.com/intent-hq/cloudlands-fe/issues/2285)) ([225609e](https://github.com/intent-hq/cloudlands-fe/commit/225609e8ef26e2b8d6a1e6c4909de4c5837ce641))
+
 ## [2.145.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.145.3...v2.145.4) (2026-09-11)
 
 
