@@ -322,13 +322,15 @@
       side="bottom"
       align="start"
       sideOffset={4}
-      contentClass="min-w-56 max-w-xs"
+      contentClass="max-w-xs"
       disableHoverableContent={false}
       class="min-w-0"
       onOpenChange={handleOpenChange}
     >
       {#snippet content()}
-        {@render details()}
+        <div class="min-w-56">
+          {@render details()}
+        </div>
       {/snippet}
       {@render pill()}
     </Tooltip>

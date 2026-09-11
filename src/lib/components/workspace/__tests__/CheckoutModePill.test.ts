@@ -139,14 +139,14 @@ async function attachRenderedTailwind(root: Element): Promise<HTMLStyleElement> 
 const ROOT_FONT_SIZE_PX = 16;
 
 /**
- * Resolve a cascaded CSS length to px. Handles the forms Tailwind emits for
- * sizing utilities (`0px`, `100%`, `calc(var(<theme scale>) * N)`); `auto` and an
- * unset value resolve to 0, which is what `min-width: auto` computes to on a
- * flex item's cross axis.
+ * Resolve a cascaded sizing value to px against `containingBlockPx`. `auto`,
+ * `none` and an unset value carry no fixed size and yield `null`; the forms
+ * Tailwind emits for sizing utilities (`0px`, `100%`, `calc(4 / 5 * 100%)`,
+ * `calc(var(<theme scale>) * N)`) resolve to a number.
  */
-function cssLengthToPx(value: string, containingBlockPx: number): number {
+function resolveSizingPx(value: string, containingBlockPx: number): number | null {
   const trimmed = value.trim();
-  if (trimmed === '' || trimmed === 'auto') return 0;
+  if (trimmed === '' || trimmed === 'auto' || trimmed === 'none') return null;
   const rootStyle = getComputedStyle(document.documentElement);
   const expression = trimmed
     .replace(/^calc\((.*)\)$/, '$1')
@@ -154,34 +154,28 @@ function cssLengthToPx(value: string, containingBlockPx: number): number {
     .replace(/(-?[\d.]+)rem/g, (_, n: string) => String(Number(n) * ROOT_FONT_SIZE_PX))
     .replace(/(-?[\d.]+)%/g, (_, n: string) => String((Number(n) / 100) * containingBlockPx))
     .replace(/(-?[\d.]+)px/g, '$1');
-  const factors = expression.split('*').map((factor) => Number(factor.trim()));
-  if (factors.some(Number.isNaN)) throw new Error(`Unsupported CSS length: ${value}`);
-  return factors.reduce((product, factor) => product * factor, 1);
+  const px = expression.split('*').reduce((product, term) => {
+    const [head, ...divisors] = term.split('/').map((part) => Number(part.trim()));
+    return product * divisors.reduce((quotient, divisor) => quotient / divisor, head);
+  }, 1);
+  if (Number.isNaN(px)) throw new Error(`Unsupported CSS length: ${value}`);
+  return px;
 }
 
 /**
- * Model the used width of `element` inside `host`: every ancestor between
- * them is a block or stretched column-flex item, so each level fills its
- * parent's content box and is then clamped by its own `min-width`.
+ * Assert the cascaded sizing of `element` cannot make it wider than its host:
+ * `width`, `min-width` and `max-width` must each be unset/auto, a percentage
+ * of the host, or a fixed length no wider than `hostWidthPx`.
  */
-function modelUsedWidth(host: HTMLElement, element: HTMLElement): number {
-  const chain: HTMLElement[] = [];
-  for (let node = element; node !== host; node = node.parentElement as HTMLElement) {
-    if (!node.parentElement) throw new Error('element is not a descendant of host');
-    chain.unshift(node);
+function expectSizingWithin(element: HTMLElement, hostWidthPx: number) {
+  const style = getComputedStyle(element);
+  for (const property of ['width', 'minWidth', 'maxWidth'] as const) {
+    const px = resolveSizingPx(style[property], hostWidthPx);
+    if (px === null) continue;
+    expect(px, `${element.className}: ${property} ${style[property]}`).toBeLessThanOrEqual(
+      hostWidthPx,
+    );
   }
-  let width = cssLengthToPx(host.style.width, 0);
-  let parent = host;
-  for (const node of chain) {
-    const parentStyle = getComputedStyle(parent);
-    const available =
-      width -
-      cssLengthToPx(parentStyle.paddingLeft, width) -
-      cssLengthToPx(parentStyle.paddingRight, width);
-    width = Math.max(available, cssLengthToPx(getComputedStyle(node).minWidth, available));
-    parent = node;
-  }
-  return width;
 }
 
 // Pre-warm the component module graph so the cold dynamic import is not
@@ -511,10 +505,12 @@ describe('CheckoutModePill', () => {
       await flushFetch();
 
       const loading = screen.getByRole('status', { name: 'Loading disk usage' });
-      expect(loading.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3);
+      const skeletons = loading.querySelectorAll<HTMLElement>('[data-slot="skeleton"]');
+      expect(skeletons).toHaveLength(3);
       style = await attachRenderedTailwind(host);
 
-      expect(modelUsedWidth(host, loading)).toBeLessThanOrEqual(200);
+      expectSizingWithin(loading, 200);
+      for (const skeleton of skeletons) expectSizingWithin(skeleton, 200);
     } finally {
       style?.remove();
       host.remove();
