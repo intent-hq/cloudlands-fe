@@ -10,6 +10,7 @@ import {
   setBundledSpecialists,
   setFileSpecialists,
 } from '$store/renderer/slices/specialists/specialists-slice';
+import { warmImport } from '../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
   page: { url: new URL('http://localhost/settings?tab=agents&specialist=implementor') },
@@ -24,13 +25,13 @@ vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
 }));
 
-const { slotOnly } = vi.hoisted(() => ({
-  async slotOnly() {
-    return {
-      default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
-    };
-  },
-}));
+warmImport(() => import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte'));
+
+async function slotOnly() {
+  return {
+    default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+  };
+}
 
 vi.mock('$lib/components/settings/ProviderSelector.svelte', slotOnly);
 vi.mock('$lib/components/settings/ConnectionsSettings.svelte', slotOnly);

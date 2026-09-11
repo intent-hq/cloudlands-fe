@@ -4,9 +4,12 @@ const MESSAGE =
   "scope with warmImport(() => import('{{specifier}}')) from src/test/warm-import, or use a static " +
   'top-level import.';
 
-// Callees whose callback runs before any test body: imports inside them warm
-// the module cache instead of being billed to a test's timeout.
-const WARMING_CALLEES = new Set(['beforeAll', 'warmImport', 'vi.mock', 'vi.doMock', 'vi.hoisted']);
+// Callees whose callback runs before any test body: imports directly inside
+// that callback warm the module cache instead of being billed to a test's
+// timeout. `vi.doMock` is deliberately absent — it is not hoisted, so its
+// factory runs wherever the call sits and only when the mocked module is next
+// imported.
+const WARMING_CALLEES = new Set(['beforeAll', 'warmImport', 'vi.mock', 'vi.hoisted']);
 
 const FUNCTION_TYPES = new Set([
   'FunctionDeclaration',
@@ -14,9 +17,17 @@ const FUNCTION_TYPES = new Set([
   'ArrowFunctionExpression',
 ]);
 
+function staticSpecifier(source) {
+  if (source?.type === 'Literal' && typeof source.value === 'string') return source.value;
+  if (source?.type === 'TemplateLiteral' && source.expressions.length === 0) {
+    return source.quasis[0]?.value.cooked ?? null;
+  }
+  return null;
+}
+
 function svelteSpecifier(source) {
-  if (source?.type !== 'Literal' || typeof source.value !== 'string') return null;
-  return source.value.endsWith('.svelte') ? source.value : null;
+  const specifier = staticSpecifier(source);
+  return specifier?.endsWith('.svelte') ? specifier : null;
 }
 
 function calleeName(node) {
@@ -32,17 +43,18 @@ function calleeName(node) {
   return null;
 }
 
-// 'warm' when the import runs before tests (module scope or under a warming
-// callee), 'cold' when it runs inside some other function body.
+// 'warm' when the import runs before tests: at module scope, or directly in
+// the callback of a warming callee. Any other enclosing function — including
+// one merely defined inside a warming callback and invoked later — is 'cold'.
 function classify(ancestors) {
-  let insideFunction = false;
-  for (const ancestor of ancestors) {
-    if (FUNCTION_TYPES.has(ancestor.type)) insideFunction = true;
-    if (ancestor.type === 'CallExpression' && WARMING_CALLEES.has(calleeName(ancestor))) {
-      return 'warm';
-    }
-  }
-  return insideFunction ? 'cold' : 'warm';
+  const fn = [...ancestors].reverse().find((ancestor) => FUNCTION_TYPES.has(ancestor.type));
+  if (!fn) return 'warm';
+  const parent = fn.parent;
+  const isWarmingCallback =
+    parent?.type === 'CallExpression' &&
+    parent.arguments.includes(fn) &&
+    WARMING_CALLEES.has(calleeName(parent));
+  return isWarmingCallback ? 'warm' : 'cold';
 }
 
 export default {

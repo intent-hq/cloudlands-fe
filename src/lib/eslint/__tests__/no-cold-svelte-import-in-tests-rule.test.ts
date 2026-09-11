@@ -80,6 +80,48 @@ describe('no-cold-svelte-import-in-tests ESLint rule', () => {
     expect(messages.every((message) => message.ruleId === RULE_ID)).toBe(true);
   });
 
+  it('reports a no-substitution template-literal specifier like a string literal', async () => {
+    const messages = await lintCode(`
+      it('renders', async () => {
+        const Foo = (await import(\`../Foo.svelte\`)).default;
+        render(Foo);
+      });
+    `);
+
+    expect(messages.map((message) => message.ruleId)).toEqual([RULE_ID]);
+    expect(messages[0]?.message).toContain("'../Foo.svelte'");
+  });
+
+  it('reports an import in a helper returned from vi.hoisted and called from a test', async () => {
+    const messages = await lintCode(`
+      const { load } = vi.hoisted(() => ({ load: () => import('../Foo.svelte') }));
+      it('renders', async () => { render((await load()).default); });
+    `);
+
+    expect(messages.map((message) => message.ruleId)).toEqual([RULE_ID]);
+  });
+
+  it('reports an import in a function defined inside beforeAll but invoked from a test', async () => {
+    const messages = await lintCode(`
+      let load;
+      beforeAll(() => { load = async () => (await import('../Foo.svelte')).default; });
+      it('renders', async () => { render(await load()); });
+    `);
+
+    expect(messages.map((message) => message.ruleId)).toEqual([RULE_ID]);
+  });
+
+  it('reports a vi.doMock factory import, which runs lazily where the call sits', async () => {
+    const messages = await lintCode(`
+      it('renders', async () => {
+        vi.doMock('svelte-fa', async () => ({ default: (await import('./mocks/Fa.svelte')).default }));
+        await import('../foo-service');
+      });
+    `);
+
+    expect(messages.map((message) => message.ruleId)).toEqual([RULE_ID]);
+  });
+
   it('reports when warmImport warms a different specifier than the test imports', async () => {
     const messages = await lintCode(`
       warmImport(() => import('../Bar.svelte'));
@@ -125,15 +167,26 @@ describe('no-cold-svelte-import-in-tests ESLint rule', () => {
     expect(messages).toHaveLength(0);
   });
 
-  it('allows dynamic .svelte imports inside vi.mock factories', async () => {
+  it('allows dynamic .svelte imports directly inside vi.mock and vi.hoisted callbacks', async () => {
     const messages = await lintCode(`
       vi.mock('$lib/components/ui/Header.svelte', async () => ({
         default: (await import('./mocks/MockSimple.svelte')).default,
       }));
-      vi.doMock('svelte-fa', async () => {
-        const MockFa = (await import('./mocks/Fa.svelte')).default;
-        return { default: MockFa };
-      });
+      const { MockFa } = await vi.hoisted(async () => ({
+        MockFa: (await import('./mocks/Fa.svelte')).default,
+      }));
+    `);
+
+    expect(messages).toHaveLength(0);
+  });
+
+  it('allows a cold helper import when warmImport warms the same specifier', async () => {
+    const messages = await lintCode(`
+      warmImport(() => import('./mocks/SlotOnly.svelte'));
+      async function slotOnly() {
+        return { default: (await import('./mocks/SlotOnly.svelte')).default };
+      }
+      vi.mock('$lib/components/settings/ProviderSelector.svelte', slotOnly);
     `);
 
     expect(messages).toHaveLength(0);
