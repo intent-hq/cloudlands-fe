@@ -9,6 +9,7 @@ import {
   findRelatedCtTests,
   lockTimeout,
   parseArgs,
+  printPlan,
   runVerificationPlan,
   verificationLockKey,
 } from './verify-changed.mjs';
@@ -154,6 +155,78 @@ describe('verification planning', () => {
       ctTests: [],
     });
     expect(deletedPlan.checks.map((check) => check.id)).toContain('vitest-ui-invariants');
+  });
+
+  it('runs the preload drift test for IPC channel source changes', () => {
+    const triggers = [
+      'src/preload/index.ts',
+      'src/preload/index.template.ts',
+      'src/shared/ipc-registry.ts',
+      'scripts/inline-ipc-channels.ts',
+    ];
+    const root = fixtureRoot({
+      ...Object.fromEntries(triggers.map((file) => [file, ''])),
+      'src/preload/other.ts': '',
+      'src/lib/example.ts': '',
+      'scripts/inline-ipc-channels.test.ts': '',
+      'package.json': '{}',
+    });
+    const ids = (files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [] }).checks.map((check) => check.id);
+
+    for (const file of triggers) {
+      expect(ids([file]), file).toContain('vitest-preload-drift');
+    }
+    const drift = createVerificationPlan(['src/shared/ipc-registry.ts'], {
+      root,
+      ctTests: [],
+    }).checks.find((check) => check.id === 'vitest-preload-drift');
+    expect(drift?.args).toEqual([
+      'exec',
+      'vitest',
+      'run',
+      '--config',
+      'vitest.config.ts',
+      'scripts/inline-ipc-channels.test.ts',
+    ]);
+    expect(drift?.lockKind).toBeNull();
+
+    expect(ids(['src/preload/other.ts'])).not.toContain('vitest-preload-drift');
+    expect(ids(['src/lib/example.ts'])).not.toContain('vitest-preload-drift');
+
+    const fallback = ids(['src/preload/index.ts', 'package.json']);
+    expect(fallback).toContain('vitest-full');
+    expect(fallback).not.toContain('vitest-preload-drift');
+
+    const direct = ids(['src/preload/index.ts', 'scripts/inline-ipc-channels.test.ts']);
+    expect(direct).toContain('vitest-direct');
+    expect(direct).not.toContain('vitest-preload-drift');
+  });
+
+  it('prints the regeneration hint only when the generated preload is planned', () => {
+    const root = fixtureRoot({
+      'src/preload/index.ts': '',
+      'src/preload/index.template.ts': '',
+      'src/shared/ipc-registry.ts': '',
+    });
+    const linesFor = (files: string[]) => {
+      const lines: string[] = [];
+      printPlan(createVerificationPlan(files, { root, ctTests: [] }), true, (line: string) =>
+        lines.push(line),
+      );
+      return lines;
+    };
+    const hint = (lines: string[]) =>
+      lines.filter((line) => line.includes('pnpm run generate:ipc-channels'));
+
+    const generated = linesFor(['src/preload/index.ts']);
+    expect(hint(generated)).toHaveLength(1);
+    expect(hint(generated)[0]).toContain('src/preload/index.ts');
+    expect(hint(generated)[0]).toContain('src/preload/index.template.ts');
+    expect(hint(linesFor(['src/shared/ipc-registry.ts', 'src/preload/index.ts']))).toHaveLength(1);
+
+    expect(hint(linesFor(['src/preload/index.template.ts']))).toEqual([]);
+    expect(hint(linesFor(['src/shared/ipc-registry.ts']))).toEqual([]);
   });
 
   it('selects a component test that directly imports a changed Svelte component', () => {
