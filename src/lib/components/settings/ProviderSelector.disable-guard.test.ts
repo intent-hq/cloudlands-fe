@@ -171,13 +171,17 @@ describe('ProviderSelector disable guard', () => {
       result,
       'Anthropic Claude Code',
     )) as HTMLButtonElement;
-    expect(claudeButton.disabled).toBe(true);
+    expect(claudeButton.getAttribute('aria-disabled')).toBe('true');
+    expect(claudeButton.getAttribute('title')).toBeTruthy();
+    mocks.dispatch.mockClear();
+    await fireEvent.click(claudeButton);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
 
     await fireEvent.click(
       result.getByRole('button', { name: 'Provider actions for Anthropic Claude Code' }),
     );
     const codexButton = (await getDisableButton(result, 'OpenAI Codex')) as HTMLButtonElement;
-    expect(codexButton.disabled).toBe(false);
+    expect(codexButton.getAttribute('aria-disabled')).not.toBe('true');
   });
 
   it('still dispatches setProviderEnabled(false) for providers not in use', async () => {

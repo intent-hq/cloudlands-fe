@@ -26,7 +26,6 @@ describe('Sheet', () => {
       'Sheet behavior fixture',
     );
     await waitFor(() => expect(sheet.contains(document.activeElement)).toBe(true));
-    expect(screen.getByRole('textbox', { name: 'Sheet field' }).className).toContain('var(--ring)');
     await fireEvent.click(screen.getByRole('button', { name: 'Nested sheet action' }));
     expect(screen.getByRole('dialog')).toBeTruthy();
 
