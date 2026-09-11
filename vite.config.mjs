@@ -3,10 +3,14 @@ import { compile, paraglideVitePlugin } from '@inlang/paraglide-js';
 import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
+import { readFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { intentdBridgePlugin } from './scripts/vite-plugin-intentd-bridge.mjs';
 import { compactParaglideDevPlugin } from './scripts/vite-plugin-paraglide-dev.mjs';
+import {
+  canReuseGeneratedParaglide as hasCurrentGeneratedParaglide,
+  writeParaglideInputsHash,
+} from './scripts/paraglide-inputs-hash.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -19,19 +23,17 @@ const paraglideOutdir = join(__dirname, 'src/shared/paraglide');
 const messagesDir = join(__dirname, 'messages');
 const normalizeWatcherPath = (file) => file.replace(/\\/g, '/');
 
-function canReuseGeneratedParaglide() {
-  const outputs = ['messages.js', 'runtime.js'].map((file) => join(paraglideOutdir, file));
-  if (outputs.some((file) => !existsSync(file))) return false;
+const paraglidePaths = {
+  projectDir: paraglideProject,
+  messagesDir,
+  outdir: paraglideOutdir,
+};
 
-  const inputs = [
-    join(paraglideProject, 'settings.json'),
-    ...readdirSync(messagesDir)
-      .filter((file) => file.endsWith('.json'))
-      .map((file) => join(messagesDir, file)),
-  ];
-  const newestInput = Math.max(...inputs.map((file) => statSync(file).mtimeMs));
-  const oldestOutput = Math.min(...outputs.map((file) => statSync(file).mtimeMs));
-  return oldestOutput >= newestInput;
+// Content-based: `generate:i18n` records a hash of the inputs next to the
+// outputs, and paraglide-js leaves unchanged outputs untouched so mtimes are
+// not a reliable freshness signal (intent-hq/intent#4621).
+function canReuseGeneratedParaglide() {
+  return hasCurrentGeneratedParaglide(paraglidePaths);
 }
 
 const reuseGeneratedParaglide = () => ({
@@ -57,6 +59,7 @@ const reuseGeneratedParaglide = () => ({
       cleanOutdir: false,
       isServer: "import.meta.env?.SSR ?? typeof window === 'undefined'",
     });
+    writeParaglideInputsHash(paraglidePaths);
   },
 });
 
