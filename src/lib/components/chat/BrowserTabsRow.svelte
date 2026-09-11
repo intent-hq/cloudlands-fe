@@ -60,6 +60,7 @@
     SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
     SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS,
     SUBSCRIPTION_LEADING_COLUMN_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_FIRST_LINE_CLASS,
     SUBSCRIPTION_LEADING_CONTENT_CLASS,
   } from './subscription-disclosure';
   import { getBrowserTabsExpanded, setBrowserTabsExpanded } from './agent-subscriptions-view-state';
@@ -300,7 +301,7 @@
               data-active={entry.active || undefined}
               onclick={() => handleTabClick(entry)}
             >
-              <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true">
+              <span class={SUBSCRIPTION_LEADING_COLUMN_FIRST_LINE_CLASS} aria-hidden="true">
                 <span
                   class="size-1.5 shrink-0 rounded-full {entry.hidden
                     ? 'bg-muted-foreground/20'

@@ -20,6 +20,8 @@ export const SUBSCRIPTION_ROW_GEOMETRY_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKEN
 export const SUBSCRIPTION_FINISHED_ROW_GEOMETRY_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} min-h-10 border-0! ${SUBSCRIPTION_CARD_INLINE_PADDING_CLASS} py-2!`;
 export const SUBSCRIPTION_LEADING_COLUMN_CLASS =
   'inline-flex size-[var(--operational-leading-slot-size)] min-w-operational-leading shrink-0 items-center justify-center leading-none';
+/** For multi-line type-body text: top-align the text lane alongside this slot. */
+export const SUBSCRIPTION_LEADING_COLUMN_FIRST_LINE_CLASS = `${SUBSCRIPTION_LEADING_COLUMN_CLASS} self-start mt-subscription-first-line`;
 export const SUBSCRIPTION_LEADING_CONTENT_CLASS =
   'inline-flex min-w-0 items-center gap-operational-leading';
 export const SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS =

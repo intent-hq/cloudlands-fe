@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { SUBSCRIPTION_CARD_SURFACE_CLASS } from '$lib/components/chat/subscription-disclosure';
+  import AutomatedWakeCardHeader from '$lib/components/chat/AutomatedWakeCardHeader.svelte';
+  import BrowserTabsRow from '$lib/components/chat/BrowserTabsRow.svelte';
+  import { initializeLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { onDestroy } from 'svelte';
   import { extractAllContent, type AgentMessage } from '$shared/types';
   import PinnedUserPrompt from '$lib/components/chat/PinnedUserPrompt.svelte';
@@ -26,6 +30,7 @@
 
   interface Props {
     panelId: string;
+    browserGeometry?: boolean;
     theme?: 'light' | 'dark';
     width?: number;
     zoom?: number;
@@ -38,6 +43,7 @@
 
   let {
     panelId,
+    browserGeometry = false,
     theme = 'light',
     width = 720,
     zoom = 1,
@@ -112,10 +118,93 @@
       },
     ],
   });
+  $effect(() => {
+    if (!browserGeometry) return;
+    store.dispatch(
+      initializeLayout(panelId, {
+        root: { type: 'panel', panelId: 'browser' },
+        panels: {
+          browser: {
+            id: 'browser',
+            activeTabId: 'docs',
+            tabs: [
+              {
+                id: 'docs',
+                type: 'browser',
+                ownerAgentId: 'geometry-agent',
+                closable: true,
+                title: labelLength === 'long' ? 'Documentation '.repeat(30) : 'Documentation',
+                browserUrl:
+                  labelLength === 'long' ? `https://example.test/${'long-path/'.repeat(30)}` : '',
+              },
+            ],
+          },
+        },
+        focusedPanelId: 'browser',
+      }),
+    );
+  });
 </script>
 
 <section class:dark={theme === 'dark'} style:width="{width}px" style:zoom data-panel={panelId}>
-  <div class="transcript-geometry-grid grid grid-cols-2 gap-4 bg-background p-4 text-foreground">
+  {#if browserGeometry}
+    <div class="transcript-geometry-grid bg-background p-4 text-foreground">
+      <ChatOperationalRow testId="browser-geometry-tool-row" toolIcon>
+        {#snippet leading()}<Fa icon={faWrench} size={16} />{/snippet}
+        {#snippet summary()}Reviewing{/snippet}
+      </ChatOperationalRow>
+      <div class={SUBSCRIPTION_CARD_SURFACE_CLASS}>
+        <BrowserTabsRow workspaceId={panelId} agentId="geometry-agent" />
+      </div>
+      <div data-testid="automated-geometry-cards">
+        <div class={SUBSCRIPTION_CARD_SURFACE_CLASS}>
+          <AutomatedWakeCardHeader
+            presentation={{
+              kind: 'hook',
+              state: 'delivered',
+              bodyText: '',
+              queueInfo: null,
+              attribution: {
+                hookId: 'geometry-hook',
+                reason: 'dispatched',
+                rawName: 'Build',
+                displayName:
+                  labelLength === 'long' ? 'Build completion check '.repeat(10) : 'Build',
+              },
+            }}
+            expanded={false}
+            controlsId="geometry-hook-details"
+            ontoggle={() => {}}
+          />
+        </div>
+        <div class={SUBSCRIPTION_CARD_SURFACE_CLASS}>
+          <AutomatedWakeCardHeader
+            presentation={{
+              kind: 'pr',
+              state: 'delivered',
+              bodyText: '',
+              queueInfo: null,
+              attribution: {
+                monitorId: 'geometry-pr',
+                repo:
+                  labelLength === 'long'
+                    ? `intent-hq/${'long-repository-'.repeat(10)}`
+                    : 'intent-hq/intent',
+                prNumber: 42,
+              },
+            }}
+            expanded={false}
+            controlsId="geometry-pr-details"
+            ontoggle={() => {}}
+          />
+        </div>
+      </div>
+    </div>
+  {/if}
+  <div
+    class:hidden={browserGeometry}
+    class="transcript-geometry-grid grid grid-cols-2 gap-4 bg-background p-4 text-foreground"
+  >
     <div>
       <div data-testid="sent-card" class={USER_MESSAGE_SURFACE_CLASS}>
         <span data-testid="ordinary-user-text" class={USER_MESSAGE_TEXT_CLASS}>

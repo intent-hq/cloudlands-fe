@@ -592,3 +592,73 @@ test('uses a deterministic non-animated sticky surface with reduced motion', asy
     await prompt.evaluate((node) => Number.parseFloat(getComputedStyle(node).transitionDuration)),
   ).toBeLessThanOrEqual(0.001);
 });
+
+for (const width of [360, 960]) {
+  for (const zoom of [1, 2]) {
+    for (const labelLength of ['short', 'long'] as const) {
+      test(`centers browser-tab dots on the first line at ${width}px and ${zoom * 100}% with ${labelLength} labels`, async ({
+        mount,
+        page,
+      }) => {
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        const component = await mount(ChatEventGeometryHost, {
+          props: {
+            panelId: `browser-${width}-${zoom}-${labelLength}`,
+            browserGeometry: true,
+            width,
+            zoom,
+            labelLength,
+          },
+        });
+        await component.getByTestId('browser-tabs-summary').click();
+        const row = component.getByTestId('browser-tab-item');
+        await expect(row).toBeVisible();
+        await page.evaluate(() => document.fonts.ready);
+        const geometry = await component.evaluate((root) => {
+          const row = root.querySelector('[data-testid="browser-tab-item"]')!;
+          const dot = row.firstElementChild!.firstElementChild!.getBoundingClientRect();
+          const title = row.children[1].children[0] as HTMLElement;
+          const titleBox = title.getBoundingClientRect();
+          const lineHeight = Number.parseFloat(getComputedStyle(title).lineHeight);
+          const scale = titleBox.height / title.offsetHeight;
+          const tool = root.querySelector('[data-testid="browser-geometry-tool-row"]')!;
+          const leading = tool.querySelector('[data-operational-leading]')!.getBoundingClientRect();
+          const text = tool.querySelector('[data-operational-summary]')!.getBoundingClientRect();
+          return {
+            lineHeight,
+            verticalDelta: (dot.top + dot.bottom) / 2 - (titleBox.top + (lineHeight * scale) / 2),
+            glyphDelta: (dot.left + dot.right - leading.left - leading.right) / 2,
+            textDelta: titleBox.left - text.left,
+            titleTruncated: title.scrollWidth > title.clientWidth,
+            urlTruncated:
+              row.children[1].children[1].scrollWidth > row.children[1].children[1].clientWidth,
+          };
+        });
+        const automated = await component
+          .getByTestId('automated-wake-header')
+          .evaluateAll((headers) =>
+            headers.map((header) => {
+              const glyph = header.querySelector('svg')!.getBoundingClientRect();
+              const lane = header.querySelector(
+                '[data-testid="automated-wake-text-lane"]',
+              ) as HTMLElement;
+              const box = lane.getBoundingClientRect();
+              const scale = box.height / lane.offsetHeight;
+              return (
+                (glyph.top + glyph.bottom) / 2 -
+                (box.top + (Number.parseFloat(getComputedStyle(lane).lineHeight) * scale) / 2)
+              );
+            }),
+          );
+        for (const delta of automated) expect(Math.abs(delta)).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(geometry.verticalDelta)).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(geometry.glyphDelta)).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(geometry.textDelta)).toBeLessThanOrEqual(0.5);
+        if (labelLength === 'long') {
+          expect(geometry.titleTruncated).toBe(true);
+          expect(geometry.urlTruncated).toBe(true);
+        }
+      });
+    }
+  }
+}

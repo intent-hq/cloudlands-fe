@@ -856,9 +856,7 @@ describe('ChatMessage hook wake attribution', () => {
     const textLane = screen.getByTestId('automated-wake-text-lane');
     expect(textLane.className).toContain('gap-x-1');
     expect(textLane.classList.contains('flex-wrap')).toBe(true);
-    const leadingIcon = header.firstElementChild;
-    expect(leadingIcon?.classList.contains('self-start')).toBe(true);
-    expect(leadingIcon?.classList.contains('mt-1')).toBe(true);
+    // First-line glyph alignment is verified by chat-event-geometry.ct.spec.ts.
     expect(screen.getByTestId('automated-wake-toggle').classList.contains('self-start')).toBe(true);
     const primaryLabel = screen.getByTestId('automated-wake-primary-label');
     expect(primaryLabel.textContent?.trim()).toBe('ci-watch');
