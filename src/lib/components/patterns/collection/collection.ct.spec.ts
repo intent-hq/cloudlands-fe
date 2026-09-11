@@ -57,7 +57,7 @@ test('selectable modal rows toggle after pointer hover without reactive loops', 
 }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  const component = await mount(InterruptedAgentsModal, {
+  await mount(InterruptedAgentsModal, {
     props: {
       open: true,
       inline: true,
@@ -73,7 +73,7 @@ test('selectable modal rows toggle after pointer hover without reactive loops', 
       ],
     },
   });
-  const option = component.getByRole('option');
+  const option = page.getByRole('alertdialog').getByRole('option');
   await option.hover();
   await option.click();
   await expect(option).toHaveAttribute('aria-selected', 'false');
