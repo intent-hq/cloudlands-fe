@@ -37,13 +37,17 @@
   {#if context.state.hover}
     {#if context.variant === 'default'}
       <TabsIndicator store={context.state.hover} selectedIndexes={context.state.selectedIndexes} />
-      <ProximityHighlight store={context.state.hover} selectedIndexes={[]} />
+      {#if !context.state.selectedIndexes.includes(context.state.hover.activeIndex ?? -1)}
+        <ProximityHighlight store={context.state.hover} selectedIndexes={[]} />
+      {/if}
     {:else}
       <ProximityHighlight
         store={context.state.hover}
         selectedIndexes={context.state.selectedIndexes}
-        selectedClass="bg-active"
-        hoverClass="bg-active"
+        selectedClass="bg-selected shadow-(--elevation-raised)"
+        hoverClass={context.state.selectedIndexes.includes(context.state.hover.activeIndex ?? -1)
+          ? 'bg-transparent'
+          : 'bg-hover'}
       />
     {/if}
   {/if}

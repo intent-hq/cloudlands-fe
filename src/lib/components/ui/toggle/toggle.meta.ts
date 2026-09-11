@@ -41,7 +41,8 @@ export const toggleMetadata = {
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/toggle/toggle.test.ts',
-  removalGate: 'Retain canonical aria-pressed Toggle.',
+  removalGate:
+    'Retain canonical aria-pressed Toggle with constant caption weight, a visible muted off surface, and raised selected on surface.',
   dynamicImports: [],
   fixtures: toggleFixtures,
 } satisfies UiComponentMetadata;

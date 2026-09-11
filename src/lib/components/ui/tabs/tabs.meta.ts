@@ -12,7 +12,8 @@ export const tabsMetadata = {
   callers: [],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/tabs/tabs.test.ts',
-  removalGate: 'Retain while exported; selection, motion, proximity, and keyboard tests must pass.',
+  removalGate:
+    'Retain while exported; selection, motion, proximity, and keyboard tests must pass; captions keep constant weight and hover never covers the raised selected surface.',
   dynamicImports: [],
   fixtures: tabsFixtures,
 } satisfies UiComponentMetadata;
