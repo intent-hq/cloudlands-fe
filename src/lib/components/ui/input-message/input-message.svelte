@@ -21,7 +21,7 @@
   role={tone === 'error' ? 'alert' : undefined}
   aria-live={tone === 'helper' ? 'polite' : undefined}
   class={cn(
-    'type-body mt-1.5 pl-0.5 motion-reduce:transition-none',
+    'type-caption mt-1.5 pl-0.5 motion-reduce:transition-none',
     tone === 'error' ? 'text-danger' : 'text-muted-foreground',
     className,
   )}

@@ -14,6 +14,10 @@ describe('InputMessage', () => {
     const helper = getByText('Helpful context');
     expect(helper.getAttribute('role')).toBeNull();
     expect(helper.getAttribute('aria-live')).toBe('polite');
+    expect(helper.classList.contains('type-caption')).toBe(true);
+    expect(helper.classList.contains('text-muted-foreground')).toBe(true);
+    expect(getByRole('alert').classList.contains('type-caption')).toBe(true);
+    expect(getByRole('alert').classList.contains('text-danger')).toBe(true);
     expect(getByRole('alert').textContent).toBe('Needs attention');
   });
 
