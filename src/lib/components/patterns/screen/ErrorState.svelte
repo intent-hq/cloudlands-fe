@@ -46,7 +46,7 @@
   {...restProps}
 >
   {#if details && detailsLabel}
-    <details class="mt-3 text-left type-caption text-muted-foreground">
+    <details class="text-left type-caption text-muted-foreground">
       <summary class="cursor-pointer font-normal text-muted-foreground">{detailsLabel}</summary>
       <div class="mt-1.5">{@render details()}</div>
     </details>

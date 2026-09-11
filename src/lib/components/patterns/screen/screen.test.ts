@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createRawSnippet } from 'svelte';
+import ErrorState from './ErrorState.svelte';
 import ScreenHarness from './ScreenHarness.svelte';
 import { screenFixtures } from './screen.fixtures';
 import { screenMetadata } from './screen.meta';
@@ -25,7 +27,9 @@ describe('screen pattern', () => {
     const body = container.querySelector('[data-slot="takeover-screen-body"]')!;
     const footer = container.querySelector('[data-slot="screen-footer"]')!;
 
-    expect(screen.getByText('2 of 3')).toBeTruthy();
+    const counter = screen.getByText('2 of 3');
+    const title = screen.getByRole('heading', { name: 'Example screen' });
+    expect(counter.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(body.contains(footer)).toBe(false);
     expect(container.querySelector('[data-slot="takeover-screen"]')).toBeTruthy();
   });
@@ -53,6 +57,21 @@ describe('screen pattern', () => {
     expect(
       container.querySelector('[data-state-kind="error"]')?.getAttribute('data-severity'),
     ).toBe('danger');
+  });
+
+  it('keeps danger error copy neutral while the icon carries severity', () => {
+    const { container } = render(ErrorState, {
+      severity: 'danger',
+      message: createRawSnippet(() => ({ render: () => '<p>Unable to load</p>' })),
+      icon: createRawSnippet(() => ({ render: () => '<span aria-hidden="true">!</span>' })),
+    });
+    const message = container.querySelector('[data-slot="empty-state-description"]')!;
+    const icon = container.querySelector('[data-slot="empty-state-icon"]')!;
+
+    expect(message.classList.contains('text-destructive')).toBe(false);
+    expect(message.classList.contains('text-danger')).toBe(false);
+    expect(message.classList.contains('text-muted-foreground')).toBe(true);
+    expect(icon.classList.contains('text-destructive')).toBe(true);
   });
 
   it('provides list, card-grid, and form loading fixture recipes', () => {

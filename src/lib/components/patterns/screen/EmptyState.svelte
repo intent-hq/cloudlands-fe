@@ -54,49 +54,51 @@
   )}
   {...restProps}
 >
-  <div class={cn('w-full max-w-md', contentClass)}>
+  <div
+    class={cn(
+      'flex w-full max-w-md flex-col',
+      density === 'compact' ? 'gap-3' : 'gap-4',
+      contentClass,
+    )}
+  >
     {#if icon}
       <div
         data-slot="empty-state-icon"
         class={cn(
           'mx-auto flex w-fit',
-          density === 'compact' ? 'mb-2' : 'mb-3',
-          severity === 'danger' ? 'text-danger' : 'text-muted-foreground',
+          severity === 'danger' ? 'text-destructive' : 'text-muted-foreground',
         )}
       >
         {@render icon()}
       </div>
     {/if}
-    {#if title}
-      <div
-        data-slot="empty-state-title"
-        class={cn(
-          emphasis === 'prominent'
-            ? 'type-title font-semibold text-foreground'
-            : 'type-body font-normal',
-          emphasis === 'routine' &&
-            (severity === 'danger' ? 'text-danger' : 'text-muted-foreground'),
-        )}
-      >
-        {@render title()}
-      </div>
-    {/if}
-    {#if description}
-      <div
-        data-slot="empty-state-description"
-        class={cn(
-          title ? 'mt-1 type-caption' : 'type-body',
-          severity === 'danger' ? 'text-danger' : 'text-muted-foreground',
-        )}
-      >
-        {@render description()}
+    {#if title || description}
+      <div>
+        {#if title}
+          <div
+            data-slot="empty-state-title"
+            class={cn(
+              emphasis === 'prominent'
+                ? 'type-title font-semibold text-foreground'
+                : 'type-body font-normal',
+              emphasis === 'routine' && 'text-muted-foreground',
+            )}
+          >
+            {@render title()}
+          </div>
+        {/if}
+        {#if description}
+          <div
+            data-slot="empty-state-description"
+            class={cn(title ? 'mt-1 type-caption' : 'type-body', 'text-muted-foreground')}
+          >
+            {@render description()}
+          </div>
+        {/if}
       </div>
     {/if}
     {#if actions || (actionLabel && onAction)}
-      <div
-        data-slot="empty-state-actions"
-        class={cn('flex justify-center gap-2', density === 'compact' ? 'mt-3' : 'mt-4')}
-      >
+      <div data-slot="empty-state-actions" class="flex justify-center gap-2">
         {@render actions?.()}
         {#if actionLabel && onAction}
           <Button
