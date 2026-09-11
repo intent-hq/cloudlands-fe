@@ -88,7 +88,7 @@
       >
         <h3
           id={`keyboard-shortcuts-${categoryId}`}
-          class="type-caption font-medium! text-muted-foreground"
+          class="type-caption font-medium text-muted-foreground"
         >
           {category.title}
         </h3>

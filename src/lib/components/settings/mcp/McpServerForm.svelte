@@ -153,7 +153,7 @@
 <div class="space-y-4" onkeydown={handleKeydown}>
   <!-- Server Name -->
   <div>
-    <span class="block type-body font-medium! mb-1.5">
+    <span class="block type-body font-medium mb-1.5">
       {m.settings_mcp_form_serverName_label()} <span class="text-danger">*</span>
     </span>
     <Input
@@ -171,7 +171,7 @@
 
   <!-- Connection Type -->
   <div>
-    <span class="block type-body font-medium! mb-1.5">
+    <span class="block type-body font-medium mb-1.5">
       {m.settings_mcp_form_connectionType_label()}
       <span class="text-danger">*</span>
     </span>
@@ -205,7 +205,7 @@
   {#if form.type === 'stdio'}
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
-        <span class="block type-body font-medium! mb-1.5">
+        <span class="block type-body font-medium mb-1.5">
           {m.settings_mcp_form_command_label()} <span class="text-danger">*</span>
         </span>
         <!-- i18n-ignore (example command) -->
@@ -214,7 +214,7 @@
       </div>
 
       <div>
-        <span class="block type-body font-medium! mb-1.5"
+        <span class="block type-body font-medium mb-1.5"
           >{m.settings_mcp_form_arguments_label()}</span
         >
         <!-- i18n-ignore (example flags) -->
@@ -226,7 +226,7 @@
     <!-- Environment Variables -->
     <div>
       <div class="flex items-center justify-between mb-1.5">
-        <span class="type-body font-medium!">{m.settings_mcp_form_envVars_label()}</span>
+        <span class="type-body font-medium">{m.settings_mcp_form_envVars_label()}</span>
         <Button size="sm" variant="ghost" onclick={addEnvVar}>
           <Fa icon={faPlus} class="mr-1" size="xs" />
           {m.settings_mcp_form_add()}
@@ -255,7 +255,7 @@
   {:else}
     <!-- Remote fields (http/sse) -->
     <div>
-      <span class="block type-body font-medium! mb-1.5">
+      <span class="block type-body font-medium mb-1.5">
         {m.settings_mcp_form_url_label()} <span class="text-danger">*</span>
       </span>
       <!-- i18n-ignore (example URL) -->
@@ -265,7 +265,7 @@
 
     <!-- Auth Type -->
     <div>
-      <span class="block type-body font-medium! mb-1.5"
+      <span class="block type-body font-medium mb-1.5"
         >{m.settings_mcp_form_authentication_label()}</span
       >
       <div class="flex gap-1 p-1 bg-muted rounded-lg w-fit">
@@ -298,7 +298,7 @@
     {#if form.authType === 'header'}
       <div>
         <div class="flex items-center justify-between mb-1.5">
-          <span class="type-body font-medium!">{m.settings_mcp_form_headers_label()}</span>
+          <span class="type-body font-medium">{m.settings_mcp_form_headers_label()}</span>
           <Button size="sm" variant="ghost" onclick={addHeader}>
             <Fa icon={faPlus} class="mr-1" size="xs" />
             {m.settings_mcp_form_add()}

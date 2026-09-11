@@ -114,7 +114,7 @@
     {#if !imageLoaded}
       <!-- Show initial while loading -->
       <span
-        class="type-caption absolute text-subtle font-medium!"
+        class="type-caption absolute text-subtle font-medium"
         style="font-size: {size * 0.45}px;"
       >
         {label.charAt(0)}
@@ -124,7 +124,7 @@
     <Fa icon={faIcon} class="text-ghost" style="font-size: {size * 0.7}px;" />
   {:else}
     <!-- Fallback to initial -->
-    <span class="type-caption text-subtle font-medium!" style="font-size: {size * 0.45}px;">
+    <span class="type-caption text-subtle font-medium" style="font-size: {size * 0.45}px;">
       {label.charAt(0)}
     </span>
   {/if}

@@ -1515,7 +1515,7 @@
               <div
                 class="type-body select-text text-pretty {agentAttribution ||
                 automatedWakePresentation
-                  ? 'font-medium! text-foreground'
+                  ? 'font-medium text-foreground'
                   : USER_MESSAGE_TEXT_CLASS} {agentAttribution
                   ? ''
                   : isSticky

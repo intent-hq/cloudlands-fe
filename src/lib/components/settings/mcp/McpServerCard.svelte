@@ -174,7 +174,7 @@
       </div>
     {/snippet}
     {#snippet title()}
-      <span class="type-body font-medium!" title={matchedPreset ? matchedPreset.label : server.name}
+      <span class="type-body font-medium" title={matchedPreset ? matchedPreset.label : server.name}
         >{matchedPreset ? matchedPreset.label : server.name}</span
       >
     {/snippet}
@@ -276,7 +276,7 @@
           <div class="flex items-start gap-2 py-1">
             <div class="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 mt-1.5 shrink-0"></div>
             <div class="min-w-0 flex-1">
-              <span class="type-body font-medium!">{formatToolName(tool.name, server.name)}</span>
+              <span class="type-body font-medium">{formatToolName(tool.name, server.name)}</span>
               {#if tool.description}
                 <p class="type-body text-subtle line-clamp-2">{tool.description}</p>
               {/if}

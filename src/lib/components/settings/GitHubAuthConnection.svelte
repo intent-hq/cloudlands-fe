@@ -74,7 +74,7 @@
     </div>
     <div class="flex min-w-0 items-center gap-3">
       <!-- i18n-ignore (brand name) -->
-      <span class="type-body font-medium! text-foreground">GitHub</span>
+      <span class="type-body font-medium text-foreground">GitHub</span>
       {#if $isAuthenticated$}
         <span class="type-body flex min-w-0 items-center gap-1 text-muted-foreground">
           <Fa icon={faCheck} class="size-3 text-success" />

@@ -79,7 +79,7 @@
   </div>
   <div class="flex min-w-0 items-center gap-3">
     <!-- i18n-ignore (brand name) -->
-    <span class="type-body font-medium! text-foreground">Sentry</span>
+    <span class="type-body font-medium text-foreground">Sentry</span>
     {#if $isAuthenticated$}
       <span class="type-body flex min-w-0 items-center gap-1 text-muted-foreground">
         <Fa icon={faCheck} class="size-3 text-success" />
@@ -139,7 +139,7 @@
   {#if showConnectForm && !$storeIsConnecting$}
     <div class="col-span-2 col-start-2 mt-2 space-y-3 rounded-md bg-sidebar p-3">
       <div class="space-y-2">
-        <label for="sentry-org" class="type-body block font-medium! text-foreground">
+        <label for="sentry-org" class="type-body block font-medium text-foreground">
           {m.settings_connections_sentry_orgSlug_label()}
         </label>
         <Input
@@ -154,7 +154,7 @@
       </div>
 
       <div class="space-y-2">
-        <label for="sentry-token" class="type-body block font-medium! text-foreground">
+        <label for="sentry-token" class="type-body block font-medium text-foreground">
           {m.settings_connections_sentry_apiToken_label()}
         </label>
         <Input

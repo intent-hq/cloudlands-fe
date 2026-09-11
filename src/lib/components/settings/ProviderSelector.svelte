@@ -467,7 +467,7 @@
       <Button
         variant="ghost"
         type="button"
-        class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors type-body font-medium!"
+        class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors type-body font-medium"
         onclick={() => checkProviderAvailability(true, true)}
       >
         {m.settings_providers_tryAgain()}
@@ -480,7 +480,7 @@
       <div>
         <h2
           id={`provider-group-${group.id}`}
-          class="type-caption font-medium! text-muted-foreground mb-3"
+          class="type-caption font-medium text-muted-foreground mb-3"
         >
           {#if group.id === 'enabled'}
             {m.settings_providers_groupEnabled_label()}

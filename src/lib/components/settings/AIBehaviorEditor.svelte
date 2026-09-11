@@ -716,13 +716,13 @@
               }}
               aria-label={m.settings_aiBehavior_name_label()}
               placeholder={m.settings_aiBehavior_specialistName_placeholder()}
-              class="min-w-0 flex-1 type-title font-medium! text-foreground bg-transparent border-none outline-none px-0 py-0 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
+              class="min-w-0 flex-1 type-title font-medium text-foreground bg-transparent border-none outline-none px-0 py-0 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
             />
           {:else}
-            <h2 class="type-title font-medium! text-foreground">{currentSpecialist.name}</h2>
+            <h2 class="type-title font-medium text-foreground">{currentSpecialist.name}</h2>
             {#if isBuiltIn && hasOverrides}
               <span
-                class="type-caption px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium! inline-flex items-center gap-1"
+                class="type-caption px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium inline-flex items-center gap-1"
               >
                 <Fa icon={faPencil} class="w-2.5 h-2.5" />
                 {m.settings_aiBehavior_modifiedBadge()}
@@ -805,7 +805,7 @@
         <!-- Preserve the specialist model, reasoning, and delegation controls. -->
         <div class="min-w-0">
           <div class="flex min-w-0 flex-wrap items-center gap-3">
-            <span class="type-body shrink-0 font-medium! text-foreground">
+            <span class="type-body shrink-0 font-medium text-foreground">
               {m.settings_aiBehavior_model_label()}
             </span>
             <ModelPicker
@@ -866,7 +866,7 @@
         data-testid="create-specialist-prompt-column"
         class="min-h-0 min-w-0 h-full xl:flex xl:flex-col"
       >
-        <h2 class="mb-2 shrink-0 type-title font-medium! text-foreground">
+        <h2 class="mb-2 shrink-0 type-title font-medium text-foreground">
           {m.settings_aiBehavior_createSpecialist_title()}
         </h2>
         <div class="flex min-h-0 flex-1 flex-col gap-1.5">
@@ -904,7 +904,7 @@
         <div>
           <label
             for="create-specialist-name"
-            class="type-body font-medium! text-foreground block mb-1.5"
+            class="type-body font-medium text-foreground block mb-1.5"
           >
             {m.settings_aiBehavior_name_label()}
           </label>
@@ -920,7 +920,7 @@
         <div>
           <label
             for="create-specialist-description"
-            class="type-body font-medium! text-foreground block mb-1.5"
+            class="type-body font-medium text-foreground block mb-1.5"
           >
             {m.settings_aiBehavior_description_label()}
           </label>
@@ -934,7 +934,7 @@
         </div>
 
         <div class="flex items-center gap-3">
-          <span class="type-body shrink-0 font-medium! text-foreground">
+          <span class="type-body shrink-0 font-medium text-foreground">
             {m.settings_aiBehavior_model_label()}
           </span>
           <ModelPicker

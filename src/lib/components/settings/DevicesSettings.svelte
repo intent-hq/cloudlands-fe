@@ -71,7 +71,7 @@
 
 <div class="space-y-5">
   <div>
-    <h2 class="type-caption font-medium! text-muted-foreground mb-3">
+    <h2 class="type-caption font-medium text-muted-foreground mb-3">
       {m.settings_devices_title()}
     </h2>
     <p class="max-w-2xl type-body text-muted-foreground">
@@ -106,7 +106,7 @@
     {/snippet}
     {#snippet empty()}
       <div class="rounded-xl border border-dashed border-border bg-card p-8 text-left">
-        <p class="type-body font-medium! text-foreground">{m.settings_devices_empty_title()}</p>
+        <p class="type-body font-medium text-foreground">{m.settings_devices_empty_title()}</p>
         <p class="mt-1 type-body text-muted-foreground">{m.settings_devices_empty_description()}</p>
       </div>
     {/snippet}

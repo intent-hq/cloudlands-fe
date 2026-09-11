@@ -185,7 +185,7 @@
 
 <!-- Per-type Overrides -->
 <div>
-  <p class="type-body mb-1 font-medium! text-foreground">
+  <p class="type-body mb-1 font-medium text-foreground">
     {m.settings_backgroundAgent_overrides_title()}
   </p>
 

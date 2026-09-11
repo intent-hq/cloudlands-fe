@@ -479,7 +479,7 @@
       <Fa icon={faArrowLeft} class="type-caption opacity-50 mr-1" />
       <span>{backLabel}</span>
       <kbd
-        class="type-caption ml-2 px-1.5 py-0.5 font-medium! bg-muted text-muted-foreground border border-border rounded opacity-60 group-hover:opacity-100 transition-opacity"
+        class="type-caption ml-2 px-1.5 py-0.5 font-medium bg-muted text-muted-foreground border border-border rounded opacity-60 group-hover:opacity-100 transition-opacity"
       >
         {isMac ? '⌘' : 'Ctrl'},
       </kbd>
@@ -508,7 +508,7 @@
       {#if $isReadyToInstall$}
         <Button
           variant="plain"
-          class="type-body cursor-pointer border-none bg-transparent p-0 font-medium! text-primary-ink underline hover:text-primary-ink/80"
+          class="type-body cursor-pointer border-none bg-transparent p-0 font-medium text-primary-ink underline hover:text-primary-ink/80"
           onclick={() => appStore.dispatch(installUpdate())}
         >
           {m.settings_footer_updateAvailable()}
@@ -1015,7 +1015,7 @@
                 <section class="px-6 py-5">
                   <div class="flex items-center justify-between gap-4">
                     <div class="min-w-0">
-                      <p class="type-body font-medium! text-foreground">
+                      <p class="type-body font-medium text-foreground">
                         {m.settings_connection_socket_label()}
                       </p>
                       <p class="type-body text-subtle mt-0.5 font-mono select-text break-all">
@@ -1056,7 +1056,7 @@
               <section class="px-6 py-5">
                 <div class="flex items-center justify-between">
                   <div>
-                    <p class="type-body font-medium! text-foreground">
+                    <p class="type-body font-medium text-foreground">
                       {m.settings_reset_label()}
                     </p>
                     <p class="type-body text-subtle">
@@ -1082,7 +1082,7 @@
                 <section class="px-6 py-5">
                   <div class="flex flex-col gap-2">
                     <!-- i18n-ignore (dev-only) -->
-                    <span class="type-body font-medium!">Update Toast Simulation</span>
+                    <span class="type-body font-medium">Update Toast Simulation</span>
                     <div class="flex items-center gap-2">
                       <Button
                         variant="outline"

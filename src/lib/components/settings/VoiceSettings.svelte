@@ -323,7 +323,7 @@
                   <Button
                     variant="ghost"
                     type="button"
-                    class="type-body text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium!"
+                    class="type-body text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium"
                     onclick={() => handleShowKeyInput(target)}
                   >
                     {m.settings_voice_setKey()}
@@ -351,7 +351,7 @@
                 />
                 <Button
                   type="button"
-                  class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium! type-body"
+                  class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium type-body"
                   onclick={() => handleSubmitApiKey(target)}
                   disabled={!apiKeyDraft.trim()}
                 >
@@ -485,7 +485,7 @@
 
       {#if $vocabulary$ !== null || $workspaceVocabularyMaxTerms$ !== null}
         <div class="space-y-3 pt-1">
-          <span class="type-body text-foreground font-medium!">
+          <span class="type-body text-foreground font-medium">
             {m.settings_voice_workspaceVocabulary_label()}
           </span>
 
@@ -541,7 +541,7 @@
                 />
                 <Button
                   type="button"
-                  class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium! type-body"
+                  class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium type-body"
                   onclick={handleAddVocabularyTerm}
                   disabled={!vocabularyDraft.trim()}
                 >

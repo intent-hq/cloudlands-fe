@@ -55,7 +55,7 @@
           {/if}
         </div>
         <div class="flex min-w-0 items-center gap-3">
-          <span class="type-body font-medium! text-foreground">{integration.name}</span>
+          <span class="type-body font-medium text-foreground">{integration.name}</span>
           <div class="h-3 w-16 animate-pulse rounded bg-muted/50"></div>
         </div>
         <!-- Action button skeleton -->

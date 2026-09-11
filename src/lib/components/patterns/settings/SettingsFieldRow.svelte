@@ -97,7 +97,7 @@
             id={labelId}
             for={htmlFor}
             class={cn(
-              'type-body block font-medium! text-foreground',
+              'type-body block font-medium text-foreground',
               !compact && 'md:py-[max(0px,calc((var(--control-height-medium)-1lh)/2))]',
             )}
           >
@@ -107,7 +107,7 @@
           <div
             id={labelId}
             class={cn(
-              'type-body font-medium! text-foreground',
+              'type-body font-medium text-foreground',
               !compact && 'md:py-[max(0px,calc((var(--control-height-medium)-1lh)/2))]',
             )}
           >

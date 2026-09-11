@@ -331,7 +331,7 @@
     <section class="px-6 py-4">
       <div class="flex items-center justify-between gap-4">
         <div class="min-w-0">
-          <p class="type-body font-medium! text-foreground">
+          <p class="type-body font-medium text-foreground">
             {m.settings_hardware_status_label()}
           </p>
           {#if connectionStatus === 'connected' && deviceName}
@@ -407,7 +407,7 @@
 
     <!-- Action keys: device graphic + assignment dropdown -->
     <section class="px-6 py-5">
-      <p class="type-body font-medium! text-foreground">{m.settings_hardware_actionKeys_label()}</p>
+      <p class="type-body font-medium text-foreground">{m.settings_hardware_actionKeys_label()}</p>
       <p class="type-body text-subtle mt-1 mb-4">
         {m.settings_hardware_actionKeys_description()}
       </p>
@@ -423,7 +423,7 @@
         />
         <div class="w-full sm:w-60 shrink-0">
           {#if selectedSlot !== null}
-            <p class="type-body font-medium! text-muted-foreground mb-2">
+            <p class="type-body font-medium text-muted-foreground mb-2">
               {selectedKeyLabel}
             </p>
             <Select.Root value={selectedActionId ?? 'none'} onchange={handleActionChange}>
@@ -475,7 +475,7 @@
 
     <!-- Cycle scope: which cycle actions include sub-agents -->
     <section class="px-6 py-5">
-      <p class="type-body font-medium! text-foreground">
+      <p class="type-body font-medium text-foreground">
         {m.settings_hardware_cycleScope_label()}
       </p>
       <p class="type-body text-subtle mt-1 mb-3">
@@ -502,7 +502,7 @@
     <section class="px-6 py-5">
       <div class="flex items-center justify-between">
         <div>
-          <p class="type-body font-medium! text-foreground">
+          <p class="type-body font-medium text-foreground">
             {m.settings_hardware_promptLimit_label()}
           </p>
           <p class="type-body text-subtle mt-1">

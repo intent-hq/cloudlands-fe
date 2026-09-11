@@ -13,7 +13,7 @@
 <Accordion.Root type="multiple" class={cn('min-w-0', className)}>
   <Accordion.Item value="content">
     <Accordion.Header>
-      <Accordion.Trigger class="type-body font-medium! data-[state=open]:font-medium!">
+      <Accordion.Trigger class="type-body font-medium data-[state=open]:font-medium">
         {label}
       </Accordion.Trigger>
     </Accordion.Header>

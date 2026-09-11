@@ -153,7 +153,7 @@
     <div class="w-80 p-3 space-y-3 overflow-hidden">
       <!-- Header with helpful copy -->
       <div class="space-y-1">
-        <p class="type-body font-medium! text-foreground">
+        <p class="type-body font-medium text-foreground">
           {m.settings_providerPath_header({ name: providerName })}
         </p>
         <p class="type-body text-subtle">

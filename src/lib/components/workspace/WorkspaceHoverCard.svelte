@@ -353,7 +353,7 @@
       <div class="min-w-0" data-workspace-hover-card-identity>
         <div class="flex min-w-0 items-center justify-between gap-3">
           <h2
-            class="type-body min-w-0 truncate font-medium! text-foreground"
+            class="type-body min-w-0 truncate font-medium text-foreground"
             data-workspace-hover-card-title
           >
             {workspace.title || m.workspace_links_untitled_label()}

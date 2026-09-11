@@ -105,7 +105,7 @@
       class="flex w-full cursor-pointer items-center justify-start gap-2.5 rounded-lg px-2.5 py-2 text-left type-body transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
         {item.id === 'advanced' ? '' : 'mb-0.5'}
         {activeTab === item.id
-        ? 'bg-muted font-medium! text-foreground shadow-xs'
+        ? 'bg-muted font-medium text-foreground shadow-xs'
         : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
     >
       <span

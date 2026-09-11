@@ -156,7 +156,7 @@
     <div class="flex min-w-0 items-center justify-between gap-3">
       <p class="min-w-0 truncate type-body text-muted-foreground">
         {m.settings_colorTheme_importedLabel()}
-        <span class="type-caption text-foreground font-medium!">{$customThemeName}</span>
+        <span class="type-caption text-foreground font-medium">{$customThemeName}</span>
       </p>
       <Button variant="ghost" size="xs" onclick={selectDefault}>
         {m.settings_colorTheme_clearButton()}

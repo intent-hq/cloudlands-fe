@@ -167,7 +167,7 @@
     <h3 class="type-caption font-medium text-muted-foreground">Popover — title and body</h3>
     <Popover.Root open staticPosition
       ><Popover.Content class="w-full p-4"
-        ><h4 class="type-body font-medium!">Workspace details</h4>
+        ><h4 class="type-body font-medium">Workspace details</h4>
         <p class="type-caption mt-1 text-muted-foreground">
           Review the selected workspace before continuing.
         </p></Popover.Content
@@ -192,7 +192,7 @@
     <Popover.Root open staticPosition
       ><Popover.Content class="w-full"
         ><div class="p-4">
-          <h4 class="type-body font-medium!">Archive workspace?</h4>
+          <h4 class="type-body font-medium">Archive workspace?</h4>
           <p class="type-caption mt-1 text-muted-foreground">You can restore it later.</p>
         </div>
         <footer class="flex justify-end gap-2 border-t border-border p-3">

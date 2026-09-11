@@ -105,7 +105,7 @@
 </script>
 
 <div class="flex flex-col gap-1" data-listen-target-selector>
-  <p class="type-body font-medium! text-foreground">{m.settings_listenTargets_label()}</p>
+  <p class="type-body font-medium text-foreground">{m.settings_listenTargets_label()}</p>
   <p class="type-body text-subtle mb-1">{m.settings_listenTargets_description()}</p>
   <ul class="flex flex-col gap-0.5">
     {#each ipOptions as ip (ip)}

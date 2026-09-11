@@ -69,7 +69,7 @@
     >
       <div class="space-y-1 px-3 pt-3">
         <p class="type-caption text-muted-foreground">Bulk change</p>
-        <h3 class="type-body font-medium! text-foreground">Update workspace specialists</h3>
+        <h3 class="type-body font-medium text-foreground">Update workspace specialists</h3>
         <p
           class="type-caption leading-relaxed text-muted-foreground"
           data-catalog-rendered-state="long-content"

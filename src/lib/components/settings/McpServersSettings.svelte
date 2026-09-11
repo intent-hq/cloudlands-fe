@@ -487,7 +487,7 @@
             class="border-b border-border bg-muted/20"
           >
             <div class="py-4">
-              <h3 class="type-body font-medium! mb-4">
+              <h3 class="type-body font-medium mb-4">
                 {m.settings_mcpServers_editServerTitle({ name: editingServer.name })}
               </h3>
               <McpServerForm
@@ -541,7 +541,7 @@
           {:else if $error$}
             <div class="mb-4 rounded-lg border border-danger/30 bg-danger-background/5 p-4">
               <div class="space-y-1">
-                <p class="type-body font-medium! text-foreground">
+                <p class="type-body font-medium text-foreground">
                   {m.settings_mcpServers_loadError()}
                 </p>
                 <p class="type-body text-danger">{$error$}</p>
@@ -614,7 +614,7 @@
           <!-- Easy MCP Installation (below configured servers) -->
           <div class="pt-4">
             <div class="flex items-center gap-2 mb-3">
-              <span class="type-body font-medium! text-foreground"
+              <span class="type-body font-medium text-foreground"
                 >{m.settings_mcpServers_quickInstall()}</span
               >
             </div>
@@ -632,7 +632,7 @@
                     <div class="py-3 px-1">
                       <div class="flex items-center gap-2 mb-3">
                         <McpIcon iconName={option.iconName} label={option.label} size={20} />
-                        <span class="font-medium! type-body">{option.label}</span>
+                        <span class="font-medium type-body">{option.label}</span>
                       </div>
 
                       {#each option.userInput || [] as input}
@@ -684,13 +684,13 @@
 
                         <div class="flex-1 min-w-0 text-left">
                           <div class="flex items-center gap-2">
-                            <span class="type-body font-medium! truncate">{option.label}</span>
+                            <span class="type-body font-medium truncate">{option.label}</span>
                             {#if needsAuth}
-                              <span class="type-caption text-warning-ink font-medium!">
+                              <span class="type-caption text-warning-ink font-medium">
                                 {m.settings_mcp_status_needsAuth()}
                               </span>
                             {:else if installed}
-                              <span class="type-caption text-green-600 font-medium!">
+                              <span class="type-caption text-green-600 font-medium">
                                 {m.settings_mcpServers_installed()}
                               </span>
                             {/if}
@@ -706,7 +706,7 @@
                           <Button
                             variant="ghost"
                             type="button"
-                            class="px-3 py-1 type-body font-medium! rounded-md border border-warning/30 text-warning-ink hover:bg-warning/10 transition-colors cursor-pointer"
+                            class="px-3 py-1 type-body font-medium rounded-md border border-warning/30 text-warning-ink hover:bg-warning/10 transition-colors cursor-pointer"
                             onclick={() => handleReauthenticate(normalizeServerName(option.label))}
                           >
                             {m.settings_mcp_authenticateButton()}
@@ -742,7 +742,7 @@
           onclick={handleToggleAdvanced}
         >
           <div class="text-left">
-            <p class="type-body font-medium! text-foreground">
+            <p class="type-body font-medium text-foreground">
               {m.settings_mcpServers_advancedTitle()}
             </p>
             <p class="type-body text-subtle">

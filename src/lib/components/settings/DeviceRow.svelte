@@ -637,7 +637,7 @@
         </div>
         <div class="space-y-4">
           <fieldset class="space-y-1" disabled={busy !== null}>
-            <legend class="type-body font-medium! text-foreground"
+            <legend class="type-body font-medium text-foreground"
               >{m.settings_devices_accent_label()}</legend
             >
             <div class="flex flex-wrap gap-1">
@@ -772,7 +772,7 @@
           class="space-y-2 rounded-md border border-warning-foreground/30 bg-warning/10 p-3"
           role="alert"
         >
-          <p class="type-body font-medium! text-foreground">
+          <p class="type-body font-medium text-foreground">
             {m.settings_devices_removeFromCloud_title()}
           </p>
           <p class="type-body text-muted-foreground">
@@ -792,7 +792,7 @@
           class="space-y-2 rounded-md border border-warning-foreground/30 bg-warning/10 p-3"
           role="alert"
         >
-          <p class="type-body font-medium! text-foreground">
+          <p class="type-body font-medium text-foreground">
             {m.settings_devices_confirmFingerprint_title()}
           </p>
           <p class="type-body text-muted-foreground">

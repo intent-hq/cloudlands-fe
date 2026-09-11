@@ -62,7 +62,7 @@
 
 <div class="space-y-4">
   <div>
-    <span class="block type-body font-medium! mb-1.5">{m.settings_mcp_import_title()}</span>
+    <span class="block type-body font-medium mb-1.5">{m.settings_mcp_import_title()}</span>
     <Textarea
       bind:value={jsonContent}
       onkeydown={handleKeydown}
