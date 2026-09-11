@@ -45,7 +45,6 @@
 
   const productStates = [
     ['destructive-confirm-default', 'DestructiveConfirm — default'],
-    ['destructive-confirm-typed-name', 'DestructiveConfirm — typed name'],
     ['destructive-confirm-busy', 'DestructiveConfirm — busy'],
     ['form-dialog-default', 'FormDialog — default'],
     ['form-dialog-busy', 'FormDialog — busy'],
@@ -53,6 +52,7 @@
     ['input-dialog', 'InputDialog'],
     ['message-dialog', 'MessageDialog'],
     ['delete-warning-dialog', 'DeleteWarningDialog'],
+    ['archive-warning-dialog', 'DeleteWarningDialog — archive'],
     ['bulk-action-confirm-dialog', 'BulkActionConfirmDialog'],
     ['quit-confirmation-modal', 'QuitConfirmationModal'],
     ['replace-agent-modal', 'ReplaceAgentModal'],
@@ -97,10 +97,26 @@
   const quitPayload = {
     requestId: 'catalog-quit',
     interrupted: [
-      { agentId: 'agent-local', agentName: 'Build reviewer', workspaceName: 'Design system' },
+      {
+        agentId: 'agent-local',
+        agentName: 'Build reviewer',
+        workspaceId: 'design',
+        workspaceName: 'Design system',
+      },
     ],
     keepRunning: [
-      { agentId: 'agent-remote', agentName: 'Remote verifier', workspaceName: 'Release prep' },
+      {
+        agentId: 'agent-remote',
+        agentName: 'Remote verifier',
+        workspaceId: 'release',
+        workspaceName: 'Release prep',
+      },
+      {
+        agentId: 'agent-design',
+        agentName: 'Design reviewer',
+        workspaceId: 'design',
+        workspaceName: 'Design system',
+      },
     ],
     disruptedBrowserTabs: [
       {
@@ -108,6 +124,8 @@
         ownerAgentId: 'agent-local',
         ownerAgentName: 'Build reviewer',
         title: 'Component docs',
+        url: 'https://intent.app/docs/components',
+        workspaceId: 'design',
       },
     ],
   };
@@ -209,17 +227,6 @@
       confirmLabel="Delete workspace"
       onConfirm={() => {}}
     />
-  {:else if state === 'destructive-confirm-typed-name'}
-    <DestructiveConfirm
-      open
-      static
-      title="Delete Design system?"
-      description="Type the workspace name to continue."
-      confirmLabel="Delete workspace"
-      typedConfirmation="Design system"
-      typedLabel="Workspace name"
-      onConfirm={() => {}}
-    />
   {:else if state === 'destructive-confirm-busy'}
     <DestructiveConfirm
       open
@@ -272,11 +279,13 @@
       message="The workspace is ready on the selected connection."
       buttons={['Dismiss', 'Open workspace']}
     />
-  {:else if state === 'delete-warning-dialog'}
+  {:else if state === 'delete-warning-dialog' || state === 'archive-warning-dialog'}
     <DeleteWarningDialog
       open
       static
-      agentNames={['Implementor', 'Verifier']}
+      mode={state === 'archive-warning-dialog' ? 'archive' : 'delete'}
+      agents={[{ id: 'catalog-implementor', name: 'Implementor', specialist: 'implementor', state: 'running' }, { id: 'catalog-verifier', name: 'Verifier', specialist: 'verifier', state: 'running' }]}
+      localChanges={{ hasUnpushedCommits: true, hasUncommittedChanges: true, roots: [{ kind: 'primary', path: '/workspace/catalog', branch: 'refine-modals', unpushedCount: 2, uncommittedCount: 1 }] }}
       hookNames={['Watch release build']}
       openPrs={[{ number: 418, title: 'Refine modal catalog', status: 'Open', url: '' }]}
     />
