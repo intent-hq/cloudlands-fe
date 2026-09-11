@@ -6,7 +6,10 @@ export interface CaptureStabilityOptions {
 }
 
 export interface CaptureStabilityResult {
+  /** Images that gated readiness; deferred lazy images are excluded. */
   imageCount: number;
+  /** Offscreen `loading="lazy"` images the browser has not started loading. */
+  deferredImageCount: number;
   reducedMotion: boolean;
 }
 
@@ -74,10 +77,41 @@ async function waitForImage(image: HTMLImageElement, signal: AbortSignal): Promi
   }
 }
 
-async function waitForImages(root: HTMLElement, signal: AbortSignal): Promise<number> {
-  const images = [...root.querySelectorAll('img')];
+function intersectsViewport(image: HTMLImageElement): boolean {
+  const view = image.ownerDocument.defaultView;
+  if (!view) return true;
+  const rect = image.getBoundingClientRect();
+  return (
+    rect.bottom >= 0 &&
+    rect.right >= 0 &&
+    rect.top <= view.innerHeight &&
+    rect.left <= view.innerWidth
+  );
+}
+
+/**
+ * Viewport readiness semantics: an incomplete `loading="lazy"` image outside the viewport
+ * cannot be relied on to complete without a scroll, so it never gates readiness. Visible
+ * lazy images, complete images, and eager images gate as before.
+ */
+function isDeferredLazyImage(image: HTMLImageElement): boolean {
+  if (image.complete) return false;
+  if ((image.getAttribute('loading') ?? '').toLowerCase() !== 'lazy') return false;
+  return !intersectsViewport(image);
+}
+
+interface ImageReadiness {
+  imageCount: number;
+  deferredImageCount: number;
+}
+
+async function waitForImages(root: HTMLElement, signal: AbortSignal): Promise<ImageReadiness> {
+  const images = [...root.querySelectorAll('img')].filter((image) => !isDeferredLazyImage(image));
   await Promise.all(images.map((image) => waitForImage(image, signal)));
-  return images.length;
+  return {
+    imageCount: images.length,
+    deferredImageCount: root.querySelectorAll('img').length - images.length,
+  };
 }
 
 function waitForAnimationFrame(documentRef: Document, signal: AbortSignal): Promise<void> {
@@ -109,6 +143,13 @@ function waitForAnimationFrame(documentRef: Document, signal: AbortSignal): Prom
  * Wait for capture-affecting fonts and images, then allow two animation frames for
  * reduced-motion styles and layout to settle. The wait always ends at the timeout
  * or when its signal is aborted.
+ *
+ * Image readiness uses viewport semantics: every eager image, every already-complete
+ * image, and every lazy image that intersects the viewport must finish loading and
+ * decoding, whether it succeeds or errors. Incomplete offscreen `loading="lazy"` images
+ * are reported in `deferredImageCount` and do not gate readiness, because the browser
+ * does not fetch them until they approach the viewport; a capture never scrolls, so
+ * they cannot affect it.
  */
 export async function waitForCaptureStability(
   root: HTMLElement,
@@ -136,13 +177,13 @@ export async function waitForCaptureStability(
       waitForImages(root, controller.signal),
     ]);
     await waitForAnimationFrame(documentRef, controller.signal);
-    const imageCount = await waitForImages(root, controller.signal);
+    const images = await waitForImages(root, controller.signal);
     await waitForAnimationFrame(documentRef, controller.signal);
 
     const reducedMotion =
       documentRef.documentElement.classList.contains('catalog-reduced-motion') ||
       documentRef.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
-    return { imageCount, reducedMotion };
+    return { ...images, reducedMotion };
   } catch (error) {
     if (timedOut) throw new CaptureStabilityTimeoutError(timeoutMs);
     if (options.signal?.aborted) throw abortError();
