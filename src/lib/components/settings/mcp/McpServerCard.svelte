@@ -163,7 +163,7 @@
 </script>
 
 <div class="group/collection-row">
-  <ListRow class="items-start px-1">
+  <ListRow class="items-start px-0">
     {#snippet leading()}
       <div class="mt-0.5">
         {#if matchedPreset}
@@ -174,7 +174,7 @@
       </div>
     {/snippet}
     {#snippet title()}
-      <span title={matchedPreset ? matchedPreset.label : server.name}
+      <span class="type-body font-medium!" title={matchedPreset ? matchedPreset.label : server.name}
         >{matchedPreset ? matchedPreset.label : server.name}</span
       >
     {/snippet}
@@ -199,7 +199,7 @@
     {/snippet}
     {#snippet description()}
       <div class="min-w-0">
-        <p class="text-xs text-subtle truncate">
+        <p class="type-body truncate text-muted-foreground">
           {matchedPreset ? matchedPreset.description : displayCommand()}
         </p>
 

@@ -67,49 +67,46 @@
   }
 </script>
 
-<div class="space-y-2">
-  <div class="flex items-start justify-between gap-4">
-    <div class="space-y-1">
-      <div class="flex items-center gap-2">
-        <Fa icon={faGithub} class="w-4 h-4 text-ghost" />
-        <!-- i18n-ignore (brand name) -->
-        <span class="text-sm text-foreground">GitHub</span>
-        {#if $isAuthenticated$}
-          <span class="text-xs text-subtle flex items-center gap-1">
-            <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
-            {#if $user$}
-              @{$user$.login}
-            {:else}
-              {m.settings_connections_connected()}
-            {/if}
-          </span>
-        {/if}
-      </div>
-      <p class="text-xs text-subtle pl-6">
-        {m.settings_connections_github_description()}
-      </p>
-      {#if $error$}
-        <p class="text-xs text-danger pl-6">{$error$}</p>
+<div class="py-3">
+  <div class="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1">
+    <div class="flex size-4 items-center justify-center text-ghost">
+      <Fa icon={faGithub} class="size-4" />
+    </div>
+    <div class="flex min-w-0 items-center gap-3">
+      <!-- i18n-ignore (brand name) -->
+      <span class="type-body font-medium! text-foreground">GitHub</span>
+      {#if $isAuthenticated$}
+        <span class="type-body flex min-w-0 items-center gap-1 text-muted-foreground">
+          <Fa icon={faCheck} class="size-3 text-success" />
+          {#if $user$}
+            @{$user$.login}
+          {:else}
+            {m.settings_connections_connected()}
+          {/if}
+        </span>
       {/if}
     </div>
 
-    <div class="flex items-center gap-2 text-xs">
+    <div class="flex h-[22px] items-center gap-3 self-start">
       {#if $isAuthenticating$}
-        <span class="text-subtle">{m.settings_connections_github_waitingForAuthorization()}</span>
+        <span class="type-body text-muted-foreground"
+          >{m.settings_connections_github_waitingForAuthorization()}</span
+        >
       {:else if $isAuthenticated$}
         <Button
-          variant="ghost"
+          variant="link"
+          size="sm"
           type="button"
-          class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+          class="h-[22px] px-0"
           onclick={handleGitHubReconnect}
         >
           {m.settings_connections_reconnect()}
         </Button>
-        <span class="text-ghost">·</span>
         <Button
-          variant="ghost"
+          variant="link"
+          size="sm"
           type="button"
-          class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
+          class="h-[22px] px-0"
           onclick={handleGitHubDisconnect}
           disabled={isDisconnectingGitHub}
         >
@@ -119,26 +116,38 @@
         </Button>
       {:else if !$requiresDaemonAuth$}
         <Button
-          variant="ghost"
+          variant="link"
+          size="sm"
           type="button"
-          class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium"
+          class="h-[22px] px-0"
           onclick={handleGitHubConnect}
         >
           {m.settings_connections_connect()}
         </Button>
       {:else}
-        <span class="text-xs text-subtle">{m.settings_connections_requiresDaemonAuth()}</span>
+        <span class="type-body text-muted-foreground"
+          >{m.settings_connections_requiresDaemonAuth()}</span
+        >
       {/if}
     </div>
+    <p class="type-body col-start-2 text-muted-foreground">
+      {m.settings_connections_github_description()}
+    </p>
+    {#if $error$}
+      <p class="type-body col-start-2 text-danger">{$error$}</p>
+    {/if}
   </div>
 
   {#if $isAuthenticating$ && $deviceFlow$}
-    <div class="pl-6 max-w-xs">
-      <GitHubDeviceCodeCard
-        userCode={$deviceFlow$.userCode}
-        verificationUri={$deviceFlow$.verificationUri}
-        compact
-      />
+    <div class="mt-2 grid grid-cols-[1rem_minmax(0,1fr)] gap-x-3">
+      <div></div>
+      <div class="max-w-xs">
+        <GitHubDeviceCodeCard
+          userCode={$deviceFlow$.userCode}
+          verificationUri={$deviceFlow$.verificationUri}
+          compact
+        />
+      </div>
     </div>
   {/if}
 </div>

@@ -6,7 +6,6 @@
     IntentMarkLoader,
     Skeleton,
     Textarea,
-    Switch,
   } from '$lib/components/patterns/settings/custom-controls';
   import { logger } from '../../../shared/logger';
   import { onMount } from 'svelte';
@@ -23,6 +22,11 @@
   import McpJsonImport from './mcp/McpJsonImport.svelte';
   import McpIcon from './mcp/McpIcon.svelte';
   import { ListView } from '$lib/components/patterns/collection';
+  import {
+    SettingsForm,
+    defineSettings,
+    defineSettingsCustomControls,
+  } from '$lib/components/patterns/settings';
   import { crispOut, springIn } from '$lib/motion';
   import { faCheck, faCopy, faPlus, faRotateRight } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -350,25 +354,78 @@
   const editFormState = $derived<McpServerFormState | undefined>(
     editingServer ? serverToFormState(editingServer) : undefined,
   );
+
+  const enabledSchema = $derived.by(() =>
+    defineSettings({
+      sections: [
+        {
+          id: 'mcp-servers',
+          title: m.settings_mcpServers_title(),
+          entries: [
+            {
+              kind: 'switch',
+              id: 'mcp-servers-enabled',
+              label: m.settings_mcpServers_title(),
+              get: () => $enabled$,
+              set: handleToggleEnabled,
+            },
+          ],
+        },
+      ],
+    }),
+  );
+
+  const configuredSchema = $derived.by(() =>
+    defineSettings({
+      sections: [
+        {
+          id: 'mcp-configured',
+          title: m.settings_mcpServers_sectionTitle(),
+          entries: [
+            {
+              kind: 'custom',
+              id: 'mcp-configured-servers',
+              label: m.settings_mcpServers_sectionTitle(),
+              description:
+                $servers$.length === 1
+                  ? m.settings_mcpServers_serverCount_one()
+                  : m.settings_mcpServers_serverCount_many({
+                      count: formatInteger($servers$.length),
+                    }),
+            },
+          ],
+        },
+      ],
+    }),
+  );
 </script>
+
+{#snippet mcpDescription()}
+  <span class="block">{m.settings_mcpServers_description()}</span>
+  <span class="block">{m.settings_mcpServers_newAgentsOnlyNote()}</span>
+{/snippet}
+
+{#snippet configuredServersControl()}
+  {#if showAddPanel}
+    <Button variant="link" size="sm" onclick={() => (showAddPanel = false)}>
+      {m.settings_mcpServers_cancel()}
+    </Button>
+  {:else}
+    <Button variant="secondary" size="sm" onclick={() => (showAddPanel = true)}>
+      <Fa icon={faPlus} class="mr-1.5" size="xs" />
+      {m.settings_mcpServers_addNew()}
+    </Button>
+  {/if}
+{/snippet}
 
 <section class="bg-card rounded-xl divide-y divide-border overflow-hidden">
   <!-- Enable User MCP Servers Toggle -->
-  <div class="px-6 py-5">
-    <div class="flex items-center justify-between">
-      <div>
-        <p class="text-sm font-medium text-foreground">{m.settings_mcpServers_title()}</p>
-        <p class="text-xs text-subtle">{m.settings_mcpServers_description()}</p>
-        <p class="text-xs text-subtle">{m.settings_mcpServers_newAgentsOnlyNote()}</p>
-      </div>
-      <Switch
-        checked={$enabled$}
-        onCheckedChange={handleToggleEnabled}
-        size="xs"
-        class="mb-auto"
-        ariaLabel={m.settings_mcpServers_title()}
-      />
-    </div>
+  <div class="px-6">
+    <SettingsForm
+      schema={enabledSchema}
+      embedded
+      descriptions={{ 'mcp-servers-enabled': mcpDescription }}
+    />
   </div>
 
   {#if $enabled$}
@@ -380,30 +437,13 @@
       <!-- Combined MCP Servers Section -->
       <section>
         <!-- Header with Add button -->
-        <div class="flex items-center justify-between py-4">
-          <div>
-            <p class="text-sm font-medium text-foreground">
-              {m.settings_mcpServers_sectionTitle()}
-            </p>
-            <p class="text-xs text-subtle">
-              {$servers$.length === 1
-                ? m.settings_mcpServers_serverCount_one()
-                : m.settings_mcpServers_serverCount_many({
-                    count: formatInteger($servers$.length),
-                  })}
-            </p>
-          </div>
-          {#if showAddPanel}
-            <Button variant="ghost" size="sm" onclick={() => (showAddPanel = false)}>
-              {m.settings_mcpServers_cancel()}
-            </Button>
-          {:else}
-            <Button variant="outline" size="sm" onclick={() => (showAddPanel = true)}>
-              <Fa icon={faPlus} class="mr-1.5" size="xs" />
-              {m.settings_mcpServers_addNew()}
-            </Button>
-          {/if}
-        </div>
+        <SettingsForm
+          schema={configuredSchema}
+          embedded
+          custom={defineSettingsCustomControls({
+            'mcp-configured-servers': configuredServersControl,
+          })}
+        />
 
         <!-- Expandable Add Panel -->
         {#if showAddPanel}

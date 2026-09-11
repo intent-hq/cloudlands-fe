@@ -14,11 +14,13 @@
     searchQuery = '',
     custom = {},
     descriptions = {},
+    embedded = false,
   }: {
     schema: SettingsSchema;
     searchQuery?: string;
     custom?: SettingsCustomControls;
     descriptions?: SettingsDescriptionSnippets;
+    embedded?: boolean;
   } = $props();
   const sections = $derived(
     schema.sections
@@ -35,50 +37,63 @@
     ['select', 'input', 'number', 'path', 'keybinding'].includes(kind);
 </script>
 
-<div data-slot="settings-form" class="min-w-0 space-y-10">
-  {#each sections as section (section.id)}
-    <SettingsSection id={section.id} title={section.title} description={section.description}>
-      {#each section.entries as entry (entry.id)}
-        {@const controlId = `setting-${entry.id}`}
-        {@const disabled = resolveSetting(entry.disabled, false)}
-        {@const busy = resolveSetting(entry.busy, false)}
-        {@const error = resolveSetting(entry.error, undefined)}
-        {@const status = resolveSetting(entry.status, undefined)}
-        <SettingsFieldRow
-          id={entry.id}
-          label={entry.label}
-          description={entry.description}
-          descriptionContent={descriptions[entry.id]}
-          controlOnly={entry.kind === 'custom' && entry.layout === 'full-width'}
-          htmlFor={hasLabelTarget(entry.kind) ? controlId : undefined}
-          {disabled}
-          {busy}
-          {error}
-          {status}
-          statusTone={entry.statusTone}
-          danger={entry.danger}
-          experimental={entry.experimental}
-          featureCode={entry.featureCode}
-          searchText={[entry.label, entry.description, entry.featureCode].filter(Boolean).join(' ')}
-        >
-          {#snippet control({ labelId, descriptionId, errorId })}
-            {@const context = {
-              entry,
-              controlId,
-              labelId,
-              descriptionId,
-              errorId,
-              disabled,
-              busy,
-            }}
-            {#if entry.kind === 'custom'}
-              {#if custom[entry.id]}{@render custom[entry.id](context)}{/if}
-            {:else}
-              <SettingsControl {entry} {context} />
-            {/if}
-          {/snippet}
-        </SettingsFieldRow>
-      {/each}
-    </SettingsSection>
+{#snippet rows(entries: SettingsSchema['sections'][number]['entries'])}
+  {#each entries as entry (entry.id)}
+    {@const controlId = `setting-${entry.id}`}
+    {@const disabled = resolveSetting(entry.disabled, false)}
+    {@const busy = resolveSetting(entry.busy, false)}
+    {@const error = resolveSetting(entry.error, undefined)}
+    {@const status = resolveSetting(entry.status, undefined)}
+    <SettingsFieldRow
+      id={entry.id}
+      label={entry.label}
+      description={entry.description}
+      descriptionContent={descriptions[entry.id]}
+      controlOnly={entry.kind === 'custom' && entry.layout === 'full-width'}
+      htmlFor={hasLabelTarget(entry.kind) ? controlId : undefined}
+      {disabled}
+      {busy}
+      {error}
+      {status}
+      statusTone={entry.statusTone}
+      danger={entry.danger}
+      experimental={entry.experimental}
+      featureCode={entry.featureCode}
+      searchText={[entry.label, entry.description, entry.featureCode].filter(Boolean).join(' ')}
+      class={entry.class}
+    >
+      {#snippet control({ labelId, descriptionId, errorId })}
+        {@const context = {
+          entry,
+          controlId,
+          labelId,
+          descriptionId,
+          errorId,
+          disabled,
+          busy,
+        }}
+        {#if entry.kind === 'custom'}
+          {#if custom[entry.id]}{@render custom[entry.id](context)}{/if}
+        {:else}
+          <SettingsControl {entry} {context} />
+        {/if}
+      {/snippet}
+    </SettingsFieldRow>
   {/each}
-</div>
+{/snippet}
+
+{#if embedded}
+  <div data-slot="settings-form" class="min-w-0 divide-y divide-border">
+    {#each sections as section (section.id)}
+      {@render rows(section.entries)}
+    {/each}
+  </div>
+{:else}
+  <div data-slot="settings-form" class="min-w-0 space-y-10">
+    {#each sections as section (section.id)}
+      <SettingsSection id={section.id} title={section.title} description={section.description}>
+        {@render rows(section.entries)}
+      </SettingsSection>
+    {/each}
+  </div>
+{/if}

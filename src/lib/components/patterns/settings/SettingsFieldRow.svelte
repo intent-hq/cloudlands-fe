@@ -93,9 +93,11 @@
         </div>{/if}
       <div class="min-w-0 flex-1 space-y-1 break-words">
         {#if htmlFor}
-          <Label id={labelId} for={htmlFor} class="block font-medium">{label}</Label>
+          <Label id={labelId} for={htmlFor} class="type-body block font-medium! text-foreground">
+            {label}
+          </Label>
         {:else}
-          <div id={labelId} class="type-body font-medium text-foreground">
+          <div id={labelId} class="type-body font-medium! text-foreground">
             {label}
           </div>
         {/if}

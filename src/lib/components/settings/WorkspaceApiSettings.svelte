@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Input, Switch } from '$lib/components/patterns/settings/custom-controls';
+  import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
   /* eslint-disable intent/no-component-async-data-fetch */
   /**
    * Workspace API Output Settings Component
@@ -19,6 +19,12 @@
   import { notify } from '$lib/components/patterns/notify';
   import { appClient } from '$lib/client';
   import { m } from '$shared/paraglide/messages.js';
+  import {
+    SettingsForm,
+    defineSettings,
+    defineSettingsCustomControls,
+    type SettingsControlContext,
+  } from '$lib/components/patterns/settings';
 
   const MAX_OUTPUT_CHARS_PATH = 'workspaceApi.maxOutputChars';
   const TOON_OUTPUT_PATH = 'workspaceApi.toonOutput';
@@ -30,6 +36,10 @@
   let persistedMaxOutputChars = $state<number>(100000);
   let editedMaxOutputChars = $state<string>('100000');
   let maxCharsSaving = $state(false);
+  const maxOutputCharsValid = $derived.by(() => {
+    const parsed = Number(editedMaxOutputChars);
+    return Number.isInteger(parsed) && (parsed === 0 || (parsed >= 1000 && parsed <= 10_000_000));
+  });
 
   onMount(async () => {
     await loadSettings();
@@ -129,79 +139,75 @@
       maxCharsSaving = false;
     }
   }
+
+  const schema = $derived.by(() =>
+    defineSettings({
+      sections: [
+        {
+          id: 'workspace-api',
+          title: m.settings_workspaceApi_maxOutputChars_label(),
+          entries: [
+            {
+              kind: 'custom',
+              id: 'workspace-api-max-output-chars',
+              label: m.settings_workspaceApi_maxOutputChars_label(),
+              description: m.settings_workspaceApi_maxOutputChars_description(),
+              error: () =>
+                maxOutputCharsValid ? undefined : m.settings_workspaceApi_maxOutputChars_invalid(),
+              disabled: () => maxCharsSaving || loading,
+            },
+            {
+              kind: 'switch',
+              id: 'workspace-api-toon-output',
+              label: m.settings_workspaceApi_toonOutput_label(),
+              description: m.settings_workspaceApi_toonOutput_description(),
+              get: () => toonOutput,
+              set: handleToonToggle,
+              disabled: () => loading,
+            },
+          ],
+        },
+      ],
+    }),
+  );
 </script>
 
-<div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-  <!-- Max output chars -->
-  <section class="px-6 py-4">
-    {#snippet maxCharsValidation()}
-      {@const parsed = Number(editedMaxOutputChars)}
-      <!-- i18n-ignore (template expression, not user-facing text) -->
-      {@const isValid =
-        Number.isInteger(parsed) && (parsed === 0 || (parsed >= 1000 && parsed <= 10_000_000))}
-      <div class="flex items-center justify-between gap-3">
-        <div>
-          <p class="text-sm font-medium text-foreground">
-            {m.settings_workspaceApi_maxOutputChars_label()}
-          </p>
-          <p class="text-xs text-subtle mt-1">
-            {m.settings_workspaceApi_maxOutputChars_description()}
-          </p>
-        </div>
-        <div class="flex items-center gap-2">
-          <div class="shrink-0 w-32">
-            <Input
-              type="number"
-              min="0"
-              max="10000000"
-              bind:value={editedMaxOutputChars}
-              disabled={maxCharsSaving || loading}
-              aria-label={m.settings_workspaceApi_maxOutputChars_ariaLabel()}
-              class="h-9 text-sm"
-            />
-          </div>
-          {#if Number(editedMaxOutputChars) !== persistedMaxOutputChars}
-            <Button
-              type="button"
-              onclick={handleMaxCharsSave}
-              disabled={maxCharsSaving || !isValid}
-              class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {maxCharsSaving
-                ? m.settings_workspaceApi_maxOutputChars_saving()
-                : m.settings_workspaceApi_maxOutputChars_save()}
-            </Button>
-          {/if}
-        </div>
-      </div>
-      {#if !isValid}
-        <p class="text-xs text-warning-ink mt-1">
-          {m.settings_workspaceApi_maxOutputChars_invalid()}
-        </p>
-      {/if}
-    {/snippet}
-    {@render maxCharsValidation()}
-  </section>
+{#snippet maxOutputCharsControl({ labelId, descriptionId, errorId }: SettingsControlContext)}
+  <div class="flex items-center gap-2">
+    <Input
+      type="number"
+      min="0"
+      max="10000000"
+      bind:value={editedMaxOutputChars}
+      disabled={maxCharsSaving || loading}
+      aria-label={m.settings_workspaceApi_maxOutputChars_ariaLabel()}
+      aria-labelledby={labelId}
+      aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ') || undefined}
+      class="w-32"
+    />
+    {#if Number(editedMaxOutputChars) !== persistedMaxOutputChars}
+      <Button
+        variant="link"
+        size="sm"
+        type="button"
+        class="h-auto px-0"
+        onclick={handleMaxCharsSave}
+        disabled={maxCharsSaving || !maxOutputCharsValid}
+      >
+        {maxCharsSaving
+          ? m.settings_workspaceApi_maxOutputChars_saving()
+          : m.settings_workspaceApi_maxOutputChars_save()}
+      </Button>
+    {/if}
+  </div>
+{/snippet}
 
-  <!-- TOON output toggle -->
-  <section class="px-6 py-5">
-    <div class="flex items-center justify-between">
-      <div>
-        <p class="text-sm font-medium text-foreground">
-          {m.settings_workspaceApi_toonOutput_label()}
-        </p>
-        <p class="text-xs text-subtle mt-1">
-          {m.settings_workspaceApi_toonOutput_description()}
-        </p>
-      </div>
-      <Switch
-        checked={toonOutput}
-        onCheckedChange={handleToonToggle}
-        size="xs"
-        class="mb-auto"
-        disabled={loading}
-        ariaLabel={m.settings_workspaceApi_toonOutput_label()}
-      />
-    </div>
-  </section>
+<div class="rounded-xl bg-card px-4">
+  <SettingsForm
+    {schema}
+    embedded
+    custom={defineSettingsCustomControls({
+      'workspace-api-max-output-chars': maxOutputCharsControl,
+    })}
+  />
 </div>

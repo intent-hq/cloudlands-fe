@@ -26,6 +26,7 @@ interface BaseSetting<K extends SettingKind> {
   kind: K;
   id: string;
   label: string;
+  class?: string;
   description?: string;
   when?: () => boolean;
   disabled?: Resolvable<boolean>;

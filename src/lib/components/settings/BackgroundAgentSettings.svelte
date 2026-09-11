@@ -25,6 +25,11 @@
   import { isEnhancePromptAvailable } from '$lib/client/live/live-prompt-enhancement';
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
+  import {
+    SettingsForm,
+    defineSettings,
+    defineSettingsCustomControls,
+  } from '$lib/components/patterns/settings';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
@@ -51,16 +56,67 @@
   function handleOverrideChange(type: BackgroundAgentType, model: string) {
     appStore.dispatch(setTypeOverride({ type, model }));
   }
+
+  const defaultSchema = $derived.by(() =>
+    defineSettings({
+      sections: [
+        {
+          id: 'background-agent-default',
+          title: m.settings_backgroundAgent_defaultModel_label(),
+          entries: [
+            {
+              kind: 'custom',
+              id: 'background-agent-default',
+              label: m.settings_backgroundAgent_defaultModel_label(),
+            },
+          ],
+        },
+      ],
+    }),
+  );
+
+  const overridesSchema = $derived.by(() =>
+    defineSettings({
+      sections: [
+        {
+          id: 'background-agent-overrides',
+          title: m.settings_backgroundAgent_overrides_title(),
+          entries: [
+            {
+              kind: 'custom',
+              id: 'background-agent-commit',
+              label: BACKGROUND_AGENT_TYPE_INFO.commit.label,
+              description: BACKGROUND_AGENT_TYPE_INFO.commit.description,
+              status: () =>
+                $hasCommitOverride$ ? m.settings_backgroundAgent_customBadge() : undefined,
+              statusTone: 'subtle',
+            },
+            {
+              kind: 'custom',
+              id: 'background-agent-pr',
+              label: BACKGROUND_AGENT_TYPE_INFO.pr.label,
+              description: BACKGROUND_AGENT_TYPE_INFO.pr.description,
+              status: () =>
+                $hasPrOverride$ ? m.settings_backgroundAgent_customBadge() : undefined,
+              statusTone: 'subtle',
+            },
+            {
+              kind: 'custom',
+              id: 'background-agent-fast',
+              label: BACKGROUND_AGENT_TYPE_INFO.fast.label,
+              status: () =>
+                $hasFastOverride$ ? m.settings_backgroundAgent_customBadge() : undefined,
+              statusTone: 'subtle',
+            },
+          ],
+        },
+      ],
+    }),
+  );
 </script>
 
-<!-- Default Model -->
-<div class="flex items-center justify-between gap-4 mb-6">
-  <div class="flex-1 min-w-0">
-    <p class="text-sm font-semibold text-foreground">
-      {m.settings_backgroundAgent_defaultModel_label()}
-    </p>
-  </div>
-  <div class="shrink-0 w-72">
+{#snippet defaultControl()}
+  <div class="w-72 shrink-0">
     <!-- Empty defaultModel means "provider default": the daemon/CLI default is
          used because background requests omit `model` on the wire. -->
     <ModelPicker
@@ -74,105 +130,83 @@
       variant="default"
     />
   </div>
-</div>
+{/snippet}
+
+{#snippet commitControl()}
+  <div class="w-72 shrink-0">
+    <ModelPicker
+      selectedModel={$typeOverrides$.commit || undefined}
+      onModelChange={(model) => handleOverrideChange('commit', model)}
+      showManageLink={false}
+      showDefaultOption={true}
+      defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
+      defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
+      defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
+      variant="default"
+    />
+  </div>
+{/snippet}
+
+{#snippet prControl()}
+  <div class="w-72 shrink-0">
+    <ModelPicker
+      selectedModel={$typeOverrides$.pr || undefined}
+      onModelChange={(model) => handleOverrideChange('pr', model)}
+      showManageLink={false}
+      showDefaultOption={true}
+      defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
+      defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
+      defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
+      variant="default"
+    />
+  </div>
+{/snippet}
+
+{#snippet fastControl()}
+  <div class="w-72 shrink-0">
+    <ModelPicker
+      selectedModel={$typeOverrides$.fast || undefined}
+      onModelChange={(model) => handleOverrideChange('fast', model)}
+      showManageLink={false}
+      showDefaultOption={true}
+      defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
+      defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
+      defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
+      variant="default"
+    />
+  </div>
+{/snippet}
+
+<SettingsForm
+  schema={defaultSchema}
+  embedded
+  custom={defineSettingsCustomControls({ 'background-agent-default': defaultControl })}
+/>
 
 <!-- Per-type Overrides -->
 <div>
-  <p class="text-sm font-semibold text-foreground mb-3">
+  <p class="type-body mb-1 font-medium! text-foreground">
     {m.settings_backgroundAgent_overrides_title()}
   </p>
 
-  <div class="space-y-4">
-    <!-- Commit message -->
-    <div class="flex items-center justify-between gap-4">
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2">
-          <span class="text-sm font-medium text-foreground"
-            >{BACKGROUND_AGENT_TYPE_INFO.commit.label}</span
-          >
-          {#if $hasCommitOverride$}
-            <span class="text-ui px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium"
-              >{m.settings_backgroundAgent_customBadge()}</span
-            >
-          {/if}
-        </div>
-        <p class="text-xs text-subtle mt-0.5">{BACKGROUND_AGENT_TYPE_INFO.commit.description}</p>
-      </div>
-      <div class="shrink-0 w-72">
-        <ModelPicker
-          selectedModel={$typeOverrides$.commit || undefined}
-          onModelChange={(model) => handleOverrideChange('commit', model)}
-          showManageLink={false}
-          showDefaultOption={true}
-          defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
-          defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
-          defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
-          variant="default"
-        />
-      </div>
-    </div>
-
-    <!-- PR description -->
-    <div class="flex items-center justify-between gap-4">
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2">
-          <span class="text-sm font-medium text-foreground"
-            >{BACKGROUND_AGENT_TYPE_INFO.pr.label}</span
-          >
-          {#if $hasPrOverride$}
-            <span class="text-ui px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium"
-              >{m.settings_backgroundAgent_customBadge()}</span
-            >
-          {/if}
-        </div>
-        <p class="text-xs text-subtle mt-0.5">{BACKGROUND_AGENT_TYPE_INFO.pr.description}</p>
-      </div>
-      <div class="shrink-0 w-72">
-        <ModelPicker
-          selectedModel={$typeOverrides$.pr || undefined}
-          onModelChange={(model) => handleOverrideChange('pr', model)}
-          showManageLink={false}
-          showDefaultOption={true}
-          defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
-          defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
-          defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
-          variant="default"
-        />
-      </div>
-    </div>
-
-    <!-- Quick tasks -->
-    <div class="flex items-center justify-between gap-4">
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2">
-          <span class="text-sm font-medium text-foreground"
-            >{BACKGROUND_AGENT_TYPE_INFO.fast.label}</span
-          >
-          {#if $hasFastOverride$}
-            <span class="text-ui px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium"
-              >{m.settings_backgroundAgent_customBadge()}</span
-            >
-          {/if}
-        </div>
-        <p class="text-xs text-subtle mt-0.5">{BACKGROUND_AGENT_TYPE_INFO.fast.description}</p>
-        {#if fastEnhanceUnavailable}
-          <p class="text-xs text-subtle mt-1" data-testid="fast-auggie-only-note">
-            {m.settings_backgroundAgent_fastAuggieOnlyNote()}
-          </p>
-        {/if}
-      </div>
-      <div class="shrink-0 w-72">
-        <ModelPicker
-          selectedModel={$typeOverrides$.fast || undefined}
-          onModelChange={(model) => handleOverrideChange('fast', model)}
-          showManageLink={false}
-          showDefaultOption={true}
-          defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
-          defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
-          defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
-          variant="default"
-        />
-      </div>
-    </div>
+  <div class="divide-y divide-border">
+    {#snippet fastDescription()}
+      <span class="block">{BACKGROUND_AGENT_TYPE_INFO.fast.description}</span>
+      {#if fastEnhanceUnavailable}
+        <span class="block" data-testid="fast-auggie-only-note">
+          {m.settings_backgroundAgent_fastAuggieOnlyNote()}
+        </span>
+      {/if}
+    {/snippet}
+    <SettingsForm
+      schema={overridesSchema}
+      embedded
+      custom={defineSettingsCustomControls({
+        'background-agent-commit': commitControl,
+        'background-agent-pr': prControl,
+        'background-agent-fast': fastControl,
+      })}
+      descriptions={{ 'background-agent-fast': fastDescription }}
+    />
   </div>
 </div>

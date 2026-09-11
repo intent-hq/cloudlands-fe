@@ -3,7 +3,12 @@
     resolveEditorFallbackIcon,
     resolveEditorIcon,
   } from '$lib/components/shared/icons/editor-icon';
-  import { SettingsFieldRow } from '$lib/components/patterns/settings';
+  import {
+    SettingsFieldRow,
+    SettingsForm,
+    defineSettings,
+    defineSettingsCustomControls,
+  } from '$lib/components/patterns/settings';
   import { Button, Switch } from '$lib/components/patterns/settings/custom-controls';
   import {
     selectHiddenEditorIds,
@@ -170,11 +175,39 @@
     dragPreviewElement?.remove();
     dragPreviewElement = null;
   }
+
+  const emptySchema = $derived.by(() =>
+    defineSettings({
+      sections: [
+        {
+          id: 'open-in-apps',
+          title: m.settings_openInApps_empty(),
+          entries: [
+            {
+              kind: 'custom',
+              id: 'open-in-apps-empty',
+              label: m.settings_openInApps_empty(),
+              layout: 'full-width',
+              class: 'py-0 first:pt-0 last:pb-0',
+            },
+          ],
+        },
+      ],
+    }),
+  );
 </script>
+
+{#snippet emptyState()}
+  <p class="type-body py-3 text-muted-foreground">{m.settings_openInApps_empty()}</p>
+{/snippet}
 
 <div class="min-w-0 space-y-1" data-open-in-apps>
   {#if installedEditors.length === 0}
-    <p class="type-body py-3 text-muted-foreground">{m.settings_openInApps_empty()}</p>
+    <SettingsForm
+      schema={emptySchema}
+      embedded
+      custom={defineSettingsCustomControls({ 'open-in-apps-empty': emptyState })}
+    />
   {:else}
     {#each installedEditors as editor (editor.id)}
       <!-- svelte-ignore a11y_no_static_element_interactions (keyboard reordering is on the nested button) -->
@@ -204,7 +237,7 @@
           id={`open-in-${editor.id}`}
           htmlFor={`open-in-${editor.id}-switch`}
           label={editor.name}
-          class="py-2.5 first:pt-2.5 last:pb-2.5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:gap-4"
+          class="py-2.5 first:pt-2.5 last:pb-2.5 [&>div:first-child]:items-center md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:gap-4"
         >
           {#snippet leading()}
             <div

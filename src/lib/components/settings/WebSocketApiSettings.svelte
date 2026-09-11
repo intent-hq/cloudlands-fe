@@ -41,6 +41,11 @@
     faQrcode,
   } from '@fortawesome/free-solid-svg-icons';
   import { notify } from '$lib/components/patterns/notify';
+  import {
+    SettingsFieldRow,
+    SettingsForm,
+    defineSettings,
+  } from '$lib/components/patterns/settings';
   import { appClient } from '$lib/client';
   import ListenTargetSelector from './ListenTargetSelector.svelte';
   import type { ListenTargetSelection } from './ListenTargetSelector.svelte';
@@ -79,6 +84,10 @@
   let persistedPort = $state<number>(5181); // persisted setting value
   let editedPort = $state<string>('5181'); // input value as string
   let portSaving = $state(false);
+  const portValid = $derived.by(() => {
+    const value = Number(editedPort);
+    return Number.isInteger(value) && value >= 1024 && value <= 65535;
+  });
 
   // Listen targets + tunnel state (monorepo tailcat feature). `tunnelSupported`
   // gates the whole tunnel surface: false on daemons predating the
@@ -658,66 +667,74 @@
   onDestroy(() => {
     if (qrTimer) clearTimeout(qrTimer);
   });
+
+  const connectionSchema = $derived.by(() =>
+    defineSettings({
+      sections: [
+        {
+          id: 'websocket-api',
+          title: m.settings_wsApi_enable_label(),
+          entries: isRemote
+            ? [
+                {
+                  kind: 'custom',
+                  id: 'websocket-api-remote',
+                  label: m.settings_wsApi_enable_label(),
+                  description: m.settings_wsApi_remoteInfo_description(),
+                },
+              ]
+            : [
+                {
+                  kind: 'switch',
+                  id: 'websocket-api-enabled',
+                  label: m.settings_wsApi_enable_label(),
+                  description: m.settings_wsApi_enable_description(),
+                  get: () => enabled,
+                  set: handleToggle,
+                  disabled: () => loading || toggleBusy,
+                },
+              ],
+        },
+      ],
+    }),
+  );
 </script>
 
 <div class="flex min-w-0 flex-col gap-4" data-settings-websocket-api>
-  {#if isRemote}
-    <!-- Remote connection: info-only panel — no toggle/port/token/QR controls -->
-    <section>
-      <p class="text-sm font-medium text-foreground">{m.settings_wsApi_enable_label()}</p>
-      <p class="text-xs text-subtle mt-1">
-        {m.settings_wsApi_remoteInfo_description()}
-      </p>
-    </section>
-  {:else}
-    <!-- Enable toggle -->
-    <section>
-      <div class="flex items-center justify-between">
-        <div>
-          <p class="text-sm font-medium text-foreground">{m.settings_wsApi_enable_label()}</p>
-          <p class="text-xs text-subtle mt-1">
-            {m.settings_wsApi_enable_description()}
-          </p>
-        </div>
-        <Switch
-          checked={enabled}
-          onCheckedChange={handleToggle}
-          size="xs"
-          class="mb-auto"
-          disabled={loading || toggleBusy}
-          ariaLabel={m.settings_wsApi_enable_label()}
-        />
-      </div>
-    </section>
+  <SettingsForm schema={connectionSchema} embedded />
 
+  {#if !isRemote}
     {#if enabled && tunnelSupported}
       <div transition:slide={{ tier: 'moderate' }} class="space-y-4">
         <!-- Tailcat tunnel toggle: drives server.tunnel.enabled. Absent on
              old daemons predating the server.tunnel.* settings. -->
+        {#snippet tunnelDescription()}
+          {m.settings_tunnel_enable_description()}{' '}<Button
+            variant="link"
+            size="sm"
+            href="https://github.com/tailscale/tailcat"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="h-auto px-0">{m.settings_tunnel_github_link()}</Button
+          >
+        {/snippet}
         <section data-tunnel-toggle-row>
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium text-foreground">
-                {m.settings_tunnel_enable_label()}
-              </p>
-              <p class="text-xs text-subtle mt-1">
-                {m.settings_tunnel_enable_description()}{' '}<a
-                  href="https://github.com/tailscale/tailcat"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="underline hover:text-foreground">{m.settings_tunnel_github_link()}</a
-                >
-              </p>
-            </div>
-            <Switch
-              checked={tunnelEnabled}
-              onCheckedChange={handleTunnelToggle}
-              size="xs"
-              class="mb-auto"
-              disabled={toggleBusy || listenSaving}
-              ariaLabel={m.settings_tunnel_enable_label()}
-            />
-          </div>
+          <SettingsFieldRow
+            id="websocket-tunnel"
+            label={m.settings_tunnel_enable_label()}
+            descriptionContent={tunnelDescription}
+            disabled={toggleBusy || listenSaving}
+          >
+            {#snippet control({ labelId, descriptionId })}
+              <Switch
+                checked={tunnelEnabled}
+                onCheckedChange={handleTunnelToggle}
+                disabled={toggleBusy || listenSaving}
+                ariaLabelledby={labelId}
+                ariaDescribedby={descriptionId}
+              />
+            {/snippet}
+          </SettingsFieldRow>
         </section>
 
         <!-- This daemon's own tailcat tunnel address (copyable) — shown only
@@ -756,66 +773,62 @@
              targets). Absent on daemons that do not report
              server.bindAddress. -->
         <section data-local-network-toggle-row>
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium text-foreground">
-                {m.settings_wsApi_localNetworkAccess_label()}
-              </p>
-              <p class="text-xs text-subtle mt-1">
-                {m.settings_wsApi_localNetworkAccess_description()}
-              </p>
-            </div>
-            <Switch
-              checked={localNetworkShown}
-              onCheckedChange={handleLocalNetworkToggle}
-              size="xs"
-              class="mb-auto"
-              disabled={toggleBusy || listenSaving}
-              ariaLabel={m.settings_wsApi_localNetworkAccess_label()}
-            />
-          </div>
+          <SettingsFieldRow
+            id="websocket-local-network"
+            label={m.settings_wsApi_localNetworkAccess_label()}
+            description={m.settings_wsApi_localNetworkAccess_description()}
+            disabled={toggleBusy || listenSaving}
+          >
+            {#snippet control({ labelId, descriptionId })}
+              <Switch
+                checked={localNetworkShown}
+                onCheckedChange={handleLocalNetworkToggle}
+                disabled={toggleBusy || listenSaving}
+                ariaLabelledby={labelId}
+                ariaDescribedby={descriptionId}
+              />
+            {/snippet}
+          </SettingsFieldRow>
         </section>
       </div>
     {/if}
 
     <!-- Port (always visible) -->
-    <section>
-      {#snippet portValidation()}
-        {@const portNum = Number(editedPort)}
-        <!-- i18n-ignore (template expression, not user-facing text) -->
-        {@const isValid = Number.isInteger(portNum) && portNum >= 1024 && portNum <= 65535}
-        <div class="flex items-center justify-between gap-3">
-          <span class="text-sm font-medium text-foreground">{m.settings_wsApi_port_label()}</span>
-          <div class="flex items-center gap-2">
-            <div class="shrink-0 w-32">
-              <Input
-                type="number"
-                min="1024"
-                max="65535"
-                bind:value={editedPort}
-                disabled={portSaving}
-                aria-label={m.settings_wsApi_port_ariaLabel()}
-                class="h-9 text-sm"
-              />
-            </div>
-            {#if Number(editedPort) !== persistedPort}
-              <Button
-                type="button"
-                onclick={handlePortSave}
-                disabled={portSaving || !isValid}
-                class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {portSaving ? m.settings_wsApi_port_saving() : m.settings_wsApi_port_save()}
-              </Button>
-            {/if}
+    <SettingsFieldRow
+      id="websocket-port"
+      label={m.settings_wsApi_port_label()}
+      error={portValid ? undefined : m.settings_wsApi_port_invalid()}
+      disabled={portSaving}
+    >
+      {#snippet control({ labelId, errorId })}
+        <div class="flex items-center gap-2">
+          <div class="shrink-0 w-32">
+            <Input
+              type="number"
+              min="1024"
+              max="65535"
+              bind:value={editedPort}
+              disabled={portSaving}
+              aria-label={m.settings_wsApi_port_ariaLabel()}
+              aria-labelledby={labelId}
+              aria-describedby={errorId}
+            />
           </div>
+          {#if Number(editedPort) !== persistedPort}
+            <Button
+              variant="link"
+              size="sm"
+              type="button"
+              onclick={handlePortSave}
+              disabled={portSaving || !portValid}
+              class="h-auto px-0"
+            >
+              {portSaving ? m.settings_wsApi_port_saving() : m.settings_wsApi_port_save()}
+            </Button>
+          {/if}
         </div>
-        {#if !isValid}
-          <p class="text-xs text-warning-ink mt-1">{m.settings_wsApi_port_invalid()}</p>
-        {/if}
       {/snippet}
-      {@render portValidation()}
-    </section>
+    </SettingsFieldRow>
 
     {#if enabled}
       <div transition:slide={{ tier: 'moderate' }} class="space-y-4">
@@ -835,48 +848,41 @@
         {/if}
 
         <!-- Mobile App Pairing -->
-        <section>
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium text-foreground">
-                {m.settings_wsApi_mobilePairing_label()}
-              </p>
-              <p class="text-xs text-subtle mt-1">
-                {m.settings_wsApi_mobilePairing_description()}
-              </p>
-            </div>
-            <Button
-              variant="ghost"
-              type="button"
-              onclick={handleShowQr}
-              class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer"
-            >
+        <SettingsFieldRow
+          id="websocket-mobile-pairing"
+          label={m.settings_wsApi_mobilePairing_label()}
+          description={m.settings_wsApi_mobilePairing_description()}
+        >
+          {#snippet control()}
+            <Button variant="secondary" size="sm" type="button" onclick={handleShowQr}>
               <Fa icon={faQrcode} size="sm" />
               {m.settings_wsApi_showQrCode()}
             </Button>
-          </div>
-        </section>
+          {/snippet}
+        </SettingsFieldRow>
 
         <!-- Publish this backend to iCloud Keychain (local + macOS + sync on
              + not currently published; re-publish clears the suppression) -->
         {#if publishStateLoaded && syncSupported && syncEnabled && !selfPublished}
-          <section data-publish-self-row>
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-sm font-medium text-foreground">
-                  {m.settings_wsApi_publishSelf_label()}
-                </p>
-                <p class="text-xs text-subtle mt-1">
-                  {m.settings_wsApi_publishSelf_description()}
-                </p>
-              </div>
-              <Button size="sm" onclick={handlePublishButton} disabled={publishBusy}>
+          <SettingsFieldRow
+            id="websocket-publish-self"
+            label={m.settings_wsApi_publishSelf_label()}
+            description={m.settings_wsApi_publishSelf_description()}
+            disabled={publishBusy}
+          >
+            {#snippet control()}
+              <Button
+                variant="secondary"
+                size="sm"
+                onclick={handlePublishButton}
+                disabled={publishBusy}
+              >
                 {publishSuppressed
                   ? m.settings_wsApi_publishSelf_republish_label()
                   : m.settings_wsApi_publishSelf_button_label()}
               </Button>
-            </div>
-          </section>
+            {/snippet}
+          </SettingsFieldRow>
         {/if}
 
         <!-- TLS Certificate Fingerprint (truncated single line by user

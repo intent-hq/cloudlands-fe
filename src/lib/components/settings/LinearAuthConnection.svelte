@@ -86,45 +86,42 @@
   }
 </script>
 
-<div class="space-y-3">
-  <div class="flex items-start justify-between gap-4">
-    <div class="space-y-1">
-      <div class="flex items-center gap-2">
-        <LinearIcon size={14} class="text-ghost" />
-        <!-- i18n-ignore (brand name) -->
-        <span class="text-sm text-foreground">Linear</span>
-        {#if $isAuthenticated$}
-          <span class="text-xs text-subtle flex items-center gap-1">
-            <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
-            {m.settings_connections_connected()}
-          </span>
-        {/if}
-      </div>
-      <p class="text-xs text-subtle pl-6">
-        {m.settings_connections_linear_description()}
-      </p>
-      {#if $error$}
-        <p class="text-xs text-danger pl-6">{$error$}</p>
+<div class="py-3">
+  <div class="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1">
+    <div class="flex size-4 items-center justify-center text-ghost">
+      <LinearIcon size={16} />
+    </div>
+    <div class="flex min-w-0 items-center gap-3">
+      <!-- i18n-ignore (brand name) -->
+      <span class="type-body font-medium! text-foreground">Linear</span>
+      {#if $isAuthenticated$}
+        <span class="type-body flex items-center gap-1 text-muted-foreground">
+          <Fa icon={faCheck} class="size-3 text-success" />
+          {m.settings_connections_connected()}
+        </span>
       {/if}
     </div>
 
-    <div class="flex items-center gap-2 text-xs">
+    <div class="flex h-[22px] items-center gap-3 self-start">
       {#if $isAuthenticating$}
-        <span class="text-subtle">{m.settings_connections_linear_validatingApiKey()}</span>
+        <span class="type-body text-muted-foreground"
+          >{m.settings_connections_linear_validatingApiKey()}</span
+        >
       {:else if $isAuthenticated$}
         <Button
-          variant="ghost"
+          variant="link"
+          size="sm"
           type="button"
-          class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+          class="h-[22px] px-0"
           onclick={handleShowKeyInput}
         >
           {m.settings_connections_linear_replaceKey()}
         </Button>
-        <span class="text-ghost">·</span>
         <Button
-          variant="ghost"
+          variant="link"
+          size="sm"
           type="button"
-          class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
+          class="h-[22px] px-0"
           onclick={handleLinearDisconnect}
           disabled={isDisconnectingLinear}
         >
@@ -134,71 +131,92 @@
         </Button>
       {:else if !$requiresDaemonAuth$}
         <Button
-          variant="ghost"
+          variant="link"
+          size="sm"
           type="button"
-          class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium"
+          class="h-[22px] px-0"
           onclick={handleShowKeyInput}
         >
           {m.settings_connections_connect()}
         </Button>
       {:else}
-        <span class="text-xs text-subtle">{m.settings_connections_requiresDaemonAuth()}</span>
+        <span class="type-body text-muted-foreground"
+          >{m.settings_connections_requiresDaemonAuth()}</span
+        >
       {/if}
     </div>
+    <p class="type-body col-start-2 text-muted-foreground">
+      {m.settings_connections_linear_description()}
+    </p>
+    {#if $error$}
+      <p class="type-body col-start-2 text-danger">{$error$}</p>
+    {/if}
   </div>
 
   {#if showKeyInput && !$isAuthenticating$}
-    <div class="pl-6 space-y-2">
-      <div class="flex items-center gap-2">
-        <Input
-          type="password"
-          bind:value={apiKeyDraft}
-          placeholder={/* i18n-ignore (credential format example) */ 'lin_api_...'}
-          class="h-7 text-xs flex-1"
-          aria-label={m.settings_connections_linear_apiKeyAriaLabel()}
-          onkeydown={(e) => {
-            if (e.key === 'Enter') handleSubmitApiKey();
-            if (e.key === 'Escape') handleCancelKeyInput();
-          }}
-        />
-        <Button
-          type="button"
-          class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium text-xs"
-          onclick={handleSubmitApiKey}
-          disabled={!apiKeyDraft.trim()}
-        >
-          {m.settings_connections_save()}
-        </Button>
-        <Button
-          type="button"
-          class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors text-xs"
-          onclick={handleCancelKeyInput}
-        >
-          {m.settings_connections_cancel()}
-        </Button>
+    <div class="mt-2 grid grid-cols-[1rem_minmax(0,1fr)] gap-x-3">
+      <div></div>
+      <div class="space-y-2">
+        <div class="flex items-center gap-2">
+          <Input
+            type="password"
+            bind:value={apiKeyDraft}
+            placeholder={/* i18n-ignore (credential format example) */ 'lin_api_...'}
+            class="flex-1"
+            aria-label={m.settings_connections_linear_apiKeyAriaLabel()}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') handleSubmitApiKey();
+              if (e.key === 'Escape') handleCancelKeyInput();
+            }}
+          />
+          <Button
+            variant="link"
+            size="sm"
+            type="button"
+            class="px-0"
+            onclick={handleSubmitApiKey}
+            disabled={!apiKeyDraft.trim()}
+          >
+            {m.settings_connections_save()}
+          </Button>
+          <Button
+            variant="link"
+            size="sm"
+            type="button"
+            class="px-0"
+            onclick={handleCancelKeyInput}
+          >
+            {m.settings_connections_cancel()}
+          </Button>
+        </div>
+        <p class="type-body text-muted-foreground">
+          {m.settings_connections_linear_apiKeyStorageNote()}
+        </p>
       </div>
-      <p class="text-xs text-subtle">
-        {m.settings_connections_linear_apiKeyStorageNote()}
-      </p>
     </div>
   {/if}
 
   {#if $isAuthenticated$}
-    <div class="pl-6 flex items-center gap-3">
-      <span class="text-xs text-subtle shrink-0">{m.settings_connections_linear_showIssues()}</span>
-      <Select.Root bind:value={issueFilter}>
-        <Select.Trigger class="h-7 text-xs w-[180px]">
-          {LINEAR_ISSUE_FILTER_OPTIONS.find((o) => o.value === issueFilter)?.label ||
-            m.settings_connections_linear_selectPlaceholder()}
-        </Select.Trigger>
-        <Select.Content>
-          {#each LINEAR_ISSUE_FILTER_OPTIONS as option (option.value)}
-            <Select.Item value={option.value}>
-              <span class="text-xs">{option.label}</span>
-            </Select.Item>
-          {/each}
-        </Select.Content>
-      </Select.Root>
+    <div class="mt-2 grid grid-cols-[1rem_minmax(0,1fr)] gap-x-3">
+      <div></div>
+      <div class="flex items-center gap-3">
+        <span class="type-body shrink-0 text-muted-foreground"
+          >{m.settings_connections_linear_showIssues()}</span
+        >
+        <Select.Root bind:value={issueFilter}>
+          <Select.Trigger class="w-[180px]">
+            {LINEAR_ISSUE_FILTER_OPTIONS.find((o) => o.value === issueFilter)?.label ||
+              m.settings_connections_linear_selectPlaceholder()}
+          </Select.Trigger>
+          <Select.Content>
+            {#each LINEAR_ISSUE_FILTER_OPTIONS as option (option.value)}
+              <Select.Item value={option.value}>
+                <span>{option.label}</span>
+              </Select.Item>
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      </div>
     </div>
   {/if}
 </div>

@@ -13,6 +13,8 @@
     type SettingsControlContext,
   } from '$lib/components/patterns/settings';
   import { Checkbox } from '$lib/components/patterns/settings/custom-controls';
+  // eslint-disable-next-line intent/settings-use-schema -- shared inline recipe used inside schema description snippets
+  import { InlineCode } from '$lib/components/ui/inline-code';
   import PathSettingField from './PathSettingField.svelte';
   import type { Snippet } from 'svelte';
 
@@ -296,13 +298,13 @@
 {#snippet sshKeyDescription()}
   {m.settings_gitWorkspace_sshKeyPath_description_before()}
   <!-- i18n-ignore (file path) -->
-  <code class="bg-muted px-1 rounded">~/.ssh/id_ed25519</code>)
+  <InlineCode>~/.ssh/id_ed25519</InlineCode>)
 {/snippet}
 
 {#snippet branchPrefixDescription()}
   {m.settings_gitWorkspace_branchPrefix_description_before()}
   <!-- i18n-ignore (branch prefix example) -->
-  <code class="bg-muted px-1 rounded">feature/</code>)
+  <InlineCode>feature/</InlineCode>)
 {/snippet}
 
 {#snippet worktreesControl()}

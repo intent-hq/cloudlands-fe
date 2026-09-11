@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Switch } from '$lib/components/patterns/settings/custom-controls';
+  import { Button } from '$lib/components/patterns/settings/custom-controls';
   /**
    * RTK Settings Component
    *
@@ -24,6 +24,7 @@
   import { ROOT_WORKSPACE_ID } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { notify } from '$lib/components/patterns/notify';
+  import { SettingsForm, defineSettings } from '$lib/components/patterns/settings';
 
   let rtkAvailable = $state(false);
   let rtkEnabled = $state(false);
@@ -136,61 +137,66 @@
       updating = false;
     }
   }
+
+  const schema = $derived.by(() =>
+    defineSettings({
+      sections: [
+        {
+          id: 'rtk',
+          title: m.settings_rtk_label(),
+          entries: [
+            {
+              kind: 'switch',
+              id: 'rtk-enabled',
+              label: m.settings_rtk_label(),
+              get: () => rtkEnabled,
+              set: handleToggle,
+              error: () => settingsError || undefined,
+              disabled: () => !rtkAvailable,
+            },
+          ],
+        },
+      ],
+    }),
+  );
 </script>
 
-{#if loaded}
-  <div data-rtk-settings class="w-full min-w-0">
-    {#if settingsError}
-      <div class="text-xs text-danger mb-2">
-        {settingsError}
-      </div>
-    {/if}
-    <div class="flex min-w-0 items-start justify-between gap-4">
-      <div class="min-w-0 flex-1">
-        <p class="text-sm font-medium text-foreground">{m.settings_rtk_label()}</p>
-        <p class="text-xs text-subtle">
-          {#if rtkAvailable}
-            {m.settings_rtk_enabledDescription()}
-          {:else}
-            <span class="text-muted-foreground">{m.settings_rtk_notInstalled()}</span>
-            <Button
-              variant="ghost"
-              type="button"
-              class="text-primary-ink hover:underline cursor-pointer text-xs ml-1"
-              onclick={recheckRtk}
-              disabled={checking}
-              >{checking ? m.settings_rtk_checking() : m.settings_rtk_checkAgain()}</Button
-            >
-          {/if}
-        </p>
-      </div>
-      <Switch
-        checked={rtkEnabled}
-        onCheckedChange={handleToggle}
-        size="xs"
-        class="shrink-0"
-        disabled={!rtkAvailable}
-        ariaLabel={m.settings_rtk_label()}
-      />
-    </div>
+{#snippet rtkDescription()}
+  <span class="block">
+    {rtkAvailable ? m.settings_rtk_enabledDescription() : m.settings_rtk_notInstalled()}
     {#if !rtkAvailable}
-      <p class="text-xs text-muted-foreground mt-2">
-        {m.settings_rtk_installHint_before()}
-        <Button
-          variant="ghost"
-          type="button"
-          class="text-primary-ink hover:underline cursor-pointer font-mono"
-          onclick={installRtk}><!-- i18n-ignore (shell command) -->brew install rtk</Button
-        >
-        {m.settings_rtk_installHint_orVisit()}
-        <a
-          href="https://github.com/rtk-ai/rtk"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="text-primary-ink hover:underline"
-          ><!-- i18n-ignore (URL) -->github.com/rtk-ai/rtk</a
-        >.
-      </p>
+      <Button
+        variant="link"
+        size="sm"
+        type="button"
+        class="h-auto px-0"
+        onclick={recheckRtk}
+        disabled={checking}
+        >{checking ? m.settings_rtk_checking() : m.settings_rtk_checkAgain()}</Button
+      >
     {/if}
+  </span>
+  {#if !rtkAvailable}
+    <span class="block">
+      {m.settings_rtk_installHint_before()}
+      <Button variant="link" size="sm" type="button" class="h-auto px-0" onclick={installRtk}
+        ><!-- i18n-ignore (shell command) -->brew install rtk</Button
+      >
+      {m.settings_rtk_installHint_orVisit()}
+      <Button
+        variant="link"
+        size="sm"
+        href="https://github.com/rtk-ai/rtk"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="h-auto px-0"><!-- i18n-ignore (URL) -->github.com/rtk-ai/rtk</Button
+      >.
+    </span>
+  {/if}
+{/snippet}
+
+{#if loaded}
+  <div data-rtk-settings class="min-w-0 w-full">
+    <SettingsForm {schema} embedded descriptions={{ 'rtk-enabled': rtkDescription }} />
   </div>
 {/if}

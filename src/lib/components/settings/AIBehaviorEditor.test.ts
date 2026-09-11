@@ -791,17 +791,13 @@ describe('AIBehaviorEditor actions', () => {
     render(AIBehaviorEditor, { activeView: { type: 'specialist', id: 'implementor' } });
 
     const detailsColumn = screen.getByTestId('specialist-details-column');
-    const advancedSummary = within(detailsColumn).getByText('Advanced', { selector: 'summary' });
-    const advancedDetails = advancedSummary.closest('details');
-    expect(advancedDetails).toBeTruthy();
-    expect(advancedDetails?.open).toBe(false);
+    const advancedTrigger = within(detailsColumn).getByRole('button', { name: 'Advanced' });
+    expect(advancedTrigger.getAttribute('aria-expanded')).toBe('false');
 
-    await fireEvent.click(advancedSummary);
+    await fireEvent.click(advancedTrigger);
 
-    expect(advancedDetails?.open).toBe(true);
-    expect(
-      within(advancedDetails as HTMLElement).getByRole('button', { name: 'Add model option' }),
-    ).toBeTruthy();
+    expect(advancedTrigger.getAttribute('aria-expanded')).toBe('true');
+    expect(within(detailsColumn).getByRole('button', { name: 'Add model option' })).toBeTruthy();
   });
 
   it('resets a modified specialist', async () => {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SettingsDisclosure } from '$lib/components/patterns/settings';
   import { Button, Input, Textarea } from '$lib/components/patterns/settings/custom-controls';
   import Fa from 'svelte-fa';
   import { faPlus, faRotateLeft, faTrash, faPencil } from '@fortawesome/free-solid-svg-icons';
@@ -771,14 +772,14 @@
                 }
               }}
               placeholder={m.settings_aiBehavior_specialistDescription_placeholder()}
-              class="w-full text-sm text-muted-foreground bg-transparent border-none outline-none px-0 py-0 mt-1 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
+              class="type-body mt-1 w-full border-none bg-transparent px-0 py-0 text-muted-foreground outline-none placeholder:text-muted-foreground focus:outline-none focus:ring-0"
             />
           {:else}
-            <p class="text-sm text-muted-foreground mt-1">{currentSpecialist.description}</p>
+            <p class="type-body mt-1 text-muted-foreground">{currentSpecialist.description}</p>
           {/if}
 
           {#if !isBuiltIn}
-            <p class="text-sm text-muted-foreground mt-2">
+            <p class="type-body mt-2 text-muted-foreground">
               {#if sourceLabel === 'Project'}
                 {m.settings_aiBehavior_projectInfo_before()}
                 <code class="bg-muted px-1 py-0.5 rounded break-all"
@@ -796,7 +797,7 @@
               {/if}
             </p>
           {/if}
-          <p class="text-sm text-muted-foreground mt-2">
+          <p class="type-body mt-2 text-muted-foreground">
             {m.settings_aiBehavior_usageHint()}
           </p>
         </div>
@@ -804,7 +805,7 @@
         <!-- Preserve the specialist model, reasoning, and delegation controls. -->
         <div class="min-w-0">
           <div class="flex min-w-0 flex-wrap items-center gap-3">
-            <span class="text-sm font-medium text-foreground shrink-0">
+            <span class="type-body shrink-0 font-medium! text-foreground">
               {m.settings_aiBehavior_model_label()}
             </span>
             <ModelPicker
@@ -828,17 +829,14 @@
           <!-- Delegation model options (PROTOCOL §5.11 modelOptions). Keyed on
                the specialist id so draft rows never leak across specialist
                switches (remounting resets the component's local rows). -->
-          <details class="mt-4 min-w-0">
-            <summary class="text-ui cursor-pointer text-muted-foreground">
-              {m.settings_aiBehavior_advanced_label()}
-            </summary>
+          <SettingsDisclosure label={m.settings_aiBehavior_advanced_label()} class="mt-4">
             {#key currentSpecialist.id}
               <SpecialistModelOptions
                 savedOptions={savedModelOptions}
                 onCommit={handleModelOptionsCommit}
               />
             {/key}
-          </details>
+          </SettingsDisclosure>
         </div>
 
         {#if !isBuiltIn}
@@ -936,7 +934,7 @@
         </div>
 
         <div class="flex items-center gap-3">
-          <span class="text-sm font-medium text-foreground shrink-0">
+          <span class="type-body shrink-0 font-medium! text-foreground">
             {m.settings_aiBehavior_model_label()}
           </span>
           <ModelPicker

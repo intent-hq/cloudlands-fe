@@ -565,7 +565,7 @@
             use:highlightTarget
             class="mb-12"
           >
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_defaults()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
@@ -573,7 +573,7 @@
                 <DefaultAgentModelSettings workspaceId={settingsWorkspaceId} />
               </section>
               <section class="px-6 py-5">
-                <h3 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-5">
+                <h3 class="type-title mb-5 text-foreground">
                   {m.settings_section_quickActions()}
                 </h3>
                 <BackgroundAgentSettings />
@@ -590,7 +590,7 @@
             use:highlightTarget
             class="mb-6 scroll-mt-20"
           >
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_tab_accounts()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
@@ -601,7 +601,7 @@
           </div>
 
           <div id="mcp-servers" data-highlight-id="mcp-servers" use:highlightTarget class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_mcpServers()}
             </h2>
             <McpServersSettings />
@@ -616,7 +616,7 @@
 
           <!-- Backend sync (iCloud Keychain) -->
           <div id="backend-sync" class="mb-6 scroll-mt-20">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_backendSync()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
@@ -660,7 +660,7 @@
         {#if activeTab === 'display'}
           <!-- Theme -->
           <div id="theme" data-highlight-id="appearance" use:highlightTarget class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_appearance()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
@@ -747,7 +747,7 @@
 
           <!-- Font Style -->
           <div id="font-style" data-highlight-id="font-style" use:highlightTarget class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_fontStyle()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
@@ -855,7 +855,7 @@
 
           <!-- Language -->
           <div id="language" data-highlight-id="language" use:highlightTarget class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_language_section_title()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
@@ -870,7 +870,7 @@
         {#if activeTab === 'app-behavior'}
           <!-- Updates -->
           <div id="updates" data-highlight-id="updates" use:highlightTarget class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_updates()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
@@ -904,7 +904,7 @@
           </div>
 
           <div id="open-in" data-highlight-id="open-in" use:highlightTarget class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_openIn()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
@@ -917,7 +917,7 @@
             use:highlightTarget
             class="mb-12"
           >
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_githubLinks_section_title()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
@@ -935,7 +935,7 @@
             use:highlightTarget
             class="mb-12 min-w-0"
           >
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_globalInstructions()}
             </h2>
             <AIBehaviorEditor
@@ -955,7 +955,7 @@
             use:highlightTarget
             class="mb-12"
           >
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_keyboardShortcuts()}
             </h2>
             <div class="rounded-xl bg-card px-6 py-5">
@@ -964,7 +964,7 @@
           </div>
 
           <div id="voice" data-highlight-id="voice" use:highlightTarget class="mb-12 scroll-mt-20">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_voice()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
@@ -984,7 +984,7 @@
             use:highlightTarget
             class="mb-12"
           >
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_agentBackend()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
@@ -1001,7 +1001,7 @@
             use:highlightTarget
             class="mb-12"
           >
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_websocketApi()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
@@ -1018,7 +1018,7 @@
             use:highlightTarget
             class="mb-12"
           >
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_workspaceApi()}
             </h2>
             <WorkspaceApiSettings />
@@ -1027,7 +1027,7 @@
           <!-- Connection (UDS only; hidden for WS/unknown transports) -->
           {#if udsSocketPath}
             <div id="connection" data-highlight-id="connection" use:highlightTarget class="mb-12">
-              <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              <h2 class="type-title mb-3 text-foreground">
                 {m.settings_section_connection()}
               </h2>
               <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
@@ -1051,7 +1051,7 @@
           <!-- Hardware / Creator Micro (only when a supported device is detectable) -->
           {#if showHardwareSection}
             <div id="hardware" data-highlight-id="hardware" use:highlightTarget class="mb-12">
-              <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              <h2 class="type-title mb-3 text-foreground">
                 {m.settings_section_hardware()}
               </h2>
               <HardwareConsoleSettings />
@@ -1060,7 +1060,7 @@
 
           <!-- Data -->
           <div id="data" data-highlight-id="data" use:highlightTarget class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_data()}
             </h2>
             <LegacyImportSettings />
@@ -1068,7 +1068,7 @@
 
           <!-- Reset -->
           <div id="reset" data-highlight-id="general" use:highlightTarget class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_reset()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
@@ -1093,7 +1093,7 @@
           <!-- Developer Section (only in dev mode; dev-only UI is not translated) -->
           {#if isDevMode}
             <div id="developer" data-highlight-id="developer" use:highlightTarget class="mb-12">
-              <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              <h2 class="type-title mb-3 text-foreground">
                 <!-- i18n-ignore (dev-only) -->
                 Developer
               </h2>

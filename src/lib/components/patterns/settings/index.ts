@@ -1,3 +1,4 @@
+export { default as SettingsDisclosure } from './SettingsDisclosure.svelte';
 export { default as SettingsFieldRow } from './SettingsFieldRow.svelte';
 export { default as SettingsForm } from './SettingsForm.svelte';
 export { default as SettingsPage } from './SettingsPage.svelte';
