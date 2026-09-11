@@ -10,9 +10,10 @@
  *    the time since the window was last known responsive.
  * 2. Best-effort JS stack capture: attach `webContents.debugger`, `Debugger.enable`
  *    + `Debugger.pause`, log the `callFrames` from `Debugger.paused`, then
- *    `Debugger.resume` and detach. Time-boxed and fully swallowed — it can never
- *    throw or delay the dialog. Skipped when a debugger (DevTools) is already
- *    attached, since attaching a second one would fail or hijack it.
+ *    `Debugger.resume` and detach. The whole attempt, cleanup included, is
+ *    bounded by one deadline and fully swallowed — it can never throw or delay
+ *    the dialog. Skipped when DevTools is open or a debugger is already
+ *    attached, since pausing would hijack the developer's session.
  * 3. Show a native Reload / Wait dialog. At most one dialog per unresponsive
  *    episode; the dialog is aborted (treated as Wait) when `responsive` fires
  *    first or the window closes. Reload uses `webContents.reload()` — never
@@ -91,40 +92,70 @@ function framesFromPaused(params: DebuggerPausedParams): RendererHangFrame[] {
   }));
 }
 
+type DebuggerMessageListener = (event: Electron.Event, method: string, params: unknown) => void;
+
 /**
  * Pause the renderer's JS thread over CDP and read its call stack. Returns
- * null when a debugger is already attached (DevTools) or when the renderer
- * does not report a pause within {@link STACK_CAPTURE_TIMEOUT_MS}. Always
- * resumes and detaches on the way out; callers wrap this in try/catch.
+ * null when DevTools is open or a debugger is already attached, or when the
+ * attempt does not finish within `timeoutMs`.
+ *
+ * Every CDP command can stall on a wedged renderer, so the deadline races the
+ * whole attempt rather than any single step, and the continuation checks the
+ * deadline after each await so a late reply never issues another command.
+ * Cleanup is synchronous and unconditional: the listener is removed and the
+ * debugger detached (which also resumes a paused renderer), so nothing is left
+ * attached even if the graceful resume/disable never settle. Callers wrap this
+ * in try/catch.
  */
-async function defaultCaptureStack(window: BrowserWindow): Promise<RendererHangFrame[] | null> {
+export async function captureRendererStack(
+  window: BrowserWindow,
+  timeoutMs: number = STACK_CAPTURE_TIMEOUT_MS,
+): Promise<RendererHangFrame[] | null> {
   const contents = window.webContents;
   const dbg = contents.debugger;
-  if (dbg.isAttached()) return null;
+  if (contents.isDevToolsOpened() || dbg.isAttached()) return null;
 
-  dbg.attach('1.3');
-  let onMessage: ((event: Electron.Event, method: string, params: unknown) => void) | null = null;
-  let timer: NodeJS.Timeout | null = null;
-  try {
-    const paused = new Promise<RendererHangFrame[] | null>((resolve) => {
+  let expired = false;
+  let onMessage: DebuggerMessageListener | null = null;
+
+  const attempt = (async (): Promise<RendererHangFrame[] | null> => {
+    dbg.attach('1.3');
+    const paused = new Promise<RendererHangFrame[]>((resolve) => {
       onMessage = (_event, method, params) => {
         if (method === 'Debugger.paused') resolve(framesFromPaused(params as DebuggerPausedParams));
       };
       dbg.on('message', onMessage);
-      timer = setTimeout(() => resolve(null), STACK_CAPTURE_TIMEOUT_MS);
     });
     await dbg.sendCommand('Debugger.enable');
+    if (expired) return null;
     await dbg.sendCommand('Debugger.pause');
-    return await paused;
+    if (expired) return null;
+    const frames = await paused;
+    if (expired) return null;
+    await dbg.sendCommand('Debugger.resume');
+    if (expired) return null;
+    await dbg.sendCommand('Debugger.disable');
+    return frames;
+  })();
+  // The race may settle first; keep a late rejection from being unhandled.
+  attempt.catch(() => undefined);
+
+  let timer: NodeJS.Timeout | null = null;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      expired = true;
+      resolve(null);
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([attempt, deadline]);
   } finally {
+    expired = true;
     if (timer) clearTimeout(timer);
     if (onMessage) dbg.removeListener('message', onMessage);
     try {
-      if (dbg.isAttached()) {
-        await dbg.sendCommand('Debugger.resume').catch(() => undefined);
-        await dbg.sendCommand('Debugger.disable').catch(() => undefined);
-        dbg.detach();
-      }
+      if (dbg.isAttached()) dbg.detach();
     } catch {
       // Detach is best-effort; the renderer may already be gone.
     }
@@ -179,7 +210,7 @@ export function attachRendererHangMonitor(
 ): void {
   const deps: RendererHangMonitorDeps = {
     resolveWorkspaceId: defaultResolveWorkspaceId,
-    captureStack: defaultCaptureStack,
+    captureStack: captureRendererStack,
     showMessageBox: defaultShowMessageBox,
     now: Date.now,
     ...overrides,
@@ -189,6 +220,8 @@ export function attachRendererHangMonitor(
   let lastResponsiveAt = deps.now();
   /** Non-null while an unresponsive episode is in progress (dialog pending or shown). */
   let episode: AbortController | null = null;
+  /** When the current episode's `unresponsive` event fired. */
+  let episodeStartedAt = 0;
 
   const isGone = () => window.isDestroyed() || contents.isDestroyed();
 
@@ -247,6 +280,7 @@ export function attachRendererHangMonitor(
     if (episode) return;
     const abort = new AbortController();
     episode = abort;
+    episodeStartedAt = deps.now();
     void handleUnresponsive(abort).catch((error: unknown) => {
       logger.warn('Renderer hang handling failed', { windowId, error: errorMessage(error) });
     });
@@ -257,7 +291,7 @@ export function attachRendererHangMonitor(
     if (episode) {
       logger.info('Renderer responsive again', {
         windowId,
-        msUnresponsive: now - lastResponsiveAt,
+        msUnresponsive: now - episodeStartedAt,
       });
       episode.abort();
       episode = null;

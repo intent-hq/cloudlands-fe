@@ -174,6 +174,11 @@ function getPayloadWorkspaceId(data: unknown): string | undefined {
 const windowWorkspaceState = new Map<number, boolean>();
 /** Track which workspace ID each window is viewing */
 const windowWorkspaceIds = new Map<number, string>();
+/**
+ * Diagnostic only: the last workspace each window ever reported, kept when the
+ * window leaves the workspace so hang/crash logs still carry context.
+ */
+const lastKnownWindowWorkspaceIds = new Map<number, string>();
 /** Track which workspace tabs are open per window */
 const windowOpenWorkspaceTabs = new Map<number, string[]>();
 
@@ -198,11 +203,13 @@ export function getFocusedWindowWorkspaceId(): string | undefined {
 }
 
 /**
- * Get the last-known workspace ID viewed by a specific window.
- * Returns undefined when the window has never reported a workspace view.
+ * Get the last-known workspace ID viewed by a specific window, for diagnostics.
+ * Unlike the current-workspace maps this survives the window navigating away
+ * from the workspace; it returns undefined only when the window has never
+ * reported a workspace view.
  */
 export function getWorkspaceIdForWindow(windowId: number): string | undefined {
-  return windowWorkspaceIds.get(windowId);
+  return lastKnownWindowWorkspaceIds.get(windowId);
 }
 
 /**
@@ -357,6 +364,7 @@ app.on('browser-window-created', (_event, window) => {
   window.on('closed', () => {
     windowWorkspaceState.delete(window.id);
     windowWorkspaceIds.delete(window.id);
+    lastKnownWindowWorkspaceIds.delete(window.id);
     clearWindowBrowserFocusOwner(window.id);
     windowOpenWorkspaceTabs.delete(window.id);
     // A close changes the set of open workspaces: notify listeners (menu
@@ -840,6 +848,7 @@ export function setupSystemIPC() {
             windowWorkspaceState.set(windowId, validated.inWorkspace);
             if (validated.workspaceId) {
               windowWorkspaceIds.set(windowId, validated.workspaceId);
+              lastKnownWindowWorkspaceIds.set(windowId, validated.workspaceId);
             } else if (!validated.inWorkspace) {
               windowWorkspaceIds.delete(windowId);
             }

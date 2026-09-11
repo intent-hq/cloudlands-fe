@@ -1,9 +1,10 @@
 /**
  * Unit tests for the renderer hang monitor (src/main/renderer-hang-monitor.ts).
- * The stack capture, workspace lookup, dialog, and clock are injected, so no
- * electron debugger or native dialog is touched.
+ * The monitor tests inject stack capture, workspace lookup, dialog, and clock.
+ * The capture tests drive the real `captureRendererStack` against a fake CDP
+ * debugger whose commands can be held pending, so no native Electron is touched.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 
 const loggerMocks = vi.hoisted(() => ({
@@ -25,6 +26,7 @@ vi.mock('../../shared/logger', () => ({
 import { stampWindowWithBackend } from '../window-backend';
 import {
   attachRendererHangMonitor,
+  captureRendererStack,
   type RendererHangFrame,
   type RendererHangMonitorDeps,
 } from '../renderer-hang-monitor';
@@ -211,6 +213,23 @@ describe('attachRendererHangMonitor', () => {
     );
   });
 
+  it('reports msUnresponsive as the duration of the episode, not the healthy time before it', async () => {
+    const fake = createFakeWindow();
+    const h = createHarness();
+    attachRendererHangMonitor(fake.window, h.deps);
+
+    h.clock.now = 60_000;
+    fake.emitUnresponsive();
+    await flush();
+    h.clock.now = 64_000;
+    fake.emitResponsive();
+
+    expect(loggerMocks.info).toHaveBeenCalledWith(
+      'Renderer responsive again',
+      expect.objectContaining({ msUnresponsive: 4_000 }),
+    );
+  });
+
   it('aborts an open dialog when responsive fires and does not reload', async () => {
     const fake = createFakeWindow();
     const h = createHarness();
@@ -312,5 +331,154 @@ describe('attachRendererHangMonitor', () => {
     expect(fake.listenerCount('unresponsive')).toBe(0);
     expect(fake.listenerCount('responsive')).toBe(0);
     expect(fake.reload).not.toHaveBeenCalled();
+  });
+});
+
+type CdpCommand = 'Debugger.enable' | 'Debugger.pause' | 'Debugger.resume' | 'Debugger.disable';
+type DebuggerMessage = (event: unknown, method: string, params: unknown) => void;
+
+/**
+ * Fake `webContents` with a CDP debugger. One command can be held pending
+ * (`hold`) and released later via `release()`, modelling a wedged renderer that
+ * replies after the deadline. `Debugger.pause` emits `Debugger.paused` when it
+ * completes, like V8 does.
+ */
+function createFakeDebuggerWindow(
+  options: { hold?: CdpCommand; devToolsOpen?: boolean; attachFails?: boolean } = {},
+) {
+  let attached = false;
+  const listeners = new Set<DebuggerMessage>();
+  const commands: string[] = [];
+  let release: () => void = () => {};
+  const detach = vi.fn(() => {
+    attached = false;
+  });
+  const emitPaused = () => {
+    for (const listener of [...listeners]) {
+      listener({}, 'Debugger.paused', {
+        callFrames: [
+          {
+            functionName: 'busyLoop',
+            url: 'app://renderer/main.js',
+            location: { lineNumber: 11, columnNumber: 2 },
+          },
+        ],
+      });
+    }
+  };
+  const dbg = {
+    isAttached: () => attached,
+    attach: vi.fn(() => {
+      if (options.attachFails) throw new Error('Cannot attach: renderer is gone');
+      attached = true;
+    }),
+    detach,
+    on: vi.fn((_event: string, listener: DebuggerMessage) => listeners.add(listener)),
+    removeListener: vi.fn((_event: string, listener: DebuggerMessage) =>
+      listeners.delete(listener),
+    ),
+    sendCommand: vi.fn((method: string) => {
+      commands.push(method);
+      const reply = () => {
+        if (method === 'Debugger.pause') emitPaused();
+      };
+      if (method === options.hold) {
+        return new Promise<object>((resolve) => {
+          release = () => {
+            reply();
+            resolve({});
+          };
+        });
+      }
+      queueMicrotask(reply);
+      return Promise.resolve({});
+    }),
+  };
+  const window = {
+    id: 9,
+    webContents: {
+      debugger: dbg,
+      isDevToolsOpened: () => options.devToolsOpen ?? false,
+      isDestroyed: () => false,
+    },
+    isDestroyed: () => false,
+  };
+  return {
+    window: window as unknown as BrowserWindow,
+    commands,
+    detach,
+    isAttached: () => attached,
+    listenerCount: () => listeners.size,
+    release: () => release(),
+  };
+}
+
+describe('captureRendererStack', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('pauses, reads the paused call frames, then resumes and detaches', async () => {
+    const fake = createFakeDebuggerWindow();
+    const frames = await captureRendererStack(fake.window, 3000);
+
+    expect(frames).toEqual([
+      { functionName: 'busyLoop', url: 'app://renderer/main.js', lineNumber: 12, columnNumber: 3 },
+    ]);
+    expect(fake.commands).toEqual([
+      'Debugger.enable',
+      'Debugger.pause',
+      'Debugger.resume',
+      'Debugger.disable',
+    ]);
+    expect(fake.detach).toHaveBeenCalledTimes(1);
+    expect(fake.isAttached()).toBe(false);
+    expect(fake.listenerCount()).toBe(0);
+  });
+
+  it('skips capture entirely while DevTools is open, even though no debugger is attached', async () => {
+    const fake = createFakeDebuggerWindow({ devToolsOpen: true });
+    const frames = await captureRendererStack(fake.window, 3000);
+
+    expect(frames).toBeNull();
+    expect(fake.commands).toEqual([]);
+    expect(fake.isAttached()).toBe(false);
+  });
+
+  it.each<CdpCommand>(['Debugger.enable', 'Debugger.pause', 'Debugger.resume', 'Debugger.disable'])(
+    'gives up at the deadline and detaches when %s stalls, and a late reply issues no further commands',
+    async (held) => {
+      const fake = createFakeDebuggerWindow({ hold: held });
+      const pending = captureRendererStack(fake.window, 3000);
+
+      await vi.advanceTimersByTimeAsync(2999);
+      expect(fake.isAttached()).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(pending).resolves.toBeNull();
+      expect(fake.commands.at(-1)).toBe(held);
+      expect(fake.detach).toHaveBeenCalledTimes(1);
+      expect(fake.isAttached()).toBe(false);
+      expect(fake.listenerCount()).toBe(0);
+
+      const issuedAtDeadline = [...fake.commands];
+      fake.release();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(fake.commands).toEqual(issuedAtDeadline);
+      expect(fake.detach).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('propagates an attach failure without issuing commands so the caller can log it', async () => {
+    const fake = createFakeDebuggerWindow({ attachFails: true });
+
+    await expect(captureRendererStack(fake.window, 3000)).rejects.toThrow(
+      'Cannot attach: renderer is gone',
+    );
+    expect(fake.commands).toEqual([]);
+    expect(fake.isAttached()).toBe(false);
   });
 });
