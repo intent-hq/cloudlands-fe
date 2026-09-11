@@ -142,7 +142,7 @@
     {/if}
   {:else if componentId === 'searchable-select'}
     <div data-catalog-rendered-state="default selected search long-content">
-      <SearchableSelect bind:value={searchableValue} options={wrapperOptions} />
+      <SearchableSelect bind:value={searchableValue} options={wrapperOptions} staticPosition />
     </div>
     <div data-catalog-rendered-state="disabled">
       <SearchableSelect options={wrapperOptions} disabled />
@@ -161,6 +161,7 @@
         bind:open={dropdownOpen}
         options={dropdownOptions}
         portal={false}
+        staticPosition
       />
     </div>
     <div data-catalog-rendered-state="disabled">

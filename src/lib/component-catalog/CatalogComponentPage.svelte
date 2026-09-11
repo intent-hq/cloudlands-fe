@@ -180,7 +180,7 @@
 
   :global(.playground) {
     display: block;
-    overflow: hidden;
+    overflow: visible;
     border: 1px solid hsl(var(--border));
     border-radius: var(--radius-medium);
   }
@@ -205,11 +205,12 @@
 
   .fixture-preview {
     overflow-x: auto;
+    border-radius: var(--radius-medium);
   }
 
   .section-preview {
     margin-top: 0.75rem;
-    overflow: hidden;
+    overflow: visible;
     border: 1px solid hsl(var(--border));
     border-radius: var(--radius-medium);
     padding: 0;

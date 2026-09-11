@@ -61,6 +61,21 @@ test.afterAll(async () => {
   await server?.close();
 });
 
+test('SearchableSelect playground keeps the last open option visible', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`${baseUrl}sandbox/searchable-select`, { waitUntil: 'networkidle' });
+  const preview = page.locator('[data-catalog-preview="searchable-select"]').first();
+  await preview.getByRole('combobox').first().click();
+  const lastOption = preview.getByRole('option').last();
+  await expect(lastOption).toBeInViewport({ ratio: 1 });
+  const unobscured = await lastOption.evaluate((option) => {
+    const rect = option.getBoundingClientRect();
+    return option.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.bottom - 1));
+  });
+  expect(unobscured).toBe(true);
+});
+
 for (const viewport of [
   { name: 'desktop', width: 1440, height: 1000 },
   { name: 'compact', width: 390, height: 844 },
