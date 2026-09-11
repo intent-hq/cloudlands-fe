@@ -4,11 +4,8 @@ import type { ComponentProps } from 'svelte';
 import { definePreview } from '$lib/component-catalog/preview-definition';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
-import {
-  mockInvoke,
-  registerMockIpcHandler,
-  unregisterMockIpcHandler,
-} from '$shared/ipc-mock-router';
+import { mockInvoke } from '$shared/ipc-mock-router';
+import { setupModelPickerPreviewHandler } from '../../../../test/catalog-preview-ipc';
 import {
   providerModelsLoaded,
   providerModelsCacheCleared,
@@ -69,11 +66,12 @@ function setupModels(populated: boolean) {
     for (const group of previousCollapsed)
       appStore.dispatch(setModelPickerGroupCollapsed(group, false));
     const epoch = selectProviderModelsClearEpoch.select(appStore.state);
+    const restoreModelHandlers: Array<() => void> = [];
     for (const providerId of ['codex', 'claude-code']) {
       const rows = populated
         ? models.map((model) => ({ ...model, value: `${providerId}-${model.value}` }))
         : [];
-      registerMockIpcHandler(`${providerId}:get-models`, () => ({ success: true, data: rows }));
+      restoreModelHandlers.push(setupModelPickerPreviewHandler(providerId, rows));
       appStore.dispatch(providerModelsLoaded(providerId, { models: rows }, epoch));
       if (providerId === 'codex') appStore.dispatch(setAvailableModels(rows, providerId));
     }
@@ -83,8 +81,7 @@ function setupModels(populated: boolean) {
       disposed = true;
       if (activeCleanup === cleanup) activeCleanup = undefined;
       if (bridge && originalInvoke) bridge.invoke = originalInvoke;
-      for (const providerId of ['codex', 'claude-code'])
-        unregisterMockIpcHandler(`${providerId}:get-models`);
+      for (const restoreHandler of restoreModelHandlers) restoreHandler();
       appStore.dispatch(providerModelsCacheCleared());
       const restoreEpoch = selectProviderModelsClearEpoch.select(appStore.state);
       for (const [providerId, entry] of Object.entries(previousCache))

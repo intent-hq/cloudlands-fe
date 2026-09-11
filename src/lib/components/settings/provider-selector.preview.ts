@@ -3,8 +3,7 @@
 import type { ComponentProps } from 'svelte';
 import { definePreview } from '$lib/component-catalog/preview-definition';
 import { store as appStore } from '$store/renderer/store';
-import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
-import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+import { setupProviderSelectorPreviewHandlers } from '../../../test/catalog-preview-ipc';
 import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
 import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
 import {
@@ -101,17 +100,9 @@ function setupProviderSelector() {
       unsloth: unavailable,
     },
   };
-  registerMockIpcHandler(PROVIDERS_CHANNELS.GET_AVAILABILITY, () => ({
-    success: true,
-    data: availability,
-  }));
-  registerMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS, () => ({
-    success: true,
-    data: { paths: {}, secondaryPaths: {} },
-  }));
+  const restoreHandlers = setupProviderSelectorPreviewHandlers(availability);
   return () => {
-    unregisterMockIpcHandler(PROVIDERS_CHANNELS.GET_AVAILABILITY);
-    unregisterMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS);
+    restoreHandlers();
     restoreProviders();
   };
 }
