@@ -14,9 +14,18 @@
 // `isSessionRunning` / `isAgentActivelyWorking` (or another activity
 // predicate), never `getAvatarState*(…) === '<literal>'`. Display mappings
 // (glow colour, sort rank, label branch) may compare and are recorded in
-// `ALLOWLIST` with a one-line rationale. Every comparison site in production
-// source must be allowlisted, and a `gate` entry is refused: it is migration
-// debt that must move to an activity predicate in a follow-up.
+// `ALLOWLIST` as `kind: 'display'`. A comparison that decides whether
+// something is shown / included is `kind: 'gate'`: pre-existing gates are
+// recorded as migration debt with a `followUp` naming the predicate to move
+// to, and the number of gate entries is ratcheted by `GATE_DEBT_CEILING` —
+// lower it as gates migrate, never raise it. New gates are not accepted; this
+// test does not change any caller's behaviour.
+//
+// Site identity: one allowlist entry covers exactly one comparison site —
+// `path` + the whitespace-normalised `comparison` text, plus a `context`
+// substring of the line when the same comparison appears more than once in a
+// file. A second identical comparison elsewhere in the file, or a new
+// comparison added to an already-allowlisted line, therefore fails.
 //
 // Detection is regex plus bracket-balanced source inspection, not a type
 // checker:
@@ -37,7 +46,15 @@
 //  - Limits: cross-file flow through `string`/untyped parameters is caught only
 //    by the ladder-only-literal rule; destructured bindings, `.includes(…)`,
 //    `Set.has(…)`, lookup tables, and comparisons against a variable holding a
-//    literal are not detected.
+//    literal are not detected. Selector calls are matched by their canonical
+//    names, so an aliased import (`import { getAvatarState as x }`) is not
+//    followed. A wrapper without an explicit `: AvatarState` return annotation
+//    (`function stateOf(s) { return getAvatarStateForSession(s); }`) is not
+//    tracked, and even a recognised typed wrapper's result assigned to an
+//    unannotated variable is not tracked transitively. Reassignment
+//    (`row.state = …`), parenthesised/cast operands, and member access on the
+//    literal's opposite side are only partially covered; comments and strings
+//    are not stripped before matching.
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -53,128 +70,203 @@ const EXCLUDED_DIRECTORIES = new Set(['__tests__', 'src/routes/sandbox']);
 type SiteKind = 'display' | 'gate';
 
 interface AllowlistEntry {
-  /** `<path>#<anchor>` — the anchor must appear on every covered comparison line. */
-  site: `${string}#${string}`;
+  path: string;
+  /** Whitespace-normalised comparison text exactly as the scanner reports it. */
+  comparison: string;
+  /** Substring of the site's line; required when `comparison` repeats within `path`. */
+  context?: string;
   kind: SiteKind;
   rationale: string;
+  /** `gate` only: the activity predicate the site must migrate to. */
+  followUp?: string;
 }
+
+/** Number of `kind: 'gate'` entries accepted as recorded debt. Lower it, never raise it. */
+const GATE_DEBT_CEILING = 3;
+const GATE_FOLLOW_UP = /\bisSessionRunning\b|\bisAgentActivelyWorking\b/;
+const HOVER_CARD_GATE_FOLLOW_UP =
+  'Decide row inclusion from getAgentAttentionRequest plus an activity predicate ' +
+  '(isSessionRunning / isAgentActivelyWorking); keep ladder equality for row copy only.';
+
+const AGENT_AVATAR_WITH_STATE =
+  'src/features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
+const AVATAR_STATE_LABEL = 'src/features/agent/components/agent-avatar/avatar-state-label.ts';
+const AGENT_CARD = 'src/lib/components/chat/AgentCard.svelte';
+const MULTI_SELECT_SIDEBAR = 'src/lib/components/workspace/MultiSelectTabbedSidebar.svelte';
+const WORKSPACE_HOVER_CARD = 'src/lib/components/workspace/WorkspaceHoverCard.svelte';
+const SIDEBAR_LAUNCHER_PREVIEW = 'src/lib/components/workspace/utils/sidebar-launcher-preview.ts';
 
 const ALLOWLIST: readonly AllowlistEntry[] = [
   {
-    site: "src/features/agent/components/agent-avatar/AgentAvatarWithState.svelte#state === 'unread'",
+    path: AGENT_AVATAR_WITH_STATE,
+    comparison: "state === 'unread'",
     kind: 'display',
     rationale: 'Renders the unread dot indicator for that one state; nothing is hidden.',
   },
   {
-    site: 'src/features/agent/components/agent-avatar/avatar-state-label.ts#switch (state)',
+    path: AVATAR_STATE_LABEL,
+    comparison: 'switch (state)',
     kind: 'display',
     rationale: 'Exhaustive accessible-label lookup covering every ladder state.',
   },
   {
-    site: "src/lib/components/chat/AgentCard.svelte#avatarState === 'running'",
+    path: AGENT_CARD,
+    comparison: "avatarState === 'running'",
     kind: 'display',
-    rationale: 'Glow class for live states; the card itself is always rendered.',
+    rationale: 'Active glow class; the card itself is always rendered.',
   },
   {
-    site: "src/lib/components/chat/AgentCard.svelte#avatarState === 'failed'",
+    path: AGENT_CARD,
+    comparison: "avatarState === 'responding'",
+    kind: 'display',
+    rationale: 'Active glow class for the declared-but-never-returned responding state.',
+  },
+  {
+    path: AGENT_CARD,
+    comparison: "avatarState === 'failed'",
     kind: 'display',
     rationale: 'Red shadow class for the failed state.',
   },
   {
-    site: "src/lib/components/chat/AgentCard.svelte#avatarState === 'needs-permission'",
+    path: AGENT_CARD,
+    comparison: "avatarState === 'needs-permission'",
     kind: 'display',
     rationale: 'Amber shadow class for the needs-permission state.',
   },
   {
-    site: "src/lib/components/chat/AgentCard.svelte#avatarState === 'attention-discussion'",
+    path: AGENT_CARD,
+    comparison: "avatarState === 'attention-discussion'",
     kind: 'display',
     rationale: 'Amber shadow class for the attention-discussion state.',
   },
   {
-    site: "src/lib/components/chat/AgentCard.svelte#avatarState === 'attention-blocker'",
+    path: AGENT_CARD,
+    comparison: "avatarState === 'attention-blocker'",
     kind: 'display',
     rationale: 'Red shadow class for the attention-blocker state.',
   },
   {
-    site: "src/lib/components/chat/AgentCard.svelte#avatarState === 'waiting'",
+    path: AGENT_CARD,
+    comparison: "avatarState === 'waiting'",
     kind: 'display',
     rationale: 'Amber shadow class for the waiting state.',
   },
   {
-    site: "src/lib/components/workspace/MultiSelectTabbedSidebar.svelte#state === 'failed'",
+    path: MULTI_SELECT_SIDEBAR,
+    comparison: "state === 'failed'",
     kind: 'display',
     rationale: 'Launcher status tone (danger) for the failed state.',
   },
   {
-    site: "src/lib/components/workspace/MultiSelectTabbedSidebar.svelte#state === 'question'",
+    path: MULTI_SELECT_SIDEBAR,
+    comparison: "state === 'question'",
     kind: 'display',
     rationale: 'Launcher status tone (warning) for user-attention states.',
   },
   {
-    site: "src/lib/components/workspace/MultiSelectTabbedSidebar.svelte#state === 'needs-permission'",
+    path: MULTI_SELECT_SIDEBAR,
+    comparison: "state === 'needs-permission'",
     kind: 'display',
     rationale: 'Launcher status tone (warning) for user-attention states.',
   },
   {
-    site: "src/lib/components/workspace/MultiSelectTabbedSidebar.svelte#state === 'attention-blocker'",
+    path: MULTI_SELECT_SIDEBAR,
+    comparison: "state === 'attention-blocker'",
     kind: 'display',
     rationale: 'Launcher status tone (warning) for user-attention states.',
   },
   {
-    site: "src/lib/components/workspace/MultiSelectTabbedSidebar.svelte#state === 'attention-discussion'",
+    path: MULTI_SELECT_SIDEBAR,
+    comparison: "state === 'attention-discussion'",
     kind: 'display',
     rationale: 'Launcher status tone (warning) for user-attention states.',
   },
   {
-    site: "src/lib/components/workspace/MultiSelectTabbedSidebar.svelte#state === 'running'",
+    path: MULTI_SELECT_SIDEBAR,
+    comparison: "state === 'running'",
     kind: 'display',
-    rationale: 'Launcher status tone (success) for live states; membership is decided elsewhere.',
+    rationale: 'Launcher status tone (success); launcher membership is decided elsewhere.',
   },
   {
-    site: "src/lib/components/workspace/WorkspaceHoverCard.svelte#canonicalState === 'question'",
+    path: MULTI_SELECT_SIDEBAR,
+    comparison: "state === 'responding'",
     kind: 'display',
-    rationale: 'Selects the question row copy/meta; the row is emitted for every state.',
+    rationale: 'Launcher status tone (success) for the declared-but-never-returned state.',
   },
   {
-    site: "src/lib/components/workspace/WorkspaceHoverCard.svelte#canonicalState === 'attention-discussion'",
+    path: WORKSPACE_HOVER_CARD,
+    comparison: "canonicalState === 'question'",
+    context: '? sessionPendingQuestions',
     kind: 'display',
-    rationale: 'Selects the discussion row copy; the row is emitted for every state.',
+    rationale: 'Loads pending-question metadata for the row copy; does not affect inclusion.',
   },
   {
-    site: "src/lib/components/workspace/WorkspaceHoverCard.svelte#canonicalState === 'attention-blocker'",
-    kind: 'display',
-    rationale: 'Selects the blocker row copy; the row is emitted for every state.',
+    path: WORKSPACE_HOVER_CARD,
+    comparison: "canonicalState === 'question'",
+    context: 'if (canonicalState',
+    kind: 'gate',
+    rationale:
+      'Picks the attention row group; without this branch a question session that is neither ' +
+      'unread nor active falls through to the final `return null` and is dropped from the card.',
+    followUp: HOVER_CARD_GATE_FOLLOW_UP,
   },
   {
-    site: "src/lib/components/workspace/utils/sidebar-launcher-preview.ts#state === 'failed'",
+    path: WORKSPACE_HOVER_CARD,
+    comparison: "canonicalState === 'attention-discussion'",
+    kind: 'gate',
+    rationale:
+      'Picks the attention row group; the branch decides inclusion versus the final `return null`.',
+    followUp: HOVER_CARD_GATE_FOLLOW_UP,
+  },
+  {
+    path: WORKSPACE_HOVER_CARD,
+    comparison: "canonicalState === 'attention-blocker'",
+    kind: 'gate',
+    rationale:
+      'Picks the attention row group; the branch decides inclusion versus the final `return null`.',
+    followUp: HOVER_CARD_GATE_FOLLOW_UP,
+  },
+  {
+    path: SIDEBAR_LAUNCHER_PREVIEW,
+    comparison: "state === 'failed'",
     kind: 'display',
     rationale: 'Launcher ordering rank (3) for the failed state.',
   },
   {
-    site: "src/lib/components/workspace/utils/sidebar-launcher-preview.ts#state === 'question'",
+    path: SIDEBAR_LAUNCHER_PREVIEW,
+    comparison: "state === 'question'",
     kind: 'display',
     rationale: 'Launcher ordering rank (2) for user-attention states.',
   },
   {
-    site: "src/lib/components/workspace/utils/sidebar-launcher-preview.ts#state === 'needs-permission'",
+    path: SIDEBAR_LAUNCHER_PREVIEW,
+    comparison: "state === 'needs-permission'",
     kind: 'display',
     rationale: 'Launcher ordering rank (2) for user-attention states.',
   },
   {
-    site: "src/lib/components/workspace/utils/sidebar-launcher-preview.ts#state === 'attention-blocker'",
+    path: SIDEBAR_LAUNCHER_PREVIEW,
+    comparison: "state === 'attention-blocker'",
     kind: 'display',
     rationale: 'Launcher ordering rank (2) for user-attention states.',
   },
   {
-    site: "src/lib/components/workspace/utils/sidebar-launcher-preview.ts#state === 'attention-discussion'",
+    path: SIDEBAR_LAUNCHER_PREVIEW,
+    comparison: "state === 'attention-discussion'",
     kind: 'display',
     rationale: 'Launcher ordering rank (2) for user-attention states.',
   },
   {
-    site: "src/lib/components/workspace/utils/sidebar-launcher-preview.ts#state === 'running'",
+    path: SIDEBAR_LAUNCHER_PREVIEW,
+    comparison: "state === 'running'",
     kind: 'display',
-    rationale:
-      'Launcher ordering rank (1) for live states; the running flag is computed separately.',
+    rationale: 'Launcher ordering rank (1); the running flag is computed separately.',
+  },
+  {
+    path: SIDEBAR_LAUNCHER_PREVIEW,
+    comparison: "state === 'responding'",
+    kind: 'display',
+    rationale: 'Launcher ordering rank (1) for the declared-but-never-returned responding state.',
   },
 ];
 
@@ -286,19 +378,17 @@ function normalizeText(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
-function collectComparisons(path: string, literals: string[]): ComparisonHit[] {
-  const text = source(path);
+function collectComparisonsIn(path: string, text: string, literals: string[]): ComparisonHit[] {
   const literal = literals.map(escapeRegExp).join('|');
   const ladderOnlyLiteral = LADDER_ONLY_LITERALS.map(escapeRegExp).join('|');
-  const hits = new Map<string, ComparisonHit>();
+  const hits = new Map<number, ComparisonHit>();
   const record = (index: number, matched: string) => {
-    const hit = {
+    hits.set(index, {
       path,
       line: lineNumberAt(text, index),
       text: normalizeText(matched),
       lineText: lineTextAt(text, index),
-    };
-    hits.set(`${hit.line}:${hit.text}`, hit);
+    });
   };
 
   for (const identifier of ladderIdentifiers(text, ladderOnlyLiteral)) {
@@ -331,26 +421,60 @@ function collectProductionComparisons(): ComparisonHit[] {
   const literals = readAvatarStateLiterals();
   return productionSourceFiles()
     .sort()
-    .flatMap((path) => collectComparisons(path, literals));
+    .flatMap((path) => collectComparisonsIn(path, source(path), literals));
 }
 
-function splitSite(site: string): { path: string; anchor: string } {
-  const separator = site.indexOf('#');
-  return { path: site.slice(0, separator), anchor: site.slice(separator + 1) };
+function matches(entry: AllowlistEntry, hit: ComparisonHit): boolean {
+  return (
+    entry.path === hit.path &&
+    entry.comparison === hit.text &&
+    (entry.context === undefined || hit.lineText.includes(entry.context))
+  );
 }
 
-function covers(entry: AllowlistEntry, hit: ComparisonHit): boolean {
-  const { path, anchor } = splitSite(entry.site);
-  return path === hit.path && (hit.lineText.includes(anchor) || hit.text.includes(anchor));
+interface Reconciliation {
+  /** Hits no entry claims. */
+  unlisted: ComparisonHit[];
+  /** Hits more than one entry claims. */
+  ambiguous: ComparisonHit[];
+  /** Entries matching no hit. */
+  stale: AllowlistEntry[];
+  /** Entries matching more than one hit. */
+  duplicated: { entry: AllowlistEntry; hits: ComparisonHit[] }[];
+}
+
+function reconcile(hits: ComparisonHit[], allowlist: readonly AllowlistEntry[]): Reconciliation {
+  const result: Reconciliation = { unlisted: [], ambiguous: [], stale: [], duplicated: [] };
+  for (const hit of hits) {
+    const owners = allowlist.filter((entry) => matches(entry, hit));
+    if (owners.length === 0) result.unlisted.push(hit);
+    else if (owners.length > 1) result.ambiguous.push(hit);
+  }
+  for (const entry of allowlist) {
+    const covered = hits.filter((hit) => matches(entry, hit));
+    if (covered.length === 0) result.stale.push(entry);
+    else if (covered.length > 1) result.duplicated.push({ entry, hits: covered });
+  }
+  return result;
 }
 
 function describeHit(hit: ComparisonHit): string {
   return `${hit.path}:${hit.line} — ${hit.text}`;
 }
 
+function describeEntry(entry: AllowlistEntry): string {
+  return `${entry.path}#${entry.comparison}${entry.context ? ` @ ${entry.context}` : ''}`;
+}
+
+function describeDuplicate({ entry, hits }: Reconciliation['duplicated'][number]): string {
+  return `${describeEntry(entry)} covers one site but matched ${hits.length}:\n  ${hits
+    .map(describeHit)
+    .join('\n  ')}`;
+}
+
 const GUIDANCE =
   `Visibility gates must use isSessionRunning / isAgentActivelyWorking from ${LADDER_PATH}; ` +
-  `display mappings need an allowlist entry with a rationale in ${INVENTORY_PATH}.`;
+  `display mappings need their own allowlist entry with a rationale in ${INVENTORY_PATH}.`;
 
 describe('avatar-state comparison inventory', () => {
   it('reads the ladder literals from the ladder module', () => {
@@ -362,32 +486,119 @@ describe('avatar-state comparison inventory', () => {
   it('keeps every production comparison against a ladder literal on the audited allowlist', () => {
     const hits = collectProductionComparisons();
     expect(hits.length).toBeGreaterThan(0);
-    const unlisted = hits.filter((hit) => !ALLOWLIST.some((entry) => covers(entry, hit)));
+    const { unlisted, ambiguous, duplicated } = reconcile(hits, ALLOWLIST);
     expect(
       unlisted.map(describeHit),
       `Unaudited comparison of an AvatarState ladder result to a literal:\n` +
         `${unlisted.map(describeHit).join('\n')}\n${GUIDANCE}`,
     ).toEqual([]);
+    expect(
+      duplicated.map(describeDuplicate),
+      `An allowlist entry covers exactly one site; add an entry (with context) per site in ` +
+        `${INVENTORY_PATH}:\n${duplicated.map(describeDuplicate).join('\n')}\n${GUIDANCE}`,
+    ).toEqual([]);
+    expect(
+      ambiguous.map(describeHit),
+      `Comparison claimed by more than one allowlist entry; tighten context in ${INVENTORY_PATH}:\n` +
+        ambiguous.map(describeHit).join('\n'),
+    ).toEqual([]);
   });
 
-  it('keeps every allowlist entry resolving to at least one comparison site', () => {
-    const hits = collectProductionComparisons();
-    const stale = ALLOWLIST.filter((entry) => !hits.some((hit) => covers(entry, hit)));
+  it('keeps every allowlist entry resolving to exactly one comparison site', () => {
+    const { stale } = reconcile(collectProductionComparisons(), ALLOWLIST);
     expect(
-      stale.map((entry) => entry.site),
+      stale.map(describeEntry),
       `Stale allowlist entries in ${INVENTORY_PATH} (no matching comparison in production source):\n` +
-        stale.map((entry) => entry.site).join('\n'),
+        stale.map(describeEntry).join('\n'),
     ).toEqual([]);
-    expect(new Set(ALLOWLIST.map((entry) => entry.site)).size).toBe(ALLOWLIST.length);
+    expect(new Set(ALLOWLIST.map(describeEntry)).size).toBe(ALLOWLIST.length);
   });
 
-  it('records a rationale for every entry and no visibility gate on ladder equality', () => {
-    for (const entry of ALLOWLIST) expect(entry.rationale.trim(), entry.site).not.toBe('');
-    const gates = ALLOWLIST.filter((entry) => entry.kind === 'gate').map((entry) => entry.site);
+  it('records a rationale for every entry and ratchets ladder-equality gate debt', () => {
+    for (const entry of ALLOWLIST)
+      expect(entry.rationale.trim(), describeEntry(entry)).not.toBe('');
+    const gates = ALLOWLIST.filter((entry) => entry.kind === 'gate');
+    for (const gate of gates) {
+      expect(
+        gate.followUp ?? '',
+        `${describeEntry(gate)} is a gate and must name the activity predicate to migrate to`,
+      ).toMatch(GATE_FOLLOW_UP);
+    }
     expect(
-      gates,
-      `Gate entries compare a ladder result to decide visibility/inclusion; migrate them to ` +
-        `isSessionRunning / isAgentActivelyWorking (${LADDER_PATH}):\n${gates.join('\n')}`,
-    ).toEqual([]);
+      gates.length,
+      `Gate entries compare a ladder result to decide visibility/inclusion. Do not add new ones; ` +
+        `migrate the recorded debt to isSessionRunning / isAgentActivelyWorking (${LADDER_PATH}) ` +
+        `and lower GATE_DEBT_CEILING:\n${gates.map(describeEntry).join('\n')}`,
+    ).toBeLessThanOrEqual(GATE_DEBT_CEILING);
+  });
+
+  describe('regression fixtures (in-memory edits of real production source)', () => {
+    const literals = readAvatarStateLiterals();
+    const GLOW_LINE = "if (avatarState === 'running' || avatarState === 'responding')";
+    const FAILED_GLOW_LINE =
+      "if (avatarState === 'failed') return 'shadow shadow-red-500 shadow-sm';";
+    const MENTION_AVATAR = 'src/lib/components/chat/input/MentionAgentAvatar.svelte';
+
+    function reconcileFixture(path: string, text: string): Reconciliation {
+      return reconcile(collectComparisonsIn(path, text, literals), ALLOWLIST);
+    }
+
+    function agentCardSource(): string {
+      const text = source(AGENT_CARD);
+      expect(text).toContain(GLOW_LINE);
+      expect(text).toContain(FAILED_GLOW_LINE);
+      return text;
+    }
+
+    it('fails a duplicate ladder-equality gate added elsewhere in an allowlisted file', () => {
+      const comparison = "avatarState === 'running'";
+      const injectedLine = `if (${comparison}) return;`;
+      const text = agentCardSource().replace('</script>', `  ${injectedLine}\n</script>`);
+      const { unlisted, duplicated } = reconcileFixture(AGENT_CARD, text);
+      expect(unlisted).toEqual([]);
+      const duplicate = duplicated.find(({ entry }) => entry.comparison === comparison);
+      expect(duplicate?.hits.map((hit) => hit.lineText.trim())).toEqual(
+        expect.arrayContaining([expect.stringContaining(GLOW_LINE), injectedLine]),
+      );
+      expect(duplicate?.hits).toHaveLength(2);
+      expect(duplicated.map(describeDuplicate).join('\n')).toMatch(
+        new RegExp(`${escapeRegExp(AGENT_CARD)}:\\d+ — ${escapeRegExp(comparison)}`),
+      );
+    });
+
+    it('fails an extra comparison added to an already-allowlisted line', () => {
+      const text = agentCardSource().replace(
+        GLOW_LINE,
+        "if (avatarState === 'running' || avatarState === 'responding' || avatarState === 'waiting')",
+      );
+      const { duplicated } = reconcileFixture(AGENT_CARD, text);
+      const duplicate = duplicated.find(
+        ({ entry }) => entry.comparison === "avatarState === 'waiting'",
+      );
+      expect(duplicate?.hits).toHaveLength(2);
+      expect(new Set(duplicate?.hits.map((hit) => hit.line)).size).toBe(2);
+    });
+
+    it('fails a direct visibility gate injected into a non-allowlisted component', () => {
+      const text = source(MENTION_AVATAR).replace(
+        '</script>',
+        "  if (getAvatarStateForSession(session) !== 'running') return;\n</script>",
+      );
+      const { unlisted } = reconcileFixture(MENTION_AVATAR, text);
+      expect(unlisted.map((hit) => hit.text)).toEqual([
+        "getAvatarStateForSession(session) !== 'running'",
+      ]);
+      expect(unlisted.map(describeHit).join('\n')).toMatch(
+        new RegExp(`^${escapeRegExp(MENTION_AVATAR)}:\\d+ — `),
+      );
+    });
+
+    it('reports a stale entry when an allowlisted comparison is removed', () => {
+      const text = agentCardSource().replace(FAILED_GLOW_LINE, '');
+      const { stale } = reconcileFixture(AGENT_CARD, text);
+      expect(stale.filter((entry) => entry.path === AGENT_CARD).map(describeEntry)).toEqual([
+        `${AGENT_CARD}#avatarState === 'failed'`,
+      ]);
+    });
   });
 });
