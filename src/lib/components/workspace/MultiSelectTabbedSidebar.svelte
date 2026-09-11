@@ -124,6 +124,7 @@
     type TabId,
   } from './multi-select-sidebar-tabs';
   import { getFixedContainingBlockOffset } from './utils/fixed-containing-block';
+  import { applyContentReveal } from './utils/sidebar-card-morph';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -427,22 +428,7 @@
     const fixedContainingBlockOffset = getFixedContainingBlockOffset(node);
     const fixedLeft = cardRect.left - fixedContainingBlockOffset.x;
     const fixedTop = cardRect.top - fixedContainingBlockOffset.y;
-    // Reveal is written onto the content node itself; inherited custom properties
-    // on the shell would restyle the whole card subtree every frame.
     const content = node.querySelector<HTMLElement>('[data-sidebar-expanded-content]');
-    const revealContent = (t: number) => {
-      if (!content) return;
-      const contentProgress = Math.max(0, Math.min(1, (t - 0.72) / 0.28));
-      if (contentProgress >= 1) {
-        content.style.removeProperty('opacity');
-        content.style.removeProperty('transform');
-        content.style.removeProperty('will-change');
-        return;
-      }
-      content.style.opacity = `${contentProgress}`;
-      content.style.transform = `translateY(${(1 - contentProgress) * 4}px)`;
-      content.style.willChange = 'opacity, transform';
-    };
 
     return {
       duration: 300,
@@ -451,7 +437,7 @@
         const shellInverse = 1 - shellProgress;
         return `position: fixed; left: ${fixedLeft}px; top: ${fixedTop}px; width: ${cardRect.width}px; height: ${cardRect.height}px; transform-origin: top left; transform: translate(${shellInverse * translateX}px, ${shellInverse * translateY}px) scale(${scaleX + shellProgress * (1 - scaleX)}, ${scaleY + shellProgress * (1 - scaleY)}); background-color: hsl(var(--sidebar)); will-change: transform;`;
       },
-      tick: revealContent,
+      tick: (t) => applyContentReveal(content, t),
     };
   }
 

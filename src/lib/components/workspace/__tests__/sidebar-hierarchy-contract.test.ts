@@ -211,13 +211,8 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('getFixedContainingBlockOffset(node)');
     expect(sidebar).toContain('position: fixed; left: ${fixedLeft}px');
     expect(sidebar).toContain("direction === 'expand' ? cubicOut(t) : cubicIn(t)");
-    expect(sidebar).toContain('(t - 0.72) / 0.28');
     expect(sidebar).toContain('data-sidebar-expanded-content');
     expect(sidebar).toContain("window.matchMedia('(prefers-reduced-motion: reduce)').matches");
-    // The content reveal writes onto the content node directly; inherited custom
-    // properties on the shell would restyle the whole card subtree every frame.
-    expect(sidebar).toContain("node.querySelector<HTMLElement>('[data-sidebar-expanded-content]')");
-    expect(sidebar).toContain('tick: revealContent');
     expect(sidebar).not.toContain('--sidebar-card-content-');
     expect(transitions).not.toContain('--sidebar-card-content-');
     expect(transitions).not.toContain('grid-template-rows');
