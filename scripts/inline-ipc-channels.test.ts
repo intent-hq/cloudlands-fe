@@ -1,17 +1,18 @@
 /**
  * Preload generator drift tests.
  *
- * `src/preload/index.ts` is regenerated from `src/preload/index.template.ts` by
- * scripts/inline-ipc-channels.ts on every `npm run dev` and every `npm run
- * build`. Anything hand-written into index.ts is therefore deleted before
- * packaging — it works in whatever the developer was running at the time and is
- * absent from every shipped artifact.
+ * `src/preload/index.ts` is untracked and generated from
+ * `src/preload/index.template.ts` by scripts/inline-ipc-channels.ts on every
+ * `npm run dev` and every `npm run build`. Anything hand-written into index.ts
+ * is therefore deleted before packaging — it works in whatever the developer
+ * was running at the time and is absent from every shipped artifact.
  *
  * That trap ate the `getIpcListenerCounts` diagnostic bridge
  * (intent-hq/monorepo#2124), which left the renderer retention fingerprint
  * reporting `ipcBackendListeners: -1` in every real build. These tests keep the
- * generator's guard honest and keep the committed output in sync with the
- * template.
+ * generator's guard honest. They never read the generated file from the repo:
+ * every baseline is produced by running the generator into a temp fixture, so
+ * the suite passes whether or not src/preload/index.ts exists locally.
  */
 // @verify-changed-triggers: src/preload/index.ts, src/preload/index.template.ts, src/shared/ipc-registry.ts, scripts/inline-ipc-channels.ts
 
@@ -19,15 +20,13 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
 const scriptPath = join(repoRoot, 'scripts/inline-ipc-channels.ts');
 
 const realTemplatePath = join(repoRoot, 'src/preload/index.template.ts');
-const realIndexPath = join(repoRoot, 'src/preload/index.ts');
 const realTemplate = readFileSync(realTemplatePath, 'utf-8');
-const realIndex = readFileSync(realIndexPath, 'utf-8');
 
 const fixtureRoots: string[] = [];
 
@@ -79,6 +78,18 @@ function withHandEdit(index: string): string {
 }
 
 describe('preload generator drift guard', () => {
+  // The baseline every drift case hand-edits: a fresh regeneration of the real
+  // template, produced in a fixture rather than read from the repo (the
+  // generated file is untracked and may be absent).
+  let baselineIndex: string;
+
+  beforeAll(() => {
+    const root = makeFixture(realTemplate);
+    const result = runGenerator(root);
+    if (result.status !== 0) throw new Error(`baseline regeneration failed:\n${result.output}`);
+    baselineIndex = generatedIndex(root);
+  });
+
   it('regenerates a template-only tree and exits 0', () => {
     const root = makeFixture(realTemplate);
     const result = runGenerator(root);
@@ -88,7 +99,7 @@ describe('preload generator drift guard', () => {
   });
 
   it('fails instead of silently deleting a hand edit made to the generated file', () => {
-    const root = makeFixture(realTemplate, withHandEdit(realIndex));
+    const root = makeFixture(realTemplate, withHandEdit(baselineIndex));
 
     const result = runGenerator(root);
 
@@ -103,10 +114,10 @@ describe('preload generator drift guard', () => {
     // A multiset comparison calls this "unchanged" and overwrites it in
     // silence — the same silent-discard failure the guard exists to stop.
     const moved = '  // Remove all listeners for a channel';
-    const index = realIndex
+    const index = baselineIndex
       .replace(`${moved}\n`, '')
       .replace('  // IPC once (listen once)', `${moved}\n  // IPC once (listen once)`);
-    expect(index, 'fixture must actually move a line').not.toBe(realIndex);
+    expect(index, 'fixture must actually move a line').not.toBe(baselineIndex);
     const root = makeFixture(realTemplate, index);
 
     const result = runGenerator(root);
@@ -124,7 +135,7 @@ describe('preload generator drift guard', () => {
       '  // IPC once (listen once)',
       '  // brand-new-template-line\n  // IPC once (listen once)',
     );
-    const root = makeFixture(template, realIndex);
+    const root = makeFixture(template, baselineIndex);
 
     const result = runGenerator(root);
 
@@ -133,7 +144,7 @@ describe('preload generator drift guard', () => {
   });
 
   it('discards hand edits only when --force is passed explicitly', () => {
-    const root = makeFixture(realTemplate, withHandEdit(realIndex));
+    const root = makeFixture(realTemplate, withHandEdit(baselineIndex));
 
     const result = runGenerator(root, '--force');
 
@@ -143,21 +154,7 @@ describe('preload generator drift guard', () => {
   });
 });
 
-describe('committed preload output is in sync with its template', () => {
-  it('src/preload/index.ts matches a fresh regeneration byte for byte', () => {
-    // Catches both directions of drift before it reaches main: a hand edit to
-    // index.ts (which the next build deletes) and a template change that was
-    // never regenerated (so reviewers read output that does not match the app).
-    const root = makeFixture(realTemplate, realIndex);
-    const result = runGenerator(root);
-
-    expect(result.status, result.output).toBe(0);
-    expect(
-      generatedIndex(root),
-      'src/preload/index.ts is stale or hand-edited — run `npm run generate:ipc-channels`',
-    ).toBe(realIndex);
-  });
-
+describe('preload template', () => {
   it('exposes getIpcListenerCounts from the template, not just the generated file', () => {
     // monorepo#2124: present only in index.ts meant `ipcBackendListeners` read
     // -1 in every packaged build.
