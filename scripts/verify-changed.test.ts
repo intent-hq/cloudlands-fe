@@ -354,6 +354,25 @@ describe('dependency freshness gate', () => {
     await runCli(['--dry-run', 'src/lib/example.ts'], root, stale.options);
     expect(stale.calls).toEqual([]);
   });
+
+  it('refuses with the remediation when the installed lockfile copy is unreadable', async () => {
+    const root = fixtureRoot({
+      'src/lib/example.ts': 'export const value = 1;',
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+    });
+    mkdirSync(join(root, 'node_modules', '.pnpm', 'lock.yaml'), { recursive: true });
+    const calls: string[] = [];
+    const options = {
+      log() {},
+      async runPlan() {
+        calls.push('runPlan');
+      },
+    };
+    await expect(runCli(['src/lib/example.ts'], root, options)).rejects.toThrow(
+      /could not be read \(EISDIR\).*pnpm install --frozen-lockfile/,
+    );
+    expect(calls).toEqual([]);
+  });
 });
 
 describe('expensive-check coordination', () => {

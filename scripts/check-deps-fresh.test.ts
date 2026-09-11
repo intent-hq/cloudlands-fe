@@ -58,6 +58,17 @@ describe('check-deps-fresh', () => {
     expect(result.reason).toContain(INSTALL_COMMAND);
     expect(result.reason).not.toContain('\n');
   });
+
+  it('reports an unreadable install with the remediation when the lockfile copy cannot be read', () => {
+    const root = fixtureRoot({ 'pnpm-lock.yaml': LOCKFILE });
+    mkdirSync(join(root, 'node_modules', '.pnpm', 'lock.yaml'), { recursive: true });
+    const result = checkDepsFresh(root);
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe('unreadable');
+    expect(result.reason).toContain('could not be read (EISDIR)');
+    expect(result.reason).toContain(INSTALL_COMMAND);
+    expect(result.reason).not.toContain('\n');
+  });
 });
 
 describe('check-deps-fresh CLI', () => {
@@ -97,6 +108,17 @@ describe('check-deps-fresh CLI', () => {
     expect(result.stdout).toBe('');
     expect(result.stderr.trimEnd().split('\n')).toEqual([
       `[deps:check] node_modules is missing (no node_modules/.pnpm/lock.yaml) — run: ${INSTALL_COMMAND}`,
+    ]);
+  });
+
+  it('exits 1 with a single prefixed stderr line when the lockfile copy is unreadable', () => {
+    const root = fixtureRoot({ 'pnpm-lock.yaml': LOCKFILE });
+    mkdirSync(join(root, 'node_modules', '.pnpm', 'lock.yaml'), { recursive: true });
+    const result = runCli(root);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr.trimEnd().split('\n')).toEqual([
+      `[deps:check] node_modules/.pnpm/lock.yaml could not be read (EISDIR) — run: ${INSTALL_COMMAND}`,
     ]);
   });
 });

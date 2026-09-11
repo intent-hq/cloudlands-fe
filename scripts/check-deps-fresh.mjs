@@ -8,26 +8,32 @@ export const INSTALL_COMMAND = 'pnpm install --frozen-lockfile';
 const LOCKFILE = 'pnpm-lock.yaml';
 const INSTALLED_LOCKFILE = join('node_modules', '.pnpm', 'lock.yaml');
 
-function readOptional(path) {
+function readInstalled(path) {
   try {
-    return readFileSync(path);
+    return { content: readFileSync(path), code: null };
   } catch (error) {
-    if (error?.code === 'ENOENT') return null;
-    throw error;
+    return { content: null, code: error?.code ?? 'UNKNOWN' };
   }
 }
 
 export function checkDepsFresh(root = REPO_ROOT) {
   const lockfile = readFileSync(join(root, LOCKFILE));
-  const installed = readOptional(join(root, INSTALLED_LOCKFILE));
-  if (installed === null) {
+  const installed = readInstalled(join(root, INSTALLED_LOCKFILE));
+  if (installed.code === 'ENOENT') {
     return {
       ok: false,
       status: 'missing',
       reason: `node_modules is missing (no ${INSTALLED_LOCKFILE}) — run: ${INSTALL_COMMAND}`,
     };
   }
-  if (!lockfile.equals(installed)) {
+  if (installed.code !== null) {
+    return {
+      ok: false,
+      status: 'unreadable',
+      reason: `${INSTALLED_LOCKFILE} could not be read (${installed.code}) — run: ${INSTALL_COMMAND}`,
+    };
+  }
+  if (!lockfile.equals(installed.content)) {
     return {
       ok: false,
       status: 'stale',
