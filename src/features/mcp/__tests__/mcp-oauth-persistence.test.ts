@@ -30,6 +30,7 @@ interface DiscoveryOverrides {
   authorizationResponseIssuerSupported?: boolean;
   tokenEndpointAuthMethods?: string[];
   registrationStatus?: number;
+  registrationClient?: Record<string, unknown>;
   includeChallengeMetadata?: boolean;
 }
 
@@ -71,7 +72,9 @@ function stubDiscovery(overrides: DiscoveryOverrides = {}): void {
       if (url === 'https://auth.example.com/register') {
         const status = overrides.registrationStatus ?? 201;
         return status === 201
-          ? Response.json({ client_id: 'intent-client' }, { status })
+          ? Response.json(overrides.registrationClient ?? { client_id: 'intent-client' }, {
+              status,
+            })
           : new Response(null, { status });
       }
       if (url === 'https://auth.example.com/token') {
@@ -363,6 +366,27 @@ describe('mcp-oauth ↔ daemon mcp.oauth.* (PROTOCOL.md §5.22)', () => {
       false,
     );
     expect(openExternalMock).not.toHaveBeenCalled();
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { label: 'missing', secret: undefined },
+    { label: 'empty', secret: '' },
+    { label: 'null', secret: null },
+    { label: 'non-string', secret: 42 },
+  ])('rejects a $label client_secret for client_secret_post before consent', async ({ secret }) => {
+    stubDiscovery({
+      tokenEndpointAuthMethods: ['client_secret_post'],
+      registrationClient: { client_id: 'intent-client', client_secret: secret },
+    });
+    openExternalMock.mockRejectedValueOnce(new Error('Unexpected browser launch'));
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    const result = await initiateMcpOAuth('srv-provider', 'https://mcp.example.com/mcp');
+
+    expect(result).toMatchObject({ success: false, error: expect.stringMatching(/registration/i) });
+    expect(openExternalMock).not.toHaveBeenCalled();
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/token'))).toBe(false);
     expect(requestMock).not.toHaveBeenCalled();
   });
 

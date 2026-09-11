@@ -221,8 +221,13 @@ async function registerClient(
   }
   if (!response.ok) throw new Error(`OAuth client registration failed (HTTP ${response.status}).`);
   const value = (await response.json()) as Partial<OAuthClient>;
-  if (!value.client_id)
+  if (
+    !value.client_id ||
+    (tokenEndpointAuthMethod === 'client_secret_post' &&
+      (typeof value.client_secret !== 'string' || !value.client_secret))
+  ) {
     throw new Error('The OAuth provider returned an invalid client registration.');
+  }
   return { client_id: value.client_id, client_secret: value.client_secret };
 }
 
