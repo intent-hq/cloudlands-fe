@@ -147,36 +147,39 @@ body {
 }
 
 /* Canonical type roles. Prefer these over physical Tailwind size utilities in new product UI. */
-.type-caption {
-  font-size: var(--text-caption-size);
-  line-height: var(--text-caption-line-height);
-  font-weight: var(--text-caption-weight);
-  letter-spacing: var(--text-caption-tracking);
-}
-.type-body {
-  font-size: var(--text-body-size);
-  line-height: var(--text-body-line-height);
-  font-weight: var(--text-body-weight);
-  letter-spacing: var(--text-body-tracking);
-}
-.type-title {
-  font-size: var(--text-title-size);
-  line-height: var(--text-title-line-height);
-  font-weight: var(--text-title-weight);
-  letter-spacing: var(--text-title-tracking);
-}
-.type-display {
-  font-size: var(--text-display-size);
-  line-height: var(--text-display-line-height);
-  font-weight: var(--text-display-weight);
-  letter-spacing: var(--text-display-tracking);
-}
-.type-code {
-  font-family: var(--font-code);
-  font-size: var(--text-code-size);
-  line-height: var(--text-code-line-height);
-  font-weight: var(--text-code-weight);
-  letter-spacing: var(--text-code-tracking);
+/* Components precede Tailwind utilities so explicit weight overrides win. */
+@layer components {
+  .type-caption {
+    font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+    font-weight: var(--text-caption-weight);
+    letter-spacing: var(--text-caption-tracking);
+  }
+  .type-body {
+    font-size: var(--text-body-size);
+    line-height: var(--text-body-line-height);
+    font-weight: var(--text-body-weight);
+    letter-spacing: var(--text-body-tracking);
+  }
+  .type-title {
+    font-size: var(--text-title-size);
+    line-height: var(--text-title-line-height);
+    font-weight: var(--text-title-weight);
+    letter-spacing: var(--text-title-tracking);
+  }
+  .type-display {
+    font-size: var(--text-display-size);
+    line-height: var(--text-display-line-height);
+    font-weight: var(--text-display-weight);
+    letter-spacing: var(--text-display-tracking);
+  }
+  .type-code {
+    font-family: var(--font-code);
+    font-size: var(--text-code-size);
+    line-height: var(--text-code-line-height);
+    font-weight: var(--text-code-weight);
+    letter-spacing: var(--text-code-tracking);
+  }
 }
 
 /* Compatibility utilities resolve to the canonical caption/body roles. */
