@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.148.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.147.1...v2.148.0) (2026-09-11)
+
+
+### 🚀 Features
+
+* **onboarding:** launch Claude login from the terminal drawer ([#2307](https://github.com/intent-hq/cloudlands-fe/issues/2307)) ([cdbc6ff](https://github.com/intent-hq/cloudlands-fe/commit/cdbc6ffcc75553bdac5bfb38f383368a028bcc75))
+
 ## [2.147.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.147.0...v2.147.1) (2026-09-11)
 
 
