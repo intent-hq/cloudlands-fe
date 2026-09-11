@@ -238,21 +238,27 @@ function readCallee(node) {
   return ts.isPropertyAccessExpression(callee) && READ_FUNCTIONS.has(callee.name.text);
 }
 
-// The `cwd` initializers of any object-literal option argument after the
-// target. Only that property names a location a read resolves against
-// (`globSync('*.ts', { cwd })`); other options and callbacks are not inspected,
-// so a callback body that mentions `process.cwd()` does not make a read.
-function cwdOptions(node) {
+// The object literals an option argument may denote: the literal itself, or
+// every literal a local name is bound to (`const opts = { cwd }`).
+function optionObjects(argument, bindings) {
+  if (ts.isObjectLiteralExpression(argument)) return [argument];
+  if (!ts.isIdentifier(argument)) return [];
+  return (bindings.get(argument.text) ?? []).filter(ts.isObjectLiteralExpression);
+}
+
+// The `cwd` values of any option object after the target, written inline or
+// through a local binding, as `cwd: expr` or shorthand `{ cwd }`. Only that
+// property names a location a read resolves against (`globSync('*.ts', opts)`);
+// other options and callbacks are not inspected, so a callback body that
+// mentions `process.cwd()` does not make a read.
+function cwdOptions(node, bindings) {
   const locations = [];
   for (const argument of node.arguments.slice(1)) {
-    if (!ts.isObjectLiteralExpression(argument)) continue;
-    for (const property of argument.properties) {
-      if (
-        ts.isPropertyAssignment(property) &&
-        ts.isIdentifier(property.name) &&
-        property.name.text === 'cwd'
-      ) {
-        locations.push(property.initializer);
+    for (const object of optionObjects(argument, bindings)) {
+      for (const property of object.properties) {
+        if (!ts.isIdentifier(property.name) || property.name.text !== 'cwd') continue;
+        if (ts.isPropertyAssignment(property)) locations.push(property.initializer);
+        else if (ts.isShorthandPropertyAssignment(property)) locations.push(property.name);
       }
     }
   }
@@ -261,38 +267,48 @@ function cwdOptions(node) {
 
 // A read location is argument zero, or a `cwd` option; either counts when it is
 // a bare repo literal or derives from a root.
-function readsRootArgument(node, tainted) {
-  const locations = node.arguments[0] ? [node.arguments[0], ...cwdOptions(node)] : [];
+function readsRootArgument(node, tainted, bindings) {
+  const locations = node.arguments[0] ? [node.arguments[0], ...cwdOptions(node, bindings)] : [];
   return locations.some((location) => isRepoLiteral(location) || containsRoot(location, tainted));
 }
 
-// Names bound to expressions that derive from a repository root: variables and
-// functions whose initializer, assigned value, or body mentions a root source
-// or another tainted name. Iterates to a fixpoint so order does not matter.
-function collectTaintedNames(sourceFile) {
-  const bindings = [];
+// Every expression a local name is bound to: variable initializers, function
+// bodies, and plain `name = expr` assignments.
+function collectBindings(sourceFile) {
+  const bindings = new Map();
+  const bind = (name, expression) => {
+    if (!bindings.has(name)) bindings.set(name, []);
+    bindings.get(name).push(expression);
+  };
   const visit = (node) => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
-      bindings.push([node.name.text, node.initializer]);
+      bind(node.name.text, node.initializer);
     } else if (ts.isFunctionDeclaration(node) && node.name && node.body) {
-      bindings.push([node.name.text, node.body]);
+      bind(node.name.text, node.body);
     } else if (
       ts.isBinaryExpression(node) &&
       node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
       ts.isIdentifier(node.left)
     ) {
-      bindings.push([node.left.text, node.right]);
+      bind(node.left.text, node.right);
     }
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
+  return bindings;
+}
+
+// Names bound to expressions that derive from a repository root: variables and
+// functions whose initializer, assigned value, or body mentions a root source
+// or another tainted name. Iterates to a fixpoint so order does not matter.
+function collectTaintedNames(bindings) {
   const tainted = new Set();
   let grew = true;
   while (grew) {
     grew = false;
-    for (const [name, expression] of bindings) {
+    for (const [name, expressions] of bindings) {
       if (tainted.has(name)) continue;
-      if (isRepoLiteral(expression) || containsRoot(expression, tainted)) {
+      if (expressions.some((e) => isRepoLiteral(e) || containsRoot(e, tainted))) {
         tainted.add(name);
         grew = true;
       }
@@ -311,14 +327,15 @@ export function requiresTriggerDeclaration(content, filePath = 'suite.test.ts') 
   const sourceFile = parseSuite(source, filePath);
   let importsSource = false;
   let readsRoot = false;
-  const tainted = collectTaintedNames(sourceFile);
+  const bindings = collectBindings(sourceFile);
+  const tainted = collectTaintedNames(bindings);
   const visit = (node) => {
     if (importsSource) return;
     if (isSourceImport(moduleSpecifier(node), filePath)) {
       importsSource = true;
       return;
     }
-    if (!readsRoot && readCallee(node)) readsRoot = readsRootArgument(node, tainted);
+    if (!readsRoot && readCallee(node)) readsRoot = readsRootArgument(node, tainted, bindings);
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);

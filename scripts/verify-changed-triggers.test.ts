@@ -246,6 +246,14 @@ describe('requiresTriggerDeclaration', () => {
     ['an existsSync probe', "expect(existsSync(resolve(process.cwd(), 'src/a.ts'))).toBe(true)"],
     ['a cwd option', "globSync('*.ts', { cwd: path.join(process.cwd(), 'src/shared') })"],
     ['a bare src/ cwd option', "fs.globSync('**/*.ts', { cwd: 'src/shared' })"],
+    [
+      'a bound options object',
+      "const opts = { cwd: path.join(process.cwd(), 'src/shared') }; globSync('*.ts', opts)",
+    ],
+    [
+      'a shorthand cwd option',
+      "const cwd = path.join(process.cwd(), 'src/shared'); globSync('*.ts', { cwd })",
+    ],
   ];
   for (const [label, read] of rootReads) {
     it(`flags a read derived from ${label}`, () => {
@@ -385,6 +393,28 @@ describe('requiresTriggerDeclaration', () => {
       '    expect(text).toContain(process.cwd());',
       '  });',
       "  fs.readdirSync(tmp, { withFileTypes: true, encoding: process.cwd() ? 'utf8' : 'utf8' });",
+      '});',
+    );
+    expect(requiresTriggerDeclaration(content, 'scripts/a.test.ts')).toBe(false);
+  });
+
+  it('does not flag a bound temp options object whose other properties mention the root', () => {
+    const content = lines(
+      "import fs, { globSync, mkdtempSync } from 'node:fs';",
+      "import { tmpdir } from 'node:os';",
+      "import { join } from 'node:path';",
+      "import { it } from 'vitest';",
+      "const cwd = mkdtempSync(join(tmpdir(), 'case-'));",
+      'const opts = {',
+      '  cwd,',
+      '  exclude: (name: string) => name.startsWith(process.cwd()),',
+      '};',
+      "const readOpts = { encoding: 'utf8', signal: process.cwd() ? undefined : undefined };",
+      "it('x', () => {",
+      "  expect(globSync('**/*', opts)).toHaveLength(0);",
+      "  fs.readFile(join(cwd, 'output.txt'), readOpts, (err, text) => {",
+      '    expect(text).toContain(process.cwd());',
+      '  });',
       '});',
     );
     expect(requiresTriggerDeclaration(content, 'scripts/a.test.ts')).toBe(false);
