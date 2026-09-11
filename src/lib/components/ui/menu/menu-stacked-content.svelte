@@ -26,7 +26,7 @@
 
 {#snippet renderItems(items: StackedMenuItem[])}
   {#each items as item (item.id)}
-    {#if item.items?.length}
+    {#if item.items?.length || item.content}
       <DropdownMenu.Sub>
         <SubTrigger disabled={item.disabled} class={item.class}>
           {#if item.icon}
@@ -39,7 +39,11 @@
           {/if}
         </SubTrigger>
         <SubContent class={submenuClass}>
-          {@render renderItems(item.items)}
+          {#if item.content}
+            {@render item.content()}
+          {:else if item.items}
+            {@render renderItems(item.items)}
+          {/if}
         </SubContent>
       </DropdownMenu.Sub>
     {:else}

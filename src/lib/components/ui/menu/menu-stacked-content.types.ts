@@ -1,4 +1,5 @@
 import type { IconDefinition } from '$lib/icons/phosphor-icons';
+import type { Snippet } from 'svelte';
 
 export interface StackedMenuItem {
   id: string;
@@ -10,6 +11,7 @@ export interface StackedMenuItem {
   class?: string;
   onSelect?: (event: Event) => void;
   items?: StackedMenuItem[];
+  content?: Snippet;
 }
 
 export interface StackedMenuGroup {
