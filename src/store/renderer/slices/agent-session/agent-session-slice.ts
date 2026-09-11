@@ -1,5 +1,5 @@
 import { deepEqual, shallowEqual } from 'fast-equals';
-import type { AgentSession, AgentMessage, SessionStats } from '$shared/types';
+import type { AgentMetadata, AgentSession, AgentMessage, SessionStats } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { CanonicalAgentStatusFields, WorkspaceEvent } from '$features/events/types';
 import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
@@ -684,6 +684,41 @@ function canonicalFieldsFromWorkspaceEvent(event: {
     return [agentId, data];
   }
   return null;
+}
+
+/**
+ * `agent:updated` question-marker projection (PROTOCOL §6.5 "Pending-question
+ * `agent:updated` payloads"): a committed marker mutation carries the mutated
+ * value in `event.data` — a set is the message id, a clear is a WRITTEN empty
+ * string, and a legacy marker-less session omits the field. Mirror exactly the
+ * string fields present so the store reflects the marker in the same
+ * synchronous step the event is applied (the follow-up `agent.get` refresh is
+ * async and can land after a later `agent:queue:updated` shrink, which would
+ * otherwise reopen a just-answered question set for one event interval).
+ * Omitted / non-string fields are left untouched — never fabricated.
+ */
+type PendingQuestionMarkerFields = Partial<
+  Pick<AgentMetadata, 'pendingQuestionsMessageId' | 'dismissedQuestionsMessageId'>
+>;
+
+function pendingQuestionMarkersFromWorkspaceEvent(event: {
+  type?: string;
+  data?: any;
+}): [string, PendingQuestionMarkerFields] | null {
+  if (event.type !== 'agent:updated') return null;
+  const data = event.data;
+  if (!data || typeof data !== 'object') return null;
+  const agentId = data.agentId;
+  if (typeof agentId !== 'string' || agentId.length === 0) return null;
+  const fields: PendingQuestionMarkerFields = {};
+  if (typeof data.pendingQuestionsMessageId === 'string') {
+    fields.pendingQuestionsMessageId = data.pendingQuestionsMessageId;
+  }
+  if (typeof data.dismissedQuestionsMessageId === 'string') {
+    fields.dismissedQuestionsMessageId = data.dismissedQuestionsMessageId;
+  }
+  if (Object.keys(fields).length === 0) return null;
+  return [agentId, fields];
 }
 
 function userMessageFromWorkspaceEvent(event: WorkspaceEvent): [string, AgentMessage] | null {
@@ -1445,6 +1480,22 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
     if (!existing) return state;
     if (existing.stats && shallowEqual(existing.stats, stats)) return state;
     return updateSessionFields(state, agentId, { stats });
+  }
+
+  const markers = pendingQuestionMarkersFromWorkspaceEvent(event);
+  if (markers) {
+    const [agentId, fields] = markers;
+    const existing = getSession(state, agentId);
+    if (!existing) return state;
+    const metadata = existing.metadata ?? {};
+    if (
+      Object.entries(fields).every(
+        ([key, value]) => metadata[key as keyof typeof metadata] === value,
+      )
+    ) {
+      return state;
+    }
+    return updateSessionFields(state, agentId, { metadata: { ...metadata, ...fields } });
   }
 
   const canonical = canonicalFieldsFromWorkspaceEvent(event);

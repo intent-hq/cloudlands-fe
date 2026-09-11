@@ -1022,6 +1022,68 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].waitingForAgentIds).toEqual(['child-1']);
     });
 
+    describe('agent:updated pending-question marker projection (§6.5)', () => {
+      const updated = (data: Record<string, unknown>) =>
+        eventReceived('ws-1', {
+          id: 'evt-updated',
+          type: 'agent:updated',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', ...data },
+        } as any);
+      const seeded = () =>
+        agentSessionReducer(
+          initialState,
+          upsertSession(
+            makeSession('a1', 'ws-1', {
+              metadata: { pendingQuestionsMessageId: 'msg-q1', specialist: 'implementor' },
+            }),
+          ),
+        );
+
+      it('applies a written empty-string clear synchronously and keeps unrelated metadata', () => {
+        const next = agentSessionReducer(seeded(), updated({ pendingQuestionsMessageId: '' }));
+
+        expect(next.byAgentId['a1'].metadata).toEqual({
+          pendingQuestionsMessageId: '',
+          specialist: 'implementor',
+        });
+      });
+
+      it('applies a marker set and the dismissal marker riding alongside it', () => {
+        const cleared = agentSessionReducer(seeded(), updated({ pendingQuestionsMessageId: '' }));
+        const set = agentSessionReducer(cleared, updated({ pendingQuestionsMessageId: 'msg-q2' }));
+        expect(set.byAgentId['a1'].metadata?.pendingQuestionsMessageId).toBe('msg-q2');
+
+        const dismissed = agentSessionReducer(
+          set,
+          updated({ dismissedQuestionsMessageId: 'msg-q2', pendingQuestionsMessageId: 'msg-q2' }),
+        );
+        expect(dismissed.byAgentId['a1'].metadata).toMatchObject({
+          dismissedQuestionsMessageId: 'msg-q2',
+          pendingQuestionsMessageId: 'msg-q2',
+        });
+      });
+
+      it('leaves the marker untouched when agent:updated omits it or carries a non-string', () => {
+        const state = seeded();
+
+        expect(agentSessionReducer(state, updated({ modelId: 'other' }))).toBe(state);
+        expect(agentSessionReducer(state, updated({ pendingQuestionsMessageId: null }))).toBe(
+          state,
+        );
+        expect(agentSessionReducer(state, updated({ pendingQuestionsMessageId: 'msg-q1' }))).toBe(
+          state,
+        );
+      });
+
+      it('does not create a session for an unknown agent', () => {
+        expect(agentSessionReducer(initialState, updated({ pendingQuestionsMessageId: '' }))).toBe(
+          initialState,
+        );
+      });
+    });
+
     it('folds the agent:idle isWaitingForOtherAgents flag onto the session', () => {
       // §6.5: agent:idle freezes the completion-watch waiting flag into the
       // payload at emit time — a coordinator that ended its turn to wait on
