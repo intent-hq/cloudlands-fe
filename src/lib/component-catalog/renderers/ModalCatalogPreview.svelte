@@ -284,8 +284,24 @@
       open
       static
       mode={state === 'archive-warning-dialog' ? 'archive' : 'delete'}
-      agents={[{ id: 'catalog-implementor', name: 'Implementor', specialist: 'implementor', state: 'running' }, { id: 'catalog-verifier', name: 'Verifier', specialist: 'verifier', state: 'running' }]}
-      localChanges={{ hasUnpushedCommits: true, hasUncommittedChanges: true, roots: [{ kind: 'primary', path: '/workspace/catalog', branch: 'refine-modals', unpushedCount: 2, uncommittedCount: 1 }] }}
+      agents={[
+        { id: 'catalog-implementor', name: 'Implementor', specialist: 'implementor', state: 'running' },
+        { id: 'catalog-verifier', name: 'Verifier', specialist: 'verifier', state: 'running' },
+      ]}
+      localChanges={{
+        hasUnpushedCommits: true,
+        hasUncommittedChanges: true,
+        roots: [
+          {
+            kind: 'primary',
+            path: '/workspace/catalog',
+            branch: 'refine-modals',
+            hasRemoteRefs: true,
+            unpushedCount: 2,
+            uncommittedCount: 1,
+          },
+        ],
+      }}
       hookNames={['Watch release build']}
       openPrs={[{ number: 418, title: 'Refine modal catalog', status: 'Open', url: '' }]}
     />

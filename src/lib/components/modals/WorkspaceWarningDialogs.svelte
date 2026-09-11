@@ -14,19 +14,19 @@
     selectLocalChangesForDelete,
     selectOpenPrsForArchive,
     selectOpenPrsForDelete,
-    selectRunningAgentNamesForArchive,
-    selectRunningAgentNamesForDelete,
+    selectRunningAgentsForArchive,
+    selectRunningAgentsForDelete,
     selectShowArchiveWarning,
     selectShowDeleteWarning,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
 
   const showDeleteWarning$ = selectShowDeleteWarning();
-  const runningAgentNamesForDelete$ = selectRunningAgentNamesForDelete();
+  const runningAgentsForDelete$ = selectRunningAgentsForDelete();
   const activeHookNamesForDelete$ = selectActiveHookNamesForDelete();
   const openPrsForDelete$ = selectOpenPrsForDelete();
   const localChangesForDelete$ = selectLocalChangesForDelete();
   const showArchiveWarning$ = selectShowArchiveWarning();
-  const runningAgentNamesForArchive$ = selectRunningAgentNamesForArchive();
+  const runningAgentsForArchive$ = selectRunningAgentsForArchive();
   const activeHookNamesForArchive$ = selectActiveHookNamesForArchive();
   const openPrsForArchive$ = selectOpenPrsForArchive();
   const localChangesForArchive$ = selectLocalChangesForArchive();
@@ -35,7 +35,7 @@
 <!-- Redux-owned delete warning host (global for all workspace delete entrypoints) -->
 <DeleteWarningDialog
   open={$showDeleteWarning$}
-  agentNames={$runningAgentNamesForDelete$}
+  agents={$runningAgentsForDelete$}
   hookNames={$activeHookNamesForDelete$}
   openPrs={$openPrsForDelete$}
   localChanges={$localChangesForDelete$}
@@ -47,7 +47,7 @@
 <DeleteWarningDialog
   open={$showArchiveWarning$}
   mode="archive"
-  agentNames={$runningAgentNamesForArchive$}
+  agents={$runningAgentsForArchive$}
   hookNames={$activeHookNamesForArchive$}
   openPrs={$openPrsForArchive$}
   localChanges={$localChangesForArchive$}
