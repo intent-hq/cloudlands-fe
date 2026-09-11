@@ -136,8 +136,13 @@
     const status = String(session.status).toLowerCase();
     const attention = getAgentAttentionRequest(session);
     const marker = session.metadata?.pendingQuestionsMessageId;
+    const pending = derivePendingQuestions(
+      session.messages,
+      false,
+      false,
+      typeof marker === 'string' ? marker : undefined,
+    );
     const markerId = typeof marker === 'string' && marker.length > 0 ? marker : undefined;
-    const pending = derivePendingQuestions(session.messages, false, false, markerId);
     const hasQuestion =
       (pending !== null || markerId !== undefined) &&
       !isQuestionMessageDismissed(session.metadata, pending?.messageId ?? markerId);
