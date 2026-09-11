@@ -4,6 +4,12 @@ import { m } from '$shared/paraglide/messages.js';
 import type { Workspace } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 
+const { loggerWarnMock } = vi.hoisted(() => ({ loggerWarnMock: vi.fn() }));
+
+vi.mock('$lib/utils/client-logger', () => ({
+  createLogger: () => ({ error: vi.fn(), warn: loggerWarnMock, info: vi.fn(), debug: vi.fn() }),
+}));
+
 vi.mock('../../voice/voice-recorder', () => ({
   isVoiceRecordingSupported: vi.fn(() => true),
 }));
@@ -1284,6 +1290,86 @@ describe('round-robin across presses', () => {
     definition.execute(second.context);
     expect(activeAgentDispatches(dispatch)[0]).toEqual(['ws-1', 'a-1']);
     expect(activeAgentDispatches(second.dispatch)[0]).toEqual(['ws-1', 'a-2']);
+  });
+});
+
+describe('cycle step side-effect failures', () => {
+  /** Three unread agents across three workspaces; the walk starts at a-1. */
+  function makeUnreadState() {
+    return makeState({
+      workspaces: ['ws-1', 'ws-2', 'ws-3'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'], activeAgentId: 'a-1' },
+        'ws-2': { ids: ['b-1'], activeAgentId: null },
+        'ws-3': { ids: ['c-1'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-1', 'ws-2', 'ws-3'],
+      sessionOverrides: {
+        'a-1': { hasUnread: true, lastMessageId: 'm-a' },
+        'b-1': { hasUnread: true, lastMessageId: 'm-b' },
+        'c-1': { hasUnread: true, lastMessageId: 'm-c' },
+      },
+    });
+  }
+
+  function hudDispatches(dispatch: ReturnType<typeof vi.fn>): unknown[] {
+    return dispatch.mock.calls
+      .map(([action]) => action as { type: string })
+      .filter((action) => action.type === 'hardwareConsole/actionHudShown');
+  }
+
+  it('a rejected navigate is logged as a warning and does not throw', async () => {
+    const state = makeUnreadState();
+    const { context, navigate } = makeContext(state);
+    const error = new Error('goto stalled');
+    navigate.mockImplementation(() => Promise.reject(error));
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    expect(() => definition.execute(context)).not.toThrow();
+    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    await vi.waitFor(() => expect(loggerWarnMock).toHaveBeenCalled());
+    expect(loggerWarnMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        actionId: 'cycle-unread-agents',
+        workspaceId: 'ws-2',
+        stopKey: 'b-1',
+        error,
+      }),
+    );
+  });
+
+  it('a throwing focus leaves the cursor on the previous stop and shows no HUD', () => {
+    const state = makeUnreadState();
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    const failure = new Error('dispatch failed');
+    dispatch.mockImplementation((action: { type: string }) => {
+      if (action.type === 'workspaceAgents/setActiveAgentId') throw failure;
+      return undefined;
+    });
+    expect(() => definition.execute(context)).toThrow(failure);
+    expect(hudDispatches(dispatch)).toEqual([]);
+    // The next press retries the same stop rather than skipping past it.
+    const second = makeContext(state);
+    definition.execute(second.context);
+    expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-2', 'b-1']]);
+    expect(hudDispatches(second.dispatch)).toHaveLength(1);
+  });
+
+  it('a successful step advances the cursor and shows the HUD after focusing', () => {
+    const state = makeUnreadState();
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-2', 'b-1'],
+      ['ws-3', 'c-1'],
+    ]);
+    const types = dispatch.mock.calls.map(([action]) => (action as { type: string }).type);
+    expect(types.indexOf('hardwareConsole/actionHudShown')).toBeGreaterThan(
+      types.indexOf('workspaceAgents/setActiveAgentId'),
+    );
   });
 });
 

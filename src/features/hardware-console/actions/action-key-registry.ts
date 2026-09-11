@@ -404,13 +404,19 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
         index = entries.findIndex((e) => e.agentId === focused);
       }
       const next = entries[(index + 1) % entries.length];
-      lastCycledStopByAction.set(spec.id, cycleStopKey(next));
-      // Successful step: surface what the button did in the bottom-center
-      // HUD (the middleware hides it after inactivity).
-      const remaining = spec.countRemaining?.(state, entries, next) ?? entries.length - 1;
-      context.dispatch(actionHudShown(spec.getHudLabel?.(remaining) ?? spec.getLabel()));
+      const nextKey = cycleStopKey(next);
       if (next.wsId !== activeWorkspaceId(context)) {
-        void context.navigate(`/workspace/${next.wsId}`);
+        // Route switching is async and can fail (a stalled `goto` on a
+        // remote window): log it instead of swallowing the rejection so a
+        // press that never leaves the current view is visible.
+        void context.navigate(`/workspace/${next.wsId}`).catch((error: unknown) => {
+          logger.warn('Failed to switch workspace for cycle step', {
+            actionId: spec.id,
+            workspaceId: next.wsId,
+            stopKey: nextKey,
+            error,
+          });
+        });
       }
       if (next.agentId !== null) {
         focusAgent(context, next.wsId, next.agentId);
@@ -420,6 +426,14 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
         // session cache so later stops can target a concrete agent.
         context.dispatch(hydrateAgentsRequested(next.wsId));
       }
+      // Only a step whose synchronous side effects ran advances the cursor
+      // and surfaces what the button did in the bottom-center HUD (the
+      // middleware hides it after inactivity): a throw above leaves the
+      // cursor on the previous stop so the next press retries this one
+      // instead of skipping it.
+      lastCycledStopByAction.set(spec.id, nextKey);
+      const remaining = spec.countRemaining?.(state, entries, next) ?? entries.length - 1;
+      context.dispatch(actionHudShown(spec.getHudLabel?.(remaining) ?? spec.getLabel()));
     },
   };
 }
