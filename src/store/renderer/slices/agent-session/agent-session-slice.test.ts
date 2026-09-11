@@ -3404,16 +3404,20 @@ describe('agent-session selectors', () => {
       expect(selectAgentAttentionRequest.select(state, 'unknown')).toBeNull();
     });
 
-    it('gates a pending request while the agent runs a live turn; surfaces it once idle', () => {
-      // Mid-turn rehydration can deliver the persisted fields while the agent
-      // is still streaming — the selector must defer until the turn ends.
+    it('surfaces a pending request while the agent runs a live turn and once idle', () => {
+      // Automatic deliveries restart the agent without clearing the request,
+      // so it is still pending mid-turn — attention trumps running.
       const live = makeSession('a1', 'ws-1', {
         attentionRequestKind: 'blocker',
         attentionRequestReason: 'sandbox broken',
         isResponding: true,
       });
       const liveState = storeWith({ byAgentId: { a1: live }, agentIdsByWorkspace: {} });
-      expect(selectAgentAttentionRequest.select(liveState, 'a1')).toBeNull();
+      expect(selectAgentAttentionRequest.select(liveState, 'a1')).toEqual({
+        kind: 'blocker',
+        reason: 'sandbox broken',
+        timestamp: undefined,
+      });
 
       const settled = makeSession('a1', 'ws-1', {
         attentionRequestKind: 'blocker',

@@ -1,6 +1,6 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({
   clearAdapter: vi.fn(),
@@ -1441,6 +1441,35 @@ describe('panelLayoutSaga', () => {
       expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalledWith(REQUESTED, expect.anything());
       expect(dispatch.mock.calls.map(([action]) => action)).toContainEqual(
         updateTabBrowserUrl(WS_1, 'tab-b', FRESH_TUNNEL, REQUESTED),
+      );
+      await cancelSaga(task);
+    });
+
+    it('re-resolves a restored hidden tunneled tab onto the fresh endpoint', async () => {
+      const layout = browserLayout();
+      const browserTab = layout.panels['panel-1'].tabs[0];
+      layout.panels['panel-1'] = { id: 'panel-1', tabs: [], activeTabId: null };
+      layout.hiddenTabs = [browserTab];
+      mocks.getJSON.mockReturnValue(layout);
+      mocks.resolveBrowserLinkUrl.mockResolvedValue({
+        url: FRESH_TUNNEL,
+        rewritten: true,
+        requestedUrl: REQUESTED,
+        tunneled: true,
+      });
+      const { channel, dispatch, getState, task } = startReducingSaga();
+      await settle();
+      channel.put(workspaceMounted(WS_1));
+      await settle();
+
+      expect(dispatch.mock.calls.map(([action]) => action)).toContainEqual(
+        updateTabBrowserUrl(WS_1, 'tab-b', FRESH_TUNNEL, REQUESTED),
+      );
+      expect(getItem(getState().panelLayout.byWorkspaceId[WS_1].hiddenTabs, 'tab-b')).toMatchObject(
+        {
+          browserUrl: FRESH_TUNNEL,
+          browserRequestedUrl: REQUESTED,
+        },
       );
       await cancelSaga(task);
     });

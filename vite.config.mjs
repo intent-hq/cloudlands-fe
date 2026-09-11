@@ -3,9 +3,15 @@ import { compile, paraglideVitePlugin } from '@inlang/paraglide-js';
 import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
+import { readFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { intentdBridgePlugin } from './scripts/vite-plugin-intentd-bridge.mjs';
+import { compactParaglideDevPlugin } from './scripts/vite-plugin-paraglide-dev.mjs';
+import {
+  PARAGLIDE_OUTPUT_STRUCTURE,
+  canReuseGeneratedParaglide as hasCurrentGeneratedParaglide,
+  compileWithInputsHash,
+} from './scripts/paraglide-inputs-hash.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -18,30 +24,17 @@ const paraglideOutdir = join(__dirname, 'src/shared/paraglide');
 const messagesDir = join(__dirname, 'messages');
 const normalizeWatcherPath = (file) => file.replace(/\\/g, '/');
 
-// Pure decision logic, kept separate from the hard-coded project paths so it can be
-// unit-tested deterministically with injected paths/stats (fresh, stale, missing,
-// partial output) instead of depending on the ambient mtimes of this checkout's
-// gitignored src/shared/paraglide output. Called with no arguments (the defaults),
-// production/dev behavior is unchanged.
-export function canReuseGeneratedParaglide({
-  outputPaths = ['messages.js', 'runtime.js'].map((file) => join(paraglideOutdir, file)),
-  inputPaths,
-  existsSync: exists = existsSync,
-  statSync: stat = statSync,
-  readdirSync: readdir = readdirSync,
-} = {}) {
-  if (outputPaths.some((file) => !exists(file))) return false;
+const paraglidePaths = {
+  projectDir: paraglideProject,
+  messagesDir,
+  outdir: paraglideOutdir,
+};
 
-  const resolvedInputPaths = inputPaths ?? [
-    join(paraglideProject, 'settings.json'),
-    ...readdir(messagesDir)
-      .filter((file) => file.endsWith('.json'))
-      .map((file) => join(messagesDir, file)),
-  ];
-
-  const newestInput = Math.max(...resolvedInputPaths.map((file) => stat(file).mtimeMs));
-  const oldestOutput = Math.min(...outputPaths.map((file) => stat(file).mtimeMs));
-  return oldestOutput >= newestInput;
+// Content-based: `generate:i18n` records a hash of the inputs next to the
+// outputs, and paraglide-js leaves unchanged outputs untouched so mtimes are
+// not a reliable freshness signal (intent-hq/intent#4621).
+function canReuseGeneratedParaglide() {
+  return hasCurrentGeneratedParaglide(paraglidePaths);
 }
 
 const reuseGeneratedParaglide = () => ({
@@ -60,12 +53,18 @@ const reuseGeneratedParaglide = () => ({
     const isProjectSettings = normalizedFile === normalizedProjectSettings;
     if (!isMessage && !isProjectSettings) return;
 
-    await compile({
-      project: paraglideProject,
-      outdir: paraglideOutdir,
-      outputStructure: 'locale-modules',
-      cleanOutdir: false,
-      isServer: "import.meta.env?.SSR ?? typeof window === 'undefined'",
+    // An edit that lands mid-compile leaves no sidecar; it also fires its own
+    // watchChange, which recompiles, so no retry is needed here.
+    await compileWithInputsHash({
+      ...paraglidePaths,
+      compile: () =>
+        compile({
+          project: paraglideProject,
+          outdir: paraglideOutdir,
+          outputStructure: PARAGLIDE_OUTPUT_STRUCTURE,
+          cleanOutdir: false,
+          isServer: "import.meta.env?.SSR ?? typeof window === 'undefined'",
+        }),
     });
   },
 });
@@ -333,13 +332,9 @@ export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) =
   }
 
   return {
-    // Plugin order:
-    // 1. paraglideVitePlugin() - compiles messages/{locale}.json into src/shared/paraglide (typed m.* functions)
-    // 2. devHealthProbeSilencer() - dev-only: absorbs /health probes from the MCP bridge scanner before SvelteKit sees them
-    // 3. preventSvelteKitRegenHMR() - blocks HMR page reloads for .svelte-kit/generated files
-    // 4. sveltekit() - SvelteKit's virtual modules and SSR handling
-    // 5. handleUnhandledSvelteKitModules() - catches any __sveltekit/* modules not handled by SvelteKit
-    // 6. excludeNodeModules() - excludes Node.js-only code from browser bundle
+    // Registration order is not the full execution order: Vite also applies each
+    // plugin's enforce phase. compactParaglideDevPlugin is serve-only and uses
+    // enforce: 'pre' to compact generated translations before normal transforms.
     plugins: [
       {
         name: 'use-production-paraglide-bundle',
@@ -388,6 +383,7 @@ export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) =
             // locale modules keep the same runtime contract with a bounded build graph.
             outputStructure: 'locale-modules',
           }),
+      compactParaglideDevPlugin(paraglideOutdir),
       devHealthProbeSilencer(),
       intentdBridgeRequested && intentdBridgePlugin(),
       preventSvelteKitRegenHMR(),

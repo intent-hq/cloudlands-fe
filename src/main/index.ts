@@ -1662,13 +1662,13 @@ app.whenReady().then(async () => {
     // Run regardless of whether a window exists yet (intent-hq/monorepo#3054,
     // same race as #1848 above): this setImmediate task can run before window
     // creation, and gating on the window skipped the check — and the pref
-    // advance — for the whole session. The window is resolved at send time
-    // inside the check; with no window the notes park as pending for the
-    // renderer's get-pending claim.
+    // advance — for the whole session. Open windows are enumerated at send
+    // time inside the check; with no window the notes park as pending for
+    // the renderers' get-pending path.
     if (app.isPackaged) {
       const { initializeReleaseNotesOnStartup } =
         await import('../features/release-notes/main/release-notes.ipc');
-      void initializeReleaseNotesOnStartup(getMainWindow);
+      void initializeReleaseNotesOnStartup();
     }
 
     // Setup development-only IPC handlers

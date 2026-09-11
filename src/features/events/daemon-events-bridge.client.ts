@@ -3313,9 +3313,10 @@ function handleClientTransitionEvent(event: WorkspaceEvent): void {
 /**
  * `browser:tab-opened` / `browser:tab-updated` / `browser:tab-closed` (REV-2)
  * are workspace-scoped and self-sufficient: `data = { tab, changes? }` carries
- * the daemon registry row for the tab, so the mirror is patched in place —
- * upsert the row on opened/updated, drop it on closed — without a
- * `browser.listTabs` refetch.
+ * the daemon registry row for the tab, so the row is forwarded as-is —
+ * `browserTabUpserted` on opened/updated, `browserTabClosed` on closed — for
+ * the panel-layout registry saga to apply, without a `browser.listTabs`
+ * refetch; the browser-clients slice only advances its `tabsRevision`.
  */
 function handleBrowserTabEvent(
   event: WorkspaceEvent,
@@ -3356,7 +3357,11 @@ function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
 
   appStore.dispatch(setServerStatus(match.name, mapped));
   const lastError = status.lastError;
-  if (mapped === 'error' && typeof lastError === 'string' && lastError.length > 0) {
+  if (
+    (mapped === 'error' || mapped === 'auth_required') &&
+    typeof lastError === 'string' &&
+    lastError.length > 0
+  ) {
     appStore.dispatch(setServerErrorMessage(match.name, lastError));
   } else {
     appStore.dispatch(clearServerErrorMessage(match.name));

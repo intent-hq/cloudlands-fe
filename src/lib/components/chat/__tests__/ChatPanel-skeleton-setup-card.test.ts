@@ -7,6 +7,12 @@
  * rows — no WorkspaceSetupCard. The pure-predicate tests in
  * chat-panel-visibility.test.ts cannot catch the card being reintroduced
  * inside the skeleton branch, so this suite renders ChatPanel itself.
+ *
+ * ChatPanel must be imported statically: a dynamic `import()` inside a test
+ * body charges the Vite transform of ChatPanel's whole module graph to that
+ * test's `testTimeout`, which times out under multi-worker load
+ * (intent-hq/intent#3082). A static import pays the same cost during file
+ * collection, where no per-test timeout applies.
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync } from 'svelte';

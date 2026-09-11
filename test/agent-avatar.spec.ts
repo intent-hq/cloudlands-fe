@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 import {
   agentAvatarGeometry,
   agentAvatarVariants,
@@ -22,7 +23,9 @@ test.beforeAll(async () => {
   server = await createServer({
     configFile: false,
     root: process.cwd(),
-    cacheDir: process.env.AGENT_AVATAR_VITE_CACHE_DIR,
+    cacheDir: viteHarnessCacheDir('agent-avatar', {
+      override: process.env.AGENT_AVATAR_VITE_CACHE_DIR,
+    }),
     plugins: [svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
       alias: [

@@ -1,6 +1,8 @@
-import type { AgentMessage } from '$shared/types';
+import type { AgentMessage, AgentSession } from '$shared/types';
 import { getQuestionFromResourceBlock, type Question } from '$shared/types/question-resource';
 import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
+import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
+import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
 import { getAnsweredQuestionsMessageId } from './answer-message';
 
 /**
@@ -103,4 +105,43 @@ export function derivePendingQuestions(
     return questions.length > 0 ? { messageId: msg.id, questions } : null;
   }
   return null;
+}
+
+/**
+ * The pending, non-dismissed question set of a session, or null. THE way
+ * avatar surfaces derive the question set from a session: marker classified
+ * from `metadata.pendingQuestionsMessageId`, turn-active from the canonical
+ * `isAgentRunningState(toAgentRuntimeStateInput(session))` (only affects the
+ * legacy no-marker fallback), and the daemon's dismissal marker applied via
+ * `isQuestionMessageDismissed`. Store-free.
+ */
+export function sessionPendingQuestions(session: AgentSession): PendingQuestionSet | null {
+  const pending = derivePendingQuestions(
+    session.messages ?? [],
+    isAgentRunningState(toAgentRuntimeStateInput(session)),
+    false,
+    session.metadata?.pendingQuestionsMessageId,
+  );
+  if (!pending || isQuestionMessageDismissed(session.metadata, pending.messageId)) return null;
+  return pending;
+}
+
+/**
+ * Whether a session has an unanswered, non-dismissed question. THE way avatar
+ * surfaces derive `hasQuestion` — every surface must agree on this signal.
+ *
+ * Beyond `sessionPendingQuestions`, a set marker whose message is not in the
+ * loaded tail is fail-closed: it counts as pending unless a tagged answer row
+ * names it or the dismissal marker matches. This mirrors the chat panel's
+ * fail-closed composer, so a question the daemon still holds open never
+ * disappears from an avatar just because its row was paged out.
+ */
+export function sessionHasPendingQuestion(session: AgentSession): boolean {
+  if (sessionPendingQuestions(session) !== null) return true;
+  const marker = classifyPendingQuestionMarker(session.metadata?.pendingQuestionsMessageId);
+  if (marker.kind !== 'set') return false;
+  const messages = session.messages ?? [];
+  if (messages.some((message) => message.id === marker.messageId)) return false;
+  if (isQuestionSetAnswered(messages, marker.messageId)) return false;
+  return !isQuestionMessageDismissed(session.metadata, marker.messageId);
 }

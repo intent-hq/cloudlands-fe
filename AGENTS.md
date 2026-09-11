@@ -40,6 +40,7 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 | state/store         | ../../docs/fe/STATE_MANAGEMENT.md, src/store/renderer/docs/                          |
 | component design    | ../../docs/fe/COMPONENTS_DESIGN.md                                                   |
 | UI invariant gates  | `pnpm run test:ui-invariants` — ratchets + catalog `*.meta.ts` ledgers, see below    |
+| deps freshness      | `pnpm run deps:check` — gates refuse to run on a stale node_modules install          |
 | panels/layout       | ../../docs/fe/panel-system-refactoring.md, ../../docs/fe/PANEL_TAB_UX_SPEC.md        |
 | PR descriptions     | ../../docs/fe/PR_DESCRIPTION_GUIDE.md                                                |
 | browser/CDP         | ../../docs/fe/BROWSER_PANEL_SPEC.md, ../../docs/fe/CDP_MCP_TOOLS.md                  |
@@ -144,6 +145,16 @@ Shared options are `--theme light|dark|system` (default `light`), `--width 240..
 (default `720`), `--motion reduced|full` (default `reduced`), `--scale 1|2` (default
 `1`), `--timeout <milliseconds>` (default `30000`), `--out <path>`, and
 `--allow-console-errors`. Set `SANDBOX_DEBUG=1` for runner diagnostics.
+
+The in-process server, like every `test/*.spec.ts` Vite harness, uses its own optimizer
+cache under `node_modules/.vite-harness/<harness>` (via `test/vite-harness-cache.mjs`)
+instead of the shared `node_modules/.vite`, so a probe never invalidates a running
+`dev:ui` / `dev:web` server's optimized deps or vice versa. The runner fails fast with the
+cause named — a `504 Outdated Optimize Dep` / `Optimize Deps Processing Error` on a module
+URL, or an esbuild dependency-scan / optimizer failure from the dev-server log — instead
+of a generic ready-marker timeout. `SANDBOX_GOMAXPROCS=<n>` exports `GOMAXPROCS` to the
+esbuild service for that run; it is a diagnostic knob for the dependency-scan crashes in
+intent-hq/intent#4617, not a fix, so leave it unset normally.
 
 `sandbox:shot` captures the complete component frame without shell chrome or scrolling.
 By default it writes
@@ -314,7 +325,23 @@ parsed code (comments, string bodies, and regex literals never count) references
 neither that marker nor
 `// @ui-invariant-exempt: <reason>`. Add the marker to any new inventory or ledger suite;
 `node scripts/ui-invariant-suites.mjs --list` shows the current set and `--check`
-validates markers without running anything.
+validates markers without running anything. Likewise, any code change under `src/`, any
+`AGENTS.md` change (root or nested — `lint:instruction-themis-pins` scans them all), and
+any edit to the `scripts/check-*.mjs` gates themselves also runs
+`pnpm run lint:architecture` — the repo-wide static architecture scans CI runs through
+`validate:architecture` plus its separate whole-`src/` `workspace:*` dispatcher gate step —
+because those scans are cross-file graph checks that
+per-file linting cannot see: cloudlands-fe#2315 passed `verify:changed` locally and
+failed CI in `lint:saga-watcher-ownership`. A change to `scripts/type-check.ts` additionally
+runs `pnpm run type-check:validate`, since `lint:architecture` omits that wrapper and the
+per-boundary checks invoke `tsc` directly.
+
+For the same reason, a change to any IPC channel source — `src/preload/index.ts`,
+`src/preload/index.template.ts`, `src/shared/ipc-registry.ts`, or
+`scripts/inline-ipc-channels.ts` — also runs `scripts/inline-ipc-channels.test.ts`, which
+reads the generated preload from disk and fails when it drifts from the template
+(cloudlands-fe#2314 hand-edited `src/preload/index.ts` and only CI caught it). Regenerate
+with `pnpm run generate:ipc-channels` rather than editing `src/preload/index.ts` by hand.
 
 Only checks that genuinely conflict use host-wide locks, held for one check at a time:
 Playwright CT uses `ct-<CT_PORT>` (default `ct-3100`) and the full Vitest fallback uses

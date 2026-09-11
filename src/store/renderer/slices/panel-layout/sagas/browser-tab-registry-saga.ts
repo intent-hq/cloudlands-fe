@@ -80,7 +80,6 @@ import {
   takeEvery,
   type SagaGenerator,
 } from 'typed-redux-saga';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -122,7 +121,12 @@ import {
   selectWorkspaceListLoadedForBackend,
 } from '../../workspace/workspace-selectors';
 import { setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
-import { selectPanelLayoutWorkspace } from '../panel-layout-selectors';
+import {
+  collectBrowserTabs,
+  selectPanelLayoutWorkspace,
+  type BrowserTabVisibility as Visibility,
+  type LayoutBrowserTab as HostedTab,
+} from '../panel-layout-selectors';
 import {
   acknowledgeBrowserTabHost,
   applyBrowserTabRegistryRow,
@@ -152,8 +156,6 @@ export const SYNC_RETRY_MS = 5_000;
 /** Longest a materialised row waits for the routing saga to place it. */
 const PLACEMENT_WAIT_MS = 5_000;
 
-type Visibility = BrowserTab['visibility'];
-type HostedTab = { tab: PanelTab; visibility: Visibility };
 type Listing = { rows: BrowserTab[]; revision: number };
 /**
  * One workspace's connect-time load: its rows, the generation they were read
@@ -277,19 +279,6 @@ function isSettled(layout: WorkspacePanelLayoutState): boolean {
     layout.restoreStatus === 'empty' ||
     layout.restoreStatus === 'invalid'
   );
-}
-
-function collectBrowserTabs(layout: WorkspacePanelLayoutState): HostedTab[] {
-  const out: HostedTab[] = [];
-  for (const panel of Object.values(layout.panels)) {
-    for (const tab of panel.tabs) {
-      if (tab.type === 'browser') out.push({ tab, visibility: 'visible' });
-    }
-  }
-  for (const tab of getItems(layout.hiddenTabs)) {
-    if (tab.type === 'browser') out.push({ tab, visibility: 'hidden' });
-  }
-  return out;
 }
 
 /** A tab this client renders: acknowledged as ours, or not yet seen by the registry. */

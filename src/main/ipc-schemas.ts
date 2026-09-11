@@ -810,6 +810,11 @@ export const XcodeOpenSchema = z.union([
 ]);
 
 // USER_MCP_CHANNELS schemas
+export const UserMcpAuthenticateSchema = z.object({
+  serverId: z.string().min(1, 'Server ID is required'),
+  url: z.string().url('A valid MCP server URL is required'),
+});
+
 export const UserMcpCheckAuthSchema = z.object({
   url: z.string().min(1, 'URL is required'),
   name: z.string().optional(), // Server name for OAuth token lookup

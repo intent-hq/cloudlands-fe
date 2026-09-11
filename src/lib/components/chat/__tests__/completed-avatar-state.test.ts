@@ -47,10 +47,27 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatReceivedFirstChunk: () => makeReadable(false),
   selectChatLastChunkReceivedAt: () => makeReadable(0),
+  selectPendingQuestionRecovery: () => makeReadable(undefined),
 }));
 
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPendingCount: () => makeReadable(0),
+}));
+
+// AgentCard reads `appStore.state` for the transcript-derived question
+// fallback; the real store is never initialized in this suite.
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({ state: () => ({}) });
+});
+
+vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
+  selectHudAgentHasPendingQuestion: () => makeReadable(false),
+}));
+
+vi.mock('$lib/components/chat/questions/wizard-gate', () => ({
+  deriveWizardPendingQuestions: () => null,
 }));
 
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
