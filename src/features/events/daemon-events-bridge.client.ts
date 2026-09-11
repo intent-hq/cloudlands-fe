@@ -172,6 +172,7 @@ import {
 import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import {
   bulkUpsertSessions,
+  pendingQuestionMarkersFromWorkspaceEvent,
   removeSession,
   renameSession,
   setProcessQueueHint,
@@ -1620,10 +1621,7 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
   if (!data) return;
   const agentId = data.agentId;
   if (typeof agentId !== 'string' || agentId.length === 0) return;
-  if (
-    typeof data.pendingQuestionsMessageId === 'string' ||
-    typeof data.dismissedQuestionsMessageId === 'string'
-  ) {
+  if (pendingQuestionMarkersFromWorkspaceEvent(event) !== null) {
     notePendingQuestionMarkerProjection(agentId);
   }
   void refreshAgentSessionAfterEvent(agentId);

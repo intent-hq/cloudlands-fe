@@ -701,7 +701,7 @@ type PendingQuestionMarkerFields = Partial<
   Pick<AgentMetadata, 'pendingQuestionsMessageId' | 'dismissedQuestionsMessageId'>
 >;
 
-function pendingQuestionMarkersFromWorkspaceEvent(event: {
+export function pendingQuestionMarkersFromWorkspaceEvent(event: {
   type?: string;
   data?: any;
 }): [string, PendingQuestionMarkerFields] | null {
