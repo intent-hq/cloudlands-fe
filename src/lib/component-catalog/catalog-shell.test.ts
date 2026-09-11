@@ -1,3 +1,6 @@
+// @verify-changed-triggers: src/lib/component-catalog/**, src/routes/**, src/hooks.client.ts,
+//   eslint.config.js
+
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';

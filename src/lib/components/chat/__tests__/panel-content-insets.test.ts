@@ -1,3 +1,6 @@
+// @verify-changed-triggers: ../ChatPanel.svelte, ../input/SimpleRichInput.svelte,
+//   ../../layout/panel-system/PanelTabBar.svelte
+
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';

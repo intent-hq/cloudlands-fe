@@ -1,3 +1,6 @@
+// @verify-changed-triggers: ../AgentCard.svelte, ../../agent-overview/AgentOverviewPanel.svelte,
+//   ../../tiptap/comments/AgentPeekCard.svelte
+
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 

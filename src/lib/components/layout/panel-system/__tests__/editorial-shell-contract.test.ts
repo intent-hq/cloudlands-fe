@@ -1,3 +1,17 @@
+// @verify-changed-triggers: ../Panel.svelte, ../PanelContainer.svelte, ../PanelLayout.svelte,
+//   ../PanelSplitHandle.svelte, ../PanelTabBar.svelte, ../LayoutPresetDropdown.svelte,
+//   ../../WindowTitleBar.svelte, ../../WorkspaceTabStrip.svelte,
+//   ../../sidebar-nav/SidebarNav.svelte, ../../sidebar-nav/SidebarPanel.svelte,
+//   ../../../workspace/WorkspaceLayout.svelte, ../../../workspace/WorkspaceSidebarHeader.svelte,
+//   ../../../workspace/MultiSelectTabbedSidebar.svelte,
+//   ../../../workspace/WorkspaceTerminalDock.svelte, ../../../workspace/multi-select-sidebar-tabs.ts,
+//   ../../../workspace/sidebar/SidebarHeaderAction.svelte,
+//   ../../../workspace/sidebar/WorkspaceProgressCard.svelte,
+//   ../../../terminal/QuakeTerminalOverlay.svelte, ../../../../../app.css, ../../../../../app.html,
+//   ../../../../../routes/(app)/+layout.svelte, ../../../../../routes/(app)/app-layout.css,
+//   ../../../../../routes/(app)/workspace/[id]/WorkspaceSurface.svelte,
+//   ../../../../../routes/(app)/workspace/[id]/composables/use-panel-shortcuts.svelte.ts
+
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
