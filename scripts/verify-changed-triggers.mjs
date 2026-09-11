@@ -27,13 +27,24 @@ import {
 export const TRIGGER_MARKER = '@verify-changed-triggers:';
 export const EXEMPT_MARKER = '@verify-changed-exempt:';
 
-const GLOB_CHARACTERS = /[*?[\]{}]/;
+// Wildcards, classes, braces, and the extglob openers `@(` `+(` `!(` (`?(` and
+// `*(` are already covered by their first character).
+const GLOB_CHARACTERS = /[*?[\]{}]|[@+!]\(/;
 // Bracket-class escaping is the only form `path.matchesGlob` honors on every
 // platform (backslash escapes are path separators on Windows). Escaping `(`
 // also disarms the `+(…)` / `!(…)` extglob forms, so `!` stays literal.
 const GLOB_METACHARACTERS = /[*?[\]{}+@()]/g;
 const INTEGRATION_ROOT = 'tests/integration/';
-const READ_FUNCTIONS = new Set(['readFileSync', 'readdirSync', 'globSync', 'readFile', 'readdir']);
+const READ_FUNCTIONS = new Set([
+  'readFileSync',
+  'readdirSync',
+  'globSync',
+  'existsSync',
+  'readFile',
+  'readdir',
+]);
+// Resolved entries that cannot match a repo-relative changed path.
+const OUTSIDE_PACKAGE = /^(?:\.\.(?:\/|$)|\/|[A-Za-z]:\/)/;
 const ROOT_IDENTIFIERS = new Set(['__dirname', '__filename', 'repoRoot', 'REPO_ROOT']);
 const META_PROPERTIES = new Set(['url', 'dirname', 'filename']);
 // The vitest.config.ts aliases that resolve into `src/` (`$app` lands on the
@@ -79,7 +90,8 @@ function resolveTriggerEntry(entry, filePath) {
   const base = path.posix.normalize(
     path.posix.join(path.posix.dirname(filePath), ...segments.slice(0, index)),
   );
-  return [escapeGlob(base), ...segments.slice(index)].join('/');
+  const prefix = base === '.' ? [] : [escapeGlob(base)];
+  return [...prefix, ...segments.slice(index)].join('/');
 }
 
 // Splits a marker list on commas outside `{}` / `[]`, so brace and class globs
@@ -300,7 +312,7 @@ export function inspectDeclaredSuites(files) {
       continue;
     }
     if (header.kind === 'triggers') {
-      const escaped = header.triggers.filter((trigger) => trigger.startsWith('../'));
+      const escaped = header.triggers.filter((trigger) => OUTSIDE_PACKAGE.test(trigger));
       if (header.triggers.length === 0) {
         violations.push(
           violation(
@@ -313,8 +325,8 @@ export function inspectDeclaredSuites(files) {
         violations.push(
           violation(
             file.path,
-            `${TRIGGER_MARKER} entries resolve outside the package: ${escaped.join(', ')}`,
-            'triggers must resolve to paths under the package root',
+            `${TRIGGER_MARKER} entries are not repo-relative: ${escaped.join(', ')}`,
+            'triggers must resolve to repo-relative paths under the package root (no leading / or ../)',
           ),
         );
       } else {

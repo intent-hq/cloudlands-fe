@@ -120,6 +120,45 @@ describe('readTriggerHeader', () => {
     ).toEqual([testFile]);
   });
 
+  it('resolves relative entries that land on the package root without a leading ./', () => {
+    const header = readTriggerHeader(
+      lines(`// ${TRIGGER_MARKER} ../*.yml, ../foo.ts, ../../*.ts`),
+      'scripts/x.test.ts',
+    );
+    expect(header).toEqual({ kind: 'triggers', triggers: ['*.yml', 'foo.ts', '../*.ts'] });
+    expect(readTriggerHeader(lines(`// ${TRIGGER_MARKER} ./*.ts, ./a.ts`), 'x.test.ts')).toEqual({
+      kind: 'triggers',
+      triggers: ['*.ts', 'a.ts'],
+    });
+    const suites = [{ path: 'scripts/x.test.ts', triggers: header.triggers!.slice(0, 2) }];
+    expect(selectDeclaredSuites(suites, ['electron-builder.yml'])).toEqual(['scripts/x.test.ts']);
+    expect(selectDeclaredSuites(suites, ['foo.ts'])).toEqual(['scripts/x.test.ts']);
+    expect(selectDeclaredSuites(suites, ['scripts/foo.ts'])).toEqual([]);
+  });
+
+  it('rejects entries that escape the package root or are absolute', () => {
+    const result = inspectDeclaredSuites([
+      {
+        path: 'scripts/x.test.ts',
+        content: lines(`// ${TRIGGER_MARKER} ../../*.ts, src/a.ts`, ''),
+      },
+      {
+        path: 'scripts/y.test.ts',
+        content: lines(`// ${TRIGGER_MARKER} /src/preload/index.ts`, ''),
+      },
+      { path: 'scripts/z.test.ts', content: lines(`// ${TRIGGER_MARKER} C:\\src\\a.ts`, '') },
+    ]);
+    expect(result.suites).toEqual([]);
+    expect(result.violations.map((entry) => [entry.path, entry.message])).toEqual([
+      ['scripts/x.test.ts', `${TRIGGER_MARKER} entries are not repo-relative: ../*.ts`],
+      [
+        'scripts/y.test.ts',
+        `${TRIGGER_MARKER} entries are not repo-relative: /src/preload/index.ts`,
+      ],
+      ['scripts/z.test.ts', `${TRIGGER_MARKER} entries are not repo-relative: C:/src/a.ts`],
+    ]);
+  });
+
   it('reads the exempt marker with its reason and ignores markers after the first token', () => {
     expect(
       readTriggerHeader(lines(`// ${EXEMPT_MARKER} reads only its temp dir`, 'const a = 1;')),
@@ -145,6 +184,18 @@ describe('matchesTrigger', () => {
     expect(matchesTrigger(route, 'src/routes/(app)/workspace/xyz/+page.svelte')).toBe(false);
     expect(matchesTrigger('src/*.{ts,svelte}', 'src/App.svelte')).toBe(true);
   });
+
+  it('recognizes extglob entries as glob syntax', () => {
+    expect(matchesTrigger('src/@(a|b).ts', 'src/a.ts')).toBe(true);
+    expect(matchesTrigger('src/@(a|b).ts', 'src/c.ts')).toBe(false);
+    expect(matchesTrigger('src/+(a|b).ts', 'src/ab.ts')).toBe(true);
+    expect(matchesTrigger('src/!(b).ts', 'src/a.ts')).toBe(true);
+    expect(matchesTrigger('src/!(b).ts', 'src/b.ts')).toBe(false);
+    expect(matchesTrigger('src/?(a)b.ts', 'src/b.ts')).toBe(true);
+    expect(matchesTrigger('src/*(a).ts', 'src/aa.ts')).toBe(true);
+    expect(matchesTrigger('src/routes/[(]app[)]/*.ts', 'src/routes/(app)/x.ts')).toBe(true);
+    expect(matchesTrigger('src/routes/(app)/x.ts', 'src/routes/(app)/x.ts')).toBe(true);
+  });
 });
 
 describe('requiresTriggerDeclaration', () => {
@@ -155,6 +206,7 @@ describe('requiresTriggerDeclaration', () => {
     ['import.meta.dirname', "await fs.promises.readFile(path.join(import.meta.dirname, 'x'))"],
     ['a repoRoot binding', "readdir(path.join(repoRoot, 'src'))"],
     ['a bare src/ literal', "readFileSync('src/lib/App.svelte', 'utf8')"],
+    ['an existsSync probe', "expect(existsSync(resolve(process.cwd(), 'src/a.ts'))).toBe(true)"],
   ];
   for (const [label, read] of rootReads) {
     it(`flags a read derived from ${label}`, () => {
@@ -304,7 +356,7 @@ describe('inspectDeclaredSuites', () => {
     expect(result.violations.map((entry) => [entry.path, entry.message])).toEqual([
       ['a.test.ts', `${EXEMPT_MARKER} needs a reason`],
       ['b.test.ts', `${TRIGGER_MARKER} lists no paths`],
-      ['c.test.ts', `${TRIGGER_MARKER} entries resolve outside the package: ../../outside.ts`],
+      ['c.test.ts', `${TRIGGER_MARKER} entries are not repo-relative: ../../outside.ts`],
     ]);
   });
 });
