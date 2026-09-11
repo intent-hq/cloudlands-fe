@@ -125,6 +125,11 @@
     const handleKeydown = () => {
       keyboardActive = true;
       syncKeyboardIndex();
+      // Background Chromium tabs can change activeElement without emitting focusin.
+      // Read it after Bits UI has handled the key, rather than relying on that event.
+      void tick().then(() => {
+        if (keyboardActive) syncKeyboardIndex();
+      });
     };
     const handlePointerMove = () => {
       keyboardActive = false;

@@ -69,6 +69,9 @@ describe('Menu keyboard and focus behavior', () => {
     await fireEvent.pointerMove(banana, { pointerType: 'mouse', clientX: 10, clientY: 30 });
     await waitFor(() => expect(document.activeElement).toBe(banana));
     await waitFor(() => expect(highlight.getAttribute('data-active-index')).toBe('1'));
+    const suppressFocusEvent = (event: Event) => event.stopImmediatePropagation();
+    menu.addEventListener('focusin', suppressFocusEvent, true);
+    menu.addEventListener('focus', suppressFocusEvent, true);
     await fireEvent.keyDown(banana, { key: 'ArrowDown' });
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     await waitFor(() => {
