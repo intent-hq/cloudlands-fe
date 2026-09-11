@@ -37,6 +37,11 @@ function* fetchReleaseNotes(): SagaGenerator<void> {
   }
 }
 
+/**
+ * Read the startup notes main parked (kept until dismissed in any window).
+ * The read does not clear them, so dedup per version here — the `show` push
+ * may deliver the same notes.
+ */
 function* claimPending(surfaced: Set<string>): SagaGenerator<void> {
   try {
     const notes = yield* call([releaseNotesClient, releaseNotesClient.claimPendingReleaseNotes]);

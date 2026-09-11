@@ -5,7 +5,7 @@
  * Asserts that:
  * - `initializeReleaseNotes` subscribes to the main → renderer show push once
  * - the startup push (notes attached) opens the modal with those notes
- * - startup notes parked before the listener existed are claimed over
+ * - startup notes parked before the listener existed are read over
  *   `release-notes:get-pending`, and a duplicate push does not re-open
  * - the Help-menu push (`notes: null`) opens the modal loading, fetches over
  *   `release-notes:get`, and resolves into content

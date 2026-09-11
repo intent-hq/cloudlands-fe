@@ -39,7 +39,10 @@ export const RELEASE_NOTES_CHANNELS = {
   // Invoke channels (renderer → main)
   GET: 'release-notes:get',
   GET_PENDING: 'release-notes:get-pending',
-  /** Renderer tells main the user dismissed the modal (main marks the version seen). */
+  /**
+   * Renderer tells main the user dismissed the modal: main clears its
+   * in-memory pending notes and broadcasts `release-notes:close` to all windows.
+   */
   DISMISS: 'release-notes:dismiss',
   // Event channels (main → renderer)
   SHOW: 'release-notes:show',

@@ -33,9 +33,12 @@ export const releaseNotesClient = {
   },
 
   /**
-   * Claim the startup notes the main process parked before the renderer had a
+   * Read the startup notes the main process parked before the renderer had a
    * `release-notes:show` listener. Resolves `null` when there is nothing
-   * pending; claiming clears the slot so the modal opens at most once.
+   * pending. This is a read, not a claim: main keeps the parked notes until
+   * `release-notes:dismiss` clears them (from any window), so every window can
+   * see them; the renderer dedups per version so the modal opens at most once
+   * per window.
    */
   async claimPendingReleaseNotes(): Promise<ReleaseNotesContent | null> {
     const response = await invokeIpc<ReleaseNotesResponse>(RELEASE_NOTES_CHANNELS.GET_PENDING);
