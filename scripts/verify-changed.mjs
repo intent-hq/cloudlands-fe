@@ -567,6 +567,10 @@ export function createVerificationPlan(files, options = {}) {
   }
   if (boundaries.has('preload')) {
     checks.push(
+      command('generate-ipc-channels', 'Generate preload IPC channels', [
+        'run',
+        'generate:ipc-channels',
+      ]),
       command('tsc-preload', 'TypeScript (preload)', [
         'exec',
         'tsc',

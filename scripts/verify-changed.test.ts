@@ -388,11 +388,51 @@ describe('verification planning', () => {
       return lines;
     };
     const hint = (lines: string[]) =>
-      lines.filter((line) => line.includes('pnpm run generate:ipc-channels'));
+      lines.filter(
+        (line) => line.includes('is generated from') || line.includes('regenerate with'),
+      );
 
     expect(hint(linesFor(['src/preload/index.ts']))).toEqual([]);
     expect(hint(linesFor(['src/preload/index.template.ts']))).toEqual([]);
     expect(hint(linesFor(['src/shared/ipc-registry.ts', 'src/preload/index.ts']))).toEqual([]);
+  });
+
+  it('generates the preload IPC channels before every preload type check', () => {
+    const root = fixtureRoot({
+      'src/preload/index.template.ts': '',
+      'src/shared/protocol.ts': '',
+      'src/lib/example.ts': '',
+      'tsconfig.preload.json': '{}',
+      'package.json': '{}',
+    });
+    const ids = (files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [] }).checks.map((check) => check.id);
+    const generate = createVerificationPlan(['tsconfig.preload.json'], {
+      root,
+      ctTests: [],
+    }).checks.find((check) => check.id === 'generate-ipc-channels');
+    expect(generate?.args).toEqual(['run', 'generate:ipc-channels']);
+    expect(generate?.lockKind).toBeNull();
+
+    for (const files of [
+      ['src/preload/index.template.ts'],
+      ['src/shared/protocol.ts'],
+      ['tsconfig.preload.json'],
+      ['package.json'],
+    ]) {
+      const plan = ids(files);
+      const generateIndex = plan.indexOf('generate-ipc-channels');
+      const tscIndex = plan.indexOf('tsc-preload');
+      expect(tscIndex, files.join()).toBeGreaterThan(-1);
+      expect(generateIndex, files.join()).toBeGreaterThan(-1);
+      expect(generateIndex, files.join()).toBeLessThan(tscIndex);
+      expect(
+        plan.filter((id) => id === 'generate-ipc-channels'),
+        files.join(),
+      ).toHaveLength(1);
+    }
+
+    expect(ids(['src/lib/example.ts'])).not.toContain('generate-ipc-channels');
   });
 
   it('selects a component test that directly imports a changed Svelte component', () => {
@@ -465,6 +505,7 @@ describe('verification planning', () => {
       'svelte-check',
       'tsc-renderer',
       'tsc-main',
+      'generate-ipc-channels',
       'tsc-preload',
     ]);
     expect(plan.checks.find((check) => check.id === 'vitest-full')?.lockKind).toBe('vitest-full');
