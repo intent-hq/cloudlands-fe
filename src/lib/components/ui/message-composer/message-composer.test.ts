@@ -134,6 +134,34 @@ describe('MessageComposer', () => {
     expect(document.activeElement).toBe(textbox);
   });
 
+  it.each(['MacIntel', 'Linux x86_64'])(
+    'accepts scoped numbered shortcuts on %s',
+    async (platform) => {
+      const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform);
+      try {
+        for (const index of [0, 1, 2]) {
+          const onValueChange = vi.fn();
+          const suggestions = ['Explain changes', 'Write release notes', 'Add tests'];
+          const view = render(MessageComposer, { props: { suggestions, onValueChange } });
+          const textbox = view.getByRole('textbox');
+          const modifiers = platform === 'MacIntel' ? { ctrlKey: true } : { altKey: true };
+          await fireEvent.keyDown(textbox, { key: String(index + 1), ...modifiers });
+          expect(onValueChange).not.toHaveBeenCalled();
+          textbox.focus();
+          await fireEvent.keyDown(textbox, { key: '4', ...modifiers });
+          expect(onValueChange).not.toHaveBeenCalled();
+          await fireEvent.keyDown(textbox, { key: String(index + 1), ...modifiers });
+          expect(onValueChange).toHaveBeenCalledExactlyOnceWith(suggestions[index]);
+          await fireEvent.keyDown(textbox, { key: '1', ...modifiers });
+          expect(onValueChange).toHaveBeenCalledTimes(1);
+          view.unmount();
+        }
+      } finally {
+        platformSpy.mockRestore();
+      }
+    },
+  );
+
   it('recalls history and restores the in-progress draft', async () => {
     const view = render(MessageComposerHarness, {
       props: { initialValue: 'unfinished', history: ['older', 'newer'] },

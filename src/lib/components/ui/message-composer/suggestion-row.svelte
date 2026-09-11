@@ -3,6 +3,7 @@
   import ArrowElbowDownLeftIcon from 'phosphor-svelte/lib/ArrowElbowDownLeftIcon';
   import { proximityItem, type ProximityHover } from '$lib/interaction';
   import { cn } from '$lib/utils.js';
+  import { ShortcutChip } from '$lib/components/ui/kbd';
   import { menuItem } from '$lib/components/ui/menu';
 
   let {
@@ -10,6 +11,7 @@
     index,
     active,
     keyHint,
+    shortcut,
     optionId,
     hover,
     compact = false,
@@ -19,6 +21,7 @@
     index: number;
     active: boolean;
     keyHint: boolean;
+    shortcut?: string;
     optionId: string;
     hover: ProximityHover;
     compact?: boolean;
@@ -42,6 +45,13 @@
   class:text-foreground={active}
 >
   <span class="min-w-0 flex-1 truncate">{text}</span>
+  {#if shortcut}
+    <span
+      class="inline-flex h-[18px] shrink-0 items-center rounded-[5px] border border-border bg-background px-1"
+    >
+      <ShortcutChip>{shortcut}</ShortcutChip>
+    </span>
+  {/if}
   {#if !active && keyHint}
     <ArrowDownIcon size={13} class="shrink-0 opacity-70" aria-hidden="true" />
   {:else}

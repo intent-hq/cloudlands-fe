@@ -6,7 +6,6 @@
   import XIcon from 'phosphor-svelte/lib/XIcon';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
-  import { ShortcutChip } from '$lib/components/ui/kbd';
   import { ProximityHighlight } from '$lib/components/ui/proximity-highlight';
   import SizeProvider from '$lib/components/ui/SizeProvider.svelte';
   import SurfaceProvider from '$lib/components/ui/SurfaceProvider.svelte';
@@ -233,6 +232,29 @@
     onSend?.(trimmed, filesArr);
   }
 
+  const isMac =
+    typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
+
+  function handleSuggestionShortcut(event: KeyboardEvent) {
+    if (
+      event.defaultPrevented ||
+      event.isComposing ||
+      disabled ||
+      !suggestionsOpen ||
+      !rootRef?.contains(document.activeElement) ||
+      event.shiftKey ||
+      event.metaKey
+    )
+      return;
+    const modifier = isMac ? event.ctrlKey && !event.altKey : event.altKey && !event.ctrlKey;
+    if (!modifier || !/^[1-3]$/.test(event.key)) return;
+    const suggestion = suggestions[Number(event.key) - 1];
+    if (suggestion === undefined) return;
+    event.preventDefault();
+    event.stopPropagation();
+    acceptSuggestion(suggestion);
+  }
+
   function handleKeydown(event: KeyboardEvent) {
     if (event.isComposing) return;
     const plain = !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey;
@@ -428,6 +450,7 @@
       className,
     )}
     style={rootStyle || undefined}
+    onkeydown={handleSuggestionShortcut}
     onmousedown={handleRootMousedown}
     onmouseenter={() => (hovered = true)}
     onmouseleave={() => (hovered = false)}
@@ -437,6 +460,41 @@
     {...restProps}
   >
     <SurfaceProvider value={2}>
+      <div
+        use:animatedHeight={{ open: suggestionsOpen, tier: 'moderate' }}
+        data-message-composer-height="suggestions"
+        data-motion-tier="moderate"
+        aria-hidden={!suggestionsOpen || undefined}
+        inert={!suggestionsOpen}
+      >
+        <div class="pb-2">
+          <div
+            bind:this={suggestionListRef}
+            id={suggestionListId}
+            role="listbox"
+            aria-label={SUGGESTIONS_LABEL}
+            class="relative -mx-2 flex flex-col border-b border-border px-1.5 pb-1.5"
+          >
+            {#if suggestionHover}<ProximityHighlight store={suggestionHover} />{/if}
+            {#if suggestionHover}
+              {#each suggestions as suggestion, index (`${suggestion}-${index}`)}
+                <SuggestionRow
+                  text={suggestion}
+                  {index}
+                  shortcut={index < 3 ? `${isMac ? '⌃' : 'Alt+'}${index + 1}` : undefined}
+                  active={activeSuggestion === index}
+                  keyHint={index === 0 && activeSuggestion === null}
+                  optionId={`${suggestionListId}-${index}`}
+                  hover={suggestionHover}
+                  {compact}
+                  onSelect={() => acceptSuggestion(suggestion)}
+                />
+              {/each}
+            {/if}
+          </div>
+        </div>
+      </div>
+
       {#if supportsFiles}
         <Input
           type="file"
@@ -535,7 +593,7 @@
             ? undefined
             : `${suggestionListId}-${activeSuggestion}`}
           class={cn(
-            'min-h-0! resize-none border-0 bg-transparent px-2 py-2 shadow-none placeholder:text-muted-foreground',
+            'min-h-0! resize-none border-0 bg-transparent hover:bg-transparent focus:bg-transparent focus-visible:bg-transparent active:bg-transparent px-2 py-2 shadow-none placeholder:text-muted-foreground',
             compact ? 'px-1.5 py-1.5 text-[13px] leading-[18px]' : 'text-sm leading-5',
             textareaProps?.class,
           )}
@@ -562,12 +620,6 @@
           >
             <span class="flex max-w-full items-center gap-1.5">
               <span class="min-w-0 truncate">{placeholderSuggestion}</span>
-              <span
-                class="inline-flex h-[18px] items-center rounded-[5px] border border-border bg-background px-1"
-              >
-                <!-- i18n-ignore (physical keyboard key label) -->
-                <ShortcutChip>Tab</ShortcutChip>
-              </span>
             </span>
           </div>
           <span id={ghostHintId} class="sr-only">
@@ -610,39 +662,6 @@
         </div>
       </div>
 
-      <div
-        use:animatedHeight={{ open: suggestionsOpen, tier: 'moderate' }}
-        data-message-composer-height="suggestions"
-        data-motion-tier="moderate"
-        aria-hidden={!suggestionsOpen || undefined}
-        inert={!suggestionsOpen}
-      >
-        <div class="pt-2">
-          <div
-            bind:this={suggestionListRef}
-            id={suggestionListId}
-            role="listbox"
-            aria-label={SUGGESTIONS_LABEL}
-            class="relative -mx-2 flex flex-col border-t border-border px-1.5 pt-1.5"
-          >
-            {#if suggestionHover}<ProximityHighlight store={suggestionHover} />{/if}
-            {#if suggestionHover}
-              {#each suggestions as suggestion, index (`${suggestion}-${index}`)}
-                <SuggestionRow
-                  text={suggestion}
-                  {index}
-                  active={activeSuggestion === index}
-                  keyHint={index === 0 && activeSuggestion === null}
-                  optionId={`${suggestionListId}-${index}`}
-                  hover={suggestionHover}
-                  {compact}
-                  onSelect={() => acceptSuggestion(suggestion)}
-                />
-              {/each}
-            {/if}
-          </div>
-        </div>
-      </div>
       <span class="sr-only" role="status" aria-live="polite">{liveMessage}</span>
     </SurfaceProvider>
   </div>

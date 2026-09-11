@@ -1,4 +1,7 @@
 <script lang="ts">
+  import QueueIcon from 'phosphor-svelte/lib/QueueIcon';
+  import { menuItem } from '$lib/components/ui/menu';
+  import { cn } from '$lib/utils.js';
   import ImageIcon from 'phosphor-svelte/lib/ImageIcon';
   import XIcon from 'phosphor-svelte/lib/XIcon';
   import { Button } from '$lib/components/ui/button';
@@ -53,11 +56,14 @@
 <li
   data-message-composer-queue
   data-queued-id={item.id}
-  class="group/qrow flex cursor-grab select-none items-center gap-2 rounded-(--radius-medium) bg-muted px-2.5 text-foreground/85 active:cursor-grabbing"
+  class={cn(
+    menuItem(),
+    'group/qrow cursor-grab select-none gap-2 px-2.5 text-muted-foreground hover:bg-hover active:cursor-grabbing',
+  )}
   class:h-7={compact}
   class:h-8={!compact}
-  class:text-xs={compact}
-  class:text-[13px]={!compact}
+  class:text-[13px]={compact}
+  class:text-sm={!compact}
 >
   <div
     class="flex min-w-0 flex-1 items-center gap-2 focus-visible:outline focus-visible:-outline-offset-1"
@@ -71,6 +77,7 @@
     ondragover={(event) => event.preventDefault()}
     ondrop={handleDrop}
   >
+    <QueueIcon size={13} class="shrink-0" aria-hidden="true" />
     {#if item.files.length > 0}
       <span class="flex shrink-0 items-center gap-0.5 text-muted-foreground" aria-hidden="true">
         <ImageIcon size={13} aria-hidden="true" />
