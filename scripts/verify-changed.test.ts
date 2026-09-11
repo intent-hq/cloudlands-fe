@@ -12,6 +12,7 @@ import {
   printPlan,
   runCli,
   runVerificationPlan,
+  testRunner,
   verificationLockKey,
 } from './verify-changed.mjs';
 
@@ -315,6 +316,135 @@ describe('verification planning', () => {
     expect(plan.checks.find((check) => check.id === 'vitest-integration')?.args).toContain(
       'tests/integration/vitest.integration.config.ts',
     );
+  });
+
+  it('classifies test paths by the runner that owns them', () => {
+    expect(testRunner('test/splash-loader.spec.ts')).toBe('playwright');
+    expect(testRunner('test/nested/geometry.spec.ts')).toBe('playwright');
+    expect(testRunner('test/current-main-baseline.spec.ts')).toBe('manual');
+    expect(testRunner('test/catalog-manual-review.capture.spec.ts')).toBe('manual');
+    expect(testRunner('src/lib/components/ui/card/operate-patterns.visual.spec.ts')).toBe('manual');
+    expect(testRunner('tests/remote-env/remote-env.test.ts')).toBe('manual');
+    expect(testRunner('tests/integration/example.test.ts')).toBe('integration');
+    expect(testRunner('tests/unit/edge-cases.test.ts')).toBe('vitest');
+    expect(testRunner('src/test/factories/__tests__/workspace.factory.test.ts')).toBe('vitest');
+    expect(testRunner('src/lib/__tests__/button.ct.spec.ts')).toBe('ct');
+    expect(testRunner('scripts/verify-changed.test.ts')).toBe('vitest');
+    expect(testRunner('src/lib/example.ts')).toBeNull();
+  });
+
+  it('routes an added browser spec to Playwright instead of Vitest', () => {
+    const root = fixtureRoot({ 'test/splash-loader.spec.ts': '' });
+    const plan = createVerificationPlan(['test/splash-loader.spec.ts'], { root, ctTests: [] });
+    const ids = plan.checks.map((check) => check.id);
+    expect(ids).toContain('playwright-direct');
+    expect(ids).not.toContain('vitest-direct');
+    expect(plan.checks.find((check) => check.id === 'playwright-direct')?.args).toEqual([
+      'run',
+      'test:playwright',
+      '--',
+      'test/splash-loader.spec.ts',
+    ]);
+  });
+
+  it('never passes a deleted unit test as a test path but keeps its directory covered', () => {
+    const root = fixtureRoot({ 'src/lib/__tests__/sibling.test.ts': '' });
+    const plan = createVerificationPlan(['src/lib/__tests__/removed.test.ts'], {
+      root,
+      ctTests: [],
+    });
+    const direct = plan.checks.find((check) => check.id === 'vitest-direct');
+    expect(direct?.args).not.toContain('src/lib/__tests__/removed.test.ts');
+    expect(direct?.args).toContain('src/lib/__tests__');
+    for (const check of plan.checks) {
+      expect(check.args).not.toContain('src/lib/__tests__/removed.test.ts');
+    }
+  });
+
+  it('drops a deleted unit test whose directory is gone without running anything for it', () => {
+    const root = fixtureRoot({ 'src/other.ts': '' });
+    const plan = createVerificationPlan(['src/gone/__tests__/removed.test.ts'], {
+      root,
+      ctTests: [],
+    });
+    expect(plan.checks.map((check) => check.id)).not.toContain('vitest-direct');
+    expect(plan.checks.map((check) => check.id)).toContain('tsc-renderer');
+  });
+
+  it('drops deleted component, integration, and browser specs from runnable lists', () => {
+    const root = fixtureRoot({ 'src/lib/Button.svelte': '<button />' });
+    const files = [
+      'src/lib/__tests__/removed.ct.spec.ts',
+      'tests/integration/removed.test.ts',
+      'test/removed.spec.ts',
+    ];
+    const plan = createVerificationPlan(files, {
+      root,
+      ctTests: ['src/lib/__tests__/removed.ct.spec.ts'],
+      readText: () => '',
+    });
+    const ids = plan.checks.map((check) => check.id);
+    expect(ids).not.toContain('ct-related');
+    expect(ids).not.toContain('vitest-integration');
+    expect(ids).not.toContain('playwright-direct');
+    for (const check of plan.checks) {
+      for (const file of files) expect(check.args).not.toContain(file);
+    }
+  });
+
+  it('plans the issue scenario: modified source, deleted unit test, added browser spec', () => {
+    const root = fixtureRoot({
+      'src/app.html': '<html></html>',
+      'src/lib/splash/splash-loader.ts': 'export const ready = true;',
+      'src/lib/splash/__tests__/other.test.ts': '',
+      'test/splash-loader.spec.ts': '',
+    });
+    const files = [
+      'src/app.html',
+      'src/lib/splash/splash-loader.ts',
+      'src/lib/splash/__tests__/splash-loader.test.ts',
+      'test/splash-loader.spec.ts',
+    ];
+    const plan = createVerificationPlan(files, { root, ctTests: [] });
+    const byId = Object.fromEntries(plan.checks.map((check) => [check.id, check]));
+
+    expect(byId['playwright-direct']?.args).toEqual([
+      'run',
+      'test:playwright',
+      '--',
+      'test/splash-loader.spec.ts',
+    ]);
+    expect(byId['vitest-direct']?.args).toEqual([
+      'exec',
+      'vitest',
+      'run',
+      '--config',
+      'vitest.config.ts',
+      'src/lib/splash/__tests__',
+    ]);
+    expect(byId['vitest-related']?.args).toContain('src/lib/splash/splash-loader.ts');
+    expect(plan.fallbackReasons).toEqual([]);
+
+    const lines: string[] = [];
+    printPlan(plan, true, (line: string) => lines.push(line));
+    const commandLines = lines.filter((line) => line.startsWith('  - ') && line.includes(': pnpm'));
+    expect(commandLines.some((line) => line.includes('test:playwright'))).toBe(true);
+    for (const line of commandLines) {
+      expect(line).not.toContain('src/lib/splash/__tests__/splash-loader.test.ts');
+      expect(line.includes('vitest') && line.includes('test/splash-loader.spec.ts')).toBe(false);
+    }
+  });
+
+  it('runs the whole Playwright browser suite when its config changes', () => {
+    const root = fixtureRoot({ 'playwright.config.ts': '', 'test/a.spec.ts': '' });
+    const plan = createVerificationPlan(['playwright.config.ts', 'test/a.spec.ts'], {
+      root,
+      ctTests: [],
+    });
+    const ids = plan.checks.map((check) => check.id);
+    expect(ids).toContain('playwright-full');
+    expect(ids).not.toContain('playwright-direct');
+    expect(plan.fallbackReasons).toEqual([]);
   });
 });
 

@@ -49,6 +49,14 @@ const FORMAT_EXTENSIONS = new Set([
 ]);
 const UNIT_TEST_RE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 const CT_TEST_RE = /\.ct\.(?:test|spec)\.[cm]?[jt]sx?$/;
+// Mirrors playwright.config.ts (testDir ./test, testMatch **/*.spec.ts, testIgnore) and
+// the runner-owned excludes in vitest.config.ts / tests/integration/vitest.integration.config.ts.
+const PLAYWRIGHT_TEST_RE = /^test\/.*\.spec\.ts$/;
+const PLAYWRIGHT_MANUAL_RE =
+  /(?:^|\/)(?:catalog-manual-review\.capture|current-main-baseline)\.spec\.ts$/;
+const VISUAL_TEST_RE = /\.visual\.spec\.[cm]?[jt]sx?$/;
+const INTEGRATION_TEST_RE = /^tests\/integration\/.*\.test\.ts$/;
+const VITEST_EXCLUDED_RE = /(?:^|\/)remote-(?:env|git)\.test\.ts$/;
 const FULL_RISK_FILES = new Set([
   'package.json',
   'pnpm-lock.yaml',
@@ -215,7 +223,9 @@ export function findRelatedCtTests(files, options = {}) {
   const sourceFiles = files.filter(
     (file) => CODE_EXTENSIONS.has(extname(file)) && !UNIT_TEST_RE.test(file),
   );
-  const selected = new Set(files.filter((file) => CT_TEST_RE.test(file)));
+  const selected = new Set(
+    files.filter((file) => CT_TEST_RE.test(file) && existsSync(resolve(root, file))),
+  );
   for (const test of ctTests) {
     if (selected.has(test)) continue;
     const targets = importTargets(readText(test), test, root);
@@ -228,6 +238,21 @@ export function findRelatedCtTests(files, options = {}) {
 
 function isExisting(file, root) {
   return existsSync(resolve(root, file));
+}
+
+export function testRunner(file) {
+  if (!UNIT_TEST_RE.test(file)) return null;
+  if (CT_TEST_RE.test(file)) return 'ct';
+  if (PLAYWRIGHT_MANUAL_RE.test(file) || VISUAL_TEST_RE.test(file)) return 'manual';
+  if (PLAYWRIGHT_TEST_RE.test(file)) return 'playwright';
+  if (INTEGRATION_TEST_RE.test(file)) return 'integration';
+  if (file.startsWith('tests/integration/') || VITEST_EXCLUDED_RE.test(file)) return 'manual';
+  return 'vitest';
+}
+
+function existingParentDirectory(file, root) {
+  const directory = dirname(file);
+  return directory !== '.' && isExisting(directory, root) ? directory : null;
 }
 
 function isLintable(file) {
@@ -283,15 +308,15 @@ export function createVerificationPlan(files, options = {}) {
   const existing = files.filter((file) => isExisting(file, root));
   const formatFiles = existing.filter((file) => FORMAT_EXTENSIONS.has(extname(file)));
   const lintFiles = existing.filter(isLintable);
-  const directCt = files.filter((file) => CT_TEST_RE.test(file));
-  const directIntegration = files.filter(
-    (file) =>
-      file.startsWith('tests/integration/') && UNIT_TEST_RE.test(file) && !CT_TEST_RE.test(file),
-  );
-  const directUnit = files.filter(
-    (file) =>
-      UNIT_TEST_RE.test(file) && !CT_TEST_RE.test(file) && !file.startsWith('tests/integration/'),
-  );
+  const directTests = (runner) => existing.filter((file) => testRunner(file) === runner);
+  const directCt = directTests('ct');
+  const directIntegration = directTests('integration');
+  const directPlaywright = directTests('playwright');
+  const deletedUnitDirectories = files
+    .filter((file) => testRunner(file) === 'vitest' && !isExisting(file, root))
+    .map((file) => existingParentDirectory(file, root))
+    .filter(Boolean);
+  const directUnit = [...new Set([...directTests('vitest'), ...deletedUnitDirectories])];
   const relatedSources = existing.filter(
     (file) =>
       /^(?:src|scripts)\//.test(file) &&
@@ -306,6 +331,7 @@ export function createVerificationPlan(files, options = {}) {
   let svelteCheck = false;
   let fullUnit = false;
   let fullCt = false;
+  let fullPlaywright = false;
   const fallbackReasons = [];
 
   for (const file of files) {
@@ -315,6 +341,7 @@ export function createVerificationPlan(files, options = {}) {
     else if (file === 'tsconfig.main.json') boundaries.add('main');
     else if (file === 'tsconfig.preload.json') boundaries.add('preload');
     else if (file === 'playwright-ct.config.ts' || file.startsWith('playwright/')) fullCt = true;
+    else if (file === 'playwright.config.ts') fullPlaywright = true;
     else if (file === 'vitest.config.ts') fullUnit = true;
 
     const known =
@@ -435,6 +462,23 @@ export function createVerificationPlan(files, options = {}) {
         ['run', 'test:ct', '--', ...relatedCt],
         'ct',
       ),
+    );
+  }
+  if (fullPlaywright)
+    checks.push(
+      command('playwright-full', 'Playwright browser suite (config changed)', [
+        'run',
+        'test:playwright',
+      ]),
+    );
+  else if (directPlaywright.length) {
+    checks.push(
+      command('playwright-direct', 'Playwright browser tests (changed specs)', [
+        'run',
+        'test:playwright',
+        '--',
+        ...directPlaywright,
+      ]),
     );
   }
   if (svelteCheck) checks.push(command('svelte-check', 'Svelte check', ['run', 'check']));
