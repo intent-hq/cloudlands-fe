@@ -194,6 +194,32 @@ describe('waitForCaptureStability', () => {
     expect(broken.decode).not.toHaveBeenCalled();
   });
 
+  it('derives image counts from one snapshot when an image is removed while decoding', async () => {
+    setFonts(Promise.resolve());
+    useTimerFrames();
+    const root = document.createElement('div');
+    const removedWhileDecoding = createImage({ complete: () => true, top: 10 });
+    const offscreenLazy = createImage({
+      complete: () => false,
+      loading: 'lazy',
+      top: window.innerHeight + 2_000,
+    });
+    root.append(removedWhileDecoding, offscreenLazy);
+    let decodes = 0;
+    removedWhileDecoding.decode = vi.fn(async () => {
+      decodes += 1;
+      if (decodes === 2) removedWhileDecoding.remove();
+    });
+
+    await expect(waitForCaptureStability(root, { timeoutMs: 1_000 })).resolves.toEqual({
+      imageCount: 1,
+      deferredImageCount: 1,
+      reducedMotion: false,
+    });
+    expect(decodes).toBe(2);
+    expect(root.contains(removedWhileDecoding)).toBe(false);
+  });
+
   it('cancels the wait and removes pending image listeners', async () => {
     setFonts(Promise.resolve());
     const root = document.createElement('div');

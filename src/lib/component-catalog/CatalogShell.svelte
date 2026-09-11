@@ -25,9 +25,13 @@
   let initialRootLight = false;
   let initialRootReducedMotion = false;
   let initialRootComponentFit = false;
-  // Root inline properties this shell owns, keyed by property name, with the inline value
-  // (or null when absent) that was present before the shell first wrote the property.
-  const priorRootProperties = new Map<string, string | null>();
+  // Root inline properties this shell owns, keyed by property name, with the inline
+  // declaration (or null when absent) that was present before the shell first wrote it.
+  interface InlineDeclaration {
+    value: string;
+    priority: string;
+  }
+  const priorRootProperties = new Map<string, InlineDeclaration | null>();
 
   const resolvedTheme = $derived(theme === 'system' ? (systemDark ? 'dark' : 'light') : theme);
 
@@ -38,7 +42,13 @@
     }
     for (const [property, value] of Object.entries(next)) {
       if (!priorRootProperties.has(property)) {
-        priorRootProperties.set(property, root.style.getPropertyValue(property) || null);
+        const priorValue = root.style.getPropertyValue(property);
+        priorRootProperties.set(
+          property,
+          priorValue
+            ? { value: priorValue, priority: root.style.getPropertyPriority(property) }
+            : null,
+        );
       }
       root.style.setProperty(property, value);
     }
@@ -47,7 +57,7 @@
   function restoreRootProperty(root: HTMLElement, property: string) {
     const prior = priorRootProperties.get(property);
     if (prior === null || prior === undefined) root.style.removeProperty(property);
-    else root.style.setProperty(property, prior);
+    else root.style.setProperty(property, prior.value, prior.priority);
     priorRootProperties.delete(property);
   }
 

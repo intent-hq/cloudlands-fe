@@ -106,11 +106,12 @@ interface ImageReadiness {
 }
 
 async function waitForImages(root: HTMLElement, signal: AbortSignal): Promise<ImageReadiness> {
-  const images = [...root.querySelectorAll('img')].filter((image) => !isDeferredLazyImage(image));
+  const allImages = [...root.querySelectorAll('img')];
+  const images = allImages.filter((image) => !isDeferredLazyImage(image));
   await Promise.all(images.map((image) => waitForImage(image, signal)));
   return {
     imageCount: images.length,
-    deferredImageCount: root.querySelectorAll('img').length - images.length,
+    deferredImageCount: allImages.length - images.length,
   };
 }
 

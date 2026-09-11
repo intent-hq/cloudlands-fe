@@ -242,4 +242,26 @@ describe('CatalogShell root inline style ownership', () => {
     expect(rootStyle().getPropertyValue('color-scheme')).toBe('dark');
     expect(rootStyle().getPropertyValue('--font-ui')).toBe(fontToken);
   });
+
+  it('restores prior inline priority when a preset drops a property and on teardown', async () => {
+    rootStyle().setProperty('color-scheme', 'light', 'important');
+    rootStyle().setProperty('--background', 'red', 'important');
+    const shell = render(CatalogShell, { props: { activeSlug: 'button' } });
+    await waitFor(() => expect(rootStyle().getPropertyValue('color-scheme')).toBe('light'));
+    await chooseColorTheme('Dracula');
+    await waitFor(() => expect(rootStyle().getPropertyValue('--background')).not.toBe('red'));
+
+    await chooseColorTheme('Default');
+    await waitFor(() => expect(rootStyle().getPropertyValue('--background')).toBe('red'));
+    expect(rootStyle().getPropertyPriority('--background')).toBe('important');
+
+    await chooseTheme('Dark');
+    expect(rootStyle().getPropertyPriority('color-scheme')).toBe('');
+
+    shell.unmount();
+    expect(rootStyle().getPropertyValue('color-scheme')).toBe('light');
+    expect(rootStyle().getPropertyPriority('color-scheme')).toBe('important');
+    expect(rootStyle().getPropertyValue('--background')).toBe('red');
+    expect(rootStyle().getPropertyPriority('--background')).toBe('important');
+  });
 });

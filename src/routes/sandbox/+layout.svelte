@@ -17,13 +17,14 @@
   // CatalogShell only touches root inline properties it owns, so this survives theme updates.
   onMount(() => {
     const root = document.documentElement;
-    const prior = root.style.getPropertyValue('--font-ui');
+    const priorValue = root.style.getPropertyValue('--font-ui');
+    const priorPriority = root.style.getPropertyPriority('--font-ui');
     root.style.setProperty(
       '--font-ui',
       "'Inter Variable', Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     );
     return () => {
-      if (prior) root.style.setProperty('--font-ui', prior);
+      if (priorValue) root.style.setProperty('--font-ui', priorValue, priorPriority);
       else root.style.removeProperty('--font-ui');
     };
   });
