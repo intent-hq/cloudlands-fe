@@ -1,0 +1,222 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { createActionTypeRingBuffer } from './middlewares/action-ring-buffer';
+import {
+  LONG_TASK_ERROR_MS,
+  LONG_TASK_RATE_LIMIT_MS,
+  LONG_TASK_WARN_MS,
+  startLongTaskWatchdog,
+  type LongTaskWatchdogStoreLike,
+} from './long-task-watchdog';
+
+type ObserverCallback = (list: { getEntries(): PerformanceEntry[] }) => void;
+
+/** Fake PerformanceObserver: records observe() options, lets tests emit entries. */
+function createFakeObserver() {
+  const instances: Array<{
+    callback: ObserverCallback;
+    connected: boolean;
+    disconnect: ReturnType<typeof vi.fn>;
+  }> = [];
+  const observeOptions: unknown[] = [];
+  class FakeObserver {
+    static supportedEntryTypes = ['longtask'];
+    readonly callback: ObserverCallback;
+    connected = false;
+    disconnect = vi.fn(() => {
+      this.connected = false;
+    });
+    constructor(callback: ObserverCallback) {
+      this.callback = callback;
+      instances.push(this);
+    }
+    observe(options: unknown) {
+      this.connected = true;
+      observeOptions.push(options);
+    }
+  }
+  const emit = (durations: number[], startTime = 100) => {
+    for (const instance of instances) {
+      if (!instance.connected) continue;
+      instance.callback({
+        getEntries: () =>
+          durations.map(
+            (duration) => ({ duration, startTime, entryType: 'longtask' }) as PerformanceEntry,
+          ),
+      });
+    }
+  };
+  return {
+    Observer: FakeObserver as unknown as typeof PerformanceObserver,
+    instances,
+    observeOptions,
+    emit,
+  };
+}
+
+/** Fake store whose readable notifies subscribers synchronously on setState. */
+function createFakeStore(initialTabId: string | null) {
+  let state: unknown = { tabState: { currentTabId: initialTabId } };
+  const listeners = new Set<(state: unknown) => void>();
+  const store: LongTaskWatchdogStoreLike & { setTab(id: string | null): void } = {
+    get state() {
+      return state;
+    },
+    getReadableState: () => ({
+      subscribe(run) {
+        listeners.add(run);
+        run(state);
+        return () => listeners.delete(run);
+      },
+    }),
+    setTab(id) {
+      state = { tabState: { currentTabId: id } };
+      for (const run of listeners) run(state);
+    },
+  };
+  return store;
+}
+
+const stops: Array<() => void> = [];
+afterEach(() => {
+  for (const stop of stops.splice(0)) stop();
+});
+
+describe('startLongTaskWatchdog', () => {
+  it('observes longtask entries and logs the attribution payload', () => {
+    const fake = createFakeObserver();
+    const store = createFakeStore('ws-a');
+    const actionTypes = createActionTypeRingBuffer(20);
+    const log = vi.fn();
+    stops.push(startLongTaskWatchdog(store, { observerFactory: fake.Observer, actionTypes, log }));
+
+    expect(fake.observeOptions).toEqual([{ entryTypes: ['longtask'] }]);
+
+    store.setTab('ws-b');
+    actionTypes.push('tabState/setCurrentTab');
+    actionTypes.push('workspace/loadRequested');
+    fake.emit([LONG_TASK_WARN_MS + 50], 1234.6);
+
+    expect(log).toHaveBeenCalledOnce();
+    const [severity, message, payload] = log.mock.calls[0];
+    expect(severity).toBe('warn');
+    expect(message).toContain(String(LONG_TASK_WARN_MS + 50));
+    expect(payload).toEqual({
+      durationMs: LONG_TASK_WARN_MS + 50,
+      startTimeMs: 1235,
+      pathname: window.location.pathname,
+      activeWorkspaceId: 'ws-b',
+      previousWorkspaceId: 'ws-a',
+      recentActionTypes: ['tabState/setCurrentTab', 'workspace/loadRequested'],
+      suppressed: 0,
+    });
+  });
+
+  it('classifies severity by threshold and ignores short tasks', () => {
+    const fake = createFakeObserver();
+    const log = vi.fn();
+    stops.push(
+      startLongTaskWatchdog(createFakeStore(null), {
+        observerFactory: fake.Observer,
+        actionTypes: createActionTypeRingBuffer(1),
+        log,
+        rateLimitMs: 0,
+      }),
+    );
+
+    fake.emit([LONG_TASK_WARN_MS - 1, LONG_TASK_WARN_MS, LONG_TASK_ERROR_MS]);
+
+    expect(log.mock.calls.map((c) => c[0])).toEqual(['warn', 'error']);
+    expect(log.mock.calls[0][2]).toMatchObject({
+      activeWorkspaceId: null,
+      previousWorkspaceId: null,
+    });
+  });
+
+  it('rate-limits per severity bucket and reports the suppressed count', () => {
+    const fake = createFakeObserver();
+    const log = vi.fn();
+    let clock = 0;
+    stops.push(
+      startLongTaskWatchdog(createFakeStore('ws-a'), {
+        observerFactory: fake.Observer,
+        actionTypes: createActionTypeRingBuffer(1),
+        log,
+        now: () => clock,
+      }),
+    );
+
+    fake.emit([300, 300, 300, 2500, 2500]);
+    expect(log.mock.calls.map((c) => c[0])).toEqual(['warn', 'error']);
+
+    clock = LONG_TASK_RATE_LIMIT_MS - 1;
+    fake.emit([300]);
+    expect(log).toHaveBeenCalledTimes(2);
+
+    clock = LONG_TASK_RATE_LIMIT_MS;
+    fake.emit([300, 2500]);
+    expect(log).toHaveBeenCalledTimes(4);
+    expect(log.mock.calls[2][2]).toMatchObject({ suppressed: 3 });
+    expect(log.mock.calls[3][2]).toMatchObject({ suppressed: 1 });
+
+    clock = LONG_TASK_RATE_LIMIT_MS * 2;
+    fake.emit([300]);
+    expect(log.mock.calls[4][2]).toMatchObject({ suppressed: 0 });
+  });
+
+  it('keeps exactly one observer alive and disconnects on stop', () => {
+    const fake = createFakeObserver();
+    const log = vi.fn();
+    const options = {
+      observerFactory: fake.Observer,
+      actionTypes: createActionTypeRingBuffer(1),
+      log,
+    };
+
+    const stopFirst = startLongTaskWatchdog(createFakeStore('ws-a'), options);
+    const stopSecond = startLongTaskWatchdog(createFakeStore('ws-a'), options);
+    stops.push(stopFirst, stopSecond);
+
+    expect(fake.instances).toHaveLength(2);
+    expect(fake.instances[0].disconnect).toHaveBeenCalledOnce();
+    expect(fake.instances[1].disconnect).not.toHaveBeenCalled();
+
+    fake.emit([500]);
+    expect(log).toHaveBeenCalledOnce();
+
+    stopSecond();
+    stopSecond();
+    expect(fake.instances[1].disconnect).toHaveBeenCalledOnce();
+
+    log.mockClear();
+    fake.emit([500]);
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it('stops tracking workspace switches after stop', () => {
+    const fake = createFakeObserver();
+    const store = createFakeStore('ws-a');
+    const log = vi.fn();
+    const stop = startLongTaskWatchdog(store, {
+      observerFactory: fake.Observer,
+      actionTypes: createActionTypeRingBuffer(1),
+      log,
+    });
+    stop();
+
+    expect(() => store.setTab('ws-b')).not.toThrow();
+  });
+
+  it('is a no-op when longtask observation is unsupported', () => {
+    class Unsupported {
+      static supportedEntryTypes = ['paint'];
+      observe = vi.fn();
+      disconnect = vi.fn();
+    }
+    const stop = startLongTaskWatchdog(createFakeStore('ws-a'), {
+      observerFactory: Unsupported as unknown as typeof PerformanceObserver,
+    });
+    expect(stop).toBeTypeOf('function');
+    expect(() => stop()).not.toThrow();
+  });
+});
