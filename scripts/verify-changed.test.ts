@@ -16,7 +16,21 @@ import {
   runVerificationPlan,
   testRunner,
   verificationLockKey,
+  vitestExcludePatterns,
 } from './verify-changed.mjs';
+
+const requireFromTest = createRequire(import.meta.url);
+
+function vitestList(root: string, filter: string) {
+  const bin = join(requireFromTest.resolve('vitest/package.json'), '..', 'vitest.mjs');
+  return execFileSync(
+    process.execPath,
+    [bin, 'list', '--root', root, '--config', 'vitest.config.ts', filter],
+    { cwd: process.cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+  )
+    .split('\n')
+    .filter(Boolean);
+}
 
 const temporaryPaths: string[] = [];
 
@@ -412,6 +426,48 @@ describe('verification planning', () => {
     });
     expect(plan.checks.map((check) => check.id)).not.toContain('vitest-direct');
     for (const check of plan.checks) expect(check.args).not.toContain('src/lib/debug/__tests__');
+  });
+
+  it('reads the Vitest exclude list from the repository config', () => {
+    const patterns = vitestExcludePatterns(process.cwd());
+    expect(patterns).toEqual(
+      expect.arrayContaining(['**/build/**', '**/dist/**', 'test/**', '**/*.ct.spec.ts']),
+    );
+    for (const pattern of patterns) expect(pattern).not.toMatch(/\/\/|\s/);
+  });
+
+  it('ignores survivors that Vitest excludes when deciding a deletion fallback', () => {
+    const test = "import { test } from 'vitest';\ntest('kept', () => {});\n";
+    const root = fixtureRoot({
+      'vitest.config.ts': [
+        'export default {',
+        '  test: {',
+        '    exclude: [',
+        "      '**/node_modules/**',",
+        "      '**/build/**', // build output",
+        "      '**/dist/**',",
+        "      '**/example/quarantined.test.ts',",
+        '    ],',
+        '  },',
+        '};',
+        '',
+      ].join('\n'),
+      'src/example/build/keep.test.ts': test,
+      'src/example/dist/keep.test.ts': test,
+      'src/example/quarantined.test.ts': test,
+    });
+    const deleted = 'src/example/removed.test.ts';
+
+    expect(vitestList(root, 'src/example')).toEqual([]);
+    const excludedOnly = createVerificationPlan([deleted], { root, ctTests: [] });
+    expect(excludedOnly.checks.map((check) => check.id)).not.toContain('vitest-direct');
+
+    writeFileSync(join(root, 'src/example/live.test.ts'), test);
+    expect(vitestList(root, 'src/example')).toEqual(['src/example/live.test.ts > kept']);
+    const withSurvivor = createVerificationPlan([deleted], { root, ctTests: [] });
+    expect(withSurvivor.checks.find((check) => check.id === 'vitest-direct')?.args).toContain(
+      'src/example',
+    );
   });
 
   it('keeps a deleted unit test directory when a nested runnable unit test survives', () => {

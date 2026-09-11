@@ -14,6 +14,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { globSync } from 'glob';
 import { checkDepsFresh } from './check-deps-fresh.mjs';
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -255,21 +256,34 @@ export function testRunner(file) {
   return 'vitest';
 }
 
-function hasRunnableUnitTests(directory, root) {
-  const absolute = resolve(root, directory);
-  if (!existsSync(absolute) || !statSync(absolute).isDirectory()) return false;
-  for (const entry of readdirSync(absolute, { withFileTypes: true })) {
-    if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
-    const child = `${directory}/${entry.name}`;
-    if (entry.isDirectory() ? hasRunnableUnitTests(child, root) : testRunner(child) === 'vitest')
-      return true;
-  }
-  return false;
+// Vitest's default `test.include`; vitest.config.ts does not override it.
+const VITEST_INCLUDE_GLOB = '**/*.{test,spec}.?(c|m)[jt]s?(x)';
+
+export function vitestExcludePatterns(root = REPO_ROOT) {
+  const configPath = resolve(root, 'vitest.config.ts');
+  if (!existsSync(configPath)) return [];
+  const block = /\bexclude:\s*\[([\s\S]*?)\]/.exec(readFileSync(configPath, 'utf8'))?.[1] ?? '';
+  const code = block
+    .split('\n')
+    .map((line) => line.replace(/\/\/.*$/, ''))
+    .join('\n');
+  return [...code.matchAll(/'([^']+)'/g)].map((match) => match[1]);
 }
 
-function survivingUnitTestDirectory(file, root) {
+function hasRunnableUnitTests(directory, root, exclude) {
+  const absolute = resolve(root, directory);
+  if (!existsSync(absolute) || !statSync(absolute).isDirectory()) return false;
+  return globSync(`${directory}/${VITEST_INCLUDE_GLOB}`, {
+    cwd: root,
+    ignore: exclude,
+    nodir: true,
+    posix: true,
+  }).some((file) => testRunner(file) === 'vitest');
+}
+
+function survivingUnitTestDirectory(file, root, exclude) {
   const directory = dirname(file);
-  return directory !== '.' && hasRunnableUnitTests(directory, root) ? directory : null;
+  return directory !== '.' && hasRunnableUnitTests(directory, root, exclude) ? directory : null;
 }
 
 function isLintable(file) {
@@ -329,9 +343,12 @@ export function createVerificationPlan(files, options = {}) {
   const directCt = directTests('ct');
   const directIntegration = directTests('integration');
   const directPlaywright = directTests('playwright');
-  const deletedUnitDirectories = files
-    .filter((file) => testRunner(file) === 'vitest' && !isExisting(file, root))
-    .map((file) => survivingUnitTestDirectory(file, root))
+  const deletedUnitTests = files.filter(
+    (file) => testRunner(file) === 'vitest' && !isExisting(file, root),
+  );
+  const vitestExclude = deletedUnitTests.length ? vitestExcludePatterns(root) : [];
+  const deletedUnitDirectories = deletedUnitTests
+    .map((file) => survivingUnitTestDirectory(file, root, vitestExclude))
     .filter(Boolean);
   const directUnit = [...new Set([...directTests('vitest'), ...deletedUnitDirectories])];
   const relatedSources = existing.filter(
