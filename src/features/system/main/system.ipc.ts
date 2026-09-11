@@ -198,6 +198,14 @@ export function getFocusedWindowWorkspaceId(): string | undefined {
 }
 
 /**
+ * Get the last-known workspace ID viewed by a specific window.
+ * Returns undefined when the window has never reported a workspace view.
+ */
+export function getWorkspaceIdForWindow(windowId: number): string | undefined {
+  return windowWorkspaceIds.get(windowId);
+}
+
+/**
  * Get all workspace IDs that have an open Electron window.
  * Includes both the currently viewed workspace per window AND all workspace
  * tabs open in each window. This ensures that workspaces open in background
