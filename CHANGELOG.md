@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.145.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.145.2...v2.145.3) (2026-09-11)
+
+
+### 🐛 Bug Fixes
+
+* unblock the unread-agent cycle key on remote daemons ([#2315](https://github.com/intent-hq/cloudlands-fe/issues/2315)) ([0e39b28](https://github.com/intent-hq/cloudlands-fe/commit/0e39b2829752e274dece402951391027901a129e))
+* **workspace-hover-card:** follow canonical avatar-state precedence for agent rows ([#2316](https://github.com/intent-hq/cloudlands-fe/issues/2316)) ([02b7c44](https://github.com/intent-hq/cloudlands-fe/commit/02b7c445a1aa9588c80ce4820ca21e6ef9a97e3c))
+
 ## [2.145.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.145.1...v2.145.2) (2026-09-11)
 
 
