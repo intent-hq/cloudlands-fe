@@ -58,6 +58,27 @@ describe('NewSpaceModal nested overlay layering', () => {
     },
   );
 
+  it('keeps the <body> marker through one modal closing (outro) while another stays open', async () => {
+    const props = { open: true, onClose: vi.fn() };
+    const first = render(NewSpaceModal, { props });
+    const second = render(NewSpaceModal, { props });
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-new-space-modal]')).toHaveLength(2),
+    );
+
+    await first.rerender({ ...props, open: false });
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-new-space-modal]')).toHaveLength(1),
+    );
+    expect(document.body.hasAttribute('data-new-space-modal-open')).toBe(true);
+
+    await second.rerender({ ...props, open: false });
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-new-space-modal]')).toHaveLength(0),
+    );
+    expect(document.body.hasAttribute('data-new-space-modal-open')).toBe(false);
+  });
+
   it('raises nested selects, menus, and dialogs above the create modal', () => {
     const modal = source('src/lib/components/modals/NewSpaceModal.svelte');
     const selectContent = source('src/lib/components/ui/select/select-content.svelte');
