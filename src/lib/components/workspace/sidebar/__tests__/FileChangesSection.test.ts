@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
+import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -185,6 +186,8 @@ vi.mock('@fortawesome/free-solid-svg-icons', async (importOriginal) => {
     },
   });
 });
+
+warmImport(() => import('../FileChangesSection.svelte'));
 
 function makeChange(
   path: string,
