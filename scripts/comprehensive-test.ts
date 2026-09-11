@@ -5,14 +5,33 @@
  * Tests all critical functionality to ensure the app is working correctly
  */
 
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { pnpmInvocation } from './pnpm-launcher.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.join(__dirname, '..');
+
+function pnpmOutput(args: string[]): string {
+  const launcher = pnpmInvocation(args);
+  const result = spawnSync(launcher.executable, launcher.args, {
+    cwd: rootDir,
+    encoding: 'utf-8',
+    shell: launcher.shell,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(
+      `pnpm ${args.join(' ')} exited with ${result.status ?? result.signal}\n${output}`,
+    );
+  }
+  return output;
+}
 
 interface TestResult {
   name: string;
@@ -42,10 +61,7 @@ console.log('🧪 Running Comprehensive Tests...\n');
 
 // 1. TypeScript Compilation
 runTest('TypeScript compilation', () => {
-  const output = execSync('pnpm check 2>&1', {
-    cwd: rootDir,
-    encoding: 'utf-8',
-  });
+  const output = pnpmOutput(['check']);
 
   // Check for errors
   const errorMatch = output.match(/found (\d+) error/);
@@ -57,11 +73,7 @@ runTest('TypeScript compilation', () => {
 // 2. IPC Handler Registration
 runTest('IPC handler registration', () => {
   try {
-    const auditOutput = execSync('pnpm tsx scripts/comprehensive-ipc-audit.ts 2>&1', {
-      cwd: rootDir,
-      encoding: 'utf-8',
-      stdio: 'pipe',
-    });
+    const auditOutput = pnpmOutput(['tsx', 'scripts/comprehensive-ipc-audit.ts']);
 
     // Check for missing handlers
     const missingMatch = auditOutput.match(/Missing Handlers:\n([\s\S]*?)⚠️/);

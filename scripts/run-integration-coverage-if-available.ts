@@ -2,6 +2,7 @@
 
 import { spawn } from 'child_process';
 import { createRequire } from 'module';
+import { pnpmInvocation } from './pnpm-launcher.mjs';
 
 const require = createRequire(import.meta.url);
 
@@ -13,18 +14,19 @@ try {
   process.exit(1);
 }
 
-const child = spawn(
-  'pnpm',
-  [
-    'exec',
-    'vitest',
-    'run',
-    '--config',
-    'tests/integration/vitest.integration.config.ts',
-    '--coverage',
-  ],
-  { stdio: 'inherit', env: { ...process.env, VITEST_COVERAGE: 'true' } },
-);
+const launcher = pnpmInvocation([
+  'exec',
+  'vitest',
+  'run',
+  '--config',
+  'tests/integration/vitest.integration.config.ts',
+  '--coverage',
+]);
+const child = spawn(launcher.executable, launcher.args, {
+  stdio: 'inherit',
+  shell: launcher.shell,
+  env: { ...process.env, VITEST_COVERAGE: 'true' },
+});
 
 child.on('close', (code) => process.exit(code ?? 1));
 child.on('error', (error) => {
