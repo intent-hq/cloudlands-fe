@@ -5,7 +5,12 @@
  * and only a question-bearing assistant row at the non-system tail pends.
  */
 import { describe, expect, it } from 'vitest';
-import { classifyPendingQuestionMarker, derivePendingQuestions } from '../pending-questions';
+import {
+  classifyPendingQuestionMarker,
+  derivePendingQuestions,
+  sessionHasPendingQuestion,
+  sessionPendingQuestions,
+} from '../pending-questions';
 import { buildAnswerMessageMetadata, getAnsweredQuestionsMessageId } from '../answer-message';
 import { deriveMarkedQuestionRecoveryState, deriveWizardPendingQuestions } from '../wizard-gate';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
@@ -295,6 +300,249 @@ describe('derivePendingQuestions', () => {
       messageId: 'msg-a1',
     });
     expect(derivePendingQuestions([older, newer], false, false, 'msg-missing')).toBeNull();
+  });
+});
+
+// ============================================================================
+// Shared session predicate — marker × dismissal × in-tail/off-tail matrix
+// ============================================================================
+
+describe('sessionPendingQuestions / sessionHasPendingQuestion', () => {
+  const questionTail: AgentMessage[] = [
+    userMessage('msg-u0'),
+    assistantMessage([{ type: 'text', text: 'One question:' }, questionBlock()], { id: 'msg-a1' }),
+  ];
+  // The marked row was paged out of the loaded tail; only later rows remain.
+  const offTail: AgentMessage[] = [
+    userMessage('msg-u5'),
+    assistantMessage([{ type: 'text', text: 'Later reply.' }], { id: 'msg-a6' }),
+  ];
+  const idle = { isResponding: false, isStreaming: false, isProcessing: false };
+
+  describe('marker absent (legacy fallback)', () => {
+    it('pends the tail question while the agent is idle', () => {
+      const session = makeStoredSession({ ...idle, messages: questionTail, metadata: {} });
+      expect(sessionPendingQuestions(session)).toMatchObject({ messageId: 'msg-a1' });
+      expect(sessionHasPendingQuestion(session)).toBe(true);
+    });
+
+    it('is null while the own turn is active (isAgentRunningState)', () => {
+      for (const flag of ['isResponding', 'isStreaming', 'isProcessing'] as const) {
+        const session = makeStoredSession({ ...idle, [flag]: true, messages: questionTail });
+        expect(sessionPendingQuestions(session)).toBeNull();
+        expect(sessionHasPendingQuestion(session)).toBe(false);
+      }
+    });
+
+    it('still pends while merely waiting on other agents (blocked wait is not running)', () => {
+      const session = makeStoredSession({
+        ...idle,
+        isWaitingForOtherAgents: true,
+        messages: questionTail,
+      });
+      expect(sessionHasPendingQuestion(session)).toBe(true);
+    });
+
+    it('is false when the tail question was dismissed', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: questionTail,
+        metadata: { dismissedQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionPendingQuestions(session)).toBeNull();
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+
+    it('is false when the tail has no question row', () => {
+      const session = makeStoredSession({ ...idle, messages: offTail });
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+  });
+
+  describe("marker cleared ('')", () => {
+    it('is false even when the tail still has a question row', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: questionTail,
+        metadata: { pendingQuestionsMessageId: '' },
+      });
+      expect(sessionPendingQuestions(session)).toBeNull();
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+
+    it('is false regardless of dismissal or tail contents', () => {
+      expect(
+        sessionHasPendingQuestion(
+          makeStoredSession({
+            ...idle,
+            messages: questionTail,
+            metadata: { pendingQuestionsMessageId: '', dismissedQuestionsMessageId: 'msg-a1' },
+          }),
+        ),
+      ).toBe(false);
+      expect(
+        sessionHasPendingQuestion(
+          makeStoredSession({
+            ...idle,
+            messages: offTail,
+            metadata: { pendingQuestionsMessageId: '' },
+          }),
+        ),
+      ).toBe(false);
+    });
+  });
+
+  describe('marker set, marked message in tail', () => {
+    it('pends when not dismissed', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: questionTail,
+        metadata: { pendingQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionPendingQuestions(session)).toMatchObject({ messageId: 'msg-a1' });
+      expect(sessionPendingQuestions(session)!.questions[0].header).toBe('Auth method');
+      expect(sessionHasPendingQuestion(session)).toBe(true);
+    });
+
+    it('stays pending while a later turn runs (marker is sticky)', () => {
+      const session = makeStoredSession({
+        isResponding: true,
+        isStreaming: true,
+        messages: [
+          ...questionTail,
+          userMessage('msg-wake'),
+          assistantMessage([{ type: 'text', text: 'Handling…' }], {
+            id: 'msg-a2',
+            isStreaming: true,
+          }),
+        ],
+        metadata: { pendingQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionHasPendingQuestion(session)).toBe(true);
+    });
+
+    it('is false when dismissed', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: questionTail,
+        metadata: { pendingQuestionsMessageId: 'msg-a1', dismissedQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionPendingQuestions(session)).toBeNull();
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+
+    it('a dismissal for a different message does not suppress', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: questionTail,
+        metadata: { pendingQuestionsMessageId: 'msg-a1', dismissedQuestionsMessageId: 'msg-old' },
+      });
+      expect(sessionHasPendingQuestion(session)).toBe(true);
+    });
+
+    it('is false once a tagged answer row names the set', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: [...questionTail, answerMessage('msg-a1')],
+        metadata: { pendingQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionPendingQuestions(session)).toBeNull();
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+
+    it('is false while the marked row is still streaming', () => {
+      const session = makeStoredSession({
+        isResponding: true,
+        messages: [
+          userMessage('msg-u0'),
+          assistantMessage([questionBlock()], { id: 'msg-a1', isStreaming: true }),
+        ],
+        metadata: { pendingQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+  });
+
+  describe('marker set, marked message off-tail (fail-closed)', () => {
+    it('sessionPendingQuestions is null (no questions to render) but the predicate is true', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: offTail,
+        metadata: { pendingQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionPendingQuestions(session)).toBeNull();
+      expect(sessionHasPendingQuestion(session)).toBe(true);
+    });
+
+    it('stays true while a later turn runs and with an empty loaded tail', () => {
+      expect(
+        sessionHasPendingQuestion(
+          makeStoredSession({
+            isResponding: true,
+            messages: offTail,
+            metadata: { pendingQuestionsMessageId: 'msg-a1' },
+          }),
+        ),
+      ).toBe(true);
+      expect(
+        sessionHasPendingQuestion(
+          makeStoredSession({
+            ...idle,
+            messages: [],
+            metadata: { pendingQuestionsMessageId: 'msg-a1' },
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it('is false when dismissed', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: offTail,
+        metadata: { pendingQuestionsMessageId: 'msg-a1', dismissedQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+
+    it('is false once a tagged answer row in the tail names the set', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: [...offTail, answerMessage('msg-a1')],
+        metadata: { pendingQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+      // An answer for another set does not resolve this one.
+      expect(
+        sessionHasPendingQuestion(
+          makeStoredSession({
+            ...idle,
+            messages: [...offTail, answerMessage('msg-other')],
+            metadata: { pendingQuestionsMessageId: 'msg-a1' },
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it('a marked row in the tail that is not an assistant question is not fail-closed pending', () => {
+      // The marker names a row that IS loaded but carries no question — the
+      // strict derivation owns that case and the off-tail rule must not
+      // override it.
+      const session = makeStoredSession({
+        ...idle,
+        messages: [userMessage('msg-u0'), userMessage('msg-a1')],
+        metadata: { pendingQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+  });
+
+  it('tolerates a session without a loaded transcript (AgentLite)', () => {
+    const lite = makeStoredSession({ ...idle, metadata: { pendingQuestionsMessageId: 'msg-a1' } });
+    delete (lite as Partial<AgentSession>).messages;
+    expect(sessionPendingQuestions(lite)).toBeNull();
+    expect(sessionHasPendingQuestion(lite)).toBe(true);
+    delete (lite as Partial<AgentSession>).metadata;
+    expect(sessionHasPendingQuestion(lite)).toBe(false);
   });
 });
 
