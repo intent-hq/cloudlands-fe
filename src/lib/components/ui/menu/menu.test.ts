@@ -50,6 +50,39 @@ describe('Menu keyboard and focus behavior', () => {
     await waitFor(() => expect(document.activeElement).toBe(cherry));
   });
 
+  it('moves the highlight with keyboard focus after pointer hover and leave', async () => {
+    render(MenuTestHarness);
+    await openMenu();
+    const apple = screen.getByRole('menuitem', { name: 'Apple' });
+    const banana = screen.getByRole('menuitem', { name: 'Banana' });
+    const cherry = screen.getByRole('menuitem', { name: 'Cherry' });
+    const menu = screen.getByRole('menu');
+    const highlight = menu.querySelector('[data-slot="menu-list-highlight"]')!;
+    const items = Array.from(menu.querySelectorAll<HTMLElement>('[data-menu-item]:not([data-disabled])'));
+    items.forEach((item, index) => {
+      item.getBoundingClientRect = () =>
+        ({ top: index * 20, bottom: index * 20 + 20, left: 0, width: 100, height: 20 }) as DOMRect;
+    });
+    await fireEvent.pointerMove(banana, { pointerType: 'mouse', clientX: 10, clientY: 30 });
+    await waitFor(() => expect(document.activeElement).toBe(banana));
+    await waitFor(() => expect(highlight.getAttribute('data-active-index')).toBe('1'));
+    await fireEvent.keyDown(banana, { key: 'ArrowDown' });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(cherry);
+      expect(highlight.getAttribute('data-active-index')).toBe('2');
+    });
+    await fireEvent.keyDown(cherry, { key: 'ArrowUp' });
+    await waitFor(() => expect(highlight.getAttribute('data-active-index')).toBe('1'));
+    await fireEvent.pointerLeave(menu, { pointerType: 'mouse' });
+    await fireEvent.keyDown(banana, { key: 'ArrowUp' });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(apple);
+      expect(highlight.getAttribute('data-active-index')).toBe('0');
+    });
+    await fireEvent.keyDown(apple, { key: 'ArrowDown' });
+    await waitFor(() => expect(highlight.getAttribute('data-active-index')).toBe('1'));
+  });
+
   it('dismisses with Escape and restores focus to the trigger', async () => {
     render(MenuTestHarness);
     const trigger = await openMenu();
@@ -269,7 +302,7 @@ describe('Menu metadata and compatibility', () => {
     await openMenu();
     const menu = screen.getByRole('menu');
     const apple = screen.getByRole('menuitem', { name: 'Apple' });
-    expect(menu.className).toContain('bg-surface-3');
+    expect(menu.className).toContain('bg-popover');
     expect(menu.className).toContain('border-border');
     expect(menu.className).toContain('overflow-y-auto');
     expect(menu.className).toContain('rounded-md');

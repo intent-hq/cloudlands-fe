@@ -7,12 +7,7 @@
   import ListHighlight from '../menu/menu-list-highlight.svelte';
   import { menuItem, menuOverlay } from '../menu/menu-recipes';
   import { slide } from '$lib/motion';
-  import {
-    clampSurface,
-    setSurface,
-    SURFACE_BG,
-    useSurface,
-  } from '$lib/components/ui/surface-context';
+  import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
   import {
     OPTION_LIST_CONTAINER_CLASS,
     OPTION_LIST_END_SLOT_CLASS,
@@ -424,7 +419,6 @@
       data-surface-level={surface}
       class={cn(
         menuOverlay(),
-        SURFACE_BG[surface],
         'w-full max-h-72 rounded-(--radius-medium)',
         contentClass,
       )}
@@ -439,7 +433,6 @@
         data-surface-level={surface}
         class={cn(
           menuOverlay(),
-          SURFACE_BG[surface],
           'w-(--bits-combobox-anchor-width) max-h-72 rounded-(--radius-medium)',
           contentClass,
         )}

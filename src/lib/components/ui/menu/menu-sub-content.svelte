@@ -4,12 +4,7 @@
   import { cn } from '$lib/utils.js';
   import ListHighlight from './menu-list-highlight.svelte';
   import { menuOverlay } from './menu-recipes';
-  import {
-    clampSurface,
-    setSurface,
-    SURFACE_BG,
-    useSurface,
-  } from '$lib/components/ui/surface-context';
+  import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { useStaticOverlay } from '../static-overlay-context.svelte';
   import { handleMenuPageKey, setMenuTabStop, syncMenuTabStopFromFocus } from './menu-roving-focus';
@@ -46,7 +41,6 @@
   const contentClass = $derived(
     cn(
       menuOverlay(),
-      SURFACE_BG[surface],
       OPTION_LIST_CONTAINER_CLASS,
       'min-w-40 overflow-y-auto overscroll-contain',
       className,

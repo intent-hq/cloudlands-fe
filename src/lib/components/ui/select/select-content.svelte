@@ -4,12 +4,7 @@
   import ListHighlight from '../menu/menu-list-highlight.svelte';
   import { menuOverlay } from '../menu/menu-recipes';
   import { cn } from '$lib/utils';
-  import {
-    clampSurface,
-    setSurface,
-    SURFACE_BG,
-    useSurface,
-  } from '$lib/components/ui/surface-context';
+  import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
 
   let {
@@ -91,7 +86,6 @@
     data-surface-level={surface}
     class={cn(
       menuOverlay(),
-      SURFACE_BG[surface],
       'w-full max-h-60 rounded-(--radius-medium)',
       className,
     )}
@@ -107,7 +101,6 @@
       sideOffset={4}
       class={cn(
         menuOverlay(),
-        SURFACE_BG[surface],
         'w-(--bits-select-anchor-width) max-h-60 rounded-(--radius-medium)',
         className,
       )}

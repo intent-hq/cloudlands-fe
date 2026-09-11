@@ -2,7 +2,7 @@
   import { Popover as PopoverPrimitive } from 'bits-ui';
   import { cn } from '$lib/utils';
   import { menuOverlay } from '../menu/menu-recipes';
-  import { clampSurface, setSurface, SURFACE_BG, useSurface } from '../surface-context';
+  import { clampSurface, setSurface, useSurface } from '../surface-context';
   import { useStaticOverlay } from '../static-overlay-context.svelte';
 
   let {
@@ -23,7 +23,7 @@
   const isStatic = $derived(staticPosition ?? rootStaticPosition());
   const surface = clampSurface(useSurface() + 2);
   setSurface(surface);
-  const contentClass = $derived(cn(menuOverlay(), SURFACE_BG[surface], className));
+  const contentClass = $derived(cn(menuOverlay(), className));
 </script>
 
 {#if isStatic}
