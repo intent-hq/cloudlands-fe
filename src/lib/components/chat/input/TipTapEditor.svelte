@@ -1649,11 +1649,6 @@
     word-break: break-word;
   }
 
-  .tiptap-container :global(.tiptap-editor:focus-visible) {
-    outline: 1px solid hsl(var(--focus-ring));
-    outline-offset: -1px;
-  }
-
   .tiptap-container :global(.tiptap-editor p) {
     margin: 0;
     overflow-wrap: break-word;
