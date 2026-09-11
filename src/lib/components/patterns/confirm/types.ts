@@ -4,7 +4,6 @@ export interface ConfirmOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
-  typedConfirmation?: string;
   onConfirm?: () => void | Promise<void>;
 }
 
@@ -16,7 +15,7 @@ export interface PromptField {
   required?: boolean;
 }
 
-export interface PromptOptions extends Omit<ConfirmOptions, 'typedConfirmation' | 'onConfirm'> {
+export interface PromptOptions extends Omit<ConfirmOptions, 'onConfirm'> {
   field: PromptField;
   onConfirm?: (value: string) => void | Promise<void>;
 }

@@ -19,7 +19,7 @@ export const confirmFixtures = [
   {
     id: 'destructive-confirm',
     title: 'Destructive confirm',
-    states: ['default', 'typed-name', 'busy'],
+    states: ['default', 'busy'],
     themes: ['light', 'dark'],
     viewport: 'both',
   },

@@ -59,7 +59,6 @@
     confirmLabel={request.options.confirmLabel ?? m.modals_bulkActionConfirm_confirm_label()}
     cancelLabel={request.options.cancelLabel ?? m.modals_bulkActionConfirm_cancel_label()}
     destructive={request.options.destructive ?? false}
-    typedConfirmation={request.options.typedConfirmation}
     {busy}
     onConfirm={accept}
     onCancel={cancel}

@@ -1,7 +1,5 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { Input } from '$lib/components/ui/input';
-  import { Label } from '$lib/components/ui/label';
   import FormDialog from './FormDialog.svelte';
 
   interface Props {
@@ -11,8 +9,6 @@
     description?: string;
     confirmLabel: string;
     cancelLabel?: string;
-    typedConfirmation?: string;
-    typedLabel?: string;
     details?: Snippet;
     busy?: boolean;
     destructive?: boolean;
@@ -29,8 +25,6 @@
     description,
     confirmLabel,
     cancelLabel,
-    typedConfirmation,
-    typedLabel,
     details,
     busy = false,
     destructive = true,
@@ -39,14 +33,6 @@
     onConfirm,
     onCancel,
   }: Props = $props();
-
-  let typedValue = $state('');
-  let inputRef: HTMLInputElement | null = $state(null);
-  const canSubmit = $derived(!typedConfirmation || typedValue === typedConfirmation);
-
-  $effect(() => {
-    if (open) typedValue = '';
-  });
 </script>
 
 <FormDialog
@@ -57,25 +43,12 @@
   submitLabel={confirmLabel}
   {cancelLabel}
   submitVariant={destructive ? 'destructive' : 'default'}
-  {canSubmit}
   {busy}
-  initialFocus={typedConfirmation ? inputRef : null}
-  focusSubmit={!typedConfirmation}
+  focusSubmit
   class={className}
   {closeLabel}
   onSubmit={onConfirm}
   {onCancel}
 >
   {#if details}{@render details()}{/if}
-  {#if typedConfirmation}
-    <div class="grid gap-2">
-      {#if typedLabel}<Label for="typed-confirmation">{typedLabel}</Label>{/if}
-      <Input
-        id="typed-confirmation"
-        bind:ref={inputRef}
-        bind:value={typedValue}
-        autocomplete="off"
-      />
-    </div>
-  {/if}
 </FormDialog>

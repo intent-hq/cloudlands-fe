@@ -181,7 +181,6 @@ export const catalogEntries: CatalogEntry[] = [
         title: 'Product modals',
         states: [
           'destructive-confirm-default',
-          'destructive-confirm-typed-name',
           'destructive-confirm-busy',
           'form-dialog-default',
           'form-dialog-busy',

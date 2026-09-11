@@ -73,20 +73,16 @@ describe('confirm service', () => {
     await expect(cancelled).resolves.toBeNull();
   });
 
-  it('requires an exact typed confirmation before enabling destructive submit', async () => {
+  it('confirms a destructive action without requiring text input', async () => {
     render(ConfirmHost);
     const result = confirm({
       title: 'Delete Alpha',
       confirmLabel: 'Delete',
       destructive: true,
-      typedConfirmation: 'Alpha',
     });
-    const input = await screen.findByRole('textbox');
-    const button = screen.getByRole('button', { name: 'Delete' });
-    expect(button.hasAttribute('disabled')).toBe(true);
-    await fireEvent.input(input, { target: { value: 'alpha' } });
-    expect(button.hasAttribute('disabled')).toBe(true);
-    await fireEvent.input(input, { target: { value: 'Alpha' } });
+    const button = await screen.findByRole('button', { name: 'Delete' });
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(button.hasAttribute('disabled')).toBe(false);
     await fireEvent.click(button);
     await expect(result).resolves.toBe(true);
   });

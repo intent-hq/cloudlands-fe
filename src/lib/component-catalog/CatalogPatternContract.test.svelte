@@ -58,8 +58,6 @@
             title="Remove workspace"
             description="This action cannot be undone."
             confirmLabel="Remove workspace"
-            typedConfirmation={state === 'typed-name' ? 'workspace' : undefined}
-            typedLabel={state === 'typed-name' ? 'Type workspace to confirm' : undefined}
             busy={state === 'busy'}
             onConfirm={() => undefined}
           />
