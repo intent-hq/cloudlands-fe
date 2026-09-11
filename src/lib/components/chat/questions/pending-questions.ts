@@ -1,4 +1,4 @@
-import type { AgentMessage } from '$shared/types';
+import type { AgentMessage, QueuedMessage } from '$shared/types';
 import { getQuestionFromResourceBlock, type Question } from '$shared/types/question-resource';
 import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
 import { getAnsweredQuestionsMessageId } from './answer-message';
@@ -54,13 +54,29 @@ export function isQuestionSetAnswered(
 }
 
 /**
+ * True when a queued (not yet delivered) message carries the wizard's answer
+ * tag naming `messageId`. An answer sent while the agent is mid-turn rides
+ * the daemon queue with its `messageMetadata`; the set counts as answered
+ * from the moment it is queued, so the wizard does not stay up until drain.
+ */
+export function isQuestionSetAnsweredInQueue(
+  queuedMessages: readonly QueuedMessage[],
+  messageId: string,
+): boolean {
+  return queuedMessages.some(
+    (queued) => getAnsweredQuestionsMessageId({ metadata: queued.messageMetadata }) === messageId,
+  );
+}
+
+/**
  * Derive the pending question set, or null when there is none.
  *
  * With the daemon marker set, the marked question-bearing row stays pending
  * regardless of `isTurnActive`: the marker is only written once the asking
  * turn has ended, and later automatic/user turns must not hide the wizard.
  * It is null only while that row is still streaming, once a tagged answer
- * row names it, or while an optimistic pending user bubble is shown.
+ * row names it (in the transcript or still in `queuedMessages`), or while an
+ * optimistic pending user bubble is shown.
  *
  * Without the marker (legacy daemon) the transcript-tail fallback applies and
  * is additionally null whenever the agent's OWN turn is active (`isTurnActive`
@@ -75,6 +91,7 @@ export function derivePendingQuestions(
   isTurnActive: boolean,
   showingPendingUserMessage = false,
   pendingQuestionsMessageId?: string,
+  queuedMessages: readonly QueuedMessage[] = [],
 ): PendingQuestionSet | null {
   if (showingPendingUserMessage || messages.length === 0) {
     return null;
@@ -86,6 +103,7 @@ export function derivePendingQuestions(
     const marked = messages.find((message) => message.id === marker.messageId);
     if (!marked || marked.role !== 'assistant' || marked.isStreaming) return null;
     if (isQuestionSetAnswered(messages, marker.messageId)) return null;
+    if (isQuestionSetAnsweredInQueue(queuedMessages, marker.messageId)) return null;
     const questions = questionsOf(marked);
     return questions.length > 0 ? { messageId: marked.id, questions } : null;
   }

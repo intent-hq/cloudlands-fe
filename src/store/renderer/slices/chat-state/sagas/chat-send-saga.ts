@@ -233,6 +233,9 @@ function* dispatchToLifecycle(
       const queueOptions = {
         ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
         ...(options.fileBlocks !== undefined ? { fileBlocks: options.fileBlocks } : {}),
+        ...(options.messageMetadata !== undefined
+          ? { messageMetadata: options.messageMetadata }
+          : {}),
       };
       // Captured BEFORE the wire call: an authoritative snapshot folded while
       // the RPC is in flight — a live agent:queue:updated fold

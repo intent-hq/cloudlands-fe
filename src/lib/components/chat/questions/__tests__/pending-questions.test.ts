@@ -5,11 +5,16 @@
  * and only a question-bearing assistant row at the non-system tail pends.
  */
 import { describe, expect, it } from 'vitest';
-import { classifyPendingQuestionMarker, derivePendingQuestions } from '../pending-questions';
+import {
+  classifyPendingQuestionMarker,
+  derivePendingQuestions,
+  isQuestionSetAnsweredInQueue,
+} from '../pending-questions';
 import { buildAnswerMessageMetadata, getAnsweredQuestionsMessageId } from '../answer-message';
 import { deriveMarkedQuestionRecoveryState, deriveWizardPendingQuestions } from '../wizard-gate';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
-import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
+import type { AgentMessage, AgentSession, ContentBlock, QueuedMessage } from '$shared/types';
+import { createCollection, addItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
@@ -77,6 +82,20 @@ function answerMessage(answeredQuestionsMessageId: string, id = 'msg-answer-1'):
     timestamp: new Date().toISOString(),
     metadata: buildAnswerMessageMetadata(answeredQuestionsMessageId),
   } as unknown as AgentMessage;
+}
+
+/** A daemon queue entry as echoed by agent.queueMessage / agent.getQueue. */
+function queuedMessage(
+  messageMetadata: Record<string, unknown> | undefined,
+  id = 'qm-1',
+): QueuedMessage {
+  return {
+    id,
+    content: 'Q: Auth method\nA: OAuth',
+    queuedAt: new Date().toISOString(),
+    position: 0,
+    ...(messageMetadata !== undefined ? { messageMetadata } : {}),
+  };
 }
 
 describe('classifyPendingQuestionMarker', () => {
@@ -184,6 +203,26 @@ describe('derivePendingQuestions', () => {
     expect(derivePendingQuestions(otherAnswer, false, false, 'msg-a1')).toMatchObject({
       messageId: 'msg-a1',
     });
+  });
+
+  it('a queued tagged answer hides a marked set while the agent is still mid-turn', () => {
+    // The wizard's answer was sent while the agent was responding: it rides
+    // the daemon queue with its messageMetadata and is not in the transcript
+    // yet. The set counts as answered from the moment it is queued.
+    const msg = assistantMessage([questionBlock()], { id: 'msg-a1' });
+    const queued = [queuedMessage(buildAnswerMessageMetadata('msg-a1'))];
+    expect(derivePendingQuestions([msg], true, false, 'msg-a1', queued)).toBeNull();
+    expect(derivePendingQuestions([msg], false, false, 'msg-a1', queued)).toBeNull();
+    // A queued answer for a different set, or an untagged queued message,
+    // does not resolve this one.
+    expect(
+      derivePendingQuestions([msg], false, false, 'msg-a1', [
+        queuedMessage(buildAnswerMessageMetadata('msg-other')),
+      ]),
+    ).toMatchObject({ messageId: 'msg-a1' });
+    expect(
+      derivePendingQuestions([msg], false, false, 'msg-a1', [queuedMessage(undefined)]),
+    ).toMatchObject({ messageId: 'msg-a1' });
   });
 
   it('ends the legacy fallback at a later user row', () => {
@@ -316,11 +355,43 @@ function makeStoredSession(overrides: Partial<AgentSession> = {}): AgentSession 
   };
 }
 
-function stateWith(session: AgentSession): StoreState {
-  return {
+function stateWith(session: AgentSession, queued: QueuedMessage[] = []): StoreState {
+  const state = {
     agentSessions: { byAgentId: { [session.id]: session }, agentIdsByWorkspace: {} },
   } as unknown as StoreState;
+  if (queued.length > 0) {
+    state.agentQueue = {
+      byAgentId: {
+        [session.id]: {
+          messages: queued.reduce(
+            (collection, entry) => addItem(collection, entry),
+            createCollection<QueuedMessage, 'id'>('id'),
+          ),
+          recentlyRemovedMessageIds: [],
+          isHydrating: false,
+          error: null,
+        },
+      },
+    } as StoreState['agentQueue'];
+  }
+  return state;
 }
+
+describe('isQuestionSetAnsweredInQueue', () => {
+  it('matches only a queued entry tagged for the given question set', () => {
+    const tagged = queuedMessage(buildAnswerMessageMetadata('msg-a1'));
+    expect(isQuestionSetAnsweredInQueue([tagged], 'msg-a1')).toBe(true);
+    expect(isQuestionSetAnsweredInQueue([tagged], 'msg-other')).toBe(false);
+    expect(isQuestionSetAnsweredInQueue([queuedMessage(undefined)], 'msg-a1')).toBe(false);
+    expect(
+      isQuestionSetAnsweredInQueue(
+        [queuedMessage({ type: 'agent_message', fromAgentId: 'agent-x' })],
+        'msg-a1',
+      ),
+    ).toBe(false);
+    expect(isQuestionSetAnsweredInQueue([], 'msg-a1')).toBe(false);
+  });
+});
 
 // The suite exercises the REAL production gate — deriveWizardPendingQuestions
 // from ../wizard-gate, the same function ChatPanel.svelte calls — so reverting
@@ -418,6 +489,41 @@ describe('wizard gate while waiting on delegated agents', () => {
     );
     const answered = [...transcript, answerMessage('msg-a1')];
     expect(deriveWizardPendingQuestions(state, AGENT_ID, answered)).toBeNull();
+  });
+
+  it('STICKY: a tagged answer still in the daemon queue hides the wizard while the agent is mid-turn', () => {
+    // The answer was sent while the agent was responding, so it went through
+    // agent.queueMessage (with its messageMetadata) instead of the transcript.
+    // The marker is still set; the wizard must not stay up until drain.
+    const running = makeStoredSession({
+      isResponding: true,
+      isStreaming: true,
+      metadata: { pendingQuestionsMessageId: 'msg-a1' },
+    });
+    const queued = [queuedMessage(buildAnswerMessageMetadata('msg-a1'))];
+    expect(
+      deriveWizardPendingQuestions(stateWith(running, queued), AGENT_ID, transcript),
+    ).toBeNull();
+    // The entry leaving the queue with no tagged transcript row (e.g. the
+    // user removed it before drain) re-surfaces the set.
+    expect(deriveWizardPendingQuestions(stateWith(running), AGENT_ID, transcript)).toMatchObject({
+      messageId: 'msg-a1',
+    });
+    // Once drained, the tagged transcript row keeps it hidden.
+    expect(
+      deriveWizardPendingQuestions(stateWith(running), AGENT_ID, [
+        ...transcript,
+        answerMessage('msg-a1'),
+      ]),
+    ).toBeNull();
+    // A queued answer for another set leaves this one pending.
+    expect(
+      deriveWizardPendingQuestions(
+        stateWith(running, [queuedMessage(buildAnswerMessageMetadata('msg-other'))]),
+        AGENT_ID,
+        transcript,
+      ),
+    ).toMatchObject({ messageId: 'msg-a1' });
   });
 
   it('a trailing user message (e.g. delegated-agent wake report) no longer supersedes', () => {
@@ -650,6 +756,28 @@ describe('wizard gate honors the authoritative pending marker', () => {
         answerMessage('msg-recovered'),
       ]),
     ).toBeNull();
+  });
+
+  it('a queued tagged answer resolves a recovered marked set too', () => {
+    const state = stateWith(
+      makeStoredSession({
+        isResponding: true,
+        metadata: { pendingQuestionsMessageId: 'msg-recovered' },
+      }),
+      [queuedMessage(buildAnswerMessageMetadata('msg-recovered'))],
+    );
+    state.chatState = {
+      byAgentId: {
+        [AGENT_ID]: {
+          pendingQuestionRecovery: {
+            messageId: 'msg-recovered',
+            status: 'found',
+            questions: [QUESTION],
+          },
+        },
+      },
+    } as StoreState['chatState'];
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, transcript)).toBeNull();
   });
 
   it('keeps an authoritative marker fail-closed when recovery settles as not found', () => {

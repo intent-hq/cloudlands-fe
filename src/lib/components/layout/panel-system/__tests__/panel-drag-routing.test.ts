@@ -82,6 +82,9 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentAttentionRequest: () => readable(null),
   selectAgentSession: () => readable(null),
 }));
+vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
+  selectAgentQueueMessages: Object.assign(() => readable([]), { select: () => [] }),
+}));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPendingCount: () => readable(0),
   selectPermissionRequests: () => readable([]),

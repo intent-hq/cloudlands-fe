@@ -979,11 +979,14 @@
     // Reading $agentIsResponding$ keeps this $derived reactive to gate flips
     // that do not change the transcript; the dismissal marker read keeps it
     // reactive to metadata-only session updates (optimistic dismiss /
-    // agent:updated); the shared helper re-reads both from store state.
+    // agent:updated); the queue read keeps it reactive to a tagged answer
+    // entering/leaving the agent's queue; the shared helper re-reads all of
+    // them from store state.
     void $agentIsResponding$;
     void $agentSession$?.metadata?.dismissedQuestionsMessageId;
     void $agentSession$?.metadata?.pendingQuestionsMessageId;
     void $pendingQuestionRecovery$;
+    void $queuedMessages$;
     return deriveWizardPendingQuestions(
       appStore.state,
       agentId,
