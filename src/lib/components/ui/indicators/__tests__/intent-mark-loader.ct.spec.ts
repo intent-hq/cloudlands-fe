@@ -138,6 +138,35 @@ test('freezes the filled Twist pose during a theme change in a handoff', async (
   expect(neutral.width).toBeGreaterThan(0);
 });
 
+test('resolves currentColor again when replaying cached Twist frames in another theme', async ({
+  mount,
+}) => {
+  const component = await mount(IntentMarkLoaderHost, {
+    props: { variant: 'twist', playing: true, theme: 'light' },
+  });
+  const root = component.getByRole('status');
+  await expect(root).toHaveAttribute('data-motion-state', 'playing');
+  await seekLoop(root, 1600);
+  const firstFill = await root
+    .locator('[data-mark-arm]')
+    .first()
+    .evaluate((path) => getComputedStyle(path).fill);
+  await component.update({ props: { variant: 'pulse', playing: true, theme: 'dark' } });
+  await expect(root).toHaveAttribute('data-motion-state', 'playing');
+  await component.update({ props: { variant: 'twist', playing: true, theme: 'dark' } });
+  await expect(root).toHaveAttribute('data-motion-state', 'playing');
+  await seekLoop(root, 1600);
+  const replay = await root
+    .locator('[data-mark-arm]')
+    .first()
+    .evaluate((path) => {
+      const style = getComputedStyle(path);
+      return { fill: style.fill, color: style.color };
+    });
+  expect(replay.fill).toBe(replay.color);
+  expect(replay.fill).not.toBe(firstFill);
+});
+
 for (const variant of ['pulse', 'bloom', 'twist'] as const) {
   test(`matches every measured ${variant} source pose and the loop boundary`, async ({
     mount,

@@ -28,7 +28,8 @@ export function createIntentMarkMotion(
   const template = neutral.cloneNode(true) as SVGGElement;
   const media = window.matchMedia('(prefers-reduced-motion: reduce)');
   let options = initial;
-  let inViewport = true;
+  // Avoid building invisible loops before the observer's first notification.
+  let inViewport = typeof IntersectionObserver === 'undefined';
   let visible = !document.hidden;
   let destroyed = false;
   let sequence = 0;
@@ -39,6 +40,7 @@ export function createIntentMarkMotion(
   let activeVariant: IntentMarkVariant | undefined;
   let transitionTimer: number | undefined;
   let transitioning = false;
+  let isNeutral = true;
 
   const cancelAnimations = () => {
     if (transitionTimer !== undefined) window.clearTimeout(transitionTimer);
@@ -52,6 +54,7 @@ export function createIntentMarkMotion(
   };
 
   const setNeutral = () => {
+    if (isNeutral) return;
     sequence += 1;
     cancelAnimations();
     current = template.cloneNode(true) as SVGGElement;
@@ -59,6 +62,7 @@ export function createIntentMarkMotion(
     outgoing = undefined;
     activeVariant = undefined;
     transitioning = false;
+    isNeutral = true;
     root.dataset.motionState = 'neutral';
   };
 
@@ -67,7 +71,9 @@ export function createIntentMarkMotion(
   const startLoop = (variant: IntentMarkVariant) => {
     loops = Array.from(current.querySelectorAll<SVGPathElement>('[data-mark-arm]')).map(
       (path, index) =>
-        path.animate(intentMarkKeyframes(variant, index), {
+        // WAAPI takes a mutable array but copies its input. Copy only the array
+        // of references; immutable keyframe objects are shared across all marks.
+        path.animate(intentMarkKeyframes(variant, index).slice(), {
           duration: intentMarkMotionTiming[`${variant}Ms`],
           easing: 'linear',
           iterations: Infinity,
@@ -78,25 +84,32 @@ export function createIntentMarkMotion(
 
   const transitionTo = (variant?: IntentMarkVariant) => {
     const run = ++sequence;
+    isNeutral = false;
     // Freeze the rendered vector pose before cancel. Rapid updates keep at most
     // two layers and cannot revive the callbacks from an earlier handoff.
-    for (const path of current.querySelectorAll<SVGPathElement>('[data-mark-arm]')) {
-      const rendered = getComputedStyle(path);
-      for (const property of [
-        'd',
-        'fill',
-        'stroke',
-        'transform',
-        'opacity',
-        'stroke-dasharray',
-        'stroke-dashoffset',
-        'stroke-width',
-      ])
-        path.style.setProperty(property, rendered.getPropertyValue(property));
-    }
+    const properties = [
+      'd',
+      'fill',
+      'stroke',
+      'transform',
+      'opacity',
+      'stroke-dasharray',
+      'stroke-dashoffset',
+      'stroke-width',
+    ];
+    // Computed styles are live: snapshot every value before the first write,
+    // otherwise each write invalidates the next read and forces another flush.
+    const poses = Array.from(current.querySelectorAll<SVGPathElement>('[data-mark-arm]')).map(
+      (path) => {
+        const rendered = getComputedStyle(path);
+        return { path, values: properties.map((property) => rendered.getPropertyValue(property)) };
+      },
+    );
     const style = getComputedStyle(current);
     const transform = style.transform;
     const opacity = style.opacity || '1';
+    for (const { path, values } of poses)
+      properties.forEach((property, index) => path.style.setProperty(property, values[index]));
     cancelAnimations();
     outgoing?.remove();
     outgoing = current;

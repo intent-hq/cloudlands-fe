@@ -19,12 +19,14 @@ interface AnimationRecord {
 const records: AnimationRecord[] = [];
 const intersectionCallbacks: IntersectionObserverCallback[] = [];
 let reducedMotion = false;
+let initiallyIntersecting: boolean | undefined = true;
 let mediaChange: (() => void) | undefined;
 
 beforeEach(() => {
   records.length = 0;
   intersectionCallbacks.length = 0;
   reducedMotion = false;
+  initiallyIntersecting = true;
   mediaChange = undefined;
   Object.defineProperty(document, 'hidden', { configurable: true, value: false });
   Element.prototype.animate = vi.fn(function (this: Element, frames, options) {
@@ -67,10 +69,16 @@ beforeEach(() => {
   vi.stubGlobal(
     'IntersectionObserver',
     class {
-      constructor(callback: IntersectionObserverCallback) {
+      constructor(private callback: IntersectionObserverCallback) {
         intersectionCallbacks.push(callback);
       }
-      observe() {}
+      observe(target: Element) {
+        if (initiallyIntersecting !== undefined)
+          this.callback(
+            [{ isIntersecting: initiallyIntersecting, target } as IntersectionObserverEntry],
+            this as unknown as IntersectionObserver,
+          );
+      }
       disconnect() {}
     },
   );
@@ -109,6 +117,84 @@ function liveLoops(root: Element): AnimationRecord[] {
 }
 
 describe('IntentMarkLoader', () => {
+  it('defers all animation setup until the first visible observation', async () => {
+    initiallyIntersecting = undefined;
+    const readStyle = vi.spyOn(window, 'getComputedStyle');
+    const view = render(IntentMarkLoader, { props: { variant: 'bloom', playing: true } });
+    const root = view.container.querySelector<SVGSVGElement>('svg')!;
+    const originalLayer = root.firstElementChild;
+    const intersect = (isIntersecting: boolean) =>
+      intersectionCallbacks[0](
+        [{ isIntersecting, target: root } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    expect(records).toHaveLength(0);
+    intersect(false);
+    await view.rerender({ variant: 'twist', playing: true });
+    intersect(false);
+    expect(records).toHaveLength(0);
+    expect(readStyle).not.toHaveBeenCalled();
+    expect(root.firstElementChild).toBe(originalLayer);
+    intersect(true);
+    completeTransition();
+    expect(liveLoops(root)).toHaveLength(5);
+    expect(root.querySelector<SVGGElement>('[data-mark-layer]')?.dataset.markLayer).toBe('twist');
+  });
+
+  it('falls back to animation when IntersectionObserver is unavailable', () => {
+    vi.stubGlobal('IntersectionObserver', undefined);
+    const view = render(IntentMarkLoader, { props: { variant: 'pulse', playing: true } });
+    completeTransition();
+    expect(liveLoops(view.container)).toHaveLength(5);
+  });
+
+  it('leaves the neutral DOM alone during repeated hidden and reduced-motion updates', async () => {
+    const view = render(IntentMarkLoader, { props: { variant: 'bloom', playing: true } });
+    const root = view.getByRole('status');
+    completeTransition();
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    const neutral = root.firstElementChild;
+    const mutations = vi.spyOn(root, 'replaceChildren');
+    const readStyle = vi.spyOn(window, 'getComputedStyle');
+    for (const variant of ['pulse', 'twist', 'bloom'] as const) {
+      await view.rerender({ variant, playing: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      reducedMotion = true;
+      mediaChange?.();
+    }
+    expect(mutations).not.toHaveBeenCalled();
+    expect(readStyle).not.toHaveBeenCalled();
+    expect(root.firstElementChild).toBe(neutral);
+    expect(liveLoops(root)).toHaveLength(0);
+    view.unmount();
+    intersectionCallbacks[0](
+      [{ isIntersecting: true, target: root } as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    );
+    expect(root.getAttribute('data-motion-state')).toBe('destroyed');
+  });
+
+  it.each(['pulse', 'bloom', 'twist'] as const)(
+    'shares immutable %s frame data without sharing animation lifetimes',
+    (variant) => {
+      const first = render(IntentMarkLoader, { props: { variant, playing: true } });
+      completeTransition();
+      const firstLoops = liveLoops(first.container);
+      const second = render(IntentMarkLoader, { props: { variant, playing: true } });
+      completeTransition();
+      const secondLoops = liveLoops(second.container);
+      for (let arm = 0; arm < firstLoops.length; arm++) {
+        expect(firstLoops[arm].frames[0]).toBe(secondLoops[arm].frames[0]);
+        expect(Reflect.set(firstLoops[arm].frames[0], 'opacity', 0.123)).toBe(false);
+      }
+      first.unmount();
+      expect(firstLoops.every(({ cancel }) => cancel.mock.calls.length > 0)).toBe(true);
+      expect(secondLoops.every(({ cancel }) => cancel.mock.calls.length === 0)).toBe(true);
+      expect(liveLoops(second.container)).toHaveLength(5);
+    },
+  );
+
   it('keeps the public API and accepts size, class, variant, and stopped state', () => {
     const { getByRole } = render(IntentMarkLoader, {
       props: { variant: 'pulse', size: 48, playing: false, class: 'custom-mark' },

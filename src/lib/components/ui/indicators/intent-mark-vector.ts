@@ -106,7 +106,7 @@ function sample(track: readonly ScalarKey[], frame: number): number {
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
 const rounded = (n: number) => Number(n.toFixed(6));
 
-export function pulseKeyframes(index: number): Keyframe[] {
+function createPulseKeyframes(index: number): Keyframe[] {
   const [x, y] = [
     [-15.856, -18.903],
     [15.8795, -18.9409],
@@ -300,10 +300,31 @@ function twistKeyframes(index: number): Keyframe[] {
   ];
 }
 
-export function intentMarkKeyframes(variant: IntentMarkVariant, index: number): Keyframe[] {
-  if (variant === 'pulse') return pulseKeyframes(index);
+function createKeyframes(variant: IntentMarkVariant, index: number): Keyframe[] {
+  if (variant === 'pulse') return createPulseKeyframes(index);
   if (variant === 'twist') return twistKeyframes(index);
   // Sample the original scalar curves at 120Hz, then let the browser interpolate.
   // These are rotations and real length trims, not traced frame outlines.
   return Array.from({ length: 245 }, (_, i) => ({ ...bloomPose(index, i / 4), offset: i / 244 }));
+}
+
+type MotionFrames = readonly Readonly<Keyframe>[];
+// At most three variants × five arms per renderer. Generate only on first use;
+// never retain elements, animations, or resolved theme colors in this cache.
+const keyframeCache: Record<IntentMarkVariant, (MotionFrames | undefined)[]> = {
+  pulse: [],
+  bloom: [],
+  twist: [],
+};
+
+export function intentMarkKeyframes(variant: IntentMarkVariant, index: number): MotionFrames {
+  if (!Number.isInteger(index) || index < 0 || index >= intentMarkPaths.length)
+    throw new RangeError('Intent mark arm index is out of range');
+  return (keyframeCache[variant][index] ??= Object.freeze(
+    createKeyframes(variant, index).map((frame) => Object.freeze(frame)),
+  ));
+}
+
+export function pulseKeyframes(index: number): MotionFrames {
+  return intentMarkKeyframes('pulse', index);
 }
