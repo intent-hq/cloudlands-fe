@@ -55,6 +55,19 @@ function isValidWorkspaceId(id: string): boolean {
   return WORKSPACE_ID_RE.test(id) && id !== '.' && id !== '..';
 }
 
+/** Identify video-shaped assets even when invalid, so they cannot fall back to image policy. */
+export function isWorkspaceAssetVideoCandidate(value: string): boolean {
+  if (!/^[\s\u0000-\u001f]*workspace-asset:/i.test(value)) return false;
+  // Decode individual bytes for classification, including when another escape is malformed.
+  // Acceptance and routing remain exclusively in workspaceAssetVideoSource below.
+  const path = value
+    .split(/[?#]/)[0]
+    .replace(/%([a-f0-9]{2})/gi, (_match, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
+  return /\.(?:mp4|webm)$/i.test(path.trim());
+}
+
 /** Saved assets stay on note.readAsset routing, never workspace file paths. */
 export function workspaceAssetVideoSource(
   value: string,

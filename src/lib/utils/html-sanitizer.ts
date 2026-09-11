@@ -7,7 +7,7 @@
 
 import { Logger } from '$shared/logger';
 import DOMPurify from 'dompurify';
-import { workspaceAssetVideoSource } from './workspace-file-image';
+import { isWorkspaceAssetVideoCandidate, workspaceAssetVideoSource } from './workspace-file-image';
 
 const logger = new Logger('html-sanitizer');
 
@@ -47,6 +47,15 @@ DOMPurify.addHook('uponSanitizeElement', (node) => {
 // anchor hrefs; keeping it media-only avoids relying on the main-process
 // shell.openExternal allowlist to keep such links inert.
 DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
+  if (
+    node.nodeName === 'IMG' &&
+    data.attrName === 'src' &&
+    isWorkspaceAssetVideoCandidate(data.attrValue) &&
+    !workspaceAssetVideoSource(data.attrValue, sanitizedWorkspaceId)
+  ) {
+    data.keepAttr = false;
+    return;
+  }
   if (
     enforceWorkspaceFileScope &&
     isWorkspaceFileUrl(data.attrValue) &&

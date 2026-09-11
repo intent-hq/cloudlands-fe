@@ -127,6 +127,55 @@ describe('markdown-processor inline workspace file images', () => {
 });
 
 describe('markdown-processor inline workspace file videos', () => {
+  it.each([
+    ['cross-workspace', 'workspace-asset://other-ws/demo.webm', 'ws-abc'],
+    ['unknown workspace', 'workspace-asset://ws-abc/demo.mp4', undefined],
+    ['malformed path', 'workspace-asset://ws-abc/../demo.mp4', 'ws-abc'],
+    ['malformed escape', 'workspace-asset://ws-abc/bad%zz.webm', 'ws-abc'],
+    ['invalid backend', 'workspace-asset://ws-abc/demo.webm?backend=bad%2Froute', 'ws-abc'],
+    ['unknown query', 'workspace-asset://ws-abc/demo.mp4?unknown=1', 'ws-abc'],
+  ])(
+    'never restores rejected %s saved videos through inline note save/reload',
+    async (_reason, src, workspaceId) => {
+      const html = await processMarkdownToHTML(`Recording: ![rejected](${src})`, { workspaceId });
+      const rendered = document.createElement('div');
+      rendered.innerHTML = html;
+      expect(rendered.querySelector('img[src], video[src]')).toBeNull();
+      const editor = new Editor(
+        createEditorConfig({
+          element: document.createElement('div'),
+          content: html,
+          editable: true,
+          onUpdate: () => {},
+          useMarkdown: true,
+          workspace: workspaceId ? { id: workspaceId } : undefined,
+          enableMentions: false,
+        }),
+      );
+      await tick();
+      try {
+        rendered.innerHTML = editor.getHTML();
+        expect(rendered.querySelector('img[src], video[src]')).toBeNull();
+        rendered.innerHTML = await processMarkdownToHTML(processHTMLToMarkdown(editor.getHTML()), {
+          workspaceId,
+        });
+        expect(rendered.querySelector('img[src], video[src]')).toBeNull();
+      } finally {
+        editor.destroy();
+      }
+    },
+  );
+
+  it('keeps rejected saved-video code examples inert and unchanged', async () => {
+    const example = '![rejected](workspace-asset://other-ws/demo.webm?backend=bad%2Froute)';
+    const element = document.createElement('div');
+    element.innerHTML = await processMarkdownToHTML(`\`\`\`markdown\n${example}\n\`\`\``, {
+      workspaceId: 'ws-abc',
+    });
+    expect(element.querySelector('pre code')?.textContent?.trim()).toBe(example);
+    expect(element.querySelector('img[src], video[src]')).toBeNull();
+  });
+
   it.each(['webm', 'mp4'])(
     'round-trips a saved %s asset through the note editor',
     async (extension) => {

@@ -3,6 +3,7 @@ import { getWorkspaceVideoSource } from '$shared/types/content-block';
 import { parseWorkspaceFileImageUrl } from './image-actions';
 import {
   intentFileImageUrlToWorkspaceFileUrl,
+  isWorkspaceAssetVideoCandidate,
   workspaceAssetVideoSource,
   workspaceFileMediaUrlToIntentFileUrl,
 } from './workspace-file-image';
@@ -127,7 +128,7 @@ export function splitWorkspaceVideoMarkdown(
       flushMarkdown();
       segments.push({ type: 'video', source, name: alt || undefined });
     } else if (
-      mediaUrl.startsWith('workspace-asset://') ||
+      (mediaUrl.startsWith('workspace-asset://') && !isWorkspaceAssetVideoCandidate(mediaUrl)) ||
       resolvesWorkspaceImage(mediaUrl, workspaceId)
     ) {
       markdownLines.push(lines[index]);

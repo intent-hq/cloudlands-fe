@@ -1,5 +1,7 @@
+/** @vitest-environment jsdom */
 import { describe, expect, it } from 'vitest';
 import { splitWorkspaceVideoMarkdown } from './workspace-file-video';
+import { processMarkdownToHTML } from './markdown-processor';
 
 const WS = 'workspace-1';
 
@@ -33,6 +35,45 @@ describe('splitWorkspaceVideoMarkdown', () => {
           (segment) => segment.type === 'video',
         ),
       ).toBe(false);
+    },
+  );
+
+  it.each([
+    ['cross-workspace', 'workspace-asset://other-ws/demo.webm', WS],
+    ['unknown workspace', `workspace-asset://${WS}/demo.mp4`, undefined],
+    ['traversal', `workspace-asset://${WS}/../demo.webm`, WS],
+    ['encoded separator', `workspace-asset://${WS}/a%2Fdemo.mp4`, WS],
+    ['malformed escape', `workspace-asset://${WS}/bad%zz.webm`, WS],
+    ['duplicate backend', `workspace-asset://${WS}/demo.webm?backend=one&backend=two`, WS],
+    ['invalid backend', `workspace-asset://${WS}/demo.mp4?backend=remote%2Fother`, WS],
+    ['unknown query', `workspace-asset://${WS}/demo.webm?url=remote`, WS],
+    ['fragment', `workspace-asset://${WS}/demo.mp4#fragment`, WS],
+  ])(
+    'cannot reload rejected %s video as an image in recursive markdown',
+    async (_reason, src, workspaceId) => {
+      const segments = splitWorkspaceVideoMarkdown(`![rejected](${src})`, workspaceId);
+      expect(segments.some((segment) => segment.type === 'video')).toBe(false);
+      for (const segment of segments) {
+        if (segment.type !== 'markdown') continue;
+        const element = document.createElement('div');
+        element.innerHTML = await processMarkdownToHTML(segment.content, { workspaceId });
+        expect(element.querySelector('img[src], video[src]')).toBeNull();
+        expect(element.textContent).toContain('rejected');
+      }
+    },
+  );
+
+  it.each(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tiff'])(
+    'keeps saved %s images loadable through recursive markdown',
+    async (extension) => {
+      const src = `workspace-asset://${WS}/image.${extension}?backend=remote-1&v=render-1`;
+      const [segment] = splitWorkspaceVideoMarkdown(`![image](${src})`, WS);
+      expect(segment.type).toBe('markdown');
+      if (segment.type !== 'markdown') throw new Error('Expected image markdown');
+      const element = document.createElement('div');
+      element.innerHTML = await processMarkdownToHTML(segment.content, { workspaceId: WS });
+      expect(element.querySelector('img')?.getAttribute('src')).toBe(src);
+      expect(element.querySelector('video')).toBeNull();
     },
   );
 

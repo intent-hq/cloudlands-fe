@@ -142,6 +142,31 @@ describe('MarkdownViewer static rendering', () => {
     expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
   });
 
+  it.each([
+    ['recursive', 'workspace-asset://other-ws/demo.webm', 'ws-abc'],
+    ['inline', 'workspace-asset://ws-abc/demo.mp4?backend=bad%2Froute', 'ws-abc'],
+    ['static', 'workspace-asset://ws-abc/../demo.mp4', 'ws-abc'],
+    ['unknown workspace', 'workspace-asset://ws-abc/demo.webm', undefined],
+  ])('keeps rejected saved videos inert in %s rendering', async (mode, src, workspaceId) => {
+    const validSrc = 'workspace-asset://ws-abc/valid.mp4';
+    const markdown = `![rejected](${src})`;
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content:
+          mode === 'recursive'
+            ? `![valid](${validSrc})\n\n${markdown}\n\nrender complete`
+            : `Recording: ${markdown}\n\nrender complete`,
+        workspaceId,
+        chatImageThumbnails: mode === 'recursive',
+      },
+    });
+    await screen.findByText('render complete');
+    const sources = Array.from(container.querySelectorAll('img[src], video[src]'), (node) =>
+      node.getAttribute('src'),
+    );
+    expect(sources).toEqual(mode === 'recursive' ? [validSrc] : []);
+  });
+
   it.each(['webm', 'mp4'])(
     'retains download recovery for a failed inline saved %s video',
     async (extension) => {
